@@ -371,12 +371,11 @@ fn term_power_of_var(term: &Expr, var: &str) -> i128 {
       left,
       right,
     } => {
-      if let Expr::Identifier(name) = left.as_ref() {
-        if name == var {
-          if let Expr::Integer(n) = right.as_ref() {
-            return *n;
-          }
-        }
+      if let Expr::Identifier(name) = left.as_ref()
+        && name == var
+        && let Expr::Integer(n) = right.as_ref()
+      {
+        return *n;
       }
       0
     }
@@ -393,12 +392,11 @@ fn term_power_of_var(term: &Expr, var: &str) -> i128 {
       args.iter().map(|a| term_power_of_var(a, var)).sum()
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if let Expr::Identifier(n) = &args[0] {
-        if n == var {
-          if let Expr::Integer(p) = &args[1] {
-            return *p;
-          }
-        }
+      if let Expr::Identifier(n) = &args[0]
+        && n == var
+        && let Expr::Integer(p) = &args[1]
+      {
+        return *p;
       }
       0
     }

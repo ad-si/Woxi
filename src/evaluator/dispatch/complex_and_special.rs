@@ -1500,22 +1500,21 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
       } = func.as_ref()
         && name == "Inactive"
         && inactive_args.len() == 1
+        && let Expr::Identifier(func_name) = &inactive_args[0]
       {
-        if let Expr::Identifier(func_name) = &inactive_args[0] {
-          // Check filter
-          let should_activate = match filter {
-            Some(allowed) => allowed.contains(func_name),
-            None => true,
+        // Check filter
+        let should_activate = match filter {
+          Some(allowed) => allowed.contains(func_name),
+          None => true,
+        };
+        if should_activate {
+          // Activate: replace with f[args...], recursing into args
+          let activated_args: Vec<Expr> =
+            args.iter().map(|a| activate_expr(a, filter)).collect();
+          return Expr::FunctionCall {
+            name: func_name.clone(),
+            args: activated_args,
           };
-          if should_activate {
-            // Activate: replace with f[args...], recursing into args
-            let activated_args: Vec<Expr> =
-              args.iter().map(|a| activate_expr(a, filter)).collect();
-            return Expr::FunctionCall {
-              name: func_name.clone(),
-              args: activated_args,
-            };
-          }
         }
       }
       // Recurse into both func and args
@@ -1601,40 +1600,41 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         if args.is_empty() {
           Ok(Expr::Integer(1))
         } else if args.len() == 2 {
-          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
-            if p1.len() == 2 && p2.len() == 2 {
-              let width = Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![
-                    p2[0].clone(),
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![Expr::Integer(-1), p1[0].clone()],
-                    },
-                  ],
-                }],
-              };
-              let height = Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![
-                    p2[1].clone(),
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![Expr::Integer(-1), p1[1].clone()],
-                    },
-                  ],
-                }],
-              };
-              let area = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![width, height],
-              };
-              return crate::evaluator::evaluate_expr_to_expr(&area);
-            }
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1])
+            && p1.len() == 2
+            && p2.len() == 2
+          {
+            let width = Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  p2[0].clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), p1[0].clone()],
+                  },
+                ],
+              }],
+            };
+            let height = Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  p2[1].clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), p1[1].clone()],
+                  },
+                ],
+              }],
+            };
+            let area = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![width, height],
+            };
+            return crate::evaluator::evaluate_expr_to_expr(&area);
           }
           Ok(Expr::FunctionCall {
             name: "Area".to_string(),
@@ -1649,93 +1649,82 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] = |det| / 2
       "Triangle" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() == 3 {
-              if let (Expr::List(p1), Expr::List(p2), Expr::List(p3)) =
-                (&pts[0], &pts[1], &pts[2])
-              {
-                if p1.len() == 2 && p2.len() == 2 && p3.len() == 2 {
-                  // Area = |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
-                  let area_expr = Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![
-                      Expr::FunctionCall {
-                        name: "Rational".to_string(),
-                        args: vec![Expr::Integer(1), Expr::Integer(2)],
-                      },
-                      Expr::FunctionCall {
-                        name: "Abs".to_string(),
-                        args: vec![Expr::FunctionCall {
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() == 3
+          && let (Expr::List(p1), Expr::List(p2), Expr::List(p3)) =
+            (&pts[0], &pts[1], &pts[2])
+          && p1.len() == 2
+          && p2.len() == 2
+          && p3.len() == 2
+        {
+          // Area = |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
+          let area_expr = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+              Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![
+                        p1[0].clone(),
+                        Expr::FunctionCall {
                           name: "Plus".to_string(),
                           args: vec![
+                            p2[1].clone(),
                             Expr::FunctionCall {
                               name: "Times".to_string(),
-                              args: vec![
-                                p1[0].clone(),
-                                Expr::FunctionCall {
-                                  name: "Plus".to_string(),
-                                  args: vec![
-                                    p2[1].clone(),
-                                    Expr::FunctionCall {
-                                      name: "Times".to_string(),
-                                      args: vec![
-                                        Expr::Integer(-1),
-                                        p3[1].clone(),
-                                      ],
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                            Expr::FunctionCall {
-                              name: "Times".to_string(),
-                              args: vec![
-                                p2[0].clone(),
-                                Expr::FunctionCall {
-                                  name: "Plus".to_string(),
-                                  args: vec![
-                                    p3[1].clone(),
-                                    Expr::FunctionCall {
-                                      name: "Times".to_string(),
-                                      args: vec![
-                                        Expr::Integer(-1),
-                                        p1[1].clone(),
-                                      ],
-                                    },
-                                  ],
-                                },
-                              ],
-                            },
-                            Expr::FunctionCall {
-                              name: "Times".to_string(),
-                              args: vec![
-                                p3[0].clone(),
-                                Expr::FunctionCall {
-                                  name: "Plus".to_string(),
-                                  args: vec![
-                                    p1[1].clone(),
-                                    Expr::FunctionCall {
-                                      name: "Times".to_string(),
-                                      args: vec![
-                                        Expr::Integer(-1),
-                                        p2[1].clone(),
-                                      ],
-                                    },
-                                  ],
-                                },
-                              ],
+                              args: vec![Expr::Integer(-1), p3[1].clone()],
                             },
                           ],
-                        }],
-                      },
-                    ],
-                  };
-                  return crate::evaluator::evaluate_expr_to_expr(&area_expr);
-                }
-              }
-            }
-          }
+                        },
+                      ],
+                    },
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![
+                        p2[0].clone(),
+                        Expr::FunctionCall {
+                          name: "Plus".to_string(),
+                          args: vec![
+                            p3[1].clone(),
+                            Expr::FunctionCall {
+                              name: "Times".to_string(),
+                              args: vec![Expr::Integer(-1), p1[1].clone()],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![
+                        p3[0].clone(),
+                        Expr::FunctionCall {
+                          name: "Plus".to_string(),
+                          args: vec![
+                            p1[1].clone(),
+                            Expr::FunctionCall {
+                              name: "Times".to_string(),
+                              args: vec![Expr::Integer(-1), p2[1].clone()],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                }],
+              },
+            ],
+          };
+          return crate::evaluator::evaluate_expr_to_expr(&area_expr);
         }
         Ok(Expr::FunctionCall {
           name: "Area".to_string(),
@@ -1744,12 +1733,11 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Polygon[{{x1,y1},{x2,y2},...}] — Shoelace formula
       "Polygon" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() >= 3 {
-              return compute_polygon_area(pts);
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 3
+        {
+          return compute_polygon_area(pts);
         }
         Ok(Expr::FunctionCall {
           name: "Area".to_string(),
@@ -1776,10 +1764,10 @@ fn compute_polygon_area(pts: &[Expr]) -> Result<Expr, InterpreterError> {
   let coords: Vec<(&Expr, &Expr)> = pts
     .iter()
     .filter_map(|p| {
-      if let Expr::List(xy) = p {
-        if xy.len() == 2 {
-          return Some((&xy[0], &xy[1]));
-        }
+      if let Expr::List(xy) = p
+        && xy.len() == 2
+      {
+        return Some((&xy[0], &xy[1]));
       }
       None
     })
@@ -1896,65 +1884,66 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           ]))
         } else if args.len() == 1 {
           // Rectangle[{x1,y1}] = Rectangle[{x1,y1},{x1+1,y1+1}]
-          if let Expr::List(p1) = &args[0] {
-            if p1.len() == 2 {
-              let cx = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  p1[0].clone(),
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(2)],
-                  },
-                ],
-              };
-              let cy = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  p1[1].clone(),
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(2)],
-                  },
-                ],
-              };
-              let result = Expr::List(vec![cx, cy]);
-              return crate::evaluator::evaluate_expr_to_expr(&result);
-            }
+          if let Expr::List(p1) = &args[0]
+            && p1.len() == 2
+          {
+            let cx = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                p1[0].clone(),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+              ],
+            };
+            let cy = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                p1[1].clone(),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+              ],
+            };
+            let result = Expr::List(vec![cx, cy]);
+            return crate::evaluator::evaluate_expr_to_expr(&result);
           }
           unevaluated()
         } else if args.len() == 2 {
-          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
-            if p1.len() == 2 && p2.len() == 2 {
-              let cx = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(2)],
-                  },
-                  Expr::FunctionCall {
-                    name: "Plus".to_string(),
-                    args: vec![p1[0].clone(), p2[0].clone()],
-                  },
-                ],
-              };
-              let cy = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(1), Expr::Integer(2)],
-                  },
-                  Expr::FunctionCall {
-                    name: "Plus".to_string(),
-                    args: vec![p1[1].clone(), p2[1].clone()],
-                  },
-                ],
-              };
-              let result = Expr::List(vec![cx, cy]);
-              return crate::evaluator::evaluate_expr_to_expr(&result);
-            }
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1])
+            && p1.len() == 2
+            && p2.len() == 2
+          {
+            let cx = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![p1[0].clone(), p2[0].clone()],
+                },
+              ],
+            };
+            let cy = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![p1[1].clone(), p2[1].clone()],
+                },
+              ],
+            };
+            let result = Expr::List(vec![cx, cy]);
+            return crate::evaluator::evaluate_expr_to_expr(&result);
           }
           unevaluated()
         } else {
@@ -1963,34 +1952,31 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] — centroid is average of vertices
       "Triangle" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() == 3 {
-              return compute_triangle_centroid(pts);
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() == 3
+        {
+          return compute_triangle_centroid(pts);
         }
         unevaluated()
       }
       // Polygon[{{x1,y1},{x2,y2},...}] — centroid via shoelace-derived formula
       "Polygon" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() >= 3 {
-              return compute_polygon_centroid(pts);
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 3
+        {
+          return compute_polygon_centroid(pts);
         }
         unevaluated()
       }
       // Line[{{x1,y1},{x2,y2},...}] — centroid is weighted average by segment length
       "Line" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() >= 2 {
-              return compute_line_centroid(pts);
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 2
+        {
+          return compute_line_centroid(pts);
         }
         unevaluated()
       }
@@ -2074,10 +2060,10 @@ fn compute_polygon_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
   let coords: Vec<(&Expr, &Expr)> = pts
     .iter()
     .filter_map(|p| {
-      if let Expr::List(xy) = p {
-        if xy.len() == 2 {
-          return Some((&xy[0], &xy[1]));
-        }
+      if let Expr::List(xy) = p
+        && xy.len() == 2
+      {
+        return Some((&xy[0], &xy[1]));
       }
       None
     })
@@ -2350,7 +2336,7 @@ fn find_sequence_function(
   // Convert items to rational numbers (as i128 numerator/denominator pairs)
   let vals: Vec<(i128, i128)> = items
     .iter()
-    .map(|item| expr_to_rational(item))
+    .map(expr_to_rational)
     .collect::<Option<Vec<_>>>()
     .ok_or_else(|| {
       InterpreterError::EvaluationError(
@@ -2674,12 +2660,11 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Line[{{x1,y1},{x2,y2},...}] -> sum of segment lengths
       "Line" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() >= 2 {
-              return compute_polyline_length(pts, "ArcLength");
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 2
+        {
+          return compute_polyline_length(pts, "ArcLength");
         }
         unevaluated()
       }
@@ -2736,46 +2721,47 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           // Rectangle[{x1,y1}] = Rectangle[{x1,y1},{x1+1,y1+1}], perimeter = 4
           Ok(Expr::Integer(4))
         } else if args.len() == 2 {
-          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
-            if p1.len() == 2 && p2.len() == 2 {
-              let width = Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![
-                    p2[0].clone(),
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![Expr::Integer(-1), p1[0].clone()],
-                    },
-                  ],
-                }],
-              };
-              let height = Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![
-                    p2[1].clone(),
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![Expr::Integer(-1), p1[1].clone()],
-                    },
-                  ],
-                }],
-              };
-              let perimeter = Expr::FunctionCall {
-                name: "Times".to_string(),
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1])
+            && p1.len() == 2
+            && p2.len() == 2
+          {
+            let width = Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
                 args: vec![
-                  Expr::Integer(2),
+                  p2[0].clone(),
                   Expr::FunctionCall {
-                    name: "Plus".to_string(),
-                    args: vec![width, height],
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), p1[0].clone()],
                   },
                 ],
-              };
-              return crate::evaluator::evaluate_expr_to_expr(&perimeter);
-            }
+              }],
+            };
+            let height = Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  p2[1].clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), p1[1].clone()],
+                  },
+                ],
+              }],
+            };
+            let perimeter = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(2),
+                Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![width, height],
+                },
+              ],
+            };
+            return crate::evaluator::evaluate_expr_to_expr(&perimeter);
           }
           unevaluated()
         } else {
@@ -2784,28 +2770,26 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] -> sum of side lengths
       "Triangle" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() == 3 {
-              // Close the polygon: add first point at end
-              let mut closed = pts.to_vec();
-              closed.push(pts[0].clone());
-              return compute_polyline_length(&closed, "Perimeter");
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() == 3
+        {
+          // Close the polygon: add first point at end
+          let mut closed = pts.to_vec();
+          closed.push(pts[0].clone());
+          return compute_polyline_length(&closed, "Perimeter");
         }
         unevaluated()
       }
       // Polygon[{{x1,y1},...}] -> sum of side lengths (closed)
       "Polygon" => {
-        if args.len() == 1 {
-          if let Expr::List(pts) = &args[0] {
-            if pts.len() >= 3 {
-              let mut closed = pts.to_vec();
-              closed.push(pts[0].clone());
-              return compute_polyline_length(&closed, "Perimeter");
-            }
-          }
+        if args.len() == 1
+          && let Expr::List(pts) = &args[0]
+          && pts.len() >= 3
+        {
+          let mut closed = pts.to_vec();
+          closed.push(pts[0].clone());
+          return compute_polyline_length(&closed, "Perimeter");
         }
         unevaluated()
       }

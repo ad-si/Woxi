@@ -5256,11 +5256,11 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match dom.as_str() {
       "Integers" => solutions
         .into_iter()
-        .filter(|sol| solution_is_integer(sol))
+        .filter(solution_is_integer)
         .collect::<Vec<_>>(),
       "Reals" => solutions
         .into_iter()
-        .filter(|sol| solution_is_real(sol))
+        .filter(solution_is_real)
         .collect::<Vec<_>>(),
       _ => solutions,
     }
@@ -5315,13 +5315,13 @@ fn find_instance_numerical(
         Expr::Integer(val as i128)
       };
       let subst = substitute_var(cond, var, &test_val);
-      if let Ok(evaled) = evaluate_expr_to_expr(&subst) {
-        if matches!(evaled, Expr::Identifier(ref s) if s == "True") {
-          results.push(Expr::List(vec![Expr::Rule {
-            pattern: Box::new(Expr::Identifier(var.clone())),
-            replacement: Box::new(test_val),
-          }]));
-        }
+      if let Ok(evaled) = evaluate_expr_to_expr(&subst)
+        && matches!(evaled, Expr::Identifier(ref s) if s == "True")
+      {
+        results.push(Expr::List(vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var.clone())),
+          replacement: Box::new(test_val),
+        }]));
       }
       val += step;
     }
@@ -5338,21 +5338,21 @@ fn find_instance_numerical(
         let test2 = Expr::Integer(val2 as i128);
         let subst =
           substitute_var(&substitute_var(cond, var1, &test1), var2, &test2);
-        if let Ok(evaled) = evaluate_expr_to_expr(&subst) {
-          if matches!(evaled, Expr::Identifier(ref s) if s == "True") {
-            results.push(Expr::List(vec![
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var1.clone())),
-                replacement: Box::new(test1.clone()),
-              },
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var2.clone())),
-                replacement: Box::new(test2),
-              },
-            ]));
-            if results.len() >= n {
-              break 'outer;
-            }
+        if let Ok(evaled) = evaluate_expr_to_expr(&subst)
+          && matches!(evaled, Expr::Identifier(ref s) if s == "True")
+        {
+          results.push(Expr::List(vec![
+            Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var1.clone())),
+              replacement: Box::new(test1.clone()),
+            },
+            Expr::Rule {
+              pattern: Box::new(Expr::Identifier(var2.clone())),
+              replacement: Box::new(test2),
+            },
+          ]));
+          if results.len() >= n {
+            break 'outer;
           }
         }
         val2 += step2;

@@ -44,7 +44,7 @@ AddSides,,,,11.3,3491
 AddTo,Adds a value to a variable,✅,stateful,1,550
 AddToSearchIndex,,🚫,,12,
 AddToVectorDatabase,,🚫,,14.1,
-AddUsers,,,,10,5486
+AddUsers,,🚫,,10,5486
 AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8,1107
 AdjacencyList,Graph operations,🚫,None,9,2276
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8,1055
@@ -59,7 +59,7 @@ AffineSpace,,,,10.2,3862
 AffineStateSpaceModel,Affine state-space model,✅,unevaluated,10,1687
 AffineTransform,Affine geometric transformation,✅,unevaluated,6,1633
 After,,🚫,,3,1130
-AggregatedEntityClass,,,,12,4479
+AggregatedEntityClass,,🚫,,12,4479
 AggregationLayer,,🚫,,11.1,3306
 AircraftData,,🚫,,10,883
 AirportData,,🚫,,10,246
@@ -89,11 +89,11 @@ AllowedCloudParameterExtensions,,🚫,,11.1,5184
 AllowedDimensions,,,,9,4479
 AllowedFrequencyRange,,,,12,
 AllowedHeads,,,,12,3191
-AllowGroupClose,,,,8,5587
-AllowInlineCells,,,,4,5486
-AllowLooseGrammar,,,,10.1,5587
-AllowReverseGroupClose,,,,8,5587
-AllowVersionUpdate,,,,12.1,
+AllowGroupClose,,🚫,,8,5587
+AllowInlineCells,,🚫,,4,5486
+AllowLooseGrammar,,🚫,,10.1,5587
+AllowReverseGroupClose,,🚫,,8,5587
+AllowVersionUpdate,,🚫,,12.1,
 AllSameBy,,,,14.1,
 AllTrue,Checks if all elements in a list are true,✅,pure,10,1232
 Alphabet,Returns the list of lowercase English letters,✅,pure,10.1,706
@@ -105,7 +105,7 @@ AlternatingGroup,,,,8,2828
 AlternativeHypothesis,,,,8,3353
 Alternatives,Pattern object representing any of several alternatives,✅,pure,2,10
 AltitudeMethod,,,,10,5390
-AmbientLight,,,,13,
+AmbientLight,,🚫,,13,
 AmbiguityFunction,,,,10,4612
 AmbiguityList,,,,10,5390
 AnatomyData,,🚫,,10.3,1192
@@ -128,8 +128,8 @@ AnimationDirection,animation option,🚫,None,3,2338
 AnimationRate,,🚫,,6,1122
 AnimationRepetitions,Animation repetition option,✅,pure,6,1552
 AnimationRunning,Option controlling whether an animation is running,✅,none,6,686
-AnimationRunTime,,,,10,4479
-AnimationTimeIndex,,,,10,4660
+AnimationRunTime,,🚫,,10,4479
+AnimationTimeIndex,,🚫,,10,4660
 AnimationVideo,,🚫,,12.3,
 Animator,Animated control element,✅,unevaluated,6,1573
 Annotate,,,,12.1,4881
@@ -227,15 +227,15 @@ ArraySymbol,,,,14.1,
 Arrow,Represents an arrow graphics primitive,✅,pure,6,181
 Arrowheads,Specifies arrowhead sizes and styles,✅,pure,6,184
 ASATriangle,,,,10,3765
-Ask,,,,10.4,2748
-AskAppend,,,,10.4,4437
-AskConfirm,,,,10.4,4315
-AskDisplay,,,,10.4,4104
-AskedQ,,,,10.4,4707
-AskedValue,,,,10.4,4479
-AskFunction,,,,10.4,3291
-AskState,,,,11.1,5390
-AskTemplateDisplay,,,,10.4,4567
+Ask,,🚫,,10.4,2748
+AskAppend,,🚫,,10.4,4437
+AskConfirm,,🚫,,10.4,4315
+AskDisplay,,🚫,,10.4,4104
+AskedQ,,🚫,,10.4,4707
+AskedValue,,🚫,,10.4,4479
+AskFunction,,🚫,,10.4,3291
+AskState,,🚫,,11.1,5390
+AskTemplateDisplay,,🚫,,10.4,4567
 AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1,125
 Assert,,,,8,2483
 AssessmentFunction,,,,12.2,3678
@@ -249,22 +249,22 @@ AssociationThread,Creates an association from lists of keys and values,✅,pure,
 AssumeDeterministic,,,,11,4881
 Assuming,Evaluate expression under given assumptions,✅,pure,5,452
 Assumptions,Specify assumptions for symbolic computation,✅,none,3,262
-AstroAngularSeparation,,,,13.2,
-AstroBackground,,,,13.2,
-AstroCenter,,,,13.2,
-AstroDistance,,,,13.2,
-AstroGraphics,,,,13.2,
-AstroGridLines,,,,13.2,
-AstroGridLinesStyle,,,,13.2,
-AstroPosition,,,,13.2,
-AstroProjection,,,,13.2,
-AstroRange,,,,13.2,
-AstroRangePadding,,,,13.2,
-AstroReferenceFrame,,,,13.2,
-AstroRiseSet,,,,14.1,
-AstroStyling,,,,13.2,
-AstroSubpoint,,,,14,
-AstroZoomLevel,,,,13.2,
+AstroAngularSeparation,,🚫,,13.2,
+AstroBackground,,🚫,,13.2,
+AstroCenter,,🚫,,13.2,
+AstroDistance,,🚫,,13.2,
+AstroGraphics,,🚫,,13.2,
+AstroGridLines,,🚫,,13.2,
+AstroGridLinesStyle,,🚫,,13.2,
+AstroPosition,,🚫,,13.2,
+AstroProjection,,🚫,,13.2,
+AstroRange,,🚫,,13.2,
+AstroRangePadding,,🚫,,13.2,
+AstroReferenceFrame,,🚫,,13.2,
+AstroRiseSet,,🚫,,14.1,
+AstroStyling,,🚫,,13.2,
+AstroSubpoint,,🚫,,14,
+AstroZoomLevel,,🚫,,13.2,
 Asymptotic,Asymptotic approximation,✅,unevaluated,12.1,1629
 AsymptoticDSolveValue,Asymptotic solutions to differential equations,🚫,pure,11.3,1386
 AsymptoticEqual,,,,11.3,4104
@@ -281,7 +281,7 @@ AsymptoticProduct,,,,12.1,
 AsymptoticRSolveValue,,,,12,4262
 AsymptoticSolve,,,,12,2541
 AsymptoticSum,,,,12,4081
-Asynchronous,,,,8,5486
+Asynchronous,,🚫,,8,5486
 Atom,Basic building block,🚫,,12,2065
 AtomCoordinates,,,,12,5390
 AtomCount,,,,12,5390
@@ -354,7 +354,7 @@ AudioTrim,,🚫,,11,3031
 AudioType,,🚫,,11,4567
 AugmentedPolyhedron,,,,12,4947
 AugmentedSymmetricPolynomial,,,,8,4291
-Authentication,,,,11,4612
+Authentication,,🚫,,11,4612
 AuthenticationDialog,,🚫,,11.3,5390
 AutoAction,UI interaction,🚫,None,6,2421
 Autocomplete,,🚫,,10.2,4173
@@ -423,7 +423,7 @@ BayesianMinimization,,,,11,3785
 BayesianMinimizationObject,,,,11,5184
 Because,Represents a because logical relation,✅,pure,3,5486
 BeckmannDistribution,Beckmann distribution,✅,unevaluated,8,1849
-Beep,,,,6,2468
+Beep,,🚫,,6,2468
 Before,Symbolic temporal ordering wrapper,✅,pure,3,1451
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1,578
 BeginDialogPacket,,🚫,,3,
@@ -459,7 +459,7 @@ BetweennessCentrality,,,,8,2742
 BeveledPolyhedron,,,,12,5587
 BezierCurve,Represents a Bezier curve graphics primitive,✅,pure,7,778
 BezierFunction,Evaluate Bezier curves from control points using de Casteljau algorithm,✅,pure,7,1371
-BilateralFilter,,,,8,3191
+BilateralFilter,,🚫,,8,3191
 BilateralHypergeometricPFQ,,,,14,
 BilateralLaplaceTransform,,,,12.3,
 BilateralZTransform,,,,13,
@@ -467,7 +467,7 @@ Binarize,Converts an image to black and white using a threshold,✅,pure,7,630
 BinaryDeserialize,,,,11.1,3636
 BinaryDistance,,,,10.2,4479
 BinaryFormat,Option for opening streams in binary format,🚫,3,1962
-BinaryImageQ,,,,7,4660
+BinaryImageQ,,🚫,,7,4660
 BinaryRead,Reads a single binary object from a file or stream,🚫,io,5.1,1926
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 BinarySerialize,,,,11.1,3108
@@ -480,21 +480,21 @@ BinomialDistribution,Binomial probability distribution,✅,none,6,729
 BinomialPointProcess,,,,12.2,5390
 BinomialProcess,,,,9,2503
 BinormalDistribution,,🚫,,8,1056
-BioMolecule,,,,14.1,
-BioMoleculeFoldingMethod,,,,14.1,
-BioMoleculePlot3D,,,,14.1,
-BioMoleculeValue,,,,14.1,
+BioMolecule,,🚫,,14.1,
+BioMoleculeFoldingMethod,,🚫,,14.1,
+BioMoleculePlot3D,,🚫,,14.1,
+BioMoleculeValue,,🚫,,14.1,
 BiorthogonalSplineWavelet,,,,8,3462
-BioSequence,,,,12.2,3070
-BioSequenceBackTranslateList,,,,12.2,
-BioSequenceComplement,,,,12.2,4138
-BioSequenceInstances,,,,12.2,5587
-BioSequenceModify,,,,12.2,5184
-BioSequencePlot,,,,13,
-BioSequenceQ,,,,12.2,5184
-BioSequenceReverseComplement,,,,12.2,5079
-BioSequenceTranscribe,,,,12.2,5013
-BioSequenceTranslate,,,,12.2,4027
+BioSequence,,🚫,,12.2,3070
+BioSequenceBackTranslateList,,🚫,,12.2,
+BioSequenceComplement,,🚫,,12.2,4138
+BioSequenceInstances,,🚫,,12.2,5587
+BioSequenceModify,,🚫,,12.2,5184
+BioSequencePlot,,🚫,,13,
+BioSequenceQ,,🚫,,12.2,5184
+BioSequenceReverseComplement,,🚫,,12.2,5079
+BioSequenceTranscribe,,🚫,,12.2,5013
+BioSequenceTranslate,,🚫,,12.2,4027
 BipartiteGraphQ,,,,8,3491
 BiquadraticFilterModel,,,,10.4,4660
 BirnbaumImportance,,,,9,3889
@@ -544,7 +544,7 @@ BlomqvistBeta,,,,9,3947
 BlomqvistBetaTest,,,,9,4225
 Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 Blur,Applies Gaussian blur to an image,✅,pure,7,1124
-Blurring,,,,13.2,
+Blurring,,🚫,,13.2,
 BodePlot,Bode magnitude and phase plot,✅,pure,8,1456
 BohmanWindow,,,,9,4387
 Bold,Style directive for bold text,✅,pure,6,207
@@ -573,7 +573,7 @@ BooleanVariables,,,,7,3566
 BorderDimensions,,,,8,2587
 BorelTannerDistribution,,,,8,3697
 Bottom,Symbol for bottom alignment,✅,pure,1,394
-BottomHatTransform,,,,7,4138
+BottomHatTransform,,🚫,,7,4138
 BoundaryDiscretizeGraphics,Boundary discretize graphics,✅,unevaluated,10,1665
 BoundaryDiscretizeRegion,,🚫,,10,1240
 BoundaryMesh,mesh generation,🚫,None,10,2344
@@ -593,11 +593,11 @@ BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8,1002
 Bra,quantum notation,🚫,None,13.3,2333
 BracketingBar,,,,3,2514
 BraKet,,,,13.3,3474
-BrayCurtisDistance,,,,6,3440
+BrayCurtisDistance,Bray-Curtis distance between vectors,✅,none,6,3440
 BreadthFirstScan,,,,8,2755
 Break,Exits a loop,✅,pure,1,610
 BridgeData,,🚫,,10,4881
-BrightnessEqualize,,,,11.1,4173
+BrightnessEqualize,,🚫,,11.1,4173
 BroadcastStationData,,🚫,,10,4881
 Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 BrownForsytheTest,,,,8,3972
@@ -613,7 +613,7 @@ BubbleSizes,chart option,🚫,None,7,2380
 BuckyballGraph,,,,13.1,
 BuildCompiledComponent,,,,13.2,
 BuildingData,,🚫,,10,3785
-BulletGauge,,,,9,2762
+BulletGauge,,🚫,,9,2762
 BusinessDayQ,,,,9,4809
 ButterflyGraph,,,,8,2798
 ButterworthFilterModel,,,,9,2854
@@ -638,12 +638,12 @@ CachePersistence,,,,10.2,5184
 CalendarConvert,,,,10,3378
 CalendarData,,🚫,,9,4262
 CalendarType,,,,9,3200
-CalibratedSystemModel,,,,13.3,
+CalibratedSystemModel,,🚫,,13.3,
 Callout,,🚫,,11,1015
 CalloutMarker,,🚫,,11,3298
 CalloutStyle,,🚫,,11,3636
 CallPacket,,,,3,3862
-CanberraDistance,,,,6,3843
+CanberraDistance,Canberra distance between vectors,✅,none,6,3843
 Cancel,Cancels common factors in a rational expression,✅,pure,1,1229
 CancelButton,,🚫,,6,2553
 CandlestickChart,,🚫,,8,2541
@@ -656,7 +656,7 @@ CanonicalWarpingCorrespondence,,,,11,4315
 CanonicalWarpingDistance,,,,11,4052
 CantorMesh,,,,11.1,2650
 CantorStaircase,,,,10,2911
-Canvas,,,,12.2,3083
+Canvas,,🚫,,12.2,3083
 Cap,,,,3,3020
 CapForm,Option for line cap form in graphics,✅,none,7,857
 CapitalDifferentialD,,,,3,4387
@@ -742,9 +742,9 @@ CenteredInterval,,,,13,
 CentralFeature,,,,11.1,4437
 CentralMoment,Computes the k-th central moment of a list,✅,pure,6,1349
 CentralMomentGeneratingFunction,,,,8,3317
-Cepstrogram,,,,11.1,4173
-CepstrogramArray,,,,11.1,4437
-CepstrumArray,,,,11.1,4947
+Cepstrogram,,🚫,,11.1,4173
+CepstrogramArray,,🚫,,11.1,4437
+CepstrumArray,,🚫,,11.1,4947
 CForm,Format expression as C code,✅,pure,1,1354
 ChampernowneNumber,,,,7,3785
 ChannelBase,,🚫,,11,5184
@@ -799,7 +799,7 @@ ChoiceDialog,,🚫,,6,2442
 CholeskyDecomposition,Cholesky factorization of positive-definite matrix,🚫,,5,2067
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1,328
 ChromaticityPlot,color visualization,🚫,None,10,2394
-ChromaticityPlot3D,,,,10,3059
+ChromaticityPlot3D,,🚫,,10,3059
 ChromaticPolynomial,,,,10,2545
 Circle,Represents a circle graphics primitive,✅,pure,2,256
 CircleDot,Circle dot operator,✅,unevaluated,3,1776
@@ -826,19 +826,19 @@ ClassPriors,,,,10,4052
 Clear,Clears values and definitions of symbols but preserves attributes,✅,stateful,1,82
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1,133
 ClearAttributes,Removes attributes from a symbol,✅,stateful,1,1665
-ClearCookies,,,,11,4262
-ClearDistributedDefinitions,,,,14.1,
-ClearPermissions,,,,10.2,5079
+ClearCookies,,🚫,,11,4262
+ClearDistributedDefinitions,,🚫,,14.1,
+ClearPermissions,,🚫,,10.2,5079
 ClearSystemCache,Clear internal system caches,✅,pure,6,1489
 ClebschGordan,,🚫,,2,1066
 ClickPane,UI interaction,🚫,None,6,2236
-ClickToCopy,,,,12.2,
-ClickToCopyEnabled,,,,12.3,5013
+ClickToCopy,,🚫,,12.2,
+ClickToCopyEnabled,,🚫,,12.3,5013
 Clip,Constrains a value to a range,✅,pure,5.1,834
 ClippingStyle,,🚫,,6,1046
 ClipPlanes,3D graphics option,🚫,None,10,2338
-ClipPlanesStyle,,,,10,3353
-ClipRange,,,,9,3344
+ClipPlanesStyle,,🚫,,10,3353
+ClipRange,,🚫,,9,3344
 Clock,,🚫,,6,1244
 ClockGauge,dynamic gauge display,🚫,None,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
@@ -877,7 +877,7 @@ ClusteringComponents,Clustering components,✅,unevaluated,8,1748
 ClusteringMeasurements,,,,13.2,
 ClusteringTree,,,,10.4,3843
 CMYKColor,CMYK color specification,✅,pure,2,1446
-CodeAssistOptions,,,,10,4437
+CodeAssistOptions,,🚫,,10,4437
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1,369
 CoefficientArrays,,🚫,,5,964
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1,513
@@ -886,16 +886,16 @@ CoifletWavelet,,,,8,4006
 Collect,Collects terms with the same powers of a variable,✅,pure,1,339
 CollinearPoints,,,,12.2,5184
 Colon,,,,3,2952
-ColorBalance,,,,10.2,3636
+ColorBalance,,🚫,,10.2,3636
 ColorCombine,Combine color channels,✅,unevaluated,7,1800
 ColorConvert,Convert between color spaces,✅,pure,7,766
-ColorCoverage,,,,10,4707
+ColorCoverage,,🚫,,10,4707
 ColorData,,🚫,,6,224
 ColorDataFunction,,,,6,4225
-ColorDetect,,,,12,3755
+ColorDetect,,🚫,,12,3755
 ColorDistance,Distance between colors,🚫,,10,2071
 ColorFunction,Option specifying the color function for visualization,✅,none,2,152
-ColorFunctionBinning,,,,12.2,5184
+ColorFunctionBinning,,🚫,,12.2,5184
 ColorFunctionScaling,Option to scale color function input,✅,none,4,559
 Colorize,,🚫,,8,1035
 ColorNegate,Negates colors in an image,✅,pure,7,658
@@ -907,9 +907,9 @@ ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,Separate color channels of an image,🚫,io,7,1409
 ColorSetter,Color setter control,✅,unevaluated,6,1803
 ColorSlider,GUI widget for interactive color selection,🚫,,6,1949
-ColorsNear,,,,12,3593
+ColorsNear,,🚫,,12,3593
 ColorSpace,Option for specifying the color space of images,✅,pure,7,419
-ColorToneMapping,,,,10.2,4356
+ColorToneMapping,,🚫,,10.2,4356
 Column,Displays elements in a vertical column,✅,pure,6,174
 ColumnAlignments,,,,3,2671
 ColumnLines,,,,3,2914
@@ -925,7 +925,7 @@ CombinatorK,,,,12.2,4081
 CombinatorS,,,,12.2,4173
 CombinatorW,,,,12.2,
 CombinatorY,,,,12.2,
-CombinedEntityClass,,,,12,5013
+CombinedEntityClass,,🚫,,12,5013
 CombinerFunction,,,,10,3656
 CometData,,🚫,,10,1195
 Commonest,Returns the most common elements in a list,✅,pure,6,1617
@@ -942,21 +942,21 @@ CompilationOptions,Option for specifying compilation settings,✅,pure,8,1452
 CompilationTarget,Option for compilation target,✅,none,8,738
 Compile,Compiles a function for numerical evaluation,✅,pure,2,393
 Compiled,Compiled option,✅,unevaluated,2,1697
-CompiledCodeFunction,,,,12,
-CompiledComponent,,,,13.2,
-CompiledComponentRawInterface,,,,14.1,
-CompiledExpressionDeclaration,,,,13.1,
+CompiledCodeFunction,,🚫,,12,
+CompiledComponent,,🚫,,13.2,
+CompiledComponentRawInterface,,🚫,,14.1,
+CompiledExpressionDeclaration,,🚫,,13.1,
 CompiledFunction,Head for compiled functions,✅,pure,2,2477
 CompiledLayer,,🚫,,12.2,5184
-CompilerCallback,,,,13.1,
-CompilerEnvironment,,,,12.3,
-CompilerEnvironmentAppendTo,,,,12.3,
-CompilerEnvironmentObject,,,,12.3,
-CompilerInformation,,,,14.1,
-CompilerOptions,,,,12,5486
-CompilerRuntimeErrorAction,,,,14.1,
+CompilerCallback,,🚫,,13.1,
+CompilerEnvironment,,🚫,,12.3,
+CompilerEnvironmentAppendTo,,🚫,,12.3,
+CompilerEnvironmentObject,,🚫,,12.3,
+CompilerInformation,,🚫,,14.1,
+CompilerOptions,,🚫,,12,5486
+CompilerRuntimeErrorAction,,🚫,,14.1,
 Complement,Returns elements in first list but not in others,✅,pure,1,414
-ComplementedEntityClass,,,,12.1,
+ComplementedEntityClass,,🚫,,12.1,
 CompleteGraph,Generates a complete graph with n vertices,✅,none,8,1062
 CompleteGraphQ,,,,8,3566
 CompleteIntegral,,,,13,
@@ -995,7 +995,7 @@ Cone,3D cone graphics primitive,✅,none,7,1170
 ConfidenceLevel,Confidence level specification,✅,unevaluated,7,1578
 ConfidenceRange,,,,9,5486
 ConfidenceTransform,,,,9,5587
-Confirm,,,,12.2,4707
+Confirm,,🚫,,12.2,4707
 ConfirmAssert,,,,12.2,5390
 ConfirmBy,,,,12.2,4612
 ConfirmMatch,,,,12.2,4262
@@ -1014,7 +1014,7 @@ Conjunction,,,,7,4437
 ConnectedComponents,Find connected components of a graph,✅,pure,8,1441
 ConnectedGraphComponents,,,,10.4,3121
 ConnectedGraphQ,Test if graph is connected,🚫,,8,2089
-ConnectedMeshComponents,,,,10,3215
+ConnectedMeshComponents,,🚫,,10,3215
 ConnectedMoleculeComponents,,,,12,5587
 ConnectedMoleculeQ,,,,12,
 ConnectionSettings,,,,12,
@@ -1096,7 +1096,7 @@ Convolve,,🚫,,7,882
 ConwayGroupCo1,,,,8,5184
 ConwayGroupCo2,,,,8,4947
 ConwayGroupCo3,,,,8,4881
-CookieFunction,,,,11,4809
+CookieFunction,,🚫,,11,4809
 CoordinateBoundingBox,,,,10.1,3755
 CoordinateBoundingBoxArray,,,,10.1,3402
 CoordinateBounds,Coordinate bounds of a list of points,✅,none,10.1,2483
@@ -1126,7 +1126,7 @@ Cos,Returns the cosine of a number,✅,pure,1,31
 CosDegrees,,,,14.1,
 Cosh,Returns the hyperbolic cosine,✅,pure,1,259
 CoshIntegral,Hyperbolic cosine integral function,✅,1,3,1347
-CosineDistance,,,,6,2911
+CosineDistance,Cosine distance between vectors,✅,none,6,2911
 CosineWindow,,,,9,3862
 CosIntegral,Cosine integral Ci(z),✅,pure,2,1178
 Cot,Returns the cotangent,✅,pure,1,358
@@ -1154,8 +1154,8 @@ CoxModelFit,,,,9,3537
 CramerVonMisesTest,,,,8,3522
 CreateArchive,,,,8,3491
 CreateCellID,,🚫,,6,5013
-CreateChannel,,,,11,3402
-CreateCloudExpression,,,,10.4,2971
+CreateChannel,,🚫,,11,3402
+CreateCloudExpression,,🚫,,10.4,2971
 CreateCompilerEnvironment,,,,12.3,
 CreateDatabin,,,,10,3506
 CreateDataStructure,,,,12.1,3008
@@ -1167,13 +1167,13 @@ CreateFile,Creates a file with a name or a random file in the default area for t
 CreateForeignCallback,,,,13.3,
 CreateIntermediateDirectories,,,,6,3823
 CreateLicenseEntitlement,,,,12.2,4881
-CreateManagedLibraryExpression,,,,10,4204
-CreateManagedObject,,,,13.3,
+CreateManagedLibraryExpression,,🚫,,10,4204
+CreateManagedObject,,🚫,,13.3,
 CreateNotebook,,🚫,,10,3612
-CreatePacletArchive,,,,12.1,
+CreatePacletArchive,,🚫,,12.1,
 CreatePalette,Create a palette notebook,✅,unevaluated,6,1579
-CreatePermissionsGroup,,,,10,4291
-CreateSearchIndex,,,,10.2,3353
+CreatePermissionsGroup,,🚫,,10,4291
+CreateSearchIndex,,🚫,,10.2,3353
 CreateSemanticSearchIndex,,🚫,,14.1,
 CreateSystemModel,,,,11.3,4660
 CreateTypeInstance,,,,13.1,
@@ -1203,7 +1203,7 @@ Cubics,Option for solving cubic equations using radical formulas,✅,pure,1,1688
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2,561
 Cumulant,Statistical cumulant,✅,unevaluated,8,1586
 CumulantGeneratingFunction,,,,8,3176
-CumulativeFeatureImpactPlot,,,,13.1,
+CumulativeFeatureImpactPlot,,🚫,,13.1,
 Cup,,,,3,4081
 CupCap,,,,3,5390
 Curl,Computes the curl of a vector field,✅,pure,9,847
@@ -1214,7 +1214,7 @@ CurrentNotebookImage,,🚫,,11.2,5079
 CurrentScreenImage,,🚫,,11.2,4387
 CurrentValue,Returns current values of frontend settings,✅,effectful,6,442
 CurryApplied,,,,12.1,5184
-CurvatureFlowFilter,,,,8,3121
+CurvatureFlowFilter,,🚫,,8,3121
 CurveClosed,Check if curve is closed,🚫,,8,2084
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 CycleGraph,Cycle graph on n vertices,✅,pure,8,1547
@@ -1244,7 +1244,7 @@ DataDistribution,,,,8,3578
 DataRange,Option specifying the range of data,✅,none,5.1,678
 DataReversed,Option for reversing data in plots,✅,pure,6,1455
 Dataset,Wraps data with type information for structured data handling,✅,pure,10,610
-DatasetTheme,,,,12.3,
+DatasetTheme,,🚫,,12.3,
 DataStructure,,,,12.1,3947
 DataStructureQ,,,,12.1,
 DateBounds,,,,11,4291
@@ -1296,7 +1296,7 @@ DeclarePackage,Declare package for autoloading (package management),🚫,,2,1997
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1,3522
 DeconvolutionLayer,,🚫,,11,3162
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1,536
-Decrypt,,,,10.1,2596
+Decrypt,,🚫,,10.1,2596
 DecryptFile,,🚫,,11.1,4387
 DedekindEta,Dedekind eta modular function,✅,pure,3,1525
 DeepSpaceProbeData,,🚫,,10,4006
@@ -1342,10 +1342,10 @@ Deletable,,,,3,3823
 Delete,Deletes an element at a given position,✅,pure,2,542
 DeleteAdjacentDuplicates,Removes consecutive duplicate elements from a list,✅,pure,13.1,
 DeleteAnomalies,,,,12,4947
-DeleteBorderComponents,,,,8,2578
+DeleteBorderComponents,,🚫,,8,2578
 DeleteCases,Deletes elements matching a pattern,✅,pure,2,272
-DeleteChannel,,,,11,4356
-DeleteCloudExpression,,,,10.4,4527
+DeleteChannel,,🚫,,11,4356
+DeleteCloudExpression,,🚫,,10.4,4527
 DeleteContents,,,,2,2565
 DeleteDirectory,file system operation,🚫,None,2,2311
 DeleteDuplicates,Removes duplicate elements from a list,✅,pure,7,373
@@ -1354,8 +1354,8 @@ DeleteElements,,,,13.1,
 DeleteFile,Delete a file from the filesystem,✅,effectful,2,1359
 DeleteMissing,Delete Missing elements from a list,✅,,10,1338
 DeleteObject,cloud/object deletion,🚫,None,11.2,2421
-DeletePermissionsKey,,,,11,5587
-DeleteSearchIndex,,,,10.2,4881
+DeletePermissionsKey,,🚫,,11,5587
+DeleteSearchIndex,,🚫,,10.2,4881
 DeleteSmallComponents,,🚫,,8,1334
 DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
 DelimitedSequence,,,,10,2693
@@ -1364,7 +1364,7 @@ DelimiterAutoMatching,,,,12.3,
 DelimiterFlashTime,,,,3,4881
 Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1,3889
 DeliveryFunction,,,,10.1,5079
-Dendrogram,,,,10.4,3143
+Dendrogram,,🚫,,10.4,3143
 Denominator,Returns the denominator of a rational expression,✅,pure,1,512
 DensityHistogram,Density histogram,✅,unevaluated,8,1877
 DensityPlot,Creates a density plot of a function,✅,pure,1,440
@@ -1375,7 +1375,7 @@ Deployed,Deployed option,✅,unevaluated,6,1730
 Depth,Returns the depth of an expression,✅,pure,1,911
 DepthFirstScan,,,,8,2792
 Derivative,Represents the derivative of a function,✅,pure,1,26
-DerivativeFilter,,,,8,2889
+DerivativeFilter,,🚫,,8,2889
 DerivativePDETerm,,,,12.2,5390
 DerivedKey,,,,12,5587
 DescriptorStateSpace,,,,9,4707
@@ -1520,7 +1520,7 @@ DistanceMatrix,Distance matrix,✅,unevaluated,10.3,1806
 DistanceTransform,Distance transform,✅,unevaluated,7,1768
 Distribute,Distribute one operator over another,✅,pure,1,1074
 Distributed,Represents a variable distributed according to a given distribution,✅,pure,8,365
-DistributedContexts,,,,8,2662
+DistributedContexts,,🚫,,8,2662
 DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7,1672
 DistributionChart,Distribution chart,✅,unevaluated,8,1880
 DistributionFitTest,,🚫,,8,1343
@@ -1541,11 +1541,11 @@ DMSString,,,,7,3566
 Do,Evaluates an expression repeatedly,✅,pure,1,147
 DockedCell,,🚫,,13.2,
 DockedCells,,🚫,,6,1164
-DocumentGenerator,,,,10,3191
-DocumentGeneratorInformation,,,,10,4527
-DocumentGenerators,,,,10,4437
+DocumentGenerator,,🚫,,10,3191
+DocumentGeneratorInformation,,🚫,,10,4527
+DocumentGenerators,,🚫,,10,4437
 DocumentNotebook,notebook creation,🚫,None,6,2317
-DocumentWeightingRules,,,,11.1,5184
+DocumentWeightingRules,,🚫,,11.1,5184
 Dodecahedron,,,,12,3124
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9,1646
 DominatorTreeGraph,,,,13,
@@ -1692,7 +1692,7 @@ EmptySpaceF,,,,12.2,5486
 Enabled,Option for whether a control is enabled,✅,none,6,750
 Enclose,,,,12.2,3593
 Encode,,,,2,3717
-Encrypt,,,,10.1,2767
+Encrypt,,🚫,,10.1,2767
 EncryptedObject,,🚫,,10.1,4809
 EncryptFile,,🚫,,11.1,4356
 End,Ends a private context (no-op in Woxi),✅,effectful,1,571
@@ -1726,10 +1726,10 @@ EntityTypeName,,🚫,,10,2729
 EntityUnregister,,🚫,,11.3,5486
 EntityValue,Retrieves property values from entities in the Wolfram Knowledgebase,✅,effectful,10,342
 Entropy,Information entropy,🚫,,7,2124
-EntropyFilter,,,,7,3537
+EntropyFilter,,🚫,,7,3537
 Environment,Symbol representing the system environment,✅,pure,1,2720
 Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2,243
-EpilogFunction,,,,10.1,5587
+EpilogFunction,,🚫,,10.1,5587
 Equal,Checks if two values are equal,✅,pure,1,11
 EqualTilde,,,,3,5079
 EqualTo,,,,10.3,2578
@@ -1823,7 +1823,7 @@ ExpressionGraph,,,,12.1,2605
 ExpressionTree,,,,12.3,
 ExpressionUUID,,,,13,
 ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3,749
-ExtendedEntityClass,,,,12,4356
+ExtendedEntityClass,,🚫,,12,4356
 ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1,1557
 Extension,Extension option,✅,unevaluated,3,1693
 ExtentElementFunction,,,,8,2671
@@ -1857,7 +1857,7 @@ FaceForm,Specifies face styling for filled graphics,✅,pure,1,344
 FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2,1351
 FaceGridsStyle,Option for Graphics3D specifying the style of face grids,✅,pure,6,2911
 FaceRecognize,,,,12.2,5184
-FacialFeatures,,,,11.3,3059
+FacialFeatures,,🚫,,11.3,3059
 Factor,Factors a polynomial over the integers,✅,pure,1,307
 Factorial,Returns the factorial of a non-negative integer,✅,pure,1,128
 Factorial2,Returns the double factorial,✅,pure,1,1128
@@ -1877,19 +1877,19 @@ FailureQ,,,,10.2,3636
 False,Boolean constant representing logical falsehood,✅,pure,1,38
 FareySequence,,,,10,3506
 FARIMAProcess,,,,9,3121
-FeatureDistance,,,,11,4387
+FeatureDistance,,🚫,,11,4387
 FeatureExtract,,🚫,,11,3280
 FeatureExtraction,Extract features from data,✅,unevaluated,11,1623
 FeatureExtractor,Feature extractor,✅,unevaluated,11,1719
 FeatureExtractorFunction,,🚫,,11,5184
-FeatureImpactPlot,,,,13.1,
-FeatureNames,,,,10.1,4081
-FeatureNearest,,,,11.1,4707
+FeatureImpactPlot,,🚫,,13.1,
+FeatureNames,,🚫,,10.1,4081
+FeatureNearest,,🚫,,11.1,4707
 FeatureSpacePlot,ML visualization,🚫,None,11.1,2438
-FeatureSpacePlot3D,,,,11.3,5013
+FeatureSpacePlot3D,,🚫,,11.3,5013
 FeatureTypes,Feature types option,✅,unevaluated,10.1,1885
-FeatureValueDependencyPlot,,,,13.1,
-FeatureValueImpactPlot,,,,13.1,
+FeatureValueDependencyPlot,,🚫,,13.1,
+FeatureValueImpactPlot,,🚫,,13.1,
 FeedbackLinearize,,,,10,3578
 FeedbackSector,,,,9,5390
 FeedbackSectorStyle,,,,9,5486
@@ -1936,7 +1936,7 @@ FilledTorus,,,,13,
 Filling,Option for filling areas under curves in plots,✅,pure,6,202
 FillingStyle,Option for specifying the style of plot filling,✅,pure,6,410
 FillingTransform,Morphological filling,✅,unevaluated,8,1810
-FilteredEntityClass,,,,12,3224
+FilteredEntityClass,,🚫,,12,3224
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6,682
 FinancialBond,,🚫,,8,2519
 FinancialData,,🚫,,6,43
@@ -2139,7 +2139,7 @@ Framed,Display wrapper that draws a frame around its argument,✅,pure,6,390
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2,221
 FrameListVideo,,🚫,,12.3,
 FrameMargins,Option specifying margins within a frame,✅,none,6,755
-FrameRate,,,,11.2,4527
+FrameRate,,🚫,,11.2,4527
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6,540
@@ -2192,11 +2192,11 @@ FullSimplify,Performs aggressive algebraic simplification including factoring an
 Function,Represents a pure function,✅,pure,1,19
 FunctionAnalytic,,,,12.2,3717
 FunctionBijective,,,,12.2,4262
-FunctionCompile,,,,12,3389
-FunctionCompileExport,,,,12,
-FunctionCompileExportByteArray,,,,12,
-FunctionCompileExportLibrary,,,,12,4747
-FunctionCompileExportString,,,,12,
+FunctionCompile,,🚫,,12,3389
+FunctionCompileExport,,🚫,,12,
+FunctionCompileExportByteArray,,🚫,,12,
+FunctionCompileExportLibrary,,🚫,,12,4747
+FunctionCompileExportString,,🚫,,12,
 FunctionContinuous,,,,12.2,2662
 FunctionConvexity,,,,12.2,4291
 FunctionDeclaration,,,,12.3,
@@ -2216,7 +2216,7 @@ FunctionSingularities,,,,12.2,3765
 FunctionSpace,,,,7,4479
 FunctionSurjective,,,,12.2,4387
 FussellVeselyImportance,,,,9,4437
-GaborFilter,,,,9,3440
+GaborFilter,,🚫,,9,3440
 GaborMatrix,,,,9,3947
 GaborWavelet,,,,8,2816
 GainMargins,,,,8,4809
@@ -2236,9 +2236,9 @@ GaugeFaceStyle,,,,9,3612
 GaugeFrameElementFunction,,,,9,4437
 GaugeFrameSize,,,,9,3474
 GaugeFrameStyle,,,,9,3233
-GaugeLabels,,,,9,2473
-GaugeMarkers,,,,9,2707
-GaugeStyle,,,,9,2921
+GaugeLabels,,🚫,,9,2473
+GaugeMarkers,,🚫,,9,2707
+GaugeStyle,,🚫,,9,2921
 GaussianFilter,,🚫,,7,1173
 GaussianIntegers,,,,2,2468
 GaussianMatrix,Gaussian matrix,✅,unevaluated,7,1779
@@ -2250,22 +2250,22 @@ GCD,Returns the greatest common divisor of integers,✅,pure,1,616
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1,894
 General,Default message group symbol,✅,pure,1,690
 GeneralizedLinearModelFit,Fits a generalized linear model to data,🚫,None,7,2187
-GenerateAsymmetricKeyPair,,,,10.1,3326
+GenerateAsymmetricKeyPair,,🚫,,10.1,3326
 GenerateConditions,Option for generating conditions in results,✅,1,3,1282
-GeneratedAssetFormat,,,,12.3,
-GeneratedAssetLocation,,,,12.2,5390
+GeneratedAssetFormat,,🚫,,12.3,
+GeneratedAssetLocation,,🚫,,12.2,5390
 GeneratedCell,,🚫,,3,1303
-GeneratedDocumentBinding,,,,10,5486
-GenerateDerivedKey,,,,12,
-GenerateDigitalSignature,,,,12,4660
-GenerateDocument,,,,10,4006
+GeneratedDocumentBinding,,🚫,,10,5486
+GenerateDerivedKey,,🚫,,12,
+GenerateDigitalSignature,,🚫,,12,4660
+GenerateDocument,,🚫,,10,4006
 GeneratedParameters,Generated parameters option,✅,unevaluated,5,1873
 GeneratedQuantityMagnitudes,,,,11.3,
-GenerateFileSignature,,,,12.1,
-GenerateHTTPResponse,,,,10.3,4104
-GenerateLLMToolResponse,,,,13.3,
-GenerateSecuredAuthenticationKey,,,,11.3,4437
-GenerateSymmetricKey,,,,10.1,3916
+GenerateFileSignature,,🚫,,12.1,
+GenerateHTTPResponse,,🚫,,10.3,4104
+GenerateLLMToolResponse,,🚫,,13.3,
+GenerateSecuredAuthenticationKey,,🚫,,11.3,4437
+GenerateSymmetricKey,,🚫,,10.1,3916
 GeneratingFunction,Compute generating function of a sequence,✅,pure,7,1440
 GeneratorDescription,,,,10.1,5184
 GeneratorHistoryLength,,,,10.1,5390
@@ -2287,10 +2287,10 @@ GeoCenter,,🚫,,10,2650
 GeoCircle,,🚫,,10,2812
 GeoContourPlot,,🚫,,12.1,4527
 GeoDensityPlot,,🚫,,12.1,5390
-GeodesicClosing,,,,9,4262
-GeodesicDilation,,,,7,3593
-GeodesicErosion,,,,7,4881
-GeodesicOpening,,,,9,4707
+GeodesicClosing,,🚫,,9,4262
+GeodesicDilation,,🚫,,7,3593
+GeodesicErosion,,🚫,,7,4881
+GeodesicOpening,,🚫,,9,4707
 GeodesicPolyhedron,,,,13.1,
 GeoDestination,geographic computation,🚫,None,7,2421
 GeodesyData,,🚫,,7,1930
@@ -2547,7 +2547,7 @@ HeunT,,,,12.1,5486
 HeunTPrime,,,,12.1,
 HexadecimalCharacter,,,,7,3947
 Hexahedron,3D geometric primitive,🚫,None,10,2233
-HiddenItems,,,,12.1,
+HiddenItems,,🚫,,12.1,
 HiddenMarkovProcess,,,,10,3265
 Highlighted,Highlighted display,✅,unevaluated,10.4,1800
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
@@ -2562,11 +2562,11 @@ Histogram,Creates a histogram from data,✅,pure,7,347
 Histogram3D,,🚫,,7,1096
 HistogramDistribution,Histogram distribution,✅,unevaluated,8,1776
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8,1322
-HistogramPointDensity,,,,12.2,4006
-HistogramTransform,,,,9,2821
-HistogramTransformInterpolation,,,,9,4173
+HistogramPointDensity,,🚫,,12.2,4006
+HistogramTransform,,🚫,,9,2821
+HistogramTransformInterpolation,,🚫,,9,4173
 HistoricalPeriodData,,🚫,,10,4947
-HitMissTransform,,,,7,2679
+HitMissTransform,,🚫,,7,2679
 HITSCentrality,,,,8,4262
 HjorthDistribution,,,,11.1,3947
 HodgeDual,,,,9,2911
@@ -2619,7 +2619,7 @@ Hyphenation,text processing,🚫,None,4,2425
 HypoexponentialDistribution,Hypoexponential distribution,✅,pure,9,1473
 HypothesisTestData,,🚫,,8,5184
 IconData,,🚫,,10,3191
-Iconize,,,,11.3,3803
+Iconize,,🚫,,11.3,3803
 IconRules,,,,10,5013
 Icosahedron,,,,12,3378
 Identity,Returns its argument unchanged,✅,pure,1,322
@@ -2643,7 +2643,7 @@ ImageAdjust,Auto-adjusts image contrast and brightness,✅,pure,7,772
 ImageAlign,,🚫,,8,3083
 ImageApply,Applies a function to each pixel of an image,✅,pure,7,1272
 ImageApplyIndexed,,🚫,,10,3916
-ImageAspectRatio,,,,8,3008
+ImageAspectRatio,,🚫,,8,3008
 ImageAssemble,Assembles a grid of images into a single image,✅,pure,7,1385
 ImageAugmentationLayer,,🚫,,11.1,4315
 ImageBoundingBoxes,,🚫,,12,5013
@@ -2792,10 +2792,10 @@ InhomogeneousPoissonPointProcess,,,,12.2,5184
 InhomogeneousPoissonProcess,,,,10.1,4173
 InitialEvaluationHistory,,,,11,4707
 Initialization,Option for initialization code,✅,none,6,565
-InitializationCell,,,,3,3134
-InitializationObject,,,,12.3,
-InitializationObjects,,,,11.2,4567
-InitializationValue,,,,11.2,3636
+InitializationCell,,🚫,,3,3134
+InitializationObject,,🚫,,12.3,
+InitializationObjects,,🚫,,11.2,4567
+InitializationValue,,🚫,,11.2,3636
 Initialize,,,,11.2,4262
 InitialSeeding,,,,12,3678
 Inner,Generalized inner product,✅,pure,1,845
@@ -2804,19 +2804,19 @@ InnerPolyhedron,,,,12,
 Inpaint,,,,8,2625
 Input,Reads user input (inert in Woxi),✅,effectful,1,642
 InputAliases,Notebook interface option for input alias definitions,🚫,,4,1930
-InputAssumptions,,,,8,4356
-InputAutoReplacements,,,,4,3317
+InputAssumptions,,🚫,,8,4356
+InputAutoReplacements,,🚫,,4,3317
 InputField,Input field for interactive interfaces,✅,none,6,556
 InputForm,Converts expression to input form,✅,pure,1,354
-InputNamePacket,,,,3,4567
+InputNamePacket,,🚫,,3,4567
 InputNotebook,Requires external services or GUI infrastructure,🚫,io,3,926
-InputOutputResponse,,,,14,
+InputOutputResponse,,🚫,,14,
 InputOutputResponseData,,🚫,,14,
-InputPacket,,,,3,
+InputPacket,,🚫,,3,
 InputPorts,,,,12.2,4747
 InputStream,Input stream object,✅,effectful,2,3344
 InputString,Symbol specifying input string type for Input,✅,pure,1,2051
-InputStringPacket,,,,3,
+InputStringPacket,,🚫,,3,
 InscribedBall,,,,13.3,
 Insert,Inserts an element at a specified position in a list,✅,pure,1,575
 InsertionFunction,,,,10,3143
@@ -2841,7 +2841,7 @@ IntegerString,Converts an integer to a string in a given base,✅,pure,6,933
 Integrate,Computes the indefinite integral of an expression,✅,pure,1,54
 IntegrateChangeVariables,,,,13.1,
 Interactive,,,,9,3363
-InteractiveTradingChart,,,,8,3522
+InteractiveTradingChart,,🚫,,8,3522
 InterfaceSwitched,,,,13,
 Interleaving,Option for specifying channel interleaving in images,✅,pure,7,429
 IntermediateTest,,,,14,
@@ -2912,7 +2912,7 @@ InverseRadon,,,,8,3636
 InverseRadonTransform,,,,11.2,5390
 InverseSeries,Symbol for computing inverse of a power series,✅,pure,1,2065
 InverseShortTimeFourier,,,,12,
-InverseSpectrogram,,,,12,3862
+InverseSpectrogram,,🚫,,12,3862
 InverseSurvivalFunction,probability distribution,🚫,None,8,2350
 InverseTransformedRegion,,,,10,4104
 InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8,1806
@@ -2995,7 +2995,7 @@ KernelConfigurationEdit,,,,13.3,
 KernelEvaluate,,,,13.3,
 KernelFunction,,,,12,4881
 KernelMixtureDistribution,probability distribution,🚫,None,8,2413
-KernelObject,,,,7,2625
+KernelObject,,🚫,,7,2625
 Ket,Dirac ket notation,✅,unevaluated,13.3,1665
 Key,Operator form for extracting values from associations by key,✅,none,10,966
 KeyCollisionFunction,,,,10.3,5013
@@ -3012,7 +3012,7 @@ KeypointStrength,,,,10,4138
 Keys,Returns the keys of an association,✅,pure,10,667
 KeySelect,Selects elements of an association by a key criterion,✅,pure,10,2191
 KeySort,Sorts an association by its keys,✅,pure,10,1694
-KeySortBy,,,,10,3522
+KeySortBy,Sort association by applying function to keys,✅,none,10,3522
 KeyTake,Takes specified keys from an association,✅,pure,10,2147
 KeyUnion,,,,10,2842
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
@@ -3044,7 +3044,7 @@ Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6,39
 LabelingFunction,,🚫,,7,1085
 LabelingSize,,,,11.3,3257
 LabelStyle,Option for specifying the style of labels in graphics,✅,none,6,269
-LabelVisibility,,,,12,
+LabelVisibility,,🚫,,12,
 LaguerreL,Laguerre polynomial,✅,pure,1,670
 LakeData,,🚫,,10,4707
 LambdaComponents,,,,9,4612
@@ -3064,7 +3064,7 @@ LanguageIdentify,,🚫,,10.1,3224
 LaplaceDistribution,Laplace distribution,✅,computation,6,1788
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4,458
 Laplacian,Compute the Laplacian (sum of second partial derivatives),✅,pure,9,718
-LaplacianFilter,,,,7,3070
+LaplacianFilter,,🚫,,7,3070
 LaplacianGaussianFilter,image filtering,🚫,None,7,2421
 LaplacianPDETerm,,,,12.2,4567
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6,159
@@ -3167,7 +3167,7 @@ Lighter,Makes a color lighter,✅,pure,6,402
 LightGray,Named light color evaluating to GrayLevel[0.85],✅,pure,6,633
 LightGreen,Named light color evaluating to RGBColor[0.88 1 0.88],✅,pure,6,1140
 Lighting,Option for 3D lighting,✅,pure,1,511
-LightingAngle,,,,6,3306
+LightingAngle,,🚫,,6,3306
 LightMagenta,Named light color evaluating to RGBColor[1 0.9 1],✅,pure,6,3176
 LightOrange,Named light color evaluating to RGBColor[1 0.9 0.8],✅,pure,6,1551
 LightPink,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,1944
@@ -3182,7 +3182,7 @@ Line,Represents a line graphics primitive,✅,pure,1,59
 LinearFractionalOptimization,,,,12,5486
 LinearFractionalTransform,,,,6,3578
 LinearGradientFilling,,,,12.2,2712
-LinearGradientImage,,,,10,2742
+LinearGradientImage,,🚫,,10,2742
 LinearizingTransformationData,,🚫,,10,
 LinearLayer,,🚫,,11,1218
 LinearModelFit,Fits a linear model to data and returns a FittedModel object,✅,pure,7,768
@@ -3200,22 +3200,22 @@ LineIntegralConvolutionScale,,,,7,3306
 LineIntegrate,,,,13.3,
 LineLegend,Legend with line samples,✅,none,9,760
 LineSpacing,Line spacing specification,✅,unevaluated,3,1601
-LinkActivate,,,,3,4052
+LinkActivate,,🚫,,3,4052
 LinkClose,,🚫,,3,2786
 LinkConnect,,🚫,,3,2929
 LinkCreate,,🚫,,3,2675
-LinkFunction,,,,7,4437
-LinkInterrupt,,,,3,5390
+LinkFunction,,🚫,,7,4437
+LinkInterrupt,,🚫,,3,5390
 LinkLaunch,,🚫,,3,2845
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3,2197
-LinkPatterns,,,,3,5013
+LinkPatterns,,🚫,,3,5013
 LinkProtocol,,🚫,,3,2842
 LinkRankCentrality,,,,10,4527
 LinkRead,Read from WSTP link,🚫,,3,2051
 LinkReadyQ,,🚫,,3,3162
-Links,,,,3,3070
+Links,,🚫,,3,3070
 LinkWrite,Write an expression to a WSTP connection,🚫,3,1967
-LiouvilleLambda,,,,7,3506
+LiouvilleLambda,Liouville lambda function,✅,none,7,3506
 List,Represents a list of elements,✅,pure,1,1
 Listable,Attribute for automatic threading over lists,✅,pure,1,568
 ListAnimate,,🚫,,6,926
@@ -3223,7 +3223,7 @@ ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,
 ListContourPlot3D,3D contour plot from data,✅,unevaluated,6,1858
 ListConvolve,Computes discrete convolution of two lists,✅,pure,4,1110
 ListCorrelate,Computes discrete cross-correlation of two lists,✅,pure,4,1129
-ListCurvePathPlot,,,,7,2509
+ListCurvePathPlot,,🚫,,7,2509
 ListDeconvolve,,,,8,3566
 ListDensityPlot,Creates a density plot from a list of values or {x y z} triples,✅,pure,1,839
 ListDensityPlot3D,,🚫,,10.2,2911
@@ -3245,9 +3245,9 @@ ListPlot3D,Creates a 3D plot from data,✅,pure,1,622
 ListPointPlot3D,3D scatter plot of points,✅,pure,6,694
 ListPolarPlot,Plots data in polar coordinates,✅,pure,6,1119
 ListQ,Tests if expression is a list,✅,pure,2,679
-ListSliceContourPlot3D,,,,10.2,2786
-ListSliceDensityPlot3D,,,,10.2,3048
-ListSliceVectorPlot3D,,,,10.2,3678
+ListSliceContourPlot3D,,🚫,,10.2,2786
+ListSliceDensityPlot3D,,🚫,,10.2,3048
+ListSliceVectorPlot3D,,🚫,,10.2,3678
 ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 ListStreamDensityPlot,,🚫,,7,3291
 ListStreamPlot,stream visualization,🚫,None,7,2305
@@ -3281,7 +3281,7 @@ LocalizeVariables,,,,6,2525
 LocalObject,,,,10.2,2894
 LocalObjects,,,,10.4,4081
 LocalResponseNormalizationLayer,,,,11.1,5013
-LocalSubmit,,,,11.2,3593
+LocalSubmit,,🚫,,11.2,3593
 LocalSymbol,,,,10.2,2777
 LocalTime,,,,10,3121
 LocalTimeZone,,,,10,4052
@@ -3341,7 +3341,7 @@ LQRegulatorGains,,,,8,3427
 LucasL,Returns the nth Lucas number,✅,pure,6,1512
 LuccioSamiComponents,,,,9,4881
 LUDecomposition,LU decomposition with partial pivoting,✅,pure,3,1112
-LunarEclipse,,,,10,4052
+LunarEclipse,,🚫,,10,4052
 LunationNumber,,,,14,
 LUVColor,,,,10,3717
 LyapunovSolve,,,,8,3389
@@ -3373,7 +3373,7 @@ MandelbrotSetDistance,,,,10,3843
 MandelbrotSetIterationCount,,,,10,4006
 MandelbrotSetMemberQ,,,,10,3153
 MandelbrotSetPlot,Mandelbrot set plot,✅,unevaluated,10,1748
-MangoldtLambda,,,,7,2900
+MangoldtLambda,Von Mangoldt function,✅,none,7,2900
 ManhattanDistance,Manhattan (L1) distance between two vectors,✅,pure,6,2462
 Manipulate,,🚫,,6,95
 ManipulateVideo,,🚫,,14.1,
@@ -3407,7 +3407,7 @@ MassTransportPDEComponent,,,,12.2,3242
 MatchingDissimilarity,,,,6,3916
 MatchLocalNames,,,,2,4881
 MatchQ,Tests if an expression matches a pattern,✅,pure,1,203
-MaterialShading,,,,12.3,
+MaterialShading,,🚫,,12.3,
 MaternPointProcess,,,,12.2,4809
 MathematicalFunctionData,,🚫,,10.3,2851
 MathieuC,Mathieu C function,✅,unevaluated,3,1852
@@ -3507,22 +3507,22 @@ MergingFunction,,,,11.1,5013
 MersennePrimeExponent,,,,10.4,3462
 MersennePrimeExponentQ,,,,10.4,4437
 Mesh,Option for mesh lines in plots,✅,pure,1,165
-MeshCellCentroid,,,,10,3176
+MeshCellCentroid,,🚫,,10,3176
 MeshCellCount,Count mesh cells in a region,🚫,,10,1975
-MeshCellHighlight,,,,10.2,3031
-MeshCellIndex,,,,10,3031
-MeshCellLabel,,,,10,2786
-MeshCellMarker,,,,10,4173
+MeshCellHighlight,,🚫,,10.2,3031
+MeshCellIndex,,🚫,,10,3031
+MeshCellLabel,,🚫,,10,2786
+MeshCellMarker,,🚫,,10,4173
 MeshCellMeasure,mesh computation option,🚫,None,10,2292
-MeshCellQuality,,,,10,4527
+MeshCellQuality,,🚫,,10,4527
 MeshCells,Requires external services or GUI infrastructure,🚫,io,10,968
-MeshCellShapeFunction,,,,10.2,3697
+MeshCellShapeFunction,,🚫,,10.2,3697
 MeshCellStyle,Style mesh cells,✅,unevaluated,10,1593
-MeshConnectivityGraph,,,,12.1,3153
+MeshConnectivityGraph,,🚫,,12.1,3153
 MeshCoordinates,Requires external services or GUI infrastructure,🚫,io,10,951
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6,506
 MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10,1016
-MeshQualityGoal,,,,10,2742
+MeshQualityGoal,,🚫,,10,2742
 MeshRefinementFunction,Numerical mesh option,🚫,None,10,2263
 MeshRegion,Requires external services or GUI infrastructure,🚫,io,10,935
 MeshRegionQ,,,,10,3291
@@ -3544,7 +3544,7 @@ MIMETypeToFormatList,,,,13,
 Min,Returns the minimum value from a set of arguments or a list,✅,pure,1,180
 MinColorDistance,,,,10,3947
 MinDate,,,,12.1,
-MinDetect,,,,8,2952
+MinDetect,,🚫,,8,2952
 MineralData,,🚫,,10,4881
 MinFilter,,,,7,3153
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10,1534
@@ -3582,7 +3582,7 @@ MixedRadixQuantity,,,,9,4881
 MixedUnit,unit system,🚫,None,10.4,2355
 MixtureDistribution,,✅,,8,1331
 Mod,Returns the remainder of integer division,✅,pure,1,134
-Modal,,,,6,2821
+Modal,,🚫,,6,2821
 ModelPredictiveController,,,,13.1,
 ModularInverse,Returns the modular multiplicative inverse,✅,pure,11.1,1975
 ModularLambda,,,,3,5079
@@ -3621,11 +3621,11 @@ MoonPhaseDate,,🚫,,14,
 MoonPosition,,🚫,,10,3162
 MorletWavelet,,,,8,3578
 MorphologicalBinarize,Morphological binarize,✅,unevaluated,8,1895
-MorphologicalBranchPoints,,,,8,3491
+MorphologicalBranchPoints,,🚫,,8,3491
 MorphologicalComponents,,🚫,,7,1048
-MorphologicalEulerNumber,,,,7,3717
-MorphologicalGraph,,,,8,2777
-MorphologicalPerimeter,,,,7,2503
+MorphologicalEulerNumber,,🚫,,7,3717
+MorphologicalGraph,,🚫,,8,2777
+MorphologicalPerimeter,,🚫,,7,2503
 MorphologicalTransform,Applies morphological operations to binary images,🚫,None,8,2165
 MortalityData,,🚫,,10.3,387
 Most,Returns the list without its last element,✅,pure,5,379
@@ -3753,7 +3753,7 @@ NHoldAll,,,,3,3094
 NHoldFirst,,,,3,3737
 NHoldRest,,,,3,3344
 NicholsGridLines,,,,8,5390
-NicholsPlot,,,,8,3363
+NicholsPlot,,🚫,,8,3363
 NightHemisphere,,,,10,3242
 NIntegrate,Computes a numerical integral,✅,pure,1,176
 NLineIntegrate,,,,14,
@@ -3843,7 +3843,7 @@ NotGreaterTilde,,,,3,5390
 Nothing,Element that disappears from lists,✅,pure,10.2,648
 NotHumpDownHump,,,,3,5390
 NotHumpEqual,,,,3,5390
-NotificationFunction,,,,10.1,4747
+NotificationFunction,,🚫,,10.1,4747
 NotLeftTriangle,,,,3,5390
 NotLeftTriangleBar,,,,3,5390
 NotLeftTriangleEqual,,,,3,5390
@@ -3947,8 +3947,8 @@ ONanGroupON,,,,8,5184
 Once,,,,11,3462
 OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1,1960
 Opacity,Specifies opacity for graphics,✅,pure,6,37
-OpacityFunction,,,,10.2,2999
-OpacityFunctionScaling,,,,10.2,4315
+OpacityFunction,,🚫,,10.2,2999
+OpacityFunctionScaling,,🚫,,10.2,4315
 OpaqueRawPointer,,,,13.3,
 OpenAppend,Opens a file for appending,✅,effectful,1,2188
 Opener,,🚫,,6,2851
@@ -4008,7 +4008,7 @@ OverVector,Display form with a vector arrow accent,✅,none,6,777
 OverwriteTarget,Option specifying whether to overwrite an existing target file,🚫,None,11,2170
 OwenT,,,,8,4567
 OwnValues,Returns the own values of a symbol,✅,pure,2,1092
-PacletDataRebuild,,,,12.1,
+PacletDataRebuild,,🚫,,12.1,
 PacletDirectoryLoad,,🚫,,12.1,4204
 PacletDirectoryUnload,,🚫,,12.1,
 PacletDisable,,,,12.1,
@@ -4045,15 +4045,15 @@ PageWidth,Option specifying the page width for output formatting,✅,pure,1,1701
 Pagination,,,,11,5079
 PairCorrelationG,,,,12.2,5079
 PairedBarChart,Chart visualization,🚫,None,8,2260
-PairedHistogram,,,,8,2625
-PairedSmoothHistogram,,,,9,2880
+PairedHistogram,,🚫,,8,2625
+PairedSmoothHistogram,,🚫,,9,2880
 PairedTTest,,,,8,3427
 PairedZTest,,,,8,3656
-PairwiseDensityHistogram,,,,14,
-PairwiseListPlot,,,,14,
-PairwiseProbabilityPlot,,,,14,
-PairwiseQuantilePlot,,,,14,
-PairwiseSmoothDensityHistogram,,,,14,
+PairwiseDensityHistogram,,🚫,,14,
+PairwiseListPlot,,🚫,,14,
+PairwiseProbabilityPlot,,🚫,,14,
+PairwiseQuantilePlot,,🚫,,14,
+PairwiseSmoothDensityHistogram,,🚫,,14,
 PaletteNotebook,,🚫,,6,2565
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 Pane,Fixed-size display pane,✅,none,6,594
@@ -4147,14 +4147,14 @@ PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11,1991
 Periodogram,Signal periodogram,🚫,,9,2108
-PeriodogramArray,,,,9,3537
+PeriodogramArray,,🚫,,9,3537
 Permanent,,,,10.2,3389
 Permissions,,🚫,,10,1157
-PermissionsGroup,,,,10,3522
-PermissionsGroupMemberQ,,,,12.2,5486
-PermissionsGroups,,,,10,5587
-PermissionsKey,,,,11,3413
-PermissionsKeys,,,,11,5587
+PermissionsGroup,,🚫,,10,3522
+PermissionsGroupMemberQ,,🚫,,12.2,5486
+PermissionsGroups,,🚫,,10,5587
+PermissionsKey,,🚫,,11,3413
+PermissionsKeys,,🚫,,11,5587
 PermutationCycles,Cycle decomposition of a permutation,✅,pure,8,1550
 PermutationCyclesQ,,,,8,3280
 PermutationGroup,Group theory permutation group representation,🚫,,8,1979
@@ -4171,13 +4171,13 @@ PermutationReplace,Replace by permutation,✅,unevaluated,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533
 PermutationSupport,,,,8,3947
 Permute,Permute elements of a list,✅,pure,8,1355
-PeronaMalikFilter,,,,8,3823
+PeronaMalikFilter,,🚫,,8,3823
 PerpendicularBisector,,,,12,4707
 PersistenceLocation,,,,11.1,4173
 PersistenceTime,,,,11.1,4947
-PersistentObject,,,,11.1,4356
-PersistentObjects,,,,11.1,3717
-PersistentSymbol,,,,12.3,
+PersistentObject,,🚫,,11.1,4356
+PersistentObjects,,🚫,,11.1,3717
+PersistentSymbol,,🚫,,12.3,
 PersonData,,🚫,,10,3803
 PERTDistribution,,,,8,3191
 PetersenGraph,Petersen graph,✅,unevaluated,8,1620
@@ -4216,8 +4216,8 @@ PlanetaryMoonData,,🚫,,10,1026
 PlanetData,,🚫,,10,877
 PlantData,,🚫,,10,4527
 Play,Requires external services or GUI infrastructure,🚫,io,2,840
-PlaybackSettings,,,,13.1,
-PlayRange,,,,2,3108
+PlaybackSettings,,🚫,,13.1,
+PlayRange,,🚫,,2,3108
 Plot,Plots a function over a range,✅,effectful,1,21
 Plot3D,Creates a three-dimensional surface plot of a function,✅,pure,1,115
 PlotHighlighting,,🚫,,13.3,
@@ -4252,7 +4252,7 @@ PointProcessParameterAssumptions,,,,12.2,5390
 PointProcessParameterQ,,,,12.2,5390
 PointSize,Specifies point size in graphics,✅,pure,1,123
 PointStatisticFunction,,,,12.2,
-PointValuePlot,,,,12.2,3191
+PointValuePlot,,🚫,,12.2,3191
 PoissonConsulDistribution,,,,8,3678
 PoissonDistribution,Represents a Poisson distribution,✅,pure,6,945
 PoissonPDEComponent,,,,12.2,
@@ -4364,7 +4364,7 @@ PrintTemporary,Print temporary expression,✅,unevaluated,6,1870
 Prism,,,,10,2971
 PrivateCellOptions,,,,10,4479
 PrivateFontOptions,,,,3,2617
-PrivateKey,,,,10.1,4612
+PrivateKey,,🚫,,10.1,4612
 PrivateNotebookOptions,,,,4,4173
 Probability,Compute probability of an event given a distribution,✅,pure,8,671
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8,967
@@ -4395,10 +4395,10 @@ Proportional,Symbolic proportional relation,✅,pure,3,1440
 Protect,Protects symbols from modification,✅,stateful,1,721
 Protected,Attribute preventing modification,✅,pure,1,1544
 ProteinData,,🚫,,7,745
-Pruning,,,,8,2828
+Pruning,,🚫,,8,2828
 PseudoInverse,Compute Moore-Penrose pseudoinverse of a matrix,✅,pure,1,1543
 PsychrometricPropertyData,,🚫,,11.1,4567
-PublicKey,,,,10.1,4947
+PublicKey,,🚫,,10.1,4947
 PublisherID,,🚫,,11.2,
 PulsarData,,🚫,,10,4881
 PunctuationCharacter,character class,🚫,None,10.3,2389
@@ -4450,7 +4450,7 @@ Quotient,Returns the integer quotient of division,✅,pure,1,649
 QuotientRemainder,Returns the quotient and remainder of integer division,✅,pure,,1555
 RadialAxisPlot,,🚫,,12.2,3108
 RadialGradientFilling,,,,12.2,4881
-RadialGradientImage,,,,10,3593
+RadialGradientImage,,🚫,,10,3593
 RadialityCentrality,,,,9,4660
 RadicalBox,,,,3,3593
 RadicalBoxOptions,,,,4,
@@ -4468,10 +4468,10 @@ RandomChoice,Random selection with replacement,✅,contextual,6,338
 RandomColor,Generate a random color,✅,none,10,756
 RandomComplex,,🚫,,6,1258
 RandomDate,,,,13.2,
-RandomEntity,,,,10.2,2807
+RandomEntity,,🚫,,10.2,2807
 RandomFunction,Simulates random processes like Wiener and Poisson processes,🚫,io,9,773
 RandomGeneratorState,,,,12.2,
-RandomGeoPosition,,,,12,
+RandomGeoPosition,,🚫,,12,
 RandomGraph,Generate a random graph,✅,none,8,810
 RandomImage,Generates a random image with given dimensions,✅,pure,8,1723
 RandomInstance,Random geometric instance,✅,unevaluated,12,1736
@@ -4491,7 +4491,7 @@ RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual
 RandomWalkProcess,,,,9,2561
 RandomWord,Generate random words (requires dictionary),🚫,,10.3,2018
 Range,Generates a sequence of numbers,✅,pure,1,67
-RangeFilter,,,,8,3048
+RangeFilter,,🚫,,8,3048
 RankedMax,k-th largest element,✅,pure,8,2355
 RankedMin,k-th smallest element,✅,pure,8,2263
 RarerProbability,,,,12,
@@ -4543,7 +4543,7 @@ RecordLists,Data import option for structuring records as lists,🚫,,2,1932
 RecordSeparators,Record separator option for streams,🚫,,2,2119
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
 RectangleChart,Rectangle chart,✅,unevaluated,7,1687
-RectangleChart3D,,,,7,3200
+RectangleChart3D,,🚫,,7,3200
 RectangularRepeatingElement,,,,11.1,5486
 RecurrenceFilter,,,,9,2642
 RecurrenceTable,Generate a table of values from a recurrence relation,✅,none,7,534
@@ -4555,9 +4555,9 @@ Refine,Simplifies expressions using assumptions,✅,pure,5,764
 ReflectionMatrix,Gives the reflection matrix for a normal vector,✅,None,6,2203
 ReflectionTransform,Reflection transformation matrix,✅,pure,6,1536
 Refresh,,🚫,,6,1145
-RefreshRate,,,,6,2880
+RefreshRate,,🚫,,6,2880
 Region,,🚫,,11.1,959
-RegionBinarize,,,,8,3008
+RegionBinarize,,🚫,,8,3008
 RegionBoundary,,🚫,,10,1301
 RegionBoundaryStyle,,,,12.1,4612
 RegionBounds,Bounding box of a region,✅,pure,10,1480
@@ -4673,14 +4673,14 @@ ResolveContextAliases,,,,13,
 ResourceData,,🚫,,11,836
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12,519
 ResourceObject,Resource object,✅,unevaluated,11,1844
-ResourceRegister,,,,11.2,4947
-ResourceRemove,,,,11,4707
-ResourceSearch,,,,11,3215
-ResourceSubmit,,,,11.2,5184
-ResourceSystemBase,,,,12.1,
-ResourceSystemPath,,,,12.1,
-ResourceUpdate,,,,11.2,3889
-ResourceVersion,,,,12.1,
+ResourceRegister,,🚫,,11.2,4947
+ResourceRemove,,🚫,,11,4707
+ResourceSearch,,🚫,,11,3215
+ResourceSubmit,,🚫,,11.2,5184
+ResourceSystemBase,,🚫,,12.1,
+ResourceSystemPath,,🚫,,12.1,
+ResourceUpdate,,🚫,,11.2,3889
+ResourceVersion,,🚫,,12.1,
 ResponseForm,,,,10,3889
 Rest,Returns the list without its first element,✅,pure,1,289
 RestartInterval,,,,10.2,5587
@@ -4706,7 +4706,7 @@ RFixedPoints,,,,14.1,
 RGBColor,Specifies a color by RGB values,✅,pure,1,24
 RiccatiSolve,,,,8,3823
 RiceDistribution,,,,8,2986
-RidgeFilter,,,,8,3257
+RidgeFilter,,🚫,,8,3257
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7,331
 RiemannSiegelTheta,Riemann-Siegel theta function,✅,unevaluated,2,1734
 RiemannSiegelZ,Riemann-Siegel Z function,✅,unevaluated,2,1675
@@ -4789,7 +4789,7 @@ SameAs,,,,13.1,
 SameQ,Tests if expressions are identical,✅,pure,1,107
 SameTest,,🚫,,2,1024
 SameTestProperties,,,,12.1,
-SampledEntityClass,,,,12,4947
+SampledEntityClass,,🚫,,12,4947
 SampleDepth,,,,2,3656
 SampledSoundFunction,,,,2,3265
 SampledSoundList,Sampled sound representation,🚫,,2,2082
@@ -4834,8 +4834,8 @@ ScriptBaselineShifts,Script baseline shift option,✅,unevaluated,3,1599
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3,626
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3,614
 Scrollbars,Scrollbars option,✅,unevaluated,7,1803
-ScrollingOptions,,,,4,4809
-ScrollPosition,,,,7,2729
+ScrollingOptions,,🚫,,4,4809
+ScrollPosition,,🚫,,7,2729
 SearchAdjustment,,,,11,4947
 SearchIndexObject,,🚫,,10.2,4707
 SearchIndices,,,,10.2,5184
@@ -4850,9 +4850,9 @@ SectorChart,Creates a sector chart from data,✅,pure,7,2138
 SectorChart3D,,🚫,,7,3048
 SectorOrigin,Sector origin in pie charts,✅,unevaluated,7,1605
 SectorSpacing,,,,7,2812
-SecuredAuthenticationKey,,,,11.2,4809
-SecuredAuthenticationKeys,,,,11.3,
-SecurityCertificate,,,,12.2,
+SecuredAuthenticationKey,,🚫,,11.2,4809
+SecuredAuthenticationKeys,,🚫,,11.3,
+SecurityCertificate,,🚫,,12.2,
 SeedRandom,Seeds the random number generator,✅,stateful,1,351
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1,149
 Selectable,GUI option for content selectability,🚫,,3,1977
@@ -4860,9 +4860,9 @@ SelectComponents,Select image components,✅,unevaluated,8,1593
 SelectedCells,,🚫,,10,2468
 SelectedNotebook,Return the currently selected notebook,✅,none,3,687
 SelectFirst,Select first element matching a criterion,✅,pure,10,1514
-SelectionCreateCell,,,,3,5079
+SelectionCreateCell,,🚫,,3,5079
 SelectionEvaluate,Evaluate selected notebook content,🚫,,3,2051
-SelectionEvaluateCreateCell,,,,3,3755
+SelectionEvaluateCreateCell,,🚫,,3,3755
 SelectionMove,Move the selection in a notebook,✅,none,3,636
 SelfLoopStyle,,,,6,2656
 SemanticImport,Import with semantic interpretation,🚫,,10,2100
@@ -4905,7 +4905,7 @@ ServiceExecute,Execute external service,🚫,,10,2141
 ServiceObject,,🚫,,10,4387
 ServiceRequest,,🚫,,12,
 ServiceSubmit,,🚫,,12,
-SessionSubmit,,,,11.2,2900
+SessionSubmit,,🚫,,11.2,2900
 SessionTime,Elapsed time in seconds since session start,✅,pure,2,1444
 Set,Assigns a value to a symbol,✅,stateful,1,5
 SetAccuracy,,🚫,,2,972
@@ -4919,7 +4919,7 @@ SetEnvironment,,,,9,3326
 SetFileDate,,,,2,4479
 SetFileFormatProperties,,,,13,
 SetOptions,Sets options for functions (no-op in Woxi),✅,effectful,1,446
-SetPermissions,,,,10.2,3378
+SetPermissions,,🚫,,10.2,3378
 SetPrecision,Sets the precision of a number to a specified number of digits,✅,pure,2,548
 SetSelectedNotebook,notebook UI,🚫,None,3,2383
 SetSharedFunction,,,,7,2587
@@ -4991,13 +4991,13 @@ SinghMaddalaDistribution,,,,8,3326
 SingleLetterItalics,Single letter italics option,✅,unevaluated,3,1897
 SingularValueDecomposition,,🚫,,5,1283
 SingularValueList,Singular value list,✅,unevaluated,5,1892
-SingularValuePlot,,,,8,3755
+SingularValuePlot,,🚫,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
 SinhIntegral,Hyperbolic sine integral function,✅,1,3,1309
 SinIntegral,Sine integral Si(z),✅,pure,2,1148
 SixJSymbol,,🚫,,2,1217
 Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
-SkeletonTransform,,,,8,3522
+SkeletonTransform,,🚫,,8,3522
 SkellamDistribution,,,,8,3862
 Skewness,Computes the skewness of a list,✅,pure,6,1402
 SkewNormalDistribution,Probability distribution,🚫,None,8,2193
@@ -5041,7 +5041,7 @@ SocketWaitAll,,🚫,,11.2,5390
 SocketWaitNext,,🚫,,11.2,5184
 SoftmaxLayer,Softmax neural layer,✅,unevaluated,11,1712
 SokalSneathDissimilarity,,,,6,4262
-SolarEclipse,,,,10,4081
+SolarEclipse,,🚫,,10,4081
 SolarSystemFeatureData,,🚫,,10,4138
 SolarTime,,,,12.3,
 SolidAngle,,,,12,4479
@@ -5059,7 +5059,7 @@ SolveValues,,,,12.3,
 Sort,Sorts a list in ascending order,✅,pure,1,194
 SortBy,Sorts a list using a function as a criterion,✅,pure,6,405
 SortedBy,,,,12,5013
-SortedEntityClass,,,,12,4262
+SortedEntityClass,,🚫,,12,4262
 Sound,Represents a sound object,✅,none,2,629
 SoundNote,Represents a musical note for sound generation,✅,pure,6,479
 SoundVolume,Sound volume specification,✅,pure,6,1503
@@ -5099,7 +5099,7 @@ SpeciesData,,🚫,,10,4881
 SpecificityGoal,,,,10.1,3862
 SpectralLineData,,🚫,,11.1,4006
 Spectrogram,Time-frequency spectrogram of signal,🚫,,9,2034
-SpectrogramArray,,,,9,3656
+SpectrogramArray,,🚫,,9,3656
 Specularity,Graphics directive for specular highlighting,✅,none,6,576
 SpeechCases,,,,12.1,
 SpeechInterpreter,,,,12.1,
@@ -5139,7 +5139,7 @@ SplineKnots,,🚫,,7,1064
 SplineWeights,,🚫,,7,1094
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3,615
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7,1000
-SpokenString,,,,7,3474
+SpokenString,,🚫,,7,3474
 SpotLight,,,,13,
 Sqrt,Returns the square root of a number,✅,pure,1,18
 SqrtBox,Low-level box construct for square root display (typesetting),🚫,,3,1999
@@ -5165,13 +5165,13 @@ StableDistribution,,,,8,2519
 Stack,layout primitive,🚫,None,2,2399
 StackBegin,,,,2,4947
 StackComplete,,,,2,4479
-StackedDateListPlot,,,,11.2,3697
-StackedListPlot,,,,11.2,2821
+StackedDateListPlot,,🚫,,11.2,3697
+StackedListPlot,,🚫,,11.2,2821
 StackInhibit,,,,2,4612
 StadiumShape,,,,10.2,3612
 StandardAtmosphereData,,🚫,,10,4204
 StandardDeviation,Returns the standard deviation of a list,✅,pure,5,645
-StandardDeviationFilter,,,,7,3522
+StandardDeviationFilter,,🚫,,7,3522
 StandardForm,Converts expression to standard form,✅,pure,3,689
 Standardize,Standardize data,✅,unevaluated,7,1822
 Standardized,,,,10.1,4479
@@ -5181,12 +5181,12 @@ Star,graphics primitive,🚫,None,3,2329
 StarClusterData,,🚫,,10,4881
 StarData,,🚫,,10,722
 StarGraph,,,,8,2617
-StartExternalSession,,,,11.2,3162
+StartExternalSession,,🚫,,11.2,3162
 StartingStepSize,Starting step size option,✅,unevaluated,4,1760
 StartOfLine,,,,5.1,2786
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 StartProcess,,🚫,,10,2514
-StartWebSession,,,,12,3678
+StartWebSession,,🚫,,12,3678
 StateFeedbackGains,,,,8,2650
 StateOutputEstimator,,,,8,3737
 StateResponse,Control systems,🚫,None,8,2254
@@ -5370,7 +5370,7 @@ SymmetrizedIndependentComponents,,,,9,3566
 SymmetrizedReplacePart,,,,9,4881
 SynchronousInitialization,Notebook synchronous initialization,🚫,io,6,1429
 SynchronousUpdating,,🚫,,6,931
-Synonyms,,,,12,4052
+Synonyms,,🚫,,12,4052
 SyntaxForm,Typesetting,🚫,None,3,2276
 SyntaxInformation,Syntax information for a symbol,✅,pure,6,1520
 SyntaxLength,,,,2,4527
@@ -5426,7 +5426,7 @@ TableDirections,Option for TableForm display directions,🚫,,2,1977
 TableForm,Formats data as a table,✅,pure,1,255
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2,517
 TableSpacing,,🚫,,2,1290
-TableView,,,,12.1,2792
+TableView,,🚫,,12.1,2792
 Tabular,Represents a data frame or table of structured data,✅,pure,14.2,2792
 ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
 TabView,,🚫,,6,1308
@@ -5455,12 +5455,12 @@ TargetSystem,,,,12,
 TargetUnits,,,,9,2693
 TaskAbort,,,,11.2,5587
 TaskExecute,,,,11.2,4809
-TaskObject,,,,11.2,
-TaskRemove,,,,11.2,3636
-TaskResume,,,,11.2,5390
-Tasks,,,,11.2,4707
-TaskSuspend,,,,11.2,4947
-TaskWait,,,,11.2,4881
+TaskObject,,🚫,,11.2,
+TaskRemove,,🚫,,11.2,3636
+TaskResume,,🚫,,11.2,5390
+Tasks,,🚫,,11.2,4707
+TaskSuspend,,🚫,,11.2,4947
+TaskWait,,🚫,,11.2,4881
 TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7,1986
 TelegraphProcess,,,,9,3566
 TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10,1949
@@ -5485,7 +5485,7 @@ TensorSymmetry,,,,9,2993
 TensorTranspose,tensor algebra,🚫,None,9,2394
 TensorWedge,,,,9,2533
 TerminatedEvaluation,,,,13.2,
-TernaryListPlot,,,,13.1,
+TernaryListPlot,,🚫,,13.1,
 TernaryPlotCorners,,,,13.1,
 TestCreate,,,,13.3,
 TestEvaluate,,,,13.3,
@@ -5518,12 +5518,12 @@ TextSummarize,,,,14,
 TextTranslation,,🚫,,11.1,2971
 Texture,Apply a texture to a surface in graphics,✅,none,8,849
 TextureCoordinateFunction,Texture coordinate function,✅,unevaluated,8,1643
-TextureCoordinateScaling,,,,8,2720
-TextureMapping,,,,14,
+TextureCoordinateScaling,,🚫,,8,2720
+TextureMapping,,🚫,,14,
 TextWords,,🚫,,10.1,1295
 Therefore,Represents a therefore logical relation,✅,pure,3,3972
 ThermodynamicData,,🚫,,10,1368
-ThermometerGauge,,,,9,2867
+ThermometerGauge,,🚫,,9,2867
 Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6,112
 Thickness,Sets relative line thickness in graphics,✅,pure,1,85
 Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6,443
@@ -5602,7 +5602,7 @@ Together,Puts terms over a common denominator,✅,pure,1,455
 Toggler,,🚫,,6,2617
 TogglerBar,Toggler bar control,✅,unevaluated,6,1716
 ToInvertibleTimeSeries,,,,9,4138
-TokenWords,,,,2,4881
+TokenWords,,🚫,,2,4881
 Tolerance,Tolerance specification,✅,unevaluated,2,1583
 ToLowerCase,Converts a string to lowercase,✅,pure,2,827
 Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
@@ -5612,7 +5612,7 @@ TooltipDelay,Tooltip delay option,✅,unevaluated,7,1833
 TooltipStyle,Style option for tooltips (GUI),🚫,,8,2002
 ToonShading,,,,12.1,
 Top,Symbol for top alignment,✅,pure,1,385
-TopHatTransform,,,,7,3636
+TopHatTransform,,🚫,,7,3636
 ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
 TopologicalSort,,,,8,3224
 ToRadicals,Attempts to express in terms of radicals,✅,1,3,1211
@@ -5624,7 +5624,7 @@ ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1
 ToString,Converts an expression to a string,✅,pure,1,148
 Total,Sums the elements of a list,✅,pure,5,151
 TotalLayer,Neural network total layer,✅,pure,11,1518
-TotalVariationFilter,,,,8,3020
+TotalVariationFilter,,🚫,,8,3020
 TotalWidth,Option specifying the total width for formatted output,✅,none,1,5184
 TouchPosition,,🚫,,10,5486
 TouchscreenAutoZoom,,🚫,,9,4947
@@ -5681,7 +5681,7 @@ TransitiveReductionGraph,,,,10,3522
 Translate,Translates a graphics object,✅,pure,6,448
 TranslationOptions,,,,10.2,4809
 TranslationTransform,Creates an affine translation transformation,✅,none,6,1011
-Transliterate,,,,10.3,2591
+Transliterate,,🚫,,10.3,2591
 Transparent,,🚫,,7,1256
 Transpose,Transposes a matrix (list of lists),✅,pure,1,73
 TransposeLayer,,🚫,,11.1,2828
@@ -5860,7 +5860,7 @@ UpValues,Returns the up values of a symbol,✅,pure,2,1704
 URL,URL wrapper,✅,unevaluated,11,1727
 URLBuild,Builds a URL from components and query parameters,✅,pure,10,1951
 URLDecode,,,,10,4027
-URLDispatcher,,,,10.4,4567
+URLDispatcher,,🚫,,10.4,4567
 URLDownload,,🚫,,11,2993
 URLDownloadSubmit,,🚫,,11.2,4081
 URLEncode,,,,10,3031
@@ -5903,8 +5903,8 @@ VectorDatabaseObject,,🚫,,14.1,
 VectorDatabaseObjects,,🚫,,14.1,
 VectorDatabaseSearch,,🚫,,14.1,
 VectorDensityPlot,Visualization,🚫,None,7,2278
-VectorDisplacementPlot,,,,13,
-VectorDisplacementPlot3D,,,,13,
+VectorDisplacementPlot,,🚫,,13,
+VectorDisplacementPlot3D,,🚫,,13,
 VectorGreater,,,,12,5184
 VectorGreaterEqual,,,,12,4291
 VectorLess,,,,12,
@@ -5924,11 +5924,11 @@ Vee,,,,3,3094
 Verbatim,Inert wrapper to prevent interpretation,✅,none,3,723
 VerificationTest,Testing framework function,🚫,,10,2119
 VerifyConvergence,,,,2,3291
-VerifyDerivedKey,,,,12,
-VerifyDigitalSignature,,,,12,4707
-VerifyFileSignature,,,,12.1,
+VerifyDerivedKey,,🚫,,12,
+VerifyDigitalSignature,,🚫,,12,4707
+VerifyFileSignature,,🚫,,12.1,
 VerifyInterpretation,,,,12,
-VerifySecurityCertificates,,,,11,4567
+VerifySecurityCertificates,,🚫,,11,4567
 VerifySolutions,Option for Solve to verify solutions,✅,pure,1,2986
 VerifyTestAssumptions,,,,8,3916
 VersionedPreferences,,,,12.1,
@@ -5972,7 +5972,7 @@ VertexTransitiveGraphQ,,,,12.3,
 VertexWeight,Vertex weight option,✅,unevaluated,8,1895
 VertexWeightedGraphQ,,,,12,
 VerticalBar,,,,3,5013
-VerticalGauge,,,,9,2462
+VerticalGauge,,🚫,,9,2462
 VerticalSeparator,,,,3,3233
 VerticalSlider,Vertical slider control,✅,pure,6,1547
 VerticalTilde,,,,3,5184
@@ -6013,10 +6013,10 @@ VideoTransparency,,🚫,,13.1,
 VideoTrim,,🚫,,12.1,4612
 ViewAngle,,🚫,,6,1005
 ViewCenter,View center option,✅,unevaluated,2,1838
-ViewMatrix,,,,6,2679
+ViewMatrix,,🚫,,6,2679
 ViewPoint,Option for 3D viewing position,✅,pure,1,360
-ViewProjection,,,,11.2,2605
-ViewRange,,,,6,3083
+ViewProjection,,🚫,,11.2,2605
+ViewRange,,🚫,,6,3083
 ViewVector,3D graphics option for specifying the view direction,🚫,,6,1956
 ViewVertical,,🚫,,2,986
 Visible,Visibility option,✅,pure,3,1563
@@ -6029,7 +6029,7 @@ VonMisesStress,,,,14.1,
 VoronoiMesh,,🚫,,10,1221
 W,,,,,
 WaitAll,Async parallel computation,🚫,None,7,2233
-WaitNext,,,,7,4006
+WaitNext,,🚫,,7,4006
 WakebyDistribution,,,,8,3678
 WalleniusHypergeometricDistribution,,,,8,4006
 WaringYuleDistribution,,,,8,3889
@@ -6040,10 +6040,10 @@ WatsonUSquareTest,,,,8,3717
 WattsStrogatzGraphDistribution,,,,8,2707
 WaveletBestBasis,,,,8,3389
 WaveletFilterCoefficients,Signal processing,🚫,None,8,2239
-WaveletImagePlot,,,,8,3031
+WaveletImagePlot,,🚫,,8,3031
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8,1921
 WaveletMapIndexed,wavelet processing,🚫,None,8,2383
-WaveletMatrixPlot,,,,8,3176
+WaveletMatrixPlot,,🚫,,8,3176
 WaveletPhi,wavelet function,🚫,None,8,2371
 WaveletPsi,Wavelet function (signal processing),🚫,,8,2006
 WaveletScale,,🚫,,8,4291
@@ -6106,7 +6106,7 @@ Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 WhitespaceCharacter,String pattern for whitespace,✅,pure,5.1,1539
 WhittakerM,Whittaker M function,✅,unevaluated,6,1651
 WhittakerW,Whittaker W function,✅,unevaluated,6,1741
-WienerFilter,,,,8,4315
+WienerFilter,,🚫,,8,4315
 WienerProcess,,🚫,,9,1268
 WignerD,,,,8,2587
 WignerSemicircleDistribution,,,,8,3280
@@ -6145,8 +6145,8 @@ WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
 WordCount,,,,10.1,3257
 WordCounts,Counts word occurrences in a string,✅,None,10.1,2413
 WordData,,🚫,,6,92
-WordDefinition,,,,10.3,2867
-WordFrequency,,,,10.4,4291
+WordDefinition,,🚫,,10.3,2867
+WordFrequency,,🚫,,10.4,4291
 WordFrequencyData,,🚫,,10.4,1815
 WordList,Returns a list of common English words,🚫,io,10.3,762
 WordOrientation,,,,10.1,4006
@@ -6154,8 +6154,8 @@ WordSearch,,,,2,4437
 WordSelectionFunction,,,,11.2,5390
 WordSeparators,text processing option,🚫,None,2,2305
 WordSpacings,,,,10.1,4204
-WordStem,,,,10.1,4138
-WordTranslation,,,,10.3,2712
+WordStem,,🚫,,10.1,4138
+WordTranslation,,🚫,,10.3,2712
 WorkingPrecision,Option for numerical precision,✅,pure,1,412
 WrapAround,,,,10,5587
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1,1246

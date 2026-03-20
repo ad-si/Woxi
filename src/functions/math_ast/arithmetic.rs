@@ -1080,18 +1080,20 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
     }
   }
 
-  if let Expr::FunctionCall { name, args } = e {
-    if name == "Times" && args.len() >= 2 && is_complex_literal(&args[0]) {
-      let rest = &args[1..];
-      return Some(if rest.len() == 1 {
-        rest[0].clone()
-      } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: rest.to_vec(),
-        }
-      });
-    }
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Times"
+    && args.len() >= 2
+    && is_complex_literal(&args[0])
+  {
+    let rest = &args[1..];
+    return Some(if rest.len() == 1 {
+      rest[0].clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: rest.to_vec(),
+      }
+    });
   }
   None
 }
@@ -1161,14 +1163,14 @@ fn extract_trig_factors(e: &Expr) -> Vec<(String, Expr, i64)> {
         name: fn_name,
         args: fn_args,
       } = &args[0]
+        && term_priority(&args[0]) >= 1
+        && fn_args.len() == 1
       {
-        if term_priority(&args[0]) >= 1 && fn_args.len() == 1 {
-          let exp = match &args[1] {
-            Expr::Integer(n) => *n as i64,
-            _ => 0,
-          };
-          factors.push((fn_name.clone(), fn_args[0].clone(), exp));
-        }
+        let exp = match &args[1] {
+          Expr::Integer(n) => *n as i64,
+          _ => 0,
+        };
+        factors.push((fn_name.clone(), fn_args[0].clone(), exp));
       }
     }
     Expr::BinaryOp {
@@ -1180,14 +1182,14 @@ fn extract_trig_factors(e: &Expr) -> Vec<(String, Expr, i64)> {
         name: fn_name,
         args: fn_args,
       } = left.as_ref()
+        && term_priority(left) >= 1
+        && fn_args.len() == 1
       {
-        if term_priority(left) >= 1 && fn_args.len() == 1 {
-          let exp = match right.as_ref() {
-            Expr::Integer(n) => *n as i64,
-            _ => 0,
-          };
-          factors.push((fn_name.clone(), fn_args[0].clone(), exp));
-        }
+        let exp = match right.as_ref() {
+          Expr::Integer(n) => *n as i64,
+          _ => 0,
+        };
+        factors.push((fn_name.clone(), fn_args[0].clone(), exp));
       }
     }
     _ => {}

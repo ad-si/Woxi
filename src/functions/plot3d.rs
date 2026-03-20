@@ -2581,16 +2581,13 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       pattern,
       replacement,
     } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ImageSize"
+      && let Some((w, h, fw)) = parse_image_size(replacement)
     {
-      if let Expr::Identifier(name) = pattern.as_ref() {
-        if name == "ImageSize" {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
-            svg_width = w;
-            svg_height = h;
-            full_width = fw;
-          }
-        }
-      }
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
     }
   }
 
@@ -2762,16 +2759,18 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn parse_xyz_points(items: &[Expr]) -> Vec<(f64, f64, f64)> {
   let mut pts = Vec::new();
   for item in items {
-    if let Expr::List(coords) = item {
-      if coords.len() == 3 {
-        let x = try_eval_to_f64(&coords[0]);
-        let y = try_eval_to_f64(&coords[1]);
-        let z = try_eval_to_f64(&coords[2]);
-        if let (Some(x), Some(y), Some(z)) = (x, y, z) {
-          if x.is_finite() && y.is_finite() && z.is_finite() {
-            pts.push((x, y, z));
-          }
-        }
+    if let Expr::List(coords) = item
+      && coords.len() == 3
+    {
+      let x = try_eval_to_f64(&coords[0]);
+      let y = try_eval_to_f64(&coords[1]);
+      let z = try_eval_to_f64(&coords[2]);
+      if let (Some(x), Some(y), Some(z)) = (x, y, z)
+        && x.is_finite()
+        && y.is_finite()
+        && z.is_finite()
+      {
+        pts.push((x, y, z));
       }
     }
   }
@@ -2949,14 +2948,13 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let phi = phi_min + (j as f64 / n_phi as f64) * phi_range;
       if let Some(r) =
         evaluate_at_t_theta(body, &theta_var, theta, &phi_var, phi)
+        && r.is_finite()
       {
-        if r.is_finite() {
-          let x = r * theta.sin() * phi.cos();
-          let y = r * theta.sin() * phi.sin();
-          let z = r * theta.cos();
-          if x.is_finite() && y.is_finite() && z.is_finite() {
-            grid_pts[i][j] = Some(Point3D { x, y, z });
-          }
+        let x = r * theta.sin() * phi.cos();
+        let y = r * theta.sin() * phi.sin();
+        let z = r * theta.cos();
+        if x.is_finite() && y.is_finite() && z.is_finite() {
+          grid_pts[i][j] = Some(Point3D { x, y, z });
         }
       }
     }
@@ -2971,15 +2969,13 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut z_max = f64::NEG_INFINITY;
 
   for row in &grid_pts {
-    for pt in row {
-      if let Some(p) = pt {
-        x_min = x_min.min(p.x);
-        x_max = x_max.max(p.x);
-        y_min = y_min.min(p.y);
-        y_max = y_max.max(p.y);
-        z_min = z_min.min(p.z);
-        z_max = z_max.max(p.z);
-      }
+    for p in row.iter().flatten() {
+      x_min = x_min.min(p.x);
+      x_max = x_max.max(p.x);
+      y_min = y_min.min(p.y);
+      y_max = y_max.max(p.y);
+      z_min = z_min.min(p.z);
+      z_max = z_max.max(p.z);
     }
   }
 
@@ -3134,16 +3130,13 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       pattern,
       replacement,
     } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "ImageSize"
+      && let Some((w, h, fw)) = parse_image_size(replacement)
     {
-      if let Expr::Identifier(name) = pattern.as_ref() {
-        if name == "ImageSize" {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
-            svg_width = w;
-            svg_height = h;
-            full_width = fw;
-          }
-        }
-      }
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
     }
   }
 
@@ -3171,14 +3164,13 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (j, yj) in (y_start..=y_end).enumerate() {
       let sub1 = substitute_var(body, &xvar, &Expr::Integer(xi as i128));
       let sub2 = substitute_var(&sub1, &yvar, &Expr::Integer(yj as i128));
-      if let Ok(result) = evaluate_expr_to_expr(&sub2) {
-        if let Some(z) = try_eval_to_f64(&result) {
-          if z.is_finite() {
-            grid[i][j] = z;
-            z_lo = z_lo.min(z);
-            z_hi = z_hi.max(z);
-          }
-        }
+      if let Ok(result) = evaluate_expr_to_expr(&sub2)
+        && let Some(z) = try_eval_to_f64(&result)
+        && z.is_finite()
+      {
+        grid[i][j] = z;
+        z_lo = z_lo.min(z);
+        z_hi = z_hi.max(z);
       }
     }
   }

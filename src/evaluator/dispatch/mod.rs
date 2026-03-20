@@ -1281,35 +1281,34 @@ pub fn evaluate_function_call_ast_inner(
         name: cname,
         args: cargs,
       } = &args[1]
+        && cname == "Cycles"
+        && cargs.len() == 1
+        && let Expr::List(cycle_list) = &cargs[0]
       {
-        if cname == "Cycles" && cargs.len() == 1 {
-          if let Expr::List(cycle_list) = &cargs[0] {
-            let mut result = list.clone();
-            for cycle in cycle_list {
-              if let Expr::List(c) = cycle {
-                let indices: Vec<usize> = c
-                  .iter()
-                  .filter_map(|e| {
-                    if let Expr::Integer(n) = e {
-                      Some(*n as usize)
-                    } else {
-                      None
-                    }
-                  })
-                  .collect();
-                if indices.len() >= 2 {
-                  // Cycle (a,b,c): position a gets value from c, b from a, c from b
-                  let last_val = list[indices[indices.len() - 1] - 1].clone();
-                  for i in (1..indices.len()).rev() {
-                    result[indices[i] - 1] = list[indices[i - 1] - 1].clone();
-                  }
-                  result[indices[0] - 1] = last_val;
+        let mut result = list.clone();
+        for cycle in cycle_list {
+          if let Expr::List(c) = cycle {
+            let indices: Vec<usize> = c
+              .iter()
+              .filter_map(|e| {
+                if let Expr::Integer(n) = e {
+                  Some(*n as usize)
+                } else {
+                  None
                 }
+              })
+              .collect();
+            if indices.len() >= 2 {
+              // Cycle (a,b,c): position a gets value from c, b from a, c from b
+              let last_val = list[indices[indices.len() - 1] - 1].clone();
+              for i in (1..indices.len()).rev() {
+                result[indices[i] - 1] = list[indices[i - 1] - 1].clone();
               }
+              result[indices[0] - 1] = last_val;
             }
-            return Ok(Expr::List(result));
           }
         }
+        return Ok(Expr::List(result));
       }
     }
     return Ok(Expr::FunctionCall {
@@ -1324,59 +1323,58 @@ pub fn evaluate_function_call_ast_inner(
       name: cname,
       args: cargs,
     } = &args[0]
+      && cname == "Cycles"
+      && cargs.len() == 1
+      && let Expr::List(cycle_list) = &cargs[0]
     {
-      if cname == "Cycles" && cargs.len() == 1 {
-        if let Expr::List(cycle_list) = &cargs[0] {
-          // Find the maximum element to determine list length
-          let mut max_elem: usize = 0;
-          for cycle in cycle_list {
-            if let Expr::List(c) = cycle {
-              for elem in c {
-                if let Expr::Integer(n) = elem {
-                  if *n as usize > max_elem {
-                    max_elem = *n as usize;
-                  }
-                }
-              }
-            }
-          }
-          // Allow explicit length via second argument
-          if args.len() == 2 {
-            if let Expr::Integer(n) = &args[1] {
+      // Find the maximum element to determine list length
+      let mut max_elem: usize = 0;
+      for cycle in cycle_list {
+        if let Expr::List(c) = cycle {
+          for elem in c {
+            if let Expr::Integer(n) = elem
+              && *n as usize > max_elem
+            {
               max_elem = *n as usize;
             }
           }
-          // Build identity permutation
-          let mut perm: Vec<usize> = (0..=max_elem).collect();
-          // Apply each cycle
-          for cycle in cycle_list {
-            if let Expr::List(c) = cycle {
-              let indices: Vec<usize> = c
-                .iter()
-                .filter_map(|e| {
-                  if let Expr::Integer(n) = e {
-                    Some(*n as usize)
-                  } else {
-                    None
-                  }
-                })
-                .collect();
-              if indices.len() >= 2 {
-                // Cycle (a, b, c) means a->b, b->c, c->a
-                let first = indices[0];
-                for i in 0..indices.len() - 1 {
-                  perm[indices[i]] = indices[i + 1];
-                }
-                perm[indices[indices.len() - 1]] = first;
-              }
-            }
-          }
-          let result: Vec<Expr> = (1..=max_elem)
-            .map(|i| Expr::Integer(perm[i] as i128))
-            .collect();
-          return Ok(Expr::List(result));
         }
       }
+      // Allow explicit length via second argument
+      if args.len() == 2
+        && let Expr::Integer(n) = &args[1]
+      {
+        max_elem = *n as usize;
+      }
+      // Build identity permutation
+      let mut perm: Vec<usize> = (0..=max_elem).collect();
+      // Apply each cycle
+      for cycle in cycle_list {
+        if let Expr::List(c) = cycle {
+          let indices: Vec<usize> = c
+            .iter()
+            .filter_map(|e| {
+              if let Expr::Integer(n) = e {
+                Some(*n as usize)
+              } else {
+                None
+              }
+            })
+            .collect();
+          if indices.len() >= 2 {
+            // Cycle (a, b, c) means a->b, b->c, c->a
+            let first = indices[0];
+            for i in 0..indices.len() - 1 {
+              perm[indices[i]] = indices[i + 1];
+            }
+            perm[indices[indices.len() - 1]] = first;
+          }
+        }
+      }
+      let result: Vec<Expr> = (1..=max_elem)
+        .map(|i| Expr::Integer(perm[i] as i128))
+        .collect();
+      return Ok(Expr::List(result));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
@@ -1491,12 +1489,11 @@ pub fn evaluate_function_call_ast_inner(
       name: gname,
       args: gargs,
     } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let Expr::List(_) = &gargs[1]
     {
-      if gname == "Graph" && gargs.len() == 2 {
-        if let Expr::List(_) = &gargs[1] {
-          return Ok(gargs[1].clone());
-        }
-      }
+      return Ok(gargs[1].clone());
     }
     // Return unevaluated for non-graph input
     return Ok(Expr::FunctionCall {
@@ -1511,12 +1508,11 @@ pub fn evaluate_function_call_ast_inner(
       name: gname,
       args: gargs,
     } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let Expr::List(_) = &gargs[0]
     {
-      if gname == "Graph" && gargs.len() == 2 {
-        if let Expr::List(_) = &gargs[0] {
-          return Ok(gargs[0].clone());
-        }
-      }
+      return Ok(gargs[0].clone());
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
@@ -1530,43 +1526,39 @@ pub fn evaluate_function_call_ast_inner(
       name: gname,
       args: gargs,
     } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
-      if gname == "Graph" && gargs.len() == 2 {
-        if let (Expr::List(vertices), Expr::List(edges)) =
-          (&gargs[0], &gargs[1])
+      let n = vertices.len();
+      // Build vertex-to-index mapping
+      let vertex_index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (expr_to_string(v), i))
+        .collect();
+      // Initialize n×n zero matrix
+      let mut matrix = vec![vec![Expr::Integer(0); n]; n];
+      for edge in edges {
+        if let Expr::FunctionCall {
+          name: ename,
+          args: eargs,
+        } = edge
+          && eargs.len() == 2
         {
-          let n = vertices.len();
-          // Build vertex-to-index mapping
-          let vertex_index: std::collections::HashMap<String, usize> = vertices
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (expr_to_string(v), i))
-            .collect();
-          // Initialize n×n zero matrix
-          let mut matrix = vec![vec![Expr::Integer(0); n]; n];
-          for edge in edges {
-            if let Expr::FunctionCall {
-              name: ename,
-              args: eargs,
-            } = edge
-            {
-              if eargs.len() == 2 {
-                let from_str = expr_to_string(&eargs[0]);
-                let to_str = expr_to_string(&eargs[1]);
-                if let (Some(&fi), Some(&ti)) =
-                  (vertex_index.get(&from_str), vertex_index.get(&to_str))
-                {
-                  matrix[fi][ti] = Expr::Integer(1);
-                  if ename == "UndirectedEdge" {
-                    matrix[ti][fi] = Expr::Integer(1);
-                  }
-                }
-              }
+          let from_str = expr_to_string(&eargs[0]);
+          let to_str = expr_to_string(&eargs[1]);
+          if let (Some(&fi), Some(&ti)) =
+            (vertex_index.get(&from_str), vertex_index.get(&to_str))
+          {
+            matrix[fi][ti] = Expr::Integer(1);
+            if ename == "UndirectedEdge" {
+              matrix[ti][fi] = Expr::Integer(1);
             }
           }
-          return Ok(Expr::List(matrix.into_iter().map(Expr::List).collect()));
         }
       }
+      return Ok(Expr::List(matrix.into_iter().map(Expr::List).collect()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
@@ -1582,171 +1574,164 @@ pub fn evaluate_function_call_ast_inner(
       name: gname,
       args: gargs,
     } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
-      if gname == "Graph" && gargs.len() == 2 {
-        if let (Expr::List(vertices), Expr::List(edges)) =
-          (&gargs[0], &gargs[1])
-        {
-          let n = vertices.len();
-          let vertex_index: std::collections::HashMap<String, usize> = vertices
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (expr_to_string(v), i))
-            .collect();
+      let n = vertices.len();
+      let vertex_index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (expr_to_string(v), i))
+        .collect();
 
-          // Check if graph is directed or undirected
-          let is_directed = edges.iter().any(|e| {
+      // Check if graph is directed or undirected
+      let is_directed = edges.iter().any(|e| {
             matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
           });
 
-          let comp_list = if is_directed {
-            // Strongly connected components via Kosaraju's algorithm
-            let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-            let mut radj: Vec<Vec<usize>> = vec![Vec::new(); n];
-            for edge in edges {
-              if let Expr::FunctionCall { args: eargs, .. } = edge {
-                if eargs.len() == 2 {
-                  let from_str = expr_to_string(&eargs[0]);
-                  let to_str = expr_to_string(&eargs[1]);
-                  if let (Some(&fi), Some(&ti)) =
-                    (vertex_index.get(&from_str), vertex_index.get(&to_str))
-                  {
-                    adj[fi].push(ti);
-                    radj[ti].push(fi);
-                  }
-                }
-              }
+      let comp_list = if is_directed {
+        // Strongly connected components via Kosaraju's algorithm
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut radj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for edge in edges {
+          if let Expr::FunctionCall { args: eargs, .. } = edge
+            && eargs.len() == 2
+          {
+            let from_str = expr_to_string(&eargs[0]);
+            let to_str = expr_to_string(&eargs[1]);
+            if let (Some(&fi), Some(&ti)) =
+              (vertex_index.get(&from_str), vertex_index.get(&to_str))
+            {
+              adj[fi].push(ti);
+              radj[ti].push(fi);
             }
+          }
+        }
 
-            // Pass 1: DFS on original graph to get finish order
-            let mut visited = vec![false; n];
-            let mut order: Vec<usize> = Vec::new();
-            for i in 0..n {
-              if !visited[i] {
-                let mut stack = vec![(i, false)];
-                while let Some((node, processed)) = stack.pop() {
-                  if processed {
-                    order.push(node);
-                    continue;
-                  }
-                  if visited[node] {
-                    continue;
-                  }
-                  visited[node] = true;
-                  stack.push((node, true));
-                  for &next in &adj[node] {
-                    if !visited[next] {
-                      stack.push((next, false));
-                    }
-                  }
-                }
-              }
-            }
-
-            // Pass 2: DFS on reverse graph in reverse finish order
-            let mut comp_id = vec![usize::MAX; n];
-            let mut components: Vec<Vec<usize>> = Vec::new();
-            for &node in order.iter().rev() {
-              if comp_id[node] != usize::MAX {
+        // Pass 1: DFS on original graph to get finish order
+        let mut visited = vec![false; n];
+        let mut order: Vec<usize> = Vec::new();
+        for i in 0..n {
+          if !visited[i] {
+            let mut stack = vec![(i, false)];
+            while let Some((node, processed)) = stack.pop() {
+              if processed {
+                order.push(node);
                 continue;
               }
-              let cid = components.len();
-              let mut component = Vec::new();
-              let mut stack = vec![node];
-              while let Some(v) = stack.pop() {
-                if comp_id[v] != usize::MAX {
-                  continue;
-                }
-                comp_id[v] = cid;
-                component.push(v);
-                for &prev in &radj[v] {
-                  if comp_id[prev] == usize::MAX {
-                    stack.push(prev);
-                  }
-                }
+              if visited[node] {
+                continue;
               }
-              components.push(component);
-            }
-
-            // Convert to Expr lists
-            components
-              .into_iter()
-              .map(|comp| {
-                comp.into_iter().map(|i| vertices[i].clone()).collect()
-              })
-              .collect::<Vec<Vec<Expr>>>()
-          } else {
-            // Undirected: Union-Find
-            let mut parent: Vec<usize> = (0..n).collect();
-            let mut uf_rank = vec![0usize; n];
-
-            fn find(parent: &mut Vec<usize>, i: usize) -> usize {
-              if parent[i] != i {
-                parent[i] = find(parent, parent[i]);
-              }
-              parent[i]
-            }
-
-            fn union(
-              parent: &mut Vec<usize>,
-              uf_rank: &mut Vec<usize>,
-              a: usize,
-              b: usize,
-            ) {
-              let ra = find(parent, a);
-              let rb = find(parent, b);
-              if ra == rb {
-                return;
-              }
-              if uf_rank[ra] < uf_rank[rb] {
-                parent[ra] = rb;
-              } else if uf_rank[ra] > uf_rank[rb] {
-                parent[rb] = ra;
-              } else {
-                parent[rb] = ra;
-                uf_rank[ra] += 1;
-              }
-            }
-
-            for edge in edges {
-              if let Expr::FunctionCall { args: eargs, .. } = edge {
-                if eargs.len() == 2 {
-                  let from_str = expr_to_string(&eargs[0]);
-                  let to_str = expr_to_string(&eargs[1]);
-                  if let (Some(&fi), Some(&ti)) =
-                    (vertex_index.get(&from_str), vertex_index.get(&to_str))
-                  {
-                    union(&mut parent, &mut uf_rank, fi, ti);
-                  }
+              visited[node] = true;
+              stack.push((node, true));
+              for &next in &adj[node] {
+                if !visited[next] {
+                  stack.push((next, false));
                 }
               }
             }
-
-            // Group vertices by their root, preserving insertion order
-            let mut components: Vec<Vec<Expr>> = Vec::new();
-            let mut root_to_idx: std::collections::HashMap<usize, usize> =
-              std::collections::HashMap::new();
-            for (i, v) in vertices.iter().enumerate() {
-              let root = find(&mut parent, i);
-              if let Some(&idx) = root_to_idx.get(&root) {
-                components[idx].push(v.clone());
-              } else {
-                let idx = components.len();
-                root_to_idx.insert(root, idx);
-                components.push(vec![v.clone()]);
-              }
-            }
-
-            // Sort components by size (largest first)
-            components.sort_by(|a, b| b.len().cmp(&a.len()));
-            components
-          };
-
-          return Ok(Expr::List(
-            comp_list.into_iter().map(Expr::List).collect(),
-          ));
+          }
         }
-      }
+
+        // Pass 2: DFS on reverse graph in reverse finish order
+        let mut comp_id = vec![usize::MAX; n];
+        let mut components: Vec<Vec<usize>> = Vec::new();
+        for &node in order.iter().rev() {
+          if comp_id[node] != usize::MAX {
+            continue;
+          }
+          let cid = components.len();
+          let mut component = Vec::new();
+          let mut stack = vec![node];
+          while let Some(v) = stack.pop() {
+            if comp_id[v] != usize::MAX {
+              continue;
+            }
+            comp_id[v] = cid;
+            component.push(v);
+            for &prev in &radj[v] {
+              if comp_id[prev] == usize::MAX {
+                stack.push(prev);
+              }
+            }
+          }
+          components.push(component);
+        }
+
+        // Convert to Expr lists
+        components
+          .into_iter()
+          .map(|comp| comp.into_iter().map(|i| vertices[i].clone()).collect())
+          .collect::<Vec<Vec<Expr>>>()
+      } else {
+        // Undirected: Union-Find
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut uf_rank = vec![0usize; n];
+
+        fn find(parent: &mut Vec<usize>, i: usize) -> usize {
+          if parent[i] != i {
+            parent[i] = find(parent, parent[i]);
+          }
+          parent[i]
+        }
+
+        fn union(
+          parent: &mut Vec<usize>,
+          uf_rank: &mut Vec<usize>,
+          a: usize,
+          b: usize,
+        ) {
+          let ra = find(parent, a);
+          let rb = find(parent, b);
+          if ra == rb {
+            return;
+          }
+          if uf_rank[ra] < uf_rank[rb] {
+            parent[ra] = rb;
+          } else if uf_rank[ra] > uf_rank[rb] {
+            parent[rb] = ra;
+          } else {
+            parent[rb] = ra;
+            uf_rank[ra] += 1;
+          }
+        }
+
+        for edge in edges {
+          if let Expr::FunctionCall { args: eargs, .. } = edge
+            && eargs.len() == 2
+          {
+            let from_str = expr_to_string(&eargs[0]);
+            let to_str = expr_to_string(&eargs[1]);
+            if let (Some(&fi), Some(&ti)) =
+              (vertex_index.get(&from_str), vertex_index.get(&to_str))
+            {
+              union(&mut parent, &mut uf_rank, fi, ti);
+            }
+          }
+        }
+
+        // Group vertices by their root, preserving insertion order
+        let mut components: Vec<Vec<Expr>> = Vec::new();
+        let mut root_to_idx: std::collections::HashMap<usize, usize> =
+          std::collections::HashMap::new();
+        for (i, v) in vertices.iter().enumerate() {
+          let root = find(&mut parent, i);
+          if let Some(&idx) = root_to_idx.get(&root) {
+            components[idx].push(v.clone());
+          } else {
+            let idx = components.len();
+            root_to_idx.insert(root, idx);
+            components.push(vec![v.clone()]);
+          }
+        }
+
+        // Sort components by size (largest first)
+        components.sort_by(|a, b| b.len().cmp(&a.len()));
+        components
+      };
+
+      return Ok(Expr::List(comp_list.into_iter().map(Expr::List).collect()));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
@@ -1794,97 +1779,91 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // PathGraph[{v1, v2, ...}] — create a path graph connecting sequential vertices
-  if name == "PathGraph" && args.len() == 1 {
-    if let Expr::List(verts) = &args[0] {
-      if verts.len() >= 2 {
-        let mut edges = Vec::new();
-        for i in 0..verts.len() - 1 {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![verts[i].clone(), verts[i + 1].clone()],
-          });
-        }
-        return Ok(Expr::FunctionCall {
-          name: "Graph".to_string(),
-          args: vec![Expr::List(verts.clone()), Expr::List(edges)],
-        });
-      }
+  if name == "PathGraph"
+    && args.len() == 1
+    && let Expr::List(verts) = &args[0]
+    && verts.len() >= 2
+  {
+    let mut edges = Vec::new();
+    for i in 0..verts.len() - 1 {
+      edges.push(Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![verts[i].clone(), verts[i + 1].clone()],
+      });
     }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(verts.clone()), Expr::List(edges)],
+    });
   }
 
   // VertexCount[Graph[verts, edges]] — number of vertices
-  if name == "VertexCount" && args.len() == 1 {
-    if let Expr::FunctionCall {
+  if name == "VertexCount"
+    && args.len() == 1
+    && let Expr::FunctionCall {
       name: gname,
       args: gargs,
     } = &args[0]
-    {
-      if gname == "Graph" && !gargs.is_empty() {
-        if let Expr::List(verts) = &gargs[0] {
-          return Ok(Expr::Integer(verts.len() as i128));
-        }
-      }
-    }
+    && gname == "Graph"
+    && !gargs.is_empty()
+    && let Expr::List(verts) = &gargs[0]
+  {
+    return Ok(Expr::Integer(verts.len() as i128));
   }
 
   // EdgeCount[Graph[verts, edges]] — number of edges
-  if name == "EdgeCount" && args.len() == 1 {
-    if let Expr::FunctionCall {
+  if name == "EdgeCount"
+    && args.len() == 1
+    && let Expr::FunctionCall {
       name: gname,
       args: gargs,
     } = &args[0]
-    {
-      if gname == "Graph" && gargs.len() >= 2 {
-        if let Expr::List(edges) = &gargs[1] {
-          return Ok(Expr::Integer(edges.len() as i128));
-        }
-      }
-    }
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let Expr::List(edges) = &gargs[1]
+  {
+    return Ok(Expr::Integer(edges.len() as i128));
   }
 
   // VertexDegree[graph] or VertexDegree[graph, vertex] — vertex degree(s)
-  if name == "VertexDegree" && (args.len() == 1 || args.len() == 2) {
-    if let Expr::FunctionCall {
+  if name == "VertexDegree"
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::FunctionCall {
       name: gname,
       args: gargs,
     } = &args[0]
-    {
-      if gname == "Graph" && gargs.len() >= 2 {
-        if let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1]) {
-          // Count degree for each vertex
-          let mut degrees = vec![0i128; verts.len()];
-          for edge in edges {
-            if let Expr::FunctionCall {
-              name: _ename,
-              args: eargs,
-            } = edge
-            {
-              if eargs.len() == 2 {
-                for (idx, v) in verts.iter().enumerate() {
-                  if expr_to_string(&eargs[0]) == expr_to_string(v)
-                    || expr_to_string(&eargs[1]) == expr_to_string(v)
-                  {
-                    degrees[idx] += 1;
-                  }
-                }
-              }
-            }
-          }
-          if args.len() == 2 {
-            // Single vertex
-            let target = expr_to_string(&args[1]);
-            for (idx, v) in verts.iter().enumerate() {
-              if expr_to_string(v) == target {
-                return Ok(Expr::Integer(degrees[idx]));
-              }
-            }
-          } else {
-            return Ok(Expr::List(
-              degrees.into_iter().map(Expr::Integer).collect(),
-            ));
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    // Count degree for each vertex
+    let mut degrees = vec![0i128; verts.len()];
+    for edge in edges {
+      if let Expr::FunctionCall {
+        name: _ename,
+        args: eargs,
+      } = edge
+        && eargs.len() == 2
+      {
+        for (idx, v) in verts.iter().enumerate() {
+          if expr_to_string(&eargs[0]) == expr_to_string(v)
+            || expr_to_string(&eargs[1]) == expr_to_string(v)
+          {
+            degrees[idx] += 1;
           }
         }
       }
+    }
+    if args.len() == 2 {
+      // Single vertex
+      let target = expr_to_string(&args[1]);
+      for (idx, v) in verts.iter().enumerate() {
+        if expr_to_string(v) == target {
+          return Ok(Expr::Integer(degrees[idx]));
+        }
+      }
+    } else {
+      return Ok(Expr::List(degrees.into_iter().map(Expr::Integer).collect()));
     }
   }
 
@@ -1894,37 +1873,36 @@ pub fn evaluate_function_call_ast_inner(
       name: gname,
       args: gargs,
     } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(verts) = &gargs[0]
     {
-      if gname == "Graph" && gargs.len() >= 2 {
-        if let Expr::List(verts) = &gargs[0] {
-          let n = verts.len();
-          if n == 0 {
-            return Ok(Expr::List(vec![]));
-          }
-          // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
-          // Snap coordinates near simple rational values (0, ±0.5, ±1) to
-          // eliminate platform-dependent ULP differences in f64 trig.
-          fn snap_coord(v: f64) -> f64 {
-            for &target in &[0.0, 0.5, -0.5, 1.0, -1.0] {
-              if (v - target).abs() < 1e-14 {
-                return target;
-              }
-            }
-            v
-          }
-          let coords: Vec<Expr> = (1..=n)
-            .map(|k| {
-              let angle = std::f64::consts::FRAC_PI_2
-                + (k as f64) * 2.0 * std::f64::consts::PI / (n as f64);
-              Expr::List(vec![
-                Expr::Real(snap_coord(angle.cos())),
-                Expr::Real(snap_coord(angle.sin())),
-              ])
-            })
-            .collect();
-          return Ok(Expr::List(coords));
-        }
+      let n = verts.len();
+      if n == 0 {
+        return Ok(Expr::List(vec![]));
       }
+      // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
+      // Snap coordinates near simple rational values (0, ±0.5, ±1) to
+      // eliminate platform-dependent ULP differences in f64 trig.
+      fn snap_coord(v: f64) -> f64 {
+        for &target in &[0.0, 0.5, -0.5, 1.0, -1.0] {
+          if (v - target).abs() < 1e-14 {
+            return target;
+          }
+        }
+        v
+      }
+      let coords: Vec<Expr> = (1..=n)
+        .map(|k| {
+          let angle = std::f64::consts::FRAC_PI_2
+            + (k as f64) * 2.0 * std::f64::consts::PI / (n as f64);
+          Expr::List(vec![
+            Expr::Real(snap_coord(angle.cos())),
+            Expr::Real(snap_coord(angle.sin())),
+          ])
+        })
+        .collect();
+      return Ok(Expr::List(coords));
     }
     // Return unevaluated for non-graph input
     return Ok(Expr::FunctionCall {
@@ -1934,46 +1912,49 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // FileExistsQ[path] — check if file/directory exists
-  if name == "FileExistsQ" && args.len() == 1 {
-    if let Expr::String(path) = &args[0] {
-      let exists = std::path::Path::new(path).exists();
-      return Ok(Expr::Identifier(
-        if exists { "True" } else { "False" }.to_string(),
-      ));
-    }
+  if name == "FileExistsQ"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    let exists = std::path::Path::new(path).exists();
+    return Ok(Expr::Identifier(
+      if exists { "True" } else { "False" }.to_string(),
+    ));
   }
 
   // DeleteFile[path] — delete a file
-  if name == "DeleteFile" && args.len() == 1 {
-    if let Expr::String(path) = &args[0] {
-      match std::fs::remove_file(path) {
-        Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
-        Err(e) => {
-          crate::emit_message(&format!(
-            "DeleteFile::nffil: File not found during DeleteFile[{}]. {}",
-            path, e
-          ));
-          return Ok(Expr::FunctionCall {
-            name: "$Failed".to_string(),
-            args: vec![],
-          });
-        }
+  if name == "DeleteFile"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    match std::fs::remove_file(path) {
+      Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
+      Err(e) => {
+        crate::emit_message(&format!(
+          "DeleteFile::nffil: File not found during DeleteFile[{}]. {}",
+          path, e
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "$Failed".to_string(),
+          args: vec![],
+        });
       }
     }
   }
 
   // DeleteMissing[list] — remove Missing[] elements from a list
-  if name == "DeleteMissing" && args.len() == 1 {
-    if let Expr::List(items) = &args[0] {
-      let filtered: Vec<Expr> = items
+  if name == "DeleteMissing"
+    && args.len() == 1
+    && let Expr::List(items) = &args[0]
+  {
+    let filtered: Vec<Expr> = items
         .iter()
         .filter(|item| {
           !matches!(item, Expr::FunctionCall { name, .. } if name == "Missing")
         })
         .cloned()
         .collect();
-      return Ok(Expr::List(filtered));
-    }
+    return Ok(Expr::List(filtered));
   }
 
   // PiecewiseExpand — expand certain functions into Piecewise form
@@ -2084,7 +2065,7 @@ pub fn evaluate_function_call_ast_inner(
           };
           return evaluate_expr_to_expr(&pw);
         }
-        "Clip" if fargs.len() >= 1 => {
+        "Clip" if !fargs.is_empty() => {
           let x = fargs[0].clone();
           let (lo, hi) = if fargs.len() >= 2 {
             if let Expr::List(bounds) = &fargs[1] {
@@ -2168,10 +2149,9 @@ pub fn evaluate_function_call_ast_inner(
             && j < matrix_vals[i].len()
             && j < matrix_vals.len()
             && i < matrix_vals[j].len()
+            && matrix_vals[i][j] != matrix_vals[j][i]
           {
-            if matrix_vals[i][j] != matrix_vals[j][i] {
-              is_symmetric = false;
-            }
+            is_symmetric = false;
           }
         }
       }
@@ -2205,41 +2185,42 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // MovingAverage[list, r] — simple moving average with window size r
-  if name == "MovingAverage" && args.len() == 2 {
-    if let (Expr::List(items), Some(r)) = (
+  if name == "MovingAverage"
+    && args.len() == 2
+    && let (Expr::List(items), Some(r)) = (
       &args[0],
       match &args[1] {
         Expr::Integer(n) if *n >= 1 => Some(*n as usize),
         _ => None,
       },
-    ) {
-      let n = items.len();
-      if r > n {
-        crate::emit_message(&format!(
-          "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
-          r, n
-        ));
-        return Ok(Expr::FunctionCall {
-          name: name.to_string(),
-          args: args.to_vec(),
-        });
-      }
-      let mut result = Vec::with_capacity(n - r + 1);
-      for i in 0..=(n - r) {
-        let window: Vec<Expr> = items[i..i + r].to_vec();
-        let sum = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: window,
-        };
-        let avg = Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(sum),
-          right: Box::new(Expr::Integer(r as i128)),
-        };
-        result.push(evaluate_expr_to_expr(&avg)?);
-      }
-      return Ok(Expr::List(result));
+    )
+  {
+    let n = items.len();
+    if r > n {
+      crate::emit_message(&format!(
+        "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
+        r, n
+      ));
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
     }
+    let mut result = Vec::with_capacity(n - r + 1);
+    for i in 0..=(n - r) {
+      let window: Vec<Expr> = items[i..i + r].to_vec();
+      let sum = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: window,
+      };
+      let avg = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(sum),
+        right: Box::new(Expr::Integer(r as i128)),
+      };
+      result.push(evaluate_expr_to_expr(&avg)?);
+    }
+    return Ok(Expr::List(result));
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle
@@ -2383,13 +2364,14 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // FirstCase[x, y] returns Missing["NotFound"] when x is not a list
-  if name == "FirstCase" && args.len() == 2 {
-    if !matches!(&args[0], Expr::List(_)) {
-      return Ok(Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![Expr::String("NotFound".to_string())],
-      });
-    }
+  if name == "FirstCase"
+    && args.len() == 2
+    && !matches!(&args[0], Expr::List(_))
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotFound".to_string())],
+    });
   }
 
   // Neural network layer/model functions return $Failed for invalid arguments
@@ -3027,68 +3009,67 @@ fn blend_two_rational(
 /// FunctionInterpolation[expr, {x, xmin, xmax}] — sample a function and build
 /// an InterpolatingFunction with cubic spline interpolation.
 fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if let Expr::List(spec) = &args[1] {
-    if spec.len() == 3 {
-      if let Expr::Identifier(var_name) = &spec[0] {
-        // Force numeric evaluation of bounds
-        let xmin_n = Expr::FunctionCall {
-          name: "N".to_string(),
-          args: vec![spec[1].clone()],
-        };
-        let xmax_n = Expr::FunctionCall {
-          name: "N".to_string(),
-          args: vec![spec[2].clone()],
-        };
-        let xmin_expr = crate::evaluator::evaluate_expr_to_expr(&xmin_n);
-        let xmax_expr = crate::evaluator::evaluate_expr_to_expr(&xmax_n);
-        if let (Ok(xmin_e), Ok(xmax_e)) = (&xmin_expr, &xmax_expr) {
-          let xmin = match xmin_e {
-            Expr::Integer(n) => Some(*n as f64),
-            Expr::Real(f) => Some(*f),
-            _ => None,
-          };
-          let xmax = match xmax_e {
-            Expr::Integer(n) => Some(*n as f64),
-            Expr::Real(f) => Some(*f),
-            _ => None,
-          };
-          if let (Some(xmin), Some(xmax)) = (xmin, xmax) {
-            let n_points = 65;
-            let dx = (xmax - xmin) / (n_points - 1) as f64;
-            let mut data_points = Vec::with_capacity(n_points);
-            let body = &args[0];
+  if let Expr::List(spec) = &args[1]
+    && spec.len() == 3
+    && let Expr::Identifier(var_name) = &spec[0]
+  {
+    // Force numeric evaluation of bounds
+    let xmin_n = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![spec[1].clone()],
+    };
+    let xmax_n = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![spec[2].clone()],
+    };
+    let xmin_expr = crate::evaluator::evaluate_expr_to_expr(&xmin_n);
+    let xmax_expr = crate::evaluator::evaluate_expr_to_expr(&xmax_n);
+    if let (Ok(xmin_e), Ok(xmax_e)) = (&xmin_expr, &xmax_expr) {
+      let xmin = match xmin_e {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(f) => Some(*f),
+        _ => None,
+      };
+      let xmax = match xmax_e {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(f) => Some(*f),
+        _ => None,
+      };
+      if let (Some(xmin), Some(xmax)) = (xmin, xmax) {
+        let n_points = 65;
+        let dx = (xmax - xmin) / (n_points - 1) as f64;
+        let mut data_points = Vec::with_capacity(n_points);
+        let body = &args[0];
 
-            for i in 0..n_points {
-              let x_val = xmin + i as f64 * dx;
-              let x_expr = Expr::Real(x_val);
-              let substituted =
-                crate::syntax::substitute_variable(body, var_name, &x_expr);
-              if let Ok(y_expr) =
-                crate::evaluator::evaluate_expr_to_expr(&substituted)
-              {
-                let y_val = match &y_expr {
-                  Expr::Integer(n) => Some(*n as f64),
-                  Expr::Real(f) => Some(*f),
-                  _ => None,
-                };
-                if let Some(y) = y_val {
-                  data_points
-                    .push(Expr::List(vec![Expr::Real(x_val), Expr::Real(y)]));
-                }
-              }
-            }
-
-            if data_points.len() >= 2 {
-              let domain = Expr::List(vec![Expr::List(vec![
-                Expr::Real(xmin),
-                Expr::Real(xmax),
-              ])]);
-              return Ok(Expr::FunctionCall {
-                name: "InterpolatingFunction".to_string(),
-                args: vec![domain, Expr::List(data_points), Expr::Integer(3)],
-              });
+        for i in 0..n_points {
+          let x_val = xmin + i as f64 * dx;
+          let x_expr = Expr::Real(x_val);
+          let substituted =
+            crate::syntax::substitute_variable(body, var_name, &x_expr);
+          if let Ok(y_expr) =
+            crate::evaluator::evaluate_expr_to_expr(&substituted)
+          {
+            let y_val = match &y_expr {
+              Expr::Integer(n) => Some(*n as f64),
+              Expr::Real(f) => Some(*f),
+              _ => None,
+            };
+            if let Some(y) = y_val {
+              data_points
+                .push(Expr::List(vec![Expr::Real(x_val), Expr::Real(y)]));
             }
           }
+        }
+
+        if data_points.len() >= 2 {
+          let domain = Expr::List(vec![Expr::List(vec![
+            Expr::Real(xmin),
+            Expr::Real(xmax),
+          ])]);
+          return Ok(Expr::FunctionCall {
+            name: "InterpolatingFunction".to_string(),
+            args: vec![domain, Expr::List(data_points), Expr::Integer(3)],
+          });
         }
       }
     }

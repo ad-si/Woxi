@@ -1060,11 +1060,10 @@ fn collect_dirac_like_terms(terms: Vec<Expr>) -> Vec<Expr> {
             name: n,
             args: inner,
           } = a
+            && n == "Times"
           {
-            if n == "Times" {
-              flat.extend(inner.iter().cloned());
-              continue;
-            }
+            flat.extend(inner.iter().cloned());
+            continue;
           }
           flat.push(a.clone());
         }
@@ -1096,7 +1095,7 @@ fn collect_dirac_like_terms(terms: Vec<Expr>) -> Vec<Expr> {
 
     let base_key = base_parts
       .iter()
-      .map(|e| crate::syntax::expr_to_string(e))
+      .map(crate::syntax::expr_to_string)
       .collect::<Vec<_>>()
       .join("*");
 
@@ -1434,43 +1433,43 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
 fn match_neg_a_t_squared(exp: &Expr, t: &str) -> Option<Expr> {
   // After normalization, -t^2 might appear as Times[-1, Power[t, 2]]
   // and -a*t^2 as Times[-1, a, Power[t, 2]] or Times[Times[-1, a], Power[t, 2]]
-  if let Some((fname, fargs)) = as_func_args(exp) {
-    if fname == "Times" {
-      // Find t^2 factor and collect the rest
-      let mut t_sq_idx = None;
-      for (i, arg) in fargs.iter().enumerate() {
-        if let Some(("Power", pargs)) = as_func_args(arg)
-          && pargs.len() == 2
-          && let Expr::Identifier(v) = pargs[0]
-          && v == t
-          && matches!(pargs[1], Expr::Integer(2))
-        {
-          t_sq_idx = Some(i);
-          break;
-        }
+  if let Some((fname, fargs)) = as_func_args(exp)
+    && fname == "Times"
+  {
+    // Find t^2 factor and collect the rest
+    let mut t_sq_idx = None;
+    for (i, arg) in fargs.iter().enumerate() {
+      if let Some(("Power", pargs)) = as_func_args(arg)
+        && pargs.len() == 2
+        && let Expr::Identifier(v) = pargs[0]
+        && v == t
+        && matches!(pargs[1], Expr::Integer(2))
+      {
+        t_sq_idx = Some(i);
+        break;
       }
-      if let Some(idx) = t_sq_idx {
-        let rest: Vec<_> = fargs
-          .iter()
-          .enumerate()
-          .filter(|(i, _)| *i != idx)
-          .map(|(_, a)| (*a).clone())
-          .collect();
-        if rest.iter().all(|a| !depends_on(a, t)) {
-          // The coefficient of t^2 is the product of rest
-          // We need it to be negative (i.e. -a where a > 0)
-          // Return a = -coefficient
-          let coeff = if rest.len() == 1 {
-            rest[0].clone()
-          } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: rest,
-            }
-          };
-          // a = -coeff (negate)
-          return Some(make_times(vec![Expr::Integer(-1), coeff]));
-        }
+    }
+    if let Some(idx) = t_sq_idx {
+      let rest: Vec<_> = fargs
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != idx)
+        .map(|(_, a)| (*a).clone())
+        .collect();
+      if rest.iter().all(|a| !depends_on(a, t)) {
+        // The coefficient of t^2 is the product of rest
+        // We need it to be negative (i.e. -a where a > 0)
+        // Return a = -coefficient
+        let coeff = if rest.len() == 1 {
+          rest[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest,
+          }
+        };
+        // a = -coeff (negate)
+        return Some(make_times(vec![Expr::Integer(-1), coeff]));
       }
     }
   }
@@ -1479,38 +1478,38 @@ fn match_neg_a_t_squared(exp: &Expr, t: &str) -> Option<Expr> {
 
 /// Match exponent of form -a*Abs[t] and return a.
 fn match_neg_a_abs_t(exp: &Expr, t: &str) -> Option<Expr> {
-  if let Some((fname, fargs)) = as_func_args(exp) {
-    if fname == "Times" {
-      // Find Abs[t] factor
-      let mut abs_idx = None;
-      for (i, arg) in fargs.iter().enumerate() {
-        if let Some(("Abs", aargs)) = as_func_args(arg)
-          && aargs.len() == 1
-          && let Expr::Identifier(v) = aargs[0]
-          && v == t
-        {
-          abs_idx = Some(i);
-          break;
-        }
+  if let Some((fname, fargs)) = as_func_args(exp)
+    && fname == "Times"
+  {
+    // Find Abs[t] factor
+    let mut abs_idx = None;
+    for (i, arg) in fargs.iter().enumerate() {
+      if let Some(("Abs", aargs)) = as_func_args(arg)
+        && aargs.len() == 1
+        && let Expr::Identifier(v) = aargs[0]
+        && v == t
+      {
+        abs_idx = Some(i);
+        break;
       }
-      if let Some(idx) = abs_idx {
-        let rest: Vec<_> = fargs
-          .iter()
-          .enumerate()
-          .filter(|(i, _)| *i != idx)
-          .map(|(_, a)| (*a).clone())
-          .collect();
-        if rest.iter().all(|a| !depends_on(a, t)) {
-          let coeff = if rest.len() == 1 {
-            rest[0].clone()
-          } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: rest,
-            }
-          };
-          return Some(make_times(vec![Expr::Integer(-1), coeff]));
-        }
+    }
+    if let Some(idx) = abs_idx {
+      let rest: Vec<_> = fargs
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != idx)
+        .map(|(_, a)| (*a).clone())
+        .collect();
+      if rest.iter().all(|a| !depends_on(a, t)) {
+        let coeff = if rest.len() == 1 {
+          rest[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest,
+          }
+        };
+        return Some(make_times(vec![Expr::Integer(-1), coeff]));
       }
     }
   }
@@ -1583,30 +1582,28 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
     if fname == "Power" && fargs.len() == 2 {
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
-      if is_e {
-        if let Some(a) = match_neg_a_t_squared(fargs[1], w) {
-          // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
-          return Some(make_times(vec![
-            make_power(
-              Expr::Constant("E".to_string()),
-              make_times(vec![
+      if is_e && let Some(a) = match_neg_a_t_squared(fargs[1], w) {
+        // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
+        return Some(make_times(vec![
+          make_power(
+            Expr::Constant("E".to_string()),
+            make_times(vec![
+              Expr::Integer(-1),
+              make_power(t.clone(), Expr::Integer(2)),
+              make_power(
+                make_times(vec![Expr::Integer(4), a.clone()]),
                 Expr::Integer(-1),
-                make_power(t.clone(), Expr::Integer(2)),
-                make_power(
-                  make_times(vec![Expr::Integer(4), a.clone()]),
-                  Expr::Integer(-1),
-                ),
-              ]),
-            ),
-            make_power(
-              make_times(vec![Expr::Integer(2), a]),
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(-1), Expr::Integer(2)],
-              },
-            ),
-          ]));
-        }
+              ),
+            ]),
+          ),
+          make_power(
+            make_times(vec![Expr::Integer(2), a]),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(-1), Expr::Integer(2)],
+            },
+          ),
+        ]));
       }
     }
 
@@ -1794,7 +1791,7 @@ fn collect_domain_constraints(
     // Log[x] → x > 0
     Expr::FunctionCall { name, args }
       if (name == "Log" || name == "Log2" || name == "Log10")
-        && args.len() >= 1 =>
+        && !args.is_empty() =>
     {
       let arg = args.last().unwrap();
       for a in args {
@@ -1845,26 +1842,139 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
     operands,
     operators,
   } = constraint
+    && operands.len() == 2
+    && operators.len() == 1
   {
-    if operands.len() == 2 && operators.len() == 1 {
-      let lhs = &operands[0];
-      let rhs = &operands[1];
-      let op = &operators[0];
+    let lhs = &operands[0];
+    let rhs = &operands[1];
+    let op = &operators[0];
 
-      match op {
-        ComparisonOp::NotEqual => {
-          // Try to solve lhs == rhs for roots
-          let diff = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
-            left: Box::new(lhs.clone()),
-            right: Box::new(rhs.clone()),
+    match op {
+      ComparisonOp::NotEqual => {
+        // Try to solve lhs == rhs for roots
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(lhs.clone()),
+          right: Box::new(rhs.clone()),
+        };
+        let diff_eval =
+          crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
+
+        // Use Solve to find roots
+        let eq = Expr::Comparison {
+          operands: vec![diff_eval, Expr::Integer(0)],
+          operators: vec![ComparisonOp::Equal],
+        };
+        let var_expr = Expr::Identifier(var.to_string());
+        crate::push_quiet();
+        let solve_result =
+          crate::functions::polynomial_ast::solve::solve_ast(&[
+            eq,
+            var_expr.clone(),
+          ]);
+        crate::pop_quiet();
+
+        if let Ok(Expr::List(ref solutions)) = solve_result {
+          // Extract numeric root values
+          let mut roots: Vec<f64> = Vec::new();
+          let mut root_exprs: Vec<Expr> = Vec::new();
+          for sol in solutions {
+            if let Expr::List(rules) = sol
+              && rules.len() == 1
+            {
+              if let Expr::Rule { replacement, .. } = &rules[0] {
+                if let Some(val) = expr_to_f64(replacement) {
+                  roots.push(val);
+                  root_exprs.push(replacement.as_ref().clone());
+                }
+              } else if let Expr::FunctionCall { name, args } = &rules[0]
+                && name == "Rule"
+                && args.len() == 2
+                && let Some(val) = expr_to_f64(&args[1])
+              {
+                roots.push(val);
+                root_exprs.push(args[1].clone());
+              }
+            }
+          }
+
+          if !roots.is_empty() {
+            // Sort roots
+            let mut indexed: Vec<(f64, Expr)> =
+              roots.into_iter().zip(root_exprs).collect();
+            indexed.sort_by(|a, b| {
+              a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Build interval complement: x < r1 || r1 < x < r2 || ... || x > rN
+            let mut intervals: Vec<Expr> = Vec::new();
+
+            // x < first root
+            intervals.push(Expr::Comparison {
+              operands: vec![var_expr.clone(), indexed[0].1.clone()],
+              operators: vec![ComparisonOp::Less],
+            });
+
+            // Between consecutive roots: ri < x < r(i+1)
+            for i in 0..indexed.len() - 1 {
+              intervals.push(Expr::FunctionCall {
+                name: "Inequality".to_string(),
+                args: vec![
+                  indexed[i].1.clone(),
+                  Expr::Identifier("Less".to_string()),
+                  var_expr.clone(),
+                  Expr::Identifier("Less".to_string()),
+                  indexed[i + 1].1.clone(),
+                ],
+              });
+            }
+
+            // x > last root
+            intervals.push(Expr::Comparison {
+              operands: vec![
+                var_expr.clone(),
+                indexed.last().unwrap().1.clone(),
+              ],
+              operators: vec![ComparisonOp::Greater],
+            });
+
+            if intervals.len() == 1 {
+              return intervals.pop().unwrap();
+            }
+            return Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: intervals,
+            };
+          }
+        }
+
+        // Fallback: simple x != value case
+        if matches!(lhs, Expr::Identifier(name) if name == var) {
+          return Expr::FunctionCall {
+            name: "Or".to_string(),
+            args: vec![
+              Expr::Comparison {
+                operands: vec![lhs.clone(), rhs.clone()],
+                operators: vec![ComparisonOp::Less],
+              },
+              Expr::Comparison {
+                operands: vec![lhs.clone(), rhs.clone()],
+                operators: vec![ComparisonOp::Greater],
+              },
+            ],
           };
-          let diff_eval =
-            crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
-
-          // Use Solve to find roots
+        }
+      }
+      ComparisonOp::GreaterEqual
+      | ComparisonOp::Greater
+      | ComparisonOp::LessEqual
+      | ComparisonOp::Less => {
+        // Try to solve for x: isolate x by solving lhs - rhs == 0
+        // then adjust the inequality
+        if contains_variable(lhs, var) && !contains_variable(rhs, var) {
+          // Try to solve lhs = value for x
           let eq = Expr::Comparison {
-            operands: vec![diff_eval, Expr::Integer(0)],
+            operands: vec![lhs.clone(), rhs.clone()],
             operators: vec![ComparisonOp::Equal],
           };
           let var_expr = Expr::Identifier(var.to_string());
@@ -1876,149 +1986,34 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
             ]);
           crate::pop_quiet();
 
-          if let Ok(Expr::List(ref solutions)) = solve_result {
-            // Extract numeric root values
-            let mut roots: Vec<f64> = Vec::new();
-            let mut root_exprs: Vec<Expr> = Vec::new();
-            for sol in solutions {
-              if let Expr::List(rules) = sol {
-                if rules.len() == 1 {
-                  if let Expr::Rule { replacement, .. } = &rules[0] {
-                    if let Some(val) = expr_to_f64(replacement) {
-                      roots.push(val);
-                      root_exprs.push(replacement.as_ref().clone());
-                    }
-                  } else if let Expr::FunctionCall { name, args } = &rules[0] {
-                    if name == "Rule" && args.len() == 2 {
-                      if let Some(val) = expr_to_f64(&args[1]) {
-                        roots.push(val);
-                        root_exprs.push(args[1].clone());
-                      }
-                    }
-                  }
-                }
+          if let Ok(Expr::List(ref solutions)) = solve_result
+            && solutions.len() == 1
+            && let Expr::List(rules) = &solutions[0]
+            && rules.len() == 1
+          {
+            let value = match &rules[0] {
+              Expr::Rule { replacement, .. } => {
+                Some(replacement.as_ref().clone())
               }
-            }
-
-            if !roots.is_empty() {
-              // Sort roots
-              let mut indexed: Vec<(f64, Expr)> =
-                roots.into_iter().zip(root_exprs).collect();
-              indexed.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-              });
-
-              // Build interval complement: x < r1 || r1 < x < r2 || ... || x > rN
-              let mut intervals: Vec<Expr> = Vec::new();
-
-              // x < first root
-              intervals.push(Expr::Comparison {
-                operands: vec![var_expr.clone(), indexed[0].1.clone()],
-                operators: vec![ComparisonOp::Less],
-              });
-
-              // Between consecutive roots: ri < x < r(i+1)
-              for i in 0..indexed.len() - 1 {
-                intervals.push(Expr::FunctionCall {
-                  name: "Inequality".to_string(),
-                  args: vec![
-                    indexed[i].1.clone(),
-                    Expr::Identifier("Less".to_string()),
-                    var_expr.clone(),
-                    Expr::Identifier("Less".to_string()),
-                    indexed[i + 1].1.clone(),
-                  ],
-                });
+              Expr::FunctionCall { name, args }
+                if name == "Rule" && args.len() == 2 =>
+              {
+                Some(args[1].clone())
               }
-
-              // x > last root
-              intervals.push(Expr::Comparison {
-                operands: vec![
-                  var_expr.clone(),
-                  indexed.last().unwrap().1.clone(),
-                ],
-                operators: vec![ComparisonOp::Greater],
-              });
-
-              if intervals.len() == 1 {
-                return intervals.pop().unwrap();
-              }
-              return Expr::FunctionCall {
-                name: "Or".to_string(),
-                args: intervals,
+              _ => None,
+            };
+            if let Some(val) = value {
+              // Check if the coefficient of x is positive (preserve direction)
+              // For simple cases, just return x op val
+              return Expr::Comparison {
+                operands: vec![var_expr, val],
+                operators: vec![*op],
               };
             }
           }
-
-          // Fallback: simple x != value case
-          if matches!(lhs, Expr::Identifier(name) if name == var) {
-            return Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: vec![
-                Expr::Comparison {
-                  operands: vec![lhs.clone(), rhs.clone()],
-                  operators: vec![ComparisonOp::Less],
-                },
-                Expr::Comparison {
-                  operands: vec![lhs.clone(), rhs.clone()],
-                  operators: vec![ComparisonOp::Greater],
-                },
-              ],
-            };
-          }
         }
-        ComparisonOp::GreaterEqual
-        | ComparisonOp::Greater
-        | ComparisonOp::LessEqual
-        | ComparisonOp::Less => {
-          // Try to solve for x: isolate x by solving lhs - rhs == 0
-          // then adjust the inequality
-          if contains_variable(lhs, var) && !contains_variable(rhs, var) {
-            // Try to solve lhs = value for x
-            let eq = Expr::Comparison {
-              operands: vec![lhs.clone(), rhs.clone()],
-              operators: vec![ComparisonOp::Equal],
-            };
-            let var_expr = Expr::Identifier(var.to_string());
-            crate::push_quiet();
-            let solve_result =
-              crate::functions::polynomial_ast::solve::solve_ast(&[
-                eq,
-                var_expr.clone(),
-              ]);
-            crate::pop_quiet();
-
-            if let Ok(Expr::List(ref solutions)) = solve_result {
-              if solutions.len() == 1 {
-                if let Expr::List(rules) = &solutions[0] {
-                  if rules.len() == 1 {
-                    let value = match &rules[0] {
-                      Expr::Rule { replacement, .. } => {
-                        Some(replacement.as_ref().clone())
-                      }
-                      Expr::FunctionCall { name, args }
-                        if name == "Rule" && args.len() == 2 =>
-                      {
-                        Some(args[1].clone())
-                      }
-                      _ => None,
-                    };
-                    if let Some(val) = value {
-                      // Check if the coefficient of x is positive (preserve direction)
-                      // For simple cases, just return x op val
-                      return Expr::Comparison {
-                        operands: vec![var_expr, val],
-                        operators: vec![op.clone()],
-                      };
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        _ => {}
       }
+      _ => {}
     }
   }
 
@@ -2078,10 +2073,11 @@ fn generating_function(
     Expr::Identifier(name) => name.as_str(),
     // Multivariate: GeneratingFunction[a, {n, m}, {x, y}]
     Expr::List(ns) => {
-      if let Expr::List(xs) = x_expr {
-        if ns.len() == xs.len() && ns.len() >= 2 {
-          return generating_function_multivariate(expr, ns, xs);
-        }
+      if let Expr::List(xs) = x_expr
+        && ns.len() == xs.len()
+        && ns.len() >= 2
+      {
+        return generating_function_multivariate(expr, ns, xs);
       }
       return Ok(Expr::FunctionCall {
         name: "GeneratingFunction".to_string(),
@@ -2119,17 +2115,17 @@ fn generating_function_multivariate(
     let x_var = &xs[i];
     result = generating_function(&result, n_var, x_var)?;
     // If it came back unevaluated, we can't continue
-    if let Expr::FunctionCall { ref name, .. } = result {
-      if name == "GeneratingFunction" {
-        return Ok(Expr::FunctionCall {
-          name: "GeneratingFunction".to_string(),
-          args: vec![
-            expr.clone(),
-            Expr::List(ns.to_vec()),
-            Expr::List(xs.to_vec()),
-          ],
-        });
-      }
+    if let Expr::FunctionCall { ref name, .. } = result
+      && name == "GeneratingFunction"
+    {
+      return Ok(Expr::FunctionCall {
+        name: "GeneratingFunction".to_string(),
+        args: vec![
+          expr.clone(),
+          Expr::List(ns.to_vec()),
+          Expr::List(xs.to_vec()),
+        ],
+      });
     }
   }
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -2182,10 +2178,9 @@ fn gf_inner(
     left,
     right,
   } = expr
+    && let Some(result) = gf_divide(left, right, n, x)?
   {
-    if let Some(result) = gf_divide(left, right, n, x)? {
-      return Ok(Some(result));
-    }
+    return Ok(Some(result));
   }
 
   // Handle Minus: a - b => a + (-b)
@@ -2235,65 +2230,62 @@ fn gf_inner(
     name: fname,
     args: fargs,
   } = expr
+    && fargs.len() == 1
+    && let Some((shift, inner_var)) = extract_shift(&fargs[0], n)
+    && shift > 0
   {
-    if fargs.len() == 1 {
-      if let Some((shift, inner_var)) = extract_shift(&fargs[0], n) {
-        if shift > 0 {
-          // GeneratingFunction[f[n+k], n, x] = (1/x^k) * (GF[f[n],n,x] - Sum[f[i]*x^i, {i,0,k-1}])
-          let base_expr = Expr::FunctionCall {
-            name: fname.clone(),
-            args: vec![Expr::Identifier(inner_var.to_string())],
-          };
-          let gf_base = Expr::FunctionCall {
-            name: "GeneratingFunction".to_string(),
-            args: vec![base_expr, Expr::Identifier(n.to_string()), x.clone()],
-          };
-          // Subtract the first k terms
-          let mut subtract_terms = Vec::new();
-          for i in 0..shift {
-            let fi = Expr::FunctionCall {
-              name: fname.clone(),
-              args: vec![Expr::Integer(i as i128)],
-            };
-            let term = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(fi),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(x.clone()),
-                right: Box::new(Expr::Integer(i as i128)),
-              }),
-            };
-            subtract_terms.push(term);
-          }
-          let subtracted =
-            subtract_terms.into_iter().reduce(|acc, t| Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(acc),
-              right: Box::new(t),
-            });
-          let numerator = if let Some(sub) = subtracted {
-            Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(gf_base),
-              right: Box::new(sub),
-            }
-          } else {
-            gf_base
-          };
-          let result = Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(numerator),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(shift as i128)),
-            }),
-          };
-          return Ok(Some(result));
-        }
-      }
+    // GeneratingFunction[f[n+k], n, x] = (1/x^k) * (GF[f[n],n,x] - Sum[f[i]*x^i, {i,0,k-1}])
+    let base_expr = Expr::FunctionCall {
+      name: fname.clone(),
+      args: vec![Expr::Identifier(inner_var.to_string())],
+    };
+    let gf_base = Expr::FunctionCall {
+      name: "GeneratingFunction".to_string(),
+      args: vec![base_expr, Expr::Identifier(n.to_string()), x.clone()],
+    };
+    // Subtract the first k terms
+    let mut subtract_terms = Vec::new();
+    for i in 0..shift {
+      let fi = Expr::FunctionCall {
+        name: fname.clone(),
+        args: vec![Expr::Integer(i as i128)],
+      };
+      let term = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(fi),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(Expr::Integer(i as i128)),
+        }),
+      };
+      subtract_terms.push(term);
     }
+    let subtracted =
+      subtract_terms.into_iter().reduce(|acc, t| Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(acc),
+        right: Box::new(t),
+      });
+    let numerator = if let Some(sub) = subtracted {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(gf_base),
+        right: Box::new(sub),
+      }
+    } else {
+      gf_base
+    };
+    let result = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(shift as i128)),
+      }),
+    };
+    return Ok(Some(result));
   }
 
   Ok(None)
@@ -2309,37 +2301,33 @@ fn extract_shift<'a>(expr: &'a Expr, var: &str) -> Option<(i64, &'a str)> {
       left,
       right,
     } => {
-      if let Expr::Identifier(name) = left.as_ref() {
-        if name == var {
-          if let Expr::Integer(k) = right.as_ref() {
-            return Some((*k as i64, name.as_str()));
-          }
-        }
+      if let Expr::Identifier(name) = left.as_ref()
+        && name == var
+        && let Expr::Integer(k) = right.as_ref()
+      {
+        return Some((*k as i64, name.as_str()));
       }
-      if let Expr::Identifier(name) = right.as_ref() {
-        if name == var {
-          if let Expr::Integer(k) = left.as_ref() {
-            return Some((*k as i64, name.as_str()));
-          }
-        }
+      if let Expr::Identifier(name) = right.as_ref()
+        && name == var
+        && let Expr::Integer(k) = left.as_ref()
+      {
+        return Some((*k as i64, name.as_str()));
       }
       None
     }
     // Handle FunctionCall Plus[k, n] form
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
-      if let Expr::Identifier(id) = &args[0] {
-        if id == var {
-          if let Expr::Integer(k) = &args[1] {
-            return Some((*k as i64, id.as_str()));
-          }
-        }
+      if let Expr::Identifier(id) = &args[0]
+        && id == var
+        && let Expr::Integer(k) = &args[1]
+      {
+        return Some((*k as i64, id.as_str()));
       }
-      if let Expr::Identifier(id) = &args[1] {
-        if id == var {
-          if let Expr::Integer(k) = &args[0] {
-            return Some((*k as i64, id.as_str()));
-          }
-        }
+      if let Expr::Identifier(id) = &args[1]
+        && id == var
+        && let Expr::Integer(k) = &args[0]
+      {
+        return Some((*k as i64, id.as_str()));
       }
       None
     }
@@ -2375,53 +2363,51 @@ fn gf_power(
   }
 
   // Case: n^k where k is a positive integer => Eulerian number formula
-  if matches!(base, Expr::Identifier(name) if name == n) && !depends_on(exp, n)
+  if matches!(base, Expr::Identifier(name) if name == n)
+    && !depends_on(exp, n)
+    && let Expr::Integer(k) = exp
   {
-    if let Expr::Integer(k) = exp {
-      let k = *k;
-      if k >= 2 {
-        return gf_n_power_k(k, x);
-      }
+    let k = *k;
+    if k >= 2 {
+      return gf_n_power_k(k, x);
     }
   }
 
   // Case: Power[Factorial[n], -1] => 1/n! => E^x
-  if let Expr::Integer(-1) = exp {
-    if let Expr::FunctionCall { name, args } = base {
-      if name == "Factorial" && args.len() == 1 {
-        if matches!(&args[0], Expr::Identifier(var) if var == n) {
-          return Ok(Some(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Constant("E".to_string())),
-            right: Box::new(x.clone()),
-          }));
-        }
-      }
-    }
+  if let Expr::Integer(-1) = exp
+    && let Expr::FunctionCall { name, args } = base
+    && name == "Factorial"
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(var) if var == n)
+  {
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::Constant("E".to_string())),
+      right: Box::new(x.clone()),
+    }));
   }
 
   // Case: Power[Factorial[n], -2] => 1/(n!)^2 => BesselI[0, 2*Sqrt[x]]
-  if let Expr::Integer(-2) = exp {
-    if let Expr::FunctionCall { name, args } = base {
-      if name == "Factorial" && args.len() == 1 {
-        if matches!(&args[0], Expr::Identifier(var) if var == n) {
-          return Ok(Some(Expr::FunctionCall {
-            name: "BesselI".to_string(),
-            args: vec![
-              Expr::Integer(0),
-              Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(2)),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![x.clone()],
-                }),
-              },
-            ],
-          }));
-        }
-      }
-    }
+  if let Expr::Integer(-2) = exp
+    && let Expr::FunctionCall { name, args } = base
+    && name == "Factorial"
+    && args.len() == 1
+    && matches!(&args[0], Expr::Identifier(var) if var == n)
+  {
+    return Ok(Some(Expr::FunctionCall {
+      name: "BesselI".to_string(),
+      args: vec![
+        Expr::Integer(0),
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![x.clone()],
+          }),
+        },
+      ],
+    }));
   }
 
   Ok(None)
@@ -2676,10 +2662,11 @@ fn gf_times(
   };
 
   // Try specific combined patterns like (-1)^n which is Power[-1, n]
-  if let Some((fname, fargs)) = as_func_args(&recombined) {
-    if fname == "Power" && fargs.len() == 2 {
-      return gf_power(fargs[0], fargs[1], n, x);
-    }
+  if let Some((fname, fargs)) = as_func_args(&recombined)
+    && fname == "Power"
+    && fargs.len() == 2
+  {
+    return gf_power(fargs[0], fargs[1], n, x);
   }
 
   Ok(None)
@@ -2717,27 +2704,26 @@ fn gf_binomial(
   // Binomial[n, k] where k is constant: x^k/(1-x)^(k+1)
   if matches!(top, Expr::Identifier(name) if name == n)
     && !depends_on(bottom, n)
+    && let Expr::Integer(k) = bottom
   {
-    if let Expr::Integer(k) = bottom {
-      // x^k / (1-x)^(k+1)
-      return Ok(Some(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
+    // x^k / (1-x)^(k+1)
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(*k)),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
         left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(x.clone()),
-          right: Box::new(Expr::Integer(*k)),
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(x.clone()),
         }),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(x.clone()),
-          }),
-          right: Box::new(Expr::Integer(k + 1)),
-        }),
-      }));
-    }
+        right: Box::new(Expr::Integer(k + 1)),
+      }),
+    }));
   }
 
   // Binomial[2n, n] => 1/Sqrt[1-4x]
@@ -2746,31 +2732,32 @@ fn gf_binomial(
   }
   if matches!(bottom, Expr::Identifier(name) if name == n) {
     // Check if top is 2*n
-    if let Some((fname, fargs)) = as_func_args(top) {
-      if fname == "Times" && fargs.len() == 2 {
-        let is_2n = (matches!(fargs[0], Expr::Integer(2))
-          && matches!(fargs[1], Expr::Identifier(name) if name == n))
-          || (matches!(fargs[1], Expr::Integer(2))
-            && matches!(fargs[0], Expr::Identifier(name) if name == n));
-        if is_2n {
-          // 1/Sqrt[1 - 4*x]
-          return Ok(Some(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(Expr::Integer(4)),
-                right: Box::new(x.clone()),
-              }),
+    if let Some((fname, fargs)) = as_func_args(top)
+      && fname == "Times"
+      && fargs.len() == 2
+    {
+      let is_2n = (matches!(fargs[0], Expr::Integer(2))
+        && matches!(fargs[1], Expr::Identifier(name) if name == n))
+        || (matches!(fargs[1], Expr::Integer(2))
+          && matches!(fargs[0], Expr::Identifier(name) if name == n));
+      if is_2n {
+        // 1/Sqrt[1 - 4*x]
+        return Ok(Some(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(4)),
+              right: Box::new(x.clone()),
             }),
-            right: Box::new(Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(-1), Expr::Integer(2)],
-            }),
-          }));
-        }
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(2)],
+          }),
+        }));
       }
     }
   }
@@ -2789,43 +2776,44 @@ fn gf_divide(
 
   // 1/(n+1) => -Log[1-x]/x
   if matches!(num, Expr::Integer(1)) {
-    if let Some((fname, fargs)) = as_func_args(den) {
-      if fname == "Plus" && fargs.len() == 2 {
-        let is_n_plus_1 = (matches!(fargs[0], Expr::Identifier(name) if name == n)
-          && matches!(fargs[1], Expr::Integer(1)))
-          || (matches!(fargs[1], Expr::Identifier(name) if name == n)
-            && matches!(fargs[0], Expr::Integer(1)));
-        if is_n_plus_1 {
-          return Ok(Some(Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(Expr::FunctionCall {
-                name: "Log".to_string(),
-                args: vec![Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(Expr::Integer(1)),
-                  right: Box::new(x.clone()),
-                }],
-              }),
+    if let Some((fname, fargs)) = as_func_args(den)
+      && fname == "Plus"
+      && fargs.len() == 2
+    {
+      let is_n_plus_1 = (matches!(fargs[0], Expr::Identifier(name) if name == n)
+        && matches!(fargs[1], Expr::Integer(1)))
+        || (matches!(fargs[1], Expr::Identifier(name) if name == n)
+          && matches!(fargs[0], Expr::Integer(1)));
+      if is_n_plus_1 {
+        return Ok(Some(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(x.clone()),
+              }],
             }),
-            right: Box::new(x.clone()),
-          }));
-        }
+          }),
+          right: Box::new(x.clone()),
+        }));
       }
     }
 
     // 1/Factorial[n] => E^x
-    if let Expr::FunctionCall { name, args } = den {
-      if name == "Factorial" && args.len() == 1 {
-        if matches!(&args[0], Expr::Identifier(var) if var == n) {
-          return Ok(Some(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(Expr::Constant("E".to_string())),
-            right: Box::new(x.clone()),
-          }));
-        }
-      }
+    if let Expr::FunctionCall { name, args } = den
+      && name == "Factorial"
+      && args.len() == 1
+      && matches!(&args[0], Expr::Identifier(var) if var == n)
+    {
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(x.clone()),
+      }));
     }
   }
 

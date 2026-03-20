@@ -1112,14 +1112,14 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => &arg,
   };
 
-  if let Some(components) = extract_date_components(date_expr) {
-    if components.len() >= 3 {
-      let year = components[0] as i64;
-      let month = components[1] as i64;
-      let day = components[2] as i64;
-      let dow = day_of_week(year, month, day);
-      return Ok(Expr::Identifier(day_name(dow).to_string()));
-    }
+  if let Some(components) = extract_date_components(date_expr)
+    && components.len() >= 3
+  {
+    let year = components[0] as i64;
+    let month = components[1] as i64;
+    let day = components[2] as i64;
+    let dow = day_of_week(year, month, day);
+    return Ok(Expr::Identifier(day_name(dow).to_string()));
   }
 
   Ok(Expr::FunctionCall {

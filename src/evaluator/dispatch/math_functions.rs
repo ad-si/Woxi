@@ -164,15 +164,14 @@ pub fn dispatch_math_functions(
       // Call the Quartiles logic by dispatching
       if let Some(Ok(Expr::List(ref qs))) =
         dispatch_math_functions("Quartiles", args)
+        && qs.len() == 3
       {
-        if qs.len() == 3 {
-          let diff = Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Minus,
-            left: Box::new(qs[2].clone()),
-            right: Box::new(qs[0].clone()),
-          };
-          return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
-        }
+        let diff = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(qs[2].clone()),
+          right: Box::new(qs[0].clone()),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
     }
     "Abs" if args.len() == 1 => {
@@ -883,6 +882,53 @@ pub fn dispatch_math_functions(
     "MoebiusMu" if args.len() == 1 => {
       return Some(crate::functions::math_ast::moebius_mu_ast(args));
     }
+    "MangoldtLambda" if args.len() == 1 => {
+      // MangoldtLambda[n] = Log[p] if n = p^k for prime p, else 0
+      if let Expr::Integer(n) = &args[0] {
+        if *n <= 1 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let factors = crate::functions::math_ast::factor_integer_ast(args);
+        if let Ok(Expr::List(ref pairs)) = factors {
+          // Filter out {-1, 1} factor
+          let real_factors: Vec<&Expr> = pairs
+            .iter()
+            .filter(|p| {
+              if let Expr::List(pv) = p
+                && let Expr::Integer(base) = &pv[0]
+              {
+                return *base != -1;
+              }
+              true
+            })
+            .collect();
+          if real_factors.len() == 1 {
+            // Only one prime factor -> n = p^k
+            if let Expr::List(pv) = real_factors[0]
+              && let Expr::Integer(p) = &pv[0]
+            {
+              return Some(Ok(Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![Expr::Integer(*p)],
+              }));
+            }
+          }
+          return Some(Ok(Expr::Integer(0)));
+        }
+      }
+    }
+    "LiouvilleLambda" if args.len() == 1 => {
+      // LiouvilleLambda[n] = (-1)^Omega(n) where Omega counts prime factors with multiplicity
+      if let Expr::Integer(n) = &args[0] {
+        if *n == 0 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let omega = crate::functions::math_ast::prime_omega_ast(args);
+        if let Ok(Expr::Integer(total)) = omega {
+          return Some(Ok(Expr::Integer(if total % 2 == 0 { 1 } else { -1 })));
+        }
+      }
+    }
     "EulerPhi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::euler_phi_ast(args));
     }
@@ -890,18 +936,17 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::jacobi_symbol_ast(args));
     }
     "MultiplicativeOrder" if args.len() == 2 => {
-      if let (Expr::Integer(a), Expr::Integer(n)) = (&args[0], &args[1]) {
-        if *n > 0 {
-          let a_mod = ((*a % *n) + *n) % *n;
-          if a_mod != 0 && crate::functions::math_ast::gcd_i128(a_mod, *n) == 1
-          {
-            let mut power = a_mod;
-            for k in 1..=*n {
-              if power == 1 {
-                return Some(Ok(Expr::Integer(k)));
-              }
-              power = (power * a_mod) % *n;
+      if let (Expr::Integer(a), Expr::Integer(n)) = (&args[0], &args[1])
+        && *n > 0
+      {
+        let a_mod = ((*a % *n) + *n) % *n;
+        if a_mod != 0 && crate::functions::math_ast::gcd_i128(a_mod, *n) == 1 {
+          let mut power = a_mod;
+          for k in 1..=*n {
+            if power == 1 {
+              return Some(Ok(Expr::Integer(k)));
             }
+            power = (power * a_mod) % *n;
           }
         }
       }
@@ -1101,142 +1146,40 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::parabolic_cylinder_d_ast(args));
     }
     "FromPolarCoordinates" if args.len() == 1 => {
-      if let Expr::List(ref elems) = args[0] {
-        if elems.len() == 2 {
-          let r = &elems[0];
-          let theta = &elems[1];
-          let x = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: vec![theta.clone()],
-            }),
-          };
-          let y = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: vec![theta.clone()],
-            }),
-          };
-          let result = Expr::List(vec![x, y]);
-          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
-        }
+      if let Expr::List(ref elems) = args[0]
+        && elems.len() == 2
+      {
+        let r = &elems[0];
+        let theta = &elems[1];
+        let x = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(r.clone()),
+          right: Box::new(Expr::FunctionCall {
+            name: "Cos".to_string(),
+            args: vec![theta.clone()],
+          }),
+        };
+        let y = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(r.clone()),
+          right: Box::new(Expr::FunctionCall {
+            name: "Sin".to_string(),
+            args: vec![theta.clone()],
+          }),
+        };
+        let result = Expr::List(vec![x, y]);
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
     }
     "ToPolarCoordinates" if args.len() == 1 => {
-      if let Expr::List(ref elems) = args[0] {
-        if elems.len() == 2 {
-          let x = &elems[0];
-          let y = &elems[1];
-          let r = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(x.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(y.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-            }],
-          };
-          let theta = Expr::FunctionCall {
-            name: "ArcTan".to_string(),
-            args: vec![x.clone(), y.clone()],
-          };
-          let result = Expr::List(vec![r, theta]);
-          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
-        }
-      }
-    }
-    "FromSphericalCoordinates" if args.len() == 1 => {
-      if let Expr::List(ref elems) = args[0] {
-        if elems.len() == 3 {
-          let r = &elems[0];
-          let theta = &elems[1];
-          let phi = &elems[2];
-          let x = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(r.clone()),
-              right: Box::new(Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![theta.clone()],
-              }),
-            }),
-            right: Box::new(Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: vec![phi.clone()],
-            }),
-          };
-          let y = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(r.clone()),
-              right: Box::new(Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: vec![theta.clone()],
-              }),
-            }),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: vec![phi.clone()],
-            }),
-          };
-          let z = Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(r.clone()),
-            right: Box::new(Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: vec![theta.clone()],
-            }),
-          };
-          let result = Expr::List(vec![x, y, z]);
-          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
-        }
-      }
-    }
-    "ToSphericalCoordinates" if args.len() == 1 => {
-      if let Expr::List(ref elems) = args[0] {
-        if elems.len() == 3 {
-          let x = &elems[0];
-          let y = &elems[1];
-          let z = &elems[2];
-          let sum_sq = Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(x.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(y.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(z.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          };
-          let r = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![sum_sq],
-          };
-          let xy_sq = Expr::BinaryOp {
+      if let Expr::List(ref elems) = args[0]
+        && elems.len() == 2
+      {
+        let x = &elems[0];
+        let y = &elems[1];
+        let r = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::BinaryOp {
             op: BinaryOperator::Plus,
             left: Box::new(Expr::BinaryOp {
               op: BinaryOperator::Power,
@@ -1248,64 +1191,164 @@ pub fn dispatch_math_functions(
               left: Box::new(y.clone()),
               right: Box::new(Expr::Integer(2)),
             }),
-          };
-          let theta = Expr::FunctionCall {
-            name: "ArcTan".to_string(),
-            args: vec![
-              z.clone(),
-              Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: vec![xy_sq],
-              },
-            ],
-          };
-          let phi_expr = Expr::FunctionCall {
-            name: "ArcTan".to_string(),
-            args: vec![x.clone(), y.clone()],
-          };
-          let result = Expr::List(vec![r, theta, phi_expr]);
-          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
-        }
+          }],
+        };
+        let theta = Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![x.clone(), y.clone()],
+        };
+        let result = Expr::List(vec![r, theta]);
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+    }
+    "FromSphericalCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0]
+        && elems.len() == 3
+      {
+        let r = &elems[0];
+        let theta = &elems[1];
+        let phi = &elems[2];
+        let x = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![theta.clone()],
+            }),
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: "Cos".to_string(),
+            args: vec![phi.clone()],
+          }),
+        };
+        let y = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![theta.clone()],
+            }),
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: "Sin".to_string(),
+            args: vec![phi.clone()],
+          }),
+        };
+        let z = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(r.clone()),
+          right: Box::new(Expr::FunctionCall {
+            name: "Cos".to_string(),
+            args: vec![theta.clone()],
+          }),
+        };
+        let result = Expr::List(vec![x, y, z]);
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+    }
+    "ToSphericalCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0]
+        && elems.len() == 3
+      {
+        let x = &elems[0];
+        let y = &elems[1];
+        let z = &elems[2];
+        let sum_sq = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(y.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(z.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        };
+        let r = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![sum_sq],
+        };
+        let xy_sq = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(x.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(y.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        };
+        let theta = Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![
+            z.clone(),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![xy_sq],
+            },
+          ],
+        };
+        let phi_expr = Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![x.clone(), y.clone()],
+        };
+        let result = Expr::List(vec![r, theta, phi_expr]);
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
     }
     "ContinuedFractionK" if args.len() == 2 => {
       // ContinuedFractionK[f, {i, imin, imax}]
-      if let Expr::List(ref spec) = args[1] {
-        if spec.len() == 3 {
-          if let Expr::Identifier(var) = &spec[0] {
-            let imin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
-              .unwrap_or_else(|_| spec[1].clone());
-            let imax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
-              .unwrap_or_else(|_| spec[2].clone());
-            if let (Expr::Integer(imin), Expr::Integer(imax)) =
-              (&imin_expr, &imax_expr)
-            {
-              let body = &args[0];
-              let mut acc = Expr::Integer(0);
-              for k in (*imin..=*imax).rev() {
-                let fk = crate::syntax::replace_identifier_in_expr(
-                  body,
-                  var,
-                  &Expr::Integer(k),
-                );
-                let fk_eval =
-                  crate::evaluator::evaluate_expr_to_expr(&fk).unwrap_or(fk);
-                let denom = Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(fk_eval),
-                  right: Box::new(acc),
-                };
-                acc = Expr::BinaryOp {
-                  op: BinaryOperator::Divide,
-                  left: Box::new(Expr::Integer(1)),
-                  right: Box::new(denom),
-                };
-                acc =
-                  crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
-              }
-              return Some(Ok(acc));
-            }
+      if let Expr::List(ref spec) = args[1]
+        && spec.len() == 3
+        && let Expr::Identifier(var) = &spec[0]
+      {
+        let imin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
+          .unwrap_or_else(|_| spec[1].clone());
+        let imax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
+          .unwrap_or_else(|_| spec[2].clone());
+        if let (Expr::Integer(imin), Expr::Integer(imax)) =
+          (&imin_expr, &imax_expr)
+        {
+          let body = &args[0];
+          let mut acc = Expr::Integer(0);
+          for k in (*imin..=*imax).rev() {
+            let fk = crate::syntax::replace_identifier_in_expr(
+              body,
+              var,
+              &Expr::Integer(k),
+            );
+            let fk_eval =
+              crate::evaluator::evaluate_expr_to_expr(&fk).unwrap_or(fk);
+            let denom = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(fk_eval),
+              right: Box::new(acc),
+            };
+            acc = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(denom),
+            };
+            acc = crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
           }
+          return Some(Ok(acc));
         }
       }
     }
@@ -1393,123 +1436,75 @@ pub fn dispatch_math_functions(
     }
     // ExponentialMovingAverage[list, alpha]
     "ExponentialMovingAverage" if args.len() == 2 => {
-      if let Expr::List(ref elems) = args[0] {
-        if !elems.is_empty() {
-          let alpha = &args[1];
-          let one_minus_alpha = Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(alpha.clone()),
+      if let Expr::List(ref elems) = args[0]
+        && !elems.is_empty()
+      {
+        let alpha = &args[1];
+        let one_minus_alpha = Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(alpha.clone()),
+        };
+        let one_minus_alpha_eval =
+          crate::evaluator::evaluate_expr_to_expr(&one_minus_alpha)
+            .unwrap_or(one_minus_alpha);
+        let mut ema = elems[0].clone();
+        let mut result = vec![ema.clone()];
+        for elem in &elems[1..] {
+          // ema = alpha * x + (1 - alpha) * ema
+          let new_ema = Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(alpha.clone()),
+              right: Box::new(elem.clone()),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(one_minus_alpha_eval.clone()),
+              right: Box::new(ema),
+            }),
           };
-          let one_minus_alpha_eval =
-            crate::evaluator::evaluate_expr_to_expr(&one_minus_alpha)
-              .unwrap_or(one_minus_alpha);
-          let mut ema = elems[0].clone();
-          let mut result = vec![ema.clone()];
-          for elem in &elems[1..] {
-            // ema = alpha * x + (1 - alpha) * ema
-            let new_ema = Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(alpha.clone()),
-                right: Box::new(elem.clone()),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(one_minus_alpha_eval.clone()),
-                right: Box::new(ema),
-              }),
-            };
-            ema = crate::evaluator::evaluate_expr_to_expr(&new_ema)
-              .unwrap_or(new_ema);
-            result.push(ema.clone());
-          }
-          return Some(Ok(Expr::List(result)));
+          ema = crate::evaluator::evaluate_expr_to_expr(&new_ema)
+            .unwrap_or(new_ema);
+          result.push(ema.clone());
         }
+        return Some(Ok(Expr::List(result)));
       }
     }
     // CircleThrough[{p1, p2, p3}] — circumscribed circle through 3 points
     "CircleThrough" if args.len() == 1 => {
-      if let Expr::List(ref pts) = args[0] {
-        if pts.len() == 3 {
-          // Extract coordinates
-          let coords: Vec<(&Expr, &Expr)> = pts
-            .iter()
-            .filter_map(|p| {
-              if let Expr::List(c) = p {
-                if c.len() == 2 {
-                  return Some((&c[0], &c[1]));
-                }
-              }
-              None
-            })
-            .collect();
-          if coords.len() == 3 {
-            let (x1, y1) = coords[0];
-            let (x2, y2) = coords[1];
-            let (x3, y3) = coords[2];
-            // Build the circumcenter formula as AST and evaluate
-            // D = 2*(x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2))
-            let d_expr = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(2)),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(x1.clone()),
-                    right: Box::new(Expr::BinaryOp {
-                      op: BinaryOperator::Minus,
-                      left: Box::new(y2.clone()),
-                      right: Box::new(y3.clone()),
-                    }),
-                  }),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Times,
-                    left: Box::new(x2.clone()),
-                    right: Box::new(Expr::BinaryOp {
-                      op: BinaryOperator::Minus,
-                      left: Box::new(y3.clone()),
-                      right: Box::new(y1.clone()),
-                    }),
-                  }),
-                }),
-                right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(x3.clone()),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(y1.clone()),
-                    right: Box::new(y2.clone()),
-                  }),
-                }),
-              }),
-            };
-            // sq(p) = x^2 + y^2
-            let sq = |x: &Expr, y: &Expr| Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(x.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(y.clone()),
-                right: Box::new(Expr::Integer(2)),
-              }),
-            };
-            // h_num = sq1*(y2-y3) + sq2*(y3-y1) + sq3*(y1-y2)
-            let h_num = Expr::BinaryOp {
+      if let Expr::List(ref pts) = args[0]
+        && pts.len() == 3
+      {
+        // Extract coordinates
+        let coords: Vec<(&Expr, &Expr)> = pts
+          .iter()
+          .filter_map(|p| {
+            if let Expr::List(c) = p
+              && c.len() == 2
+            {
+              return Some((&c[0], &c[1]));
+            }
+            None
+          })
+          .collect();
+        if coords.len() == 3 {
+          let (x1, y1) = coords[0];
+          let (x2, y2) = coords[1];
+          let (x3, y3) = coords[2];
+          // Build the circumcenter formula as AST and evaluate
+          // D = 2*(x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2))
+          let d_expr = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::BinaryOp {
               op: BinaryOperator::Plus,
               left: Box::new(Expr::BinaryOp {
                 op: BinaryOperator::Plus,
                 left: Box::new(Expr::BinaryOp {
                   op: BinaryOperator::Times,
-                  left: Box::new(sq(x1, y1)),
+                  left: Box::new(x1.clone()),
                   right: Box::new(Expr::BinaryOp {
                     op: BinaryOperator::Minus,
                     left: Box::new(y2.clone()),
@@ -1518,7 +1513,7 @@ pub fn dispatch_math_functions(
                 }),
                 right: Box::new(Expr::BinaryOp {
                   op: BinaryOperator::Times,
-                  left: Box::new(sq(x2, y2)),
+                  left: Box::new(x2.clone()),
                   right: Box::new(Expr::BinaryOp {
                     op: BinaryOperator::Minus,
                     left: Box::new(y3.clone()),
@@ -1528,167 +1523,339 @@ pub fn dispatch_math_functions(
               }),
               right: Box::new(Expr::BinaryOp {
                 op: BinaryOperator::Times,
-                left: Box::new(sq(x3, y3)),
+                left: Box::new(x3.clone()),
                 right: Box::new(Expr::BinaryOp {
                   op: BinaryOperator::Minus,
                   left: Box::new(y1.clone()),
                   right: Box::new(y2.clone()),
                 }),
               }),
-            };
-            // k_num = sq1*(x3-x2) + sq2*(x1-x3) + sq3*(x2-x1)
-            let k_num = Expr::BinaryOp {
+            }),
+          };
+          // sq(p) = x^2 + y^2
+          let sq = |x: &Expr, y: &Expr| Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(y.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          // h_num = sq1*(y2-y3) + sq2*(y3-y1) + sq3*(y1-y2)
+          let h_num = Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
               op: BinaryOperator::Plus,
               left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(sq(x1, y1)),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(x3.clone()),
-                    right: Box::new(x2.clone()),
-                  }),
-                }),
+                op: BinaryOperator::Times,
+                left: Box::new(sq(x1, y1)),
                 right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(sq(x2, y2)),
-                  right: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(x1.clone()),
-                    right: Box::new(x3.clone()),
-                  }),
+                  op: BinaryOperator::Minus,
+                  left: Box::new(y2.clone()),
+                  right: Box::new(y3.clone()),
                 }),
               }),
               right: Box::new(Expr::BinaryOp {
                 op: BinaryOperator::Times,
-                left: Box::new(sq(x3, y3)),
+                left: Box::new(sq(x2, y2)),
                 right: Box::new(Expr::BinaryOp {
                   op: BinaryOperator::Minus,
-                  left: Box::new(x2.clone()),
-                  right: Box::new(x1.clone()),
+                  left: Box::new(y3.clone()),
+                  right: Box::new(y1.clone()),
                 }),
               }),
-            };
-            let h = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(h_num),
-              right: Box::new(d_expr.clone()),
-            };
-            let k = Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(k_num),
-              right: Box::new(d_expr),
-            };
-            let h_eval =
-              crate::evaluator::evaluate_expr_to_expr(&h).unwrap_or(h);
-            let k_eval =
-              crate::evaluator::evaluate_expr_to_expr(&k).unwrap_or(k);
-            // r = sqrt((x1-h)^2 + (y1-k)^2)
-            let r = Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(x1.clone()),
-                    right: Box::new(h_eval.clone()),
-                  }),
-                  right: Box::new(Expr::Integer(2)),
-                }),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(sq(x3, y3)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(y1.clone()),
+                right: Box::new(y2.clone()),
+              }),
+            }),
+          };
+          // k_num = sq1*(x3-x2) + sq2*(x1-x3) + sq3*(x2-x1)
+          let k_num = Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(sq(x1, y1)),
                 right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(Expr::BinaryOp {
-                    op: BinaryOperator::Minus,
-                    left: Box::new(y1.clone()),
-                    right: Box::new(k_eval.clone()),
-                  }),
-                  right: Box::new(Expr::Integer(2)),
+                  op: BinaryOperator::Minus,
+                  left: Box::new(x3.clone()),
+                  right: Box::new(x2.clone()),
                 }),
-              }],
-            };
-            let r_eval =
-              crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
-            return Some(Ok(Expr::FunctionCall {
-              name: "Circle".to_string(),
-              args: vec![Expr::List(vec![h_eval, k_eval]), r_eval],
-            }));
-          }
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(sq(x2, y2)),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(x1.clone()),
+                  right: Box::new(x3.clone()),
+                }),
+              }),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(sq(x3, y3)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(x2.clone()),
+                right: Box::new(x1.clone()),
+              }),
+            }),
+          };
+          let h = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(h_num),
+            right: Box::new(d_expr.clone()),
+          };
+          let k = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(k_num),
+            right: Box::new(d_expr),
+          };
+          let h_eval = crate::evaluator::evaluate_expr_to_expr(&h).unwrap_or(h);
+          let k_eval = crate::evaluator::evaluate_expr_to_expr(&k).unwrap_or(k);
+          // r = sqrt((x1-h)^2 + (y1-k)^2)
+          let r = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(x1.clone()),
+                  right: Box::new(h_eval.clone()),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(y1.clone()),
+                  right: Box::new(k_eval.clone()),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }],
+          };
+          let r_eval = crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
+          return Some(Ok(Expr::FunctionCall {
+            name: "Circle".to_string(),
+            args: vec![Expr::List(vec![h_eval, k_eval]), r_eval],
+          }));
         }
       }
     }
     "CoordinateBounds" if args.len() == 1 => {
       // CoordinateBounds[{{x1,y1,...}, {x2,y2,...}, ...}] returns {{xmin,xmax}, {ymin,ymax}, ...}
-      if let Expr::List(points) = &args[0] {
-        if !points.is_empty() {
-          if let Expr::List(first) = &points[0] {
-            let dim = first.len();
-            let mut mins: Vec<Expr> = first.clone();
-            let mut maxs: Vec<Expr> = first.clone();
-            for pt in &points[1..] {
-              if let Expr::List(coords) = pt {
-                if coords.len() == dim {
-                  for d in 0..dim {
-                    let less_than_min =
-                      evaluate_expr_to_expr(&Expr::FunctionCall {
-                        name: "Less".to_string(),
-                        args: vec![coords[d].clone(), mins[d].clone()],
-                      });
-                    if let Ok(Expr::Identifier(ref s)) = less_than_min {
-                      if s == "True" {
-                        mins[d] = coords[d].clone();
-                      }
-                    }
-                    let greater_than_max =
-                      evaluate_expr_to_expr(&Expr::FunctionCall {
-                        name: "Greater".to_string(),
-                        args: vec![coords[d].clone(), maxs[d].clone()],
-                      });
-                    if let Ok(Expr::Identifier(ref s)) = greater_than_max {
-                      if s == "True" {
-                        maxs[d] = coords[d].clone();
-                      }
-                    }
-                  }
-                }
+      if let Expr::List(points) = &args[0]
+        && !points.is_empty()
+        && let Expr::List(first) = &points[0]
+      {
+        let dim = first.len();
+        let mut mins: Vec<Expr> = first.clone();
+        let mut maxs: Vec<Expr> = first.clone();
+        for pt in &points[1..] {
+          if let Expr::List(coords) = pt
+            && coords.len() == dim
+          {
+            for d in 0..dim {
+              let less_than_min = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Less".to_string(),
+                args: vec![coords[d].clone(), mins[d].clone()],
+              });
+              if let Ok(Expr::Identifier(ref s)) = less_than_min
+                && s == "True"
+              {
+                mins[d] = coords[d].clone();
+              }
+              let greater_than_max =
+                evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "Greater".to_string(),
+                  args: vec![coords[d].clone(), maxs[d].clone()],
+                });
+              if let Ok(Expr::Identifier(ref s)) = greater_than_max
+                && s == "True"
+              {
+                maxs[d] = coords[d].clone();
               }
             }
-            let bounds: Vec<Expr> = (0..dim)
-              .map(|d| Expr::List(vec![mins[d].clone(), maxs[d].clone()]))
-              .collect();
-            return Some(Ok(Expr::List(bounds)));
           }
         }
+        let bounds: Vec<Expr> = (0..dim)
+          .map(|d| Expr::List(vec![mins[d].clone(), maxs[d].clone()]))
+          .collect();
+        return Some(Ok(Expr::List(bounds)));
       }
     }
     "ChessboardDistance" | "ChebyshevDistance" if args.len() == 2 => {
       // ChessboardDistance[{a1,...,an}, {b1,...,bn}] = Max[Abs[a1-b1], ..., Abs[an-bn]]
-      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
-        if a.len() == b.len() && !a.is_empty() {
-          let diffs: Vec<Expr> = a
-            .iter()
-            .zip(b.iter())
-            .map(|(ai, bi)| Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
-                left: Box::new(ai.clone()),
-                right: Box::new(Expr::BinaryOp {
-                  op: crate::syntax::BinaryOperator::Times,
-                  left: Box::new(Expr::Integer(-1)),
-                  right: Box::new(bi.clone()),
-                }),
-              }],
-            })
-            .collect();
-          let max_expr = Expr::FunctionCall {
-            name: "Max".to_string(),
-            args: diffs,
-          };
-          return Some(evaluate_expr_to_expr(&max_expr));
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+        && a.len() == b.len()
+        && !a.is_empty()
+      {
+        let diffs: Vec<Expr> = a
+          .iter()
+          .zip(b.iter())
+          .map(|(ai, bi)| Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(ai.clone()),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(-1)),
+                right: Box::new(bi.clone()),
+              }),
+            }],
+          })
+          .collect();
+        let max_expr = Expr::FunctionCall {
+          name: "Max".to_string(),
+          args: diffs,
+        };
+        return Some(evaluate_expr_to_expr(&max_expr));
+      }
+    }
+    "BrayCurtisDistance" if args.len() == 2 => {
+      // BrayCurtisDistance[u, v] = Total[Abs[u - v]] / Total[Abs[u + v]]
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+        && a.len() == b.len()
+        && !a.is_empty()
+      {
+        let mut num_terms = Vec::new();
+        let mut den_terms = Vec::new();
+        for (ai, bi) in a.iter().zip(b.iter()) {
+          num_terms.push(Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(ai.clone()),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(-1)),
+                right: Box::new(bi.clone()),
+              }),
+            }],
+          });
+          den_terms.push(Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(ai.clone()),
+              right: Box::new(bi.clone()),
+            }],
+          });
         }
+        let num = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: num_terms,
+        };
+        let den = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: den_terms,
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(num),
+          right: Box::new(den),
+        };
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    "CanberraDistance" if args.len() == 2 => {
+      // CanberraDistance[u, v] = Sum[Abs[ui - vi] / (Abs[ui] + Abs[vi])]
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+        && a.len() == b.len()
+        && !a.is_empty()
+      {
+        let mut terms = Vec::new();
+        for (ai, bi) in a.iter().zip(b.iter()) {
+          let num = Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(ai.clone()),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(-1)),
+                right: Box::new(bi.clone()),
+              }),
+            }],
+          };
+          let den = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![ai.clone()],
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![bi.clone()],
+            }),
+          };
+          terms.push(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(num),
+            right: Box::new(den),
+          });
+        }
+        let sum = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: terms,
+        };
+        return Some(evaluate_expr_to_expr(&sum));
+      }
+    }
+    "CosineDistance" if args.len() == 2 => {
+      // CosineDistance[u, v] = 1 - (u.v) / (Norm[u] * Norm[v])
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+        && a.len() == b.len()
+        && !a.is_empty()
+      {
+        let dot = Expr::FunctionCall {
+          name: "Dot".to_string(),
+          args: vec![args[0].clone(), args[1].clone()],
+        };
+        let norm_a = Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: vec![args[0].clone()],
+        };
+        let norm_b = Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: vec![args[1].clone()],
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(dot),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(norm_a),
+                right: Box::new(norm_b),
+              }),
+            }),
+          }),
+        };
+        return Some(evaluate_expr_to_expr(&result));
       }
     }
     _ => {}

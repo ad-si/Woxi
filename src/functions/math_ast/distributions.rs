@@ -677,32 +677,33 @@ fn probability_from_event(
   is_discrete: bool,
 ) -> Result<Expr, InterpreterError> {
   // Handle And conditions: a < x && x < b  →  a < x < b
-  if let Expr::FunctionCall { name, args } = event {
-    if name == "And" && args.len() == 2 {
-      // Try to extract compound inequality: lower < x && x < upper
-      if let (Some((lo, lo_op)), Some((hi, hi_op))) = (
-        extract_bound(&args[0], var, true),
-        extract_bound(&args[1], var, false),
-      ) {
-        // P[lo < x < hi] = CDF[dist, hi] - CDF[dist, lo]
-        let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
-        let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
-        let result = minus(cdf_hi, cdf_lo);
-        // Adjust for inclusive/exclusive bounds if needed (for continuous, same)
-        let _ = (lo_op, hi_op); // For continuous distributions, < vs <= doesn't matter
-        return eval(result);
-      }
-      // Try reversed: x < upper && lower < x
-      if let (Some((hi, hi_op)), Some((lo, lo_op))) = (
-        extract_bound(&args[0], var, false),
-        extract_bound(&args[1], var, true),
-      ) {
-        let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
-        let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
-        let result = minus(cdf_hi, cdf_lo);
-        let _ = (lo_op, hi_op);
-        return eval(result);
-      }
+  if let Expr::FunctionCall { name, args } = event
+    && name == "And"
+    && args.len() == 2
+  {
+    // Try to extract compound inequality: lower < x && x < upper
+    if let (Some((lo, lo_op)), Some((hi, hi_op))) = (
+      extract_bound(&args[0], var, true),
+      extract_bound(&args[1], var, false),
+    ) {
+      // P[lo < x < hi] = CDF[dist, hi] - CDF[dist, lo]
+      let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
+      let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
+      let result = minus(cdf_hi, cdf_lo);
+      // Adjust for inclusive/exclusive bounds if needed (for continuous, same)
+      let _ = (lo_op, hi_op); // For continuous distributions, < vs <= doesn't matter
+      return eval(result);
+    }
+    // Try reversed: x < upper && lower < x
+    if let (Some((hi, hi_op)), Some((lo, lo_op))) = (
+      extract_bound(&args[0], var, false),
+      extract_bound(&args[1], var, true),
+    ) {
+      let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
+      let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
+      let result = minus(cdf_hi, cdf_lo);
+      let _ = (lo_op, hi_op);
+      return eval(result);
     }
   }
 
@@ -807,39 +808,39 @@ fn extract_bound(
     operands,
     operators,
   } = expr
+    && operands.len() == 2
+    && operators.len() == 1
   {
-    if operands.len() == 2 && operators.len() == 1 {
-      let op = &operators[0];
-      let (left, right) = (&operands[0], &operands[1]);
-      let is_left_var = matches!(left, Expr::Identifier(n) if n == var);
-      let is_right_var = matches!(right, Expr::Identifier(n) if n == var);
+    let op = &operators[0];
+    let (left, right) = (&operands[0], &operands[1]);
+    let is_left_var = matches!(left, Expr::Identifier(n) if n == var);
+    let is_right_var = matches!(right, Expr::Identifier(n) if n == var);
 
-      if lower {
-        // Looking for: a < x or a <= x (lower bound is a)
-        if is_right_var
-          && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
-        {
-          return Some((left.clone(), *op));
-        }
-        // x > a or x >= a (lower bound is a)
-        if is_left_var
-          && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
-        {
-          return Some((right.clone(), *op));
-        }
-      } else {
-        // Looking for: x < b or x <= b (upper bound is b)
-        if is_left_var
-          && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
-        {
-          return Some((right.clone(), *op));
-        }
-        // b > x or b >= x (upper bound is b)
-        if is_right_var
-          && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
-        {
-          return Some((left.clone(), *op));
-        }
+    if lower {
+      // Looking for: a < x or a <= x (lower bound is a)
+      if is_right_var
+        && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
+      {
+        return Some((left.clone(), *op));
+      }
+      // x > a or x >= a (lower bound is a)
+      if is_left_var
+        && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+      {
+        return Some((right.clone(), *op));
+      }
+    } else {
+      // Looking for: x < b or x <= b (upper bound is b)
+      if is_left_var
+        && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
+      {
+        return Some((right.clone(), *op));
+      }
+      // b > x or b >= x (upper bound is b)
+      if is_right_var
+        && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+      {
+        return Some((left.clone(), *op));
       }
     }
   }
@@ -1294,28 +1295,28 @@ fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
       if *op == crate::syntax::BinaryOperator::Plus =>
     {
       // If left is linear in var and right is constant (or vice versa)
-      if !contains_var(right, var) {
-        if let Some((a, b)) = extract_linear(left, var) {
-          let new_b = plus(b, right.as_ref().clone());
-          return Some((a, new_b));
-        }
+      if !contains_var(right, var)
+        && let Some((a, b)) = extract_linear(left, var)
+      {
+        let new_b = plus(b, right.as_ref().clone());
+        return Some((a, new_b));
       }
-      if !contains_var(left, var) {
-        if let Some((a, b)) = extract_linear(right, var) {
-          let new_b = plus(left.as_ref().clone(), b);
-          return Some((a, new_b));
-        }
+      if !contains_var(left, var)
+        && let Some((a, b)) = extract_linear(right, var)
+      {
+        let new_b = plus(left.as_ref().clone(), b);
+        return Some((a, new_b));
       }
       None
     }
     Expr::BinaryOp { op, left, right }
       if *op == crate::syntax::BinaryOperator::Minus =>
     {
-      if !contains_var(right, var) {
-        if let Some((a, b)) = extract_linear(left, var) {
-          let new_b = minus(b, right.as_ref().clone());
-          return Some((a, new_b));
-        }
+      if !contains_var(right, var)
+        && let Some((a, b)) = extract_linear(left, var)
+      {
+        let new_b = minus(b, right.as_ref().clone());
+        return Some((a, new_b));
       }
       None
     }

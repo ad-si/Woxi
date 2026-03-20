@@ -2636,9 +2636,9 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fn letter_from_int(n: i128) -> Expr {
     // Valid range: 1..=26 for positive, -26..=-1 for negative
     // Everything else (0, >26, <-26) returns space
-    let pos = if n >= 1 && n <= 26 {
+    let pos = if (1..=26).contains(&n) {
       n as u8 // 1..=26
-    } else if n >= -26 && n <= -1 {
+    } else if (-26..=-1).contains(&n) {
       (26 + n + 1) as u8 // -1->26, -2->25, ..., -26->1
     } else {
       return Expr::String(" ".to_string());

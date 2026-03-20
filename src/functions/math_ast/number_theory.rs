@@ -1474,7 +1474,6 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(factors))
 }
 
-/// Divisors[n] - Returns a sorted list of all divisors of n
 // ─── IntegerPartitions ─────────────────────────────────────────────
 // IntegerPartitions[n] — all partitions of n
 // IntegerPartitions[n, k] — partitions with at most k parts
@@ -1482,7 +1481,6 @@ pub fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
 // IntegerPartitions[n, {kmin, kmax}] — partitions with kmin..kmax parts
 // IntegerPartitions[n, kspec, {d1, d2, ...}] — using only given elements
 // kspec can be All (equivalent to no constraint)
-
 pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse n
   let n = match expr_to_i128(&args[0]) {
@@ -3039,18 +3037,17 @@ pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(ref pairs) = factors {
     let mut total: i128 = 0;
     for pair in pairs {
-      if let Expr::List(pv) = pair {
-        if pv.len() == 2 {
-          if let Expr::Integer(exp) = &pv[1] {
-            // Skip the {-1, 1} factor for negative numbers
-            if let Expr::Integer(base) = &pv[0] {
-              if *base == -1 {
-                continue;
-              }
-            }
-            total += *exp;
-          }
+      if let Expr::List(pv) = pair
+        && pv.len() == 2
+        && let Expr::Integer(exp) = &pv[1]
+      {
+        // Skip the {-1, 1} factor for negative numbers
+        if let Expr::Integer(base) = &pv[0]
+          && *base == -1
+        {
+          continue;
         }
+        total += *exp;
       }
     }
     Ok(Expr::Integer(total))
@@ -3068,16 +3065,16 @@ pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(ref pairs) = factors {
     let mut count: i128 = 0;
     for pair in pairs {
-      if let Expr::List(pv) = pair {
-        if pv.len() == 2 {
-          // Skip the {-1, 1} factor for negative numbers
-          if let Expr::Integer(base) = &pv[0] {
-            if *base == -1 {
-              continue;
-            }
-          }
-          count += 1;
+      if let Expr::List(pv) = pair
+        && pv.len() == 2
+      {
+        // Skip the {-1, 1} factor for negative numbers
+        if let Expr::Integer(base) = &pv[0]
+          && *base == -1
+        {
+          continue;
         }
+        count += 1;
       }
     }
     Ok(Expr::Integer(count))

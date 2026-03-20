@@ -123,120 +123,120 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && matches!(&ra[0], Expr::Integer(n) if n % 2 != 0)
     ) =>
     {
-      if let Expr::FunctionCall { args: ra, .. } = &args[0] {
-        if let Expr::Integer(num) = &ra[0] {
-          let num = *num;
-          // num is odd, denominator is 2, so argument is num/2
-          // For positive half-integers: Gamma[(2k+1)/2] where k = (num-1)/2
-          if num > 0 {
-            let k = (num - 1) / 2;
-            // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
-            let mut factorial_2k = BigInt::from(1);
-            for i in 2..=(2 * k) {
-              factorial_2k *= i;
+      if let Expr::FunctionCall { args: ra, .. } = &args[0]
+        && let Expr::Integer(num) = &ra[0]
+      {
+        let num = *num;
+        // num is odd, denominator is 2, so argument is num/2
+        // For positive half-integers: Gamma[(2k+1)/2] where k = (num-1)/2
+        if num > 0 {
+          let k = (num - 1) / 2;
+          // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
+          let mut factorial_2k = BigInt::from(1);
+          for i in 2..=(2 * k) {
+            factorial_2k *= i;
+          }
+          let mut factorial_k = BigInt::from(1);
+          for i in 2..=k {
+            factorial_k *= i;
+          }
+          let four_k = BigInt::from(4).pow(k as u32);
+          let denom = four_k * factorial_k;
+          // Result = factorial_2k / denom * Sqrt[Pi]
+          // Simplify the rational part
+          let g = gcd_bigint(&factorial_2k, &denom);
+          let num_simplified = &factorial_2k / &g;
+          let den_simplified = &denom / &g;
+          let sqrt_pi = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::Identifier("Pi".to_string()),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+            ],
+          };
+          if den_simplified == BigInt::from(1) {
+            if num_simplified == BigInt::from(1) {
+              return Ok(sqrt_pi);
             }
-            let mut factorial_k = BigInt::from(1);
-            for i in 2..=k {
-              factorial_k *= i;
-            }
-            let four_k = BigInt::from(4).pow(k as u32);
-            let denom = four_k * factorial_k;
-            // Result = factorial_2k / denom * Sqrt[Pi]
-            // Simplify the rational part
-            let g = gcd_bigint(&factorial_2k, &denom);
-            let num_simplified = &factorial_2k / &g;
-            let den_simplified = &denom / &g;
-            let sqrt_pi = Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
-                Expr::Identifier("Pi".to_string()),
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(2)],
-                },
-              ],
-            };
-            if den_simplified == BigInt::from(1) {
-              if num_simplified == BigInt::from(1) {
-                return Ok(sqrt_pi);
-              }
-              return Ok(Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![bigint_to_expr(num_simplified), sqrt_pi],
-              });
-            }
-            let coeff = Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![
-                bigint_to_expr(num_simplified),
-                bigint_to_expr(den_simplified),
-              ],
-            };
             return Ok(Expr::FunctionCall {
               name: "Times".to_string(),
-              args: vec![coeff, sqrt_pi],
-            });
-          } else if num < 0 {
-            // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
-            // = (-4)^n * n! * Sqrt[Pi] / (2n)!  where n = (1 - num) / 2
-            let n = (1 - num) / 2;
-            let sign = if n % 2 == 0 {
-              BigInt::from(1)
-            } else {
-              BigInt::from(-1)
-            };
-            let four_n = BigInt::from(4).pow(n as u32);
-            let mut factorial_n = BigInt::from(1);
-            for i in 2..=n {
-              factorial_n *= i;
-            }
-            let mut factorial_2n = BigInt::from(1);
-            for i in 2..=(2 * n) {
-              factorial_2n *= i;
-            }
-            let numerator = &sign * &four_n * &factorial_n;
-            let denominator = factorial_2n;
-            let num_abs: BigInt = numerator.magnitude().clone().into();
-            let g = gcd_bigint(&num_abs, &denominator);
-            let num_simplified = &num_abs / &g;
-            let den_simplified = &denominator / &g;
-            let is_neg = numerator < BigInt::from(0);
-            let sqrt_pi = Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
-                Expr::Identifier("Pi".to_string()),
-                Expr::FunctionCall {
-                  name: "Rational".to_string(),
-                  args: vec![Expr::Integer(1), Expr::Integer(2)],
-                },
-              ],
-            };
-            let coeff_num = if is_neg {
-              -num_simplified.clone()
-            } else {
-              num_simplified.clone()
-            };
-            if den_simplified == BigInt::from(1) {
-              if coeff_num == BigInt::from(1) {
-                return Ok(sqrt_pi);
-              }
-              return Ok(Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![bigint_to_expr(coeff_num), sqrt_pi],
-              });
-            }
-            let coeff = Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![
-                bigint_to_expr(coeff_num),
-                bigint_to_expr(den_simplified),
-              ],
-            };
-            return Ok(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![coeff, sqrt_pi],
+              args: vec![bigint_to_expr(num_simplified), sqrt_pi],
             });
           }
+          let coeff = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![
+              bigint_to_expr(num_simplified),
+              bigint_to_expr(den_simplified),
+            ],
+          };
+          return Ok(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![coeff, sqrt_pi],
+          });
+        } else if num < 0 {
+          // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
+          // = (-4)^n * n! * Sqrt[Pi] / (2n)!  where n = (1 - num) / 2
+          let n = (1 - num) / 2;
+          let sign = if n % 2 == 0 {
+            BigInt::from(1)
+          } else {
+            BigInt::from(-1)
+          };
+          let four_n = BigInt::from(4).pow(n as u32);
+          let mut factorial_n = BigInt::from(1);
+          for i in 2..=n {
+            factorial_n *= i;
+          }
+          let mut factorial_2n = BigInt::from(1);
+          for i in 2..=(2 * n) {
+            factorial_2n *= i;
+          }
+          let numerator = &sign * &four_n * &factorial_n;
+          let denominator = factorial_2n;
+          let num_abs: BigInt = numerator.magnitude().clone().into();
+          let g = gcd_bigint(&num_abs, &denominator);
+          let num_simplified = &num_abs / &g;
+          let den_simplified = &denominator / &g;
+          let is_neg = numerator < BigInt::from(0);
+          let sqrt_pi = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::Identifier("Pi".to_string()),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+            ],
+          };
+          let coeff_num = if is_neg {
+            -num_simplified.clone()
+          } else {
+            num_simplified.clone()
+          };
+          if den_simplified == BigInt::from(1) {
+            if coeff_num == BigInt::from(1) {
+              return Ok(sqrt_pi);
+            }
+            return Ok(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![bigint_to_expr(coeff_num), sqrt_pi],
+            });
+          }
+          let coeff = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![
+              bigint_to_expr(coeff_num),
+              bigint_to_expr(den_simplified),
+            ],
+          };
+          return Ok(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![coeff, sqrt_pi],
+          });
         }
       }
       Ok(Expr::FunctionCall {
@@ -359,7 +359,7 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   };
   let k_val = match &args[1] {
-    Expr::Integer(k) => Some(*k as i128),
+    Expr::Integer(k) => Some(*k),
     Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
     _ => None,
   };
@@ -367,13 +367,12 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Numeric evaluation when n is Real or k is Real
   let has_real =
     matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
-  if has_real {
-    if let (Some(n), Some(k)) = (n_val, k_val) {
-      if k >= 1 {
-        let result = bessel_j_zero(n, k as usize);
-        return Ok(Expr::Real(result));
-      }
-    }
+  if has_real
+    && let (Some(n), Some(k)) = (n_val, k_val)
+    && k >= 1
+  {
+    let result = bessel_j_zero(n, k as usize);
+    return Ok(Expr::Real(result));
   }
 
   // Return unevaluated (symbolic)
@@ -811,16 +810,16 @@ pub fn hypergeometric_0f1_regularized_ast(
   // Hypergeometric0F1Regularized[a, 0] = 1/Gamma(a)
   // For non-negative integer a=0: 1/Gamma(0) = 0
   // For positive integer a: 1/Gamma(a) is well-defined
-  if is_expr_zero(z_expr) {
-    if let Some(a_val) = try_eval_to_f64(a_expr) {
-      let ga = gamma_fn(a_val);
-      if ga.is_infinite() || ga == 0.0 {
-        return Ok(Expr::Integer(0));
-      }
-      if a_val == a_val.floor() && a_val > 0.0 {
-        // 1/Gamma(a) for positive integer a — return exact integer if possible
-        return Ok(Expr::Integer(1));
-      }
+  if is_expr_zero(z_expr)
+    && let Some(a_val) = try_eval_to_f64(a_expr)
+  {
+    let ga = gamma_fn(a_val);
+    if ga.is_infinite() || ga == 0.0 {
+      return Ok(Expr::Integer(0));
+    }
+    if a_val == a_val.floor() && a_val > 0.0 {
+      // 1/Gamma(a) for positive integer a — return exact integer if possible
+      return Ok(Expr::Integer(1));
     }
   }
 
@@ -4547,14 +4546,14 @@ pub fn hypergeometric_pfq_regularized_ast(
   if matches!(&pfq_result, Expr::Identifier(s) if s == "Infinity") {
     // Check if any denominator Gamma is infinite (non-positive integer b)
     for b_expr in &b_list {
-      if let Some(n) = expr_to_i128(b_expr) {
-        if n <= 0 {
-          // Gamma has a pole, so regularized form is finite (indeterminate) - return unevaluated
-          return Ok(Expr::FunctionCall {
-            name: "HypergeometricPFQRegularized".to_string(),
-            args: args.to_vec(),
-          });
-        }
+      if let Some(n) = expr_to_i128(b_expr)
+        && n <= 0
+      {
+        // Gamma has a pole, so regularized form is finite (indeterminate) - return unevaluated
+        return Ok(Expr::FunctionCall {
+          name: "HypergeometricPFQRegularized".to_string(),
+          args: args.to_vec(),
+        });
       }
     }
     return Ok(Expr::Identifier("Infinity".to_string()));
@@ -4565,46 +4564,46 @@ pub fn hypergeometric_pfq_regularized_ast(
     || b_list.iter().any(|e| matches!(e, Expr::Real(_)));
 
   // Try numeric path: if pfq_result is numeric and all b values yield numeric gamma
-  if has_real {
-    if let Some(pfq_val) = match &pfq_result {
+  if has_real
+    && let Some(pfq_val) = match &pfq_result {
       Expr::Real(x) => Some(*x),
       Expr::Integer(n) => Some(*n as f64),
       Expr::Identifier(s) if s == "Infinity" => Some(f64::INFINITY),
       _ => None,
-    } {
-      // Compute product of Gamma[b_i] numerically
-      let b_vals: Option<Vec<f64>> = b_list
-        .iter()
-        .map(|e| match e {
-          Expr::Real(x) => Some(*x),
-          Expr::Integer(n) => Some(*n as f64),
-          Expr::FunctionCall { name, args }
-            if name == "Rational" && args.len() == 2 =>
-          {
-            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-              Some(*n as f64 / *d as f64)
-            } else {
-              None
-            }
+    }
+  {
+    // Compute product of Gamma[b_i] numerically
+    let b_vals: Option<Vec<f64>> = b_list
+      .iter()
+      .map(|e| match e {
+        Expr::Real(x) => Some(*x),
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+            Some(*n as f64 / *d as f64)
+          } else {
+            None
           }
-          _ => None,
-        })
-        .collect();
+        }
+        _ => None,
+      })
+      .collect();
 
-      if let Some(b_vals) = b_vals {
-        let mut gamma_prod = 1.0_f64;
-        for bv in &b_vals {
-          gamma_prod *= gamma_fn(*bv);
-        }
-        if gamma_prod.is_infinite() {
-          return Ok(Expr::Integer(0)); // 1/Γ(pole) = 0 for regularization
-        }
-        let result = pfq_val / gamma_prod;
-        if result.is_infinite() {
-          return Ok(Expr::Identifier("Infinity".to_string()));
-        }
-        return Ok(Expr::Real(result));
+    if let Some(b_vals) = b_vals {
+      let mut gamma_prod = 1.0_f64;
+      for bv in &b_vals {
+        gamma_prod *= gamma_fn(*bv);
       }
+      if gamma_prod.is_infinite() {
+        return Ok(Expr::Integer(0)); // 1/Γ(pole) = 0 for regularization
+      }
+      let result = pfq_val / gamma_prod;
+      if result.is_infinite() {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      return Ok(Expr::Real(result));
     }
   }
 
@@ -4645,13 +4644,13 @@ pub fn hypergeometric_2f1_regularized_ast(
   let result = hypergeometric_pfq_regularized_ast(&pfq_args)?;
 
   // If the result stayed as HypergeometricPFQRegularized, convert back to 2F1 form
-  if let Expr::FunctionCall { name, .. } = &result {
-    if name == "HypergeometricPFQRegularized" {
-      return Ok(Expr::FunctionCall {
-        name: "Hypergeometric2F1Regularized".to_string(),
-        args: args.to_vec(),
-      });
-    }
+  if let Expr::FunctionCall { name, .. } = &result
+    && name == "HypergeometricPFQRegularized"
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Hypergeometric2F1Regularized".to_string(),
+      args: args.to_vec(),
+    });
   }
 
   Ok(result)
@@ -4741,13 +4740,13 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z_expr = &args[1];
 
   // Handle z = 0 case: SphericalBesselJ[0, 0] = 1, SphericalBesselJ[n, 0] = 0 for n > 0
-  if matches!(z_expr, Expr::Integer(0)) {
-    if let Some(n) = expr_to_i128(n_expr) {
-      if n == 0 {
-        return Ok(Expr::Integer(1));
-      } else if n > 0 {
-        return Ok(Expr::Integer(0));
-      }
+  if matches!(z_expr, Expr::Integer(0))
+    && let Some(n) = expr_to_i128(n_expr)
+  {
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    } else if n > 0 {
+      return Ok(Expr::Integer(0));
     }
   }
 
@@ -4757,17 +4756,15 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n_f64 = try_eval_to_f64(n_expr);
   let z_f64 = try_eval_to_f64(z_expr);
 
-  if has_real {
-    if let (Some(n_val), Some(z_val)) = (n_f64, z_f64) {
-      let bessel_result =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "BesselJ".to_string(),
-          args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
-        })?;
-      if let Some(bj) = try_eval_to_f64(&bessel_result) {
-        let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * bj;
-        return Ok(Expr::Real(result));
-      }
+  if has_real && let (Some(n_val), Some(z_val)) = (n_f64, z_f64) {
+    let bessel_result =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "BesselJ".to_string(),
+        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+      })?;
+    if let Some(bj) = try_eval_to_f64(&bessel_result) {
+      let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * bj;
+      return Ok(Expr::Real(result));
     }
   }
 
@@ -4807,40 +4804,37 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Handle Rational arguments — compute Gamma then Log
-  if let Expr::FunctionCall { name, args: fargs } = z {
-    if name == "Rational" && fargs.len() == 2 {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1]) {
-        if *d == 2 && *n > 0 {
-          // Half-integer: LogGamma[k/2] = Log[Gamma[k/2]]
-          let gamma_result = gamma_ast(&[z.clone()])?;
-          return crate::evaluator::evaluate_expr_to_expr(
-            &Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![gamma_result],
-            },
-          );
-        }
-        if *n <= 0 && *d > 0 && *n % *d == 0 {
-          // Non-positive integer
-          return Ok(Expr::Identifier("Infinity".to_string()));
-        }
-      }
+  if let Expr::FunctionCall { name, args: fargs } = z
+    && name == "Rational"
+    && fargs.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1])
+  {
+    if *d == 2 && *n > 0 {
+      // Half-integer: LogGamma[k/2] = Log[Gamma[k/2]]
+      let gamma_result = gamma_ast(&[z.clone()])?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![gamma_result],
+      });
+    }
+    if *n <= 0 && *d > 0 && *n % *d == 0 {
+      // Non-positive integer
+      return Ok(Expr::Identifier("Infinity".to_string()));
     }
   }
 
   // Handle numeric (Real) — use lgamma
-  if let Some(f) = try_eval_to_f64(z) {
-    if matches!(z, Expr::Real(_))
+  if let Some(f) = try_eval_to_f64(z)
+    && (matches!(z, Expr::Real(_))
       || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational")
-        && try_eval_to_f64(z).is_some()
-    {
-      if f <= 0.0 && f == f.floor() {
-        return Ok(Expr::Identifier("Infinity".to_string()));
-      }
-      if matches!(z, Expr::Real(_)) {
-        let result = gamma_fn(f).abs().ln();
-        return Ok(Expr::Real(result));
-      }
+        && try_eval_to_f64(z).is_some())
+  {
+    if f <= 0.0 && f == f.floor() {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if matches!(z, Expr::Real(_)) {
+      let result = gamma_fn(f).abs().ln();
+      return Ok(Expr::Real(result));
     }
   }
 
@@ -6384,19 +6378,16 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // MeijerG[{{}, {}}, {{0}, {}}, 0] = 1
-  if let Expr::Integer(0) = z {
-    if n == 0
-      && m == 1
-      && lower_rest.is_empty()
-      && upper_n.is_empty()
-      && upper_rest.is_empty()
-    {
-      if let Some(b0) = expr_to_i128(&lower_m[0]) {
-        if b0 == 0 {
-          return Ok(Expr::Integer(1));
-        }
-      }
-    }
+  if let Expr::Integer(0) = z
+    && n == 0
+    && m == 1
+    && lower_rest.is_empty()
+    && upper_n.is_empty()
+    && upper_rest.is_empty()
+    && let Some(b0) = expr_to_i128(&lower_m[0])
+    && b0 == 0
+  {
+    return Ok(Expr::Integer(1));
   }
 
   // Try numeric evaluation
@@ -6586,7 +6577,7 @@ fn meijer_g_direct_series(
       }
 
       // Count apparent pole order from numerator Gamma functions
-      let mut pole_order = 0;
+      let mut pole_order: usize = 0;
       for j in 0..m {
         let diff = s0 - b[j];
         if diff >= -1e-14 && (diff - diff.round()).abs() < 1e-10 {
@@ -6618,11 +6609,7 @@ fn meijer_g_direct_series(
         }
       }
 
-      let effective_order = if zero_order >= pole_order {
-        0
-      } else {
-        pole_order - zero_order
-      };
+      let effective_order = pole_order.saturating_sub(zero_order);
 
       if effective_order == 0 {
         continue; // no pole here
@@ -6755,12 +6742,11 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Special case: StruveH[n, 0] for non-negative integer n => 0
-  if matches!(z_expr, Expr::Integer(0)) {
-    if let Expr::Integer(n) = n_expr {
-      if *n >= 0 {
-        return Ok(Expr::Integer(0));
-      }
-    }
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+    && *n >= 0
+  {
+    return Ok(Expr::Integer(0));
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real
@@ -6844,12 +6830,11 @@ pub fn struve_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Special case: StruveL[n, 0] for non-negative integer n => 0
-  if matches!(z_expr, Expr::Integer(0)) {
-    if let Expr::Integer(n) = n_expr {
-      if *n >= 0 {
-        return Ok(Expr::Integer(0));
-      }
-    }
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+    && *n >= 0
+  {
+    return Ok(Expr::Integer(0));
   }
 
   // Numeric evaluation when both args are numeric and at least one is Real
@@ -6927,19 +6912,17 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name,
         args: rat_args,
       } = &args[0]
+        && name == "Rational"
+        && rat_args.len() == 2
+        && let (Expr::Integer(n), Expr::Integer(d)) =
+          (&rat_args[0], &rat_args[1])
       {
-        if name == "Rational" && rat_args.len() == 2 {
-          if let (Expr::Integer(n), Expr::Integer(d)) =
-            (&rat_args[0], &rat_args[1])
-          {
-            let rem = n.rem_euclid(*d);
-            // frac = rem/d, compare with 1/2 => 2*rem < d
-            if 2 * rem < *d {
-              return Ok(Expr::Integer(1));
-            } else {
-              return Ok(Expr::Integer(-1));
-            }
-          }
+        let rem = n.rem_euclid(*d);
+        // frac = rem/d, compare with 1/2 => 2*rem < d
+        if 2 * rem < *d {
+          return Ok(Expr::Integer(1));
+        } else {
+          return Ok(Expr::Integer(-1));
         }
       }
       Ok(Expr::FunctionCall {
@@ -6949,17 +6932,17 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     2 => {
       // SquareWave[{d1, d2, ...}, t]
-      if let Expr::List(levels) = &args[0] {
-        if let Some(t) = expr_to_f64(&args[1]) {
-          let n = levels.len();
-          if n == 0 {
-            return Ok(Expr::Integer(0));
-          }
-          let frac = t - t.floor();
-          let idx_raw = (frac * n as f64).floor() as usize;
-          let idx = (n - 1).saturating_sub(idx_raw.min(n - 1));
-          return Ok(levels[idx].clone());
+      if let Expr::List(levels) = &args[0]
+        && let Some(t) = expr_to_f64(&args[1])
+      {
+        let n = levels.len();
+        if n == 0 {
+          return Ok(Expr::Integer(0));
         }
+        let frac = t - t.floor();
+        let idx_raw = (frac * n as f64).floor() as usize;
+        let idx = (n - 1).saturating_sub(idx_raw.min(n - 1));
+        return Ok(levels[idx].clone());
       }
       Ok(Expr::FunctionCall {
         name: "SquareWave".to_string(),
@@ -6988,37 +6971,35 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name,
         args: rat_args,
       } = &args[0]
+        && name == "Rational"
+        && rat_args.len() == 2
+        && let (Expr::Integer(n), Expr::Integer(d)) =
+          (&rat_args[0], &rat_args[1])
       {
-        if name == "Rational" && rat_args.len() == 2 {
-          if let (Expr::Integer(n), Expr::Integer(d)) =
-            (&rat_args[0], &rat_args[1])
-          {
-            // Compute triangle wave for n/d exactly
-            // shifted = n/d + 3/4 = (4n + 3d) / (4d)
-            let num = 4 * n + 3 * d;
-            let den = 4 * d;
-            // frac = num mod den / den (using Euclidean remainder)
-            let rem = num.rem_euclid(den);
-            // val = 4 * |rem/den - 1/2| - 1 = 4 * |rem - den/2| / den - 1
-            // = (4 * |2*rem - den|) / (2*den) - 1
-            // = (2 * |2*rem - den| - den) / den
-            let two_rem_minus_den = 2 * rem - den;
-            let abs_val = two_rem_minus_den.abs();
-            let result_num = 2 * abs_val - den;
-            let result_den = den;
-            // Simplify result_num / result_den
-            let g = gcd(result_num, result_den);
-            let sn = result_num / g;
-            let sd = result_den / g;
-            if sd == 1 {
-              return Ok(Expr::Integer(sn));
-            }
-            return Ok(Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(sn), Expr::Integer(sd)],
-            });
-          }
+        // Compute triangle wave for n/d exactly
+        // shifted = n/d + 3/4 = (4n + 3d) / (4d)
+        let num = 4 * n + 3 * d;
+        let den = 4 * d;
+        // frac = num mod den / den (using Euclidean remainder)
+        let rem = num.rem_euclid(den);
+        // val = 4 * |rem/den - 1/2| - 1 = 4 * |rem - den/2| / den - 1
+        // = (4 * |2*rem - den|) / (2*den) - 1
+        // = (2 * |2*rem - den| - den) / den
+        let two_rem_minus_den = 2 * rem - den;
+        let abs_val = two_rem_minus_den.abs();
+        let result_num = 2 * abs_val - den;
+        let result_den = den;
+        // Simplify result_num / result_den
+        let g = gcd(result_num, result_den);
+        let sn = result_num / g;
+        let sd = result_den / g;
+        if sd == 1 {
+          return Ok(Expr::Integer(sn));
         }
+        return Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+        });
       }
       // Float input
       if let Some(t) = expr_to_f64(&args[0]) {
@@ -7034,20 +7015,19 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     2 => {
       // TriangleWave[{min, max}, t]
-      if let Expr::List(bounds) = &args[0] {
-        if bounds.len() == 2 {
-          // First compute base triangle wave value
-          let base_args = [args[1].clone()];
-          let base = triangle_wave_ast(&base_args)?;
-          if let Some(v) = expr_to_f64(&base) {
-            if let (Some(lo), Some(hi)) =
-              (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
-            {
-              // Scale from [-1,1] to [min,max]: result = min + (max-min)*(v+1)/2
-              let result = lo + (hi - lo) * (v + 1.0) / 2.0;
-              return Ok(Expr::Real(result));
-            }
-          }
+      if let Expr::List(bounds) = &args[0]
+        && bounds.len() == 2
+      {
+        // First compute base triangle wave value
+        let base_args = [args[1].clone()];
+        let base = triangle_wave_ast(&base_args)?;
+        if let Some(v) = expr_to_f64(&base)
+          && let (Some(lo), Some(hi)) =
+            (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
+        {
+          // Scale from [-1,1] to [min,max]: result = min + (max-min)*(v+1)/2
+          let result = lo + (hi - lo) * (v + 1.0) / 2.0;
+          return Ok(Expr::Real(result));
         }
       }
       Ok(Expr::FunctionCall {
@@ -7074,28 +7054,26 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name,
         args: rat_args,
       } = &args[0]
+        && name == "Rational"
+        && rat_args.len() == 2
+        && let (Expr::Integer(n), Expr::Integer(d)) =
+          (&rat_args[0], &rat_args[1])
       {
-        if name == "Rational" && rat_args.len() == 2 {
-          if let (Expr::Integer(n), Expr::Integer(d)) =
-            (&rat_args[0], &rat_args[1])
-          {
-            // frac(n/d) = (n mod d) / d using Euclidean remainder
-            let rem = n.rem_euclid(*d);
-            if rem == 0 {
-              return Ok(Expr::Integer(0));
-            }
-            let g = gcd(rem, *d);
-            let sn = rem / g;
-            let sd = d / g;
-            if sd == 1 {
-              return Ok(Expr::Integer(sn));
-            }
-            return Ok(Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(sn), Expr::Integer(sd)],
-            });
-          }
+        // frac(n/d) = (n mod d) / d using Euclidean remainder
+        let rem = n.rem_euclid(*d);
+        if rem == 0 {
+          return Ok(Expr::Integer(0));
         }
+        let g = gcd(rem, *d);
+        let sn = rem / g;
+        let sd = d / g;
+        if sd == 1 {
+          return Ok(Expr::Integer(sn));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+        });
       }
       // Float input
       if let Some(t) = expr_to_f64(&args[0]) {
@@ -7109,19 +7087,18 @@ pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     2 => {
       // SawtoothWave[{min, max}, t]
-      if let Expr::List(bounds) = &args[0] {
-        if bounds.len() == 2 {
-          let base_args = [args[1].clone()];
-          let base = sawtooth_wave_ast(&base_args)?;
-          if let Some(v) = expr_to_f64(&base) {
-            if let (Some(lo), Some(hi)) =
-              (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
-            {
-              // Scale from [0,1] to [min,max]: result = min + (max-min)*v
-              let result = lo + (hi - lo) * v;
-              return Ok(Expr::Real(result));
-            }
-          }
+      if let Expr::List(bounds) = &args[0]
+        && bounds.len() == 2
+      {
+        let base_args = [args[1].clone()];
+        let base = sawtooth_wave_ast(&base_args)?;
+        if let Some(v) = expr_to_f64(&base)
+          && let (Some(lo), Some(hi)) =
+            (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
+        {
+          // Scale from [0,1] to [min,max]: result = min + (max-min)*v
+          let result = lo + (hi - lo) * v;
+          return Ok(Expr::Real(result));
         }
       }
       Ok(Expr::FunctionCall {
@@ -7146,10 +7123,10 @@ pub fn parabolic_cylinder_d_ast(
   }
 
   // Numeric evaluation when both arguments are numeric
-  if let (Some(nu), Some(z)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1])) {
-    if matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)) {
-      return Ok(Expr::Real(parabolic_cylinder_d(nu, z)));
-    }
+  if let (Some(nu), Some(z)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+    && (matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)))
+  {
+    return Ok(Expr::Real(parabolic_cylinder_d(nu, z)));
   }
 
   Ok(Expr::FunctionCall {

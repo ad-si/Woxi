@@ -132,40 +132,40 @@ pub fn dispatch_list_operations(
     }
     "MovingMap" if args.len() == 3 => {
       // MovingMap[f, list, n] - apply f to sublists of length n+1
-      if let Expr::List(items) = &args[1] {
-        if let Some(n) = match &args[2] {
+      if let Expr::List(items) = &args[1]
+        && let Some(n) = match &args[2] {
           Expr::Integer(n) => Some(*n as usize),
           _ => None,
-        } {
-          let window_size = n + 1;
-          if window_size > items.len() {
-            return Some(Ok(Expr::List(vec![])));
-          }
-          let f = &args[0];
-          let mut results = Vec::new();
-          for i in 0..=(items.len() - window_size) {
-            let sublist = Expr::List(items[i..i + window_size].to_vec());
-            // Construct f[sublist] using Map-like application
-            let applied = match f {
-              Expr::Identifier(fname) => Expr::FunctionCall {
-                name: fname.clone(),
-                args: vec![sublist],
-              },
-              _ => {
-                // For pure functions etc, use general application
-                Expr::FunctionCall {
-                  name: expr_to_string(f),
-                  args: vec![sublist],
-                }
-              }
-            };
-            match crate::evaluator::evaluate_expr_to_expr(&applied) {
-              Ok(val) => results.push(val),
-              Err(e) => return Some(Err(e)),
-            }
-          }
-          return Some(Ok(Expr::List(results)));
         }
+      {
+        let window_size = n + 1;
+        if window_size > items.len() {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        let f = &args[0];
+        let mut results = Vec::new();
+        for i in 0..=(items.len() - window_size) {
+          let sublist = Expr::List(items[i..i + window_size].to_vec());
+          // Construct f[sublist] using Map-like application
+          let applied = match f {
+            Expr::Identifier(fname) => Expr::FunctionCall {
+              name: fname.clone(),
+              args: vec![sublist],
+            },
+            _ => {
+              // For pure functions etc, use general application
+              Expr::FunctionCall {
+                name: expr_to_string(f),
+                args: vec![sublist],
+              }
+            }
+          };
+          match crate::evaluator::evaluate_expr_to_expr(&applied) {
+            Ok(val) => results.push(val),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(Ok(Expr::List(results)));
       }
     }
     "Select" if args.len() == 2 => {
@@ -339,21 +339,20 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::map_thread_ast(&args[0], &args[1], level));
     }
     "Downsample" if args.len() == 2 || args.len() == 3 => {
-      if let Expr::List(items) = &args[0] {
-        if let Some(n) = expr_to_i128(&args[1]) {
-          if n >= 1 {
-            let offset = if args.len() == 3 {
-              expr_to_i128(&args[2]).unwrap_or(1)
-            } else {
-              1
-            };
-            let n = n as usize;
-            let offset = (offset - 1).max(0) as usize;
-            let result: Vec<Expr> =
-              items.iter().skip(offset).step_by(n).cloned().collect();
-            return Some(Ok(Expr::List(result)));
-          }
-        }
+      if let Expr::List(items) = &args[0]
+        && let Some(n) = expr_to_i128(&args[1])
+        && n >= 1
+      {
+        let offset = if args.len() == 3 {
+          expr_to_i128(&args[2]).unwrap_or(1)
+        } else {
+          1
+        };
+        let n = n as usize;
+        let offset = (offset - 1).max(0) as usize;
+        let result: Vec<Expr> =
+          items.iter().skip(offset).step_by(n).cloned().collect();
+        return Some(Ok(Expr::List(result)));
       }
     }
     "BlockMap" if args.len() == 3 || args.len() == 4 => {
@@ -1455,7 +1454,7 @@ pub fn dispatch_list_operations(
         }
         let pairs: Vec<Expr> = keys
           .into_iter()
-          .zip(counts.into_iter())
+          .zip(counts)
           .map(|(k, c)| Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![k, Expr::Integer(c)],
@@ -1477,13 +1476,10 @@ pub fn dispatch_list_operations(
         for elem in elems {
           // Apply f[state, elem] — build function call expression
           let applied = match f {
-            Expr::Function { body } => {
-              let substituted = crate::syntax::substitute_slots(
-                body,
-                &[state.clone(), elem.clone()],
-              );
-              substituted
-            }
+            Expr::Function { body } => crate::syntax::substitute_slots(
+              body,
+              &[state.clone(), elem.clone()],
+            ),
             Expr::Identifier(fname) => Expr::FunctionCall {
               name: fname.clone(),
               args: vec![state.clone(), elem.clone()],
@@ -1519,14 +1515,13 @@ pub fn dispatch_list_operations(
           if let Some(ref kv) = key_val {
             for a2 in l2 {
               let key_val2 = get_assoc_value(a2, &key_str);
-              if let Some(ref kv2) = key_val2 {
-                if crate::syntax::expr_to_string(kv)
+              if let Some(ref kv2) = key_val2
+                && crate::syntax::expr_to_string(kv)
                   == crate::syntax::expr_to_string(kv2)
-                {
-                  // Merge the two associations
-                  let merged = merge_associations(a1, a2);
-                  results.push(merged);
-                }
+              {
+                // Merge the two associations
+                let merged = merge_associations(a1, a2);
+                results.push(merged);
               }
             }
           }
@@ -1551,8 +1546,7 @@ pub fn dispatch_list_operations(
           return Some(Ok(Expr::Integer(0)));
         }
         let sub_len = sub.len();
-        let sub_strs: Vec<String> =
-          sub.iter().map(|e| expr_to_string(e)).collect();
+        let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
         let mut count = 0i128;
         let mut i = 0;
         while i + sub_len <= list.len() {
@@ -1571,6 +1565,41 @@ pub fn dispatch_list_operations(
           }
         }
         return Some(Ok(Expr::Integer(count)));
+      }
+    }
+    // KeySortBy[assoc, f] — sort association by applying f to keys
+    "KeySortBy" if args.len() == 2 => {
+      if let Expr::Association(pairs) = &args[0] {
+        let func = &args[1];
+        let mut indexed: Vec<(usize, Expr)> = pairs
+          .iter()
+          .enumerate()
+          .map(|(i, (k, _))| {
+            let applied = evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: expr_to_string(func),
+              args: vec![k.clone()],
+            })
+            .unwrap_or(k.clone());
+            (i, applied)
+          })
+          .collect();
+        indexed.sort_by(|a, b| {
+          let sa = expr_to_string(&a.1);
+          let sb = expr_to_string(&b.1);
+          // Try numeric comparison first
+          let na: Result<f64, _> = sa.parse();
+          let nb: Result<f64, _> = sb.parse();
+          if let (Ok(a_val), Ok(b_val)) = (na, nb) {
+            a_val
+              .partial_cmp(&b_val)
+              .unwrap_or(std::cmp::Ordering::Equal)
+          } else {
+            sa.cmp(&sb)
+          }
+        });
+        let sorted_pairs: Vec<(Expr, Expr)> =
+          indexed.iter().map(|(i, _)| pairs[*i].clone()).collect();
+        return Some(Ok(Expr::Association(sorted_pairs)));
       }
     }
 

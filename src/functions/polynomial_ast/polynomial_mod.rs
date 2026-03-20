@@ -100,7 +100,7 @@ fn collect_sum_terms(expr: &Expr) -> Vec<Expr> {
       terms
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      args.iter().flat_map(|a| collect_sum_terms(a)).collect()
+      args.iter().flat_map(collect_sum_terms).collect()
     }
     _ => vec![expr.clone()],
   }
