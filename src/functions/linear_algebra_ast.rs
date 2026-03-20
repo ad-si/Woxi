@@ -3622,3 +3622,181 @@ pub fn principal_components_ast(
 
   Ok(Expr::List(result))
 }
+
+// ─── SmithDecomposition ────────────────────────────────────────────────
+
+/// SmithDecomposition[matrix] - returns {U, S, V} where U.matrix.V = S
+/// and S is the Smith normal form (diagonal with divisibility).
+pub fn smith_decomposition_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "SmithDecomposition expects exactly 1 argument".into(),
+    ));
+  }
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "SmithDecomposition".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let int_matrix = match matrix_to_i128(&matrix) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "SmithDecomposition".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let nrows = int_matrix.len();
+  let ncols = if nrows > 0 { int_matrix[0].len() } else { 0 };
+  if nrows == 0 || ncols == 0 {
+    return Ok(Expr::FunctionCall {
+      name: "SmithDecomposition".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let mut s: Vec<Vec<i128>> = int_matrix;
+  let mut u: Vec<Vec<i128>> = identity_i128(nrows);
+  let mut v: Vec<Vec<i128>> = identity_i128(ncols);
+
+  let min_dim = nrows.min(ncols);
+
+  for k in 0..min_dim {
+    loop {
+      // Find smallest nonzero absolute value in submatrix s[k..][k..]
+      let mut pivot_r = k;
+      let mut pivot_c = k;
+      let mut pivot_val = 0i128;
+      for i in k..nrows {
+        for j in k..ncols {
+          if s[i][j] != 0 && (pivot_val == 0 || s[i][j].abs() < pivot_val) {
+            pivot_val = s[i][j].abs();
+            pivot_r = i;
+            pivot_c = j;
+          }
+        }
+      }
+      if pivot_val == 0 {
+        break;
+      }
+
+      // Move pivot to (k, k)
+      if pivot_r != k {
+        s.swap(k, pivot_r);
+        u.swap(k, pivot_r);
+      }
+      if pivot_c != k {
+        for row in &mut s {
+          row.swap(k, pivot_c);
+        }
+        for row in &mut v {
+          row.swap(k, pivot_c);
+        }
+      }
+
+      // Ensure positive
+      if s[k][k] < 0 {
+        for j in 0..ncols {
+          s[k][j] = -s[k][j];
+        }
+        for j in 0..nrows {
+          u[k][j] = -u[k][j];
+        }
+      }
+
+      // Eliminate column k
+      let mut changed = false;
+      for i in (k + 1)..nrows {
+        if s[i][k] != 0 {
+          let q = s[i][k] / s[k][k];
+          for j in 0..ncols {
+            s[i][j] -= q * s[k][j];
+          }
+          for j in 0..nrows {
+            u[i][j] -= q * u[k][j];
+          }
+          if s[i][k] != 0 {
+            changed = true;
+          }
+        }
+      }
+
+      // Eliminate row k
+      for j in (k + 1)..ncols {
+        if s[k][j] != 0 {
+          let q = s[k][j] / s[k][k];
+          for i in 0..nrows {
+            s[i][j] -= q * s[i][k];
+          }
+          for i in 0..ncols {
+            v[i][j] -= q * v[i][k];
+          }
+          if s[k][j] != 0 {
+            changed = true;
+          }
+        }
+      }
+
+      if !changed {
+        // Check divisibility
+        let mut all_divide = true;
+        for i in (k + 1)..nrows {
+          for j in (k + 1)..ncols {
+            if s[i][j] != 0 && s[i][j] % s[k][k] != 0 {
+              all_divide = false;
+              for jj in 0..ncols {
+                s[k][jj] += s[i][jj];
+              }
+              for jj in 0..nrows {
+                u[k][jj] += u[i][jj];
+              }
+              break;
+            }
+          }
+          if !all_divide {
+            break;
+          }
+        }
+        if all_divide {
+          break;
+        }
+      }
+    }
+  }
+
+  let u_expr = matrix_to_expr(
+    u.into_iter()
+      .map(|row| row.into_iter().map(Expr::Integer).collect())
+      .collect(),
+  );
+  let s_expr = matrix_to_expr(
+    s.into_iter()
+      .map(|row| row.into_iter().map(Expr::Integer).collect())
+      .collect(),
+  );
+  let v_expr = matrix_to_expr(
+    v.into_iter()
+      .map(|row| row.into_iter().map(Expr::Integer).collect())
+      .collect(),
+  );
+
+  Ok(Expr::List(vec![u_expr, s_expr, v_expr]))
+}
+
+fn identity_i128(n: usize) -> Vec<Vec<i128>> {
+  let mut m = vec![vec![0i128; n]; n];
+  for i in 0..n {
+    m[i][i] = 1;
+  }
+  m
+}

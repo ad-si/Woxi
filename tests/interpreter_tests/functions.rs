@@ -10917,6 +10917,37 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // SmithDecomposition
+  #[test]
+  fn smith_decomposition_2x2() {
+    // SmithDecomposition returns {U, S, V} where U.M.V = S
+    // S is the Smith normal form
+    let result = interpret("SmithDecomposition[{{1, 2}, {3, 4}}]").unwrap();
+    // Verify the Smith normal form (diagonal part)
+    assert!(result.contains("{{1, 0}, {0, 2}}"));
+    // Verify U.M.V = S
+    let verify = interpret(
+      "Module[{d = SmithDecomposition[{{1, 2}, {3, 4}}]}, d[[1]].{{1, 2}, {3, 4}}.d[[3]] == d[[2]]]",
+    )
+    .unwrap();
+    assert_eq!(verify, "True");
+  }
+  #[test]
+  fn smith_decomposition_identity() {
+    assert_eq!(
+      interpret("SmithDecomposition[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{1, 0}, {0, 1}}, {{1, 0}, {0, 1}}}"
+    );
+  }
+  #[test]
+  fn smith_decomposition_3x3_verify() {
+    let verify = interpret(
+      "Module[{m = {{2, 4, 4}, {-6, 6, 12}, {10, -4, -16}}, d = SmithDecomposition[{{2, 4, 4}, {-6, 6, 12}, {10, -4, -16}}]}, d[[1]].m.d[[3]] == d[[2]]]",
+    )
+    .unwrap();
+    assert_eq!(verify, "True");
+  }
+
   // ChromaticPolynomial
   #[test]
   fn chromatic_polynomial_complete_4() {
