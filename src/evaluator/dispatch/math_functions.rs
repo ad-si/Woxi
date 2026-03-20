@@ -2104,6 +2104,59 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // AddSides[rel, expr] — add expr to both sides of a relation
+    "AddSides" if args.len() == 2 => {
+      if let Some(result) = apply_to_sides(&args[0], &args[1], "Plus") {
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // SubtractSides[rel, expr] — subtract expr from both sides
+    "SubtractSides" if args.len() == 2 => {
+      let neg = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), args[1].clone()],
+      };
+      if let Some(result) = apply_to_sides(&args[0], &neg, "Plus") {
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // MultiplySides[rel, expr] — multiply both sides by expr
+    "MultiplySides" if args.len() == 2 => {
+      if let Some(result) = apply_to_sides(&args[0], &args[1], "Times") {
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // DivideSides[rel, expr] — divide both sides by expr
+    "DivideSides" if args.len() == 2 => {
+      let inv = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![args[1].clone(), Expr::Integer(-1)],
+      };
+      if let Some(result) = apply_to_sides(&args[0], &inv, "Times") {
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // ApplySides[f, rel] — apply function f to both sides of a relation
+    "ApplySides" if args.len() == 2 => {
+      if let Expr::Comparison {
+        operands,
+        operators,
+      } = &args[1]
+      {
+        let new_operands: Vec<Expr> = operands
+          .iter()
+          .map(|op| Expr::FunctionCall {
+            name: crate::syntax::expr_to_string(&args[0]),
+            args: vec![op.clone()],
+          })
+          .collect();
+        let result = Expr::Comparison {
+          operands: new_operands,
+          operators: operators.clone(),
+        };
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
     // FromDMS[{d, m, s}] — convert degrees/minutes/seconds to decimal degrees
     "FromDMS" if args.len() == 1 => {
       match &args[0] {
@@ -2730,6 +2783,30 @@ fn power(base: Expr, exp: Expr) -> Expr {
   Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![base, exp],
+  }
+}
+
+/// Apply an operation to both sides of a comparison/equation.
+/// e.g. apply_to_sides(x == 2, 3, "Plus") => x + 3 == 2 + 3
+fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = relation
+  {
+    let new_operands: Vec<Expr> = operands
+      .iter()
+      .map(|operand| Expr::FunctionCall {
+        name: op.to_string(),
+        args: vec![operand.clone(), value.clone()],
+      })
+      .collect();
+    Some(Expr::Comparison {
+      operands: new_operands,
+      operators: operators.clone(),
+    })
+  } else {
+    None
   }
 }
 

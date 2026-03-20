@@ -34,6 +34,21 @@ pub fn dispatch_datetime_functions(
         args: args.to_vec(),
       }));
     }
+    // DayCount[date1, date2] — number of days between two dates
+    "DayCount" if args.len() == 2 => {
+      // Use DateDifference which returns Quantity[n, "Days"]
+      let result = crate::functions::datetime_ast::date_difference_ast(args);
+      if let Ok(Expr::FunctionCall {
+        name: ref qname,
+        args: ref qargs,
+      }) = result
+        && qname == "Quantity"
+        && qargs.len() == 2
+      {
+        return Some(Ok(qargs[0].clone()));
+      }
+      return Some(result);
+    }
     _ => {}
   }
   None
