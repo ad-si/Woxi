@@ -800,7 +800,7 @@ CholeskyDecomposition,Cholesky factorization of positive-definite matrix,🚫,,5
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1,328
 ChromaticityPlot,color visualization,🚫,None,10,2394
 ChromaticityPlot3D,,🚫,,10,3059
-ChromaticPolynomial,,,,10,2545
+ChromaticPolynomial,gives the chromatic polynomial of a graph in the variable k,✅,none,10,2545
 Circle,Represents a circle graphics primitive,✅,pure,2,256
 CircleDot,Circle dot operator,✅,unevaluated,3,1776
 CircleMinus,Circle minus operator,🚫,,3,2152

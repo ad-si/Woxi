@@ -10917,6 +10917,36 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // ChromaticPolynomial
+  #[test]
+  fn chromatic_polynomial_complete_4() {
+    assert_eq!(
+      interpret("ChromaticPolynomial[CompleteGraph[4], k]").unwrap(),
+      "-6*k + 11*k^2 - 6*k^3 + k^4"
+    );
+  }
+  #[test]
+  fn chromatic_polynomial_path_3() {
+    assert_eq!(
+      interpret("ChromaticPolynomial[PathGraph[{1,2,3}], k]").unwrap(),
+      "k - 2*k^2 + k^3"
+    );
+  }
+  #[test]
+  fn chromatic_polynomial_star_4() {
+    assert_eq!(
+      interpret("ChromaticPolynomial[StarGraph[4], k]").unwrap(),
+      "-k + 3*k^2 - 3*k^3 + k^4"
+    );
+  }
+  #[test]
+  fn chromatic_polynomial_single_vertex() {
+    assert_eq!(
+      interpret("ChromaticPolynomial[CompleteGraph[1], k]").unwrap(),
+      "k"
+    );
+  }
+
   // ChiDistribution
   #[test]
   fn chi_distribution_basic() {
