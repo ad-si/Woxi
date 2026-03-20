@@ -11048,4 +11048,40 @@ mod batch_unevaluated_wrappers_2 {
       "MatrixPropertyDistribution[x]"
     );
   }
+
+  #[test]
+  fn rename_file_basic() {
+    // Create a temp file, rename it, check old doesn't exist and new does, clean up
+    let result = interpret(
+      r#"Block[{src = CreateFile["test_rename_src_woxi.txt"]},
+        Close[src];
+        RenameFile["test_rename_src_woxi.txt", "test_rename_dst_woxi.txt"];
+        result = {FileExistsQ["test_rename_src_woxi.txt"], FileExistsQ["test_rename_dst_woxi.txt"]};
+        DeleteFile["test_rename_dst_woxi.txt"];
+        result]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{False, True}");
+  }
+
+  #[test]
+  fn rename_file_returns_dest_path() {
+    let result = interpret(
+      r#"Block[{src = CreateFile["test_rename_ret_woxi.txt"]},
+        Close[src];
+        result = RenameFile["test_rename_ret_woxi.txt", "test_rename_ret2_woxi.txt"];
+        DeleteFile["test_rename_ret2_woxi.txt"];
+        result]"#,
+    )
+    .unwrap();
+    assert!(result.contains("test_rename_ret2_woxi.txt"));
+  }
+
+  #[test]
+  fn rename_file_not_found() {
+    let result =
+      interpret(r#"RenameFile["nonexistent_woxi_file.txt", "dest.txt"]"#)
+        .unwrap();
+    assert_eq!(result, "$Failed[]");
+  }
 }

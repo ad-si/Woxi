@@ -4639,7 +4639,7 @@ RemoveOutputStreamMethod,,,,9,5587
 RemoveUsers,,🚫,,10,5390
 RemoveVideoStream,,🚫,,12.1,
 RenameDirectory,,,,2,3843
-RenameFile,,,,2,2553
+RenameFile,renames a file,✅,FileSystem,2,2553
 RenderingOptions,,🚫,,4,2742
 RenewalProcess,,🚫,,9,4052
 RenkoChart,,🚫,,8,3298
