@@ -10069,4 +10069,111 @@ mod batch_unevaluated_wrappers_2 {
       "{10, 15, 20, 25, 30}"
     );
   }
+
+  // IntersectingQ
+  #[test]
+  fn intersecting_q_true() {
+    assert_eq!(
+      interpret("IntersectingQ[{1, 2, 3}, {3, 4, 5}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn intersecting_q_false() {
+    assert_eq!(
+      interpret("IntersectingQ[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn intersecting_q_empty() {
+    assert_eq!(interpret("IntersectingQ[{}, {1}]").unwrap(), "False");
+  }
+
+  // AlternatingFactorial
+  #[test]
+  fn alternating_factorial_0() {
+    assert_eq!(interpret("AlternatingFactorial[0]").unwrap(), "0");
+  }
+  #[test]
+  fn alternating_factorial_1() {
+    assert_eq!(interpret("AlternatingFactorial[1]").unwrap(), "1");
+  }
+  #[test]
+  fn alternating_factorial_3() {
+    assert_eq!(interpret("AlternatingFactorial[3]").unwrap(), "5");
+  }
+  #[test]
+  fn alternating_factorial_5() {
+    assert_eq!(interpret("AlternatingFactorial[5]").unwrap(), "101");
+  }
+  #[test]
+  fn alternating_factorial_10() {
+    assert_eq!(interpret("AlternatingFactorial[10]").unwrap(), "3301819");
+  }
+
+  // AlphabeticOrder
+  #[test]
+  fn alphabetic_order_less() {
+    assert_eq!(
+      interpret("AlphabeticOrder[\"apple\", \"banana\"]").unwrap(),
+      "1"
+    );
+  }
+  #[test]
+  fn alphabetic_order_greater() {
+    assert_eq!(
+      interpret("AlphabeticOrder[\"banana\", \"apple\"]").unwrap(),
+      "-1"
+    );
+  }
+  #[test]
+  fn alphabetic_order_equal() {
+    assert_eq!(
+      interpret("AlphabeticOrder[\"apple\", \"apple\"]").unwrap(),
+      "0"
+    );
+  }
+
+  // BinaryDistance
+  #[test]
+  fn binary_distance_same() {
+    assert_eq!(
+      interpret("BinaryDistance[{1, 0, 1}, {1, 0, 1}]").unwrap(),
+      "0"
+    );
+  }
+  #[test]
+  fn binary_distance_different() {
+    assert_eq!(
+      interpret("BinaryDistance[{1, 0, 1, 1}, {1, 1, 0, 1}]").unwrap(),
+      "1"
+    );
+  }
+
+  // SquaresR
+  #[test]
+  fn squares_r_2_5() {
+    assert_eq!(interpret("SquaresR[2, 5]").unwrap(), "8");
+  }
+  #[test]
+  fn squares_r_2_25() {
+    assert_eq!(interpret("SquaresR[2, 25]").unwrap(), "12");
+  }
+  #[test]
+  fn squares_r_2_0() {
+    assert_eq!(interpret("SquaresR[2, 0]").unwrap(), "1");
+  }
+  #[test]
+  fn squares_r_1_4() {
+    assert_eq!(interpret("SquaresR[1, 4]").unwrap(), "2");
+  }
+  #[test]
+  fn squares_r_1_3() {
+    assert_eq!(interpret("SquaresR[1, 3]").unwrap(), "0");
+  }
+  #[test]
+  fn squares_r_4_5() {
+    assert_eq!(interpret("SquaresR[4, 5]").unwrap(), "48");
+  }
 }
