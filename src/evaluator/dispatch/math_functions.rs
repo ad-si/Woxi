@@ -1268,9 +1268,232 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "ContinuedFractionK" if args.len() == 2 => {
+      // ContinuedFractionK[f, {i, imin, imax}]
+      if let Expr::List(ref spec) = args[1] {
+        if spec.len() == 3 {
+          if let Expr::Identifier(var) = &spec[0] {
+            let imin_expr = crate::evaluator::evaluate_expr_to_expr(&spec[1])
+              .unwrap_or_else(|_| spec[1].clone());
+            let imax_expr = crate::evaluator::evaluate_expr_to_expr(&spec[2])
+              .unwrap_or_else(|_| spec[2].clone());
+            if let (Expr::Integer(imin), Expr::Integer(imax)) =
+              (&imin_expr, &imax_expr)
+            {
+              let body = &args[0];
+              let mut acc = Expr::Integer(0);
+              for k in (*imin..=*imax).rev() {
+                let fk = crate::syntax::replace_identifier_in_expr(
+                  body,
+                  var,
+                  &Expr::Integer(k),
+                );
+                let fk_eval =
+                  crate::evaluator::evaluate_expr_to_expr(&fk).unwrap_or(fk);
+                let denom = Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  left: Box::new(fk_eval),
+                  right: Box::new(acc),
+                };
+                acc = Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(Expr::Integer(1)),
+                  right: Box::new(denom),
+                };
+                acc =
+                  crate::evaluator::evaluate_expr_to_expr(&acc).unwrap_or(acc);
+              }
+              return Some(Ok(acc));
+            }
+          }
+        }
+      }
+    }
+    "FindLinearRecurrence" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        return Some(find_linear_recurrence_impl(elems));
+      }
+    }
     _ => {}
   }
   None
+}
+
+/// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that
+/// a[n] = c1*a[n-1] + c2*a[n-2] + ... + cd*a[n-d] for all valid n.
+fn find_linear_recurrence_impl(seq: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::expr_to_rational;
+
+  // Convert sequence to rationals
+  let mut rats: Vec<(i128, i128)> = Vec::new();
+  for e in seq {
+    let ev =
+      crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    match expr_to_rational(&ev) {
+      Some(r) => rats.push(r),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "FindLinearRecurrence".to_string(),
+          args: vec![Expr::List(seq.to_vec())],
+        });
+      }
+    }
+  }
+
+  let n = rats.len();
+  // Try recurrence orders from 1 up to n/2
+  for d in 1..=n / 2 {
+    // Check if recurrence of order d works for all positions d..n-1
+    // Build system: for each i in d..n: a[i] = c1*a[i-1] + c2*a[i-2] + ... + cd*a[i-d]
+    // We need at least d equations to solve for d unknowns.
+    if n < 2 * d {
+      continue;
+    }
+
+    // Solve the system using the first d equations, then verify the rest
+    // Use Cramer's rule / Gaussian elimination with rationals
+    let mut matrix: Vec<Vec<(i128, i128)>> = Vec::new();
+    let mut rhs: Vec<(i128, i128)> = Vec::new();
+
+    for i in d..(2 * d).min(n) {
+      let mut row = Vec::new();
+      for j in 1..=d {
+        row.push(rats[i - j]);
+      }
+      matrix.push(row);
+      rhs.push(rats[i]);
+    }
+
+    // Gaussian elimination
+    if let Some(coeffs) = solve_rational_system(&mut matrix, &mut rhs) {
+      // Verify against remaining elements
+      let mut valid = true;
+      for i in (2 * d).min(n)..n {
+        let mut sum = (0i128, 1i128);
+        for (j, c) in coeffs.iter().enumerate() {
+          let term = rat_mul(*c, rats[i - 1 - j]);
+          sum = rat_add(sum, term);
+        }
+        if sum != rats[i] {
+          valid = false;
+          break;
+        }
+      }
+      if valid {
+        let result: Vec<Expr> = coeffs
+          .iter()
+          .map(|&(num, den)| rational_to_expr_local(num, den))
+          .collect();
+        return Ok(Expr::List(result));
+      }
+    }
+  }
+
+  // No recurrence found
+  Ok(Expr::FunctionCall {
+    name: "FindLinearRecurrence".to_string(),
+    args: vec![Expr::List(seq.to_vec())],
+  })
+}
+
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let n = a.0 * b.1 + b.0 * a.1;
+  let d = a.1 * b.1;
+  let g = gcd_i128(n.abs(), d.abs());
+  (n / g, d / g)
+}
+
+fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let n = a.0 * b.0;
+  let d = a.1 * b.1;
+  let g = gcd_i128(n.abs(), d.abs());
+  (n / g, d / g)
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  if a == 0 { 1 } else { a }
+}
+
+fn solve_rational_system(
+  matrix: &mut [Vec<(i128, i128)>],
+  rhs: &mut [(i128, i128)],
+) -> Option<Vec<(i128, i128)>> {
+  let n = matrix.len();
+  if n == 0 {
+    return Some(vec![]);
+  }
+
+  // Forward elimination
+  for col in 0..n {
+    // Find pivot
+    let pivot_row = (col..n).find(|&r| matrix[r][col].0 != 0)?;
+    if pivot_row != col {
+      matrix.swap(col, pivot_row);
+      rhs.swap(col, pivot_row);
+    }
+
+    let pivot = matrix[col][col];
+    for row in (col + 1)..n {
+      if matrix[row][col].0 == 0 {
+        continue;
+      }
+      let factor = rat_div(matrix[row][col], pivot);
+      for c in col..n {
+        let sub = rat_mul(factor, matrix[col][c]);
+        matrix[row][c] = rat_sub(matrix[row][c], sub);
+      }
+      let sub = rat_mul(factor, rhs[col]);
+      rhs[row] = rat_sub(rhs[row], sub);
+    }
+  }
+
+  // Back substitution
+  let mut solution = vec![(0i128, 1i128); n];
+  for i in (0..n).rev() {
+    let mut val = rhs[i];
+    for j in (i + 1)..n {
+      let sub = rat_mul(matrix[i][j], solution[j]);
+      val = rat_sub(val, sub);
+    }
+    if matrix[i][i].0 == 0 {
+      return None;
+    }
+    solution[i] = rat_div(val, matrix[i][i]);
+  }
+
+  Some(solution)
+}
+
+fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_add(a, (-b.0, b.1))
+}
+
+fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  if b.0 < 0 {
+    rat_mul(a, (-b.1, -b.0))
+  } else {
+    rat_mul(a, (b.1, b.0))
+  }
+}
+
+fn rational_to_expr_local(n: i128, d: i128) -> Expr {
+  let g = gcd_i128(n.abs(), d.abs());
+  let (n, d) = (n / g, d / g);
+  if d < 0 {
+    rational_to_expr_local(-n, -d)
+  } else if d == 1 {
+    Expr::Integer(n)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(n), Expr::Integer(d)],
+    }
+  }
 }
 
 /// ExpToTrig[expr] — replace Exp[z] with trig/hyperbolic forms.

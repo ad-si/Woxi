@@ -7715,3 +7715,48 @@ pub fn top_level_output(expr: &Expr) -> String {
     _ => expr_to_output(expr),
   }
 }
+
+/// Replace all occurrences of an identifier with a given expression.
+pub fn replace_identifier_in_expr(
+  expr: &Expr,
+  name: &str,
+  replacement: &Expr,
+) -> Expr {
+  match expr {
+    Expr::Identifier(n) if n == name => replacement.clone(),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_identifier_in_expr(left, name, replacement)),
+      right: Box::new(replace_identifier_in_expr(right, name, replacement)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_identifier_in_expr(operand, name, replacement)),
+    },
+    Expr::FunctionCall {
+      name: fname,
+      args: fargs,
+    } => Expr::FunctionCall {
+      name: if fname == name {
+        if let Expr::Identifier(n) = replacement {
+          n.clone()
+        } else {
+          fname.clone()
+        }
+      } else {
+        fname.clone()
+      },
+      args: fargs
+        .iter()
+        .map(|a| replace_identifier_in_expr(a, name, replacement))
+        .collect(),
+    },
+    Expr::List(elems) => Expr::List(
+      elems
+        .iter()
+        .map(|a| replace_identifier_in_expr(a, name, replacement))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
+}

@@ -208,7 +208,7 @@ AroundReplace,,,,12,3678
 ARProcess,Autoregressive process,✅,unevaluated,9,1614
 ARPublish,,,,13.3,
 Array,Generates a list by applying a function to successive indices,✅,pure,1,233
-ArrayComponents,,,,8,2165
+ArrayComponents,Connected component labeling on arbitrary arrays,🚫,None,8,2165
 ArrayDepth,Returns the depth of a nested array,✅,pure,5,1622
 ArrayDot,,,,14.1,
 ArrayFilter,,,,10.2,3378
@@ -963,7 +963,7 @@ CompleteIntegral,,,,13,
 CompleteKaryTree,Complete k-ary tree graph,🚫,,8,2162
 Complex,Head type for complex numbers,✅,pure,1,541
 ComplexArrayPlot,,,,12.2,4881
-ComplexContourPlot,,,,12.1,2210
+ComplexContourPlot,Visualization,🚫,None,12.1,2210
 Complexes,Domain of complex numbers,✅,none,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
@@ -1050,7 +1050,7 @@ Contexts,,,,2,3402
 ContextToFileName,,,,3,5079
 Continue,Continues to next loop iteration,✅,pure,1,1072
 ContinuedFraction,Returns the continued fraction representation,✅,pure,4,1381
-ContinuedFractionK,,,,7,2212
+ContinuedFractionK,Evaluates a generalized continued fraction,✅,None,7,2212
 ContinuousAction,,🚫,,6,1155
 ContinuousMarkovProcess,,,,9,3162
 ContinuousTask,,,,10.2,4947
@@ -1143,7 +1143,7 @@ CountDistinctBy,,,,10,4527
 CountRoots,,,,6,2380
 CountryData,,🚫,,6,161
 Counts,Returns association of element counts,✅,pure,10,898
-CountsBy,,,,10,2268
+CountsBy,Counts elements grouped by a function,✅,None,10,2268
 Covariance,Computes the covariance of two lists,✅,pure,6,1534
 CovarianceEstimatorFunction,,,,7,5587
 CovarianceFunction,Covariance function,✅,unevaluated,9,1887
@@ -1276,7 +1276,7 @@ DateValue,Date value extraction,✅,unevaluated,10,1788
 DateWithinQ,,,,11.1,3823
 DaubechiesWavelet,,,,8,2299
 DavisDistribution,,,,8,3823
-DawsonF,,,,7,2187
+DawsonF,Dawson integral special function,🚫,None,7,2187
 DayCount,,,,9,2605
 DayCountConvention,,,,9,5184
 DayHemisphere,,,,10,4104
@@ -1562,7 +1562,7 @@ DoubleLeftRightArrow,,,,3,3636
 DoubleLeftTee,,,,3,5486
 DoubleLongLeftArrow,,,,3,3291
 DoubleLongLeftRightArrow,,,,3,2380
-DoubleLongRightArrow,,,,3,2214
+DoubleLongRightArrow,Symbol notation,🚫,None,3,2214
 DoubleRightArrow,,,,3,3578
 DoubleRightTee,Double right tee symbol,✅,unevaluated,3,1752
 DoubleUpArrow,,,,3,5390
@@ -1629,7 +1629,7 @@ EdgeCost,,,,9,3440
 EdgeCount,Returns the number of edges in a graph,✅,1,8,1256
 EdgeCoverQ,,,,8,4612
 EdgeCycleMatrix,,,,10,4479
-EdgeDelete,,,,8,2172
+EdgeDelete,Graph data structure operations,🚫,None,8,2172
 EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8,962
 EdgeForm,Specifies edge styling for filled graphics,✅,pure,1,120
 EdgeIndex,,,,8,3242
@@ -1741,7 +1741,7 @@ Erfc,Returns the complementary error function value,✅,pure,2,784
 Erfi,Returns the imaginary error function value,✅,pure,1,995
 ErlangB,,,,9,4387
 ErlangC,,,,9,4262
-ErlangDistribution,,,,8,2190
+ErlangDistribution,Probability distribution,🚫,None,8,2190
 Erosion,Morphological erosion,✅,unevaluated,7,1582
 ErrorBox,,,,3,4612
 EscapeRadius,,,,10,4006
@@ -1963,7 +1963,7 @@ FindEdgeIndependentPaths,,,,10,4809
 FindEquationalProof,,,,11.3,3094
 FindEulerianCycle,,,,8,2816
 FindExternalEvaluators,,,,,
-FindFaces,,,,9,2217
+FindFaces,Image processing,🚫,None,9,2217
 FindFile,Find file,✅,unevaluated,7,1766
 FindFit,Finds a least-squares fit of a model to data,✅,pure,5,535
 FindFormula,Find formula fitting data,✅,unevaluated,10.2,1740
@@ -1991,7 +1991,7 @@ FindKClique,,,,9,3972
 FindKClub,,,,9,4437
 FindKPlex,,,,9,3823
 FindLibrary,,,,8,3889
-FindLinearRecurrence,,,,7,2254
+FindLinearRecurrence,Finds a minimal linear recurrence for a sequence,✅,None,7,2254
 FindList,,,,2,3162
 FindMatchingColor,,,,12,5390
 FindMaximum,Finds a local maximum of a function numerically,✅,pure,5,557
@@ -2109,7 +2109,7 @@ Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
 FourierCosCoefficient,,,,7,2338
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7,1995
-FourierCosTransform,,,,4,2190
+FourierCosTransform,Symbolic integral transforms,🚫,None,4,2190
 FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6,1997
 FourierDCTFilter,,,,9,4809
 FourierDCTMatrix,,,,9,3889
@@ -2384,7 +2384,7 @@ GoodmanKruskalGammaTest,,,,9,4567
 Goto,Jumps to a Label,✅,pure,1,1106
 GouraudShading,,,,13.1,
 Grad,Compute the gradient of a scalar function,✅,none,9,461
-Gradient,,,,2.2,2203
+Gradient,Symbolic gradient operator,🚫,None,2.2,2203
 GradientFilter,Image gradient filter,✅,pure,7,1507
 GradientFittedMesh,,,,13,
 GradientOrientationFilter,,,,9,3143
@@ -2447,7 +2447,7 @@ GreaterSlantEqual,,,,3,5486
 GreaterThan,,,,10.3,2632
 GreaterTilde,,,,3,5013
 Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
-GreenFunction,,,,10.4,2210
+GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
 Grid,Displays data in a grid layout,✅,pure,6,167
 GridBox,,🚫,,3,1245
 GridDefaultElement,,,,3,5587
@@ -2491,7 +2491,7 @@ HammingWindow,,,,9,3020
 HandlerFunctions,,,,11,3474
 HandlerFunctionsKeys,,,,11,3889
 HankelH1,Hankel function H1,✅,unevaluated,6,1910
-HankelH2,,,,6,2197
+HankelH2,Hankel function of the second kind,🚫,None,6,2197
 HankelMatrix,,,,6,2889
 HankelTransform,,,,11.1,2867
 HannPoissonWindow,,,,9,4138
@@ -2876,9 +2876,9 @@ InverseCDF,,🚫,,6,1251
 InverseChiSquareDistribution,,,,7,2656
 InverseContinuousWaveletTransform,,,,8,3353
 InverseDistanceTransform,,,,8,4052
-InverseEllipticNomeQ,,,,3,2212
+InverseEllipticNomeQ,Elliptic function,🚫,None,3,2212
 InverseErf,Inverse error function,✅,unevaluated,3,1906
-InverseErfc,,,,3,2203
+InverseErfc,Inverse complementary error function,🚫,None,3,2203
 InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1,1260
 InverseFourierCosTransform,,,,4,3537
 InverseFourierSequenceTransform,,,,7,3257
@@ -3817,7 +3817,7 @@ NotebookFileName,,,,7,2240
 NotebookFind,Search in a notebook,✅,unevaluated,3,1565
 NotebookGet,Get notebook expression,✅,pure,3,1562
 NotebookImport,,,,10.1,2693
-NotebookInformation,,,,5,2217
+NotebookInformation,Notebook UI,🚫,None,5,2217
 NotebookLocate,Locates and selects a cell or object in an open notebook,🚫,None,3,2179
 NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3,2162
 NotebookOpen,Open a notebook file,🚫,io,3,1418
@@ -4589,7 +4589,7 @@ RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6,603
 RegionProduct,Cartesian product of regions,🚫,,10,2129
-RegionQ,,,,10,2208
+RegionQ,Geometric region predicate,🚫,None,10,2208
 RegionResize,,,,11,3765
 RegionSimilar,,,,13,
 RegionSize,,,,11,5079
@@ -5000,7 +5000,7 @@ Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
 SkeletonTransform,,,,8,3522
 SkellamDistribution,,,,8,3862
 Skewness,Computes the skewness of a list,✅,pure,6,1402
-SkewNormalDistribution,,,,8,2193
+SkewNormalDistribution,Probability distribution,🚫,None,8,2193
 Skip,,,,2,2311
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 SliceDensityPlot3D,,,,10.2,2512
@@ -5477,7 +5477,7 @@ TemporalRegularity,,,,10,3462
 Temporary,Temporary option,✅,unevaluated,2,1912
 TensorContract,Contract tensor indices,✅,pure,9,1484
 TensorDimensions,,,,9,3008
-TensorExpand,,,,9,2167
+TensorExpand,Symbolic tensor algebra expansion,🚫,None,9,2167
 TensorProduct,Tensor product of arrays,✅,none,9,797
 TensorRank,Gives the rank (number of indices) of a tensor,✅,pure,9,1938
 TensorReduce,Reduce tensor expressions,🚫,,9,2108
@@ -5909,7 +5909,7 @@ VectorGreater,,,,12,5184
 VectorGreaterEqual,,,,12,4291
 VectorLess,,,,12,
 VectorLessEqual,,,,12,4612
-VectorMarkers,,,,11.3,2214
+VectorMarkers,Visualization option,🚫,None,11.3,2214
 VectorPlot,Creates a vector field plot,✅,pure,7,445
 VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7,1018
 VectorPoints,,🚫,,7,1039
