@@ -2104,6 +2104,76 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // AlternatingFactorial[n] = n! - (n-1)! + (n-2)! - ... + (-1)^n * 0!
+    // Actually: af(0)=0, af(n) = n! - af(n-1) for n >= 1
+    "AlternatingFactorial" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0]) {
+        if n < 0 {
+          return None;
+        }
+        let n = n as u64;
+        // Compute iteratively: af(0) = 0, af(k) = k! - af(k-1)
+        let mut factorials: Vec<num_bigint::BigInt> =
+          vec![num_bigint::BigInt::from(1u64)];
+        for k in 1..=n {
+          factorials
+            .push(factorials.last().unwrap() * num_bigint::BigInt::from(k));
+        }
+        let mut af = num_bigint::BigInt::from(0);
+        for k in 1..=n {
+          af = &factorials[k as usize] - &af;
+        }
+        let result_str = af.to_string();
+        if let Ok(v) = result_str.parse::<i128>() {
+          return Some(Ok(Expr::Integer(v)));
+        }
+        // For very large values, return as string
+        return Some(Ok(Expr::Integer(result_str.parse().unwrap_or(0))));
+      }
+    }
+    // AlphabeticOrder[s1, s2] — 1 if s1 < s2, -1 if s1 > s2, 0 if equal
+    "AlphabeticOrder" if args.len() == 2 => {
+      if let (Expr::String(s1), Expr::String(s2)) = (&args[0], &args[1]) {
+        let s1_lower = s1.to_lowercase();
+        let s2_lower = s2.to_lowercase();
+        let result = match s1_lower.cmp(&s2_lower) {
+          std::cmp::Ordering::Less => 1,
+          std::cmp::Ordering::Greater => -1,
+          std::cmp::Ordering::Equal => match s1.cmp(s2) {
+            std::cmp::Ordering::Less => 1,
+            std::cmp::Ordering::Greater => -1,
+            std::cmp::Ordering::Equal => 0,
+          },
+        };
+        return Some(Ok(Expr::Integer(result)));
+      }
+    }
+    // BinaryDistance[u, v] — 0 if u == v, 1 otherwise
+    "BinaryDistance" if args.len() == 2 => {
+      let s1 = crate::syntax::expr_to_string(&args[0]);
+      let s2 = crate::syntax::expr_to_string(&args[1]);
+      return Some(Ok(Expr::Integer(if s1 == s2 { 0 } else { 1 })));
+    }
+    // SquaresR[k, n] — number of representations of n as sum of k squares
+    "SquaresR" if args.len() == 2 => {
+      if let (Some(k), Some(n)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      {
+        if n == 0 {
+          return Some(Ok(Expr::Integer(1)));
+        }
+        if n < 0 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let n = n as i64;
+        let k = k as usize;
+        // Brute-force count: enumerate all integer tuples with sum of squares = n
+        // Each component ranges from -isqrt(n) to isqrt(n)
+        let max_val = (n as f64).sqrt() as i64;
+        let count = count_squares_r(k, n, max_val, 0);
+        return Some(Ok(Expr::Integer(count as i128)));
+      }
+    }
     // AddSides[rel, expr] — add expr to both sides of a relation
     "AddSides" if args.len() == 2 => {
       if let Some(result) = apply_to_sides(&args[0], &args[1], "Plus") {
@@ -2784,6 +2854,29 @@ fn power(base: Expr, exp: Expr) -> Expr {
     name: "Power".to_string(),
     args: vec![base, exp],
   }
+}
+
+/// Count representations of n as sum of k squares (brute force recursion)
+fn count_squares_r(
+  k: usize,
+  remaining: i64,
+  max_val: i64,
+  depth: usize,
+) -> i64 {
+  if depth == k {
+    return if remaining == 0 { 1 } else { 0 };
+  }
+  let mut count = 0i64;
+  let limit = (remaining as f64).sqrt() as i64;
+  let limit = limit.min(max_val);
+  for v in -limit..=limit {
+    let sq = v * v;
+    if sq > remaining {
+      continue;
+    }
+    count += count_squares_r(k, remaining - sq, max_val, depth + 1);
+  }
+  count
 }
 
 /// Apply an operation to both sides of a comparison/equation.

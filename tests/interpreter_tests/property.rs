@@ -144,6 +144,8 @@ mod plus {
         "0".to_string()
       } else if expected_coeff == BigInt::from(1) {
         "x".to_string()
+      } else if expected_coeff == BigInt::from(-1) {
+        "-x".to_string()
       } else {
         format!("{expected_coeff}*x")
       };

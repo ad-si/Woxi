@@ -1603,6 +1603,16 @@ pub fn dispatch_list_operations(
       }
     }
 
+    // IntersectingQ[list1, list2] — True if lists share any element
+    "IntersectingQ" if args.len() == 2 => {
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
+        let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
+        let has_common = b.iter().any(|e| a_strs.contains(&expr_to_string(e)));
+        return Some(Ok(Expr::Identifier(
+          if has_common { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     _ => {}
   }
   None
