@@ -949,6 +949,124 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::Identifier("False".to_string())));
       }
     }
+    "HermitianMatrixQ" if args.len() == 1 => {
+      // Hermitian: M == ConjugateTranspose[M]
+      // For real matrices, this is SymmetricMatrixQ
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let matrix: Vec<Vec<Expr>> = rows
+          .iter()
+          .filter_map(|r| match r {
+            Expr::List(cols) if cols.len() == n => Some(cols.clone()),
+            _ => None,
+          })
+          .collect();
+        if matrix.len() == n {
+          for i in 0..n {
+            for j in i..n {
+              // Check M[i][j] == Conjugate[M[j][i]]
+              let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Conjugate".to_string(),
+                args: vec![matrix[j][i].clone()],
+              })
+              .unwrap_or(matrix[j][i].clone());
+              let diff = evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(matrix[i][j].clone()),
+                right: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(Expr::Integer(-1)),
+                  right: Box::new(conj),
+                }),
+              })
+              .unwrap_or(Expr::Integer(1));
+              if !is_zero_expr(&diff) {
+                return Some(Ok(Expr::Identifier("False".to_string())));
+              }
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+      }
+    }
+    "AntihermitianMatrixQ" if args.len() == 1 => {
+      // Antihermitian: M == -ConjugateTranspose[M]
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let matrix: Vec<Vec<Expr>> = rows
+          .iter()
+          .filter_map(|r| match r {
+            Expr::List(cols) if cols.len() == n => Some(cols.clone()),
+            _ => None,
+          })
+          .collect();
+        if matrix.len() == n {
+          for i in 0..n {
+            for j in i..n {
+              // Check M[i][j] == -Conjugate[M[j][i]]
+              let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Conjugate".to_string(),
+                args: vec![matrix[j][i].clone()],
+              })
+              .unwrap_or(matrix[j][i].clone());
+              let sum = evaluate_expr_to_expr(&Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(matrix[i][j].clone()),
+                right: Box::new(conj),
+              })
+              .unwrap_or(Expr::Integer(1));
+              if !is_zero_expr(&sum) {
+                return Some(Ok(Expr::Identifier("False".to_string())));
+              }
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+      }
+    }
+    "NormalMatrixQ" if args.len() == 1 => {
+      // Normal: M.M^H == M^H.M where M^H is conjugate transpose
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let matrix: Vec<Vec<Expr>> = rows
+          .iter()
+          .filter_map(|r| match r {
+            Expr::List(cols) if cols.len() == n => Some(cols.clone()),
+            _ => None,
+          })
+          .collect();
+        if matrix.len() == n {
+          // Build conjugate transpose
+          let mut ct = vec![vec![Expr::Integer(0); n]; n];
+          for i in 0..n {
+            for j in 0..n {
+              ct[i][j] = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Conjugate".to_string(),
+                args: vec![matrix[j][i].clone()],
+              })
+              .unwrap_or(matrix[j][i].clone());
+            }
+          }
+          // Compute M.M^H and M^H.M
+          let ct_list =
+            Expr::List(ct.iter().map(|r| Expr::List(r.clone())).collect());
+          let m_list = args[0].clone();
+          let mmh = crate::functions::linear_algebra_ast::dot_ast(&[
+            m_list.clone(),
+            ct_list.clone(),
+          ]);
+          let mhm =
+            crate::functions::linear_algebra_ast::dot_ast(&[ct_list, m_list]);
+          if let (Ok(a), Ok(b)) = (mmh, mhm) {
+            let a_str = expr_to_string(&a);
+            let b_str = expr_to_string(&b);
+            return Some(Ok(Expr::Identifier(
+              if a_str == b_str { "True" } else { "False" }.to_string(),
+            )));
+          }
+        }
+      }
+    }
     _ => {}
   }
   None

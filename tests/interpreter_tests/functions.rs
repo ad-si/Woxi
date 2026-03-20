@@ -9725,4 +9725,44 @@ mod batch_unevaluated_wrappers_2 {
   fn sequence_count_no_match() {
     assert_eq!(interpret("SequenceCount[{1, 2, 3}, {4, 5}]").unwrap(), "0");
   }
+  #[test]
+  fn chebyshev_distance_basic() {
+    assert_eq!(interpret("ChebyshevDistance[{1, 2}, {3, 5}]").unwrap(), "3");
+  }
+  #[test]
+  fn hermitian_matrix_q_real_symmetric() {
+    assert_eq!(
+      interpret("HermitianMatrixQ[{{1, 0}, {0, 2}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn hermitian_matrix_q_false() {
+    assert_eq!(
+      interpret("HermitianMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn normal_matrix_q_diagonal() {
+    assert_eq!(
+      interpret("NormalMatrixQ[{{1, 0}, {0, 2}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn normal_matrix_q_false() {
+    assert_eq!(
+      interpret("NormalMatrixQ[{{1, 1}, {0, 1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn parallel_sum_basic() {
+    assert_eq!(interpret("ParallelSum[i^2, {i, 1, 5}]").unwrap(), "55");
+  }
+  #[test]
+  fn parallel_product_basic() {
+    assert_eq!(interpret("ParallelProduct[i, {i, 1, 5}]").unwrap(), "120");
+  }
 }
