@@ -736,7 +736,7 @@ CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
 CensoredDistribution,,,,8,2587
 Censoring,,,,8,4809
 Center,Symbol for centering alignment,✅,pure,1,199
-CenterArray,,,,11,3242
+CenterArray,Center a list within a larger array,✅,none,11,3242
 CenterDot,Symbolic centered dot operator,✅,pure,3,465
 CenteredInterval,,,,13,
 CentralFeature,,,,11.1,4437
@@ -1536,7 +1536,7 @@ Divisible,Tests if one number is divisible by another,✅,pure,6,1013
 Divisors,Returns all divisors of an integer,✅,pure,1,675
 DivisorSigma,Returns the sum of k-th powers of divisors,✅,pure,1,1114
 DivisorSum,Applies a function to each divisor and sums the results,✅,pure,7,2519
-DMSList,,,,7,3378
+DMSList,Convert decimal degrees to degrees-minutes-seconds,✅,none,7,3378
 DMSString,,,,7,3566
 Do,Evaluates an expression repeatedly,✅,pure,1,147
 DockedCell,,🚫,,13.2,
@@ -2478,7 +2478,7 @@ Gudermannian,Returns the Gudermannian function value,✅,pure,7,1895
 GuidedFilter,,,,10.2,3916
 GumbelDistribution,Probability distribution,🚫,None,6,2276
 HaarWavelet,wavelet function,🚫,None,8,2404
-HadamardMatrix,,,,9,3176
+HadamardMatrix,Hadamard matrix of size n,✅,none,9,3176
 HalfLine,geometric primitive,🚫,None,10,2299
 HalfNormalDistribution,,,,6,2462
 HalfPlane,,🚫,,10,2468
@@ -2492,7 +2492,7 @@ HandlerFunctions,,🚫,,11,3474
 HandlerFunctionsKeys,,🚫,,11,3889
 HankelH1,Hankel function H1,✅,unevaluated,6,1910
 HankelH2,Hankel function of the second kind,🚫,None,6,2197
-HankelMatrix,,,,6,2889
+HankelMatrix,Hankel matrix from a list,✅,none,6,2889
 HankelTransform,,,,11.1,2867
 HannPoissonWindow,,,,9,4138
 HannWindow,,,,9,3233
@@ -4352,7 +4352,7 @@ Primes,Domain of primes,✅,unevaluated,4,1707
 PrimeZetaP,,,,7,2971
 PrimitivePolynomialQ,,,,11.1,4437
 PrimitiveRoot,,,,6,2798
-PrimitiveRootList,,,,10,2880
+PrimitiveRootList,List of primitive roots modulo n,✅,none,10,2880
 PrincipalComponents,,,,8,2473
 PrincipalValue,Represents Cauchy principal value,✅,1,3,1160
 Print,Outputs a string to the console,✅,effectful,1,55
@@ -4698,7 +4698,7 @@ ReverseElement,Symbolic reverse element relation,✅,pure,3,5184
 ReverseEquilibrium,,,,3,5390
 ReverseGraph,,,,8,3537
 ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
-ReverseSortBy,,,,12,3215
+ReverseSortBy,Sort in reverse order by a function,✅,none,12,3215
 ReverseUpEquilibrium,,,,3,5390
 RevolutionAxis,Option for axis of revolution,✅,none,7,815
 RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6,518
@@ -4817,7 +4817,7 @@ ScalePadding,,,,9,3636
 ScaleRanges,,,,9,3566
 ScaleRangeStyle,,,,9,3785
 ScalingFunctions,,🚫,,8,936
-ScalingMatrix,,,,6,3427
+ScalingMatrix,Diagonal scaling matrix,✅,none,6,3427
 ScalingTransform,Create a scaling transformation matrix,✅,pure,6,1442
 Scan,Applies a function to each element for side effects,✅,pure,1,740
 ScheduledTask,task scheduling,🚫,None,10,2421
@@ -6142,7 +6142,7 @@ Word,Symbol representing a word in string patterns,✅,none,2,79
 WordBoundary,Word boundary pattern,✅,unevaluated,5.1,1682
 WordCharacter,String pattern for word characters,✅,pure,5.1,1534
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
-WordCount,,,,10.1,3257
+WordCount,Count words in a string,✅,none,10.1,3257
 WordCounts,Counts word occurrences in a string,✅,None,10.1,2413
 WordData,,🚫,,6,92
 WordDefinition,,🚫,,10.3,2867

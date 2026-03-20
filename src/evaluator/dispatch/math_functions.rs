@@ -2104,6 +2104,57 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // PrimitiveRootList[n] — list of primitive roots modulo n
+    "PrimitiveRootList" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0]) {
+        if n <= 1 {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        let n = n as u64;
+        let phi = euler_totient(n);
+        let mut roots = Vec::new();
+        for g in 1..n {
+          if is_primitive_root(g, n, phi) {
+            roots.push(Expr::Integer(g as i128));
+          }
+        }
+        return Some(Ok(Expr::List(roots)));
+      }
+    }
+    // DMSList[degrees] — convert decimal degrees to {d, m, s}
+    "DMSList" if args.len() == 1 => {
+      let val =
+        evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+      if let Some((num, den)) =
+        crate::functions::math_ast::expr_to_rational(&val)
+      {
+        let d = num / den;
+        let remainder = num - d * den;
+        let min_num = remainder * 60;
+        let m = min_num / den;
+        let min_rem = min_num - m * den;
+        let sec_num = min_rem * 60;
+        let s = sec_num / den;
+        let sec_rem = sec_num - s * den;
+        if sec_rem == 0 {
+          return Some(Ok(Expr::List(vec![
+            Expr::Integer(d),
+            Expr::Integer(m),
+            Expr::Integer(s),
+          ])));
+        } else {
+          let g = gcd_i128(sec_num.abs(), den.abs());
+          return Some(Ok(Expr::List(vec![
+            Expr::Integer(d),
+            Expr::Integer(m),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(sec_num / g), Expr::Integer(den / g)],
+            },
+          ])));
+        }
+      }
+    }
     // AlternatingFactorial[n] = n! - (n-1)! + (n-2)! - ... + (-1)^n * 0!
     // Actually: af(0)=0, af(n) = n! - af(n-1) for n >= 1
     "AlternatingFactorial" if args.len() == 1 => {
@@ -2854,6 +2905,72 @@ fn power(base: Expr, exp: Expr) -> Expr {
     name: "Power".to_string(),
     args: vec![base, exp],
   }
+}
+
+/// Euler's totient function
+fn euler_totient(mut n: u64) -> u64 {
+  let mut result = n;
+  let mut p = 2u64;
+  while p * p <= n {
+    if n.is_multiple_of(p) {
+      while n.is_multiple_of(p) {
+        n /= p;
+      }
+      result -= result / p;
+    }
+    p += 1;
+  }
+  if n > 1 {
+    result -= result / n;
+  }
+  result
+}
+
+/// Check if g is a primitive root modulo n
+fn is_primitive_root(g: u64, n: u64, phi: u64) -> bool {
+  if gcd_u64(g, n) != 1 {
+    return false;
+  }
+  // g is a primitive root iff g^(phi/p) != 1 (mod n) for all prime factors p of phi
+  let mut temp_phi = phi;
+  let mut p = 2u64;
+  while p * p <= temp_phi {
+    if temp_phi.is_multiple_of(p) {
+      if pow_mod(g, phi / p, n) == 1 {
+        return false;
+      }
+      while temp_phi.is_multiple_of(p) {
+        temp_phi /= p;
+      }
+    }
+    p += 1;
+  }
+  if temp_phi > 1 && pow_mod(g, phi / temp_phi, n) == 1 {
+    return false;
+  }
+  true
+}
+
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {
+  let mut result = 1u64;
+  base %= modulus;
+  while exp > 0 {
+    if exp % 2 == 1 {
+      result = (result as u128 * base as u128 % modulus as u128) as u64;
+    }
+    exp >>= 1;
+    base = (base as u128 * base as u128 % modulus as u128) as u64;
+  }
+  result
 }
 
 /// Count representations of n as sum of k squares (brute force recursion)

@@ -1603,6 +1603,56 @@ pub fn dispatch_list_operations(
       }
     }
 
+    // CenterArray[list, n] — center list within an array of size n, padding with 0
+    "CenterArray" if args.len() >= 2 && args.len() <= 3 => {
+      if let (Expr::List(items), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
+        let n = n as usize;
+        let pad = if args.len() == 3 {
+          args[2].clone()
+        } else {
+          Expr::Integer(0)
+        };
+        let m = items.len();
+        if n <= m {
+          let start = (m - n) / 2;
+          return Some(Ok(Expr::List(items[start..start + n].to_vec())));
+        }
+        let left_pad = (n - m) / 2;
+        let right_pad = n - m - left_pad;
+        let mut result = vec![pad.clone(); left_pad];
+        result.extend_from_slice(items);
+        result.extend(vec![pad; right_pad]);
+        return Some(Ok(Expr::List(result)));
+      }
+    }
+    // ReverseSortBy[list, f] — sort list in reverse order by applying f
+    "ReverseSortBy" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0] {
+        let func = &args[1];
+        let mut indexed: Vec<(usize, String)> = items
+          .iter()
+          .enumerate()
+          .map(|(i, item)| {
+            let key = apply_function_to_arg(func, item)
+              .unwrap_or_else(|_| item.clone());
+            let key_str = expr_to_string(&key);
+            (i, key_str)
+          })
+          .collect();
+        indexed.sort_by(|a, b| {
+          let fa = a.1.parse::<f64>();
+          let fb = b.1.parse::<f64>();
+          if let (Ok(va), Ok(vb)) = (fa, fb) {
+            vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
+          } else {
+            b.1.cmp(&a.1)
+          }
+        });
+        let result: Vec<Expr> =
+          indexed.iter().map(|(i, _)| items[*i].clone()).collect();
+        return Some(Ok(Expr::List(result)));
+      }
+    }
     // IntersectingQ[list1, list2] — True if lists share any element
     "IntersectingQ" if args.len() == 2 => {
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
