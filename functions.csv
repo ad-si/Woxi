@@ -152,7 +152,7 @@ Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the s
 AntisymmetricMatrixQ,Test if matrix is antisymmetric,✅,none,10,3972
 Antonyms,,🚫,,12,4567
 AnyMatch,,,,14.1,
-AnyOrder,,,,10.1,2596
+AnyOrder,grammar pattern for any order,✅,Symbolic,10.1,2596
 AnySubset,,,,10.1,4707
 AnyTrue,Checks if any element in a list is true,✅,pure,10,2031
 Apart,Decomposes a rational expression into partial fractions,✅,pure,1,683
@@ -911,7 +911,7 @@ ColorsNear,,🚫,,12,3593
 ColorSpace,Option for specifying the color space of images,✅,pure,7,419
 ColorToneMapping,,🚫,,10.2,4356
 Column,Displays elements in a vertical column,✅,pure,6,174
-ColumnAlignments,,,,3,2671
+ColumnAlignments,option for column alignments in grids,✅,Symbolic,3,2671
 ColumnLines,,,,3,2914
 ColumnsEqual,,,,3,4660
 ColumnSpacings,option for column spacing in grids,✅,Symbolic,3,2570
@@ -1552,7 +1552,7 @@ DominatorTreeGraph,,,,13,
 DominatorVertexList,,,,13,
 Dot,Computes the dot product or matrix multiplication,✅,pure,1,51
 DotDashed,Dot-dashed line style directive,✅,none,6,1399
-DotEqual,,,,3,2729
+DotEqual,dot-equal symbol,✅,Symbolic,3,2729
 DotLayer,,🚫,,11.1,4356
 Dotted,Dotted line style directive,✅,none,6,466
 DoubleBracketingBar,,,,3,3972
@@ -1826,7 +1826,7 @@ ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pur
 ExtendedEntityClass,,🚫,,12,4356
 ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1,1557
 Extension,Extension option,✅,unevaluated,3,1693
-ExtentElementFunction,,,,8,2671
+ExtentElementFunction,option for extent element function,✅,Symbolic,8,2671
 ExtentMarkers,,,,8,3162
 ExtentSize,,🚫,,8,1345
 ExternalBundle,,🚫,,10,5184
@@ -2503,7 +2503,7 @@ HarmonicMean,Returns the harmonic mean of a list,✅,pure,6,2223
 HarmonicMeanFilter,,,,7,4204
 HarmonicNumber,Returns the n-th harmonic number,✅,pure,4,929
 Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure,1,1333
-HatchFilling,,,,12.1,2635
+HatchFilling,option for hatch filling in plots,✅,Symbolic,12.1,2635
 HatchShading,,,,12.1,3737
 Haversine,Haversine function,✅,computation,7,1901
 HazardFunction,Hazard function,✅,unevaluated,8,1679
@@ -2511,7 +2511,7 @@ Head,Returns the head of an expression,✅,pure,1,229
 HeaderAlignment,,,,12.1,
 HeaderBackground,,,,12.1,
 HeaderDisplayFunction,,,,12.1,
-HeaderLines,,,,10,2650
+HeaderLines,option for header lines in imports,✅,Symbolic,10,2650
 HeaderSize,,,,12.1,
 HeaderStyle,,,,12.1,
 Heads,Option for including heads in operations,✅,none,2,824
@@ -2747,7 +2747,7 @@ IncidenceGraph,,,,8,3317
 IncidenceList,,,,9,3280
 IncidenceMatrix,Graph incidence matrix,✅,unevaluated,8,1880
 IncludeAromaticBonds,,,,12,
-IncludeConstantBasis,,,,7,2632
+IncludeConstantBasis,option for including constant basis,✅,Symbolic,7,2632
 IncludedContexts,,,,12.3,
 IncludeDefinitions,,,,12,5486
 IncludeDirectories,,,,12,
@@ -2864,7 +2864,7 @@ Intersection,Returns sorted intersection of lists,✅,pure,1,553
 Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3,236
 IntervalIntersection,Computes the intersection of intervals,✅,pure,3,2179
 IntervalMarkers,option for interval markers in plots,✅,Symbolic,12,2587
-IntervalMarkersStyle,,,,12,2632
+IntervalMarkersStyle,option for interval marker style,✅,Symbolic,12,2632
 IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3,605
 IntervalSlider,UI widget,🚫,None,10,2389
 IntervalUnion,Computes the union of intervals,✅,pure,3,2786
@@ -3093,7 +3093,7 @@ LearningRateMultipliers,,🚫,,11.1,3440
 LeastSquares,Least squares solution,✅,unevaluated,6,1885
 LeastSquaresFilterKernel,,,,9,3717
 Left,Symbol for left alignment,✅,pure,1,241
-LeftArrow,,,,3,2762
+LeftArrow,left arrow symbol,✅,Symbolic,3,2762
 LeftArrowBar,,,,3,5390
 LeftArrowRightArrow,,,,3,5390
 LeftDownTeeVector,,,,3,5390
@@ -3797,7 +3797,7 @@ Normalize,Normalizes a vector to unit length,✅,pure,6,421
 Normalized,,,,10,5079
 NormalizedSquaredEuclideanDistance,Normalized squared Euclidean distance between vectors,✅,1,8,2944
 NormalMatrixQ,Test whether a matrix is normal,✅,none,10,3972
-NormalsFunction,,,,6,2777
+NormalsFunction,option for normals computation,✅,Symbolic,6,2777
 NormFunction,,,,5,2880
 Not,Checks if a condition is false,✅,pure,1,139
 NotCongruent,,,,3,4881
@@ -3913,7 +3913,7 @@ NumberFieldSignature,,,,6,4315
 NumberForm,Displays a number with specified formatting,✅,pure,1,336
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2,1960
 NumberLinePlot,Requires external services or GUI infrastructure,🚫,io,10,913
-NumberMarks,,,,3,2734
+NumberMarks,option for number marks,✅,Symbolic,3,2734
 NumberMultiplier,,,,3,3737
 NumberPadding,,🚫,,2,1035
 NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure,1,2541
@@ -4119,7 +4119,7 @@ ParzenWindow,,,,9,4356
 PascalBinomial,,,,14.1,
 PascalDistribution,,,,8,3008
 PassEventsDown,Pass events down option,✅,unevaluated,6,1771
-PassEventsUp,,,,6,2777
+PassEventsUp,option for passing events up,✅,Symbolic,6,2777
 Paste,,,,8,2553
 PasteButton,Represents a button that pastes content when clicked,🚫,None,6,2174
 Path,Graph theory path,🚫,None,4,2260
@@ -4768,7 +4768,7 @@ RowLines,option for grid formatting row lines,✅,Symbolic,3,2557
 RowMinHeight,,,,3,3803
 RowReduce,Returns the row echelon form of a matrix,✅,pure,1,483
 RowsEqual,,,,3,5486
-RowSpacings,,,,3,2742
+RowSpacings,option for row spacing in grids,✅,Symbolic,3,2742
 RSolve,Solve recurrence equations,✅,pure,5,695
 RSolveValue,Solution value of recurrence,✅,unevaluated,10,1621
 RStabilityConditions,,,,14.1,
@@ -4811,7 +4811,7 @@ SavitzkyGolayMatrix,,,,10,3506
 SawtoothWave,Periodic sawtooth wave function,✅,pure,7,1480
 Scale,Scales a graphics object,✅,pure,6,597
 Scaled,Represents a scaled position or size,✅,pure,1,183
-ScaleDivisions,,,,9,2662
+ScaleDivisions,option for scale divisions,✅,Symbolic,9,2662
 ScaleOrigin,,,,9,3440
 ScalePadding,,,,9,3636
 ScaleRanges,,,,9,3566
@@ -4864,7 +4864,7 @@ SelectionCreateCell,,🚫,,3,5079
 SelectionEvaluate,Evaluate selected notebook content,🚫,,3,2051
 SelectionEvaluateCreateCell,,🚫,,3,3755
 SelectionMove,Move the selection in a notebook,✅,none,3,636
-SelfLoopStyle,,,,6,2656
+SelfLoopStyle,option for self-loop style in graphs,✅,Symbolic,6,2656
 SemanticImport,Import with semantic interpretation,🚫,,10,2100
 SemanticImportString,,🚫,,10,2491
 SemanticInterpretation,natural language processing,🚫,None,10,2305
@@ -5183,7 +5183,7 @@ StarData,,🚫,,10,722
 StarGraph,Star graph with n vertices,✅,1,8,2617
 StartExternalSession,,🚫,,11.2,3162
 StartingStepSize,Starting step size option,✅,unevaluated,4,1760
-StartOfLine,,,,5.1,2786
+StartOfLine,string pattern for start of line,✅,Symbolic,5.1,2786
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 StartProcess,,🚫,,10,2514
 StartWebSession,,🚫,,12,3678
@@ -5291,7 +5291,7 @@ Subscript,Represents a subscripted expression for display,✅,pure,1,30
 SubscriptBox,Represents a subscript box for typesetting,✅,pure,3,964
 SubscriptBoxOptions,,🚫,,4,5390
 Subsequences,Returns all contiguous subsequences of a list,✅,pure,10.4,2632
-Subset,,,,3,2688
+Subset,represents a subset relation,✅,Symbolic,3,2688
 SubsetCases,,,,12.1,4660
 SubsetCount,,,,12.1,5013
 SubsetEqual,,,,3,3916
@@ -5452,7 +5452,7 @@ TargetDevice,,🚫,,11,2986
 TargetFunctions,,🚫,,3,1113
 TargetStructure,,🚫,,13.3,
 TargetSystem,,🚫,,12,
-TargetUnits,,,,9,2693
+TargetUnits,option for target units,✅,Symbolic,9,2693
 TaskAbort,,🚫,,11.2,5587
 TaskExecute,,🚫,,11.2,4809
 TaskObject,,🚫,,11.2,
