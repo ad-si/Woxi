@@ -266,6 +266,13 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::List(results)));
       }
     }
+    // WordCount["string"] — count words in a string
+    "WordCount" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        let count = s.split_whitespace().count();
+        return Some(Ok(Expr::Integer(count as i128)));
+      }
+    }
     _ => {}
   }
   None

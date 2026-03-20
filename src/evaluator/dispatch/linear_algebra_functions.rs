@@ -1066,9 +1066,102 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    // HankelMatrix[{c1,...,cn}] — Hankel matrix where entry (i,j) = c[i+j-1]
+    "HankelMatrix" if !args.is_empty() && args.len() <= 2 => {
+      if args.len() == 1 {
+        if let Expr::List(col) = &args[0] {
+          let n = col.len();
+          let mut rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let idx = i + j;
+              if idx < n {
+                row.push(col[idx].clone());
+              } else {
+                row.push(Expr::Integer(0));
+              }
+            }
+            rows.push(Expr::List(row));
+          }
+          return Some(Ok(Expr::List(rows)));
+        }
+      } else if let (Expr::List(col), Expr::List(row_data)) =
+        (&args[0], &args[1])
+      {
+        // HankelMatrix[col, row] — first column is col, last row is row_data
+        let n = col.len();
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+          let mut row = Vec::with_capacity(n);
+          for j in 0..n {
+            if i + j < n {
+              row.push(col[i + j].clone());
+            } else {
+              // Use row_data for the remainder
+              let rd_idx = i + j - n + 1;
+              if rd_idx < row_data.len() {
+                row.push(row_data[rd_idx].clone());
+              } else {
+                row.push(Expr::Integer(0));
+              }
+            }
+          }
+          rows.push(Expr::List(row));
+        }
+        return Some(Ok(Expr::List(rows)));
+      }
+    }
+    // HadamardMatrix[n] — Hadamard matrix of size n (must be power of 2)
+    "HadamardMatrix" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0]) {
+        let n = n as usize;
+        if n > 0 && (n & (n - 1)) == 0 {
+          // n is a power of 2: Sylvester construction
+          let mat = hadamard_sylvester(n);
+          let result: Vec<Expr> = mat
+            .into_iter()
+            .map(|row| Expr::List(row.into_iter().map(Expr::Integer).collect()))
+            .collect();
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
+    // ScalingMatrix[{s1, s2, ...}] — diagonal scaling matrix
+    "ScalingMatrix" if args.len() == 1 => {
+      if let Expr::List(scales) = &args[0] {
+        let n = scales.len();
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+          let mut row = vec![Expr::Integer(0); n];
+          row[i] = scales[i].clone();
+          rows.push(Expr::List(row));
+        }
+        return Some(Ok(Expr::List(rows)));
+      }
+    }
     _ => {}
   }
   None
+}
+
+/// Hadamard matrix via Sylvester construction for powers of 2
+fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
+  if n == 1 {
+    return vec![vec![1]];
+  }
+  let half = hadamard_sylvester(n / 2);
+  let h = n / 2;
+  let mut result = vec![vec![0i128; n]; n];
+  for i in 0..h {
+    for j in 0..h {
+      result[i][j] = half[i][j];
+      result[i][j + h] = half[i][j];
+      result[i + h][j] = half[i][j];
+      result[i + h][j + h] = -half[i][j];
+    }
+  }
+  result
 }
 
 /// LUDecomposition[m] — compute LU decomposition with partial pivoting.

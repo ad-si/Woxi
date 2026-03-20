@@ -10176,4 +10176,100 @@ mod batch_unevaluated_wrappers_2 {
   fn squares_r_4_5() {
     assert_eq!(interpret("SquaresR[4, 5]").unwrap(), "48");
   }
+
+  // HankelMatrix
+  #[test]
+  fn hankel_matrix_basic() {
+    assert_eq!(
+      interpret("HankelMatrix[{1, 2, 3}]").unwrap(),
+      "{{1, 2, 3}, {2, 3, 0}, {3, 0, 0}}"
+    );
+  }
+  #[test]
+  fn hankel_matrix_two_args() {
+    assert_eq!(
+      interpret("HankelMatrix[{1, 2, 3}, {3, 4, 5}]").unwrap(),
+      "{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+  }
+
+  // HadamardMatrix
+  #[test]
+  fn hadamard_matrix_2() {
+    assert_eq!(interpret("HadamardMatrix[2]").unwrap(), "{{1, 1}, {1, -1}}");
+  }
+  #[test]
+  fn hadamard_matrix_4() {
+    assert_eq!(
+      interpret("HadamardMatrix[4]").unwrap(),
+      "{{1, 1, 1, 1}, {1, -1, 1, -1}, {1, 1, -1, -1}, {1, -1, -1, 1}}"
+    );
+  }
+
+  // PrimitiveRootList
+  #[test]
+  fn primitive_root_list_7() {
+    assert_eq!(interpret("PrimitiveRootList[7]").unwrap(), "{3, 5}");
+  }
+  #[test]
+  fn primitive_root_list_13() {
+    assert_eq!(interpret("PrimitiveRootList[13]").unwrap(), "{2, 6, 7, 11}");
+  }
+
+  // DMSList (inverse of FromDMS)
+  #[test]
+  fn dms_list_basic() {
+    assert_eq!(interpret("DMSList[72803/1800]").unwrap(), "{40, 26, 46}");
+  }
+
+  // WordCount
+  #[test]
+  fn word_count_basic() {
+    assert_eq!(
+      interpret("WordCount[\"hello world foo bar\"]").unwrap(),
+      "4"
+    );
+  }
+  #[test]
+  fn word_count_empty() {
+    assert_eq!(interpret("WordCount[\"\"]").unwrap(), "0");
+  }
+
+  // CenterArray
+  #[test]
+  fn center_array_basic() {
+    assert_eq!(
+      interpret("CenterArray[{a, b, c}, 7]").unwrap(),
+      "{0, 0, a, b, c, 0, 0}"
+    );
+  }
+  #[test]
+  fn center_array_smaller() {
+    assert_eq!(interpret("CenterArray[{a, b, c}, 2]").unwrap(), "{a, b}");
+  }
+
+  // ScalingMatrix
+  #[test]
+  fn scaling_matrix_2d() {
+    assert_eq!(
+      interpret("ScalingMatrix[{2, 3}]").unwrap(),
+      "{{2, 0}, {0, 3}}"
+    );
+  }
+  #[test]
+  fn scaling_matrix_3d() {
+    assert_eq!(
+      interpret("ScalingMatrix[{1, 2, 3}]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+    );
+  }
+
+  // ReverseSortBy
+  #[test]
+  fn reverse_sort_by_basic() {
+    assert_eq!(
+      interpret("ReverseSortBy[{3, 1, 2, 5, 4}, Identity]").unwrap(),
+      "{5, 4, 3, 2, 1}"
+    );
+  }
 }
