@@ -2065,6 +2065,55 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // KnightTourGraph[m, n] — graph of knight moves on an m×n chessboard
+  if name == "KnightTourGraph"
+    && args.len() == 2
+    && let Expr::Integer(m) = &args[0]
+    && let Expr::Integer(n) = &args[1]
+  {
+    let m = *m as usize;
+    let n = *n as usize;
+    let total = m * n;
+    let vertices: Vec<Expr> =
+      (1..=total).map(|i| Expr::Integer(i as i128)).collect();
+    let knight_moves: [(i32, i32); 8] = [
+      (1, 2),
+      (1, -2),
+      (-1, 2),
+      (-1, -2),
+      (2, 1),
+      (2, -1),
+      (-2, 1),
+      (-2, -1),
+    ];
+    let mut edges = Vec::new();
+    for r in 0..m {
+      for c in 0..n {
+        let from = r * n + c + 1; // 1-indexed
+        for &(dr, dc) in &knight_moves {
+          let nr = r as i32 + dr;
+          let nc = c as i32 + dc;
+          if nr >= 0 && nr < m as i32 && nc >= 0 && nc < n as i32 {
+            let to = nr as usize * n + nc as usize + 1;
+            if from < to {
+              edges.push(Expr::FunctionCall {
+                name: "UndirectedEdge".to_string(),
+                args: vec![
+                  Expr::Integer(from as i128),
+                  Expr::Integer(to as i128),
+                ],
+              });
+            }
+          }
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // AdjacencyMatrix[Graph[{vertices}, {edges}]] — build adjacency matrix
   if name == "AdjacencyMatrix" && args.len() == 1 {
     if let Expr::FunctionCall {

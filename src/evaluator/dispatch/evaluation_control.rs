@@ -158,6 +158,18 @@ pub fn dispatch_evaluation_control(
         args: logistic_args,
       }));
     }
+    "FrechetDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "FrechetDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "ExtremeValueDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "ExtremeValueDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "InverseChiSquareDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "InverseChiSquareDistribution".to_string(),
