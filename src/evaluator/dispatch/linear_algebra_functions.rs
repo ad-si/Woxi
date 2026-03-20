@@ -1066,6 +1066,44 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
+    "AntisymmetricMatrixQ" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let mut is_antisymmetric = true;
+        'outer: for i in 0..n {
+          if let Expr::List(row_i) = &rows[i] {
+            if row_i.len() != n {
+              is_antisymmetric = false;
+              break;
+            }
+            for j in 0..n {
+              if let Expr::List(row_j) = &rows[j] {
+                // Check m[i][j] + m[j][i] == 0
+                let sum = Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![row_i[j].clone(), row_j[i].clone()],
+                };
+                let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
+                if !matches!(evaluated, Expr::Integer(0)) {
+                  is_antisymmetric = false;
+                  break 'outer;
+                }
+              } else {
+                is_antisymmetric = false;
+                break 'outer;
+              }
+            }
+          } else {
+            is_antisymmetric = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if is_antisymmetric { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     // HankelMatrix[{c1,...,cn}] — Hankel matrix where entry (i,j) = c[i+j-1]
     "HankelMatrix" if !args.is_empty() && args.len() <= 2 => {
       if args.len() == 1 {

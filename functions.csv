@@ -149,7 +149,7 @@ Antialiasing,Option for antialiasing in graphics,✅,none,6,855
 Antihermitian,,,,12.2,5486
 AntihermitianMatrixQ,Test whether a matrix is anti-Hermitian,✅,none,10,3947
 Antisymmetric,,,,9,2452
-AntisymmetricMatrixQ,,,,10,3972
+AntisymmetricMatrixQ,Test if matrix is antisymmetric,✅,none,10,3972
 Antonyms,,🚫,,12,4567
 AnyMatch,,,,14.1,
 AnyOrder,,,,10.1,2596
@@ -1119,7 +1119,7 @@ CoreNilpotentDecomposition,,,,13,
 CornerFilter,,,,8,3765
 CornerNeighbors,Corner neighbors option,✅,unevaluated,7,1827
 Correlation,Computes the Pearson correlation of two lists,✅,pure,6,1135
-CorrelationDistance,,,,6,3070
+CorrelationDistance,1 minus Pearson correlation between vectors,✅,none,6,3070
 CorrelationFunction,Correlation function,✅,unevaluated,9,1723
 CorrelationTest,,,,9,3317
 Cos,Returns the cosine of a number,✅,pure,1,31
@@ -4313,7 +4313,7 @@ Power,Raises a number to a power,✅,pure,1,4
 PowerDistribution,,,,8,3224
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2,640
 PowerMod,Computes modular exponentiation a^b mod m,✅,pure,1,607
-PowerModList,,,,6,3306
+PowerModList,List of successive power-mod values,✅,none,6,3306
 PowerRange,Generate a list of values by successive multiplication,✅,1,10,2131
 PowerSpectralDensity,Power spectral density of signal,🚫,,9,2091
 PowersRepresentations,Representations as sums of powers,✅,unevaluated,6,1637
@@ -4937,7 +4937,7 @@ ShapiroWilkTest,,,,8,3593
 Share,Memory sharing optimization (no-op),✅,none,1,3233
 SharingList,,,,11.3,5587
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7,2462
-ShearingMatrix,,,,6,2960
+ShearingMatrix,Shearing transformation matrix,✅,none,6,2960
 ShearingTransform,Returns TransformationFunction wrapper,🚫,None,6,2208
 ShellRegion,,,,11,3823
 ShenCastanMatrix,,,,9,4479
