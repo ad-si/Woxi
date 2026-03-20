@@ -1619,6 +1619,50 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "CoordinateBounds" if args.len() == 1 => {
+      // CoordinateBounds[{{x1,y1,...}, {x2,y2,...}, ...}] returns {{xmin,xmax}, {ymin,ymax}, ...}
+      if let Expr::List(points) = &args[0] {
+        if !points.is_empty() {
+          if let Expr::List(first) = &points[0] {
+            let dim = first.len();
+            let mut mins: Vec<Expr> = first.clone();
+            let mut maxs: Vec<Expr> = first.clone();
+            for pt in &points[1..] {
+              if let Expr::List(coords) = pt {
+                if coords.len() == dim {
+                  for d in 0..dim {
+                    let less_than_min =
+                      evaluate_expr_to_expr(&Expr::FunctionCall {
+                        name: "Less".to_string(),
+                        args: vec![coords[d].clone(), mins[d].clone()],
+                      });
+                    if let Ok(Expr::Identifier(ref s)) = less_than_min {
+                      if s == "True" {
+                        mins[d] = coords[d].clone();
+                      }
+                    }
+                    let greater_than_max =
+                      evaluate_expr_to_expr(&Expr::FunctionCall {
+                        name: "Greater".to_string(),
+                        args: vec![coords[d].clone(), maxs[d].clone()],
+                      });
+                    if let Ok(Expr::Identifier(ref s)) = greater_than_max {
+                      if s == "True" {
+                        maxs[d] = coords[d].clone();
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            let bounds: Vec<Expr> = (0..dim)
+              .map(|d| Expr::List(vec![mins[d].clone(), maxs[d].clone()]))
+              .collect();
+            return Some(Ok(Expr::List(bounds)));
+          }
+        }
+      }
+    }
     _ => {}
   }
   None

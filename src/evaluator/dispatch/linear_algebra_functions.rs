@@ -664,6 +664,58 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec(),
       }));
     }
+    "Adjugate" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let matrix: Vec<Vec<Expr>> = rows
+          .iter()
+          .filter_map(|r| match r {
+            Expr::List(cols) if cols.len() == n => Some(cols.clone()),
+            _ => None,
+          })
+          .collect();
+        if matrix.len() == n && n > 0 {
+          let mut result = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let mut sub = Vec::with_capacity(n - 1);
+              for r in 0..n {
+                if r == j {
+                  continue;
+                }
+                let mut sub_row = Vec::with_capacity(n - 1);
+                for c in 0..n {
+                  if c == i {
+                    continue;
+                  }
+                  sub_row.push(matrix[r][c].clone());
+                }
+                sub.push(Expr::List(sub_row));
+              }
+              let minor_matrix = Expr::List(sub);
+              let det =
+                crate::functions::linear_algebra_ast::det_ast(&[minor_matrix]);
+              match det {
+                Ok(d) => {
+                  let sign = if (i + j) % 2 == 0 { 1 } else { -1 };
+                  let cofactor = evaluate_expr_to_expr(&Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(Expr::Integer(sign)),
+                    right: Box::new(d),
+                  })
+                  .unwrap_or(Expr::Integer(0));
+                  row.push(cofactor);
+                }
+                Err(e) => return Some(Err(e)),
+              }
+            }
+            result.push(Expr::List(row));
+          }
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
     "QRDecomposition" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::qr_decomposition_ast(
         args,

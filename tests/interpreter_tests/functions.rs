@@ -9613,4 +9613,49 @@ mod batch_unevaluated_wrappers_2 {
       "a*b*c"
     );
   }
+  #[test]
+  fn adjugate_2x2() {
+    assert_eq!(
+      interpret("Adjugate[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{4, -2}, {-3, 1}}"
+    );
+  }
+  #[test]
+  fn adjugate_3x3() {
+    assert_eq!(
+      interpret("Adjugate[{{1, 2, 3}, {0, 4, 5}, {1, 0, 6}}]").unwrap(),
+      "{{24, -12, -2}, {5, 3, -5}, {-4, 2, 4}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_basic() {
+    assert_eq!(
+      interpret("CoordinateBounds[{{1, 5}, {3, 2}, {-1, 7}}]").unwrap(),
+      "{{-1, 3}, {2, 7}}"
+    );
+  }
+  #[test]
+  fn glaisher_symbolic() {
+    assert_eq!(interpret("Glaisher").unwrap(), "Glaisher");
+  }
+  #[test]
+  fn glaisher_numeric() {
+    assert_eq!(interpret("N[Glaisher]").unwrap(), "1.2824271291006226");
+  }
+  #[test]
+  fn nminvalue_basic() {
+    assert_eq!(interpret("NMinValue[x^2 + 3*x + 2, x]").unwrap(), "-0.25");
+  }
+  #[test]
+  fn nmaxvalue_basic() {
+    assert_eq!(interpret("NMaxValue[-x^2 + 3*x + 2, x]").unwrap(), "4.25");
+  }
+  #[test]
+  fn find_arg_min_basic() {
+    assert_eq!(interpret("FindArgMin[x^2 + 3*x + 2, x]").unwrap(), "{-1.5}");
+  }
+  #[test]
+  fn find_arg_max_basic() {
+    assert_eq!(interpret("FindArgMax[-x^2 + 3*x + 2, x]").unwrap(), "{1.5}");
+  }
 }
