@@ -1663,7 +1663,7 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "ChessboardDistance" if args.len() == 2 => {
+    "ChessboardDistance" | "ChebyshevDistance" if args.len() == 2 => {
       // ChessboardDistance[{a1,...,an}, {b1,...,bn}] = Max[Abs[a1-b1], ..., Abs[an-bn]]
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
         if a.len() == b.len() && !a.is_empty() {

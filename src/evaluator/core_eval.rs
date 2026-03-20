@@ -244,13 +244,13 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       let median = times[times.len() / 2];
       return Ok(Some(Expr::List(vec![Expr::Real(median), last_result])));
     }
-    "Sum" if args.len() >= 2 => {
+    "Sum" | "ParallelSum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
       return Ok(Some(crate::functions::list_helpers_ast::sum_ast(
         &prepared,
       )?));
     }
-    "Product" if args.len() >= 2 => {
+    "Product" | "ParallelProduct" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
       return Ok(Some(crate::functions::list_helpers_ast::product_ast(
         &prepared,
