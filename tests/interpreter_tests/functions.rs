@@ -2679,6 +2679,32 @@ mod reverse_extended {
   use super::*;
 
   #[test]
+  fn syntax_q_valid() {
+    assert_eq!(interpret("SyntaxQ[\"1 + 2\"]").unwrap(), "True");
+  }
+
+  #[test]
+  fn syntax_q_invalid() {
+    assert_eq!(interpret("SyntaxQ[\"1 + \"]").unwrap(), "False");
+  }
+
+  #[test]
+  fn interquartile_range() {
+    assert_eq!(
+      interpret("InterquartileRange[{1, 2, 3, 4, 5, 6, 7, 8}]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn interquartile_range_odd() {
+    assert_eq!(
+      interpret("InterquartileRange[{1, 3, 5, 7, 9}]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
   fn reverse_function_call() {
     assert_eq!(interpret("Reverse[x[a, b, c]]").unwrap(), "x[c, b, a]");
   }

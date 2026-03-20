@@ -31,7 +31,7 @@ AcousticPressureCondition,,,,12.2,4527
 AcousticRadiationValue,,,,12.2,5587
 AcousticSoundHardValue,,,,12.2,
 AcousticSoundSoftCondition,,,,12.2,
-ActionMenu,,,,6,2116
+ActionMenu,Dropdown action menu,🚫,,6,2116
 Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,✅,pure,10,997
 ActivateResult,,,,14,
 ActiveClassification,,,,11.1,4291
@@ -138,7 +138,7 @@ AnnotationDelete,,,,12,
 AnnotationKeys,,,,12.1,
 AnnotationRules,,,,12,4315
 AnnotationValue,,,,12.1,3566
-Annuity,,,,8,2162
+Annuity,Financial annuity computation,🚫,,8,2162
 AnnuityDue,,,,8,4437
 Annulus,Annular region specification,🚫,,10.2,2054
 AnomalyDetection,,,,12,5390
@@ -198,7 +198,7 @@ ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1,297
 Area,Computes the area of geometric regions like Disk Rectangle Triangle and Polygon,✅,pure,10,834
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1,135
 ArgMax,Position of maximum,✅,unevaluated,7,1721
-ArgMin,,,,7,2144
+ArgMin,Find argument minimizing expression,🚫,,7,2144
 ArgumentsOptions,,,,12.2,3363
 ARIMAProcess,,,,9,2442
 ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1,2449
@@ -473,7 +473,7 @@ BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 BinarySerialize,,,,11.1,3108
 BinaryWrite,Write binary data,✅,unevaluated,5.1,1833
 BinCounts,Counts data points in equal-width bins,✅,pure,6,1225
-BinLists,,,,6,2149
+BinLists,Bin data into lists,🚫,,6,2149
 BinnedVariogramList,,,,13,
 Binomial,Returns the binomial coefficient,✅,pure,1,225
 BinomialDistribution,Binomial probability distribution,✅,none,6,729
@@ -624,7 +624,7 @@ ButtonBoxOptions,,,,4,3474
 ButtonData,,🚫,,3,1205
 ButtonFunction,Button function option,✅,unevaluated,3,1866
 ButtonMinHeight,,,,3,4052
-ButtonNotebook,,,,3,2116
+ButtonNotebook,Notebook containing buttons,🚫,,3,2116
 ButtonSource,,,,3,3636
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1,2438
 ByteArray,,,,10.1,2591
@@ -803,7 +803,7 @@ ChromaticityPlot3D,,,,10,3059
 ChromaticPolynomial,,,,10,2545
 Circle,Represents a circle graphics primitive,✅,pure,2,256
 CircleDot,Circle dot operator,✅,unevaluated,3,1776
-CircleMinus,,,,3,2152
+CircleMinus,Circle minus operator,🚫,,3,2152
 CirclePlus,Represents the direct sum or XOR operator,✅,1,3,1158
 CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
 CircleThrough,,,,12,2399
@@ -960,7 +960,7 @@ ComplementedEntityClass,,,,12.1,
 CompleteGraph,Generates a complete graph with n vertices,✅,none,8,1062
 CompleteGraphQ,,,,8,3566
 CompleteIntegral,,,,13,
-CompleteKaryTree,,,,8,2162
+CompleteKaryTree,Complete k-ary tree graph,🚫,,8,2162
 Complex,Head type for complex numbers,✅,pure,1,541
 ComplexArrayPlot,,,,12.2,4881
 ComplexContourPlot,,,,12.1,2210
@@ -1337,7 +1337,7 @@ DEigenvalues,,,,10.3,3678
 Deinitialization,,,,6,3506
 Del,Symbolic nabla operator with Unicode display,✅,none,3,1046
 DelaunayMesh,Delaunay triangulation mesh,✅,pure,10,1459
-Delayed,,,,10,2138
+Delayed,Delayed evaluation wrapper,🚫,,10,2138
 Deletable,,,,3,3823
 Delete,Deletes an element at a given position,✅,pure,2,542
 DeleteAdjacentDuplicates,Removes consecutive duplicate elements from a list,✅,pure,13.1,
@@ -1482,7 +1482,7 @@ DiscreteDelta,Discrete delta function,✅,computation,4,1632
 DiscreteHadamardTransform,,,,9,4315
 DiscreteIndicator,,,,7,3972
 DiscreteInputOutputModel,,,,13.1,
-DiscreteLimit,,,,11.2,2152
+DiscreteLimit,Discrete limit of sequence,🚫,,11.2,2152
 DiscreteLQEstimatorGains,,,,8,4947
 DiscreteLQRegulatorGains,,,,8,4612
 DiscreteLyapunovSolve,,,,8,4138
@@ -1715,7 +1715,7 @@ EntityGroup,,,,10.3,4809
 EntityInstance,,,,10.3,4027
 EntityList,,🚫,,10,1100
 EntityPrefetch,,,,11.3,5390
-EntityProperties,,,,10,2147
+EntityProperties,Properties of an entity,🚫,,10,2147
 EntityProperty,Represents a property of an entity class,✅,pure,10,366
 EntityPropertyClass,,,,10,3200
 EntityRegister,,,,11.3,4104
@@ -1725,7 +1725,7 @@ EntityType,,,,13.3,
 EntityTypeName,,,,10,2729
 EntityUnregister,,,,11.3,5486
 EntityValue,Retrieves property values from entities in the Wolfram Knowledgebase,✅,effectful,10,342
-Entropy,,,,7,2124
+Entropy,Information entropy,🚫,,7,2124
 EntropyFilter,,,,7,3537
 Environment,Symbol representing the system environment,✅,pure,1,2720
 Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2,243
@@ -1906,7 +1906,7 @@ File,Symbolic file reference wrapper,✅,pure,11,1469
 FileBaseName,File base name,✅,unevaluated,7,1796
 FileByteCount,Count bytes in file (file I/O),🚫,,2,2018
 FileConvert,,,,12,5486
-FileDate,,,,2,2121
+FileDate,Get file modification date,🚫,,2,2121
 FileExistsQ,Tests whether a file or directory exists,✅,2,7,1293
 FileExtension,,,,7,2742
 FileFormat,,,,6,3889
@@ -2052,7 +2052,7 @@ FisherZDistribution,,,,8,3972
 Fit,Performs a least-squares fit of data to a linear combination of basis functions,✅,pure,1,641
 FitRegularization,,,,12,3803
 FittedModel,,,,7,3280
-FixedOrder,,,,10.1,2157
+FixedOrder,Fixed ordering pattern constraint,🚫,,10.1,2157
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1,870
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2,1174
 Flat,Attribute for associative functions,✅,pure,1,1379
@@ -2403,7 +2403,7 @@ GraphDiameter,,,,8,2625
 GraphDifference,,,,8,3506
 GraphDisjointUnion,,,,8,3491
 GraphDistance,Distance between graph vertices,✅,unevaluated,8,1625
-GraphDistanceMatrix,,,,8,2157
+GraphDistanceMatrix,Distance matrix of graph,🚫,,8,2157
 GraphEmbedding,Compute vertex coordinates for graph layouts using circular embedding,✅,pure,9,1367
 GraphHighlight,,,,8,2317
 GraphHighlightStyle,Graph highlight style,✅,unevaluated,8,1889
@@ -2468,7 +2468,7 @@ GroupGenerators,,,,8,2707
 Groupings,,,,11,2777
 GroupMultiplicationTable,,,,8,3378
 GroupOrbits,Orbits of a group action,✅,pure,8,1480
-GroupOrder,,,,8,2129
+GroupOrder,Order of a group,🚫,,8,2129
 GroupPageBreakWithin,,,,3,3947
 GroupSetwiseStabilizer,,,,8,4527
 GroupStabilizer,,,,8,3344
@@ -2856,7 +2856,7 @@ InterpretationBox,Interpretation box,✅,unevaluated,3,1652
 InterpretationBoxOptions,,,,4,5587
 InterpretationFunction,,,,12.2,2561
 Interpreter,Requires external services or GUI infrastructure,🚫,io,10,813
-InterquartileRange,,,,6,2431
+InterquartileRange,Difference between third and first quartiles,✅,1,6,2431
 Interrupt,Interrupts evaluation,✅,effectful,2,3972
 IntersectedEntityClass,,,,12.1,
 IntersectingQ,,,,10,2650
@@ -3322,7 +3322,7 @@ Longitude,,,,7,2707
 LongLeftArrow,,,,3,5390
 LongLeftRightArrow,,,,3,3737
 LongRightArrow,Long right arrow notation for infix display,✅,pure,3,1463
-LongShortTermMemoryLayer,,,,11.1,2121
+LongShortTermMemoryLayer,LSTM neural network layer,🚫,,11.1,2121
 Lookup,Looks up a key in an association,✅,pure,10,998
 LoopFreeGraphQ,,,,8,3678
 Looping,,,,12.1,
@@ -3412,7 +3412,7 @@ MaternPointProcess,,,,12.2,4809
 MathematicalFunctionData,,🚫,,10.3,2851
 MathieuC,Mathieu C function,✅,unevaluated,3,1852
 MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3,1842
-MathieuCharacteristicB,,,,3,2131
+MathieuCharacteristicB,Mathieu characteristic value,🚫,,3,2131
 MathieuCharacteristicExponent,,,,3,3785
 MathieuCPrime,,,,3,2311
 MathieuGroupM11,Mathieu group M11,✅,unevaluated,8,1656
@@ -3426,7 +3426,7 @@ MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 Matrices,Matrix domain,✅,unevaluated,9,1753
 MatrixExp,Computes the matrix exponential,✅,pure,2,807
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1,53
-MatrixFunction,,,,9,2134
+MatrixFunction,Apply function to matrix,🚫,,9,2134
 MatrixLog,Matrix logarithm,✅,unevaluated,9,1875
 MatrixNormalDistribution,,,,10.3,3317
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6,552
@@ -3460,7 +3460,7 @@ MaxPlotPoints,Maximum number of plot points option,✅,pure,5.1,1548
 MaxRecursion,Option specifying the maximum recursion depth,✅,none,2,420
 MaxRoots,,,,14,
 MaxStableDistribution,,,,8,3108
-MaxStepFraction,,,,4,2112
+MaxStepFraction,ODE solver step size option,🚫,,4,2112
 MaxSteps,Option specifying the maximum number of steps,✅,none,2,705
 MaxStepSize,Option for maximum step size in numerical methods,✅,pure,3,1482
 MaxTrainingRounds,Max training iterations,✅,unevaluated,11,1607
@@ -3811,7 +3811,7 @@ NotebookClose,Close a notebook,✅,pure,3,1517
 NotebookDelete,Delete notebook cells,✅,unevaluated,3,1740
 NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
-NotebookEvaluate,,,,8,2112
+NotebookEvaluate,Evaluate notebook programmatically,🚫,,8,2112
 NotebookEventActions,Actions for notebook events,🚫,,6,2045
 NotebookFileName,,,,7,2240
 NotebookFind,Search in a notebook,✅,unevaluated,3,1565
@@ -3977,7 +3977,7 @@ OrderingLayer,,,,12,5390
 Orderless,Attribute for commutative functions,✅,pure,1,1325
 OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
 OrdinalScale,,,,13.1,
-OrnsteinUhlenbeckProcess,,,,9,2157
+OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9,2157
 Orthogonalize,,🚫,,6,1191
 OrthogonalMatrix,,,,14,
 OrthogonalMatrixQ,,,,10,2807
@@ -4015,7 +4015,7 @@ PacletDisable,,,,12.1,
 PacletEnable,,,,12.1,
 PacletFind,,,,12.1,3108
 PacletFindRemote,,,,12.1,4881
-PacletInstall,,,,12.1,2138
+PacletInstall,Install Wolfram paclet,🚫,,12.1,2138
 PacletInstallSubmit,,,,12.1,
 PacletNewerQ,,,,12.1,
 PacletObject,,,,12.1,4437
@@ -4058,7 +4058,7 @@ PaletteNotebook,,,,6,2565
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 Pane,Fixed-size display pane,✅,none,6,594
 Panel,Display content in a panel frame,✅,none,6,717
-Paneled,,,,6,2147
+Paneled,Panel wrapper for display,🚫,,6,2147
 PaneSelector,Pane selector control,✅,unevaluated,6,1793
 ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6,1392
 ParagraphIndent,,,,3,4081
@@ -4074,7 +4074,7 @@ Parallelize,Parallelize computation,✅,unevaluated,7,1745
 ParallelKernels,,,,13.1,
 ParallelMap,Applies a function in parallel to each element,✅,1,7,1204
 ParallelNeeds,,,,7,3257
-Parallelogram,,,,10,2138
+Parallelogram,Parallelogram geometric region,🚫,,10,2138
 ParallelProduct,,,,7,4660
 ParallelSubmit,Submit parallel task,✅,unevaluated,7,1764
 ParallelSum,,,,7,2462
@@ -4092,7 +4092,7 @@ ParametricRampLayer,,,,12.1,4291
 ParametricRegion,Represent a parametric region,🚫,pure,10,1400
 ParentBox,,,,10,5079
 ParentCell,,,,10,4356
-ParentDirectory,,,,2,2132
+ParentDirectory,Parent directory path,🚫,,2,2132
 ParentEdgeLabel,,,,13.1,
 ParentEdgeLabelFunction,,,,13.1,
 ParentEdgeLabelStyle,,,,13.1,
@@ -4140,7 +4140,7 @@ PearsonChiSquareTest,,,,8,2734
 PearsonCorrelationTest,,,,9,3697
 PearsonDistribution,Pearson family distribution,🚫,,8,2071
 PenttinenPointProcess,,,,12.2,5486
-PercentForm,,,,12,2124
+PercentForm,Format number as percentage,🚫,,12,2124
 PerfectNumber,,,,10.4,3947
 PerfectNumberQ,,,,10.4,4027
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
@@ -4441,7 +4441,7 @@ QuestionInterface,,,,13,
 QuestionObject,,,,12.3,
 QuestionSelector,,,,13.1,
 QueueingNetworkProcess,,,,9,2889
-QueueingProcess,,,,9,2129
+QueueingProcess,Queueing theory process,🚫,,9,2129
 QueueProperties,,,,9,2435
 Quiet,Evaluate expression suppressing messages,✅,contextual,6,284
 QuietEcho,,,,12.2,
@@ -4540,7 +4540,7 @@ RecognitionPrior,,,,10.1,4027
 ReconstructionMesh,,,,13.1,
 Record,Record data structure,✅,unevaluated,2,1648
 RecordLists,Data import option for structuring records as lists,🚫,,2,1932
-RecordSeparators,,,,2,2119
+RecordSeparators,Record separator option for streams,🚫,,2,2119
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
 RectangleChart,Rectangle chart,✅,unevaluated,7,1687
 RectangleChart3D,,,,7,3200
@@ -4588,7 +4588,7 @@ RegionNearest,Nearest point in a region,✅,pure,10,1507
 RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
 RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6,603
-RegionProduct,,,,10,2129
+RegionProduct,Cartesian product of regions,🚫,,10,2129
 RegionQ,,,,10,2208
 RegionResize,,,,11,3765
 RegionSimilar,,,,13,
@@ -4750,7 +4750,7 @@ RootMeanSquare,Returns the root mean square of a list,✅,pure,6,2065
 RootOfUnityQ,,,,6,3947
 RootReduce,Reduce algebraic number to minimal polynomial root,🚫,pure,3,1397
 Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1,924
-RootSum,,,,3,2141
+RootSum,Sum over polynomial roots,🚫,,3,2141
 RootTree,,,,13.1,
 Rotate,Rotates a graphics object,✅,pure,6,315
 RotateLabel,,🚫,,2,890
@@ -4888,7 +4888,7 @@ SequenceMostLayer,,,,11.1,4387
 SequencePosition,Position of sequence pattern,✅,unevaluated,10.1,1796
 SequencePredict,,,,11.1,4262
 SequencePredictorFunction,,,,11.1,
-SequenceReplace,,,,11.3,2116
+SequenceReplace,Replace sequence patterns,🚫,,11.3,2116
 SequenceRestLayer,,,,11.1,4612
 SequenceReverseLayer,,,,11.1,4747
 SequenceSplit,,,,11.3,3656
@@ -4901,7 +4901,7 @@ ServiceConnect,Connect to service,✅,unevaluated,10,1914
 ServiceDeploy,,,,12.3,
 ServiceDeployment,,,,12.3,
 ServiceDisconnect,,,,10,5079
-ServiceExecute,,,,10,2141
+ServiceExecute,Execute external service,🚫,,10,2141
 ServiceObject,,,,10,4387
 ServiceRequest,,,,12,
 ServiceSubmit,,,,12,
@@ -4974,7 +4974,7 @@ Sign,Returns the sign of a number,✅,pure,1,313
 Signature,Signature of a permutation,✅,pure,1,1353
 SignedRankTest,,,,8,3427
 SignedRegionDistance,Computational geometry function for signed distance to a region,🚫,,10,1926
-SignificanceLevel,,,,8,2157
+SignificanceLevel,Statistical significance level option,🚫,,8,2157
 SignPadding,,,,2,2828
 SignTest,,,,8,3317
 SimilarityRules,,,,7,4707
@@ -4982,7 +4982,7 @@ SimpleGraph,,,,8,2229
 SimpleGraphQ,,,,8,3823
 SimplePolygonQ,,,,12,4437
 SimplePolyhedronQ,,,,12,
-Simplex,,,,10,2162
+Simplex,Simplex geometric region,🚫,,10,2162
 Simplify,Performs algebraic simplification of expressions,✅,pure,1,68
 Sin,Returns the sine,✅,pure,1,22
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6,798
@@ -5361,9 +5361,9 @@ SymmetricKey,,,,10.1,5013
 SymmetricMatrix,,,,14,
 SymmetricMatrixQ,Tests whether a matrix is symmetric,✅,pure,7,1940
 SymmetricPolynomial,,,,6,2561
-SymmetricReduction,,,,6,2112
+SymmetricReduction,Symmetric polynomial reduction,🚫,,6,2112
 Symmetrize,,,,9,2679
-SymmetrizedArray,,,,9,2112
+SymmetrizedArray,Array with symmetry constraints,🚫,,9,2112
 SymmetrizedArrayRules,,,,9,3916
 SymmetrizedDependentComponents,,,,9,4479
 SymmetrizedIndependentComponents,,,,9,3566
@@ -5375,7 +5375,7 @@ SyntaxForm,,,,3,2276
 SyntaxInformation,Syntax information for a symbol,✅,pure,6,1520
 SyntaxLength,,,,2,4527
 SyntaxPacket,,,,3,
-SyntaxQ,,,,2,2360
+SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2,2360
 SynthesizeMissingValues,,,,12,5390
 SystemCredential,,,,12.1,
 SystemCredentialData,,🚫,,12.1,
@@ -5646,7 +5646,7 @@ TracePrint,Print evaluation trace (debugging/tracing),🚫,,2,2025
 TraceScan,,,,2,2491
 TrackCellChangeTimes,,,,13.3,
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6,495
-TrackingFunction,,,,10,2129
+TrackingFunction,Tracking callback option,🚫,,10,2129
 TracyWidomDistribution,,,,10.3,3862
 TradingChart,Financial trading chart,✅,unevaluated,8,1666
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3,317
@@ -5784,7 +5784,7 @@ Underlined,Underlined text,✅,unevaluated,6,1701
 Underoverscript,,,,3,3803
 UnderoverscriptBox,,,,3,2777
 UnderoverscriptBoxOptions,,,,4,2842
-Underscript,,,,6,2144
+Underscript,Typesetting subscript,🚫,,6,2144
 UnderscriptBox,,,,3,2452
 UnderscriptBoxOptions,,,,4,2944
 UnderseaFeatureData,,🚫,,10,
@@ -5922,7 +5922,7 @@ VectorStyle,,🚫,,7,1182
 VectorSymbol,,,,14.1,
 Vee,,,,3,3094
 Verbatim,Inert wrapper to prevent interpretation,✅,none,3,723
-VerificationTest,,,,10,2119
+VerificationTest,Testing framework function,🚫,,10,2119
 VerifyConvergence,,,,2,3291
 VerifyDerivedKey,,,,12,
 VerifyDigitalSignature,,,,12,4707
@@ -5952,7 +5952,7 @@ VertexEccentricity,,,,8,2871
 VertexInComponent,,,,8,3326
 VertexInComponentGraph,,,,12.3,
 VertexInDegree,In-degree of a vertex in a directed graph,🚫,,8,2042
-VertexIndex,,,,8,2149
+VertexIndex,Index of vertex in graph,🚫,,8,2149
 VertexJaccardSimilarity,,,,9,4947
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
 VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8,1419
