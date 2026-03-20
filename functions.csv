@@ -4552,7 +4552,7 @@ Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure
 ReferenceAltitude,,,,14.1,
 ReferenceLineStyle,,,,8,4225
 Refine,Simplifies expressions using assumptions,✅,pure,5,764
-ReflectionMatrix,,,,6,2203
+ReflectionMatrix,Gives the reflection matrix for a normal vector,✅,None,6,2203
 ReflectionTransform,Reflection transformation matrix,✅,pure,6,1536
 Refresh,,🚫,,6,1145
 RefreshRate,,,,6,2880
@@ -5809,7 +5809,7 @@ UnionPlus,,,,3,4881
 Unique,Generate a unique symbol,✅,effectful,1,944
 UniqueElements,,,,13.1,
 UnitaryMatrix,,,,14,
-UnitaryMatrixQ,,,,10,2260
+UnitaryMatrixQ,Tests whether a matrix is unitary,✅,None,10,2260
 UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7,1043
 UnitConvert,Converts a quantity to a different unit,✅,pure,9,643
 UnitDimensions,,,,9,3280
