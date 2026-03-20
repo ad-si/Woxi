@@ -2006,7 +2006,7 @@ FindMinValue,numerical optimization,🚫,None,7,2350
 FindMoleculeSubstructure,,,,12,4660
 FindPath,Find paths in a graph,✅,pure,10,1510
 FindPeaks,Find peaks in data,✅,pure,10,1517
-FindPermutation,,,,8,2679
+FindPermutation,Find permutation mapping one list to another,✅,1,8,2679
 FindPlanarColoring,,,,13,
 FindPointProcessParameters,,,,12.2,5587
 FindPostmanTour,,,,9,3344
@@ -2071,7 +2071,7 @@ FoldList,Returns the list of intermediate results from Fold,✅,pure,2,611
 FoldPair,,,,10.2,3916
 FoldPairList,Folds a list returning emitted values and new states,✅,None,10.2,2268
 FoldWhile,,,,12.2,3200
-FoldWhileList,,,,12.2,3070
+FoldWhileList,Fold while condition holds returning intermediate results,✅,1,12.2,3070
 FollowRedirects,,,,11,4947
 FontColor,Option symbol for specifying text color in Style,✅,pure,3,175
 FontFamily,Option specifying the font family for text rendering,✅,none,3,103
@@ -3007,7 +3007,7 @@ KeyframeActions,,,,14.1,
 KeyFreeQ,,,,10.3,4809
 KeyIntersection,,,,10,3176
 KeyMap,Maps a function over the keys of an association,✅,pure,10,1855
-KeyMemberQ,,,,10.3,2978
+KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KeypointStrength,,,,10,4138
 Keys,Returns the keys of an association,✅,pure,10,667
 KeySelect,Selects elements of an association by a key criterion,✅,pure,10,2191
@@ -4158,14 +4158,14 @@ PermissionsKeys,,🚫,,11,5587
 PermutationCycles,Cycle decomposition of a permutation,✅,pure,8,1550
 PermutationCyclesQ,,,,8,3280
 PermutationGroup,Group theory permutation group representation,🚫,,8,1979
-PermutationLength,,,,8,3176
+PermutationLength,Number of non-fixed points in a permutation,✅,1,8,3176
 PermutationList,Converts cycle notation to permutation list,✅,none,8,2223
-PermutationListQ,,,,8,3862
+PermutationListQ,True if list is a valid permutation,✅,1,8,3862
 PermutationMatrix,,,,13.1,
 PermutationMax,,,,8,4315
 PermutationMin,,,,8,5013
-PermutationOrder,,,,8,2986
-PermutationPower,,,,8,2944
+PermutationOrder,Order of a permutation,✅,1,8,2986
+PermutationPower,Power of a permutation,✅,1,8,2944
 PermutationProduct,Product of permutations,✅,pure,8,1507
 PermutationReplace,Replace by permutation,✅,unevaluated,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533

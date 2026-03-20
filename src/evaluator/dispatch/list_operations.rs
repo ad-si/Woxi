@@ -1673,12 +1673,253 @@ pub fn dispatch_list_operations(
         )));
       }
     }
+    // FindPermutation[list1, list2] — find permutation that maps list1 to list2
+    "FindPermutation" if args.len() == 2 => {
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+        && a.len() == b.len()
+      {
+        let n = a.len();
+        let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
+        let b_strs: Vec<String> = b.iter().map(expr_to_string).collect();
+        let mut perm = vec![0usize; n];
+        let mut valid = true;
+        for (i, bs) in b_strs.iter().enumerate() {
+          if let Some(pos) = a_strs.iter().position(|x| x == bs) {
+            perm[pos] = i + 1;
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if valid {
+          // Convert to cycles notation
+          let mut visited = vec![false; n];
+          let mut cycles = Vec::new();
+          for start in 0..n {
+            if visited[start] || perm[start] == start + 1 {
+              visited[start] = true;
+              continue;
+            }
+            let mut cycle = Vec::new();
+            let mut curr = start;
+            while !visited[curr] {
+              visited[curr] = true;
+              cycle.push(Expr::Integer((curr + 1) as i128));
+              curr = perm[curr] - 1;
+            }
+            if cycle.len() > 1 {
+              cycles.push(Expr::List(cycle));
+            }
+          }
+          return Some(Ok(Expr::FunctionCall {
+            name: "Cycles".to_string(),
+            args: vec![Expr::List(cycles)],
+          }));
+        }
+      }
+    }
+    // KeyMemberQ[assoc, key] — True if key exists in association
+    "KeyMemberQ" if args.len() == 2 => {
+      if let Expr::Association(pairs) = &args[0] {
+        let key_str = expr_to_string(&args[1]);
+        let found = pairs.iter().any(|(k, _)| expr_to_string(k) == key_str);
+        return Some(Ok(Expr::Identifier(
+          if found { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
+    // PermutationOrder[perm] — order (smallest n such that perm^n = identity)
+    "PermutationOrder" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        // Permutation as list form
+        let n = perm.len();
+        let mut indices = Vec::with_capacity(n);
+        let mut valid = true;
+        for p in perm {
+          if let Expr::Integer(v) = p {
+            indices.push(*v as usize);
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if valid {
+          // Find cycle lengths, order = LCM of cycle lengths
+          let mut visited = vec![false; n];
+          let mut order: i128 = 1;
+          for start in 0..n {
+            if visited[start] {
+              continue;
+            }
+            let mut cycle_len: i128 = 0;
+            let mut curr = start;
+            while !visited[curr] {
+              visited[curr] = true;
+              cycle_len += 1;
+              curr = indices[curr] - 1;
+            }
+            order = lcm_i128(order, cycle_len);
+          }
+          return Some(Ok(Expr::Integer(order)));
+        }
+      }
+    }
+    // PermutationPower[perm, n] — apply permutation n times
+    "PermutationPower" if args.len() == 2 => {
+      if let (Expr::List(perm), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
+        let len = perm.len();
+        let mut indices = Vec::with_capacity(len);
+        let mut valid = true;
+        for p in perm {
+          if let Expr::Integer(v) = p {
+            indices.push(*v as usize);
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if valid {
+          // For negative n, use inverse first
+          let (indices, n) = if n < 0 {
+            // Compute inverse
+            let mut inv = vec![0usize; len];
+            for (i, &idx) in indices.iter().enumerate() {
+              inv[idx - 1] = i + 1;
+            }
+            (inv, -n)
+          } else {
+            (indices, n)
+          };
+          // Apply permutation n times efficiently using cycle decomposition
+          let mut result = vec![0usize; len];
+          let mut visited = vec![false; len];
+          for start in 0..len {
+            if visited[start] {
+              continue;
+            }
+            // Trace cycle
+            let mut cycle = Vec::new();
+            let mut curr = start;
+            while !visited[curr] {
+              visited[curr] = true;
+              cycle.push(curr);
+              curr = indices[curr] - 1;
+            }
+            let cycle_len = cycle.len();
+            let shift = (n as usize) % cycle_len;
+            for (i, &pos) in cycle.iter().enumerate() {
+              result[pos] = cycle[(i + shift) % cycle_len] + 1;
+            }
+          }
+          let result_exprs: Vec<Expr> = result
+            .into_iter()
+            .map(|v| Expr::Integer(v as i128))
+            .collect();
+          return Some(Ok(Expr::List(result_exprs)));
+        }
+      }
+    }
+    // PermutationLength[perm] — number of non-fixed points
+    "PermutationLength" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let mut count: i128 = 0;
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(v) = p
+            && *v as usize != i + 1
+          {
+            count += 1;
+          }
+        }
+        return Some(Ok(Expr::Integer(count)));
+      }
+    }
+    // PermutationListQ[list] — True if list is a valid permutation
+    "PermutationListQ" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let n = perm.len();
+        let mut seen = vec![false; n + 1];
+        let mut valid = true;
+        for p in perm {
+          if let Expr::Integer(v) = p {
+            let v = *v as usize;
+            if v >= 1 && v <= n && !seen[v] {
+              seen[v] = true;
+            } else {
+              valid = false;
+              break;
+            }
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if valid { "True" } else { "False" }.to_string(),
+        )));
+      }
+      // Non-list input
+      return Some(Ok(Expr::Identifier("False".to_string())));
+    }
+    // FoldWhileList[f, x, list, test] — fold while test is True, returning intermediate results
+    "FoldWhileList" if args.len() == 4 => {
+      if let Expr::List(items) = &args[2] {
+        let f = &args[0];
+        let mut acc = args[1].clone();
+        let test = &args[3];
+        let mut results = vec![acc.clone()];
+        for item in items {
+          // Build f[acc, item] and evaluate
+          let call = match f {
+            Expr::Identifier(name) => Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![acc.clone(), item.clone()],
+            },
+            Expr::Function { body } => crate::syntax::substitute_slots(
+              body,
+              &[acc.clone(), item.clone()],
+            ),
+            _ => Expr::FunctionCall {
+              name: expr_to_string(f),
+              args: vec![acc.clone(), item.clone()],
+            },
+          };
+          let new_acc = evaluate_expr_to_expr(&call).unwrap_or(call);
+          // Test the new value
+          let test_result = apply_function_to_arg(test, &new_acc)
+            .unwrap_or(Expr::Identifier("False".to_string()));
+          let test_str = expr_to_string(&test_result);
+          if test_str != "True" {
+            break;
+          }
+          acc = new_acc;
+          results.push(acc.clone());
+        }
+        return Some(Ok(Expr::List(results)));
+      }
+    }
     _ => {}
   }
   None
 }
 
 /// Extract a value from an association by key string
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+fn lcm_i128(a: i128, b: i128) -> i128 {
+  if a == 0 || b == 0 {
+    return 0;
+  }
+  let g = gcd_i128(a.abs(), b.abs());
+  (a / g * b).abs()
+}
+
 fn get_assoc_value(assoc: &Expr, key: &str) -> Option<Expr> {
   if let Expr::Association(pairs) = assoc {
     for (k, v) in pairs {
