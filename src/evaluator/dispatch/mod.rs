@@ -3665,6 +3665,9 @@ pub fn evaluate_function_call_ast_inner(
       | "LeftArrow"
       | "DotEqual"
       | "NumberMarks"
+      | "MixedRadix"
+      | "XMLObject"
+      | "UnderoverscriptBox"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
