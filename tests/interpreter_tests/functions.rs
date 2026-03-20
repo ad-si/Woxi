@@ -9308,4 +9308,63 @@ mod batch_unevaluated_wrappers_2 {
       "DefaultDuration[x]"
     );
   }
+  #[test]
+  fn from_polar_coordinates_symbolic() {
+    assert_eq!(
+      interpret("FromPolarCoordinates[{r, theta}]").unwrap(),
+      "{r*Cos[theta], r*Sin[theta]}"
+    );
+  }
+  #[test]
+  fn from_polar_coordinates_numeric() {
+    assert_eq!(
+      interpret("FromPolarCoordinates[{2, Pi/4}]").unwrap(),
+      "{2/Sqrt[2], 2/Sqrt[2]}"
+    );
+  }
+  #[test]
+  fn to_polar_coordinates_symbolic() {
+    assert_eq!(
+      interpret("ToPolarCoordinates[{x, y}]").unwrap(),
+      "{Sqrt[x^2 + y^2], ArcTan[x, y]}"
+    );
+  }
+  #[test]
+  fn to_polar_coordinates_numeric() {
+    assert_eq!(
+      interpret("ToPolarCoordinates[{1, 1}]").unwrap(),
+      "{Sqrt[2], ArcTan[1, 1]}"
+    );
+  }
+  #[test]
+  fn from_spherical_coordinates() {
+    assert_eq!(
+      interpret("FromSphericalCoordinates[{r, theta, phi}]").unwrap(),
+      "{r*Cos[phi]*Sin[theta], r*Sin[phi]*Sin[theta], r*Cos[theta]}"
+    );
+  }
+  #[test]
+  fn to_spherical_coordinates() {
+    assert_eq!(
+      interpret("ToSphericalCoordinates[{x, y, z}]").unwrap(),
+      "{Sqrt[x^2 + y^2 + z^2], ArcTan[z, Sqrt[x^2 + y^2]], ArcTan[x, y]}"
+    );
+  }
+  #[test]
+  fn qr_decomposition_identity() {
+    assert_eq!(
+      interpret("QRDecomposition[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {{1, 0}, {0, 1}}}"
+    );
+  }
+  #[test]
+  fn qr_decomposition_3x3() {
+    assert_eq!(
+      interpret(
+        "QRDecomposition[{{12, -51, 4}, {6, 167, -68}, {-4, 24, -41}}]"
+      )
+      .unwrap(),
+      "{{{6/7, 3/7, -2/7}, {-69/175, 158/175, 6/35}, {-58/175, 6/175, -33/35}}, {{14, 21, -14}, {0, 175, -70}, {0, 0, 35}}}"
+    );
+  }
 }

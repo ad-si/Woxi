@@ -3363,3 +3363,117 @@ pub fn fitted_model_normal(
     "FittedModel: missing FittedExpression".into(),
   ))
 }
+
+/// QRDecomposition[m] - returns {Q^T, R} where m = Q^T . R
+pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "QRDecomposition".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = matrix.len(); // rows
+  if n == 0 {
+    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+  }
+  let m = matrix[0].len(); // cols
+
+  // Extract columns
+  let mut cols: Vec<Vec<Expr>> = Vec::with_capacity(m);
+  for j in 0..m {
+    let mut col = Vec::with_capacity(n);
+    for i in 0..n {
+      col.push(matrix[i][j].clone());
+    }
+    cols.push(col);
+  }
+
+  // Modified Gram-Schmidt
+  let mut u: Vec<Vec<Expr>> = cols.clone();
+  let mut q: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  let mut r_entries: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); m]; n.min(m)];
+
+  for i in 0..n.min(m) {
+    // Compute norm of u[i]
+    let norm_sq = eval_dot_product(&u[i], &u[i])?;
+    let norm = eval_expr(&Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![norm_sq.clone()],
+    })?;
+
+    // R[i][i] = norm
+    r_entries[i][i] = norm.clone();
+
+    // Q[i] = u[i] / norm
+    let mut qi = Vec::with_capacity(n);
+    for k in 0..n {
+      qi.push(eval_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(u[i][k].clone()),
+        right: Box::new(norm.clone()),
+      })?);
+    }
+    q.push(qi.clone());
+
+    // Orthogonalize remaining columns
+    for j in (i + 1)..m {
+      let proj = eval_dot_product(&qi, &u[j])?;
+      r_entries[i][j] = proj.clone();
+      for k in 0..n {
+        u[j][k] = eval_expr(&Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(u[j][k].clone()),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(proj.clone()),
+            right: Box::new(qi[k].clone()),
+          }),
+        })?;
+      }
+    }
+  }
+
+  // Build Q^T (rows of Q^T = the qi vectors)
+  let qt_expr =
+    Expr::List(q.iter().map(|row| Expr::List(row.clone())).collect());
+
+  // Build R
+  let r_expr = Expr::List(
+    r_entries
+      .iter()
+      .map(|row| Expr::List(row.clone()))
+      .collect(),
+  );
+
+  Ok(Expr::List(vec![qt_expr, r_expr]))
+}
+
+/// Helper: evaluate a dot product of two vectors
+fn eval_dot_product(a: &[Expr], b: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let mut sum = Expr::Integer(0);
+  for (ai, bi) in a.iter().zip(b.iter()) {
+    let prod = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(ai.clone()),
+      right: Box::new(bi.clone()),
+    };
+    sum = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(sum),
+      right: Box::new(prod),
+    };
+  }
+  eval_expr(&sum)
+}
+
+/// Helper: evaluate an expression through the evaluator
+fn eval_expr(e: &Expr) -> Result<Expr, InterpreterError> {
+  evaluate_expr_to_expr(e)
+}

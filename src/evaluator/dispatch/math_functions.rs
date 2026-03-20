@@ -1100,6 +1100,174 @@ pub fn dispatch_math_functions(
     "ParabolicCylinderD" if args.len() == 2 => {
       return Some(crate::functions::math_ast::parabolic_cylinder_d_ast(args));
     }
+    "FromPolarCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        if elems.len() == 2 {
+          let r = &elems[0];
+          let theta = &elems[1];
+          let x = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![theta.clone()],
+            }),
+          };
+          let y = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![theta.clone()],
+            }),
+          };
+          let result = Expr::List(vec![x, y]);
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    "ToPolarCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        if elems.len() == 2 {
+          let x = &elems[0];
+          let y = &elems[1];
+          let r = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(x.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(y.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }],
+          };
+          let theta = Expr::FunctionCall {
+            name: "ArcTan".to_string(),
+            args: vec![x.clone(), y.clone()],
+          };
+          let result = Expr::List(vec![r, theta]);
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    "FromSphericalCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        if elems.len() == 3 {
+          let r = &elems[0];
+          let theta = &elems[1];
+          let phi = &elems[2];
+          let x = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(r.clone()),
+              right: Box::new(Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![theta.clone()],
+              }),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![phi.clone()],
+            }),
+          };
+          let y = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(r.clone()),
+              right: Box::new(Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![theta.clone()],
+              }),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![phi.clone()],
+            }),
+          };
+          let z = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(r.clone()),
+            right: Box::new(Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![theta.clone()],
+            }),
+          };
+          let result = Expr::List(vec![x, y, z]);
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    "ToSphericalCoordinates" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        if elems.len() == 3 {
+          let x = &elems[0];
+          let y = &elems[1];
+          let z = &elems[2];
+          let sum_sq = Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(x.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(y.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(z.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          let r = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![sum_sq],
+          };
+          let xy_sq = Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(y.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          let theta = Expr::FunctionCall {
+            name: "ArcTan".to_string(),
+            args: vec![
+              z.clone(),
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![xy_sq],
+              },
+            ],
+          };
+          let phi_expr = Expr::FunctionCall {
+            name: "ArcTan".to_string(),
+            args: vec![x.clone(), y.clone()],
+          };
+          let result = Expr::List(vec![r, theta, phi_expr]);
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
     _ => {}
   }
   None
