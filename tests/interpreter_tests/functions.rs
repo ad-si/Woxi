@@ -11326,4 +11326,42 @@ mod batch_unevaluated_wrappers_2 {
       "{UndirectedEdge[1, 6], UndirectedEdge[3, 4]}"
     );
   }
+
+  #[test]
+  fn batch_inert_symbols() {
+    // Test a batch of inert symbolic heads
+    assert_eq!(interpret("AnyOrder[x, y]").unwrap(), "AnyOrder[x, y]");
+    assert_eq!(
+      interpret("IntervalMarkersStyle[x]").unwrap(),
+      "IntervalMarkersStyle[x]"
+    );
+    assert_eq!(interpret("HatchFilling[x]").unwrap(), "HatchFilling[x]");
+    assert_eq!(
+      interpret("IncludeConstantBasis[x]").unwrap(),
+      "IncludeConstantBasis[x]"
+    );
+    assert_eq!(interpret("HeaderLines[x]").unwrap(), "HeaderLines[x]");
+    assert_eq!(interpret("SelfLoopStyle[x]").unwrap(), "SelfLoopStyle[x]");
+    assert_eq!(interpret("ScaleDivisions[x]").unwrap(), "ScaleDivisions[x]");
+    assert_eq!(
+      interpret("ColumnAlignments[x]").unwrap(),
+      "ColumnAlignments[x]"
+    );
+    assert_eq!(
+      interpret("ExtentElementFunction[x]").unwrap(),
+      "ExtentElementFunction[x]"
+    );
+    assert_eq!(interpret("Subset[x, y]").unwrap(), "Subset[x, y]");
+    assert_eq!(interpret("TargetUnits[x]").unwrap(), "TargetUnits[x]");
+    assert_eq!(interpret("RowSpacings[x]").unwrap(), "RowSpacings[x]");
+    assert_eq!(interpret("PassEventsUp[x]").unwrap(), "PassEventsUp[x]");
+    assert_eq!(
+      interpret("NormalsFunction[x]").unwrap(),
+      "NormalsFunction[x]"
+    );
+    assert_eq!(interpret("StartOfLine[x]").unwrap(), "StartOfLine[x]");
+    assert_eq!(interpret("LeftArrow[x, y]").unwrap(), "LeftArrow[x, y]");
+    assert_eq!(interpret("DotEqual[x, y]").unwrap(), "DotEqual[x, y]");
+    assert_eq!(interpret("NumberMarks[x]").unwrap(), "NumberMarks[x]");
+  }
 }
