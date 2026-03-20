@@ -10472,4 +10472,96 @@ mod batch_unevaluated_wrappers_2 {
       "{{-1, 11}, {-1, 21}}"
     );
   }
+
+  // FindPermutation
+  #[test]
+  fn find_permutation_basic() {
+    assert_eq!(
+      interpret("FindPermutation[{a, b, c}, {b, c, a}]").unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+  }
+  #[test]
+  fn find_permutation_identity() {
+    assert_eq!(
+      interpret("FindPermutation[{a, b, c}, {a, b, c}]").unwrap(),
+      "Cycles[{}]"
+    );
+  }
+
+  // KeyMemberQ
+  #[test]
+  fn key_member_q_true() {
+    assert_eq!(
+      interpret("KeyMemberQ[<|\"a\" -> 1, \"b\" -> 2|>, \"a\"]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn key_member_q_false() {
+    assert_eq!(
+      interpret("KeyMemberQ[<|\"a\" -> 1, \"b\" -> 2|>, \"c\"]").unwrap(),
+      "False"
+    );
+  }
+
+  // PermutationOrder
+  #[test]
+  fn permutation_order_identity() {
+    assert_eq!(interpret("PermutationOrder[{1, 2, 3}]").unwrap(), "1");
+  }
+  #[test]
+  fn permutation_order_swap() {
+    assert_eq!(interpret("PermutationOrder[{2, 1, 3}]").unwrap(), "2");
+  }
+  #[test]
+  fn permutation_order_cycle3() {
+    assert_eq!(interpret("PermutationOrder[{2, 3, 1}]").unwrap(), "3");
+  }
+
+  // PermutationPower
+  #[test]
+  fn permutation_power_identity() {
+    assert_eq!(
+      interpret("PermutationPower[{2, 3, 1}, 3]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+  #[test]
+  fn permutation_power_square() {
+    assert_eq!(
+      interpret("PermutationPower[{2, 3, 1}, 2]").unwrap(),
+      "{3, 1, 2}"
+    );
+  }
+
+  // PermutationLength
+  #[test]
+  fn permutation_length_identity() {
+    assert_eq!(interpret("PermutationLength[{1, 2, 3}]").unwrap(), "0");
+  }
+  #[test]
+  fn permutation_length_swap() {
+    assert_eq!(interpret("PermutationLength[{2, 1, 3}]").unwrap(), "2");
+  }
+
+  // PermutationListQ
+  #[test]
+  fn permutation_list_q_true() {
+    assert_eq!(interpret("PermutationListQ[{2, 3, 1}]").unwrap(), "True");
+  }
+  #[test]
+  fn permutation_list_q_false() {
+    assert_eq!(interpret("PermutationListQ[{1, 1, 2}]").unwrap(), "False");
+  }
+
+  // FoldWhileList
+  #[test]
+  fn fold_while_list_basic() {
+    assert_eq!(
+      interpret("FoldWhileList[Plus, 0, {1, 2, 3, 4, 5}, Function[# < 10]]")
+        .unwrap(),
+      "{0, 1, 3, 6}"
+    );
+  }
 }
