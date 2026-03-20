@@ -10564,4 +10564,76 @@ mod batch_unevaluated_wrappers_2 {
       "{0, 1, 3, 6}"
     );
   }
+
+  // PermutationCyclesQ
+  #[test]
+  fn permutation_cycles_q_true() {
+    assert_eq!(
+      interpret("PermutationCyclesQ[Cycles[{{1, 3}, {2, 4}}]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn permutation_cycles_q_false() {
+    assert_eq!(interpret("PermutationCyclesQ[{1, 2, 3}]").unwrap(), "False");
+  }
+
+  // PermutationSupport
+  #[test]
+  fn permutation_support_basic() {
+    assert_eq!(
+      interpret("PermutationSupport[{2, 1, 3}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+  #[test]
+  fn permutation_support_identity() {
+    assert_eq!(interpret("PermutationSupport[{1, 2, 3}]").unwrap(), "{}");
+  }
+
+  // PermutationMax
+  #[test]
+  fn permutation_max_basic() {
+    assert_eq!(interpret("PermutationMax[{2, 1, 3, 4}]").unwrap(), "2");
+  }
+
+  // PermutationMin
+  #[test]
+  fn permutation_min_basic() {
+    assert_eq!(interpret("PermutationMin[{2, 1, 3, 4}]").unwrap(), "1");
+  }
+
+  // Splice
+  #[test]
+  fn splice_basic() {
+    assert_eq!(interpret("{1, Splice[{2, 3}], 4}").unwrap(), "{1, 2, 3, 4}");
+  }
+
+  // SubsetMap
+  #[test]
+  fn subset_map_basic() {
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c, d, e}, {2, 4}]").unwrap(),
+      "{a, d, c, b, e}"
+    );
+  }
+
+  // Assert
+  #[test]
+  fn assert_true() {
+    assert_eq!(interpret("Assert[1 + 1 == 2]").unwrap(), "Null");
+  }
+  #[test]
+  fn assert_false() {
+    assert!(interpret("Assert[1 + 1 == 3]").is_err());
+  }
+
+  // StarGraph
+  #[test]
+  fn star_graph_basic() {
+    assert_eq!(
+      interpret("StarGraph[4]").unwrap(),
+      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}]"
+    );
+  }
 }

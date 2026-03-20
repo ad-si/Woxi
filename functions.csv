@@ -237,7 +237,7 @@ AskFunction,,🚫,,10.4,3291
 AskState,,🚫,,11.1,5390
 AskTemplateDisplay,,🚫,,10.4,4567
 AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1,125
-Assert,,,,8,2483
+Assert,Assert that a condition is True,✅,1,8,2483
 AssessmentFunction,,🚫,,12.2,3678
 AssessmentResultObject,,🚫,,12.2,
 AssociateTo,Append to association,✅,unevaluated,10,1776
@@ -4156,20 +4156,20 @@ PermissionsGroups,,🚫,,10,5587
 PermissionsKey,,🚫,,11,3413
 PermissionsKeys,,🚫,,11,5587
 PermutationCycles,Cycle decomposition of a permutation,✅,pure,8,1550
-PermutationCyclesQ,,,,8,3280
+PermutationCyclesQ,True if valid Cycles form,✅,1,8,3280
 PermutationGroup,Group theory permutation group representation,🚫,,8,1979
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8,3176
 PermutationList,Converts cycle notation to permutation list,✅,none,8,2223
 PermutationListQ,True if list is a valid permutation,✅,1,8,3862
 PermutationMatrix,,,,13.1,
-PermutationMax,,,,8,4315
-PermutationMin,,,,8,5013
+PermutationMax,Largest element moved by a permutation,✅,1,8,4315
+PermutationMin,Smallest element moved by a permutation,✅,1,8,5013
 PermutationOrder,Order of a permutation,✅,1,8,2986
 PermutationPower,Power of a permutation,✅,1,8,2944
 PermutationProduct,Product of permutations,✅,pure,8,1507
 PermutationReplace,Replace by permutation,✅,unevaluated,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533
-PermutationSupport,,,,8,3947
+PermutationSupport,Elements moved by a permutation,✅,1,8,3947
 Permute,Permute elements of a list,✅,pure,8,1355
 PeronaMalikFilter,,🚫,,8,3823
 PerpendicularBisector,,,,12,4707
@@ -5131,7 +5131,7 @@ SpheroidalS1,,🚫,,6,2549
 SpheroidalS1Prime,,🚫,,6,2929
 SpheroidalS2,,🚫,,6,2642
 SpheroidalS2Prime,,🚫,,6,2921
-Splice,,,,12.1,2650
+Splice,Splice a list into an enclosing list,✅,1,12.1,2650
 SplicedDistribution,,,,9,3566
 SplineClosed,Option for closing B-spline curves,✅,pure,7,215
 SplineDegree,Option for the degree of spline interpolation,✅,none,7,774
@@ -5180,7 +5180,7 @@ StandbyDistribution,,,,9,3108
 Star,graphics primitive,🚫,None,3,2329
 StarClusterData,,🚫,,10,4881
 StarData,,🚫,,10,722
-StarGraph,,,,8,2617
+StarGraph,Star graph with n vertices,✅,1,8,2617
 StartExternalSession,,🚫,,11.2,3162
 StartingStepSize,Starting step size option,✅,unevaluated,4,1760
 StartOfLine,,,,5.1,2786
@@ -5295,7 +5295,7 @@ Subset,,,,3,2688
 SubsetCases,,,,12.1,4660
 SubsetCount,,,,12.1,5013
 SubsetEqual,,,,3,3916
-SubsetMap,,,,12,2755
+SubsetMap,Map function over subset and recombine,✅,1,12,2755
 SubsetPosition,,,,12.1,5587
 SubsetQ,Tests if one list is a subset of another,✅,pure,10,1562
 SubsetReplace,,,,12.1,4809
