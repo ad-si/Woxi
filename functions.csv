@@ -700,7 +700,7 @@ Cell,Represents a cell in a notebook with content and style information,✅,pure
 CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3,1417
 CellBaseline,Option for cell baseline alignment,✅,none,3,685
 CellBracketOptions,,,,4,3889
-CellChangeTimes,,,,6,1975
+CellChangeTimes,Notebook cell option for tracking changes,🚫,,6,1975
 CellContext,,,,6,2333
 CellDingbat,,,,3,2286
 CellDingbatMargin,,,,13.1,
@@ -900,7 +900,7 @@ ColorFunctionScaling,Option to scale color function input,✅,none,4,559
 Colorize,,🚫,,8,1035
 ColorNegate,Negates colors in an image,✅,pure,7,658
 ColorProfileData,,🚫,,9,2487
-ColorQ,,,,10,2162
+ColorQ,Test whether an expression is a color directive,✅,1,10,2162
 ColorQuantize,Quantize image colors,✅,unevaluated,7,1827
 ColorReplace,Replace colors in image,✅,unevaluated,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
@@ -930,7 +930,7 @@ CombinerFunction,,,,10,3656
 CometData,,🚫,,10,1195
 Commonest,Returns the most common elements in a list,✅,pure,6,1617
 CommonestFilter,,,,7,3020
-CommonName,,,,10,1986
+CommonName,Entity common name lookup,🚫,,10,1986
 CommonUnits,,,,9,5079
 CommunityBoundaryStyle,,,,9,4809
 CommunityGraphPlot,Community graph plot,✅,unevaluated,9,1707
@@ -2717,7 +2717,7 @@ ImageScan,,,,9,4437
 ImageSegmentationComponents,,,,14,
 ImageSegmentationFilter,,,,14,
 ImageSize,Option specifying the display size of graphics and other objects,✅,none,3,70
-ImageSizeAction,,,,6,1991
+ImageSizeAction,Option controlling image size behavior,🚫,,6,1991
 ImageSizeMultipliers,,,,6,2179
 ImageStitch,,,,13,
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7,1569
@@ -3474,7 +3474,7 @@ MeanAround,,,,12,2798
 MeanClusteringCoefficient,,,,9,3843
 MeanDegreeConnectivity,,,,9,4947
 MeanDeviation,,,,6,2367
-MeanFilter,,,,7,1991
+MeanFilter,Signal processing mean filter,🚫,,7,1991
 MeanGraphDistance,,,,9,4204
 MeanNeighborDegree,,,,9,4660
 MeanPointDensity,,,,12.2,5390
@@ -3508,7 +3508,7 @@ MersennePrimeExponent,,,,10.4,3462
 MersennePrimeExponentQ,,,,10.4,4437
 Mesh,Option for mesh lines in plots,✅,pure,1,165
 MeshCellCentroid,,,,10,3176
-MeshCellCount,,,,10,1975
+MeshCellCount,Count mesh cells in a region,🚫,,10,1975
 MeshCellHighlight,,,,10.2,3031
 MeshCellIndex,,,,10,3031
 MeshCellLabel,,,,10,2786
@@ -3612,7 +3612,7 @@ MomentConvert,,,,8,3678
 MomentEvaluate,,,,8,3737
 MomentGeneratingFunction,,,,8,2094
 MomentOfInertia,,,,10.4,3031
-Monday,,,,9,1970
+Monday,Day of the week symbol (just a constant symbol),🚫,,9,1970
 Monitor,,🚫,,6,1183
 MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,none,7,1375
 MonsterGroupM,,,,8,4809
@@ -3975,7 +3975,7 @@ Ordering,Returns positions that would sort a list,✅,pure,4.1,545
 OrderingBy,,,,12,4262
 OrderingLayer,,,,12,5390
 Orderless,Attribute for commutative functions,✅,pure,1,1325
-OrderlessPatternSequence,,,,10.1,1992
+OrderlessPatternSequence,Pattern matching construct for orderless sequences,🚫,,10.1,1992
 OrdinalScale,,,,13.1,
 OrnsteinUhlenbeckProcess,,,,9,2157
 Orthogonalize,,🚫,,6,1191
@@ -4145,7 +4145,7 @@ PerfectNumber,,,,10.4,3947
 PerfectNumberQ,,,,10.4,4027
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
-PeriodicBoundaryCondition,,,,11,1991
+PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11,1991
 Periodogram,,,,9,2108
 PeriodogramArray,,,,9,3537
 Permanent,,,,10.2,3389
@@ -4157,7 +4157,7 @@ PermissionsKey,,,,11,3413
 PermissionsKeys,,,,11,5587
 PermutationCycles,Cycle decomposition of a permutation,✅,pure,8,1550
 PermutationCyclesQ,,,,8,3280
-PermutationGroup,,,,8,1979
+PermutationGroup,Group theory permutation group representation,🚫,,8,1979
 PermutationLength,,,,8,3176
 PermutationList,Converts cycle notation to permutation list,✅,none,8,2223
 PermutationListQ,,,,8,3862
@@ -4294,7 +4294,7 @@ PolynomialSumOfSquaresList,,,,13,
 PoolingLayer,Neural net pooling layer,✅,unevaluated,11,1737
 PopupMenu,Interactive popup menu control,✅,none,6,792
 PopupView,,,,6,3522
-PopupWindow,,,,6,1975
+PopupWindow,GUI popup window element,🚫,,6,1975
 Position,Finds all positions of a pattern in a list,✅,pure,1,218
 PositionIndex,Maps each value to its list positions,✅,pure,10,1120
 PositionLargest,,,,13.2,
@@ -4314,7 +4314,7 @@ PowerDistribution,,,,8,3224
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2,640
 PowerMod,Computes modular exponentiation a^b mod m,✅,pure,1,607
 PowerModList,,,,6,3306
-PowerRange,,,,10,2131
+PowerRange,Generate a list of values by successive multiplication,✅,1,10,2131
 PowerSpectralDensity,,,,9,2091
 PowersRepresentations,Representations as sums of powers,✅,unevaluated,6,1637
 PowerSymmetricPolynomial,,,,8,4707
@@ -4855,7 +4855,7 @@ SecuredAuthenticationKeys,,,,11.3,
 SecurityCertificate,,,,12.2,
 SeedRandom,Seeds the random number generator,✅,stateful,1,351
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1,149
-Selectable,,,,3,1977
+Selectable,GUI option for content selectability,🚫,,3,1977
 SelectComponents,Select image components,✅,unevaluated,8,1593
 SelectedCells,,,,10,2468
 SelectedNotebook,Return the currently selected notebook,✅,none,3,687
@@ -5243,7 +5243,7 @@ StringMatchQ,Tests if string matches a pattern with wildcards,✅,pure,1,467
 StringPadLeft,Pads a string on the left to a specified length,✅,pure,10.1,2837
 StringPadRight,Pads a string on the right to a specified length,✅,pure,10.1,3200
 StringPart,Extracts characters from a string by index,✅,pure,11,2656
-StringPartition,,,,10.1,2097
+StringPartition,Partition a string into substrings of a given length,✅,1,10.1,2097
 StringPosition,Finds all positions of a substring,✅,pure,2,923
 StringQ,Tests if expression is a string,✅,pure,2,724
 StringRepeat,Repeats a string a specified number of times,✅,pure,10.1,2512
@@ -5327,7 +5327,7 @@ Sunset,,,,10,2193
 SuperDagger,Dagger superscript,✅,unevaluated,6,1709
 SuperMinus,,,,6,2087
 SupernovaData,,🚫,,10,4881
-SuperPlus,,,,6,1982
+SuperPlus,Typesetting notation for superscript plus,🚫,,6,1982
 Superscript,Inert superscript display form,✅,pure,1,292
 SuperscriptBox,,🚫,,3,994
 SuperscriptBoxOptions,,,,4,
@@ -5421,8 +5421,8 @@ SystemsModelStateFeedbackConnect,,,,8,2491
 SystemsModelVectorRelativeOrders,,,,10,4204
 Table,Generates a list by evaluating an expression,✅,pure,1,32
 TableAlignments,,🚫,,2,1159
-TableDepth,,,,2,1986
-TableDirections,,,,2,1977
+TableDepth,Option for TableForm display depth,🚫,,2,1986
+TableDirections,Option for TableForm display directions,🚫,,2,1977
 TableForm,Formats data as a table,✅,pure,1,255
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2,517
 TableSpacing,,🚫,,2,1290
@@ -6090,7 +6090,7 @@ WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1,171
 WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3,1852
 WeierstrassZeta,Weierstrass zeta function,✅,unevaluated,3,1781
 WeightedAdjacencyGraph,Weighted adjacency graph,✅,unevaluated,8,1695
-WeightedAdjacencyMatrix,,,,8,1979
+WeightedAdjacencyMatrix,Get weighted adjacency matrix of a graph,🚫,,8,1979
 WeightedData,,🚫,,9,1493
 WeightedGraphQ,,,,8,3916
 Weights,Weights specification for statistical functions,✅,pure,7,1537

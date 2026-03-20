@@ -4019,3 +4019,36 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::String(result))
 }
+
+/// StringPartition[string, n] partitions string into non-overlapping substrings of length n.
+/// StringPartition[string, n, d] partitions with offset d.
+pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let s = expr_to_str(&args[0])?;
+  let n = expr_to_int(&args[1])? as usize;
+  if n == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Partition size must be positive.".to_string(),
+    ));
+  }
+  let d = if args.len() >= 3 {
+    expr_to_int(&args[2])? as usize
+  } else {
+    n
+  };
+  if d == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Offset must be positive.".to_string(),
+    ));
+  }
+
+  let chars: Vec<char> = s.chars().collect();
+  let mut parts = Vec::new();
+  let mut i = 0;
+  while i + n <= chars.len() {
+    let part: String = chars[i..i + n].iter().collect();
+    parts.push(Expr::String(part));
+    i += d;
+  }
+
+  Ok(Expr::List(parts))
+}
