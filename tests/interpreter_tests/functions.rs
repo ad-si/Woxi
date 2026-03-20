@@ -9894,4 +9894,141 @@ mod batch_unevaluated_wrappers_2 {
       "85/18"
     );
   }
+
+  // EqualTo operator form
+  #[test]
+  fn equal_to_true() {
+    assert_eq!(interpret("EqualTo[5][5]").unwrap(), "True");
+  }
+  #[test]
+  fn equal_to_false() {
+    assert_eq!(interpret("EqualTo[5][3]").unwrap(), "False");
+  }
+  #[test]
+  fn equal_to_symbolic() {
+    assert_eq!(interpret("EqualTo[5][x]").unwrap(), "x == 5");
+  }
+
+  // GreaterThan, LessThan, etc.
+  #[test]
+  fn greater_than_false() {
+    assert_eq!(interpret("GreaterThan[5][3]").unwrap(), "False");
+  }
+  #[test]
+  fn greater_than_true() {
+    assert_eq!(interpret("GreaterThan[5][7]").unwrap(), "True");
+  }
+  #[test]
+  fn less_than_true() {
+    assert_eq!(interpret("LessThan[5][3]").unwrap(), "True");
+  }
+  #[test]
+  fn less_than_false() {
+    assert_eq!(interpret("LessThan[5][7]").unwrap(), "False");
+  }
+  #[test]
+  fn greater_equal_than_true() {
+    assert_eq!(interpret("GreaterEqualThan[3][3]").unwrap(), "True");
+  }
+  #[test]
+  fn greater_equal_than_false() {
+    assert_eq!(interpret("GreaterEqualThan[5][3]").unwrap(), "False");
+  }
+  #[test]
+  fn less_equal_than_true() {
+    assert_eq!(interpret("LessEqualThan[3][3]").unwrap(), "True");
+  }
+  #[test]
+  fn less_equal_than_false() {
+    assert_eq!(interpret("LessEqualThan[3][5]").unwrap(), "False");
+  }
+  #[test]
+  fn unequal_to_true() {
+    assert_eq!(interpret("UnequalTo[5][3]").unwrap(), "True");
+  }
+  #[test]
+  fn unequal_to_false() {
+    assert_eq!(interpret("UnequalTo[5][5]").unwrap(), "False");
+  }
+
+  // FileNameDrop
+  #[test]
+  fn file_name_drop_default() {
+    assert_eq!(interpret("FileNameDrop[\"a/b/c/d.txt\"]").unwrap(), "a/b/c");
+  }
+  #[test]
+  fn file_name_drop_positive() {
+    assert_eq!(
+      interpret("FileNameDrop[\"a/b/c/d.txt\", 1]").unwrap(),
+      "b/c/d.txt"
+    );
+  }
+  #[test]
+  fn file_name_drop_positive_2() {
+    assert_eq!(
+      interpret("FileNameDrop[\"a/b/c/d.txt\", 2]").unwrap(),
+      "c/d.txt"
+    );
+  }
+  #[test]
+  fn file_name_drop_negative() {
+    assert_eq!(
+      interpret("FileNameDrop[\"a/b/c/d.txt\", -1]").unwrap(),
+      "a/b/c"
+    );
+  }
+  #[test]
+  fn file_name_drop_negative_2() {
+    assert_eq!(
+      interpret("FileNameDrop[\"a/b/c/d.txt\", -2]").unwrap(),
+      "a/b"
+    );
+  }
+
+  // FromDMS
+  #[test]
+  fn from_dms_three() {
+    assert_eq!(interpret("FromDMS[{40, 26, 46}]").unwrap(), "72803/1800");
+  }
+  #[test]
+  fn from_dms_two() {
+    assert_eq!(interpret("FromDMS[{40, 26}]").unwrap(), "1213/30");
+  }
+  #[test]
+  fn from_dms_one() {
+    assert_eq!(interpret("FromDMS[46]").unwrap(), "46");
+  }
+
+  // NArgMin / NArgMax
+  #[test]
+  fn nargmin_basic() {
+    assert_eq!(interpret("NArgMin[x^2 + 3x + 1, x]").unwrap(), "-1.5");
+  }
+  #[test]
+  fn nargmax_basic() {
+    assert_eq!(interpret("NArgMax[-x^2 + 3x + 1, x]").unwrap(), "1.5");
+  }
+
+  // ArrayResample
+  #[test]
+  fn array_resample_downsample() {
+    assert_eq!(
+      interpret("ArrayResample[{1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+  #[test]
+  fn array_resample_upsample() {
+    assert_eq!(
+      interpret("ArrayResample[{1, 2, 3}, 5]").unwrap(),
+      "{1, 3/2, 2, 5/2, 3}"
+    );
+  }
+  #[test]
+  fn array_resample_exact() {
+    assert_eq!(
+      interpret("ArrayResample[{10, 20, 30}, 5]").unwrap(),
+      "{10, 15, 20, 25, 30}"
+    );
+  }
 }
