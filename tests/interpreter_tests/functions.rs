@@ -10681,4 +10681,56 @@ mod batch_unevaluated_wrappers_2 {
   fn booleans_element() {
     assert_eq!(interpret("Element[True, Booleans]").unwrap(), "True");
   }
+
+  // UndirectedGraphQ
+  #[test]
+  fn undirected_graph_q_true() {
+    assert_eq!(
+      interpret("UndirectedGraphQ[CompleteGraph[3]]").unwrap(),
+      "True"
+    );
+  }
+
+  // TreeGraphQ
+  #[test]
+  fn tree_graph_q_star() {
+    assert_eq!(interpret("TreeGraphQ[StarGraph[4]]").unwrap(), "True");
+  }
+  #[test]
+  fn tree_graph_q_cycle() {
+    assert_eq!(interpret("TreeGraphQ[CompleteGraph[3]]").unwrap(), "False");
+  }
+
+  // AcyclicGraphQ
+  #[test]
+  fn acyclic_graph_q_tree() {
+    assert_eq!(interpret("AcyclicGraphQ[StarGraph[4]]").unwrap(), "True");
+  }
+
+  // GraphDiameter
+  #[test]
+  fn graph_diameter_path() {
+    assert_eq!(interpret("GraphDiameter[KaryTree[3]]").unwrap(), "2");
+  }
+
+  // GraphRadius
+  #[test]
+  fn graph_radius_star() {
+    assert_eq!(interpret("GraphRadius[StarGraph[4]]").unwrap(), "1");
+  }
+
+  // GraphCenter
+  #[test]
+  fn graph_center_star() {
+    assert_eq!(interpret("GraphCenter[StarGraph[4]]").unwrap(), "{1}");
+  }
+
+  // GraphPeriphery
+  #[test]
+  fn graph_periphery_star() {
+    assert_eq!(
+      interpret("GraphPeriphery[StarGraph[4]]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
 }

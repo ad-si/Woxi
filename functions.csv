@@ -39,7 +39,7 @@ ActiveClassificationObject,,🚫,,11.1,
 ActivePrediction,,🚫,,11.1,4356
 ActivePredictionObject,,🚫,,11.1,
 ActiveStyle,,🚫,,7,4527
-AcyclicGraphQ,,,,8,2952
+AcyclicGraphQ,True if graph has no cycles,✅,1,8,2952
 AddSides,Add an expression to both sides of an equation,✅,none,11.3,3491
 AddTo,Adds a value to a variable,✅,stateful,1,550
 AddToSearchIndex,,🚫,,12,
@@ -2395,11 +2395,11 @@ Graph,Represents a graph with vertices and edges,✅,pure,8,303
 Graph3D,3D graph visualization,✅,unevaluated,10,1740
 GraphAssortativity,,,,9,3440
 GraphAutomorphismGroup,,,,10,3862
-GraphCenter,,,,8,2971
+GraphCenter,Vertices with minimum eccentricity,✅,1,8,2971
 GraphComplement,,,,8,2777
 GraphData,,🚫,,6,580
 GraphDensity,,,,9,4006
-GraphDiameter,,,,8,2625
+GraphDiameter,Maximum shortest path distance,✅,1,8,2625
 GraphDifference,,,,8,3506
 GraphDisjointUnion,,,,8,3491
 GraphDistance,Distance between graph vertices,✅,unevaluated,8,1625
@@ -2421,14 +2421,14 @@ GraphLayers,,,,12.3,
 GraphLayerStyle,,,,12.3,
 GraphLayout,,🚫,,8,888
 GraphLinkEfficiency,,,,9,4660
-GraphPeriphery,,,,8,2889
+GraphPeriphery,Vertices with maximum eccentricity,✅,1,8,2889
 GraphPlot,Requires external services or GUI infrastructure,🚫,io,6,849
 GraphPlot3D,3D graph plot,✅,unevaluated,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
 GraphPropertyDistribution,,,,9,2635
 GraphQ,graph predicate (no graph framework),🚫,None,8,2305
-GraphRadius,,,,8,3378
+GraphRadius,Minimum vertex eccentricity,✅,1,8,3378
 GraphReciprocity,,,,9,4809
 GraphSum,,,,13.1,
 GraphTree,,,,12.3,
@@ -5713,7 +5713,7 @@ TreeExtract,,,,12.3,
 TreeFold,,,,12.3,
 TreeForm,Display an expression as a tree structure,✅,pure,1,1138
 TreeGraph,Tree graph,✅,unevaluated,8,1808
-TreeGraphQ,,,,8,2807
+TreeGraphQ,True if graph is a tree,✅,1,8,2807
 TreeInsert,,,,12.3,
 TreeLayout,,,,13,
 TreeLeafCount,,,,13.1,
@@ -5790,7 +5790,7 @@ UnderscriptBoxOptions,,🚫,,4,2944
 UnderseaFeatureData,,🚫,,10,
 UndirectedEdge,Undirected graph edge,✅,pure,8,201
 UndirectedGraph,Create undirected graph,🚫,,8,2038
-UndirectedGraphQ,,,,8,2867
+UndirectedGraphQ,True if all edges are undirected,✅,1,8,2867
 UndoOptions,,🚫,,10,5013
 UndoTrackedVariables,Variables tracked for undo,✅,pure,10,1559
 Unequal,Checks if two values are not equal,✅,pure,1,200
@@ -5948,7 +5948,7 @@ VertexDataCoordinates,,,,9,5587
 VertexDegree,Returns the degree of vertices in a graph,✅,1,8,1287
 VertexDelete,Graph manipulation for deleting vertices,🚫,,8,1935
 VertexDiceSimilarity,,,,9,4947
-VertexEccentricity,,,,8,2871
+VertexEccentricity,Maximum distance from a vertex,✅,1,8,2871
 VertexInComponent,,,,8,3326
 VertexInComponentGraph,,,,12.3,
 VertexInDegree,In-degree of a vertex in a directed graph,🚫,,8,2042
