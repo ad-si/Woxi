@@ -1066,6 +1066,91 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    // DiagonalMatrixQ[m] — True if m is diagonal
+    "DiagonalMatrixQ" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let mut is_diag = true;
+        'diag: for i in 0..n {
+          if let Expr::List(row) = &rows[i] {
+            if row.len() != n {
+              is_diag = false;
+              break;
+            }
+            for j in 0..n {
+              if i != j && !matches!(&row[j], Expr::Integer(0)) {
+                let evaluated =
+                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
+                if !matches!(evaluated, Expr::Integer(0)) {
+                  is_diag = false;
+                  break 'diag;
+                }
+              }
+            }
+          } else {
+            is_diag = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if is_diag { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
+    // UpperTriangularMatrixQ[m] — True if m is upper triangular
+    "UpperTriangularMatrixQ" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let mut is_upper = true;
+        'upper: for i in 0..n {
+          if let Expr::List(row) = &rows[i] {
+            for j in 0..i.min(row.len()) {
+              if !matches!(&row[j], Expr::Integer(0)) {
+                let evaluated =
+                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
+                if !matches!(evaluated, Expr::Integer(0)) {
+                  is_upper = false;
+                  break 'upper;
+                }
+              }
+            }
+          } else {
+            is_upper = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if is_upper { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
+    // LowerTriangularMatrixQ[m] — True if m is lower triangular
+    "LowerTriangularMatrixQ" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        let mut is_lower = true;
+        'lower: for i in 0..n {
+          if let Expr::List(row) = &rows[i] {
+            for j in (i + 1)..row.len() {
+              if !matches!(&row[j], Expr::Integer(0)) {
+                let evaluated =
+                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
+                if !matches!(evaluated, Expr::Integer(0)) {
+                  is_lower = false;
+                  break 'lower;
+                }
+              }
+            }
+          } else {
+            is_lower = false;
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if is_lower { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
     "AntisymmetricMatrixQ" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {

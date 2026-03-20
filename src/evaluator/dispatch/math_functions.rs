@@ -2104,6 +2104,129 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // KroneckerSymbol[a, n] — generalized Jacobi symbol
+    "KroneckerSymbol" if args.len() == 2 => {
+      if let (Some(a), Some(n)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      {
+        let result = kronecker_symbol(a, n);
+        return Some(Ok(Expr::Integer(result)));
+      }
+    }
+    // NormalizedSquaredEuclideanDistance[u, v]
+    // = (1/2) * Total[(u-v)^2] / (Total[(u-Mean[u])^2] + Total[(v-Mean[v])^2])
+    "NormalizedSquaredEuclideanDistance" if args.len() == 2 => {
+      if let (Expr::List(u), Expr::List(v)) = (&args[0], &args[1]) {
+        if u.len() != v.len() || u.is_empty() {
+          return None;
+        }
+        // Build expression: Divide[Total[Power[Subtract[u,v], 2]], 2 * Plus[Total[...], Total[...]]]
+        let diff_sq: Vec<Expr> = u
+          .iter()
+          .zip(v.iter())
+          .map(|(ui, vi)| Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  ui.clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), vi.clone()],
+                  },
+                ],
+              },
+              Expr::Integer(2),
+            ],
+          })
+          .collect();
+        let numerator = Expr::FunctionCall {
+          name: "Total".to_string(),
+          args: vec![Expr::List(diff_sq)],
+        };
+        // Variance-like terms
+        let mean_u = Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: vec![Expr::List(u.clone())],
+        };
+        let mean_v = Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: vec![Expr::List(v.clone())],
+        };
+        let var_u: Vec<Expr> = u
+          .iter()
+          .map(|ui| Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  ui.clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), mean_u.clone()],
+                  },
+                ],
+              },
+              Expr::Integer(2),
+            ],
+          })
+          .collect();
+        let var_v: Vec<Expr> = v
+          .iter()
+          .map(|vi| Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  vi.clone(),
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![Expr::Integer(-1), mean_v.clone()],
+                  },
+                ],
+              },
+              Expr::Integer(2),
+            ],
+          })
+          .collect();
+        let denominator = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Total".to_string(),
+              args: vec![Expr::List(var_u)],
+            },
+            Expr::FunctionCall {
+              name: "Total".to_string(),
+              args: vec![Expr::List(var_v)],
+            },
+          ],
+        };
+        let result = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                numerator,
+                Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![denominator, Expr::Integer(-1)],
+                },
+              ],
+            },
+          ],
+        };
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
     // CorrelationDistance[u, v] — 1 - Correlation[u, v]
     "CorrelationDistance" if args.len() == 2 => {
       // Build 1 - Correlation[u, v] and evaluate
@@ -3049,6 +3172,60 @@ fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {
     exp >>= 1;
     base = (base as u128 * base as u128 % modulus as u128) as u64;
   }
+  result
+}
+
+/// Kronecker symbol — generalization of Jacobi symbol to all integers
+fn kronecker_symbol(a: i128, n: i128) -> i128 {
+  if n == 0 {
+    return if a == 1 || a == -1 { 1 } else { 0 };
+  }
+  if n == 1 {
+    return 1;
+  }
+  if n == -1 {
+    return if a < 0 { -1 } else { 1 };
+  }
+
+  // Handle n == 2
+  if n == 2 {
+    if a % 2 == 0 {
+      return 0;
+    }
+    let a_mod_8 = a.rem_euclid(8);
+    return if a_mod_8 == 1 || a_mod_8 == 7 { 1 } else { -1 };
+  }
+  if n == -2 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, 2);
+  }
+
+  // For negative n, factor out the sign
+  if n < 0 {
+    return kronecker_symbol(a, -1) * kronecker_symbol(a, -n);
+  }
+
+  // n > 2 and positive. Factor out powers of 2 from n.
+  let mut n_rem = n;
+  let mut result: i128 = 1;
+
+  // Extract factor of 2
+  let mut twos = 0;
+  while n_rem % 2 == 0 {
+    n_rem /= 2;
+    twos += 1;
+  }
+  if twos > 0 {
+    let k2 = kronecker_symbol(a, 2);
+    for _ in 0..twos {
+      result *= k2;
+    }
+  }
+
+  // Now n_rem is odd and positive, use Jacobi symbol
+  if n_rem > 1 {
+    result *= crate::functions::jacobi_symbol(a, n_rem);
+  }
+
   result
 }
 

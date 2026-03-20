@@ -1401,7 +1401,7 @@ DGaussianWavelet,,🚫,,8,3566
 Diagonal,Extract diagonal of a matrix,✅,pure,6,932
 DiagonalizableMatrixQ,Test whether a matrix is diagonalizable,✅,none,10,2570
 DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1,493
-DiagonalMatrixQ,,,,12,3737
+DiagonalMatrixQ,True if a matrix is diagonal,✅,1,12,3737
 Dialog,,🚫,,2,3612
 DialogInput,Dialog input,✅,unevaluated,6,1770
 DialogNotebook,,🚫,,6,2723
@@ -3031,7 +3031,7 @@ KolmogorovSmirnovTest,statistical test,🚫,None,8,2431
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4,591
 KroneckerModelDecomposition,,,,9,4173
 KroneckerProduct,Kronecker (tensor) product of matrices,✅,pure,6,625
-KroneckerSymbol,,,,6,2978
+KroneckerSymbol,Generalized Jacobi symbol,✅,1,6,2978
 KuiperTest,,,,8,3717
 KumaraswamyDistribution,,,,8,3612
 Kurtosis,Computes the kurtosis of a list,✅,pure,6,1416
@@ -3332,7 +3332,7 @@ LowerLeftArrow,,,,3,5390
 LowerRightArrow,,,,3,5390
 LowerTriangularize,Zero out elements above a diagonal,✅,pure,7,1212
 LowerTriangularMatrix,,,,13.1,
-LowerTriangularMatrixQ,,,,12,5587
+LowerTriangularMatrixQ,True if a matrix is lower triangular,✅,1,12,5587
 LowpassFilter,Apply a lowpass filter to data,🚫,9,1964
 LQEstimatorGains,,,,8,4315
 LQGRegulator,,,,8,4567
@@ -3795,7 +3795,7 @@ NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,p
 NormalizationLayer,,🚫,,12,5587
 Normalize,Normalizes a vector to unit length,✅,pure,6,421
 Normalized,,,,10,5079
-NormalizedSquaredEuclideanDistance,,,,8,2944
+NormalizedSquaredEuclideanDistance,Normalized squared Euclidean distance between vectors,✅,1,8,2944
 NormalMatrixQ,Test whether a matrix is normal,✅,none,10,3972
 NormalsFunction,,,,6,2777
 NormFunction,,,,5,2880
@@ -5849,7 +5849,7 @@ UpperLeftArrow,,,,3,5390
 UpperRightArrow,,,,3,4081
 UpperTriangularize,Zero out elements below a diagonal,✅,pure,7,1103
 UpperTriangularMatrix,,,,13.1,
-UpperTriangularMatrixQ,,,,12,4356
+UpperTriangularMatrixQ,True if a matrix is upper triangular,✅,1,12,4356
 Upsample,Upsample a list by inserting zeros,✅,none,9,2528
 UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1,454
 UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1,992

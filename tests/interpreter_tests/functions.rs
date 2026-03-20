@@ -10320,4 +10320,78 @@ mod batch_unevaluated_wrappers_2 {
       "{{1, 2}, {0, 1}}"
     );
   }
+
+  // DiagonalMatrixQ
+  #[test]
+  fn diagonal_matrix_q_true() {
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn diagonal_matrix_q_false() {
+    assert_eq!(
+      interpret("DiagonalMatrixQ[{{1, 2}, {0, 3}}]").unwrap(),
+      "False"
+    );
+  }
+
+  // UpperTriangularMatrixQ
+  #[test]
+  fn upper_triangular_q_true() {
+    assert_eq!(
+      interpret("UpperTriangularMatrixQ[{{1, 2, 3}, {0, 4, 5}, {0, 0, 6}}]")
+        .unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn upper_triangular_q_false() {
+    assert_eq!(
+      interpret("UpperTriangularMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  // LowerTriangularMatrixQ
+  #[test]
+  fn lower_triangular_q_true() {
+    assert_eq!(
+      interpret("LowerTriangularMatrixQ[{{1, 0, 0}, {2, 3, 0}, {4, 5, 6}}]")
+        .unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn lower_triangular_q_false() {
+    assert_eq!(
+      interpret("LowerTriangularMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  // KroneckerSymbol
+  #[test]
+  fn kronecker_symbol_basic() {
+    assert_eq!(interpret("KroneckerSymbol[2, 7]").unwrap(), "1");
+  }
+  #[test]
+  fn kronecker_symbol_neg() {
+    assert_eq!(interpret("KroneckerSymbol[3, 7]").unwrap(), "-1");
+  }
+  #[test]
+  fn kronecker_symbol_zero() {
+    assert_eq!(interpret("KroneckerSymbol[7, 7]").unwrap(), "0");
+  }
+
+  // NormalizedSquaredEuclideanDistance
+  #[test]
+  fn normalized_sqeuclidean_same() {
+    assert_eq!(
+      interpret("NormalizedSquaredEuclideanDistance[{1, 2, 3}, {1, 2, 3}]")
+        .unwrap(),
+      "0"
+    );
+  }
 }
