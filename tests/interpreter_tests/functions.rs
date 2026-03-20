@@ -11481,4 +11481,28 @@ mod batch_unevaluated_wrappers_2 {
       "UnderoverscriptBox[x, y, z]"
     );
   }
+
+  #[test]
+  fn inverse_gaussian_distribution_head() {
+    assert_eq!(
+      interpret("InverseGaussianDistribution[m, l]").unwrap(),
+      "InverseGaussianDistribution[m, l]"
+    );
+  }
+
+  #[test]
+  fn inverse_gaussian_distribution_pdf() {
+    let result =
+      interpret("PDF[InverseGaussianDistribution[m, l], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > 0"));
+  }
+
+  #[test]
+  fn inverse_gaussian_distribution_cdf() {
+    let result =
+      interpret("CDF[InverseGaussianDistribution[m, l], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > 0"));
+  }
 }

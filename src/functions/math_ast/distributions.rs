@@ -154,6 +154,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "FrechetDistribution" => pdf_frechet(dargs, x),
     "ExtremeValueDistribution" => pdf_extreme_value(dargs, x),
     "GompertzMakehamDistribution" => pdf_gompertz_makeham(dargs, x),
+    "InverseGaussianDistribution" => pdf_inverse_gaussian(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -372,6 +373,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "FrechetDistribution" => cdf_frechet(dargs, x),
     "ExtremeValueDistribution" => cdf_extreme_value(dargs, x),
     "GompertzMakehamDistribution" => cdf_gompertz_makeham(dargs, x),
+    "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -949,6 +951,91 @@ fn cdf_gompertz_makeham(
   let value = minus(int(1), power(e(), inner));
   let value = eval(value)?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// PDF[InverseGaussianDistribution[m, l], x] = Piecewise[{{Sqrt[l/x^3]/(E^((l*(-m+x)^2)/(2*m^2*x))*Sqrt[2*Pi]), x > 0}}, 0]
+fn pdf_inverse_gaussian(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseGaussianDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let l = dargs[1].clone();
+
+  // Sqrt[l/x^3]
+  let numer = sqrt(divide(l.clone(), power(x.clone(), int(3))));
+  // l*(-m+x)^2 / (2*m^2*x)
+  let exp_arg = divide(
+    times(l, power(minus(x.clone(), m.clone()), int(2))),
+    times(int(2), times(power(m, int(2)), x.clone())),
+  );
+  // E^(exp_arg)
+  let exp_part = power(e(), exp_arg);
+  // Sqrt[2*Pi]
+  let sqrt_2pi = sqrt(times(int(2), pi()));
+  let value = eval(divide(numer, times(exp_part, sqrt_2pi)))?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// CDF[InverseGaussianDistribution[m, l], x]
+fn cdf_inverse_gaussian(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseGaussianDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let l = dargs[1].clone();
+
+  // Sqrt[l/x]
+  let sqrt_lx = sqrt(divide(l.clone(), x.clone()));
+  // Erfc[((m - x)*Sqrt[l/x])/(Sqrt[2]*m)]/2
+  let erfc1_arg = divide(
+    times(minus(m.clone(), x.clone()), sqrt_lx.clone()),
+    times(sqrt(int(2)), m.clone()),
+  );
+  let erfc1 = divide(
+    Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![erfc1_arg],
+    },
+    int(2),
+  );
+  // E^((2*l)/m) * Erfc[(Sqrt[l/x]*(m + x))/(Sqrt[2]*m)]/2
+  let exp_part = power(e(), divide(times(int(2), l), m.clone()));
+  let erfc2_arg = divide(
+    times(
+      sqrt_lx,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(m.clone()),
+        right: Box::new(x.clone()),
+      },
+    ),
+    times(sqrt(int(2)), m),
+  );
+  let erfc2 = divide(
+    Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![erfc2_arg],
+    },
+    int(2),
+  );
+  let value = eval(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(erfc1),
+    right: Box::new(times(exp_part, erfc2)),
+  })?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
 }
 

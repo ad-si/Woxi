@@ -2888,7 +2888,7 @@ InverseFunction,Represents the inverse of a function,✅,none,2,584
 InverseFunctions,option for inverse computation,🚫,None,2,2431
 InverseGammaDistribution,represents an inverse gamma distribution,✅,Computation,7,2605
 InverseGammaRegularized,special function,🚫,None,3,2380
-InverseGaussianDistribution,,,,6,2671
+InverseGaussianDistribution,represents an inverse Gaussian distribution,✅,Computation,6,2671
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7,2108
 InverseHankelTransform,,,,11.1,4527
 InverseHaversine,Inverse haversine function,✅,computation,7,3593
