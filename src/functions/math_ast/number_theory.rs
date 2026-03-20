@@ -3032,3 +3032,59 @@ fn partitions_q(n: usize) -> BigInt {
   }
   dp[n].clone()
 }
+
+/// PrimeOmega[n] - number of prime factors with multiplicity
+pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let factors = factor_integer_ast(args)?;
+  if let Expr::List(ref pairs) = factors {
+    let mut total: i128 = 0;
+    for pair in pairs {
+      if let Expr::List(pv) = pair {
+        if pv.len() == 2 {
+          if let Expr::Integer(exp) = &pv[1] {
+            // Skip the {-1, 1} factor for negative numbers
+            if let Expr::Integer(base) = &pv[0] {
+              if *base == -1 {
+                continue;
+              }
+            }
+            total += *exp;
+          }
+        }
+      }
+    }
+    Ok(Expr::Integer(total))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "PrimeOmega".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// PrimeNu[n] - number of distinct prime factors
+pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let factors = factor_integer_ast(args)?;
+  if let Expr::List(ref pairs) = factors {
+    let mut count: i128 = 0;
+    for pair in pairs {
+      if let Expr::List(pv) = pair {
+        if pv.len() == 2 {
+          // Skip the {-1, 1} factor for negative numbers
+          if let Expr::Integer(base) = &pv[0] {
+            if *base == -1 {
+              continue;
+            }
+          }
+          count += 1;
+        }
+      }
+    }
+    Ok(Expr::Integer(count))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "PrimeNu".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}

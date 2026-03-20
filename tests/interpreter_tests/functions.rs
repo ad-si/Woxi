@@ -2461,6 +2461,58 @@ mod heaviside_pi {
   }
 }
 
+mod prime_omega {
+  use super::*;
+
+  #[test]
+  fn one_has_zero() {
+    assert_eq!(interpret("PrimeOmega[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn prime_has_one() {
+    assert_eq!(interpret("PrimeOmega[7]").unwrap(), "1");
+  }
+
+  #[test]
+  fn composite_with_multiplicity() {
+    // 12 = 2^2 * 3, so PrimeOmega = 2 + 1 = 3
+    assert_eq!(interpret("PrimeOmega[12]").unwrap(), "3");
+  }
+
+  #[test]
+  fn larger_number() {
+    // 100 = 2^2 * 5^2, so PrimeOmega = 2 + 2 = 4
+    assert_eq!(interpret("PrimeOmega[100]").unwrap(), "4");
+  }
+}
+
+mod prime_nu {
+  use super::*;
+
+  #[test]
+  fn one_has_zero() {
+    assert_eq!(interpret("PrimeNu[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn prime_has_one() {
+    assert_eq!(interpret("PrimeNu[7]").unwrap(), "1");
+  }
+
+  #[test]
+  fn composite_distinct_factors() {
+    // 12 = 2^2 * 3, so PrimeNu = 2 (distinct primes: 2, 3)
+    assert_eq!(interpret("PrimeNu[12]").unwrap(), "2");
+  }
+
+  #[test]
+  fn three_distinct_factors() {
+    // 60 = 2^2 * 3 * 5, so PrimeNu = 3
+    assert_eq!(interpret("PrimeNu[60]").unwrap(), "3");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

@@ -821,6 +821,12 @@ pub fn dispatch_math_functions(
     "FactorInteger" if args.len() == 1 => {
       return Some(crate::functions::math_ast::factor_integer_ast(args));
     }
+    "PrimeOmega" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::prime_omega_ast(args));
+    }
+    "PrimeNu" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::prime_nu_ast(args));
+    }
     "IntegerPartitions" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
