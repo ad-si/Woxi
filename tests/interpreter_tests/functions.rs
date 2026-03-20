@@ -2705,6 +2705,46 @@ mod reverse_extended {
   }
 
   #[test]
+  fn unitary_matrix_q_identity() {
+    assert_eq!(
+      interpret("UnitaryMatrixQ[{{1, 0}, {0, 1}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unitary_matrix_q_permutation() {
+    assert_eq!(
+      interpret("UnitaryMatrixQ[{{0, 1}, {1, 0}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unitary_matrix_q_non_unitary() {
+    assert_eq!(
+      interpret("UnitaryMatrixQ[{{1, 0}, {0, 2}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn reflection_matrix_axis() {
+    assert_eq!(
+      interpret("ReflectionMatrix[{1, 0}]").unwrap(),
+      "{{-1, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn reflection_matrix_diagonal() {
+    assert_eq!(
+      interpret("ReflectionMatrix[{1, 1}]").unwrap(),
+      "{{0, -1}, {-1, 0}}"
+    );
+  }
+
+  #[test]
   fn reverse_function_call() {
     assert_eq!(interpret("Reverse[x[a, b, c]]").unwrap(), "x[c, b, a]");
   }

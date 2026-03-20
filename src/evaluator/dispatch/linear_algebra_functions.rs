@@ -106,6 +106,96 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows)));
       }
     }
+    "UnitaryMatrixQ" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        if n == 0 {
+          return Some(Ok(Expr::Identifier("False".to_string())));
+        }
+        let is_square = rows.iter().all(|r| {
+          if let Expr::List(cols) = r {
+            cols.len() == n
+          } else {
+            false
+          }
+        });
+        if !is_square {
+          return Some(Ok(Expr::Identifier("False".to_string())));
+        }
+        let transpose =
+          crate::functions::list_helpers_ast::transpose_ast(&args[0]);
+        if let Ok(t) = transpose {
+          let dot = crate::functions::linear_algebra_ast::dot_ast(&[
+            t,
+            args[0].clone(),
+          ]);
+          if let Ok(product) = dot {
+            if let Ok(evaluated) =
+              crate::evaluator::evaluate_expr_to_expr(&product)
+            {
+              let identity =
+                crate::functions::linear_algebra_ast::identity_matrix_ast(&[
+                  Expr::Integer(n as i128),
+                ]);
+              if let Ok(id) = identity {
+                let result = crate::syntax::expr_to_string(&evaluated)
+                  == crate::syntax::expr_to_string(&id);
+                return Some(Ok(Expr::Identifier(
+                  if result { "True" } else { "False" }.to_string(),
+                )));
+              }
+            }
+          }
+        }
+      }
+      return Some(Ok(Expr::Identifier("False".to_string())));
+    }
+    "ReflectionMatrix" if args.len() == 1 => {
+      if let Expr::List(v) = &args[0] {
+        let n = v.len();
+        if n > 0 {
+          let dot_vv = Expr::FunctionCall {
+            name: "Dot".to_string(),
+            args: vec![args[0].clone(), args[0].clone()],
+          };
+          let mut rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let delta = if i == j {
+                Expr::Integer(1)
+              } else {
+                Expr::Integer(0)
+              };
+              let vi_vj = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(v[i].clone()),
+                right: Box::new(v[j].clone()),
+              };
+              let two_vi_vj = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(2)),
+                right: Box::new(vi_vj),
+              };
+              let frac = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(two_vi_vj),
+                right: Box::new(dot_vv.clone()),
+              };
+              let entry = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Minus,
+                left: Box::new(delta),
+                right: Box::new(frac),
+              };
+              row.push(entry);
+            }
+            rows.push(Expr::List(row));
+          }
+          let result = Expr::List(rows);
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
     "LeviCivitaTensor" if args.len() == 2 => {
       if matches!(&args[1], Expr::Identifier(h) if h == "List") {
         return Some(
