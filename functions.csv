@@ -791,7 +791,7 @@ ChemicalFormula,,🚫,,13,
 ChemicalInstance,,🚫,,13.1,
 ChemicalReaction,,🚫,,13,
 ChessboardDistance,Chessboard (Chebyshev) distance between points,✅,none,6,2549
-ChiDistribution,,,,6,2509
+ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6,2509
 ChineseRemainder,Solves a system of modular congruences,✅,pure,6,2389
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6,1186
 ChoiceButtons,,🚫,,7,3326

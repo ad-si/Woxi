@@ -10917,6 +10917,36 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // ChiDistribution
+  #[test]
+  fn chi_distribution_basic() {
+    assert_eq!(
+      interpret("ChiDistribution[3]").unwrap(),
+      "ChiDistribution[3]"
+    );
+  }
+  #[test]
+  fn chi_distribution_symbolic() {
+    assert_eq!(
+      interpret("ChiDistribution[n]").unwrap(),
+      "ChiDistribution[n]"
+    );
+  }
+  #[test]
+  fn chi_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[ChiDistribution[n], x]").unwrap(),
+      "Piecewise[{{(2^(1 - n/2)*x^(n - 1))/(E^(x^2/2)*Gamma[n/2]), x > 0}}, 0]"
+    );
+  }
+  #[test]
+  fn chi_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[ChiDistribution[n], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[n/2, 0, x^2/2], x > 0}}, 0]"
+    );
+  }
+
   // ResetDirectory
   #[test]
   fn reset_directory_restores_previous() {
