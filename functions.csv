@@ -40,7 +40,7 @@ ActivePrediction,,🚫,,11.1,4356
 ActivePredictionObject,,🚫,,11.1,
 ActiveStyle,,🚫,,7,4527
 AcyclicGraphQ,,,,8,2952
-AddSides,,,,11.3,3491
+AddSides,Add an expression to both sides of an equation,✅,none,11.3,3491
 AddTo,Adds a value to a variable,✅,stateful,1,550
 AddToSearchIndex,,🚫,,12,
 AddToVectorDatabase,,🚫,,14.1,
@@ -171,7 +171,7 @@ AppendTo,Appends an element to a list stored in a variable,✅,stateful,1,230
 Application,Application wrapper,✅,unevaluated,12.2,1766
 Apply,Applies a function to list elements as arguments,✅,pure,1,60
 ApplyReaction,,,,13.1,
-ApplySides,,,,11.3,3265
+ApplySides,Apply a function to both sides of an equation,✅,none,11.3,3265
 ApplyTo,,,,12.2,3612
 ArcCos,Returns the arc cosine of a number,✅,pure,1,249
 ArcCosDegrees,,,,14.1,
@@ -1277,7 +1277,7 @@ DateWithinQ,,,,11.1,3823
 DaubechiesWavelet,wavelet function,🚫,None,8,2299
 DavisDistribution,,,,8,3823
 DawsonF,Dawson integral special function,🚫,None,7,2187
-DayCount,,,,9,2605
+DayCount,Count days between two dates,✅,none,9,2605
 DayCountConvention,,,,9,5184
 DayHemisphere,,,,10,4104
 DaylightQ,,,,10,4527
@@ -1531,7 +1531,7 @@ Div,Compute the divergence of a vector field,✅,pure,9,736
 Divide,Divide numbers,✅,pure,1,572
 DivideBy,Divides a variable by a value,✅,stateful,1,1555
 Dividers,Option for dividing lines in Grid,✅,none,6,547
-DivideSides,,,,11.3,3008
+DivideSides,Divide both sides of an equation by an expression,✅,none,11.3,3008
 Divisible,Tests if one number is divisible by another,✅,pure,6,1013
 Divisors,Returns all divisors of an integer,✅,pure,1,675
 DivisorSigma,Returns the sum of k-th powers of divisors,✅,pure,1,1114
@@ -3647,7 +3647,7 @@ Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
 MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,✅,none,8,1954
 MultinormalDistribution,,🚫,,8,1042
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4,1760
-MultiplySides,,,,11.3,2611
+MultiplySides,Multiply both sides of an equation by an expression,✅,none,11.3,2611
 Multiselection,,,,9,4809
 MultivariateHypergeometricDistribution,,,,8,2816
 MultivariatePoissonDistribution,,,,8,2720
@@ -5309,7 +5309,7 @@ SubtitleEncoding,,🚫,,12.1,
 SubtitleTrackSelection,,🚫,,12.2,
 Subtract,Subtracts one number from another,✅,pure,1,567
 SubtractFrom,Subtracts a value from a variable,✅,stateful,1,1099
-SubtractSides,,,,11.3,2642
+SubtractSides,Subtract an expression from both sides of an equation,✅,none,11.3,2642
 SubValues,Returns the sub values of a symbol,✅,pure,2,2251
 Succeeds,,,,3,4947
 SucceedsEqual,,,,3,5390

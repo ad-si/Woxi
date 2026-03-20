@@ -10009,6 +10009,44 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("NArgMax[-x^2 + 3x + 1, x]").unwrap(), "1.5");
   }
 
+  // AddSides / SubtractSides / MultiplySides / DivideSides / ApplySides
+  #[test]
+  fn add_sides_basic() {
+    assert_eq!(interpret("AddSides[x == 2, 3]").unwrap(), "3 + x == 5");
+  }
+  #[test]
+  fn subtract_sides_basic() {
+    assert_eq!(interpret("SubtractSides[x + 3 == 5, 3]").unwrap(), "x == 2");
+  }
+  #[test]
+  fn multiply_sides_basic() {
+    assert_eq!(interpret("MultiplySides[x == 2, 3]").unwrap(), "3*x == 6");
+  }
+  #[test]
+  fn divide_sides_basic() {
+    assert_eq!(interpret("DivideSides[2x == 6, 2]").unwrap(), "x == 3");
+  }
+  #[test]
+  fn apply_sides_basic() {
+    assert_eq!(interpret("ApplySides[f, x == y]").unwrap(), "f[x] == f[y]");
+  }
+
+  // DayCount
+  #[test]
+  fn day_count_basic() {
+    assert_eq!(
+      interpret("DayCount[{2020, 1, 1}, {2020, 12, 31}]").unwrap(),
+      "365"
+    );
+  }
+  #[test]
+  fn day_count_same_month() {
+    assert_eq!(
+      interpret("DayCount[{2023, 1, 1}, {2023, 1, 31}]").unwrap(),
+      "30"
+    );
+  }
+
   // ArrayResample
   #[test]
   fn array_resample_downsample() {
