@@ -9856,4 +9856,42 @@ mod batch_unevaluated_wrappers_2 {
       "{0, 0, 0}"
     );
   }
+  #[test]
+  fn trimmed_mean_basic() {
+    assert_eq!(
+      interpret("TrimmedMean[{1, 2, 3, 100}, 0.25]").unwrap(),
+      "5/2"
+    );
+  }
+  #[test]
+  fn trimmed_mean_larger() {
+    assert_eq!(
+      interpret("TrimmedMean[{1, 2, 3, 4, 5, 6, 7, 8, 9, 100}, 0.2]").unwrap(),
+      "11/2"
+    );
+  }
+  #[test]
+  fn winsorized_mean_basic() {
+    assert_eq!(
+      interpret("WinsorizedMean[{1, 2, 3, 4, 5, 6, 7, 8, 9, 100}, 0.2]")
+        .unwrap(),
+      "11/2"
+    );
+  }
+  #[test]
+  fn trimmed_variance_basic() {
+    assert_eq!(
+      interpret("TrimmedVariance[{1, 2, 3, 4, 5, 6, 7, 8, 9, 100}, 0.2]")
+        .unwrap(),
+      "7/2"
+    );
+  }
+  #[test]
+  fn winsorized_variance_basic() {
+    assert_eq!(
+      interpret("WinsorizedVariance[{1, 2, 3, 4, 5, 6, 7, 8, 9, 100}, 0.2]")
+        .unwrap(),
+      "85/18"
+    );
+  }
 }
