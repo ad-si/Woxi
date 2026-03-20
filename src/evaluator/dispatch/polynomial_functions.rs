@@ -140,6 +140,93 @@ pub fn dispatch_polynomial_functions(
     "NMaximize" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::nminimize_ast(args, true));
     }
+    "FindArgMin" if args.len() == 2 => {
+      // FindArgMin[f, x] => calls FindMinimum[f, {x, 0}] and extracts the arg
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
+        {
+          // Result is {value, {x -> arg}}
+          if result.len() == 2 {
+            if let Expr::List(rules) = &result[1] {
+              let args_list: Vec<Expr> = rules
+                .iter()
+                .filter_map(|r| {
+                  if let Expr::Rule { replacement, .. } = r {
+                    Some(replacement.as_ref().clone())
+                  } else {
+                    None
+                  }
+                })
+                .collect();
+              return Some(Ok(Expr::List(args_list)));
+            }
+          }
+        }
+      }
+    }
+    "FindArgMax" if args.len() == 2 => {
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
+        {
+          if result.len() == 2 {
+            if let Expr::List(rules) = &result[1] {
+              let args_list: Vec<Expr> = rules
+                .iter()
+                .filter_map(|r| {
+                  if let Expr::Rule { replacement, .. } = r {
+                    Some(replacement.as_ref().clone())
+                  } else {
+                    None
+                  }
+                })
+                .collect();
+              return Some(Ok(Expr::List(args_list)));
+            }
+          }
+        }
+      }
+    }
+    "NMinValue" if args.len() == 2 => {
+      // NMinValue[f, x] => calls FindMinimum[f, {x, 0}] and extracts the value
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
+        {
+          if !result.is_empty() {
+            return Some(Ok(result[0].clone()));
+          }
+        }
+      }
+    }
+    "NMaxValue" if args.len() == 2 => {
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
+        {
+          if !result.is_empty() {
+            return Some(Ok(result[0].clone()));
+          }
+        }
+      }
+    }
     "Tuples" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::list_helpers_ast::tuples_ast(args));
     }

@@ -49,7 +49,7 @@ AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8,1107
 AdjacencyList,Graph operations,🚫,None,9,2276
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8,1055
 AdjacentMeshCells,,,,12.1,4225
-Adjugate,,,,13,
+Adjugate,Transpose of cofactor matrix,✅,none,13,
 AdjustmentBox,,,,3,2570
 AdjustmentBoxOptions,,,,4,5587
 AdjustTimeSeriesForecast,,,,9,4809
@@ -1099,7 +1099,7 @@ ConwayGroupCo3,,,,8,4881
 CookieFunction,,,,11,4809
 CoordinateBoundingBox,,,,10.1,3755
 CoordinateBoundingBoxArray,,,,10.1,3402
-CoordinateBounds,,,,10.1,2483
+CoordinateBounds,Coordinate bounds of a list of points,✅,none,10.1,2483
 CoordinateBoundsArray,,,,10.1,2880
 CoordinateChartData,,🚫,,9,2837
 CoordinatesToolOptions,Coordinates tool options,✅,unevaluated,7,1800
@@ -1944,8 +1944,8 @@ FinancialDerivative,,🚫,,8,1236
 FinancialIndicator,financial data,🚫,None,8,2338
 Find,Finds a file on the search path,🚧,effectful,2,1793
 FindAnomalies,,,,12,4809
-FindArgMax,,,,7,2632
-FindArgMin,,,,7,2462
+FindArgMax,Find argument that maximizes a function,✅,none,7,2632
+FindArgMin,Find argument that minimizes a function,✅,none,7,2462
 FindChannels,,,,11,4387
 FindClique,graph algorithm,🚫,None,8,2317
 FindClusters,,🚫,,6,1198
@@ -2372,7 +2372,7 @@ GestureHandler,,,,9,4315
 Get,Reads and evaluates a file returning the last result,✅,effectful,1,283
 GetEnvironment,,,,9,3717
 GibbsPointProcess,,,,12.2,5587
-Glaisher,,,,4,2509
+Glaisher,Glaisher-Kinkelin constant,✅,none,4,2509
 GlobalClusteringCoefficient,,,,9,3233
 Glow,Graphics directive for glow effect,✅,1,6,1169
 GoldenAngle,,,,10.2,3344
@@ -3760,7 +3760,7 @@ NLineIntegrate,,,,14,
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5,794
 NMaxValue,Numerical maximum value optimization (numerical optimization),🚫,,7,2020
 NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5,587
-NMinValue,,,,7,2475
+NMinValue,Numerical minimum value of a function,✅,none,7,2475
 NominalScale,,,,13.1,
 NominalVariables,,,,7,2851
 NoncentralBetaDistribution,,,,8,3717
