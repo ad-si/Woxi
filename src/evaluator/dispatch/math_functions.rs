@@ -2104,6 +2104,185 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // FromDMS[{d, m, s}] — convert degrees/minutes/seconds to decimal degrees
+    "FromDMS" if args.len() == 1 => {
+      match &args[0] {
+        Expr::List(parts) => {
+          // {d}, {d, m}, or {d, m, s}
+          let d = parts.first().cloned().unwrap_or(Expr::Integer(0));
+          let m = parts.get(1).cloned().unwrap_or(Expr::Integer(0));
+          let s = parts.get(2).cloned().unwrap_or(Expr::Integer(0));
+          // result = d + m/60 + s/3600
+          let result = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              d,
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  m,
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(60)],
+                  },
+                ],
+              },
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  s,
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(3600)],
+                  },
+                ],
+              },
+            ],
+          };
+          return Some(evaluate_expr_to_expr(&result));
+        }
+        // FromDMS[n] where n is just degrees
+        Expr::Integer(_) | Expr::Real(_) => {
+          return Some(Ok(args[0].clone()));
+        }
+        _ => {}
+      }
+    }
+    // NArgMin[f, x] — numerical arg min
+    "NArgMin" if args.len() == 2 => {
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
+          && result.len() == 2
+          && let Expr::List(rules) = &result[1]
+        {
+          let args_list: Vec<Expr> = rules
+            .iter()
+            .filter_map(|r| {
+              if let Expr::Rule { replacement, .. } = r {
+                // Apply N[] to get numeric result
+                let n_expr = Expr::FunctionCall {
+                  name: "N".to_string(),
+                  args: vec![replacement.as_ref().clone()],
+                };
+                Some(
+                  evaluate_expr_to_expr(&n_expr)
+                    .unwrap_or(replacement.as_ref().clone()),
+                )
+              } else {
+                None
+              }
+            })
+            .collect();
+          if args_list.len() == 1 {
+            return Some(Ok(args_list.into_iter().next().unwrap()));
+          }
+          return Some(Ok(Expr::List(args_list)));
+        }
+      }
+    }
+    // NArgMax[f, x] — numerical arg max
+    "NArgMax" if args.len() == 2 => {
+      if let Expr::Identifier(var) = &args[1] {
+        let find_args = vec![
+          args[0].clone(),
+          Expr::List(vec![Expr::Identifier(var.clone()), Expr::Integer(0)]),
+        ];
+        if let Ok(Expr::List(ref result)) =
+          crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
+          && result.len() == 2
+          && let Expr::List(rules) = &result[1]
+        {
+          let args_list: Vec<Expr> = rules
+            .iter()
+            .filter_map(|r| {
+              if let Expr::Rule { replacement, .. } = r {
+                let n_expr = Expr::FunctionCall {
+                  name: "N".to_string(),
+                  args: vec![replacement.as_ref().clone()],
+                };
+                Some(
+                  evaluate_expr_to_expr(&n_expr)
+                    .unwrap_or(replacement.as_ref().clone()),
+                )
+              } else {
+                None
+              }
+            })
+            .collect();
+          if args_list.len() == 1 {
+            return Some(Ok(args_list.into_iter().next().unwrap()));
+          }
+          return Some(Ok(Expr::List(args_list)));
+        }
+      }
+    }
+    // ArrayResample[list, n] — resample a 1D array to n elements using linear interpolation
+    "ArrayResample" if args.len() == 2 => {
+      if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
+        let n = n as usize;
+        let m = elems.len();
+        if n == 0 {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        if m == 0 {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        if n == 1 {
+          return Some(Ok(Expr::List(vec![elems[0].clone()])));
+        }
+        if m == 1 {
+          return Some(Ok(Expr::List(vec![elems[0].clone(); n])));
+        }
+        let mut result = Vec::with_capacity(n);
+        for i in 0..n {
+          // Map output index i to input coordinate
+          // t = i * (m-1) / (n-1)
+          let t_num = i as i128 * (m as i128 - 1);
+          let t_den = n as i128 - 1;
+          let idx = (t_num / t_den) as usize;
+          let rem = t_num % t_den;
+          if rem == 0 {
+            // Exact index
+            result.push(elems[idx].clone());
+          } else {
+            // Linear interpolation: elems[idx] + rem/t_den * (elems[idx+1] - elems[idx])
+            let frac = Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(rem), Expr::Integer(t_den)],
+            };
+            let interp = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                elems[idx].clone(),
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![
+                    frac,
+                    Expr::FunctionCall {
+                      name: "Plus".to_string(),
+                      args: vec![
+                        elems[idx + 1].clone(),
+                        Expr::FunctionCall {
+                          name: "Times".to_string(),
+                          args: vec![Expr::Integer(-1), elems[idx].clone()],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            };
+            result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
+          }
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
     _ => {}
   }
   None

@@ -638,6 +638,55 @@ pub fn dispatch_predicate_functions(
     "Share" => {
       return Some(Ok(Expr::Integer(0)));
     }
+    // Operator forms: EqualTo[y][x] → x == y, etc.
+    "EqualTo" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::Equal],
+        }),
+      }));
+    }
+    "UnequalTo" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+        }),
+      }));
+    }
+    "GreaterThan" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::Greater],
+        }),
+      }));
+    }
+    "LessThan" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::Less],
+        }),
+      }));
+    }
+    "GreaterEqualThan" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+        }),
+      }));
+    }
+    "LessEqualThan" if args.len() == 1 => {
+      return Some(Ok(Expr::Function {
+        body: Box::new(Expr::Comparison {
+          operands: vec![Expr::Slot(1), args[0].clone()],
+          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+        }),
+      }));
+    }
     _ => {}
   }
   None

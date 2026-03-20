@@ -1178,6 +1178,28 @@ pub fn dispatch_io_functions(
         }
       }
     }
+    // FileNameDrop["path", n] — drop n path components
+    "FileNameDrop" if !args.is_empty() && args.len() <= 2 => {
+      if let Expr::String(path) = &args[0] {
+        let n = if args.len() == 2 {
+          expr_to_i128(&args[1])?
+        } else {
+          -1 // default: drop last component
+        };
+        let parts: Vec<&str> = path.split('/').collect();
+        let total = parts.len() as i128;
+        let result = if n >= 0 {
+          // Drop first n components
+          let skip = (n as usize).min(parts.len());
+          parts[skip..].join("/")
+        } else {
+          // Drop last |n| components
+          let keep = (total + n).max(0) as usize;
+          parts[..keep].join("/")
+        };
+        return Some(Ok(Expr::String(result)));
+      }
+    }
     _ => {}
   }
   None

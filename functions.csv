@@ -219,7 +219,7 @@ ArrayPlot,Plots a matrix as a grid of colored cells,✅,pure,5.1,346
 ArrayPlot3D,,🚫,,12.2,4006
 ArrayQ,Tests if an expression is a full array,✅,pure,5,1668
 ArrayReduce,,,,12.2,5079
-ArrayResample,,,,10,2557
+ArrayResample,Resample an array to a different size,✅,none,10,2557
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9,965
 ArrayRules,Extract non-default elements as position rules,✅,pure,5,1517
 Arrays,type system,🚫,None,9,2435
@@ -1732,7 +1732,7 @@ Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,
 EpilogFunction,,🚫,,10.1,5587
 Equal,Checks if two values are equal,✅,pure,1,11
 EqualTilde,,,,3,5079
-EqualTo,,,,10.3,2578
+EqualTo,Operator form of Equal,✅,none,10.3,2578
 Equilibrium,,,,3,3363
 EquirippleFilterKernel,,,,9,4225
 Equivalent,Logical equivalence,✅,pure,7,1298
@@ -1914,7 +1914,7 @@ FileFormatProperties,,,,13,
 FileFormatQ,,,,12.2,5184
 FileHash,,,,6,3134
 FileNameDepth,,,,7,3755
-FileNameDrop,,,,7,2554
+FileNameDrop,Drop path components from a file name,✅,none,7,2554
 FileNameForms,,,,11,4527
 FileNameJoin,Join file path components,✅,pure,7,582
 FileNames,Lists file names matching a pattern,✅,effectful,2,707
@@ -2163,7 +2163,7 @@ FromCoefficientRules,Builds a polynomial from coefficient rules,✅,None,7,2411
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4,2350
 FromDateString,,,,12.3,
 FromDigits,Constructs integer from list of digits,✅,pure,3,526
-FromDMS,,,,7,2587
+FromDMS,Convert degrees-minutes-seconds to decimal degrees,✅,none,7,2587
 FromEntity,,🚫,,10,3413
 FromFiniteField,,,,14,
 FromFiniteFieldIndex,,,,14,
@@ -2439,12 +2439,12 @@ GrayLevel,Specifies a gray color level,✅,pure,1,46
 Greater,Checks if one value is greater than another,✅,pure,1,48
 GreaterEqual,Checks if one value is greater than or equal to another,✅,pure,1,110
 GreaterEqualLess,,,,3,5390
-GreaterEqualThan,,,,10.3,3215
+GreaterEqualThan,Operator form of GreaterEqual,✅,none,10.3,3215
 GreaterFullEqual,,,,3,5184
 GreaterGreater,,,,3,5013
 GreaterLess,,,,3,5390
 GreaterSlantEqual,,,,3,5486
-GreaterThan,,,,10.3,2632
+GreaterThan,Operator form of Greater,✅,none,10.3,2632
 GreaterTilde,,,,3,5013
 Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
 GreenFunction,Differential equation Green's function,🚫,None,10.4,2210
@@ -3129,12 +3129,12 @@ LerchPhi,Lerch transcendent special function,✅,pure,1,1108
 Less,Checks if one value is less than another,✅,pure,1,41
 LessEqual,Checks if one value is less than or equal to another,✅,pure,1,57
 LessEqualGreater,,,,3,5390
-LessEqualThan,,,,10.3,3491
+LessEqualThan,Operator form of LessEqual,✅,none,10.3,3491
 LessFullEqual,,,,3,3717
 LessGreater,,,,3,5390
 LessLess,,,,3,3537
 LessSlantEqual,,,,3,5486
-LessThan,,,,10.3,3059
+LessThan,Operator form of Less,✅,none,10.3,3059
 LessTilde,,,,3,5390
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 LetterCounts,Counts letter occurrences in a string,✅,None,10.1,2605
@@ -3658,7 +3658,7 @@ NameQ,Test if a string is a defined symbol name,✅,pure,1,3280
 Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1,889
 Nand,Logical NAND,✅,pure,4.1,2233
 NArgMax,numeric optimization,🚫,None,7,2320
-NArgMin,,,,7,2605
+NArgMin,Numerical arg min,✅,none,7,2605
 NBodySimulation,,,,12,3697
 NBodySimulationData,,🚫,,12,
 NCache,,,,6,4356
@@ -5794,7 +5794,7 @@ UndirectedGraphQ,,,,8,2867
 UndoOptions,,🚫,,10,5013
 UndoTrackedVariables,Variables tracked for undo,✅,pure,10,1559
 Unequal,Checks if two values are not equal,✅,pure,1,200
-UnequalTo,,,,10.4,3678
+UnequalTo,Operator form of Unequal,✅,none,10.4,3678
 Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2,407
 UniformDistribution,Represents a continuous uniform probability distribution,✅,pure,6,757
 UniformGraphDistribution,,,,8,2921
