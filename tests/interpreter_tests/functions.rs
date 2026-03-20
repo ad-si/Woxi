@@ -9821,4 +9821,39 @@ mod batch_unevaluated_wrappers_2 {
       "<|a -> 1, ba -> 2, ccc -> 3|>"
     );
   }
+  #[test]
+  fn max_filter_basic() {
+    assert_eq!(
+      interpret("MaxFilter[{1, 5, 2, 8, 3}, 1]").unwrap(),
+      "{5, 5, 8, 8, 8}"
+    );
+  }
+  #[test]
+  fn min_filter_basic() {
+    assert_eq!(
+      interpret("MinFilter[{1, 5, 2, 8, 3}, 1]").unwrap(),
+      "{1, 1, 2, 2, 3}"
+    );
+  }
+  #[test]
+  fn upsample_basic() {
+    assert_eq!(
+      interpret("Upsample[{a, b, c}, 2]").unwrap(),
+      "{a, 0, b, 0, c, 0}"
+    );
+  }
+  #[test]
+  fn downsample_basic() {
+    assert_eq!(
+      interpret("Downsample[{a, b, c, d, e, f}, 2]").unwrap(),
+      "{a, c, e}"
+    );
+  }
+  #[test]
+  fn euler_angles_identity() {
+    assert_eq!(
+      interpret("EulerAngles[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
 }

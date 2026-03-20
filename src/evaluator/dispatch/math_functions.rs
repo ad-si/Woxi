@@ -1858,6 +1858,136 @@ pub fn dispatch_math_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
+    "MaxFilter" if args.len() == 2 => {
+      // MaxFilter[list, r] — replace each element with the max in a window of radius r
+      if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
+        let r = r as usize;
+        let n = elems.len();
+        let mut result = Vec::with_capacity(n);
+        for i in 0..n {
+          let lo = i.saturating_sub(r);
+          let hi = if i + r < n { i + r } else { n - 1 };
+          let window: Vec<Expr> = elems[lo..=hi].to_vec();
+          let max_val = evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Max".to_string(),
+            args: window,
+          })
+          .unwrap_or(elems[i].clone());
+          result.push(max_val);
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
+    "MinFilter" if args.len() == 2 => {
+      if let (Expr::List(elems), Some(r)) = (&args[0], expr_to_i128(&args[1])) {
+        let r = r as usize;
+        let n = elems.len();
+        let mut result = Vec::with_capacity(n);
+        for i in 0..n {
+          let lo = i.saturating_sub(r);
+          let hi = if i + r < n { i + r } else { n - 1 };
+          let window: Vec<Expr> = elems[lo..=hi].to_vec();
+          let min_val = evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Min".to_string(),
+            args: window,
+          })
+          .unwrap_or(elems[i].clone());
+          result.push(min_val);
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
+    "Upsample" if args.len() == 2 => {
+      // Upsample[list, n] — insert n-1 zeros between each element
+      if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
+        let n = n as usize;
+        if n > 0 {
+          let mut result = Vec::new();
+          for elem in elems {
+            result.push(elem.clone());
+            for _ in 1..n {
+              result.push(Expr::Integer(0));
+            }
+          }
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
+    "Downsample" if args.len() == 2 => {
+      // Downsample[list, n] — take every n-th element
+      if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
+        let n = n as usize;
+        if n > 0 {
+          let result: Vec<Expr> = elems.iter().step_by(n).cloned().collect();
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
+    "EulerAngles" if args.len() == 1 => {
+      // EulerAngles[matrix] — extract ZYZ Euler angles from 3x3 rotation matrix
+      // For ZYZ convention: R = Rz(alpha) Ry(beta) Rz(gamma)
+      // beta = ArcCos[R33], alpha = ArcTan[-R23, R13], gamma = ArcTan[R32, R31]
+      if let Expr::List(rows) = &args[0]
+        && rows.len() == 3
+      {
+        let matrix: Vec<Vec<Expr>> = rows
+          .iter()
+          .filter_map(|r| match r {
+            Expr::List(cols) if cols.len() == 3 => Some(cols.clone()),
+            _ => None,
+          })
+          .collect();
+        if matrix.len() == 3 {
+          // Use numeric approach: evaluate elements
+          let get = |i: usize, j: usize| -> f64 {
+            match &matrix[i][j] {
+              Expr::Integer(v) => *v as f64,
+              Expr::Real(v) => *v,
+              _ => {
+                if let Ok(Expr::Real(v)) =
+                  evaluate_expr_to_expr(&Expr::FunctionCall {
+                    name: "N".to_string(),
+                    args: vec![matrix[i][j].clone()],
+                  })
+                {
+                  v
+                } else {
+                  0.0
+                }
+              }
+            }
+          };
+          let r33 = get(2, 2);
+          let beta = r33.acos();
+          let (alpha, gamma) = if beta.abs() < 1e-10 {
+            // beta ≈ 0: gimbal lock, alpha + gamma = atan2(R21, R11)
+            let ag = get(1, 0).atan2(get(0, 0));
+            (ag, 0.0)
+          } else if (beta - std::f64::consts::PI).abs() < 1e-10 {
+            // beta ≈ pi: alpha - gamma = atan2(R21, -R11)
+            let ag = get(1, 0).atan2(-get(0, 0));
+            (ag, 0.0)
+          } else {
+            let alpha = (-get(1, 2)).atan2(get(0, 2));
+            let gamma = get(2, 1).atan2(get(2, 0));
+            (alpha, gamma)
+          };
+          // Convert back to exact if close to simple values
+          let to_expr = |v: f64| -> Expr {
+            if v.abs() < 1e-14 {
+              Expr::Integer(0)
+            } else {
+              Expr::Real(v)
+            }
+          };
+          return Some(Ok(Expr::List(vec![
+            to_expr(alpha),
+            to_expr(beta),
+            to_expr(gamma),
+          ])));
+        }
+      }
+    }
     _ => {}
   }
   None
