@@ -10636,4 +10636,49 @@ mod batch_unevaluated_wrappers_2 {
       "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}]"
     );
   }
+
+  // CirculantGraph
+  #[test]
+  fn circulant_graph_basic() {
+    let result = interpret("CirculantGraph[4, {1}]").unwrap();
+    assert!(result.starts_with("Graph[{1, 2, 3, 4}"));
+  }
+
+  // KaryTree
+  #[test]
+  fn kary_tree_binary() {
+    let result = interpret("KaryTree[7]").unwrap();
+    assert!(result.starts_with("Graph[{1, 2, 3, 4, 5, 6, 7}"));
+    assert!(result.contains("UndirectedEdge[1, 2]"));
+    assert!(result.contains("UndirectedEdge[1, 3]"));
+  }
+
+  // HypercubeGraph
+  #[test]
+  fn hypercube_graph_2() {
+    let result = interpret("HypercubeGraph[2]").unwrap();
+    assert!(result.starts_with("Graph[{1, 2, 3, 4}"));
+  }
+
+  // EdgeQ
+  #[test]
+  fn edge_q_true() {
+    assert_eq!(
+      interpret("EdgeQ[CompleteGraph[3], UndirectedEdge[1, 2]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn edge_q_false() {
+    assert_eq!(
+      interpret("EdgeQ[StarGraph[3], UndirectedEdge[2, 3]]").unwrap(),
+      "False"
+    );
+  }
+
+  // Booleans domain
+  #[test]
+  fn booleans_element() {
+    assert_eq!(interpret("Element[True, Booleans]").unwrap(), "True");
+  }
 }

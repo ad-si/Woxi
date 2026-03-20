@@ -1435,6 +1435,113 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // CirculantGraph[n, {j1, j2, ...}] — circulant graph
+  if name == "CirculantGraph"
+    && args.len() == 2
+    && let (Expr::Integer(n), Expr::List(jumps)) = (&args[0], &args[1])
+  {
+    let n = *n as usize;
+    let vertices: Vec<Expr> =
+      (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+    let mut edges = Vec::new();
+    let jump_vals: Vec<usize> = jumps
+      .iter()
+      .filter_map(|j| {
+        if let Expr::Integer(v) = j {
+          Some(*v as usize)
+        } else {
+          None
+        }
+      })
+      .collect();
+    for i in 1..=n {
+      for &j in &jump_vals {
+        let target = ((i - 1 + j) % n) + 1;
+        if i < target {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(i as i128), Expr::Integer(target as i128)],
+          });
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
+  // KaryTree[n] or KaryTree[n, k] — k-ary tree with n vertices (default k=2)
+  if name == "KaryTree"
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    let k = if args.len() == 2 {
+      if let Expr::Integer(kv) = &args[1] {
+        *kv as usize
+      } else {
+        2
+      }
+    } else {
+      2
+    };
+    if n >= 1 {
+      let vertices: Vec<Expr> =
+        (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+      let mut edges = Vec::new();
+      for i in 1..=n {
+        for c in 0..k {
+          let child = k * (i - 1) + c + 2;
+          if child <= n {
+            edges.push(Expr::FunctionCall {
+              name: "UndirectedEdge".to_string(),
+              args: vec![
+                Expr::Integer(i as i128),
+                Expr::Integer(child as i128),
+              ],
+            });
+          }
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices), Expr::List(edges)],
+      });
+    }
+  }
+
+  // HypercubeGraph[n] — n-dimensional hypercube graph
+  if name == "HypercubeGraph"
+    && args.len() == 1
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    let num_vertices = 1usize << n; // 2^n
+    let vertices: Vec<Expr> = (1..=num_vertices)
+      .map(|i| Expr::Integer(i as i128))
+      .collect();
+    let mut edges = Vec::new();
+    for i in 0..num_vertices {
+      for bit in 0..n {
+        let j = i ^ (1 << bit);
+        if i < j {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![
+              Expr::Integer((i + 1) as i128),
+              Expr::Integer((j + 1) as i128),
+            ],
+          });
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {
@@ -1545,6 +1652,24 @@ pub fn evaluate_function_call_ast_inner(
       name: name.to_string(),
       args: args.to_vec(),
     });
+  }
+
+  // EdgeQ[graph, edge] — True if edge exists in graph
+  if name == "EdgeQ"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let Expr::List(edges) = &gargs[1]
+  {
+    let edge_str = expr_to_string(&args[1]);
+    let found = edges.iter().any(|e| expr_to_string(e) == edge_str);
+    return Ok(Expr::Identifier(
+      if found { "True" } else { "False" }.to_string(),
+    ));
   }
 
   // AdjacencyMatrix[Graph[{vertices}, {edges}]] — build adjacency matrix
