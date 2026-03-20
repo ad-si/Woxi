@@ -847,6 +847,108 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::Identifier("False".to_string())));
       }
     }
+    "NegativeDefiniteMatrixQ" if args.len() == 1 => {
+      // All eigenvalues must be strictly negative
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        for row in rows {
+          if let Expr::List(cols) = row {
+            if cols.len() != n {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          } else {
+            return None;
+          }
+        }
+        if let Ok(Expr::List(ref eigenvals)) =
+          crate::functions::linear_algebra_ast::eigenvalues_ast(args)
+        {
+          for ev in eigenvals {
+            let evaluated = evaluate_expr_to_expr(ev).unwrap_or(ev.clone());
+            let is_neg = match &evaluated {
+              Expr::Integer(v) => *v < 0,
+              Expr::Real(v) => *v < 0.0,
+              Expr::FunctionCall { name, args: fargs }
+                if name == "Rational" && fargs.len() == 2 =>
+              {
+                if let Expr::Integer(n) = &fargs[0] {
+                  *n < 0
+                } else {
+                  false
+                }
+              }
+              _ => {
+                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "N".to_string(),
+                  args: vec![evaluated.clone()],
+                });
+                if let Ok(Expr::Real(v)) = nval {
+                  v < 0.0
+                } else {
+                  false
+                }
+              }
+            };
+            if !is_neg {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
+    }
+    "NegativeSemidefiniteMatrixQ" if args.len() == 1 => {
+      // All eigenvalues must be <= 0
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        for row in rows {
+          if let Expr::List(cols) = row {
+            if cols.len() != n {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          } else {
+            return None;
+          }
+        }
+        if let Ok(Expr::List(ref eigenvals)) =
+          crate::functions::linear_algebra_ast::eigenvalues_ast(args)
+        {
+          for ev in eigenvals {
+            let evaluated = evaluate_expr_to_expr(ev).unwrap_or(ev.clone());
+            let is_pos = match &evaluated {
+              Expr::Integer(v) => *v > 0,
+              Expr::Real(v) => *v > 0.0,
+              Expr::FunctionCall { name, args: fargs }
+                if name == "Rational" && fargs.len() == 2 =>
+              {
+                if let Expr::Integer(n) = &fargs[0] {
+                  *n > 0
+                } else {
+                  false
+                }
+              }
+              _ => {
+                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "N".to_string(),
+                  args: vec![evaluated.clone()],
+                });
+                if let Ok(Expr::Real(v)) = nval {
+                  v > 0.0
+                } else {
+                  false
+                }
+              }
+            };
+            if is_pos {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
+    }
     _ => {}
   }
   None

@@ -1544,6 +1544,35 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::Integer(seen.len() as i128)));
       }
     }
+    // SequenceCount[list, sublist] — count non-overlapping occurrences
+    "SequenceCount" if args.len() == 2 => {
+      if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
+        if sub.is_empty() {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let sub_len = sub.len();
+        let sub_strs: Vec<String> =
+          sub.iter().map(|e| expr_to_string(e)).collect();
+        let mut count = 0i128;
+        let mut i = 0;
+        while i + sub_len <= list.len() {
+          let mut matches = true;
+          for j in 0..sub_len {
+            if expr_to_string(&list[i + j]) != sub_strs[j] {
+              matches = false;
+              break;
+            }
+          }
+          if matches {
+            count += 1;
+            i += sub_len;
+          } else {
+            i += 1;
+          }
+        }
+        return Some(Ok(Expr::Integer(count)));
+      }
+    }
 
     _ => {}
   }
