@@ -456,6 +456,105 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(results))
 }
 
+/// PowerRange[min, max] generates {min, min*10, min*100, ...} up to max.
+/// PowerRange[min, max, r] uses factor r instead of 10.
+pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "PowerRange".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Try rational arithmetic
+  let all_rational = args.iter().all(|a| expr_to_rational(a).is_some());
+
+  if all_rational {
+    let (min_n, min_d) = expr_to_rational(&args[0]).unwrap();
+    let (max_n, max_d) = expr_to_rational(&args[1]).unwrap();
+    let (fac_n, fac_d) = if args.len() == 3 {
+      expr_to_rational(&args[2]).unwrap()
+    } else {
+      (10, 1)
+    };
+
+    if fac_n == 0 {
+      return Err(InterpreterError::EvaluationError(
+        "PowerRange: factor cannot be zero".into(),
+      ));
+    }
+
+    let mut results = Vec::new();
+    let mut cur_n = min_n;
+    let mut cur_d = min_d;
+
+    // Compare min vs max to determine direction
+    // min_val = min_n / min_d, max_val = max_n / max_d
+    let min_cmp_max = (min_n * max_d).cmp(&(max_n * min_d));
+    // Adjust for negative denominators
+    let min_cmp_max = if (min_d > 0) != (max_d > 0) {
+      min_cmp_max.reverse()
+    } else {
+      min_cmp_max
+    };
+    let growing = matches!(
+      min_cmp_max,
+      std::cmp::Ordering::Less | std::cmp::Ordering::Equal
+    );
+
+    loop {
+      // Compare cur vs max
+      let cmp_val = cur_n * max_d;
+      let cmp_ref = max_n * cur_d;
+      let same_sign = (cur_d > 0) == (max_d > 0);
+
+      let past_max = if growing {
+        if same_sign {
+          cmp_val > cmp_ref
+        } else {
+          cmp_val < cmp_ref
+        }
+      } else {
+        if same_sign {
+          cmp_val < cmp_ref
+        } else {
+          cmp_val > cmp_ref
+        }
+      };
+
+      if past_max {
+        break;
+      }
+
+      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+
+      // cur *= factor: (cur_n/cur_d) * (fac_n/fac_d) = (cur_n*fac_n) / (cur_d*fac_d)
+      cur_n *= fac_n;
+      cur_d *= fac_d;
+
+      // Simplify
+      let g = gcd_i128(cur_n.abs(), cur_d.abs());
+      if g > 1 {
+        cur_n /= g;
+        cur_d /= g;
+      }
+
+      if results.len() > 1_000_000 {
+        return Err(InterpreterError::EvaluationError(
+          "PowerRange: result too large".into(),
+        ));
+      }
+    }
+
+    return Ok(Expr::List(results));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "PowerRange".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// AST-based ConstantArray: create array filled with constant.
 /// ConstantArray[c, n] -> {c, c, ..., c} (n times)
 /// ConstantArray[c, {n1, n2}] -> nested array

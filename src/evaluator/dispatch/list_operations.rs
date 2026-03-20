@@ -822,6 +822,9 @@ pub fn dispatch_list_operations(
     "Range" => {
       return Some(list_helpers_ast::range_ast(args));
     }
+    "PowerRange" if args.len() == 2 || args.len() == 3 => {
+      return Some(list_helpers_ast::power_range_ast(args));
+    }
     "Accumulate" if args.len() == 1 => {
       return Some(list_helpers_ast::accumulate_ast(&args[0]));
     }

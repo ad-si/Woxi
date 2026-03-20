@@ -167,6 +167,9 @@ pub fn dispatch_string_functions(
     "AlphabeticSort" if args.len() == 1 => {
       return Some(crate::functions::string_ast::alphabetic_sort_ast(args));
     }
+    "StringPartition" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::string_ast::string_partition_ast(args));
+    }
     "Hash" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::hash_ast(args));
     }

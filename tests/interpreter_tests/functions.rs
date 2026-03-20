@@ -2303,6 +2303,107 @@ mod text_string {
   }
 }
 
+mod string_partition {
+  use super::*;
+
+  #[test]
+  fn basic_partition() {
+    assert_eq!(
+      interpret("StringPartition[\"abcdefghij\", 3]").unwrap(),
+      "{abc, def, ghi}"
+    );
+  }
+
+  #[test]
+  fn non_divisible_drops_remainder() {
+    assert_eq!(
+      interpret("StringPartition[\"abcde\", 2]").unwrap(),
+      "{ab, cd}"
+    );
+  }
+
+  #[test]
+  fn with_offset_1() {
+    assert_eq!(
+      interpret("StringPartition[\"abcdefghij\", 3, 1]").unwrap(),
+      "{abc, bcd, cde, def, efg, fgh, ghi, hij}"
+    );
+  }
+
+  #[test]
+  fn with_offset_2() {
+    assert_eq!(
+      interpret("StringPartition[\"abcdefghij\", 3, 2]").unwrap(),
+      "{abc, cde, efg, ghi}"
+    );
+  }
+
+  #[test]
+  fn single_char_partition() {
+    assert_eq!(
+      interpret("StringPartition[\"abc\", 1]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+}
+
+mod power_range {
+  use super::*;
+
+  #[test]
+  fn default_factor_10() {
+    assert_eq!(
+      interpret("PowerRange[1, 1000, 10]").unwrap(),
+      "{1, 10, 100, 1000}"
+    );
+  }
+
+  #[test]
+  fn factor_2() {
+    assert_eq!(
+      interpret("PowerRange[2, 32, 2]").unwrap(),
+      "{2, 4, 8, 16, 32}"
+    );
+  }
+
+  #[test]
+  fn two_arg_default_factor() {
+    assert_eq!(interpret("PowerRange[1, 100]").unwrap(), "{1, 10, 100}");
+  }
+
+  #[test]
+  fn fractional_factor() {
+    assert_eq!(
+      interpret("PowerRange[1, 1/27, 1/3]").unwrap(),
+      "{1, 1/3, 1/9, 1/27}"
+    );
+  }
+}
+
+mod color_q {
+  use super::*;
+
+  #[test]
+  fn rgb_color_is_true() {
+    assert_eq!(interpret("ColorQ[RGBColor[1, 0, 0]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn named_color_is_true() {
+    assert_eq!(interpret("ColorQ[Red]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_is_false() {
+    assert_eq!(interpret("ColorQ[42]").unwrap(), "False");
+  }
+
+  #[test]
+  fn string_is_false() {
+    assert_eq!(interpret("ColorQ[\"hello\"]").unwrap(), "False");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

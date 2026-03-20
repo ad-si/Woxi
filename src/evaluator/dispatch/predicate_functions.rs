@@ -33,6 +33,26 @@ pub fn dispatch_predicate_functions(
         .to_string(),
       )));
     }
+    "ColorQ" if args.len() == 1 => {
+      let is_color = match &args[0] {
+        Expr::FunctionCall { name, .. } => matches!(
+          name.as_str(),
+          "RGBColor"
+            | "Hue"
+            | "GrayLevel"
+            | "CMYKColor"
+            | "XYZColor"
+            | "LABColor"
+            | "LCHColor"
+            | "LUVColor"
+            | "Opacity"
+        ),
+        _ => false,
+      };
+      return Some(Ok(Expr::Identifier(
+        if is_color { "True" } else { "False" }.to_string(),
+      )));
+    }
     "BooleanQ" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::Identifier(name) if name == "True" || name == "False" => {
