@@ -19,6 +19,13 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "PolynomialQuotientRemainder" if args.len() == 3 => {
+      return Some(
+        crate::functions::polynomial_ast::polynomial_quotient_remainder_ast(
+          args,
+        ),
+      );
+    }
     "Expand" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::expand_ast(args));
     }

@@ -558,7 +558,7 @@ Bookmarks,,,,7,2512
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 BooleanConsecutiveFunction,,,,9,5587
 BooleanConvert,Convert Boolean expressions,✅,unevaluated,7,1588
-BooleanCountingFunction,,,,7,2012
+BooleanCountingFunction,Boolean function from count specification (requires BDD),🚫,,7,2012
 BooleanFunction,Represents a Boolean function using Binary Decision Diagrams,🚫,,7,1956
 BooleanGraph,,,,8,3737
 BooleanMaxterms,,,,7,4262
@@ -816,7 +816,7 @@ CircularRealMatrixDistribution,,,,10.3,3593
 CircularSymplecticMatrixDistribution,,,,10.3,4747
 CircularUnitaryMatrixDistribution,,,,10.3,3755
 CircumscribedBall,,,,13.3,
-Circumsphere,,,,10,2026
+Circumsphere,Circumsphere of a simplex (computational geometry),🚫,,10,2026
 CityData,,🚫,,6,69
 ClassifierFunction,,,,10,4567
 ClassifierMeasurements,Classifier performance measurements,✅,unevaluated,10,1569
@@ -1285,14 +1285,14 @@ DayMatchQ,,,,9,3134
 DayName,Return the name of the day of the week for a given date,✅,none,9,1981
 DayNightTerminator,,,,10,4104
 DayPlus,,,,9,2867
-DayRange,,,,9,1991
+DayRange,Generate date range between two dates (requires calendar system),🚫,,9,1991
 DayRound,,,,9,3363
 DeBruijnGraph,,,,8,3031
 DeBruijnSequence,,,,11.3,5013
 Decapitalize,Lowercases the first letter of a string,✅,pure,10.1,4660
 DecimalForm,Display a number in decimal notation without scientific notation,✅,pure,11.2,1438
 DeclareCompiledComponent,,,,13.2,
-DeclarePackage,,,,2,1997
+DeclarePackage,Declare package for autoloading (package management),🚫,,2,1997
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1,3522
 DeconvolutionLayer,,,,11,3162
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1,536
@@ -1357,7 +1357,7 @@ DeleteObject,,,,11.2,2421
 DeletePermissionsKey,,,,11,5587
 DeleteSearchIndex,,,,10.2,4881
 DeleteSmallComponents,,🚫,,8,1334
-DeleteStopwords,,,,10.1,2012
+DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
 DelimitedSequence,,,,10,2693
 Delimiter,Separator element in menus and palettes,✅,none,6,698
 DelimiterAutoMatching,,,,12.3,
@@ -1619,7 +1619,7 @@ EchoFunction,,,,10.3,4081
 EchoLabel,,,,12.2,4747
 EchoTiming,,,,12.2,5013
 EclipseType,,,,10,4612
-EdgeAdd,,,,8,1995
+EdgeAdd,Add edges to a graph (graph theory),🚫,,8,1995
 EdgeBetweennessCentrality,,,,9,4356
 EdgeCapacity,,,,9,3094
 EdgeChromaticNumber,,,,13,
@@ -1898,13 +1898,13 @@ FetalGrowthData,,🚫,,10.1,4081
 Fibonacci,Returns the nth Fibonacci number,✅,pure,3,520
 Fibonorial,,,,10,5184
 FieldCompletionFunction,,,,11.1,4527
-FieldHint,,,,8,2015
+FieldHint,Input field hint text option (GUI),🚫,,8,2015
 FieldHintStyle,,,,8,3083
 FieldMasked,,,,8,4612
 FieldSize,,🚫,,6,1102
 File,Symbolic file reference wrapper,✅,pure,11,1469
 FileBaseName,File base name,✅,unevaluated,7,1796
-FileByteCount,,,,2,2018
+FileByteCount,Count bytes in file (file I/O),🚫,,2,2018
 FileConvert,,,,12,5486
 FileDate,,,,2,2121
 FileExistsQ,Tests whether a file or directory exists,✅,2,7,1293
@@ -1950,7 +1950,7 @@ FindChannels,,,,11,4387
 FindClique,,,,8,2317
 FindClusters,,🚫,,6,1198
 FindCookies,,,,11,5184
-FindCurvePath,,,,7,2008
+FindCurvePath,Find smooth path through points (computational geometry),🚫,,7,2008
 FindCycle,Find graph cycles,✅,unevaluated,10,1815
 FindDevices,,,,10,4291
 FindDistribution,Find matching distribution,✅,unevaluated,10.3,1643
@@ -2108,9 +2108,9 @@ ForwardCloudCredentials,,,,12.2,
 Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
 FourierCosCoefficient,,,,7,2338
-FourierCosSeries,,,,7,1995
+FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7,1995
 FourierCosTransform,,,,4,2190
-FourierDCT,,,,6,1997
+FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6,1997
 FourierDCTFilter,,,,9,4809
 FourierDCTMatrix,,,,9,3889
 FourierDST,,,,6,3048
@@ -2524,7 +2524,7 @@ HeatTemperatureCondition,,,,12.2,4356
 HeatTransferPDEComponent,,,,12.2,3378
 HeatTransferValue,,,,12.2,3972
 HeavisideLambda,,,,7,2329
-HeavisidePi,,,,7,2094
+HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7,2094
 HeavisideTheta,Heaviside step function,✅,pure,6,705
 HeldGroupHe,,,,8,5013
 HelmholtzPDEComponent,,,,12.2,5486
@@ -2692,7 +2692,7 @@ ImageLevels,,,,8,3121
 ImageLines,Find line segments in an image,🚫,8,1964
 ImageMargins,Option for margins around an image,✅,none,3,842
 ImageMarker,,,,10.4,4104
-ImageMeasurements,,,,9,2031
+ImageMeasurements,Measure image properties (image processing),🚫,,9,2031
 ImageMesh,,,,11,2411
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7,1038
 ImagePad,,🚫,,7,1184
@@ -3256,7 +3256,7 @@ ListSurfacePlot3D,3D surface plot from points,✅,unevaluated,6,1788
 ListVectorDensityPlot,,,,7,3462
 ListVectorDisplacementPlot,,,,13,
 ListVectorDisplacementPlot3D,,,,13,
-ListVectorPlot,,,,7,2024
+ListVectorPlot,Vector field plot from list data (plotting),🚫,,7,2024
 ListVectorPlot3D,,,,7,2625
 ListZTransform,,,,9,4006
 LiteralType,,,,13.1,
@@ -3394,7 +3394,7 @@ MarcumQ,,,,8,5486
 MardiaCombinedTest,,,,8,4437
 MardiaKurtosisTest,,,,8,3889
 MardiaSkewnessTest,,,,8,4006
-MarginalDistribution,,,,8,2002
+MarginalDistribution,Marginal distribution of multivariate distribution (complex statistics),🚫,,8,2002
 MarkovProcessProperties,,,,9,2755
 Masking,,,,8,2223
 MassConcentrationCondition,,,,12.2,4660
@@ -3483,7 +3483,7 @@ MeanShiftFilter,,,,8,2707
 MeanSquaredLossLayer,,,,11,2792
 Median,Returns the median value of a list,✅,pure,5,666
 MedianDeviation,,,,6,3402
-MedianFilter,,,,7,2031
+MedianFilter,Apply median filter to data (signal processing),🚫,,7,2031
 MedicalTestData,,🚫,,10,4809
 Medium,Medium size specification,✅,none,6,287
 MeijerG,Meijer G-function,✅,pure,3,492
@@ -3589,7 +3589,7 @@ ModularLambda,,,,3,5079
 Module,Scopes local variables with unique names,✅,pure,2,74
 Modulus,Option for modular arithmetic,✅,pure,1,608
 MoebiusMu,Returns the Möbius function value,✅,pure,1,1235
-Molecule,,,,12,2015
+Molecule,Chemical molecule representation (chemistry),🚫,,12,2015
 MoleculeAlign,,,,12.3,
 MoleculeContainsQ,,,,12,5184
 MoleculeDraw,,,,12.2,4315
@@ -3641,7 +3641,7 @@ MovingMedian,,,,6,3578
 MoyalDistribution,,,,8,3765
 MultiaxisArrangement,,,,13,
 Multicolumn,Multi-column layout,✅,unevaluated,10,1648
-MultiedgeStyle,,,,6,2005
+MultiedgeStyle,Style option for multi-edges in graphs (GUI),🚫,,6,2005
 MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
 MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,✅,none,8,1954
@@ -3758,7 +3758,7 @@ NightHemisphere,,,,10,3242
 NIntegrate,Computes a numerical integral,✅,pure,1,176
 NLineIntegrate,,,,14,
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5,794
-NMaxValue,,,,7,2020
+NMaxValue,Numerical maximum value optimization (numerical optimization),🚫,,7,2020
 NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5,587
 NMinValue,,,,7,2475
 NominalScale,,,,13.1,
@@ -3969,7 +3969,7 @@ OptionValue,Retrieves the value of a named option within a function using Option
 Or,Checks if at least one condition is true,✅,pure,1,136
 Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
 Order,Returns the canonical ordering of two expressions,✅,pure,1,1216
-OrderDistribution,,,,8,2024
+OrderDistribution,Order statistics distribution (complex statistics),🚫,,8,2024
 OrderedQ,Tests if a list is in canonical order,✅,pure,1,1162
 Ordering,Returns positions that would sort a list,✅,pure,4.1,545
 OrderingBy,,,,12,4262
@@ -4199,7 +4199,7 @@ PillaiTraceTest,,,,9,4173
 PingTime,,,,11,4567
 Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306
 PitchRecognize,,,,12,5390
-PixelValue,,,,8,2005
+PixelValue,Get pixel value from image (image processing),🚫,,8,2005
 PixelValuePositions,Pixel positions matching a value,✅,pure,9,1536
 Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7,391
 Placeholder,,🚫,,7,1029
@@ -4287,7 +4287,7 @@ PolynomialLCM,,,,2,2533
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
 PolynomialQuotient,Quotient of polynomial division,✅,pure,1,1460
-PolynomialQuotientRemainder,,,,6,2157
+PolynomialQuotientRemainder,Quotient and remainder of polynomial division,✅,1,6,2157
 PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3,1574
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1,1353
 PolynomialSumOfSquaresList,,,,13,
@@ -4489,7 +4489,7 @@ RandomTime,,,,13.2,
 RandomTree,,,,12.3,
 RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8,301
 RandomWalkProcess,,,,9,2561
-RandomWord,,,,10.3,2018
+RandomWord,Generate random words (requires dictionary),🚫,,10.3,2018
 Range,Generates a sequence of numbers,✅,pure,1,67
 RangeFilter,,,,8,3048
 RankedMax,k-th largest element,✅,pure,8,2355
@@ -4931,7 +4931,7 @@ Setter,,🚫,,6,1237
 SetterBar,,🚫,,6,895
 Setting,Setting wrapper,✅,unevaluated,6,1891
 SetUsers,,,,10,5486
-Shallow,,,,2,2008
+Shallow,Control output depth display (notebook display),🚫,,2,2008
 ShannonWavelet,,,,8,3916
 ShapiroWilkTest,,,,8,3593
 Share,Memory sharing optimization (no-op),✅,none,1,3233
@@ -4955,7 +4955,7 @@ ShortUpArrow,,,,3,5390
 Show,Combines multiple graphics objects into a single display,✅,pure,1,75
 ShowAutoSpellCheck,,,,11,4173
 ShowAutoStyles,,,,4,2707
-ShowCellBracket,,,,3,2015
+ShowCellBracket,Notebook cell bracket display option (GUI),🚫,,3,2015
 ShowCellLabel,,,,3,2305
 ShowCellTags,,,,3,3402
 ShowCursorTracker,,,,4,4660
@@ -5002,7 +5002,7 @@ SkellamDistribution,,,,8,3862
 Skewness,Computes the skewness of a list,✅,pure,6,1402
 SkewNormalDistribution,,,,8,2193
 Skip,,,,2,2311
-SliceContourPlot3D,,,,10.2,2012
+SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 SliceDensityPlot3D,,,,10.2,2512
 SliceDistribution,,,,9,2978
 SliceVectorPlot3D,,,,10.2,2662
@@ -5142,7 +5142,7 @@ SplitBy,Splits list at boundaries where a function changes value,✅,pure,7,1000
 SpokenString,,,,7,3474
 SpotLight,,,,13,
 Sqrt,Returns the square root of a number,✅,pure,1,18
-SqrtBox,,,,3,1999
+SqrtBox,Low-level box construct for square root display (typesetting),🚫,,3,1999
 SqrtBoxOptions,,,,6,
 Square,Square geometric primitive,🚫,pure,3,1437
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6,1946
@@ -5322,7 +5322,7 @@ SumConvergence,,🚫,,7,1050
 SummationLayer,,,,11,3108
 Sunday,Sunday day name,✅,unevaluated,9,1869
 SunPosition,,,,10,2179
-Sunrise,,,,10,1999
+Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10,1999
 Sunset,,,,10,2193
 SuperDagger,Dagger superscript,✅,unevaluated,6,1709
 SuperMinus,,,,6,2087
@@ -5609,7 +5609,7 @@ Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,
 ToNumberField,,,,6,2219
 Tooltip,Interactive tooltip element,🚫,effectful,6,260
 TooltipDelay,Tooltip delay option,✅,unevaluated,7,1833
-TooltipStyle,,,,8,2002
+TooltipStyle,Style option for tooltips (GUI),🚫,,8,2002
 ToonShading,,,,12.1,
 Top,Symbol for top alignment,✅,pure,1,385
 TopHatTransform,,,,7,3636
@@ -5642,7 +5642,7 @@ TraceForward,,,,2,4204
 TraceOff,,,,2,4138
 TraceOn,,,,2,5184
 TraceOriginal,,,,2,2978
-TracePrint,,,,2,2025
+TracePrint,Print evaluation trace (debugging/tracing),🚫,,2,2025
 TraceScan,,,,2,2491
 TrackCellChangeTimes,,,,13.3,
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6,495
@@ -5815,7 +5815,7 @@ UnitConvert,Converts a quantity to a different unit,✅,pure,9,643
 UnitDimensions,,,,9,3280
 Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure,6,781
 UnitRootTest,,,,9,3785
-UnitSimplify,,,,9,2020
+UnitSimplify,Simplify physical units (unit system),🚫,,9,2020
 UnitStep,Returns the unit step function value,✅,pure,4,273
 UnitSystem,Option for specifying the unit system for computations,✅,pure,10,398
 UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7,1944
@@ -6045,7 +6045,7 @@ WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,�
 WaveletMapIndexed,,,,8,2383
 WaveletMatrixPlot,,,,8,3176
 WaveletPhi,,,,8,2371
-WaveletPsi,,,,8,2006
+WaveletPsi,Wavelet function (signal processing),🚫,,8,2006
 WaveletScale,,,,8,4291
 WaveletScalogram,,,,8,2197
 WaveletThreshold,,,,8,2723

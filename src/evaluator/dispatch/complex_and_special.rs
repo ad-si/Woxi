@@ -30,6 +30,9 @@ pub fn dispatch_complex_and_special(
     "UnitBox" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_box_ast(args));
     }
+    "HeavisidePi" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::heaviside_pi_ast(args));
+    }
     "UnitTriangle" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_triangle_ast(args));
     }

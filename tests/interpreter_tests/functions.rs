@@ -2404,6 +2404,63 @@ mod color_q {
   }
 }
 
+mod polynomial_quotient_remainder {
+  use super::*;
+
+  #[test]
+  fn basic_division() {
+    assert_eq!(
+      interpret("PolynomialQuotientRemainder[x^3 + 2x + 1, x + 1, x]").unwrap(),
+      "{3 - x + x^2, -2}"
+    );
+  }
+
+  #[test]
+  fn exact_division() {
+    assert_eq!(
+      interpret("PolynomialQuotientRemainder[x^2 - 1, x - 1, x]").unwrap(),
+      "{1 + x, 0}"
+    );
+  }
+
+  #[test]
+  fn linear_by_linear() {
+    assert_eq!(
+      interpret("PolynomialQuotientRemainder[2x + 3, x + 1, x]").unwrap(),
+      "{2, 1}"
+    );
+  }
+}
+
+mod heaviside_pi {
+  use super::*;
+
+  #[test]
+  fn zero_is_one() {
+    assert_eq!(interpret("HeavisidePi[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn inside_is_one() {
+    assert_eq!(interpret("HeavisidePi[1/4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn outside_is_zero() {
+    assert_eq!(interpret("HeavisidePi[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_boundary_unevaluated() {
+    assert_eq!(interpret("HeavisidePi[1/2]").unwrap(), "HeavisidePi[1/2]");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("HeavisidePi[x]").unwrap(), "HeavisidePi[x]");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 
