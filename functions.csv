@@ -615,7 +615,7 @@ BuildCompiledComponent,,🚫,,13.2,
 BuildingData,,🚫,,10,3785
 BulletGauge,,🚫,,9,2762
 BusinessDayQ,,,,9,4809
-ButterflyGraph,,,,8,2798
+ButterflyGraph,Butterfly graph,✅,1,8,2798
 ButterworthFilterModel,,,,9,2854
 Button,Interactive button element,🚫,effectful,6,280
 ButtonBar,,🚫,,7,2570
@@ -843,7 +843,7 @@ Clock,,🚫,,6,1244
 ClockGauge,dynamic gauge display,🚫,None,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,parallel computing,🚫,None,7,2371
-ClosenessCentrality,,,,8,3008
+ClosenessCentrality,Closeness centrality of graph vertices,✅,1,8,3008
 Closing,Morphological closing,✅,unevaluated,7,1916
 CloudAccountData,,🚫,,10,3612
 CloudBase,,🚫,,10,5013
@@ -1330,7 +1330,7 @@ DefineOutputStreamMethod,,,,9,4747
 DefineResourceFunction,,,,12,5587
 Definition,Display the definition of a symbol,✅,pure,1,2462
 Degree,Represents the number of radians in one degree,✅,pure,1,150
-DegreeCentrality,,,,8,2487
+DegreeCentrality,Degree centrality of graph vertices,✅,1,8,2487
 DegreeGraphDistribution,Degree-based graph distribution,🚫,,8,2039
 DEigensystem,,🚫,,10.3,2533
 DEigenvalues,,,,10.3,3678
@@ -2396,7 +2396,7 @@ Graph3D,3D graph visualization,✅,unevaluated,10,1740
 GraphAssortativity,,,,9,3440
 GraphAutomorphismGroup,,,,10,3862
 GraphCenter,Vertices with minimum eccentricity,✅,1,8,2971
-GraphComplement,,,,8,2777
+GraphComplement,Complement of a graph,✅,1,8,2777
 GraphData,,🚫,,6,580
 GraphDensity,,,,9,4006
 GraphDiameter,Maximum shortest path distance,✅,1,8,2625
@@ -5958,7 +5958,7 @@ VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
 VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8,1419
 VertexList,List of vertices in a graph,✅,none,8,657
 VertexNormals,Vertex normal vectors,✅,unevaluated,6,1721
-VertexOutComponent,,,,8,2605
+VertexOutComponent,Vertices reachable from a vertex,✅,1,8,2605
 VertexOutComponentGraph,,,,12.3,
 VertexOutDegree,Out-degree of a vertex in a directed graph,🚫,,8,2031
 VertexQ,,,,8,3427
