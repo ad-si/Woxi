@@ -10814,6 +10814,36 @@ mod batch_unevaluated_wrappers_2 {
     assert!(result.starts_with("Graph[{1, 2, 3, 4, 5}"));
   }
 
+  // HalfNormalDistribution
+  #[test]
+  fn half_normal_distribution_basic() {
+    assert_eq!(
+      interpret("HalfNormalDistribution[1]").unwrap(),
+      "HalfNormalDistribution[1]"
+    );
+  }
+  #[test]
+  fn half_normal_distribution_symbolic() {
+    assert_eq!(
+      interpret("HalfNormalDistribution[t]").unwrap(),
+      "HalfNormalDistribution[t]"
+    );
+  }
+  #[test]
+  fn half_normal_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[HalfNormalDistribution[t], x]").unwrap(),
+      "Piecewise[{{(2*t)/(E^((t^2*x^2)/Pi)*Pi), x > 0}}, 0]"
+    );
+  }
+  #[test]
+  fn half_normal_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[HalfNormalDistribution[t], x]").unwrap(),
+      "Piecewise[{{Erf[(t*x)/Sqrt[Pi]], x > 0}}, 0]"
+    );
+  }
+
   // UnderscriptBox
   #[test]
   fn underscript_box_basic() {

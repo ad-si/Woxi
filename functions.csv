@@ -148,7 +148,7 @@ Anonymous,,,,11,5390
 Antialiasing,Option for antialiasing in graphics,✅,none,6,855
 Antihermitian,,,,12.2,5486
 AntihermitianMatrixQ,Test whether a matrix is anti-Hermitian,✅,none,10,3947
-Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,y,none,9,2452
+Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,✅,none,9,2452
 AntisymmetricMatrixQ,Test if matrix is antisymmetric,✅,none,10,3972
 Antonyms,,🚫,,12,4567
 AnyMatch,,,,14.1,
@@ -2480,7 +2480,7 @@ GumbelDistribution,Probability distribution,🚫,None,6,2276
 HaarWavelet,wavelet function,🚫,None,8,2404
 HadamardMatrix,Hadamard matrix of size n,✅,none,9,3176
 HalfLine,geometric primitive,🚫,None,10,2299
-HalfNormalDistribution,,,,6,2462
+HalfNormalDistribution,represents a half-normal distribution with parameter theta,✅,none,6,2462
 HalfPlane,,🚫,,10,2468
 HalfSpace,,,,10.2,3215
 HalftoneShading,,,,12.1,4027
@@ -5785,7 +5785,7 @@ Underoverscript,,,,3,3803
 UnderoverscriptBox,,,,3,2777
 UnderoverscriptBoxOptions,,🚫,,4,2842
 Underscript,Typesetting subscript,🚫,,6,2144
-UnderscriptBox,a low-level typesetting box representing an expression with an underscript,y,none,3,2452
+UnderscriptBox,a low-level typesetting box representing an expression with an underscript,✅,none,3,2452
 UnderscriptBoxOptions,,🚫,,4,2944
 UnderseaFeatureData,,🚫,,10,
 UndirectedEdge,Undirected graph edge,✅,pure,8,201
