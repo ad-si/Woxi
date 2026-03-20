@@ -10896,4 +10896,24 @@ mod batch_unevaluated_wrappers_2 {
       "UnderscriptBox[x, y, z]"
     );
   }
+
+  // MathieuSPrime
+  #[test]
+  fn mathieu_s_prime_symbolic() {
+    assert_eq!(
+      interpret("MathieuSPrime[a, q, z]").unwrap(),
+      "MathieuSPrime[a, q, z]"
+    );
+  }
+  #[test]
+  fn mathieu_s_prime_no_args() {
+    assert_eq!(interpret("MathieuSPrime[]").unwrap(), "MathieuSPrime[]");
+  }
+  #[test]
+  fn mathieu_s_prime_in_expr() {
+    assert_eq!(
+      interpret("2 * MathieuSPrime[a, q, z]").unwrap(),
+      "2*MathieuSPrime[a, q, z]"
+    );
+  }
 }
