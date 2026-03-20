@@ -10733,4 +10733,53 @@ mod batch_unevaluated_wrappers_2 {
       "{2, 3, 4}"
     );
   }
+
+  // DegreeCentrality
+  #[test]
+  fn degree_centrality_complete3() {
+    assert_eq!(
+      interpret("DegreeCentrality[CompleteGraph[3]]").unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+  #[test]
+  fn degree_centrality_star4() {
+    assert_eq!(
+      interpret("DegreeCentrality[StarGraph[4]]").unwrap(),
+      "{1, 1/3, 1/3, 1/3}"
+    );
+  }
+
+  // GraphComplement
+  #[test]
+  fn graph_complement_star3() {
+    // StarGraph[3] = Graph[{1,2,3}, {1<->2, 1<->3}]
+    // Complement should have only edge 2<->3
+    let result = interpret("GraphComplement[StarGraph[3]]").unwrap();
+    assert!(result.contains("UndirectedEdge[2, 3]"));
+  }
+
+  // VertexOutComponent
+  #[test]
+  fn vertex_out_component_star() {
+    let result = interpret("VertexOutComponent[StarGraph[4], 1]").unwrap();
+    assert_eq!(result, "{1, 2, 3, 4}");
+  }
+
+  // ClosenessCentrality
+  #[test]
+  fn closeness_centrality_complete3() {
+    assert_eq!(
+      interpret("ClosenessCentrality[CompleteGraph[3]]").unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+
+  // ButterflyGraph
+  #[test]
+  fn butterfly_graph_basic() {
+    let result = interpret("ButterflyGraph[2]").unwrap();
+    // ButterflyGraph[2] has 5 vertices
+    assert!(result.starts_with("Graph[{1, 2, 3, 4, 5}"));
+  }
 }

@@ -1809,6 +1809,215 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // DegreeCentrality[graph] — degree centrality of each vertex
+  if name == "DegreeCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let adj = build_undirected_adj(vertices, edges);
+    let max_degree = n.saturating_sub(1);
+    let centralities: Vec<Expr> = adj
+      .iter()
+      .map(|neighbors| {
+        if max_degree > 0 {
+          let deg = neighbors.len() as i128;
+          let den = max_degree as i128;
+          let g = gcd_i128(deg, den);
+          if den / g == 1 {
+            Expr::Integer(deg / g)
+          } else {
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(deg / g), Expr::Integer(den / g)],
+            }
+          }
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    return Ok(Expr::List(centralities));
+  }
+
+  // GraphComplement[graph] — complement of a graph
+  if name == "GraphComplement"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    // Build set of existing edges
+    let vertex_strs: Vec<String> =
+      vertices.iter().map(expr_to_string).collect();
+    let mut edge_set = std::collections::HashSet::new();
+    for edge in edges {
+      if let Expr::FunctionCall { args: eargs, .. } = edge
+        && eargs.len() == 2
+      {
+        let a = expr_to_string(&eargs[0]);
+        let b = expr_to_string(&eargs[1]);
+        edge_set.insert((a.clone(), b.clone()));
+        edge_set.insert((b, a));
+      }
+    }
+    // Build complement edges
+    let mut comp_edges = Vec::new();
+    for i in 0..n {
+      for j in (i + 1)..n {
+        if !edge_set.contains(&(vertex_strs[i].clone(), vertex_strs[j].clone()))
+        {
+          comp_edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![vertices[i].clone(), vertices[j].clone()],
+          });
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices.clone()), Expr::List(comp_edges)],
+    });
+  }
+
+  // VertexOutComponent[graph, v] — vertices reachable from v
+  if name == "VertexOutComponent"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let vertex_strs: Vec<String> =
+      vertices.iter().map(expr_to_string).collect();
+    let target = expr_to_string(&args[1]);
+    if let Some(start) = vertex_strs.iter().position(|v| v == &target) {
+      let adj = build_undirected_adj(vertices, edges);
+      // BFS from start
+      let mut visited = vec![false; n];
+      let mut queue = std::collections::VecDeque::new();
+      visited[start] = true;
+      queue.push_back(start);
+      let mut component = Vec::new();
+      while let Some(v) = queue.pop_front() {
+        component.push(vertices[v].clone());
+        for &u in &adj[v] {
+          if !visited[u] {
+            visited[u] = true;
+            queue.push_back(u);
+          }
+        }
+      }
+      return Ok(Expr::List(component));
+    }
+  }
+
+  // ClosenessCentrality[graph] — closeness centrality for each vertex
+  if name == "ClosenessCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let adj = build_undirected_adj(vertices, edges);
+    // Closeness centrality = (n-1) / sum of distances to all other vertices
+    let centralities: Vec<Expr> = (0..n)
+      .map(|start| {
+        let dists = bfs_all_dists(&adj, start, n);
+        let total_dist: i128 = dists.iter().filter(|&&d| d > 0).sum();
+        if total_dist > 0 {
+          let num = (n as i128) - 1;
+          let g = gcd_i128(num, total_dist);
+          if total_dist / g == 1 {
+            Expr::Integer(num / g)
+          } else {
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(num / g), Expr::Integer(total_dist / g)],
+            }
+          }
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    return Ok(Expr::List(centralities));
+  }
+
+  // ButterflyGraph[n] — butterfly graph with 2n+1 vertices
+  if name == "ButterflyGraph"
+    && args.len() == 1
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    // Butterfly graph: two cycles of size n sharing one vertex
+    // Vertices: 1..=2n+1, center is vertex 1
+    let total = 2 * n + 1;
+    let vertices: Vec<Expr> =
+      (1..=total).map(|i| Expr::Integer(i as i128)).collect();
+    let mut edges = Vec::new();
+    // First wing: vertices 1, 2, ..., n+1 form a cycle
+    for i in 0..n {
+      let a = i + 2; // 2, 3, ..., n+1
+      let b = if i + 1 < n { i + 3 } else { 2 };
+      edges.push(Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+      });
+    }
+    // Connect first wing to center
+    edges.push(Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)],
+    });
+    edges.push(Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer((n + 1) as i128)],
+    });
+    // Second wing: vertices 1, n+2, ..., 2n+1 form a cycle
+    for i in 0..n {
+      let a = n + 1 + i + 1; // n+2, n+3, ..., 2n+1
+      let b = if i + 1 < n { n + 1 + i + 2 } else { n + 2 };
+      edges.push(Expr::FunctionCall {
+        name: "UndirectedEdge".to_string(),
+        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+      });
+    }
+    // Connect second wing to center
+    edges.push(Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer((n + 2) as i128)],
+    });
+    edges.push(Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer((2 * n + 1) as i128)],
+    });
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // AdjacencyMatrix[Graph[{vertices}, {edges}]] — build adjacency matrix
   if name == "AdjacencyMatrix" && args.len() == 1 {
     if let Expr::FunctionCall {
@@ -3151,6 +3360,23 @@ fn is_connected(adj: &[Vec<usize>], n: usize) -> bool {
     }
   }
   count == n
+}
+
+/// BFS from start vertex, return all distances
+fn bfs_all_dists(adj: &[Vec<usize>], start: usize, n: usize) -> Vec<i128> {
+  let mut dist = vec![-1i128; n];
+  let mut queue = std::collections::VecDeque::new();
+  dist[start] = 0;
+  queue.push_back(start);
+  while let Some(v) = queue.pop_front() {
+    for &u in &adj[v] {
+      if dist[u] == -1 {
+        dist[u] = dist[v] + 1;
+        queue.push_back(u);
+      }
+    }
+  }
+  dist
 }
 
 /// BFS from start vertex, return max distance (eccentricity)
