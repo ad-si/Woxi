@@ -1033,7 +1033,7 @@ ConstantVideo,,,,14.1,
 ConstellationData,,🚫,,10,1342
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
 Containing,,,,10.2,4527
-ContainsAll,,,,10.2,2289
+ContainsAll,Test if a list contains all elements of another list,✅,1,10.2,2289
 ContainsAny,Test if any elements of the second list appear in the first,✅,none,10.2,2061
 ContainsExactly,,,,10.2,4138
 ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
@@ -2557,7 +2557,7 @@ HighpassFilter,,,,9,2978
 HigmanSimsGroupHS,,,,8,5079
 HilbertCurve,,,,11.1,3612
 HilbertFilter,,,,9,3656
-HilbertMatrix,,,,6,2503
+HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6,2503
 Histogram,Creates a histogram from data,✅,pure,7,347
 Histogram3D,,🚫,,7,1096
 HistogramDistribution,Histogram distribution,✅,unevaluated,8,1776
@@ -3380,7 +3380,7 @@ ManipulateVideo,,🚫,,14.1,
 Manipulator,,🚫,,6,1201
 MannedSpaceMissionData,,🚫,,10,4947
 MannWhitneyTest,,,,8,3306
-MantissaExponent,,,,2,2468
+MantissaExponent,Decompose a number into mantissa and exponent,✅,1,2,2468
 Manual,,,,6,2425
 Map,Applies a function to each element of a list,✅,pure,1,28
 MapAll,Apply a function to every subexpression,✅,pure,1,1265
@@ -3568,7 +3568,7 @@ Missing,Represents missing data or keys,✅,pure,,
 MissingBehavior,,,,10,4027
 MissingDataMethod,,,,9,3059
 MissingDataRules,,,,10,5079
-MissingQ,,,,10.2,2317
+MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 MissingString,,,,10,5184
 MissingStyle,,,,10,4881
 MissingValuePattern,,,,12,5587
@@ -5595,7 +5595,7 @@ ToContinuousTimeModel,,,,8,3972
 Today,Returns a DateObject representing the current date,✅,contextual,10,1044
 ToDiscreteTimeModel,,,,8,2251
 ToEntity,,,,10,2688
-ToeplitzMatrix,,,,6,2408
+ToeplitzMatrix,Generate a symmetric Toeplitz matrix from a list,✅,1,6,2408
 ToExpression,Converts a string to an evaluated expression,✅,pure,1,321
 ToFiniteField,,,,14,
 Together,Puts terms over a common denominator,✅,pure,1,455
