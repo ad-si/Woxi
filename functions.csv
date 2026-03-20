@@ -3421,7 +3421,7 @@ MathieuGroupM22,,,,8,5079
 MathieuGroupM23,,,,8,4947
 MathieuGroupM24,,,,8,4387
 MathieuS,Even periodic Mathieu function,🚫,,3,1960
-MathieuSPrime,,,,3,2477
+MathieuSPrime,gives the derivative of the odd Mathieu function with characteristic value a and parameter q,✅,none,3,2477
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 Matrices,Matrix domain,✅,unevaluated,9,1753
 MatrixExp,Computes the matrix exponential,✅,pure,2,807
