@@ -1964,6 +1964,53 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(centralities));
   }
 
+  // ChromaticPolynomial[graph, k] — chromatic polynomial of a graph
+  if name == "ChromaticPolynomial"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let k = &args[1];
+    let n = vertices.len();
+
+    // Build edge set as pairs of vertex indices
+    let vertex_index: std::collections::HashMap<String, usize> = vertices
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (expr_to_string(v), i))
+      .collect();
+    let mut edge_pairs: Vec<(usize, usize)> = Vec::new();
+    for edge in edges {
+      if let Expr::FunctionCall { args: eargs, .. } = edge
+        && eargs.len() == 2
+      {
+        let from_str = expr_to_string(&eargs[0]);
+        let to_str = expr_to_string(&eargs[1]);
+        if let (Some(&fi), Some(&ti)) =
+          (vertex_index.get(&from_str), vertex_index.get(&to_str))
+        {
+          let (a, b) = if fi < ti { (fi, ti) } else { (ti, fi) };
+          edge_pairs.push((a, b));
+        }
+      }
+    }
+    // Deduplicate edges
+    edge_pairs.sort();
+    edge_pairs.dedup();
+
+    // Compute chromatic polynomial coefficients using deletion-contraction
+    let coeffs = chromatic_poly_coeffs(n, &edge_pairs);
+
+    // Build polynomial expression in k
+    let poly = poly_to_expr(&coeffs, k);
+    return Ok(poly);
+  }
+
   // ButterflyGraph[n] — butterfly graph with 2n+1 vertices
   if name == "ButterflyGraph"
     && args.len() == 1
@@ -3658,4 +3705,136 @@ fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "FunctionInterpolation".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Compute chromatic polynomial coefficients via deletion-contraction.
+/// Returns coefficients [c_0, c_1, ..., c_n] where P(k) = c_0 + c_1*k + ... + c_n*k^n.
+fn chromatic_poly_coeffs(n: usize, edges: &[(usize, usize)]) -> Vec<i128> {
+  if edges.is_empty() {
+    // Empty graph (no edges): P(k) = k^n
+    let mut coeffs = vec![0i128; n + 1];
+    if n <= coeffs.len() {
+      coeffs[n] = 1;
+    }
+    return coeffs;
+  }
+
+  // Pick an edge to delete/contract
+  let (u, v) = edges[0];
+  let remaining_edges: Vec<(usize, usize)> = edges[1..].to_vec();
+
+  // Deletion: P(G-e, k) - remove the edge
+  let del_coeffs = chromatic_poly_coeffs(n, &remaining_edges);
+
+  // Contraction: P(G/e, k) - merge v into u, renumber vertices
+  let mut contracted_edges: Vec<(usize, usize)> = Vec::new();
+  for &(a, b) in &remaining_edges {
+    let a2 = if a == v {
+      u
+    } else if a > v {
+      a - 1
+    } else {
+      a
+    };
+    let b2 = if b == v {
+      u
+    } else if b > v {
+      b - 1
+    } else {
+      b
+    };
+    if a2 != b2 {
+      let (x, y) = if a2 < b2 { (a2, b2) } else { (b2, a2) };
+      contracted_edges.push((x, y));
+    }
+  }
+  contracted_edges.sort();
+  contracted_edges.dedup();
+
+  let con_coeffs = chromatic_poly_coeffs(n - 1, &contracted_edges);
+
+  // P(G, k) = P(G-e, k) - P(G/e, k)
+  let max_len = del_coeffs.len().max(con_coeffs.len());
+  let mut result = vec![0i128; max_len];
+  for (i, &c) in del_coeffs.iter().enumerate() {
+    result[i] += c;
+  }
+  for (i, &c) in con_coeffs.iter().enumerate() {
+    result[i] -= c;
+  }
+  result
+}
+
+/// Convert polynomial coefficients to an expression in variable k.
+fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, &c) in coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let term = match i {
+      0 => Expr::Integer(c),
+      1 => {
+        if c == 1 {
+          k.clone()
+        } else if c == -1 {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(k.clone()),
+          }
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(c)),
+            right: Box::new(k.clone()),
+          }
+        }
+      }
+      _ => {
+        let k_pow = Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(k.clone()),
+          right: Box::new(Expr::Integer(i as i128)),
+        };
+        if c == 1 {
+          k_pow
+        } else if c == -1 {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(k_pow),
+          }
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(c)),
+            right: Box::new(k_pow),
+          }
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+
+  // Build the polynomial via evaluation to get canonical form
+  let sum = if terms.len() == 1 {
+    terms.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+
+  match crate::evaluator::evaluate_expr_to_expr(&sum) {
+    Ok(result) => result,
+    Err(_) => sum,
+  }
 }
