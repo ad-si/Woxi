@@ -1391,6 +1391,44 @@ pub fn dispatch_math_functions(
       };
       return Some(Ok(triangle));
     }
+    // ExponentialMovingAverage[list, alpha]
+    "ExponentialMovingAverage" if args.len() == 2 => {
+      if let Expr::List(ref elems) = args[0] {
+        if !elems.is_empty() {
+          let alpha = &args[1];
+          let one_minus_alpha = Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(alpha.clone()),
+          };
+          let one_minus_alpha_eval =
+            crate::evaluator::evaluate_expr_to_expr(&one_minus_alpha)
+              .unwrap_or(one_minus_alpha);
+          let mut ema = elems[0].clone();
+          let mut result = vec![ema.clone()];
+          for elem in &elems[1..] {
+            // ema = alpha * x + (1 - alpha) * ema
+            let new_ema = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(alpha.clone()),
+                right: Box::new(elem.clone()),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(one_minus_alpha_eval.clone()),
+                right: Box::new(ema),
+              }),
+            };
+            ema = crate::evaluator::evaluate_expr_to_expr(&new_ema)
+              .unwrap_or(new_ema);
+            result.push(ema.clone());
+          }
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
     _ => {}
   }
   None

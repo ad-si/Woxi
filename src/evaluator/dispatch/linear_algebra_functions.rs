@@ -106,7 +106,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows)));
       }
     }
-    "UnitaryMatrixQ" if args.len() == 1 => {
+    "UnitaryMatrixQ" | "OrthogonalMatrixQ" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();
         if n == 0 {
