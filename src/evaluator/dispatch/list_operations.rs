@@ -1897,6 +1897,156 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(results)));
       }
     }
+    // PermutationCyclesQ[Cycles[{...}]] — True if valid Cycles form
+    "PermutationCyclesQ" if args.len() == 1 => {
+      if let Expr::FunctionCall {
+        name: cname,
+        args: cargs,
+      } = &args[0]
+        && cname == "Cycles"
+        && cargs.len() == 1
+        && let Expr::List(cycles) = &cargs[0]
+      {
+        let mut valid = true;
+        let mut seen = std::collections::HashSet::new();
+        for cycle in cycles {
+          if let Expr::List(c) = cycle {
+            for elem in c {
+              if let Expr::Integer(v) = elem {
+                if *v < 1 || !seen.insert(*v) {
+                  valid = false;
+                  break;
+                }
+              } else {
+                valid = false;
+                break;
+              }
+            }
+          } else {
+            valid = false;
+          }
+          if !valid {
+            break;
+          }
+        }
+        return Some(Ok(Expr::Identifier(
+          if valid { "True" } else { "False" }.to_string(),
+        )));
+      }
+      return Some(Ok(Expr::Identifier("False".to_string())));
+    }
+    // PermutationSupport[perm] — set of elements moved by the permutation
+    "PermutationSupport" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let mut support = Vec::new();
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(v) = p
+            && *v as usize != i + 1
+          {
+            support.push(Expr::Integer((i + 1) as i128));
+          }
+        }
+        return Some(Ok(Expr::List(support)));
+      }
+    }
+    // PermutationMax[perm] — largest element moved by the permutation
+    "PermutationMax" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let mut max_val: Option<i128> = None;
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(v) = p
+            && *v as usize != i + 1
+          {
+            let idx = (i + 1) as i128;
+            max_val = Some(max_val.map_or(idx, |m: i128| m.max(idx)));
+          }
+        }
+        if let Some(m) = max_val {
+          return Some(Ok(Expr::Integer(m)));
+        }
+        return Some(Ok(Expr::Integer(0)));
+      }
+    }
+    // PermutationMin[perm] — smallest element moved by the permutation
+    "PermutationMin" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let mut min_val: Option<i128> = None;
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(v) = p
+            && *v as usize != i + 1
+          {
+            let idx = (i + 1) as i128;
+            min_val = Some(min_val.map_or(idx, |m: i128| m.min(idx)));
+          }
+        }
+        if let Some(m) = min_val {
+          return Some(Ok(Expr::Integer(m)));
+        }
+        return Some(Ok(Expr::FunctionCall {
+          name: "Infinity".to_string(),
+          args: vec![],
+        }));
+      }
+    }
+    // Splice[list] — splice a list into the enclosing List (at evaluation level, acts like Sequence)
+    "Splice" if args.len() == 1 => {
+      if let Expr::List(items) = &args[0] {
+        // Splice[{a, b, c}] evaluates to Sequence[a, b, c]
+        return Some(Ok(Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: items.clone(),
+        }));
+      }
+    }
+    // SubsetMap[f, list, positions] — apply f to elements at positions, put results back
+    "SubsetMap" if args.len() == 3 => {
+      if let (Expr::List(items), Expr::List(positions)) = (&args[1], &args[2]) {
+        let f = &args[0];
+        // Extract elements at given positions
+        let pos_indices: Vec<usize> = positions
+          .iter()
+          .filter_map(|p| {
+            if let Expr::Integer(v) = p {
+              Some(*v as usize)
+            } else {
+              None
+            }
+          })
+          .collect();
+        let subset: Vec<Expr> = pos_indices
+          .iter()
+          .filter_map(|&idx| items.get(idx - 1).cloned())
+          .collect();
+        // Apply f to the subset
+        let mapped = apply_function_to_arg(f, &Expr::List(subset))
+          .unwrap_or(Expr::List(vec![]));
+        // Put results back
+        if let Expr::List(mapped_items) = &mapped {
+          let mut result = items.clone();
+          for (i, &pos) in pos_indices.iter().enumerate() {
+            if pos >= 1 && pos <= result.len() && i < mapped_items.len() {
+              result[pos - 1] = mapped_items[i].clone();
+            }
+          }
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
+    // Assert[test] — assert that test is True, return Null
+    "Assert" if !args.is_empty() && args.len() <= 2 => {
+      let test_result =
+        evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
+      if matches!(&test_result, Expr::Identifier(s) if s == "True") {
+        return Some(Ok(Expr::Identifier("Null".to_string())));
+      }
+      // Assertion failed
+      let msg = if args.len() == 2 {
+        expr_to_string(&args[1])
+      } else {
+        format!("Assertion {} failed.", expr_to_string(&args[0]))
+      };
+      return Some(Err(InterpreterError::EvaluationError(msg)));
+    }
     _ => {}
   }
   None

@@ -1408,6 +1408,33 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // StarGraph[n] → star graph with 1 center vertex connected to n-1 outer vertices
+  if name == "StarGraph"
+    && args.len() == 1
+    && let Expr::Integer(n) = &args[0]
+  {
+    let n = *n as usize;
+    if n >= 2 {
+      let vertices: Vec<Expr> =
+        (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+      let edges: Vec<Expr> = (2..=n)
+        .map(|i| Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(i as i128)],
+        })
+        .collect();
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices), Expr::List(edges)],
+      });
+    } else if n == 1 {
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vec![Expr::Integer(1)]), Expr::List(vec![])],
+      });
+    }
+  }
+
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {
