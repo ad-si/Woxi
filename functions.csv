@@ -140,7 +140,7 @@ AnnotationRules,,,,12,4315
 AnnotationValue,,,,12.1,3566
 Annuity,,,,8,2162
 AnnuityDue,,,,8,4437
-Annulus,,,,10.2,2054
+Annulus,Annular region specification,🚫,,10.2,2054
 AnomalyDetection,,,,12,5390
 AnomalyDetector,,,,12.1,5184
 AnomalyDetectorFunction,,,,12,
@@ -282,7 +282,7 @@ AsymptoticRSolveValue,,,,12,4262
 AsymptoticSolve,,,,12,2541
 AsymptoticSum,,,,12,4081
 Asynchronous,,,,8,5486
-Atom,,,,12,2065
+Atom,Basic building block,🚫,,12,2065
 AtomCoordinates,,,,12,5390
 AtomCount,,,,12,5390
 AtomDiagramCoordinates,,,,12,5486
@@ -385,7 +385,7 @@ AxisObject,,,,12.3,
 AxisStyle,,,,12.3,
 B,,,,,
 BabyMonsterGroupB,,,,8,4947
-Back,,,,6,2074
+Back,Navigate back in history,🚫,,6,2074
 Background,Option specifying the background color or style,✅,none,2,108
 Backslash,,,,3,3291
 Backward,,,,6,3242
@@ -893,7 +893,7 @@ ColorCoverage,,,,10,4707
 ColorData,,🚫,,6,224
 ColorDataFunction,,,,6,4225
 ColorDetect,,,,12,3755
-ColorDistance,,,,10,2071
+ColorDistance,Distance between colors,🚫,,10,2071
 ColorFunction,Option specifying the color function for visualization,✅,none,2,152
 ColorFunctionBinning,,,,12.2,5184
 ColorFunctionScaling,Option to scale color function input,✅,none,4,559
@@ -1056,7 +1056,7 @@ ContinuousMarkovProcess,,,,9,3162
 ContinuousTask,,,,10.2,4947
 ContinuousTimeModelQ,,,,8,5390
 ContinuousWaveletData,,🚫,,8,4262
-ContinuousWaveletTransform,,,,8,2071
+ContinuousWaveletTransform,CWT of signal,🚫,,8,2071
 ContourDetect,,,,8,3737
 ContourIntegrate,,,,13.3,
 ContourLabels,Option for labeling contour lines,✅,none,6,843
@@ -1271,7 +1271,7 @@ DateReduction,,,,10.2,3755
 DateScale,,,,13,
 DateSelect,,,,12.2,4809
 DateString,Returns a string representing the current local date and time,✅,contextual,6,802
-DateTicksFormat,,,,6,2036
+DateTicksFormat,Date format for plot tick labels,🚫,,6,2036
 DateValue,Date value extraction,✅,unevaluated,10,1788
 DateWithinQ,,,,11.1,3823
 DaubechiesWavelet,,,,8,2299
@@ -1331,7 +1331,7 @@ DefineResourceFunction,,,,12,5587
 Definition,Display the definition of a symbol,✅,pure,1,2462
 Degree,Represents the number of radians in one degree,✅,pure,1,150
 DegreeCentrality,,,,8,2487
-DegreeGraphDistribution,,,,8,2039
+DegreeGraphDistribution,Degree-based graph distribution,🚫,,8,2039
 DEigensystem,,,,10.3,2533
 DEigenvalues,,,,10.3,3678
 Deinitialization,,,,6,3506
@@ -2059,7 +2059,7 @@ Flat,Attribute for associative functions,✅,pure,1,1379
 FlatShading,,,,13.1,
 Flatten,Flattens nested lists,✅,pure,1,83
 FlattenAt,Flatten at specific positions,✅,computation,2,1649
-FlattenLayer,,,,11,2042
+FlattenLayer,Neural network flatten layer,🚫,,11,2042
 FlatTopWindow,,,,9,4387
 FlightData,,🚫,,13,
 FlipView,,,,6,2102
@@ -2327,7 +2327,7 @@ GeoLocation,,,,10,3083
 GeologicalPeriodData,,🚫,,10,3083
 GeomagneticModelData,,🚫,,10.1,3440
 GeoMarker,Geographic marker,✅,unevaluated,10,1760
-GeometricAssertion,,,,12,2054
+GeometricAssertion,Assert geometric properties,🚫,,12,2054
 GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9,1588
 GeometricDistribution,Geometric probability distribution,✅,pure,6,1474
 GeometricMean,Returns the geometric mean of a list,✅,pure,6,1294
@@ -2699,7 +2699,7 @@ ImagePad,,🚫,,7,1184
 ImagePadding,Option for specifying padding around plotted images,✅,pure,6,422
 ImagePartition,Partition an image,✅,unevaluated,7,1617
 ImagePeriodogram,,,,9,4052
-ImagePerspectiveTransformation,,,,8,2061
+ImagePerspectiveTransformation,Perspective transform on image,🚫,,8,2061
 ImagePosition,,,,12,5587
 ImagePreviewFunction,,,,11.2,5486
 ImagePyramid,,,,12,
@@ -3118,7 +3118,7 @@ Legended,Wrapper to attach a legend to a graphic,✅,none,7,785
 LegendFunction,Option for legend formatting function,✅,pure,9,1499
 LegendLabel,Option for specifying legend labels in plots,✅,none,9,1371
 LegendLayout,,🚫,,9,1348
-LegendMargins,,,,9,2034
+LegendMargins,Margins around plot legends,🚫,,9,2034
 LegendMarkers,Legend marker specification,✅,unevaluated,9,1637
 LegendMarkerSize,,🚫,,9,1151
 LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
@@ -3211,7 +3211,7 @@ LinkObject,,,,3,2197
 LinkPatterns,,,,3,5013
 LinkProtocol,,,,3,2842
 LinkRankCentrality,,,,10,4527
-LinkRead,,,,3,2051
+LinkRead,Read from WSTP link,🚫,,3,2051
 LinkReadyQ,,,,3,3162
 Links,,,,3,3070
 LinkWrite,Write an expression to a WSTP connection,🚫,3,1967
@@ -3692,7 +3692,7 @@ NeighborhoodGraph,,,,8,2079
 Nest,Applies a function n times to an expression,✅,pure,1,451
 NestedGreaterGreater,,,,3,4881
 NestedLessLess,,,,3,5390
-NestGraph,,,,10.2,2057
+NestGraph,Nest graph operation,🚫,,10.2,2057
 NestList,Returns the list of intermediate results from Nest,✅,pure,1,371
 NestTree,,,,12.3,
 NestWhile,Applies a function repeatedly while a condition holds,✅,pure,4,909
@@ -3766,7 +3766,7 @@ NominalVariables,,,,7,2851
 NoncentralBetaDistribution,,,,8,3717
 NoncentralChiSquareDistribution,,,,6,3059
 NoncentralFRatioDistribution,,,,6,2900
-NoncentralStudentTDistribution,,,,6,2057
+NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6,2057
 NonCommutativeMultiply,Non-commutative multiplication operator,✅,pure,1,290
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1,1954
 NondimensionalizationTransform,,,,11.3,4262
@@ -3812,7 +3812,7 @@ NotebookDelete,Delete notebook cells,✅,unevaluated,3,1740
 NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
 NotebookEvaluate,,,,8,2112
-NotebookEventActions,,,,6,2045
+NotebookEventActions,Actions for notebook events,🚫,,6,2045
 NotebookFileName,,,,7,2240
 NotebookFind,Search in a notebook,✅,unevaluated,3,1565
 NotebookGet,Get notebook expression,✅,pure,3,1562
@@ -3932,7 +3932,7 @@ NumericFunction,Numeric function attribute,✅,unevaluated,3,1801
 NumericQ,Tests if expression has a numeric value,✅,pure,3,172
 NuttallWindow,,,,9,4291
 NyquistGridLines,,,,8,5079
-NyquistPlot,,,,8,2040
+NyquistPlot,Nyquist stability plot,🚫,,8,2040
 ObservabilityGramian,,,,8,4262
 ObservabilityMatrix,,,,8,3224
 ObservableDecomposition,,,,8,4291
@@ -4138,7 +4138,7 @@ PeakDetect,,,,10,2798
 PeanoCurve,,,,11.1,4437
 PearsonChiSquareTest,,,,8,2734
 PearsonCorrelationTest,,,,9,3697
-PearsonDistribution,,,,8,2071
+PearsonDistribution,Pearson family distribution,🚫,,8,2071
 PenttinenPointProcess,,,,12.2,5486
 PercentForm,,,,12,2124
 PerfectNumber,,,,10.4,3947
@@ -4193,7 +4193,7 @@ PIDTune,,,,9,2880
 Piecewise,Represents a piecewise function,✅,pure,5.1,239
 PiecewiseExpand,Expands functions to explicit Piecewise form,✅,1,5.1,1090
 PieChart,Creates a pie chart from data,✅,pure,7,586
-PieChart3D,,,,7,2048
+PieChart3D,3D pie chart,🚫,,7,2048
 PillaiTrace,,,,9,4612
 PillaiTraceTest,,,,9,4173
 PingTime,,,,11,4567
@@ -4343,8 +4343,8 @@ PreviousCell,,,,10,3108
 PreviousDate,,,,11.1,4173
 PriceGraphDistribution,,,,8,3353
 Prime,Returns the nth prime number,✅,pure,1,308
-PrimeNu,,,,7,2276
-PrimeOmega,,,,7,2251
+PrimeNu,Count distinct prime factors of an integer,✅,1,7,2276
+PrimeOmega,Count prime factors with multiplicity,✅,1,7,2251
 PrimePi,Counts the number of primes less than or equal to n,✅,pure,2,688
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6,2320
 PrimeQ,Tests if a number is prime,✅,pure,1,462
@@ -4662,7 +4662,7 @@ Resampling,Signal processing option for resampling methods,🚫,,8,1930
 ResamplingAlgorithmData,,🚫,,10.1,4947
 ResamplingMethod,Resampling method option,✅,unevaluated,10,1859
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
-RescalingTransform,,,,6,2045
+RescalingTransform,Rescaling transformation for coordinates,🚫,,6,2045
 ResetDirectory,,,,2,2495
 ReshapeLayer,,,,11,2399
 Residue,Computes the residue of an expression at a point,✅,pure,2,585
@@ -4745,7 +4745,7 @@ RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
 Root,Represents the k-th root of a polynomial,✅,pure,3,396
 RootApproximant,Root approximant,✅,unevaluated,6,1901
 RootIntervals,,,,6,3344
-RootLocusPlot,,,,8,2036
+RootLocusPlot,Root locus plot for control systems,🚫,,8,2036
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6,2065
 RootOfUnityQ,,,,6,3947
 RootReduce,Reduce algebraic number to minimal polynomial root,🚫,pure,3,1397
@@ -4861,7 +4861,7 @@ SelectedCells,,,,10,2468
 SelectedNotebook,Return the currently selected notebook,✅,none,3,687
 SelectFirst,Select first element matching a criterion,✅,pure,10,1514
 SelectionCreateCell,,,,3,5079
-SelectionEvaluate,,,,3,2051
+SelectionEvaluate,Evaluate selected notebook content,🚫,,3,2051
 SelectionEvaluateCreateCell,,,,3,3755
 SelectionMove,Move the selection in a notebook,✅,none,3,636
 SelfLoopStyle,,,,6,2656
@@ -5098,7 +5098,7 @@ SpearmanRho,,,,9,3593
 SpeciesData,,🚫,,10,4881
 SpecificityGoal,,,,10.1,3862
 SpectralLineData,,🚫,,11.1,4006
-Spectrogram,,,,9,2034
+Spectrogram,Time-frequency spectrogram of signal,🚫,,9,2034
 SpectrogramArray,,,,9,3656
 Specularity,Graphics directive for specular highlighting,✅,none,6,576
 SpeechCases,,,,12.1,
@@ -5112,7 +5112,7 @@ Sphere,3D sphere graphics primitive,✅,none,6,282
 SpherePoints,,,,11.1,3083
 SphericalAngle,,,,14,
 SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6,1001
-SphericalBesselY,,,,6,2054
+SphericalBesselY,Spherical Bessel function of second kind,🚫,,6,2054
 SphericalDistance,,,,13.3,
 SphericalHankelH1,,,,6,2219
 SphericalHankelH2,,,,6,3566
@@ -5539,7 +5539,7 @@ Through,Distributes a list of functions over arguments,✅,pure,1,501
 Throw,Throws a value to be caught by Catch,✅,pure,1,589
 ThueMorse,,,,10.2,3427
 Thumbnail,Thumbnail image wrapper,✅,pure,7,1475
-Thursday,,,,9,2091
+Thursday,Day of the week symbol,🚫,,9,2091
 TickDirection,,,,12.3,
 TickLabelOrientation,,,,12.3,
 TickLabelPositioning,,,,12.3,
@@ -5759,7 +5759,7 @@ TsallisQExponentialDistribution,,,,9,3947
 TsallisQGaussianDistribution,,,,9,3566
 TTest,,,,8,2203
 Tube,3D tube around a curve,✅,none,7,720
-Tuesday,,,,9,2048
+Tuesday,Day of the week symbol,🚫,,9,2048
 TukeyLambdaDistribution,,,,8,3402
 TukeyWindow,,,,9,3889
 TunnelData,,🚫,,10,4947
@@ -5789,7 +5789,7 @@ UnderscriptBox,,,,3,2452
 UnderscriptBoxOptions,,,,4,2944
 UnderseaFeatureData,,🚫,,10,
 UndirectedEdge,Undirected graph edge,✅,pure,8,201
-UndirectedGraph,,,,8,2038
+UndirectedGraph,Create undirected graph,🚫,,8,2038
 UndirectedGraphQ,,,,8,2867
 UndoOptions,,,,10,5013
 UndoTrackedVariables,Variables tracked for undo,✅,pure,10,1559
@@ -5951,7 +5951,7 @@ VertexDiceSimilarity,,,,9,4947
 VertexEccentricity,,,,8,2871
 VertexInComponent,,,,8,3326
 VertexInComponentGraph,,,,12.3,
-VertexInDegree,,,,8,2042
+VertexInDegree,In-degree of a vertex in a directed graph,🚫,,8,2042
 VertexIndex,,,,8,2149
 VertexJaccardSimilarity,,,,9,4947
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
@@ -5960,7 +5960,7 @@ VertexList,List of vertices in a graph,✅,none,8,657
 VertexNormals,Vertex normal vectors,✅,unevaluated,6,1721
 VertexOutComponent,,,,8,2605
 VertexOutComponentGraph,,,,12.3,
-VertexOutDegree,,,,8,2031
+VertexOutDegree,Out-degree of a vertex in a directed graph,🚫,,8,2031
 VertexQ,,,,8,3427
 VertexReplace,,,,8,2404
 VertexShape,,,,8,2184
@@ -6070,7 +6070,7 @@ WebSessionObject,,,,12,5184
 WebSessions,,,,12,
 WebWindowObject,,,,12,
 Wedge,Symbolic wedge product operator with Unicode display,✅,none,3,1049
-Wednesday,,,,9,2045
+Wednesday,Day of the week symbol,🚫,,9,2045
 WeibullDistribution,Weibull probability distribution,✅,,6,1322
 WeierstrassE1,,,,11.2,
 WeierstrassE2,,,,11.2,
@@ -6120,7 +6120,7 @@ WindDirectionData,,🚫,,10,3843
 WindingCount,,,,12,
 WindingPolygon,,,,12,4881
 WindowClickSelect,,,,3,3378
-WindowElements,,,,3,2048
+WindowElements,Window UI elements option,🚫,,3,2048
 WindowFrame,,,,3,2355
 WindowFrameElements,,,,4,2541
 WindowMargins,Window margin specification,✅,unevaluated,3,1632
