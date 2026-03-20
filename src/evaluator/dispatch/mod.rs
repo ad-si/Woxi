@@ -2487,6 +2487,27 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // RenameFile[source, dest] — rename/move a file
+  if name == "RenameFile"
+    && args.len() == 2
+    && let Expr::String(source) = &args[0]
+    && let Expr::String(dest) = &args[1]
+  {
+    match std::fs::rename(source, dest) {
+      Ok(()) => return Ok(Expr::String(dest.clone())),
+      Err(_e) => {
+        crate::emit_message(&format!(
+          "RenameFile::fdnfnd: Directory or file \"{}\" not found.",
+          source
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "$Failed".to_string(),
+          args: vec![],
+        });
+      }
+    }
+  }
+
   // DeleteMissing[list] — remove Missing[] elements from a list
   if name == "DeleteMissing"
     && args.len() == 1
