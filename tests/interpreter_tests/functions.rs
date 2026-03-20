@@ -10844,6 +10844,35 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // PrincipalComponents
+  #[test]
+  fn principal_components_2x2() {
+    assert_eq!(
+      interpret("PrincipalComponents[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{2/Sqrt[2], 0}, {-2/Sqrt[2], 0}}"
+    );
+  }
+  #[test]
+  fn principal_components_3x2() {
+    assert_eq!(
+      interpret("PrincipalComponents[{{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{{4/Sqrt[2], 0}, {0, 0}, {-4/Sqrt[2], 0}}"
+    );
+  }
+  #[test]
+  fn principal_components_single_row() {
+    assert_eq!(
+      interpret("PrincipalComponents[{{1, 2}}]").unwrap(),
+      "{{0, 0}}"
+    );
+  }
+  #[test]
+  fn principal_components_numerical() {
+    let result =
+      interpret("PrincipalComponents[N[{{1, 2}, {3, 4}, {5, 6}}]]").unwrap();
+    assert!(result.contains("2.828427124746"));
+  }
+
   // UnderscriptBox
   #[test]
   fn underscript_box_basic() {

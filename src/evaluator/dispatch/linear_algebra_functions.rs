@@ -207,6 +207,11 @@ pub fn dispatch_linear_algebra_functions(
     "Eigenvalues" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvalues_ast(args));
     }
+    "PrincipalComponents" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::principal_components_ast(args),
+      );
+    }
     "SymmetricMatrixQ" if args.len() == 1 => {
       return Some(crate::functions::list_helpers_ast::symmetric_matrix_q_ast(
         &args[0],
