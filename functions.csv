@@ -455,7 +455,7 @@ BetaNegativeBinomialDistribution,,,,6,3947
 BetaPrimeDistribution,,,,8,3059
 BetaRegularized,Regularized incomplete beta function,✅,1,2,1263
 Between,Tests if a value is between bounds,✅,pure,10.3,1728
-BetweennessCentrality,,,,8,2742
+BetweennessCentrality,betweenness centrality of graph vertices,✅,Computation,8,2742
 BeveledPolyhedron,,,,12,5587
 BezierCurve,Represents a Bezier curve graphics primitive,✅,pure,7,778
 BezierFunction,Evaluate Bezier curves from control points using de Casteljau algorithm,✅,pure,7,1371
@@ -1908,7 +1908,7 @@ FileByteCount,Count bytes in file (file I/O),🚫,,2,2018
 FileConvert,,,,12,5486
 FileDate,Get file modification date,🚫,,2,2121
 FileExistsQ,Tests whether a file or directory exists,✅,2,7,1293
-FileExtension,,,,7,2742
+FileExtension,gets the file extension from a path,✅,Computation,7,2742
 FileFormat,,,,6,3889
 FileFormatProperties,,,,13,
 FileFormatQ,,,,12.2,5184
@@ -3275,7 +3275,7 @@ LLMToolResponse,,🚫,,13.3,
 LoadCompiledComponent,,,,13.2,
 LocalAdaptiveBinarize,,,,10,2671
 LocalCache,,,,11,4707
-LocalClusteringCoefficient,,,,9,2748
+LocalClusteringCoefficient,local clustering coefficient of graph vertices,✅,Computation,9,2748
 LocalEvaluate,,,,13.1,
 LocalizeVariables,,🚫,,6,2525
 LocalObject,,,,10.2,2894

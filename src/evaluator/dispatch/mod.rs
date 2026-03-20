@@ -1964,6 +1964,119 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::List(centralities));
   }
 
+  // BetweennessCentrality[graph] — betweenness centrality for each vertex
+  if name == "BetweennessCentrality"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let adj = build_undirected_adj(vertices, edges);
+    let mut betweenness = vec![0.0_f64; n];
+
+    for s in 0..n {
+      // BFS from s to compute shortest path counts and distances
+      let mut dist = vec![-1i128; n];
+      let mut sigma = vec![0.0_f64; n]; // number of shortest paths
+      let mut pred: Vec<Vec<usize>> = vec![vec![]; n]; // predecessors
+      let mut queue = std::collections::VecDeque::new();
+      let mut stack = Vec::new();
+
+      dist[s] = 0;
+      sigma[s] = 1.0;
+      queue.push_back(s);
+
+      while let Some(v) = queue.pop_front() {
+        stack.push(v);
+        for &w in &adj[v] {
+          if dist[w] < 0 {
+            dist[w] = dist[v] + 1;
+            queue.push_back(w);
+          }
+          if dist[w] == dist[v] + 1 {
+            sigma[w] += sigma[v];
+            pred[w].push(v);
+          }
+        }
+      }
+
+      // Accumulate dependency
+      let mut delta = vec![0.0_f64; n];
+      while let Some(w) = stack.pop() {
+        for &v in &pred[w] {
+          delta[v] += (sigma[v] / sigma[w]) * (1.0 + delta[w]);
+        }
+        if w != s {
+          betweenness[w] += delta[w];
+        }
+      }
+    }
+
+    // Normalize: divide by 2 for undirected graphs
+    let centralities: Vec<Expr> =
+      betweenness.iter().map(|&b| Expr::Real(b / 2.0)).collect();
+    return Ok(Expr::List(centralities));
+  }
+
+  // LocalClusteringCoefficient[graph] — local clustering coefficient for each vertex
+  if name == "LocalClusteringCoefficient"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let adj = build_undirected_adj(vertices, edges);
+    // Build neighbor sets for quick lookup
+    let neighbor_sets: Vec<std::collections::HashSet<usize>> = adj
+      .iter()
+      .map(|neighbors| neighbors.iter().copied().collect())
+      .collect();
+
+    let coefficients: Vec<Expr> = (0..n)
+      .map(|v| {
+        let k = adj[v].len();
+        if k < 2 {
+          return Expr::Integer(0);
+        }
+        let mut triangles = 0i128;
+        let neighbors = &adj[v];
+        for i in 0..neighbors.len() {
+          for j in (i + 1)..neighbors.len() {
+            if neighbor_sets[neighbors[i]].contains(&neighbors[j]) {
+              triangles += 1;
+            }
+          }
+        }
+        let possible = (k * (k - 1) / 2) as i128;
+        if triangles == possible {
+          Expr::Integer(1)
+        } else if triangles == 0 {
+          Expr::Integer(0)
+        } else {
+          let g = gcd_i128(triangles, possible);
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![
+              Expr::Integer(triangles / g),
+              Expr::Integer(possible / g),
+            ],
+          }
+        }
+      })
+      .collect();
+    return Ok(Expr::List(coefficients));
+  }
+
   // ChromaticPolynomial[graph, k] — chromatic polynomial of a graph
   if name == "ChromaticPolynomial"
     && args.len() == 2
@@ -2593,6 +2706,19 @@ pub fn evaluate_function_call_ast_inner(
         return Ok(Expr::List(history));
       }
     }
+  }
+
+  // FileExtension[path] — get file extension
+  if name == "FileExtension"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    let ext = std::path::Path::new(path)
+      .extension()
+      .and_then(|e| e.to_str())
+      .unwrap_or("")
+      .to_string();
+    return Ok(Expr::String(ext));
   }
 
   // FileExistsQ[path] — check if file/directory exists
