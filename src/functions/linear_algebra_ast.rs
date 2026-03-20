@@ -3289,10 +3289,10 @@ pub fn evaluate_fitted_model(
   if let Expr::String(prop) = &call_args[0] {
     // Look up the property in the association
     for (key, val) in assoc {
-      if let Expr::String(k) = key {
-        if k == prop {
-          return Ok(val.clone());
-        }
+      if let Expr::String(k) = key
+        && k == prop
+      {
+        return Ok(val.clone());
       }
     }
     return Err(InterpreterError::EvaluationError(format!(
@@ -3308,10 +3308,10 @@ pub fn evaluate_fitted_model(
     if let Expr::String(k) = key {
       if k == "FittedExpression" {
         fitted_expr = Some(val.clone());
-      } else if k == "VariableName" {
-        if let Expr::String(v) = val {
-          var_name = Some(v.clone());
-        }
+      } else if k == "VariableName"
+        && let Expr::String(v) = val
+      {
+        var_name = Some(v.clone());
       }
     }
   }
@@ -3352,10 +3352,10 @@ pub fn fitted_model_normal(
   };
 
   for (key, val) in assoc {
-    if let Expr::String(k) = key {
-      if k == "FittedExpression" {
-        return Ok(val.clone());
-      }
+    if let Expr::String(k) = key
+      && k == "FittedExpression"
+    {
+      return Ok(val.clone());
     }
   }
 

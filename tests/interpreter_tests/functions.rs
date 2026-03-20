@@ -9765,4 +9765,60 @@ mod batch_unevaluated_wrappers_2 {
   fn parallel_product_basic() {
     assert_eq!(interpret("ParallelProduct[i, {i, 1, 5}]").unwrap(), "120");
   }
+  #[test]
+  fn mangoldt_lambda_prime() {
+    assert_eq!(interpret("MangoldtLambda[7]").unwrap(), "Log[7]");
+  }
+  #[test]
+  fn mangoldt_lambda_prime_power() {
+    assert_eq!(interpret("MangoldtLambda[8]").unwrap(), "Log[2]");
+  }
+  #[test]
+  fn mangoldt_lambda_composite() {
+    assert_eq!(interpret("MangoldtLambda[6]").unwrap(), "0");
+  }
+  #[test]
+  fn mangoldt_lambda_one() {
+    assert_eq!(interpret("MangoldtLambda[1]").unwrap(), "0");
+  }
+  #[test]
+  fn liouville_lambda_basic() {
+    assert_eq!(interpret("LiouvilleLambda[6]").unwrap(), "1");
+  }
+  #[test]
+  fn liouville_lambda_prime() {
+    assert_eq!(interpret("LiouvilleLambda[7]").unwrap(), "-1");
+  }
+  #[test]
+  fn liouville_lambda_prime_power() {
+    assert_eq!(interpret("LiouvilleLambda[8]").unwrap(), "-1");
+  }
+  #[test]
+  fn bray_curtis_distance() {
+    assert_eq!(
+      interpret("BrayCurtisDistance[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "3/7"
+    );
+  }
+  #[test]
+  fn canberra_distance() {
+    assert_eq!(
+      interpret("CanberraDistance[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "143/105"
+    );
+  }
+  #[test]
+  fn cosine_distance_orthogonal() {
+    assert_eq!(interpret("CosineDistance[{1, 0}, {0, 1}]").unwrap(), "1");
+  }
+  #[test]
+  fn key_sort_by_basic() {
+    assert_eq!(
+      interpret(
+        "KeySortBy[<|\"ba\" -> 2, \"a\" -> 1, \"ccc\" -> 3|>, StringLength]"
+      )
+      .unwrap(),
+      "<|a -> 1, ba -> 2, ccc -> 3|>"
+    );
+  }
 }

@@ -75,20 +75,20 @@ pub fn dispatch_linear_algebra_functions(
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
     }
     "HilbertMatrix" if args.len() == 1 => {
-      if let Some(n) = expr_to_i128(&args[0]) {
-        if n >= 0 {
-          let n = n as usize;
-          let mut rows = Vec::with_capacity(n);
-          for i in 0..n {
-            let mut row = Vec::with_capacity(n);
-            for j in 0..n {
-              let denom = (i + j + 1) as i128;
-              row.push(crate::functions::math_ast::make_rational_pub(1, denom));
-            }
-            rows.push(Expr::List(row));
+      if let Some(n) = expr_to_i128(&args[0])
+        && n >= 0
+      {
+        let n = n as usize;
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+          let mut row = Vec::with_capacity(n);
+          for j in 0..n {
+            let denom = (i + j + 1) as i128;
+            row.push(crate::functions::math_ast::make_rational_pub(1, denom));
           }
-          return Some(Ok(Expr::List(rows)));
+          rows.push(Expr::List(row));
         }
+        return Some(Ok(Expr::List(rows)));
       }
     }
     "ToeplitzMatrix" if args.len() == 1 => {
@@ -98,7 +98,7 @@ pub fn dispatch_linear_algebra_functions(
         for i in 0..n {
           let mut row = Vec::with_capacity(n);
           for j in 0..n {
-            let idx = if i > j { i - j } else { j - i };
+            let idx = i.abs_diff(j);
             row.push(elems[idx].clone());
           }
           rows.push(Expr::List(row));
@@ -129,21 +129,20 @@ pub fn dispatch_linear_algebra_functions(
             t,
             args[0].clone(),
           ]);
-          if let Ok(product) = dot {
-            if let Ok(evaluated) =
+          if let Ok(product) = dot
+            && let Ok(evaluated) =
               crate::evaluator::evaluate_expr_to_expr(&product)
-            {
-              let identity =
-                crate::functions::linear_algebra_ast::identity_matrix_ast(&[
-                  Expr::Integer(n as i128),
-                ]);
-              if let Ok(id) = identity {
-                let result = crate::syntax::expr_to_string(&evaluated)
-                  == crate::syntax::expr_to_string(&id);
-                return Some(Ok(Expr::Identifier(
-                  if result { "True" } else { "False" }.to_string(),
-                )));
-              }
+          {
+            let identity =
+              crate::functions::linear_algebra_ast::identity_matrix_ast(&[
+                Expr::Integer(n as i128),
+              ]);
+            if let Ok(id) = identity {
+              let result = crate::syntax::expr_to_string(&evaluated)
+                == crate::syntax::expr_to_string(&id);
+              return Some(Ok(Expr::Identifier(
+                if result { "True" } else { "False" }.to_string(),
+              )));
             }
           }
         }
@@ -217,22 +216,22 @@ pub fn dispatch_linear_algebra_functions(
       // Compute eigenvalues and check all are strictly positive
       let eigenvals_result =
         crate::functions::linear_algebra_ast::eigenvalues_ast(args);
-      if let Ok(list_expr) = eigenvals_result {
-        if let Expr::List(eigenvals) = &list_expr {
-          for ev in eigenvals {
-            let n_val =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "N".to_string(),
-                args: vec![ev.clone()],
-              });
-            match n_val {
-              Ok(Expr::Real(f)) if f > 0.0 => continue,
-              Ok(Expr::Integer(n)) if n > 0 => continue,
-              _ => return Some(Ok(Expr::Identifier("False".to_string()))),
-            }
+      if let Ok(list_expr) = eigenvals_result
+        && let Expr::List(eigenvals) = &list_expr
+      {
+        for ev in eigenvals {
+          let n_val =
+            crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+              name: "N".to_string(),
+              args: vec![ev.clone()],
+            });
+          match n_val {
+            Ok(Expr::Real(f)) if f > 0.0 => continue,
+            Ok(Expr::Integer(n)) if n > 0 => continue,
+            _ => return Some(Ok(Expr::Identifier("False".to_string()))),
           }
-          return Some(Ok(Expr::Identifier("True".to_string())));
         }
+        return Some(Ok(Expr::Identifier("True".to_string())));
       }
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
@@ -822,10 +821,10 @@ pub fn dispatch_linear_algebra_functions(
                 name: fname,
                 args: fargs,
               } if fname == "Rational" && fargs.len() == 2 => {
-                if let Expr::Integer(n) = &fargs[0] {
-                  if *n < 0 {
-                    return Some(Ok(Expr::Identifier("False".to_string())));
-                  }
+                if let Expr::Integer(n) = &fargs[0]
+                  && *n < 0
+                {
+                  return Some(Ok(Expr::Identifier("False".to_string())));
                 }
               }
               _ => {
@@ -834,10 +833,10 @@ pub fn dispatch_linear_algebra_functions(
                   name: "N".to_string(),
                   args: vec![evaluated.clone()],
                 });
-                if let Ok(Expr::Real(v)) = nval {
-                  if v < 0.0 {
-                    return Some(Ok(Expr::Identifier("False".to_string())));
-                  }
+                if let Ok(Expr::Real(v)) = nval
+                  && v < 0.0
+                {
+                  return Some(Ok(Expr::Identifier("False".to_string())));
                 }
               }
             }

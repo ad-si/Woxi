@@ -514,12 +514,10 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           cmp_val < cmp_ref
         }
+      } else if same_sign {
+        cmp_val < cmp_ref
       } else {
-        if same_sign {
-          cmp_val < cmp_ref
-        } else {
-          cmp_val > cmp_ref
-        }
+        cmp_val > cmp_ref
       };
 
       if past_max {

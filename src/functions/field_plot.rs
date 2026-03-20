@@ -1673,17 +1673,18 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = re_min + (i as f64 + 0.5) / grid_size as f64 * (re_max - re_min);
     for j in 0..grid_size {
       let im = im_min + (j as f64 + 0.5) / grid_size as f64 * (im_max - im_min);
-      if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im) {
-        if fre.is_finite() && fim.is_finite() {
-          let (r, g, b) = complex_to_rgb(fre, fim);
-          let sx = area.plot_x0 + i as f64 * cell_w;
-          // Flip y: higher im values at top
-          let sy = area.plot_y0 + (grid_size - 1 - j) as f64 * cell_h;
-          svg.push_str(&format!(
+      if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im)
+        && fre.is_finite()
+        && fim.is_finite()
+      {
+        let (r, g, b) = complex_to_rgb(fre, fim);
+        let sx = area.plot_x0 + i as f64 * cell_w;
+        // Flip y: higher im values at top
+        let sy = area.plot_y0 + (grid_size - 1 - j) as f64 * cell_h;
+        svg.push_str(&format!(
             "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
             cell_w + 0.5, cell_h + 0.5
           ));
-        }
       }
     }
   }

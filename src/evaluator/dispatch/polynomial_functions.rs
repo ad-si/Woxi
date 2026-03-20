@@ -151,20 +151,20 @@ pub fn dispatch_polynomial_functions(
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
         {
           // Result is {value, {x -> arg}}
-          if result.len() == 2 {
-            if let Expr::List(rules) = &result[1] {
-              let args_list: Vec<Expr> = rules
-                .iter()
-                .filter_map(|r| {
-                  if let Expr::Rule { replacement, .. } = r {
-                    Some(replacement.as_ref().clone())
-                  } else {
-                    None
-                  }
-                })
-                .collect();
-              return Some(Ok(Expr::List(args_list)));
-            }
+          if result.len() == 2
+            && let Expr::List(rules) = &result[1]
+          {
+            let args_list: Vec<Expr> = rules
+              .iter()
+              .filter_map(|r| {
+                if let Expr::Rule { replacement, .. } = r {
+                  Some(replacement.as_ref().clone())
+                } else {
+                  None
+                }
+              })
+              .collect();
+            return Some(Ok(Expr::List(args_list)));
           }
         }
       }
@@ -177,22 +177,20 @@ pub fn dispatch_polynomial_functions(
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
+          && result.len() == 2
+          && let Expr::List(rules) = &result[1]
         {
-          if result.len() == 2 {
-            if let Expr::List(rules) = &result[1] {
-              let args_list: Vec<Expr> = rules
-                .iter()
-                .filter_map(|r| {
-                  if let Expr::Rule { replacement, .. } = r {
-                    Some(replacement.as_ref().clone())
-                  } else {
-                    None
-                  }
-                })
-                .collect();
-              return Some(Ok(Expr::List(args_list)));
-            }
-          }
+          let args_list: Vec<Expr> = rules
+            .iter()
+            .filter_map(|r| {
+              if let Expr::Rule { replacement, .. } = r {
+                Some(replacement.as_ref().clone())
+              } else {
+                None
+              }
+            })
+            .collect();
+          return Some(Ok(Expr::List(args_list)));
         }
       }
     }
@@ -205,10 +203,9 @@ pub fn dispatch_polynomial_functions(
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, false)
+          && !result.is_empty()
         {
-          if !result.is_empty() {
-            return Some(Ok(result[0].clone()));
-          }
+          return Some(Ok(result[0].clone()));
         }
       }
     }
@@ -220,10 +217,9 @@ pub fn dispatch_polynomial_functions(
         ];
         if let Ok(Expr::List(ref result)) =
           crate::functions::polynomial_ast::find_minimum_ast(&find_args, true)
+          && !result.is_empty()
         {
-          if !result.is_empty() {
-            return Some(Ok(result[0].clone()));
-          }
+          return Some(Ok(result[0].clone()));
         }
       }
     }
@@ -334,29 +330,29 @@ pub fn dispatch_polynomial_functions(
           } = rule
           {
             {
-              if let Expr::List(exps) = pattern.as_ref() {
-                if exps.len() == 1 {
-                  let coeff = replacement.as_ref();
-                  let exp = &exps[0];
-                  let term = match exp {
-                    Expr::Integer(0) => coeff.clone(),
-                    Expr::Integer(1) => Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Times,
-                      left: Box::new(coeff.clone()),
-                      right: Box::new(Expr::Identifier(var.clone())),
-                    },
-                    _ => Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Times,
-                      left: Box::new(coeff.clone()),
-                      right: Box::new(Expr::BinaryOp {
-                        op: crate::syntax::BinaryOperator::Power,
-                        left: Box::new(Expr::Identifier(var.clone())),
-                        right: Box::new(exp.clone()),
-                      }),
-                    },
-                  };
-                  terms.push(term);
-                }
+              if let Expr::List(exps) = pattern.as_ref()
+                && exps.len() == 1
+              {
+                let coeff = replacement.as_ref();
+                let exp = &exps[0];
+                let term = match exp {
+                  Expr::Integer(0) => coeff.clone(),
+                  Expr::Integer(1) => Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(coeff.clone()),
+                    right: Box::new(Expr::Identifier(var.clone())),
+                  },
+                  _ => Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(coeff.clone()),
+                    right: Box::new(Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Power,
+                      left: Box::new(Expr::Identifier(var.clone())),
+                      right: Box::new(exp.clone()),
+                    }),
+                  },
+                };
+                terms.push(term);
               }
             }
           }

@@ -181,50 +181,50 @@ fn handle_power(
   exp: &Expr,
 ) -> Result<Option<Vec<i128>>, InterpreterError> {
   // Case: a^(p/q) where a is rational
-  if let Some(a_val) = extract_rational(base) {
-    if let Some((p, q)) = extract_rational_pair(exp) {
-      // α = (a_num/a_den)^(p/q)
-      // α^q = (a_num/a_den)^p
-      let (a_num, a_den) = a_val;
-      if q > 0 && q <= 20 && p.abs() <= 20 {
-        let q_us = q as u32;
-        let p_abs = p.unsigned_abs() as u32;
-        if p > 0 {
-          // α^q = a_num^p / a_den^p → a_den^p * x^q - a_num^p = 0
-          let num_pow = a_num.pow(p_abs);
-          let den_pow = a_den.pow(p_abs);
-          let mut coeffs = vec![0i128; q_us as usize + 1];
-          coeffs[0] = -num_pow;
-          coeffs[q_us as usize] = den_pow;
-          return Ok(make_primitive_and_irreducible(coeffs));
-        } else {
-          // α = (a_num/a_den)^(-|p|/q) = (a_den/a_num)^(|p|/q)
-          let num_pow = a_den.pow(p_abs);
-          let den_pow = a_num.pow(p_abs);
-          let mut coeffs = vec![0i128; q_us as usize + 1];
-          coeffs[0] = -num_pow;
-          coeffs[q_us as usize] = den_pow;
-          return Ok(make_primitive_and_irreducible(coeffs));
-        }
+  if let Some(a_val) = extract_rational(base)
+    && let Some((p, q)) = extract_rational_pair(exp)
+  {
+    // α = (a_num/a_den)^(p/q)
+    // α^q = (a_num/a_den)^p
+    let (a_num, a_den) = a_val;
+    if q > 0 && q <= 20 && p.abs() <= 20 {
+      let q_us = q as u32;
+      let p_abs = p.unsigned_abs() as u32;
+      if p > 0 {
+        // α^q = a_num^p / a_den^p → a_den^p * x^q - a_num^p = 0
+        let num_pow = a_num.pow(p_abs);
+        let den_pow = a_den.pow(p_abs);
+        let mut coeffs = vec![0i128; q_us as usize + 1];
+        coeffs[0] = -num_pow;
+        coeffs[q_us as usize] = den_pow;
+        return Ok(make_primitive_and_irreducible(coeffs));
+      } else {
+        // α = (a_num/a_den)^(-|p|/q) = (a_den/a_num)^(|p|/q)
+        let num_pow = a_den.pow(p_abs);
+        let den_pow = a_num.pow(p_abs);
+        let mut coeffs = vec![0i128; q_us as usize + 1];
+        coeffs[0] = -num_pow;
+        coeffs[q_us as usize] = den_pow;
+        return Ok(make_primitive_and_irreducible(coeffs));
       }
     }
   }
 
   // Case: algebraic^integer
-  if let Some(n) = expr_to_i128(exp) {
-    if n >= 2 && n <= 10 {
-      let base_poly = compute_minpoly_coeffs(base)?;
-      if let Some(bp) = base_poly {
-        // minpoly(α^n): substitute x^(1/n) for x in p(x), then compute resultant
-        // Actually: if p(α) = 0, then q(β) = Res_y(p(y), y^n - x) evaluated properly
-        // Simpler: compose p with x^n replacement
-        // If minpoly of α is p(x), then α^n is a root of p(x^(1/n))...
-        // Better: use resultant approach
-        // Res_t(p(t), t^n - x) gives a polynomial in x whose roots include α^n
-        let numeric_val = expr_to_f64(exp)
-          .and_then(|ne| expr_to_f64(base).map(|be| be.powf(ne)));
-        return Ok(minpoly_of_power(&bp, n, numeric_val));
-      }
+  if let Some(n) = expr_to_i128(exp)
+    && (2..=10).contains(&n)
+  {
+    let base_poly = compute_minpoly_coeffs(base)?;
+    if let Some(bp) = base_poly {
+      // minpoly(α^n): substitute x^(1/n) for x in p(x), then compute resultant
+      // Actually: if p(α) = 0, then q(β) = Res_y(p(y), y^n - x) evaluated properly
+      // Simpler: compose p with x^n replacement
+      // If minpoly of α is p(x), then α^n is a root of p(x^(1/n))...
+      // Better: use resultant approach
+      // Res_t(p(t), t^n - x) gives a polynomial in x whose roots include α^n
+      let numeric_val =
+        expr_to_f64(exp).and_then(|ne| expr_to_f64(base).map(|be| be.powf(ne)));
+      return Ok(minpoly_of_power(&bp, n, numeric_val));
     }
   }
 
@@ -396,10 +396,7 @@ fn minpoly_of_sum(
 
   // Compute determinant of this polynomial matrix using expansion
   let det = poly_matrix_determinant(&matrix);
-  let det = match det {
-    Some(d) => d,
-    None => return None,
-  };
+  let det = det?;
 
   // Make monic and primitive
   let result = make_primitive_monic(&det);
@@ -654,18 +651,18 @@ fn make_primitive_monic(coeffs: &[i128]) -> Vec<i128> {
     .iter()
     .copied()
     .filter(|&c| c != 0)
-    .fold(0i128, |a, b| gcd_abs(a, b));
+    .fold(0i128, gcd_abs);
   if g > 1 {
     for c in &mut result {
       *c /= g;
     }
   }
   // Make leading coefficient positive (monic convention)
-  if let Some(&lc) = result.last() {
-    if lc < 0 {
-      for c in &mut result {
-        *c = -*c;
-      }
+  if let Some(&lc) = result.last()
+    && lc < 0
+  {
+    for c in &mut result {
+      *c = -*c;
     }
   }
   result
@@ -748,15 +745,15 @@ fn try_factor_integer_poly(coeffs: &[i128]) -> Vec<Vec<i128>> {
   if remaining.len() > 2 {
     // Check if it has repeated factors
     let deriv = poly_derivative_i128(&remaining);
-    if let Some(g) = poly_gcd(&remaining, &deriv) {
-      if g.len() > 1 {
-        // Has repeated factors
-        if let Some(q) = poly_exact_divide(&remaining, &g) {
-          let sq_free = make_primitive_monic(&q);
-          if sq_free.len() > 1 && sq_free.len() < remaining.len() {
-            factors.push(sq_free);
-            return factors;
-          }
+    if let Some(g) = poly_gcd(&remaining, &deriv)
+      && g.len() > 1
+    {
+      // Has repeated factors
+      if let Some(q) = poly_exact_divide(&remaining, &g) {
+        let sq_free = make_primitive_monic(&q);
+        if sq_free.len() > 1 && sq_free.len() < remaining.len() {
+          factors.push(sq_free);
+          return factors;
         }
       }
     }

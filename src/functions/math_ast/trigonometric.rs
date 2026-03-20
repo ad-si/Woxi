@@ -2533,14 +2533,14 @@ fn trig_expand_recursive(expr: &Expr) -> Expr {
           // Recurse into other function calls
           Expr::FunctionCall {
             name: name.clone(),
-            args: args.iter().map(|a| trig_expand_recursive(a)).collect(),
+            args: args.iter().map(trig_expand_recursive).collect(),
           }
         }
       }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(|a| trig_expand_recursive(a)).collect(),
+      args: args.iter().map(trig_expand_recursive).collect(),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
@@ -2548,7 +2548,7 @@ fn trig_expand_recursive(expr: &Expr) -> Expr {
       right: Box::new(trig_expand_recursive(right)),
     },
     Expr::List(items) => {
-      Expr::List(items.iter().map(|i| trig_expand_recursive(i)).collect())
+      Expr::List(items.iter().map(trig_expand_recursive).collect())
     }
     _ => expr.clone(),
   }
@@ -3018,12 +3018,11 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
       right,
     } => {
       let base = trig_reduce_recursive(left);
-      if let Expr::Integer(n) = right.as_ref() {
-        if *n >= 2 {
-          if let Some(result) = reduce_trig_power(&base, *n) {
-            return result;
-          }
-        }
+      if let Expr::Integer(n) = right.as_ref()
+        && *n >= 2
+        && let Some(result) = reduce_trig_power(&base, *n)
+      {
+        return result;
       }
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Power,
@@ -3034,7 +3033,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
     // Recurse into other structures
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(|a| trig_reduce_recursive(a)).collect(),
+      args: args.iter().map(trig_reduce_recursive).collect(),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
@@ -3046,7 +3045,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
       operand: Box::new(trig_reduce_recursive(operand)),
     },
     Expr::List(items) => {
-      Expr::List(items.iter().map(|i| trig_reduce_recursive(i)).collect())
+      Expr::List(items.iter().map(trig_reduce_recursive).collect())
     }
     _ => expr.clone(),
   }
@@ -3055,7 +3054,7 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
 /// Handle Times[a1, a2, ...] — find pairs of trig functions to reduce.
 fn trig_reduce_product(factors: &[Expr]) -> Expr {
   let mut reduced: Vec<Expr> =
-    factors.iter().map(|f| trig_reduce_recursive(f)).collect();
+    factors.iter().map(trig_reduce_recursive).collect();
 
   // Repeatedly try to find and reduce pairs of trig functions
   let mut changed = true;
@@ -3231,7 +3230,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   // Collect (numerator_coeff, trig_expr_or_None_for_constant) pairs
   let mut num_terms: Vec<(i128, Option<Expr>)> = Vec::new();
 
-  if nu % 2 == 0 {
+  if nu.is_multiple_of(2) {
     // Even power
     let half_n = nu / 2;
     // Constant term: C(n, n/2)
@@ -3245,8 +3244,10 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
       let coeff = 2 * binom_val;
       let sign = if is_cos {
         1
+      } else if (half_n - k).is_multiple_of(2) {
+        1
       } else {
-        if (half_n - k) % 2 == 0 { 1 } else { -1 }
+        -1
       };
       let trig_arg = make_int_times_arg(m, m);
       let trig_call = Expr::FunctionCall {
@@ -3265,8 +3266,10 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
       let coeff = 2 * binom_val;
       let sign = if is_cos {
         1
+      } else if (half_n - k).is_multiple_of(2) {
+        1
       } else {
-        if (half_n - k) % 2 == 0 { 1 } else { -1 }
+        -1
       };
       let trig_arg = make_int_times_arg(m, m);
       let trig_call = Expr::FunctionCall {
@@ -3351,14 +3354,11 @@ fn try_reduce_with_power(a: &Expr, b: &Expr) -> Option<Expr> {
     left,
     right,
   } = a
+    && let Expr::Integer(n) = right.as_ref()
+    && *n >= 2
+    && let Some(reduced_power) = reduce_trig_power(left, *n)
   {
-    if let Expr::Integer(n) = right.as_ref() {
-      if *n >= 2 {
-        if let Some(reduced_power) = reduce_trig_power(left, *n) {
-          return Some(reduce_two_factor_product(&reduced_power, b));
-        }
-      }
-    }
+    return Some(reduce_two_factor_product(&reduced_power, b));
   }
   None
 }
