@@ -146,6 +146,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
+    "HalfNormalDistribution" => pdf_half_normal(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -356,6 +357,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => cdf_laplace(dargs, x),
     "RayleighDistribution" => cdf_rayleigh(dargs, x),
+    "HalfNormalDistribution" => cdf_half_normal(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -2101,4 +2103,39 @@ fn pdf_negative_binomial(
   let pdf_val = times(times(power(one_minus_p, x.clone()), power(p, n)), binom);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// PDF[HalfNormalDistribution[t], x] = Piecewise[{{(2*t)/(E^((t^2*x^2)/Pi)*Pi), x > 0}}, 0]
+fn pdf_half_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "HalfNormalDistribution expects 1 argument".into(),
+    ));
+  }
+  let t = dargs[0].clone();
+  // (2*t) / (E^((t^2 * x^2) / Pi) * Pi)
+  let numerator = times(int(2), t.clone());
+  let exponent =
+    divide(times(power(t, int(2)), power(x.clone(), int(2))), pi());
+  let denominator = times(power(e(), exponent), pi());
+  let pdf_val = divide(numerator, denominator);
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[HalfNormalDistribution[t], x] = Piecewise[{{Erf[(t*x)/Sqrt[Pi]], x > 0}}, 0]
+fn cdf_half_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "HalfNormalDistribution expects 1 argument".into(),
+    ));
+  }
+  let t = dargs[0].clone();
+  let erf_arg = divide(times(t, x.clone()), sqrt(pi()));
+  let erf_val = Expr::FunctionCall {
+    name: "Erf".to_string(),
+    args: vec![erf_arg],
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(erf_val, cond)], int(0)))
 }
