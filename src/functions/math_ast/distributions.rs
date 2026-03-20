@@ -153,6 +153,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseChiSquareDistribution" => pdf_inverse_chi_square(dargs, x),
     "FrechetDistribution" => pdf_frechet(dargs, x),
     "ExtremeValueDistribution" => pdf_extreme_value(dargs, x),
+    "GompertzMakehamDistribution" => pdf_gompertz_makeham(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -370,6 +371,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseChiSquareDistribution" => cdf_inverse_chi_square(dargs, x),
     "FrechetDistribution" => cdf_frechet(dargs, x),
     "ExtremeValueDistribution" => cdf_extreme_value(dargs, x),
+    "GompertzMakehamDistribution" => cdf_gompertz_makeham(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -897,6 +899,57 @@ fn cdf_extreme_value(
       operand: Box::new(power(e(), ab)),
     },
   ))
+}
+
+// PDF[GompertzMakehamDistribution[l, x0], x] = Piecewise[{{E^(l*x + (1 - E^(l*x))*x0)*l*x0, x >= 0}}, 0]
+fn pdf_gompertz_makeham(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GompertzMakehamDistribution expects 2 arguments".into(),
+    ));
+  }
+  let l = dargs[0].clone();
+  let x0 = dargs[1].clone();
+
+  // l*x
+  let lx = times(l.clone(), x.clone());
+  // E^(l*x)
+  let e_lx = power(e(), lx.clone());
+  // (1 - E^(l*x))*x0
+  let inner = times(minus(int(1), e_lx), x0.clone());
+  // l*x + (1 - E^(l*x))*x0
+  let exp_arg = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(lx),
+    right: Box::new(inner),
+  };
+  let value = eval(times(times(power(e(), exp_arg), l), x0))?;
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// CDF[GompertzMakehamDistribution[l, x0], x] = Piecewise[{{1 - E^((1 - E^(l*x))*x0), x >= 0}}, 0]
+fn cdf_gompertz_makeham(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GompertzMakehamDistribution expects 2 arguments".into(),
+    ));
+  }
+  let l = dargs[0].clone();
+  let x0 = dargs[1].clone();
+
+  let e_lx = power(e(), times(l, x.clone()));
+  let inner = times(minus(int(1), e_lx), x0);
+  let value = minus(int(1), power(e(), inner));
+  let value = eval(value)?;
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 // ─── Probability ─────────────────────────────────────────────────────

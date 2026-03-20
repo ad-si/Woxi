@@ -11415,4 +11415,46 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("DotEqual[x, y]").unwrap(), "DotEqual[x, y]");
     assert_eq!(interpret("NumberMarks[x]").unwrap(), "NumberMarks[x]");
   }
+
+  #[test]
+  fn weakly_connected_components_directed() {
+    assert_eq!(
+      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{DirectedEdge[1,2],DirectedEdge[3,4]}]]")
+        .unwrap(),
+      "{{1, 2}, {3, 4}, {5}}"
+    );
+  }
+
+  #[test]
+  fn weakly_connected_components_undirected() {
+    assert_eq!(
+      interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{UndirectedEdge[1,2],UndirectedEdge[3,4]}]]")
+        .unwrap(),
+      "{{1, 2}, {3, 4}, {5}}"
+    );
+  }
+
+  #[test]
+  fn gompertz_makeham_distribution_head() {
+    assert_eq!(
+      interpret("GompertzMakehamDistribution[l, x0]").unwrap(),
+      "GompertzMakehamDistribution[l, x0]"
+    );
+  }
+
+  #[test]
+  fn gompertz_makeham_distribution_pdf() {
+    let result =
+      interpret("PDF[GompertzMakehamDistribution[l, x0], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x >= 0"));
+  }
+
+  #[test]
+  fn gompertz_makeham_distribution_cdf() {
+    let result =
+      interpret("CDF[GompertzMakehamDistribution[l, x0], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x >= 0"));
+  }
 }

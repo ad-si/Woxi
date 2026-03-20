@@ -2377,7 +2377,7 @@ GlobalClusteringCoefficient,,,,9,3233
 Glow,Graphics directive for glow effect,✅,1,6,1169
 GoldenAngle,,,,10.2,3344
 GoldenRatio,The golden ratio constant,✅,pure,1,469
-GompertzMakehamDistribution,,,,8,2712
+GompertzMakehamDistribution,represents a Gompertz-Makeham distribution,✅,Computation,8,2712
 GoochShading,,,,12.1,5587
 GoodmanKruskalGamma,,,,9,4052
 GoodmanKruskalGammaTest,,,,9,4567
@@ -6050,7 +6050,7 @@ WaveletScale,,🚫,,8,4291
 WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8,2197
 WaveletThreshold,,,,8,2723
 WavePDEComponent,,,,12.2,
-WeaklyConnectedComponents,,,,9,2767
+WeaklyConnectedComponents,weakly connected components of a graph,✅,Computation,9,2767
 WeaklyConnectedGraphComponents,,,,10.4,3755
 WeaklyConnectedGraphQ,,,,9,4027
 WeakStationarity,,,,9,3389

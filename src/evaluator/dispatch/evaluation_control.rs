@@ -158,6 +158,12 @@ pub fn dispatch_evaluation_control(
         args: logistic_args,
       }));
     }
+    "GompertzMakehamDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "GompertzMakehamDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "FrechetDistribution" if args.len() == 2 => {
       return Some(Ok(Expr::FunctionCall {
         name: "FrechetDistribution".to_string(),
