@@ -11328,6 +11328,57 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn file_extension_basic() {
+    assert_eq!(interpret(r#"FileExtension["hello.txt"]"#).unwrap(), "txt");
+  }
+
+  #[test]
+  fn file_extension_multi() {
+    assert_eq!(interpret(r#"FileExtension["file.tar.gz"]"#).unwrap(), "gz");
+  }
+
+  #[test]
+  fn file_extension_none() {
+    assert_eq!(interpret(r#"FileExtension["noext"]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn betweenness_centrality_line() {
+    assert_eq!(
+      interpret("BetweennessCentrality[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3]}]]").unwrap(),
+      "{0., 1., 0.}"
+    );
+  }
+
+  #[test]
+  fn betweenness_centrality_star() {
+    assert_eq!(
+      interpret("BetweennessCentrality[StarGraph[5]]").unwrap(),
+      "{6., 0., 0., 0., 0.}"
+    );
+  }
+
+  #[test]
+  fn local_clustering_coefficient_triangle() {
+    assert_eq!(
+      interpret("LocalClusteringCoefficient[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3],UndirectedEdge[1,3]}]]")
+        .unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+
+  #[test]
+  fn local_clustering_coefficient_square() {
+    assert_eq!(
+      interpret(
+        "LocalClusteringCoefficient[Graph[{1,2,3,4},{UndirectedEdge[1,2],UndirectedEdge[2,3],UndirectedEdge[3,4],UndirectedEdge[1,4]}]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
   fn batch_inert_symbols() {
     // Test a batch of inert symbolic heads
     assert_eq!(interpret("AnyOrder[x, y]").unwrap(), "AnyOrder[x, y]");
