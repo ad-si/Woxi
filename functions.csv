@@ -46,7 +46,7 @@ AddToSearchIndex,,,,12,
 AddToVectorDatabase,,,,14.1,
 AddUsers,,,,10,5486
 AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8,1107
-AdjacencyList,,,,9,2276
+AdjacencyList,Graph operations,🚫,None,9,2276
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8,1055
 AdjacentMeshCells,,,,12.1,4225
 Adjugate,,,,13,
@@ -73,7 +73,7 @@ AiryBi,Airy function of the second kind Bi(x),✅,pure,2,1384
 AiryBiPrime,,,,2,4747
 AiryBiZero,,,,6,4747
 AlgebraicIntegerQ,,,,6,4081
-AlgebraicNumber,,,,6,2246
+AlgebraicNumber,Algebraic number theory,🚫,None,6,2246
 AlgebraicNumberDenominator,,,,6,4707
 AlgebraicNumberNorm,,,,6,3306
 AlgebraicNumberPolynomial,,,,6,3363
@@ -160,7 +160,7 @@ ApartSquareFree,,,,6,3755
 APIFunction,Create a web API from a function,🚫,io,10,1379
 Appearance,Option symbol for specifying visual appearance,✅,pure,6,197
 AppearanceElements,,🚫,,6,1031
-AppearanceRules,,,,10,2243
+AppearanceRules,UI styling,🚫,None,10,2243
 AppellF1,Appell hypergeometric function F1,✅,1,4,1168
 AppellF2,,,,13.3,
 AppellF3,,,,13.3,
@@ -396,8 +396,8 @@ BandstopFilter,,,,9,3612
 BarabasiAlbertGraphDistribution,,,,8,2777
 BarChart,Creates a bar chart from data,✅,pure,7,449
 BarChart3D,3D bar chart,✅,pure,7,1539
-BarcodeImage,,,,10,2263
-BarcodeRecognize,,,,10,2268
+BarcodeImage,Barcode generation,🚫,None,10,2263
+BarcodeRecognize,Image recognition,🚫,None,10,2268
 BaringhausHenzeTest,,,,10.2,4173
 BarLegend,Color bar legend for plots,✅,none,9,805
 BarlowProschanImportance,,,,9,4707
@@ -565,7 +565,7 @@ BooleanMaxterms,,,,7,4262
 BooleanMinimize,,,,7,2509
 BooleanMinterms,,,,7,3224
 BooleanQ,Tests if an expression is True or False,✅,pure,10,2845
-BooleanRegion,,,,10,2251
+BooleanRegion,Geometric region construction,🚫,None,10,2251
 Booleans,,,,4,3008
 BooleanStrings,,,,10,5184
 BooleanTable,Truth table for a boolean expression over all variable combinations,✅,pure,7,1464
@@ -581,7 +581,7 @@ BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10,1586
 BoundaryMeshRegionQ,,,,10,3636
 BoundaryStyle,Option for boundary styling in plots,✅,none,6,644
 BoundedRegionQ,,,,10,2828
-BoundingRegion,,,,10.4,2286
+BoundingRegion,Geometric region,🚫,None,10.4,2286
 BoxData,,🚫,,8,681
 Boxed,Option for boxed axes in 3D plots,✅,pure,1,270
 Boxes,,,,6,3200
@@ -702,7 +702,7 @@ CellBaseline,Option for cell baseline alignment,✅,none,3,685
 CellBracketOptions,,,,4,3889
 CellChangeTimes,Notebook cell option for tracking changes,🚫,,6,1975
 CellContext,,,,6,2333
-CellDingbat,,,,3,2286
+CellDingbat,Notebook UI,🚫,None,3,2286
 CellDingbatMargin,,,,13.1,
 CellDynamicExpression,,,,8,3389
 CellEditDuplicate,,,,3,2742
@@ -831,7 +831,7 @@ ClearDistributedDefinitions,,,,14.1,
 ClearPermissions,,,,10.2,5079
 ClearSystemCache,Clear internal system caches,✅,pure,6,1489
 ClebschGordan,,🚫,,2,1066
-ClickPane,,,,6,2236
+ClickPane,UI interaction,🚫,None,6,2236
 ClickToCopy,,,,12.2,
 ClickToCopyEnabled,,,,12.3,5013
 Clip,Constrains a value to a range,✅,pure,5.1,834
@@ -867,7 +867,7 @@ CloudPublish,,,,10.2,2509
 CloudPut,,,,10,2367
 CloudRenderingMethod,,,,12,4707
 CloudSave,,,,10,3506
-CloudShare,,,,10.2,2276
+CloudShare,Cloud service,🚫,None,10.2,2276
 CloudSubmit,,,,10.2,3823
 CloudSymbol,,,,10,3578
 CloudUnshare,,,,11.3,
@@ -1255,7 +1255,7 @@ DatedUnit,,,,10,2914
 DateFormat,,,,10,3242
 DateFunction,,,,6,3224
 DateGranularity,,,,13.2,
-DateHistogram,,,,10.2,2246
+DateHistogram,Date visualization,🚫,None,10.2,2246
 DateInterval,,,,12.1,2578
 DateList,Converts to date list,✅,pure,6,709
 DateListLogPlot,,,,7,2294
@@ -1454,7 +1454,7 @@ DiracComb,,,,7,3843
 DiracDelta,Dirac delta generalized function,✅,pure,4,624
 DirectedEdge,Represents a directed edge between two vertices,✅,pure,8,400
 DirectedEdges,,🚫,,6,986
-DirectedGraph,,,,8,2246
+DirectedGraph,Graph construction,🚫,None,8,2246
 DirectedGraphQ,,,,8,3191
 DirectedInfinity,Represents a directed infinity,✅,pure,1,1270
 Direction,Option specifying the direction for operations,✅,none,2,484
@@ -1524,7 +1524,7 @@ DistributedContexts,,,,8,2662
 DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7,1672
 DistributionChart,Distribution chart,✅,unevaluated,8,1880
 DistributionFitTest,,🚫,,8,1343
-DistributionParameterAssumptions,,,,8,2286
+DistributionParameterAssumptions,Probability distribution,🚫,None,8,2286
 DistributionParameterQ,,,,8,2617
 Dithering,,,,8,3121
 Div,Compute the divergence of a vector field,✅,pure,9,736
@@ -1650,7 +1650,7 @@ EdgeWeight,,🚫,,8,942
 EdgeWeightedGraphQ,,,,12,
 Editable,,🚫,,3,1233
 EditDistance,Returns the edit distance between two strings,✅,pure,6,1921
-EffectiveInterest,,,,8,2276
+EffectiveInterest,Financial computation,🚫,None,8,2276
 Eigensystem,Eigenvalues and eigenvectors of a matrix,✅,pure,1,590
 Eigenvalues,Computes the eigenvalues of a matrix,✅,pure,1,275
 EigenvectorCentrality,,,,8,3215
@@ -1679,7 +1679,7 @@ EllipticPi,Elliptic integral of the third kind,✅,pure,1,1362
 EllipticTheta,Jacobi theta function,✅,pure,1,551
 EllipticThetaPrime,Derivative of Jacobi theta function with respect to z,✅,pure,3,1375
 EmbedCode,Embed code for deployment,🚫,,10,2079
-EmbeddedHTML,,,,10,2225
+EmbeddedHTML,Web embedding,🚫,None,10,2225
 EmbeddedService,,,,10,4707
 EmbeddedSQLEntityClass,,,,12.2,
 EmbeddedSQLExpression,,,,12.2,
@@ -1918,7 +1918,7 @@ FileNameDrop,,,,7,2554
 FileNameForms,,,,11,4527
 FileNameJoin,Join file path components,✅,pure,7,582
 FileNames,Lists file names matching a pattern,✅,effectful,2,707
-FileNameSetter,,,,6,2254
+FileNameSetter,UI file picker,🚫,None,6,2254
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7,1938
 FileNameTake,Extract file name from path,✅,pure,7,1557
 FileNameToFormatList,,,,13,
@@ -1975,7 +1975,7 @@ FindGeometricTransform,Find geometric transformation,✅,unevaluated,8,1730
 FindGraphCommunities,Finds community structure in a graph,🚫,None,9,2179
 FindGraphIsomorphism,,,,8,2944
 FindGraphPartition,,,,9,3317
-FindHamiltonianCycle,,,,8,2276
+FindHamiltonianCycle,Graph algorithm,🚫,None,8,2276
 FindHamiltonianPath,,,,10.2,2812
 FindHiddenMarkovStates,,,,10,3803
 FindImageShapes,,,,13.3,
@@ -2069,7 +2069,7 @@ FluidFlowPDEComponent,,,,14,
 Fold,Applies a binary function cumulatively to a list with an initial value,✅,pure,2,486
 FoldList,Returns the list of intermediate results from Fold,✅,pure,2,611
 FoldPair,,,,10.2,3916
-FoldPairList,,,,10.2,2268
+FoldPairList,Folds a list returning emitted values and new states,✅,None,10.2,2268
 FoldWhile,,,,12.2,3200
 FoldWhileList,,,,12.2,3070
 FollowRedirects,,,,11,4947
@@ -2187,7 +2187,7 @@ FullForm,Returns the full internal form of an expression,✅,pure,1,491
 FullGraphics,,,,2,2688
 FullInformationOutputRegulator,,,,10,4173
 FullMoon,,,,14,
-FullRegion,,,,10,2260
+FullRegion,Geometric region,🚫,None,10,2260
 FullSimplify,Performs aggressive algebraic simplification including factoring and trig identities,✅,pure,1,114
 Function,Represents a pure function,✅,pure,1,19
 FunctionAnalytic,,,,12.2,3717
@@ -2433,7 +2433,7 @@ GraphReciprocity,,,,9,4809
 GraphSum,,,,13.1,
 GraphTree,,,,12.3,
 GraphTriangleCount,,,,14.1,
-GraphUnion,,,,8,2251
+GraphUnion,Graph operations,🚫,None,8,2251
 Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
 GrayLevel,Specifies a gray color level,✅,pure,1,46
 Greater,Checks if one value is greater than another,✅,pure,1,48
@@ -2476,7 +2476,7 @@ GroupStabilizerChain,,,,8,4006
 GrowCutComponents,,,,10,4173
 Gudermannian,Returns the Gudermannian function value,✅,pure,7,1895
 GuidedFilter,,,,10.2,3916
-GumbelDistribution,,,,6,2276
+GumbelDistribution,Probability distribution,🚫,None,6,2276
 HaarWavelet,,,,8,2404
 HadamardMatrix,,,,9,3176
 HalfLine,,,,10,2299
@@ -2546,7 +2546,7 @@ HeunGPrime,,,,12.1,
 HeunT,,,,12.1,5486
 HeunTPrime,,,,12.1,
 HexadecimalCharacter,,,,7,3947
-Hexahedron,,,,10,2233
+Hexahedron,3D geometric primitive,🚫,None,10,2233
 HiddenItems,,,,12.1,
 HiddenMarkovProcess,,,,10,3265
 Highlighted,Highlighted display,✅,unevaluated,10.4,1800
@@ -2608,7 +2608,7 @@ Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure
 Hypergeometric1F1Regularized,,✅,,3,1342
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,Regularized hypergeometric 2F1 function,✅,pure,3,850
-HypergeometricDistribution,,,,6,2289
+HypergeometricDistribution,Probability distribution,🚫,None,6,2289
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3,386
 HypergeometricPFQRegularized,Regularized generalized hypergeometric function,✅,pure,3,791
 HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
@@ -2960,7 +2960,7 @@ JankoGroupJ4,,,,8,5184
 JarqueBeraALMTest,,,,8,3678
 JohnsonDistribution,,,,8,2911
 Join,Concatenates multiple lists,✅,pure,1,105
-JoinAcross,,,,10,2292
+JoinAcross,Joins lists of associations on a common key,✅,None,10,2292
 Joined,Option for joining points in list plots,✅,none,6,285
 JoinedCurve,Joined curve primitive,✅,unevaluated,8,1754
 JoinForm,Graphics join form directive,🚫,pure,7,1420
@@ -3176,7 +3176,7 @@ LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,973
 LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6,1188
 Likelihood,,,,8,2688
 Limit,Computes the limit of an expression,✅,pure,1,160
-LimitsPositioning,,,,3,2276
+LimitsPositioning,Typesetting option,🚫,None,3,2276
 LindleyDistribution,,,,8,3889
 Line,Represents a line graphics primitive,✅,pure,1,59
 LinearFractionalOptimization,,,,12,5486
@@ -3396,7 +3396,7 @@ MardiaKurtosisTest,,,,8,3889
 MardiaSkewnessTest,,,,8,4006
 MarginalDistribution,Marginal distribution of multivariate distribution (complex statistics),🚫,,8,2002
 MarkovProcessProperties,,,,9,2755
-Masking,,,,8,2223
+Masking,Image processing masking option,🚫,None,8,2223
 MassConcentrationCondition,,,,12.2,4660
 MassFluxValue,,,,12.2,4881
 MassImpermeableBoundaryValue,,,,12.2,5079
@@ -3450,7 +3450,7 @@ MaxFeatures,,,,9,2671
 MaxFilter,,,,7,2525
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10,1249
 Maximize,Global symbolic maximization of a function over variables with optional constraints,✅,pure,5,530
-MaxItems,,,,10.1,2236
+MaxItems,Display option,🚫,None,10.1,2236
 MaxIterations,Option for maximum iterations,✅,pure,1,646
 MaxLimit,,,,11.2,2889
 MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1,1085
@@ -3523,7 +3523,7 @@ MeshCoordinates,Requires external services or GUI infrastructure,🚫,io,10,951
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6,506
 MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10,1016
 MeshQualityGoal,,,,10,2742
-MeshRefinementFunction,,,,10,2263
+MeshRefinementFunction,Numerical mesh option,🚫,None,10,2263
 MeshRegion,Requires external services or GUI infrastructure,🚫,io,10,935
 MeshRegionQ,,,,10,3291
 MeshShading,Option for alternating shading between mesh lines,✅,none,6,779
@@ -3573,7 +3573,7 @@ MissingString,,,,10,5184
 MissingStyle,,,,10,4881
 MissingValuePattern,,,,12,5587
 MissingValueSynthesis,,,,12.3,
-MittagLefflerE,,,,9,2225
+MittagLefflerE,Special function,🚫,None,9,2225
 MixedFractionParts,Returns the integer and fractional parts of a number,✅,pure,12,
 MixedGraphQ,,,,10,4437
 MixedMagnitude,,,,10.4,2867
@@ -3813,7 +3813,7 @@ NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
 NotebookEvaluate,Evaluate notebook programmatically,🚫,,8,2112
 NotebookEventActions,Actions for notebook events,🚫,,6,2045
-NotebookFileName,,,,7,2240
+NotebookFileName,Notebook UI,🚫,None,7,2240
 NotebookFind,Search in a notebook,✅,unevaluated,3,1565
 NotebookGet,Get notebook expression,✅,pure,3,1562
 NotebookImport,,,,10.1,2693
@@ -4001,7 +4001,7 @@ Overlaps,Overlap specification,✅,unevaluated,5.1,1658
 Overlay,,🚫,,8,1156
 OverlayVideo,,,,13,
 Overscript,Overscript notation,✅,unevaluated,3,1704
-OverscriptBox,,,,3,2223
+OverscriptBox,Typesetting box,🚫,None,3,2223
 OverscriptBoxOptions,,,,4,5390
 OverTilde,Displays expression with tilde above,✅,1,6,1288
 OverVector,Display form with a vector arrow accent,✅,none,6,777
@@ -4044,7 +4044,7 @@ PageTheme,,,,11,3413
 PageWidth,Option specifying the page width for output formatting,✅,pure,1,1701
 Pagination,,,,11,5079
 PairCorrelationG,,,,12.2,5079
-PairedBarChart,,,,8,2260
+PairedBarChart,Chart visualization,🚫,None,8,2260
 PairedHistogram,,,,8,2625
 PairedSmoothHistogram,,,,9,2880
 PairedTTest,,,,8,3427
@@ -4122,7 +4122,7 @@ PassEventsDown,Pass events down option,✅,unevaluated,6,1771
 PassEventsUp,,,,6,2777
 Paste,,,,8,2553
 PasteButton,Represents a button that pastes content when clicked,🚫,None,6,2174
-Path,,,,4,2260
+Path,Graph theory path,🚫,None,4,2260
 PathGraph,Creates a path graph from a list of vertices,✅,1,8,1209
 PathGraphQ,,,,8,3765
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1,9
@@ -4257,7 +4257,7 @@ PoissonConsulDistribution,,,,8,3678
 PoissonDistribution,Represents a Poisson distribution,✅,pure,6,945
 PoissonPDEComponent,,,,12.2,
 PoissonPointProcess,,,,12.2,4479
-PoissonProcess,,,,9,2260
+PoissonProcess,Stochastic process,🚫,None,9,2260
 PoissonWindow,,,,9,4262
 PolarAxes,Polar axes option,✅,unevaluated,7,1611
 PolarAxesOrigin,,,,7,2816
@@ -4369,7 +4369,7 @@ PrivateNotebookOptions,,,,4,4173
 Probability,Compute probability of an event given a distribution,✅,pure,8,671
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8,967
 ProbabilityPlot,Creates a probability plot for assessing data distribution fit,🚫,None,8,2198
-ProbabilityScalePlot,,,,8,2278
+ProbabilityScalePlot,Statistical visualization,🚫,None,8,2278
 ProbitModelFit,,,,7,3344
 ProcessConnection,,,,10,3378
 ProcessDirectory,,,,10,3889
@@ -4523,7 +4523,7 @@ ReadByteArray,,,,11.3,4437
 ReadLine,,,,10,2889
 ReadList,Read a list of items from a file or stream,✅,effectful,1,767
 ReadProtected,Attribute preventing reading definitions,✅,pure,1,1484
-ReadString,,,,10,2282
+ReadString,File I O,🚫,None,10,2282
 Real,Head type for real (floating-point) numbers,✅,pure,1,263
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 RealBlockDiagonalForm,,,,7,5486
@@ -4938,7 +4938,7 @@ Share,Memory sharing optimization (no-op),✅,none,1,3233
 SharingList,,,,11.3,5587
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7,2462
 ShearingMatrix,,,,6,2960
-ShearingTransform,,,,6,2208
+ShearingTransform,Returns TransformationFunction wrapper,🚫,None,6,2208
 ShellRegion,,,,11,3823
 ShenCastanMatrix,,,,9,4479
 ShiftedGompertzDistribution,,,,10.3,3785
@@ -4978,7 +4978,7 @@ SignificanceLevel,Statistical significance level option,🚫,,8,2157
 SignPadding,,,,2,2828
 SignTest,,,,8,3317
 SimilarityRules,,,,7,4707
-SimpleGraph,,,,8,2229
+SimpleGraph,Graph construction,🚫,None,8,2229
 SimpleGraphQ,,,,8,3823
 SimplePolygonQ,,,,12,4437
 SimplePolyhedronQ,,,,12,
@@ -5114,7 +5114,7 @@ SphericalAngle,,,,14,
 SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6,1001
 SphericalBesselY,Spherical Bessel function of second kind,🚫,,6,2054
 SphericalDistance,,,,13.3,
-SphericalHankelH1,,,,6,2219
+SphericalHankelH1,Special function,🚫,None,6,2219
 SphericalHankelH2,,,,6,3566
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
 SphericalPlot3D,3D plot in spherical coordinates,✅,pure,6,744
@@ -5158,7 +5158,7 @@ SquareSupersetEqual,,,,3,5390
 SquareUnion,,,,3,4881
 SquareWave,Periodic square wave function with period 1,✅,pure,7,1384
 Squiggled,,,,13.3,
-SSSTriangle,,,,10,2239
+SSSTriangle,Constructs a triangle from three side lengths,✅,None,10,2239
 StabilityMargins,,,,8,4138
 StabilityMarginsStyle,,,,8,4567
 StableDistribution,,,,8,2519
@@ -5189,14 +5189,14 @@ StartProcess,,,,10,2514
 StartWebSession,,,,12,3678
 StateFeedbackGains,,,,8,2650
 StateOutputEstimator,,,,8,3737
-StateResponse,,,,8,2254
+StateResponse,Control systems,🚫,None,8,2254
 StateSpaceModel,,🚫,,8,1079
 StateSpaceRealization,,,,8,3803
 StateSpaceTransform,,,,8,2952
 StateTransformationLinearize,,,,10,4356
 StationaryDistribution,,,,9,2944
 StationaryWaveletPacketTransform,,,,8,3059
-StationaryWaveletTransform,,,,8,2243
+StationaryWaveletTransform,Signal processing,🚫,None,8,2243
 StatusArea,Display status text on mouseover,✅,none,6,593
 StatusCentrality,,,,9,4809
 StepMonitor,Option for monitoring integration steps,✅,pure,5,1486
@@ -5371,7 +5371,7 @@ SymmetrizedReplacePart,,,,9,4881
 SynchronousInitialization,Notebook synchronous initialization,🚫,io,6,1429
 SynchronousUpdating,,🚫,,6,931
 Synonyms,,,,12,4052
-SyntaxForm,,,,3,2276
+SyntaxForm,Typesetting,🚫,None,3,2276
 SyntaxInformation,Syntax information for a symbol,✅,pure,6,1520
 SyntaxLength,,,,2,4527
 SyntaxPacket,,,,3,
@@ -5411,7 +5411,7 @@ SystemsModelDelete,,,,8,3363
 SystemsModelDimensions,,,,8,4081
 SystemsModelExtract,,,,8,2425
 SystemsModelFeedbackConnect,,,,8,2442
-SystemsModelLabels,,,,8,2289
+SystemsModelLabels,Control systems,🚫,None,8,2289
 SystemsModelLinearity,,,,10,4809
 SystemsModelMerge,,,,10,4138
 SystemsModelOrder,,,,8,3947
@@ -5532,9 +5532,9 @@ ThomasPointProcess,,,,12.2,5486
 ThompsonGroupTh,,,,8,5184
 Thread,Threads a function over corresponding list elements,✅,pure,1,179
 Threaded,,,,13.1,
-ThreadingLayer,,,,11.1,2239
+ThreadingLayer,Machine learning,🚫,None,11.1,2239
 ThreeJSymbol,Wigner 3-j symbol,✅,unevaluated,2,1597
-Threshold,,,,8,2229
+Threshold,Image processing thresholding,🚫,None,8,2229
 Through,Distributes a list of functions over arguments,✅,pure,1,501
 Throw,Throws a value to be caught by Catch,✅,pure,1,589
 ThueMorse,,,,10.2,3427
@@ -5576,7 +5576,7 @@ TimeSeriesModel,,,,10,
 TimeSeriesModelFit,Time series model fit,✅,unevaluated,10,1791
 TimeSeriesResample,,,,10,2449
 TimeSeriesRescale,,,,10,2748
-TimeSeriesShift,,,,10,2233
+TimeSeriesShift,Time series manipulation,🚫,None,10,2233
 TimeSeriesThread,,,,10,2442
 TimeSeriesWindow,,,,10,2329
 TimeSystem,,,,13,
@@ -5593,7 +5593,7 @@ ToBoxes,Converts an expression to its box form representation for typesetting,�
 ToCharacterCode,Converts characters to their character codes,✅,pure,2,846
 ToContinuousTimeModel,,,,8,3972
 Today,Returns a DateObject representing the current date,✅,contextual,10,1044
-ToDiscreteTimeModel,,,,8,2251
+ToDiscreteTimeModel,Control systems,🚫,None,8,2251
 ToEntity,,,,10,2688
 ToeplitzMatrix,Generate a symmetric Toeplitz matrix from a list,✅,1,6,2408
 ToExpression,Converts a string to an evaluated expression,✅,pure,1,321
@@ -5606,7 +5606,7 @@ TokenWords,,,,2,4881
 Tolerance,Tolerance specification,✅,unevaluated,2,1583
 ToLowerCase,Converts a string to lowercase,✅,pure,2,827
 Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
-ToNumberField,,,,6,2219
+ToNumberField,Algebraic number theory,🚫,None,6,2219
 Tooltip,Interactive tooltip element,🚫,effectful,6,260
 TooltipDelay,Tooltip delay option,✅,unevaluated,7,1833
 TooltipStyle,Style option for tooltips (GUI),🚫,,8,2002
@@ -5902,7 +5902,7 @@ VectorColorFunctionScaling,,,,7,3083
 VectorDatabaseObject,,,,14.1,
 VectorDatabaseObjects,,,,14.1,
 VectorDatabaseSearch,,,,14.1,
-VectorDensityPlot,,,,7,2278
+VectorDensityPlot,Visualization,🚫,None,7,2278
 VectorDisplacementPlot,,,,13,
 VectorDisplacementPlot3D,,,,13,
 VectorGreater,,,,12,5184
@@ -6028,7 +6028,7 @@ VonMisesDistribution,,,,8,3566
 VonMisesStress,,,,14.1,
 VoronoiMesh,,🚫,,10,1221
 W,,,,,
-WaitAll,,,,7,2233
+WaitAll,Async parallel computation,🚫,None,7,2233
 WaitNext,,,,7,4006
 WakebyDistribution,,,,8,3678
 WalleniusHypergeometricDistribution,,,,8,4006
@@ -6039,7 +6039,7 @@ WatershedComponents,Watershed components,✅,unevaluated,8,1836
 WatsonUSquareTest,,,,8,3717
 WattsStrogatzGraphDistribution,,,,8,2707
 WaveletBestBasis,,,,8,3389
-WaveletFilterCoefficients,,,,8,2239
+WaveletFilterCoefficients,Signal processing,🚫,None,8,2239
 WaveletImagePlot,,,,8,3031
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8,1921
 WaveletMapIndexed,,,,8,2383
@@ -6095,7 +6095,7 @@ WeightedData,,🚫,,9,1493
 WeightedGraphQ,,,,8,3916
 Weights,Weights specification for statistical functions,✅,pure,7,1537
 WelchWindow,,,,9,4262
-WheelGraph,,,,8,2286
+WheelGraph,Graph construction,🚫,None,8,2286
 WhenEvent,Specify events in differential equations,✅,none,9,780
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1,226
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1,220
@@ -6159,7 +6159,7 @@ WordTranslation,,,,10.3,2712
 WorkingPrecision,Option for numerical precision,✅,pure,1,412
 WrapAround,,,,10,5587
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1,1246
-WriteLine,,,,10,2282
+WriteLine,File I O,🚫,None,10,2282
 WriteString,Write a string to an output stream,✅,effectful,1,930
 Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7,876
 XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481

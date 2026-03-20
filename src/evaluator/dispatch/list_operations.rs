@@ -1468,10 +1468,114 @@ pub fn dispatch_list_operations(
         return Some(crate::evaluator::evaluate_expr_to_expr(&assoc));
       }
     }
+    // FoldPairList[f, x, list] — fold with pair output {emit, newState}
+    "FoldPairList" if args.len() == 3 => {
+      if let Expr::List(ref elems) = args[2] {
+        let f = &args[0];
+        let mut state = args[1].clone();
+        let mut results = Vec::new();
+        for elem in elems {
+          // Apply f[state, elem] — build function call expression
+          let applied = match f {
+            Expr::Function { body } => {
+              let substituted = crate::syntax::substitute_slots(
+                body,
+                &[state.clone(), elem.clone()],
+              );
+              substituted
+            }
+            Expr::Identifier(fname) => Expr::FunctionCall {
+              name: fname.clone(),
+              args: vec![state.clone(), elem.clone()],
+            },
+            _ => Expr::FunctionCall {
+              name: expr_to_string(f),
+              args: vec![state.clone(), elem.clone()],
+            },
+          };
+          let result = crate::evaluator::evaluate_expr_to_expr(&applied)
+            .unwrap_or(applied);
+          if let Expr::List(ref pair) = result {
+            if pair.len() == 2 {
+              results.push(pair[0].clone());
+              state = pair[1].clone();
+            } else {
+              return Some(Ok(result));
+            }
+          } else {
+            return Some(Ok(result));
+          }
+        }
+        return Some(Ok(Expr::List(results)));
+      }
+    }
+    // JoinAcross[list1, list2, key] — join associations on a common key
+    "JoinAcross" if args.len() == 3 => {
+      if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
+        let key_str = crate::syntax::expr_to_string(&args[2]);
+        let mut results = Vec::new();
+        for a1 in l1 {
+          let key_val = get_assoc_value(a1, &key_str);
+          if let Some(ref kv) = key_val {
+            for a2 in l2 {
+              let key_val2 = get_assoc_value(a2, &key_str);
+              if let Some(ref kv2) = key_val2 {
+                if crate::syntax::expr_to_string(kv)
+                  == crate::syntax::expr_to_string(kv2)
+                {
+                  // Merge the two associations
+                  let merged = merge_associations(a1, a2);
+                  results.push(merged);
+                }
+              }
+            }
+          }
+        }
+        return Some(Ok(Expr::List(results)));
+      }
+    }
 
     _ => {}
   }
   None
+}
+
+/// Extract a value from an association by key string
+fn get_assoc_value(assoc: &Expr, key: &str) -> Option<Expr> {
+  if let Expr::Association(pairs) = assoc {
+    for (k, v) in pairs {
+      let k_str = expr_to_string(k);
+      if k_str == key || k_str == key.trim_matches('"') {
+        return Some(v.clone());
+      }
+    }
+  }
+  None
+}
+
+/// Merge two associations, with the first taking priority for duplicate keys
+fn merge_associations(a1: &Expr, a2: &Expr) -> Expr {
+  let mut pairs: Vec<(Expr, Expr)> = Vec::new();
+  let mut seen_keys: Vec<String> = Vec::new();
+
+  if let Expr::Association(items) = a1 {
+    for (k, v) in items {
+      let k_str = expr_to_string(k);
+      seen_keys.push(k_str);
+      pairs.push((k.clone(), v.clone()));
+    }
+  }
+
+  if let Expr::Association(items) = a2 {
+    for (k, v) in items {
+      let k_str = expr_to_string(k);
+      if !seen_keys.contains(&k_str) {
+        pairs.push((k.clone(), v.clone()));
+      }
+    }
+  }
+
+  Expr::Association(pairs)
 }
 
 fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
