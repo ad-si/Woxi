@@ -1809,7 +1809,7 @@ Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1,829
 ExponentFunction,Exponent display function,✅,unevaluated,2,1712
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6,806
 ExponentialFamily,,,,7,3134
-ExponentialGeneratingFunction,,,,7,2503
+ExponentialGeneratingFunction,Compute the exponential generating function of a sequence,✅,pure,7,2503
 ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6,2367
 ExponentialPowerDistribution,,,,8,3048
 ExponentStep,,,,3,3537

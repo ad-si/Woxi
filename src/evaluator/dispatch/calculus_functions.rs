@@ -182,6 +182,11 @@ pub fn dispatch_calculus_functions(
     "GeneratingFunction" if args.len() == 3 => {
       return Some(generating_function(&args[0], &args[1], &args[2]));
     }
+    "ExponentialGeneratingFunction" if args.len() == 3 => {
+      return Some(exponential_generating_function(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     _ => {}
   }
   None
@@ -2834,4 +2839,396 @@ fn gf_divide(
   }
 
   Ok(None)
+}
+
+// ─── ExponentialGeneratingFunction ──────────────────────────────────────
+
+/// ExponentialGeneratingFunction[a_n, n, x] = Sum[a_n * x^n / n!, {n, 0, Infinity}]
+fn exponential_generating_function(
+  expr: &Expr,
+  n_expr: &Expr,
+  x_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match n_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ExponentialGeneratingFunction".to_string(),
+        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  if let Some(result) = egf_inner(expr, n, x_expr)? {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "ExponentialGeneratingFunction".to_string(),
+      args: vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+    })
+  }
+}
+
+/// Core EGF pattern matching.
+/// Returns Some(result) if a closed form is found, None otherwise.
+fn egf_inner(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Case 0: expr doesn't depend on n => constant * e^x
+  if !depends_on(expr, n) {
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(expr.clone()),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(x.clone()),
+      }),
+    }));
+  }
+
+  // Case 1: expr = n (the variable itself)
+  // EGF[n, n, x] = x * e^x
+  if matches!(expr, Expr::Identifier(name) if name == n) {
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(x.clone()),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(x.clone()),
+      }),
+    }));
+  }
+
+  // Handle Minus: a - b => a + (-b)
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left,
+    right,
+  } = expr
+  {
+    let neg_right = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: right.clone(),
+    };
+    let as_plus = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: left.clone(),
+      right: Box::new(neg_right),
+    };
+    return egf_inner(&as_plus, n, x);
+  }
+
+  // Handle Divide: a / b => a * b^(-1)
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left,
+    right,
+  } = expr
+  {
+    let as_times = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: left.clone(),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: right.clone(),
+        right: Box::new(Expr::Integer(-1)),
+      }),
+    };
+    return egf_inner(&as_times, n, x);
+  }
+
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    match fname {
+      "Plus" => {
+        return egf_plus(expr, n, x);
+      }
+      "Times" => {
+        return egf_times(expr, n, x);
+      }
+      "Power" if fargs.len() == 2 => {
+        return egf_power(fargs[0], fargs[1], n, x);
+      }
+      "Factorial" if fargs.len() == 1 => {
+        // EGF[n!, n, x] = 1/(1-x)
+        if matches!(fargs[0], Expr::Identifier(name) if name == n) {
+          return Ok(Some(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(x.clone()),
+            }),
+            right: Box::new(Expr::Integer(-1)),
+          }));
+        }
+      }
+      _ => {}
+    }
+  }
+
+  Ok(None)
+}
+
+/// EGF for Plus: linearity
+fn egf_plus(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let terms = egf_collect_plus_terms(expr);
+  let mut results = Vec::new();
+  for term in &terms {
+    if let Some(r) = egf_inner(term, n, x)? {
+      results.push(r);
+    } else {
+      return Ok(None);
+    }
+  }
+  let mut sum = results.remove(0);
+  for r in results {
+    sum = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(sum),
+      right: Box::new(r),
+    };
+  }
+  Ok(Some(sum))
+}
+
+/// EGF for Times: factor out constants, handle c * f(n)
+fn egf_times(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  let factors = egf_collect_times_factors(expr);
+
+  let mut constants = Vec::new();
+  let mut n_dependent = Vec::new();
+  for factor in &factors {
+    if depends_on(factor, n) {
+      n_dependent.push((*factor).clone());
+    } else {
+      constants.push((*factor).clone());
+    }
+  }
+
+  if !constants.is_empty() && !n_dependent.is_empty() {
+    let c = if constants.len() == 1 {
+      constants.remove(0)
+    } else {
+      let mut product = constants.remove(0);
+      for ci in constants {
+        product = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(product),
+          right: Box::new(ci),
+        };
+      }
+      product
+    };
+    let rest = if n_dependent.len() == 1 {
+      n_dependent.remove(0)
+    } else {
+      let mut product = n_dependent.remove(0);
+      for f in n_dependent {
+        product = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(product),
+          right: Box::new(f),
+        };
+      }
+      product
+    };
+    if let Some(inner) = egf_inner(&rest, n, x)? {
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(c),
+        right: Box::new(inner),
+      }));
+    }
+    return Ok(None);
+  }
+
+  Ok(None)
+}
+
+/// EGF for Power[base, exp]
+fn egf_power(
+  base: &Expr,
+  exp: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Case: c^n where c doesn't depend on n => e^(c*x)
+  if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
+  {
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::Constant("E".to_string())),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(base.clone()),
+        right: Box::new(x.clone()),
+      }),
+    }));
+  }
+
+  // Case: n^k where k is a non-negative integer
+  // EGF[n^k, n, x] = e^x * Sum[S(k,j) * x^j, {j=0..k}]
+  if matches!(base, Expr::Identifier(name) if name == n) {
+    if let Some(k) = egf_expr_to_nonneg_int(exp) {
+      let poly = egf_stirling_polynomial(k, x);
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Constant("E".to_string())),
+          right: Box::new(x.clone()),
+        }),
+        right: Box::new(poly),
+      }));
+    }
+  }
+
+  Ok(None)
+}
+
+/// Collect all terms from a Plus expression.
+fn egf_collect_plus_terms(expr: &Expr) -> Vec<&Expr> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut terms = egf_collect_plus_terms(left);
+      terms.extend(egf_collect_plus_terms(right));
+      terms
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    _ => vec![expr],
+  }
+}
+
+/// Collect all factors from a Times expression.
+fn egf_collect_times_factors(expr: &Expr) -> Vec<&Expr> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut factors = egf_collect_times_factors(left);
+      factors.extend(egf_collect_times_factors(right));
+      factors
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    _ => vec![expr],
+  }
+}
+
+/// Extract a non-negative integer from an expression.
+fn egf_expr_to_nonneg_int(expr: &Expr) -> Option<usize> {
+  match expr {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    _ => None,
+  }
+}
+
+/// Compute the Stirling polynomial: Sum[S(k,j) * x^j, {j=0..k}]
+fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  let stirling = egf_stirling_numbers(k);
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (j, &s) in stirling.iter().enumerate() {
+    if s == 0 {
+      continue;
+    }
+    let xj = if j == 0 {
+      Expr::Integer(s as i128)
+    } else if j == 1 {
+      if s == 1 {
+        x.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(s as i128)),
+          right: Box::new(x.clone()),
+        }
+      }
+    } else {
+      let x_power = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(j as i128)),
+      };
+      if s == 1 {
+        x_power
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(s as i128)),
+          right: Box::new(x_power),
+        }
+      }
+    };
+    terms.push(xj);
+  }
+
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  if terms.len() == 1 {
+    return terms.remove(0);
+  }
+  let mut sum = terms.remove(0);
+  for t in terms {
+    sum = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(sum),
+      right: Box::new(t),
+    };
+  }
+  sum
+}
+
+/// Compute Stirling numbers of the second kind S(k, j) for j = 0..k.
+fn egf_stirling_numbers(k: usize) -> Vec<u64> {
+  if k == 0 {
+    return vec![1];
+  }
+  let mut prev = vec![1u64];
+  for i in 1..=k {
+    let mut cur = vec![0u64; i + 1];
+    for j in 0..=i {
+      if j < prev.len() {
+        cur[j] += (j as u64) * prev[j];
+      }
+      if j > 0 && j - 1 < prev.len() {
+        cur[j] += prev[j - 1];
+      }
+    }
+    prev = cur;
+  }
+  prev
 }

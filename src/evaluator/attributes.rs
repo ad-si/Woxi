@@ -220,11 +220,28 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
     "Locked" => vec!["Locked", "Protected"],
-    "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
-    | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
-    | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize"
-    | "Entity" | "SquareWave" | "TriangleWave" | "SawtoothWave"
-    | "GeneratingFunction" | "ScalingTransform" | "NetGraph" | "CMYKColor" => {
+    "EllipticExp"
+    | "EllipticLog"
+    | "Infinity"
+    | "InputString"
+    | "InverseSeries"
+    | "PlotRange"
+    | "MatrixForm"
+    | "Show"
+    | "ListPlot3D"
+    | "Input"
+    | "SeriesData"
+    | "RunThrough"
+    | "AbsolutePointSize"
+    | "Entity"
+    | "SquareWave"
+    | "TriangleWave"
+    | "SawtoothWave"
+    | "GeneratingFunction"
+    | "ExponentialGeneratingFunction"
+    | "ScalingTransform"
+    | "NetGraph"
+    | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
     "Plot3D" => {
