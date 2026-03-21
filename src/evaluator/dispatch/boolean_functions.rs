@@ -90,6 +90,9 @@ pub fn dispatch_boolean_functions(
     "BooleanTable" if args.len() == 2 => {
       return Some(crate::functions::boolean_ast::boolean_table_ast(args));
     }
+    "BooleanMinimize" if args.len() == 1 => {
+      return Some(crate::functions::boolean_ast::boolean_minimize_ast(args));
+    }
     _ => {}
   }
   None

@@ -1217,3 +1217,241 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Identifier("True".to_string()))
 }
+
+/// BooleanMinimize[expr] - Find the minimal sum-of-products form.
+pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "BooleanMinimize".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let expr = &args[0];
+
+  // Handle trivial cases
+  if matches!(expr, Expr::Identifier(s) if s == "True") {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  if matches!(expr, Expr::Identifier(s) if s == "False") {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // Collect all boolean variables
+  let mut vars_set = BTreeSet::new();
+  collect_boolean_variables(expr, &mut vars_set);
+  let var_list: Vec<String> = vars_set.into_iter().collect();
+  let n = var_list.len();
+
+  // Limit to 20 variables
+  if n > 20 {
+    return Ok(Expr::FunctionCall {
+      name: "BooleanMinimize".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  if n == 0 {
+    return evaluate_expr_to_expr(expr);
+  }
+
+  // Build truth table: collect minterms (variable assignments that give True)
+  let mut minterms: Vec<u64> = Vec::new();
+  for bits in 0..(1u64 << n) {
+    let mut substituted = expr.clone();
+    for (i, var_name) in var_list.iter().enumerate() {
+      let val = if (bits >> i) & 1 == 1 {
+        Expr::Identifier("True".to_string())
+      } else {
+        Expr::Identifier("False".to_string())
+      };
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var_name, &val);
+    }
+    let result = evaluate_expr_to_expr(&substituted)?;
+    if matches!(&result, Expr::Identifier(s) if s == "True") {
+      minterms.push(bits);
+    }
+  }
+
+  if minterms.is_empty() {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+  if minterms.len() == (1usize << n) {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Quine-McCluskey: find prime implicants
+  let prime_implicants = quine_mccluskey(&minterms, n);
+
+  // Greedy set cover
+  let cover = greedy_cover(&prime_implicants, &minterms);
+
+  // Convert to Boolean expression
+  implicants_to_expr(&cover, &var_list)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Implicant {
+  mask: u64,  // which bits matter (1 = matters)
+  value: u64, // required value for bits that matter
+}
+
+impl Implicant {
+  fn covers(&self, minterm: u64) -> bool {
+    (minterm & self.mask) == self.value
+  }
+}
+
+fn quine_mccluskey(minterms: &[u64], n: usize) -> Vec<Implicant> {
+  let full_mask = (1u64 << n) - 1;
+
+  let mut current: Vec<Implicant> = minterms
+    .iter()
+    .map(|&m| Implicant {
+      mask: full_mask,
+      value: m,
+    })
+    .collect();
+
+  let mut all_prime: Vec<Implicant> = Vec::new();
+
+  loop {
+    let mut next: Vec<Implicant> = Vec::new();
+    let mut used = vec![false; current.len()];
+
+    for i in 0..current.len() {
+      for j in (i + 1)..current.len() {
+        if current[i].mask != current[j].mask {
+          continue;
+        }
+        let diff = current[i].value ^ current[j].value;
+        if diff.count_ones() == 1 {
+          let new_mask = current[i].mask & !diff;
+          let new_value = current[i].value & new_mask;
+          let merged = Implicant {
+            mask: new_mask,
+            value: new_value,
+          };
+          if !next.contains(&merged) {
+            next.push(merged);
+          }
+          used[i] = true;
+          used[j] = true;
+        }
+      }
+    }
+
+    for (i, imp) in current.iter().enumerate() {
+      if !used[i] && !all_prime.contains(imp) {
+        all_prime.push(imp.clone());
+      }
+    }
+
+    if next.is_empty() {
+      break;
+    }
+    current = next;
+  }
+
+  all_prime
+}
+
+fn greedy_cover(primes: &[Implicant], minterms: &[u64]) -> Vec<Implicant> {
+  let mut uncovered: Vec<u64> = minterms.to_vec();
+  let mut cover: Vec<Implicant> = Vec::new();
+
+  // Essential prime implicants
+  loop {
+    let mut found_essential = false;
+    let mut i = 0;
+    while i < uncovered.len() {
+      let mt = uncovered[i];
+      let covering: Vec<usize> = primes
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.covers(mt))
+        .map(|(idx, _)| idx)
+        .collect();
+      if covering.len() == 1 {
+        let essential = &primes[covering[0]];
+        if !cover.contains(essential) {
+          cover.push(essential.clone());
+          found_essential = true;
+        }
+        uncovered.retain(|&m| !essential.covers(m));
+        i = 0;
+        continue;
+      }
+      i += 1;
+    }
+    if !found_essential {
+      break;
+    }
+  }
+
+  // Greedy for remaining
+  while !uncovered.is_empty() {
+    let best = primes
+      .iter()
+      .filter(|p| !cover.contains(p))
+      .max_by_key(|p| uncovered.iter().filter(|&&m| p.covers(m)).count());
+    if let Some(best_prime) = best {
+      let bp = best_prime.clone();
+      uncovered.retain(|&m| !bp.covers(m));
+      cover.push(bp);
+    } else {
+      break;
+    }
+  }
+
+  cover
+}
+
+fn implicants_to_expr(
+  implicants: &[Implicant],
+  vars: &[String],
+) -> Result<Expr, InterpreterError> {
+  if implicants.is_empty() {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for imp in implicants {
+    let mut literals: Vec<Expr> = Vec::new();
+    for (i, var_name) in vars.iter().enumerate() {
+      let bit = 1u64 << i;
+      if imp.mask & bit != 0 {
+        let var = Expr::Identifier(var_name.clone());
+        if imp.value & bit != 0 {
+          literals.push(var);
+        } else {
+          literals.push(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Not,
+            operand: Box::new(var),
+          });
+        }
+      }
+    }
+    let term = if literals.is_empty() {
+      Expr::Identifier("True".to_string())
+    } else if literals.len() == 1 {
+      literals.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: literals,
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.len() == 1 {
+    Ok(terms.remove(0))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: terms,
+    })
+  }
+}

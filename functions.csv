@@ -562,7 +562,7 @@ BooleanCountingFunction,Boolean function from count specification (requires BDD)
 BooleanFunction,Represents a Boolean function using Binary Decision Diagrams,🚫,,7,1956
 BooleanGraph,,,,8,3737
 BooleanMaxterms,,,,7,4262
-BooleanMinimize,,,,7,2509
+BooleanMinimize,Find the minimal sum-of-products Boolean expression,✅,pure,7,2509
 BooleanMinterms,,,,7,3224
 BooleanQ,Tests if an expression is True or False,✅,pure,10,2845
 BooleanRegion,Geometric region construction,🚫,None,10,2251
