@@ -971,14 +971,17 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
               } else {
                 std::cmp::Ordering::Less
               };
-            } else {
-              // Same or later variable → pair (monomial) first
+            } else if nv > pv {
+              // Later variable → pair (monomial) first
               return if a_has_pairs {
                 std::cmp::Ordering::Less
               } else {
                 std::cmp::Ordering::Greater
               };
             }
+            // Same earliest variable → fall through to string comparison
+            // so that e.g. E^x sorts before x (since "E^x" < "x") but
+            // a sorts before E^a (since "a" < "E^a"), matching Wolfram.
           }
         }
       }
@@ -1348,7 +1351,8 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         right: rb,
       },
     ) => {
-      // Normalize Minus(a, b) to Plus(a, -b) for comparison
+      // Normalize Minus→Plus and Divide→Times for comparison,
+      // matching Wolfram's canonical form.
       let (norm_op_a, norm_ra) =
         if *op_a == crate::syntax::BinaryOperator::Minus {
           (
@@ -1356,6 +1360,15 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             Expr::UnaryOp {
               op: crate::syntax::UnaryOperator::Minus,
               operand: ra.clone(),
+            },
+          )
+        } else if *op_a == crate::syntax::BinaryOperator::Divide {
+          (
+            crate::syntax::BinaryOperator::Times,
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: ra.clone(),
+              right: Box::new(Expr::Integer(-1)),
             },
           )
         } else {
@@ -1370,12 +1383,34 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
               operand: rb.clone(),
             },
           )
+        } else if *op_b == crate::syntax::BinaryOperator::Divide {
+          (
+            crate::syntax::BinaryOperator::Times,
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: rb.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          )
         } else {
           (*op_b, *rb.clone())
         };
-      let oa = norm_op_a as u8;
-      let ob = norm_op_b as u8;
-      let cmp = oa.cmp(&ob);
+      // Compare by canonical operator name (alphabetical) rather than
+      // enum discriminant, so Power sorts before Times, matching Wolfram.
+      let op_name = |op: &crate::syntax::BinaryOperator| -> &str {
+        match op {
+          crate::syntax::BinaryOperator::Plus => "Plus",
+          crate::syntax::BinaryOperator::Minus => "Plus",
+          crate::syntax::BinaryOperator::Times => "Times",
+          crate::syntax::BinaryOperator::Divide => "Times",
+          crate::syntax::BinaryOperator::Power => "Power",
+          crate::syntax::BinaryOperator::And => "And",
+          crate::syntax::BinaryOperator::Or => "Or",
+          crate::syntax::BinaryOperator::StringJoin => "StringJoin",
+          crate::syntax::BinaryOperator::Alternatives => "Alternatives",
+        }
+      };
+      let cmp = op_name(&norm_op_a).cmp(op_name(&norm_op_b));
       if cmp != Ordering::Equal {
         return cmp;
       }
@@ -1544,7 +1579,9 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       let base_sp = times_factor_subpriority(left);
       // Power[Plus[...], n] sorts alongside identifiers (subpriority 0),
       // not after them (subpriority 1). Wolfram puts (1+x)^2 before plain s.
-      if base_sp > 0 { 0 } else { base_sp }
+      // Power[func_call, n] (e.g. Sin[x]^2) keeps the function call subpriority
+      // so it sorts alongside other function calls.
+      if base_sp == 1 { 0 } else { base_sp }
     }
     Expr::BinaryOp {
       op:
@@ -1574,11 +1611,11 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       // Power[base, exp] and Sqrt[base] sort like their base (same as BinaryOp::Power)
       "Sqrt" if args.len() == 1 => {
         let base_sp = times_factor_subpriority(&args[0]);
-        if base_sp > 0 { 0 } else { base_sp }
+        if base_sp == 1 { 0 } else { base_sp }
       }
       "Power" if args.len() == 2 => {
         let base_sp = times_factor_subpriority(&args[0]);
-        if base_sp > 0 { 0 } else { base_sp }
+        if base_sp == 1 { 0 } else { base_sp }
       }
       // Numeric-constant function calls (e.g. Log[2], Sqrt[3]) sort before variables
       // but after the imaginary unit I. Only applies to known math functions.
@@ -1644,8 +1681,16 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       }
       return aa.len().cmp(&ab.len());
     }
-    // Default: compare by string representation
-    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+    // For same top-level type (e.g. both BinaryOp::Power), use canonical
+    // comparison which correctly orders a^4 before (1+s)^(3/2) by comparing
+    // bases structurally. For different types (e.g. Identifier vs FunctionCall),
+    // use string comparison which gives correct case-sensitive ordering
+    // (e.g. Sqrt[a] before x since 'S' < 'x').
+    if std::mem::discriminant(a) == std::mem::discriminant(b) {
+      compare_expr_canonical(a, b)
+    } else {
+      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+    }
   });
 }
 

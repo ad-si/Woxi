@@ -519,6 +519,8 @@ function main() {
     /\bNetGraph\[/,         // Neural network internals differ between implementations
     /\bConnectedComponents\[/, // Vertex ordering within components is implementation-specific
     /\bStarGraph\[/,         // Internal Graph representation differs (edge list vs SparseArray)
+    /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
+    /\bSymmetrize\[/,        // Woxi returns dense list, Wolfram returns SymmetrizedArray
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.

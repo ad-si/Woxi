@@ -10433,14 +10433,28 @@ mod batch_unevaluated_wrappers_2 {
   // CrossMatrix
   #[test]
   fn cross_matrix_basic() {
-    // CrossMatrix returns unevaluated (Wolfram returns SparseArray-based representation)
     assert_eq!(
       interpret("CrossMatrix[{1, 0, 0}]").unwrap(),
-      "CrossMatrix[{1, 0, 0}]"
+      "{{0, 0, 0}, {0, 0, -1}, {0, 1, 0}}"
     );
   }
   #[test]
-  fn cross_matrix_general() {
+  fn cross_matrix_unit_y() {
+    assert_eq!(
+      interpret("CrossMatrix[{0, 1, 0}]").unwrap(),
+      "{{0, 0, 1}, {0, 0, 0}, {-1, 0, 0}}"
+    );
+  }
+  #[test]
+  fn cross_matrix_general_numeric() {
+    assert_eq!(
+      interpret("CrossMatrix[{2, 3, 4}]").unwrap(),
+      "{{0, -4, 3}, {4, 0, -2}, {-3, 2, 0}}"
+    );
+  }
+  #[test]
+  fn cross_matrix_symbolic_unevaluated() {
+    // Symbolic arguments return unevaluated (matches Wolfram behavior)
     assert_eq!(
       interpret("CrossMatrix[{a, b, c}]").unwrap(),
       "CrossMatrix[{a, b, c}]"
@@ -10463,17 +10477,18 @@ mod batch_unevaluated_wrappers_2 {
   // Symmetrize
   #[test]
   fn symmetrize_symmetric() {
-    // Symmetrize returns unevaluated (Wolfram returns SymmetrizedArray object)
+    // Already symmetric: (M + M^T)/2 = M
     assert_eq!(
       interpret("Symmetrize[{{1, 2}, {2, 3}}]").unwrap(),
-      "Symmetrize[{{1, 2}, {2, 3}}]"
+      "{{1, 2}, {2, 3}}"
     );
   }
   #[test]
   fn symmetrize_asymmetric() {
+    // (M + M^T)/2: {{1, (2+4)/2}, {(4+2)/2, 3}} = {{1, 3}, {3, 3}}
     assert_eq!(
       interpret("Symmetrize[{{1, 2}, {4, 3}}]").unwrap(),
-      "Symmetrize[{{1, 2}, {4, 3}}]"
+      "{{1, 3}, {3, 3}}"
     );
   }
 
@@ -11295,7 +11310,7 @@ mod batch_unevaluated_wrappers_2 {
   fn extreme_value_distribution_pdf() {
     assert_eq!(
       interpret("PDF[ExtremeValueDistribution[a, b], x]").unwrap(),
-      "E^((a - x)/b - E^((a - x)/b))/b"
+      "E^(-E^((a - x)/b) + (a - x)/b)/b"
     );
   }
 
