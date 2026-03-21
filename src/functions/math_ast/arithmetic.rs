@@ -1540,7 +1540,12 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       op: crate::syntax::BinaryOperator::Power,
       left,
       ..
-    } => times_factor_subpriority(left),
+    } => {
+      let base_sp = times_factor_subpriority(left);
+      // Power[Plus[...], n] sorts alongside identifiers (subpriority 0),
+      // not after them (subpriority 1). Wolfram puts (1+x)^2 before plain s.
+      if base_sp > 0 { 0 } else { base_sp }
+    }
     Expr::BinaryOp {
       op:
         crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
@@ -1567,8 +1572,14 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       }
       "Plus" => 1,
       // Power[base, exp] and Sqrt[base] sort like their base (same as BinaryOp::Power)
-      "Sqrt" if args.len() == 1 => times_factor_subpriority(&args[0]),
-      "Power" if args.len() == 2 => times_factor_subpriority(&args[0]),
+      "Sqrt" if args.len() == 1 => {
+        let base_sp = times_factor_subpriority(&args[0]);
+        if base_sp > 0 { 0 } else { base_sp }
+      }
+      "Power" if args.len() == 2 => {
+        let base_sp = times_factor_subpriority(&args[0]);
+        if base_sp > 0 { 0 } else { base_sp }
+      }
       // Numeric-constant function calls (e.g. Log[2], Sqrt[3]) sort before variables
       // but after the imaginary unit I. Only applies to known math functions.
       "Log" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Exp" | "Abs"
