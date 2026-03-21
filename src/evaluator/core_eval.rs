@@ -1153,6 +1153,13 @@ pub fn evaluate_expr_to_expr_inner(
               l == r
             } else if expr_to_string(left) == expr_to_string(right) {
               true
+            } else if {
+              // Normalize Divide to Times[..., Power[..., -1]] for comparison
+              let nl = normalize_divide_to_times(left);
+              let nr = normalize_divide_to_times(right);
+              expr_to_string(&nl) == expr_to_string(&nr)
+            } {
+              true
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -1527,6 +1534,49 @@ pub fn evaluate_expr_to_expr_inner(
         .collect::<Result<_, _>>()?;
       apply_curried_call(&evaluated_func, &evaluated_args)
     }
+  }
+}
+
+/// Normalize Divide expressions to Times[..., Power[..., -1]] form
+/// for structural comparison. This handles cases like
+/// 1/(a*b) vs (a*b)^-1 which are equivalent but structurally different.
+fn normalize_divide_to_times(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let nl = normalize_divide_to_times(left);
+      let nr = normalize_divide_to_times(right);
+      // a/b → Times[a, Power[b, -1]], then evaluate to get canonical form
+      let inv = crate::functions::math_ast::power_two(&nr, &Expr::Integer(-1));
+      match inv {
+        Ok(inv_expr) => {
+          if matches!(&nl, Expr::Integer(1)) {
+            inv_expr
+          } else {
+            crate::functions::math_ast::times_ast(&[nl, inv_expr])
+              .unwrap_or(expr.clone())
+          }
+        }
+        Err(_) => expr.clone(),
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(normalize_divide_to_times(left)),
+      right: Box::new(normalize_divide_to_times(right)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(normalize_divide_to_times).collect(),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(normalize_divide_to_times(operand)),
+    },
+    _ => expr.clone(),
   }
 }
 

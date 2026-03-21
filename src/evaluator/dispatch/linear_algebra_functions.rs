@@ -1315,7 +1315,36 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows)));
       }
     }
-    // CrossMatrix — returns unevaluated (Wolfram returns SparseArray-based representation)
+    // CrossMatrix[{a, b, c}] — skew-symmetric matrix such that CrossMatrix[v].u == Cross[v, u]
+    // Returns {{0, -c, b}, {c, 0, -a}, {-b, a, 0}} for numeric vectors.
+    // Wolfram requires numeric input and returns SparseArray; we return a plain list.
+    "CrossMatrix" if args.len() == 1 => {
+      if let Expr::List(elems) = &args[0]
+        && elems.len() == 3 && elems.iter().all(|e| {
+        matches!(e, Expr::Integer(_) | Expr::Real(_))
+          || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      }) {
+        let a = &elems[0];
+        let b = &elems[1];
+        let c = &elems[2];
+        let neg = |e: &Expr| -> Expr {
+          match evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), e.clone()],
+          }) {
+            Ok(result) => result,
+            Err(_) => Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), e.clone()],
+            },
+          }
+        };
+        let row0 = Expr::List(vec![Expr::Integer(0), neg(c), b.clone()]);
+        let row1 = Expr::List(vec![c.clone(), Expr::Integer(0), neg(a)]);
+        let row2 = Expr::List(vec![neg(b), a.clone(), Expr::Integer(0)]);
+        return Some(Ok(Expr::List(vec![row0, row1, row2])));
+      }
+    }
     // FourierMatrix[n] — discrete Fourier transform matrix
     // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
     // Uses Cos + I*Sin for exact symbolic results
@@ -1402,7 +1431,57 @@ pub fn dispatch_linear_algebra_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
-    // Symmetrize — returns unevaluated (Wolfram returns SymmetrizedArray object)
+    // Symmetrize[matrix] — symmetrize a square matrix: (M + M^T) / 2
+    // Wolfram returns SymmetrizedArray; we return a plain list (Normal form).
+    "Symmetrize" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        // Check it's a square matrix of numeric values
+        let mut matrix: Vec<Vec<Expr>> = Vec::new();
+        let mut all_ok = true;
+        for row in rows {
+          if let Expr::List(cols) = row {
+            if cols.len() != n {
+              all_ok = false;
+              break;
+            }
+            matrix.push(cols.clone());
+          } else {
+            all_ok = false;
+            break;
+          }
+        }
+        if all_ok && n > 0 {
+          let mut result_rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut result_cols = Vec::with_capacity(n);
+            for j in 0..n {
+              // (M[i,j] + M[j,i]) / 2
+              let sum = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![matrix[i][j].clone(), matrix[j][i].clone()],
+              };
+              let half = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  },
+                  sum,
+                ],
+              };
+              match evaluate_expr_to_expr(&half) {
+                Ok(val) => result_cols.push(val),
+                Err(_) => result_cols.push(half),
+              }
+            }
+            result_rows.push(Expr::List(result_cols));
+          }
+          return Some(Ok(Expr::List(result_rows)));
+        }
+      }
+    }
     _ => {}
   }
   None
