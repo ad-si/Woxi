@@ -870,6 +870,10 @@ pub fn evaluate_expr_to_expr_inner(
       if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
         return crate::functions::control_flow_ast::piecewise_ast(args);
       }
+      // Special handling for TraceScan - traces evaluation of sub-expressions
+      if name == "TraceScan" && args.len() >= 2 && args.len() <= 3 {
+        return crate::functions::control_flow_ast::trace_scan_ast(args);
+      }
       // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
       // These functions take unevaluated expressions as first argument
       if name == "Table"

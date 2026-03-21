@@ -1964,6 +1964,7 @@ pub fn match_pattern(
 
 /// Get the head of an expression (for pattern matching with head constraints)
 pub fn get_expr_head(expr: &Expr) -> String {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),
@@ -1971,6 +1972,30 @@ pub fn get_expr_head(expr: &Expr) -> String {
     Expr::List(_) => "List".to_string(),
     Expr::FunctionCall { name, .. } => name.clone(),
     Expr::Association(_) => "Association".to_string(),
+    Expr::BinaryOp { op, .. } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus => "Plus".to_string(),
+      BinaryOperator::Times => "Times".to_string(),
+      BinaryOperator::Divide => "Times".to_string(),
+      BinaryOperator::Power => "Power".to_string(),
+      BinaryOperator::And => "And".to_string(),
+      BinaryOperator::Or => "Or".to_string(),
+      BinaryOperator::StringJoin => "StringJoin".to_string(),
+      BinaryOperator::Alternatives => "Alternatives".to_string(),
+    },
+    Expr::UnaryOp { op, .. } => match op {
+      UnaryOperator::Minus => "Times".to_string(),
+      UnaryOperator::Not => "Not".to_string(),
+    },
+    Expr::Comparison { .. } => "Comparison".to_string(),
+    Expr::CompoundExpr(_) => "CompoundExpression".to_string(),
+    Expr::Rule { .. } => "Rule".to_string(),
+    Expr::RuleDelayed { .. } => "RuleDelayed".to_string(),
+    Expr::Map { .. } => "Map".to_string(),
+    Expr::Apply { .. } => "Apply".to_string(),
+    Expr::ReplaceAll { .. } => "ReplaceAll".to_string(),
+    Expr::ReplaceRepeated { .. } => "ReplaceRepeated".to_string(),
+    Expr::Function { .. } => "Function".to_string(),
+    Expr::Part { .. } => "Part".to_string(),
     _ => "Symbol".to_string(),
   }
 }

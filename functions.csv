@@ -5643,7 +5643,7 @@ TraceOff,,,,2,4138
 TraceOn,,,,2,5184
 TraceOriginal,,,,2,2978
 TracePrint,Print evaluation trace (debugging/tracing),🚫,,2,2025
-TraceScan,,,,2,2491
+TraceScan,Apply a function as a side effect to each sub-expression during evaluation,✅,effectful,2,2491
 TrackCellChangeTimes,,,,13.3,
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6,495
 TrackingFunction,Tracking callback option,🚫,,10,2129

@@ -3,7 +3,8 @@
 //! Switch, Piecewise, Quiet.
 
 use crate::InterpreterError;
-use crate::evaluator::evaluate_expr_to_expr;
+use crate::evaluator::{apply_function_to_arg, evaluate_expr_to_expr};
+use crate::functions::expr_form::{ExprForm, decompose_expr};
 use crate::syntax::Expr;
 use crate::syntax::expr_to_string;
 
@@ -270,4 +271,122 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   result
+}
+
+/// Wrap an expression in HoldForm.
+fn hold_form(expr: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "HoldForm".to_string(),
+    args: vec![expr.clone()],
+  }
+}
+
+/// Call the trace function on an expression, unconditionally.
+fn do_trace(expr: &Expr, f: &Expr) -> Result<(), InterpreterError> {
+  let wrapped = hold_form(expr);
+  apply_function_to_arg(f, &wrapped)?;
+  Ok(())
+}
+
+/// Call the trace function on an expression if it matches the form filter.
+/// Returns true if the expression was traced.
+fn maybe_trace(
+  expr: &Expr,
+  f: &Expr,
+  form: Option<&Expr>,
+) -> Result<bool, InterpreterError> {
+  if let Some(form_pat) = form {
+    if crate::evaluator::match_pattern(expr, form_pat).is_none() {
+      return Ok(false);
+    }
+  }
+  do_trace(expr, f)?;
+  Ok(true)
+}
+
+/// Rebuild an expression from a head name and children as a FunctionCall.
+fn rebuild_from_head(head: &str, children: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: children.to_vec(),
+  }
+}
+
+/// Recursively trace-evaluate an expression, calling f on each sub-expression.
+fn trace_eval(
+  expr: &Expr,
+  f: &Expr,
+  form: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  // Trace the input expression
+  maybe_trace(expr, f, form)?;
+
+  match decompose_expr(expr) {
+    ExprForm::Atom(_) => {
+      // Atoms evaluate to themselves (or to their value)
+      let result = evaluate_expr_to_expr(expr)?;
+      if expr_to_string(&result) != expr_to_string(expr) {
+        maybe_trace(&result, f, form)?;
+      }
+      Ok(result)
+    }
+    ExprForm::Composite { head, children } => {
+      // Trace the head; remember if it matched the form
+      let head_expr = Expr::Identifier(head.clone());
+      let head_matched = maybe_trace(&head_expr, f, form)?;
+
+      // Recursively trace-evaluate each child
+      let mut evaluated_children = Vec::new();
+      let mut children_changed = false;
+      for child in &children {
+        let eval_child = trace_eval(child, f, form)?;
+        if expr_to_string(&eval_child) != expr_to_string(child) {
+          children_changed = true;
+        }
+        evaluated_children.push(eval_child);
+      }
+
+      // Rebuild with evaluated children
+      let rebuilt = rebuild_from_head(&head, &evaluated_children);
+      if children_changed {
+        // When head matched, always trace rebuilt; otherwise check form
+        if head_matched {
+          do_trace(&rebuilt, f)?;
+        } else {
+          maybe_trace(&rebuilt, f, form)?;
+        }
+      }
+
+      // Final evaluation (apply the head function to evaluated args)
+      let result = evaluate_expr_to_expr(&rebuilt)?;
+      let rebuilt_str = expr_to_string(&rebuilt);
+      let result_str = expr_to_string(&result);
+      if result_str != rebuilt_str {
+        // When head matched, always trace result; otherwise check form
+        if head_matched {
+          do_trace(&result, f)?;
+        } else {
+          maybe_trace(&result, f, form)?;
+        }
+      }
+
+      Ok(result)
+    }
+  }
+}
+
+/// TraceScan[f, expr] — apply f to each sub-expression during evaluation.
+/// TraceScan[f, expr, form] — apply f only to sub-expressions matching form.
+/// Returns the evaluated result of expr.
+pub fn trace_scan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Evaluate the function argument (first arg)
+  let f = evaluate_expr_to_expr(&args[0])?;
+  let expr = &args[1];
+  let form = if args.len() == 3 {
+    Some(&args[2])
+  } else {
+    None
+  };
+
+  trace_eval(expr, &f, form)
 }
