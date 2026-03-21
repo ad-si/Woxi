@@ -1182,7 +1182,7 @@ mod negative_binomial_distribution {
   fn pdf_symbolic() {
     assert_eq!(
       interpret("PDF[NegativeBinomialDistribution[n, p], k]").unwrap(),
-      "Piecewise[{{(1 - p)^k*p^n*Binomial[k + n - 1, n - 1], k >= 0}}, 0]"
+      "Piecewise[{{(1 - p)^k*p^n*Binomial[-1 + k + n, -1 + n], k >= 0}}, 0]"
     );
   }
 
@@ -1223,7 +1223,7 @@ mod negative_binomial_distribution {
     assert_eq!(
       interpret("StandardDeviation[NegativeBinomialDistribution[n, p]]")
         .unwrap(),
-      "Sqrt[(n*(1 - p))/p^2]"
+      "Sqrt[n*(1 - p)]/p"
     );
   }
 }

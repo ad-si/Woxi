@@ -1250,13 +1250,55 @@ pub fn dispatch_linear_algebra_functions(
       if let Some(n) = expr_to_i128(&args[0]) {
         let n = n as usize;
         if n > 0 && (n & (n - 1)) == 0 {
-          // n is a power of 2: Sylvester construction
+          // n is a power of 2: Sylvester construction, normalized by 1/Sqrt[n]
           let mat = hadamard_sylvester(n);
-          let result: Vec<Expr> = mat
+          // Evaluate 1/Sqrt[n] first
+          let sqrt_n_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(n as i128)],
+          };
+          let sqrt_n =
+            evaluate_expr_to_expr(&sqrt_n_expr).unwrap_or(sqrt_n_expr);
+          // Compute 1/Sqrt[n] once (evaluated)
+          let inv_sqrt_n_expr = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(sqrt_n.clone()),
+          };
+          let inv_sqrt_n =
+            evaluate_expr_to_expr(&inv_sqrt_n_expr).unwrap_or(inv_sqrt_n_expr);
+
+          let result_rows: Vec<Expr> = mat
             .into_iter()
-            .map(|row| Expr::List(row.into_iter().map(Expr::Integer).collect()))
+            .map(|row| {
+              Expr::List(
+                row
+                  .into_iter()
+                  .map(|v| {
+                    if v == 1 {
+                      inv_sqrt_n.clone()
+                    } else if v == -1 {
+                      // Use Times[-1, inv_sqrt_n] so display matches -(1/Sqrt[n])
+                      let entry = Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: vec![Expr::Integer(-1), inv_sqrt_n.clone()],
+                      };
+                      evaluate_expr_to_expr(&entry).unwrap_or(entry)
+                    } else {
+                      // v / Sqrt[n]
+                      let entry = Expr::BinaryOp {
+                        op: crate::syntax::BinaryOperator::Divide,
+                        left: Box::new(Expr::Integer(v)),
+                        right: Box::new(sqrt_n.clone()),
+                      };
+                      evaluate_expr_to_expr(&entry).unwrap_or(entry)
+                    }
+                  })
+                  .collect(),
+              )
+            })
             .collect();
-          return Some(Ok(Expr::List(result)));
+          return Some(Ok(Expr::List(result_rows)));
         }
       }
     }
@@ -1273,82 +1315,83 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows)));
       }
     }
-    // CrossMatrix[{a, b, c}] — skew-symmetric matrix for cross product
-    "CrossMatrix" if args.len() == 1 => {
-      if let Expr::List(v) = &args[0]
-        && v.len() == 3
-      {
-        let a = v[0].clone();
-        let b = v[1].clone();
-        let c = v[2].clone();
-        let neg = |e: Expr| -> Expr {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![Expr::Integer(-1), e],
-          }
-        };
-        let row0 =
-          Expr::List(vec![Expr::Integer(0), neg(c.clone()), b.clone()]);
-        let row1 = Expr::List(vec![c, Expr::Integer(0), neg(a.clone())]);
-        let row2 = Expr::List(vec![neg(b), a, Expr::Integer(0)]);
-        let result = Expr::List(vec![row0, row1, row2]);
-        return Some(evaluate_expr_to_expr(&result));
-      }
-    }
+    // CrossMatrix — returns unevaluated (Wolfram returns SparseArray-based representation)
     // FourierMatrix[n] — discrete Fourier transform matrix
+    // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
+    // Uses Cos + I*Sin for exact symbolic results
     "FourierMatrix" if args.len() == 1 => {
       if let Some(n) = expr_to_i128(&args[0])
         && n > 0
       {
         let n = n as usize;
-        let mut rows = Vec::with_capacity(n);
-        // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
-        let sqrt_n = Expr::FunctionCall {
+        let inv_sqrt_n = Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
             Expr::Integer(n as i128),
             Expr::FunctionCall {
               name: "Rational".to_string(),
-              args: vec![Expr::Integer(1), Expr::Integer(2)],
+              args: vec![Expr::Integer(-1), Expr::Integer(2)],
             },
           ],
         };
+        let mut rows = Vec::with_capacity(n);
         for j in 0..n {
           let mut row = Vec::with_capacity(n);
           for k in 0..n {
             let exp = ((j * k) % n) as i128;
             if exp == 0 {
               // entry = 1/sqrt(n)
-              row.push(Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![sqrt_n.clone(), Expr::Integer(-1)],
-              });
+              row.push(inv_sqrt_n.clone());
             } else {
-              // entry = e^(2*pi*i*exp/n) / sqrt(n)
-              let phase = Expr::FunctionCall {
+              // angle = 2*Pi*exp/n, compute (Cos[angle] + I*Sin[angle]) / Sqrt[n]
+              // Simplify the fraction 2*exp/n
+              let num = 2 * exp;
+              let den = n as i128;
+              let g = gcd_i128(num.abs(), den);
+              let snum = num / g;
+              let sden = den / g;
+              let angle = if sden == 1 {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![
+                    Expr::Integer(snum),
+                    Expr::Identifier("Pi".to_string()),
+                  ],
+                }
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![
+                    Expr::FunctionCall {
+                      name: "Rational".to_string(),
+                      args: vec![Expr::Integer(snum), Expr::Integer(sden)],
+                    },
+                    Expr::Identifier("Pi".to_string()),
+                  ],
+                }
+              };
+              // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
+              let cos_part = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![angle.clone()],
+              };
+              let sin_part = Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![
-                  Expr::Integer(2),
-                  Expr::Identifier("Pi".to_string()),
                   Expr::Identifier("I".to_string()),
                   Expr::FunctionCall {
-                    name: "Rational".to_string(),
-                    args: vec![Expr::Integer(exp), Expr::Integer(n as i128)],
+                    name: "Sin".to_string(),
+                    args: vec![angle],
                   },
                 ],
               };
+              let omega = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![cos_part, sin_part],
+              };
               let entry = Expr::FunctionCall {
                 name: "Times".to_string(),
-                args: vec![
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![Expr::Identifier("E".to_string()), phase],
-                  },
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![sqrt_n.clone(), Expr::Integer(-1)],
-                  },
-                ],
+                args: vec![omega, inv_sqrt_n.clone()],
               };
               row.push(entry);
             }
@@ -1359,48 +1402,19 @@ pub fn dispatch_linear_algebra_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
-    // Symmetrize[m] — symmetrize a matrix: (m + Transpose[m]) / 2
-    "Symmetrize" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        // Check it's a square matrix
-        let is_square = rows
-          .iter()
-          .all(|r| matches!(r, Expr::List(row) if row.len() == n));
-        if is_square {
-          let expr = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "Rational".to_string(),
-                args: vec![Expr::Integer(1), Expr::Integer(2)],
-              },
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  args[0].clone(),
-                  Expr::FunctionCall {
-                    name: "Transpose".to_string(),
-                    args: vec![args[0].clone()],
-                  },
-                ],
-              },
-            ],
-          };
-          return Some(evaluate_expr_to_expr(&expr));
-        }
-      }
-    }
+    // Symmetrize — returns unevaluated (Wolfram returns SymmetrizedArray object)
     _ => {}
   }
   None
 }
 
-/// Hadamard matrix via Sylvester construction for powers of 2
+/// Hadamard matrix via Sylvester construction for powers of 2,
+/// then reordered by sequency (Walsh ordering) to match Wolfram's HadamardMatrix.
 fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
   if n == 1 {
     return vec![vec![1]];
   }
+  // Build Sylvester construction
   let half = hadamard_sylvester(n / 2);
   let h = n / 2;
   let mut result = vec![vec![0i128; n]; n];
@@ -1412,7 +1426,16 @@ fn hadamard_sylvester(n: usize) -> Vec<Vec<i128>> {
       result[i + h][j + h] = -half[i][j];
     }
   }
-  result
+  // Reorder rows by sequency (number of sign changes)
+  let mut rows_with_seq: Vec<(usize, Vec<i128>)> = result
+    .into_iter()
+    .map(|row| {
+      let seq = row.windows(2).filter(|w| w[0] != w[1]).count();
+      (seq, row)
+    })
+    .collect();
+  rows_with_seq.sort_by_key(|(seq, _)| *seq);
+  rows_with_seq.into_iter().map(|(_, row)| row).collect()
 }
 
 /// LUDecomposition[m] — compute LU decomposition with partial pivoting.
@@ -1613,4 +1636,15 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(result))
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
 }

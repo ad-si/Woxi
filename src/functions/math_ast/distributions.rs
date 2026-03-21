@@ -1665,9 +1665,13 @@ fn distribution_mean_variance(
       let n = dargs[0].clone();
       let p = dargs[1].clone();
       // Mean = n*(1-p)/p, Var = n*(1-p)/p^2
+      // Express variance as Times[n, (1-p), p^(-2)] so Sqrt can extract p^(-1)
       let one_minus_p = minus(int(1), p.clone());
       let mean = divide(times(n.clone(), one_minus_p.clone()), p.clone());
-      let var = divide(times(n, one_minus_p), power(p, int(2)));
+      let var = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n, one_minus_p, power(p, int(-2))],
+      };
       Ok((mean, var))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -2510,14 +2514,16 @@ fn pdf_negative_binomial(
   }
   let n = dargs[0].clone();
   let p = dargs[1].clone();
-  // (1-p)^k * p^n * Binomial[k+n-1, n-1]
+  // (1-p)^k * p^n * Binomial[-1+k+n, -1+n]
   let one_minus_p = minus(int(1), p.clone());
+  let n_minus_1 = plus(int(-1), n.clone());
+  let k_plus_n_minus_1 = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![int(-1), x.clone(), n.clone()],
+  };
   let binom = Expr::FunctionCall {
     name: "Binomial".to_string(),
-    args: vec![
-      plus(x.clone(), minus(n.clone(), int(1))),
-      minus(n.clone(), int(1)),
-    ],
+    args: vec![k_plus_n_minus_1, n_minus_1],
   };
   let pdf_val = times(times(power(one_minus_p, x.clone()), power(p, n)), binom);
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));

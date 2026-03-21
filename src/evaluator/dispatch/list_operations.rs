@@ -1614,7 +1614,8 @@ pub fn dispatch_list_operations(
         };
         let m = items.len();
         if n <= m {
-          let start = (m - n) / 2;
+          // Take n elements centered: use ceiling division for the offset
+          let start = (m - n).div_ceil(2);
           return Some(Ok(Expr::List(items[start..start + n].to_vec())));
         }
         let left_pad = (n - m) / 2;
@@ -1885,14 +1886,16 @@ pub fn dispatch_list_operations(
           };
           let new_acc = evaluate_expr_to_expr(&call).unwrap_or(call);
           // Test the new value
-          let test_result = apply_function_to_arg(test, &new_acc)
+          // Include the new value, then check the test.
+          // If the test fails, we still include this value (Wolfram behavior).
+          acc = new_acc;
+          results.push(acc.clone());
+          let test_result = apply_function_to_arg(test, &acc)
             .unwrap_or(Expr::Identifier("False".to_string()));
           let test_str = expr_to_string(&test_result);
           if test_str != "True" {
             break;
           }
-          acc = new_acc;
-          results.push(acc.clone());
         }
         return Some(Ok(Expr::List(results)));
       }
@@ -2032,21 +2035,7 @@ pub fn dispatch_list_operations(
         }
       }
     }
-    // Assert[test] — assert that test is True, return Null
-    "Assert" if !args.is_empty() && args.len() <= 2 => {
-      let test_result =
-        evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
-      if matches!(&test_result, Expr::Identifier(s) if s == "True") {
-        return Some(Ok(Expr::Identifier("Null".to_string())));
-      }
-      // Assertion failed
-      let msg = if args.len() == 2 {
-        expr_to_string(&args[1])
-      } else {
-        format!("Assertion {} failed.", expr_to_string(&args[0]))
-      };
-      return Some(Err(InterpreterError::EvaluationError(msg)));
-    }
+    // Assert — returns unevaluated (matches Wolfram default behavior without AssertTools package)
     _ => {}
   }
   None

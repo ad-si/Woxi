@@ -871,6 +871,9 @@ pub fn dispatch_math_functions(
     "ArcTan" if args.len() == 1 => {
       return Some(crate::functions::math_ast::arctan_ast(args));
     }
+    "ArcTan" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::arctan2_ast(args));
+    }
     "Sinh" if args.len() == 1 => {
       return Some(crate::functions::math_ast::sinh_ast(args));
     }
@@ -2246,41 +2249,84 @@ pub fn dispatch_math_functions(
       };
       return Some(evaluate_expr_to_expr(&result_expr));
     }
-    // PowerModList[a, n, m] — {a^1 mod m, a^2 mod m, ..., a^n mod m}
+    // PowerModList[a, b, m] — modular power/root list
+    // For integer b: returns {a^b mod m}
+    // For Rational[1, k] b: finds all x in {0,...,m-1} such that x^k ≡ a (mod m)
     "PowerModList" if args.len() == 3 => {
-      if let (Some(a), Some(n), Some(m)) = (
-        expr_to_i128(&args[0]),
-        expr_to_i128(&args[1]),
-        expr_to_i128(&args[2]),
-      ) {
-        if m <= 0 || n < 0 {
+      if let (Some(a), Some(m)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[2]))
+      {
+        if m <= 0 {
           return None;
         }
-        let mut result = Vec::with_capacity(n as usize);
-        let mut current = a % m;
-        if current < 0 {
-          current += m;
-        }
-        for _ in 0..n {
-          result.push(Expr::Integer(current));
-          current = (current * (a % m)) % m;
-          if current < 0 {
-            current += m;
+        // Check if exponent is a Rational 1/k (modular root)
+        let root_exp = match &args[1] {
+          Expr::FunctionCall { name, args: rargs }
+            if name == "Rational"
+              && rargs.len() == 2
+              && matches!(&rargs[0], Expr::Integer(1))
+              && matches!(&rargs[1], Expr::Integer(k) if *k > 0) =>
+          {
+            if let Expr::Integer(k) = &rargs[1] {
+              Some(*k)
+            } else {
+              None
+            }
           }
+          _ => None,
+        };
+        if let Some(k) = root_exp {
+          // Find all x where x^k ≡ a (mod m)
+          let a_mod = ((a % m) + m) % m;
+          let mut result = Vec::new();
+          for x in 0..m {
+            let mut power = 1i128;
+            let mut base = x % m;
+            let mut exp = k;
+            while exp > 0 {
+              if exp % 2 == 1 {
+                power = (power * base) % m;
+              }
+              base = (base * base) % m;
+              exp /= 2;
+            }
+            if power == a_mod {
+              result.push(Expr::Integer(x));
+            }
+          }
+          return Some(Ok(Expr::List(result)));
+        } else if let Some(n) = expr_to_i128(&args[1]) {
+          // Integer exponent: return {a^n mod m}
+          if n < 0 {
+            return None;
+          }
+          let mut power = 1i128;
+          let mut base = ((a % m) + m) % m;
+          let mut exp = n;
+          while exp > 0 {
+            if exp % 2 == 1 {
+              power = (power * base) % m;
+            }
+            base = (base * base) % m;
+            exp /= 2;
+          }
+          return Some(Ok(Expr::List(vec![Expr::Integer(power)])));
         }
-        return Some(Ok(Expr::List(result)));
       }
     }
     // ShearingMatrix[theta, v, n] — shearing transformation matrix
-    // ShearingMatrix[s, {v1,...}, {n1,...}] = I + s * outer(v, n)
+    // ShearingMatrix[theta, {v1,...}, {n1,...}] = I + Tan[theta] * outer(v, n)
     "ShearingMatrix" if args.len() == 3 => {
       if let (Expr::List(v), Expr::List(n_vec)) = (&args[1], &args[2]) {
         let dim = v.len();
         if dim != n_vec.len() {
           return None;
         }
-        // Build identity + s * outer(v, n)
-        let s = &args[0];
+        // Build identity + Tan[theta] * outer(v, n)
+        let s = &Expr::FunctionCall {
+          name: "Tan".to_string(),
+          args: vec![args[0].clone()],
+        };
         let mut rows = Vec::with_capacity(dim);
         for i in 0..dim {
           let mut row = Vec::with_capacity(dim);
@@ -2690,43 +2736,72 @@ pub fn dispatch_math_functions(
       }
       return Some(Ok(result));
     }
-    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}] — array of coordinate bounds
-    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}, d] — with padding d
+    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}] — grid of coordinate tuples (step 1)
+    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}, d] — grid with step d
     "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 2 => {
       if let Expr::List(bounds) = &args[0] {
-        // Parse bounds pairs
-        let mut ranges: Vec<(Expr, Expr)> = Vec::new();
+        // Parse bounds pairs as integer ranges
+        let mut ranges: Vec<(i128, i128)> = Vec::new();
+        let mut ok = true;
         for b in bounds {
           if let Expr::List(pair) = b
             && pair.len() == 2
+            && let (Some(lo), Some(hi)) =
+              (expr_to_i128(&pair[0]), expr_to_i128(&pair[1]))
           {
-            ranges.push((pair[0].clone(), pair[1].clone()));
+            ranges.push((lo, hi));
+          } else {
+            ok = false;
+            break;
           }
         }
-        if !ranges.is_empty() {
-          // With optional padding
-          if args.len() == 2
-            && let Some(d) = expr_to_i128(&args[1])
-          {
-            // Expand each range by d
-            for range in &mut ranges {
-              let min_expr = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![range.0.clone(), Expr::Integer(-d)],
-              };
-              let max_expr = Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![range.1.clone(), Expr::Integer(d)],
-              };
-              range.0 = evaluate_expr_to_expr(&min_expr).unwrap_or(min_expr);
-              range.1 = evaluate_expr_to_expr(&max_expr).unwrap_or(max_expr);
+        if ok && !ranges.is_empty() {
+          let step = if args.len() == 2 {
+            expr_to_i128(&args[1]).unwrap_or(1)
+          } else {
+            1
+          };
+          if step > 0 {
+            // Generate discrete values for each dimension
+            let dim_values: Vec<Vec<i128>> = ranges
+              .iter()
+              .map(|&(lo, hi)| {
+                let mut vals = Vec::new();
+                let mut v = lo;
+                while v <= hi {
+                  vals.push(v);
+                  v += step;
+                }
+                vals
+              })
+              .collect();
+
+            // Build nested array: outer dimensions correspond to first dims
+            fn build_grid(dim_values: &[Vec<i128>], prefix: &[i128]) -> Expr {
+              if prefix.len() == dim_values.len() {
+                // Create a coordinate tuple
+                if prefix.len() == 1 {
+                  Expr::List(vec![Expr::Integer(prefix[0])])
+                } else {
+                  Expr::List(prefix.iter().map(|&v| Expr::Integer(v)).collect())
+                }
+              } else {
+                let dim_idx = prefix.len();
+                let items: Vec<Expr> = dim_values[dim_idx]
+                  .iter()
+                  .map(|&v| {
+                    let mut new_prefix = prefix.to_vec();
+                    new_prefix.push(v);
+                    build_grid(dim_values, &new_prefix)
+                  })
+                  .collect();
+                Expr::List(items)
+              }
             }
+
+            let result = build_grid(&dim_values, &[]);
+            return Some(Ok(result));
           }
-          let result: Vec<Expr> = ranges
-            .into_iter()
-            .map(|(lo, hi)| Expr::List(vec![lo, hi]))
-            .collect();
-          return Some(Ok(Expr::List(result)));
         }
       }
     }

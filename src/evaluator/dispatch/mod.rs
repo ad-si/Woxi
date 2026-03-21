@@ -1820,28 +1820,11 @@ pub fn evaluate_function_call_ast_inner(
     && gargs.len() == 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
-    let n = vertices.len();
     let adj = build_undirected_adj(vertices, edges);
-    let max_degree = n.saturating_sub(1);
+    // DegreeCentrality returns raw vertex degree (not normalized)
     let centralities: Vec<Expr> = adj
       .iter()
-      .map(|neighbors| {
-        if max_degree > 0 {
-          let deg = neighbors.len() as i128;
-          let den = max_degree as i128;
-          let g = gcd_i128(deg, den);
-          if den / g == 1 {
-            Expr::Integer(deg / g)
-          } else {
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(deg / g), Expr::Integer(den / g)],
-            }
-          }
-        } else {
-          Expr::Integer(0)
-        }
-      })
+      .map(|neighbors| Expr::Integer(neighbors.len() as i128))
       .collect();
     return Ok(Expr::List(centralities));
   }
@@ -1941,23 +1924,16 @@ pub fn evaluate_function_call_ast_inner(
     let n = vertices.len();
     let adj = build_undirected_adj(vertices, edges);
     // Closeness centrality = (n-1) / sum of distances to all other vertices
+    // ClosenessCentrality returns machine precision floats
     let centralities: Vec<Expr> = (0..n)
       .map(|start| {
         let dists = bfs_all_dists(&adj, start, n);
         let total_dist: i128 = dists.iter().filter(|&&d| d > 0).sum();
         if total_dist > 0 {
-          let num = (n as i128) - 1;
-          let g = gcd_i128(num, total_dist);
-          if total_dist / g == 1 {
-            Expr::Integer(num / g)
-          } else {
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(num / g), Expr::Integer(total_dist / g)],
-            }
-          }
+          let val = (n as f64 - 1.0) / (total_dist as f64);
+          Expr::Real(val)
         } else {
-          Expr::Integer(0)
+          Expr::Real(0.0)
         }
       })
       .collect();
