@@ -1227,3 +1227,82 @@ mod negative_binomial_distribution {
     );
   }
 }
+
+mod stable_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_head_2_params() {
+    clear_state();
+    assert_eq!(
+      interpret("StableDistribution[1, 0]").unwrap(),
+      "StableDistribution[1, 0]"
+    );
+  }
+
+  #[test]
+  fn inert_head_4_params() {
+    clear_state();
+    assert_eq!(
+      interpret("StableDistribution[1, 0, 0, 1]").unwrap(),
+      "StableDistribution[1, 0, 0, 1]"
+    );
+  }
+
+  #[test]
+  fn pdf_cauchy_standard() {
+    clear_state();
+    // StableDistribution[1, 0] is standard Cauchy
+    assert_eq!(
+      interpret("PDF[StableDistribution[1, 0], x]").unwrap(),
+      "1/(Pi*(1 + x^2))"
+    );
+  }
+
+  #[test]
+  fn pdf_cauchy_with_location_scale() {
+    clear_state();
+    assert_eq!(
+      interpret("PDF[StableDistribution[1, 0, 2, 3], x]").unwrap(),
+      "1/(3*Pi*(1 + ((-2 + x)/3)^2))"
+    );
+  }
+
+  #[test]
+  fn pdf_normal_special_case() {
+    clear_state();
+    // StableDistribution[2, 0] corresponds to Normal(0, Sqrt[2])
+    let result = interpret("PDF[StableDistribution[2, 0], x]").unwrap();
+    assert!(
+      result.contains("E^"),
+      "Expected exponential form, got: {}",
+      result
+    );
+    assert!(
+      result.contains("Pi"),
+      "Expected Pi in denominator, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn pdf_general_unevaluated() {
+    clear_state();
+    // General case returns unevaluated
+    assert_eq!(
+      interpret("PDF[StableDistribution[3/2, 1/2], x]").unwrap(),
+      "PDF[StableDistribution[3/2, 1/2], x]"
+    );
+  }
+
+  #[test]
+  fn cdf_cauchy_standard() {
+    clear_state();
+    let result = interpret("CDF[StableDistribution[1, 0], x]").unwrap();
+    assert!(
+      result.contains("ArcTan"),
+      "Expected ArcTan, got: {}",
+      result
+    );
+  }
+}

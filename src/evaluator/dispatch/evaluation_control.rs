@@ -265,6 +265,13 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "StableDistribution" if args.len() == 2 || args.len() == 4 => {
+      // StableDistribution[alpha, beta] or StableDistribution[alpha, beta, mu, sigma]
+      return Some(Ok(Expr::FunctionCall {
+        name: "StableDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "Names" if args.len() <= 1 => {
       let all_names = crate::get_defined_names();
       if args.is_empty() {
