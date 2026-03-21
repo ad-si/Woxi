@@ -406,18 +406,44 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } if matches!(exp.as_ref(), Expr::Integer(2)) => {
             outside.push(*base.clone());
           }
-          // expr^(2n) → move expr^n outside
+          // expr^(2n) → move expr^n outside (for any even n, including negative)
           Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Power,
             left: base,
             right: exp,
-          } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0) => {
+          } if matches!(exp.as_ref(), Expr::Integer(n) if n % 2 == 0 && *n != 0) => {
             if let Expr::Integer(n) = exp.as_ref() {
-              outside.push(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
-                left: base.clone(),
-                right: Box::new(Expr::Integer(n / 2)),
-              });
+              let half = n / 2;
+              if half == 1 {
+                outside.push(*base.clone());
+              } else {
+                outside.push(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: base.clone(),
+                  right: Box::new(Expr::Integer(half)),
+                });
+              }
+            }
+          }
+          // Power[base, even_n] (FunctionCall form) → move base^(n/2) outside
+          Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } if pname == "Power"
+            && pargs.len() == 2
+            && matches!(&pargs[1], Expr::Integer(n) if n % 2 == 0 && *n != 0) =>
+          {
+            if let Expr::Integer(n) = &pargs[1] {
+              let half = n / 2;
+              if half == 1 {
+                outside.push(pargs[0].clone());
+              } else {
+                outside.push(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(pargs[0].clone()),
+                  right: Box::new(Expr::Integer(half)),
+                });
+              }
             }
           }
           _ => {

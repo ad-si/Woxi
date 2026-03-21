@@ -518,6 +518,7 @@ function main() {
     /\bServiceConnect\[/,   // Network-dependent Failure result
     /\bNetGraph\[/,         // Neural network internals differ between implementations
     /\bConnectedComponents\[/, // Vertex ordering within components is implementation-specific
+    /\bStarGraph\[/,         // Internal Graph representation differs (edge list vs SparseArray)
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -569,6 +570,8 @@ function main() {
     // Complex optimization (not yet implemented)
     "MinValue[x, y]",
     "ArgMax[x, y]",
+    // FindArgMin: Woxi gives exact -1.5, Wolfram introduces FP noise -1.5000000000000004
+    "FindArgMin[x^2 + 3*x + 2, x]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

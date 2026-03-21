@@ -230,9 +230,11 @@ pub fn dispatch_string_functions(
       if let Expr::List(ref elems) = args[0] {
         let mut items: Vec<Expr> = elems.clone();
         items.sort_by(|a, b| {
+          // NumericalSort sorts by numerical value for numbers,
+          // and lexicographically for strings (not natural sort).
           let sa = crate::syntax::expr_to_string(a);
           let sb = crate::syntax::expr_to_string(b);
-          natural_cmp(&sa, &sb)
+          sa.cmp(&sb)
         });
         return Some(Ok(Expr::List(items)));
       }

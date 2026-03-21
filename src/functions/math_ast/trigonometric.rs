@@ -1716,6 +1716,72 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// ArcTan[x, y] - Two-argument arctangent (atan2)
+/// Returns the angle in radians of the point (x, y).
+/// ArcTan[x, y] = ArcTan[y/x] with quadrant adjustment.
+pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcTan expects exactly 2 arguments".into(),
+    ));
+  }
+  let x = &args[0];
+  let y = &args[1];
+
+  // Numeric case: both Real
+  if let (Expr::Real(fx), Expr::Real(fy)) = (x, y) {
+    return Ok(Expr::Real(fy.atan2(*fx)));
+  }
+
+  // Exact special values for common angles
+  if let (Some(xn), Some(yn)) = (expr_to_i128(x), expr_to_i128(y)) {
+    return Ok(match (xn, yn) {
+      (_, 0) if xn > 0 => Expr::Integer(0), // ArcTan[+x, 0] = 0
+      (_, 0) if xn < 0 => Expr::Constant("Pi".to_string()), // ArcTan[-x, 0] = Pi
+      (0, _) if yn > 0 => Expr::BinaryOp {
+        // ArcTan[0, +y] = Pi/2
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      },
+      (0, _) if yn < 0 => Expr::BinaryOp {
+        // ArcTan[0, -y] = -Pi/2
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+        }),
+        right: Box::new(Expr::Constant("Pi".to_string())),
+      },
+      _ if xn > 0 && yn == xn => Expr::BinaryOp {
+        // ArcTan[a, a] = Pi/4
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(4)),
+      },
+      _ if xn > 0 && yn == -xn => Expr::BinaryOp {
+        // ArcTan[a, -a] = -Pi/4
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(4)],
+        }),
+        right: Box::new(Expr::Constant("Pi".to_string())),
+      },
+      _ => Expr::FunctionCall {
+        name: "ArcTan".to_string(),
+        args: args.to_vec(),
+      },
+    });
+  }
+
+  // Return unevaluated for symbolic args
+  Ok(Expr::FunctionCall {
+    name: "ArcTan".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Try to split an expression into real part and exact imaginary coefficient.
 /// Returns Some((real_part_expr, (im_num, im_den))) if the expression
 /// has the form `real_part + (im_num/im_den)*I` where the imaginary

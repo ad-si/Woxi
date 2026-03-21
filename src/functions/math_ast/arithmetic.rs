@@ -2271,7 +2271,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Result is (int_product * rat_numer) / rat_denom
   let combined_numer = int_product * rat_numer;
   let combined_denom = rat_denom;
-  let coeff = if has_rational || (has_int && combined_denom != 1) {
+  let mut coeff = if has_rational || (has_int && combined_denom != 1) {
     make_rational(combined_numer, combined_denom)
   } else {
     Expr::Integer(int_product)
@@ -2333,6 +2333,58 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Combine like bases: x^a * x^b → x^(a+b)
   symbolic_args = combine_like_bases(symbolic_args)?;
+
+  // Try to combine integer coefficient with same-base power in symbolic args.
+  // Only absorb one factor of the base so the result stays in canonical form:
+  // E.g. 2 * 2^(-1/2) → 1 * 2^(1/2) = Sqrt[2]
+  // E.g. -2 * 2^(-1/2) → -1 * Sqrt[2]
+  // E.g. 4 * 2^(-1/2) → 2 * Sqrt[2]  (absorb one factor of 2)
+  if let Expr::Integer(c) = &coeff {
+    let cv = *c;
+    let abs_cv = cv.unsigned_abs();
+    if abs_cv > 1 {
+      for i in 0..symbolic_args.len() {
+        let (base, exp) = extract_base_exponent(&symbolic_args[i]);
+        if let Expr::Integer(b) = &base {
+          let bv = *b;
+          // Only absorb when exponent is negative — this converts e.g.
+          // 2 * 2^(-1/2) → Sqrt[2], 4 * 2^(-1/2) → 2*Sqrt[2]
+          // but leaves 2 * Sqrt[2] (exp=1/2) alone to avoid cycles.
+          let exp_is_negative = match &exp {
+            Expr::Integer(n) => *n < 0,
+            Expr::FunctionCall { name, args: rargs }
+              if name == "Rational" && rargs.len() == 2 =>
+            {
+              matches!(&rargs[0], Expr::Integer(n) if *n < 0)
+            }
+            _ => false,
+          };
+          if bv > 1 && abs_cv % (bv as u128) == 0 && exp_is_negative {
+            // Only absorb one factor of base into the power
+            let new_exp = plus_ast(&[Expr::Integer(1), exp])?;
+            if matches!(&new_exp, Expr::Integer(0)) {
+              symbolic_args.remove(i);
+            } else if matches!(&new_exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
+            {
+              symbolic_args[i] = crate::functions::math_ast::sqrt_ast(&[base])?;
+            } else if matches!(&new_exp, Expr::Integer(1)) {
+              symbolic_args[i] = base;
+            } else {
+              symbolic_args[i] = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(base),
+                right: Box::new(new_exp),
+              };
+            }
+            let sign = if cv < 0 { -1i128 } else { 1i128 };
+            let remainder = (abs_cv / bv as u128) as i128;
+            coeff = Expr::Integer(sign * remainder);
+            break;
+          }
+        }
+      }
+    }
+  }
 
   // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
   if symbolic_args.is_empty() {
@@ -2502,6 +2554,27 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
     }
+  }
+
+  // n / Sqrt[m] → delegate to times_ast so coefficient combining works
+  // E.g. 2/Sqrt[2] → Sqrt[2], 4/Sqrt[2] → 2*Sqrt[2]
+  // Skip for |n|<=1 since 1/Sqrt[m] is already the canonical display form
+  if let Expr::Integer(n) = a
+    && n.unsigned_abs() > 1
+    && let Expr::FunctionCall {
+      name,
+      args: sqrt_args,
+    } = b
+    && name == "Sqrt"
+    && sqrt_args.len() == 1
+    && matches!(&sqrt_args[0], Expr::Integer(m) if *m > 0)
+  {
+    let b_inv = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(b.clone()),
+      right: Box::new(Expr::Integer(-1)),
+    };
+    return times_ast(&[Expr::Integer(*n), b_inv]);
   }
 
   // Sqrt[n] / d → Sqrt[n/d^2] for integer n and d
