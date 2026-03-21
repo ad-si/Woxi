@@ -5161,7 +5161,7 @@ Squiggled,,🚫,,13.3,
 SSSTriangle,Constructs a triangle from three side lengths,✅,None,10,2239
 StabilityMargins,,,,8,4138
 StabilityMarginsStyle,,,,8,4567
-StableDistribution,,,,8,2519
+StableDistribution,Stable distribution with PDF/CDF for Cauchy and Normal special cases,✅,pure,8,2519
 Stack,layout primitive,🚫,None,2,2399
 StackBegin,,,,2,4947
 StackComplete,,,,2,4479

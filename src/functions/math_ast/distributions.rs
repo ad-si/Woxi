@@ -155,6 +155,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExtremeValueDistribution" => pdf_extreme_value(dargs, x),
     "GompertzMakehamDistribution" => pdf_gompertz_makeham(dargs, x),
     "InverseGaussianDistribution" => pdf_inverse_gaussian(dargs, x),
+    "StableDistribution" => pdf_stable(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -374,6 +375,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExtremeValueDistribution" => cdf_extreme_value(dargs, x),
     "GompertzMakehamDistribution" => cdf_gompertz_makeham(dargs, x),
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
+    "StableDistribution" => cdf_stable(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -2608,4 +2610,120 @@ fn cdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(gamma_reg, cond)], int(0)))
+}
+
+/// PDF[StableDistribution[alpha, beta, mu, sigma], x]
+/// General case returns unevaluated. Special cases:
+/// - alpha=1, beta=0: Cauchy(mu, sigma)
+/// - alpha=2: Normal(mu, sigma*Sqrt[2])
+fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let (alpha, beta, mu, sigma) = match dargs.len() {
+    2 => (dargs[0].clone(), dargs[1].clone(), int(0), int(1)),
+    4 => (
+      dargs[0].clone(),
+      dargs[1].clone(),
+      dargs[2].clone(),
+      dargs[3].clone(),
+    ),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "StableDistribution".to_string(),
+            args: dargs.to_vec(),
+          },
+          x,
+        ],
+      });
+    }
+  };
+
+  // Evaluate parameters to check for special cases
+  let alpha_eval = evaluate_expr_to_expr(&alpha)?;
+  let beta_eval = evaluate_expr_to_expr(&beta)?;
+
+  // alpha=1, beta=0: Cauchy distribution
+  if matches!(&alpha_eval, Expr::Integer(1))
+    && matches!(&beta_eval, Expr::Integer(0))
+  {
+    let diff = minus(x, mu);
+    let ratio = divide(diff, sigma.clone());
+    let denom = times(times(pi(), sigma), plus(int(1), power(ratio, int(2))));
+    return eval(divide(int(1), denom));
+  }
+
+  // alpha=2: Normal(mu, sigma*Sqrt[2])
+  if matches!(&alpha_eval, Expr::Integer(2)) {
+    let s = times(sigma, sqrt(int(2)));
+    let cauchy_args = vec![mu, s];
+    return pdf_normal(&cauchy_args, x);
+  }
+
+  // General case: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "PDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "StableDistribution".to_string(),
+        args: dargs.to_vec(),
+      },
+      x,
+    ],
+  })
+}
+
+/// CDF[StableDistribution[alpha, beta, mu, sigma], x]
+fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let (alpha, beta, mu, sigma) = match dargs.len() {
+    2 => (dargs[0].clone(), dargs[1].clone(), int(0), int(1)),
+    4 => (
+      dargs[0].clone(),
+      dargs[1].clone(),
+      dargs[2].clone(),
+      dargs[3].clone(),
+    ),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "StableDistribution".to_string(),
+            args: dargs.to_vec(),
+          },
+          x,
+        ],
+      });
+    }
+  };
+
+  let alpha_eval = evaluate_expr_to_expr(&alpha)?;
+  let beta_eval = evaluate_expr_to_expr(&beta)?;
+
+  // alpha=1, beta=0: Cauchy CDF = 1/2 + ArcTan[(x-mu)/sigma]/Pi
+  if matches!(&alpha_eval, Expr::Integer(1))
+    && matches!(&beta_eval, Expr::Integer(0))
+  {
+    let cauchy_args = vec![mu, sigma];
+    return cdf_cauchy(&cauchy_args, x);
+  }
+
+  // alpha=2: Normal CDF
+  if matches!(&alpha_eval, Expr::Integer(2)) {
+    let s = times(sigma, sqrt(int(2)));
+    let normal_args = vec![mu, s];
+    return cdf_normal(&normal_args, x);
+  }
+
+  // General case: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "CDF".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "StableDistribution".to_string(),
+        args: dargs.to_vec(),
+      },
+      x,
+    ],
+  })
 }
