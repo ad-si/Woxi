@@ -877,7 +877,8 @@ fn pdf_extreme_value(
     }),
     right: Box::new(ab),
   };
-  eval(divide(power(e(), exp_arg), b))
+  let exp_arg_eval = eval(exp_arg)?;
+  eval(divide(power(e(), exp_arg_eval), b))
 }
 
 // CDF[ExtremeValueDistribution[a, b], x] = E^(-E^((a - x)/b))
@@ -2584,7 +2585,7 @@ fn pdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     name: "Gamma".to_string(),
     args: vec![divide(n, int(2))],
   };
-  let pdf_val = divide(times(pow2, x_pow), times(exp_part, gamma_part));
+  let pdf_val = eval(divide(times(pow2, x_pow), times(exp_part, gamma_part)))?;
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(pdf_val, cond)], int(0)))
 }

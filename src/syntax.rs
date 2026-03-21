@@ -4090,6 +4090,30 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2295} ");
       }
+      // Subset[a, b] displays as a ⊂ b
+      if name == "Subset" && args.len() == 2 {
+        return format!(
+          "{} \u{2282} {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
+      // LeftArrow[a, b] displays as a ← b
+      if name == "LeftArrow" && args.len() == 2 {
+        return format!(
+          "{} \u{2190} {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
+      // DotEqual[a, b] displays as a ≐ b
+      if name == "DotEqual" && args.len() == 2 {
+        return format!(
+          "{} \u{2250} {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
       // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
       if name == "AngleBracket" && !args.is_empty() {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
@@ -4857,6 +4881,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
           ))
         || (matches!(op, BinaryOperator::Power)
           && matches!(left.as_ref(), Expr::Integer(n) if *n < 0))
+        // Power is right-associative: (x^a)^b must be parenthesized to avoid x^a^b = x^(a^b)
+        || (matches!(op, BinaryOperator::Power)
+          && (matches!(
+            left.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              ..
+            }
+          ) || matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Power")))
         || (matches!(op, BinaryOperator::Power | BinaryOperator::Times)
           && matches!(
             left.as_ref(),
@@ -5981,6 +6014,30 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2295} ");
       }
+      // Subset[a, b] displays as a ⊂ b
+      if name == "Subset" && args.len() == 2 {
+        return format!(
+          "{} \u{2282} {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      // LeftArrow[a, b] displays as a ← b
+      if name == "LeftArrow" && args.len() == 2 {
+        return format!(
+          "{} \u{2190} {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      // DotEqual[a, b] displays as a ≐ b
+      if name == "DotEqual" && args.len() == 2 {
+        return format!(
+          "{} \u{2250} {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
       // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
       if name == "AngleBracket" && !args.is_empty() {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
@@ -6446,6 +6503,33 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2295} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Subset" && args.len() == 2 =>
+    {
+      format!(
+        "{} \u{2282} {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "LeftArrow" && args.len() == 2 =>
+    {
+      format!(
+        "{} \u{2190} {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DotEqual" && args.len() == 2 =>
+    {
+      format!(
+        "{} \u{2250} {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "AngleBracket" && !args.is_empty() =>

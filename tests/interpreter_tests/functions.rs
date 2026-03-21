@@ -10658,11 +10658,17 @@ mod batch_unevaluated_wrappers_2 {
   // Assert — returns unevaluated (Wolfram default behavior without AssertTools package)
   #[test]
   fn assert_unevaluated() {
-    assert_eq!(interpret("Assert[1 + 1 == 2]").unwrap(), "Assert[True]");
+    assert_eq!(
+      interpret("Assert[1 + 1 == 2]").unwrap(),
+      "Assert[1 + 1 == 2]"
+    );
   }
   #[test]
   fn assert_false_unevaluated() {
-    assert_eq!(interpret("Assert[1 + 1 == 3]").unwrap(), "Assert[False]");
+    assert_eq!(
+      interpret("Assert[1 + 1 == 3]").unwrap(),
+      "Assert[1 + 1 == 3]"
+    );
   }
 
   // StarGraph
@@ -11003,7 +11009,7 @@ mod batch_unevaluated_wrappers_2 {
   fn chi_distribution_pdf() {
     assert_eq!(
       interpret("PDF[ChiDistribution[n], x]").unwrap(),
-      "Piecewise[{{(2^(1 - n/2)*x^(n - 1))/(E^(x^2/2)*Gamma[n/2]), x > 0}}, 0]"
+      "Piecewise[{{(2^(1 - n/2)*x^(-1 + n))/(E^(x^2/2)*Gamma[n/2]), x > 0}}, 0]"
     );
   }
   #[test]
@@ -11088,7 +11094,7 @@ mod batch_unevaluated_wrappers_2 {
     let result =
       interpret(r#"RenameFile["nonexistent_woxi_file.txt", "dest.txt"]"#)
         .unwrap();
-    assert_eq!(result, "$Failed[]");
+    assert_eq!(result, "$Failed");
   }
 
   #[test]
@@ -11219,7 +11225,7 @@ mod batch_unevaluated_wrappers_2 {
   fn logistic_distribution_pdf() {
     assert_eq!(
       interpret("PDF[LogisticDistribution[m, s], x]").unwrap(),
-      "E^((m - x)/s)/(s*(1 + E^((m - x)/s))^2)"
+      "E^((m - x)/s)/((1 + E^((m - x)/s))^2*s)"
     );
   }
 
@@ -11243,7 +11249,7 @@ mod batch_unevaluated_wrappers_2 {
   fn inverse_chi_square_distribution_pdf() {
     assert_eq!(
       interpret("PDF[InverseChiSquareDistribution[n], x]").unwrap(),
-      "Piecewise[{{x^(-1)^(1 + n/2)/(2^(n/2)*E^(1/(2*x))*Gamma[n/2]), x > 0}}, 0]"
+      "Piecewise[{{(x^(-1))^(1 + n/2)/(2^(n/2)*E^(1/(2*x))*Gamma[n/2]), x > 0}}, 0]"
     );
   }
 
@@ -11408,7 +11414,7 @@ mod batch_unevaluated_wrappers_2 {
       interpret("ExtentElementFunction[x]").unwrap(),
       "ExtentElementFunction[x]"
     );
-    assert_eq!(interpret("Subset[x, y]").unwrap(), "Subset[x, y]");
+    assert_eq!(interpret("Subset[x, y]").unwrap(), "x \u{2282} y");
     assert_eq!(interpret("TargetUnits[x]").unwrap(), "TargetUnits[x]");
     assert_eq!(interpret("RowSpacings[x]").unwrap(), "RowSpacings[x]");
     assert_eq!(interpret("PassEventsUp[x]").unwrap(), "PassEventsUp[x]");
@@ -11417,8 +11423,8 @@ mod batch_unevaluated_wrappers_2 {
       "NormalsFunction[x]"
     );
     assert_eq!(interpret("StartOfLine[x]").unwrap(), "StartOfLine[x]");
-    assert_eq!(interpret("LeftArrow[x, y]").unwrap(), "LeftArrow[x, y]");
-    assert_eq!(interpret("DotEqual[x, y]").unwrap(), "DotEqual[x, y]");
+    assert_eq!(interpret("LeftArrow[x, y]").unwrap(), "x \u{2190} y");
+    assert_eq!(interpret("DotEqual[x, y]").unwrap(), "x \u{2250} y");
     assert_eq!(interpret("NumberMarks[x]").unwrap(), "NumberMarks[x]");
   }
 
@@ -11427,7 +11433,7 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{DirectedEdge[1,2],DirectedEdge[3,4]}]]")
         .unwrap(),
-      "{{1, 2}, {3, 4}, {5}}"
+      "{{2, 1}, {4, 3}, {5}}"
     );
   }
 
@@ -11436,7 +11442,7 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("WeaklyConnectedComponents[Graph[{1,2,3,4,5},{UndirectedEdge[1,2],UndirectedEdge[3,4]}]]")
         .unwrap(),
-      "{{1, 2}, {3, 4}, {5}}"
+      "{{2, 1}, {4, 3}, {5}}"
     );
   }
 

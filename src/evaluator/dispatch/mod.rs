@@ -2499,6 +2499,10 @@ pub fn evaluate_function_call_ast_inner(
       }
     }
 
+    // Reverse vertices within each component to match Wolfram's ordering
+    for comp in &mut components {
+      comp.reverse();
+    }
     components.sort_by(|a, b| b.len().cmp(&a.len()));
     return Ok(Expr::List(components.into_iter().map(Expr::List).collect()));
   }
@@ -2822,10 +2826,7 @@ pub fn evaluate_function_call_ast_inner(
           "RenameFile::fdnfnd: Directory or file \"{}\" not found.",
           source
         ));
-        return Ok(Expr::FunctionCall {
-          name: "$Failed".to_string(),
-          args: vec![],
-        });
+        return Ok(Expr::Identifier("$Failed".to_string()));
       }
     }
   }
