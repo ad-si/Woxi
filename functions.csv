@@ -466,7 +466,7 @@ BilateralZTransform,,,,13,
 Binarize,Converts an image to black and white using a threshold,✅,pure,7,630
 BinaryDeserialize,,,,11.1,3636
 BinaryDistance,Binary distance between vectors,✅,none,10.2,4479
-BinaryFormat,Option for opening streams in binary format,🚫,3,1962
+BinaryFormat,Option for opening streams in binary format,🚫,,3,1962
 BinaryImageQ,,🚫,,7,4660
 BinaryRead,Reads a single binary object from a file or stream,🚫,io,5.1,1926
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
@@ -1761,7 +1761,7 @@ EulerGamma,Euler-Mascheroni constant,✅,pure,1,868
 EulerianGraphQ,,,,8,3124
 EulerMatrix,Rotation matrix from Euler angles,🚫,,10.2,2082
 EulerPhi,Returns Euler's totient function,✅,pure,1,1073
-Evaluatable,Option for Cell specifying if it should be evaluated,🚫,3,1967
+Evaluatable,Option for Cell specifying if it should be evaluated,🚫,,3,1967
 Evaluate,Forces evaluation of an expression,✅,pure,2,86
 EvaluatePacket,,🚫,,3,3094
 EvaluationBox,,,,10,3048
@@ -2689,7 +2689,7 @@ ImageKeypoints,,🚫,,8,2812
 ImageLabels,,🚫,,12.1,
 ImageLegends,,🚫,,12.1,
 ImageLevels,,🚫,,8,3121
-ImageLines,Find line segments in an image,🚫,8,1964
+ImageLines,Find line segments in an image,🚫,,8,1964
 ImageMargins,Option for margins around an image,✅,none,3,842
 ImageMarker,,🚫,,10.4,4104
 ImageMeasurements,Measure image properties (image processing),🚫,,9,2031
@@ -3214,7 +3214,7 @@ LinkRankCentrality,,,,10,4527
 LinkRead,Read from WSTP link,🚫,,3,2051
 LinkReadyQ,,🚫,,3,3162
 Links,,🚫,,3,3070
-LinkWrite,Write an expression to a WSTP connection,🚫,3,1967
+LinkWrite,Write an expression to a WSTP connection,🚫,,3,1967
 LiouvilleLambda,Liouville lambda function,✅,none,7,3506
 List,Represents a list of elements,✅,pure,1,1
 Listable,Attribute for automatic threading over lists,✅,pure,1,568
@@ -3333,7 +3333,7 @@ LowerRightArrow,,,,3,5390
 LowerTriangularize,Zero out elements above a diagonal,✅,pure,7,1212
 LowerTriangularMatrix,,,,13.1,
 LowerTriangularMatrixQ,True if a matrix is lower triangular,✅,1,12,5587
-LowpassFilter,Apply a lowpass filter to data,🚫,9,1964
+LowpassFilter,Apply a lowpass filter to data,🚫,,9,1964
 LQEstimatorGains,,,,8,4315
 LQGRegulator,,,,8,4567
 LQOutputRegulatorGains,,,,8,4437
@@ -5869,7 +5869,7 @@ URLExpand,,🚫,,10,4947
 URLParse,,,,10,3280
 URLQueryDecode,,,,10,4660
 URLQueryEncode,,,,10,4437
-URLRead,Send HTTP request and read response,🚫,11,1967
+URLRead,Send HTTP request and read response,🚫,,11,1967
 URLResponseTime,,🚫,,11.1,4707
 URLShorten,,🚫,,10,2611
 URLSubmit,,🚫,,11,3755
