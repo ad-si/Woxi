@@ -2946,3 +2946,129 @@ mod function_domain {
     );
   }
 }
+
+mod exponential_generating_function {
+  use super::*;
+
+  #[test]
+  fn egf_constant() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[1, n, x]").unwrap(),
+      "E^x"
+    );
+  }
+
+  #[test]
+  fn egf_constant_c() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[5, n, x]").unwrap(),
+      "5*E^x"
+    );
+  }
+
+  #[test]
+  fn egf_variable_n() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[n, n, x]").unwrap(),
+      "E^x*x"
+    );
+  }
+
+  #[test]
+  fn egf_n_squared() {
+    clear_state();
+    // E^x*(x + x^2) is mathematically equivalent to E^x*x*(1+x)
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[n^2, n, x]").unwrap(),
+      "E^x*(x + x^2)"
+    );
+  }
+
+  #[test]
+  fn egf_exponential_2n() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[2^n, n, x]").unwrap(),
+      "E^(2*x)"
+    );
+  }
+
+  #[test]
+  fn egf_exponential_neg1() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[(-1)^n, n, x]").unwrap(),
+      "E^(-x)"
+    );
+  }
+
+  #[test]
+  fn egf_factorial() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[Factorial[n], n, x]").unwrap(),
+      "(1 - x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn egf_n_plus_1() {
+    clear_state();
+    // n + 1 = n + 1 → x*e^x + e^x = e^x*(1+x)
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[n + 1, n, x]").unwrap(),
+      "E^x + E^x*x"
+    );
+  }
+
+  #[test]
+  fn egf_constant_times_n() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[3*n, n, x]").unwrap(),
+      "3*E^x*x"
+    );
+  }
+
+  #[test]
+  fn egf_3_to_n() {
+    clear_state();
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[3^n, n, x]").unwrap(),
+      "E^(3*x)"
+    );
+  }
+
+  #[test]
+  fn egf_n_cubed() {
+    clear_state();
+    // S(3,1)=1, S(3,2)=3, S(3,3)=1 → x + 3x^2 + x^3
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[n^3, n, x]").unwrap(),
+      "E^x*(x + 3*x^2 + x^3)"
+    );
+  }
+
+  #[test]
+  fn egf_unevaluated_unknown() {
+    clear_state();
+    // Unknown pattern returns unevaluated
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[Sin[n], n, x]").unwrap(),
+      "ExponentialGeneratingFunction[Sin[n], n, x]"
+    );
+  }
+
+  #[test]
+  fn egf_zero_power() {
+    clear_state();
+    // n^0 = 1, so EGF[1, n, x] = E^x
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[n^0, n, x]").unwrap(),
+      "E^x"
+    );
+  }
+}
