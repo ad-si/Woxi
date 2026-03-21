@@ -4732,3 +4732,99 @@ mod characteristic_polynomial {
     );
   }
 }
+
+mod boolean_minimize {
+  use super::*;
+
+  #[test]
+  fn minimize_true() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn minimize_false() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn minimize_tautology() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[a || Not[a]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn minimize_contradiction() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[a && Not[a]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn minimize_absorption() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[a || (a && b)]").unwrap(), "a");
+  }
+
+  #[test]
+  fn minimize_complementary() {
+    clear_state();
+    // (a && b) || (a && !b) → a
+    assert_eq!(
+      interpret("BooleanMinimize[And[a, b] || And[a, Not[b]]]").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
+  fn minimize_extract_b() {
+    clear_state();
+    // (a && b) || (!a && b) → b
+    assert_eq!(
+      interpret("BooleanMinimize[And[a, b] || And[Not[a], b]]").unwrap(),
+      "b"
+    );
+  }
+
+  #[test]
+  fn minimize_identity() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[a && b]").unwrap(), "a && b");
+  }
+
+  #[test]
+  fn minimize_implies() {
+    clear_state();
+    // Implies[a, b] → !a || b
+    let result = interpret("BooleanMinimize[Implies[a, b]]").unwrap();
+    assert!(
+      result == " !a || b" || result == "b ||  !a",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn minimize_xor() {
+    clear_state();
+    // Xor[a, b] → (a && !b) || (!a && b)
+    let result = interpret("BooleanMinimize[Xor[a, b]]").unwrap();
+    assert!(result.contains("&&"), "Got: {}", result);
+    assert!(result.contains("||"), "Got: {}", result);
+  }
+
+  #[test]
+  fn minimize_single_var() {
+    clear_state();
+    assert_eq!(interpret("BooleanMinimize[a || a]").unwrap(), "a");
+  }
+
+  #[test]
+  fn minimize_single_not_var() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanMinimize[Not[a] || Not[a]]").unwrap(),
+      " !a"
+    );
+  }
+}
