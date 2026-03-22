@@ -2958,6 +2958,75 @@ mod weierstrass_p_prime {
   }
 }
 
+mod inverse_weierstrass_p {
+  use super::*;
+
+  #[test]
+  fn roundtrip_form1() {
+    // WeierstrassP[0.5, {4, 0}] ≈ 4.050208734712057
+    // InverseWeierstrassP[4.050208734712057, {4.0, 0.0}] should return {u, p'}
+    // where u ≈ 0.5
+    let result =
+      interpret("InverseWeierstrassP[4.050208734712057, {4.0, 0.0}]").unwrap();
+    // result is a list {u, pp}
+    assert!(result.starts_with('{'), "expected list, got {}", result);
+    let inner = &result[1..result.len() - 1];
+    let parts: Vec<&str> = inner.split(", ").collect();
+    assert_eq!(parts.len(), 2, "expected 2 elements, got {:?}", parts);
+    let u: f64 = parts[0].parse().unwrap();
+    assert!(
+      (u.abs() - 0.5).abs() < 1e-4,
+      "expected |u| ≈ 0.5, got {}",
+      u
+    );
+  }
+
+  #[test]
+  fn roundtrip_form2() {
+    // InverseWeierstrassP[{4.050208734712057, -15.797491968339017}, {4.0, 0.0}]
+    // should return u ≈ 0.5
+    let result = interpret(
+      "InverseWeierstrassP[{4.050208734712057, -15.797491968339017}, {4.0, 0.0}]",
+    )
+    .unwrap();
+    let u: f64 = result.parse().unwrap();
+    assert!((u - 0.5).abs() < 1e-4, "expected u ≈ 0.5, got {}", u);
+  }
+
+  #[test]
+  fn consistency_check() {
+    // Compute WeierstrassP at a point, then invert, and verify roundtrip
+    let p_str = interpret("WeierstrassP[1.0, {2.0, 3.0}]").unwrap();
+    let pp_str = interpret("WeierstrassPPrime[1.0, {2.0, 3.0}]").unwrap();
+    let p: f64 = p_str.parse().unwrap();
+    let pp: f64 = pp_str.parse().unwrap();
+
+    let inv_result = interpret(&format!(
+      "InverseWeierstrassP[{{{}, {}}}, {{2.0, 3.0}}]",
+      p, pp
+    ))
+    .unwrap();
+    let u: f64 = inv_result.parse().unwrap();
+    assert!((u - 1.0).abs() < 1e-4, "expected u ≈ 1.0, got {}", u);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("InverseWeierstrassP[p, {g2, g3}]").unwrap(),
+      "InverseWeierstrassP[p, {g2, g3}]"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    assert_eq!(
+      interpret("InverseWeierstrassP[1]").unwrap(),
+      "InverseWeierstrassP[1]"
+    );
+  }
+}
+
 mod inverse_jacobi {
   use super::*;
 

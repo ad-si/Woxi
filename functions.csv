@@ -2916,7 +2916,7 @@ InverseSpectrogram,,🚫,,12,3862
 InverseSurvivalFunction,probability distribution,🚫,None,8,2350
 InverseTransformedRegion,,,,10,4104
 InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8,1806
-InverseWeierstrassP,,,,3,2528
+InverseWeierstrassP,Inverse Weierstrass elliptic function,✅,pure,3,2528
 InverseWishartMatrixDistribution,,,,10.3,4081
 InverseZTransform,Inverse Z-transform,✅,unevaluated,4,1880
 Invisible,,🚫,,6,907
