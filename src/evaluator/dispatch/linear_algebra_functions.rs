@@ -275,6 +275,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "LogitModelFit" if args.len() == 3 => {
+      return Some(crate::functions::linear_algebra_ast::logit_model_fit_ast(
+        args,
+      ));
+    }
     "FindFit" if args.len() == 4 => {
       return Some(crate::functions::linear_algebra_ast::find_fit_ast(args));
     }
