@@ -179,6 +179,12 @@ pub fn dispatch_calculus_functions(
     "FourierTransform" if args.len() == 3 => {
       return Some(fourier_transform(&args[0], &args[1], &args[2]));
     }
+    "FourierSinTransform" if args.len() == 3 => {
+      return Some(fourier_sin_transform(&args[0], &args[1], &args[2]));
+    }
+    "FourierCosTransform" if args.len() == 3 => {
+      return Some(fourier_cos_transform(&args[0], &args[1], &args[2]));
+    }
     "InverseFourierTransform" if args.len() == 3 => {
       return Some(inverse_fourier_transform(&args[0], &args[1], &args[2]));
     }
@@ -3237,4 +3243,249 @@ fn egf_stirling_numbers(k: usize) -> Vec<u64> {
     prev = cur;
   }
   prev
+}
+
+// ── FourierSinTransform / FourierCosTransform ───────────────────────
+// FourierSinTransform[f, t, w] = sqrt(2/pi) * Integrate[f * Sin[w*t], {t, 0, Infinity}]
+// FourierCosTransform[f, t, w] = sqrt(2/pi) * Integrate[f * Cos[w*t], {t, 0, Infinity}]
+
+fn fourier_sin_transform(
+  expr: &Expr,
+  t_expr: &Expr,
+  w_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let t = match t_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FourierSinTransform".to_string(),
+        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      });
+    }
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+
+  if let Some(result) =
+    fourier_sin_cos_transform_inner(&normalized, t, w_expr, true)
+  {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "FourierSinTransform".to_string(),
+      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    })
+  }
+}
+
+fn fourier_cos_transform(
+  expr: &Expr,
+  t_expr: &Expr,
+  w_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let t = match t_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FourierCosTransform".to_string(),
+        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      });
+    }
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+
+  if let Some(result) =
+    fourier_sin_cos_transform_inner(&normalized, t, w_expr, false)
+  {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "FourierCosTransform".to_string(),
+      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    })
+  }
+}
+
+/// Try to compute Fourier sine or cosine transform symbolically.
+/// is_sin: true for sine transform, false for cosine transform.
+fn fourier_sin_cos_transform_inner(
+  expr: &Expr,
+  t: &str,
+  w: &Expr,
+  is_sin: bool,
+) -> Option<Expr> {
+  // sqrt(2/Pi) prefactor
+  let prefactor = make_sqrt(make_times(vec![
+    Expr::Integer(2),
+    make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+  ]));
+
+  // Handle linearity: c * f(t) where c doesn't depend on t
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    if fname == "Times" {
+      let mut coeff_parts = Vec::new();
+      let mut t_parts = Vec::new();
+      for a in &fargs {
+        if depends_on(a, t) {
+          t_parts.push((*a).clone());
+        } else {
+          coeff_parts.push((*a).clone());
+        }
+      }
+      if !coeff_parts.is_empty() && !t_parts.is_empty() {
+        let inner = if t_parts.len() == 1 {
+          t_parts.into_iter().next().unwrap()
+        } else {
+          make_times(t_parts)
+        };
+        if let Some(result) =
+          fourier_sin_cos_transform_inner(&inner, t, w, is_sin)
+        {
+          let mut all = coeff_parts;
+          all.push(result);
+          return Some(make_times(all));
+        }
+      }
+    } else if fname == "Plus" {
+      let mut results = Vec::new();
+      for a in &fargs {
+        if let Some(r) = fourier_sin_cos_transform_inner(a, t, w, is_sin) {
+          results.push(r);
+        } else {
+          return None;
+        }
+      }
+      return Some(make_plus(results));
+    }
+  }
+
+  // FST[E^(-a*t), t, w] = sqrt(2/Pi) * w / (a^2 + w^2) (for a > 0)
+  // FCT[E^(-a*t), t, w] = sqrt(2/Pi) * a / (a^2 + w^2) (for a > 0)
+  if let Some(exp_arg) = is_exp_of(expr) {
+    // Check if exp_arg = -a*t (negative linear in t)
+    if let Some(neg_coeff) = extract_neg_linear_coeff(exp_arg, t) {
+      let a = neg_coeff;
+      let a2_plus_w2 = make_plus(vec![
+        make_power(a.clone(), Expr::Integer(2)),
+        make_power(w.clone(), Expr::Integer(2)),
+      ]);
+      let result = if is_sin {
+        // sqrt(2/Pi) * w / (a^2 + w^2)
+        make_times(vec![
+          prefactor,
+          w.clone(),
+          make_power(a2_plus_w2, Expr::Integer(-1)),
+        ])
+      } else {
+        // sqrt(2/Pi) * a / (a^2 + w^2)
+        make_times(vec![
+          prefactor,
+          a,
+          make_power(a2_plus_w2, Expr::Integer(-1)),
+        ])
+      };
+      return Some(result);
+    }
+  }
+
+  // FST[t, t, w] — just the variable itself
+  if let Expr::Identifier(name) = expr {
+    if name == t && is_sin {
+      // FST[t, t, w] = sqrt(2/Pi) * ... not well-defined (diverges)
+      return None;
+    }
+  }
+
+  // FST[1/t, t, w] = sqrt(Pi/2) (for w > 0)
+  if is_sin {
+    if let Some((fname, fargs)) = as_func_args(expr) {
+      if fname == "Power"
+        && fargs.len() == 2
+        && matches!(&fargs[0], Expr::Identifier(v) if v == t)
+        && matches!(&fargs[1], Expr::Integer(-1))
+      {
+        return Some(make_sqrt(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
+          },
+        ])));
+      }
+    }
+  }
+
+  None
+}
+
+/// Check if expr is E^(something) or Exp[something], return the exponent.
+fn is_exp_of(expr: &Expr) -> Option<&Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    if fname == "Exp" && fargs.len() == 1 {
+      return Some(&fargs[0]);
+    }
+    if fname == "Power" && fargs.len() == 2 {
+      if matches!(&fargs[0], Expr::Identifier(e) | Expr::Constant(e) if e == "E")
+      {
+        return Some(&fargs[1]);
+      }
+    }
+  }
+  None
+}
+
+/// If expr = -a * t where a doesn't depend on t, return a.
+fn extract_neg_linear_coeff<'a>(expr: &'a Expr, t: &str) -> Option<Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    if fname == "Times" {
+      let mut has_t = false;
+      let mut has_neg = false;
+      let mut coeffs = Vec::new();
+      for a in fargs {
+        if let Expr::Identifier(v) = a {
+          if v == t {
+            has_t = true;
+            continue;
+          }
+        }
+        if matches!(a, Expr::Integer(-1)) {
+          has_neg = true;
+          continue;
+        }
+        if !depends_on(a, t) {
+          coeffs.push(a.clone());
+        } else {
+          return None;
+        }
+      }
+      if has_t && has_neg {
+        return Some(if coeffs.is_empty() {
+          Expr::Integer(1)
+        } else if coeffs.len() == 1 {
+          coeffs.into_iter().next().unwrap()
+        } else {
+          make_times(coeffs)
+        });
+      }
+    }
+  }
+  // Check if it's -t directly: BinaryOp Times(-1, t)
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    if matches!(left.as_ref(), Expr::Integer(-1))
+      && matches!(right.as_ref(), Expr::Identifier(v) if v == t)
+    {
+      return Some(Expr::Integer(1));
+    }
+  }
+  None
 }

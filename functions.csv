@@ -2109,7 +2109,7 @@ Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
 FourierCosCoefficient,symbolic Fourier integral,🚫,None,7,2338
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7,1995
-FourierCosTransform,Symbolic integral transforms,🚫,None,4,2190
+FourierCosTransform,Fourier cosine transform of a function,✅,pure,4,2190
 FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6,1997
 FourierDCTFilter,,,,9,4809
 FourierDCTMatrix,,,,9,3889
@@ -2121,7 +2121,7 @@ FourierSequenceTransform,,,,7,2880
 FourierSeries,,🚫,,7,1317
 FourierSinCoefficient,symbolic Fourier integral,🚫,None,7,2329
 FourierSinSeries,Fourier sine series,✅,unevaluated,7,1842
-FourierSinTransform,,,,4,2553
+FourierSinTransform,Fourier sine transform of a function,✅,pure,4,2553
 FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4,639
 FourierTrigSeries,,🚫,,7,1085
 FoxH,,,,12.3,

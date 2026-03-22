@@ -3120,6 +3120,70 @@ mod asymptotic_solve {
   }
 }
 
+mod fourier_sin_transform {
+  use super::*;
+
+  #[test]
+  fn exp_decay() {
+    clear_state();
+    // FourierSinTransform[E^(-a*t), t, w] = Sqrt[2/Pi] * w / (a^2 + w^2)
+    let result = interpret("FourierSinTransform[E^(-a*t), t, w]").unwrap();
+    assert!(
+      result.contains("w") && !result.contains("FourierSinTransform"),
+      "expected evaluated result, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn linearity() {
+    clear_state();
+    let result = interpret("FourierSinTransform[3*E^(-t), t, w]").unwrap();
+    assert!(
+      !result.contains("FourierSinTransform"),
+      "expected evaluated result, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    clear_state();
+    let result = interpret("FourierSinTransform[f[t], t, w]").unwrap();
+    assert!(
+      result.contains("FourierSinTransform"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
+}
+
+mod fourier_cos_transform {
+  use super::*;
+
+  #[test]
+  fn exp_decay() {
+    clear_state();
+    let result = interpret("FourierCosTransform[E^(-a*t), t, w]").unwrap();
+    assert!(
+      result.contains("a") && !result.contains("FourierCosTransform"),
+      "expected evaluated result, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    clear_state();
+    let result = interpret("FourierCosTransform[g[t], t, w]").unwrap();
+    assert!(
+      result.contains("FourierCosTransform"),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
+}
+
 mod discrete_convolve {
   use super::*;
 
