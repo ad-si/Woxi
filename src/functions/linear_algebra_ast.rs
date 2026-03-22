@@ -3264,6 +3264,280 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// LogitModelFit[data, {1, x, x^2, ...}, x] — logistic regression.
+///
+/// Fits logit(p) = b0*f0 + b1*f1 + ... using Iteratively Reweighted Least Squares (IRLS).
+/// Returns a FittedModel with Type "Logit".
+pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LogitModelFit expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let basis = match &args[1] {
+    Expr::List(items) => items.clone(),
+    other => vec![Expr::Integer(1), other.clone()],
+  };
+
+  let var_name = match &args[2] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LogitModelFit: third argument must be a variable".into(),
+      ));
+    }
+  };
+
+  let data_list = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LogitModelFit: first argument must be a non-empty list".into(),
+      ));
+    }
+  };
+
+  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let n = x_vals.len();
+  let m = basis.len();
+
+  // Build design matrix A (n×m)
+  let mut a_matrix = vec![vec![0.0f64; m]; n];
+  for i in 0..n {
+    let x_expr = Expr::Real(x_vals[i]);
+    for j in 0..m {
+      let substituted =
+        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
+      let evaluated = evaluate_expr_to_expr(&substituted)?;
+      match try_eval_to_f64(&evaluated) {
+        Some(v) => a_matrix[i][j] = v,
+        None => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "LogitModelFit: could not evaluate basis function {:?} at x = {}",
+            basis[j], x_vals[i]
+          )));
+        }
+      }
+    }
+  }
+
+  // IRLS for logistic regression
+  let mut beta = vec![0.0f64; m];
+  let max_iter = 100;
+  let tol = 1e-10;
+
+  for _ in 0..max_iter {
+    // Compute predicted probabilities: p_i = 1 / (1 + exp(-eta_i))
+    let mut eta = vec![0.0f64; n];
+    let mut p = vec![0.0f64; n];
+    for i in 0..n {
+      eta[i] = (0..m).map(|j| beta[j] * a_matrix[i][j]).sum();
+      p[i] = 1.0 / (1.0 + (-eta[i]).exp());
+      // Clamp to avoid numerical issues
+      p[i] = p[i].clamp(1e-15, 1.0 - 1e-15);
+    }
+
+    // Compute W = diag(p*(1-p)) and z = eta + (y - p) / (p*(1-p))
+    let mut w = vec![0.0f64; n];
+    let mut z = vec![0.0f64; n];
+    for i in 0..n {
+      w[i] = p[i] * (1.0 - p[i]);
+      z[i] = eta[i] + (y_vals[i] - p[i]) / w[i];
+    }
+
+    // Weighted least squares: solve (A^T W A) beta = A^T W z
+    // Build A^T W A (m×m) and A^T W z (m×1)
+    let mut atwa = vec![vec![0.0f64; m]; m];
+    let mut atwz = vec![0.0f64; m];
+    for j in 0..m {
+      for k in 0..m {
+        let mut s = 0.0;
+        for i in 0..n {
+          s += a_matrix[i][j] * w[i] * a_matrix[i][k];
+        }
+        atwa[j][k] = s;
+      }
+      let mut s = 0.0;
+      for i in 0..n {
+        s += a_matrix[i][j] * w[i] * z[i];
+      }
+      atwz[j] = s;
+    }
+
+    // Solve via Gaussian elimination
+    let new_beta = match solve_linear_system(&atwa, &atwz) {
+      Some(b) => b,
+      None => break,
+    };
+
+    let delta: f64 = new_beta
+      .iter()
+      .zip(beta.iter())
+      .map(|(a, b)| (a - b).abs())
+      .sum();
+    beta = new_beta;
+    if delta < tol {
+      break;
+    }
+  }
+
+  // Compute fitted probabilities and residuals
+  let mut fitted_probs = Vec::with_capacity(n);
+  let mut residuals = Vec::with_capacity(n);
+  for i in 0..n {
+    let eta: f64 = (0..m).map(|j| beta[j] * a_matrix[i][j]).sum();
+    let p = 1.0 / (1.0 + (-eta).exp());
+    fitted_probs.push(p);
+    residuals.push(y_vals[i] - p);
+  }
+
+  // Build the fitted logistic expression
+  let mut linear_terms = Vec::new();
+  for (j, c) in beta.iter().enumerate() {
+    let coeff_expr = Expr::Real(*c);
+    if matches!(&basis[j], Expr::Integer(1)) {
+      linear_terms.push(coeff_expr);
+    } else {
+      linear_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff_expr, basis[j].clone()],
+      });
+    }
+  }
+  let linear_expr = if linear_terms.len() == 1 {
+    linear_terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: linear_terms,
+    }
+  };
+
+  // Build logistic: 1 / (1 + Exp[-linear])
+  let fitted_expr = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::Integer(1),
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "Exp".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![Expr::Integer(-1), linear_expr],
+                }],
+              },
+            ],
+          },
+          Expr::Integer(-1),
+        ],
+      },
+    ],
+  };
+
+  let input_data = Expr::List(
+    x_vals
+      .iter()
+      .zip(y_vals.iter())
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .collect(),
+  );
+
+  let assoc = Expr::Association(vec![
+    (
+      Expr::String("Type".to_string()),
+      Expr::Identifier("Logit".to_string()),
+    ),
+    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (
+      Expr::String("BestFitParameters".to_string()),
+      Expr::List(beta.iter().map(|c| Expr::Real(*c)).collect()),
+    ),
+    (
+      Expr::String("IndependentVariables".to_string()),
+      Expr::List(vec![Expr::Identifier(var_name.clone())]),
+    ),
+    (
+      Expr::String("BasisFunctions".to_string()),
+      Expr::List(basis),
+    ),
+    (
+      Expr::String("FitResiduals".to_string()),
+      Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
+    ),
+    (
+      Expr::String("PredictedResponse".to_string()),
+      Expr::List(fitted_probs.iter().map(|v| Expr::Real(*v)).collect()),
+    ),
+    (Expr::String("InputData".to_string()), input_data),
+    (
+      Expr::String("VariableName".to_string()),
+      Expr::String(var_name),
+    ),
+  ]);
+
+  Ok(Expr::FunctionCall {
+    name: "FittedModel".to_string(),
+    args: vec![assoc],
+  })
+}
+
+/// Solve a linear system Ax = b using Gaussian elimination with partial pivoting.
+fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+  let n = a.len();
+  // Build augmented matrix
+  let mut aug: Vec<Vec<f64>> = a
+    .iter()
+    .enumerate()
+    .map(|(i, row)| {
+      let mut r = row.clone();
+      r.push(b[i]);
+      r
+    })
+    .collect();
+
+  for col in 0..n {
+    // Partial pivoting
+    let mut max_row = col;
+    let mut max_val = aug[col][col].abs();
+    for row in (col + 1)..n {
+      if aug[row][col].abs() > max_val {
+        max_val = aug[row][col].abs();
+        max_row = row;
+      }
+    }
+    if max_val < 1e-30 {
+      return None;
+    }
+    aug.swap(col, max_row);
+
+    let pivot = aug[col][col];
+    for row in (col + 1)..n {
+      let factor = aug[row][col] / pivot;
+      for j in col..=n {
+        aug[row][j] -= factor * aug[col][j];
+      }
+    }
+  }
+
+  // Back substitution
+  let mut x = vec![0.0; n];
+  for i in (0..n).rev() {
+    let mut s = aug[i][n];
+    for j in (i + 1)..n {
+      s -= aug[i][j] * x[j];
+    }
+    x[i] = s / aug[i][i];
+  }
+  Some(x)
+}
+
 /// Evaluate a FittedModel at a point or query a property.
 /// Called when FittedModel[assoc][arg] is encountered.
 pub fn evaluate_fitted_model(

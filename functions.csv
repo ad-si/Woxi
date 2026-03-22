@@ -3302,7 +3302,7 @@ LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1,15
 LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
 LogisticDistribution,represents a logistic distribution,✅,Computation,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
-LogitModelFit,,,,7,2541
+LogitModelFit,Logistic regression model fitting via IRLS,✅,pure,7,2541
 LogLikelihood,Log-likelihood function,✅,unevaluated,8,1687
 LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6,912
 LogLogisticDistribution,,,,8,3612

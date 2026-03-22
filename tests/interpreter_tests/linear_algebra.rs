@@ -1495,3 +1495,76 @@ mod tensor_wedge {
     assert_eq!(interpret("TensorWedge[a, b]").unwrap(), "TensorWedge[a, b]");
   }
 }
+
+#[cfg(test)]
+mod logit_model_fit {
+  use super::*;
+
+  #[test]
+  fn basic_logistic_regression() {
+    // Simple dataset: low x -> y=0, high x -> y=1
+    let result = interpret(
+      "LogitModelFit[{{0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}}, {1, x}, x]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("FittedModel"),
+      "expected FittedModel, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn fitted_model_evaluation() {
+    clear_state();
+    // Fit a logistic model and evaluate at a point
+    interpret(
+      "model = LogitModelFit[{{0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}}, {1, x}, x]",
+    )
+    .unwrap();
+
+    // Evaluate at x=2.5 — should be near 0.5 (transition point)
+    let result = interpret("model[2.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      val > 0.2 && val < 0.8,
+      "expected probability near 0.5 at transition, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn extreme_predictions() {
+    clear_state();
+    interpret(
+      "model = LogitModelFit[{{0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}}, {1, x}, x]",
+    )
+    .unwrap();
+
+    // At x=-5, should be close to 0
+    let low = interpret("model[-5.0]").unwrap();
+    let low_val: f64 = low.parse().unwrap();
+    assert!(low_val < 0.1, "expected p < 0.1 at x=-5, got {}", low_val);
+
+    // At x=10, should be close to 1
+    let high = interpret("model[10.0]").unwrap();
+    let high_val: f64 = high.parse().unwrap();
+    assert!(high_val > 0.9, "expected p > 0.9 at x=10, got {}", high_val);
+  }
+
+  #[test]
+  fn best_fit_parameters() {
+    clear_state();
+    interpret(
+      "model = LogitModelFit[{{0, 0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}}, {1, x}, x]",
+    )
+    .unwrap();
+
+    let params = interpret("model[\"BestFitParameters\"]").unwrap();
+    assert!(
+      params.starts_with('{'),
+      "expected list of params, got {}",
+      params
+    );
+  }
+}
