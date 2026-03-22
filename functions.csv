@@ -279,7 +279,7 @@ AsymptoticOutputTracker,,,,10,3765
 AsymptoticProbability,,,,12.2,4612
 AsymptoticProduct,,,,12.1,
 AsymptoticRSolveValue,,,,12,4262
-AsymptoticSolve,,,,12,2541
+AsymptoticSolve,Find asymptotic solutions to equations near a point,✅,pure,12,2541
 AsymptoticSum,,,,12,4081
 Asynchronous,,🚫,,8,5486
 Atom,Basic building block,🚫,,12,2065

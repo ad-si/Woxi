@@ -3072,3 +3072,50 @@ mod exponential_generating_function {
     );
   }
 }
+
+mod asymptotic_solve {
+  use super::*;
+
+  #[test]
+  fn simple_linear() {
+    clear_state();
+    // Solve x - 1 == 0 near x -> 0, order 3
+    // Solution: x -> 1
+    let result = interpret("AsymptoticSolve[x - 1 == 0, x -> 0, 3]").unwrap();
+    assert_eq!(result, "{{x -> 1}}");
+  }
+
+  #[test]
+  fn quadratic() {
+    clear_state();
+    // Solve x^2 - 4 == 0 near x -> 0, order 3
+    // Solutions: x -> 2 and x -> -2
+    let result = interpret("AsymptoticSolve[x^2 - 4 == 0, x -> 0, 3]").unwrap();
+    assert!(
+      result.contains("x -> 2") && result.contains("x -> -2"),
+      "expected solutions x -> 2 and x -> -2, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn near_nonzero_point() {
+    clear_state();
+    // Solve x^2 - 1 == 0 near x -> 1, order 2
+    // x = 1 is a root, so should find x -> 1
+    let result = interpret("AsymptoticSolve[x^2 - 1 == 0, x -> 1, 2]").unwrap();
+    assert!(result.contains("x -> 1"), "expected x -> 1 in {}", result);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    clear_state();
+    // With wrong number of args
+    let result = interpret("AsymptoticSolve[x^2 - 1]").unwrap();
+    assert!(
+      result.starts_with("AsymptoticSolve["),
+      "expected unevaluated, got {}",
+      result
+    );
+  }
+}

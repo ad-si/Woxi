@@ -87,6 +87,9 @@ pub fn dispatch_calculus_functions(
     "Series" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::series_ast(args));
     }
+    "AsymptoticSolve" if args.len() == 3 => {
+      return Some(crate::functions::calculus_ast::asymptotic_solve_ast(args));
+    }
     "SeriesCoefficient" if args.len() == 2 => {
       // SeriesCoefficient[f, {x, x0, n}]
       if let Expr::List(spec) = &args[1]
