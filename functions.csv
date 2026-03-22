@@ -6108,7 +6108,7 @@ WhittakerM,Whittaker M function,✅,unevaluated,6,1651
 WhittakerW,Whittaker W function,✅,unevaluated,6,1741
 WienerFilter,,🚫,,8,4315
 WienerProcess,,🚫,,9,1268
-WignerD,,,,8,2587
+WignerD,Wigner D-matrix elements for rotation group representations,✅,pure,8,2587
 WignerSemicircleDistribution,,,,8,3280
 WikidataData,,🚫,,12.1,4006
 WikidataSearch,,🚫,,12.1,4707

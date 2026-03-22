@@ -3862,3 +3862,80 @@ mod weber_e_tests {
     assert_eq!(interpret("WeberE[1]").unwrap(), "WeberE[1]");
   }
 }
+
+#[cfg(test)]
+mod wigner_d_tests {
+  use super::*;
+
+  #[test]
+  fn j1_identity() {
+    // WignerD[{1, 0, 0}, 0] = d^1_{0,0}(0) = 1
+    let result: f64 = interpret("WignerD[{1, 0, 0}, 0.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-10, "got {}", result);
+  }
+
+  #[test]
+  fn j1_at_pi() {
+    // d^1_{0,0}(Pi) = cos(Pi) = -1
+    let result: f64 = interpret("WignerD[{1, 0, 0}, 3.141592653589793]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - (-1.0)).abs() < 1e-10, "got {}", result);
+  }
+
+  #[test]
+  fn j_half() {
+    // d^{1/2}_{1/2, 1/2}(theta) = cos(theta/2)
+    let theta: f64 = 1.0;
+    let expected = (theta / 2.0).cos();
+    let result: f64 =
+      interpret(&format!("WignerD[{{1/2, 1/2, 1/2}}, {}]", theta))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+      (result - expected).abs() < 1e-10,
+      "expected {}, got {}",
+      expected,
+      result
+    );
+  }
+
+  #[test]
+  fn j_half_off_diag() {
+    // d^{1/2}_{1/2, -1/2}(theta) = -sin(theta/2)
+    let theta: f64 = 1.0;
+    let expected = -(theta / 2.0).sin();
+    let result: f64 =
+      interpret(&format!("WignerD[{{1/2, 1/2, -1/2}}, {}]", theta))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+      (result - expected).abs() < 1e-10,
+      "expected {}, got {}",
+      expected,
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("WignerD[{j, m1, m2}, theta]").unwrap(),
+      "WignerD[{j, m1, m2}, theta]"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    assert_eq!(
+      interpret("WignerD[{1, 0, 0}]").unwrap(),
+      "WignerD[{1, 0, 0}]"
+    );
+  }
+}
