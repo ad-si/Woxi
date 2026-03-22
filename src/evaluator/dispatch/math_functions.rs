@@ -716,6 +716,9 @@ pub fn dispatch_math_functions(
     "StruveH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::struve_h_ast(args));
     }
+    "AngerJ" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::anger_j_ast(args));
+    }
     "StruveL" if args.len() == 2 => {
       return Some(crate::functions::math_ast::struve_l_ast(args));
     }

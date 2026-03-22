@@ -3621,3 +3621,98 @@ mod log_gamma {
     assert_eq!(interpret("LogGamma[x]").unwrap(), "LogGamma[x]");
   }
 }
+
+#[cfg(test)]
+mod anger_j_tests {
+  use super::*;
+
+  // AngerJ[n, z] = BesselJ[n, z] for integer n
+  #[test]
+  fn integer_order_equals_bessel_j() {
+    // AngerJ[0, 0] = BesselJ[0, 0] = 1
+    assert_eq!(interpret("AngerJ[0, 0]").unwrap(), "1");
+
+    // AngerJ[1, 0] = BesselJ[1, 0] = 0
+    assert_eq!(interpret("AngerJ[1, 0]").unwrap(), "0");
+
+    // AngerJ[2, 0] = BesselJ[2, 0] = 0
+    assert_eq!(interpret("AngerJ[2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_order_numeric() {
+    // AngerJ[0, 1.0] = BesselJ[0, 1.0] ≈ 0.7651976865579666
+    let result: f64 = interpret("AngerJ[0, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.7651976865579666).abs() < 1e-8, "got {}", result);
+
+    // AngerJ[1, 3.0] = BesselJ[1, 3.0] ≈ 0.33905895852593644
+    let result: f64 = interpret("AngerJ[1, 3.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 0.33905895852593644).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn non_integer_order_at_zero() {
+    // AngerJ[0.5, 0] = Sin[0.5 * Pi] / (0.5 * Pi) = 1 / (Pi/2) = 2/Pi ≈ 0.6366197723675814
+    let result: f64 = interpret("AngerJ[0.5, 0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 2.0 / std::f64::consts::PI).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn non_integer_order_numeric() {
+    // AngerJ[0.5, 1.0] ≈ 0.8551653096792619
+    let result: f64 = interpret("AngerJ[0.5, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.8551653096792676).abs() < 1e-6, "got {}", result);
+
+    // AngerJ[1.5, 2.0] ≈ 0.4036548767715761
+    let result: f64 = interpret("AngerJ[1.5, 2.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 0.40365487677157613).abs() < 1e-6,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn negative_order() {
+    // AngerJ[-1, 3.0] = BesselJ[-1, 3.0] = -BesselJ[1, 3.0]
+    let result: f64 = interpret("AngerJ[-1, 3.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.33905895852593644)).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_wrapper() {
+    // N[AngerJ[0, 5]] should force numeric evaluation
+    let result: f64 = interpret("N[AngerJ[0, 5]]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.17759677131433826)).abs() < 1e-8,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    // Integer order reduces to BesselJ
+    assert_eq!(interpret("AngerJ[0, x]").unwrap(), "BesselJ[0, x]");
+    // Non-integer symbolic stays as AngerJ
+    assert_eq!(interpret("AngerJ[n, z]").unwrap(), "AngerJ[n, z]");
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    // AngerJ with wrong number of args should return unevaluated
+    assert_eq!(interpret("AngerJ[1]").unwrap(), "AngerJ[1]");
+  }
+}

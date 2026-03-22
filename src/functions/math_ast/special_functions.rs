@@ -7163,3 +7163,150 @@ pub fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
 
   prefactor * (term1 + term2)
 }
+
+/// AngerJ[nu, z] — Anger function.
+///
+/// For integer nu, AngerJ[n, z] = BesselJ[n, z].
+/// For general nu, AngerJ[nu, z] = (1/Pi) * Integral[Cos[nu*t - z*Sin[t]], {t, 0, Pi}]
+pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "AngerJ expects exactly 2 arguments".into(),
+    ));
+  }
+  let nu_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Extract numeric values
+  let nu_val = match nu_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let z_val = match z_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+
+  // Special case: AngerJ[n, 0] for integer n
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = nu_expr
+  {
+    return if *n == 0 {
+      Ok(Expr::Integer(1))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // For integer nu, AngerJ[n, z] = BesselJ[n, z]
+  if let Expr::Integer(_) = nu_expr {
+    return bessel_j_ast(args);
+  }
+
+  // Numeric evaluation when both args are numeric and at least one is Real
+  let is_numeric_eval = nu_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(nu_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let nu = nu_val.unwrap();
+    let z = z_val.unwrap();
+    let result = anger_j(nu, z);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "AngerJ".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute AngerJ[nu, z] numerically using Gauss-Legendre quadrature.
+///
+/// AngerJ[nu, z] = (1/Pi) * Integral[Cos[nu*t - z*Sin[t]], {t, 0, Pi}]
+/// For integer nu, this equals BesselJ[n, z].
+pub fn anger_j(nu: f64, z: f64) -> f64 {
+  // For integer nu, delegate to BesselJ
+  if nu == nu.floor() && nu.is_finite() {
+    return bessel_j(nu, z);
+  }
+
+  // For z = 0: AngerJ[nu, 0] = Sin[nu*Pi] / (nu*Pi)
+  if z == 0.0 {
+    let x = nu * std::f64::consts::PI;
+    return x.sin() / x;
+  }
+
+  // Gauss-Legendre quadrature on [0, Pi]
+  // Transform: t = (Pi/2) * (u + 1) where u in [-1, 1]
+  gauss_legendre_anger_j(nu, z)
+}
+
+/// Gauss-Legendre quadrature for the Anger function integral.
+fn gauss_legendre_anger_j(nu: f64, z: f64) -> f64 {
+  // Use 64-point Gauss-Legendre quadrature
+  // Nodes and weights for [-1, 1]
+  let nodes_weights = gauss_legendre_64();
+  let half_pi = std::f64::consts::PI / 2.0;
+  let inv_pi = 1.0 / std::f64::consts::PI;
+
+  let mut sum = 0.0;
+  for &(node, weight) in &nodes_weights {
+    let t = half_pi * (node + 1.0); // Map [-1,1] to [0, Pi]
+    let integrand = (nu * t - z * t.sin()).cos();
+    sum += weight * integrand;
+  }
+  sum * half_pi * inv_pi
+}
+
+/// 64-point Gauss-Legendre nodes and weights on [-1, 1].
+fn gauss_legendre_64() -> Vec<(f64, f64)> {
+  // Compute nodes and weights using the Golub-Welsch algorithm
+  let n = 64;
+  let mut nodes = vec![0.0_f64; n];
+  let mut weights = vec![0.0_f64; n];
+
+  for i in 0..n {
+    // Initial guess using Chebyshev nodes
+    let mut x =
+      -(std::f64::consts::PI * (4 * i + 3) as f64 / (4 * n + 2) as f64).cos();
+
+    // Newton's method to find roots of P_n(x)
+    for _ in 0..100 {
+      let (p, dp) = legendre_p_and_deriv(n, x);
+      let dx = -p / dp;
+      x += dx;
+      if dx.abs() < 1e-16 {
+        break;
+      }
+    }
+    nodes[i] = x;
+    let (_, dp) = legendre_p_and_deriv(n, x);
+    weights[i] = 2.0 / ((1.0 - x * x) * dp * dp);
+  }
+
+  nodes.into_iter().zip(weights).collect()
+}
+
+/// Evaluate Legendre polynomial P_n(x) and its derivative P_n'(x).
+fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
+  let mut p0 = 1.0;
+  let mut p1 = x;
+  let mut dp0 = 0.0;
+  let mut dp1 = 1.0;
+
+  for k in 1..n {
+    let kf = k as f64;
+    let p2 = ((2.0 * kf + 1.0) * x * p1 - kf * p0) / (kf + 1.0);
+    let dp2 = ((2.0 * kf + 1.0) * (p1 + x * dp1) - kf * dp0) / (kf + 1.0);
+    p0 = p1;
+    p1 = p2;
+    dp0 = dp1;
+    dp1 = dp2;
+  }
+
+  (p1, dp1)
+}
