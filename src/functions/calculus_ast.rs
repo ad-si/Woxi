@@ -6182,3 +6182,269 @@ fn total_differentiate(
     }),
   }
 }
+
+/// AsymptoticSolve[eqn, x -> x0, n] — find asymptotic solutions of eqn near x = x0 to order n.
+///
+/// Uses Series expansion and iterative coefficient solving.
+pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "AsymptoticSolve".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Parse the equation: eqn can be f == 0 or just f (treated as f == 0)
+  let f_expr = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operands.len() == 2 =>
+    {
+      // f == g becomes f - g
+      if matches!(&operands[1], Expr::Integer(0)) {
+        operands[0].clone()
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(operands[0].clone()),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(operands[1].clone()),
+          }),
+        }
+      }
+    }
+    // Also handle FunctionCall "Equal"
+    Expr::FunctionCall {
+      name,
+      args: eq_args,
+    } if name == "Equal" && eq_args.len() == 2 => {
+      if matches!(&eq_args[1], Expr::Integer(0)) {
+        eq_args[0].clone()
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(eq_args[0].clone()),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(eq_args[1].clone()),
+          }),
+        }
+      }
+    }
+    other => other.clone(),
+  };
+
+  // Parse x -> x0
+  let (var_name, x0) = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match pattern.as_ref() {
+      Expr::Identifier(name) => (name.clone(), *replacement.clone()),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AsymptoticSolve".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    },
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "AsymptoticSolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Parse order n
+  let order = match &args[2] {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "AsymptoticSolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if order < 1 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Compute the series expansion of f around x0
+  let series_result = series_ast(&[
+    f_expr.clone(),
+    Expr::List(vec![
+      Expr::Identifier(var_name.clone()),
+      x0.clone(),
+      Expr::Integer(order),
+    ]),
+  ])?;
+
+  // Extract SeriesData coefficients
+  let (coeffs, _min_power) = match extract_series_coefficients(&series_result) {
+    Some(c) => c,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "AsymptoticSolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if coeffs.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Use the series to find solutions via InverseSeries approach:
+  // f(x) = c0 + c1*(x-x0) + c2*(x-x0)^2 + ... = 0
+  // If c0 == 0, x = x0 is already a solution. Look at the structure.
+  // If c0 != 0, we need to solve for x-x0.
+
+  // Use Newton-like iteration on the truncated polynomial
+  // Build the polynomial: sum of c_k * t^(k + min_power) where t = x - x0
+  // and solve this polynomial for t using Solve
+
+  // Build the polynomial expression in a temporary variable
+  let t_var = Expr::Identifier("AsymptoticSolve$t".to_string());
+
+  let mut poly_terms: Vec<Expr> = Vec::new();
+  for (i, coeff) in coeffs.iter().enumerate() {
+    if matches!(coeff, Expr::Integer(0)) {
+      continue;
+    }
+    let power = _min_power + i as i128;
+    let term = if power == 0 {
+      coeff.clone()
+    } else if power == 1 {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(coeff.clone()),
+        right: Box::new(t_var.clone()),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(coeff.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(t_var.clone()),
+          right: Box::new(Expr::Integer(power)),
+        }),
+      }
+    };
+    poly_terms.push(term);
+  }
+
+  if poly_terms.is_empty() {
+    // f is identically zero to this order — any x works
+    return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var_name)),
+      replacement: Box::new(x0),
+    }])]));
+  }
+
+  let poly_expr = if poly_terms.len() == 1 {
+    poly_terms.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: poly_terms,
+    }
+  };
+
+  // Solve poly_expr == 0 for t
+  use crate::evaluator::evaluate_expr_to_expr;
+
+  let solve_expr = Expr::FunctionCall {
+    name: "Solve".to_string(),
+    args: vec![
+      Expr::Comparison {
+        operands: vec![poly_expr, Expr::Integer(0)],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      },
+      Expr::Identifier("AsymptoticSolve$t".to_string()),
+    ],
+  };
+
+  let solutions = evaluate_expr_to_expr(&solve_expr)?;
+
+  // Convert solutions from t -> val to x -> x0 + val
+  match &solutions {
+    Expr::List(sol_list) => {
+      let mut result = Vec::new();
+      for sol in sol_list {
+        if let Expr::List(rules) = sol {
+          let mut new_rules = Vec::new();
+          for rule in rules {
+            if let Expr::Rule { replacement, .. } = rule {
+              // x = x0 + t
+              let x_val = if matches!(x0, Expr::Integer(0)) {
+                *replacement.clone()
+              } else {
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Plus,
+                  left: Box::new(x0.clone()),
+                  right: replacement.clone(),
+                }
+              };
+              let simplified = evaluate_expr_to_expr(&x_val)?;
+              new_rules.push(Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var_name.clone())),
+                replacement: Box::new(simplified),
+              });
+            }
+          }
+          if !new_rules.is_empty() {
+            result.push(Expr::List(new_rules));
+          }
+        }
+      }
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "AsymptoticSolve".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Extract coefficients from a SeriesData expression.
+/// Returns (coefficients, min_power).
+fn extract_series_coefficients(expr: &Expr) -> Option<(Vec<Expr>, i128)> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "SeriesData" => {
+      // SeriesData[var, x0, coeffs_list, nmin, nmax, den]
+      if args.len() >= 4 {
+        let coeffs = match &args[2] {
+          Expr::List(items) => items.clone(),
+          _ => return None,
+        };
+        let nmin = match &args[3] {
+          Expr::Integer(n) => *n,
+          _ => return None,
+        };
+        let den = if args.len() >= 6 {
+          match &args[5] {
+            Expr::Integer(d) => *d,
+            _ => 1,
+          }
+        } else {
+          1
+        };
+        // The actual power of the i-th coefficient is (nmin + i) / den
+        // For simplicity, handle den == 1
+        if den == 1 { Some((coeffs, nmin)) } else { None }
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
