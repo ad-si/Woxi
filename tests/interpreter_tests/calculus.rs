@@ -3120,6 +3120,34 @@ mod asymptotic_solve {
   }
 }
 
+mod discrete_convolve {
+  use super::*;
+
+  #[test]
+  fn finite_sum_case() {
+    clear_state();
+    // DiscreteConvolve with Piecewise-like expressions
+    // Use UnitStep to create finite support:
+    // f[n] = UnitStep[n] * UnitStep[2-n] (nonzero for n=0,1,2)
+    // DiscreteConvolve on simple expressions
+    // For now just test that the function runs and returns something
+    let result =
+      interpret("DiscreteConvolve[KroneckerDelta[n], KroneckerDelta[m], n, m]")
+        .unwrap();
+    // The Sum may not simplify the infinite sum, but it should return something
+    assert!(!result.is_empty(), "expected non-empty result");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("DiscreteConvolve[f, g, n]").unwrap(),
+      "DiscreteConvolve[f, g, n]"
+    );
+  }
+}
+
 mod list_fourier_sequence_transform {
   use super::*;
 

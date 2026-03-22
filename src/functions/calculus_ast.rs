@@ -6448,3 +6448,85 @@ fn extract_series_coefficients(expr: &Expr) -> Option<(Vec<Expr>, i128)> {
     _ => None,
   }
 }
+
+/// DiscreteConvolve[f, g, n, m] — discrete convolution.
+///
+/// Computes Sum[f /. n -> k, g /. m -> (m - k), {k, -Infinity, Infinity}]
+/// by building a Sum expression and evaluating it.
+pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Ok(Expr::FunctionCall {
+      name: "DiscreteConvolve".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let f_expr = &args[0];
+  let g_expr = &args[1];
+  let n_var = match &args[2] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DiscreteConvolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let m_var = match &args[3] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DiscreteConvolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Build: Sum[(f /. n -> k$dc) * (g /. m -> (m - k$dc)), {k$dc, -Infinity, Infinity}]
+  let k_var = "DiscreteConvolve$k";
+  let k_expr = Expr::Identifier(k_var.to_string());
+
+  // f /. n -> k
+  let f_sub = crate::syntax::substitute_variable(f_expr, &n_var, &k_expr);
+
+  // g /. m -> (m - k)  — but the result variable is m (output var),
+  // which is the same as the output. In WL convention, the result is in terms of m.
+  let m_minus_k = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::Identifier(m_var.clone())),
+    right: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(k_expr.clone()),
+    }),
+  };
+  let g_sub = crate::syntax::substitute_variable(g_expr, &m_var, &m_minus_k);
+
+  // Build the product
+  let product = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(f_sub),
+    right: Box::new(g_sub),
+  };
+
+  // Build Sum[product, {k, -Infinity, Infinity}]
+  let sum_expr = Expr::FunctionCall {
+    name: "Sum".to_string(),
+    args: vec![
+      product,
+      Expr::List(vec![
+        k_expr,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(-1),
+            Expr::Identifier("Infinity".to_string()),
+          ],
+        },
+        Expr::Identifier("Infinity".to_string()),
+      ]),
+    ],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&sum_expr)
+}
