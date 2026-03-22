@@ -90,6 +90,9 @@ pub fn dispatch_calculus_functions(
     "AsymptoticSolve" if args.len() == 3 => {
       return Some(crate::functions::calculus_ast::asymptotic_solve_ast(args));
     }
+    "DiscreteConvolve" if args.len() == 4 => {
+      return Some(crate::functions::calculus_ast::discrete_convolve_ast(args));
+    }
     "SeriesCoefficient" if args.len() == 2 => {
       // SeriesCoefficient[f, {x, x0, n}]
       if let Expr::List(spec) = &args[1]
