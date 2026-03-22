@@ -5483,7 +5483,7 @@ TensorRank,Gives the rank (number of indices) of a tensor,✅,pure,9,1938
 TensorReduce,Reduce tensor expressions,🚫,,9,2108
 TensorSymmetry,,,,9,2993
 TensorTranspose,tensor algebra,🚫,None,9,2394
-TensorWedge,,,,9,2533
+TensorWedge,Exterior (wedge) product of vectors/tensors,✅,pure,9,2533
 TerminatedEvaluation,,,,13.2,
 TernaryListPlot,,🚫,,13.1,
 TernaryPlotCorners,,,,13.1,

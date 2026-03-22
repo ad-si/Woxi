@@ -1429,3 +1429,69 @@ mod symmetric_matrix_q {
     );
   }
 }
+
+#[cfg(test)]
+mod tensor_wedge {
+  use super::*;
+
+  #[test]
+  fn two_vectors_2d() {
+    // TensorWedge[{a, b}, {c, d}] = {{0, a*d - b*c}, {-(a*d - b*c), 0}}
+    assert_eq!(
+      interpret("TensorWedge[{1, 0}, {0, 1}]").unwrap(),
+      "{{0, 1}, {-1, 0}}"
+    );
+  }
+
+  #[test]
+  fn two_vectors_3d_numeric() {
+    // TensorWedge[{1, 0, 0}, {0, 1, 0}]
+    // = {{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}
+    assert_eq!(
+      interpret("TensorWedge[{1, 0, 0}, {0, 1, 0}]").unwrap(),
+      "{{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn antisymmetry() {
+    // TensorWedge[u, v] = -TensorWedge[v, u]
+    let uv = interpret("TensorWedge[{1, 2, 3}, {4, 5, 6}]").unwrap();
+    let vu = interpret("TensorWedge[{4, 5, 6}, {1, 2, 3}]").unwrap();
+    // Parse and check negation
+    let uv_neg =
+      interpret(&format!("Map[Function[x, -x], {}, {{2}}]", uv)).unwrap();
+    assert_eq!(uv_neg, vu, "TensorWedge should be antisymmetric");
+  }
+
+  #[test]
+  fn single_vector() {
+    // TensorWedge[v] = v
+    assert_eq!(interpret("TensorWedge[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn parallel_vectors_zero() {
+    // Wedge of parallel vectors is zero
+    assert_eq!(
+      interpret("TensorWedge[{1, 2}, {2, 4}]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn three_vectors_3d() {
+    // TensorWedge[{1,0,0}, {0,1,0}, {0,0,1}] should give a rank-3 tensor
+    // with the only nonzero entries being ±1 at even/odd permutations of (0,1,2)
+    let result =
+      interpret("TensorWedge[{1, 0, 0}, {0, 1, 0}, {0, 0, 1}]").unwrap();
+    // The (0,1,2) entry should be 1 and (1,0,2) should be -1, etc.
+    assert!(result.contains("1"), "should contain nonzero entries");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    // Non-list args should return unevaluated
+    assert_eq!(interpret("TensorWedge[a, b]").unwrap(), "TensorWedge[a, b]");
+  }
+}

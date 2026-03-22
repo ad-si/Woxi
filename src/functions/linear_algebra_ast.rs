@@ -3800,3 +3800,141 @@ fn identity_i128(n: usize) -> Vec<Vec<i128>> {
   }
   m
 }
+
+/// TensorWedge[v1, v2, ...] — exterior (wedge) product of vectors/tensors.
+///
+/// For k vectors of dimension n, produces a rank-k antisymmetric tensor.
+/// TensorWedge[u, v]_{i,j} = u_i * v_j - u_j * v_i
+pub fn tensor_wedge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "TensorWedge expects at least 1 argument".into(),
+    ));
+  }
+
+  // Single argument: TensorWedge[v] = v
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
+
+  // Extract vectors (each arg must be a List)
+  let mut vectors: Vec<&[Expr]> = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::List(items) => vectors.push(items),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "TensorWedge".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // All vectors must have the same dimension
+  let n = vectors[0].len();
+  for v in &vectors {
+    if v.len() != n {
+      return Err(InterpreterError::EvaluationError(
+        "TensorWedge: all vectors must have the same dimension".into(),
+      ));
+    }
+  }
+
+  let k = vectors.len();
+  if k > n {
+    // Wedge product of more vectors than the dimension is zero
+    return Ok(build_zero_tensor(n, k));
+  }
+
+  // Build the k-dimensional antisymmetric tensor
+  // For indices (i1, i2, ..., ik), the value is:
+  //   Sum over permutations σ of {0,...,k-1}: sign(σ) * v_{σ(0)}[i0] * v_{σ(1)}[i1] * ... * v_{σ(k-1)}[ik-1]
+  let perms = permutations(k);
+  build_wedge_tensor(&vectors, n, k, &perms, &vec![])
+}
+
+/// Recursively build the wedge product tensor.
+fn build_wedge_tensor(
+  vectors: &[&[Expr]],
+  n: usize,
+  k: usize,
+  perms: &[(Vec<usize>, i32)],
+  indices: &Vec<usize>,
+) -> Result<Expr, InterpreterError> {
+  if indices.len() == k {
+    // Compute the element at this multi-index
+    // Build Times[sign, v_{σ(0)}[i0], ..., v_{σ(k-1)}[ik-1]] for each perm
+    // and sum them all using Plus[...]
+    let mut terms = Vec::new();
+    for (perm, sign) in perms {
+      let mut factors: Vec<Expr> = vec![Expr::Integer(*sign as i128)];
+      for (slot, &p_idx) in perm.iter().enumerate() {
+        factors.push(vectors[p_idx][indices[slot]].clone());
+      }
+      let term = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors,
+      };
+      terms.push(term);
+    }
+    let sum_expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    };
+    return Ok(evaluate_expr_to_expr(&sum_expr)?);
+  }
+
+  // Build the next level of the tensor
+  let mut elements = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut new_indices = indices.clone();
+    new_indices.push(i);
+    elements.push(build_wedge_tensor(vectors, n, k, perms, &new_indices)?);
+  }
+  Ok(Expr::List(elements))
+}
+
+/// Build a zero tensor of shape n × n × ... × n (k times).
+fn build_zero_tensor(n: usize, k: usize) -> Expr {
+  if k == 0 {
+    return Expr::Integer(0);
+  }
+  let inner = build_zero_tensor(n, k - 1);
+  Expr::List(vec![inner; n])
+}
+
+/// Generate all permutations of {0, 1, ..., n-1} with their signs.
+fn permutations(n: usize) -> Vec<(Vec<usize>, i32)> {
+  let mut result = Vec::new();
+  let mut perm: Vec<usize> = (0..n).collect();
+  permutations_helper(&mut perm, 0, &mut result);
+  result
+}
+
+fn permutations_helper(
+  perm: &mut Vec<usize>,
+  start: usize,
+  result: &mut Vec<(Vec<usize>, i32)>,
+) {
+  let n = perm.len();
+  if start == n {
+    // Count inversions to determine sign
+    let mut inversions = 0;
+    for i in 0..n {
+      for j in (i + 1)..n {
+        if perm[i] > perm[j] {
+          inversions += 1;
+        }
+      }
+    }
+    let sign = if inversions % 2 == 0 { 1 } else { -1 };
+    result.push((perm.clone(), sign));
+    return;
+  }
+  for i in start..n {
+    perm.swap(start, i);
+    permutations_helper(perm, start + 1, result);
+    perm.swap(start, i);
+  }
+}
