@@ -156,6 +156,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "StruveL"
     | "ParabolicCylinderD"
     | "AngerJ"
+    | "WeberE"
     | "InverseWeierstrassP" => {
       vec!["Listable", "NumericFunction", "Protected", "ReadProtected"]
     }

@@ -4120,7 +4120,7 @@ PascalBinomial,,,,14.1,
 PascalDistribution,,,,8,3008
 PassEventsDown,Pass events down option,✅,unevaluated,6,1771
 PassEventsUp,option for passing events up,✅,Symbolic,6,2777
-Paste,,,,8,2553
+Paste,Paste from clipboard (UI function),🚫,UI,8,2553
 PasteButton,Represents a button that pastes content when clicked,🚫,None,6,2174
 Path,Graph theory path,🚫,None,4,2260
 PathGraph,Creates a path graph from a list of vertices,✅,1,8,1209
@@ -6059,7 +6059,7 @@ WeatherForecastData,,🚫,,10.4,2894
 WebAudioSearch,,🚫,,12,4707
 WebColumn,,🚫,,13,
 WebElementObject,,🚫,,12,4881
-WeberE,,,,7,2587
+WeberE,Weber function E_nu(z) via numerical quadrature,✅,pure,7,2587
 WebExecute,,🚫,,12,2944
 WebImage,,🚫,,12,4660
 WebImageSearch,Searches the web for images matching a query,🚫,None,11.1,2165

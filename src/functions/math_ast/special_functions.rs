@@ -7419,6 +7419,80 @@ fn gauss_legendre_anger_j(nu: f64, z: f64) -> f64 {
   sum * half_pi * inv_pi
 }
 
+/// WeberE[nu, z] — Weber function.
+///
+/// E_nu(z) = (1/Pi) * Integral[Sin[nu*t - z*Sin[t]], {t, 0, Pi}]
+pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WeberE expects exactly 2 arguments".into(),
+    ));
+  }
+  let nu_expr = &args[0];
+  let z_expr = &args[1];
+
+  let nu_val = match nu_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let z_val = match z_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+
+  // Special case: WeberE[0, 0] = 0
+  if matches!(z_expr, Expr::Integer(0)) && matches!(nu_expr, Expr::Integer(0)) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation when both args are numeric and at least one is Real
+  let is_numeric_eval = nu_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(nu_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let nu = nu_val.unwrap();
+    let z = z_val.unwrap();
+    let result = weber_e(nu, z);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "WeberE".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute WeberE[nu, z] numerically using Gauss-Legendre quadrature.
+///
+/// E_nu(z) = (1/Pi) * Integral[Sin[nu*t - z*Sin[t]], {t, 0, Pi}]
+pub fn weber_e(nu: f64, z: f64) -> f64 {
+  // For z = 0: WeberE[nu, 0] = (1 - Cos[nu*Pi]) / (nu*Pi)
+  if z == 0.0 {
+    if nu == 0.0 {
+      return 0.0;
+    }
+    let x = nu * std::f64::consts::PI;
+    return (1.0 - x.cos()) / x;
+  }
+
+  // Gauss-Legendre quadrature
+  let nodes_weights = gauss_legendre_64();
+  let half_pi = std::f64::consts::PI / 2.0;
+  let inv_pi = 1.0 / std::f64::consts::PI;
+
+  let mut sum = 0.0;
+  for &(node, weight) in &nodes_weights {
+    let t = half_pi * (node + 1.0);
+    let integrand = (nu * t - z * t.sin()).sin();
+    sum += weight * integrand;
+  }
+  sum * half_pi * inv_pi
+}
+
 /// 64-point Gauss-Legendre nodes and weights on [-1, 1].
 fn gauss_legendre_64() -> Vec<(f64, f64)> {
   // Compute nodes and weights using the Golub-Welsch algorithm

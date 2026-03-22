@@ -3785,3 +3785,80 @@ mod anger_j_tests {
     assert_eq!(interpret("AngerJ[1]").unwrap(), "AngerJ[1]");
   }
 }
+
+#[cfg(test)]
+mod weber_e_tests {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    // WeberE[0, 0] = 0
+    assert_eq!(interpret("WeberE[0, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_order_numeric() {
+    // WeberE[0, 1.0] ≈ -0.5686566270483014
+    let result: f64 = interpret("WeberE[0, 1.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.5686566270483014)).abs() < 1e-6,
+      "got {}",
+      result
+    );
+
+    // WeberE[1, 3.0] ≈ -0.38348979681886397
+    let result: f64 = interpret("WeberE[1, 3.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - (-0.38348979681886397)).abs() < 1e-6,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn non_integer_order() {
+    // WeberE[0.5, 1.0] ≈ 0.09950754264004202
+    let result: f64 = interpret("WeberE[0.5, 1.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 0.09950754264004202).abs() < 1e-6,
+      "got {}",
+      result
+    );
+
+    // WeberE[1.5, 2.0] ≈ 0.10882159808007938
+    let result: f64 = interpret("WeberE[1.5, 2.0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 0.10882159808007938).abs() < 1e-6,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn non_integer_at_zero() {
+    // WeberE[0.5, 0] = (1 - Cos[0.5*Pi]) / (0.5*Pi) = 1 / (Pi/2) = 2/Pi ≈ 0.6366
+    let result: f64 = interpret("WeberE[0.5, 0]").unwrap().parse().unwrap();
+    assert!(
+      (result - 2.0 / std::f64::consts::PI).abs() < 1e-6,
+      "got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_wrapper() {
+    // N[WeberE[0, 5]] should force numeric evaluation
+    let result: f64 = interpret("N[WeberE[0, 5]]").unwrap().parse().unwrap();
+    assert!(result.is_finite(), "got {}", result);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("WeberE[n, z]").unwrap(), "WeberE[n, z]");
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    assert_eq!(interpret("WeberE[1]").unwrap(), "WeberE[1]");
+  }
+}
