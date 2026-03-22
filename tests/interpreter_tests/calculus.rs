@@ -3119,3 +3119,70 @@ mod asymptotic_solve {
     );
   }
 }
+
+mod list_fourier_sequence_transform {
+  use super::*;
+
+  #[test]
+  fn single_element() {
+    clear_state();
+    assert_eq!(
+      interpret("ListFourierSequenceTransform[{5}, omega]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn two_elements_symbolic() {
+    clear_state();
+    let result =
+      interpret("ListFourierSequenceTransform[{1, 1}, omega]").unwrap();
+    assert!(
+      result.contains("E"),
+      "expected expression with E, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn numeric_at_zero() {
+    clear_state();
+    // At omega = 0, E^0 = 1 for all terms, so sum = 1 + 2 + 3 = 6
+    assert_eq!(
+      interpret("ListFourierSequenceTransform[{1, 2, 3}, 0]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn numeric_at_pi() {
+    clear_state();
+    // {1.0, 1.0} at omega = 1.0: should produce a complex number
+    let result =
+      interpret("ListFourierSequenceTransform[{1.0, 1.0}, 1.0]").unwrap();
+    // Should contain numeric values (possibly complex)
+    assert!(
+      !result.contains("ListFourierSequenceTransform"),
+      "expected evaluated, got {}",
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("ListFourierSequenceTransform[x]").unwrap(),
+      "ListFourierSequenceTransform[x]"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    clear_state();
+    assert_eq!(
+      interpret("ListFourierSequenceTransform[{}, omega]").unwrap(),
+      "0"
+    );
+  }
+}

@@ -291,6 +291,11 @@ pub fn dispatch_math_functions(
     "InverseFourier" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::inverse_fourier_ast(args));
     }
+    "ListFourierSequenceTransform" if args.len() == 2 => {
+      return Some(
+        crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
+      );
+    }
     "Mean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_ast(args));
     }

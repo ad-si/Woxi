@@ -3228,7 +3228,7 @@ ListDeconvolve,,,,8,3566
 ListDensityPlot,Creates a density plot from a list of values or {x y z} triples,✅,pure,1,839
 ListDensityPlot3D,,🚫,,10.2,2911
 ListFormat,,,,10,4204
-ListFourierSequenceTransform,,,,9,2541
+ListFourierSequenceTransform,Discrete-time Fourier transform of a list sequence,✅,pure,9,2541
 ListInterpolation,Creates interpolation from uniformly spaced data,✅,pure,3,1186
 ListLineIntegralConvolutionPlot,,🚫,,7,3636
 ListLinePlot,Plots data as a line graph,✅,pure,6,169

@@ -3057,3 +3057,88 @@ fn compute_euler_gamma(
   let gamma_str = "0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495";
   BigFloat::parse(gamma_str, astro_float::Radix::Dec, bits, rm, cc)
 }
+
+/// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.
+///
+/// Computes Sum[a_k * E^(-I * omega * k), {k, 0, n-1}].
+pub fn list_fourier_sequence_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "ListFourierSequenceTransform".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ListFourierSequenceTransform".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if list.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  let omega = &args[1];
+
+  // Build the sum: Sum[a_k * E^(-I * omega * k), {k, 0, n-1}]
+  use crate::evaluator::evaluate_expr_to_expr;
+  use crate::syntax::BinaryOperator;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, coeff) in list.iter().enumerate() {
+    if matches!(coeff, Expr::Integer(0)) {
+      continue;
+    }
+
+    if k == 0 {
+      // E^0 = 1, so just add the coefficient
+      terms.push(coeff.clone());
+    } else {
+      // a_k * E^(-I * omega * k)
+      let k_expr = Expr::Integer(k as i128);
+      // -I * omega * k
+      let exponent = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::Integer(-1),
+          Expr::Identifier("I".to_string()),
+          omega.clone(),
+          k_expr,
+        ],
+      };
+      let exp_term = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier("E".to_string())),
+        right: Box::new(exponent),
+      };
+      let term = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(coeff.clone()),
+        right: Box::new(exp_term),
+      };
+      terms.push(term);
+    }
+  }
+
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  let sum = if terms.len() == 1 {
+    terms.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+
+  evaluate_expr_to_expr(&sum)
+}
