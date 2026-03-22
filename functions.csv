@@ -115,7 +115,7 @@ AnatomyStyling,,🚫,,12,
 AnchoredSearch,,,,2,5486
 And,Checks if all conditions are true,✅,pure,1,50
 AndersonDarlingTest,,,,8,3427
-AngerJ,,,,7,2525
+AngerJ,Anger function AngerJ[nu z] which equals BesselJ for integer orders,✅,pure,7,2525
 AngleBisector,,,,12,4204
 AngleBracket,Symbolic representation of angle brackets,✅,,3,1329
 AnglePath,Generate 2D points by successively turning and stepping,✅,pure,10.1,1543
