@@ -3019,6 +3019,163 @@ pub fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
   result
 }
 
+/// InverseWeierstrassP[p, {g2, g3}] — inverse Weierstrass elliptic function.
+///
+/// Returns {u, ℘'(u)} where ℘(u; g₂, g₃) = p.
+///
+/// InverseWeierstrassP[{p, pp}, {g2, g3}] — returns u given both p and p'.
+pub fn inverse_weierstrass_p_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseWeierstrassP expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let (g2, g3) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseWeierstrassP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Try to get g2, g3 as f64
+  let g2_f = match try_eval_to_f64(g2) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseWeierstrassP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let g3_f = match try_eval_to_f64(g3) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseWeierstrassP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Two forms:
+  // 1. InverseWeierstrassP[p, {g2, g3}] where p is a number → {u, p'}
+  // 2. InverseWeierstrassP[{p, pp}, {g2, g3}] → u
+  match &args[0] {
+    Expr::List(items) if items.len() == 2 => {
+      // Form 2: {p, pp} given
+      let p_f = match try_eval_to_f64(&items[0]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "InverseWeierstrassP".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let pp_f = match try_eval_to_f64(&items[1]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "InverseWeierstrassP".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let u = inverse_weierstrass_p_with_prime(p_f, pp_f, g2_f, g3_f);
+      Ok(Expr::Real(u))
+    }
+    _ => {
+      // Form 1: just p given
+      let p_f = match try_eval_to_f64(&args[0]) {
+        Some(v) => v,
+        None => {
+          // Check if it's purely symbolic
+          if !matches!(&args[0], Expr::Real(_))
+            && !matches!(&args[0], Expr::Integer(_))
+          {
+            return Ok(Expr::FunctionCall {
+              name: "InverseWeierstrassP".to_string(),
+              args: args.to_vec(),
+            });
+          }
+          return Ok(Expr::FunctionCall {
+            name: "InverseWeierstrassP".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      // Need at least one Real for numeric eval
+      let has_real = matches!(&args[0], Expr::Real(_))
+        || matches!(g2, Expr::Real(_))
+        || matches!(g3, Expr::Real(_));
+      if !has_real {
+        return Ok(Expr::FunctionCall {
+          name: "InverseWeierstrassP".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      let (u, pp) = inverse_weierstrass_p_numeric(p_f, g2_f, g3_f);
+      Ok(Expr::List(vec![Expr::Real(u), Expr::Real(pp)]))
+    }
+  }
+}
+
+/// Compute InverseWeierstrassP[p, {g2, g3}] numerically.
+/// Returns (u, p') where ℘(u) = p.
+/// Uses Newton's method starting from an initial guess.
+fn inverse_weierstrass_p_numeric(p: f64, g2: f64, g3: f64) -> (f64, f64) {
+  // ℘'² = 4℘³ - g₂℘ - g₃
+  let pp_sq = 4.0 * p * p * p - g2 * p - g3;
+  let pp = if pp_sq >= 0.0 {
+    -pp_sq.sqrt() // Take the negative branch (principal value, small positive u)
+  } else {
+    // Complex case — for now just use the magnitude
+    0.0
+  };
+  let u = inverse_weierstrass_p_with_prime(p, pp, g2, g3);
+  let actual_pp = weierstrass_p_prime_numeric(u, g2, g3);
+  (u, actual_pp)
+}
+
+/// Compute u given p, p', g2, g3 such that ℘(u) = p and ℘'(u) = pp.
+/// Uses Newton's method: u_{n+1} = u_n - (℘(u_n) - p) / ℘'(u_n)
+fn inverse_weierstrass_p_with_prime(p: f64, pp: f64, g2: f64, g3: f64) -> f64 {
+  // Initial guess: for large p, u ≈ 1/√p (from Laurent series ℘ ≈ 1/u²)
+  let mut u = if p.abs() > 1.0 {
+    let sign = if pp < 0.0 { 1.0 } else { -1.0 };
+    sign / p.abs().sqrt()
+  } else {
+    // For smaller p, start with a moderate guess
+    let sign = if pp < 0.0 { 1.0 } else { -1.0 };
+    sign * 0.5
+  };
+
+  // Newton's method
+  for _ in 0..200 {
+    let wp = weierstrass_p_numeric(u, g2, g3);
+    let wpp = weierstrass_p_prime_numeric(u, g2, g3);
+
+    if wpp.abs() < 1e-300 {
+      break;
+    }
+
+    let delta = (wp - p) / wpp;
+    u -= delta;
+
+    if delta.abs() < 1e-14 * u.abs().max(1e-14) {
+      break;
+    }
+  }
+
+  u
+}
+
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
