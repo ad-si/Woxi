@@ -730,6 +730,9 @@ pub fn dispatch_math_functions(
     "WeberE" if args.len() == 2 => {
       return Some(crate::functions::math_ast::weber_e_ast(args));
     }
+    "WignerD" if args.len() == 2 || args.len() == 4 => {
+      return Some(crate::functions::math_ast::wigner_d_ast(args));
+    }
     "StruveL" if args.len() == 2 => {
       return Some(crate::functions::math_ast::struve_l_ast(args));
     }

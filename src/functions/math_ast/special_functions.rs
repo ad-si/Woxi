@@ -7493,6 +7493,212 @@ pub fn weber_e(nu: f64, z: f64) -> f64 {
   sum * half_pi * inv_pi
 }
 
+/// WignerD[{j, m1, m2}, theta] — Wigner d-matrix element d^j_{m1,m2}(theta).
+///
+/// WignerD[{j, m1, m2}, phi, theta, psi] — full Wigner D-matrix element:
+///   D^j_{m1,m2}(phi,theta,psi) = E^(-I*m1*phi) * d^j_{m1,m2}(theta) * E^(-I*m2*psi)
+pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Supported forms:
+  // WignerD[{j, m1, m2}, theta]
+  // WignerD[{j, m1, m2}, phi, theta, psi]
+  if args.len() != 2 && args.len() != 4 {
+    return Ok(Expr::FunctionCall {
+      name: "WignerD".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let (j_val, m1_val, m2_val) = match &args[0] {
+    Expr::List(items) if items.len() == 3 => {
+      let j = match try_eval_to_f64(&items[0]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "WignerD".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let m1 = match try_eval_to_f64(&items[1]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "WignerD".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let m2 = match try_eval_to_f64(&items[2]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "WignerD".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (j, m1, m2)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "WignerD".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if args.len() == 2 {
+    // WignerD[{j, m1, m2}, theta]
+    let theta = match try_eval_to_f64(&args[1]) {
+      Some(v) => v,
+      None => {
+        // Check if at least one is Real
+        if !matches!(&args[1], Expr::Real(_)) {
+          return Ok(Expr::FunctionCall {
+            name: "WignerD".to_string(),
+            args: args.to_vec(),
+          });
+        }
+        return Ok(Expr::FunctionCall {
+          name: "WignerD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let result = wigner_d_small(j_val, m1_val, m2_val, theta);
+    Ok(Expr::Real(result))
+  } else {
+    // WignerD[{j, m1, m2}, phi, theta, psi]
+    let phi = match try_eval_to_f64(&args[1]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "WignerD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let theta = match try_eval_to_f64(&args[2]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "WignerD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let psi = match try_eval_to_f64(&args[3]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "WignerD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let d = wigner_d_small(j_val, m1_val, m2_val, theta);
+    // D = E^(-I*m1*phi) * d * E^(-I*m2*psi)
+    // For real angles, this is: d * E^(-I*(m1*phi + m2*psi))
+    // = d * (cos(m1*phi+m2*psi) - I*sin(m1*phi+m2*psi))
+    let phase = m1_val * phi + m2_val * psi;
+    let re = d * phase.cos();
+    let im = -d * phase.sin();
+    if im.abs() < 1e-15 {
+      Ok(Expr::Real(re))
+    } else {
+      // Return Complex form
+      Ok(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Real(re),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+          },
+        ],
+      })
+    }
+  }
+}
+
+/// Compute the Wigner (small) d-matrix element d^j_{m1,m2}(theta).
+fn wigner_d_small(j: f64, m1: f64, m2: f64, theta: f64) -> f64 {
+  // Only handle half-integer/integer j, m1, m2
+  let j2 = (2.0 * j).round() as i64;
+  let m1_2 = (2.0 * m1).round() as i64;
+  let m2_2 = (2.0 * m2).round() as i64;
+
+  // Validate
+  if (j2 as f64 - 2.0 * j).abs() > 1e-10
+    || (m1_2 as f64 - 2.0 * m1).abs() > 1e-10
+    || (m2_2 as f64 - 2.0 * m2).abs() > 1e-10
+  {
+    return f64::NAN;
+  }
+
+  if m1_2.abs() > j2 || m2_2.abs() > j2 {
+    return 0.0;
+  }
+
+  // Use integer arithmetic for factorials
+  // s ranges from max(0, m1-m2) to min(j+m1, j-m2)
+  // Using half-integer labels: j+m1 = (j2+m1_2)/2, etc.
+  let jpm1 = (j2 + m1_2) / 2;
+  let jmm1 = (j2 - m1_2) / 2;
+  let jpm2 = (j2 + m2_2) / 2;
+  let jmm2 = (j2 - m2_2) / 2;
+  let m1mm2 = (m1_2 - m2_2) / 2;
+
+  let s_min = 0i64.max(m1mm2);
+  let s_max = jpm1.min(jmm2);
+
+  if s_min > s_max {
+    return 0.0;
+  }
+
+  let half_theta = theta / 2.0;
+  let cos_ht = half_theta.cos();
+  let sin_ht = half_theta.sin();
+
+  let prefactor = (factorial_f64(jpm1 as u64)
+    * factorial_f64(jmm1 as u64)
+    * factorial_f64(jpm2 as u64)
+    * factorial_f64(jmm2 as u64))
+  .sqrt();
+
+  let mut sum = 0.0;
+  for s in s_min..=s_max {
+    let denom = factorial_f64((jpm1 - s) as u64)
+      * factorial_f64(s as u64)
+      * factorial_f64((s - m1mm2) as u64)
+      * factorial_f64((jmm2 - s) as u64);
+
+    // cos(theta/2)^(2j + m1 - m2 - 2s) * sin(theta/2)^(m2 - m1 + 2s)
+    let cos_power = (2.0 * j + m1 - m2 - 2.0 * s as f64) as i64;
+    let sin_power = (m2 - m1 + 2.0 * s as f64) as i64;
+
+    let sign = if s % 2 == 0 { 1.0 } else { -1.0 };
+    let term =
+      sign * cos_ht.powi(cos_power as i32) * sin_ht.powi(sin_power as i32)
+        / denom;
+    sum += term;
+  }
+
+  prefactor * sum
+}
+
+/// Factorial as f64 for moderate n.
+fn factorial_f64(n: u64) -> f64 {
+  if n <= 1 {
+    return 1.0;
+  }
+  let mut result = 1.0;
+  for i in 2..=n {
+    result *= i as f64;
+  }
+  result
+}
+
 /// 64-point Gauss-Legendre nodes and weights on [-1, 1].
 fn gauss_legendre_64() -> Vec<(f64, f64)> {
   // Compute nodes and weights using the Golub-Welsch algorithm
