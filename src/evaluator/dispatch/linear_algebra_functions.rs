@@ -281,6 +281,11 @@ pub fn dispatch_linear_algebra_functions(
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
+    "TensorWedge" if !args.is_empty() => {
+      return Some(crate::functions::linear_algebra_ast::tensor_wedge_ast(
+        args,
+      ));
+    }
     "VectorAngle" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::vector_angle_ast(
         args,
