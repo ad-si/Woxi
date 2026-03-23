@@ -1542,6 +1542,75 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ExpressionGraph[expr] → Graph of the expression tree
+  if name == "ExpressionGraph" && args.len() == 1 {
+    let mut counter = 0u64;
+    let mut vertices = Vec::new();
+    let mut edges = Vec::new();
+
+    fn walk_expr(
+      expr: &Expr,
+      counter: &mut u64,
+      vertices: &mut Vec<Expr>,
+      edges: &mut Vec<Expr>,
+    ) -> u64 {
+      *counter += 1;
+      let my_id = *counter;
+      vertices.push(Expr::Integer(my_id as i128));
+
+      // Get children based on expression type
+      let children: Option<&[Expr]> = match expr {
+        Expr::FunctionCall { args, .. } => Some(args),
+        Expr::List(items) => Some(items),
+        Expr::BinaryOp { .. } => None, // handled separately
+        _ => None,
+      };
+
+      if let Some(kids) = children {
+        for child in kids {
+          let child_id = *counter + 1;
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![
+              Expr::Integer(my_id as i128),
+              Expr::Integer(child_id as i128),
+            ],
+          });
+          walk_expr(child, counter, vertices, edges);
+        }
+      } else if let Expr::BinaryOp { left, right, .. } = expr {
+        let left_id = *counter + 1;
+        edges.push(Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer(my_id as i128),
+            Expr::Integer(left_id as i128),
+          ],
+        });
+        walk_expr(left, counter, vertices, edges);
+        let right_id = *counter + 1;
+        edges.push(Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer(my_id as i128),
+            Expr::Integer(right_id as i128),
+          ],
+        });
+        walk_expr(right, counter, vertices, edges);
+      }
+      // Atoms (Integer, Real, Identifier, String, etc.) have no children
+
+      my_id
+    }
+
+    walk_expr(&args[0], &mut counter, &mut vertices, &mut edges);
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {

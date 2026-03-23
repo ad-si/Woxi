@@ -12238,6 +12238,60 @@ mod primitive_root {
   }
 }
 
+mod expression_graph {
+  use super::*;
+
+  #[test]
+  fn single_atom() {
+    assert_eq!(interpret("VertexList[ExpressionGraph[x]]").unwrap(), "{1}");
+    assert_eq!(interpret("EdgeList[ExpressionGraph[x]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn simple_function() {
+    assert_eq!(
+      interpret("EdgeList[ExpressionGraph[f[x, y]]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3]}"
+    );
+  }
+
+  #[test]
+  fn nested_function() {
+    assert_eq!(
+      interpret("EdgeList[ExpressionGraph[f[x, g[y, z]]]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[3, 4], UndirectedEdge[3, 5]}"
+    );
+  }
+
+  #[test]
+  fn plus_times() {
+    assert_eq!(
+      interpret("VertexList[ExpressionGraph[a + b*c]]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+    assert_eq!(
+      interpret("EdgeList[ExpressionGraph[a + b*c]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[3, 4], UndirectedEdge[3, 5]}"
+    );
+  }
+
+  #[test]
+  fn list_expression() {
+    assert_eq!(
+      interpret("EdgeList[ExpressionGraph[{a, b, c}]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}"
+    );
+  }
+
+  #[test]
+  fn vertex_count() {
+    assert_eq!(
+      interpret("VertexCount[ExpressionGraph[a + b^2 + c^3 + d]]").unwrap(),
+      "9"
+    );
+  }
+}
+
 mod option_symbols_batch {
   use super::*;
 

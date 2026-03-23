@@ -1819,7 +1819,7 @@ ExportForm,Export form wrapper,✅,unevaluated,10,1763
 ExportString,Exports an expression to a string in a given format, ✅,pure,4,787
 Expression,Type specifier for reading expressions,✅,pure,1,765
 ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6,1021
-ExpressionGraph,,,,12.1,2605
+ExpressionGraph,Create a graph from the tree structure of an expression,✅,pure,12.1,2605
 ExpressionTree,,,,12.3,
 ExpressionUUID,,,,13,
 ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3,749
