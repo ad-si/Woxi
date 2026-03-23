@@ -3269,3 +3269,58 @@ mod list_fourier_sequence_transform {
     );
   }
 }
+
+mod frenet_serret_system {
+  use super::*;
+
+  #[test]
+  fn two_d_parabola() {
+    assert_eq!(
+      interpret("FrenetSerretSystem[{t, t^2}, t]").unwrap(),
+      "{{2/(1 + 4*t^2)^(3/2)}, {{1/Sqrt[1 + 4*t^2], (2*t)/Sqrt[1 + 4*t^2]}, {(-2*t)/Sqrt[1 + 4*t^2], 1/Sqrt[1 + 4*t^2]}}}"
+    );
+  }
+
+  #[test]
+  fn two_d_straight_line() {
+    assert_eq!(
+      interpret("FrenetSerretSystem[{3*t, 4*t}, t]").unwrap(),
+      "{{0}, {{3/5, 4/5}, {-4/5, 3/5}}}"
+    );
+  }
+
+  #[test]
+  fn two_d_symbolic_coefficients() {
+    assert_eq!(
+      interpret("FrenetSerretSystem[{a*t, b*t^2}, t]").unwrap(),
+      "{{(2*a*b)/(a^2 + 4*b^2*t^2)^(3/2)}, {{a/Sqrt[a^2 + 4*b^2*t^2], (2*b*t)/Sqrt[a^2 + 4*b^2*t^2]}, {(-2*b*t)/Sqrt[a^2 + 4*b^2*t^2], a/Sqrt[a^2 + 4*b^2*t^2]}}}"
+    );
+  }
+
+  #[test]
+  fn three_d_straight_line() {
+    assert_eq!(
+      interpret("FrenetSerretSystem[{t, 0, 0}, t]").unwrap(),
+      "{{0, 0}, {{1, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn three_d_polynomial_curve() {
+    // FrenetSerretSystem[{t, t^2, t^3}, t] - tangent vector
+    let result =
+      interpret("FrenetSerretSystem[{t, t^2, t^3}, t][[2, 1]]").unwrap();
+    assert_eq!(
+      result,
+      "{1/Sqrt[1 + 4*t^2 + 9*t^4], (2*t)/Sqrt[1 + 4*t^2 + 9*t^4], (3*t^2)/Sqrt[1 + 4*t^2 + 9*t^4]}"
+    );
+  }
+
+  #[test]
+  fn returns_unevaluated_for_non_list() {
+    assert_eq!(
+      interpret("FrenetSerretSystem[f[t], t]").unwrap(),
+      "FrenetSerretSystem[f[t], t]"
+    );
+  }
+}

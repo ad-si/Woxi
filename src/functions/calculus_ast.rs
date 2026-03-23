@@ -6549,3 +6549,307 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   crate::evaluator::evaluate_expr_to_expr(&sum_expr)
 }
+
+/// FrenetSerretSystem[{f1, f2, ...}, t] - Frenet-Serret system for a parametric curve
+/// Returns {{curvatures...}, {tangent, normal, ...}} where:
+/// - 2D: {{κ}, {T, N}}
+/// - 3D: {{κ, τ}, {T, N, B}}
+pub fn frenet_serret_system_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FrenetSerretSystem expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let components = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FrenetSerretSystem".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let var_name = match &args[1] {
+    Expr::Identifier(s) => s.as_str(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FrenetSerretSystem: second argument must be a variable".into(),
+      ));
+    }
+  };
+
+  let n = components.len();
+  if n < 2 || n > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "FrenetSerretSystem".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let eval = |e: &Expr| -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(e)
+  };
+
+  // Compute first and second derivatives of each component
+  let mut r1 = Vec::with_capacity(n); // r'
+  let mut r2 = Vec::with_capacity(n); // r''
+  for c in components {
+    let d1 = differentiate_expr(c, var_name)?;
+    let d1 = eval(&d1)?;
+    let d2 = differentiate_expr(&d1, var_name)?;
+    let d2 = eval(&d2)?;
+    r1.push(d1);
+    r2.push(d2);
+  }
+
+  // speed_sq = sum of r'[i]^2
+  let speed_sq = sum_of_squares(&r1);
+  let speed_sq = eval(&speed_sq)?;
+
+  // speed = Sqrt[speed_sq]
+  let speed = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![speed_sq.clone()],
+  };
+
+  // T = r' / speed (unit tangent)
+  let tangent: Vec<Expr> = r1
+    .iter()
+    .map(|c| {
+      eval(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(c.clone()),
+        right: Box::new(speed.clone()),
+      })
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+
+  if n == 2 {
+    // 2D case
+    // κ = (x'*y'' - y'*x'') / (speed_sq)^(3/2)
+    let numerator = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(r1[0].clone()),
+        right: Box::new(r2[1].clone()),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(r1[1].clone()),
+        right: Box::new(r2[0].clone()),
+      }),
+    };
+    let denom = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(speed_sq),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(3)),
+        right: Box::new(Expr::Integer(2)),
+      }),
+    };
+    let kappa = eval(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denom),
+    })?;
+
+    // N = {-T2, T1} (rotate tangent 90° counterclockwise)
+    let normal = vec![
+      eval(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(tangent[1].clone()),
+      })?,
+      tangent[0].clone(),
+    ];
+
+    Ok(Expr::List(vec![
+      Expr::List(vec![kappa]),
+      Expr::List(vec![Expr::List(tangent), Expr::List(normal)]),
+    ]))
+  } else {
+    // 3D case
+    // r''' for torsion
+    let mut r3 = Vec::with_capacity(3);
+    for c in &r2 {
+      let d3 = differentiate_expr(c, var_name)?;
+      r3.push(eval(&d3)?);
+    }
+
+    // cross = r' × r''
+    let cross = cross_product_3d(&r1, &r2);
+    let cross: Vec<Expr> = cross
+      .into_iter()
+      .map(|c| eval(&c))
+      .collect::<Result<Vec<_>, _>>()?;
+
+    // norm_cross_sq = ||cross||^2
+    let norm_cross_sq = sum_of_squares(&cross);
+    let norm_cross_sq = eval(&norm_cross_sq)?;
+
+    // Check if curvature is zero (straight line case)
+    let is_zero_curvature = matches!(&norm_cross_sq, Expr::Integer(0));
+    if is_zero_curvature {
+      let zero_vec =
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)]);
+      return Ok(Expr::List(vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
+        Expr::List(vec![Expr::List(tangent), zero_vec.clone(), zero_vec]),
+      ]));
+    }
+
+    // norm_cross = ||cross||
+    let norm_cross = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![norm_cross_sq.clone()],
+    };
+
+    // κ = ||cross|| / ||r'||^3 = norm_cross / speed_sq^(3/2)
+    let speed_cubed = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(speed_sq),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(3)),
+        right: Box::new(Expr::Integer(2)),
+      }),
+    };
+    let kappa = eval(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(norm_cross.clone()),
+      right: Box::new(speed_cubed),
+    })?;
+
+    // τ = (r' × r'') · r''' / ||r' × r''||^2
+    let dot_cross_r3 = dot_product(&cross, &r3);
+    let dot_cross_r3 = eval(&dot_cross_r3)?;
+    let tau = eval(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(dot_cross_r3),
+      right: Box::new(norm_cross_sq),
+    })?;
+
+    // B = (r' × r'') / ||r' × r''|| (unit binormal)
+    let binormal: Vec<Expr> = cross
+      .iter()
+      .map(|c| {
+        eval(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(c.clone()),
+          right: Box::new(norm_cross.clone()),
+        })
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+
+    // N = B × T (unit normal)
+    let normal_cross = cross_product_3d(&binormal, &tangent);
+    let normal: Vec<Expr> = normal_cross
+      .into_iter()
+      .map(|c| eval(&c))
+      .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Expr::List(vec![
+      Expr::List(vec![kappa, tau]),
+      Expr::List(vec![
+        Expr::List(tangent),
+        Expr::List(normal),
+        Expr::List(binormal),
+      ]),
+    ]))
+  }
+}
+
+/// Helper: compute sum of squares of expressions
+fn sum_of_squares(items: &[Expr]) -> Expr {
+  let squared: Vec<Expr> = items
+    .iter()
+    .map(|e| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(e.clone()),
+      right: Box::new(Expr::Integer(2)),
+    })
+    .collect();
+  if squared.len() == 1 {
+    squared.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: squared,
+    }
+  }
+}
+
+/// Helper: compute cross product of two 3D vectors
+fn cross_product_3d(a: &[Expr], b: &[Expr]) -> Vec<Expr> {
+  vec![
+    // a[1]*b[2] - a[2]*b[1]
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[1].clone()),
+        right: Box::new(b[2].clone()),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[2].clone()),
+        right: Box::new(b[1].clone()),
+      }),
+    },
+    // a[2]*b[0] - a[0]*b[2]
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[2].clone()),
+        right: Box::new(b[0].clone()),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[0].clone()),
+        right: Box::new(b[2].clone()),
+      }),
+    },
+    // a[0]*b[1] - a[1]*b[0]
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[0].clone()),
+        right: Box::new(b[1].clone()),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(a[1].clone()),
+        right: Box::new(b[0].clone()),
+      }),
+    },
+  ]
+}
+
+/// Helper: compute dot product of two vectors
+fn dot_product(a: &[Expr], b: &[Expr]) -> Expr {
+  let terms: Vec<Expr> = a
+    .iter()
+    .zip(b.iter())
+    .map(|(ai, bi)| Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(ai.clone()),
+      right: Box::new(bi.clone()),
+    })
+    .collect();
+  if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  }
+}

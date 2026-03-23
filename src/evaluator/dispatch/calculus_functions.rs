@@ -63,6 +63,11 @@ pub fn dispatch_calculus_functions(
     "Curl" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::curl_ast(args));
     }
+    "FrenetSerretSystem" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::frenet_serret_system_ast(
+        args,
+      ));
+    }
     "Grad" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::grad_ast(args));
     }
