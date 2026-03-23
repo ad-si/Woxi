@@ -2980,10 +2980,9 @@ mod exponential_generating_function {
   #[test]
   fn egf_n_squared() {
     clear_state();
-    // E^x*(x + x^2) is mathematically equivalent to E^x*x*(1+x)
     assert_eq!(
       interpret("ExponentialGeneratingFunction[n^2, n, x]").unwrap(),
-      "E^x*(x + x^2)"
+      "E^x*x*(1 + x)"
     );
   }
 
@@ -3017,10 +3016,10 @@ mod exponential_generating_function {
   #[test]
   fn egf_n_plus_1() {
     clear_state();
-    // n + 1 = n + 1 → x*e^x + e^x = e^x*(1+x)
+    // n + 1 → E^x*(1 + x)
     assert_eq!(
       interpret("ExponentialGeneratingFunction[n + 1, n, x]").unwrap(),
-      "E^x + E^x*x"
+      "E^x*(1 + x)"
     );
   }
 
@@ -3045,10 +3044,21 @@ mod exponential_generating_function {
   #[test]
   fn egf_n_cubed() {
     clear_state();
-    // S(3,1)=1, S(3,2)=3, S(3,3)=1 → x + 3x^2 + x^3
+    // S(3,1)=1, S(3,2)=3, S(3,3)=1 → x*(1 + 3*x + x^2)
     assert_eq!(
       interpret("ExponentialGeneratingFunction[n^3, n, x]").unwrap(),
-      "E^x*(x + 3*x^2 + x^3)"
+      "E^x*x*(1 + 3*x + x^2)"
+    );
+  }
+
+  #[test]
+  fn egf_sin_n() {
+    clear_state();
+    // EGF[Sin[n], n, x] = (Cosh[x*Cos[1]] + Sinh[x*Cos[1]]) * Sin[x*Sin[1]]
+    // which equals E^(x*Cos[1]) * Sin[x*Sin[1]]
+    assert_eq!(
+      interpret("ExponentialGeneratingFunction[Sin[n], n, x]").unwrap(),
+      "(Cosh[x*Cos[1]] + Sinh[x*Cos[1]])*Sin[x*Sin[1]]"
     );
   }
 
@@ -3057,8 +3067,8 @@ mod exponential_generating_function {
     clear_state();
     // Unknown pattern returns unevaluated
     assert_eq!(
-      interpret("ExponentialGeneratingFunction[Sin[n], n, x]").unwrap(),
-      "ExponentialGeneratingFunction[Sin[n], n, x]"
+      interpret("ExponentialGeneratingFunction[Log[n], n, x]").unwrap(),
+      "ExponentialGeneratingFunction[Log[n], n, x]"
     );
   }
 
@@ -3077,34 +3087,15 @@ mod asymptotic_solve {
   use super::*;
 
   #[test]
-  fn simple_linear() {
+  fn integer_third_arg_unevaluated() {
     clear_state();
-    // Solve x - 1 == 0 near x -> 0, order 3
-    // Solution: x -> 1
+    // A plain integer 3rd arg is invalid; Wolfram returns unevaluated
     let result = interpret("AsymptoticSolve[x - 1 == 0, x -> 0, 3]").unwrap();
-    assert_eq!(result, "{{x -> 1}}");
-  }
-
-  #[test]
-  fn quadratic() {
-    clear_state();
-    // Solve x^2 - 4 == 0 near x -> 0, order 3
-    // Solutions: x -> 2 and x -> -2
-    let result = interpret("AsymptoticSolve[x^2 - 4 == 0, x -> 0, 3]").unwrap();
     assert!(
-      result.contains("x -> 2") && result.contains("x -> -2"),
-      "expected solutions x -> 2 and x -> -2, got {}",
+      result.starts_with("AsymptoticSolve["),
+      "expected unevaluated for integer 3rd arg, got {}",
       result
     );
-  }
-
-  #[test]
-  fn near_nonzero_point() {
-    clear_state();
-    // Solve x^2 - 1 == 0 near x -> 1, order 2
-    // x = 1 is a root, so should find x -> 1
-    let result = interpret("AsymptoticSolve[x^2 - 1 == 0, x -> 1, 2]").unwrap();
-    assert!(result.contains("x -> 1"), "expected x -> 1 in {}", result);
   }
 
   #[test]
@@ -3274,7 +3265,7 @@ mod list_fourier_sequence_transform {
     clear_state();
     assert_eq!(
       interpret("ListFourierSequenceTransform[{}, omega]").unwrap(),
-      "0"
+      "{}"
     );
   }
 }

@@ -6262,8 +6262,18 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Parse order n
+  // Parse order: must be a list {param, val, n} or a rule param -> val.
+  // A plain integer is not valid (Wolfram returns unevaluated).
   let order = match &args[2] {
+    Expr::List(items) if items.len() == 3 => match &items[2] {
+      Expr::Integer(n) => *n,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AsymptoticSolve".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    },
     Expr::Integer(n) => *n,
     _ => {
       return Ok(Expr::FunctionCall {
@@ -6272,6 +6282,15 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // When 3rd arg is a plain integer (not a list/rule with perturbation param),
+  // Wolfram returns unevaluated.
+  if matches!(&args[2], Expr::Integer(_)) {
+    return Ok(Expr::FunctionCall {
+      name: "AsymptoticSolve".to_string(),
+      args: args.to_vec(),
+    });
+  }
 
   if order < 1 {
     return Ok(Expr::List(vec![]));

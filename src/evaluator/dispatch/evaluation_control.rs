@@ -265,11 +265,33 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
-    "StableDistribution" if args.len() == 2 || args.len() == 4 => {
-      // StableDistribution[alpha, beta] or StableDistribution[alpha, beta, mu, sigma]
+    "StableDistribution"
+      if args.len() == 2 || args.len() == 4 || args.len() == 5 =>
+    {
+      // Normalize to canonical 5-parameter form: StableDistribution[1, alpha, beta, mu, sigma]
+      // 2-param: StableDistribution[alpha, beta] -> StableDistribution[1, alpha, beta, 0, 1]
+      // 4-param: StableDistribution[alpha, beta, mu, sigma] -> StableDistribution[1, alpha, beta, mu, sigma]
+      // 5-param: already canonical
+      let canonical_args = match args.len() {
+        2 => vec![
+          Expr::Integer(1),
+          args[0].clone(),
+          args[1].clone(),
+          Expr::Integer(0),
+          Expr::Integer(1),
+        ],
+        4 => vec![
+          Expr::Integer(1),
+          args[0].clone(),
+          args[1].clone(),
+          args[2].clone(),
+          args[3].clone(),
+        ],
+        _ => args.to_vec(), // 5-param, already canonical
+      };
       return Some(Ok(Expr::FunctionCall {
         name: "StableDistribution".to_string(),
-        args: args.to_vec(),
+        args: canonical_args,
       }));
     }
     "Names" if args.len() <= 1 => {

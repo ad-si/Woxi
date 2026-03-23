@@ -2881,6 +2881,147 @@ fn exponential_generating_function(
   }
 }
 
+/// Try to compute the polynomial part P(x) such that EGF = E^x * P(x).
+/// Returns Some(polynomial) if the expression has this form, None otherwise.
+/// This allows combining polynomial parts before multiplying by E^x,
+/// producing properly factored output like E^x*(1+x) instead of E^x + E^x*x.
+fn egf_poly_part(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Constant (doesn't depend on n) => P(x) = constant
+  if !depends_on(expr, n) {
+    return Ok(Some(expr.clone()));
+  }
+
+  // n => P(x) = x
+  if matches!(expr, Expr::Identifier(name) if name == n) {
+    return Ok(Some(x.clone()));
+  }
+
+  // Handle Minus: a - b => a + (-b)
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left,
+    right,
+  } = expr
+  {
+    let neg_right = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: right.clone(),
+    };
+    let as_plus = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: left.clone(),
+      right: Box::new(neg_right),
+    };
+    return egf_poly_part(&as_plus, n, x);
+  }
+
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    match fname {
+      "Plus" => {
+        // Sum of polynomials
+        let terms = egf_collect_plus_terms(expr);
+        let mut poly_parts = Vec::new();
+        for term in &terms {
+          if let Some(p) = egf_poly_part(term, n, x)? {
+            poly_parts.push(p);
+          } else {
+            return Ok(None);
+          }
+        }
+        let sum = if poly_parts.len() == 1 {
+          poly_parts.remove(0)
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: poly_parts,
+          }
+        };
+        return Ok(Some(sum));
+      }
+      "Times" => {
+        // c * f(n) where c doesn't depend on n => P(x) = c * Pf(x)
+        let factors = egf_collect_times_factors(expr);
+        let mut constants = Vec::new();
+        let mut n_dependent = Vec::new();
+        for factor in &factors {
+          if depends_on(factor, n) {
+            n_dependent.push((*factor).clone());
+          } else {
+            constants.push((*factor).clone());
+          }
+        }
+        if !constants.is_empty() && !n_dependent.is_empty() {
+          let rest = if n_dependent.len() == 1 {
+            n_dependent.remove(0)
+          } else {
+            let mut product = n_dependent.remove(0);
+            for f in n_dependent {
+              product = Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(product),
+                right: Box::new(f),
+              };
+            }
+            product
+          };
+          if let Some(inner_poly) = egf_poly_part(&rest, n, x)? {
+            let c = if constants.len() == 1 {
+              constants.remove(0)
+            } else {
+              let mut product = constants.remove(0);
+              for ci in constants {
+                product = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(product),
+                  right: Box::new(ci),
+                };
+              }
+              product
+            };
+            return Ok(Some(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(c),
+              right: Box::new(inner_poly),
+            }));
+          }
+        }
+      }
+      "Power" if fargs.len() == 2 => {
+        // n^k where k is a non-negative integer => P(x) = factored Stirling polynomial
+        if matches!(fargs[0], Expr::Identifier(name) if name == n) {
+          if let Some(k) = egf_expr_to_nonneg_int(fargs[1]) {
+            return Ok(Some(egf_stirling_polynomial(k, x)));
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  // n^k via BinaryOp::Power
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left,
+    right,
+  } = expr
+  {
+    if matches!(left.as_ref(), Expr::Identifier(name) if name == n) {
+      if let Some(k) = egf_expr_to_nonneg_int(right) {
+        return Ok(Some(egf_stirling_polynomial(k, x)));
+      }
+    }
+  }
+
+  Ok(None)
+}
+
 /// Core EGF pattern matching.
 /// Returns Some(result) if a closed form is found, None otherwise.
 fn egf_inner(
@@ -2890,30 +3031,17 @@ fn egf_inner(
 ) -> Result<Option<Expr>, InterpreterError> {
   use crate::syntax::BinaryOperator;
 
-  // Case 0: expr doesn't depend on n => constant * e^x
-  if !depends_on(expr, n) {
+  // First try the polynomial approach: EGF = E^x * P(x)
+  // This produces properly factored results like E^x*(1+x) instead of E^x + E^x*x
+  if let Some(poly) = egf_poly_part(expr, n, x)? {
     return Ok(Some(Expr::BinaryOp {
       op: BinaryOperator::Times,
-      left: Box::new(expr.clone()),
-      right: Box::new(Expr::BinaryOp {
+      left: Box::new(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(Expr::Constant("E".to_string())),
         right: Box::new(x.clone()),
       }),
-    }));
-  }
-
-  // Case 1: expr = n (the variable itself)
-  // EGF[n, n, x] = x * e^x
-  if matches!(expr, Expr::Identifier(name) if name == n) {
-    return Ok(Some(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(x.clone()),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Constant("E".to_string())),
-        right: Box::new(x.clone()),
-      }),
+      right: Box::new(poly),
     }));
   }
 
@@ -2981,6 +3109,103 @@ fn egf_inner(
           }));
         }
       }
+      // EGF[Sin[n], n, x] = E^(x*Cos[1]) * Sin[x*Sin[1]]
+      // Derived from: Sin[n] = Im[e^(in)], so EGF = Im[e^(x*e^i)]
+      //   = Im[e^(x*(cos1 + i*sin1))] = e^(x*cos1) * sin(x*sin1)
+      // Wolfram outputs: Sin[x*Sin[1]]*(Cosh[x*Cos[1]] + Sinh[x*Cos[1]])
+      // which equals e^(x*Cos[1]) * Sin[x*Sin[1]] since Cosh+Sinh = E^x
+      "Sin"
+        if fargs.len() == 1
+          && matches!(fargs[0], Expr::Identifier(name) if name == n) =>
+      {
+        // Build: Sin[x*Sin[1]] * (Cosh[x*Cos[1]] + Sinh[x*Cos[1]])
+        let cos1 = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![Expr::Integer(1)],
+        };
+        let sin1 = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![Expr::Integer(1)],
+        };
+        let x_cos1 = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(x.clone()),
+          right: Box::new(cos1),
+        };
+        let x_sin1 = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(x.clone()),
+          right: Box::new(sin1),
+        };
+        let sin_part = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![x_sin1],
+        };
+        let cosh_part = Expr::FunctionCall {
+          name: "Cosh".to_string(),
+          args: vec![x_cos1.clone()],
+        };
+        let sinh_part = Expr::FunctionCall {
+          name: "Sinh".to_string(),
+          args: vec![x_cos1],
+        };
+        let exp_part = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(cosh_part),
+          right: Box::new(sinh_part),
+        };
+        return Ok(Some(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(sin_part),
+          right: Box::new(exp_part),
+        }));
+      }
+      // EGF[Cos[n], n, x] = E^(x*Cos[1]) * Cos[x*Sin[1]]
+      "Cos"
+        if fargs.len() == 1
+          && matches!(fargs[0], Expr::Identifier(name) if name == n) =>
+      {
+        let cos1 = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![Expr::Integer(1)],
+        };
+        let sin1 = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![Expr::Integer(1)],
+        };
+        let x_cos1 = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(x.clone()),
+          right: Box::new(cos1),
+        };
+        let x_sin1 = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(x.clone()),
+          right: Box::new(sin1),
+        };
+        let cos_part = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![x_sin1],
+        };
+        let cosh_part = Expr::FunctionCall {
+          name: "Cosh".to_string(),
+          args: vec![x_cos1.clone()],
+        };
+        let sinh_part = Expr::FunctionCall {
+          name: "Sinh".to_string(),
+          args: vec![x_cos1],
+        };
+        let exp_part = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(cosh_part),
+          right: Box::new(sinh_part),
+        };
+        return Ok(Some(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(cos_part),
+          right: Box::new(exp_part),
+        }));
+      }
       _ => {}
     }
   }
@@ -2988,7 +3213,7 @@ fn egf_inner(
   Ok(None)
 }
 
-/// EGF for Plus: linearity
+/// EGF for Plus: linearity (fallback when poly_part doesn't work)
 fn egf_plus(
   expr: &Expr,
   n: &str,
@@ -3166,19 +3391,31 @@ fn egf_expr_to_nonneg_int(expr: &Expr) -> Option<usize> {
 }
 
 /// Compute the Stirling polynomial: Sum[S(k,j) * x^j, {j=0..k}]
+/// For k >= 1, factors out x: x * (S(k,1) + S(k,2)*x + ... + S(k,k)*x^(k-1))
+/// to match Wolfram's canonical form (e.g. E^x*x*(1+x) instead of E^x*(x+x^2)).
 fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
   use crate::syntax::BinaryOperator;
 
   let stirling = egf_stirling_numbers(k);
 
-  let mut terms: Vec<Expr> = Vec::new();
-  for (j, &s) in stirling.iter().enumerate() {
+  // k=0: S(0,0)=1, polynomial is just 1
+  if k == 0 {
+    return Expr::Integer(1);
+  }
+
+  // For k >= 1, S(k,0) = 0, so all terms have j >= 1.
+  // Factor out x: build inner = S(k,1) + S(k,2)*x + ... + S(k,k)*x^(k-1)
+  let mut inner_terms: Vec<Expr> = Vec::new();
+  for j in 1..=k {
+    let s = stirling[j];
     if s == 0 {
       continue;
     }
-    let xj = if j == 0 {
+    // shifted power: j-1
+    let shifted = j - 1;
+    let term = if shifted == 0 {
       Expr::Integer(s as i128)
-    } else if j == 1 {
+    } else if shifted == 1 {
       if s == 1 {
         x.clone()
       } else {
@@ -3192,7 +3429,7 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
       let x_power = Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(j as i128)),
+        right: Box::new(Expr::Integer(shifted as i128)),
       };
       if s == 1 {
         x_power
@@ -3204,24 +3441,32 @@ fn egf_stirling_polynomial(k: usize, x: &Expr) -> Expr {
         }
       }
     };
-    terms.push(xj);
+    inner_terms.push(term);
   }
 
-  if terms.is_empty() {
+  if inner_terms.is_empty() {
     return Expr::Integer(0);
   }
-  if terms.len() == 1 {
-    return terms.remove(0);
+
+  let inner = if inner_terms.len() == 1 {
+    inner_terms.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: inner_terms,
+    }
+  };
+
+  // x * inner (or just x if inner is 1)
+  if matches!(&inner, Expr::Integer(1)) {
+    x.clone()
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(x.clone()),
+      right: Box::new(inner),
+    }
   }
-  let mut sum = terms.remove(0);
-  for t in terms {
-    sum = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(sum),
-      right: Box::new(t),
-    };
-  }
-  sum
 }
 
 /// Compute Stirling numbers of the second kind S(k, j) for j = 0..k.
