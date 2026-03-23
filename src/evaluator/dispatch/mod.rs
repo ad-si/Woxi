@@ -1542,6 +1542,67 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
+  if name == "RecurrenceFilter" && args.len() == 2 {
+    if let (Expr::List(coeffs), Expr::List(data)) = (&args[0], &args[1]) {
+      if coeffs.len() == 2 {
+        if let (Expr::List(a_coeffs), Expr::List(b_coeffs)) =
+          (&coeffs[0], &coeffs[1])
+        {
+          if !a_coeffs.is_empty() {
+            // y[n] = (sum_j b[j]*x[n-j] - sum_i(i>0) a[i]*y[n-i]) / a[0]
+            let n = data.len();
+            let mut output: Vec<Expr> = Vec::with_capacity(n);
+            for i in 0..n {
+              // Feedforward: sum b[j] * x[n-j]
+              let mut sum = Expr::Integer(0);
+              for (j, bj) in b_coeffs.iter().enumerate() {
+                if i >= j {
+                  let term = Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(bj.clone()),
+                    right: Box::new(data[i - j].clone()),
+                  };
+                  sum = Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Plus,
+                    left: Box::new(sum),
+                    right: Box::new(term),
+                  };
+                }
+              }
+              // Feedback: subtract a[k]*y[n-k] for k >= 1
+              for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
+                if i >= k {
+                  let term = Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(ak.clone()),
+                    right: Box::new(output[i - k].clone()),
+                  };
+                  sum = Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Minus,
+                    left: Box::new(sum),
+                    right: Box::new(term),
+                  };
+                }
+              }
+              // Divide by a[0]
+              let result = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(sum),
+                right: Box::new(a_coeffs[0].clone()),
+              };
+              match evaluate_expr_to_expr(&result) {
+                Ok(v) => output.push(v),
+                Err(e) => return Err(e),
+              }
+            }
+            return Ok(Expr::List(output));
+          }
+        }
+      }
+    }
+  }
+
   // CantorMesh[n] → Cantor set at level n as a MeshRegion
   if name == "CantorMesh" && args.len() == 1 {
     if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
