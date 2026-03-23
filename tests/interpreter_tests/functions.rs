@@ -12084,3 +12084,52 @@ mod planar_angle {
     assert_eq!(interpret("PlanarAngle[0]").unwrap(), "PlanarAngle[0]");
   }
 }
+
+mod symbolic_wrappers {
+  use super::*;
+
+  #[test]
+  fn transformation_function() {
+    assert_eq!(
+      interpret("TransformationFunction[{{1, 0}, {0, 1}}]").unwrap(),
+      "TransformationFunction[{{1, 0}, {0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn conic_hull_region() {
+    assert_eq!(
+      interpret("ConicHullRegion[{{1, 0}, {0, 1}}]").unwrap(),
+      "ConicHullRegion[{{1, 0}, {0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn hyperplane() {
+    assert_eq!(
+      interpret("Hyperplane[{1, 0, 0}, 0]").unwrap(),
+      "Hyperplane[{1, 0, 0}, 0]"
+    );
+  }
+
+  #[test]
+  fn abelian_group() {
+    assert_eq!(
+      interpret("AbelianGroup[{2, 3}]").unwrap(),
+      "AbelianGroup[{2, 3}]"
+    );
+  }
+
+  #[test]
+  fn full_graphics() {
+    assert_eq!(interpret("FullGraphics[0]").unwrap(), "FullGraphics[0]");
+  }
+
+  #[test]
+  fn delimited_sequence() {
+    assert_eq!(
+      interpret("DelimitedSequence[0]").unwrap(),
+      "DelimitedSequence[0]"
+    );
+  }
+}

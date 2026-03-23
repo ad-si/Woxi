@@ -1,6 +1,6 @@
 name,description,implementation_status,effect_level,version,rank
 AASTriangle,,,,10,3522
-AbelianGroup,,,,8,2693
+AbelianGroup,Represents an abelian group specified by invariant factors,✅,pure,8,2693
 Abort,Aborts evaluation,✅,effectful,2,980
 AbortKernels,,🚫,,7,3578
 AbortProtect,Protect computation from abort,🚫,,2,2089
@@ -1006,7 +1006,7 @@ ConformDates,,,,14.1,
 ConformImages,,,,10,3378
 Congruent,,,,3,2960
 ConicGradientFilling,,,,12.2,4479
-ConicHullRegion,,,,10,2675
+ConicHullRegion,Represents a conic hull region,✅,pure,10,2675
 ConicOptimization,,,,12,
 Conjugate,Returns the complex conjugate,✅,pure,1,293
 ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
@@ -1358,7 +1358,7 @@ DeletePermissionsKey,,🚫,,11,5587
 DeleteSearchIndex,,🚫,,10.2,4881
 DeleteSmallComponents,,🚫,,8,1334
 DeleteStopwords,Remove stopwords from text (NLP),🚫,,10.1,2012
-DelimitedSequence,,,,10,2693
+DelimitedSequence,Represents a delimited sequence of expressions,✅,pure,10,2693
 Delimiter,Separator element in menus and palettes,✅,none,6,698
 DelimiterAutoMatching,,,,12.3,
 DelimiterFlashTime,,,,3,4881
@@ -2184,7 +2184,7 @@ FrontEndTokenExecute,,🚫,,4,1280
 Full,Full-size image specification,✅,none,6,294
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1,4173
 FullForm,Returns the full internal form of an expression,✅,pure,1,491
-FullGraphics,,,,2,2688
+FullGraphics,Converts graphics primitives to explicit coordinates,✅,pure,2,2688
 FullInformationOutputRegulator,,,,10,4173
 FullMoon,,,,14,
 FullRegion,Geometric region,🚫,None,10,2260
@@ -2614,7 +2614,7 @@ HypergeometricPFQRegularized,Regularized generalized hypergeometric function,✅
 HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
 Hyperlink,Interactive hyperlink element,🚫,effectful,6,209
 HyperlinkAction,,🚫,,12.1,5486
-Hyperplane,,,,10.2,2688
+Hyperplane,Represents a hyperplane defined by a normal vector and offset,✅,pure,10.2,2688
 Hyphenation,text processing,🚫,None,4,2425
 HypoexponentialDistribution,Hypoexponential distribution,✅,pure,9,1473
 HypothesisTestData,,🚫,,8,5184
@@ -5666,7 +5666,7 @@ TransferFunctionPoles,,🚫,,8,2487
 TransferFunctionTransform,,🚫,,9,4027
 TransferFunctionZeros,,🚫,,8,3678
 TransformationClass,,,,10,2867
-TransformationFunction,,,,6,2656
+TransformationFunction,Represents a geometric transformation as a matrix,✅,pure,6,2656
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4,1422
 TransformationMatrix,requires TransformationFunction framework,🚫,None,6,2344
 TransformedDistribution,,🚫,,8,851
