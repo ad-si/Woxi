@@ -1256,7 +1256,7 @@ DateFormat,,,,10,3242
 DateFunction,,,,6,3224
 DateGranularity,,,,13.2,
 DateHistogram,Date visualization,🚫,None,10.2,2246
-DateInterval,,,,12.1,2578
+DateInterval,Creates an interval between two dates with normalized date list representation,✅,pure,12.1,2578
 DateList,Converts to date list,✅,pure,6,709
 DateListLogPlot,date visualization,🚫,None,7,2294
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6,508
