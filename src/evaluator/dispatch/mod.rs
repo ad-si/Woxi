@@ -3827,6 +3827,7 @@ pub fn evaluate_function_call_ast_inner(
       | "MixedRadix"
       | "XMLObject"
       | "UnderoverscriptBox"
+      | "ForwardBackward"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
