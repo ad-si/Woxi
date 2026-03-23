@@ -1056,6 +1056,16 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       0
     }
+    // ByteArray[{b1, b2, ...}] — length is number of bytes
+    Expr::FunctionCall { name, args }
+      if name == "ByteArray" && args.len() == 1 =>
+    {
+      if let Expr::List(items) = &args[0] {
+        items.len() as i128
+      } else {
+        1
+      }
+    }
     Expr::FunctionCall { args, .. } => args.len() as i128,
     Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
       if let Some((_head, ha_args)) =

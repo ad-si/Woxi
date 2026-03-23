@@ -3882,6 +3882,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let unit_str = quantity_unit_to_string(&args[1]);
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
+      // Special case: ByteArray[{b1, b2, ...}] — display as ByteArray[<n>]
+      if name == "ByteArray" && args.len() == 1 {
+        if let Expr::List(items) = &args[0] {
+          return format!("ByteArray[<{}>]", items.len());
+        }
+      }
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
       if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
       {
@@ -5361,6 +5367,12 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // FortranForm[expr] displays as FortranForm[evaluated_expr] in OutputForm
       if name == "FortranForm" && args.len() == 1 {
         return format!("FortranForm[{}]", expr_to_output(&args[0]));
+      }
+      // Special case: ByteArray[{b1, b2, ...}] — display as ByteArray[<n>]
+      if name == "ByteArray" && args.len() == 1 {
+        if let Expr::List(items) = &args[0] {
+          return format!("ByteArray[<{}>]", items.len());
+        }
       }
       // Special case: InterpolatingFunction[domain, data(, order)] — hide data with <>
       if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)

@@ -294,6 +294,70 @@ pub fn dispatch_evaluation_control(
         args: canonical_args,
       }));
     }
+    // ByteArray[{b1, b2, ...}] — create a byte array from a list of unsigned bytes
+    // ByteArray["base64string"] — create a byte array from base64
+    "ByteArray" if args.len() == 1 => {
+      match &args[0] {
+        Expr::List(items) => {
+          // Validate all items are integers in 0..255
+          let mut bytes = Vec::new();
+          for item in items {
+            match item {
+              Expr::Integer(n) if (0..=255).contains(n) => {
+                bytes.push(Expr::Integer(*n));
+              }
+              _ => {
+                crate::emit_message(
+                  "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
+                );
+                return Some(Ok(Expr::FunctionCall {
+                  name: "ByteArray".to_string(),
+                  args: args.to_vec(),
+                }));
+              }
+            }
+          }
+          return Some(Ok(Expr::FunctionCall {
+            name: "ByteArray".to_string(),
+            args: vec![Expr::List(bytes)],
+          }));
+        }
+        Expr::String(s) => {
+          // Decode base64 string to byte list
+          use base64::Engine;
+          let engine = base64::engine::general_purpose::STANDARD;
+          match engine.decode(s) {
+            Ok(decoded) => {
+              let bytes: Vec<Expr> =
+                decoded.iter().map(|b| Expr::Integer(*b as i128)).collect();
+              return Some(Ok(Expr::FunctionCall {
+                name: "ByteArray".to_string(),
+                args: vec![Expr::List(bytes)],
+              }));
+            }
+            Err(_) => {
+              crate::emit_message(
+                "ByteArray::lend: The argument at position 1 in ByteArray[...] should be a vector of unsigned byte values or a Base64-encoded string.",
+              );
+              return Some(Ok(Expr::FunctionCall {
+                name: "ByteArray".to_string(),
+                args: args.to_vec(),
+              }));
+            }
+          }
+        }
+        _ => {
+          crate::emit_message(&format!(
+            "ByteArray::lend: The argument at position 1 in ByteArray[{}] should be a vector of unsigned byte values or a Base64-encoded string.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "ByteArray".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
+    }
     // CensoredDistribution[{min, max}, dist] — censored distribution
     "CensoredDistribution" if args.len() == 2 => {
       // Evaluate the underlying distribution to normalize it
