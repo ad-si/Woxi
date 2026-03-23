@@ -12170,3 +12170,43 @@ mod q_binomial {
     assert_eq!(interpret("QBinomial[3, 1, 2]").unwrap(), "7");
   }
 }
+
+mod primitive_root {
+  use super::*;
+
+  #[test]
+  fn prime_7() {
+    assert_eq!(interpret("PrimitiveRoot[7]").unwrap(), "3");
+  }
+
+  #[test]
+  fn prime_13() {
+    assert_eq!(interpret("PrimitiveRoot[13]").unwrap(), "2");
+  }
+
+  #[test]
+  fn prime_23() {
+    assert_eq!(interpret("PrimitiveRoot[23]").unwrap(), "5");
+  }
+
+  #[test]
+  fn small_n_2() {
+    assert_eq!(interpret("PrimitiveRoot[2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn n_4() {
+    assert_eq!(interpret("PrimitiveRoot[4]").unwrap(), "3");
+  }
+
+  #[test]
+  fn no_primitive_root() {
+    // n=8 has no primitive root
+    assert_eq!(interpret("PrimitiveRoot[8]").unwrap(), "PrimitiveRoot[8]");
+  }
+
+  #[test]
+  fn n_too_small() {
+    assert_eq!(interpret("PrimitiveRoot[1]").unwrap(), "PrimitiveRoot[1]");
+  }
+}
