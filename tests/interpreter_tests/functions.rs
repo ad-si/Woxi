@@ -12490,6 +12490,95 @@ mod option_symbols_batch {
   }
 
   #[test]
+  fn function_continuous_polynomial() {
+    assert_eq!(interpret("FunctionContinuous[x^2, x]").unwrap(), "True");
+    assert_eq!(
+      interpret("FunctionContinuous[x^2 + 3*x + 1, x]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn function_continuous_trig() {
+    assert_eq!(interpret("FunctionContinuous[Sin[x], x]").unwrap(), "True");
+    assert_eq!(interpret("FunctionContinuous[Cos[x], x]").unwrap(), "True");
+    assert_eq!(interpret("FunctionContinuous[Tan[x], x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn function_continuous_exp() {
+    assert_eq!(interpret("FunctionContinuous[Exp[x], x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn function_continuous_discontinuous() {
+    assert_eq!(interpret("FunctionContinuous[1/x, x]").unwrap(), "False");
+    assert_eq!(
+      interpret("FunctionContinuous[Floor[x], x]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FunctionContinuous[Sign[x], x]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FunctionContinuous[Sqrt[x], x]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("FunctionContinuous[Log[x], x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn function_continuous_abs() {
+    assert_eq!(interpret("FunctionContinuous[Abs[x], x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn function_continuous_constant() {
+    assert_eq!(interpret("FunctionContinuous[5, x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn function_continuous_composite() {
+    assert_eq!(
+      interpret("FunctionContinuous[x^2 + Sin[x], x]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn function_continuous_restricted_domain() {
+    assert_eq!(
+      interpret("FunctionContinuous[{Log[x], x > 0}, x]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("FunctionContinuous[{Sqrt[x], x > 0}, x]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("FunctionContinuous[{1/x, x > 0}, x]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn function_continuous_multivariate() {
+    assert_eq!(
+      interpret("FunctionContinuous[x + y, {x, y}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn function_continuous_fractional_power() {
+    assert_eq!(
+      interpret("FunctionContinuous[x^(1/3), x]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
   fn graph_property_distribution_edge_count_bernoulli() {
     assert_eq!(
       interpret(
