@@ -11860,3 +11860,42 @@ mod xml_template {
     assert_eq!(interpret("XMLTemplate").unwrap(), "XMLTemplate");
   }
 }
+
+mod censored_distribution {
+  use super::*;
+
+  #[test]
+  fn with_normal() {
+    assert_eq!(
+      interpret("CensoredDistribution[{1, 5}, NormalDistribution[]]").unwrap(),
+      "CensoredDistribution[{1, 5}, NormalDistribution[0, 1]]"
+    );
+  }
+
+  #[test]
+  fn with_explicit_normal() {
+    assert_eq!(
+      interpret("CensoredDistribution[{-2, 2}, NormalDistribution[0, 1]]")
+        .unwrap(),
+      "CensoredDistribution[{-2, 2}, NormalDistribution[0, 1]]"
+    );
+  }
+
+  #[test]
+  fn with_exponential() {
+    assert_eq!(
+      interpret("CensoredDistribution[{0, 10}, ExponentialDistribution[1]]")
+        .unwrap(),
+      "CensoredDistribution[{0, 10}, ExponentialDistribution[1]]"
+    );
+  }
+
+  #[test]
+  fn with_infinity_bounds() {
+    assert_eq!(
+      interpret("CensoredDistribution[{-Infinity, 5}, NormalDistribution[]]")
+        .unwrap(),
+      "CensoredDistribution[{-Infinity, 5}, NormalDistribution[0, 1]]"
+    );
+  }
+}
