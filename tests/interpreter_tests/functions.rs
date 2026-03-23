@@ -11810,3 +11810,39 @@ mod stream_position {
     );
   }
 }
+
+mod date_interval {
+  use super::*;
+
+  #[test]
+  fn from_date_lists() {
+    assert_eq!(
+      interpret("DateInterval[{{2020, 1, 1}, {2020, 12, 31}}]").unwrap(),
+      "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, Day, Gregorian, None]"
+    );
+  }
+
+  #[test]
+  fn from_date_strings() {
+    assert_eq!(
+      interpret("DateInterval[{\"Jan 1, 2020\", \"Dec 31, 2020\"}]").unwrap(),
+      "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, Day, Gregorian, None]"
+    );
+  }
+
+  #[test]
+  fn from_date_objects() {
+    assert_eq!(
+      interpret(
+        "DateInterval[{DateObject[{2020, 1, 1}], DateObject[{2020, 12, 31}]}]"
+      )
+      .unwrap(),
+      "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, Day, Gregorian, None]"
+    );
+  }
+
+  #[test]
+  fn invalid_arg() {
+    assert_eq!(interpret("DateInterval[0]").unwrap(), "DateInterval[0]");
+  }
+}

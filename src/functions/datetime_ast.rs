@@ -233,7 +233,7 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     if let Ok(day) = parts[0].parse::<i64>() {
       let month_lower = parts[1].to_lowercase();
       if let Some(month_idx) =
-        months.iter().position(|m| month_lower.starts_with(m))
+        months.iter().position(|m| m.starts_with(&*month_lower))
         && let Ok(year) = parts[2].parse::<i64>()
       {
         return Some((year, (month_idx + 1) as i64, day));
@@ -242,7 +242,7 @@ fn parse_date_string(s: &str) -> Option<(i64, i64, i64)> {
     // Try "Month Day Year" format
     let month_lower = parts[0].to_lowercase();
     if let Some(month_idx) =
-      months.iter().position(|m| month_lower.starts_with(m))
+      months.iter().position(|m| m.starts_with(&*month_lower))
     {
       // Remove trailing comma from day if present
       let day_str = parts[1].trim_end_matches(',');
@@ -1126,4 +1126,29 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "DayName".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Resolve a date expression (date list, date string, DateObject) to a
+/// normalized {year, month, day, hour, min, sec} Expr::List.
+/// Returns None if the expression cannot be interpreted as a date.
+pub fn resolve_date_to_list(expr: &Expr) -> Option<Expr> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
+  match &evaluated {
+    Expr::List(_) => {
+      let components = extract_date_components(&evaluated)?;
+      let (y, m, d, h, min, sec) = normalize_date(&components);
+      Some(make_date_list(y, m, d, h, min, sec))
+    }
+    Expr::String(s) => {
+      let (y, m, d) = parse_date_string(s)?;
+      Some(make_date_list(y, m, d, 0, 0, 0.0))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DateObject" && !args.is_empty() =>
+    {
+      // DateObject[{y, m, d, ...}] — extract the date list
+      resolve_date_to_list(&args[0])
+    }
+    _ => None,
+  }
 }
