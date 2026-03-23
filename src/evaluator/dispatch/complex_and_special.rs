@@ -1052,6 +1052,86 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec(),
       }));
     }
+    // QBinomial[n, k, q] — Gaussian binomial coefficient (q-binomial)
+    "QBinomial" if args.len() == 3 => {
+      if let (Expr::Integer(n), Expr::Integer(k)) = (&args[0], &args[1]) {
+        let n = *n;
+        let k = *k;
+        if k < 0 || k > n || n < 0 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        if k == 0 || k == n {
+          return Some(Ok(Expr::Integer(1)));
+        }
+        let q = &args[2];
+        // Only evaluate for numeric q
+        let is_numeric = matches!(q, Expr::Integer(_) | Expr::Real(_))
+          || matches!(q, Expr::FunctionCall { name, .. } if name == "Rational");
+        if !is_numeric {
+          return Some(Ok(Expr::FunctionCall {
+            name: "QBinomial".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        // Product[(1 - q^(n-i)) / (1 - q^(i+1)), {i, 0, k-1}]
+        let mut result = Expr::Integer(1);
+        for i in 0..k {
+          let num = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Integer(-1),
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![q.clone(), Expr::Integer(n - i)],
+                  },
+                ],
+              },
+            ],
+          };
+          let den = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Integer(-1),
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![q.clone(), Expr::Integer(i + 1)],
+                  },
+                ],
+              },
+            ],
+          };
+          result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              result,
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  num,
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![den, Expr::Integer(-1)],
+                  },
+                ],
+              },
+            ],
+          };
+        }
+        return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "QBinomial".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // RegionEqual[r1, r2, ...] — test whether regions are equal
     "RegionEqual" => {
       return Some(compute_region_equal(args));

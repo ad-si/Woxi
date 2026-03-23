@@ -12133,3 +12133,40 @@ mod symbolic_wrappers {
     );
   }
 }
+
+mod q_binomial {
+  use super::*;
+
+  #[test]
+  fn numeric_q() {
+    assert_eq!(interpret("QBinomial[4, 2, 2]").unwrap(), "35");
+  }
+
+  #[test]
+  fn rational_q() {
+    assert_eq!(interpret("QBinomial[5, 2, 1/2]").unwrap(), "155/64");
+  }
+
+  #[test]
+  fn k_zero() {
+    assert_eq!(interpret("QBinomial[4, 0, q]").unwrap(), "1");
+  }
+
+  #[test]
+  fn k_equals_n() {
+    assert_eq!(interpret("QBinomial[4, 4, q]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_q() {
+    assert_eq!(
+      interpret("QBinomial[3, 1, q]").unwrap(),
+      "QBinomial[3, 1, q]"
+    );
+  }
+
+  #[test]
+  fn q_one_half_small() {
+    assert_eq!(interpret("QBinomial[3, 1, 2]").unwrap(), "7");
+  }
+}
