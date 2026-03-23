@@ -1542,6 +1542,119 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ArrayMesh[matrix] → MeshRegion from a binary 2D array
+  if name == "ArrayMesh" && args.len() == 1 {
+    if let Expr::List(rows) = &args[0] {
+      let nrows = rows.len();
+      if nrows == 0 {
+        return Ok(Expr::FunctionCall {
+          name: "ArrayMesh".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      // Parse the matrix
+      let mut matrix: Vec<Vec<bool>> = Vec::new();
+      let mut ncols = 0usize;
+      for row in rows {
+        if let Expr::List(cols) = row {
+          if ncols == 0 {
+            ncols = cols.len();
+          }
+          let row_vals: Vec<bool> = cols
+            .iter()
+            .map(|e| !matches!(e, Expr::Integer(0)))
+            .collect();
+          matrix.push(row_vals);
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "ArrayMesh".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+
+      // Collect vertices: process columns left-to-right, within each column rows bottom-to-top
+      // Each cell corner is (x_left/x_right, y_bottom/y_top) added as BL, TL, BR, TR
+      let mut vertices: Vec<(f64, f64)> = Vec::new();
+      let mut vertex_index =
+        std::collections::HashMap::<(i64, i64), usize>::new();
+
+      let add_vertex =
+        |x: i64,
+         y: i64,
+         vertices: &mut Vec<(f64, f64)>,
+         index: &mut std::collections::HashMap<(i64, i64), usize>|
+         -> usize {
+          if let Some(&idx) = index.get(&(x, y)) {
+            idx
+          } else {
+            let idx = vertices.len() + 1; // 1-indexed
+            vertices.push((x as f64, y as f64));
+            index.insert((x, y), idx);
+            idx
+          }
+        };
+
+      // Phase 1: collect vertices in the right order
+      for col in 0..ncols {
+        for row in (0..nrows).rev() {
+          if matrix[row][col] {
+            let y_bottom = (nrows - 1 - row) as i64;
+            let y_top = y_bottom + 1;
+            let x_left = col as i64;
+            let x_right = x_left + 1;
+            // BL, TL, BR, TR order
+            add_vertex(x_left, y_bottom, &mut vertices, &mut vertex_index);
+            add_vertex(x_left, y_top, &mut vertices, &mut vertex_index);
+            add_vertex(x_right, y_bottom, &mut vertices, &mut vertex_index);
+            add_vertex(x_right, y_top, &mut vertices, &mut vertex_index);
+          }
+        }
+      }
+
+      // Phase 2: create polygons in row-major order (top-to-bottom, left-to-right)
+      let mut polygons: Vec<Expr> = Vec::new();
+      for row in 0..nrows {
+        for col in 0..ncols {
+          if matrix[row][col] {
+            let y_bottom = (nrows - 1 - row) as i64;
+            let y_top = y_bottom + 1;
+            let x_left = col as i64;
+            let x_right = x_left + 1;
+            // CCW: BR, TR, TL, BL
+            let br = vertex_index[&(x_right, y_bottom)];
+            let tr = vertex_index[&(x_right, y_top)];
+            let tl = vertex_index[&(x_left, y_top)];
+            let bl = vertex_index[&(x_left, y_bottom)];
+            polygons.push(Expr::List(vec![
+              Expr::Integer(br as i128),
+              Expr::Integer(tr as i128),
+              Expr::Integer(tl as i128),
+              Expr::Integer(bl as i128),
+            ]));
+          }
+        }
+      }
+
+      // Build MeshRegion[vertices, {Polygon[polygons]}]
+      let vertex_exprs: Vec<Expr> = vertices
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+        .collect();
+
+      return Ok(Expr::FunctionCall {
+        name: "MeshRegion".to_string(),
+        args: vec![
+          Expr::List(vertex_exprs),
+          Expr::List(vec![Expr::FunctionCall {
+            name: "Polygon".to_string(),
+            args: vec![Expr::List(polygons)],
+          }]),
+        ],
+      });
+    }
+  }
+
   // ExpressionGraph[expr] → Graph of the expression tree
   if name == "ExpressionGraph" && args.len() == 1 {
     let mut counter = 0u64;

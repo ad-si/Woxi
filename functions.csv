@@ -213,7 +213,7 @@ ArrayDepth,Returns the depth of a nested array,✅,pure,5,1622
 ArrayDot,,,,14.1,
 ArrayFilter,,,,10.2,3378
 ArrayFlatten,Flatten a matrix of sub-matrices into a single matrix,✅,pure,6,504
-ArrayMesh,,,,10.4,2611
+ArrayMesh,Create a MeshRegion from a binary 2D array,✅,pure,10.4,2611
 ArrayPad,Pads an array with elements on each side,✅,pure,7,881
 ArrayPlot,Plots a matrix as a grid of colored cells,✅,pure,5.1,346
 ArrayPlot3D,,🚫,,12.2,4006

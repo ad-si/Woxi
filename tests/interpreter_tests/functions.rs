@@ -12238,6 +12238,50 @@ mod primitive_root {
   }
 }
 
+mod array_mesh {
+  use super::*;
+
+  #[test]
+  fn single_cell() {
+    assert_eq!(
+      interpret("ArrayMesh[{{1}}]").unwrap(),
+      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}, {Polygon[{{3, 4, 2, 1}}]}]"
+    );
+  }
+
+  #[test]
+  fn horizontal_strip() {
+    assert_eq!(
+      interpret("ArrayMesh[{{1, 1}}]").unwrap(),
+      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}, {2., 0.}, {2., 1.}}, {Polygon[{{3, 4, 2, 1}, {5, 6, 4, 3}}]}]"
+    );
+  }
+
+  #[test]
+  fn vertical_strip() {
+    assert_eq!(
+      interpret("ArrayMesh[{{1}, {1}}]").unwrap(),
+      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}, {0., 2.}, {1., 2.}}, {Polygon[{{4, 6, 5, 2}, {3, 4, 2, 1}}]}]"
+    );
+  }
+
+  #[test]
+  fn diagonal_pattern() {
+    assert_eq!(
+      interpret("ArrayMesh[{{1, 0}, {0, 1}}]").unwrap(),
+      "MeshRegion[{{0., 1.}, {0., 2.}, {1., 1.}, {1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}, {Polygon[{{3, 4, 2, 1}, {6, 7, 3, 5}}]}]"
+    );
+  }
+
+  #[test]
+  fn complex_pattern() {
+    assert_eq!(
+      interpret("ArrayMesh[{{1, 1, 0}, {1, 1, 1}, {0, 1, 0}}]").unwrap(),
+      "MeshRegion[{{0., 1.}, {0., 2.}, {1., 1.}, {1., 2.}, {0., 3.}, {1., 3.}, {1., 0.}, {2., 0.}, {2., 1.}, {2., 2.}, {2., 3.}, {3., 1.}, {3., 2.}}, {Polygon[{{4, 6, 5, 2}, {10, 11, 6, 4}, {3, 4, 2, 1}, {9, 10, 4, 3}, {12, 13, 10, 9}, {8, 9, 3, 7}}]}]"
+    );
+  }
+}
+
 mod expression_graph {
   use super::*;
 
