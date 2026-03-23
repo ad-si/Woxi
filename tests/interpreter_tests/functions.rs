@@ -11846,3 +11846,17 @@ mod date_interval {
     assert_eq!(interpret("DateInterval[0]").unwrap(), "DateInterval[0]");
   }
 }
+
+mod xml_template {
+  use super::*;
+
+  #[test]
+  fn returns_unevaluated() {
+    assert_eq!(interpret("XMLTemplate[0]").unwrap(), "XMLTemplate[0]");
+  }
+
+  #[test]
+  fn symbol_returns_itself() {
+    assert_eq!(interpret("XMLTemplate").unwrap(), "XMLTemplate");
+  }
+}
