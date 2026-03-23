@@ -3273,7 +3273,7 @@ LLMTool,,🚫,,13.3,
 LLMToolRequest,,🚫,,13.3,
 LLMToolResponse,,🚫,,13.3,
 LoadCompiledComponent,,,,13.2,
-LocalAdaptiveBinarize,,,,10,2671
+LocalAdaptiveBinarize,Requires image processing framework,🚫,io,10,2671
 LocalCache,,,,11,4707
 LocalClusteringCoefficient,local clustering coefficient of graph vertices,✅,Computation,9,2748
 LocalEvaluate,,,,13.1,
@@ -5766,7 +5766,7 @@ TunnelData,,🚫,,10,4947
 Tuples,Generates all tuples of elements from a list,✅,pure,5.1,367
 TuranGraph,,,,8,3191
 TuringMachine,,,,6,2854
-TuttePolynomial,,,,10,2671
+TuttePolynomial,Compute the Tutte polynomial of a graph,✅,1,10,2671
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Typed,,,,12,3108
 TypeDeclaration,,,,13.1,

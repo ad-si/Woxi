@@ -12490,6 +12490,55 @@ mod option_symbols_batch {
   }
 
   #[test]
+  fn tutte_polynomial_empty_graph() {
+    assert_eq!(
+      interpret("TuttePolynomial[Graph[{1, 2, 3}, {}]][x, y]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn tutte_polynomial_single_vertex() {
+    assert_eq!(
+      interpret("TuttePolynomial[Graph[{1}, {}]][x, y]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn tutte_polynomial_single_edge() {
+    assert_eq!(
+      interpret("TuttePolynomial[Graph[{1, 2}, {UndirectedEdge[1, 2]}]][x, y]")
+        .unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn tutte_polynomial_path() {
+    assert_eq!(
+      interpret("TuttePolynomial[PathGraph[{1, 2, 3}]][x, y]").unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn tutte_polynomial_k3() {
+    assert_eq!(
+      interpret("TuttePolynomial[CompleteGraph[3]][x, y]").unwrap(),
+      "x + x^2 + y"
+    );
+  }
+
+  #[test]
+  fn tutte_polynomial_k4() {
+    assert_eq!(
+      interpret("TuttePolynomial[CompleteGraph[4]][x, y]").unwrap(),
+      "2*x + 3*x^2 + x^3 + 2*y + 4*x*y + 3*y^2 + y^3"
+    );
+  }
+
+  #[test]
   fn function_continuous_polynomial() {
     assert_eq!(interpret("FunctionContinuous[x^2, x]").unwrap(), "True");
     assert_eq!(

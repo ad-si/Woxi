@@ -3088,6 +3088,223 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // TuttePolynomial[graph] — compute the Tutte polynomial via deletion-contraction
+  if name == "TuttePolynomial"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let Expr::List(verts) = &gargs[0]
+    && let Expr::List(edges) = &gargs[1]
+  {
+    use std::collections::HashMap;
+
+    type Poly = HashMap<(i32, i32), i128>;
+
+    fn poly_add(a: &Poly, b: &Poly) -> Poly {
+      let mut result = a.clone();
+      for (k, v) in b {
+        *result.entry(*k).or_insert(0) += v;
+      }
+      result.retain(|_, v| *v != 0);
+      result
+    }
+
+    fn poly_mul_var(p: &Poly, var: u8) -> Poly {
+      // var: 0 = x, 1 = y
+      p.iter()
+        .map(|(&(xp, yp), &c)| {
+          if var == 0 {
+            ((xp + 1, yp), c)
+          } else {
+            ((xp, yp + 1), c)
+          }
+        })
+        .collect()
+    }
+
+    // Compute connected components count using BFS
+    fn count_components(
+      vertex_ids: &[usize],
+      adj: &HashMap<usize, Vec<usize>>,
+    ) -> usize {
+      let mut visited = std::collections::HashSet::new();
+      let mut components = 0;
+      for &v in vertex_ids {
+        if !visited.contains(&v) {
+          components += 1;
+          let mut stack = vec![v];
+          while let Some(u) = stack.pop() {
+            if visited.insert(u) {
+              if let Some(neighbors) = adj.get(&u) {
+                for &n in neighbors {
+                  if !visited.contains(&n) {
+                    stack.push(n);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      components
+    }
+
+    // Build adjacency for given edge set
+    fn build_adj(edges: &[(usize, usize)]) -> HashMap<usize, Vec<usize>> {
+      let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
+      for &(u, v) in edges {
+        adj.entry(u).or_default().push(v);
+        adj.entry(v).or_default().push(u);
+      }
+      adj
+    }
+
+    fn tutte_poly(vertex_ids: &[usize], edges: &[(usize, usize)]) -> Poly {
+      if edges.is_empty() {
+        let mut p = Poly::new();
+        p.insert((0, 0), 1);
+        return p;
+      }
+
+      let (u, v) = edges[0];
+      let rest = &edges[1..];
+
+      // Check if it's a loop
+      if u == v {
+        // Loop: T(G) = y * T(G - e)
+        let sub = tutte_poly(vertex_ids, rest);
+        return poly_mul_var(&sub, 1);
+      }
+
+      // Check if it's a bridge: removing it increases components
+      let adj_with = build_adj(edges);
+      let comp_with = count_components(vertex_ids, &adj_with);
+      let adj_without = build_adj(rest);
+      let comp_without = count_components(vertex_ids, &adj_without);
+
+      if comp_without > comp_with {
+        // Bridge: T(G) = x * T(G / e)
+        // Contract: merge v into u in remaining edges
+        let contracted_edges: Vec<(usize, usize)> = rest
+          .iter()
+          .map(|&(a, b)| {
+            let a2 = if a == v { u } else { a };
+            let b2 = if b == v { u } else { b };
+            (a2, b2)
+          })
+          .collect();
+        let contracted_verts: Vec<usize> =
+          vertex_ids.iter().copied().filter(|&x| x != v).collect();
+        let sub = tutte_poly(&contracted_verts, &contracted_edges);
+        poly_mul_var(&sub, 0)
+      } else {
+        // Regular edge: T(G) = T(G - e) + T(G / e)
+        // Deletion
+        let del = tutte_poly(vertex_ids, rest);
+        // Contraction: merge v into u, keep self-loops (they contribute y terms)
+        let contracted_edges: Vec<(usize, usize)> = rest
+          .iter()
+          .map(|&(a, b)| {
+            let a2 = if a == v { u } else { a };
+            let b2 = if b == v { u } else { b };
+            (a2, b2)
+          })
+          .collect();
+        let contracted_verts: Vec<usize> =
+          vertex_ids.iter().copied().filter(|&x| x != v).collect();
+        let con = tutte_poly(&contracted_verts, &contracted_edges);
+        poly_add(&del, &con)
+      }
+    }
+
+    // Convert graph vertices to indices
+    let vert_strs: Vec<String> = verts.iter().map(expr_to_string).collect();
+    let vertex_ids: Vec<usize> = (0..verts.len()).collect();
+    let edge_pairs: Vec<(usize, usize)> = edges
+      .iter()
+      .filter_map(|e| {
+        if let Expr::FunctionCall { args: eargs, .. } = e
+          && eargs.len() == 2
+        {
+          let a_str = expr_to_string(&eargs[0]);
+          let b_str = expr_to_string(&eargs[1]);
+          let a_idx = vert_strs.iter().position(|s| *s == a_str)?;
+          let b_idx = vert_strs.iter().position(|s| *s == b_str)?;
+          Some((a_idx, b_idx))
+        } else {
+          None
+        }
+      })
+      .collect();
+
+    let poly = tutte_poly(&vertex_ids, &edge_pairs);
+
+    // Convert polynomial to Expr using Slot[1] for x, Slot[2] for y
+    // Return as Function[{x, y}, poly_expr] using formal params
+    let slot_x = Expr::Slot(1);
+    let slot_y = Expr::Slot(2);
+
+    // Build polynomial expression
+    let mut terms: Vec<((i32, i32), i128)> = poly.into_iter().collect();
+    terms.sort_by(|a, b| a.0.cmp(&b.0));
+
+    if terms.is_empty() {
+      return Ok(Expr::Function {
+        body: Box::new(Expr::Integer(0)),
+      });
+    }
+
+    let mut term_exprs: Vec<Expr> = Vec::new();
+    for &((xp, yp), coeff) in &terms {
+      let mut factors: Vec<Expr> = Vec::new();
+      if coeff != 1 || (xp == 0 && yp == 0) {
+        factors.push(Expr::Integer(coeff));
+      }
+      if xp == 1 {
+        factors.push(slot_x.clone());
+      } else if xp > 1 {
+        factors.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![slot_x.clone(), Expr::Integer(xp as i128)],
+        });
+      }
+      if yp == 1 {
+        factors.push(slot_y.clone());
+      } else if yp > 1 {
+        factors.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![slot_y.clone(), Expr::Integer(yp as i128)],
+        });
+      }
+      let term = if factors.len() == 1 {
+        factors.pop().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors,
+        }
+      };
+      term_exprs.push(term);
+    }
+
+    let poly_expr = if term_exprs.len() == 1 {
+      term_exprs.pop().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: term_exprs,
+      }
+    };
+
+    return Ok(Expr::Function {
+      body: Box::new(poly_expr),
+    });
+  }
+
   // FunctionContinuous[f, x] or FunctionContinuous[{f, cond}, x] or FunctionContinuous[f, {x, y, ...}]
   if name == "FunctionContinuous" && (args.len() == 2 || args.len() == 3) {
     // Helper: check if an expression is continuous over all reals w.r.t. given variables
