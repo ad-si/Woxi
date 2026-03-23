@@ -11899,3 +11899,46 @@ mod censored_distribution {
     );
   }
 }
+
+mod byte_array {
+  use super::*;
+
+  #[test]
+  fn from_list() {
+    assert_eq!(interpret("ByteArray[{1, 2, 3}]").unwrap(), "ByteArray[<3>]");
+  }
+
+  #[test]
+  fn from_base64() {
+    assert_eq!(
+      interpret("ByteArray[\"SGVsbG8=\"]").unwrap(),
+      "ByteArray[<5>]"
+    );
+  }
+
+  #[test]
+  fn normal_extracts_list() {
+    assert_eq!(
+      interpret("Normal[ByteArray[{72, 101, 108, 108, 111}]]").unwrap(),
+      "{72, 101, 108, 108, 111}"
+    );
+  }
+
+  #[test]
+  fn normal_base64() {
+    assert_eq!(
+      interpret("Normal[ByteArray[\"SGVsbG8=\"]]").unwrap(),
+      "{72, 101, 108, 108, 111}"
+    );
+  }
+
+  #[test]
+  fn length() {
+    assert_eq!(interpret("Length[ByteArray[{1, 2, 3}]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn invalid_arg() {
+    assert_eq!(interpret("ByteArray[0]").unwrap(), "ByteArray[0]");
+  }
+}

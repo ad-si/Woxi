@@ -438,6 +438,17 @@ pub fn dispatch_list_operations(
           crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
         );
       }
+      // Normal[ByteArray[{b1, b2, ...}]] extracts the byte list
+      if let Expr::FunctionCall {
+        name,
+        args: ba_args,
+      } = &args[0]
+        && name == "ByteArray"
+        && ba_args.len() == 1
+        && matches!(&ba_args[0], Expr::List(_))
+      {
+        return Some(Ok(ba_args[0].clone()));
+      }
       // Normal[SparseArray[...]] expands to a regular list
       if let Expr::FunctionCall {
         name,

@@ -627,7 +627,7 @@ ButtonMinHeight,,🚫,,3,4052
 ButtonNotebook,Notebook containing buttons,🚫,,3,2116
 ButtonSource,,🚫,,3,3636
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1,2438
-ByteArray,,,,10.1,2591
+ByteArray,Creates a byte array from a list of unsigned byte values or a Base64-encoded string,✅,pure,10.1,2591
 ByteArrayFormat,,,,12,5587
 ByteArrayFormatQ,,,,12.2,5390
 ByteArrayQ,,,,10.1,4947
