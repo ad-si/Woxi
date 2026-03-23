@@ -101,7 +101,7 @@ AlphabeticOrder,Compare strings in alphabetical order,✅,none,10.3,2889
 AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅,pure,10.3,2828
 AlphaChannel,,🚫,,8,3121
 AlternatingFactorial,Alternating sum of factorials,✅,none,10,4947
-AlternatingGroup,,,,8,2828
+AlternatingGroup,Alternating group of degree n,✅,unevaluated,8,2828
 AlternativeHypothesis,,,,8,3353
 Alternatives,Pattern object representing any of several alternatives,✅,pure,2,10
 AltitudeMethod,,,,10,5390
@@ -393,7 +393,7 @@ Ball,Geometric primitive representing a ball (filled sphere),✅,none,10,989
 Band,Specify a band of a matrix,✅,none,6,732
 BandpassFilter,,,,9,2952
 BandstopFilter,,,,9,3612
-BarabasiAlbertGraphDistribution,,,,8,2777
+BarabasiAlbertGraphDistribution,Barabasi-Albert random graph distribution,✅,unevaluated,8,2777
 BarChart,Creates a bar chart from data,✅,pure,7,449
 BarChart3D,3D bar chart,✅,pure,7,1539
 BarcodeImage,Barcode generation,🚫,None,10,2263
@@ -5081,7 +5081,7 @@ SpatialBinnedPointData,,🚫,,12.2,
 SpatialBoundaryCorrection,,,,12.2,
 SpatialEstimate,,,,13,
 SpatialEstimatorFunction,,,,13,
-SpatialGraphDistribution,,,,9,2842
+SpatialGraphDistribution,Spatial random graph distribution,✅,unevaluated,9,2842
 SpatialJ,,,,12.2,
 SpatialMedian,,,,11.1,4138
 SpatialNoiseLevel,,,,13,
@@ -5797,7 +5797,7 @@ Unequal,Checks if two values are not equal,✅,pure,1,200
 UnequalTo,Operator form of Unequal,✅,none,10.4,3678
 Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2,407
 UniformDistribution,Represents a continuous uniform probability distribution,✅,pure,6,757
-UniformGraphDistribution,,,,8,2921
+UniformGraphDistribution,Uniform random graph distribution,✅,unevaluated,8,2921
 UniformPolyhedron,,,,12,2837
 UniformSumDistribution,,,,8,3020
 UnilateralConvolve,,,,14,
@@ -6037,7 +6037,7 @@ WarpingCorrespondence,,,,11,3636
 WarpingDistance,,,,11,3697
 WatershedComponents,Watershed components,✅,unevaluated,8,1836
 WatsonUSquareTest,,,,8,3717
-WattsStrogatzGraphDistribution,,,,8,2707
+WattsStrogatzGraphDistribution,Watts-Strogatz small-world graph distribution,✅,unevaluated,8,2707
 WaveletBestBasis,,🚫,,8,3389
 WaveletFilterCoefficients,Signal processing,🚫,None,8,2239
 WaveletImagePlot,,🚫,,8,3031

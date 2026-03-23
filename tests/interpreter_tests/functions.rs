@@ -12490,6 +12490,46 @@ mod option_symbols_batch {
   }
 
   #[test]
+  fn alternating_group() {
+    assert_eq!(
+      interpret("AlternatingGroup[4]").unwrap(),
+      "AlternatingGroup[4]"
+    );
+  }
+
+  #[test]
+  fn watts_strogatz_graph_distribution() {
+    assert_eq!(
+      interpret("WattsStrogatzGraphDistribution[10, 0.5]").unwrap(),
+      "WattsStrogatzGraphDistribution[10, 0.5]"
+    );
+  }
+
+  #[test]
+  fn barabasi_albert_graph_distribution() {
+    assert_eq!(
+      interpret("BarabasiAlbertGraphDistribution[10, 2]").unwrap(),
+      "BarabasiAlbertGraphDistribution[10, 2]"
+    );
+  }
+
+  #[test]
+  fn spatial_graph_distribution() {
+    assert_eq!(
+      interpret("SpatialGraphDistribution[10, 0.3]").unwrap(),
+      "SpatialGraphDistribution[10, 0.3]"
+    );
+  }
+
+  #[test]
+  fn uniform_graph_distribution() {
+    assert_eq!(
+      interpret("UniformGraphDistribution[10, 20]").unwrap(),
+      "UniformGraphDistribution[10, 20]"
+    );
+  }
+
+  #[test]
   fn tutte_polynomial_empty_graph() {
     assert_eq!(
       interpret("TuttePolynomial[Graph[{1, 2, 3}, {}]][x, y]").unwrap(),
