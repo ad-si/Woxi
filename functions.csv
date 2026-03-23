@@ -6164,7 +6164,7 @@ WriteString,Write a string to an output stream,✅,effectful,1,930
 Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7,876
 XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481
 XMLObject,represents an XML object,✅,Symbolic,4.2,2755
-XMLTemplate,,,,10,2578
+XMLTemplate,Symbolic wrapper for XML templates that returns unevaluated,✅,pure,10,2578
 Xnor,,,,7,3031
 Xor,Checks if exactly one condition is true,✅,pure,1,1197
 XYZColor,XYZ color specification,✅,unevaluated,10,1887
