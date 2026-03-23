@@ -1026,7 +1026,7 @@ ConoverTest,,,,8,3972
 ConservativeConvectionPDETerm,,,,12.2,5390
 Constant,Attribute indicating zero derivative with respect to all parameters,✅,pure,1,1704
 ConstantArray,Creates an array of repeated elements,✅,pure,6,242
-ConstantImage,,,,10,2596
+ConstantImage,Create a constant image filled with a specified color or gray level,✅,pure,10,2596
 ConstantRegionQ,,,,10,3462
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1,1873
 ConstantVideo,,,,14.1,
@@ -2147,7 +2147,7 @@ FRatioDistribution,F-ratio distribution,✅,unevaluated,6,1788
 FrechetDistribution,represents a Frechet distribution,✅,Computation,8,2671
 FreeformEvaluate,,🚫,,14.1,
 FreeQ,Tests if expression is free of a specified form,✅,pure,1,286
-FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,yes,pure,10,2591
+FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,✅,pure,10,2591
 FrequencySamplingFilterKernel,,,,9,4612
 FresnelC,,🚫,,3,1208
 FresnelF,,,,10,4356

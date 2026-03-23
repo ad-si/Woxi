@@ -89,6 +89,9 @@ pub fn dispatch_image_functions(
     "RandomImage" if args.len() <= 2 => {
       return Some(crate::functions::image_ast::random_image_ast(args));
     }
+    "ConstantImage" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::image_ast::constant_image_ast(args));
+    }
     "ImageCollage" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image_collage_ast(args));
     }
