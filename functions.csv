@@ -4545,7 +4545,7 @@ Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
 RectangleChart,Rectangle chart,✅,unevaluated,7,1687
 RectangleChart3D,,🚫,,7,3200
 RectangularRepeatingElement,,,,11.1,5486
-RecurrenceFilter,,,,9,2642
+RecurrenceFilter,Apply an IIR/FIR recurrence filter to data,✅,pure,9,2642
 RecurrenceTable,Generate a table of values from a recurrence relation,✅,none,7,534
 Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
 Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure,1,213

@@ -12282,6 +12282,34 @@ mod array_mesh {
   }
 }
 
+mod recurrence_filter {
+  use super::*;
+
+  #[test]
+  fn iir_filter() {
+    assert_eq!(
+      interpret("RecurrenceFilter[{{1, -1/2}, {1}}, {1, 2, 3, 4, 5}]").unwrap(),
+      "{1, 5/2, 17/4, 49/8, 129/16}"
+    );
+  }
+
+  #[test]
+  fn cumulative_sum() {
+    assert_eq!(
+      interpret("RecurrenceFilter[{{1, -1}, {1}}, {1, 2, 3, 4, 5}]").unwrap(),
+      "{1, 3, 6, 10, 15}"
+    );
+  }
+
+  #[test]
+  fn fir_filter() {
+    assert_eq!(
+      interpret("RecurrenceFilter[{{1}, {1, 1}}, {1, 0, 0, 0, 0}]").unwrap(),
+      "{1, 1, 0, 0, 0}"
+    );
+  }
+}
+
 mod cantor_mesh {
   use super::*;
 
