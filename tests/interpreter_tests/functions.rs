@@ -12336,6 +12336,66 @@ mod expression_graph {
   }
 }
 
+mod morphological_operations {
+  use super::*;
+
+  #[test]
+  fn opening_1d_binary() {
+    assert_eq!(
+      interpret("Opening[{0, 1, 1, 0, 1, 1, 1, 0, 0, 1}, 1]").unwrap(),
+      "{0, 0, 0, 0, 1, 1, 1, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn opening_1d_large_radius() {
+    assert_eq!(
+      interpret("Opening[{0, 1, 1, 0, 1, 1, 1, 0, 0, 1}, 2]").unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn opening_1d_grayscale() {
+    assert_eq!(
+      interpret("Opening[{0.5, 0.3, 0.8, 0.1, 0.9}, 1]").unwrap(),
+      "{0.3, 0.3, 0.3, 0.1, 0.1}"
+    );
+  }
+
+  #[test]
+  fn opening_2d() {
+    assert_eq!(
+      interpret("Opening[{{1, 1, 0}, {1, 1, 0}, {0, 0, 0}}, 1]").unwrap(),
+      "{{1, 1, 0}, {1, 1, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn erosion_1d() {
+    assert_eq!(
+      interpret("Erosion[{0, 1, 1, 0, 1, 1, 1, 0, 0, 1}, 1]").unwrap(),
+      "{0, 0, 0, 0, 0, 1, 0, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn dilation_1d() {
+    assert_eq!(
+      interpret("Dilation[{0, 0, 0, 0, 0, 1, 0, 0, 0, 0}, 1]").unwrap(),
+      "{0, 0, 0, 0, 1, 1, 1, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn closing_1d() {
+    assert_eq!(
+      interpret("Closing[{0, 1, 0, 1, 0, 1, 0}, 1]").unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1}"
+    );
+  }
+}
+
 mod option_symbols_batch {
   use super::*;
 

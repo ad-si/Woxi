@@ -844,7 +844,7 @@ ClockGauge,dynamic gauge display,🚫,None,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,parallel computing,🚫,None,7,2371
 ClosenessCentrality,Closeness centrality of graph vertices,✅,1,8,3008
-Closing,Morphological closing,✅,unevaluated,7,1916
+Closing,Morphological closing (dilation followed by erosion),✅,pure,7,1916
 CloudAccountData,,🚫,,10,3612
 CloudBase,,🚫,,10,5013
 CloudConnect,,🚫,,10,3612
@@ -1443,7 +1443,7 @@ DigitQ,Tests if a string consists entirely of digits,✅,pure,2,1827
 DigitSum,Returns the sum of digits of a number,✅,pure,14,
 DihedralAngle,,,,12,5486
 DihedralGroup,,,,8,2662
-Dilation,,🚫,,7,1299
+Dilation,Morphological dilation (max filter),✅,pure,7,1299
 DimensionalCombinations,,,,10,4567
 DimensionalMeshComponents,,,,10,4881
 DimensionReduce,,🚫,,10.1,3121
@@ -1742,7 +1742,7 @@ Erfi,Returns the imaginary error function value,✅,pure,1,995
 ErlangB,,,,9,4387
 ErlangC,,,,9,4262
 ErlangDistribution,Probability distribution,🚫,None,8,2190
-Erosion,Morphological erosion,✅,unevaluated,7,1582
+Erosion,Morphological erosion (min filter),✅,pure,7,1582
 ErrorBox,,,,3,4612
 EscapeRadius,,,,10,4006
 EstimatedBackground,,,,10,3257
@@ -3953,7 +3953,7 @@ OpaqueRawPointer,,,,13.3,
 OpenAppend,Opens a file for appending,✅,effectful,1,2188
 Opener,,🚫,,6,2851
 OpenerView,Expandable view widget,✅,pure,6,1471
-Opening,,,,7,2632
+Opening,Morphological opening (erosion followed by dilation),✅,pure,7,2632
 OpenRead,Opens a file for reading,✅,effectful,1,1278
 OpenWrite,Opens a file for writing,✅,effectful,1,1199
 Operate,Applies a function to the head of an expression,✅,pure,1,2549

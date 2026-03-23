@@ -3472,6 +3472,15 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
 
+  // Morphological operations: Opening, Closing, Erosion, Dilation
+  if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
+    && args.len() == 2
+  {
+    if let Some(result) = morphological_op(name, &args[0], &args[1]) {
+      return result;
+    }
+  }
+
   // Formatting wrappers and symbolic heads that stay unevaluated
   if matches!(
     name,
@@ -3556,7 +3565,6 @@ pub fn evaluate_function_call_ast_inner(
       | "ConfidenceLevel"
       | "CoefficientRules"
       | "Thinning"
-      | "Erosion"
       | "Tolerance"
       | "NetInitialize"
       | "BoundaryMeshRegion"
@@ -3798,7 +3806,6 @@ pub fn evaluate_function_call_ast_inner(
       | "Temporary"
       | "ServiceConnect"
       | "NonlinearStateSpaceModel"
-      | "Closing"
       | "DefaultDuration"
       | "EndOfLine"
       | "RowLines"
@@ -4390,5 +4397,188 @@ fn poly_to_expr(coeffs: &[i128], k: &Expr) -> Expr {
   match crate::evaluator::evaluate_expr_to_expr(&sum) {
     Ok(result) => result,
     Err(_) => sum,
+  }
+}
+
+/// 1D min/max filter with edge replication padding.
+fn min_max_filter_1d(data: &[f64], radius: usize, use_min: bool) -> Vec<f64> {
+  let n = data.len();
+  let mut result = vec![0.0; n];
+  for i in 0..n {
+    let lo = if i >= radius { i - radius } else { 0 };
+    let hi = if i + radius < n { i + radius } else { n - 1 };
+    let mut val = data[lo];
+    for j in (lo + 1)..=hi {
+      if use_min {
+        val = val.min(data[j]);
+      } else {
+        val = val.max(data[j]);
+      }
+    }
+    result[i] = val;
+  }
+  result
+}
+
+/// 2D min/max filter with edge replication padding.
+fn min_max_filter_2d(
+  data: &[Vec<f64>],
+  radius: usize,
+  use_min: bool,
+) -> Vec<Vec<f64>> {
+  let nrows = data.len();
+  if nrows == 0 {
+    return vec![];
+  }
+  let ncols = data[0].len();
+  let mut result = vec![vec![0.0; ncols]; nrows];
+  for r in 0..nrows {
+    for c in 0..ncols {
+      let r_lo = if r >= radius { r - radius } else { 0 };
+      let r_hi = if r + radius < nrows {
+        r + radius
+      } else {
+        nrows - 1
+      };
+      let c_lo = if c >= radius { c - radius } else { 0 };
+      let c_hi = if c + radius < ncols {
+        c + radius
+      } else {
+        ncols - 1
+      };
+      let mut val = data[r_lo][c_lo];
+      for ri in r_lo..=r_hi {
+        for ci in c_lo..=c_hi {
+          if use_min {
+            val = val.min(data[ri][ci]);
+          } else {
+            val = val.max(data[ri][ci]);
+          }
+        }
+      }
+      result[r][c] = val;
+    }
+  }
+  result
+}
+
+/// Helper to extract a numeric list from Expr::List
+fn expr_list_to_f64(list: &[Expr]) -> Option<Vec<f64>> {
+  list
+    .iter()
+    .map(|e| crate::functions::math_ast::try_eval_to_f64(e))
+    .collect()
+}
+
+/// Helper to extract a numeric 2D matrix from Expr::List(List(...))
+fn expr_matrix_to_f64(rows: &[Expr]) -> Option<Vec<Vec<f64>>> {
+  rows
+    .iter()
+    .map(|row| {
+      if let Expr::List(cols) = row {
+        expr_list_to_f64(cols)
+      } else {
+        None
+      }
+    })
+    .collect()
+}
+
+/// Morphological operations: Opening, Closing, Erosion, Dilation
+fn morphological_op(
+  name: &str,
+  data_expr: &Expr,
+  radius_expr: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let radius =
+    crate::functions::math_ast::try_eval_to_f64(radius_expr)? as usize;
+
+  match data_expr {
+    Expr::List(items) if !items.is_empty() => {
+      // Check if it's a 2D matrix or 1D list
+      if matches!(&items[0], Expr::List(_)) {
+        // 2D case
+        let matrix = expr_matrix_to_f64(items)?;
+        let result = apply_morphological_2d(name, &matrix, radius);
+        let is_int = items.iter().all(|row| {
+          if let Expr::List(cols) = row {
+            cols.iter().all(|e| matches!(e, Expr::Integer(_)))
+          } else {
+            false
+          }
+        });
+        let result_expr = result
+          .into_iter()
+          .map(|row| {
+            Expr::List(
+              row
+                .into_iter()
+                .map(|v| {
+                  if is_int {
+                    Expr::Integer(v as i128)
+                  } else {
+                    Expr::Real(v)
+                  }
+                })
+                .collect(),
+            )
+          })
+          .collect();
+        Some(Ok(Expr::List(result_expr)))
+      } else {
+        // 1D case
+        let data = expr_list_to_f64(items)?;
+        let result = apply_morphological_1d(name, &data, radius);
+        let is_int = items.iter().all(|e| matches!(e, Expr::Integer(_)));
+        let result_expr = result
+          .into_iter()
+          .map(|v| {
+            if is_int {
+              Expr::Integer(v as i128)
+            } else {
+              Expr::Real(v)
+            }
+          })
+          .collect();
+        Some(Ok(Expr::List(result_expr)))
+      }
+    }
+    _ => None,
+  }
+}
+
+fn apply_morphological_1d(name: &str, data: &[f64], radius: usize) -> Vec<f64> {
+  match name {
+    "Erosion" => min_max_filter_1d(data, radius, true),
+    "Dilation" => min_max_filter_1d(data, radius, false),
+    "Opening" => {
+      let eroded = min_max_filter_1d(data, radius, true);
+      min_max_filter_1d(&eroded, radius, false)
+    }
+    "Closing" => {
+      let dilated = min_max_filter_1d(data, radius, false);
+      min_max_filter_1d(&dilated, radius, true)
+    }
+    _ => data.to_vec(),
+  }
+}
+
+fn apply_morphological_2d(
+  name: &str,
+  data: &[Vec<f64>],
+  radius: usize,
+) -> Vec<Vec<f64>> {
+  match name {
+    "Erosion" => min_max_filter_2d(data, radius, true),
+    "Dilation" => min_max_filter_2d(data, radius, false),
+    "Opening" => {
+      let eroded = min_max_filter_2d(data, radius, true);
+      min_max_filter_2d(&eroded, radius, false)
+    }
+    "Closing" => {
+      let dilated = min_max_filter_2d(data, radius, false);
+      min_max_filter_2d(&dilated, radius, true)
+    }
+    _ => data.to_vec(),
   }
 }
