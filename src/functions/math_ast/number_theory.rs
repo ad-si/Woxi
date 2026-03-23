@@ -1865,6 +1865,29 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(result as i128))
 }
 
+/// Compute Euler's totient function for a positive integer.
+pub fn euler_phi_i128(n: i128) -> i128 {
+  if n <= 0 {
+    return 0;
+  }
+  let mut num = n as u128;
+  let mut result = n as u128;
+  let mut p: u128 = 2;
+  while p * p <= num {
+    if num % p == 0 {
+      while num % p == 0 {
+        num /= p;
+      }
+      result -= result / p;
+    }
+    p += 1;
+  }
+  if num > 1 {
+    result -= result / num;
+  }
+  result as i128
+}
+
 /// JacobiSymbol[n, m] - Compute the Jacobi symbol (n/m)
 pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

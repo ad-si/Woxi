@@ -1087,6 +1087,47 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // PrimitiveRoot[n] — smallest primitive root modulo n
+    "PrimitiveRoot" if args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        if *n <= 1 {
+          crate::emit_message(&format!(
+            "PrimitiveRoot::intg: Integer greater than 1 expected at position 1 in PrimitiveRoot[{}].",
+            n
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "PrimitiveRoot".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        let n_val = *n;
+        // Compute EulerPhi[n]
+        let phi = crate::functions::math_ast::euler_phi_i128(n_val);
+        // Find smallest g >= 2 with multiplicative order == phi
+        // (or g=1 for n=2)
+        let start = if n_val == 2 { 1 } else { 2 };
+        for g in start..n_val {
+          if crate::functions::math_ast::gcd_i128(g, n_val) != 1 {
+            continue;
+          }
+          // Check multiplicative order of g mod n
+          let mut power = g % n_val;
+          let mut order = 1i128;
+          while power != 1 && order <= phi {
+            power = (power * g) % n_val;
+            order += 1;
+          }
+          if power == 1 && order == phi {
+            return Some(Ok(Expr::Integer(g)));
+          }
+        }
+        // No primitive root exists (e.g., n=8)
+        return Some(Ok(Expr::FunctionCall {
+          name: "PrimitiveRoot".to_string(),
+          args: args.to_vec(),
+        }));
+      }
+    }
     "CoprimeQ" if args.len() >= 2 => {
       return Some(crate::functions::math_ast::coprime_q_ast(args));
     }

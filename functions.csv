@@ -4351,7 +4351,7 @@ PrimeQ,Tests if a number is prime,✅,pure,1,462
 Primes,Domain of primes,✅,unevaluated,4,1707
 PrimeZetaP,,,,7,2971
 PrimitivePolynomialQ,,,,11.1,4437
-PrimitiveRoot,,,,6,2798
+PrimitiveRoot,Finds the smallest primitive root modulo n,✅,pure,6,2798
 PrimitiveRootList,List of primitive roots modulo n,✅,none,10,2880
 PrincipalComponents,gives the principal component scores of a data matrix,✅,none,8,2473
 PrincipalValue,Represents Cauchy principal value,✅,1,3,1160
