@@ -294,6 +294,18 @@ pub fn dispatch_evaluation_control(
         args: canonical_args,
       }));
     }
+    // CensoredDistribution[{min, max}, dist] — censored distribution
+    "CensoredDistribution" if args.len() == 2 => {
+      // Evaluate the underlying distribution to normalize it
+      let dist = crate::evaluator::evaluate_expr_to_expr(&args[1])
+        .unwrap_or_else(|_| args[1].clone());
+      let bounds = crate::evaluator::evaluate_expr_to_expr(&args[0])
+        .unwrap_or_else(|_| args[0].clone());
+      return Some(Ok(Expr::FunctionCall {
+        name: "CensoredDistribution".to_string(),
+        args: vec![bounds, dist],
+      }));
+    }
     "Names" if args.len() <= 1 => {
       let all_names = crate::get_defined_names();
       if args.is_empty() {

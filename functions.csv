@@ -733,7 +733,7 @@ CellStyle,Cell style specification,✅,unevaluated,9,1625
 CellStyleImportRules,,🚫,,14,
 CellTags,,🚫,,3,1142
 CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
-CensoredDistribution,,,,8,2587
+CensoredDistribution,Represents a censored distribution with specified bounds and underlying distribution,✅,pure,8,2587
 Censoring,,,,8,4809
 Center,Symbol for centering alignment,✅,pure,1,199
 CenterArray,Center a list within a larger array,✅,none,11,3242
