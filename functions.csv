@@ -2147,7 +2147,7 @@ FRatioDistribution,F-ratio distribution,✅,unevaluated,6,1788
 FrechetDistribution,represents a Frechet distribution,✅,Computation,8,2671
 FreeformEvaluate,,🚫,,14.1,
 FreeQ,Tests if expression is free of a specified form,✅,pure,1,286
-FrenetSerretSystem,,,,10,2591
+FrenetSerretSystem,Compute the Frenet-Serret system (curvatures and orthonormal frame) for a parametric curve,yes,pure,10,2591
 FrequencySamplingFilterKernel,,,,9,4612
 FresnelC,,🚫,,3,1208
 FresnelF,,,,10,4356
