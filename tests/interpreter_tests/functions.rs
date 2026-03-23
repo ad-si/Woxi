@@ -11732,3 +11732,28 @@ mod region_equal {
     assert_eq!(interpret("RegionEqual[x, y]").unwrap(), "RegionEqual[x, y]");
   }
 }
+
+mod value_dimensions {
+  use super::*;
+
+  #[test]
+  fn symbol_returns_itself() {
+    assert_eq!(interpret("ValueDimensions").unwrap(), "ValueDimensions");
+  }
+
+  #[test]
+  fn as_option_rule() {
+    assert_eq!(
+      interpret("ValueDimensions -> 3").unwrap(),
+      "ValueDimensions -> 3"
+    );
+  }
+
+  #[test]
+  fn applied_to_arg() {
+    assert_eq!(
+      interpret("ValueDimensions[0]").unwrap(),
+      "ValueDimensions[0]"
+    );
+  }
+}
