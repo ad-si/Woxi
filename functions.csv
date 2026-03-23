@@ -654,7 +654,7 @@ CanonicalizeRegion,,,,12.3,
 CanonicalName,,🚫,,10,1286
 CanonicalWarpingCorrespondence,,,,11,4315
 CanonicalWarpingDistance,,,,11,4052
-CantorMesh,,,,11.1,2650
+CantorMesh,Create a Cantor set mesh at a given level of iteration,✅,pure,11.1,2650
 CantorStaircase,,,,10,2911
 Canvas,,🚫,,12.2,3083
 Cap,,,,3,3020
