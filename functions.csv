@@ -2426,7 +2426,7 @@ GraphPlot,Requires external services or GUI infrastructure,🚫,io,6,849
 GraphPlot3D,3D graph plot,✅,unevaluated,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
-GraphPropertyDistribution,,,,9,2635
+GraphPropertyDistribution,Distribution of a graph property over a graph distribution,✅,1,9,2635
 GraphQ,graph predicate (no graph framework),🚫,None,8,2305
 GraphRadius,Minimum vertex eccentricity,✅,1,8,3378
 GraphReciprocity,,,,9,4809

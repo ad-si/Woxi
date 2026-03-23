@@ -12482,4 +12482,93 @@ mod option_symbols_batch {
       "PolarAxesOrigin[0]"
     );
   }
+
+  #[test]
+  fn graph_property_distribution_edge_count_bernoulli() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[EdgeCount[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+      )
+      .unwrap(),
+      "BinomialDistribution[(-1 + n)*n/2, p]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_vertex_count_bernoulli() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[VertexCount[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+      )
+      .unwrap(),
+      "DiscreteUniformDistribution[{n, n}]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_vertex_degree_bernoulli() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[VertexDegree[g, 1], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+      )
+      .unwrap(),
+      "BinomialDistribution[-1 + n, p]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_edge_count_uniform() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[EdgeCount[g], Distributed[g, UniformGraphDistribution[n, m]]]"
+      )
+      .unwrap(),
+      "DiscreteUniformDistribution[{m, m}]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_vertex_count_uniform() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[VertexCount[g], Distributed[g, UniformGraphDistribution[n, m]]]"
+      )
+      .unwrap(),
+      "DiscreteUniformDistribution[{n, n}]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_vertex_degree_uniform() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[VertexDegree[g, 1], Distributed[g, UniformGraphDistribution[n, m]]]"
+      )
+      .unwrap(),
+      "HypergeometricDistribution[m, -1 + n, (-1 + n)*n/2]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_unevaluated() {
+    // Unknown property stays unevaluated
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[SomeProperty[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+      )
+      .unwrap(),
+      "GraphPropertyDistribution[SomeProperty[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+    );
+  }
+
+  #[test]
+  fn graph_property_distribution_concrete_values() {
+    assert_eq!(
+      interpret(
+        "GraphPropertyDistribution[VertexCount[g], Distributed[g, BernoulliGraphDistribution[5, 0.3]]]"
+      )
+      .unwrap(),
+      "DiscreteUniformDistribution[{5, 5}]"
+    );
+  }
 }

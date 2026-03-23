@@ -2922,6 +2922,172 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // GraphPropertyDistribution[property[g], Distributed[g, graphDist]]
+  // Returns the probability distribution of a graph property over a graph distribution.
+  if name == "GraphPropertyDistribution"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    } = &args[1]
+    && dname == "Distributed"
+    && dargs.len() == 2
+  {
+    let var = &dargs[0];
+    let graph_dist = &dargs[1];
+    let property = &args[0];
+
+    // Extract graph distribution name and params
+    if let Expr::FunctionCall {
+      name: dist_name,
+      args: dist_args,
+    } = graph_dist
+    {
+      // Extract property name and check if the graph variable matches
+      if let Expr::FunctionCall {
+        name: prop_name,
+        args: prop_args,
+      } = property
+      {
+        let var_str = expr_to_string(var);
+        let prop_var_matches =
+          !prop_args.is_empty() && expr_to_string(&prop_args[0]) == var_str;
+
+        match (prop_name.as_str(), dist_name.as_str()) {
+          // EdgeCount[g] with BernoulliGraphDistribution[n, p]
+          // → BinomialDistribution[((-1 + n)*n)/2, p]
+          ("EdgeCount", "BernoulliGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 1
+              && dist_args.len() == 2 =>
+          {
+            let n = &dist_args[0];
+            let p = &dist_args[1];
+            // Build ((-1 + n)*n)/2
+            let n_minus_1 = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Integer(-1), n.clone()],
+            };
+            let product = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![n_minus_1, n.clone()],
+            };
+            let half = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+                product,
+              ],
+            };
+            return Ok(Expr::FunctionCall {
+              name: "BinomialDistribution".to_string(),
+              args: vec![half, p.clone()],
+            });
+          }
+
+          // VertexCount[g] with BernoulliGraphDistribution[n, p]
+          // → DiscreteUniformDistribution[{n, n}]
+          ("VertexCount", "BernoulliGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 1
+              && dist_args.len() == 2 =>
+          {
+            let n = &dist_args[0];
+            return Ok(Expr::FunctionCall {
+              name: "DiscreteUniformDistribution".to_string(),
+              args: vec![Expr::List(vec![n.clone(), n.clone()])],
+            });
+          }
+
+          // VertexDegree[g, v] with BernoulliGraphDistribution[n, p]
+          // → BinomialDistribution[-1 + n, p]
+          ("VertexDegree", "BernoulliGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 2
+              && dist_args.len() == 2 =>
+          {
+            let n = &dist_args[0];
+            let p = &dist_args[1];
+            let n_minus_1 = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Integer(-1), n.clone()],
+            };
+            return Ok(Expr::FunctionCall {
+              name: "BinomialDistribution".to_string(),
+              args: vec![n_minus_1, p.clone()],
+            });
+          }
+
+          // EdgeCount[g] with UniformGraphDistribution[n, m]
+          // → DiscreteUniformDistribution[{m, m}]
+          ("EdgeCount", "UniformGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 1
+              && dist_args.len() == 2 =>
+          {
+            let m = &dist_args[1];
+            return Ok(Expr::FunctionCall {
+              name: "DiscreteUniformDistribution".to_string(),
+              args: vec![Expr::List(vec![m.clone(), m.clone()])],
+            });
+          }
+
+          // VertexCount[g] with UniformGraphDistribution[n, m]
+          // → DiscreteUniformDistribution[{n, n}]
+          ("VertexCount", "UniformGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 1
+              && dist_args.len() == 2 =>
+          {
+            let n = &dist_args[0];
+            return Ok(Expr::FunctionCall {
+              name: "DiscreteUniformDistribution".to_string(),
+              args: vec![Expr::List(vec![n.clone(), n.clone()])],
+            });
+          }
+
+          // VertexDegree[g, v] with UniformGraphDistribution[n, m]
+          // → HypergeometricDistribution[m, -1 + n, ((-1 + n)*n)/2]
+          ("VertexDegree", "UniformGraphDistribution")
+            if prop_var_matches
+              && prop_args.len() == 2
+              && dist_args.len() == 2 =>
+          {
+            let n = &dist_args[0];
+            let m = &dist_args[1];
+            let n_minus_1 = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Integer(-1), n.clone()],
+            };
+            let product = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![n_minus_1.clone(), n.clone()],
+            };
+            let half = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+                product,
+              ],
+            };
+            return Ok(Expr::FunctionCall {
+              name: "HypergeometricDistribution".to_string(),
+              args: vec![m.clone(), n_minus_1, half],
+            });
+          }
+
+          _ => {} // Fall through - return unevaluated
+        }
+      }
+    }
+  }
+
   // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
   if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
     if let Expr::FunctionCall {
