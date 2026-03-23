@@ -11842,6 +11842,17 @@ mod date_interval {
   }
 
   #[test]
+  fn input_form_has_quoted_strings() {
+    assert_eq!(
+      interpret(
+        "ToString[DateInterval[{{2020, 1, 1}, {2020, 12, 31}}], InputForm]"
+      )
+      .unwrap(),
+      "DateInterval[{{{2020, 1, 1, 0, 0, 0.}, {2020, 12, 31, 0, 0, 0.}}}, \"Day\", \"Gregorian\", None]"
+    );
+  }
+
+  #[test]
   fn invalid_arg() {
     assert_eq!(interpret("DateInterval[0]").unwrap(), "DateInterval[0]");
   }
@@ -11935,6 +11946,22 @@ mod byte_array {
   #[test]
   fn length() {
     assert_eq!(interpret("Length[ByteArray[{1, 2, 3}]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn input_form_from_list() {
+    assert_eq!(
+      interpret("ToString[ByteArray[{1, 2, 3}], InputForm]").unwrap(),
+      "ByteArray[\"AQID\"]"
+    );
+  }
+
+  #[test]
+  fn input_form_from_base64() {
+    assert_eq!(
+      interpret("ToString[ByteArray[\"SGVsbG8=\"], InputForm]").unwrap(),
+      "ByteArray[\"SGVsbG8=\"]"
+    );
   }
 
   #[test]

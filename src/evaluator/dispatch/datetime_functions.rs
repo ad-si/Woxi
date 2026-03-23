@@ -41,8 +41,8 @@ pub fn dispatch_datetime_functions(
             name: "DateInterval".to_string(),
             args: vec![
               Expr::List(vec![Expr::List(vec![start, end])]),
-              Expr::Identifier("Day".to_string()),
-              Expr::Identifier("Gregorian".to_string()),
+              Expr::String("Day".to_string()),
+              Expr::String("Gregorian".to_string()),
               Expr::Identifier("None".to_string()),
             ],
           }));
