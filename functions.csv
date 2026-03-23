@@ -2103,7 +2103,7 @@ FormulaData,,🚫,,10,2473
 FormulaLookup,Look up formulas by name or description,✅,pure,10,1488
 FortranForm,Format expression as Fortran code,✅,pure,1,2807
 Forward,,,,6,2986
-ForwardBackward,,,,6,2611
+ForwardBackward,Symbolic value for AnimationDirection option (forward then backward),✅,pure,6,2611
 ForwardCloudCredentials,,🚫,,12.2,
 Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
