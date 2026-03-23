@@ -3317,10 +3317,11 @@ mod frenet_serret_system {
   }
 
   #[test]
-  fn returns_unevaluated_for_non_list() {
+  fn scalar_function_treated_as_2d_curve() {
+    // FrenetSerretSystem[f[t], t] treats scalar f[t] as the 2D curve {t, f[t]}
     assert_eq!(
       interpret("FrenetSerretSystem[f[t], t]").unwrap(),
-      "FrenetSerretSystem[f[t], t]"
+      "{{Derivative[2][f][t]/(1 + Derivative[1][f][t]^2)^(3/2)}, {{1/Sqrt[1 + Derivative[1][f][t]^2], Derivative[1][f][t]/Sqrt[1 + Derivative[1][f][t]^2]}, {-(Derivative[1][f][t]/Sqrt[1 + Derivative[1][f][t]^2]), 1/Sqrt[1 + Derivative[1][f][t]^2]}}}"
     );
   }
 }
