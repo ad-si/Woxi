@@ -2625,6 +2625,13 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       dargs[2].clone(),
       dargs[3].clone(),
     ),
+    // 5-param canonical form: StableDistribution[1, alpha, beta, mu, sigma]
+    5 => (
+      dargs[1].clone(),
+      dargs[2].clone(),
+      dargs[3].clone(),
+      dargs[4].clone(),
+    ),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PDF".to_string(),
@@ -2644,13 +2651,15 @@ fn pdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let beta_eval = evaluate_expr_to_expr(&beta)?;
 
   // alpha=1, beta=0: Cauchy distribution
+  // Use expanded form: sigma / (Pi * (sigma^2 + (x - mu)^2))
+  // to match Wolfram's canonical simplification
   if matches!(&alpha_eval, Expr::Integer(1))
     && matches!(&beta_eval, Expr::Integer(0))
   {
     let diff = minus(x, mu);
-    let ratio = divide(diff, sigma.clone());
-    let denom = times(times(pi(), sigma), plus(int(1), power(ratio, int(2))));
-    return eval(divide(int(1), denom));
+    let numer = sigma.clone();
+    let denom = times(pi(), plus(power(sigma, int(2)), power(diff, int(2))));
+    return eval(divide(numer, denom));
   }
 
   // alpha=2: Normal(mu, sigma*Sqrt[2])
@@ -2682,6 +2691,13 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       dargs[1].clone(),
       dargs[2].clone(),
       dargs[3].clone(),
+    ),
+    // 5-param canonical form: StableDistribution[1, alpha, beta, mu, sigma]
+    5 => (
+      dargs[1].clone(),
+      dargs[2].clone(),
+      dargs[3].clone(),
+      dargs[4].clone(),
     ),
     _ => {
       return Ok(Expr::FunctionCall {

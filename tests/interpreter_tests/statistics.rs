@@ -1232,27 +1232,29 @@ mod stable_distribution {
   use super::*;
 
   #[test]
-  fn inert_head_2_params() {
+  fn canonical_form_2_params() {
     clear_state();
+    // StableDistribution[alpha, beta] normalizes to 5-param form
     assert_eq!(
       interpret("StableDistribution[1, 0]").unwrap(),
-      "StableDistribution[1, 0]"
+      "StableDistribution[1, 1, 0, 0, 1]"
     );
   }
 
   #[test]
-  fn inert_head_4_params() {
+  fn canonical_form_4_params() {
     clear_state();
+    // StableDistribution[alpha, beta, mu, sigma] normalizes to 5-param form
     assert_eq!(
       interpret("StableDistribution[1, 0, 0, 1]").unwrap(),
-      "StableDistribution[1, 0, 0, 1]"
+      "StableDistribution[1, 1, 0, 0, 1]"
     );
   }
 
   #[test]
   fn pdf_cauchy_standard() {
     clear_state();
-    // StableDistribution[1, 0] is standard Cauchy
+    // StableDistribution[1, 0] is standard Cauchy: 1/(Pi*(1 + x^2))
     assert_eq!(
       interpret("PDF[StableDistribution[1, 0], x]").unwrap(),
       "1/(Pi*(1 + x^2))"
@@ -1262,9 +1264,10 @@ mod stable_distribution {
   #[test]
   fn pdf_cauchy_with_location_scale() {
     clear_state();
+    // Expanded Cauchy form: sigma/(Pi*(sigma^2 + (x-mu)^2))
     assert_eq!(
       interpret("PDF[StableDistribution[1, 0, 2, 3], x]").unwrap(),
-      "1/(3*Pi*(1 + ((-2 + x)/3)^2))"
+      "3/(Pi*(9 + (-2 + x)^2))"
     );
   }
 
@@ -1288,10 +1291,10 @@ mod stable_distribution {
   #[test]
   fn pdf_general_unevaluated() {
     clear_state();
-    // General case returns unevaluated
+    // General case returns unevaluated (with canonical 5-param form)
     assert_eq!(
       interpret("PDF[StableDistribution[3/2, 1/2], x]").unwrap(),
-      "PDF[StableDistribution[3/2, 1/2], x]"
+      "PDF[StableDistribution[1, 3/2, 1/2, 0, 1], x]"
     );
   }
 

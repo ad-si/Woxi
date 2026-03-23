@@ -3082,7 +3082,7 @@ pub fn list_fourier_sequence_transform_ast(
   };
 
   if list.is_empty() {
-    return Ok(Expr::Integer(0));
+    return Ok(Expr::List(vec![]));
   }
 
   let omega = &args[1];

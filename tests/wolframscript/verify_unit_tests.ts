@@ -521,6 +521,7 @@ function main() {
     /\bStarGraph\[/,         // Internal Graph representation differs (edge list vs SparseArray)
     /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
     /\bSymmetrize\[/,        // Woxi returns dense list, Wolfram returns SymmetrizedArray
+    /\bTensorWedge\[/,      // Woxi returns dense list, Wolfram returns SymmetrizedArray
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -574,6 +575,8 @@ function main() {
     "ArgMax[x, y]",
     // FindArgMin: Woxi gives exact -1.5, Wolfram introduces FP noise -1.5000000000000004
     "FindArgMin[x^2 + 3*x + 2, x]",
+    // Times factor ordering: (Cosh+Sinh)*Sin vs Sin*(Cosh+Sinh)
+    "ExponentialGeneratingFunction[Sin[n], n, x]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
