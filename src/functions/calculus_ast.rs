@@ -1478,6 +1478,51 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             })
           }
         }
+        // Flattened Derivative[n, f, x]: this is the evaluated form of
+        // Derivative[n][f][x] (n-th derivative of f at x).
+        // D[Derivative[n, f, x], x] = Derivative[n+1][f][x] * D[x, x]
+        // via chain rule, where D[x,x] = 1 for simple variable.
+        "Derivative" if args.len() == 3 => {
+          if is_constant_wrt(expr, var) {
+            return Ok(Expr::Integer(0));
+          }
+          let order = &args[0];
+          let func = &args[1];
+          let inner = &args[2];
+          let d_inner = differentiate(inner, var)?;
+          if matches!(d_inner, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          // Build Derivative[n+1][f][x]
+          let new_order = if let Expr::Integer(k) = order {
+            Expr::Integer(k + 1)
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(order.clone()),
+            }
+          };
+          let deriv_expr = Expr::CurriedCall {
+            func: Box::new(Expr::CurriedCall {
+              func: Box::new(Expr::FunctionCall {
+                name: "Derivative".to_string(),
+                args: vec![new_order],
+              }),
+              args: vec![func.clone()],
+            }),
+            args: vec![inner.clone()],
+          };
+          if matches!(&d_inner, Expr::Integer(1)) {
+            Ok(simplify(deriv_expr))
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(d_inner),
+              right: Box::new(deriv_expr),
+            }))
+          }
+        }
         // General chain rule for unknown functions: D[f[g1(x),...,gn(x)], x]
         // = Sum_i Derivative[0,...,1,...,0][f][g1,...,gn] * D[gi, x]
         _ => {
@@ -6563,13 +6608,13 @@ pub fn frenet_serret_system_ast(
     ));
   }
 
+  // If the first argument is a scalar function f[t], treat it as the 2D curve {t, f[t]}
+  let owned_components;
   let components = match &args[0] {
     Expr::List(items) => items,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FrenetSerretSystem".to_string(),
-        args: args.to_vec(),
-      });
+      owned_components = vec![args[1].clone(), args[0].clone()];
+      &owned_components
     }
   };
 
