@@ -3088,6 +3088,360 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // FunctionContinuous[f, x] or FunctionContinuous[{f, cond}, x] or FunctionContinuous[f, {x, y, ...}]
+  if name == "FunctionContinuous" && (args.len() == 2 || args.len() == 3) {
+    // Helper: check if an expression is continuous over all reals w.r.t. given variables
+    fn is_continuous_on_reals(expr: &Expr, vars: &[String]) -> Option<bool> {
+      match expr {
+        Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::BigFloat(_, _)
+        | Expr::Constant(_) => Some(true),
+        Expr::Identifier(s) => {
+          if vars.contains(s) {
+            Some(true) // Variable itself is continuous (identity)
+          } else {
+            Some(true) // Constant w.r.t. the variable
+          }
+        }
+        Expr::FunctionCall { name, args } => {
+          match name.as_str() {
+            // Everywhere-continuous elementary functions
+            "Sin" | "Cos" | "Sinh" | "Cosh" | "Exp" | "Tanh" | "Sech"
+            | "ArcTan" | "ArcSinh" | "Erf" | "Erfc" | "Sinc" => {
+              if args.len() == 1 {
+                is_continuous_on_reals(&args[0], vars)
+              } else {
+                None
+              }
+            }
+            "Abs" | "RealAbs" => {
+              if args.len() == 1 {
+                is_continuous_on_reals(&args[0], vars)
+              } else {
+                None
+              }
+            }
+            // Functions not continuous on all reals
+            "Tan" | "Cot" | "Sec" | "Csc" | "Log" | "Sqrt" | "Floor"
+            | "Ceiling" | "Round" | "Sign" | "Coth" | "Csch" => {
+              if args.iter().any(|a| expr_mentions_vars(a, vars)) {
+                Some(false)
+              } else {
+                Some(true)
+              }
+            }
+            "Plus" | "Times" => {
+              let mut all_true = true;
+              for arg in args {
+                match is_continuous_on_reals(arg, vars) {
+                  Some(true) => {}
+                  Some(false) => return Some(false),
+                  None => all_true = false,
+                }
+              }
+              if all_true { Some(true) } else { None }
+            }
+            "Power" if args.len() == 2 => {
+              let base = &args[0];
+              let exp = &args[1];
+              let base_has_var = expr_mentions_vars(base, vars);
+              let exp_has_var = expr_mentions_vars(exp, vars);
+
+              if !base_has_var && !exp_has_var {
+                return Some(true);
+              }
+
+              match exp {
+                Expr::Integer(n) if *n >= 0 => {
+                  is_continuous_on_reals(base, vars)
+                }
+                Expr::Integer(_) => {
+                  if base_has_var {
+                    Some(false)
+                  } else {
+                    Some(true)
+                  }
+                }
+                Expr::FunctionCall {
+                  name: rname,
+                  args: rargs,
+                } if rname == "Rational" && rargs.len() == 2 => {
+                  if base_has_var {
+                    Some(false)
+                  } else {
+                    Some(true)
+                  }
+                }
+                _ => {
+                  if !exp_has_var && !base_has_var {
+                    Some(true)
+                  } else {
+                    None
+                  }
+                }
+              }
+            }
+            "Rational" if args.len() == 2 => Some(true),
+            "Gamma" if args.len() == 1 => {
+              if expr_mentions_vars(&args[0], vars) {
+                Some(false)
+              } else {
+                Some(true)
+              }
+            }
+            "Gamma" if args.len() == 2 => {
+              is_continuous_on_reals(&args[1], vars)
+            }
+            _ => None,
+          }
+        }
+        Expr::BinaryOp { op, left, right } => match op {
+          BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times => {
+            match (
+              is_continuous_on_reals(left, vars),
+              is_continuous_on_reals(right, vars),
+            ) {
+              (Some(true), Some(true)) => Some(true),
+              (Some(false), _) | (_, Some(false)) => Some(false),
+              _ => None,
+            }
+          }
+          BinaryOperator::Divide => {
+            let right_has_var = expr_mentions_vars(right, vars);
+            if right_has_var {
+              Some(false) // Division by expression with variable
+            } else {
+              is_continuous_on_reals(left, vars)
+            }
+          }
+          BinaryOperator::Power => {
+            let base_has_var = expr_mentions_vars(left, vars);
+            let exp_has_var = expr_mentions_vars(right, vars);
+            if !base_has_var && !exp_has_var {
+              return Some(true);
+            }
+            if !base_has_var && exp_has_var {
+              // constant^f(x) — continuous if f(x) is continuous (e.g. E^x)
+              return is_continuous_on_reals(right, vars);
+            }
+            match right.as_ref() {
+              Expr::Integer(n) if *n >= 0 => is_continuous_on_reals(left, vars),
+              Expr::Integer(_) => {
+                if base_has_var {
+                  Some(false)
+                } else {
+                  Some(true)
+                }
+              }
+              Expr::FunctionCall { name: rn, args: ra }
+                if rn == "Rational" && ra.len() == 2 =>
+              {
+                if base_has_var {
+                  Some(false)
+                } else {
+                  Some(true)
+                }
+              }
+              _ => None,
+            }
+          }
+          _ => None,
+        },
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } => is_continuous_on_reals(operand, vars),
+        _ => None,
+      }
+    }
+
+    fn expr_mentions_vars(expr: &Expr, vars: &[String]) -> bool {
+      match expr {
+        Expr::Identifier(s) => vars.contains(s),
+        Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::BigFloat(_, _)
+        | Expr::Constant(_) => false,
+        Expr::FunctionCall { args, .. } => {
+          args.iter().any(|a| expr_mentions_vars(a, vars))
+        }
+        Expr::List(items) => items.iter().any(|a| expr_mentions_vars(a, vars)),
+        Expr::BinaryOp { left, right, .. } => {
+          expr_mentions_vars(left, vars) || expr_mentions_vars(right, vars)
+        }
+        Expr::UnaryOp { operand, .. } => expr_mentions_vars(operand, vars),
+        _ => true,
+      }
+    }
+
+    fn is_continuous_on_positive(expr: &Expr, vars: &[String]) -> Option<bool> {
+      match expr {
+        Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::BigFloat(_, _)
+        | Expr::Constant(_) => Some(true),
+        Expr::Identifier(_) => Some(true),
+        Expr::FunctionCall { name, args } => match name.as_str() {
+          "Sin" | "Cos" | "Sinh" | "Cosh" | "Exp" | "Tanh" | "Sech"
+          | "ArcTan" | "ArcSinh" | "Erf" | "Erfc" | "Sinc" | "Abs"
+          | "RealAbs" | "Log" | "Sqrt" => {
+            if args.len() == 1 {
+              is_continuous_on_positive(&args[0], vars)
+            } else {
+              None
+            }
+          }
+          "Power" if args.len() == 2 => match &args[1] {
+            Expr::Integer(n) if *n >= 0 => {
+              is_continuous_on_positive(&args[0], vars)
+            }
+            Expr::Integer(_) => is_continuous_on_positive(&args[0], vars),
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rational" && ra.len() == 2 =>
+            {
+              is_continuous_on_positive(&args[0], vars)
+            }
+            _ => None,
+          },
+          "Plus" | "Times" => {
+            let mut all = true;
+            for a in args {
+              match is_continuous_on_positive(a, vars) {
+                Some(true) => {}
+                Some(false) => return Some(false),
+                None => all = false,
+              }
+            }
+            if all { Some(true) } else { None }
+          }
+          "Rational" if args.len() == 2 => Some(true),
+          "Floor" | "Ceiling" | "Round" | "Sign" | "Tan" | "Cot" | "Sec"
+          | "Csc" => {
+            if args.iter().any(|a| expr_mentions_vars(a, vars)) {
+              Some(false)
+            } else {
+              Some(true)
+            }
+          }
+          _ => None,
+        },
+        Expr::BinaryOp { op, left, right } => match op {
+          BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times => {
+            match (
+              is_continuous_on_positive(left, vars),
+              is_continuous_on_positive(right, vars),
+            ) {
+              (Some(true), Some(true)) => Some(true),
+              (Some(false), _) | (_, Some(false)) => Some(false),
+              _ => None,
+            }
+          }
+          BinaryOperator::Divide => {
+            // On positive domain, division is fine as long as both parts are continuous
+            match (
+              is_continuous_on_positive(left, vars),
+              is_continuous_on_positive(right, vars),
+            ) {
+              (Some(true), Some(true)) => Some(true),
+              (Some(false), _) | (_, Some(false)) => Some(false),
+              _ => None,
+            }
+          }
+          BinaryOperator::Power => {
+            // On positive domain, all powers are continuous
+            match (
+              is_continuous_on_positive(left, vars),
+              is_continuous_on_positive(right, vars),
+            ) {
+              (Some(true), Some(true)) => Some(true),
+              (Some(false), _) | (_, Some(false)) => Some(false),
+              _ => None,
+            }
+          }
+          _ => None,
+        },
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } => is_continuous_on_positive(operand, vars),
+        _ => None,
+      }
+    }
+
+    let (func_expr, condition) = match &args[0] {
+      Expr::List(items) if items.len() == 2 => (&items[0], Some(&items[1])),
+      other => (other, None),
+    };
+
+    let var_names: Vec<String> = match &args[1] {
+      Expr::Identifier(s) => vec![s.clone()],
+      Expr::List(items) => items
+        .iter()
+        .filter_map(|e| {
+          if let Expr::Identifier(s) = e {
+            Some(s.clone())
+          } else {
+            None
+          }
+        })
+        .collect(),
+      _ => vec![],
+    };
+
+    if !var_names.is_empty() {
+      let is_positive_domain = condition.is_some_and(|cond| {
+        // Check Comparison { operands: [x, 0], operators: [Greater] }
+        if let Expr::Comparison {
+          operands,
+          operators,
+        } = cond
+        {
+          if operands.len() == 2
+            && operators.len() == 1
+            && matches!(operators[0], ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+            && matches!(&operands[0], Expr::Identifier(s) if var_names.contains(s))
+            && matches!(&operands[1], Expr::Integer(0))
+          {
+            return true;
+          }
+        }
+        // Also check FunctionCall form (Greater[x, 0])
+        if let Expr::FunctionCall { name: op, args: cargs } = cond {
+          if (op == "Greater" || op == "GreaterEqual")
+            && cargs.len() == 2
+            && matches!(&cargs[0], Expr::Identifier(s) if var_names.contains(s))
+            && matches!(&cargs[1], Expr::Integer(0))
+          {
+            return true;
+          }
+        }
+        false
+      });
+
+      let result = if is_positive_domain {
+        is_continuous_on_positive(func_expr, &var_names)
+      } else if condition.is_none() {
+        is_continuous_on_reals(func_expr, &var_names)
+      } else {
+        None
+      };
+
+      if let Some(b) = result {
+        return Ok(Expr::Identifier(
+          if b { "True" } else { "False" }.to_string(),
+        ));
+      }
+    }
+  }
+
   // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
   if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
     if let Expr::FunctionCall {

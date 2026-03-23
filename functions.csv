@@ -2197,7 +2197,7 @@ FunctionCompileExport,,🚫,,12,
 FunctionCompileExportByteArray,,🚫,,12,
 FunctionCompileExportLibrary,,🚫,,12,4747
 FunctionCompileExportString,,🚫,,12,
-FunctionContinuous,,,,12.2,2662
+FunctionContinuous,Test whether a function is continuous,✅,1,12.2,2662
 FunctionConvexity,,,,12.2,4291
 FunctionDeclaration,,,,12.3,
 FunctionDiscontinuities,,,,12.2,4437
