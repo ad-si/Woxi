@@ -4924,7 +4924,7 @@ SetPrecision,Sets the precision of a number to a specified number of digits,✅,
 SetSelectedNotebook,notebook UI,🚫,None,3,2383
 SetSharedFunction,,🚫,,7,2587
 SetSharedVariable,Set shared variable,✅,unevaluated,7,1808
-SetStreamPosition,Sets the current position in an open stream,🚫,None,2,2184
+SetStreamPosition,Sets the current position in an open stream,✅,io,2,2184
 SetSystemModel,,🚫,,11.3,
 SetSystemOptions,,🚫,,6,1189
 Setter,,🚫,,6,1237
@@ -5217,7 +5217,7 @@ StreamMarkers,,,,11.3,4006
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7,416
 StreamPlot3D,,🚫,,12.3,
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7,864
-StreamPosition,,,,2,2570
+StreamPosition,Returns the current position in an open stream,✅,io,2,2570
 Streams,,,,2,2960
 StreamScale,,🚫,,7,1278
 StreamStyle,,🚫,,7,1304
