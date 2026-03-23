@@ -2625,3 +2625,98 @@ pub fn export_image(
     ))
   })
 }
+
+/// ConstantImage[val, {w, h}] - Create a constant image
+/// val can be a number (grayscale) or a color (Red, RGBColor[r,g,b], etc.)
+pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ConstantImage expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let (w, h) = if args.len() == 2 {
+    match &args[1] {
+      Expr::List(dims) if dims.len() == 2 => {
+        let w = expr_to_f64(&dims[0])? as u32;
+        let h = expr_to_f64(&dims[1])? as u32;
+        (w, h)
+      }
+      Expr::Integer(n) => {
+        let s = *n as u32;
+        (s, s)
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "ConstantImage: second argument must be {width, height}".into(),
+        ));
+      }
+    }
+  } else {
+    (150u32, 150u32)
+  };
+
+  // Determine the color value(s)
+  let (channels, pixel): (u8, Vec<f64>) = resolve_color_value(&args[0])?;
+
+  let len = (w as usize) * (h as usize) * (channels as usize);
+  let data: Vec<f64> = pixel.iter().cycle().take(len).copied().collect();
+
+  Ok(Expr::Image {
+    width: w,
+    height: h,
+    channels,
+    data: Arc::new(data),
+    image_type: ImageType::Real32,
+  })
+}
+
+/// Resolve a color expression to (channels, pixel_values)
+fn resolve_color_value(
+  expr: &Expr,
+) -> Result<(u8, Vec<f64>), InterpreterError> {
+  match expr {
+    // Scalar → grayscale
+    Expr::Integer(n) => Ok((1, vec![*n as f64])),
+    Expr::Real(f) => Ok((1, vec![*f])),
+    // Rational[n, d]
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let n = expr_to_f64(&args[0])?;
+      let d = expr_to_f64(&args[1])?;
+      Ok((1, vec![n / d]))
+    }
+    // RGBColor[r, g, b]
+    Expr::FunctionCall { name, args }
+      if name == "RGBColor" && args.len() == 3 =>
+    {
+      let r = expr_to_f64(&args[0])?;
+      let g = expr_to_f64(&args[1])?;
+      let b = expr_to_f64(&args[2])?;
+      Ok((3, vec![r, g, b]))
+    }
+    // GrayLevel[g]
+    Expr::FunctionCall { name, args }
+      if name == "GrayLevel" && args.len() == 1 =>
+    {
+      let g = expr_to_f64(&args[0])?;
+      Ok((1, vec![g]))
+    }
+    // Named color (Red, Blue, etc.)
+    Expr::Identifier(name) => {
+      if let Some(color_expr) = crate::evaluator::named_color_expr_pub(name) {
+        resolve_color_value(&color_expr)
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "ConstantImage: unknown color \"{}\"",
+          name
+        )))
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "ConstantImage: unsupported value {}",
+      crate::syntax::expr_to_string(expr)
+    ))),
+  }
+}

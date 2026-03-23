@@ -1081,3 +1081,82 @@ mod image_assemble {
     );
   }
 }
+
+mod constant_image {
+  use super::*;
+
+  #[test]
+  fn grayscale_dimensions() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[ConstantImage[0.5, {10, 20}]]").unwrap(),
+      "{10, 20}"
+    );
+  }
+
+  #[test]
+  fn grayscale_channels() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[ConstantImage[0.5, {5, 5}]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn grayscale_type() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageType[ConstantImage[0.5, {5, 5}]]").unwrap(),
+      "Real32"
+    );
+  }
+
+  #[test]
+  fn named_color_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageChannels[ConstantImage[Red, {5, 5}]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn rgb_color_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageChannels[ConstantImage[RGBColor[0.5, 0.3, 0.1], {5, 5}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn default_size() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDimensions[ConstantImage[0.5]]").unwrap(),
+      "{150, 150}"
+    );
+  }
+
+  #[test]
+  fn image_q() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageQ[ConstantImage[0.5, {5, 5}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn red_image_data() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ConstantImage[Red, {2, 1}]]").unwrap(),
+      "{{{1., 0., 0.}, {1., 0., 0.}}}"
+    );
+  }
+}
