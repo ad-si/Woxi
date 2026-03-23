@@ -4206,7 +4206,7 @@ Placeholder,,🚫,,7,1029
 PlaceholderLayer,,🚫,,12.2,4707
 PlaceholderReplace,,,,8,
 Plain,Font style symbol for plain (non-bold non-italic) text,✅,pure,6,361
-PlanarAngle,,,,12,2617
+PlanarAngle,Computes the angle at a vertex between two rays defined by three points,✅,pure,12,2617
 PlanarFaceList,,,,13,
 PlanarGraph,,,,10.4,2952
 PlanarGraphQ,,,,9,3440
