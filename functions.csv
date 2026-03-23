@@ -3470,7 +3470,7 @@ MaxWordGap,,,,11,5079
 McLaughlinGroupMcL,,,,8,5079
 Mean,Calculates the arithmetic mean (average) of a list,✅,pure,5,228
 MeanAbsoluteLossLayer,,🚫,,11,3427
-MeanAround,,,,12,2798
+MeanAround,Computes the mean and uncertainty of Around values,✅,pure,12,2798
 MeanClusteringCoefficient,,,,9,3843
 MeanDegreeConnectivity,,,,9,4947
 MeanDeviation,Mean absolute deviation from the mean,✅,1,6,2367
@@ -4260,7 +4260,7 @@ PoissonPointProcess,,🚫,,12.2,4479
 PoissonProcess,Stochastic process,🚫,None,9,2260
 PoissonWindow,,,,9,4262
 PolarAxes,Polar axes option,✅,unevaluated,7,1611
-PolarAxesOrigin,,,,7,2816
+PolarAxesOrigin,Option for the origin of polar axes in polar plots,✅,pure,7,2816
 PolarCurve,,,,14.1,
 PolarGridLines,Polar grid lines option,✅,unevaluated,7,1901
 PolarPlot,Creates a polar plot of a function,✅,pure,6,403
@@ -4849,7 +4849,7 @@ SecondOrderConeOptimization,,,,12,
 SectorChart,Creates a sector chart from data,✅,pure,7,2138
 SectorChart3D,,🚫,,7,3048
 SectorOrigin,Sector origin in pie charts,✅,unevaluated,7,1605
-SectorSpacing,,,,7,2812
+SectorSpacing,Option for pie chart sector spacing,✅,pure,7,2812
 SecuredAuthenticationKey,,🚫,,11.2,4809
 SecuredAuthenticationKeys,,🚫,,11.3,
 SecurityCertificate,,🚫,,12.2,
@@ -5470,7 +5470,7 @@ TemplateExpression,,,,10,3947
 TemplateIf,,,,10,3862
 TemplateObject,,,,10,3474
 TemplateSequence,,,,10,4747
-TemplateSlot,,,,10,2720
+TemplateSlot,Represents a template slot for string templates,✅,pure,10,2720
 TemplateWith,,,,10,4809
 TemporalData,,🚫,,9,1008
 TemporalRegularity,,,,10,3462
@@ -5636,7 +5636,7 @@ Tr,Computes the trace of a matrix,✅,pure,4,505
 Trace,,🚫,,2,863
 TraceAbove,,,,2,4204
 TraceBackward,,,,2,5013
-TraceDepth,,,,2,2729
+TraceDepth,Option controlling depth of tracing in Trace,✅,pure,2,2729
 TraceDialog,,🚫,,2,4660
 TraceForward,,,,2,4204
 TraceOff,,,,2,4138

@@ -12210,3 +12210,35 @@ mod primitive_root {
     assert_eq!(interpret("PrimitiveRoot[1]").unwrap(), "PrimitiveRoot[1]");
   }
 }
+
+mod option_symbols_batch {
+  use super::*;
+
+  #[test]
+  fn template_slot() {
+    assert_eq!(interpret("TemplateSlot[1]").unwrap(), "TemplateSlot[1]");
+  }
+
+  #[test]
+  fn trace_depth() {
+    assert_eq!(interpret("TraceDepth[0]").unwrap(), "TraceDepth[0]");
+  }
+
+  #[test]
+  fn mean_around() {
+    assert_eq!(interpret("MeanAround[0]").unwrap(), "MeanAround[0]");
+  }
+
+  #[test]
+  fn sector_spacing() {
+    assert_eq!(interpret("SectorSpacing[0]").unwrap(), "SectorSpacing[0]");
+  }
+
+  #[test]
+  fn polar_axes_origin() {
+    assert_eq!(
+      interpret("PolarAxesOrigin[0]").unwrap(),
+      "PolarAxesOrigin[0]"
+    );
+  }
+}
