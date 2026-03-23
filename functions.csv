@@ -1525,7 +1525,7 @@ DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7,1672
 DistributionChart,Distribution chart,✅,unevaluated,8,1880
 DistributionFitTest,,🚫,,8,1343
 DistributionParameterAssumptions,Probability distribution,🚫,None,8,2286
-DistributionParameterQ,,,,8,2617
+DistributionParameterQ,Tests whether the parameters of a distribution are valid,✅,pure,8,2617
 Dithering,,🚫,,8,3121
 Div,Compute the divergence of a vector field,✅,pure,9,736
 Divide,Divide numbers,✅,pure,1,572

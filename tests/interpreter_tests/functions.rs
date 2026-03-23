@@ -11942,3 +11942,96 @@ mod byte_array {
     assert_eq!(interpret("ByteArray[0]").unwrap(), "ByteArray[0]");
   }
 }
+
+mod distribution_parameter_q {
+  use super::*;
+
+  #[test]
+  fn normal_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[NormalDistribution[0, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn normal_invalid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[NormalDistribution[0, -1]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn exponential_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[ExponentialDistribution[1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exponential_invalid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[ExponentialDistribution[-1]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn poisson_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[PoissonDistribution[5]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn bernoulli_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[BernoulliDistribution[0.5]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn bernoulli_invalid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[BernoulliDistribution[2]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn uniform_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[UniformDistribution[{0, 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_distribution() {
+    assert_eq!(
+      interpret("DistributionParameterQ[42]").unwrap(),
+      "DistributionParameterQ[42]"
+    );
+  }
+
+  #[test]
+  fn binomial_valid() {
+    assert_eq!(
+      interpret("DistributionParameterQ[BinomialDistribution[10, 0.6]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn normal_defaults() {
+    assert_eq!(
+      interpret("DistributionParameterQ[NormalDistribution[]]").unwrap(),
+      "True"
+    );
+  }
+}

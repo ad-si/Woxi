@@ -294,6 +294,24 @@ pub fn dispatch_evaluation_control(
         args: canonical_args,
       }));
     }
+    // DistributionParameterQ[dist] — test if a distribution's parameters are valid
+    "DistributionParameterQ" if args.len() == 1 => {
+      if let Expr::FunctionCall {
+        name: dist_name,
+        args: dist_args,
+      } = &args[0]
+      {
+        let result = validate_distribution_params(dist_name, dist_args);
+        return Some(Ok(Expr::Identifier(
+          if result { "True" } else { "False" }.to_string(),
+        )));
+      }
+      // Not a recognized distribution — return unevaluated
+      return Some(Ok(Expr::FunctionCall {
+        name: "DistributionParameterQ".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // ByteArray[{b1, b2, ...}] — create a byte array from a list of unsigned bytes
     // ByteArray["base64string"] — create a byte array from base64
     "ByteArray" if args.len() == 1 => {
@@ -442,4 +460,181 @@ pub fn dispatch_evaluation_control(
     _ => {}
   }
   None
+}
+
+/// Helper to check if a numeric expression is positive.
+fn is_positive(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n > 0,
+    Expr::Real(f) => *f > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        (*n > 0 && *d > 0) || (*n < 0 && *d < 0)
+      } else {
+        false
+      }
+    }
+    _ => false,
+  }
+}
+
+/// Helper to check if a numeric expression is a probability (in [0, 1]).
+fn is_probability(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n == 0 || *n == 1,
+    Expr::Real(f) => (0.0..=1.0).contains(f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        let val = *n as f64 / *d as f64;
+        (0.0..=1.0).contains(&val)
+      } else {
+        false
+      }
+    }
+    _ => false,
+  }
+}
+
+/// Helper to check if a numeric expression is a positive integer.
+fn is_positive_integer(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(n) if *n > 0)
+}
+
+/// Validate distribution parameters. Returns true if valid.
+fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
+  match name {
+    "NormalDistribution" => {
+      // NormalDistribution[mu, sigma] — sigma must be positive
+      if args.len() == 2 {
+        is_positive(&args[1])
+      } else {
+        args.is_empty() // NormalDistribution[] uses defaults
+      }
+    }
+    "ExponentialDistribution" => {
+      // ExponentialDistribution[lambda] — lambda must be positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "PoissonDistribution" => {
+      // PoissonDistribution[mu] — mu must be positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "BernoulliDistribution" => {
+      // BernoulliDistribution[p] — p must be in [0, 1]
+      args.len() == 1 && is_probability(&args[0])
+    }
+    "BinomialDistribution" => {
+      // BinomialDistribution[n, p] — n positive integer, p in [0, 1]
+      args.len() == 2
+        && is_positive_integer(&args[0])
+        && is_probability(&args[1])
+    }
+    "UniformDistribution" => {
+      // UniformDistribution[{a, b}] — a < b
+      if args.is_empty() {
+        return true;
+      }
+      if args.len() == 1 {
+        if let Expr::List(bounds) = &args[0]
+          && bounds.len() == 2
+        {
+          // Check a < b
+          match (&bounds[0], &bounds[1]) {
+            (Expr::Integer(a), Expr::Integer(b)) => a < b,
+            (Expr::Real(a), Expr::Real(b)) => a < b,
+            (Expr::Integer(a), Expr::Real(b)) => (*a as f64) < *b,
+            (Expr::Real(a), Expr::Integer(b)) => *a < (*b as f64),
+            _ => false,
+          }
+        } else {
+          false
+        }
+      } else {
+        false
+      }
+    }
+    "GeometricDistribution" => {
+      // GeometricDistribution[p] — p in (0, 1]
+      args.len() == 1 && is_probability(&args[0]) && is_positive(&args[0])
+    }
+    "GammaDistribution" => {
+      // GammaDistribution[alpha, beta] — both positive
+      args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
+    }
+    "BetaDistribution" => {
+      // BetaDistribution[alpha, beta] — both positive
+      args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
+    }
+    "ChiSquareDistribution" => {
+      // ChiSquareDistribution[k] — k positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "StudentTDistribution" => {
+      // StudentTDistribution[nu] — nu positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "WeibullDistribution" => {
+      // WeibullDistribution[alpha, beta] — both positive
+      args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
+    }
+    "CauchyDistribution" => {
+      // CauchyDistribution[a, b] — b positive
+      args.len() == 2 && is_positive(&args[1])
+    }
+    "LogNormalDistribution" => {
+      // LogNormalDistribution[mu, sigma] — sigma positive
+      args.len() == 2 && is_positive(&args[1])
+    }
+    "NegativeBinomialDistribution" => {
+      // NegativeBinomialDistribution[n, p] — n positive, p in (0, 1]
+      args.len() == 2
+        && is_positive(&args[0])
+        && is_probability(&args[1])
+        && is_positive(&args[1])
+    }
+    "HalfNormalDistribution" => {
+      // HalfNormalDistribution[theta] — theta positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "ChiDistribution" => {
+      // ChiDistribution[k] — k positive
+      args.len() == 1 && is_positive(&args[0])
+    }
+    "FRatioDistribution" => {
+      // FRatioDistribution[n, m] — both positive
+      args.len() == 2 && is_positive(&args[0]) && is_positive(&args[1])
+    }
+    "LaplaceDistribution" => {
+      // LaplaceDistribution[mu, beta] — beta positive
+      if args.is_empty() {
+        true
+      } else {
+        args.len() == 2 && is_positive(&args[1])
+      }
+    }
+    // Recognize as a distribution but with symbolic params — assume valid
+    _ => {
+      // Check if it's a known distribution name
+      let known = [
+        "DiscreteUniformDistribution",
+        "MultinormalDistribution",
+        "DirichletDistribution",
+        "InverseGaussianDistribution",
+        "RayleighDistribution",
+        "MaxwellDistribution",
+        "GumbelDistribution",
+        "StableDistribution",
+        "TruncatedDistribution",
+        "CensoredDistribution",
+        "MixtureDistribution",
+        "ParameterMixtureDistribution",
+        "TransformedDistribution",
+      ];
+      known.contains(&name) || name.ends_with("Distribution")
+    }
+  }
 }
