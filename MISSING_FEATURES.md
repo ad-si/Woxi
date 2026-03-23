@@ -95,27 +95,24 @@ Import/Export exists but key formats are incomplete:
 
 ### 2.3 Missing Chart Types
 
-Only basic `Plot`, `ListPlot`, `ListLinePlot` exist. Missing:
+`Histogram`, `BarChart`, `PieChart`, `BoxWhiskerChart`, and `MatrixPlot` are
+already implemented. Still missing:
 
-- `Histogram[data]` - Frequency distribution
-- `BarChart[data]` - Categorical data
-- `PieChart[data]` - Proportional data
-- `BoxWhiskerChart[data]` - Statistical distribution
-- `MatrixPlot[matrix]` - Heatmap visualization
 - `ListDensityPlot` - 2D density from data
-- `DateListPlot` - Time series
+- `DateListPlot` - Time series plotting
+- `SectorChart` - Sector/annular charts
+- `ListStepPlot` - Step function plots
 
 ### 2.4 Missing Statistics Functions
 
-Some gaps in statistics that data analysts need:
+`Covariance`, `Skewness`, `Kurtosis`, `LinearModelFit`, `BinCounts`, and
+`WordCounts` are already implemented. Still missing:
 
-- `Covariance[x, y]` - Listed in todos as needed
-- `Skewness[data]` - Distribution shape
-- `Kurtosis[data]` - Distribution tails
-- `LinearModelFit` - Regression with diagnostics
-- `BinCounts` / `BinLists` - Binning operations
+- `BinLists` - Group elements into bins (vs just counting)
 - `MovingMedian` - Sliding window median
 - `SurvivalFunction` - Survival analysis
+- `MedianDeviation` - Median absolute deviation
+- `TrimmedMean` - Mean after trimming outliers
 
 ### 2.5 3D Graphics
 
@@ -127,9 +124,11 @@ Some gaps in statistics that data analysts need:
 - `RegionPlot3D` - 3D region visualization
 - Lighting, viewpoint, and material options are sparse
 
-### 2.6 TraditionalForm & Display
+### 2.6 Display & Rendering
 
-- `TraditionalForm` - Math notation display (explicitly noted in todos.md)
+`TraditionalForm` is partially implemented (produces Box expressions) but
+the rendering pipeline noted in todos.md is incomplete:
+
 - `MakeBoxes` / `RawBoxes` rendering architecture (noted in todos.md)
 - `CForm`, `FortranForm` - Code generation forms
 - Better 2D typesetting (fractions, superscripts rendered properly)
@@ -168,9 +167,8 @@ Some gaps in statistics that data analysts need:
 
 ### 3.4 String & Text Processing
 
-Most string functions are implemented, but missing:
+Most string functions are implemented. `WordCounts` works. Still missing:
 - `TextWords[text]` - Word tokenization
-- `WordCounts[text]` - Word frequency
 - `StringTemplate` - Template strings
 - `Interpreter["type"]` - Semantic string interpretation
 
@@ -210,30 +208,30 @@ These are explicitly not practical for Woxi's browser-based WASM target:
 
 ---
 
-## Summary: Top 20 Most Impactful Items
+## Summary: Top 15 Most Impactful Missing Items
 
-| # | Feature | Category | Effort |
-|---|---------|----------|--------|
-| 1 | Structured error messages & usage strings | UX | Large |
-| 2 | `Manipulate[]` with sliders in Playground | Interactive | Large |
-| 3 | `Trace[]` / debugging tools | Debugging | Medium |
-| 4 | JSON import/export | Data I/O | Small |
-| 5 | `Histogram` / `BarChart` / `PieChart` | Plotting | Medium |
-| 6 | `TraditionalForm` / math typesetting | Display | Medium |
-| 7 | Tab completion in Playground & Jupyter | UX | Medium |
-| 8 | CSV import improvements (`Import["file.csv"]`) | Data I/O | Small |
-| 9 | `ParametricPlot3D` | Plotting | Medium |
-| 10 | Package system (`BeginPackage`/`EndPackage`) | Language | Large |
-| 11 | `GroebnerBasis` | Algebra | Large |
-| 12 | `LinearModelFit` / regression diagnostics | Statistics | Medium |
-| 13 | `?FunctionName` documentation display | UX | Medium |
-| 14 | File system functions (`DeleteDirectory`, `FileDate`, etc.) | File I/O | Small |
-| 15 | Stop button for Playground | UX | Small |
-| 16 | `Shallow[]` for truncated output | Display | Small |
-| 17 | LSP server | Developer | Large |
-| 18 | `TimeZone` / `TimeUsed` | Utilities | Small |
-| 19 | MakeBoxes rendering pipeline | Architecture | Large |
-| 20 | Precision control (`SetAccuracy`, `WorkingPrecision`) | Numerics | Medium |
+| # | Feature | Category | Effort | Verified Missing |
+|---|---------|----------|--------|-----------------|
+| 1 | Structured error messages & usage strings | UX | Large | Yes - only ~80 messages |
+| 2 | `Manipulate[]` with sliders in Playground | Interactive | Large | Yes - returns unevaluated |
+| 3 | `Trace[]` / debugging tools | Debugging | Medium | Yes - returns unevaluated |
+| 4 | JSON import/export | Data I/O | Small | Yes - `Import` errors on .json |
+| 5 | Tab completion in Playground & Jupyter | UX | Medium | Yes - no completion code |
+| 6 | `ParametricPlot3D` | Plotting | Medium | Yes - returns unevaluated |
+| 7 | Package system (`BeginPackage`/`EndPackage`) | Language | Large | Yes - no-ops |
+| 8 | `GroebnerBasis` | Algebra | Large | Yes - returns unevaluated |
+| 9 | `?FunctionName` documentation display | UX | Medium | Yes - shows definitions only |
+| 10 | File system functions (`DeleteDirectory`, `FileDate`, etc.) | File I/O | Small | Yes - all return unevaluated |
+| 11 | Stop button for Playground | UX | Small | Yes - not in playground code |
+| 12 | `Shallow[]` for truncated output | Display | Small | Yes - returns unevaluated |
+| 13 | `TimeZone` / `TimeUsed` | Utilities | Small | Yes - returns unevaluated |
+| 14 | MakeBoxes rendering pipeline | Architecture | Large | Yes - noted in todos.md |
+| 15 | Precision control (`SetAccuracy`, `WorkingPrecision`) | Numerics | Medium | Yes - returns unevaluated |
+
+**Previously listed but actually implemented:**
+`Histogram`, `BarChart`, `PieChart`, `BoxWhiskerChart`, `MatrixPlot`,
+`TraditionalForm` (partial - produces Boxes), `Covariance`, `Skewness`,
+`Kurtosis`, `LinearModelFit`, `BinCounts`, `WordCounts`
 
 ---
 
