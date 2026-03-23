@@ -299,6 +299,21 @@ pub fn get_stream_content(id: usize) -> Option<(String, usize)> {
   })
 }
 
+/// Get the current read position of a stream
+pub fn get_stream_position(id: usize) -> Option<usize> {
+  STREAM_REGISTRY.with(|reg| reg.borrow().get(&id).map(|s| s.position))
+}
+
+/// Set the read position of a stream to an absolute position
+pub fn set_stream_position(id: usize, new_position: usize) {
+  STREAM_REGISTRY.with(|reg| {
+    let mut registry = reg.borrow_mut();
+    if let Some(stream) = registry.get_mut(&id) {
+      stream.position = new_position;
+    }
+  });
+}
+
 /// Advance the read position of a stream
 pub fn advance_stream_position(id: usize, new_position: usize) {
   STREAM_REGISTRY.with(|reg| {

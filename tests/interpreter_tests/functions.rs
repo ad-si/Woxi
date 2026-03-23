@@ -11757,3 +11757,56 @@ mod value_dimensions {
     );
   }
 }
+
+mod stream_position {
+  use super::*;
+
+  #[test]
+  fn initial_position() {
+    clear_state();
+    assert_eq!(
+      interpret("s = StringToStream[\"hello world\"]; StreamPosition[s]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn after_read_word() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"hello world\"]; Read[s, Word]; StreamPosition[s]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn after_two_reads() {
+    clear_state();
+    assert_eq!(
+      interpret("s = StringToStream[\"hello world\"]; Read[s, Word]; Read[s, Word]; StreamPosition[s]").unwrap(),
+      "11"
+    );
+  }
+
+  #[test]
+  fn set_stream_position() {
+    clear_state();
+    assert_eq!(
+      interpret("s = StringToStream[\"hello world\"]; Read[s, Word]; SetStreamPosition[s, 0]; StreamPosition[s]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn set_and_read_again() {
+    clear_state();
+    assert_eq!(
+      interpret("s = StringToStream[\"hello world\"]; Read[s, Word]; SetStreamPosition[s, 0]; Read[s, Word]").unwrap(),
+      "hello"
+    );
+  }
+}

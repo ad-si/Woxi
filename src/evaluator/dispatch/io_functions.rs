@@ -723,6 +723,107 @@ pub fn dispatch_io_functions(
         }
       }
     }
+    // StreamPosition[stream] — get the current position of a stream
+    "StreamPosition" if args.len() == 1 => {
+      let stream = &args[0];
+      match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            match crate::get_stream_position(*id as usize) {
+              Some(pos) => return Some(Ok(Expr::Integer(pos as i128))),
+              None => {
+                let stream_str = crate::syntax::expr_to_string(stream);
+                crate::emit_message(&format!(
+                  "StreamPosition::openx: {} is not open.",
+                  stream_str
+                ));
+                return Some(Ok(Expr::FunctionCall {
+                  name: "StreamPosition".to_string(),
+                  args: args.to_vec(),
+                }));
+              }
+            }
+          } else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "StreamPosition".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+        Expr::String(s) => {
+          crate::emit_message(&format!(
+            "StreamPosition::openx: {} is not open.",
+            s
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "StreamPosition".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "StreamPosition".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
+    }
+    // SetStreamPosition[stream, pos] — set the current position of a stream
+    "SetStreamPosition" if args.len() == 2 => {
+      let stream = &args[0];
+      let pos = match &args[1] {
+        Expr::Integer(n) => *n as usize,
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "SetStreamPosition".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            if crate::is_stream_open(*id as usize) {
+              crate::set_stream_position(*id as usize, pos);
+              return Some(Ok(Expr::Integer(pos as i128)));
+            } else {
+              let stream_str = crate::syntax::expr_to_string(stream);
+              crate::emit_message(&format!(
+                "SetStreamPosition::openx: {} is not open.",
+                stream_str
+              ));
+              return Some(Ok(Expr::FunctionCall {
+                name: "SetStreamPosition".to_string(),
+                args: args.to_vec(),
+              }));
+            }
+          } else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "SetStreamPosition".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "SetStreamPosition".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
+    }
     // Read[stream] or Read[stream, type] — read from a stream
     "Read" if !args.is_empty() && args.len() <= 2 => {
       let stream = &args[0];
