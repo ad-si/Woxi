@@ -11533,3 +11533,202 @@ mod batch_unevaluated_wrappers_2 {
     assert!(result.contains("x > 0"));
   }
 }
+
+mod region_equal {
+  use super::*;
+
+  #[test]
+  fn no_args() {
+    assert_eq!(interpret("RegionEqual[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("RegionEqual[Disk[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_disk() {
+    assert_eq!(interpret("RegionEqual[Disk[], Disk[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn disk_with_defaults() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[{0, 0}], Disk[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn disk_explicit_defaults() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[{0, 0}, 1], Disk[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn different_disks() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[], Disk[{0, 0}, 2]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn rectangle_defaults() {
+    assert_eq!(
+      interpret("RegionEqual[Rectangle[{0, 0}, {1, 1}], Rectangle[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn polygon_equals_rectangle() {
+    assert_eq!(
+      interpret(
+        "RegionEqual[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], Rectangle[]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn polygon_equals_triangle() {
+    assert_eq!(
+      interpret("RegionEqual[Polygon[{{0, 0}, {1, 0}, {0, 1}}], Triangle[]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn triangle_defaults() {
+    assert_eq!(
+      interpret("RegionEqual[Triangle[], Triangle[{{0, 0}, {1, 0}, {0, 1}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn circle_defaults() {
+    assert_eq!(
+      interpret("RegionEqual[Circle[], Circle[{0, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ball_equals_disk_2d() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[], Ball[{0, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn sphere_equals_circle_2d() {
+    assert_eq!(
+      interpret("RegionEqual[Circle[], Sphere[{0, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ball_defaults_3d() {
+    assert_eq!(
+      interpret("RegionEqual[Ball[], Ball[{0, 0, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn sphere_defaults_3d() {
+    assert_eq!(
+      interpret("RegionEqual[Sphere[], Sphere[{0, 0, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn different_points() {
+    assert_eq!(
+      interpret("RegionEqual[Point[{0, 0}], Point[{1, 1}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn same_points() {
+    assert_eq!(
+      interpret("RegionEqual[Point[{1, 2}], Point[{1, 2}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn same_lines() {
+    assert_eq!(
+      interpret("RegionEqual[Line[{{0, 0}, {1, 1}}], Line[{{0, 0}, {1, 1}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn reversed_lines() {
+    assert_eq!(
+      interpret("RegionEqual[Line[{{0, 0}, {1, 1}}], Line[{{1, 1}, {0, 0}}]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn same_intervals() {
+    assert_eq!(
+      interpret("RegionEqual[Interval[{0, 1}], Interval[{0, 1}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn different_intervals() {
+    assert_eq!(
+      interpret("RegionEqual[Interval[{0, 1}], Interval[{0, 2}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn three_equal_regions() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[], Disk[], Disk[]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn three_regions_one_different() {
+    assert_eq!(
+      interpret("RegionEqual[Disk[], Disk[], Disk[{0, 0}, 2]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn polygon_rotated_vertices() {
+    assert_eq!(
+      interpret("RegionEqual[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], Polygon[{{1, 0}, {1, 1}, {0, 1}, {0, 0}}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("RegionEqual[x, y]").unwrap(), "RegionEqual[x, y]");
+  }
+}

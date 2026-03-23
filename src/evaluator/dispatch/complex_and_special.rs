@@ -1040,6 +1040,10 @@ pub fn dispatch_complex_and_special(
     "Perimeter" if args.len() == 1 => {
       return Some(compute_perimeter(&args[0]));
     }
+    // RegionEqual[r1, r2, ...] — test whether regions are equal
+    "RegionEqual" => {
+      return Some(compute_region_equal(args));
+    }
     // FindSequenceFunction[list, var] — find a formula for an integer sequence
     "FindSequenceFunction" if args.len() == 2 => {
       return Some(find_sequence_function(&args[0], &args[1]));
@@ -2877,5 +2881,217 @@ fn compute_polyline_length(
       args: segment_lengths,
     };
     crate::evaluator::evaluate_expr_to_expr(&total)
+  }
+}
+
+/// Normalize a geometric region to its canonical form for comparison.
+/// Returns None if the expression is not a recognized region.
+fn normalize_region(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Point[coords] — already canonical
+      "Point" if !args.is_empty() => Some(expr.clone()),
+
+      // Disk[] → Disk[{0,0}, 1]; Disk[c] → Disk[c, 1]
+      // Ball[c, r] in 2D → Disk[c, r]
+      "Disk" | "Ball" => {
+        let (center, radius) = match args.len() {
+          0 => {
+            let dim = if name == "Ball" { 3 } else { 2 };
+            let center = Expr::List(vec![Expr::Integer(0); dim]);
+            (center, Expr::Integer(1))
+          }
+          1 => (args[0].clone(), Expr::Integer(1)),
+          _ => (args[0].clone(), args[1].clone()),
+        };
+        // Determine dimensionality from center
+        let dim = match &center {
+          Expr::List(coords) => coords.len(),
+          _ => {
+            if name == "Ball" {
+              3
+            } else {
+              2
+            }
+          }
+        };
+        let norm_name = if dim <= 2 { "Disk" } else { "Ball" };
+        Some(Expr::FunctionCall {
+          name: norm_name.to_string(),
+          args: vec![center, radius],
+        })
+      }
+
+      // Circle[] → Circle[{0,0}, 1]; Circle[c] → Circle[c, 1]
+      // Sphere[c, r] in 2D → Circle[c, r]
+      "Circle" | "Sphere" => {
+        let (center, radius) = match args.len() {
+          0 => {
+            let dim = if name == "Sphere" { 3 } else { 2 };
+            let center = Expr::List(vec![Expr::Integer(0); dim]);
+            (center, Expr::Integer(1))
+          }
+          1 => (args[0].clone(), Expr::Integer(1)),
+          _ => (args[0].clone(), args[1].clone()),
+        };
+        let dim = match &center {
+          Expr::List(coords) => coords.len(),
+          _ => {
+            if name == "Sphere" {
+              3
+            } else {
+              2
+            }
+          }
+        };
+        let norm_name = if dim <= 2 { "Circle" } else { "Sphere" };
+        Some(Expr::FunctionCall {
+          name: norm_name.to_string(),
+          args: vec![center, radius],
+        })
+      }
+
+      // Rectangle[] → Polygon[{{0,0},{1,0},{1,1},{0,1}}]
+      // Rectangle[{x1,y1},{x2,y2}] → Polygon with sorted vertices
+      "Rectangle" => {
+        let (p1, p2) = match args.len() {
+          0 => (
+            vec![Expr::Integer(0), Expr::Integer(0)],
+            vec![Expr::Integer(1), Expr::Integer(1)],
+          ),
+          1 => {
+            if let Expr::List(coords) = &args[0] {
+              let p2 = coords
+                .iter()
+                .map(|c| Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![c.clone(), Expr::Integer(1)],
+                })
+                .map(|e| {
+                  crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
+                })
+                .collect();
+              (coords.clone(), p2)
+            } else {
+              return Some(expr.clone());
+            }
+          }
+          _ => {
+            if let (Expr::List(c1), Expr::List(c2)) = (&args[0], &args[1]) {
+              (c1.clone(), c2.clone())
+            } else {
+              return Some(expr.clone());
+            }
+          }
+        };
+        if p1.len() == 2 && p2.len() == 2 {
+          let vertices = vec![
+            Expr::List(vec![p1[0].clone(), p1[1].clone()]),
+            Expr::List(vec![p2[0].clone(), p1[1].clone()]),
+            Expr::List(vec![p2[0].clone(), p2[1].clone()]),
+            Expr::List(vec![p1[0].clone(), p2[1].clone()]),
+          ];
+          normalize_polygon_vertices(vertices)
+        } else {
+          Some(expr.clone())
+        }
+      }
+
+      // Triangle[] → Polygon[{{0,0},{1,0},{0,1}}] (sorted)
+      // Triangle[{p1,p2,p3}] → Polygon with sorted vertices
+      "Triangle" => {
+        let vertices = if args.is_empty() {
+          vec![
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
+            Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
+          ]
+        } else if let Some(Expr::List(pts)) = args.first() {
+          pts.clone()
+        } else {
+          return Some(expr.clone());
+        };
+        normalize_polygon_vertices(vertices)
+      }
+
+      // Polygon[{v1, v2, ...}] → sorted canonical form
+      "Polygon" => {
+        if let Some(Expr::List(vertices)) = args.first() {
+          normalize_polygon_vertices(vertices.clone())
+        } else {
+          Some(expr.clone())
+        }
+      }
+
+      // Line[{p1, p2, ...}] — sort endpoints for 2-point lines
+      "Line" => {
+        if let Some(Expr::List(pts)) = args.first() {
+          if pts.len() == 2 {
+            let mut sorted = pts.clone();
+            sorted.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+            Some(Expr::FunctionCall {
+              name: "Line".to_string(),
+              args: vec![Expr::List(sorted)],
+            })
+          } else {
+            Some(expr.clone())
+          }
+        } else {
+          Some(expr.clone())
+        }
+      }
+
+      // Interval[{a, b}] — already canonical
+      "Interval" => Some(expr.clone()),
+
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Normalize polygon vertices to a canonical sorted form for comparison.
+/// We sort vertices lexicographically by their string representation to get
+/// a rotation/order-independent comparison.
+fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> Option<Expr> {
+  vertices.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+  Some(Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(vertices)],
+  })
+}
+
+/// Compute RegionEqual[r1, r2, ...].
+fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // RegionEqual[] and RegionEqual[r] → True
+  if args.len() <= 1 {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Try to normalize all regions
+  let normalized: Vec<Option<Expr>> =
+    args.iter().map(|a| normalize_region(a)).collect();
+
+  // If any region is not recognized, return unevaluated
+  if normalized.iter().any(|n| n.is_none()) {
+    return Ok(Expr::FunctionCall {
+      name: "RegionEqual".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let normalized: Vec<Expr> =
+    normalized.into_iter().map(|n| n.unwrap()).collect();
+
+  // Compare all pairs: all must be equal to the first
+  let first = &normalized[0];
+  let all_equal = normalized[1..]
+    .iter()
+    .all(|n| format!("{n:?}") == format!("{first:?}"));
+
+  if all_equal {
+    Ok(Expr::Identifier("True".to_string()))
+  } else {
+    Ok(Expr::Identifier("False".to_string()))
   }
 }
