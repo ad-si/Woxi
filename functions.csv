@@ -4571,7 +4571,7 @@ RegionDisjoint,,,,11.1,3134
 RegionDistance,,🚫,,10,1314
 RegionDistanceFunction,,,,10,5587
 RegionEmbeddingDimension,geometric region,🚫,None,10,2367
-RegionEqual,,,,11.1,2561
+RegionEqual,Tests whether geometric regions are equal by normalizing to canonical forms and comparing,✅,pure,11.1,2561
 RegionErosion,,,,12.3,
 RegionFarthestDistance,,,,13.3,
 RegionFillingStyle,,,,12.1,
