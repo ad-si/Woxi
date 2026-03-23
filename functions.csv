@@ -5880,7 +5880,7 @@ ValenceErrorHandling,,,,12,
 ValenceFilling,,,,12.2,5390
 ValidationLength,,🚫,,7,5013
 ValidationSet,Validation dataset for ML,🚫,,10,2079
-ValueDimensions,,,,10,2565
+ValueDimensions,Option symbol specifying the number of value dimensions in temporal data,✅,pure,10,2565
 ValuePreprocessingFunction,,,,11.2,5013
 ValueQ,Tests if a symbol has a value assigned,✅,pure,1,1165
 Values,Returns the values of an association,✅,pure,10,560
