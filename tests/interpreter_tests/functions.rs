@@ -12035,3 +12035,52 @@ mod distribution_parameter_q {
     );
   }
 }
+
+mod planar_angle {
+  use super::*;
+
+  #[test]
+  fn right_angle() {
+    assert_eq!(
+      interpret("PlanarAngle[{{1, 0}, {0, 0}, {0, 1}}]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn straight_angle() {
+    assert_eq!(
+      interpret("PlanarAngle[{{1, 0}, {0, 0}, {-1, 0}}]").unwrap(),
+      "Pi"
+    );
+  }
+
+  #[test]
+  fn zero_angle() {
+    assert_eq!(
+      interpret("PlanarAngle[{{1, 0}, {0, 0}, {1, 0}}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn coincident_points() {
+    assert_eq!(
+      interpret("PlanarAngle[{{0, 0}, {0, 0}, {0, 1}}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn pi_over_four() {
+    assert_eq!(
+      interpret("PlanarAngle[{{1, 0}, {0, 0}, {1, 1}}]").unwrap(),
+      "Pi/4"
+    );
+  }
+
+  #[test]
+  fn invalid_input() {
+    assert_eq!(interpret("PlanarAngle[0]").unwrap(), "PlanarAngle[0]");
+  }
+}

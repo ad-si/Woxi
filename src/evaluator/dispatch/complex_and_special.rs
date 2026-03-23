@@ -1040,6 +1040,18 @@ pub fn dispatch_complex_and_special(
     "Perimeter" if args.len() == 1 => {
       return Some(compute_perimeter(&args[0]));
     }
+    // PlanarAngle[{p1, vertex, p2}] — angle at vertex between rays to p1 and p2
+    "PlanarAngle" if args.len() == 1 => {
+      if let Expr::List(pts) = &args[0]
+        && pts.len() == 3
+      {
+        return Some(compute_planar_angle(&pts[0], &pts[1], &pts[2]));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "PlanarAngle".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // RegionEqual[r1, r2, ...] — test whether regions are equal
     "RegionEqual" => {
       return Some(compute_region_equal(args));
@@ -3094,4 +3106,130 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(Expr::Identifier("False".to_string()))
   }
+}
+
+/// Compute PlanarAngle[{p1, vertex, p2}] — the angle at vertex between rays to p1 and p2.
+/// Uses ArcCos of the dot product divided by the product of magnitudes.
+fn compute_planar_angle(
+  p1: &Expr,
+  vertex: &Expr,
+  p2: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Build symbolic vectors v1 = p1 - vertex, v2 = p2 - vertex
+  let v1 = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      p1.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), vertex.clone()],
+      },
+    ],
+  };
+  let v2 = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      p2.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), vertex.clone()],
+      },
+    ],
+  };
+
+  // Evaluate vectors
+  let v1_eval = crate::evaluator::evaluate_expr_to_expr(&v1)?;
+  let v2_eval = crate::evaluator::evaluate_expr_to_expr(&v2)?;
+
+  // Extract components
+  let (v1_comps, v2_comps) = match (&v1_eval, &v2_eval) {
+    (Expr::List(a), Expr::List(b)) if a.len() == b.len() => (a, b),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PlanarAngle".to_string(),
+        args: vec![Expr::List(vec![p1.clone(), vertex.clone(), p2.clone()])],
+      });
+    }
+  };
+
+  // Check for zero vectors (degenerate case)
+  let is_zero = |v: &[Expr]| {
+    v.iter().all(|c| match c {
+      Expr::Integer(0) => true,
+      Expr::Real(f) => *f == 0.0,
+      _ => false,
+    })
+  };
+  if is_zero(v1_comps) || is_zero(v2_comps) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  // Build dot product: v1.v2
+  let dot_terms: Vec<Expr> = v1_comps
+    .iter()
+    .zip(v2_comps.iter())
+    .map(|(a, b)| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a.clone(), b.clone()],
+    })
+    .collect();
+  let dot = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: dot_terms,
+  };
+
+  // Build magnitudes: |v1|, |v2|
+  let mag1_terms: Vec<Expr> = v1_comps
+    .iter()
+    .map(|a| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![a.clone(), Expr::Integer(2)],
+    })
+    .collect();
+  let mag1 = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: mag1_terms,
+    }],
+  };
+
+  let mag2_terms: Vec<Expr> = v2_comps
+    .iter()
+    .map(|a| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![a.clone(), Expr::Integer(2)],
+    })
+    .collect();
+  let mag2 = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: mag2_terms,
+    }],
+  };
+
+  // ArcCos[dot / (mag1 * mag2)]
+  let cos_angle = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      dot,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![mag1, mag2],
+          },
+          Expr::Integer(-1),
+        ],
+      },
+    ],
+  };
+  let angle = Expr::FunctionCall {
+    name: "ArcCos".to_string(),
+    args: vec![cos_angle],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&angle)
 }
