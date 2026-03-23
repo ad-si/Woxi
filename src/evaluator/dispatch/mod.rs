@@ -1542,6 +1542,50 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // CantorMesh[n] → Cantor set at level n as a MeshRegion
+  if name == "CantorMesh" && args.len() == 1 {
+    if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+      let n = n as usize;
+      let mut segments: Vec<(f64, f64)> = vec![(0.0, 1.0)];
+      for _ in 0..n {
+        let mut new_segs = Vec::with_capacity(segments.len() * 2);
+        for (a, b) in &segments {
+          let third = (b - a) / 3.0;
+          new_segs.push((*a, a + third));
+          new_segs.push((a + 2.0 * third, *b));
+        }
+        segments = new_segs;
+      }
+      let mut points: Vec<f64> = Vec::new();
+      for (a, b) in &segments {
+        points.push(*a);
+        points.push(*b);
+      }
+      let vertex_exprs: Vec<Expr> = points
+        .iter()
+        .map(|x| Expr::List(vec![Expr::Real(*x)]))
+        .collect();
+      let line_pairs: Vec<Expr> = (0..segments.len())
+        .map(|i| {
+          Expr::List(vec![
+            Expr::Integer((2 * i + 1) as i128),
+            Expr::Integer((2 * i + 2) as i128),
+          ])
+        })
+        .collect();
+      return Ok(Expr::FunctionCall {
+        name: "MeshRegion".to_string(),
+        args: vec![
+          Expr::List(vertex_exprs),
+          Expr::List(vec![Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(line_pairs)],
+          }]),
+        ],
+      });
+    }
+  }
+
   // ArrayMesh[matrix] → MeshRegion from a binary 2D array
   if name == "ArrayMesh" && args.len() == 1 {
     if let Expr::List(rows) = &args[0] {

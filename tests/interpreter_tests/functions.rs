@@ -12282,6 +12282,34 @@ mod array_mesh {
   }
 }
 
+mod cantor_mesh {
+  use super::*;
+
+  #[test]
+  fn level_0() {
+    assert_eq!(
+      interpret("CantorMesh[0]").unwrap(),
+      "MeshRegion[{{0.}, {1.}}, {Line[{{1, 2}}]}]"
+    );
+  }
+
+  #[test]
+  fn level_1() {
+    assert_eq!(
+      interpret("CantorMesh[1]").unwrap(),
+      "MeshRegion[{{0.}, {0.3333333333333333}, {0.6666666666666666}, {1.}}, {Line[{{1, 2}, {3, 4}}]}]"
+    );
+  }
+
+  #[test]
+  fn level_2() {
+    assert_eq!(
+      interpret("CantorMesh[2]").unwrap(),
+      "MeshRegion[{{0.}, {0.1111111111111111}, {0.2222222222222222}, {0.3333333333333333}, {0.6666666666666666}, {0.7777777777777778}, {0.8888888888888888}, {1.}}, {Line[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]}]"
+    );
+  }
+}
+
 mod expression_graph {
   use super::*;
 
