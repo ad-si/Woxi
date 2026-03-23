@@ -12484,6 +12484,12 @@ mod option_symbols_batch {
   }
 
   #[test]
+  fn dihedral_group() {
+    assert_eq!(interpret("DihedralGroup[3]").unwrap(), "DihedralGroup[3]");
+    assert_eq!(interpret("DihedralGroup[10]").unwrap(), "DihedralGroup[10]");
+  }
+
+  #[test]
   fn graph_property_distribution_edge_count_bernoulli() {
     assert_eq!(
       interpret(
