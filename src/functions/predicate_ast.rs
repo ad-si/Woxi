@@ -1056,11 +1056,19 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       0
     }
-    // ByteArray[{b1, b2, ...}] — length is number of bytes
+    // ByteArray["base64"] — length is number of bytes
     Expr::FunctionCall { name, args }
       if name == "ByteArray" && args.len() == 1 =>
     {
-      if let Expr::List(items) = &args[0] {
+      if let Expr::String(b64) = &args[0] {
+        use base64::Engine;
+        let engine = base64::engine::general_purpose::STANDARD;
+        if let Ok(decoded) = engine.decode(b64) {
+          decoded.len() as i128
+        } else {
+          1
+        }
+      } else if let Expr::List(items) = &args[0] {
         items.len() as i128
       } else {
         1

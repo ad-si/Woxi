@@ -3882,12 +3882,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let unit_str = quantity_unit_to_string(&args[1]);
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
-      // Special case: ByteArray[{b1, b2, ...}] — display as ByteArray[<n>]
-      if name == "ByteArray" && args.len() == 1 {
-        if let Expr::List(items) = &args[0] {
-          return format!("ByteArray[<{}>]", items.len());
-        }
-      }
+      // Special case: ByteArray["base64"] — InputForm shows ByteArray["base64"]
+      // (no special handling needed — falls through to default formatting)
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
       if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
       {
@@ -5368,8 +5364,15 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FortranForm" && args.len() == 1 {
         return format!("FortranForm[{}]", expr_to_output(&args[0]));
       }
-      // Special case: ByteArray[{b1, b2, ...}] — display as ByteArray[<n>]
+      // Special case: ByteArray["base64"] — display as ByteArray[<n>] in OutputForm
       if name == "ByteArray" && args.len() == 1 {
+        if let Expr::String(b64) = &args[0] {
+          use base64::Engine;
+          let engine = base64::engine::general_purpose::STANDARD;
+          if let Ok(decoded) = engine.decode(b64) {
+            return format!("ByteArray[<{}>]", decoded.len());
+          }
+        }
         if let Expr::List(items) = &args[0] {
           return format!("ByteArray[<{}>]", items.len());
         }

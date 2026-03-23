@@ -317,12 +317,14 @@ pub fn dispatch_evaluation_control(
     "ByteArray" if args.len() == 1 => {
       match &args[0] {
         Expr::List(items) => {
-          // Validate all items are integers in 0..255
-          let mut bytes = Vec::new();
+          // Validate all items are integers in 0..255, encode as base64
+          use base64::Engine;
+          let engine = base64::engine::general_purpose::STANDARD;
+          let mut raw_bytes = Vec::new();
           for item in items {
             match item {
               Expr::Integer(n) if (0..=255).contains(n) => {
-                bytes.push(Expr::Integer(*n));
+                raw_bytes.push(*n as u8);
               }
               _ => {
                 crate::emit_message(
@@ -335,22 +337,21 @@ pub fn dispatch_evaluation_control(
               }
             }
           }
+          let b64 = engine.encode(&raw_bytes);
           return Some(Ok(Expr::FunctionCall {
             name: "ByteArray".to_string(),
-            args: vec![Expr::List(bytes)],
+            args: vec![Expr::String(b64)],
           }));
         }
         Expr::String(s) => {
-          // Decode base64 string to byte list
+          // Validate base64 string, then store as-is
           use base64::Engine;
           let engine = base64::engine::general_purpose::STANDARD;
           match engine.decode(s) {
-            Ok(decoded) => {
-              let bytes: Vec<Expr> =
-                decoded.iter().map(|b| Expr::Integer(*b as i128)).collect();
+            Ok(_) => {
               return Some(Ok(Expr::FunctionCall {
                 name: "ByteArray".to_string(),
-                args: vec![Expr::List(bytes)],
+                args: vec![Expr::String(s.clone())],
               }));
             }
             Err(_) => {

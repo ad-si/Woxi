@@ -438,16 +438,27 @@ pub fn dispatch_list_operations(
           crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
         );
       }
-      // Normal[ByteArray[{b1, b2, ...}]] extracts the byte list
+      // Normal[ByteArray["base64"]] extracts the byte list
       if let Expr::FunctionCall {
         name,
         args: ba_args,
       } = &args[0]
         && name == "ByteArray"
         && ba_args.len() == 1
-        && matches!(&ba_args[0], Expr::List(_))
       {
-        return Some(Ok(ba_args[0].clone()));
+        if let Expr::String(b64) = &ba_args[0] {
+          use base64::Engine;
+          let engine = base64::engine::general_purpose::STANDARD;
+          if let Ok(decoded) = engine.decode(b64) {
+            let bytes: Vec<Expr> =
+              decoded.iter().map(|b| Expr::Integer(*b as i128)).collect();
+            return Some(Ok(Expr::List(bytes)));
+          }
+        }
+        // Fallback: if it's already a list (shouldn't happen but be safe)
+        if matches!(&ba_args[0], Expr::List(_)) {
+          return Some(Ok(ba_args[0].clone()));
+        }
       }
       // Normal[SparseArray[...]] expands to a regular list
       if let Expr::FunctionCall {
