@@ -1442,7 +1442,7 @@ DigitCount,Counts occurrences of each digit in a number,✅,pure,4,1877
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2,1827
 DigitSum,Returns the sum of digits of a number,✅,pure,14,
 DihedralAngle,,,,12,5486
-DihedralGroup,,,,8,2662
+DihedralGroup,Dihedral group of order 2n,✅,unevaluated,8,2662
 Dilation,Morphological dilation (max filter),✅,pure,7,1299
 DimensionalCombinations,,,,10,4567
 DimensionalMeshComponents,,,,10,4881
@@ -3487,7 +3487,7 @@ MedianFilter,Apply median filter to data (signal processing),🚫,,7,2031
 MedicalTestData,,🚫,,10,4809
 Medium,Medium size specification,✅,none,6,287
 MeijerG,Meijer G-function,✅,pure,3,492
-MeijerGReduce,,,,11,2656
+MeijerGReduce,Requires deep Meijer G-function theory,🚫,None,11,2656
 MeixnerDistribution,,,,9,3413
 MellinConvolve,,,,11,5079
 MellinTransform,,,,11,3176
@@ -5187,7 +5187,7 @@ StartOfLine,string pattern for start of line,✅,Symbolic,5.1,2786
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 StartProcess,,🚫,,10,2514
 StartWebSession,,🚫,,12,3678
-StateFeedbackGains,,,,8,2650
+StateFeedbackGains,Requires control systems framework (StateSpaceModel),🚫,None,8,2650
 StateOutputEstimator,,,,8,3737
 StateResponse,Control systems,🚫,None,8,2254
 StateSpaceModel,,🚫,,8,1079

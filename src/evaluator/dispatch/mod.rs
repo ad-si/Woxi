@@ -4067,6 +4067,7 @@ pub fn evaluate_function_call_ast_inner(
       | "RootApproximant"
       | "Interpretation"
       | "SymmetricGroup"
+      | "DihedralGroup"
       | "Databin"
       | "InverseErf"
       | "SmoothDensityHistogram"
