@@ -3174,7 +3174,7 @@ LightPink,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,1944
 LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6,1838
 LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,973
 LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6,1188
-Likelihood,,,,8,2688
+Likelihood,compute the likelihood function for a distribution and data,✅,none,8,2688
 Limit,Computes the limit of an expression,✅,pure,1,160
 LimitsPositioning,Typesetting option,🚫,None,3,2276
 LindleyDistribution,,,,8,3889

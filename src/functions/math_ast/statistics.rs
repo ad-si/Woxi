@@ -1453,6 +1453,76 @@ fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
   regularized_beta_inc(x, df / 2.0, 0.5)
 }
 
+// ─── Likelihood ───────────────────────────────────────────────────────
+
+/// Likelihood[dist, {x1, x2, ...}] - product of PDF[dist, xi] for each xi
+pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Likelihood".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let dist = &args[0];
+  let data = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Likelihood".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if data.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Check if all data is numeric (for forcing numerical evaluation)
+  let all_numeric = data.iter().all(|x| try_eval_to_f64(x).is_some());
+
+  // Compute PDF[dist, xi] for each data point
+  let mut pdf_values = Vec::with_capacity(data.len());
+  for xi in data {
+    let pdf_expr = Expr::FunctionCall {
+      name: "PDF".to_string(),
+      args: vec![dist.clone(), xi.clone()],
+    };
+    let pdf_val = crate::evaluator::evaluate_expr_to_expr(&pdf_expr)?;
+    pdf_values.push(pdf_val);
+  }
+
+  // Multiply them: Times[pdf1, pdf2, ...]
+  let product = if pdf_values.len() == 1 {
+    pdf_values.into_iter().next().unwrap()
+  } else {
+    let product_expr = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: pdf_values,
+    };
+    crate::evaluator::evaluate_expr_to_expr(&product_expr)?
+  };
+
+  // If all data is numeric, try to evaluate the result numerically
+  if all_numeric {
+    if let Some(val) = try_eval_to_f64(&product) {
+      return Ok(num_to_expr(val));
+    }
+    // Try N[product]
+    let n_expr = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![product.clone()],
+    };
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&n_expr) {
+      if try_eval_to_f64(&result).is_some() {
+        return Ok(result);
+      }
+    }
+  }
+  Ok(product)
+}
+
 // ─── DiscreteAsymptotic ───────────────────────────────────────────────
 
 /// DiscreteAsymptotic[expr, n -> Infinity] - leading asymptotic term of expr as n -> Infinity
