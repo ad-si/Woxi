@@ -1717,6 +1717,50 @@ mod file_name_split {
   }
 }
 
+mod expand_file_name {
+  use super::*;
+
+  #[test]
+  fn absolute_path_unchanged() {
+    assert_eq!(
+      interpret(r#"ExpandFileName["/absolute/path"]"#).unwrap(),
+      "/absolute/path"
+    );
+  }
+
+  #[test]
+  fn resolves_parent_directory() {
+    let result = interpret(r#"ExpandFileName["/a/b/../c"]"#).unwrap();
+    assert_eq!(result, "/a/c");
+  }
+
+  #[test]
+  fn resolves_current_directory() {
+    let result = interpret(r#"ExpandFileName["/a/./b"]"#).unwrap();
+    assert_eq!(result, "/a/b");
+  }
+
+  #[test]
+  fn tilde_expansion() {
+    let result = interpret(r#"ExpandFileName["~/test.txt"]"#).unwrap();
+    assert!(
+      result.ends_with("/test.txt") && !result.starts_with('~'),
+      "Expected expanded path, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn relative_path_becomes_absolute() {
+    let result = interpret(r#"ExpandFileName["foo/bar"]"#).unwrap();
+    assert!(
+      result.starts_with('/') && result.ends_with("foo/bar"),
+      "Expected absolute path, got: {}",
+      result
+    );
+  }
+}
+
 mod url_build {
   use super::*;
 

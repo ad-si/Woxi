@@ -1798,7 +1798,7 @@ Exp,Returns the exponential function e^x,✅,pure,1,52
 Expand,Expands products and positive integer powers of sums,✅,pure,1,154
 ExpandAll,Expands all products and powers in an expression,✅,pure,1,700
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1,2435
-ExpandFileName,,,,7,2807
+ExpandFileName,expand a file name to an absolute path,✅,none,7,2807
 ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1,2605
 Expectation,Compute expected value of a function of a random variable,✅,pure,8,954
 ExpGammaDistribution,,,,8,3506
@@ -3071,7 +3071,7 @@ Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6,
 Larger,,✅,,6,1328
 Last,Returns the last element of a list,✅,pure,1,140
 Latitude,extract latitude from a geo position,✅,none,7,3191
-LatitudeLongitude,,,,7,2729
+LatitudeLongitude,extract latitude and longitude from a geo position,✅,none,7,2729
 LatticeData,,🚫,,6,1451
 LatticeReduce,LLL lattice basis reduction,✅,pure,1,2650
 LaunchKernels,Launch parallel computation kernels,✅,pure,7,1549
