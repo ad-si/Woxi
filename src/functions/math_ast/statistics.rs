@@ -1202,4 +1202,255 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── LocationTest ─────────────────────────────────────────────────────
+
+/// LocationTest[data] - test if mean is 0 (one-sample t-test, returns p-value)
+/// LocationTest[data, mu0] - test if mean is mu0
+/// LocationTest[data, mu0, "PValue"] - returns p-value
+/// LocationTest[data, mu0, "TestStatistic"] - returns t-statistic
+/// LocationTest[data, mu0, "TestDataTable"] - returns test data table
+/// LocationTest[{data1, data2}, mu0] - two-sample t-test
+pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LocationTest expects 1 to 3 arguments".into(),
+    ));
+  }
+
+  // Parse mu0 (second argument, default 0)
+  let mu0 = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(s) if s == "Automatic" => 0.0,
+      other => {
+        if let Some(v) = try_eval_to_f64(other) {
+          v
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "LocationTest".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+  } else {
+    0.0
+  };
+
+  // Parse property (third argument, default "PValue")
+  let property = if args.len() == 3 {
+    match &args[2] {
+      Expr::String(s) => s.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "LocationTest".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    "PValue".to_string()
+  };
+
+  // Determine one-sample vs two-sample
+  let data = &args[0];
+  match data {
+    Expr::List(items) if !items.is_empty() => {
+      // Check if it's a two-sample test: {{...}, {...}}
+      if items.len() == 2
+        && matches!(&items[0], Expr::List(_))
+        && matches!(&items[1], Expr::List(_))
+      {
+        // Two-sample t-test
+        let vals1 = extract_numeric_list(&items[0])?;
+        let vals2 = extract_numeric_list(&items[1])?;
+        if vals1.len() < 2 || vals2.len() < 2 {
+          return Err(InterpreterError::EvaluationError(
+            "LocationTest: each sample needs at least 2 elements".into(),
+          ));
+        }
+        let (t_stat, df) = two_sample_t_test(&vals1, &vals2, mu0);
+        return format_location_test_result(t_stat, df, &property, "T");
+      }
+      // One-sample t-test
+      let vals = extract_numeric_list_flat(items)?;
+      if vals.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LocationTest: need at least 2 elements".into(),
+        ));
+      }
+      let (t_stat, df) = one_sample_t_test(&vals, mu0);
+      format_location_test_result(t_stat, df, &property, "T")
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "LocationTest".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+fn extract_numeric_list(expr: &Expr) -> Result<Vec<f64>, InterpreterError> {
+  match expr {
+    Expr::List(items) => extract_numeric_list_flat(items),
+    _ => Err(InterpreterError::EvaluationError(
+      "LocationTest: expected a list of numbers".into(),
+    )),
+  }
+}
+
+fn extract_numeric_list_flat(
+  items: &[Expr],
+) -> Result<Vec<f64>, InterpreterError> {
+  let mut vals = Vec::with_capacity(items.len());
+  for item in items {
+    if let Some(v) = try_eval_to_f64(item) {
+      vals.push(v);
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "LocationTest: all elements must be numeric".into(),
+      ));
+    }
+  }
+  Ok(vals)
+}
+
+fn one_sample_t_test(data: &[f64], mu0: f64) -> (f64, f64) {
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let variance =
+    data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+  let se = (variance / n).sqrt();
+  let t = if se == 0.0 {
+    if (mean - mu0).abs() == 0.0 {
+      0.0
+    } else {
+      f64::INFINITY
+    }
+  } else {
+    (mean - mu0) / se
+  };
+  (t, n - 1.0)
+}
+
+fn two_sample_t_test(data1: &[f64], data2: &[f64], mu0: f64) -> (f64, f64) {
+  let n1 = data1.len() as f64;
+  let n2 = data2.len() as f64;
+  let mean1 = data1.iter().sum::<f64>() / n1;
+  let mean2 = data2.iter().sum::<f64>() / n2;
+  let var1 =
+    data1.iter().map(|x| (x - mean1).powi(2)).sum::<f64>() / (n1 - 1.0);
+  let var2 =
+    data2.iter().map(|x| (x - mean2).powi(2)).sum::<f64>() / (n2 - 1.0);
+  let se = (var1 / n1 + var2 / n2).sqrt();
+  let t = if se == 0.0 {
+    let diff = mean1 - mean2 - mu0;
+    if diff.abs() == 0.0 {
+      0.0
+    } else {
+      f64::INFINITY
+    }
+  } else {
+    (mean1 - mean2 - mu0) / se
+  };
+  // Welch-Satterthwaite degrees of freedom
+  let num = (var1 / n1 + var2 / n2).powi(2);
+  let denom =
+    (var1 / n1).powi(2) / (n1 - 1.0) + (var2 / n2).powi(2) / (n2 - 1.0);
+  let df = if denom == 0.0 { 1.0 } else { num / denom };
+  (t, df)
+}
+
+fn format_location_test_result(
+  t_stat: f64,
+  df: f64,
+  property: &str,
+  test_name: &str,
+) -> Result<Expr, InterpreterError> {
+  match property {
+    "TestStatistic" => Ok(num_to_expr(t_stat)),
+    "PValue" | _ if property == "PValue" => {
+      let p = t_test_p_value(t_stat, df);
+      Ok(num_to_expr(p))
+    }
+    "TestDataTable" => {
+      let p = t_test_p_value(t_stat, df);
+      // Build Grid[{{, Statistic, P-Value}, {T, t_stat, p}}, ...]
+      let header = Expr::List(vec![
+        Expr::String(String::new()),
+        Expr::String("Statistic".to_string()),
+        Expr::String("P\u{2010}Value".to_string()),
+      ]);
+      let row = Expr::List(vec![
+        Expr::String(test_name.to_string()),
+        num_to_expr(t_stat),
+        num_to_expr(p),
+      ]);
+      Ok(Expr::FunctionCall {
+        name: "Grid".to_string(),
+        args: vec![
+          Expr::List(vec![header, row]),
+          Expr::FunctionCall {
+            name: "Rule".to_string(),
+            args: vec![
+              Expr::Identifier("Alignment".to_string()),
+              Expr::List(vec![
+                Expr::Identifier("Left".to_string()),
+                Expr::Identifier("Automatic".to_string()),
+              ]),
+            ],
+          },
+          Expr::FunctionCall {
+            name: "Rule".to_string(),
+            args: vec![
+              Expr::Identifier("Dividers".to_string()),
+              Expr::List(vec![
+                Expr::FunctionCall {
+                  name: "Rule".to_string(),
+                  args: vec![
+                    Expr::Integer(2),
+                    Expr::FunctionCall {
+                      name: "GrayLevel".to_string(),
+                      args: vec![Expr::Real(0.7)],
+                    },
+                  ],
+                },
+                Expr::FunctionCall {
+                  name: "Rule".to_string(),
+                  args: vec![
+                    Expr::Integer(2),
+                    Expr::FunctionCall {
+                      name: "GrayLevel".to_string(),
+                      args: vec![Expr::Real(0.7)],
+                    },
+                  ],
+                },
+              ]),
+            ],
+          },
+          Expr::FunctionCall {
+            name: "Rule".to_string(),
+            args: vec![
+              Expr::Identifier("Spacings".to_string()),
+              Expr::Identifier("Automatic".to_string()),
+            ],
+          },
+        ],
+      })
+    }
+    _ => {
+      // Default to PValue for unknown properties
+      let p = t_test_p_value(t_stat, df);
+      Ok(num_to_expr(p))
+    }
+  }
+}
+
+fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
+  // Two-tailed p-value: p = I(df/(df+t^2), df/2, 1/2)
+  if t_stat.is_infinite() {
+    return 0.0;
+  }
+  let x = df / (df + t_stat * t_stat);
+  regularized_beta_inc(x, df / 2.0, 0.5)
+}
+
 // ─── PowerExpand ──────────────────────────────────────────────────────

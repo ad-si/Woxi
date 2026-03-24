@@ -3286,7 +3286,7 @@ LocalSymbol,,,,10.2,2777
 LocalTime,,,,10,3121
 LocalTimeZone,,,,10,4052
 LocationEquivalenceTest,,,,8,3656
-LocationTest,,,,8,2675
+LocationTest,perform a one- or two-sample t-test for location,✅,none,8,2675
 Locator,Interactive locator object,✅,none,6,549
 LocatorAutoCreate,Option for automatic locator creation,✅,pure,6,1490
 LocatorPane,Requires external services or GUI infrastructure,🚫,io,6,984
