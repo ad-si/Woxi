@@ -302,6 +302,9 @@ pub fn dispatch_math_functions(
     "LocationTest" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::location_test_ast(args));
     }
+    "Likelihood" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::likelihood_ast(args));
+    }
     "DiscreteAsymptotic" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::math_ast::discrete_asymptotic_ast(args));
     }

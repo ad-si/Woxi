@@ -1575,3 +1575,77 @@ mod discrete_asymptotic {
     );
   }
 }
+
+mod likelihood {
+  use super::*;
+
+  #[test]
+  fn standard_normal_numeric() {
+    let result =
+      interpret("Likelihood[NormalDistribution[], {0.5, 1.0, -0.3}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.032490238142406966).abs() < 1e-12,
+      "Expected ~0.0325, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn exponential_numeric() {
+    let result =
+      interpret("Likelihood[ExponentialDistribution[2], {1, 2, 3}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.00004915369882662568).abs() < 1e-15,
+      "Expected ~4.9e-5, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn poisson_numeric() {
+    let result =
+      interpret("Likelihood[PoissonDistribution[2], {1, 2, 3}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.013220011608887245).abs() < 1e-12,
+      "Expected ~0.01322, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn exponential_symbolic() {
+    let result =
+      interpret("Likelihood[ExponentialDistribution[lambda], {1, 2, 3}]")
+        .unwrap();
+    // Result should contain lambda^3 and exponential terms
+    assert!(
+      result.contains("lambda"),
+      "Expected symbolic result with lambda, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn empty_data() {
+    assert_eq!(
+      interpret("Likelihood[NormalDistribution[], {}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn single_data_point() {
+    let result = interpret("Likelihood[NormalDistribution[], {0.0}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 1.0 / (2.0 * std::f64::consts::PI).sqrt();
+    assert!(
+      (val - expected).abs() < 1e-12,
+      "Expected ~{}, got {}",
+      expected,
+      val
+    );
+  }
+}
