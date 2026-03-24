@@ -1309,3 +1309,152 @@ mod stable_distribution {
     );
   }
 }
+
+mod location_test {
+  use super::*;
+
+  #[test]
+  fn one_sample_default_mu0() {
+    // LocationTest[data] tests if mean is 0
+    let result =
+      interpret("LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.0033200264871519245).abs() < 1e-10,
+      "Expected ~0.00332, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn one_sample_test_statistic() {
+    let result = interpret(
+      "LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 5.252257314388901).abs() < 1e-10,
+      "Expected ~5.2523, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn one_sample_with_mu0() {
+    let result =
+      interpret("LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 1, \"PValue\"]")
+        .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.2461912778840749).abs() < 1e-8,
+      "Expected ~0.2462, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn one_sample_with_mu0_test_statistic() {
+    let result = interpret(
+      "LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 1, \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 1.313064328597225).abs() < 1e-10,
+      "Expected ~1.3131, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn one_sample_integers() {
+    let result = interpret("LocationTest[{1, 2, 3}, 0, \"PValue\"]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.07417990022744857).abs() < 1e-8,
+      "Expected ~0.0742, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn one_sample_integers_test_statistic() {
+    let result =
+      interpret("LocationTest[{1, 2, 3}, 0, \"TestStatistic\"]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 3.464101615137754).abs() < 1e-8,
+      "Expected ~3.4641, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn two_sample_test() {
+    let result = interpret(
+      "LocationTest[{{1.2, 0.5, 1.9}, {2.1, 0.8, 1.5}}, 0, \"PValue\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.6541475396789262).abs() < 1e-3,
+      "Expected ~0.654, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn two_sample_test_statistic() {
+    let result = interpret(
+      "LocationTest[{{1.2, 0.5, 1.9}, {2.1, 0.8, 1.5}}, 0, \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - (-0.4832976746641418)).abs() < 1e-10,
+      "Expected ~-0.4833, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn mean_equals_mu0() {
+    // When mu0 equals the sample mean, p-value should be 1 and t-stat should be 0
+    let result = interpret(
+      "LocationTest[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 5.5, \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(val.abs() < 1e-10, "Expected 0, got {}", val);
+  }
+
+  #[test]
+  fn test_data_table() {
+    // TestDataTable returns a Grid which renders as -Graphics-
+    let result = interpret(
+      "LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, \"TestDataTable\"]",
+    )
+    .unwrap();
+    assert!(
+      result == "-Graphics-",
+      "Expected -Graphics-, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn automatic_mu0() {
+    // Automatic should be treated as 0
+    let result = interpret(
+      "LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, Automatic, \"PValue\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 0.0033200264871519245).abs() < 1e-10,
+      "Expected ~0.00332, got {}",
+      val
+    );
+  }
+}

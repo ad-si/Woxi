@@ -913,6 +913,107 @@ pub fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Log of the gamma function using Lanczos approximation.
+pub fn ln_gamma(x: f64) -> f64 {
+  if x < 0.5 {
+    let pi = std::f64::consts::PI;
+    (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x)
+  } else {
+    let x = x - 1.0;
+    let g = 7.0;
+    let c = [
+      0.999_999_999_999_809_9,
+      676.5203681218851,
+      -1259.1392167224028,
+      771.323_428_777_653_1,
+      -176.615_029_162_140_6,
+      12.507343278686905,
+      -0.13857109526572012,
+      9.984_369_578_019_572e-6,
+      1.5056327351493116e-7,
+    ];
+    let mut sum = c[0];
+    for (i, &ci) in c.iter().enumerate().skip(1) {
+      sum += ci / (x + i as f64);
+    }
+    let t = x + g + 0.5;
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+  }
+}
+
+/// Regularized incomplete beta function I_x(a, b) using continued fraction (Lentz's method).
+/// Returns the value of the regularized incomplete beta function.
+pub fn regularized_beta_inc(x: f64, a: f64, b: f64) -> f64 {
+  if x <= 0.0 {
+    return 0.0;
+  }
+  if x >= 1.0 {
+    return 1.0;
+  }
+  // Use symmetry relation when x > (a+1)/(a+b+2) for better convergence
+  if x > (a + 1.0) / (a + b + 2.0) {
+    return 1.0 - regularized_beta_inc(1.0 - x, b, a);
+  }
+  // Compute the log of the prefix: x^a * (1-x)^b / (a * B(a,b))
+  let log_prefix = a * x.ln() + b * (1.0 - x).ln() - ln_gamma(a) - ln_gamma(b)
+    + ln_gamma(a + b)
+    - a.ln();
+  let prefix = log_prefix.exp();
+  // Continued fraction using Lentz's method
+  let mut c = 1.0;
+  let mut f;
+  let mut d = 1.0 - (a + b) * x / (a + 1.0);
+  if d.abs() < 1e-30 {
+    d = 1e-30;
+  }
+  d = 1.0 / d;
+  f = d;
+  for m in 1..=200 {
+    let m_f64 = m as f64;
+    // Even step: d_{2m}
+    let numerator_even =
+      m_f64 * (b - m_f64) * x / ((a + 2.0 * m_f64 - 1.0) * (a + 2.0 * m_f64));
+    d = 1.0 + numerator_even * d;
+    if d.abs() < 1e-30 {
+      d = 1e-30;
+    }
+    c = 1.0 + numerator_even / c;
+    if c.abs() < 1e-30 {
+      c = 1e-30;
+    }
+    d = 1.0 / d;
+    f *= c * d;
+    // Odd step: d_{2m+1}
+    let numerator_odd = -(a + m_f64) * (a + b + m_f64) * x
+      / ((a + 2.0 * m_f64) * (a + 2.0 * m_f64 + 1.0));
+    d = 1.0 + numerator_odd * d;
+    if d.abs() < 1e-30 {
+      d = 1e-30;
+    }
+    c = 1.0 + numerator_odd / c;
+    if c.abs() < 1e-30 {
+      c = 1e-30;
+    }
+    d = 1.0 / d;
+    let delta = c * d;
+    f *= delta;
+    if (delta - 1.0).abs() < 1e-15 {
+      break;
+    }
+  }
+  prefix * f
+}
+
+/// CDF of Student's t-distribution with nu degrees of freedom.
+pub fn student_t_cdf(t: f64, nu: f64) -> f64 {
+  if t == 0.0 {
+    return 0.5;
+  }
+  let x = nu / (nu + t * t);
+  let beta_val = 0.5 * regularized_beta_inc(x, nu / 2.0, 0.5);
+  if t > 0.0 { 1.0 - beta_val } else { beta_val }
+}
+
 /// Check if an expression contains Infinity (used for Abs)
 pub fn contains_infinity(expr: &Expr) -> bool {
   match expr {
