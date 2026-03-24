@@ -463,6 +463,48 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    "ExpandFileName" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        let expanded = if s.starts_with('~') {
+          if let Ok(home) = std::env::var("HOME") {
+            format!("{}{}", home, &s[1..])
+          } else {
+            s.clone()
+          }
+        } else {
+          s.clone()
+        };
+        let path = std::path::PathBuf::from(&expanded);
+        let abs = if path.is_relative() {
+          if let Ok(cwd) = std::env::current_dir() {
+            cwd.join(&path)
+          } else {
+            path
+          }
+        } else {
+          path
+        };
+        // Normalize path components (resolve . and ..)
+        let mut components = Vec::new();
+        for component in abs.components() {
+          match component {
+            std::path::Component::ParentDir => {
+              components.pop();
+            }
+            std::path::Component::CurDir => {}
+            _ => components.push(component),
+          }
+        }
+        let normalized: std::path::PathBuf = components.iter().collect();
+        return Some(Ok(Expr::String(
+          normalized.to_string_lossy().into_owned(),
+        )));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ExpandFileName".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "URLBuild" if args.len() == 1 || args.len() == 2 => {
       // URLBuild["url"] => "url"
       // URLBuild[{"base", "path1", ...}] => "base/path1/..."

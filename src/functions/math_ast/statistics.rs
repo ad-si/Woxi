@@ -1587,6 +1587,32 @@ fn extract_geo_coords(expr: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
+/// LatitudeLongitude[GeoPosition[{lat, lon}]] → {Quantity[lat, "AngularDegrees"], Quantity[lon, "AngularDegrees"]}
+pub fn latitude_longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "LatitudeLongitude".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  match extract_geo_coords(&args[0]) {
+    Some((lat, lon)) => Ok(Expr::List(vec![
+      Expr::FunctionCall {
+        name: "Quantity".to_string(),
+        args: vec![lat, Expr::String("AngularDegrees".to_string())],
+      },
+      Expr::FunctionCall {
+        name: "Quantity".to_string(),
+        args: vec![lon, Expr::String("AngularDegrees".to_string())],
+      },
+    ])),
+    None => Ok(Expr::FunctionCall {
+      name: "LatitudeLongitude".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 // ─── GroupGenerators ──────────────────────────────────────────────────
 
 /// GroupGenerators[group] - return a list of generators for the given group

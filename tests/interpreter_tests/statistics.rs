@@ -1768,4 +1768,20 @@ mod longitude_latitude {
       "Quantity[-74, AngularDegrees]"
     );
   }
+
+  #[test]
+  fn latitude_longitude_geoposition() {
+    assert_eq!(
+      interpret("LatitudeLongitude[GeoPosition[{40.7128, -74.006}]]").unwrap(),
+      "{Quantity[40.7128, AngularDegrees], Quantity[-74.006, AngularDegrees]}"
+    );
+  }
+
+  #[test]
+  fn latitude_longitude_list() {
+    assert_eq!(
+      interpret("LatitudeLongitude[{51.5, -0.12}]").unwrap(),
+      "{Quantity[51.5, AngularDegrees], Quantity[-0.12, AngularDegrees]}"
+    );
+  }
 }
