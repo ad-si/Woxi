@@ -1785,3 +1785,75 @@ mod longitude_latitude {
     );
   }
 }
+
+mod pearson_chi_square_test {
+  use super::*;
+
+  #[test]
+  fn default_returns_pvalue() {
+    let result =
+      interpret("PearsonChiSquareTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}]")
+        .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      val > 0.0 && val < 1.0,
+      "Expected p-value between 0 and 1, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn test_statistic_automatic() {
+    let result = interpret(
+      "PearsonChiSquareTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, Automatic, \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      val >= 0.0,
+      "Expected non-negative test statistic, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn normal_distribution_test_statistic() {
+    let result = interpret(
+      "PearsonChiSquareTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, NormalDistribution[], \"TestStatistic\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // Data doesn't fit N(0,1) well, so statistic should be large
+    assert!(
+      val > 5.0,
+      "Expected large chi-square statistic for non-fitting distribution, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn normal_distribution_pvalue() {
+    let result = interpret(
+      "PearsonChiSquareTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, NormalDistribution[], \"PValue\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    // p-value should be small since data doesn't fit N(0,1)
+    assert!(val < 0.1, "Expected small p-value, got {}", val);
+  }
+
+  #[test]
+  fn well_fitting_data_high_pvalue() {
+    // Data from N(0,1) should have high p-value
+    let result = interpret(
+      "PearsonChiSquareTest[{-0.5, 0.3, -1.2, 0.8, -0.1, 0.6, -0.3, 1.1, -0.7, 0.2}]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      val > 0.05,
+      "Expected high p-value for well-fitting data, got {}",
+      val
+    );
+  }
+}
