@@ -1523,6 +1523,70 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(product)
 }
 
+// ─── Longitude / Latitude ─────────────────────────────────────────────
+
+/// Longitude[GeoPosition[{lat, lon}]] or Longitude[{lat, lon}] → Quantity[lon, "AngularDegrees"]
+pub fn longitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "Longitude".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let coords = extract_geo_coords(&args[0]);
+  match coords {
+    Some((_, lon)) => Ok(Expr::FunctionCall {
+      name: "Quantity".to_string(),
+      args: vec![lon, Expr::String("AngularDegrees".to_string())],
+    }),
+    None => Ok(Expr::FunctionCall {
+      name: "Longitude".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Latitude[GeoPosition[{lat, lon}]] or Latitude[{lat, lon}] → Quantity[lat, "AngularDegrees"]
+pub fn latitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "Latitude".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let coords = extract_geo_coords(&args[0]);
+  match coords {
+    Some((lat, _)) => Ok(Expr::FunctionCall {
+      name: "Quantity".to_string(),
+      args: vec![lat, Expr::String("AngularDegrees".to_string())],
+    }),
+    None => Ok(Expr::FunctionCall {
+      name: "Latitude".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Extract (lat, lon) from GeoPosition[{lat, lon}] or {lat, lon}
+fn extract_geo_coords(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
+    Expr::List(items) if items.len() >= 2 => {
+      Some((items[0].clone(), items[1].clone()))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "GeoPosition" && args.len() == 1 =>
+    {
+      if let Expr::List(items) = &args[0] {
+        if items.len() >= 2 {
+          return Some((items[0].clone(), items[1].clone()));
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
 // ─── GroupGenerators ──────────────────────────────────────────────────
 
 /// GroupGenerators[group] - return a list of generators for the given group

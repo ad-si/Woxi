@@ -1725,3 +1725,47 @@ mod group_generators {
     );
   }
 }
+
+mod longitude_latitude {
+  use super::*;
+
+  #[test]
+  fn longitude_geoposition() {
+    assert_eq!(
+      interpret("Longitude[GeoPosition[{40.7128, -74.006}]]").unwrap(),
+      "Quantity[-74.006, AngularDegrees]"
+    );
+  }
+
+  #[test]
+  fn latitude_geoposition() {
+    assert_eq!(
+      interpret("Latitude[GeoPosition[{40.7128, -74.006}]]").unwrap(),
+      "Quantity[40.7128, AngularDegrees]"
+    );
+  }
+
+  #[test]
+  fn longitude_list() {
+    assert_eq!(
+      interpret("Longitude[{1, 2}]").unwrap(),
+      "Quantity[2, AngularDegrees]"
+    );
+  }
+
+  #[test]
+  fn latitude_list() {
+    assert_eq!(
+      interpret("Latitude[{1, 2}]").unwrap(),
+      "Quantity[1, AngularDegrees]"
+    );
+  }
+
+  #[test]
+  fn longitude_integers() {
+    assert_eq!(
+      interpret("Longitude[GeoPosition[{40, -74}]]").unwrap(),
+      "Quantity[-74, AngularDegrees]"
+    );
+  }
+}

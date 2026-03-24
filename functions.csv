@@ -3070,7 +3070,7 @@ LaplacianPDETerm,,,,12.2,4567
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6,159
 Larger,,✅,,6,1328
 Last,Returns the last element of a list,✅,pure,1,140
-Latitude,,,,7,3191
+Latitude,extract latitude from a geo position,✅,none,7,3191
 LatitudeLongitude,,,,7,2729
 LatticeData,,🚫,,6,1451
 LatticeReduce,LLL lattice basis reduction,✅,pure,1,2650
@@ -3318,7 +3318,7 @@ LongestCommonSequencePositions,,,,10.2,4747
 LongestCommonSubsequence,Returns the longest common subsequence of two lists,✅,pure,7,3048
 LongestCommonSubsequencePositions,,,,10.2,3537
 LongestOrderedSequence,,,,10.2,3474
-Longitude,,,,7,2707
+Longitude,extract longitude from a geo position,✅,none,7,2707
 LongLeftArrow,,,,3,5390
 LongLeftRightArrow,,,,3,3737
 LongRightArrow,Long right arrow notation for infix display,✅,pure,3,1463
