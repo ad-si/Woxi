@@ -1649,3 +1649,79 @@ mod likelihood {
     );
   }
 }
+
+mod group_generators {
+  use super::*;
+
+  #[test]
+  fn symmetric_group_3() {
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[3]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{1, 2, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn symmetric_group_5() {
+    assert_eq!(
+      interpret("GroupGenerators[SymmetricGroup[5]]").unwrap(),
+      "{Cycles[{{1, 2}}], Cycles[{{1, 2, 3, 4, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn cyclic_group_5() {
+    assert_eq!(
+      interpret("GroupGenerators[CyclicGroup[5]]").unwrap(),
+      "{Cycles[{{1, 2, 3, 4, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn dihedral_group_3() {
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[3]]").unwrap(),
+      "{Cycles[{{2, 3}}], Cycles[{{1, 2, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn dihedral_group_4() {
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[4]]").unwrap(),
+      "{Cycles[{{1, 4}, {2, 3}}], Cycles[{{1, 2, 3, 4}}]}"
+    );
+  }
+
+  #[test]
+  fn dihedral_group_5() {
+    assert_eq!(
+      interpret("GroupGenerators[DihedralGroup[5]]").unwrap(),
+      "{Cycles[{{2, 5}, {3, 4}}], Cycles[{{1, 2, 3, 4, 5}}]}"
+    );
+  }
+
+  #[test]
+  fn alternating_group_3() {
+    assert_eq!(
+      interpret("GroupGenerators[AlternatingGroup[3]]").unwrap(),
+      "{Cycles[{{1, 2, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn alternating_group_4() {
+    assert_eq!(
+      interpret("GroupGenerators[AlternatingGroup[4]]").unwrap(),
+      "{Cycles[{{1, 2, 3}}], Cycles[{{2, 3, 4}}]}"
+    );
+  }
+
+  #[test]
+  fn alternating_group_5() {
+    assert_eq!(
+      interpret("GroupGenerators[AlternatingGroup[5]]").unwrap(),
+      "{Cycles[{{1, 2, 3}}], Cycles[{{1, 2, 3, 4, 5}}]}"
+    );
+  }
+}

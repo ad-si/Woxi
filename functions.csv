@@ -2464,7 +2464,7 @@ GroupElementPosition,,,,8,4104
 GroupElementQ,,,,8,4173
 GroupElements,Elements of a group,🚫,pure,8,1414
 GroupElementToWord,,,,9,3947
-GroupGenerators,,,,8,2707
+GroupGenerators,give generators of a group,✅,none,8,2707
 Groupings,,,,11,2777
 GroupMultiplicationTable,,,,8,3378
 GroupOrbits,Orbits of a group action,✅,pure,8,1480

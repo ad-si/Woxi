@@ -1523,6 +1523,127 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(product)
 }
 
+// ─── GroupGenerators ──────────────────────────────────────────────────
+
+/// GroupGenerators[group] - return a list of generators for the given group
+pub fn group_generators_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "GroupGenerators".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  match &args[0] {
+    Expr::FunctionCall { name, args: gargs } if gargs.len() == 1 => {
+      let n = match &gargs[0] {
+        Expr::Integer(n) if *n >= 1 => *n as usize,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "GroupGenerators".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      match name.as_str() {
+        "SymmetricGroup" => Ok(symmetric_group_generators(n)),
+        "CyclicGroup" => Ok(cyclic_group_generators(n)),
+        "DihedralGroup" => Ok(dihedral_group_generators(n)),
+        "AlternatingGroup" => Ok(alternating_group_generators(n)),
+        _ => Ok(Expr::FunctionCall {
+          name: "GroupGenerators".to_string(),
+          args: args.to_vec(),
+        }),
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "GroupGenerators".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+fn make_cycles(cycle: Vec<i128>) -> Expr {
+  Expr::FunctionCall {
+    name: "Cycles".to_string(),
+    args: vec![Expr::List(vec![Expr::List(
+      cycle.into_iter().map(Expr::Integer).collect(),
+    )])],
+  }
+}
+
+fn make_cycles_multi(cycles: Vec<Vec<i128>>) -> Expr {
+  Expr::FunctionCall {
+    name: "Cycles".to_string(),
+    args: vec![Expr::List(
+      cycles
+        .into_iter()
+        .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
+        .collect(),
+    )],
+  }
+}
+
+fn symmetric_group_generators(n: usize) -> Expr {
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(vec![])]);
+  }
+  let transposition = make_cycles(vec![1, 2]);
+  let n_cycle: Vec<i128> = (1..=n as i128).collect();
+  let rotation = make_cycles(n_cycle);
+  Expr::List(vec![transposition, rotation])
+}
+
+fn cyclic_group_generators(n: usize) -> Expr {
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(vec![])]);
+  }
+  let n_cycle: Vec<i128> = (1..=n as i128).collect();
+  Expr::List(vec![make_cycles(n_cycle)])
+}
+
+fn dihedral_group_generators(n: usize) -> Expr {
+  if n <= 1 {
+    return Expr::List(vec![make_cycles_multi(vec![])]);
+  }
+  if n == 2 {
+    return Expr::List(vec![make_cycles(vec![1, 2]), make_cycles(vec![3, 4])]);
+  }
+
+  // Reflection: for even n pairs (i, n+1-i); for odd n pairs (i, n+2-i) for i>=2
+  let mut reflection_cycles = Vec::new();
+  if n % 2 == 0 {
+    for i in 1..=(n / 2) {
+      reflection_cycles.push(vec![i as i128, (n + 1 - i) as i128]);
+    }
+  } else {
+    // Odd n: element 1 is fixed, pairs are (2,n), (3,n-1), ...
+    for i in 2..=((n + 1) / 2) {
+      reflection_cycles.push(vec![i as i128, (n + 2 - i) as i128]);
+    }
+  }
+  let reflection = make_cycles_multi(reflection_cycles);
+  let n_cycle: Vec<i128> = (1..=n as i128).collect();
+  let rotation = make_cycles(n_cycle);
+  Expr::List(vec![reflection, rotation])
+}
+
+fn alternating_group_generators(n: usize) -> Expr {
+  if n <= 2 {
+    return Expr::List(vec![make_cycles_multi(vec![])]);
+  }
+  if n == 3 {
+    return Expr::List(vec![make_cycles(vec![1, 2, 3])]);
+  }
+  let three_cycle = make_cycles(vec![1, 2, 3]);
+  let second_gen = if n % 2 == 1 {
+    make_cycles((1..=n as i128).collect())
+  } else {
+    make_cycles((2..=n as i128).collect())
+  };
+  Expr::List(vec![three_cycle, second_gen])
+}
+
 // ─── DiscreteAsymptotic ───────────────────────────────────────────────
 
 /// DiscreteAsymptotic[expr, n -> Infinity] - leading asymptotic term of expr as n -> Infinity
