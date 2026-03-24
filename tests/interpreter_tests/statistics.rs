@@ -1458,3 +1458,120 @@ mod location_test {
     );
   }
 }
+
+mod discrete_asymptotic {
+  use super::*;
+
+  #[test]
+  fn factorial_stirling() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Factorial[n], n -> Infinity]").unwrap(),
+      "(Sqrt[2*Pi]*n^(1/2 + n))/E^n"
+    );
+  }
+
+  #[test]
+  fn polynomial_leading_term() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[n^3 + 5*n^2 + 1, n -> Infinity]").unwrap(),
+      "n^3"
+    );
+  }
+
+  #[test]
+  fn polynomial_with_coefficient() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[3*n^2/2 + n, n -> Infinity]").unwrap(),
+      "(3*n^2)/2"
+    );
+  }
+
+  #[test]
+  fn exponential_identity() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[2^n, n -> Infinity]").unwrap(),
+      "2^n"
+    );
+  }
+
+  #[test]
+  fn exponential_dominant() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[3^n + 2^n, n -> Infinity]").unwrap(),
+      "3^n"
+    );
+  }
+
+  #[test]
+  fn harmonic_number() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[HarmonicNumber[n], n -> Infinity]")
+        .unwrap(),
+      "Log[n]"
+    );
+  }
+
+  #[test]
+  fn inverse_n() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[1/n, n -> Infinity]").unwrap(),
+      "n^(-1)"
+    );
+  }
+
+  #[test]
+  fn sqrt_n() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Sqrt[n], n -> Infinity]").unwrap(),
+      "Sqrt[n]"
+    );
+  }
+
+  #[test]
+  fn n_log_n() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[n*Log[n], n -> Infinity]").unwrap(),
+      "n*Log[n]"
+    );
+  }
+
+  #[test]
+  fn gamma_stirling() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Gamma[n], n -> Infinity]").unwrap(),
+      "(Sqrt[2*Pi]*n^(-1/2 + n))/E^n"
+    );
+  }
+
+  #[test]
+  fn polynomial_over_exponential() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Log[n] + n^2, n -> Infinity]").unwrap(),
+      "n^2"
+    );
+  }
+
+  #[test]
+  fn binomial_central() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Binomial[n, n/2], n -> Infinity]").unwrap(),
+      "2^(1/2 + n)/(Sqrt[Pi]*Sqrt[n])"
+    );
+  }
+
+  #[test]
+  fn constant_expression() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[42, n -> Infinity]").unwrap(),
+      "42"
+    );
+  }
+
+  #[test]
+  fn identity_n() {
+    assert_eq!(
+      interpret("DiscreteAsymptotic[n, n -> Infinity]").unwrap(),
+      "n"
+    );
+  }
+}

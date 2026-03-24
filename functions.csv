@@ -1475,7 +1475,7 @@ DirichletLambda,,,,10,5390
 DirichletTransform,,,,7,4138
 DirichletWindow,,,,9,3678
 DisableFormatting,,🚫,,11,4081
-DiscreteAsymptotic,,,,12.1,2688
+DiscreteAsymptotic,compute leading asymptotic term of a discrete sequence,✅,none,12.1,2688
 DiscreteChirpZTransform,,,,9,4052
 DiscreteConvolve,Discrete convolution of two sequences,✅,pure,7,2549
 DiscreteDelta,Discrete delta function,✅,computation,4,1632
