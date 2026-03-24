@@ -1453,4 +1453,524 @@ fn t_test_p_value(t_stat: f64, df: f64) -> f64 {
   regularized_beta_inc(x, df / 2.0, 0.5)
 }
 
+// ─── DiscreteAsymptotic ───────────────────────────────────────────────
+
+/// DiscreteAsymptotic[expr, n -> Infinity] - leading asymptotic term of expr as n -> Infinity
+pub fn discrete_asymptotic_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "DiscreteAsymptotic".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Parse second argument: must be Rule[var, Infinity] or Expr::Rule { var, Infinity }
+  let var_name = match &args[1] {
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rule" && rargs.len() == 2 =>
+    {
+      match (&rargs[0], &rargs[1]) {
+        (Expr::Identifier(s), Expr::Identifier(inf)) if inf == "Infinity" => {
+          s.clone()
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "DiscreteAsymptotic".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::Identifier(s), Expr::Identifier(inf)) if inf == "Infinity" => {
+        s.clone()
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DiscreteAsymptotic".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    },
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DiscreteAsymptotic".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let expr = &args[0];
+  match discrete_asymptotic_leading(expr, &var_name) {
+    Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
+    None => Ok(Expr::FunctionCall {
+      name: "DiscreteAsymptotic".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute the leading asymptotic term of an expression as var -> Infinity.
+/// Returns None if the expression cannot be handled.
+fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    // Constants don't depend on var
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => Some(expr.clone()),
+    Expr::Identifier(name) if name == var => Some(expr.clone()),
+    Expr::Identifier(name) if name != var => Some(expr.clone()),
+
+    // Factorial[var] → Stirling: var^(var+1/2) * Sqrt[2*Pi] / E^var
+    Expr::FunctionCall { name, args }
+      if name == "Factorial"
+        && args.len() == 1
+        && is_pure_var(&args[0], var) =>
+    {
+      Some(stirling_approx(var))
+    }
+
+    // Gamma[var] → (var-1)! ~ var^(var-1/2) * Sqrt[2*Pi] / E^var  (but actually Gamma(n) = (n-1)!)
+    // Gamma[n] → n^(n - 1/2) * Sqrt[2*Pi] / E^n  leading term
+    Expr::FunctionCall { name, args }
+      if name == "Gamma" && args.len() == 1 && is_pure_var(&args[0], var) =>
+    {
+      // Gamma[n] = (n-1)! ~ n^(n-1/2) * Sqrt[2*Pi] / E^n
+      let n = Expr::Identifier(var.to_string());
+      Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          // n^(n - 1/2)
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              n.clone(),
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  n.clone(),
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(-1), Expr::Integer(2)],
+                  },
+                ],
+              },
+            ],
+          },
+          // Sqrt[2*Pi]
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+            }],
+          },
+          // E^(-n)
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::Constant("E".to_string()),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), n],
+              },
+            ],
+          },
+        ],
+      })
+    }
+
+    // HarmonicNumber[var] → Log[var]
+    Expr::FunctionCall { name, args }
+      if name == "HarmonicNumber"
+        && args.len() == 1
+        && is_pure_var(&args[0], var) =>
+    {
+      Some(Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![Expr::Identifier(var.to_string())],
+      })
+    }
+
+    // Power[base, exp] - handle var^k, k^var, etc.
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      // If neither depends on var, return as-is
+      if !contains_var(&args[0], var) && !contains_var(&args[1], var) {
+        return Some(expr.clone());
+      }
+      // var^const or const^var - already in asymptotic form
+      Some(expr.clone())
+    }
+
+    // BinaryOp Power
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      ..
+    } => Some(expr.clone()),
+
+    // Plus: find the dominant term
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      asymptotic_sum(args, var)
+    }
+
+    // BinaryOp Plus
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => asymptotic_sum(&[*left.clone(), *right.clone()], var),
+
+    // BinaryOp Minus
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let neg_right = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), *right.clone()],
+      };
+      asymptotic_sum(&[*left.clone(), neg_right], var)
+    }
+
+    // Times: take asymptotic of each factor
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let mut result_factors = Vec::new();
+      for arg in args {
+        match discrete_asymptotic_leading(arg, var) {
+          Some(a) => result_factors.push(a),
+          None => return None,
+        }
+      }
+      if result_factors.len() == 1 {
+        Some(result_factors.into_iter().next().unwrap())
+      } else {
+        Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: result_factors,
+        })
+      }
+    }
+
+    // BinaryOp Times
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = discrete_asymptotic_leading(left, var)?;
+      let r = discrete_asymptotic_leading(right, var)?;
+      Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![l, r],
+      })
+    }
+
+    // BinaryOp Divide
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let l = discrete_asymptotic_leading(left, var)?;
+      let r = discrete_asymptotic_leading(right, var)?;
+      Some(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(l),
+        right: Box::new(r),
+      })
+    }
+
+    // Sqrt[expr]
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      let inner = discrete_asymptotic_leading(&args[0], var)?;
+      Some(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![inner],
+      })
+    }
+
+    // Log[expr] - keep as is if it depends on var
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      Some(expr.clone())
+    }
+
+    // Binomial[var, var/2] → 2^(1/2+var) / (Sqrt[var]*Sqrt[Pi])
+    Expr::FunctionCall { name, args }
+      if name == "Binomial" && args.len() == 2 =>
+    {
+      if is_pure_var(&args[0], var) {
+        if let Some(result) = asymptotic_binomial(&args[0], &args[1], var) {
+          return Some(result);
+        }
+      }
+      None
+    }
+
+    // If expression doesn't contain var, it's a constant
+    _ if !contains_var(expr, var) => Some(expr.clone()),
+
+    _ => None,
+  }
+}
+
+/// Check if expr is exactly the variable
+fn is_pure_var(expr: &Expr, var: &str) -> bool {
+  matches!(expr, Expr::Identifier(name) if name == var)
+}
+
+/// Check if expression contains the variable
+fn contains_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == var,
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => false,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_var(a, var))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_var(left, var) || contains_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_var(operand, var),
+    Expr::List(items) => items.iter().any(|a| contains_var(a, var)),
+    _ => false,
+  }
+}
+
+/// Stirling's approximation: n! ~ n^(n+1/2) * Sqrt[2*Pi] / E^n
+fn stirling_approx(var: &str) -> Expr {
+  let n = Expr::Identifier(var.to_string());
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      // n^(n + 1/2)
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          n.clone(),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              n.clone(),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+            ],
+          },
+        ],
+      },
+      // Sqrt[2*Pi]
+      Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+        }],
+      },
+      // E^(-n)
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::Constant("E".to_string()),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), n],
+          },
+        ],
+      },
+    ],
+  }
+}
+
+/// Determine growth rate class for comparison.
+/// Returns a rough numerical "growth order" for comparing dominance:
+/// constants < log < polynomial < exponential < factorial
+fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
+  if !contains_var(expr, var) {
+    return Some(0.0); // constant
+  }
+  match expr {
+    Expr::Identifier(name) if name == var => Some(1.0), // linear ~ n^1
+
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      Some(0.001) // Log grows slower than any polynomial
+    }
+
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if is_pure_var(&args[0], var) && !contains_var(&args[1], var) {
+        // var^k - polynomial
+        try_eval_to_f64(&args[1]).map(|k| k)
+      } else if !contains_var(&args[0], var) && contains_var(&args[1], var) {
+        // const^var - exponential
+        try_eval_to_f64(&args[0]).map(|base| 100.0 + base.ln())
+      } else {
+        Some(200.0) // var^var or similar - super-exponential
+      }
+    }
+
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Product: max of growth orders (approximately)
+      let mut max_order = 0.0f64;
+      for arg in args {
+        if let Some(o) = growth_order(arg, var) {
+          max_order = max_order.max(o);
+        } else {
+          return None;
+        }
+      }
+      Some(max_order)
+    }
+
+    Expr::FunctionCall { name, args }
+      if name == "Factorial"
+        && args.len() == 1
+        && is_pure_var(&args[0], var) =>
+    {
+      Some(300.0) // factorial grows faster than exponential
+    }
+
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      growth_order(&args[0], var).map(|o| o * 0.5)
+    }
+
+    // BinaryOp variants
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = growth_order(left, var)?;
+      let r = growth_order(right, var)?;
+      Some(l.max(r))
+    }
+
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if is_pure_var(left, var) && !contains_var(right, var) {
+        try_eval_to_f64(right)
+      } else if !contains_var(left, var) && contains_var(right, var) {
+        try_eval_to_f64(left).map(|base| 100.0 + base.ln())
+      } else {
+        Some(200.0)
+      }
+    }
+
+    _ => None,
+  }
+}
+
+/// Find the dominant term in a sum
+fn asymptotic_sum(terms: &[Expr], var: &str) -> Option<Expr> {
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return discrete_asymptotic_leading(&terms[0], var);
+  }
+
+  // Get asymptotic of each term and find the dominant one
+  let mut best_expr = discrete_asymptotic_leading(&terms[0], var)?;
+  let mut best_order = growth_order(&best_expr, var).unwrap_or(0.0);
+
+  for term in &terms[1..] {
+    let asym = discrete_asymptotic_leading(term, var)?;
+    let order = growth_order(&asym, var).unwrap_or(0.0);
+    if order > best_order {
+      best_expr = asym;
+      best_order = order;
+    } else if (order - best_order).abs() < 1e-10 {
+      // Same order - need to add them (e.g. 3n^2 + 5n^2 -> 8n^2)
+      // For simplicity, if they have the same growth order, keep as sum
+      best_expr = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![best_expr, asym],
+      };
+    }
+  }
+  Some(best_expr)
+}
+
+/// Asymptotic of Binomial[n, n/2] → 2^(n+1/2) / (Sqrt[n]*Sqrt[Pi])
+fn asymptotic_binomial(
+  n_expr: &Expr,
+  k_expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  // Check if k = n/2
+  let is_half = match k_expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => is_pure_var(left, var) && matches!(**right, Expr::Integer(2)),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      let has_half = args.iter().any(|a| {
+        matches!(a, Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2
+          && matches!((&ra[0], &ra[1]), (Expr::Integer(1), Expr::Integer(2))))
+      });
+      let has_var = args.iter().any(|a| is_pure_var(a, var));
+      has_half && has_var
+    }
+    _ => false,
+  };
+
+  if !is_half || !is_pure_var(n_expr, var) {
+    return None;
+  }
+
+  let n = Expr::Identifier(var.to_string());
+  // 2^(1/2 + n) / (Sqrt[n] * Sqrt[Pi])
+  Some(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      // 2^(1/2 + n)
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::Integer(2),
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+              n.clone(),
+            ],
+          },
+        ],
+      },
+      // 1 / (Sqrt[n] * Sqrt[Pi])
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![n],
+              },
+              Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![Expr::Constant("Pi".to_string())],
+              },
+            ],
+          },
+          Expr::Integer(-1),
+        ],
+      },
+    ],
+  })
+}
+
 // ─── PowerExpand ──────────────────────────────────────────────────────
