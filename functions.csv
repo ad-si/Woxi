@@ -4136,7 +4136,7 @@ Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2,728
 PDF,Probability density function,✅,pure,6,254
 PeakDetect,,,,10,2798
 PeanoCurve,,,,11.1,4437
-PearsonChiSquareTest,,,,8,2734
+PearsonChiSquareTest,perform a Pearson chi-square goodness-of-fit test,✅,none,8,2734
 PearsonCorrelationTest,,,,9,3697
 PearsonDistribution,Pearson family distribution,🚫,,8,2071
 PenttinenPointProcess,,🚫,,12.2,5486
