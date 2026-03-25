@@ -1284,7 +1284,7 @@ DaylightQ,,,,10,4527
 DayMatchQ,,,,9,3134
 DayName,Return the name of the day of the week for a given date,✅,none,9,1981
 DayNightTerminator,,🚫,,10,4104
-DayPlus,,,,9,2867
+DayPlus,Adds a number of days to a date returning a DateObject,✅,pure,9,2867
 DayRange,Generate date range between two dates (requires calendar system),🚫,,9,1991
 DayRound,,,,9,3363
 DeBruijnGraph,,,,8,3031
