@@ -3650,7 +3650,7 @@ MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4,1760
 MultiplySides,Multiply both sides of an equation by an expression,✅,none,11.3,2611
 Multiselection,,,,9,4809
 MultivariateHypergeometricDistribution,,,,8,2816
-MultivariatePoissonDistribution,,,,8,2720
+MultivariatePoissonDistribution,Represents a multivariate Poisson distribution,✅,pure,8,2720
 MultivariateTDistribution,probability distribution,🚫,None,8,2380
 N,Gives the numerical value of an expression,✅,pure,1,49
 NakagamiDistribution,,,,8,3363

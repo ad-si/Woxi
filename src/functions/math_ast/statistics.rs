@@ -274,6 +274,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (mean, _) = super::distributions::multinomial_mean_variance(dargs)?;
       Ok(mean)
     }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "MultivariatePoissonDistribution" => {
+      let (mean, _) =
+        super::distributions::multivariate_poisson_mean_variance(dargs)?;
+      Ok(mean)
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
       args: args.to_vec(),
@@ -430,6 +438,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "MultinomialDistribution" => {
       let (_, variance) =
         super::distributions::multinomial_mean_variance(dargs)?;
+      Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "MultivariatePoissonDistribution" => {
+      let (_, variance) =
+        super::distributions::multivariate_poisson_mean_variance(dargs)?;
       Ok(variance)
     }
     _ => Ok(Expr::FunctionCall {

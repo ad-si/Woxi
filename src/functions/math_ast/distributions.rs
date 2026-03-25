@@ -2504,6 +2504,41 @@ pub fn multinomial_mean_variance(
   Ok((Expr::List(means), Expr::List(variances)))
 }
 
+/// Mean and Variance for MultivariatePoissonDistribution[theta0, {theta1, ..., thetan}]
+/// Mean = {theta0 + theta1, ..., theta0 + thetan}
+/// Variance = {theta0 + theta1, ..., theta0 + thetan} (same as mean)
+pub fn multivariate_poisson_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MultivariatePoissonDistribution expects 2 arguments".into(),
+    ));
+  }
+  let theta0 = dargs[0].clone();
+  let thetas = match &dargs[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "MultivariatePoissonDistribution: second argument must be a list"
+          .into(),
+      ));
+    }
+  };
+
+  let mut components = Vec::new();
+  for theta_i in &thetas {
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![theta0.clone(), theta_i.clone()],
+    };
+    components.push(eval(sum)?);
+  }
+
+  // Variance equals Mean for Poisson marginals
+  Ok((Expr::List(components.clone()), Expr::List(components)))
+}
+
 /// PDF[NegativeBinomialDistribution[n, p], k]
 /// = (1-p)^k * p^n * Binomial[k+n-1, n-1] for k >= 0
 fn pdf_negative_binomial(
