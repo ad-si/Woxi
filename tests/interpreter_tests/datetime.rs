@@ -468,3 +468,47 @@ mod day_name {
     assert_eq!(interpret("DayName[{2024, 3, 3}]").unwrap(), "Sunday");
   }
 }
+
+mod day_plus {
+  use super::*;
+
+  #[test]
+  fn add_days() {
+    assert_eq!(
+      interpret("DayPlus[{2024, 1, 15}, 10]").unwrap(),
+      "DateObject[{2024, 1, 25}, Day]"
+    );
+  }
+
+  #[test]
+  fn subtract_days() {
+    assert_eq!(
+      interpret("DayPlus[{2024, 1, 15}, -5]").unwrap(),
+      "DateObject[{2024, 1, 10}, Day]"
+    );
+  }
+
+  #[test]
+  fn leap_year() {
+    assert_eq!(
+      interpret("DayPlus[{2024, 2, 28}, 1]").unwrap(),
+      "DateObject[{2024, 2, 29}, Day]"
+    );
+  }
+
+  #[test]
+  fn cross_month() {
+    assert_eq!(
+      interpret("DayPlus[{2024, 1, 31}, 1]").unwrap(),
+      "DateObject[{2024, 2, 1}, Day]"
+    );
+  }
+
+  #[test]
+  fn business_days() {
+    assert_eq!(
+      interpret(r#"DayPlus[{2024, 1, 15}, 10, "BusinessDay"]"#).unwrap(),
+      "DateObject[{2024, 1, 29}, Day]"
+    );
+  }
+}

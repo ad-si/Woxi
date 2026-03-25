@@ -1152,3 +1152,92 @@ pub fn resolve_date_to_list(expr: &Expr) -> Option<Expr> {
     _ => None,
   }
 }
+
+// ─── DayPlus ────────────────────────────────────────────────────────
+
+/// DayPlus[date, n] - adds n days to a date and returns DateObject
+/// DayPlus[date, n, "BusinessDay"] - adds n business days (Mon-Fri)
+pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "DayPlus".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let n_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+
+  let components = match extract_date_components(&date_arg) {
+    Some(c) => c,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "DayPlus".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let year = components[0] as i64;
+  let month = if components.len() > 1 {
+    components[1] as i64
+  } else {
+    1
+  };
+  let day = if components.len() > 2 {
+    components[2] as i64
+  } else {
+    1
+  };
+
+  let n = match &n_arg {
+    Expr::Integer(n) => *n as i64,
+    Expr::Real(f) => *f as i64,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DayPlus".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Check for "BusinessDay" mode
+  let is_business = if args.len() == 3 {
+    matches!(&args[2], Expr::String(s) if s == "BusinessDay")
+  } else {
+    false
+  };
+
+  let (ny, nm, nd) = if is_business {
+    // Add business days (skip weekends)
+    let mut abs = date_to_absolute_days(year, month, day);
+    let step = if n >= 0 { 1 } else { -1 };
+    let mut remaining = n.abs();
+    while remaining > 0 {
+      abs += step;
+      let (y, m, d) = absolute_days_to_date(abs);
+      let dow = day_of_week(y, m, d);
+      // Skip Saturday (5) and Sunday (6) — dow uses 0=Monday convention
+      if dow != 5 && dow != 6 {
+        remaining -= 1;
+      }
+    }
+    absolute_days_to_date(abs)
+  } else {
+    let abs = date_to_absolute_days(year, month, day) + n;
+    absolute_days_to_date(abs)
+  };
+
+  // Return DateObject[{y, m, d}, Day]
+  Ok(Expr::FunctionCall {
+    name: "DateObject".to_string(),
+    args: vec![
+      Expr::List(vec![
+        Expr::Integer(ny as i128),
+        Expr::Integer(nm as i128),
+        Expr::Integer(nd as i128),
+      ]),
+      Expr::Identifier("Day".to_string()),
+    ],
+  })
+}
