@@ -4052,3 +4052,43 @@ pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(parts))
 }
+
+// ─── DictionaryWordQ ──────────────────────────────────────────────
+
+use std::sync::LazyLock;
+
+static DICTIONARY_WORDS: LazyLock<std::collections::HashSet<String>> =
+  LazyLock::new(|| {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+
+    let compressed = include_bytes!("../../resources/dictionary_words.txt.gz");
+    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut text = String::new();
+    decoder
+      .read_to_string(&mut text)
+      .expect("Failed to decompress dictionary");
+
+    text.lines().map(|line| line.to_lowercase()).collect()
+  });
+
+/// DictionaryWordQ[string] - True if string is a dictionary word
+pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DictionaryWordQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let result = s.is_empty() || DICTIONARY_WORDS.contains(&s.to_lowercase());
+      Ok(Expr::Identifier(
+        if result { "True" } else { "False" }.to_string(),
+      ))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "DictionaryWordQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}

@@ -131,6 +131,9 @@ pub fn dispatch_string_functions(
     "DigitQ" if args.len() == 1 => {
       return Some(crate::functions::string_ast::digit_q_ast(args));
     }
+    "DictionaryWordQ" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::dictionary_word_q_ast(args));
+    }
     "StringInsert" if args.len() == 3 => {
       return Some(crate::functions::string_ast::string_insert_ast(args));
     }

@@ -1412,7 +1412,7 @@ Diamond,,,,3,3889
 DiamondMatrix,Creates a diamond-shaped matrix of ones,✅,pure,7,2236
 DiceDissimilarity,,,,6,4204
 DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6,872
-DictionaryWordQ,,,,10.4,2712
+DictionaryWordQ,Tests whether a string is a recognized dictionary word,✅,pure,10.4,2712
 Diff,,,,14.1,
 Diff3,,,,14.1,
 DiffAlignmentMethod,,,,14.1,
