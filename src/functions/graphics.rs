@@ -5960,6 +5960,69 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
   Some(svg)
 }
 
+// ─── KochCurve ──────────────────────────────────────────────────────
+
+/// KochCurve[n] - returns a Line representing the Koch curve at level n
+pub fn koch_curve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KochCurve called with wrong number of arguments; 1 or 2 arguments are expected.".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "KochCurve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Start with a line from (0,0) to (1,0)
+  let mut points: Vec<(f64, f64)> = vec![(0.0, 0.0), (1.0, 0.0)];
+
+  for _ in 0..n {
+    let mut new_points: Vec<(f64, f64)> =
+      Vec::with_capacity(points.len() * 4 - 3);
+    for i in 0..points.len() - 1 {
+      let (x1, y1) = points[i];
+      let (x2, y2) = points[i + 1];
+      let dx = x2 - x1;
+      let dy = y2 - y1;
+
+      // Point at 1/3
+      let p1 = (x1 + dx / 3.0, y1 + dy / 3.0);
+      // Peak of equilateral triangle
+      let p2 = (
+        x1 + dx / 2.0 - dy * (3.0_f64.sqrt() / 6.0),
+        y1 + dy / 2.0 + dx * (3.0_f64.sqrt() / 6.0),
+      );
+      // Point at 2/3
+      let p3 = (x1 + 2.0 * dx / 3.0, y1 + 2.0 * dy / 3.0);
+
+      new_points.push(points[i]);
+      new_points.push(p1);
+      new_points.push(p2);
+      new_points.push(p3);
+    }
+    new_points.push(*points.last().unwrap());
+    points = new_points;
+  }
+
+  // Build Line[{{x1, y1}, {x2, y2}, ...}]
+  let point_exprs: Vec<Expr> = points
+    .iter()
+    .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+    .collect();
+
+  Ok(Expr::FunctionCall {
+    name: "Line".to_string(),
+    args: vec![Expr::List(point_exprs)],
+  })
+}
+
 // ─── LinearGradientFilling ──────────────────────────────────────────
 
 /// Check if an expression is a color specification (RGBColor, GrayLevel, Hue, CMYKColor)

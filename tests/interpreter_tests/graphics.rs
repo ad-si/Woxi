@@ -3911,3 +3911,48 @@ mod linear_gradient_filling {
     );
   }
 }
+
+mod koch_curve {
+  use super::*;
+
+  #[test]
+  fn level_0() {
+    assert_eq!(
+      interpret("KochCurve[0]").unwrap(),
+      "Line[{{0., 0.}, {1., 0.}}]"
+    );
+  }
+
+  #[test]
+  fn level_1() {
+    let result = interpret("KochCurve[1]").unwrap();
+    assert!(
+      result.starts_with(
+        "Line[{{0., 0.}, {0.3333333333333333, 0.}, {0.5, 0.288675"
+      )
+    );
+    assert!(result.ends_with("{0.6666666666666666, 0.}, {1., 0.}}]"));
+  }
+
+  #[test]
+  fn level_2_point_count() {
+    let result = interpret("KochCurve[2]").unwrap();
+    // Level 2 should have 17 points (4^2 + 1)
+    // Rough check: starts and ends correctly
+    assert!(result.starts_with("Line[{{0., 0.},"));
+    assert!(result.ends_with("{1., 0.}}]"));
+  }
+
+  #[test]
+  fn level_3() {
+    let result = interpret("KochCurve[3]").unwrap();
+    // Level 3 should have 65 points (4^3 + 1)
+    assert!(result.starts_with("Line[{{0., 0.},"));
+    assert!(result.ends_with("{1., 0.}}]"));
+  }
+
+  #[test]
+  fn non_integer_returns_unevaluated() {
+    assert_eq!(interpret("KochCurve[x]").unwrap(), "KochCurve[x]");
+  }
+}
