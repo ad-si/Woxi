@@ -24,6 +24,9 @@ pub fn dispatch_association_functions(
     "KeySort" if args.len() == 1 => {
       return Some(crate::functions::association_ast::key_sort_ast(args));
     }
+    "KeyUnion" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::association_ast::key_union_ast(args));
+    }
     "KeyValueMap" if args.len() == 2 => {
       return Some(crate::functions::association_ast::key_value_map_ast(args));
     }

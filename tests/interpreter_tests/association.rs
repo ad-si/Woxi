@@ -536,3 +536,31 @@ mod key {
     );
   }
 }
+
+mod key_union {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("KeyUnion[{<|a -> 1, b -> 2|>, <|b -> 3, c -> 4|>}]").unwrap(),
+      "{<|a -> 1, b -> 2, c -> Missing[KeyAbsent, c]|>, <|a -> Missing[KeyAbsent, a], b -> 3, c -> 4|>}"
+    );
+  }
+
+  #[test]
+  fn disjoint_keys() {
+    assert_eq!(
+      interpret("KeyUnion[{<|a -> 1|>, <|b -> 2|>}]").unwrap(),
+      "{<|a -> 1, b -> Missing[KeyAbsent, b]|>, <|a -> Missing[KeyAbsent, a], b -> 2|>}"
+    );
+  }
+
+  #[test]
+  fn identical_keys() {
+    assert_eq!(
+      interpret("KeyUnion[{<|a -> 1|>, <|a -> 2|>}]").unwrap(),
+      "{<|a -> 1|>, <|a -> 2|>}"
+    );
+  }
+}
