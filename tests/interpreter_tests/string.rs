@@ -2008,3 +2008,56 @@ mod template_apply {
     assert_eq!(interpret(r#"TemplateApply[42, {1}]"#).unwrap(), "42");
   }
 }
+
+mod dictionary_word_q {
+  use super::*;
+
+  #[test]
+  fn common_word() {
+    assert_eq!(interpret(r#"DictionaryWordQ["dolphin"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn nonsense_word() {
+    assert_eq!(
+      interpret(r#"DictionaryWordQ["beltalowda"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn case_insensitive() {
+    assert_eq!(interpret(r#"DictionaryWordQ["Hello"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn all_caps() {
+    assert_eq!(interpret(r#"DictionaryWordQ["HELLO"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret(r#"DictionaryWordQ[""]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn multi_word_phrase() {
+    assert_eq!(
+      interpret(r#"DictionaryWordQ["ice cream"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn single_letter() {
+    assert_eq!(interpret(r#"DictionaryWordQ["a"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn non_string_argument() {
+    assert_eq!(
+      interpret(r#"DictionaryWordQ[123]"#).unwrap(),
+      "DictionaryWordQ[123]"
+    );
+  }
+}
