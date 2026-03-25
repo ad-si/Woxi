@@ -56,6 +56,9 @@ pub fn dispatch_plotting(
     "Graphics3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::graphics3d_ast(args))
     }
+    "LinearGradientFilling" => Some(
+      crate::functions::graphics::linear_gradient_filling_ast(args),
+    ),
     "ListPlot3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::list_plot3d_ast(args))
     }
