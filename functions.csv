@@ -3026,7 +3026,7 @@ KnapsackSolve,,,,11,3427
 KnightTourGraph,graph of knight moves on a chessboard,✅,Computation,8,2675
 KnotData,,🚫,,6,906
 KnownUnitQ,,,,9,4356
-KochCurve,,,,11.1,2777
+KochCurve,Generates a Koch fractal curve as a Line primitive,✅,pure,11.1,2777
 KolmogorovSmirnovTest,statistical test,🚫,None,8,2431
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4,591
 KroneckerModelDecomposition,,,,9,4173
