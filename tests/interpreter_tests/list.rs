@@ -3957,3 +3957,81 @@ mod groupings {
     assert_eq!(interpret("Groupings[{a, b, c, d}, 3]").unwrap(), "{}");
   }
 }
+
+mod peak_detect {
+  use super::*;
+
+  #[test]
+  fn basic_peaks() {
+    assert_eq!(
+      interpret("PeakDetect[{1, 3, 2, 5, 1, 4, 2}]").unwrap(),
+      "{0, 1, 0, 1, 0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("PeakDetect[{1}]").unwrap(), "{0}");
+  }
+
+  #[test]
+  fn all_equal() {
+    assert_eq!(interpret("PeakDetect[{2, 2, 2}]").unwrap(), "{0, 0, 0}");
+  }
+
+  #[test]
+  fn plateau_peak() {
+    assert_eq!(
+      interpret("PeakDetect[{1, 3, 3, 2}]").unwrap(),
+      "{0, 1, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn monotonic_increasing() {
+    assert_eq!(
+      interpret("PeakDetect[{1, 2, 3, 4, 5}]").unwrap(),
+      "{0, 0, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn monotonic_decreasing() {
+    assert_eq!(interpret("PeakDetect[{3, 2, 1}]").unwrap(), "{1, 0, 0}");
+  }
+
+  #[test]
+  fn endpoints_as_peaks() {
+    assert_eq!(
+      interpret("PeakDetect[{5, 3, 1, 3, 5}]").unwrap(),
+      "{1, 0, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn sharpness_1() {
+    assert_eq!(
+      interpret("PeakDetect[{1, 3, 2, 5, 1, 4, 2}, 1]").unwrap(),
+      "{0, 0, 0, 1, 0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn sharpness_2() {
+    assert_eq!(
+      interpret("PeakDetect[{1, 3, 2, 5, 1, 4, 2}, 2]").unwrap(),
+      "{0, 0, 0, 1, 0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn docs_example() {
+    assert_eq!(
+      interpret(
+        "PeakDetect[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}]"
+      )
+      .unwrap(),
+      "{1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0}"
+    );
+  }
+}

@@ -4134,7 +4134,7 @@ PauliMatrix,Returns a Pauli spin matrix,✅,pure,7,672
 PaulWavelet,,🚫,,8,4006
 Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2,728
 PDF,Probability density function,✅,pure,6,254
-PeakDetect,,,,10,2798
+PeakDetect,Detects peaks in a list of values with optional sharpness filtering,✅,pure,10,2798
 PeanoCurve,,,,11.1,4437
 PearsonChiSquareTest,perform a Pearson chi-square goodness-of-fit test,✅,none,8,2734
 PearsonCorrelationTest,,,,9,3697

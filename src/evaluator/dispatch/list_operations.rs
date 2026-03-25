@@ -422,6 +422,9 @@ pub fn dispatch_list_operations(
     "Groupings" if args.len() == 2 => {
       return Some(list_helpers_ast::groupings_ast(args));
     }
+    "PeakDetect" if !args.is_empty() && args.len() <= 2 => {
+      return Some(list_helpers_ast::peak_detect_ast(args));
+    }
     "SparseArray" if !args.is_empty() => {
       // Return SparseArray unevaluated (like Wolfram); use Normal[] to expand
       return Some(Ok(Expr::FunctionCall {
