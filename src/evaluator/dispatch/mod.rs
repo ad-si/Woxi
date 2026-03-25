@@ -2963,14 +2963,10 @@ pub fn evaluate_function_call_ast_inner(
           {
             let n = &dist_args[0];
             let p = &dist_args[1];
-            // Build ((-1 + n)*n)/2
+            // Build ((-1 + n)*n)/2 — flatten Times to get correct parenthesization
             let n_minus_1 = Expr::FunctionCall {
               name: "Plus".to_string(),
               args: vec![Expr::Integer(-1), n.clone()],
-            };
-            let product = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![n_minus_1, n.clone()],
             };
             let half = Expr::FunctionCall {
               name: "Times".to_string(),
@@ -2979,7 +2975,8 @@ pub fn evaluate_function_call_ast_inner(
                   name: "Rational".to_string(),
                   args: vec![Expr::Integer(1), Expr::Integer(2)],
                 },
-                product,
+                n_minus_1,
+                n.clone(),
               ],
             };
             return Ok(Expr::FunctionCall {
@@ -3062,10 +3059,7 @@ pub fn evaluate_function_call_ast_inner(
               name: "Plus".to_string(),
               args: vec![Expr::Integer(-1), n.clone()],
             };
-            let product = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![n_minus_1.clone(), n.clone()],
-            };
+            // Flatten Times to get correct parenthesization: ((-1 + n)*n)/2
             let half = Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
@@ -3073,7 +3067,8 @@ pub fn evaluate_function_call_ast_inner(
                   name: "Rational".to_string(),
                   args: vec![Expr::Integer(1), Expr::Integer(2)],
                 },
-                product,
+                n_minus_1.clone(),
+                n.clone(),
               ],
             };
             return Ok(Expr::FunctionCall {
@@ -3082,7 +3077,55 @@ pub fn evaluate_function_call_ast_inner(
             });
           }
 
-          _ => {} // Fall through - return unevaluated
+          _ => {
+            // Unknown property: return unevaluated with formal variable
+            // e.g., g → \[FormalG] (Wolfram convention for placeholder variables)
+            if let Expr::Identifier(var_name) = var {
+              let formal_name = if var_name.len() == 1 {
+                let ch = var_name.chars().next().unwrap();
+                let formal_ch = ch.to_uppercase().next().unwrap_or(ch);
+                format!("\\[Formal{}]", formal_ch)
+              } else {
+                var_name.clone()
+              };
+              if formal_name != *var_name {
+                let formal_var = Expr::Identifier(formal_name);
+                // Replace var in the property and Distributed args
+                fn replace_var(
+                  expr: &Expr,
+                  old: &str,
+                  new_expr: &Expr,
+                ) -> Expr {
+                  match expr {
+                    Expr::Identifier(name) if name == old => new_expr.clone(),
+                    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+                      name: name.clone(),
+                      args: args
+                        .iter()
+                        .map(|a| replace_var(a, old, new_expr))
+                        .collect(),
+                    },
+                    Expr::List(items) => Expr::List(
+                      items
+                        .iter()
+                        .map(|a| replace_var(a, old, new_expr))
+                        .collect(),
+                    ),
+                    _ => expr.clone(),
+                  }
+                }
+                let new_property = replace_var(property, var_name, &formal_var);
+                let new_distributed = Expr::FunctionCall {
+                  name: "Distributed".to_string(),
+                  args: vec![formal_var, graph_dist.clone()],
+                };
+                return Ok(Expr::FunctionCall {
+                  name: "GraphPropertyDistribution".to_string(),
+                  args: vec![new_property, new_distributed],
+                });
+              }
+            }
+          }
         }
       }
     }
@@ -3303,6 +3346,35 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Function {
       body: Box::new(poly_expr),
     });
+  }
+
+  // BoundedRegionQ[region] — test if a geometric region is bounded
+  if name == "BoundedRegionQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: rname,
+      args: _,
+    } = &args[0]
+    {
+      let result = match rname.as_str() {
+        // Bounded regions
+        "Disk" | "Ball" | "Rectangle" | "Cuboid" | "Polygon" | "Triangle"
+        | "Line" | "BezierCurve" | "BSplineCurve" | "Circle" | "Sphere"
+        | "Ellipsoid" | "Cone" | "Cylinder" | "Tetrahedron" | "Hexahedron"
+        | "Prism" | "Pyramid" | "Point" | "Interval" | "Simplex"
+        | "Parallelepiped" | "Annulus" | "StadiumShape" | "DiskSegment"
+        | "SphericalShell" | "CapsuleShape" => Some(true),
+        // Unbounded regions
+        "HalfPlane" | "HalfSpace" | "InfiniteLine" | "InfinitePlane"
+        | "HalfLine" | "ConicHullRegion" | "AffineHalfSpace"
+        | "AffineSpace" => Some(false),
+        _ => None,
+      };
+      if let Some(b) = result {
+        return Ok(Expr::Identifier(
+          if b { "True" } else { "False" }.to_string(),
+        ));
+      }
+    }
   }
 
   // FunctionContinuous[f, x] or FunctionContinuous[{f, cond}, x] or FunctionContinuous[f, {x, y, ...}]

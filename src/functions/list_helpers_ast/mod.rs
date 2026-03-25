@@ -16,7 +16,7 @@ mod mapping;
 mod properties;
 mod restructuring;
 mod set_operations;
-mod sorting;
+pub mod sorting;
 mod summation;
 mod utilities;
 

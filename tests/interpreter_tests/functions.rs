@@ -12530,6 +12530,41 @@ mod option_symbols_batch {
   }
 
   #[test]
+  fn bounded_region_q_bounded() {
+    assert_eq!(interpret("BoundedRegionQ[Disk[]]").unwrap(), "True");
+    assert_eq!(interpret("BoundedRegionQ[Ball[]]").unwrap(), "True");
+    assert_eq!(interpret("BoundedRegionQ[Rectangle[]]").unwrap(), "True");
+    assert_eq!(interpret("BoundedRegionQ[Circle[]]").unwrap(), "True");
+    assert_eq!(interpret("BoundedRegionQ[Sphere[]]").unwrap(), "True");
+    assert_eq!(interpret("BoundedRegionQ[Point[{0, 0}]]").unwrap(), "True");
+    assert_eq!(
+      interpret("BoundedRegionQ[Polygon[{{0,0},{1,0},{0,1}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[Line[{{0,0},{1,1}}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[Interval[{0, 1}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("BoundedRegionQ[Cuboid[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn bounded_region_q_unbounded() {
+    assert_eq!(
+      interpret("BoundedRegionQ[HalfPlane[{0,0},{1,0},{0,1}]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("BoundedRegionQ[InfiniteLine[{0,0},{1,1}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
   fn tutte_polynomial_empty_graph() {
     assert_eq!(
       interpret("TuttePolynomial[Graph[{1, 2, 3}, {}]][x, y]").unwrap(),
@@ -12674,7 +12709,7 @@ mod option_symbols_batch {
         "GraphPropertyDistribution[EdgeCount[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
       )
       .unwrap(),
-      "BinomialDistribution[(-1 + n)*n/2, p]"
+      "BinomialDistribution[((-1 + n)*n)/2, p]"
     );
   }
 
@@ -12729,7 +12764,7 @@ mod option_symbols_batch {
         "GraphPropertyDistribution[VertexDegree[g, 1], Distributed[g, UniformGraphDistribution[n, m]]]"
       )
       .unwrap(),
-      "HypergeometricDistribution[m, -1 + n, (-1 + n)*n/2]"
+      "HypergeometricDistribution[m, -1 + n, ((-1 + n)*n)/2]"
     );
   }
 
@@ -12741,7 +12776,7 @@ mod option_symbols_batch {
         "GraphPropertyDistribution[SomeProperty[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
       )
       .unwrap(),
-      "GraphPropertyDistribution[SomeProperty[g], Distributed[g, BernoulliGraphDistribution[n, p]]]"
+      "GraphPropertyDistribution[SomeProperty[\\[FormalG]], Distributed[\\[FormalG], BernoulliGraphDistribution[n, p]]]"
     );
   }
 

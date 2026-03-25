@@ -517,7 +517,7 @@ fn is_plain_func_call(e: &Expr) -> bool {
 /// For Plus/Times: the last (largest) symbolic argument
 /// For Power: the base
 /// For other functions: the last argument, or the function name
-fn expr_sort_key(e: &Expr) -> String {
+pub fn expr_sort_key(e: &Expr) -> String {
   match e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       // For Plus/Times (Orderless), use the last symbolic argument
@@ -528,6 +528,13 @@ fn expr_sort_key(e: &Expr) -> String {
           return crate::syntax::expr_to_string(last);
         }
         return expr_sort_key(last);
+      }
+      // For Power: sort key is the base (same as BinaryOp::Power)
+      if name == "Power" && args.len() == 2 {
+        if is_atom_expr(&args[0]) {
+          return crate::syntax::expr_to_string(&args[0]);
+        }
+        return expr_sort_key(&args[0]);
       }
       // For other function calls (like C[1], Sin[x]), use the function name
       name.clone()
@@ -557,7 +564,7 @@ fn expr_sort_key(e: &Expr) -> String {
 }
 
 /// Wolfram canonical string ordering: case-insensitive alphabetical, then lowercase < uppercase
-fn wolfram_string_order(a: &str, b: &str) -> i64 {
+pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
   let a_chars: Vec<char> = a.chars().collect();
   let b_chars: Vec<char> = b.chars().collect();
 

@@ -4234,6 +4234,43 @@ pub fn expr_to_string(expr: &Expr) -> String {
           };
           return format!("({}*{})/{}", n, inner_str, d);
         }
+        // Handle Times[Rational[1, d], e1, e2, ...] as "(e1*e2*...)/d" (3+ args)
+        // Only when no factor is I (imaginary unit, which pairs with the coefficient)
+        if args.len() >= 3
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
+          && let Expr::Integer(d) = &rargs[1]
+          && !args[1..].iter().any(is_denominator_factor)
+          && !args[1..]
+            .iter()
+            .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
+        {
+          let fmt_factor = |a: &Expr| -> String {
+            let s = expr_to_string(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          };
+          let rest: Vec<String> =
+            args[1..].iter().map(|a| fmt_factor(a)).collect();
+          let numer = rest.join("*");
+          return format!("({})/{}", numer, d);
+        }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
           // If the rest is a single Power[symbol, negative_int], use -x^(-n)
@@ -5628,7 +5665,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
           }
           return format!("{}/{}*1/{}", n, d, denom_str);
         }
-        // Handle Times[Rational[1, d], expr] as "expr/d"
+        // Handle Times[Rational[1, d], expr] as "expr/d" (2-arg)
         if args.len() == 2
           && let Expr::FunctionCall {
             name: rname,
@@ -5654,7 +5691,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
           };
           return format!("{}/{}", inner_str, d);
         }
-        // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
+        // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (2-arg, n != 1 and n != -1)
         if args.len() == 2
           && let Expr::FunctionCall {
             name: rname,
@@ -5682,6 +5719,43 @@ pub fn expr_to_output(expr: &Expr) -> String {
             inner
           };
           return format!("({}*{})/{}", n, inner_str, d);
+        }
+        // Handle Times[Rational[1, d], e1, e2, ...] as "(e1*e2*...)/d" (3+ args)
+        // Only when no factor is I (imaginary unit, which pairs with the coefficient)
+        if args.len() >= 3
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
+          && let Expr::Integer(d) = &rargs[1]
+          && !args[1..].iter().any(is_denominator_factor)
+          && !args[1..]
+            .iter()
+            .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
+        {
+          let fmt_factor = |a: &Expr| -> String {
+            let s = expr_to_output(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          };
+          let rest: Vec<String> =
+            args[1..].iter().map(|a| fmt_factor(a)).collect();
+          let numer = rest.join("*");
+          return format!("({})/{}", numer, d);
         }
         // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
         if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
