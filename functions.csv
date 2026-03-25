@@ -1379,7 +1379,7 @@ DerivativeFilter,,🚫,,8,2889
 DerivativePDETerm,,,,12.2,5390
 DerivedKey,,🚫,,12,5587
 DescriptorStateSpace,,,,9,4707
-DesignMatrix,,,,7,2786
+DesignMatrix,Constructs a design matrix by evaluating basis functions at data points,✅,pure,7,2786
 Det,Computes the determinant of a matrix,✅,pure,1,251
 DeviceClose,,🚫,,10,3291
 DeviceConfigure,,🚫,,10,3413

@@ -267,6 +267,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::conjugate_transpose_ast(args),
       );
     }
+    "DesignMatrix" if args.len() == 3 => {
+      return Some(crate::functions::linear_algebra_ast::design_matrix_ast(
+        args,
+      ));
+    }
     "Fit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::fit_ast(args));
     }
