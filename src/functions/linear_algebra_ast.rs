@@ -4212,3 +4212,87 @@ fn permutations_helper(
     perm.swap(start, i);
   }
 }
+
+// ─── DesignMatrix ───────────────────────────────────────────────────
+
+/// DesignMatrix[data, fns, vars] - constructs a design matrix
+/// by evaluating basis functions at each data point.
+/// Each row of data has predictor columns and a response (last column).
+pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "DesignMatrix expects 3 arguments".into(),
+    ));
+  }
+
+  let data = match &args[0] {
+    Expr::List(rows) => rows,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DesignMatrix: first argument must be a list of data points".into(),
+      ));
+    }
+  };
+
+  // Parse basis functions - can be single function or list
+  let fns: Vec<Expr> = match &args[1] {
+    Expr::List(fs) => fs.clone(),
+    single => vec![single.clone()],
+  };
+
+  // Parse variables - can be single variable or list
+  let vars: Vec<Expr> = match &args[2] {
+    Expr::List(vs) => vs.clone(),
+    single => vec![single.clone()],
+  };
+
+  // Check if first function is already 1 (constant term)
+  let has_constant = matches!(&fns[0], Expr::Integer(1));
+  let basis_fns: Vec<Expr> = if has_constant {
+    fns.clone()
+  } else {
+    let mut bfs = vec![Expr::Integer(1)];
+    bfs.extend(fns.iter().cloned());
+    bfs
+  };
+
+  let mut result_rows = Vec::new();
+  for row_expr in data {
+    let row = match row_expr {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "DesignMatrix: each data point must be a list".into(),
+        ));
+      }
+    };
+
+    // Predictors are all columns except the last
+    let predictors = &row[..row.len() - 1];
+
+    let mut result_row = Vec::new();
+    for func in &basis_fns {
+      // Substitute each variable with its predictor value
+      let mut expr = (*func).clone();
+      for (var_idx, var) in vars.iter().enumerate() {
+        if var_idx < predictors.len() {
+          // Build: func /. var -> value and evaluate
+          let rule = Expr::Rule {
+            pattern: Box::new(var.clone()),
+            replacement: Box::new(predictors[var_idx].clone()),
+          };
+          expr = Expr::FunctionCall {
+            name: "ReplaceAll".to_string(),
+            args: vec![expr, rule],
+          };
+        }
+      }
+      let substituted = evaluate_expr_to_expr(&expr)?;
+      let evaluated = evaluate_expr_to_expr(&substituted)?;
+      result_row.push(evaluated);
+    }
+    result_rows.push(Expr::List(result_row));
+  }
+
+  Ok(Expr::List(result_rows))
+}

@@ -1568,3 +1568,43 @@ mod logit_model_fit {
     );
   }
 }
+
+mod design_matrix {
+  use super::*;
+
+  #[test]
+  fn linear_single_var() {
+    assert_eq!(
+      interpret("DesignMatrix[{{1, 1}, {2, 2}, {3, 3}}, x, x]").unwrap(),
+      "{{1, 1}, {1, 2}, {1, 3}}"
+    );
+  }
+
+  #[test]
+  fn polynomial_basis() {
+    assert_eq!(
+      interpret("DesignMatrix[{{1, 1}, {2, 4}, {3, 9}}, {1, x, x^2}, x]")
+        .unwrap(),
+      "{{1, 1, 1}, {1, 2, 4}, {1, 3, 9}}"
+    );
+  }
+
+  #[test]
+  fn single_function() {
+    assert_eq!(
+      interpret("DesignMatrix[{{1, 1}, {2, 4}, {3, 9}}, x^2, x]").unwrap(),
+      "{{1, 1}, {1, 4}, {1, 9}}"
+    );
+  }
+
+  #[test]
+  fn multivariate() {
+    assert_eq!(
+      interpret(
+        "DesignMatrix[{{1, 2, 10}, {3, 4, 20}}, {1, x1, x2}, {x1, x2}]"
+      )
+      .unwrap(),
+      "{{1, 1, 2}, {1, 3, 4}}"
+    );
+  }
+}
