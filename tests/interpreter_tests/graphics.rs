@@ -3834,3 +3834,80 @@ mod discrete_plot_3d {
     assert_eq!(result, "-Graphics3D-");
   }
 }
+
+mod linear_gradient_filling {
+  use super::*;
+
+  #[test]
+  fn no_args_default() {
+    assert_eq!(
+      interpret("LinearGradientFilling[]").unwrap(),
+      "LinearGradientFilling[{0, 1} -> {GrayLevel[0], GrayLevel[1]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn two_colors() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red, Blue}]").unwrap(),
+      "LinearGradientFilling[{0, 1} -> {RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn three_colors() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red, Green, Blue}]").unwrap(),
+      "LinearGradientFilling[{0, 1/2, 1} -> {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn five_colors() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red, Green, Blue, Yellow, Black}]")
+        .unwrap(),
+      "LinearGradientFilling[{0, 1/4, 1/2, 3/4, 1} -> {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1], RGBColor[1, 1, 0], GrayLevel[0]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn with_angle() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red, Blue}, 45]").unwrap(),
+      "LinearGradientFilling[{0, 1} -> {RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 45, Fixed]"
+    );
+  }
+
+  #[test]
+  fn with_angle_and_scaled() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red, Blue}, 90, Scaled]").unwrap(),
+      "LinearGradientFilling[{0, 1} -> {RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 90, Scaled]"
+    );
+  }
+
+  #[test]
+  fn explicit_stop_positions() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{{0.2, Red}, {0.8, Blue}}]").unwrap(),
+      "LinearGradientFilling[{0.2, 0.8} -> {RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn single_color_in_list() {
+    assert_eq!(
+      interpret("LinearGradientFilling[{Red}]").unwrap(),
+      "LinearGradientFilling[{0, 1} -> {RGBColor[1, 0, 0], RGBColor[1, 0, 0]}, 0, Fixed]"
+    );
+  }
+
+  #[test]
+  fn single_color_not_list() {
+    assert_eq!(
+      interpret("LinearGradientFilling[Red]").unwrap(),
+      "LinearGradientFilling[RGBColor[1, 0, 0], 0, Fixed]"
+    );
+  }
+}

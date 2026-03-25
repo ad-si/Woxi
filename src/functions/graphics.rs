@@ -5959,3 +5959,115 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
   svg.push_str("</svg>");
   Some(svg)
 }
+
+// ─── LinearGradientFilling ──────────────────────────────────────────
+
+/// Check if an expression is a color specification (RGBColor, GrayLevel, Hue, CMYKColor)
+fn is_color_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "RGBColor" | "GrayLevel" | "Hue" | "CMYKColor"
+    ),
+    _ => false,
+  }
+}
+
+/// Generate evenly spaced stops from 0 to 1 for n colors as exact fractions
+fn evenly_spaced_stops(n: usize) -> Vec<Expr> {
+  if n <= 1 {
+    return vec![Expr::Integer(0), Expr::Integer(1)];
+  }
+  let denom = (n - 1) as i128;
+  (0..n)
+    .map(|i| crate::functions::make_rational_pub(i as i128, denom))
+    .collect()
+}
+
+/// LinearGradientFilling[...] - normalizes gradient color specifications
+pub fn linear_gradient_filling_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (stops, colors, angle, space) = if args.is_empty() {
+    // LinearGradientFilling[] → default black to white
+    let stops = vec![Expr::Integer(0), Expr::Integer(1)];
+    let colors = vec![
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![Expr::Integer(0)],
+      },
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![Expr::Integer(1)],
+      },
+    ];
+    (
+      stops,
+      colors,
+      Expr::Integer(0),
+      Expr::Identifier("Fixed".to_string()),
+    )
+  } else {
+    // Parse angle (2nd arg) and space (3rd arg)
+    let angle = if args.len() >= 2 {
+      args[1].clone()
+    } else {
+      Expr::Integer(0)
+    };
+    let space = if args.len() >= 3 {
+      args[2].clone()
+    } else {
+      Expr::Identifier("Fixed".to_string())
+    };
+
+    match &args[0] {
+      Expr::List(items) if !items.is_empty() => {
+        // Check if items are {pos, color} pairs or plain colors
+        let has_stop_pairs = items.iter().all(|item| {
+          matches!(item, Expr::List(pair) if pair.len() == 2 && !is_color_expr(&pair[0]))
+        });
+
+        if has_stop_pairs {
+          // {{pos1, color1}, {pos2, color2}, ...}
+          let mut stops = Vec::new();
+          let mut colors = Vec::new();
+          for item in items {
+            if let Expr::List(pair) = item {
+              stops.push(pair[0].clone());
+              colors.push(pair[1].clone());
+            }
+          }
+          (stops, colors, angle, space)
+        } else if items.len() == 1 {
+          // Single color → duplicate it
+          let stops = vec![Expr::Integer(0), Expr::Integer(1)];
+          let colors = vec![items[0].clone(), items[0].clone()];
+          (stops, colors, angle, space)
+        } else {
+          // Plain list of colors
+          let stops = evenly_spaced_stops(items.len());
+          let colors = items.clone();
+          (stops, colors, angle, space)
+        }
+      }
+      // Single non-list color arg
+      other => {
+        return Ok(Expr::FunctionCall {
+          name: "LinearGradientFilling".to_string(),
+          args: vec![other.clone(), angle, space],
+        });
+      }
+    }
+  };
+
+  // Build: LinearGradientFilling[{stops} -> {colors}, angle, space]
+  let rule = Expr::Rule {
+    pattern: Box::new(Expr::List(stops)),
+    replacement: Box::new(Expr::List(colors)),
+  };
+
+  Ok(Expr::FunctionCall {
+    name: "LinearGradientFilling".to_string(),
+    args: vec![rule, angle, space],
+  })
+}

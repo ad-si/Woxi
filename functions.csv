@@ -3181,7 +3181,7 @@ LindleyDistribution,,,,8,3889
 Line,Represents a line graphics primitive,✅,pure,1,59
 LinearFractionalOptimization,,,,12,5486
 LinearFractionalTransform,,,,6,3578
-LinearGradientFilling,,,,12.2,2712
+LinearGradientFilling,Specifies a linear gradient color filling for graphics,✅,pure,12.2,2712
 LinearGradientImage,,🚫,,10,2742
 LinearizingTransformationData,,🚫,,10,
 LinearLayer,,🚫,,11,1218
