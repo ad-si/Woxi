@@ -156,6 +156,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GompertzMakehamDistribution" => pdf_gompertz_makeham(dargs, x),
     "InverseGaussianDistribution" => pdf_inverse_gaussian(dargs, x),
     "StableDistribution" => pdf_stable(dargs, x),
+    "ArcSinDistribution" => pdf_arcsin(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1677,6 +1678,28 @@ fn distribution_mean_variance(
       };
       Ok((mean, var))
     }
+    "ArcSinDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "ArcSinDistribution expects 1 argument (a list {a, b})".into(),
+        ));
+      }
+      let (a, b) = match &dargs[0] {
+        Expr::List(bounds) if bounds.len() == 2 => {
+          (bounds[0].clone(), bounds[1].clone())
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "ArcSinDistribution expects a list {a, b}".into(),
+          ));
+        }
+      };
+      // Mean = (a + b) / 2
+      let mean = divide(plus(a.clone(), b.clone()), int(2));
+      // Variance = (b - a)^2 / 8
+      let var = divide(power(minus(b, a), int(2)), int(8));
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -2777,4 +2800,47 @@ fn cdf_stable(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       x,
     ],
   })
+}
+
+/// PDF[ArcSinDistribution[{a, b}], x]
+/// = Piecewise[{{1/(Pi*Sqrt[(x - a)*(b - x)]), a < x < b}}, 0]
+fn pdf_arcsin(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSinDistribution expects 1 argument (a list {a, b})".into(),
+    ));
+  }
+  let (a, b) = match &dargs[0] {
+    Expr::List(bounds) if bounds.len() == 2 => {
+      (bounds[0].clone(), bounds[1].clone())
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ArcSinDistribution expects a list {a, b}".into(),
+      ));
+    }
+  };
+
+  // density = 1 / (Pi * Sqrt[(x - a) * (b - x)])
+  let density = divide(
+    int(1),
+    times(
+      pi(),
+      sqrt(times(
+        minus(x.clone(), a.clone()),
+        minus(b.clone(), x.clone()),
+      )),
+    ),
+  );
+
+  // condition: a < x < b
+  let cond = Expr::Comparison {
+    operands: vec![a, x, b],
+    operators: vec![
+      crate::syntax::ComparisonOp::Less,
+      crate::syntax::ComparisonOp::Less,
+    ],
+  };
+
+  eval(piecewise(vec![(density, cond)], int(0)))
 }

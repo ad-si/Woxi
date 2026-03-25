@@ -259,6 +259,19 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "ArcSinDistribution" if args.is_empty() => {
+      // Default: ArcSinDistribution[{0, 1}]
+      return Some(Ok(Expr::FunctionCall {
+        name: "ArcSinDistribution".to_string(),
+        args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)])],
+      }));
+    }
+    "ArcSinDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "ArcSinDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "HalfNormalDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "HalfNormalDistribution".to_string(),

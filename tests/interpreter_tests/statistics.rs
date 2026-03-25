@@ -1911,3 +1911,49 @@ mod multivariate_poisson_distribution {
     );
   }
 }
+
+mod arcsin_distribution {
+  use super::*;
+
+  #[test]
+  fn default_form() {
+    assert_eq!(
+      interpret("ArcSinDistribution[]").unwrap(),
+      "ArcSinDistribution[{0, 1}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_form() {
+    assert_eq!(
+      interpret("ArcSinDistribution[{a, b}]").unwrap(),
+      "ArcSinDistribution[{a, b}]"
+    );
+  }
+
+  #[test]
+  fn mean_default() {
+    assert_eq!(interpret("Mean[ArcSinDistribution[]]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[ArcSinDistribution[{a, b}]]").unwrap(),
+      "(a + b)/2"
+    );
+  }
+
+  #[test]
+  fn variance_default() {
+    assert_eq!(interpret("Variance[ArcSinDistribution[]]").unwrap(), "1/8");
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[ArcSinDistribution[{a, b}]]").unwrap(),
+      "(-a + b)^2/8"
+    );
+  }
+}
