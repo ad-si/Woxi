@@ -1189,3 +1189,133 @@ fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
     }
   }
 }
+
+// ─── PeakDetect ─────────────────────────────────────────────────────
+
+/// PeakDetect[data] or PeakDetect[data, s]
+/// Returns a list of 0s and 1s indicating peak positions.
+/// Parameter s (default 0) controls sharpness filtering:
+/// with s=0, finds all local peaks; higher s filters out less prominent peaks.
+pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PeakDetect expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let data = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PeakDetect".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let sharpness: usize = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(s) if *s >= 0 => *s as usize,
+      _ => 0,
+    }
+  } else {
+    0
+  };
+
+  let n = data.len();
+  if n == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Convert to f64 values
+  let values: Vec<f64> = data
+    .iter()
+    .map(|e| crate::functions::math_ast::try_eval_to_f64(e).unwrap_or(f64::NAN))
+    .collect();
+
+  // Step 1: Find all local peaks
+  // A point is a peak if it's >= both immediate neighbors AND
+  // the plateau it belongs to (if any) has strictly lower values on both sides.
+  let mut is_peak = vec![false; n];
+  for i in 0..n {
+    let val = values[i];
+    let left_ok = i == 0 || val >= values[i - 1];
+    let right_ok = i == n - 1 || val >= values[i + 1];
+
+    if !(left_ok && right_ok) {
+      continue;
+    }
+
+    // Find the extent of the plateau (consecutive equal values)
+    let mut plateau_left = i;
+    while plateau_left > 0 && values[plateau_left - 1] == val {
+      plateau_left -= 1;
+    }
+    let mut plateau_right = i;
+    while plateau_right < n - 1 && values[plateau_right + 1] == val {
+      plateau_right += 1;
+    }
+
+    // Check that outside the plateau, values are strictly lower on at least one side
+    let left_strict = plateau_left == 0 || values[plateau_left - 1] < val;
+    let right_strict =
+      plateau_right == n - 1 || values[plateau_right + 1] < val;
+    // Both sides must be strictly lower (or at boundary)
+    is_peak[i] = left_strict
+      && right_strict
+      && (plateau_left > 0 || plateau_right < n - 1); // not all equal
+  }
+
+  // Step 2: Apply sharpness filter — compute prominence and filter
+  if sharpness > 0 {
+    // Compute prominence for each peak
+    let mut prominences: Vec<f64> = vec![0.0; n];
+    for i in 0..n {
+      if !is_peak[i] {
+        continue;
+      }
+      let val = values[i];
+      // Find the minimum of the highest points on each side
+      // between this peak and the next higher peak (or boundary)
+      let mut left_min = val;
+      for j in (0..i).rev() {
+        left_min = left_min.min(values[j]);
+        if values[j] > val {
+          break;
+        }
+      }
+      let mut right_min = val;
+      for j in (i + 1)..n {
+        right_min = right_min.min(values[j]);
+        if values[j] > val {
+          break;
+        }
+      }
+      prominences[i] = val - left_min.max(right_min);
+    }
+
+    // Sort prominences to find threshold
+    let mut sorted_proms: Vec<f64> =
+      prominences.iter().copied().filter(|p| *p > 0.0).collect();
+    sorted_proms
+      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    if !sorted_proms.is_empty() {
+      // Use sharpness to determine how many peaks to keep
+      // Higher sharpness removes less prominent peaks
+      let threshold_idx = (sharpness).min(sorted_proms.len() - 1);
+      let threshold = sorted_proms[threshold_idx];
+      for i in 0..n {
+        if is_peak[i] && prominences[i] < threshold {
+          is_peak[i] = false;
+        }
+      }
+    }
+  }
+
+  let result = is_peak
+    .iter()
+    .map(|&p| Expr::Integer(if p { 1 } else { 0 }))
+    .collect();
+  Ok(Expr::List(result))
+}
