@@ -190,7 +190,7 @@ ArcSecDegrees,,,,14.1,
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1,335
 ArcSin,Returns the arc sine of a number,✅,pure,1,250
 ArcSinDegrees,,,,14.1,
-ArcSinDistribution,,,,8,2880
+ArcSinDistribution,Represents an arcsine distribution on an interval,✅,pure,8,2880
 ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1,349
 ArcTan,Returns the arc tangent of a number,✅,pure,1,153
 ArcTanDegrees,,,,14.1,

@@ -261,6 +261,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "LaplaceDistribution"
         | "RayleighDistribution"
         | "NegativeBinomialDistribution"
+        | "ArcSinDistribution"
     ) =>
     {
       let (mean, _) =
@@ -426,6 +427,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "LaplaceDistribution"
         | "RayleighDistribution"
         | "NegativeBinomialDistribution"
+        | "ArcSinDistribution"
     ) =>
     {
       let (_, variance) =
