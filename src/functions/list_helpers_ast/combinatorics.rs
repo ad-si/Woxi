@@ -450,3 +450,237 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::List(result))
 }
+
+// ─── Groupings ──────────────────────────────────────────────────────
+
+/// Groupings[n, k] or Groupings[list, k]
+/// Generate all ways to group elements using an operator of arity k.
+pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Groupings expects 2 arguments".into(),
+    ));
+  }
+
+  let arity = match &args[1] {
+    Expr::Integer(k) if *k >= 2 => *k as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Groupings".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let elements: Vec<Expr> = match &args[0] {
+    Expr::Integer(n) if *n >= 1 => (1..=*n).map(Expr::Integer).collect(),
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Groupings".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = elements.len();
+  let results = groupings_recursive(&elements, arity);
+  Ok(Expr::List(
+    results
+      .into_iter()
+      .map(|g| {
+        if n == 1 {
+          // Single element: return just the element (not wrapped in list)
+          g
+        } else {
+          g
+        }
+      })
+      .collect(),
+  ))
+}
+
+/// Check if n elements can form a valid k-ary tree
+fn can_group(n: usize, k: usize) -> bool {
+  if n == 1 {
+    return true;
+  }
+  if n < k {
+    return false;
+  }
+  // n = 1 + m*(k-1) for some m >= 1
+  (n - 1) % (k - 1) == 0
+}
+
+/// Generate all binary groupings of a contiguous slice of elements
+/// Uses interleaved ordering to match Wolfram Language output
+fn groupings_binary(elements: &[Expr]) -> Vec<Expr> {
+  let n = elements.len();
+  if n == 1 {
+    return vec![elements[0].clone()];
+  }
+  if n == 2 {
+    return vec![Expr::List(elements.to_vec())];
+  }
+
+  let mut results = Vec::new();
+
+  // Collect all (left_size, right_size) pairs and their groupings
+  // For binary trees: split into left (i elements) and right (n-i elements)
+  // Valid sizes: i where can_group(i,2) && can_group(n-i,2)
+  // Iterate from largest left to smallest to match Wolfram ordering
+  let mut split_pairs: Vec<(usize, usize)> = Vec::new();
+  for i in (1..n).rev() {
+    if can_group(i, 2) && can_group(n - i, 2) {
+      split_pairs.push((i, n - i));
+    }
+  }
+
+  // Group symmetric pairs for interleaving
+  // Process pairs: (large, small) interleaved with (small, large)
+  let mut processed = vec![false; split_pairs.len()];
+  for idx in 0..split_pairs.len() {
+    if processed[idx] {
+      continue;
+    }
+    let (l1, r1) = split_pairs[idx];
+
+    // Find complement pair (r1, l1) if different
+    let complement_idx = if l1 != r1 {
+      split_pairs.iter().position(|&(l, r)| l == r1 && r == l1)
+    } else {
+      None
+    };
+
+    let left_groupings_1 = groupings_binary(&elements[..l1]);
+    let right_groupings_1 = groupings_binary(&elements[l1..]);
+
+    if let Some(c_idx) = complement_idx {
+      processed[c_idx] = true;
+      let (l2, _r2) = split_pairs[c_idx];
+      let left_groupings_2 = groupings_binary(&elements[..l2]);
+      let right_groupings_2 = groupings_binary(&elements[l2..]);
+
+      // Build full results for both splits
+      let mut results_1 = Vec::new();
+      for lg in &left_groupings_1 {
+        for rg in &right_groupings_1 {
+          results_1.push(Expr::List(vec![lg.clone(), rg.clone()]));
+        }
+      }
+      let mut results_2 = Vec::new();
+      for lg in &left_groupings_2 {
+        for rg in &right_groupings_2 {
+          results_2.push(Expr::List(vec![lg.clone(), rg.clone()]));
+        }
+      }
+
+      // Interleave results
+      let max_len = results_1.len().max(results_2.len());
+      for i in 0..max_len {
+        if i < results_1.len() {
+          results.push(results_1[i].clone());
+        }
+        if i < results_2.len() {
+          results.push(results_2[i].clone());
+        }
+      }
+    } else {
+      // Self-symmetric split (l1 == r1) or no complement
+      for lg in &left_groupings_1 {
+        for rg in &right_groupings_1 {
+          results.push(Expr::List(vec![lg.clone(), rg.clone()]));
+        }
+      }
+    }
+    processed[idx] = true;
+  }
+
+  results
+}
+
+/// Generate all k-ary groupings of a contiguous slice of elements
+fn groupings_recursive(elements: &[Expr], k: usize) -> Vec<Expr> {
+  let n = elements.len();
+  if n == 1 {
+    return vec![elements[0].clone()];
+  }
+  if k == 2 {
+    return groupings_binary(elements);
+  }
+  if n < k || !can_group(n, k) {
+    return vec![];
+  }
+  if n == k {
+    return vec![Expr::List(elements.to_vec())];
+  }
+
+  // For k > 2: split into k groups
+  let mut results = Vec::new();
+  generate_splits(elements, k, 0, &mut Vec::new(), &mut results, k);
+  results
+}
+
+/// Generate all ways to split elements[start..] into `remaining` groups (for k > 2)
+fn generate_splits(
+  elements: &[Expr],
+  k: usize,
+  start: usize,
+  current_groups: &mut Vec<Vec<Expr>>,
+  results: &mut Vec<Expr>,
+  remaining: usize,
+) {
+  let n = elements.len();
+  if remaining == 0 {
+    if start == n {
+      let mut group_results: Vec<Vec<Expr>> = current_groups
+        .iter()
+        .map(|g| groupings_recursive(g, k))
+        .collect();
+      let mut product = vec![Vec::new()];
+      for group in &mut group_results {
+        let mut new_product = Vec::new();
+        for existing in &product {
+          for item in group.iter() {
+            let mut combo = existing.clone();
+            combo.push(item.clone());
+            new_product.push(combo);
+          }
+        }
+        product = new_product;
+      }
+      for combo in product {
+        results.push(Expr::List(combo));
+      }
+    }
+    return;
+  }
+
+  let remaining_elements = n - start;
+  if remaining == 1 {
+    let group: Vec<Expr> = elements[start..].to_vec();
+    if can_group(group.len(), k) {
+      current_groups.push(group);
+      generate_splits(elements, k, n, current_groups, results, 0);
+      current_groups.pop();
+    }
+    return;
+  }
+
+  let max_size = remaining_elements - (remaining - 1);
+  for size in (1..=max_size).rev() {
+    if can_group(size, k) {
+      let group: Vec<Expr> = elements[start..start + size].to_vec();
+      current_groups.push(group);
+      generate_splits(
+        elements,
+        k,
+        start + size,
+        current_groups,
+        results,
+        remaining - 1,
+      );
+      current_groups.pop();
+    }
+  }
+}
