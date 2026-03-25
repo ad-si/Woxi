@@ -3014,7 +3014,7 @@ KeySelect,Selects elements of an association by a key criterion,✅,pure,10,2191
 KeySort,Sorts an association by its keys,✅,pure,10,1694
 KeySortBy,Sort association by applying function to keys,✅,none,10,3522
 KeyTake,Takes specified keys from an association,✅,pure,10,2147
-KeyUnion,,,,10,2842
+KeyUnion,Extends associations to have the union of all keys with Missing for absent keys,✅,pure,10,2842
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
 KeyValuePattern,pattern matching extension,🚫,None,10.4,2324
 Khinchin,Khinchin constant,✅,Computation,4,2698

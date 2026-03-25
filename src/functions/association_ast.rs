@@ -710,3 +710,97 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )),
   }
 }
+
+// ─── KeyUnion ───────────────────────────────────────────────────────
+
+/// KeyUnion[{assoc1, assoc2, ...}] - extends each association with Missing values
+/// for keys that appear in other associations but not in that one.
+/// KeyUnion[{assoc1, assoc2, ...}, f] - uses f[key] instead of Missing[KeyAbsent, key].
+pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KeyUnion expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let assocs = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "KeyUnion: first argument must be a list of associations".into(),
+      ));
+    }
+  };
+
+  let default_fn = if args.len() >= 2 {
+    Some(&args[1])
+  } else {
+    None
+  };
+
+  // Extract all associations as Vec<Vec<(key, value)>>
+  let mut all_assocs: Vec<Vec<(Expr, Expr)>> = Vec::new();
+  for assoc in assocs {
+    match assoc {
+      Expr::Association(items) => {
+        all_assocs.push(items.clone());
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "KeyUnion: each element must be an association".into(),
+        ));
+      }
+    }
+  }
+
+  // Collect all unique keys in order of first appearance
+  let mut all_keys: Vec<Expr> = Vec::new();
+  let mut seen_keys: Vec<String> = Vec::new();
+  for assoc in &all_assocs {
+    for (key, _) in assoc {
+      let key_str = crate::syntax::expr_to_string(key);
+      if !seen_keys.contains(&key_str) {
+        seen_keys.push(key_str);
+        all_keys.push(key.clone());
+      }
+    }
+  }
+
+  // Build result: for each association, include all keys
+  let mut result = Vec::new();
+  for assoc in &all_assocs {
+    let mut new_items: Vec<(Expr, Expr)> = Vec::new();
+    for key in &all_keys {
+      let key_str = crate::syntax::expr_to_string(key);
+      let value = assoc
+        .iter()
+        .find(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+        .map(|(_, v)| v.clone());
+      match value {
+        Some(v) => new_items.push((key.clone(), v)),
+        None => {
+          let missing = match default_fn {
+            Some(func) => {
+              let call = Expr::FunctionCall {
+                name: crate::syntax::expr_to_string(func),
+                args: vec![key.clone()],
+              };
+              crate::evaluator::evaluate_expr_to_expr(&call)?
+            }
+            None => Expr::FunctionCall {
+              name: "Missing".to_string(),
+              args: vec![
+                Expr::Identifier("KeyAbsent".to_string()),
+                key.clone(),
+              ],
+            },
+          };
+          new_items.push((key.clone(), missing));
+        }
+      }
+    }
+    result.push(Expr::Association(new_items));
+  }
+
+  Ok(Expr::List(result))
+}
