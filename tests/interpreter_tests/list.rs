@@ -3900,3 +3900,60 @@ mod expectation {
     assert_eq!(interpret("Expectation[x]").unwrap(), "Expectation[x]");
   }
 }
+
+mod groupings {
+  use super::*;
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Groupings[1, 2]").unwrap(), "{1}");
+  }
+
+  #[test]
+  fn two_elements_binary() {
+    assert_eq!(interpret("Groupings[2, 2]").unwrap(), "{{1, 2}}");
+  }
+
+  #[test]
+  fn three_elements_binary() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c}, 2]").unwrap(),
+      "{{{a, b}, c}, {a, {b, c}}}"
+    );
+  }
+
+  #[test]
+  fn four_elements_binary() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c, d}, 2]").unwrap(),
+      "{{{{a, b}, c}, d}, {a, {{b, c}, d}}, {{a, {b, c}}, d}, {a, {b, {c, d}}}, {{a, b}, {c, d}}}"
+    );
+  }
+
+  #[test]
+  fn integer_form() {
+    assert_eq!(
+      interpret("Groupings[3, 2]").unwrap(),
+      "{{{1, 2}, 3}, {1, {2, 3}}}"
+    );
+  }
+
+  #[test]
+  fn ternary_exact() {
+    assert_eq!(interpret("Groupings[{a, b, c}, 3]").unwrap(), "{{a, b, c}}");
+  }
+
+  #[test]
+  fn ternary_five_elements() {
+    assert_eq!(
+      interpret("Groupings[{a, b, c, d, e}, 3]").unwrap(),
+      "{{{a, b, c}, d, e}, {a, {b, c, d}, e}, {a, b, {c, d, e}}}"
+    );
+  }
+
+  #[test]
+  fn ternary_impossible() {
+    // 4 elements can't form a ternary tree
+    assert_eq!(interpret("Groupings[{a, b, c, d}, 3]").unwrap(), "{}");
+  }
+}
