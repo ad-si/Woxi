@@ -1320,8 +1320,39 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (Expr::Real(x), Expr::Real(y)) => {
       x.partial_cmp(y).unwrap_or(Ordering::Equal)
     }
-    (Expr::Identifier(x), Expr::Identifier(y)) => x.cmp(y),
-    (Expr::Constant(x), Expr::Constant(y)) => x.cmp(y),
+    (Expr::Identifier(x), Expr::Identifier(y)) => {
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(x, y);
+      if ord > 0 {
+        Ordering::Less
+      } else if ord < 0 {
+        Ordering::Greater
+      } else {
+        Ordering::Equal
+      }
+    }
+    (Expr::Constant(x), Expr::Constant(y)) => {
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(x, y);
+      if ord > 0 {
+        Ordering::Less
+      } else if ord < 0 {
+        Ordering::Greater
+      } else {
+        Ordering::Equal
+      }
+    }
+    // Cross-compare Constants and Identifiers using case-insensitive ordering
+    // (Wolfram doesn't separate these by type in Times ordering)
+    (Expr::Constant(x), Expr::Identifier(y))
+    | (Expr::Identifier(x), Expr::Constant(y)) => {
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(x, y);
+      if ord > 0 {
+        Ordering::Less
+      } else if ord < 0 {
+        Ordering::Greater
+      } else {
+        Ordering::Equal
+      }
+    }
     (
       Expr::FunctionCall { name: na, args: aa },
       Expr::FunctionCall { name: nb, args: ab },
@@ -1686,6 +1717,27 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     // bases structurally. For different types (e.g. Identifier vs FunctionCall),
     // use string comparison which gives correct case-sensitive ordering
     // (e.g. Sqrt[a] before x since 'S' < 'x').
+    //
+    // Special case: when comparing BinaryOp::Power with FunctionCall (Power/Sqrt),
+    // compare by base sort keys using case-insensitive ordering to avoid
+    // case-sensitivity artifacts (e.g. n^(1/2+n) should sort before Sqrt[2*Pi]
+    // because 'n' < 'p' case-insensitively).
+    let is_power_like = |e: &Expr| -> bool {
+      matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, .. })
+        || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2) || (name == "Sqrt" && args.len() == 1))
+    };
+    if is_power_like(a) && is_power_like(b) && std::mem::discriminant(a) != std::mem::discriminant(b) {
+      // Both are power-like but different Expr variants: compare by sort key
+      let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+      let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+      if ord > 0 {
+        return std::cmp::Ordering::Less;
+      } else if ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+      // Equal keys: fall through to string comparison
+    }
     if std::mem::discriminant(a) == std::mem::discriminant(b) {
       compare_expr_canonical(a, b)
     } else {

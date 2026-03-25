@@ -1466,7 +1466,7 @@ mod discrete_asymptotic {
   fn factorial_stirling() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Factorial[n], n -> Infinity]").unwrap(),
-      "(Sqrt[2*Pi]*n^(1/2 + n))/E^n"
+      "(n^(1/2 + n)*Sqrt[2*Pi])/E^n"
     );
   }
 
@@ -1539,7 +1539,7 @@ mod discrete_asymptotic {
   fn gamma_stirling() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Gamma[n], n -> Infinity]").unwrap(),
-      "(Sqrt[2*Pi]*n^(-1/2 + n))/E^n"
+      "(n^(-1/2 + n)*Sqrt[2*Pi])/E^n"
     );
   }
 
@@ -1555,7 +1555,7 @@ mod discrete_asymptotic {
   fn binomial_central() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Binomial[n, n/2], n -> Infinity]").unwrap(),
-      "2^(1/2 + n)/(Sqrt[Pi]*Sqrt[n])"
+      "2^(1/2 + n)/(Sqrt[n]*Sqrt[Pi])"
     );
   }
 
