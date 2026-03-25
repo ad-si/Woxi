@@ -1857,3 +1857,57 @@ mod pearson_chi_square_test {
     );
   }
 }
+
+mod multivariate_poisson_distribution {
+  use super::*;
+
+  #[test]
+  fn symbolic_form() {
+    assert_eq!(
+      interpret("MultivariatePoissonDistribution[1, {2, 3}]").unwrap(),
+      "MultivariatePoissonDistribution[1, {2, 3}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_parameters() {
+    assert_eq!(
+      interpret("MultivariatePoissonDistribution[a, {b, c}]").unwrap(),
+      "MultivariatePoissonDistribution[a, {b, c}]"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[MultivariatePoissonDistribution[1, {2, 3}]]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[MultivariatePoissonDistribution[a, {b, c}]]").unwrap(),
+      "{a + b, a + c}"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[MultivariatePoissonDistribution[1, {2, 3}]]")
+        .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[MultivariatePoissonDistribution[a, {b, c}]]")
+        .unwrap(),
+      "{a + b, a + c}"
+    );
+  }
+}

@@ -253,6 +253,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "MultivariatePoissonDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "MultivariatePoissonDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "HalfNormalDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "HalfNormalDistribution".to_string(),
