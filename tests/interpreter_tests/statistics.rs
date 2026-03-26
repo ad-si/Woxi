@@ -1282,6 +1282,50 @@ mod pascal_distribution {
   }
 }
 
+mod dagum_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("DagumDistribution[2, 3, 1]").unwrap(),
+      "DagumDistribution[2, 3, 1]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[DagumDistribution[2, 3, 1], 1/2]").unwrap(),
+      "32/243"
+    );
+  }
+
+  #[test]
+  fn pdf_zero() {
+    assert_eq!(
+      interpret("PDF[DagumDistribution[2, 3, 1], 0]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_negative() {
+    assert_eq!(
+      interpret("PDF[DagumDistribution[2, 3, 1], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean() {
+    assert_eq!(
+      interpret("Mean[DagumDistribution[2, 3, 1]]").unwrap(),
+      "Gamma[2/3]*Gamma[7/3]"
+    );
+  }
+}
+
 mod stable_distribution {
   use super::*;
 

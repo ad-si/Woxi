@@ -263,6 +263,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NegativeBinomialDistribution"
         | "ArcSinDistribution"
         | "PascalDistribution"
+        | "DagumDistribution"
     ) =>
     {
       let (mean, _) =
@@ -430,6 +431,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "NegativeBinomialDistribution"
         | "ArcSinDistribution"
         | "PascalDistribution"
+        | "DagumDistribution"
     ) =>
     {
       let (_, variance) =
