@@ -3539,7 +3539,7 @@ MeteorShowerData,,🚫,,10,5390
 Method,Option symbol for specifying computational methods,✅,pure,4,212
 MexicanHatWavelet,,🚫,,8,3257
 MeyerWavelet,,🚫,,8,3916
-Midpoint,,,,12,2993
+Midpoint,Compute the midpoint of two points or a line segment,✅,pure,12,2993
 MIMETypeToFormatList,,,,13,
 Min,Returns the minimum value from a set of arguments or a list,✅,pure,1,180
 MinColorDistance,,,,10,3947
@@ -4408,7 +4408,7 @@ PutAppend,Append expressions to a file,✅,effectful,1,1338
 Pyramid,,🚫,,10,2545
 Q,,,,,
 QBinomial,Computes the Gaussian binomial coefficient (q-analog of binomial),✅,pure,7,2734
-QFactorial,,,,7,3008
+QFactorial,Compute the q-analog of the factorial,✅,pure,7,3008
 QGamma,,,,7,2871
 QHypergeometricPFQ,q-analogue of the generalized hypergeometric function,🚫,,7,2729
 QnDispersion,,,,11.1,4387
