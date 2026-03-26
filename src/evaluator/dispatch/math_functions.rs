@@ -2889,9 +2889,173 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "CantorStaircase" if args.len() == 1 => {
+      return Some(cantor_staircase_ast(&args[0]));
+    }
     _ => {}
   }
   None
+}
+
+/// Compute the Cantor staircase (devil's staircase) function.
+/// For rational p/q in [0,1], computes the exact rational value.
+/// Algorithm: Express x in base 3. If a digit 1 appears, replace it
+/// and all subsequent digits with a single "1" in base 2.
+/// Replace all 2s with 1s. Read the result in base 2.
+fn cantor_staircase_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{expr_to_i128, try_eval_to_f64};
+
+  // Handle exact integers
+  if let Some(n) = expr_to_i128(arg) {
+    if n <= 0 {
+      return Ok(Expr::Integer(0));
+    } else {
+      return Ok(Expr::Integer(1));
+    }
+  }
+
+  // Handle rationals
+  if let Some((num, den)) = extract_rational(arg) {
+    if num <= 0 {
+      return Ok(Expr::Integer(0));
+    }
+    if num >= den {
+      return Ok(Expr::Integer(1));
+    }
+    // Compute cantor staircase for rational num/den in (0,1)
+    return Ok(cantor_staircase_rational(num, den));
+  }
+
+  // Handle numeric values (Real)
+  if let Some(x) = try_eval_to_f64(arg) {
+    if x <= 0.0 {
+      return Ok(Expr::Integer(0));
+    }
+    if x >= 1.0 {
+      return Ok(Expr::Integer(1));
+    }
+    return Ok(Expr::Real(cantor_staircase_f64(x)));
+  }
+
+  // Return unevaluated for symbolic arguments
+  Ok(Expr::FunctionCall {
+    name: "CantorStaircase".to_string(),
+    args: vec![arg.clone()],
+  })
+}
+
+/// Extract numerator and denominator from a rational expression
+fn extract_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+        Some((*a, *b))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Compute cantor staircase for exact rational p/q where 0 < p/q < 1
+fn cantor_staircase_rational(p: i128, q: i128) -> Expr {
+  use crate::functions::math_ast::make_rational;
+  use std::collections::HashMap;
+
+  // Use the ternary digit algorithm with cycle detection.
+  // Generate ternary digits of p/q. For each digit:
+  // - 0: binary digit 0
+  // - 2: binary digit 1
+  // - 1: output binary digit 1 and stop
+  //
+  // For repeating ternary expansions, we detect the cycle in remainders
+  // and compute the repeating binary fraction as a geometric series.
+
+  let mut result_num: i128 = 0;
+  let mut result_den: i128 = 1;
+  let mut current_p = p;
+  let current_q = q;
+
+  // Track remainders to detect cycles; map remainder -> (step_index, result_num, result_den)
+  let mut seen: HashMap<i128, (usize, i128, i128)> = HashMap::new();
+
+  for step in 0..256 {
+    if let Some(&(cycle_start, cycle_num, cycle_den)) = seen.get(&current_p) {
+      // We've entered a cycle. The repeating binary block is:
+      // (result_num / result_den) - (cycle_num / cycle_den)
+      // = (result_num * cycle_den - cycle_num * result_den) / (result_den * cycle_den)
+      // This repeating block, as a geometric series with ratio 1/2^cycle_len:
+      // total = prefix + repeating_block / (1 - 1/2^cycle_len)
+      let cycle_len = step - cycle_start;
+      // repeat block value = result_num/result_den - cycle_num/cycle_den
+      let repeat_num = result_num * cycle_den - cycle_num * result_den;
+      let repeat_den = result_den * cycle_den;
+      // Total = prefix + block * pow2/(pow2-1)
+      // = cycle_num/cycle_den + repeat_num/(repeat_den) * pow2/(pow2-1)
+      let pow2 = 1i128 << cycle_len;
+      let final_num =
+        cycle_num * repeat_den * (pow2 - 1) + repeat_num * pow2 * cycle_den;
+      let final_den = cycle_den * repeat_den * (pow2 - 1);
+      return make_rational(final_num, final_den);
+    }
+
+    seen.insert(current_p, (step, result_num, result_den));
+
+    // Multiply by 3 to get next ternary digit
+    current_p *= 3;
+    let digit = current_p / current_q;
+    current_p %= current_q;
+
+    result_den *= 2;
+
+    match digit {
+      0 => {
+        result_num *= 2;
+      }
+      1 => {
+        result_num = result_num * 2 + 1;
+        return make_rational(result_num, result_den);
+      }
+      2 => {
+        result_num = result_num * 2 + 1;
+      }
+      _ => {
+        break;
+      }
+    }
+
+    if current_p == 0 {
+      return make_rational(result_num, result_den);
+    }
+  }
+
+  // Fallback: use float
+  Expr::Real(cantor_staircase_f64(p as f64 / q as f64))
+}
+
+/// Compute cantor staircase numerically for x in (0,1)
+fn cantor_staircase_f64(x: f64) -> f64 {
+  let mut result = 0.0;
+  let mut power = 0.5;
+  let mut current = x;
+
+  for _ in 0..64 {
+    current *= 3.0;
+    if current >= 2.0 {
+      result += power;
+      current -= 2.0;
+    } else if current >= 1.0 {
+      result += power;
+      return result;
+    }
+    power *= 0.5;
+  }
+
+  result
 }
 
 /// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that
