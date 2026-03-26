@@ -3939,3 +3939,81 @@ mod wigner_d_tests {
     );
   }
 }
+
+mod cantor_staircase {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("CantorStaircase[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn one() {
+    assert_eq!(interpret("CantorStaircase[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn one_third() {
+    assert_eq!(interpret("CantorStaircase[1/3]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn two_thirds() {
+    assert_eq!(interpret("CantorStaircase[2/3]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn one_half() {
+    // 1/2 is in the middle third [1/3, 2/3], so value is 1/2
+    assert_eq!(interpret("CantorStaircase[1/2]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn one_fourth() {
+    assert_eq!(interpret("CantorStaircase[1/4]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn one_ninth() {
+    assert_eq!(interpret("CantorStaircase[1/9]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn two_ninths() {
+    assert_eq!(interpret("CantorStaircase[2/9]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn seven_ninths() {
+    assert_eq!(interpret("CantorStaircase[7/9]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn eight_ninths() {
+    assert_eq!(interpret("CantorStaircase[8/9]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("CantorStaircase[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn greater_than_one() {
+    assert_eq!(interpret("CantorStaircase[2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_float() {
+    assert_eq!(interpret("CantorStaircase[0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("CantorStaircase[x]").unwrap(),
+      "CantorStaircase[x]"
+    );
+  }
+}
