@@ -3326,6 +3326,46 @@ mod frenet_serret_system {
   }
 }
 
+mod arc_curvature {
+  use super::*;
+
+  #[test]
+  fn parabola_2d() {
+    assert_eq!(
+      interpret("ArcCurvature[{t, t^2}, t]").unwrap(),
+      "2/(1 + 4*t^2)^(3/2)"
+    );
+  }
+
+  #[test]
+  fn scalar_function() {
+    // Scalar treated as {t, f(t)}
+    assert_eq!(
+      interpret("ArcCurvature[t^2, t]").unwrap(),
+      "2/(1 + 4*t^2)^(3/2)"
+    );
+  }
+
+  #[test]
+  fn space_curve_3d() {
+    // 3D curve {t, t^2, t^3}
+    assert_eq!(
+      interpret("ArcCurvature[{t, t^2, t^3}, t]").unwrap(),
+      "Sqrt[4 + 36*t^2 + 36*t^4]/(1 + 4*t^2 + 9*t^4)^(3/2)"
+    );
+  }
+
+  #[test]
+  fn straight_line() {
+    assert_eq!(interpret("ArcCurvature[{t, 2*t}, t]").unwrap(), "0");
+  }
+
+  #[test]
+  fn straight_line_3d() {
+    assert_eq!(interpret("ArcCurvature[{t, 0, 0}, t]").unwrap(), "0");
+  }
+}
+
 mod difference_delta {
   use super::*;
 

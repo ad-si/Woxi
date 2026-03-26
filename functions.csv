@@ -182,7 +182,7 @@ ArcCoth,Returns the inverse hyperbolic cotangent,✅,pure,1,327
 ArcCsc,Returns the arc cosecant,✅,pure,1,370
 ArcCscDegrees,,,,14.1,
 ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1,348
-ArcCurvature,,,,10,2880
+ArcCurvature,Compute the curvature of a parametric curve,✅,pure,10,2880
 ARCHProcess,,🚫,,10,4173
 ArcLength,Compute the arc length of a curve,✅,pure,10,1426
 ArcSec,Returns the arc secant,✅,pure,1,372
