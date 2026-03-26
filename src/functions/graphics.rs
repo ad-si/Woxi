@@ -6068,7 +6068,7 @@ pub fn linear_gradient_filling_ast(
       stops,
       colors,
       Expr::Integer(0),
-      Expr::Identifier("Fixed".to_string()),
+      Expr::String("Fixed".to_string()),
     )
   } else {
     // Parse angle (2nd arg) and space (3rd arg)
@@ -6080,7 +6080,7 @@ pub fn linear_gradient_filling_ast(
     let space = if args.len() >= 3 {
       args[2].clone()
     } else {
-      Expr::Identifier("Fixed".to_string())
+      Expr::String("Fixed".to_string())
     };
 
     match &args[0] {

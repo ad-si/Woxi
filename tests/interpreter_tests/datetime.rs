@@ -291,7 +291,7 @@ mod date_string {
   }
 }
 
-/// Helper: extract {y, m, d} from "DateObject[{y, m, d}, Day]tz]"
+/// Helper: extract {y, m, d} from "DateObject[{y, m, d}, \"Day\"]"
 fn parse_date_object_ymd(s: &str) -> Vec<i32> {
   let list_start = s.find('{').unwrap();
   let list_end = s.find('}').unwrap();
