@@ -3325,3 +3325,130 @@ mod frenet_serret_system {
     );
   }
 }
+
+mod difference_delta {
+  use super::*;
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("DifferenceDelta[5, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn linear() {
+    assert_eq!(interpret("DifferenceDelta[x, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn linear_with_coefficients() {
+    assert_eq!(interpret("DifferenceDelta[a*x + b, x]").unwrap(), "a");
+  }
+
+  #[test]
+  fn quadratic() {
+    assert_eq!(interpret("DifferenceDelta[x^2, x]").unwrap(), "1 + 2*x");
+  }
+
+  #[test]
+  fn cubic() {
+    assert_eq!(
+      interpret("DifferenceDelta[x^3, x]").unwrap(),
+      "1 + 3*x + 3*x^2"
+    );
+  }
+
+  #[test]
+  fn symbolic_function() {
+    assert_eq!(
+      interpret("DifferenceDelta[f[x], x]").unwrap(),
+      "f[1 + x] - f[x]"
+    );
+  }
+
+  #[test]
+  fn sin_function() {
+    assert_eq!(
+      interpret("DifferenceDelta[Sin[x], x]").unwrap(),
+      "Sin[1 + x] - Sin[x]"
+    );
+  }
+
+  #[test]
+  fn second_order() {
+    // Second-order difference of x^2 is 2
+    assert_eq!(interpret("DifferenceDelta[x^2, {x, 2}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn zeroth_order() {
+    // Zeroth-order difference returns the expression itself
+    assert_eq!(interpret("DifferenceDelta[x^2, {x, 0}]").unwrap(), "x^2");
+  }
+
+  #[test]
+  fn with_step_h() {
+    // DifferenceDelta[x^2, {x, 1, h}] = (x+h)^2 - x^2 = 2*h*x + h^2
+    assert_eq!(
+      interpret("DifferenceDelta[x^2, {x, 1, h}]").unwrap(),
+      "h^2 + 2*h*x"
+    );
+  }
+
+  #[test]
+  fn independent_variable() {
+    // DifferenceDelta[y, x] = 0 when y doesn't depend on x
+    assert_eq!(interpret("DifferenceDelta[y, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn exponential() {
+    // DifferenceDelta[2^x, x] = 2^(x+1) - 2^x
+    assert_eq!(
+      interpret("DifferenceDelta[2^x, x]").unwrap(),
+      "-2^x + 2^(1 + x)"
+    );
+  }
+}
+
+mod difference_quotient {
+  use super::*;
+
+  #[test]
+  fn linear() {
+    assert_eq!(interpret("DifferenceQuotient[x, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn quadratic_step_1() {
+    assert_eq!(interpret("DifferenceQuotient[x^2, x]").unwrap(), "1 + 2*x");
+  }
+
+  #[test]
+  fn quadratic_step_h() {
+    assert_eq!(
+      interpret("DifferenceQuotient[x^2, {x, h}]").unwrap(),
+      "h + 2*x"
+    );
+  }
+
+  #[test]
+  fn cubic_step_h() {
+    assert_eq!(
+      interpret("DifferenceQuotient[x^3, {x, h}]").unwrap(),
+      "h^2 + 3*h*x + 3*x^2"
+    );
+  }
+
+  #[test]
+  fn symbolic_function() {
+    assert_eq!(
+      interpret("DifferenceQuotient[f[x], {x, h}]").unwrap(),
+      "(f[h + x] - f[x])/h"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("DifferenceQuotient[5, {x, h}]").unwrap(), "0");
+  }
+}

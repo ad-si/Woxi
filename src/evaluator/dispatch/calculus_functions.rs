@@ -196,6 +196,14 @@ pub fn dispatch_calculus_functions(
     "FunctionDomain" if args.len() >= 2 && args.len() <= 3 => {
       return Some(function_domain_ast(args));
     }
+    "DifferenceDelta" if !args.is_empty() => {
+      return Some(crate::functions::calculus_ast::difference_delta_ast(args));
+    }
+    "DifferenceQuotient" if !args.is_empty() => {
+      return Some(crate::functions::calculus_ast::difference_quotient_ast(
+        args,
+      ));
+    }
     "GeneratingFunction" if args.len() == 3 => {
       return Some(generating_function(&args[0], &args[1], &args[2]));
     }
