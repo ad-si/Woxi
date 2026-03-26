@@ -158,6 +158,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "StableDistribution" => pdf_stable(dargs, x),
     "ArcSinDistribution" => pdf_arcsin(dargs, x),
     "PascalDistribution" => pdf_pascal(dargs, x),
+    "DagumDistribution" => pdf_dagum(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1696,6 +1697,41 @@ fn distribution_mean_variance(
       };
       Ok((mean, var))
     }
+    "DagumDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "DagumDistribution expects 3 arguments".into(),
+        ));
+      }
+      let p = dargs[0].clone();
+      let a = dargs[1].clone();
+      let b = dargs[2].clone();
+      // Mean = b * Gamma[(-1 + a)/a] * Gamma[1/a + p] / Gamma[p]
+      let gamma = |x: Expr| Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![x],
+      };
+      let mean = times(
+        times(
+          b.clone(),
+          gamma(divide(minus(a.clone(), int(1)), a.clone())),
+        ),
+        divide(
+          gamma(plus(divide(int(1), a.clone()), p.clone())),
+          gamma(p.clone()),
+        ),
+      );
+      // Var = -Mean^2 + b^2 * Gamma[(-2+a)/a] * Gamma[2/a + p] / Gamma[p]
+      let second_moment = times(
+        times(
+          power(b, int(2)),
+          gamma(divide(minus(a.clone(), int(2)), a.clone())),
+        ),
+        divide(gamma(plus(divide(int(2), a), p.clone())), gamma(p)),
+      );
+      let var = minus(second_moment, power(mean.clone(), int(2)));
+      Ok((mean, var))
+    }
     "ArcSinDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -2890,6 +2926,35 @@ fn pdf_pascal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond = Expr::FunctionCall {
     name: "GreaterEqual".to_string(),
     args: vec![x, n],
+  };
+
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// PDF[DagumDistribution[p, a, b], x]
+/// = (a*p/x) * ((x/b)^(a*p)) / (1 + (x/b)^a)^(p+1) for x > 0
+fn pdf_dagum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "DagumDistribution expects 3 arguments".into(),
+    ));
+  }
+  let p = dargs[0].clone();
+  let a = dargs[1].clone();
+  let b = dargs[2].clone();
+
+  // a*p * x^(a*p - 1) * (1 + (x/b)^a)^(-1-p) / b^(a*p)
+  let ap = times(a.clone(), p.clone());
+  let x_to_ap_minus_1 = power(x.clone(), minus(ap.clone(), int(1)));
+  let x_over_b_to_a = power(divide(x.clone(), b.clone()), a.clone());
+  let bracket = power(plus(int(1), x_over_b_to_a), minus(int(-1), p));
+  let b_to_ap = power(b, ap.clone());
+  let density = divide(times(times(ap, x_to_ap_minus_1), bracket), b_to_ap);
+
+  // x > 0
+  let cond = Expr::FunctionCall {
+    name: "Greater".to_string(),
+    args: vec![x, int(0)],
   };
 
   eval(piecewise(vec![(density, cond)], int(0)))
