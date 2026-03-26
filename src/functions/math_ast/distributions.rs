@@ -157,6 +157,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGaussianDistribution" => pdf_inverse_gaussian(dargs, x),
     "StableDistribution" => pdf_stable(dargs, x),
     "ArcSinDistribution" => pdf_arcsin(dargs, x),
+    "PascalDistribution" => pdf_pascal(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1083,7 +1084,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_discrete = matches!(
     dist,
     Expr::FunctionCall { name, .. }
-    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution" | "NegativeBinomialDistribution" | "DiscreteUniformDistribution")
+    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution" | "NegativeBinomialDistribution" | "DiscreteUniformDistribution" | "PascalDistribution")
   );
 
   // Parse the event condition and compute probability
@@ -1672,6 +1673,23 @@ fn distribution_mean_variance(
       // Express variance as Times[n, (1-p), p^(-2)] so Sqrt can extract p^(-1)
       let one_minus_p = minus(int(1), p.clone());
       let mean = divide(times(n.clone(), one_minus_p.clone()), p.clone());
+      let var = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n, one_minus_p, power(p, int(-2))],
+      };
+      Ok((mean, var))
+    }
+    "PascalDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "PascalDistribution expects 2 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let p = dargs[1].clone();
+      // Mean = n/p, Var = n*(1-p)/p^2
+      let mean = divide(n.clone(), p.clone());
+      let one_minus_p = minus(int(1), p.clone());
       let var = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![n, one_minus_p, power(p, int(-2))],
@@ -2840,6 +2858,38 @@ fn pdf_arcsin(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       crate::syntax::ComparisonOp::Less,
       crate::syntax::ComparisonOp::Less,
     ],
+  };
+
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// PDF[PascalDistribution[n, p], k]
+/// = (1-p)^(k-n) * p^n * Binomial[k-1, n-1] for k >= n
+fn pdf_pascal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PascalDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+
+  // Binomial[k-1, n-1]
+  let binom = Expr::FunctionCall {
+    name: "Binomial".to_string(),
+    args: vec![minus(x.clone(), int(1)), minus(n.clone(), int(1))],
+  };
+  // p^n
+  let p_n = power(p.clone(), n.clone());
+  // (1-p)^(k-n)
+  let one_minus_p_k_n = power(minus(int(1), p), minus(x.clone(), n.clone()));
+
+  let density = times(times(binom, p_n), one_minus_p_k_n);
+
+  // k >= n
+  let cond = Expr::FunctionCall {
+    name: "GreaterEqual".to_string(),
+    args: vec![x, n],
   };
 
   eval(piecewise(vec![(density, cond)], int(0)))
