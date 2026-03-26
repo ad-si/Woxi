@@ -6930,6 +6930,154 @@ fn cross_product_3d(a: &[Expr], b: &[Expr]) -> Vec<Expr> {
 /// For 2D: κ = |x'*y'' - y'*x''| / (x'^2 + y'^2)^(3/2)
 /// For 3D: κ = ||r' × r''|| / ||r'||^3
 /// For scalar f[t]: treated as the 2D curve {t, f[t]}
+/// AsymptoticIntegrate[f, x, {x, x0, n}] - series expansion of the antiderivative
+/// Computes the antiderivative of f, then expands as a series to order n.
+pub fn asymptotic_integrate_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "AsymptoticIntegrate".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let f = &args[0];
+  let var = &args[1];
+  let spec = &args[2];
+
+  // spec must be {x, x0, n}
+  if !matches!(spec, Expr::List(items) if items.len() == 3) {
+    return Ok(Expr::FunctionCall {
+      name: "AsymptoticIntegrate".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Try to compute the exact antiderivative first
+  let antideriv_result = integrate_ast(&[f.clone(), var.clone()]);
+
+  if let Ok(ref antideriv) = antideriv_result {
+    // Check if integrate succeeded (not unevaluated)
+    let is_unevaluated = matches!(antideriv, Expr::FunctionCall { name, .. } if name == "Integrate");
+    if !is_unevaluated {
+      // Expand the antiderivative as a series
+      let series_result = series_ast(&[antideriv.clone(), spec.clone()])?;
+      // Convert SeriesData to Normal polynomial
+      let normal = Expr::FunctionCall {
+        name: "Normal".to_string(),
+        args: vec![series_result],
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&normal);
+    }
+  }
+
+  // Fallback: integrate the series term by term
+  let series_result = series_ast(&[f.clone(), spec.clone()])?;
+
+  match &series_result {
+    Expr::FunctionCall { name, args: sargs }
+      if name == "SeriesData" && sargs.len() >= 6 =>
+    {
+      if let Expr::List(coeffs) = &sargs[2] {
+        let x0 = &sargs[1];
+        let nmin =
+          crate::functions::math_ast::expr_to_i128(&sargs[3]).unwrap_or(0);
+        let nmax =
+          crate::functions::math_ast::expr_to_i128(&sargs[4]).unwrap_or(0);
+        let den =
+          crate::functions::math_ast::expr_to_i128(&sargs[5]).unwrap_or(1);
+
+        let var_name = match var {
+          Expr::Identifier(s) => s.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "AsymptoticIntegrate".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+
+        // Integrate each series term: coeff * (x-x0)^(k/den) -> coeff/(k/den+1) * (x-x0)^(k/den+1)
+        let mut terms = Vec::new();
+        for (i, coeff) in coeffs.iter().enumerate() {
+          if matches!(coeff, Expr::Integer(0)) {
+            continue;
+          }
+          let power_num = nmin + i as i128;
+          // After integration: new power = (power_num + den) / den
+          let new_power_num = power_num + den;
+          // Skip if the integrated power exceeds the requested order n
+          // nmax is the truncation order of the original series
+          if new_power_num > nmax {
+            continue;
+          }
+
+          let base = if matches!(x0, Expr::Integer(0)) {
+            Expr::Identifier(var_name.clone())
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::Identifier(var_name.clone())),
+              right: Box::new(x0.clone()),
+            }
+          };
+
+          // coeff / (new_power_num / den) * (x - x0)^(new_power_num/den)
+          // = coeff * den / new_power_num * (x - x0)^(new_power_num/den)
+          let factor = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(coeff.clone()),
+            right: Box::new(crate::functions::math_ast::make_rational(
+              den,
+              new_power_num,
+            )),
+          };
+          let power_expr = if new_power_num == den {
+            base.clone()
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(crate::functions::math_ast::make_rational(
+                new_power_num,
+                den,
+              )),
+            }
+          };
+          let term = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(factor),
+            right: Box::new(power_expr),
+          };
+          terms.push(crate::evaluator::evaluate_expr_to_expr(&term)?);
+        }
+
+        if terms.is_empty() {
+          return Ok(Expr::Integer(0));
+        }
+
+        let result = if terms.len() == 1 {
+          terms.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms,
+          }
+        };
+
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
+    _ => {}
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "AsymptoticIntegrate".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Reuse FrenetSerretSystem and extract the curvature
   let fss = frenet_serret_system_ast(args)?;

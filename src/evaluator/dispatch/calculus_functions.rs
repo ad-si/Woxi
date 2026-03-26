@@ -202,6 +202,11 @@ pub fn dispatch_calculus_functions(
     "FunctionDomain" if args.len() >= 2 && args.len() <= 3 => {
       return Some(function_domain_ast(args));
     }
+    "AsymptoticIntegrate" if args.len() == 3 => {
+      return Some(crate::functions::calculus_ast::asymptotic_integrate_ast(
+        args,
+      ));
+    }
     "ArcCurvature" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::arc_curvature_ast(args));
     }

@@ -3326,6 +3326,50 @@ mod frenet_serret_system {
   }
 }
 
+mod asymptotic_integrate {
+  use super::*;
+
+  #[test]
+  fn exp_neg_x_squared() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Exp[-x^2], x, {x, 0, 5}]").unwrap(),
+      "x - x^3/3 + x^5/10"
+    );
+  }
+
+  #[test]
+  fn reciprocal_1_plus_x() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[1/(1+x), x, {x, 0, 4}]").unwrap(),
+      "x - x^2/2 + x^3/3 - x^4/4"
+    );
+  }
+
+  #[test]
+  fn sin_x() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Sin[x], x, {x, 0, 6}]").unwrap(),
+      "-1 + x^2/2 - x^4/24 + x^6/720"
+    );
+  }
+
+  #[test]
+  fn cos_x() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[Cos[x], x, {x, 0, 5}]").unwrap(),
+      "x - x^3/6 + x^5/120"
+    );
+  }
+
+  #[test]
+  fn polynomial() {
+    assert_eq!(
+      interpret("AsymptoticIntegrate[x^2, x, {x, 0, 4}]").unwrap(),
+      "x^3/3"
+    );
+  }
+}
+
 mod max_limit {
   use super::*;
 
