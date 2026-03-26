@@ -4480,6 +4480,54 @@ fn is_clean_value(expr: &Expr) -> bool {
   }
 }
 
+/// MaxLimit[f, x -> a] - largest limiting value (from above/right)
+/// MinLimit[f, x -> a] - smallest limiting value (from below/left)
+pub fn max_limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  one_sided_limit_ast(args, "MaxLimit", LimitDirection::FromAbove)
+}
+
+pub fn min_limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  one_sided_limit_ast(args, "MinLimit", LimitDirection::FromBelow)
+}
+
+fn one_sided_limit_ast(
+  args: &[Expr],
+  fn_name: &str,
+  direction: LimitDirection,
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: fn_name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Build Limit[expr, rule, Direction -> dir]
+  let dir_str = match direction {
+    LimitDirection::FromAbove => "FromAbove",
+    LimitDirection::FromBelow => "FromBelow",
+    LimitDirection::TwoSided => "FromAbove",
+  };
+  let direction_opt = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("Direction".to_string())),
+    replacement: Box::new(Expr::String(dir_str.to_string())),
+  };
+
+  let result = limit_ast(&[args[0].clone(), args[1].clone(), direction_opt])?;
+
+  // Check if result is unevaluated Limit
+  if let Expr::FunctionCall { name, .. } = &result {
+    if name == "Limit" {
+      return Ok(Expr::FunctionCall {
+        name: fn_name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+
+  Ok(result)
+}
+
 /// Direction for one-sided limits
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LimitDirection {
