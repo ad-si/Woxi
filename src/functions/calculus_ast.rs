@@ -6878,6 +6878,29 @@ fn cross_product_3d(a: &[Expr], b: &[Expr]) -> Vec<Expr> {
   ]
 }
 
+/// ArcCurvature[curve, t] - curvature of a parametric curve
+/// For 2D: κ = |x'*y'' - y'*x''| / (x'^2 + y'^2)^(3/2)
+/// For 3D: κ = ||r' × r''|| / ||r'||^3
+/// For scalar f[t]: treated as the 2D curve {t, f[t]}
+pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Reuse FrenetSerretSystem and extract the curvature
+  let fss = frenet_serret_system_ast(args)?;
+  // FrenetSerretSystem returns {{κ, ...}, {T, N, ...}}
+  // Extract first element of first list
+  if let Expr::List(outer) = &fss {
+    if let Some(Expr::List(curvatures)) = outer.first() {
+      if let Some(kappa) = curvatures.first() {
+        return Ok(kappa.clone());
+      }
+    }
+  }
+  // Fallback: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "ArcCurvature".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h

@@ -196,6 +196,9 @@ pub fn dispatch_calculus_functions(
     "FunctionDomain" if args.len() >= 2 && args.len() <= 3 => {
       return Some(function_domain_ast(args));
     }
+    "ArcCurvature" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::arc_curvature_ast(args));
+    }
     "DifferenceDelta" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::difference_delta_ast(args));
     }
