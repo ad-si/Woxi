@@ -789,10 +789,7 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             None => Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![
-                Expr::Identifier("KeyAbsent".to_string()),
-                key.clone(),
-              ],
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
             },
           };
           new_items.push((key.clone(), missing));

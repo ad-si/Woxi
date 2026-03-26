@@ -1237,7 +1237,7 @@ pub fn day_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Integer(nm as i128),
         Expr::Integer(nd as i128),
       ]),
-      Expr::Identifier("Day".to_string()),
+      Expr::String("Day".to_string()),
     ],
   })
 }
