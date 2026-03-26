@@ -1228,6 +1228,60 @@ mod negative_binomial_distribution {
   }
 }
 
+mod pascal_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("PascalDistribution[3, 1/2]").unwrap(),
+      "PascalDistribution[3, 1/2]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[PascalDistribution[3, 1/2], 5]").unwrap(),
+      "3/16"
+    );
+  }
+
+  #[test]
+  fn pdf_below_support() {
+    assert_eq!(
+      interpret("PDF[PascalDistribution[3, 1/2], 2]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(interpret("Mean[PascalDistribution[3, 1/2]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[PascalDistribution[3, 1/2]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(interpret("Mean[PascalDistribution[n, p]]").unwrap(), "n/p");
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[PascalDistribution[n, p]]").unwrap(),
+      "(n*(1 - p))/p^2"
+    );
+  }
+}
+
 mod stable_distribution {
   use super::*;
 
