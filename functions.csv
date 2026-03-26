@@ -272,7 +272,7 @@ AsymptoticEquivalent,,,,11.3,4809
 AsymptoticExpectation,,,,12.2,4527
 AsymptoticGreater,,,,11.3,4881
 AsymptoticGreaterEqual,,,,11.3,
-AsymptoticIntegrate,,,,11.3,2889
+AsymptoticIntegrate,Compute the series expansion of an antiderivative,✅,pure,11.3,2889
 AsymptoticLess,,,,11.3,5079
 AsymptoticLessEqual,,,,11.3,3889
 AsymptoticOutputTracker,,,,10,3765
