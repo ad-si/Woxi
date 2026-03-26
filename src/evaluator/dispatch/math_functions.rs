@@ -2892,6 +2892,12 @@ pub fn dispatch_math_functions(
     "CantorStaircase" if args.len() == 1 => {
       return Some(cantor_staircase_ast(&args[0]));
     }
+    "Midpoint" if args.len() == 1 => {
+      return Some(midpoint_ast(&args[0]));
+    }
+    "QFactorial" if args.len() == 2 => {
+      return Some(qfactorial_ast(&args[0], &args[1]));
+    }
     _ => {}
   }
   None
@@ -3056,6 +3062,107 @@ fn cantor_staircase_f64(x: f64) -> f64 {
   }
 
   result
+}
+
+/// Midpoint[{p1, p2}] or Midpoint[Line[{p1, p2}]] - midpoint of two points
+fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  // Extract the two points from {p1, p2} or Line[{p1, p2}]
+  let points = match arg {
+    Expr::List(items) if items.len() == 2 => items,
+    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => {
+      if let Expr::List(items) = &args[0] {
+        if items.len() == 2 {
+          items
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "Midpoint".to_string(),
+            args: vec![arg.clone()],
+          });
+        }
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Midpoint".to_string(),
+          args: vec![arg.clone()],
+        });
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Midpoint".to_string(),
+        args: vec![arg.clone()],
+      });
+    }
+  };
+
+  let p1 = &points[0];
+  let p2 = &points[1];
+
+  // (p1 + p2) / 2 - works for both scalar and vector points
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![p1.clone(), p2.clone()],
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(sum),
+    right: Box::new(Expr::Integer(2)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// QFactorial[n, q] - q-analog of the factorial
+/// [n]_q! = [1]_q * [2]_q * ... * [n]_q where [k]_q = (1 - q^k) / (1 - q)
+fn qfactorial_ast(
+  n_expr: &Expr,
+  q_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match crate::functions::math_ast::expr_to_i128(n_expr) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "QFactorial".to_string(),
+        args: vec![n_expr.clone(), q_expr.clone()],
+      });
+    }
+  };
+
+  if n == 0 || n == 1 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Compute product of [k]_q for k = 1 to n
+  let mut factors = Vec::new();
+  for k in 1..=n {
+    // [k]_q = (1 - q^k) / (1 - q)
+    let q_k = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(q_expr.clone()),
+      right: Box::new(Expr::Integer(k as i128)),
+    };
+    let numerator = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(q_k),
+    };
+    let denominator = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(q_expr.clone()),
+    };
+    let factor = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(denominator),
+    };
+    factors.push(factor);
+  }
+
+  let product = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors,
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&product)
 }
 
 /// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that

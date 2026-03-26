@@ -2039,3 +2039,65 @@ mod multiline_continuation {
     assert_eq!(interpret("a = 3 *\n  4\na").unwrap(), "12");
   }
 }
+
+mod midpoint {
+  use super::*;
+
+  #[test]
+  fn two_points_2d() {
+    assert_eq!(interpret("Midpoint[{{0, 0}, {4, 6}}]").unwrap(), "{2, 3}");
+  }
+
+  #[test]
+  fn two_points_3d() {
+    assert_eq!(
+      interpret("Midpoint[{{1, 2, 3}, {5, 6, 7}}]").unwrap(),
+      "{3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn symbolic_points() {
+    assert_eq!(
+      interpret("Midpoint[{{a, b}, {c, d}}]").unwrap(),
+      "{(a + c)/2, (b + d)/2}"
+    );
+  }
+
+  #[test]
+  fn with_line() {
+    assert_eq!(
+      interpret("Midpoint[Line[{{0, 0}, {4, 6}}]]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn scalar_midpoint() {
+    assert_eq!(interpret("Midpoint[{2, 8}]").unwrap(), "5");
+  }
+}
+
+mod qfactorial {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("QFactorial[0, q]").unwrap(), "1");
+  }
+
+  #[test]
+  fn one() {
+    assert_eq!(interpret("QFactorial[1, q]").unwrap(), "1");
+  }
+
+  #[test]
+  fn three_half() {
+    assert_eq!(interpret("QFactorial[3, 1/2]").unwrap(), "21/8");
+  }
+
+  #[test]
+  fn four_half() {
+    assert_eq!(interpret("QFactorial[4, 1/2]").unwrap(), "315/64");
+  }
+}
