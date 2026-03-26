@@ -3326,6 +3326,52 @@ mod frenet_serret_system {
   }
 }
 
+mod max_limit {
+  use super::*;
+
+  #[test]
+  fn one_over_x_at_zero() {
+    assert_eq!(interpret("MaxLimit[1/x, x -> 0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn sin_x_over_x_at_zero() {
+    assert_eq!(interpret("MaxLimit[Sin[x]/x, x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn polynomial_at_infinity() {
+    assert_eq!(
+      interpret("MaxLimit[x^2, x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("MaxLimit[5, x -> 0]").unwrap(), "5");
+  }
+}
+
+mod min_limit {
+  use super::*;
+
+  #[test]
+  fn one_over_x_at_zero() {
+    assert_eq!(interpret("MinLimit[1/x, x -> 0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn sin_x_over_x_at_zero() {
+    assert_eq!(interpret("MinLimit[Sin[x]/x, x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("MinLimit[5, x -> 0]").unwrap(), "5");
+  }
+}
+
 mod arc_curvature {
   use super::*;
 

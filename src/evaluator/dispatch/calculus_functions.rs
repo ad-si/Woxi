@@ -89,6 +89,12 @@ pub fn dispatch_calculus_functions(
     "Limit" if (2..=3).contains(&args.len()) => {
       return Some(crate::functions::calculus_ast::limit_ast(args));
     }
+    "MaxLimit" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::max_limit_ast(args));
+    }
+    "MinLimit" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::min_limit_ast(args));
+    }
     "Series" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::series_ast(args));
     }
