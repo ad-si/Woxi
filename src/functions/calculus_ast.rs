@@ -6878,6 +6878,200 @@ fn cross_product_3d(a: &[Expr], b: &[Expr]) -> Vec<Expr> {
   ]
 }
 
+/// DifferenceDelta[f, x] = f(x+1) - f(x)
+/// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
+/// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h
+pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "DifferenceDelta".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let expr = &args[0];
+
+  // Parse second argument: x, {x, n}, or {x, n, h}
+  let (var_name, order, step) = if args.len() == 1 {
+    return Ok(Expr::FunctionCall {
+      name: "DifferenceDelta".to_string(),
+      args: args.to_vec(),
+    });
+  } else {
+    match &args[1] {
+      Expr::Identifier(name) => (name.clone(), 1usize, Expr::Integer(1)),
+      Expr::List(items) if !items.is_empty() => {
+        let var = match &items[0] {
+          Expr::Identifier(name) => name.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "DifferenceDelta".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let n = if items.len() >= 2 {
+          match crate::functions::math_ast::expr_to_i128(&items[1]) {
+            Some(n) if n >= 0 => n as usize,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "DifferenceDelta".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          }
+        } else {
+          1
+        };
+        let h = if items.len() >= 3 {
+          items[2].clone()
+        } else {
+          Expr::Integer(1)
+        };
+        (var, n, h)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DifferenceDelta".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  };
+
+  if order == 0 {
+    return crate::evaluator::evaluate_expr_to_expr(expr);
+  }
+
+  // Apply forward difference operator n times
+  let mut current = expr.clone();
+  for _ in 0..order {
+    // f(x + h)
+    let x_plus_h = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::Identifier(var_name.clone())),
+      right: Box::new(step.clone()),
+    };
+    let shifted =
+      crate::syntax::substitute_variable(&current, &var_name, &x_plus_h);
+    // f(x + h) - f(x)
+    let diff = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(shifted),
+      right: Box::new(current.clone()),
+    };
+    let expanded = Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![diff],
+    };
+    current = match crate::evaluator::evaluate_expr_to_expr(&expanded) {
+      Ok(v) => v,
+      Err(e) => return Err(e),
+    };
+  }
+
+  Ok(current)
+}
+
+/// DifferenceQuotient[f, {x, h}] = (f(x+h) - f(x)) / h
+/// DifferenceQuotient[f, x] = f(x+1) - f(x) (i.e. DifferenceDelta with step 1)
+/// DifferenceQuotient[f, {x, h}, n] = n-th order difference quotient
+pub fn difference_quotient_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "DifferenceQuotient".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let expr = &args[0];
+
+  // Parse second argument
+  let (var_name, step) = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(name) => (name.clone(), Expr::Integer(1)),
+      Expr::List(items) if items.len() == 2 => {
+        let var = match &items[0] {
+          Expr::Identifier(name) => name.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "DifferenceQuotient".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        (var, items[1].clone())
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DifferenceQuotient".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    return Ok(Expr::FunctionCall {
+      name: "DifferenceQuotient".to_string(),
+      args: args.to_vec(),
+    });
+  };
+
+  let order = if args.len() == 3 {
+    match crate::functions::math_ast::expr_to_i128(&args[2]) {
+      Some(n) if n >= 0 => n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DifferenceQuotient".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  if order == 0 {
+    return crate::evaluator::evaluate_expr_to_expr(expr);
+  }
+
+  // Apply difference quotient n times: (DifferenceDelta[f, {x, 1, h}]) / h^n
+  // Build DifferenceDelta args
+  let delta_args = vec![
+    expr.clone(),
+    Expr::List(vec![
+      Expr::Identifier(var_name.clone()),
+      Expr::Integer(order as i128),
+      step.clone(),
+    ]),
+  ];
+  let delta_result = difference_delta_ast(&delta_args)?;
+
+  // Divide by h^n
+  let divisor = if order == 1 {
+    step.clone()
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(step.clone()),
+      right: Box::new(Expr::Integer(order as i128)),
+    }
+  };
+
+  let quotient = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(delta_result),
+    right: Box::new(divisor),
+  };
+  let result = Expr::FunctionCall {
+    name: "Cancel".to_string(),
+    args: vec![quotient],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
 /// Helper: compute dot product of two vectors
 fn dot_product(a: &[Expr], b: &[Expr]) -> Expr {
   let terms: Vec<Expr> = a

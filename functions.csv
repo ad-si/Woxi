@@ -1417,8 +1417,8 @@ Diff,,,,14.1,
 Diff3,,,,14.1,
 DiffAlignmentMethod,,,,14.1,
 DiffApply,,,,14.1,
-DifferenceDelta,,,,7,2889
-DifferenceQuotient,,,,10.4,2911
+DifferenceDelta,Compute the forward difference of an expression,✅,pure,7,2889
+DifferenceQuotient,Compute the forward difference quotient of an expression,✅,pure,10.4,2911
 DifferenceRoot,,,,7,2798
 DifferenceRootReduce,,,,7,2867
 Differences,Returns successive differences between consecutive elements,✅,pure,6,470
@@ -4410,7 +4410,7 @@ Q,,,,,
 QBinomial,Computes the Gaussian binomial coefficient (q-analog of binomial),✅,pure,7,2734
 QFactorial,,,,7,3008
 QGamma,,,,7,2871
-QHypergeometricPFQ,,,,7,2729
+QHypergeometricPFQ,q-analogue of the generalized hypergeometric function,🚫,,7,2729
 QnDispersion,,,,11.1,4387
 QPochhammer,q-Pochhammer symbol,✅,pure,7,871
 QPolyGamma,,,,7,3862
@@ -6048,7 +6048,7 @@ WaveletPhi,wavelet function,🚫,None,8,2371
 WaveletPsi,Wavelet function (signal processing),🚫,,8,2006
 WaveletScale,,🚫,,8,4291
 WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8,2197
-WaveletThreshold,,,,8,2723
+WaveletThreshold,Threshold wavelet coefficients in discrete wavelet data,🚫,,8,2723
 WavePDEComponent,,,,12.2,
 WeaklyConnectedComponents,weakly connected components of a graph,✅,Computation,9,2767
 WeaklyConnectedGraphComponents,,,,10.4,3755
