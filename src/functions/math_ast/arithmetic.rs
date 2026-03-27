@@ -957,6 +957,15 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             std::cmp::Ordering::Greater
           };
         }
+        // Constant (no free variables) non-pair term sorts before pair terms
+        // (e.g. (1+Pi)/2 comes before x, matching Wolfram).
+        if !has_free_variables(&none_base) {
+          return if a_has_pairs {
+            std::cmp::Ordering::Greater
+          } else {
+            std::cmp::Ordering::Less
+          };
+        }
         // For compound algebraic terms with free variables, compare by
         // earliest variable name. Same or later variable → monomial first.
         if has_free_variables(&none_base) {
@@ -989,7 +998,13 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // and have free variables, compare by earliest variable name
       // (Wolfram sorts by leading variable). Skip for transcendental
       // functions where function-name ordering takes priority.
-      if !a_has_pairs && !b_has_pairs && pa == 0 && pb == 0 {
+      // Also skip when both bases are function calls with the same name
+      // (e.g. f[x] vs f[h+x]) — structural comparison is more accurate there.
+      let same_fn_head = matches!(
+        (&base_a, &base_b),
+        (Expr::FunctionCall { name: na, .. }, Expr::FunctionCall { name: nb, .. }) if na == nb
+      );
+      if !a_has_pairs && !b_has_pairs && pa == 0 && pb == 0 && !same_fn_head {
         let a_var = extract_earliest_variable(&base_a);
         let b_var = extract_earliest_variable(&base_b);
         if let (Some(av), Some(bv)) = (&a_var, &b_var) {

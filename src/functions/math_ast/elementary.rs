@@ -511,6 +511,21 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         times_ast(&[outside_expr, sqrt_part])
       }
     }
+    // Sqrt[Plus[...]] — extract perfect square GCD from integer coefficients.
+    // E.g. Sqrt[4 + 36*t^2 + 36*t^4] → 2*Sqrt[1 + 9*t^2 + 9*t^4]
+    _ if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus") =>
+    {
+      if let Some(result) = try_sqrt_plus_gcd(&args[0]) {
+        return Ok(result);
+      }
+      if let Some(result) = try_sqrt_gaussian(&args[0]) {
+        return Ok(result);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: args.to_vec(),
+      })
+    }
     // Sqrt[a + b*I] for Gaussian integers — try to find exact Gaussian integer sqrt
     _ => {
       if let Some(result) = try_sqrt_gaussian(&args[0]) {
@@ -521,6 +536,139 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec(),
       })
     }
+  }
+}
+
+/// Extract the integer coefficient from a Plus term.
+/// Returns (coefficient, base) where term = coefficient * base.
+/// For Integer(n), returns (n, Integer(1)).
+/// For Times[n, rest], returns (n, rest).
+fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
+  match term {
+    Expr::Integer(n) => Some((*n, Expr::Integer(1))),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::Integer(_)) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        let base = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec(),
+          }
+        };
+        Some((*n, base))
+      } else {
+        None
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (c, base) = extract_int_coeff(operand)?;
+      Some((-c, base))
+    }
+    _ => None,
+  }
+}
+
+/// Try to simplify Sqrt[Plus[...]] by extracting the GCD of integer coefficients.
+/// If the GCD is a perfect square, factor it out.
+/// E.g. Sqrt[4 + 36*t^2 + 36*t^4] → 2*Sqrt[1 + 9*t^2 + 9*t^4]
+fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
+  use crate::functions::math_ast::numeric_utils::gcd;
+
+  let terms = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args,
+    _ => return None,
+  };
+
+  if terms.is_empty() {
+    return None;
+  }
+
+  // Extract integer coefficients from each Plus term
+  let mut pairs: Vec<(i128, Expr)> = Vec::new();
+  for term in terms {
+    match extract_int_coeff(term) {
+      Some(pair) => pairs.push(pair),
+      None => return None,
+    }
+  }
+
+  // Compute GCD of absolute values of all coefficients
+  let mut g = pairs[0].0.abs();
+  for &(c, _) in &pairs[1..] {
+    g = gcd(g, c.abs()).unsigned_abs() as i128;
+    if g <= 1 {
+      return None;
+    }
+  }
+
+  if g <= 1 {
+    return None;
+  }
+
+  // Find the largest perfect square factor of the GCD
+  let mut sqrt_factor = 1i128;
+  let mut remaining_g = g;
+  let mut f = 2i128;
+  while f * f <= remaining_g {
+    while remaining_g % (f * f) == 0 {
+      sqrt_factor *= f;
+      remaining_g /= f * f;
+    }
+    f += 1;
+  }
+
+  if sqrt_factor <= 1 {
+    return None;
+  }
+
+  // Factor to divide out from under the sqrt: sqrt_factor^2
+  let factor_out = sqrt_factor * sqrt_factor;
+
+  // Build new terms with coefficients divided by factor_out
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for (coeff, base) in &pairs {
+    let new_coeff = coeff / factor_out;
+    if matches!(base, Expr::Integer(1)) {
+      // Bare integer term
+      new_terms.push(Expr::Integer(new_coeff));
+    } else if new_coeff == 1 {
+      new_terms.push(base.clone());
+    } else if new_coeff == -1 {
+      new_terms.push(super::trigonometric::negate_expr(base.clone()));
+    } else {
+      new_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(new_coeff), base.clone()],
+      });
+    }
+  }
+
+  let new_sum = if new_terms.len() == 1 {
+    new_terms.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: new_terms,
+    }
+  };
+
+  let sqrt_part = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![new_sum],
+  };
+
+  if sqrt_factor == 1 {
+    Some(sqrt_part)
+  } else {
+    times_ast(&[Expr::Integer(sqrt_factor), sqrt_part]).ok()
   }
 }
 

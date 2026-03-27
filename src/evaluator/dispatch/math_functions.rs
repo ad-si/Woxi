@@ -3068,7 +3068,13 @@ fn cantor_staircase_f64(x: f64) -> f64 {
 fn midpoint_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   // Extract the two points from {p1, p2} or Line[{p1, p2}]
   let points = match arg {
-    Expr::List(items) if items.len() == 2 => items,
+    Expr::List(items)
+      if items.len() == 2
+        && matches!(&items[0], Expr::List(_))
+        && matches!(&items[1], Expr::List(_)) =>
+    {
+      items
+    }
     Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => {
       if let Expr::List(items) = &args[0] {
         if items.len() == 2 {
