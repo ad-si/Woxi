@@ -263,6 +263,9 @@ pub fn factor_term_count(expr: &Expr) -> usize {
       left,
       right,
     } => factor_term_count(left) + factor_term_count(right),
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().map(|a| factor_term_count(a)).sum()
+    }
     _ => 1,
   }
 }

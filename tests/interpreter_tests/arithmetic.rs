@@ -2073,8 +2073,9 @@ mod midpoint {
   }
 
   #[test]
-  fn scalar_midpoint() {
-    assert_eq!(interpret("Midpoint[{2, 8}]").unwrap(), "5");
+  fn scalar_midpoint_unevaluated() {
+    // Midpoint[{2, 8}] returns unevaluated because {2, 8} are scalars, not points
+    assert_eq!(interpret("Midpoint[{2, 8}]").unwrap(), "Midpoint[{2, 8}]");
   }
 }
 

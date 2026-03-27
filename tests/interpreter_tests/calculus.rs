@@ -3441,7 +3441,7 @@ mod arc_curvature {
     // 3D curve {t, t^2, t^3}
     assert_eq!(
       interpret("ArcCurvature[{t, t^2, t^3}, t]").unwrap(),
-      "Sqrt[4 + 36*t^2 + 36*t^4]/(1 + 4*t^2 + 9*t^4)^(3/2)"
+      "(2*Sqrt[1 + 9*t^2 + 9*t^4])/(1 + 4*t^2 + 9*t^4)^(3/2)"
     );
   }
 
@@ -3491,15 +3491,16 @@ mod difference_delta {
   fn symbolic_function() {
     assert_eq!(
       interpret("DifferenceDelta[f[x], x]").unwrap(),
-      "f[1 + x] - f[x]"
+      "-f[x] + f[1 + x]"
     );
   }
 
   #[test]
   fn sin_function() {
+    // Wolfram simplifies to: 2*Sin[1/2]*Sin[(1 + Pi)/2 + x]
     assert_eq!(
       interpret("DifferenceDelta[Sin[x], x]").unwrap(),
-      "Sin[1 + x] - Sin[x]"
+      "2*Sin[1/2]*Sin[(1 + Pi)/2 + x]"
     );
   }
 
@@ -3532,11 +3533,8 @@ mod difference_delta {
 
   #[test]
   fn exponential() {
-    // DifferenceDelta[2^x, x] = 2^(x+1) - 2^x
-    assert_eq!(
-      interpret("DifferenceDelta[2^x, x]").unwrap(),
-      "-2^x + 2^(1 + x)"
-    );
+    // DifferenceDelta[2^x, x] = 2^(x+1) - 2^x = 2^x
+    assert_eq!(interpret("DifferenceDelta[2^x, x]").unwrap(), "2^x");
   }
 }
 
@@ -3544,13 +3542,20 @@ mod difference_quotient {
   use super::*;
 
   #[test]
-  fn linear() {
-    assert_eq!(interpret("DifferenceQuotient[x, x]").unwrap(), "1");
+  fn bare_var_unevaluated() {
+    // DifferenceQuotient[f, x] returns unevaluated (only {x, h} form evaluates)
+    assert_eq!(
+      interpret("DifferenceQuotient[x, x]").unwrap(),
+      "DifferenceQuotient[x, x]"
+    );
   }
 
   #[test]
-  fn quadratic_step_1() {
-    assert_eq!(interpret("DifferenceQuotient[x^2, x]").unwrap(), "1 + 2*x");
+  fn bare_var_quadratic_unevaluated() {
+    assert_eq!(
+      interpret("DifferenceQuotient[x^2, x]").unwrap(),
+      "DifferenceQuotient[x^2, x]"
+    );
   }
 
   #[test]
@@ -3573,7 +3578,7 @@ mod difference_quotient {
   fn symbolic_function() {
     assert_eq!(
       interpret("DifferenceQuotient[f[x], {x, h}]").unwrap(),
-      "(f[h + x] - f[x])/h"
+      "(-f[x] + f[h + x])/h"
     );
   }
 

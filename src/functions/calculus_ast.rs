@@ -7097,6 +7097,192 @@ pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Check if an expression contains a variable by name.
+fn expr_has_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == var,
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) | Expr::Constant(_) => {
+      false
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_var(left, var) || expr_has_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_var(operand, var),
+    Expr::FunctionCall { name: n, args } => {
+      if n == "Rational" {
+        return false;
+      }
+      args.iter().any(|a| expr_has_var(a, var))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_has_var(a, var)),
+    _ => false,
+  }
+}
+
+/// Try to compute DifferenceDelta for exponential expressions a^f(x).
+/// Returns Some(simplified_expr) if the expression is Power[base, exponent]
+/// where base doesn't depend on the variable.
+/// Δ[a^f(x), {x, h}] = a^f(x) * (a^(f(x+h)-f(x)) - 1)
+fn try_exponential_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
+  let (base, exponent) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+
+  // Base must not contain the variable
+  if expr_has_var(base, var) {
+    return None;
+  }
+
+  // Exponent must contain the variable
+  if !expr_has_var(exponent, var) {
+    return None;
+  }
+
+  // Compute f(x+h) - f(x) for the exponent
+  let x_plus_h = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::Identifier(var.to_string())),
+    right: Box::new(step.clone()),
+  };
+  let shifted_exp =
+    crate::syntax::substitute_variable(exponent, var, &x_plus_h);
+
+  // delta_exp = Expand[shifted_exp - exponent]
+  let delta_exp = Expr::FunctionCall {
+    name: "Expand".to_string(),
+    args: vec![Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(shifted_exp),
+      right: Box::new(exponent.clone()),
+    }],
+  };
+
+  // Result: base^exponent * (base^delta_exp - 1)
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(expr.clone()),
+    right: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(delta_exp),
+      }),
+      right: Box::new(Expr::Integer(1)),
+    }),
+  };
+
+  Some(result)
+}
+
+/// Try to compute DifferenceDelta for Sin/Cos using sum-to-product identities.
+/// Δ[Sin[f(x)]] = 2*Sin[Δf/2]*Sin[Pi/2 + (f(x+h)+f(x))/2]
+/// Δ[Cos[f(x)]] = -2*Sin[(f(x+h)+f(x))/2]*Sin[Δf/2]
+/// where Δf = f(x+h) - f(x).
+fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
+  let (fn_name, arg) = match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Sin" || name == "Cos") && args.len() == 1 =>
+    {
+      (name.as_str(), &args[0])
+    }
+    _ => return None,
+  };
+
+  // Argument must contain the variable
+  if !expr_has_var(arg, var) {
+    return None;
+  }
+
+  let x_plus_h = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::Identifier(var.to_string())),
+    right: Box::new(step.clone()),
+  };
+  let shifted_arg = crate::syntax::substitute_variable(arg, var, &x_plus_h);
+
+  // Compute half_delta = (shifted_arg - arg) / 2 via evaluation
+  let half_delta_raw = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Expand".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(shifted_arg.clone()),
+        right: Box::new(arg.clone()),
+      }],
+    }),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let half_delta =
+    crate::evaluator::evaluate_expr_to_expr(&half_delta_raw).ok()?;
+
+  // Build second Sin argument:
+  // For Sin: arg + (step + Pi)/2  (= arg + half_delta + Pi/2, combined fraction)
+  // For Cos: arg + (step - Pi)/2
+  // We construct (step ± Pi)/2 as a single fraction, then add arg.
+  let pi_term = if fn_name == "Sin" {
+    Expr::Constant("Pi".to_string())
+  } else {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Constant("Pi".to_string())),
+    }
+  };
+  // Build (2*half_delta + Pi) / 2  for the constant part, but use direct
+  // (step + Pi) / 2 to get a cleaner fraction when possible.
+  // General form: half_delta + Pi/2 + arg, combined as arg + (2*half_delta ± Pi)/2
+  let const_part = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(half_delta.clone()),
+      }),
+      right: Box::new(pi_term),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let second_arg_expr = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(const_part),
+    right: Box::new(arg.clone()),
+  };
+
+  let coeff = if fn_name == "Sin" {
+    Expr::Integer(2)
+  } else {
+    Expr::Integer(-2)
+  };
+
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      coeff,
+      Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![Expr::from(half_delta)],
+      },
+      Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![second_arg_expr],
+      },
+    ],
+  };
+
+  Some(result)
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h
@@ -7165,6 +7351,23 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Apply forward difference operator n times
   let mut current = expr.clone();
   for _ in 0..order {
+    // Special case: Power[base, exponent] where base is independent of the variable.
+    // Δ[base^f(x), {x, h}] = base^f(x) * (base^Δ[f(x)] - 1), which for f(x)=x
+    // gives base^x * (base^h - 1). This avoids unsimplified a^(x+h) - a^x forms.
+    if let Some(result) = try_exponential_delta(&current, &var_name, &step) {
+      current = crate::evaluator::evaluate_expr_to_expr(&result)?;
+      continue;
+    }
+
+    // Special case: Sin[f(x)] or Cos[f(x)] — use sum-to-product identities.
+    // Δ[Sin[f(x)]] = 2*Cos[(f(x+h)+f(x))/2]*Sin[(f(x+h)-f(x))/2]
+    // Δ[Cos[f(x)]] = -2*Sin[(f(x+h)+f(x))/2]*Sin[(f(x+h)-f(x))/2]
+    // Then Cos[θ] → Sin[Pi/2 + θ] and -Sin[θ] → Sin[-Pi/2 + θ] to match Wolfram.
+    if let Some(result) = try_trig_delta(&current, &var_name, &step) {
+      current = crate::evaluator::evaluate_expr_to_expr(&result)?;
+      continue;
+    }
+
     // f(x + h)
     let x_plus_h = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Plus,
@@ -7207,10 +7410,9 @@ pub fn difference_quotient_ast(
 
   let expr = &args[0];
 
-  // Parse second argument
+  // Parse second argument: only {x, h} form is supported (bare x returns unevaluated)
   let (var_name, step) = if args.len() >= 2 {
     match &args[1] {
-      Expr::Identifier(name) => (name.clone(), Expr::Integer(1)),
       Expr::List(items) if items.len() == 2 => {
         let var = match &items[0] {
           Expr::Identifier(name) => name.clone(),

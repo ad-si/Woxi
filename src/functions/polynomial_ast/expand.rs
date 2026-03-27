@@ -557,7 +557,9 @@ pub fn combine_and_build(terms: Vec<Expr>) -> Expr {
   if result_terms.is_empty() {
     Expr::Integer(0)
   } else {
-    build_sum(result_terms)
+    // Use plus_ast for canonical Plus ordering (handles non-polynomial terms correctly)
+    crate::functions::math_ast::plus_ast(&result_terms)
+      .unwrap_or_else(|_| build_sum(result_terms))
   }
 }
 
