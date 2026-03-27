@@ -6741,6 +6741,32 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         {
           result.push_str(" - ");
           result.push_str(&expr_to_input_form(operand));
+        } else if let Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } = arg
+        {
+          if matches!(left.as_ref(), Expr::Integer(-1)) {
+            result.push_str(" - ");
+            result.push_str(&expr_to_input_form(right));
+          } else if let Expr::Integer(n) = left.as_ref() {
+            if *n < 0 {
+              result.push_str(" - ");
+              let pos = Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Integer(-n)),
+                right: right.clone(),
+              };
+              result.push_str(&expr_to_input_form(&pos));
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_input_form(arg));
+            }
+          } else {
+            result.push_str(" + ");
+            result.push_str(&expr_to_input_form(arg));
+          }
         } else if let Expr::FunctionCall {
           name: tname,
           args: targs,
@@ -6808,6 +6834,14 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
             };
             result.push_str(" - ");
             result.push_str(&expr_to_input_form(&pos_term));
+          } else {
+            result.push_str(" + ");
+            result.push_str(&expr_to_input_form(arg));
+          }
+        } else if let Expr::Integer(n) = arg {
+          if *n < 0 {
+            result.push_str(" - ");
+            result.push_str(&expr_to_input_form(&Expr::Integer(-n)));
           } else {
             result.push_str(" + ");
             result.push_str(&expr_to_input_form(arg));
