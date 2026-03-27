@@ -435,6 +435,8 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
 
     // ── Energy (time-based): WattHours = kg⋅m²/(s) ⋅ 3600 ────────────
     // 1 Wh = 3600 J, dimension same as Joules: kg⋅m²/s²
+    // Note: wolframscript normalization of these names varies by version/environment.
+    // The verify script skips Quantity tests due to this variability.
     "WattHours" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
       to_si_numer: 3600,
@@ -660,10 +662,10 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "Ω" => "Ohms",
     "kΩ" => "Kilohms",
     "MΩ" => "Megohms",
-    "H" => "Henries",
-    "mH" => "Millihenries",
     "Wh" => "WattHours",
     "kWh" => "KilowattHours",
+    "H" => "Henries",
+    "mH" => "Millihenries",
     "Hz" => "Hertz",
     "kHz" => "Kilohertz",
     "MHz" => "Megahertz",
@@ -1131,10 +1133,10 @@ pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
     "Ohms" => Some("\u{03a9}"),     // Ω
     "Kilohms" => Some("k\u{03a9}"), // kΩ
     "Megohms" => Some("M\u{03a9}"), // MΩ
-    "Henries" => Some("H"),
-    "Millihenries" => Some("mH"),
     "WattHours" => Some("Wh"),
     "KilowattHours" => Some("kWh"),
+    "Henries" => Some("H"),
+    "Millihenries" => Some("mH"),
     "Hertz" => Some("Hz"),
     "Kilohertz" => Some("kHz"),
     "Megahertz" => Some("MHz"),
@@ -1214,13 +1216,126 @@ fn normalize_singular_to_plural(name: &str) -> String {
   format!("{}s", name)
 }
 
-/// Recursively normalize unit expressions: expand abbreviations like "km/h" → "Kilometers"/"Hours".
-/// Strings are kept as Expr::String (Wolfram stores units as strings internally).
+/// Full normalization for UnitConvert output: expands abbreviations, "Per" compounds,
+/// singular forms, and compound unit strings. Used for UnitConvert results where
+/// wolframscript normalizes the target unit to canonical form.
+fn normalize_unit_for_output(mut unit: Expr) -> Expr {
+  match &mut unit {
+    Expr::String(s) => {
+      let s = s.clone();
+      if get_unit_info(&s).is_some() {
+        Expr::String(canonical_unit_name(&s).to_string())
+      } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
+        normalize_unit_for_output(expanded)
+      } else if let Some(expanded) = resolve_per_unit(&s) {
+        normalize_unit_for_output(expanded)
+      } else if let Some(parsed) = try_parse_unit_string(&s) {
+        normalize_unit_for_output(parsed)
+      } else {
+        let plural = normalize_singular_to_plural(&s);
+        if get_unit_info(&plural).is_some() {
+          Expr::String(canonical_unit_name(&plural).to_string())
+        } else {
+          Expr::String(s)
+        }
+      }
+    }
+    Expr::BinaryOp { .. } => {
+      if has_bare_identifier_units(&unit) {
+        unit
+      } else if let Expr::BinaryOp { op, left, right } = &mut unit {
+        let op = *op;
+        let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
+        let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
+        Expr::BinaryOp {
+          op,
+          left: Box::new(normalize_unit_for_output(left)),
+          right: Box::new(normalize_unit_for_output(right)),
+        }
+      } else {
+        unreachable!()
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let name = std::mem::take(name);
+      let args = std::mem::take(args);
+      Expr::FunctionCall {
+        name,
+        args: args.into_iter().map(normalize_unit_for_output).collect(),
+      }
+    }
+    Expr::Identifier(s) => {
+      let s = s.clone();
+      if get_unit_info(&s).is_some() {
+        return Expr::String(canonical_unit_name(&s).to_string());
+      }
+      if let Some(expanded) = resolve_unit_abbreviation(&s) {
+        return normalize_unit_for_output(expanded);
+      }
+      if let Some(expanded) = resolve_per_unit(&s) {
+        return normalize_unit_for_output(expanded);
+      }
+      let plural = normalize_singular_to_plural(&s);
+      if get_unit_info(&plural).is_some() {
+        return Expr::String(canonical_unit_name(&plural).to_string());
+      }
+      unit
+    }
+    _ => unit,
+  }
+}
+
+/// Unit abbreviations/names that wolframscript does NOT natively recognize.
+/// These require the "Interpreting unit" entity-framework step which fails
+/// in batch/Quiet contexts. They should be preserved as-is in normalize_unit.
+/// Check if a unit expression contains any non-native unit strings.
+fn has_non_native_unit(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(s) | Expr::Identifier(s) => is_non_native_string_unit(s),
+    Expr::BinaryOp { left, right, .. } => {
+      has_non_native_unit(left) || has_non_native_unit(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(has_non_native_unit),
+    _ => false,
+  }
+}
+
+fn is_non_native_string_unit(s: &str) -> bool {
+  matches!(
+    s,
+    "us"
+      | "um"
+      | "mT"
+      | "kn"
+      | "t"
+      | "d"
+      | "Pa"
+      | "cal"
+      | "kcal"
+      | "kWh"
+      | "Wh"
+      | "KilowattHours"
+      | "WattHours"
+      | "Tonnes"
+      | "Calories"
+      | "Kilocalories"
+      | "Foot"
+      | "Inch"
+      | "MilesPerHour"
+  )
+}
+
+/// Recursively normalize unit expressions for display.
+/// Expands native abbreviations, "Per" compounds, singular forms, and compound
+/// strings. Preserves non-native unit names that wolframscript can't resolve.
 fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
-      // Try abbreviation expansion first
+      // Non-native unit strings are preserved as-is
+      if is_non_native_string_unit(&s) {
+        return Expr::String(s);
+      }
       if get_unit_info(&s).is_some() {
         Expr::String(canonical_unit_name(&s).to_string())
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
@@ -1520,6 +1635,10 @@ pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     &args[1]
   };
+  // Non-native units → Wolfram returns False (can't determine compatibility)
+  if has_non_native_unit(u1) || has_non_native_unit(u2) {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
   let result = units_compatible(u1, u2);
   Ok(Expr::Identifier(
     if result { "True" } else { "False" }.to_string(),
@@ -1574,6 +1693,14 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
 
+    // Non-native unit names that wolframscript can't resolve → return unevaluated
+    if has_non_native_unit(unit) || has_non_native_unit(target) {
+      return Ok(Expr::FunctionCall {
+        name: "UnitConvert".to_string(),
+        args: args.to_vec(),
+      });
+    }
+
     // Try compound unit decomposition for both sides
     let from_info = decompose_unit_expr(unit);
     let to_info = decompose_unit_expr(target);
@@ -1594,7 +1721,12 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         multiply_magnitude_by_rational(mag, conv_numer, conv_denom)?;
       // Build target unit expression from decomposed target components
       // (preserves the user's target unit naming)
-      Ok(make_quantity(new_mag, normalize_unit(target.clone())))
+      // UnitConvert normalizes the target to canonical form
+      let norm_target = normalize_unit_for_output(target.clone());
+      Ok(Expr::FunctionCall {
+        name: "Quantity".to_string(),
+        args: vec![new_mag, norm_target],
+      })
     } else {
       // Fallback: return unevaluated
       Ok(Expr::FunctionCall {

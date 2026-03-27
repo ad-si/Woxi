@@ -260,7 +260,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Protected", "ReadProtected"]
     }
     "Plot3D" => {
-      vec!["HoldAll", "Protected", "ReadProtected"]
+      vec!["Protected", "ReadProtected"]
     }
     "FunctionInterpolation" => {
       vec!["HoldAll", "Protected", "ReadProtected"]
