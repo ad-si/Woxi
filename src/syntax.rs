@@ -3500,7 +3500,15 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
   use crate::functions::quantity_ast::unit_to_abbreviation;
   match unit {
     Expr::Identifier(s) | Expr::String(s) => {
-      unit_to_abbreviation(s).unwrap_or(s.as_str()).to_string()
+      // Try direct lookup, then plural form (since strings may not be normalized)
+      if let Some(abbr) = unit_to_abbreviation(s) {
+        abbr.to_string()
+      } else {
+        let plural = format!("{}s", s);
+        unit_to_abbreviation(&plural)
+          .unwrap_or(s.as_str())
+          .to_string()
+      }
     }
     Expr::BinaryOp {
       op: BinaryOperator::Power,
