@@ -326,6 +326,35 @@ mod subtraction_without_spaces {
   }
 
   #[test]
+  fn tostring_input_form_negative_coefficients() {
+    // Negative coefficients in Plus should render as "- N*..." not "+ -N*..."
+    assert_eq!(
+      interpret("ToString[Expand[Resultant[x^2 + a*x + b, x^2 + c*x + d, x]], InputForm]").unwrap(),
+      "b^2 - a*b*c + b*c^2 + a^2*d - 2*b*d - a*c*d + d^2"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Expand[InterpolatingPolynomial[{0, 1, 8, 27}, x]], InputForm]"
+      )
+      .unwrap(),
+      "-1 + 3*x - 3*x^2 + x^3"
+    );
+    assert_eq!(
+      interpret("ToString[Discriminant[x^2 + b*x + c, x], InputForm]").unwrap(),
+      "b^2 - 4*c"
+    );
+    assert_eq!(
+      interpret("ToString[Discriminant[a*x^2 + b*x + c, x], InputForm]")
+        .unwrap(),
+      "b^2 - 4*a*c"
+    );
+    assert_eq!(
+      interpret("ToString[Discriminant[x^3 + p*x + q, x], InputForm]").unwrap(),
+      "-4*p^3 - 27*q^2"
+    );
+  }
+
+  #[test]
   fn negative_numbers_still_work() {
     assert_eq!(interpret("{-1, -2, -3}").unwrap(), "{-1, -2, -3}");
     assert_eq!(interpret("-1 + 3").unwrap(), "2");
