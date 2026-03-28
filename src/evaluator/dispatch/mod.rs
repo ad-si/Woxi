@@ -2880,6 +2880,21 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Integer(edges.len() as i128));
   }
 
+  // FindMaximumFlow[graph, source, sink] — maximum flow value
+  if name == "FindMaximumFlow"
+    && args.len() == 3
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let Expr::List(verts) = &gargs[0]
+    && let Expr::List(edges) = &gargs[1]
+  {
+    return find_maximum_flow_impl(verts, edges, &args[1], &args[2], args);
+  }
+
   // VertexDegree[graph] or VertexDegree[graph, vertex] — vertex degree(s)
   if name == "VertexDegree"
     && (args.len() == 1 || args.len() == 2)
@@ -5501,4 +5516,105 @@ fn apply_morphological_2d(
     }
     _ => data.to_vec(),
   }
+}
+
+/// Edmonds-Karp max flow implementation (extracted to avoid bloating dispatch stack frame)
+fn find_maximum_flow_impl(
+  verts: &[Expr],
+  edges: &[Expr],
+  source: &Expr,
+  sink: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let vertex_idx = |v: &Expr| -> Option<usize> {
+    verts
+      .iter()
+      .position(|vert| crate::evaluator::pattern_matching::expr_equal(vert, v))
+  };
+
+  let s = match vertex_idx(source) {
+    Some(i) => i,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "FindMaximumFlow".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let t = match vertex_idx(sink) {
+    Some(i) => i,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "FindMaximumFlow".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = verts.len();
+  let mut cap = vec![vec![0i128; n]; n];
+  for edge in edges {
+    if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = edge
+    {
+      if eargs.len() == 2 {
+        if let (Some(u), Some(v)) =
+          (vertex_idx(&eargs[0]), vertex_idx(&eargs[1]))
+        {
+          cap[u][v] += 1;
+          if ename == "UndirectedEdge" {
+            cap[v][u] += 1;
+          }
+        }
+      }
+    }
+  }
+
+  let mut flow = vec![vec![0i128; n]; n];
+  let mut max_flow: i128 = 0;
+
+  loop {
+    let mut parent = vec![None::<usize>; n];
+    let mut visited = vec![false; n];
+    visited[s] = true;
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(s);
+
+    while let Some(u) = queue.pop_front() {
+      if u == t {
+        break;
+      }
+      for v in 0..n {
+        if !visited[v] && cap[u][v] - flow[u][v] > 0 {
+          visited[v] = true;
+          parent[v] = Some(u);
+          queue.push_back(v);
+        }
+      }
+    }
+
+    if !visited[t] {
+      break;
+    }
+
+    let mut bottleneck = i128::MAX;
+    let mut v = t;
+    while let Some(u) = parent[v] {
+      bottleneck = bottleneck.min(cap[u][v] - flow[u][v]);
+      v = u;
+    }
+
+    v = t;
+    while let Some(u) = parent[v] {
+      flow[u][v] += bottleneck;
+      flow[v][u] -= bottleneck;
+      v = u;
+    }
+
+    max_flow += bottleneck;
+  }
+
+  Ok(Expr::Integer(max_flow))
 }
