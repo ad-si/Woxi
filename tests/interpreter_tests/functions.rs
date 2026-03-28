@@ -12791,3 +12791,53 @@ mod option_symbols_batch {
     );
   }
 }
+
+mod find_maximum_flow {
+  use super::*;
+
+  #[test]
+  fn simple_two_paths() {
+    assert_eq!(
+      interpret("FindMaximumFlow[Graph[{1 -> 2, 2 -> 3, 1 -> 3}], 1, 3]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn linear_graph() {
+    assert_eq!(
+      interpret("FindMaximumFlow[Graph[{1 -> 2, 2 -> 3}], 1, 3]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn symbolic_vertices() {
+    assert_eq!(
+      interpret("FindMaximumFlow[Graph[{a -> b, b -> c, a -> c}], a, c]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn no_path() {
+    assert_eq!(
+      interpret("FindMaximumFlow[Graph[{1 -> 2, 3 -> 4}], 1, 4]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn bottleneck() {
+    // 1->2, 1->3, 2->4, 3->4: two paths, each capacity 1, max flow = 2
+    assert_eq!(
+      interpret(
+        "FindMaximumFlow[Graph[{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4}], 1, 4]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+}

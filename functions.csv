@@ -2840,7 +2840,7 @@ CosineDistance,Cosine distance between vectors,✅,none,6.0,2911
 DifferenceQuotient,Compute the forward difference quotient of an expression,✅,pure,10.4,2911
 EntityFunction,,🚫,,12.0,2911
 FaceGridsStyle,Option for Graphics3D specifying the style of face grids,✅,pure,6.0,2911
-FindMaximumFlow,,,,9.0,2911
+FindMaximumFlow,Find the maximum flow between two vertices in a graph,✅,pure,9.0,2911
 HodgeDual,,🚫,,9.0,2911
 JohnsonDistribution,,,,8.0,2911
 LeaderSize,,🚫,,11.0,2911
