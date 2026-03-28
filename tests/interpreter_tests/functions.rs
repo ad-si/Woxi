@@ -13024,3 +13024,24 @@ fn sequence_alignment_empty() {
     "{{abc, }}"
   );
 }
+
+// ─── StationaryDistribution ─────────────────────────────────────────────────
+
+#[test]
+fn stationary_distribution_inert() {
+  assert_eq!(
+    interpret("StationaryDistribution[proc]").unwrap(),
+    "StationaryDistribution[proc]"
+  );
+}
+
+#[test]
+fn stationary_distribution_with_markov() {
+  assert_eq!(
+    interpret(
+      "StationaryDistribution[DiscreteMarkovProcess[{1, 0}, {{0.5, 0.5}, {0.3, 0.7}}]]"
+    )
+    .unwrap(),
+    "StationaryDistribution[DiscreteMarkovProcess[{1, 0}, {{0.5, 0.5}, {0.3, 0.7}}]]"
+  );
+}

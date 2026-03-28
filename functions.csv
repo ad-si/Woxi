@@ -2873,7 +2873,7 @@ PermutationPower,Power of a permutation,✅,1,8.0,2944
 RegionWithin,Tests if one geometric region is contained within another,✅,pure,11.1,2944
 SequenceAlignment,Aligns two sequences showing matches and differences,✅,pure,7.0,2944
 SpheroidalQSPrime,,🚫,,6.0,2944
-StationaryDistribution,,,,9.0,2944
+StationaryDistribution,Represents the stationary distribution of a stochastic process,✅,pure,9.0,2944
 TransferFunctionExpand,,🚫,,8.0,2944
 UnderscriptBoxOptions,,🚫,,4.0,2944
 WebExecute,,🚫,,12.0,2944
