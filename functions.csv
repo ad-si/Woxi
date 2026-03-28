@@ -2852,7 +2852,7 @@ QuantityQ,Tests if an expression is a quantity,✅,pure,9.0,2914
 ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
 CrossEntropyLossLayer,,🚫,,11.0,2921
 GaugeStyle,,🚫,,9.0,2921
-QuantityDistribution,,,,10.4,2921
+QuantityDistribution,Probability distribution with physical units,✅,pure,10.4,2921
 SequenceCount,Count non-overlapping occurrences of a subsequence,✅,none,10.1,2921
 SpheroidalS2Prime,,🚫,,6.0,2921
 UniformGraphDistribution,Uniform random graph distribution,✅,unevaluated,8.0,2921
