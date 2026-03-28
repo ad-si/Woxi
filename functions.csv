@@ -2847,7 +2847,7 @@ LeaderSize,,🚫,,11.0,2911
 ListDensityPlot3D,,🚫,,10.2,2911
 ShortRightArrow,,🚫,,3.0,2911
 ColumnLines,,🚫,,3.0,2914
-DatedUnit,,,,10.0,2914
+DatedUnit,Associates a unit with a specific date for time-aware calculations,✅,pure,10.0,2914
 QuantityQ,Tests if an expression is a quantity,✅,pure,9.0,2914
 ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
 CrossEntropyLossLayer,,🚫,,11.0,2921
