@@ -1453,6 +1453,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if let Some(svg) =
         functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
       {
+        capture_graphics(&svg);
         syntax::Expr::Graphics { svg, is_3d: false }
       } else {
         expr
