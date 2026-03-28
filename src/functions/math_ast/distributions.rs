@@ -161,6 +161,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DagumDistribution" => pdf_dagum(dargs, x),
     "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
     "NoncentralFRatioDistribution" => pdf_noncentral_f(dargs, x),
+    "JohnsonDistribution" => pdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -381,6 +382,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GompertzMakehamDistribution" => cdf_gompertz_makeham(dargs, x),
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     "StableDistribution" => cdf_stable(dargs, x),
+    "JohnsonDistribution" => cdf_johnson(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -1828,6 +1830,97 @@ fn distribution_mean_variance(
       let var = plus(minus(term1, term2), term3);
       Ok((mean, var))
     }
+    "JohnsonDistribution" => {
+      if dargs.len() != 5 {
+        return Err(InterpreterError::EvaluationError(
+          "JohnsonDistribution expects 5 arguments".into(),
+        ));
+      }
+      let type_str = match &dargs[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "JohnsonDistribution: first argument must be a string type".into(),
+          ));
+        }
+      };
+      let gamma = dargs[1].clone();
+      let delta = dargs[2].clone();
+      let mu = dargs[3].clone();
+      let sigma = dargs[4].clone();
+      match type_str.as_str() {
+        "SN" => {
+          // Mean = mu - gamma*sigma/delta
+          let mean = minus(
+            mu,
+            divide(times(gamma.clone(), sigma.clone()), delta.clone()),
+          );
+          // Var = sigma^2/delta^2
+          let var = divide(power(sigma, int(2)), power(delta, int(2)));
+          Ok((mean, var))
+        }
+        "SL" => {
+          // Mean = mu + sigma * Exp[-gamma/delta + 1/(2*delta^2)]
+          let exp_arg = plus(
+            divide(
+              Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(gamma.clone()),
+              },
+              delta.clone(),
+            ),
+            divide(int(1), times(int(2), power(delta.clone(), int(2)))),
+          );
+          let mean = plus(mu, times(sigma.clone(), power(e(), exp_arg)));
+          // Var = sigma^2 * Exp[-2*gamma/delta + 1/delta^2] * (Exp[1/delta^2] - 1)
+          let exp_arg2 = plus(
+            divide(times(int(-2), gamma), delta.clone()),
+            divide(int(1), power(delta.clone(), int(2))),
+          );
+          let var = times(
+            times(power(sigma, int(2)), power(e(), exp_arg2)),
+            minus(power(e(), divide(int(1), power(delta, int(2)))), int(1)),
+          );
+          Ok((mean, var))
+        }
+        "SU" => {
+          // Mean = mu - sigma * Exp[1/(2*delta^2)] * Sinh[gamma/delta]
+          let exp_half = power(
+            e(),
+            divide(int(1), times(int(2), power(delta.clone(), int(2)))),
+          );
+          let sinh_gd = Expr::FunctionCall {
+            name: "Sinh".to_string(),
+            args: vec![divide(gamma.clone(), delta.clone())],
+          };
+          let mean = minus(mu, times(sigma.clone(), times(exp_half, sinh_gd)));
+          // Var = (sigma^2/2) * (Exp[1/delta^2] - 1) * (Exp[1/delta^2]*Cosh[2*gamma/delta] + 1)
+          let exp_full =
+            power(e(), divide(int(1), power(delta.clone(), int(2))));
+          let cosh_2gd = Expr::FunctionCall {
+            name: "Cosh".to_string(),
+            args: vec![divide(times(int(2), gamma), delta)],
+          };
+          let var = times(
+            divide(power(sigma, int(2)), int(2)),
+            times(
+              minus(exp_full.clone(), int(1)),
+              plus(times(exp_full, cosh_2gd), int(1)),
+            ),
+          );
+          Ok((mean, var))
+        }
+        "SB" => {
+          // Mean for SB doesn't have a simple closed form
+          Err(InterpreterError::EvaluationError(
+            "JohnsonDistribution SB: no closed-form mean/variance".into(),
+          ))
+        }
+        _ => Err(InterpreterError::EvaluationError(format!(
+          "JohnsonDistribution: unknown type {type_str}"
+        ))),
+      }
+    }
     "ArcSinDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -3153,4 +3246,232 @@ fn pdf_noncentral_f(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond = comparison(x, ComparisonOp::Greater, int(0));
 
   eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// PDF[JohnsonDistribution["type", gamma, delta, mu, sigma], x]
+fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 5 {
+    return Err(InterpreterError::EvaluationError(
+      "JohnsonDistribution expects 5 arguments".into(),
+    ));
+  }
+  let type_str = match &dargs[0] {
+    Expr::String(s) => s.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "JohnsonDistribution".to_string(),
+            args: dargs.to_vec(),
+          },
+          x,
+        ],
+      });
+    }
+  };
+  let gamma = dargs[1].clone();
+  let delta = dargs[2].clone();
+  let mu = dargs[3].clone();
+  let sigma = dargs[4].clone();
+
+  // Common prefactor: delta / (sigma * Sqrt[2*Pi])
+  let prefactor = divide(
+    delta.clone(),
+    times(sigma.clone(), sqrt(times(int(2), pi()))),
+  );
+
+  // t = (x - mu) / sigma
+  let t = divide(minus(x.clone(), mu.clone()), sigma.clone());
+
+  match type_str.as_str() {
+    "SN" => {
+      // PDF = prefactor * Exp[-1/2 * (gamma + delta*t)^2]
+      let z = plus(gamma, times(delta, t));
+      let density = times(
+        prefactor,
+        power(
+          e(),
+          divide(
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(power(z, int(2))),
+            },
+            int(2),
+          ),
+        ),
+      );
+      eval(density)
+    }
+    "SL" => {
+      // PDF = prefactor * (1/t) * Exp[-1/2 * (gamma + delta*Log[t])^2], for x > mu
+      let log_t = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![t.clone()],
+      };
+      let z = plus(gamma, times(delta, log_t));
+      let density = times(
+        times(prefactor, divide(int(1), t)),
+        power(
+          e(),
+          divide(
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(power(z, int(2))),
+            },
+            int(2),
+          ),
+        ),
+      );
+      let cond = comparison(x, ComparisonOp::Greater, mu);
+      eval(piecewise(vec![(density, cond)], int(0)))
+    }
+    "SU" => {
+      // PDF = prefactor * (1/Sqrt[t^2 + 1]) * Exp[-1/2 * (gamma + delta*ArcSinh[t])^2]
+      let arcsinh_t = Expr::FunctionCall {
+        name: "ArcSinh".to_string(),
+        args: vec![t.clone()],
+      };
+      let z = plus(gamma, times(delta, arcsinh_t));
+      let density = times(
+        times(
+          prefactor,
+          divide(int(1), sqrt(plus(power(t, int(2)), int(1)))),
+        ),
+        power(
+          e(),
+          divide(
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(power(z, int(2))),
+            },
+            int(2),
+          ),
+        ),
+      );
+      eval(density)
+    }
+    "SB" => {
+      // PDF = prefactor * (1/(t*(1-t))) * Exp[-1/2 * (gamma + delta*Log[t/(1-t)])^2], for mu < x < mu+sigma
+      let one_minus_t = minus(int(1), t.clone());
+      let log_arg = divide(t.clone(), one_minus_t.clone());
+      let log_t = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![log_arg],
+      };
+      let z = plus(gamma, times(delta, log_t));
+      let density = times(
+        times(prefactor, divide(int(1), times(t, one_minus_t))),
+        power(
+          e(),
+          divide(
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(power(z, int(2))),
+            },
+            int(2),
+          ),
+        ),
+      );
+      let cond = comparison3(
+        mu.clone(),
+        ComparisonOp::Less,
+        x.clone(),
+        ComparisonOp::Less,
+        plus(mu, sigma),
+      );
+      eval(piecewise(vec![(density, cond)], int(0)))
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "JohnsonDistribution: unknown type {type_str}"
+    ))),
+  }
+}
+
+/// CDF[JohnsonDistribution["type", gamma, delta, mu, sigma], x]
+fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 5 {
+    return Err(InterpreterError::EvaluationError(
+      "JohnsonDistribution expects 5 arguments".into(),
+    ));
+  }
+  let type_str = match &dargs[0] {
+    Expr::String(s) => s.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CDF".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "JohnsonDistribution".to_string(),
+            args: dargs.to_vec(),
+          },
+          x,
+        ],
+      });
+    }
+  };
+  let gamma = dargs[1].clone();
+  let delta = dargs[2].clone();
+  let mu = dargs[3].clone();
+  let sigma = dargs[4].clone();
+
+  // t = (x - mu) / sigma
+  let t = divide(minus(x.clone(), mu.clone()), sigma.clone());
+
+  // CDF = Erfc[-(gamma + delta*h(t)) / Sqrt[2]] / 2
+  // where h depends on type
+  let h_of_t = match type_str.as_str() {
+    "SN" => t.clone(),
+    "SL" => Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![t.clone()],
+    },
+    "SU" => Expr::FunctionCall {
+      name: "ArcSinh".to_string(),
+      args: vec![t.clone()],
+    },
+    "SB" => {
+      let one_minus_t = minus(int(1), t.clone());
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![divide(t.clone(), one_minus_t)],
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "JohnsonDistribution: unknown type {type_str}"
+      )));
+    }
+  };
+
+  let z = plus(gamma, times(delta, h_of_t));
+  let erfc_arg = Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(divide(z, sqrt(int(2)))),
+  };
+  let cdf_val = divide(
+    Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![erfc_arg],
+    },
+    int(2),
+  );
+
+  match type_str.as_str() {
+    "SL" => {
+      let cond = comparison(x, ComparisonOp::Greater, mu);
+      eval(piecewise(vec![(cdf_val, cond)], int(0)))
+    }
+    "SB" => {
+      let cond_lower =
+        comparison(x.clone(), ComparisonOp::LessEqual, mu.clone());
+      let cond_upper =
+        comparison(x, ComparisonOp::GreaterEqual, plus(mu, sigma));
+      eval(piecewise(
+        vec![(int(0), cond_lower), (int(1), cond_upper)],
+        cdf_val,
+      ))
+    }
+    _ => eval(cdf_val),
+  }
 }
