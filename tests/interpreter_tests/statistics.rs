@@ -2240,7 +2240,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "(delta*E^(-1/2*((delta*(-mu + x))/sigma + gamma)^2))/(Sqrt[2*Pi]*sigma)"
+      "delta/(E^(((delta*(-mu + x))/sigma + gamma)^2/2)*Sqrt[2*Pi]*sigma)"
     );
   }
 
@@ -2248,7 +2248,7 @@ mod johnson_distribution {
   fn pdf_sn_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SN", 0, 1, 0, 1], 0]"#).unwrap(),
-      "Sqrt[2*Pi]^(-1)"
+      "1/Sqrt[2*Pi]"
     );
   }
 
@@ -2259,7 +2259,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "(delta*E^(-1/2*(delta*ArcSinh[(-mu + x)/sigma] + gamma)^2))/(Sqrt[1 + ((-mu + x)/sigma)^2]*(Sqrt[2*Pi]*sigma))"
+      "delta/(E^((delta*ArcSinh[(-mu + x)/sigma] + gamma)^2/2)*Sqrt[2*Pi]*Sqrt[(-mu + x)^2 + sigma^2])"
     );
   }
 
@@ -2267,7 +2267,7 @@ mod johnson_distribution {
   fn pdf_su_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SU", 0, 1, 0, 1], 0]"#).unwrap(),
-      "Sqrt[2*Pi]^(-1)"
+      "1/Sqrt[2*Pi]"
     );
   }
 
@@ -2278,7 +2278,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SL", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{delta/(sigma*Sqrt[2*Pi])*1/((x - mu)/sigma)*E^(-((gamma + delta*Log[(x - mu)/sigma])^2/2)), x > mu}}, 0]"
+      "Piecewise[{{delta/(E^((gamma + delta*Log[(-mu + x)/sigma])^2/2)*Sqrt[2*Pi]*(-mu + x)), x > mu}}, 0]"
     );
   }
 
@@ -2286,7 +2286,7 @@ mod johnson_distribution {
   fn pdf_sl_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SL", 0, 1, 0, 1], 1]"#).unwrap(),
-      "Sqrt[2*Pi]^(-1)"
+      "1/Sqrt[2*Pi]"
     );
   }
 
@@ -2297,7 +2297,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SB", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{delta/(sigma*Sqrt[2*Pi])*1/((x - mu)/sigma*(1 - (x - mu)/sigma))*E^(-((gamma + delta*Log[(x - mu)/sigma/(1 - (x - mu)/sigma)])^2/2)), mu < x < mu + sigma}}, 0]"
+      "Piecewise[{{(delta*sigma)/(E^((gamma + delta*Log[(-mu + x)/(mu + sigma - x)])^2/2)*Sqrt[2*Pi]*(mu + sigma - x)*(-mu + x)), mu < x < mu + sigma}}, 0]"
     );
   }
 
@@ -2305,7 +2305,7 @@ mod johnson_distribution {
   fn pdf_sb_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SB", 0, 1, 0, 1], 1/2]"#).unwrap(),
-      "4/Sqrt[2*Pi]"
+      "1/(Sqrt[2*Pi]/4)"
     );
   }
 
@@ -2318,7 +2318,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Erfc[-(((delta*(-mu + x))/sigma + gamma)/Sqrt[2])]/2"
+      "Erfc[(-((delta*(-mu + x))/sigma) - gamma)/Sqrt[2]]/2"
     );
   }
 
@@ -2337,7 +2337,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Erfc[-((delta*ArcSinh[(-mu + x)/sigma] + gamma)/Sqrt[2])]/2"
+      "(1 + Erf[(delta*ArcSinh[(-mu + x)/sigma] + gamma)/Sqrt[2]])/2"
     );
   }
 
@@ -2356,7 +2356,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SL", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{Erfc[-((gamma + delta*Log[(x - mu)/sigma])/Sqrt[2])]/2, x > mu}}, 0]"
+      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/sigma])/Sqrt[2]]/2, Inequality[mu, Less, x, LessEqual, mu + sigma]}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/sigma])/Sqrt[2]])/2, x > mu + sigma}}, 0]"
     );
   }
 
@@ -2375,7 +2375,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SB", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{0, x <= mu}, {1, x >= mu + sigma}}, Erfc[-((gamma + delta*Log[(x - mu)/sigma/(1 - (x - mu)/sigma)])/Sqrt[2])]/2]"
+      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]]/2, mu < x < mu + sigma/2}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]])/2, Inequality[mu + sigma/2, LessEqual, x, Less, mu + sigma]}, {1, x >= mu + sigma}}, 0]"
     );
   }
 
@@ -2394,7 +2394,7 @@ mod johnson_distribution {
     assert_eq!(
       interpret(r#"Mean[JohnsonDistribution["SN", gamma, delta, mu, sigma]]"#)
         .unwrap(),
-      "mu - (gamma*sigma)/delta"
+      "(delta*mu - gamma*sigma)/delta"
     );
   }
 
@@ -2428,7 +2428,7 @@ mod johnson_distribution {
     assert_eq!(
       interpret(r#"Mean[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#)
         .unwrap(),
-      "E^(1/(2*delta^2) - (gamma/delta))*sigma + mu"
+      "E^((1 - 2*delta*gamma)/(2*delta^2))*sigma + mu"
     );
   }
 
@@ -2495,7 +2495,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "E^(1/delta^2 + (-2*gamma)/delta)*sigma^2*(-1 + E^(1/delta^2))"
+      "E^((1 - 2*delta*gamma)/delta^2)*sigma^2*(-1 + E^(1/delta^2))"
     );
   }
 

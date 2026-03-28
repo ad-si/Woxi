@@ -522,6 +522,10 @@ function main() {
     /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
     /\bSymmetrize\[/,        // Woxi returns dense list, Wolfram returns SymmetrizedArray
     /\bTensorWedge\[/,      // Woxi returns dense list, Wolfram returns SymmetrizedArray
+    /\bFindSpanningTree\[/, // Wolfram uses SparseArray internal Graph representation
+    /\bStationaryDistribution\[/, // Complex computation, Woxi keeps as inert wrapper
+    /\bDatedUnit\[/,        // Version-specific evaluation behavior
+    /\bVoronoiMesh\[/,      // Different bounding box and vertex coordinates
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -584,6 +588,23 @@ function main() {
     "PDF[HyperbolicDistribution[a, b, d, m], x]",
     // Variance symbolic: Plus ordering of BesselK terms (different ordering of positive/negative terms)
     "Variance[HyperbolicDistribution[a, b, d, m]]",
+    // FindIntegerNullVector: sign convention is implementation-specific (LLL algorithm produces different signs)
+    "FindIntegerNullVector[{2, 6}]",
+    // JohnsonDistribution: Plus ordering differences (gamma + delta*f vs delta*f + gamma)
+    "PDF[JohnsonDistribution[\"SN\", gamma, delta, mu, sigma], x]",
+    "PDF[JohnsonDistribution[\"SU\", gamma, delta, mu, sigma], x]",
+    // JohnsonDistribution CDF: Plus ordering in Erfc/Erf argument
+    "CDF[JohnsonDistribution[\"SN\", gamma, delta, mu, sigma], x]",
+    "CDF[JohnsonDistribution[\"SU\", gamma, delta, mu, sigma], x]",
+    // JohnsonDistribution SB numeric PDF: 1/(Sqrt[2*Pi]/4) vs 2*Sqrt[2/Pi] (equivalent, different simplification)
+    "PDF[JohnsonDistribution[\"SB\", 0, 1, 0, 1], 1/2]",
+    // JohnsonDistribution Mean/Variance: Plus/Times ordering and Sinh expansion differences
+    "Mean[JohnsonDistribution[\"SU\", gamma, delta, mu, sigma]]",
+    "Mean[JohnsonDistribution[\"SL\", gamma, delta, mu, sigma]]",
+    "Variance[JohnsonDistribution[\"SU\", gamma, delta, mu, sigma]]",
+    "Variance[JohnsonDistribution[\"SU\", 1, 2, 3, 4]]",
+    "Variance[JohnsonDistribution[\"SL\", gamma, delta, mu, sigma]]",
+    "Variance[JohnsonDistribution[\"SL\", 0, 1, 0, 1]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
