@@ -2781,7 +2781,7 @@ LinkProtocol,,🚫,,3.0,2842
 SpatialGraphDistribution,Spatial random graph distribution,✅,unevaluated,9.0,2842
 UnderoverscriptBoxOptions,,🚫,,4.0,2842
 BooleanQ,Tests if an expression is True or False,✅,pure,10.0,2845
-IndependentUnit,,,,9.0,2845
+IndependentUnit,Represents a user-defined independent unit,✅,pure,9.0,2845
 LinkLaunch,,🚫,,3.0,2845
 DifferentialRootReduce,,🚫,,7.0,2851
 FontVariations,,🚫,,3.0,2851
