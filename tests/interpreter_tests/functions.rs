@@ -12982,3 +12982,45 @@ fn diffusion_pde_term_with_params() {
     "DiffusionPDETerm[{u, x}, c, RegionSymmetry]"
   );
 }
+
+// ─── SequenceAlignment ───────────────────────────────────────────────────────
+
+#[test]
+fn sequence_alignment_simple_substitution() {
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abcde", "abxde"]"#).unwrap(),
+    "{ab, {c, x}, de}"
+  );
+}
+
+#[test]
+fn sequence_alignment_identical() {
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abc", "abc"]"#).unwrap(),
+    "{abc}"
+  );
+}
+
+#[test]
+fn sequence_alignment_completely_different() {
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abc", "xyz"]"#).unwrap(),
+    "{{abc, xyz}}"
+  );
+}
+
+#[test]
+fn sequence_alignment_insertion() {
+  assert_eq!(
+    interpret(r#"SequenceAlignment["ac", "abc"]"#).unwrap(),
+    "{a, {, b}, c}"
+  );
+}
+
+#[test]
+fn sequence_alignment_empty() {
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abc", ""]"#).unwrap(),
+    "{{abc, }}"
+  );
+}
