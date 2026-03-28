@@ -87,6 +87,9 @@ pub fn dispatch_string_functions(
     "EditDistance" if args.len() == 2 => {
       return Some(crate::functions::string_ast::edit_distance_ast(args));
     }
+    "SequenceAlignment" if args.len() == 2 => {
+      return Some(crate::functions::string_ast::sequence_alignment_ast(args));
+    }
     "LongestCommonSubsequence" if args.len() == 2 => {
       return Some(
         crate::functions::string_ast::longest_common_subsequence_ast(args),
