@@ -12956,3 +12956,29 @@ fn excluded_forms_as_option() {
     "ExcludedForms -> {a, b}"
   );
 }
+
+// ─── PDE terms ───────────────────────────────────────────────────────────────
+
+#[test]
+fn diffusion_pde_term_basic() {
+  assert_eq!(
+    interpret("DiffusionPDETerm[{u, x}]").unwrap(),
+    "DiffusionPDETerm[{u, x}]"
+  );
+}
+
+#[test]
+fn diffusion_pde_term_with_coefficient() {
+  assert_eq!(
+    interpret("DiffusionPDETerm[{u, x}, c]").unwrap(),
+    "DiffusionPDETerm[{u, x}, c]"
+  );
+}
+
+#[test]
+fn diffusion_pde_term_with_params() {
+  assert_eq!(
+    interpret(r#"DiffusionPDETerm[{u, x}, c, "RegionSymmetry"]"#).unwrap(),
+    "DiffusionPDETerm[{u, x}, c, RegionSymmetry]"
+  );
+}

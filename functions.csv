@@ -2864,7 +2864,7 @@ GeoWithinQ,,🚫,,10.0,2929
 LinkConnect,,🚫,,3.0,2929
 SpheroidalS1Prime,,🚫,,6.0,2929
 StringEndsQ,Checks if a string ends with a specific substring,✅,pure,10.1,2929
-DiffusionPDETerm,,,,12.2,2944
+DiffusionPDETerm,Represents a diffusion PDE term div(c*grad(u)),✅,pure,12.2,2944
 FindGraphIsomorphism,,,,8.0,2944
 FindSpanningTree,,,,10.0,2944
 MinLimit,Compute the smallest limiting value from below,✅,pure,11.2,2944
