@@ -3956,3 +3956,37 @@ mod koch_curve {
     assert_eq!(interpret("KochCurve[x]").unwrap(), "KochCurve[x]");
   }
 }
+
+mod insphere {
+  use super::*;
+
+  #[test]
+  fn triangle_right_345() {
+    assert_eq!(
+      interpret("Insphere[Triangle[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap(),
+      "Sphere[{1, 1}, 1]"
+    );
+  }
+
+  #[test]
+  fn triangle_unit_right() {
+    assert_eq!(
+      interpret("Insphere[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Sphere[{(2 + Sqrt[2])^(-1), (2 + Sqrt[2])^(-1)}, (2 + Sqrt[2])^(-1)]"
+    );
+  }
+
+  #[test]
+  fn tetrahedron_unit() {
+    assert_eq!(
+      interpret("Insphere[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]")
+        .unwrap(),
+      "Sphere[{(3 + Sqrt[3])^(-1), (3 + Sqrt[3])^(-1), (3 + Sqrt[3])^(-1)}, (3 + Sqrt[3])^(-1)]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_for_unknown_region() {
+    assert_eq!(interpret("Insphere[Disk[]]").unwrap(), "Insphere[Disk[]]");
+  }
+}
