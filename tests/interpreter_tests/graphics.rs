@@ -3993,3 +3993,72 @@ mod insphere {
     );
   }
 }
+
+mod find_graph_isomorphism {
+  use super::*;
+
+  #[test]
+  fn simple_path() {
+    assert_eq!(
+      interpret(
+        "FindGraphIsomorphism[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}], Graph[{a, b, c}, {a -> b, b -> c}]]"
+      )
+      .unwrap(),
+      "{<|1 -> a, 2 -> b, 3 -> c|>}"
+    );
+  }
+
+  #[test]
+  fn non_isomorphic_different_sizes() {
+    assert_eq!(
+      interpret(
+        "FindGraphIsomorphism[Graph[{1, 2}, {1 -> 2}], Graph[{a, b, c}, {a -> b, b -> c}]]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn triangle_graph() {
+    assert_eq!(
+      interpret(
+        "FindGraphIsomorphism[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 1 -> 3}], Graph[{a, b, c}, {a -> b, b -> c, a -> c}]]"
+      )
+      .unwrap(),
+      "{<|1 -> a, 2 -> b, 3 -> c|>}"
+    );
+  }
+
+  #[test]
+  fn all_isomorphisms_triangle() {
+    let result = interpret(
+      "Length[FindGraphIsomorphism[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 1 -> 3}], Graph[{a, b, c}, {a -> b, b -> c, a -> c}], All]]"
+    )
+    .unwrap();
+    assert_eq!(result, "6"); // K3 has 3! = 6 automorphisms
+  }
+
+  #[test]
+  fn non_isomorphic_same_size() {
+    // 4-vertex path vs 4-vertex star (different degree sequences)
+    assert_eq!(
+      interpret(
+        "FindGraphIsomorphism[Graph[{1, 2, 3, 4}, {1 -> 2, 2 -> 3, 3 -> 4}], Graph[{a, b, c, d}, {a -> b, a -> c, a -> d}]]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn single_edge() {
+    assert_eq!(
+      interpret(
+        "FindGraphIsomorphism[Graph[{1, 2}, {1 -> 2}], Graph[{x, y}, {x -> y}]]"
+      )
+      .unwrap(),
+      "{<|1 -> x, 2 -> y|>}"
+    );
+  }
+}
