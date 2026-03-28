@@ -283,6 +283,37 @@ pub fn dispatch_io_functions(
             )
           }
         }
+        Expr::FunctionCall {
+          name: mr_name,
+          args: mr_args,
+        } if mr_name == "MeshRegion" && mr_args.len() == 2 => {
+          if let Some(svg) = crate::functions::voronoi::mesh_region_to_svg(
+            &mr_args[0],
+            &mr_args[1],
+          ) {
+            svg
+          } else {
+            let markup =
+              crate::functions::graphics::expr_to_svg_markup(&args[0]);
+            let char_width = 8.4_f64;
+            let font_size = 14_usize;
+            let display_width =
+              crate::functions::graphics::estimate_display_width(&args[0]);
+            let width = (display_width * char_width).ceil() as usize;
+            let (height, text_y) =
+              if crate::functions::graphics::has_fraction(&args[0]) {
+                (32_usize, 18_usize)
+              } else {
+                (font_size + 4, font_size)
+              };
+            format!(
+              "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
+               <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
+               </svg>",
+              width, height
+            )
+          }
+        }
         other => {
           // Non-graphics: render expression as SVG text with superscripts
           let markup = crate::functions::graphics::expr_to_svg_markup(other);

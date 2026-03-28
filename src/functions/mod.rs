@@ -32,6 +32,7 @@ pub mod string_ast;
 pub mod tabular_ast;
 pub mod tree_form;
 pub mod turing_machine_ast;
+pub mod voronoi;
 
 // Re-export all function implementations
 pub use association_ast::*;

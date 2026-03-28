@@ -1760,6 +1760,11 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
+  if name == "VoronoiMesh" && args.len() == 1 {
+    return crate::functions::voronoi::voronoi_mesh_ast(&args);
+  }
+
   // ExpressionGraph[expr] → Graph of the expression tree
   if name == "ExpressionGraph" && args.len() == 1 {
     let mut counter = 0u64;
