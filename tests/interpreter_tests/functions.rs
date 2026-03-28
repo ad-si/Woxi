@@ -12841,3 +12841,95 @@ mod find_maximum_flow {
     );
   }
 }
+
+#[cfg(test)]
+mod voronoi_mesh {
+  use super::*;
+
+  #[test]
+  fn unevaluated_non_list() {
+    assert_eq!(interpret("VoronoiMesh[x]").unwrap(), "VoronoiMesh[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[VoronoiMesh]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn single_point_returns_empty_region() {
+    assert_eq!(
+      interpret("VoronoiMesh[{{0, 0}}]").unwrap(),
+      "EmptyRegion[2]"
+    );
+  }
+
+  #[test]
+  fn zero_points_returns_empty_region() {
+    assert_eq!(interpret("VoronoiMesh[{}]").unwrap(), "EmptyRegion[2]");
+  }
+
+  #[test]
+  fn two_points_produces_mesh_region() {
+    let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}}]").unwrap();
+    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
+    assert!(result.contains("Polygon["));
+  }
+
+  #[test]
+  fn three_points_produces_mesh_region() {
+    let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]").unwrap();
+    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
+    assert!(result.contains("Polygon["));
+  }
+
+  #[test]
+  fn five_points_produces_mesh_region() {
+    let result =
+      interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]")
+        .unwrap();
+    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
+    assert!(result.contains("Polygon["));
+  }
+
+  #[test]
+  fn collinear_points_produces_mesh_region() {
+    let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {2, 0}}]").unwrap();
+    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
+    assert!(result.contains("Polygon["));
+  }
+
+  #[test]
+  fn result_is_mesh_region() {
+    assert_eq!(
+      interpret("Head[VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "MeshRegion"
+    );
+  }
+
+  #[test]
+  fn non_numeric_returns_unevaluated() {
+    assert_eq!(
+      interpret("VoronoiMesh[{{a, b}, {c, d}}]").unwrap(),
+      "VoronoiMesh[{{a, b}, {c, d}}]"
+    );
+  }
+
+  #[test]
+  fn svg_export() {
+    let result = interpret(
+      "ExportString[VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("<svg"));
+    assert!(result.contains("<polygon"));
+  }
+
+  #[test]
+  fn symmetric_square() {
+    // 4 corners of unit square should produce 4 cells
+    let result =
+      interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap();
+    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
+    assert!(result.contains("Polygon["));
+  }
+}
