@@ -1040,6 +1040,9 @@ pub fn dispatch_complex_and_special(
     "Perimeter" if args.len() == 1 => {
       return Some(compute_perimeter(&args[0]));
     }
+    "Insphere" if args.len() == 1 => {
+      return Some(compute_insphere(&args[0]));
+    }
     // PlanarAngle[{p1, vertex, p2}] — angle at vertex between rays to p1 and p2
     "PlanarAngle" if args.len() == 1 => {
       if let Expr::List(pts) = &args[0]
@@ -3312,4 +3315,360 @@ fn compute_planar_angle(
   };
 
   crate::evaluator::evaluate_expr_to_expr(&angle)
+}
+
+// ─── Insphere ──────────────────────────────────────────────────────────────
+
+/// Compute the insphere (incircle) of a geometric region.
+/// For a 2D Triangle: returns Sphere[{cx, cy}, r]
+/// For a 3D Tetrahedron: returns Sphere[{cx, cy, cz}, r]
+fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Triangle" if args.len() == 1 => {
+        if let Expr::List(vertices) = &args[0]
+          && vertices.len() == 3
+        {
+          // Extract 2D vertices
+          let pts: Vec<&[Expr]> = vertices
+            .iter()
+            .filter_map(|v| {
+              if let Expr::List(coords) = v {
+                Some(coords.as_slice())
+              } else {
+                None
+              }
+            })
+            .collect();
+          if pts.len() == 3
+            && pts[0].len() == 2
+            && pts[1].len() == 2
+            && pts[2].len() == 2
+          {
+            return insphere_triangle_2d(pts[0], pts[1], pts[2]);
+          }
+        }
+        Ok(Expr::FunctionCall {
+          name: "Insphere".to_string(),
+          args: vec![expr.clone()],
+        })
+      }
+      "Tetrahedron" if args.len() == 1 => {
+        if let Expr::List(vertices) = &args[0]
+          && vertices.len() == 4
+        {
+          let pts: Vec<&[Expr]> = vertices
+            .iter()
+            .filter_map(|v| {
+              if let Expr::List(coords) = v {
+                Some(coords.as_slice())
+              } else {
+                None
+              }
+            })
+            .collect();
+          if pts.len() == 4 && pts.iter().all(|p| p.len() == 3) {
+            return insphere_tetrahedron(pts[0], pts[1], pts[2], pts[3]);
+          }
+        }
+        Ok(Expr::FunctionCall {
+          name: "Insphere".to_string(),
+          args: vec![expr.clone()],
+        })
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "Insphere".to_string(),
+        args: vec![expr.clone()],
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "Insphere".to_string(),
+      args: vec![expr.clone()],
+    }),
+  }
+}
+
+/// Helper: build Sqrt[expr]
+fn insphere_sqrt(e: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![e],
+  }
+}
+
+/// Helper: build a + b
+fn insphere_plus(a: Expr, b: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a, b],
+  }
+}
+
+/// Helper: build a * b
+fn insphere_times(a: Expr, b: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![a, b],
+  }
+}
+
+/// Helper: build a - b
+fn insphere_minus(a: Expr, b: Expr) -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(a),
+    right: Box::new(b),
+  }
+}
+
+/// Helper: build a^n
+fn insphere_power(base: Expr, exp: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp],
+  }
+}
+
+/// Compute distance between two 2D points as symbolic expression
+fn dist_2d(p1: &[Expr], p2: &[Expr]) -> Expr {
+  let dx = insphere_minus(p2[0].clone(), p1[0].clone());
+  let dy = insphere_minus(p2[1].clone(), p1[1].clone());
+  insphere_sqrt(insphere_plus(
+    insphere_power(dx, Expr::Integer(2)),
+    insphere_power(dy, Expr::Integer(2)),
+  ))
+}
+
+/// Compute incircle of a 2D triangle.
+/// Vertices: A (p1), B (p2), C (p3)
+/// Side a = |BC| (opposite A), b = |AC| (opposite B), c = |AB| (opposite C)
+/// Center = (a*A + b*B + c*C) / (a + b + c)
+/// Radius = Area / semiperimeter
+fn insphere_triangle_2d(
+  p1: &[Expr],
+  p2: &[Expr],
+  p3: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Side lengths
+  let a = dist_2d(p2, p3); // opposite vertex A (p1)
+  let b = dist_2d(p1, p3); // opposite vertex B (p2)
+  let c = dist_2d(p1, p2); // opposite vertex C (p3)
+
+  // Perimeter
+  let perimeter = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), b.clone(), c.clone()],
+  };
+
+  // Center coordinates: (a*x1 + b*x2 + c*x3) / (a+b+c)
+  let cx_num = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      insphere_times(a.clone(), p1[0].clone()),
+      insphere_times(b.clone(), p2[0].clone()),
+      insphere_times(c.clone(), p3[0].clone()),
+    ],
+  };
+  let cy_num = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      insphere_times(a, p1[1].clone()),
+      insphere_times(b, p2[1].clone()),
+      insphere_times(c, p3[1].clone()),
+    ],
+  };
+
+  let cx = insphere_times(
+    cx_num,
+    insphere_power(perimeter.clone(), Expr::Integer(-1)),
+  );
+  let cy = insphere_times(
+    cy_num,
+    insphere_power(perimeter.clone(), Expr::Integer(-1)),
+  );
+
+  // Area via shoelace formula: |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
+  let area_2 = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        insphere_times(
+          p1[0].clone(),
+          insphere_minus(p2[1].clone(), p3[1].clone()),
+        ),
+        insphere_times(
+          p2[0].clone(),
+          insphere_minus(p3[1].clone(), p1[1].clone()),
+        ),
+        insphere_times(
+          p3[0].clone(),
+          insphere_minus(p1[1].clone(), p2[1].clone()),
+        ),
+      ],
+    }],
+  };
+
+  // radius = area / semiperimeter = (area_2/2) / (perimeter/2) = area_2 / perimeter
+  let radius =
+    insphere_times(area_2, insphere_power(perimeter, Expr::Integer(-1)));
+
+  // Build Sphere[{cx, cy}, r]
+  let center = Expr::List(vec![cx, cy]);
+  let sphere = Expr::FunctionCall {
+    name: "Sphere".to_string(),
+    args: vec![center, radius],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&sphere)
+}
+
+/// Compute distance between two 3D points
+fn dist_3d(p1: &[Expr], p2: &[Expr]) -> Expr {
+  let dx = insphere_minus(p2[0].clone(), p1[0].clone());
+  let dy = insphere_minus(p2[1].clone(), p1[1].clone());
+  let dz = insphere_minus(p2[2].clone(), p1[2].clone());
+  insphere_sqrt(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      insphere_power(dx, Expr::Integer(2)),
+      insphere_power(dy, Expr::Integer(2)),
+      insphere_power(dz, Expr::Integer(2)),
+    ],
+  })
+}
+
+/// Compute |AB x AC| for a 3D triangle (= 2 * area).
+/// We return twice the area to avoid fractions; the caller must account for this.
+fn triangle_cross_mag_3d(p1: &[Expr], p2: &[Expr], p3: &[Expr]) -> Expr {
+  let ab = [
+    insphere_minus(p2[0].clone(), p1[0].clone()),
+    insphere_minus(p2[1].clone(), p1[1].clone()),
+    insphere_minus(p2[2].clone(), p1[2].clone()),
+  ];
+  let ac = [
+    insphere_minus(p3[0].clone(), p1[0].clone()),
+    insphere_minus(p3[1].clone(), p1[1].clone()),
+    insphere_minus(p3[2].clone(), p1[2].clone()),
+  ];
+
+  let cx = insphere_minus(
+    insphere_times(ab[1].clone(), ac[2].clone()),
+    insphere_times(ab[2].clone(), ac[1].clone()),
+  );
+  let cy = insphere_minus(
+    insphere_times(ab[2].clone(), ac[0].clone()),
+    insphere_times(ab[0].clone(), ac[2].clone()),
+  );
+  let cz = insphere_minus(
+    insphere_times(ab[0].clone(), ac[1].clone()),
+    insphere_times(ab[1].clone(), ac[0].clone()),
+  );
+
+  insphere_sqrt(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      insphere_power(cx, Expr::Integer(2)),
+      insphere_power(cy, Expr::Integer(2)),
+      insphere_power(cz, Expr::Integer(2)),
+    ],
+  })
+}
+
+/// Compute insphere of a tetrahedron.
+/// Center = weighted average of vertices by opposite face areas
+/// Radius = 3 * Volume / surface_area
+fn insphere_tetrahedron(
+  p1: &[Expr],
+  p2: &[Expr],
+  p3: &[Expr],
+  p4: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Face cross magnitudes (= 2 * face area) for each face opposite a vertex
+  let cm1 = triangle_cross_mag_3d(p2, p3, p4); // opposite p1
+  let cm2 = triangle_cross_mag_3d(p1, p3, p4); // opposite p2
+  let cm3 = triangle_cross_mag_3d(p1, p2, p4); // opposite p3
+  let cm4 = triangle_cross_mag_3d(p1, p2, p3); // opposite p4
+
+  // total_cross = sum of cross mags = 2 * total_surface_area
+  let total_cross = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![cm1.clone(), cm2.clone(), cm3.clone(), cm4.clone()],
+  };
+
+  // Center = (cm1*p1 + cm2*p2 + cm3*p3 + cm4*p4) / total_cross
+  // (Same as using actual areas since the 2x factor cancels)
+  let mut center_coords = Vec::new();
+  for dim in 0..3 {
+    let num = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        insphere_times(cm1.clone(), p1[dim].clone()),
+        insphere_times(cm2.clone(), p2[dim].clone()),
+        insphere_times(cm3.clone(), p3[dim].clone()),
+        insphere_times(cm4.clone(), p4[dim].clone()),
+      ],
+    };
+    center_coords.push(insphere_times(
+      num,
+      insphere_power(total_cross.clone(), Expr::Integer(-1)),
+    ));
+  }
+
+  // Volume = |det(AB, AC, AD)| / 6
+  // Radius = 3V / S = 3 * (|det|/6) / (total_cross/2) = |det| / total_cross
+  let ab = [
+    insphere_minus(p2[0].clone(), p1[0].clone()),
+    insphere_minus(p2[1].clone(), p1[1].clone()),
+    insphere_minus(p2[2].clone(), p1[2].clone()),
+  ];
+  let ac = [
+    insphere_minus(p3[0].clone(), p1[0].clone()),
+    insphere_minus(p3[1].clone(), p1[1].clone()),
+    insphere_minus(p3[2].clone(), p1[2].clone()),
+  ];
+  let ad = [
+    insphere_minus(p4[0].clone(), p1[0].clone()),
+    insphere_minus(p4[1].clone(), p1[1].clone()),
+    insphere_minus(p4[2].clone(), p1[2].clone()),
+  ];
+
+  let cross_x = insphere_minus(
+    insphere_times(ac[1].clone(), ad[2].clone()),
+    insphere_times(ac[2].clone(), ad[1].clone()),
+  );
+  let cross_y = insphere_minus(
+    insphere_times(ac[2].clone(), ad[0].clone()),
+    insphere_times(ac[0].clone(), ad[2].clone()),
+  );
+  let cross_z = insphere_minus(
+    insphere_times(ac[0].clone(), ad[1].clone()),
+    insphere_times(ac[1].clone(), ad[0].clone()),
+  );
+
+  let det = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      insphere_times(ab[0].clone(), cross_x),
+      insphere_times(ab[1].clone(), cross_y),
+      insphere_times(ab[2].clone(), cross_z),
+    ],
+  };
+
+  // radius = |det| / total_cross
+  let radius = insphere_times(
+    Expr::FunctionCall {
+      name: "Abs".to_string(),
+      args: vec![det],
+    },
+    insphere_power(total_cross, Expr::Integer(-1)),
+  );
+
+  let center = Expr::List(center_coords);
+  let sphere = Expr::FunctionCall {
+    name: "Sphere".to_string(),
+    args: vec![center, radius],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&sphere)
 }

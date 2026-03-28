@@ -2827,7 +2827,7 @@ MaxLimit,Compute the largest limiting value from above,✅,pure,11.2,2889
 QueueingNetworkProcess,,🚫,,9.0,2889
 ReadLine,Read a single line from a stream or file,✅,io,10.0,2889
 DeviceRead,,🚫,,10.0,2894
-Insphere,,,,10.2,2894
+Insphere,Compute the inscribed sphere of a geometric region,✅,pure,10.2,2894
 LocalObject,,🚫,,10.2,2894
 WeatherForecastData,,🚫,,10.4,2894
 FindGeoLocation,,🚫,,7.0,2900
