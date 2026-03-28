@@ -159,6 +159,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ArcSinDistribution" => pdf_arcsin(dargs, x),
     "PascalDistribution" => pdf_pascal(dargs, x),
     "DagumDistribution" => pdf_dagum(dargs, x),
+    "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1732,6 +1733,53 @@ fn distribution_mean_variance(
       let var = minus(second_moment, power(mean.clone(), int(2)));
       Ok((mean, var))
     }
+    "HyperbolicDistribution" => {
+      if dargs.len() != 4 {
+        return Err(InterpreterError::EvaluationError(
+          "HyperbolicDistribution expects 4 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      let d = dargs[2].clone();
+      let m = dargs[3].clone();
+
+      let besselk = |n: Expr, z: Expr| Expr::FunctionCall {
+        name: "BesselK".to_string(),
+        args: vec![n, z],
+      };
+
+      let a2_minus_b2 =
+        minus(power(a.clone(), int(2)), power(b.clone(), int(2)));
+      let sqrt_a2_minus_b2 = sqrt(a2_minus_b2.clone());
+      let k_arg = times(sqrt_a2_minus_b2.clone(), d.clone());
+      let bk1 = besselk(int(1), k_arg.clone());
+      let bk2 = besselk(int(2), k_arg.clone());
+      let bk3 = besselk(int(3), k_arg);
+
+      // Mean = m + b*d*BesselK[2, Sqrt[a^2-b^2]*d] / (Sqrt[a^2-b^2]*BesselK[1, Sqrt[a^2-b^2]*d])
+      let mean = plus(
+        m,
+        divide(
+          times(times(b.clone(), d.clone()), bk2.clone()),
+          times(sqrt_a2_minus_b2, bk1.clone()),
+        ),
+      );
+
+      // Variance = d*BesselK[2,z]/(sqrt_ab*BesselK[1,z])
+      //          - b^2*d^2*BesselK[2,z]^2/((a^2-b^2)*BesselK[1,z]^2)
+      //          + b^2*d^2*BesselK[3,z]/((a^2-b^2)*BesselK[1,z])
+      let sqrt_ab = sqrt(a2_minus_b2.clone());
+      let b2d2 = times(power(b, int(2)), power(d.clone(), int(2)));
+      let term1 = divide(times(d, bk2.clone()), times(sqrt_ab, bk1.clone()));
+      let term2 = divide(
+        times(b2d2.clone(), power(bk2, int(2))),
+        times(a2_minus_b2.clone(), power(bk1.clone(), int(2))),
+      );
+      let term3 = divide(times(b2d2, bk3), times(a2_minus_b2, bk1));
+      let var = plus(minus(term1, term2), term3);
+      Ok((mean, var))
+    }
     "ArcSinDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -2958,4 +3006,45 @@ fn pdf_dagum(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   eval(piecewise(vec![(density, cond)], int(0)))
+}
+
+/// PDF[HyperbolicDistribution[a, b, d, m], x]
+/// = Sqrt[a^2 - b^2] * E^(b*(x-m) - a*Sqrt[d^2 + (x-m)^2]) / (2*a*d*BesselK[1, Sqrt[a^2-b^2]*d])
+fn pdf_hyperbolic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "HyperbolicDistribution expects 4 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+  let d = dargs[2].clone();
+  let m = dargs[3].clone();
+
+  let besselk = |n: Expr, z: Expr| Expr::FunctionCall {
+    name: "BesselK".to_string(),
+    args: vec![n, z],
+  };
+
+  let x_minus_m = minus(x, m);
+  let a2_minus_b2 = minus(power(a.clone(), int(2)), power(b.clone(), int(2)));
+  let sqrt_a2_minus_b2 = sqrt(a2_minus_b2);
+
+  // numerator: Sqrt[a^2 - b^2] * E^(b*(x-m) - a*Sqrt[d^2 + (x-m)^2])
+  let exponent = minus(
+    times(b, x_minus_m.clone()),
+    times(
+      a.clone(),
+      sqrt(plus(power(d.clone(), int(2)), power(x_minus_m, int(2)))),
+    ),
+  );
+  let numerator = times(sqrt_a2_minus_b2.clone(), power(e(), exponent));
+
+  // denominator: 2*a*d*BesselK[1, Sqrt[a^2-b^2]*d]
+  let denominator = times(
+    times(int(2), times(a, d.clone())),
+    besselk(int(1), times(sqrt_a2_minus_b2, d)),
+  );
+
+  eval(divide(numerator, denominator))
 }
