@@ -2768,7 +2768,7 @@ SignPadding,,🚫,,2.0,2828
 TransposeLayer,,🚫,,11.1,2828
 ContainsOnly,Tests if a list contains only specified elements,✅,pure,10.2,2837
 CoordinateChartData,,🚫,,9.0,2837
-Dated,,,,11.0,2837
+Dated,Symbolic wrapper associating a value with a date,✅,pure,11.0,2837
 DisjointQ,True if lists share no common elements,✅,1,10.0,2837
 FormObject,,🚫,,10.0,2837
 ImageCorrespondingPoints,,🚫,,8.0,2837
