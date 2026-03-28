@@ -12927,4 +12927,17 @@ mod voronoi_mesh {
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap();
     assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
+
+  #[test]
+  fn show_overlay_with_points() {
+    // Show[VoronoiMesh[pts], Graphics[{Point[pts]}]] should render both
+    let result = interpret(
+      "ExportString[Show[VoronoiMesh[{{0,0},{1,0},{0,1},{1,1}}], Graphics[{Point[{{0,0},{1,0},{0,1},{1,1}}]}]], \"SVG\"]"
+    ).unwrap();
+    assert!(
+      result.contains("<polygon"),
+      "Should contain Voronoi polygons"
+    );
+    assert!(result.contains("<circle"), "Should contain overlay points");
+  }
 }

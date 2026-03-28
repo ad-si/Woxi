@@ -32,7 +32,10 @@ pub fn dispatch_plotting(
       Some(crate::functions::plot3d::plot3d_ast(args))
     }
     "Graphics" if !args.is_empty() => {
-      Some(crate::functions::graphics::graphics_ast(args))
+      // Keep Graphics as a FunctionCall during evaluation so that Show[]
+      // can merge primitives from multiple Graphics expressions.
+      // Rendering to SVG happens at the output stage via render_graphics_fc_if_needed.
+      None
     }
     "Show" if !args.is_empty() => {
       Some(crate::functions::graphics::show_ast(args))
