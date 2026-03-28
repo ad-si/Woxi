@@ -31,6 +31,7 @@ pub mod scoping;
 pub mod string_ast;
 pub mod tabular_ast;
 pub mod tree_form;
+pub mod turing_machine_ast;
 
 // Re-export all function implementations
 pub use association_ast::*;
@@ -52,3 +53,4 @@ pub use predicate_ast::*;
 pub use quantity_ast::*;
 pub use scoping::*;
 pub use string_ast::*;
+pub use turing_machine_ast::*;

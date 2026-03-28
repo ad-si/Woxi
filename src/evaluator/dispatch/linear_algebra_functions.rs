@@ -460,6 +460,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),
       );
     }
+    "TuringMachine" if args.len() == 3 => {
+      return Some(crate::functions::turing_machine_ast::turing_machine_ast(
+        args,
+      ));
+    }
     "RotationMatrix" if args.len() == 1 => {
       // 2D rotation matrix: {{Cos[θ], -Sin[θ]}, {Sin[θ], Cos[θ]}}
       let theta = &args[0];

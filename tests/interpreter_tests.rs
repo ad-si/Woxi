@@ -311,4 +311,5 @@ mod interpreter_tests {
   mod string;
   mod syntax;
   mod tabular;
+  mod turing_machine;
 }
