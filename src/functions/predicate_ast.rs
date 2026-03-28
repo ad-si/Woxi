@@ -1034,6 +1034,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Pattern { .. } => "Pattern",
     Expr::PatternTest { .. } => "PatternTest",
     Expr::Image { .. } => "Image",
+    Expr::Graphics { .. } => "Graphics",
     Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
