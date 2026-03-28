@@ -2870,7 +2870,7 @@ FindSpanningTree,Finds a minimum spanning tree of a graph using Kruskal's algori
 MinLimit,Compute the smallest limiting value from below,✅,pure,11.2,2944
 NormalizedSquaredEuclideanDistance,Normalized squared Euclidean distance between vectors,✅,1,8.0,2944
 PermutationPower,Power of a permutation,✅,1,8.0,2944
-RegionWithin,,,,11.1,2944
+RegionWithin,Tests if one geometric region is contained within another,✅,pure,11.1,2944
 SequenceAlignment,,,,7.0,2944
 SpheroidalQSPrime,,🚫,,6.0,2944
 StationaryDistribution,,,,9.0,2944
