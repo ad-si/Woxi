@@ -1169,6 +1169,30 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       };
       Expr::Slot(num)
     }
+    Rule::SlotCall => {
+      // #[args] or #n[args] — Slot used as a function head
+      let mut inner = pair.into_inner();
+      let slot_pair = inner.next().unwrap();
+      let slot_expr = pair_to_expr(slot_pair);
+
+      // Collect BracketArgs (supports chained calls like #[a][b])
+      let bracket_args: Vec<Vec<Expr>> = inner
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+        .collect();
+
+      let mut result = Expr::CurriedCall {
+        func: Box::new(slot_expr),
+        args: bracket_args[0].clone(),
+      };
+      for args in bracket_args.iter().skip(1) {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args: args.clone(),
+        };
+      }
+      result
+    }
     Rule::SlotSequence => {
       let s = pair.as_str();
       // ## is slot sequence starting at 1, ##2 starts at 2, etc.
@@ -2275,6 +2299,42 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::FunctionCall {
         name: "DivideBy".to_string(),
         args: vec![var, val],
+      }
+    }
+    Rule::PrefixApplySimple => {
+      // f@x within implicit multiplication context → f[x]
+      let mut inner = pair.into_inner();
+      let func_pair = inner.next().unwrap();
+      let arg_pair = inner.next().unwrap();
+      let func_expr = pair_to_expr(func_pair);
+      let arg_expr = pair_to_expr(arg_pair);
+      match func_expr {
+        Expr::Identifier(ref name) => Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![arg_expr],
+        },
+        Expr::FunctionCall { .. } => Expr::CurriedCall {
+          func: Box::new(func_expr),
+          args: vec![arg_expr],
+        },
+        _ => Expr::PrefixApply {
+          func: Box::new(func_expr),
+          arg: Box::new(arg_expr),
+        },
+      }
+    }
+    Rule::NegativeImplicitFirst => {
+      // -N as the first factor in implicit multiplication → Integer(-N) or Real(-N)
+      let inner = pair.into_inner().next().unwrap();
+      let val = pair_to_expr(inner);
+      match val {
+        Expr::Integer(n) => Expr::Integer(-n),
+        Expr::Real(r) => Expr::Real(-r),
+        other => Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(0)),
+          right: Box::new(other),
+        },
       }
     }
     Rule::ImplicitTimes => {
@@ -7276,6 +7336,10 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
       blank_type: *blank_type,
       test: Box::new(substitute_slots(test, values)),
     },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_slots(func, values)),
+      args: substitute_slots_expand(args, values),
+    },
     // Atoms that don't contain slots
     _ => expr.clone(),
   }
@@ -7429,6 +7493,13 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
       name: name.clone(),
       blank_type: *blank_type,
       test: Box::new(substitute_variable(test, var_name, value)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_variable(func, var_name, value)),
+      args: args
+        .iter()
+        .map(|e| substitute_variable(e, var_name, value))
+        .collect(),
     },
     // Atoms that don't contain the variable
     _ => expr.clone(),

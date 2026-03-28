@@ -173,7 +173,10 @@ DivideBy = { Identifier ~ "/=" ~ Expression }
 // "b y^3" parses as b*(y^3) not (b*y)^3 and "2 x[[1]]" parses as 2*x[[1]]
 ImplicitPowerSuffix = { "^" ~ SimpleTerm }
 ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
-ImplicitTimes = { ImplicitTimesFactor ~ ImplicitTimesFactor+ }
+// NegativeImplicitFirst allows -N as the first factor in implicit multiplication
+// so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
+NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }
+ImplicitTimes = { (NegativeImplicitFirst | ImplicitTimesFactor) ~ ImplicitTimesFactor+ }
 
 // TildeInfix: a ~f~ b means f[a, b] — infix function application syntax
 // The function between tildes must be an identifier or function call (BaseFunctionCall)
@@ -235,7 +238,10 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 // This eliminates exponential backtracking caused by parsing the same
 // FunctionCall 4 times through separate Term alternatives.
 // Named suffix rules so pair_to_expr can detect them reliably.
-FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
+// Only match & as FunctionCallAnonSuffix when it has BracketArgs (f[x]&[5]) or
+// is NOT followed by @ (which would indicate expression-level & followed by prefix apply).
+// This prevents f[0]& in "a + f[0] &@ n" from consuming & at the Term level.
+FunctionCallAnonSuffix = { "&" ~ !"&" ~ (BracketArgs+ | !("@" | "+" | "-" | "*" | "/" | "^" | "<" | ">" | "=" | "|" | "." | "~")) }
 FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {
@@ -247,8 +253,12 @@ FunctionCallExtended = {
     )?
 }
 
+// SlotCall: #[args] or #n[args] — Slot used as a function head (e.g., in Y combinator: #[#] &)
+SlotCall = { Slot ~ BracketArgs+ }
+
 Term = _{
     FunctionCallExtended
+  | SlotCall
   | ImplicitTimes
   | PartAnonymousFunction
   | Unset
@@ -280,14 +290,18 @@ Term = _{
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
 // Uses UnsignedNumericValue to prevent "n-1" from being parsed as implicit multiplication n*(-1)
+// PrefixApplySimple handles f@x within implicit multiplication so Sqrt@5 binds before n Sqrt@5
+PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
 SimpleTerm = _{
     UnsignedNumericValue
+  | PrefixApplySimple
   | FunctionCall
   | DerivativeIdentifier
   | NamedCharIdentifier
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | Identifier
   | SlotSequence
+  | SlotCall
   | Slot
   | List
   | "(" ~ Expression ~ ")"
