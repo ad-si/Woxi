@@ -2730,6 +2730,140 @@ fn lll_reduce(basis: &mut Vec<Vec<i128>>) -> Vec<Vec<i128>> {
     .collect()
 }
 
+// ─── FindIntegerNullVector ───────────────────────────────────────────
+
+/// FindIntegerNullVector[{x1, x2, ..., xn}] - finds integers {a1, ..., an}
+/// such that a1*x1 + a2*x2 + ... + an*xn == 0.
+/// Uses LLL lattice reduction on a specially constructed lattice.
+pub fn find_integer_null_vector_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "FindIntegerNullVector".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FindIntegerNullVector".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = items.len();
+  if n < 2 {
+    return Ok(Expr::FunctionCall {
+      name: "FindIntegerNullVector".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Evaluate all elements to f64
+  let vals: Vec<f64> = items
+    .iter()
+    .map(|e| {
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(e)
+        .unwrap_or_else(|_| e.clone());
+      try_eval_to_f64(&evaluated)
+    })
+    .collect::<Option<Vec<f64>>>()
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "FindIntegerNullVector: all elements must be numeric".into(),
+      )
+    })?;
+
+  // Determine scaling factor based on desired precision
+  // Use 10^(precision/2) as scaling factor
+  let precision: f64 = 15.0; // default working precision
+  let scale = 10f64.powi((precision * 0.6) as i32);
+
+  // Construct the lattice: n rows of dimension n+1
+  // Row i: e_i (standard basis) with last column = round(x_i * scale)
+  let mut basis: Vec<Vec<i128>> = Vec::new();
+  for i in 0..n {
+    let mut row = vec![0i128; n + 1];
+    row[i] = 1;
+    row[n] = (vals[i] * scale).round() as i128;
+    basis.push(row);
+  }
+
+  // Apply LLL reduction
+  let reduced = lll_reduce(&mut basis);
+
+  if reduced.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "FindIntegerNullVector".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Find the vector with smallest |last component| (closest to null relation)
+  // Among those, prefer the one with smallest norm of the integer coefficients
+  let mut best: Option<&Vec<i128>> = None;
+  let mut best_score = f64::MAX;
+
+  for row in &reduced {
+    let last = row[n].abs() as f64;
+    let coeff_norm: f64 = row[..n]
+      .iter()
+      .map(|&c| (c as f64).powi(2))
+      .sum::<f64>()
+      .sqrt();
+    if coeff_norm < 1e-10 {
+      continue; // skip zero vector
+    }
+    // Score: prefer small last component relative to coefficient norm
+    let score = last / (coeff_norm + 1.0);
+    if score < best_score {
+      best_score = score;
+      best = Some(row);
+    }
+  }
+
+  let result = match best {
+    Some(row) => row[..n].to_vec(),
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "FindIntegerNullVector".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Verify the relation actually holds (dot product should be very small)
+  let dot: f64 = result
+    .iter()
+    .zip(vals.iter())
+    .map(|(&a, &x)| a as f64 * x)
+    .sum();
+  let max_val = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+  if dot.abs() > max_val * 1e-6 {
+    // Relation doesn't hold well enough
+    return Ok(Expr::FunctionCall {
+      name: "FindIntegerNullVector".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Normalize: make the first nonzero coefficient positive
+  let mut coeffs = result;
+  if let Some(&first_nonzero) = coeffs.iter().find(|&&c| c != 0) {
+    if first_nonzero < 0 {
+      for c in &mut coeffs {
+        *c = -*c;
+      }
+    }
+  }
+
+  Ok(Expr::List(coeffs.into_iter().map(Expr::Integer).collect()))
+}
+
 // ─── FindFit ──────────────────────────────────────────────────────────
 
 /// FindFit[data, model, params, var]

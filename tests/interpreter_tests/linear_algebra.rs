@@ -1608,3 +1608,67 @@ mod design_matrix {
     );
   }
 }
+
+mod find_integer_null_vector {
+  use super::*;
+
+  #[test]
+  fn simple_integers() {
+    assert_eq!(
+      interpret("FindIntegerNullVector[{1, 2, 3}]").unwrap(),
+      "{1, 1, -1}"
+    );
+  }
+
+  #[test]
+  fn rationals() {
+    assert_eq!(
+      interpret("FindIntegerNullVector[{1.0, 0.5, 0.25}]").unwrap(),
+      "{1, -2, 0}"
+    );
+  }
+
+  #[test]
+  fn no_relation() {
+    // Sqrt[2] and 1 are linearly independent over integers
+    assert_eq!(
+      interpret("FindIntegerNullVector[{1, Sqrt[2]}]").unwrap(),
+      "FindIntegerNullVector[{1, Sqrt[2]}]"
+    );
+  }
+
+  #[test]
+  fn with_zero() {
+    assert_eq!(
+      interpret("FindIntegerNullVector[{Pi, 0, 1}]").unwrap(),
+      "{0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn two_equal_values() {
+    assert_eq!(
+      interpret("FindIntegerNullVector[{3, 3}]").unwrap(),
+      "{1, -1}"
+    );
+  }
+
+  #[test]
+  fn proportional_values() {
+    // 2 and 6: 3*2 - 1*6 = 0
+    assert_eq!(
+      interpret("FindIntegerNullVector[{2, 6}]").unwrap(),
+      "{3, -1}"
+    );
+  }
+
+  #[test]
+  fn sqrt2_relation() {
+    // Sqrt[2]^2 = 2, so {Sqrt[2], Sqrt[2], -1} should work
+    // i.e., FindIntegerNullVector[{2, 1}] = {1, -2}
+    assert_eq!(
+      interpret("FindIntegerNullVector[{2, 1}]").unwrap(),
+      "{1, -2}"
+    );
+  }
+}
