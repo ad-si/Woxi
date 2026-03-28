@@ -3987,6 +3987,9 @@ mod insphere {
 
   #[test]
   fn unevaluated_for_unknown_region() {
-    assert_eq!(interpret("Insphere[Disk[]]").unwrap(), "Insphere[Disk[]]");
+    assert_eq!(
+      interpret("Insphere[Disk[]]").unwrap(),
+      "Insphere[Disk[{0, 0}]]"
+    );
   }
 }

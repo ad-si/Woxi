@@ -577,6 +577,13 @@ function main() {
     "FindArgMin[x^2 + 3*x + 2, x]",
     // Times factor ordering: (Cosh+Sinh)*Sin vs Sin*(Cosh+Sinh)
     "ExponentialGeneratingFunction[Sin[n], n, x]",
+    // Insphere: algebraic factoring difference. Woxi gives (n+Sqrt[n])^(-1), Wolfram factors to 1/(Sqrt[n]*(1+Sqrt[n]))
+    "Insphere[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]",
+    "Insphere[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]",
+    // HyperbolicDistribution PDF symbolic: Plus ordering in exponent (-(a*Sqrt[...]) + b*... vs b*... - a*Sqrt[...])
+    "PDF[HyperbolicDistribution[a, b, d, m], x]",
+    // Variance symbolic: Plus ordering of BesselK terms (different ordering of positive/negative terms)
+    "Variance[HyperbolicDistribution[a, b, d, m]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

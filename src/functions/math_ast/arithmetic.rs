@@ -1756,7 +1756,20 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     if std::mem::discriminant(a) == std::mem::discriminant(b) {
       compare_expr_canonical(a, b)
     } else {
-      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      // Use sort-key based comparison with wolfram_string_order (case-insensitive)
+      // to avoid ASCII case artifacts (e.g. 'S' < 'a' in ASCII would incorrectly
+      // put Sqrt[x] before identifier a).
+      let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+      let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+      let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+      if ord > 0 {
+        std::cmp::Ordering::Less
+      } else if ord < 0 {
+        std::cmp::Ordering::Greater
+      } else {
+        // Equal sort keys: fall back to full string comparison
+        crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      }
     }
   });
 }
@@ -2509,6 +2522,51 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Try to combine Rational coefficient with same-base positive power in symbolic args.
+  // This absorbs the base factor from the denominator, converting positive exponent to negative.
+  // E.g. Rational[1,6] * 2^(1/2) → Rational[1,3] * 2^(-1/2)  (since 6 = 2*3)
+  // E.g. Rational[1,2] * 2^(1/2) → 2^(-1/2)
+  if let Expr::FunctionCall {
+    name: rname,
+    args: rargs,
+  } = &coeff
+  {
+    if rname == "Rational" && rargs.len() == 2 {
+      if let (Expr::Integer(cn), Expr::Integer(cd)) = (&rargs[0], &rargs[1]) {
+        let cd_abs = cd.unsigned_abs();
+        if cd_abs > 1 {
+          for i in 0..symbolic_args.len() {
+            let (base, exp) = extract_base_exponent(&symbolic_args[i]);
+            if let Expr::Integer(bv) = &base {
+              let bv_abs = bv.unsigned_abs();
+              // Only for positive fractional exponents and when denominator is divisible by base
+              let exp_is_positive_frac = match &exp {
+                Expr::FunctionCall { name: en, args: ea }
+                  if en == "Rational" && ea.len() == 2 =>
+                {
+                  matches!(&ea[0], Expr::Integer(n) if *n > 0)
+                }
+                _ => false,
+              };
+              if bv_abs > 1 && exp_is_positive_frac && cd_abs % bv_abs == 0 {
+                // Absorb one factor of base from denominator into the power
+                let new_exp = plus_ast(&[Expr::Integer(-1), exp])?;
+                if matches!(&new_exp, Expr::Integer(0)) {
+                  symbolic_args.remove(i);
+                } else {
+                  symbolic_args[i] = power_two(&base, &new_exp)?;
+                }
+                let new_cd = (*cd as i128) / (*bv as i128);
+                coeff = make_rational(*cn, new_cd);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
   if symbolic_args.is_empty() {
     return Ok(coeff);
@@ -2810,6 +2868,55 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       if crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b) {
         return Ok(Expr::Integer(1));
       }
+
+      // When both numerator and denominator are Times products containing integer
+      // factors, convert to Times[num_factors..., Power[den_factors, -1]...] and let
+      // times_ast handle coefficient simplification and canonical ordering.
+      // E.g. (2*Sqrt[2]*E^(-6)) / (12*BesselK[...]) → Sqrt[2]/(6*E^6*BesselK[...])
+      if let Expr::FunctionCall {
+        name: dn,
+        args: dargs,
+      } = b
+      {
+        if dn == "Times" {
+          let num_factors = match a {
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              args.clone()
+            }
+            _ => vec![a.clone()],
+          };
+          let den_factors = dargs.clone();
+          let has_int_num = num_factors.iter().any(|f| matches!(f, Expr::Integer(_))
+              || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational"));
+          let has_int_den = den_factors.iter().any(|f| matches!(f, Expr::Integer(_))
+              || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational"));
+          if has_int_num && has_int_den {
+            // Only apply when integer factors have GCD > 1 (can actually simplify)
+            let num_int = num_factors
+              .iter()
+              .find_map(|f| match f {
+                Expr::Integer(n) => Some(n.unsigned_abs()),
+                _ => None,
+              })
+              .unwrap_or(1);
+            let den_int = den_factors
+              .iter()
+              .find_map(|f| match f {
+                Expr::Integer(n) => Some(n.unsigned_abs()),
+                _ => None,
+              })
+              .unwrap_or(1);
+            if gcd(num_int as i128, den_int as i128) > 1 {
+              let mut all_factors = num_factors;
+              for df in den_factors {
+                all_factors.push(power_two(&df, &Expr::Integer(-1))?);
+              }
+              return times_ast(&all_factors);
+            }
+          }
+        }
+      }
+
       // Flatten nested divisions: (a/b)/c → a/(b*c), a/(b/c) → (a*c)/b
       let (num, den) = flatten_division(a, b);
 

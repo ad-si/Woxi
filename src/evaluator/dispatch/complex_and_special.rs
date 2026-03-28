@@ -3376,10 +3376,31 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![expr.clone()],
         })
       }
-      _ => Ok(Expr::FunctionCall {
-        name: "Insphere".to_string(),
-        args: vec![expr.clone()],
-      }),
+      _ => {
+        // Normalize no-arg primitives like Disk[] → Disk[{0,0}]
+        let normalized =
+          if args.is_empty() && (name == "Disk" || name == "Ball") {
+            let center = match name.as_str() {
+              "Disk" => Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
+              "Ball" => Expr::List(vec![
+                Expr::Integer(0),
+                Expr::Integer(0),
+                Expr::Integer(0),
+              ]),
+              _ => unreachable!(),
+            };
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![center],
+            }
+          } else {
+            expr.clone()
+          };
+        Ok(Expr::FunctionCall {
+          name: "Insphere".to_string(),
+          args: vec![normalized],
+        })
+      }
     },
     _ => Ok(Expr::FunctionCall {
       name: "Insphere".to_string(),
