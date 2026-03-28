@@ -1043,6 +1043,9 @@ pub fn dispatch_complex_and_special(
     "Insphere" if args.len() == 1 => {
       return Some(compute_insphere(&args[0]));
     }
+    "RegionWithin" if args.len() == 2 => {
+      return Some(region_within(&args[0], &args[1], args));
+    }
     // PlanarAngle[{p1, vertex, p2}] — angle at vertex between rays to p1 and p2
     "PlanarAngle" if args.len() == 1 => {
       if let Expr::List(pts) = &args[0]
@@ -3677,4 +3680,130 @@ fn insphere_tetrahedron(
   };
 
   crate::evaluator::evaluate_expr_to_expr(&sphere)
+}
+
+/// RegionWithin[reg1, reg2] - True if reg2 is entirely within reg1
+fn region_within(
+  reg1: &Expr,
+  reg2: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::type_helpers::expr_to_number;
+
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionWithin".to_string(),
+      args: args.to_vec(),
+    })
+  };
+
+  let true_expr = || Ok(Expr::Identifier("True".to_string()));
+  let false_expr = || Ok(Expr::Identifier("False".to_string()));
+
+  // Extract region info: (name, center_coords, radius_or_half_sizes)
+  let parse_disk_ball = |r: &Expr| -> Option<(String, Vec<f64>, f64)> {
+    if let Expr::FunctionCall { name, args: rargs } = r {
+      match name.as_str() {
+        "Disk" | "Ball" => {
+          let (center, radius) = match rargs.len() {
+            0 => {
+              let dim = if name == "Disk" { 2 } else { 3 };
+              (vec![0.0; dim], 1.0)
+            }
+            1 => {
+              if let Expr::List(coords) = &rargs[0] {
+                let c: Vec<f64> =
+                  coords.iter().filter_map(|e| expr_to_number(e)).collect();
+                if c.len() == coords.len() {
+                  (c, 1.0)
+                } else {
+                  return None;
+                }
+              } else {
+                return None;
+              }
+            }
+            2 => {
+              let c = if let Expr::List(coords) = &rargs[0] {
+                let c: Vec<f64> =
+                  coords.iter().filter_map(|e| expr_to_number(e)).collect();
+                if c.len() == coords.len() {
+                  c
+                } else {
+                  return None;
+                }
+              } else {
+                return None;
+              };
+              let r = expr_to_number(&rargs[1])?;
+              (c, r)
+            }
+            _ => return None,
+          };
+          Some((name.clone(), center, radius))
+        }
+        _ => None,
+      }
+    } else {
+      None
+    }
+  };
+
+  let parse_point = |r: &Expr| -> Option<Vec<f64>> {
+    if let Expr::FunctionCall { name, args: rargs } = r
+      && name == "Point"
+      && rargs.len() == 1
+      && let Expr::List(coords) = &rargs[0]
+    {
+      let c: Vec<f64> =
+        coords.iter().filter_map(|e| expr_to_number(e)).collect();
+      if c.len() == coords.len() {
+        Some(c)
+      } else {
+        None
+      }
+    } else {
+      None
+    }
+  };
+
+  // Point within Disk/Ball
+  if let Some(pt) = parse_point(reg2) {
+    if let Some((_, center, radius)) = parse_disk_ball(reg1) {
+      if pt.len() == center.len() {
+        let dist_sq: f64 = pt
+          .iter()
+          .zip(center.iter())
+          .map(|(a, b)| (a - b).powi(2))
+          .sum();
+        return if dist_sq <= radius * radius + 1e-10 {
+          true_expr()
+        } else {
+          false_expr()
+        };
+      }
+    }
+  }
+
+  // Disk/Ball within Disk/Ball
+  if let (Some((_, c1, r1)), Some((_, c2, r2))) =
+    (parse_disk_ball(reg1), parse_disk_ball(reg2))
+  {
+    if c1.len() == c2.len() {
+      let dist: f64 = c1
+        .iter()
+        .zip(c2.iter())
+        .map(|(a, b)| (a - b).powi(2))
+        .sum::<f64>()
+        .sqrt();
+      // reg2 is within reg1 if dist(centers) + r2 <= r1
+      return if dist + r2 <= r1 + 1e-10 {
+        true_expr()
+      } else {
+        false_expr()
+      };
+    }
+  }
+
+  unevaluated()
 }

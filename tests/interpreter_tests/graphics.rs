@@ -3994,6 +3994,68 @@ mod insphere {
   }
 }
 
+mod region_within {
+  use super::*;
+
+  #[test]
+  fn point_inside_disk() {
+    assert_eq!(
+      interpret("RegionWithin[Disk[], Point[{0, 0}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn point_outside_disk() {
+    assert_eq!(
+      interpret("RegionWithin[Disk[], Point[{2, 0}]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn point_on_boundary() {
+    assert_eq!(
+      interpret("RegionWithin[Disk[], Point[{1, 0}]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn disk_within_larger_disk() {
+    assert_eq!(
+      interpret("RegionWithin[Disk[{0, 0}, 3], Disk[{1, 0}, 1]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn disk_not_within_smaller_disk() {
+    assert_eq!(
+      interpret("RegionWithin[Disk[], Disk[{1, 0}, 1]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn ball_within_ball() {
+    assert_eq!(
+      interpret("RegionWithin[Ball[{0, 0, 0}, 5], Ball[{1, 0, 0}, 2]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ball_not_within_ball() {
+    assert_eq!(
+      interpret("RegionWithin[Ball[{0, 0, 0}, 2], Ball[{3, 0, 0}, 2]]")
+        .unwrap(),
+      "False"
+    );
+  }
+}
+
 mod find_graph_isomorphism {
   use super::*;
 
