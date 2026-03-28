@@ -4062,3 +4062,49 @@ mod find_graph_isomorphism {
     );
   }
 }
+
+mod find_spanning_tree {
+  use super::*;
+
+  #[test]
+  fn triangle() {
+    assert_eq!(
+      interpret(
+        "FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}]]"
+      )
+      .unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+    );
+  }
+
+  #[test]
+  fn four_vertices() {
+    assert_eq!(
+      interpret(
+        "FindSpanningTree[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[1, 4], UndirectedEdge[1, 3]}]]"
+      )
+      .unwrap(),
+      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}]"
+    );
+  }
+
+  #[test]
+  fn tree_edge_count() {
+    let result = interpret(
+      "Length[EdgeList[FindSpanningTree[Graph[{1, 2, 3, 4, 5}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[4, 5], UndirectedEdge[1, 5], UndirectedEdge[2, 4]}]]]]"
+    )
+    .unwrap();
+    assert_eq!(result, "4"); // 5 vertices -> 4 edges
+  }
+
+  #[test]
+  fn already_tree() {
+    assert_eq!(
+      interpret(
+        "FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+      )
+      .unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+    );
+  }
+}

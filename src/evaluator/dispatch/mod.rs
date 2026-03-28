@@ -2963,6 +2963,20 @@ pub fn evaluate_function_call_ast_inner(
     return find_graph_isomorphism_impl(verts1, edges1, verts2, edges2, args);
   }
 
+  // FindSpanningTree[Graph[verts, edges]] — minimum spanning tree (Kruskal's)
+  if name == "FindSpanningTree"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    return find_spanning_tree_impl(verts, edges);
+  }
+
   // GraphPropertyDistribution[property[g], Distributed[g, graphDist]]
   // Returns the probability distribution of a graph property over a graph distribution.
   if name == "GraphPropertyDistribution"
@@ -5821,4 +5835,88 @@ fn find_graph_isomorphism_impl(
 
   let result = Expr::List(assocs);
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// FindSpanningTree using Kruskal's algorithm (unit weights)
+fn find_spanning_tree_impl(
+  verts: &[Expr],
+  edges: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let n = verts.len();
+  if n == 0 {
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vec![]), Expr::List(vec![])],
+    });
+  }
+
+  let v_strs: Vec<String> = verts.iter().map(|v| expr_to_string(v)).collect();
+
+  // Helper to extract edge endpoints
+  let edge_endpoints = |edge: &Expr| -> Option<(usize, usize)> {
+    let (s, t) = match edge {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (expr_to_string(pattern), expr_to_string(replacement)),
+      Expr::FunctionCall { args: eargs, .. } if eargs.len() == 2 => {
+        (expr_to_string(&eargs[0]), expr_to_string(&eargs[1]))
+      }
+      _ => return None,
+    };
+    let i = v_strs.iter().position(|v| *v == s)?;
+    let j = v_strs.iter().position(|v| *v == t)?;
+    Some((i, j))
+  };
+
+  // Union-Find
+  let mut parent: Vec<usize> = (0..n).collect();
+  let mut rank = vec![0usize; n];
+
+  fn find(parent: &mut [usize], x: usize) -> usize {
+    if parent[x] != x {
+      parent[x] = find(parent, parent[x]);
+    }
+    parent[x]
+  }
+
+  fn union(
+    parent: &mut [usize],
+    rank: &mut [usize],
+    x: usize,
+    y: usize,
+  ) -> bool {
+    let rx = find(parent, x);
+    let ry = find(parent, y);
+    if rx == ry {
+      return false;
+    }
+    if rank[rx] < rank[ry] {
+      parent[rx] = ry;
+    } else if rank[rx] > rank[ry] {
+      parent[ry] = rx;
+    } else {
+      parent[ry] = rx;
+      rank[rx] += 1;
+    }
+    true
+  }
+
+  // Kruskal's: add edges that don't form cycles
+  let mut tree_edges: Vec<Expr> = Vec::new();
+  for edge in edges {
+    if let Some((i, j)) = edge_endpoints(edge) {
+      if union(&mut parent, &mut rank, i, j) {
+        tree_edges.push(edge.clone());
+        if tree_edges.len() == n - 1 {
+          break;
+        }
+      }
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![Expr::List(verts.to_vec()), Expr::List(tree_edges)],
+  })
 }
