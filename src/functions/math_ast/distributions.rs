@@ -1745,26 +1745,39 @@ fn distribution_mean_variance(
       let l = dargs[2].clone();
 
       // Mean = Piecewise[{{m*(l+n)/((m-2)*n), m > 2}}, Indeterminate]
-      // For symbolic form, return the direct expression
-      let mean = divide(
+      let mean_expr = divide(
         times(m.clone(), plus(l.clone(), n.clone())),
-        times(minus(m.clone(), int(2)), n.clone()),
+        times(plus(int(-2), m.clone()), n.clone()),
+      );
+      let mean = piecewise(
+        vec![(
+          mean_expr,
+          comparison(m.clone(), ComparisonOp::Greater, int(2)),
+        )],
+        Expr::Identifier("Indeterminate".to_string()),
       );
 
-      // Variance = 2*m^2*((l+n)^2 + (m-2)*(2*l+n)) / ((m-4)*(m-2)^2*n^2)
+      // Variance = Piecewise[{{2*m^2*((l+n)^2 + (m-2)*(2*l+n)) / ((m-4)*(m-2)^2*n^2), m > 4}}, Indeterminate]
       let l_plus_n = plus(l.clone(), n.clone());
       let var_num = times(
         times(int(2), power(m.clone(), int(2))),
         plus(
           power(l_plus_n, int(2)),
-          times(minus(m.clone(), int(2)), plus(times(int(2), l), n.clone())),
+          times(plus(int(-2), m.clone()), plus(times(int(2), l), n.clone())),
         ),
       );
       let var_den = times(
-        times(minus(m.clone(), int(4)), power(minus(m, int(2)), int(2))),
+        times(
+          plus(int(-4), m.clone()),
+          power(plus(int(-2), m.clone()), int(2)),
+        ),
         power(n, int(2)),
       );
-      let var = divide(var_num, var_den);
+      let var_expr = divide(var_num, var_den);
+      let var = piecewise(
+        vec![(var_expr, comparison(m, ComparisonOp::Greater, int(4)))],
+        Expr::Identifier("Indeterminate".to_string()),
+      );
 
       Ok((mean, var))
     }
@@ -3114,10 +3127,10 @@ fn pdf_noncentral_f(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   // numerator pieces
   let m_half = power(m.clone(), half(m.clone()));
   let n_half = power(n.clone(), half(n.clone()));
-  let x_pow = power(x.clone(), half(minus(n.clone(), int(2))));
+  let x_pow = power(x.clone(), half(plus(int(-2), n.clone())));
   let bracket = power(
     plus(m.clone(), times(n.clone(), x.clone())),
-    times(int(-1), half(plus(m.clone(), n.clone()))),
+    half(plus(times(int(-1), m.clone()), times(int(-1), n.clone()))),
   );
   let hyp = hyp1f1(
     half(plus(m.clone(), n.clone())),
@@ -3137,10 +3150,7 @@ fn pdf_noncentral_f(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let density = divide(numerator, denominator);
 
-  let cond = Expr::FunctionCall {
-    name: "Greater".to_string(),
-    args: vec![x, int(0)],
-  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
 
   eval(piecewise(vec![(density, cond)], int(0)))
 }
