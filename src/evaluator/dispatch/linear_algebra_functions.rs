@@ -370,6 +370,13 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "FindIntegerNullVector" if !args.is_empty() && args.len() <= 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::find_integer_null_vector_ast(
+          args,
+        ),
+      );
+    }
     "MatrixPower" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         let mat = &args[0];
