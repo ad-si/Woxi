@@ -2747,7 +2747,7 @@ RandomEntity,,🚫,,10.2,2807
 TreeGraphQ,True if graph is a tree,✅,1,8.0,2807
 FindHamiltonianPath,,🚫,,10.2,2812
 GeoCircle,,🚫,,10.0,2812
-HyperbolicDistribution,,,,8.0,2812
+HyperbolicDistribution,Hyperbolic distribution with parameters for shape and location,✅,pure,8.0,2812
 ImageKeypoints,,🚫,,8.0,2812
 SectorSpacing,Option for pie chart sector spacing,✅,pure,7.0,2812
 FindEulerianCycle,,🚫,,8.0,2816
