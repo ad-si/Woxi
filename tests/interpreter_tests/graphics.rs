@@ -680,8 +680,8 @@ mod graphics {
         svg
       );
       assert!(
-        svg.contains("Coordinate pts should be a pair of numbers"),
-        "Should contain error message: {}",
+        svg.contains("<title>Coordinate pts should be a pair of numbers"),
+        "Should contain error message in title attribute: {}",
         svg
       );
     }
@@ -690,8 +690,8 @@ mod graphics {
     fn line_with_symbolic_arg_shows_error() {
       let svg = export_svg("Graphics[{Line[pts]}]");
       assert!(
-        svg.contains("Coordinate pts should be a pair of numbers"),
-        "Should contain error message: {}",
+        svg.contains("<title>Coordinate pts should be a pair of numbers"),
+        "Should contain error message in title: {}",
         svg
       );
     }
@@ -710,8 +710,8 @@ mod graphics {
     fn mixed_valid_and_invalid_shows_error() {
       let svg = export_svg("Graphics[{Point[{0, 0}], Point[pts]}]");
       assert!(
-        svg.contains("Coordinate pts should be a pair of numbers"),
-        "Mixed content with invalid primitive should show error message: {}",
+        svg.contains("<title>Coordinate pts should be a pair of numbers"),
+        "Mixed content with invalid primitive should show error message in title: {}",
         svg
       );
       // The valid point should still be rendered

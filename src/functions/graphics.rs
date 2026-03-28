@@ -2822,20 +2822,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg_width as f64 - 1.2,
       svg_height as f64 - 1.2
     ));
-    let font_size = 13;
-    let line_height = font_size as f64 * 1.4;
-    let total_height = errors.len() as f64 * line_height;
-    let start_y = (svg_height as f64 - total_height) / 2.0 + font_size as f64;
-    for (i, msg) in errors.iter().enumerate() {
-      let y = start_y + i as f64 * line_height;
-      svg.push_str(&format!(
-        "<text x=\"{}\" y=\"{:.1}\" font-family=\"monospace\" font-size=\"{}\" fill=\"rgb(100%,33%,33%)\" text-anchor=\"middle\">{}</text>\n",
-        svg_width as f64 / 2.0,
-        y,
-        font_size,
-        svg_escape(msg),
-      ));
-    }
+    let title_text = errors
+      .iter()
+      .map(|m| svg_escape(m))
+      .collect::<Vec<_>>()
+      .join("\n");
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"transparent\" stroke=\"none\"><title>{}</title></rect>\n",
+      svg_width, svg_height, title_text
+    ));
   }
 
   render_axes(&mut svg, axes, &bb, svg_w, svg_h);
