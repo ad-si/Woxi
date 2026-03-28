@@ -1581,3 +1581,58 @@ fn dated_unit_single_arg() {
     "DatedUnit[USDollars]"
   );
 }
+
+// ─── QuantityDistribution ───────────────────────────────────────────────────
+
+#[test]
+fn quantity_distribution_inert() {
+  assert_eq!(
+    interpret(r#"QuantityDistribution[NormalDistribution[0, 1], "Meters"]"#)
+      .unwrap(),
+    "QuantityDistribution[NormalDistribution[0, 1], Meters]"
+  );
+}
+
+#[test]
+fn quantity_distribution_mean() {
+  assert_eq!(
+    interpret(
+      r#"Mean[QuantityDistribution[NormalDistribution[0, 1], "Meters"]]"#
+    )
+    .unwrap(),
+    "Quantity[0, Meters]"
+  );
+}
+
+#[test]
+fn quantity_distribution_mean_exponential() {
+  assert_eq!(
+    interpret(
+      r#"Mean[QuantityDistribution[ExponentialDistribution[2], "Seconds"]]"#
+    )
+    .unwrap(),
+    "Quantity[1/2, Seconds]"
+  );
+}
+
+#[test]
+fn quantity_distribution_variance() {
+  assert_eq!(
+    interpret(
+      r#"Variance[QuantityDistribution[NormalDistribution[0, 1], "Meters"]]"#
+    )
+    .unwrap(),
+    "Quantity[1, Meters^2]"
+  );
+}
+
+#[test]
+fn quantity_distribution_variance_exponential() {
+  assert_eq!(
+    interpret(
+      r#"Variance[QuantityDistribution[ExponentialDistribution[2], "Seconds"]]"#
+    )
+    .unwrap(),
+    "Quantity[1/4, Seconds^2]"
+  );
+}

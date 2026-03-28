@@ -304,6 +304,17 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         super::distributions::multivariate_poisson_mean_variance(dargs)?;
       Ok(mean)
     }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "QuantityDistribution" && dargs.len() == 2 => {
+      // Mean[QuantityDistribution[dist, unit]] = Quantity[Mean[dist], unit]
+      let inner_mean = mean_ast(&[dargs[0].clone()])?;
+      Ok(Expr::FunctionCall {
+        name: "Quantity".to_string(),
+        args: vec![inner_mean, dargs[1].clone()],
+      })
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
       args: args.to_vec(),
@@ -491,6 +502,22 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (_, variance) =
         super::distributions::multivariate_poisson_mean_variance(dargs)?;
       Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "QuantityDistribution" && dargs.len() == 2 => {
+      // Variance[QuantityDistribution[dist, unit]] = Quantity[Variance[dist], unit^2]
+      let inner_var = variance_ast(&[dargs[0].clone()])?;
+      let unit_sq = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(dargs[1].clone()),
+        right: Box::new(Expr::Integer(2)),
+      };
+      Ok(Expr::FunctionCall {
+        name: "Quantity".to_string(),
+        args: vec![inner_var, unit_sq],
+      })
     }
     _ => Ok(Expr::FunctionCall {
       name: "Variance".to_string(),
