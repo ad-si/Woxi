@@ -1341,7 +1341,7 @@ mod hyperbolic_distribution {
   fn pdf_symbolic() {
     assert_eq!(
       interpret("PDF[HyperbolicDistribution[a, b, d, m], x]").unwrap(),
-      "(E^(b*(-m + x) - Sqrt[d^2 + (-m + x)^2]*a)*Sqrt[a^2 - b^2])/(2*a*d*BesselK[1, Sqrt[a^2 - b^2]*d])"
+      "(Sqrt[a^2 - b^2]*E^(-(a*Sqrt[d^2 + (-m + x)^2]) + b*(-m + x)))/(2*a*d*BesselK[1, Sqrt[a^2 - b^2]*d])"
     );
   }
 
@@ -1349,7 +1349,7 @@ mod hyperbolic_distribution {
   fn pdf_numeric() {
     assert_eq!(
       interpret("PDF[HyperbolicDistribution[3, 1, 2, 0], 0]").unwrap(),
-      "((2*Sqrt[2])/E^6)/(12*BesselK[1, 4*Sqrt[2]])"
+      "1/(3*Sqrt[2]*E^6*BesselK[1, 4*Sqrt[2]])"
     );
   }
 
@@ -1357,7 +1357,7 @@ mod hyperbolic_distribution {
   fn pdf_at_half() {
     assert_eq!(
       interpret("PDF[HyperbolicDistribution[3, 1, 2, 0], 1/2]").unwrap(),
-      "(2*E^(1/2 - (3*Sqrt[17])/2)*Sqrt[2])/(12*BesselK[1, 4*Sqrt[2]])"
+      "E^(1/2 - (3*Sqrt[17])/2)/(3*Sqrt[2]*BesselK[1, 4*Sqrt[2]])"
     );
   }
 
@@ -1373,7 +1373,7 @@ mod hyperbolic_distribution {
   fn mean_numeric() {
     assert_eq!(
       interpret("Mean[HyperbolicDistribution[3, 1, 2, 0]]").unwrap(),
-      "(2*BesselK[2, 4*Sqrt[2]])/(2*Sqrt[2]*BesselK[1, 4*Sqrt[2]])"
+      "BesselK[2, 4*Sqrt[2]]/(Sqrt[2]*BesselK[1, 4*Sqrt[2]])"
     );
   }
 
@@ -1389,7 +1389,7 @@ mod hyperbolic_distribution {
   fn variance_numeric() {
     assert_eq!(
       interpret("Variance[HyperbolicDistribution[3, 1, 2, 0]]").unwrap(),
-      "(2*BesselK[2, 4*Sqrt[2]])/(2*Sqrt[2]*BesselK[1, 4*Sqrt[2]]) + (4*BesselK[3, 4*Sqrt[2]])/(8*BesselK[1, 4*Sqrt[2]]) - (4*BesselK[2, 4*Sqrt[2]]^2)/(8*BesselK[1, 4*Sqrt[2]]^2)"
+      "BesselK[2, 4*Sqrt[2]]/(Sqrt[2]*BesselK[1, 4*Sqrt[2]]) - BesselK[2, 4*Sqrt[2]]^2/(2*BesselK[1, 4*Sqrt[2]]^2) + BesselK[3, 4*Sqrt[2]]/(2*BesselK[1, 4*Sqrt[2]])"
     );
   }
 }

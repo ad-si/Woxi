@@ -1375,7 +1375,7 @@ mod plot3d_function {
   fn plot3d_attributes() {
     assert_eq!(
       interpret("Attributes[Plot3D]").unwrap(),
-      "{Protected, ReadProtected}"
+      "{HoldAll, Protected, ReadProtected}"
     );
   }
 }

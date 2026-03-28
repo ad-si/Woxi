@@ -529,8 +529,14 @@ pub fn expr_sort_key(e: &Expr) -> String {
         }
         return expr_sort_key(last);
       }
-      // For Power: sort key is the base (same as BinaryOp::Power)
+      // For Power/Sqrt: sort key is the base (same as BinaryOp::Power)
       if name == "Power" && args.len() == 2 {
+        if is_atom_expr(&args[0]) {
+          return crate::syntax::expr_to_string(&args[0]);
+        }
+        return expr_sort_key(&args[0]);
+      }
+      if name == "Sqrt" && args.len() == 1 {
         if is_atom_expr(&args[0]) {
           return crate::syntax::expr_to_string(&args[0]);
         }
@@ -543,8 +549,12 @@ pub fn expr_sort_key(e: &Expr) -> String {
       use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Power => {
-          // Power: sort key is the base
-          crate::syntax::expr_to_string(left)
+          // Power: sort key is the base (recurse for compound bases)
+          if is_atom_expr(left) {
+            crate::syntax::expr_to_string(left)
+          } else {
+            expr_sort_key(left)
+          }
         }
         BinaryOperator::Plus | BinaryOperator::Times => {
           // For binary plus/times: use the "larger" operand

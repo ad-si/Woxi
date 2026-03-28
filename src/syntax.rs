@@ -3812,15 +3812,30 @@ fn format_times_with_denominator(
     return None;
   }
 
-  let mut numer_factors: Vec<&Expr> = Vec::new();
+  let mut numer_factors_owned: Vec<Expr> = Vec::new();
   let mut denom_exprs: Vec<Expr> = Vec::new();
+  // When a Rational[n, d] appears alongside denominator factors, split it:
+  // n goes to the numerator and d goes to the denominator.
+  // E.g. Times[Rational[1,3], Power[2,-1/2]] → 1/(3*Sqrt[2]) instead of (1/3)/Sqrt[2]
   for a in args.iter() {
     if is_denominator_factor(a) {
       denom_exprs.push(denominator_form(a));
+    } else if let Expr::FunctionCall { name, args: rargs } = a
+      && name == "Rational"
+      && rargs.len() == 2
+      && let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+      && d.abs() > 1
+    {
+      let (rn, rd) = if *d > 0 { (*n, *d) } else { (-*n, -*d) };
+      if rn != 1 {
+        numer_factors_owned.push(Expr::Integer(rn));
+      }
+      denom_exprs.insert(0, Expr::Integer(rd));
     } else {
-      numer_factors.push(a);
+      numer_factors_owned.push(a.clone());
     }
   }
+  let numer_factors: Vec<&Expr> = numer_factors_owned.iter().collect();
 
   // Format a single factor with parens around Plus
   let fmt_factor = |a: &Expr| -> String {
@@ -4242,6 +4257,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         // Handle Times[Rational[1, d], expr] as "expr/d"
         // Handle Times[Rational[-1, d], Power[x, neg]] as "-1/d*1/x^n"
         // This is the Wolfram convention for results like Integrate[1/x^3, x]
+        // Times[Rational[n, d], denom_factor] → n/(d*denom) or 1/(d*denom)
         if args.len() == 2
           && let Expr::FunctionCall {
             name: rname,
@@ -4256,7 +4272,24 @@ pub fn expr_to_string(expr: &Expr) -> String {
         {
           let denom_form = denominator_form(&args[1]);
           let denom_str = expr_to_string(&denom_form);
-          return format!("{}/{}*1/{}", n, d, denom_str);
+          let denom_needs_parens = *d > 1
+            || matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times");
+          let full_denom = if *d > 1 {
+            if denom_needs_parens {
+              format!("({}*{})", d, denom_str)
+            } else {
+              format!("{}*{}", d, denom_str)
+            }
+          } else {
+            denom_str
+          };
+          if *n == 1 {
+            return format!("1/{}", full_denom);
+          } else if *n == -1 {
+            return format!("-1/{}", full_denom);
+          } else {
+            return format!("{}/{}", n, full_denom);
+          }
         }
         // Handle Times[Rational[-1, d], expr] as "-expr/d"
         // Handle Times[Rational[1, d], expr] as "expr/d" (Wolfram convention)
