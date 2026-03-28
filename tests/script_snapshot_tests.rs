@@ -232,6 +232,13 @@ script_test!(script_levenshtein_distance, "levenshtein_distance.wls");
 script_test!(script_100_doors, "100_doors.wls");
 script_test!(script_table_form, "table_form.wls");
 script_test!(script_euro_coins_100g, "euro_coins_100g.wls");
+script_test!(script_word_wrap, "word_wrap.wls");
+script_test!(script_y_combinator, "y_combinator.wls");
+script_test!(script_yin_and_yang, "yin_and_yang.wls");
+script_test!(
+  script_zeckendorf_number_representation,
+  "zeckendorf_number_representation.wls"
+);
 
 #[test]
 fn script_cli_args() {
