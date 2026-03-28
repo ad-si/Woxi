@@ -20,6 +20,14 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Empty list: return unevaluated (Wolfram issues VoronoiMesh::pts message)
+  if pts_expr.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "VoronoiMesh".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // Parse input points
   let mut sites: Vec<(f64, f64)> = Vec::new();
   for pt in pts_expr {
@@ -34,9 +42,10 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    // Non-numeric or malformed points: return EmptyRegion[2]
     return Ok(Expr::FunctionCall {
-      name: "VoronoiMesh".to_string(),
-      args: args.to_vec(),
+      name: "EmptyRegion".to_string(),
+      args: vec![Expr::Integer(2)],
     });
   }
 
@@ -549,10 +558,22 @@ fn build_mesh_region(
     });
   }
 
-  Ok(Expr::FunctionCall {
+  let mesh_region = Expr::FunctionCall {
     name: "MeshRegion".to_string(),
     args: vec![Expr::List(vertex_exprs), Expr::List(polygon_exprs)],
-  })
+  };
+
+  // Auto-render MeshRegion to SVG for display in playground/Jupyter
+  if let Expr::FunctionCall {
+    args: ref mr_args, ..
+  } = mesh_region
+  {
+    if let Some(svg) = mesh_region_to_svg(&mr_args[0], &mr_args[1]) {
+      return Ok(crate::graphics_result(svg));
+    }
+  }
+
+  Ok(mesh_region)
 }
 
 fn point_key(x: f64, y: f64) -> u128 {
