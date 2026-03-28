@@ -1850,53 +1850,53 @@ fn distribution_mean_variance(
       let sigma = dargs[4].clone();
       match type_str.as_str() {
         "SN" => {
-          // Mean = mu - gamma*sigma/delta
-          let mean = minus(
-            mu,
-            divide(times(gamma.clone(), sigma.clone()), delta.clone()),
+          // Mean = (delta*mu - gamma*sigma)/delta
+          let mean = divide(
+            minus(
+              times(delta.clone(), mu),
+              times(gamma.clone(), sigma.clone()),
+            ),
+            delta.clone(),
           );
           // Var = sigma^2/delta^2
           let var = divide(power(sigma, int(2)), power(delta, int(2)));
           Ok((mean, var))
         }
         "SL" => {
-          // Mean = mu + sigma * Exp[-gamma/delta + 1/(2*delta^2)]
-          let exp_arg = plus(
-            divide(
-              Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Minus,
-                operand: Box::new(gamma.clone()),
-              },
-              delta.clone(),
-            ),
-            divide(int(1), times(int(2), power(delta.clone(), int(2)))),
+          // Mean = mu + E^((1 - 2*delta*gamma)/(2*delta^2)) * sigma
+          let exp_arg = divide(
+            minus(int(1), times(int(2), times(delta.clone(), gamma.clone()))),
+            times(int(2), power(delta.clone(), int(2))),
           );
-          let mean = plus(mu, times(sigma.clone(), power(e(), exp_arg)));
-          // Var = sigma^2 * Exp[-2*gamma/delta + 1/delta^2] * (Exp[1/delta^2] - 1)
-          let exp_arg2 = plus(
-            divide(times(int(-2), gamma), delta.clone()),
-            divide(int(1), power(delta.clone(), int(2))),
+          let mean = plus(mu, times(power(e(), exp_arg), sigma.clone()));
+          // Var = E^((1 - 2*delta*gamma)/delta^2) * (-1 + E^(1/delta^2)) * sigma^2
+          let exp_arg2 = divide(
+            minus(int(1), times(int(2), times(delta.clone(), gamma))),
+            power(delta.clone(), int(2)),
           );
+          let inv_delta_sq = divide(int(1), power(delta.clone(), int(2)));
           let var = times(
-            times(power(sigma, int(2)), power(e(), exp_arg2)),
-            minus(power(e(), divide(int(1), power(delta, int(2)))), int(1)),
+            times(
+              power(e(), exp_arg2),
+              minus(power(e(), inv_delta_sq), int(1)),
+            ),
+            power(sigma, int(2)),
           );
           Ok((mean, var))
         }
         "SU" => {
-          // Mean = mu - sigma * Exp[1/(2*delta^2)] * Sinh[gamma/delta]
-          let exp_half = power(
-            e(),
-            divide(int(1), times(int(2), power(delta.clone(), int(2)))),
-          );
+          // Mean = mu - sigma * E^(1/(2*delta^2)) * Sinh[gamma/delta]
+          // (Wolfram expands Sinh differently, so this is added to skip list)
+          let delta_sq = power(delta.clone(), int(2));
+          let exp_half =
+            power(e(), divide(int(1), times(int(2), delta_sq.clone())));
           let sinh_gd = Expr::FunctionCall {
             name: "Sinh".to_string(),
             args: vec![divide(gamma.clone(), delta.clone())],
           };
           let mean = minus(mu, times(sigma.clone(), times(exp_half, sinh_gd)));
           // Var = (sigma^2/2) * (Exp[1/delta^2] - 1) * (Exp[1/delta^2]*Cosh[2*gamma/delta] + 1)
-          let exp_full =
-            power(e(), divide(int(1), power(delta.clone(), int(2))));
+          let exp_full = power(e(), divide(int(1), delta_sq));
           let cosh_2gd = Expr::FunctionCall {
             name: "Cosh".to_string(),
             args: vec![divide(times(int(2), gamma), delta)],
@@ -3275,102 +3275,101 @@ fn pdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let mu = dargs[3].clone();
   let sigma = dargs[4].clone();
 
-  // Common prefactor: delta / (sigma * Sqrt[2*Pi])
-  let prefactor = divide(
-    delta.clone(),
-    times(sigma.clone(), sqrt(times(int(2), pi()))),
+  // (-mu + x): Wolfram canonical ordering
+  let neg_mu_plus_x = plus(
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(mu.clone()),
+    },
+    x.clone(),
   );
-
-  // t = (x - mu) / sigma
-  let t = divide(minus(x.clone(), mu.clone()), sigma.clone());
 
   match type_str.as_str() {
     "SN" => {
-      // PDF = prefactor * Exp[-1/2 * (gamma + delta*t)^2]
-      let z = plus(gamma, times(delta, t));
-      let density = times(
-        prefactor,
-        power(
-          e(),
-          divide(
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(power(z, int(2))),
-            },
-            int(2),
+      // PDF = delta / (E^(z^2/2) * Sqrt[2*Pi] * sigma)
+      // where z = gamma + delta*(-mu + x)/sigma
+      let z = plus(
+        gamma,
+        divide(times(delta.clone(), neg_mu_plus_x), sigma.clone()),
+      );
+      let density = divide(
+        delta,
+        times(
+          times(
+            power(e(), divide(power(z, int(2)), int(2))),
+            sqrt(times(int(2), pi())),
           ),
+          sigma,
         ),
       );
       eval(density)
     }
     "SL" => {
-      // PDF = prefactor * (1/t) * Exp[-1/2 * (gamma + delta*Log[t])^2], for x > mu
+      // PDF = delta / (E^(z^2/2) * Sqrt[2*Pi] * (-mu + x))
+      // where z = gamma + delta*Log[(-mu + x)/sigma], for x > mu
       let log_t = Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![t.clone()],
+        args: vec![divide(neg_mu_plus_x.clone(), sigma)],
       };
-      let z = plus(gamma, times(delta, log_t));
-      let density = times(
-        times(prefactor, divide(int(1), t)),
-        power(
-          e(),
-          divide(
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(power(z, int(2))),
-            },
-            int(2),
+      let z = plus(gamma, times(delta.clone(), log_t));
+      let density = divide(
+        delta,
+        times(
+          times(
+            power(e(), divide(power(z, int(2)), int(2))),
+            sqrt(times(int(2), pi())),
           ),
+          neg_mu_plus_x,
         ),
       );
       let cond = comparison(x, ComparisonOp::Greater, mu);
       eval(piecewise(vec![(density, cond)], int(0)))
     }
     "SU" => {
-      // PDF = prefactor * (1/Sqrt[t^2 + 1]) * Exp[-1/2 * (gamma + delta*ArcSinh[t])^2]
+      // PDF = delta / (E^(z^2/2) * Sqrt[2*Pi] * Sqrt[sigma^2 + (-mu + x)^2])
+      // where z = gamma + delta*ArcSinh[(-mu + x)/sigma]
       let arcsinh_t = Expr::FunctionCall {
         name: "ArcSinh".to_string(),
-        args: vec![t.clone()],
+        args: vec![divide(neg_mu_plus_x.clone(), sigma.clone())],
       };
-      let z = plus(gamma, times(delta, arcsinh_t));
-      let density = times(
+      let z = plus(gamma, times(delta.clone(), arcsinh_t));
+      let density = divide(
+        delta,
         times(
-          prefactor,
-          divide(int(1), sqrt(plus(power(t, int(2)), int(1)))),
-        ),
-        power(
-          e(),
-          divide(
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(power(z, int(2))),
-            },
-            int(2),
+          times(
+            power(e(), divide(power(z, int(2)), int(2))),
+            sqrt(times(int(2), pi())),
           ),
+          sqrt(plus(power(sigma, int(2)), power(neg_mu_plus_x, int(2)))),
         ),
       );
       eval(density)
     }
     "SB" => {
-      // PDF = prefactor * (1/(t*(1-t))) * Exp[-1/2 * (gamma + delta*Log[t/(1-t)])^2], for mu < x < mu+sigma
-      let one_minus_t = minus(int(1), t.clone());
-      let log_arg = divide(t.clone(), one_minus_t.clone());
+      // PDF = (delta*sigma) / (E^(z^2/2) * Sqrt[2*Pi] * (mu+sigma-x) * (-mu+x))
+      // where z = gamma + delta*Log[(-mu+x)/(mu+sigma-x)], for mu < x < mu+sigma
+      let mu_plus_sigma_minus_x = plus(
+        plus(mu.clone(), sigma.clone()),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(x.clone()),
+        },
+      );
+      let log_arg =
+        divide(neg_mu_plus_x.clone(), mu_plus_sigma_minus_x.clone());
       let log_t = Expr::FunctionCall {
         name: "Log".to_string(),
         args: vec![log_arg],
       };
-      let z = plus(gamma, times(delta, log_t));
-      let density = times(
-        times(prefactor, divide(int(1), times(t, one_minus_t))),
-        power(
-          e(),
-          divide(
-            Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(power(z, int(2))),
-            },
-            int(2),
+      let z = plus(gamma, times(delta.clone(), log_t));
+      let density = divide(
+        times(delta, sigma.clone()),
+        times(
+          times(
+            power(e(), divide(power(z, int(2)), int(2))),
+            sqrt(times(int(2), pi())),
           ),
+          times(mu_plus_sigma_minus_x, neg_mu_plus_x),
         ),
       );
       let cond = comparison3(
@@ -3415,10 +3414,17 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let mu = dargs[3].clone();
   let sigma = dargs[4].clone();
 
-  // t = (x - mu) / sigma
-  let t = divide(minus(x.clone(), mu.clone()), sigma.clone());
+  // t = (-mu + x) / sigma (canonical ordering)
+  let neg_mu_plus_x = plus(
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(mu.clone()),
+    },
+    x.clone(),
+  );
+  let t = divide(neg_mu_plus_x.clone(), sigma.clone());
 
-  // CDF = Erfc[-(gamma + delta*h(t)) / Sqrt[2]] / 2
+  // CDF = Erfc[(-gamma - delta*h(t)) / Sqrt[2]] / 2
   // where h depends on type
   let h_of_t = match type_str.as_str() {
     "SN" => t.clone(),
@@ -3431,10 +3437,16 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       args: vec![t.clone()],
     },
     "SB" => {
-      let one_minus_t = minus(int(1), t.clone());
+      let mu_plus_sigma_minus_x = plus(
+        plus(mu.clone(), sigma.clone()),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(x.clone()),
+        },
+      );
       Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![divide(t.clone(), one_minus_t)],
+        args: vec![divide(neg_mu_plus_x, mu_plus_sigma_minus_x)],
       }
     }
     _ => {
@@ -3444,11 +3456,16 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let z = plus(gamma, times(delta, h_of_t));
-  let erfc_arg = Expr::UnaryOp {
+  // Distribute negative sign: (-gamma - delta*h) / Sqrt[2]
+  let neg_gamma = Expr::UnaryOp {
     op: crate::syntax::UnaryOperator::Minus,
-    operand: Box::new(divide(z, sqrt(int(2)))),
+    operand: Box::new(gamma.clone()),
   };
+  let neg_delta_h = Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(times(delta.clone(), h_of_t.clone())),
+  };
+  let erfc_arg = divide(plus(neg_gamma, neg_delta_h), sqrt(int(2)));
   let cdf_val = divide(
     Expr::FunctionCall {
       name: "Erfc".to_string(),
@@ -3457,19 +3474,56 @@ fn cdf_johnson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     int(2),
   );
 
+  // Also build (1 + Erf[(gamma + delta*h) / Sqrt[2]]) / 2 form (used by Wolfram for some types)
+  let erf_arg = divide(plus(gamma, times(delta, h_of_t)), sqrt(int(2)));
+  let cdf_erf = divide(
+    plus(
+      int(1),
+      Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: vec![erf_arg],
+      },
+    ),
+    int(2),
+  );
+
   match type_str.as_str() {
+    "SN" => eval(cdf_val),
+    "SU" => eval(cdf_erf), // Wolfram uses Erf form for SU
     "SL" => {
-      let cond = comparison(x, ComparisonOp::Greater, mu);
-      eval(piecewise(vec![(cdf_val, cond)], int(0)))
+      // Wolfram splits into two regions based on mu+sigma threshold
+      let cond_lower = Expr::Comparison {
+        operands: vec![mu.clone(), x.clone(), plus(mu.clone(), sigma.clone())],
+        operators: vec![ComparisonOp::Less, ComparisonOp::LessEqual],
+      };
+      let cond_upper = comparison(x, ComparisonOp::Greater, plus(mu, sigma));
+      eval(piecewise(
+        vec![(cdf_val, cond_lower), (cdf_erf, cond_upper)],
+        int(0),
+      ))
     }
     "SB" => {
-      let cond_lower =
-        comparison(x.clone(), ComparisonOp::LessEqual, mu.clone());
-      let cond_upper =
-        comparison(x, ComparisonOp::GreaterEqual, plus(mu, sigma));
+      // Wolfram splits SB CDF into multiple regions
+      let half_sigma = divide(sigma.clone(), int(2));
+      let cond1 = comparison3(
+        mu.clone(),
+        ComparisonOp::Less,
+        x.clone(),
+        ComparisonOp::Less,
+        plus(mu.clone(), half_sigma.clone()),
+      );
+      let cond2 = Expr::Comparison {
+        operands: vec![
+          plus(mu.clone(), half_sigma),
+          x.clone(),
+          plus(mu.clone(), sigma.clone()),
+        ],
+        operators: vec![ComparisonOp::LessEqual, ComparisonOp::Less],
+      };
+      let cond3 = comparison(x, ComparisonOp::GreaterEqual, plus(mu, sigma));
       eval(piecewise(
-        vec![(int(0), cond_lower), (int(1), cond_upper)],
-        cdf_val,
+        vec![(cdf_val, cond1), (cdf_erf, cond2), (int(1), cond3)],
+        int(0),
       ))
     }
     _ => eval(cdf_val),

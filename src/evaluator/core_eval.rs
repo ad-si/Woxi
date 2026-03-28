@@ -893,7 +893,8 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "Reap"
         || name == "Plot"
         || name == "Plot3D"
-        || name == "Graphics"
+        // Note: Graphics is NOT held – its args are evaluated normally
+        // (so Thick → Thickness[Large], Red → RGBColor[1,0,0], etc.)
         || name == "ParametricPlot"
         || name == "PolarPlot"
         || name == "DensityPlot"

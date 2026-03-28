@@ -531,45 +531,30 @@ fn build_mesh_region(
   all_verts: Vec<(f64, f64)>,
   cells: Vec<Vec<usize>>,
 ) -> Result<Expr, InterpreterError> {
-  // Build Graphics[{EdgeForm[GrayLevel[0.4]], FaceForm[RGBColor[0.626,0.836,0.919]], Polygon[...], ...}]
-  // so that Show[] can merge VoronoiMesh with other Graphics primitives.
-  let fill_color = Color::new(0.626, 0.836, 0.919);
-  let edge_color = Color::gray(0.4);
+  // Build MeshRegion[{{x1,y1},...}, {Polygon[{{i1,i2,...},{j1,j2,...}}]}]
+  // Vertices list (1-indexed coordinates)
+  let verts_expr: Vec<Expr> = all_verts
+    .iter()
+    .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+    .collect();
 
-  let mut graphics_content: Vec<Expr> = Vec::new();
+  // Group polygon cells into a single Polygon with multiple faces
+  let faces: Vec<Expr> = cells
+    .iter()
+    .filter(|cell| cell.len() >= 3)
+    .map(|cell| {
+      Expr::List(cell.iter().map(|&idx| Expr::Integer(idx as i128)).collect())
+    })
+    .collect();
 
-  // EdgeForm[GrayLevel[...]]
-  graphics_content.push(Expr::FunctionCall {
-    name: "EdgeForm".to_string(),
-    args: vec![edge_color.to_expr()],
-  });
-
-  // FaceForm[RGBColor[...]]
-  graphics_content.push(Expr::FunctionCall {
-    name: "FaceForm".to_string(),
-    args: vec![fill_color.to_expr()],
-  });
-
-  // Polygon primitives with actual coordinates (not indices)
-  for cell in &cells {
-    if cell.len() >= 3 {
-      let points: Vec<Expr> = cell
-        .iter()
-        .map(|&idx| {
-          let (x, y) = all_verts[idx - 1]; // indices are 1-based
-          Expr::List(vec![Expr::Real(x), Expr::Real(y)])
-        })
-        .collect();
-      graphics_content.push(Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(points)],
-      });
-    }
-  }
+  let polygon = Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(faces)],
+  };
 
   Ok(Expr::FunctionCall {
-    name: "Graphics".to_string(),
-    args: vec![Expr::List(graphics_content)],
+    name: "MeshRegion".to_string(),
+    args: vec![Expr::List(verts_expr), Expr::List(vec![polygon])],
   })
 }
 

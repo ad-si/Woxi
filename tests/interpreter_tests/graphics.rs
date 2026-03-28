@@ -4093,12 +4093,23 @@ mod find_graph_isomorphism {
   }
 
   #[test]
-  fn all_isomorphisms_triangle() {
+  fn all_isomorphisms_directed_triangle() {
+    // Directed K3 has exactly 1 isomorphism (not 6, unlike undirected)
     let result = interpret(
       "Length[FindGraphIsomorphism[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3, 1 -> 3}], Graph[{a, b, c}, {a -> b, b -> c, a -> c}], All]]"
     )
     .unwrap();
-    assert_eq!(result, "6"); // K3 has 3! = 6 automorphisms
+    assert_eq!(result, "1");
+  }
+
+  #[test]
+  fn all_isomorphisms_undirected_triangle() {
+    // Undirected K3 has 3! = 6 automorphisms
+    let result = interpret(
+      "Length[FindGraphIsomorphism[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}], Graph[{a, b, c}, {UndirectedEdge[a, b], UndirectedEdge[b, c], UndirectedEdge[a, c]}], All]]"
+    )
+    .unwrap();
+    assert_eq!(result, "6");
   }
 
   #[test]

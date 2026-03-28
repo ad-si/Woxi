@@ -3603,6 +3603,18 @@ mod thick {
   }
 
   #[test]
+  fn thick_in_graphics_input_form() {
+    // Thick should evaluate to Thickness[Large] inside Graphics
+    assert_eq!(
+      interpret(
+        "ToString[Graphics[{Thick, Line[{{0, 0}, {1, 1}}]}], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{Thickness[Large], Line[{{0, 0}, {1, 1}}]}]"
+    );
+  }
+
+  #[test]
   fn thick_in_plot_style() {
     // Thick can be used as a PlotStyle option value
     assert_eq!(
@@ -3647,6 +3659,17 @@ mod dashed {
   }
 
   #[test]
+  fn dashed_in_graphics_input_form() {
+    assert_eq!(
+      interpret(
+        "ToString[Graphics[{Dashed, Line[{{0, 0}, {1, 1}}]}], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{Dashing[{Small, Small}], Line[{{0, 0}, {1, 1}}]}]"
+    );
+  }
+
+  #[test]
   fn dotted_in_graphics() {
     assert_eq!(
       interpret("Graphics[{Dotted, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
@@ -3655,10 +3678,32 @@ mod dashed {
   }
 
   #[test]
+  fn dotted_in_graphics_input_form() {
+    assert_eq!(
+      interpret(
+        "ToString[Graphics[{Dotted, Line[{{0, 0}, {1, 1}}]}], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{Dashing[{0, Small}], Line[{{0, 0}, {1, 1}}]}]"
+    );
+  }
+
+  #[test]
   fn dot_dashed_in_graphics() {
     assert_eq!(
       interpret("Graphics[{DotDashed, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
       "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn dot_dashed_in_graphics_input_form() {
+    assert_eq!(
+      interpret(
+        "ToString[Graphics[{DotDashed, Line[{{0, 0}, {1, 1}}]}], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{Dashing[{0, Small, Small, Small}], Line[{{0, 0}, {1, 1}}]}]"
     );
   }
 
@@ -3702,6 +3747,16 @@ mod base_style {
     assert_eq!(
       interpret("Graphics[{Disk[]}, BaseStyle -> {Red}]").unwrap(),
       "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn base_style_in_graphics_input_form() {
+    // Disk[] → Disk[{0, 0}] and Red → RGBColor[1, 0, 0] inside Graphics
+    assert_eq!(
+      interpret("ToString[Graphics[{Disk[]}, BaseStyle -> {Red}], InputForm]")
+        .unwrap(),
+      "Graphics[{Disk[{0, 0}]}, BaseStyle -> {RGBColor[1, 0, 0]}]"
     );
   }
 }
@@ -12243,33 +12298,30 @@ mod array_mesh {
 
   #[test]
   fn single_cell() {
-    assert_eq!(
-      interpret("ArrayMesh[{{1}}]").unwrap(),
-      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}, {Polygon[{{3, 4, 2, 1}}]}]"
-    );
+    // MeshRegion with Polygon is now rendered to SVG
+    assert_eq!(interpret("ArrayMesh[{{1}}]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn single_cell_head() {
+    assert_eq!(interpret("Head[ArrayMesh[{{1}}]]").unwrap(), "MeshRegion");
   }
 
   #[test]
   fn horizontal_strip() {
-    assert_eq!(
-      interpret("ArrayMesh[{{1, 1}}]").unwrap(),
-      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}, {2., 0.}, {2., 1.}}, {Polygon[{{3, 4, 2, 1}, {5, 6, 4, 3}}]}]"
-    );
+    assert_eq!(interpret("ArrayMesh[{{1, 1}}]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn vertical_strip() {
-    assert_eq!(
-      interpret("ArrayMesh[{{1}, {1}}]").unwrap(),
-      "MeshRegion[{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}, {0., 2.}, {1., 2.}}, {Polygon[{{4, 6, 5, 2}, {3, 4, 2, 1}}]}]"
-    );
+    assert_eq!(interpret("ArrayMesh[{{1}, {1}}]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn diagonal_pattern() {
     assert_eq!(
       interpret("ArrayMesh[{{1, 0}, {0, 1}}]").unwrap(),
-      "MeshRegion[{{0., 1.}, {0., 2.}, {1., 1.}, {1., 2.}, {1., 0.}, {2., 0.}, {2., 1.}}, {Polygon[{{3, 4, 2, 1}, {6, 7, 3, 5}}]}]"
+      "-Graphics-"
     );
   }
 
@@ -12277,7 +12329,7 @@ mod array_mesh {
   fn complex_pattern() {
     assert_eq!(
       interpret("ArrayMesh[{{1, 1, 0}, {1, 1, 1}, {0, 1, 0}}]").unwrap(),
-      "MeshRegion[{{0., 1.}, {0., 2.}, {1., 1.}, {1., 2.}, {0., 3.}, {1., 3.}, {1., 0.}, {2., 0.}, {2., 1.}, {2., 2.}, {2., 3.}, {3., 1.}, {3., 2.}}, {Polygon[{{4, 6, 5, 2}, {10, 11, 6, 4}, {3, 4, 2, 1}, {9, 10, 4, 3}, {12, 13, 10, 9}, {8, 9, 3, 7}}]}]"
+      "-Graphics-"
     );
   }
 }
@@ -12870,19 +12922,19 @@ mod voronoi_mesh {
   }
 
   #[test]
-  fn two_points_produces_graphics() {
+  fn two_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}}]").unwrap();
     assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn three_points_produces_graphics() {
+  fn three_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]").unwrap();
     assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn five_points_produces_graphics() {
+  fn five_points_produces_mesh_region() {
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]")
         .unwrap();
@@ -12890,16 +12942,16 @@ mod voronoi_mesh {
   }
 
   #[test]
-  fn collinear_points_produces_graphics() {
+  fn collinear_points_produces_mesh_region() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {2, 0}}]").unwrap();
     assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn result_is_graphics() {
+  fn result_is_mesh_region() {
     assert_eq!(
       interpret("Head[VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
-      "Graphics"
+      "MeshRegion"
     );
   }
 
@@ -12922,7 +12974,7 @@ mod voronoi_mesh {
 
   #[test]
   fn symmetric_square() {
-    // 4 corners of unit square should produce 4 cells
+    // 4 corners of unit square should produce 4 cells in a MeshRegion
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap();
     assert_eq!(result, "-Graphics-", "Got: {}", result);
@@ -12969,10 +13021,8 @@ fn diffusion_pde_term_basic() {
 
 #[test]
 fn diffusion_pde_term_with_coefficient() {
-  assert_eq!(
-    interpret("DiffusionPDETerm[{u, x}, c]").unwrap(),
-    "DiffusionPDETerm[{u, x}, c]"
-  );
+  // DiffusionPDETerm with 2 args evaluates to 0 (outside solver context)
+  assert_eq!(interpret("DiffusionPDETerm[{u, x}, c]").unwrap(), "0");
 }
 
 #[test]

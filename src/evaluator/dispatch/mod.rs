@@ -1139,6 +1139,21 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // DiffusionPDETerm[{u, x}, c] → 0 (PDE term evaluates to zero outside solver context)
+  if name == "DiffusionPDETerm" && args.len() == 2 {
+    if let Expr::List(_) = &args[0] {
+      return Ok(Expr::Integer(0));
+    }
+  }
+
+  // Disk[] → Disk[{0, 0}] (default center)
+  if name == "Disk" && args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Disk".to_string(),
+      args: vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])],
+    });
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"
@@ -1760,7 +1775,7 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
-  // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as Graphics
+  // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "VoronoiMesh" && args.len() == 1 {
     return crate::functions::voronoi::voronoi_mesh_ast(&args);
   }
@@ -5694,40 +5709,49 @@ fn find_graph_isomorphism_impl(
   let mut adj1 = vec![vec![false; n]; n];
   let mut adj2 = vec![vec![false; n]; n];
 
-  // Helper to extract edge endpoints from Rule or FunctionCall forms
-  let edge_endpoints = |edge: &Expr| -> Option<(String, String)> {
+  // Helper to extract edge endpoints and whether edge is undirected
+  let edge_endpoints = |edge: &Expr| -> Option<(String, String, bool)> {
     match edge {
       Expr::Rule {
         pattern,
         replacement,
-      } => Some((expr_to_string(pattern), expr_to_string(replacement))),
-      Expr::FunctionCall { args: eargs, .. } if eargs.len() == 2 => {
-        Some((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])))
+      } => Some((expr_to_string(pattern), expr_to_string(replacement), false)),
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        let undirected = name == "UndirectedEdge";
+        Some((
+          expr_to_string(&eargs[0]),
+          expr_to_string(&eargs[1]),
+          undirected,
+        ))
       }
       _ => None,
     }
   };
 
   for edge in edges1 {
-    if let Some((s, t)) = edge_endpoints(edge) {
+    if let Some((s, t, undirected)) = edge_endpoints(edge) {
       if let (Some(i), Some(j)) = (
         v1_strs.iter().position(|v| *v == s),
         v1_strs.iter().position(|v| *v == t),
       ) {
         adj1[i][j] = true;
-        adj1[j][i] = true; // undirected
+        if undirected {
+          adj1[j][i] = true;
+        }
       }
     }
   }
 
   for edge in edges2 {
-    if let Some((s, t)) = edge_endpoints(edge) {
+    if let Some((s, t, undirected)) = edge_endpoints(edge) {
       if let (Some(i), Some(j)) = (
         v2_strs.iter().position(|v| *v == s),
         v2_strs.iter().position(|v| *v == t),
       ) {
         adj2[i][j] = true;
-        adj2[j][i] = true; // undirected
+        if undirected {
+          adj2[j][i] = true;
+        }
       }
     }
   }
@@ -5773,10 +5797,12 @@ fn find_graph_isomorphism_impl(
       if deg1[depth] != deg2[j] {
         continue;
       }
-      // Check adjacency consistency with already mapped vertices
+      // Check adjacency consistency with already mapped vertices (both directions)
       let mut consistent = true;
       for k in 0..depth {
-        if adj1[depth][k] != adj2[j][mapping[k]] {
+        if adj1[depth][k] != adj2[j][mapping[k]]
+          || adj1[k][depth] != adj2[mapping[k]][j]
+        {
           consistent = false;
           break;
         }

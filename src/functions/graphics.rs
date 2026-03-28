@@ -578,7 +578,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         true
       }
       "Thickness" if args.len() == 1 => {
-        if let Some(t) = expr_to_f64(&args[0]) {
+        // Handle named sizes: Thickness[Large] → same as Thick, etc.
+        if let Expr::Identifier(s) = &args[0] {
+          match s.as_str() {
+            "Large" => style.thickness = -2.0, // AbsoluteThickness[2]
+            "Tiny" => style.thickness = -0.5,  // AbsoluteThickness[0.5]
+            _ => {
+              if let Some(t) = expr_to_f64(&args[0]) {
+                style.thickness = t;
+              }
+            }
+          }
+        } else if let Some(t) = expr_to_f64(&args[0]) {
           style.thickness = t;
         }
         true
@@ -3621,6 +3632,84 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
 }
 
 /// Implementation of Show[g1, g2, ..., opts...].
+/// Convert MeshRegion vertex/polygon data to Graphics primitives (Polygon with coordinates).
+fn mesh_region_to_graphics_prims(
+  vertices_expr: &Expr,
+  primitives_expr: &Expr,
+) -> Option<Vec<Expr>> {
+  let vertices_list = match vertices_expr {
+    Expr::List(v) => v,
+    _ => return None,
+  };
+  let mut vertices: Vec<(f64, f64)> = Vec::new();
+  for v in vertices_list {
+    if let Expr::List(coords) = v {
+      if coords.len() == 2 {
+        if let (Some(x), Some(y)) = (
+          crate::functions::math_ast::try_eval_to_f64(&coords[0]),
+          crate::functions::math_ast::try_eval_to_f64(&coords[1]),
+        ) {
+          vertices.push((x, y));
+          continue;
+        }
+      }
+    }
+    return None;
+  }
+
+  let prims = match primitives_expr {
+    Expr::List(v) => v,
+    _ => return None,
+  };
+
+  let mut result = Vec::new();
+  // Add default styling
+  result.push(Expr::FunctionCall {
+    name: "EdgeForm".to_string(),
+    args: vec![Color::gray(0.4).to_expr()],
+  });
+  result.push(Expr::FunctionCall {
+    name: "FaceForm".to_string(),
+    args: vec![Color::new(0.626, 0.836, 0.919).to_expr()],
+  });
+
+  for prim in prims {
+    if let Expr::FunctionCall { name, args } = prim {
+      if name == "Polygon" && args.len() == 1 {
+        if let Expr::List(index_lists) = &args[0] {
+          for idx_list in index_lists {
+            if let Expr::List(indices) = idx_list {
+              let points: Vec<Expr> = indices
+                .iter()
+                .filter_map(|idx| {
+                  crate::functions::math_ast::try_eval_to_f64(idx).and_then(
+                    |i| {
+                      let i = i as usize;
+                      if i >= 1 && i <= vertices.len() {
+                        let (x, y) = vertices[i - 1];
+                        Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+                      } else {
+                        None
+                      }
+                    },
+                  )
+                })
+                .collect();
+              if points.len() >= 3 {
+                result.push(Expr::FunctionCall {
+                  name: "Polygon".to_string(),
+                  args: vec![Expr::List(points)],
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  Some(result)
+}
+
 /// Merges multiple Graphics[...] calls into a single Graphics[...] call,
 /// combining their primitives and options. Arguments are kept unevaluated
 /// (Show is in the held-args list) so Graphics[...] expressions arrive as
@@ -3656,6 +3745,16 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         for opt in gargs.iter().skip(1) {
           merge_option(&mut merged_options, opt);
+        }
+      }
+      Expr::FunctionCall { name, args: gargs }
+        if name == "MeshRegion" && gargs.len() == 2 =>
+      {
+        // Convert MeshRegion to Graphics primitives for Show merging
+        if let Some(graphics_prims) =
+          mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
+        {
+          merged_primitives.push(Expr::List(graphics_prims));
         }
       }
       Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {

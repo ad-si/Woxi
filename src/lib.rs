@@ -1446,6 +1446,18 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         expr
       }
     }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "MeshRegion" && args.len() == 2 =>
+    {
+      // Render MeshRegion as SVG (e.g. from VoronoiMesh)
+      if let Some(svg) =
+        functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
+      {
+        syntax::Expr::Graphics { svg, is_3d: false }
+      } else {
+        expr
+      }
+    }
     syntax::Expr::List(items) => {
       let new_items: Vec<syntax::Expr> = items
         .iter()
