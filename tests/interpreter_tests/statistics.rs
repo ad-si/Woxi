@@ -2215,3 +2215,303 @@ mod noncentral_f_ratio_distribution {
     );
   }
 }
+
+mod johnson_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret(r#"JohnsonDistribution["SU", 0, 1, 0, 1]"#).unwrap(),
+      "JohnsonDistribution[SU, 0, 1, 0, 1]"
+    );
+    assert_eq!(
+      interpret(r#"JohnsonDistribution["SB", 1, 2, 3, 4]"#).unwrap(),
+      "JohnsonDistribution[SB, 1, 2, 3, 4]"
+    );
+  }
+
+  // --- PDF tests ---
+
+  #[test]
+  fn pdf_sn_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"PDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "(delta*E^(-1/2*((delta*(-mu + x))/sigma + gamma)^2))/(Sqrt[2*Pi]*sigma)"
+    );
+  }
+
+  #[test]
+  fn pdf_sn_numeric() {
+    assert_eq!(
+      interpret(r#"PDF[JohnsonDistribution["SN", 0, 1, 0, 1], 0]"#).unwrap(),
+      "Sqrt[2*Pi]^(-1)"
+    );
+  }
+
+  #[test]
+  fn pdf_su_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"PDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "(delta*E^(-1/2*(delta*ArcSinh[(-mu + x)/sigma] + gamma)^2))/(Sqrt[1 + ((-mu + x)/sigma)^2]*(Sqrt[2*Pi]*sigma))"
+    );
+  }
+
+  #[test]
+  fn pdf_su_numeric() {
+    assert_eq!(
+      interpret(r#"PDF[JohnsonDistribution["SU", 0, 1, 0, 1], 0]"#).unwrap(),
+      "Sqrt[2*Pi]^(-1)"
+    );
+  }
+
+  #[test]
+  fn pdf_sl_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"PDF[JohnsonDistribution["SL", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Piecewise[{{delta/(sigma*Sqrt[2*Pi])*1/((x - mu)/sigma)*E^(-((gamma + delta*Log[(x - mu)/sigma])^2/2)), x > mu}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_sl_numeric() {
+    assert_eq!(
+      interpret(r#"PDF[JohnsonDistribution["SL", 0, 1, 0, 1], 1]"#).unwrap(),
+      "Sqrt[2*Pi]^(-1)"
+    );
+  }
+
+  #[test]
+  fn pdf_sb_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"PDF[JohnsonDistribution["SB", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Piecewise[{{delta/(sigma*Sqrt[2*Pi])*1/((x - mu)/sigma*(1 - (x - mu)/sigma))*E^(-((gamma + delta*Log[(x - mu)/sigma/(1 - (x - mu)/sigma)])^2/2)), mu < x < mu + sigma}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_sb_numeric() {
+    assert_eq!(
+      interpret(r#"PDF[JohnsonDistribution["SB", 0, 1, 0, 1], 1/2]"#).unwrap(),
+      "4/Sqrt[2*Pi]"
+    );
+  }
+
+  // --- CDF tests ---
+
+  #[test]
+  fn cdf_sn_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"CDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Erfc[-(((delta*(-mu + x))/sigma + gamma)/Sqrt[2])]/2"
+    );
+  }
+
+  #[test]
+  fn cdf_sn_numeric() {
+    assert_eq!(
+      interpret(r#"CDF[JohnsonDistribution["SN", 0, 1, 0, 1], 0]"#).unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn cdf_su_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"CDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Erfc[-((delta*ArcSinh[(-mu + x)/sigma] + gamma)/Sqrt[2])]/2"
+    );
+  }
+
+  #[test]
+  fn cdf_su_numeric() {
+    assert_eq!(
+      interpret(r#"CDF[JohnsonDistribution["SU", 0, 1, 0, 1], 0]"#).unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn cdf_sl_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"CDF[JohnsonDistribution["SL", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Piecewise[{{Erfc[-((gamma + delta*Log[(x - mu)/sigma])/Sqrt[2])]/2, x > mu}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_sl_numeric() {
+    assert_eq!(
+      interpret(r#"CDF[JohnsonDistribution["SL", 0, 1, 0, 1], 1]"#).unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn cdf_sb_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"CDF[JohnsonDistribution["SB", gamma, delta, mu, sigma], x]"#
+      )
+      .unwrap(),
+      "Piecewise[{{0, x <= mu}, {1, x >= mu + sigma}}, Erfc[-((gamma + delta*Log[(x - mu)/sigma/(1 - (x - mu)/sigma)])/Sqrt[2])]/2]"
+    );
+  }
+
+  #[test]
+  fn cdf_sb_numeric() {
+    assert_eq!(
+      interpret(r#"CDF[JohnsonDistribution["SB", 0, 1, 0, 1], 1/2]"#).unwrap(),
+      "1/2"
+    );
+  }
+
+  // --- Mean tests ---
+
+  #[test]
+  fn mean_sn_symbolic() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SN", gamma, delta, mu, sigma]]"#)
+        .unwrap(),
+      "mu - (gamma*sigma)/delta"
+    );
+  }
+
+  #[test]
+  fn mean_sn_numeric() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SN", 1, 2, 3, 4]]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn mean_su_symbolic() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SU", gamma, delta, mu, sigma]]"#)
+        .unwrap(),
+      "mu - E^(1/(2*delta^2))*sigma*Sinh[gamma/delta]"
+    );
+  }
+
+  #[test]
+  fn mean_su_numeric() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SU", 0, 1, 0, 1]]"#).unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_sl_symbolic() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#)
+        .unwrap(),
+      "E^(1/(2*delta^2) - (gamma/delta))*sigma + mu"
+    );
+  }
+
+  #[test]
+  fn mean_sl_numeric() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SL", 0, 1, 0, 1]]"#).unwrap(),
+      "Sqrt[E]"
+    );
+  }
+
+  #[test]
+  fn mean_sb_unevaluated() {
+    assert_eq!(
+      interpret(r#"Mean[JohnsonDistribution["SB", 0, 1, 0, 1]]"#).unwrap(),
+      "Mean[JohnsonDistribution[SB, 0, 1, 0, 1]]"
+    );
+  }
+
+  // --- Variance tests ---
+
+  #[test]
+  fn variance_sn_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"Variance[JohnsonDistribution["SN", gamma, delta, mu, sigma]]"#
+      )
+      .unwrap(),
+      "sigma^2/delta^2"
+    );
+  }
+
+  #[test]
+  fn variance_sn_numeric() {
+    assert_eq!(
+      interpret(r#"Variance[JohnsonDistribution["SN", 1, 2, 3, 4]]"#).unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn variance_su_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"Variance[JohnsonDistribution["SU", gamma, delta, mu, sigma]]"#
+      )
+      .unwrap(),
+      "(sigma^2*(-1 + E^(1/delta^2))*(1 + E^(1/delta^2)*Cosh[(2*gamma)/delta]))/2"
+    );
+  }
+
+  #[test]
+  fn variance_su_numeric() {
+    assert_eq!(
+      interpret(r#"Variance[JohnsonDistribution["SU", 1, 2, 3, 4]]"#).unwrap(),
+      "8*(-1 + E^(1/4))*(1 + E^(1/4)*Cosh[1])"
+    );
+  }
+
+  #[test]
+  fn variance_sl_symbolic() {
+    assert_eq!(
+      interpret(
+        r#"Variance[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#
+      )
+      .unwrap(),
+      "E^(1/delta^2 + (-2*gamma)/delta)*sigma^2*(-1 + E^(1/delta^2))"
+    );
+  }
+
+  #[test]
+  fn variance_sl_numeric() {
+    assert_eq!(
+      interpret(r#"Variance[JohnsonDistribution["SL", 0, 1, 0, 1]]"#).unwrap(),
+      "E*(-1 + E)"
+    );
+  }
+
+  #[test]
+  fn variance_sb_unevaluated() {
+    assert_eq!(
+      interpret(r#"Variance[JohnsonDistribution["SB", 0, 1, 0, 1]]"#).unwrap(),
+      "Variance[JohnsonDistribution[SB, 0, 1, 0, 1]]"
+    );
+  }
+}
