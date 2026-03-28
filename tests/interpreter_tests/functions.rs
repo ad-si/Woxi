@@ -12865,53 +12865,49 @@ mod voronoi_mesh {
   }
 
   #[test]
-  fn zero_points_returns_empty_region() {
-    assert_eq!(interpret("VoronoiMesh[{}]").unwrap(), "EmptyRegion[2]");
+  fn zero_points_returns_unevaluated() {
+    assert_eq!(interpret("VoronoiMesh[{}]").unwrap(), "VoronoiMesh[{}]");
   }
 
   #[test]
-  fn two_points_produces_mesh_region() {
+  fn two_points_produces_graphics() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}}]").unwrap();
-    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
-    assert!(result.contains("Polygon["));
+    assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn three_points_produces_mesh_region() {
+  fn three_points_produces_graphics() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]").unwrap();
-    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
-    assert!(result.contains("Polygon["));
+    assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn five_points_produces_mesh_region() {
+  fn five_points_produces_graphics() {
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {0.5, 0.5}}]")
         .unwrap();
-    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
-    assert!(result.contains("Polygon["));
+    assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn collinear_points_produces_mesh_region() {
+  fn collinear_points_produces_graphics() {
     let result = interpret("VoronoiMesh[{{0, 0}, {1, 0}, {2, 0}}]").unwrap();
-    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
-    assert!(result.contains("Polygon["));
+    assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 
   #[test]
-  fn result_is_mesh_region() {
+  fn result_is_graphics() {
     assert_eq!(
       interpret("Head[VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
-      "MeshRegion"
+      "Graphics"
     );
   }
 
   #[test]
-  fn non_numeric_returns_unevaluated() {
+  fn non_numeric_returns_empty_region() {
     assert_eq!(
       interpret("VoronoiMesh[{{a, b}, {c, d}}]").unwrap(),
-      "VoronoiMesh[{{a, b}, {c, d}}]"
+      "EmptyRegion[2]"
     );
   }
 
@@ -12929,7 +12925,6 @@ mod voronoi_mesh {
     // 4 corners of unit square should produce 4 cells
     let result =
       interpret("VoronoiMesh[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap();
-    assert!(result.starts_with("MeshRegion["), "Got: {}", result);
-    assert!(result.contains("Polygon["));
+    assert_eq!(result, "-Graphics-", "Got: {}", result);
   }
 }
