@@ -2791,7 +2791,7 @@ Opener,,🚫,,6.0,2851
 SpheroidalPSPrime,,🚫,,6.0,2851
 ButterworthFilterModel,,🚫,,9.0,2854
 CompositeQ,Tests if a number is composite,✅,pure,10.0,2854
-TuringMachine,,,,6.0,2854
+TuringMachine,Simulate a Turing machine from a rule number and initial conditions,✅,pure,6.0,2854
 ColumnWidths,,🚫,,3.0,2867
 DayPlus,Adds a number of days to a date returning a DateObject,✅,pure,9.0,2867
 DifferenceRootReduce,,🚫,,7.0,2867
