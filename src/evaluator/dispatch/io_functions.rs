@@ -866,6 +866,72 @@ pub fn dispatch_io_functions(
         }
       }
     }
+    // ReadLine[stream] — read one line from a stream
+    // ReadLine["file"] — read first line from a file
+    #[cfg(not(target_arch = "wasm32"))]
+    "ReadLine" if args.len() == 1 => {
+      let (content, position, stream_id) = match &args[0] {
+        Expr::String(path) => {
+          // ReadLine["file"] - read first line from file directly
+          match std::fs::read_to_string(path) {
+            Ok(content) => (content, 0usize, None),
+            Err(_) => {
+              crate::emit_message(&format!(
+                "OpenRead::noopen: Cannot open {}.",
+                path
+              ));
+              return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            }
+          }
+        }
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if stream_head == "InputStream" && stream_args.len() == 2 => {
+          if let Expr::Integer(id) = &stream_args[1] {
+            let id = *id as usize;
+            match crate::get_stream_content(id) {
+              Some((content, pos)) => (content, pos, Some(id)),
+              None => {
+                return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+              }
+            }
+          } else {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ReadLine".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "ReadLine".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      let remaining = &content[position.min(content.len())..];
+      if remaining.is_empty() {
+        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      }
+
+      // Find end of line
+      let (line, advance) = if let Some(idx) = remaining.find('\n') {
+        (&remaining[..idx], idx + 1)
+      } else {
+        (remaining, remaining.len())
+      };
+
+      let result = Expr::String(line.to_string());
+
+      // Advance position if it's a stream
+      if let Some(id) = stream_id {
+        crate::advance_stream_position(id, position + advance);
+      }
+
+      return Some(Ok(result));
+    }
     // Read[stream] or Read[stream, type] — read from a stream
     "Read" if !args.is_empty() && args.len() <= 2 => {
       let stream = &args[0];

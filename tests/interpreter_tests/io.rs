@@ -2012,3 +2012,45 @@ mod set_directory {
     let _ = interpret(r#"SetDirectory[".."]"#);
   }
 }
+
+mod read_line {
+  use super::*;
+
+  #[test]
+  fn read_line_from_file() {
+    clear_state();
+    // Write a test file, read first line
+    let _ = interpret(
+      r#"Export["/tmp/woxi_readline_test.txt", "hello world\nsecond line", "Text"]"#,
+    );
+    assert_eq!(
+      interpret(r#"ReadLine["/tmp/woxi_readline_test.txt"]"#).unwrap(),
+      "hello world"
+    );
+  }
+
+  #[test]
+  fn read_line_from_stream() {
+    clear_state();
+    let _ = interpret(
+      r#"Export["/tmp/woxi_readline_test2.txt", "line1\nline2\nline3", "Text"]"#,
+    );
+    let result = interpret(
+      r#"stream = OpenRead["/tmp/woxi_readline_test2.txt"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {l1, l2}"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{line1, line2}");
+  }
+
+  #[test]
+  fn read_line_end_of_file() {
+    clear_state();
+    let _ =
+      interpret(r#"Export["/tmp/woxi_readline_test3.txt", "only", "Text"]"#);
+    let result = interpret(
+      r#"stream = OpenRead["/tmp/woxi_readline_test3.txt"]; l1 = ReadLine[stream]; l2 = ReadLine[stream]; Close[stream]; {l1, l2}"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{only, EndOfFile}");
+  }
+}
