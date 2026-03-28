@@ -2858,7 +2858,7 @@ SpheroidalS2Prime,,🚫,,6.0,2921
 UniformGraphDistribution,Uniform random graph distribution,✅,unevaluated,8.0,2921
 DateListStepPlot,,🚫,,10.3,2929
 EarthquakeData,,🚫,,10.0,2929
-ExcludedForms,,,,3.0,2929
+ExcludedForms,Option to specify patterns excluded from an operation,✅,pure,3.0,2929
 FindIntegerNullVector,,,,8.0,2929
 GeoWithinQ,,🚫,,10.0,2929
 LinkConnect,,🚫,,3.0,2929

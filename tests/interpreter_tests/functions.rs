@@ -12941,3 +12941,18 @@ mod voronoi_mesh {
     assert!(result.contains("<circle"), "Should contain overlay points");
   }
 }
+
+// ─── Option symbols ──────────────────────────────────────────────────────────
+
+#[test]
+fn excluded_forms_is_symbol() {
+  assert_eq!(interpret("ExcludedForms").unwrap(), "ExcludedForms");
+}
+
+#[test]
+fn excluded_forms_as_option() {
+  assert_eq!(
+    interpret("ExcludedForms -> {a, b}").unwrap(),
+    "ExcludedForms -> {a, b}"
+  );
+}
