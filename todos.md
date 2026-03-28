@@ -226,3 +226,11 @@ Implement `?Plot`
 ---
 
 Add support for `TraditionalForm[6 + 6 x^2 - 12 x]`
+
+---
+
+This should show an error in the playground, as `pts` is not defined:
+
+Graphics[{Orange, Point[pts]}]
+
+Write the error message in SVG error boxes in the title

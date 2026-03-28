@@ -2,7 +2,7 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::parse_image_size;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, expr_to_string};
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -719,13 +719,14 @@ fn collect_primitives(
   expr: &Expr,
   style: &mut StyleState,
   prims: &mut Vec<Primitive>,
+  errors: &mut Vec<String>,
 ) {
   match expr {
     Expr::List(items) => {
       // Nested list scopes style changes
       let saved = style.clone();
       for item in items {
-        collect_primitives(item, style, prims);
+        collect_primitives(item, style, prims, errors);
       }
       *style = saved;
     }
@@ -748,16 +749,24 @@ fn collect_primitives(
               _ => {}
             }
           }
-          collect_primitives(&args[0], style, prims);
+          collect_primitives(&args[0], style, prims, errors);
           *style = saved;
         }
 
         // Geometric primitives
         "Point" if !args.is_empty() => {
+          let before = prims.len();
           parse_point(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "Line" if !args.is_empty() => {
+          let before = prims.len();
           parse_line(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "Circle" => {
           parse_circle(args, style, prims);
@@ -769,19 +778,35 @@ fn collect_primitives(
           parse_rectangle(args, style, prims);
         }
         "Polygon" if !args.is_empty() => {
+          let before = prims.len();
           parse_polygon(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "Arrow" if !args.is_empty() => {
+          let before = prims.len();
           parse_arrow(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "Text" if !args.is_empty() => {
           parse_text(args, style, prims);
         }
         "BezierCurve" if !args.is_empty() => {
+          let before = prims.len();
           parse_bezier(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "BSplineCurve" if !args.is_empty() => {
+          let before = prims.len();
           parse_bspline(args, style, prims);
+          if prims.len() == before {
+            errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
         }
         "Inset" if !args.is_empty() => {
           // Inset[text, pos] is similar to Text
@@ -794,7 +819,7 @@ fn collect_primitives(
           if let Some(coords) = expr_to_point_list(&args[0]) {
             // Resolve integer indices to coordinates and process normally
             let resolved = resolve_graphics_complex_indices(&args[1], &coords);
-            collect_primitives(&resolved, style, prims);
+            collect_primitives(&resolved, style, prims, errors);
           }
         }
         "RegularPolygon" if !args.is_empty() => {
@@ -806,7 +831,7 @@ fn collect_primitives(
           if !apply_directive(expr, style) {
             // Not recognized - could be a nested graphics expression
             for a in args {
-              collect_primitives(a, style, prims);
+              collect_primitives(a, style, prims, errors);
             }
           }
         }
@@ -2693,7 +2718,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Collect primitives
   let mut style = StyleState::default();
   let mut primitives = Vec::new();
-  collect_primitives(&content, &mut style, &mut primitives);
+  let mut errors: Vec<String> = Vec::new();
+  collect_primitives(&content, &mut style, &mut primitives, &mut errors);
 
   // Compute bounding box
   let mut bb = BBox::empty();
@@ -2783,6 +2809,33 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg_height,
       bg.to_svg_rgb(),
     ));
+  }
+
+  // Render error indicator (red background + border + message) if primitives had invalid args
+  if !errors.is_empty() {
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb(100%,33%,33%)\" fill-opacity=\"0.08\"/>\n",
+      svg_width, svg_height
+    ));
+    svg.push_str(&format!(
+      "<rect x=\"0.6\" y=\"0.6\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"1.2\"/>\n",
+      svg_width as f64 - 1.2,
+      svg_height as f64 - 1.2
+    ));
+    let font_size = 13;
+    let line_height = font_size as f64 * 1.4;
+    let total_height = errors.len() as f64 * line_height;
+    let start_y = (svg_height as f64 - total_height) / 2.0 + font_size as f64;
+    for (i, msg) in errors.iter().enumerate() {
+      let y = start_y + i as f64 * line_height;
+      svg.push_str(&format!(
+        "<text x=\"{}\" y=\"{:.1}\" font-family=\"monospace\" font-size=\"{}\" fill=\"rgb(100%,33%,33%)\" text-anchor=\"middle\">{}</text>\n",
+        svg_width as f64 / 2.0,
+        y,
+        font_size,
+        svg_escape(msg),
+      ));
+    }
   }
 
   render_axes(&mut svg, axes, &bb, svg_w, svg_h);

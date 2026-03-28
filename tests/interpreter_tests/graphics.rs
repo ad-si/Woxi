@@ -662,6 +662,66 @@ mod graphics {
       );
     }
   }
+
+  mod error_indicator {
+    use super::*;
+
+    #[test]
+    fn point_with_symbolic_arg_shows_error() {
+      let svg = export_svg("Graphics[{Orange, Point[pts]}]");
+      assert!(
+        svg.contains("fill=\"rgb(100%,33%,33%)\""),
+        "Should contain red error background: {}",
+        svg
+      );
+      assert!(
+        svg.contains("stroke=\"rgb(100%,33%,33%)\""),
+        "Should contain red error border: {}",
+        svg
+      );
+      assert!(
+        svg.contains("Coordinate pts should be a pair of numbers"),
+        "Should contain error message: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn line_with_symbolic_arg_shows_error() {
+      let svg = export_svg("Graphics[{Line[pts]}]");
+      assert!(
+        svg.contains("Coordinate pts should be a pair of numbers"),
+        "Should contain error message: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn valid_point_no_error() {
+      let svg = export_svg("Graphics[{Point[{1, 2}]}]");
+      assert!(
+        !svg.contains("fill=\"rgb(100%,33%,33%)\""),
+        "Valid point should not show error: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn mixed_valid_and_invalid_shows_error() {
+      let svg = export_svg("Graphics[{Point[{0, 0}], Point[pts]}]");
+      assert!(
+        svg.contains("Coordinate pts should be a pair of numbers"),
+        "Mixed content with invalid primitive should show error message: {}",
+        svg
+      );
+      // The valid point should still be rendered
+      assert!(
+        svg.contains("<circle"),
+        "Valid point should still render: {}",
+        svg
+      );
+    }
+  }
 }
 
 mod plot3d {
