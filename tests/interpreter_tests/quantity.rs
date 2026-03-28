@@ -1547,3 +1547,37 @@ fn independent_unit_with_quantity() {
     "Quantity[3, IndependentUnit[\"Foo\"]]"
   );
 }
+
+// ─── DatedUnit ──────────────────────────────────────────────────────────────
+
+#[test]
+fn dated_unit_basic() {
+  assert_eq!(
+    interpret(r#"DatedUnit["USDollars", 1990]"#).unwrap(),
+    "DatedUnit[USDollars, 1990]"
+  );
+}
+
+#[test]
+fn dated_unit_symbolic() {
+  assert_eq!(
+    interpret(r#"DatedUnit["Euros", 2020]"#).unwrap(),
+    "DatedUnit[Euros, 2020]"
+  );
+}
+
+#[test]
+fn dated_unit_with_quantity() {
+  assert_eq!(
+    interpret(r#"Quantity[100, DatedUnit["USDollars", 1990]]"#).unwrap(),
+    r#"Quantity[100, DatedUnit["USDollars", 1990]]"#
+  );
+}
+
+#[test]
+fn dated_unit_single_arg() {
+  assert_eq!(
+    interpret(r#"DatedUnit["USDollars"]"#).unwrap(),
+    "DatedUnit[USDollars]"
+  );
+}
