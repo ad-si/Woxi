@@ -2942,6 +2942,27 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // FindGraphIsomorphism[g1, g2] — find vertex mapping between isomorphic graphs
+  if name == "FindGraphIsomorphism"
+    && (args.len() == 2 || args.len() == 3)
+    && let Expr::FunctionCall {
+      name: gname1,
+      args: gargs1,
+    } = &args[0]
+    && gname1 == "Graph"
+    && gargs1.len() >= 2
+    && let (Expr::List(verts1), Expr::List(edges1)) = (&gargs1[0], &gargs1[1])
+    && let Expr::FunctionCall {
+      name: gname2,
+      args: gargs2,
+    } = &args[1]
+    && gname2 == "Graph"
+    && gargs2.len() >= 2
+    && let (Expr::List(verts2), Expr::List(edges2)) = (&gargs2[0], &gargs2[1])
+  {
+    return find_graph_isomorphism_impl(verts1, edges1, verts2, edges2, args);
+  }
+
   // GraphPropertyDistribution[property[g], Distributed[g, graphDist]]
   // Returns the probability distribution of a graph property over a graph distribution.
   if name == "GraphPropertyDistribution"
@@ -5622,4 +5643,182 @@ fn find_maximum_flow_impl(
   }
 
   Ok(Expr::Integer(max_flow))
+}
+
+/// FindGraphIsomorphism implementation using backtracking
+fn find_graph_isomorphism_impl(
+  verts1: &[Expr],
+  edges1: &[Expr],
+  verts2: &[Expr],
+  edges2: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let n1 = verts1.len();
+  let n2 = verts2.len();
+
+  // Graphs must have same number of vertices for isomorphism
+  if n1 != n2 {
+    return Ok(Expr::List(vec![]));
+  }
+  let n = n1;
+
+  // Determine how many isomorphisms to find
+  let max_count = if args.len() == 3 {
+    match &args[2] {
+      Expr::Identifier(s) if s == "All" => usize::MAX,
+      Expr::Integer(k) if *k > 0 => *k as usize,
+      _ => 1,
+    }
+  } else {
+    1
+  };
+
+  // Build adjacency matrices using string comparison
+  let v1_strs: Vec<String> = verts1.iter().map(|v| expr_to_string(v)).collect();
+  let v2_strs: Vec<String> = verts2.iter().map(|v| expr_to_string(v)).collect();
+
+  let mut adj1 = vec![vec![false; n]; n];
+  let mut adj2 = vec![vec![false; n]; n];
+
+  // Helper to extract edge endpoints from Rule or FunctionCall forms
+  let edge_endpoints = |edge: &Expr| -> Option<(String, String)> {
+    match edge {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some((expr_to_string(pattern), expr_to_string(replacement))),
+      Expr::FunctionCall { args: eargs, .. } if eargs.len() == 2 => {
+        Some((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])))
+      }
+      _ => None,
+    }
+  };
+
+  for edge in edges1 {
+    if let Some((s, t)) = edge_endpoints(edge) {
+      if let (Some(i), Some(j)) = (
+        v1_strs.iter().position(|v| *v == s),
+        v1_strs.iter().position(|v| *v == t),
+      ) {
+        adj1[i][j] = true;
+        adj1[j][i] = true; // undirected
+      }
+    }
+  }
+
+  for edge in edges2 {
+    if let Some((s, t)) = edge_endpoints(edge) {
+      if let (Some(i), Some(j)) = (
+        v2_strs.iter().position(|v| *v == s),
+        v2_strs.iter().position(|v| *v == t),
+      ) {
+        adj2[i][j] = true;
+        adj2[j][i] = true; // undirected
+      }
+    }
+  }
+
+  // Compute degree sequences for pruning
+  let deg1: Vec<usize> = (0..n)
+    .map(|i| adj1[i].iter().filter(|&&b| b).count())
+    .collect();
+  let deg2: Vec<usize> = (0..n)
+    .map(|i| adj2[i].iter().filter(|&&b| b).count())
+    .collect();
+
+  // Backtracking search
+  let mut results: Vec<Vec<usize>> = Vec::new();
+  let mut mapping = vec![usize::MAX; n]; // mapping[i] = j means v1[i] -> v2[j]
+  let mut used = vec![false; n]; // which v2 vertices are used
+
+  fn backtrack(
+    depth: usize,
+    n: usize,
+    adj1: &[Vec<bool>],
+    adj2: &[Vec<bool>],
+    deg1: &[usize],
+    deg2: &[usize],
+    mapping: &mut Vec<usize>,
+    used: &mut Vec<bool>,
+    results: &mut Vec<Vec<usize>>,
+    max_count: usize,
+  ) {
+    if results.len() >= max_count {
+      return;
+    }
+    if depth == n {
+      results.push(mapping.clone());
+      return;
+    }
+
+    for j in 0..n {
+      if used[j] {
+        continue;
+      }
+      // Degree pruning
+      if deg1[depth] != deg2[j] {
+        continue;
+      }
+      // Check adjacency consistency with already mapped vertices
+      let mut consistent = true;
+      for k in 0..depth {
+        if adj1[depth][k] != adj2[j][mapping[k]] {
+          consistent = false;
+          break;
+        }
+      }
+      if !consistent {
+        continue;
+      }
+
+      mapping[depth] = j;
+      used[j] = true;
+      backtrack(
+        depth + 1,
+        n,
+        adj1,
+        adj2,
+        deg1,
+        deg2,
+        mapping,
+        used,
+        results,
+        max_count,
+      );
+      used[j] = false;
+    }
+  }
+
+  backtrack(
+    0,
+    n,
+    &adj1,
+    &adj2,
+    &deg1,
+    &deg2,
+    &mut mapping,
+    &mut used,
+    &mut results,
+    max_count,
+  );
+
+  // Convert results to associations: {<| v1[0] -> v2[mapping[0]], ... |>}
+  let assocs: Vec<Expr> = results
+    .iter()
+    .map(|m| {
+      let rules: Vec<Expr> = (0..n)
+        .map(|i| Expr::FunctionCall {
+          name: "Rule".to_string(),
+          args: vec![verts1[i].clone(), verts2[m[i]].clone()],
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: rules,
+      }
+    })
+    .collect();
+
+  let result = Expr::List(assocs);
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
