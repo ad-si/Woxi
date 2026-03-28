@@ -531,49 +531,46 @@ fn build_mesh_region(
   all_verts: Vec<(f64, f64)>,
   cells: Vec<Vec<usize>>,
 ) -> Result<Expr, InterpreterError> {
-  let mut grouped: std::collections::BTreeMap<usize, Vec<Vec<usize>>> =
-    std::collections::BTreeMap::new();
+  // Build Graphics[{EdgeForm[GrayLevel[0.4]], FaceForm[RGBColor[0.626,0.836,0.919]], Polygon[...], ...}]
+  // so that Show[] can merge VoronoiMesh with other Graphics primitives.
+  let fill_color = Color::new(0.626, 0.836, 0.919);
+  let edge_color = Color::gray(0.4);
+
+  let mut graphics_content: Vec<Expr> = Vec::new();
+
+  // EdgeForm[GrayLevel[...]]
+  graphics_content.push(Expr::FunctionCall {
+    name: "EdgeForm".to_string(),
+    args: vec![edge_color.to_expr()],
+  });
+
+  // FaceForm[RGBColor[...]]
+  graphics_content.push(Expr::FunctionCall {
+    name: "FaceForm".to_string(),
+    args: vec![fill_color.to_expr()],
+  });
+
+  // Polygon primitives with actual coordinates (not indices)
   for cell in &cells {
-    if !cell.is_empty() {
-      grouped.entry(cell.len()).or_default().push(cell.clone());
+    if cell.len() >= 3 {
+      let points: Vec<Expr> = cell
+        .iter()
+        .map(|&idx| {
+          let (x, y) = all_verts[idx - 1]; // indices are 1-based
+          Expr::List(vec![Expr::Real(x), Expr::Real(y)])
+        })
+        .collect();
+      graphics_content.push(Expr::FunctionCall {
+        name: "Polygon".to_string(),
+        args: vec![Expr::List(points)],
+      });
     }
   }
 
-  let vertex_exprs: Vec<Expr> = all_verts
-    .iter()
-    .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
-    .collect();
-
-  let mut polygon_exprs: Vec<Expr> = Vec::new();
-  for (_size, polys) in &grouped {
-    let index_lists: Vec<Expr> = polys
-      .iter()
-      .map(|cell| {
-        Expr::List(cell.iter().map(|&idx| Expr::Integer(idx as i128)).collect())
-      })
-      .collect();
-    polygon_exprs.push(Expr::FunctionCall {
-      name: "Polygon".to_string(),
-      args: vec![Expr::List(index_lists)],
-    });
-  }
-
-  let mesh_region = Expr::FunctionCall {
-    name: "MeshRegion".to_string(),
-    args: vec![Expr::List(vertex_exprs), Expr::List(polygon_exprs)],
-  };
-
-  // Auto-render MeshRegion to SVG for display in playground/Jupyter
-  if let Expr::FunctionCall {
-    args: ref mr_args, ..
-  } = mesh_region
-  {
-    if let Some(svg) = mesh_region_to_svg(&mr_args[0], &mr_args[1]) {
-      return Ok(crate::graphics_result(svg));
-    }
-  }
-
-  Ok(mesh_region)
+  Ok(Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(graphics_content)],
+  })
 }
 
 fn point_key(x: f64, y: f64) -> u128 {

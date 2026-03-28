@@ -209,6 +209,25 @@ pub fn dispatch_io_functions(
           crate::get_captured_graphics().unwrap_or_default()
         }
         Expr::FunctionCall {
+          name: gfx_name,
+          args: gfx_args,
+        } if (gfx_name == "Graphics" || gfx_name == "Graphics3D")
+          && !gfx_args.is_empty() =>
+        {
+          // Unevaluated Graphics[{...}] FunctionCall (e.g. from VoronoiMesh)
+          if let Ok(ref rendered) =
+            crate::functions::graphics::graphics_ast(gfx_args)
+          {
+            if let Expr::Graphics { svg: svg_data, .. } = rendered {
+              svg_data.clone()
+            } else {
+              String::new()
+            }
+          } else {
+            String::new()
+          }
+        }
+        Expr::FunctionCall {
           name: grid_name,
           args: grid_args,
         } if grid_name == "Grid" && !grid_args.is_empty() => {

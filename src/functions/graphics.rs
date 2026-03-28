@@ -73,6 +73,25 @@ impl Color {
     .with_alpha(self.a)
   }
 
+  pub(crate) fn gray(level: f64) -> Self {
+    Self::new(level, level, level)
+  }
+
+  /// Convert to an Expr (RGBColor or GrayLevel) for embedding in Graphics expressions.
+  pub(crate) fn to_expr(&self) -> Expr {
+    if (self.r - self.g).abs() < 1e-14 && (self.g - self.b).abs() < 1e-14 {
+      Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![Expr::Real(self.r)],
+      }
+    } else {
+      Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(self.r), Expr::Real(self.g), Expr::Real(self.b)],
+      }
+    }
+  }
+
   pub(crate) fn from_hue(h: f64, s: f64, b: f64) -> Self {
     // HSB to RGB conversion
     let h = ((h % 1.0) + 1.0) % 1.0;

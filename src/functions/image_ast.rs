@@ -2519,6 +2519,19 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Get SVG string from the expression
   let svg_str = match &args[0] {
     Expr::Graphics { svg, .. } => svg.clone(),
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      if let Ok(Expr::Graphics { ref svg, .. }) =
+        crate::functions::graphics::graphics_ast(fargs)
+      {
+        svg.clone()
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Rasterize: failed to render Graphics".into(),
+        ));
+      }
+    }
     Expr::FunctionCall { name, args: fargs } if name == "Grid" => {
       crate::functions::graphics::grid_svg_with_gaps(fargs, &[])?
     }

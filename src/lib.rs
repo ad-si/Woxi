@@ -968,6 +968,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         };
         // If the result is an Image, render it as a PNG <img> tag
         let result_expr = render_image_if_needed(result_expr);
+        // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.
+        // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
+        // Must run before other render passes that expect Expr::Graphics.
+        let result_expr = render_graphics_fc_if_needed(result_expr);
         // If the result is a Grid expression, render it as SVG
         let result_expr = render_grid_if_needed(result_expr);
         // If the result is a Dataset expression, render it as an SVG table
@@ -1424,6 +1428,56 @@ fn contains_framed(expr: &syntax::Expr) -> bool {
     syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
     syntax::Expr::List(items) => items.iter().any(contains_framed),
     _ => false,
+  }
+}
+
+/// If `expr` is an unevaluated `Graphics[{...}]` or `Graphics3D[{...}]`
+/// FunctionCall (e.g. returned by VoronoiMesh), render it to SVG.
+/// Also recurses into lists and wrapper forms so that e.g. `{Graphics[...], Graphics[...]}`
+/// and `TableForm[{Graphics[...], ...}]` are rendered correctly.
+fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Graphics" || name == "Graphics3D") && !args.is_empty() =>
+    {
+      if let Ok(rendered) = functions::graphics::graphics_ast(args) {
+        rendered
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::List(items) => {
+      let new_items: Vec<syntax::Expr> = items
+        .iter()
+        .cloned()
+        .map(render_graphics_fc_if_needed)
+        .collect();
+      syntax::Expr::List(new_items)
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "TableForm"
+          | "MatrixForm"
+          | "Column"
+          | "Style"
+          | "MathMLForm"
+          | "StandardForm"
+          | "InputForm"
+          | "OutputForm"
+      ) =>
+    {
+      let new_args: Vec<syntax::Expr> = args
+        .iter()
+        .cloned()
+        .map(render_graphics_fc_if_needed)
+        .collect();
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr,
   }
 }
 

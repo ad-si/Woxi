@@ -1760,7 +1760,7 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
-  // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
+  // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as Graphics
   if name == "VoronoiMesh" && args.len() == 1 {
     return crate::functions::voronoi::voronoi_mesh_ast(&args);
   }
