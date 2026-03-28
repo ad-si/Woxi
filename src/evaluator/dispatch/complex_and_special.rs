@@ -3523,21 +3523,6 @@ fn insphere_triangle_2d(
   crate::evaluator::evaluate_expr_to_expr(&sphere)
 }
 
-/// Compute distance between two 3D points
-fn dist_3d(p1: &[Expr], p2: &[Expr]) -> Expr {
-  let dx = insphere_minus(p2[0].clone(), p1[0].clone());
-  let dy = insphere_minus(p2[1].clone(), p1[1].clone());
-  let dz = insphere_minus(p2[2].clone(), p1[2].clone());
-  insphere_sqrt(Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      insphere_power(dx, Expr::Integer(2)),
-      insphere_power(dy, Expr::Integer(2)),
-      insphere_power(dz, Expr::Integer(2)),
-    ],
-  })
-}
-
 /// Compute |AB x AC| for a 3D triangle (= 2 * area).
 /// We return twice the area to avoid fractions; the caller must account for this.
 fn triangle_cross_mag_3d(p1: &[Expr], p2: &[Expr], p3: &[Expr]) -> Expr {
