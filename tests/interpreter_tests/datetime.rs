@@ -512,3 +512,40 @@ mod day_plus {
     );
   }
 }
+
+mod dated {
+  use super::*;
+
+  #[test]
+  fn dated_basic() {
+    assert_eq!(
+      interpret("Dated[100, {2015, 3, 1}]").unwrap(),
+      "Dated[100, {2015, 3, 1}]"
+    );
+  }
+
+  #[test]
+  fn dated_head() {
+    assert_eq!(
+      interpret("Head[Dated[100, {2015, 3, 1}]]").unwrap(),
+      "Dated"
+    );
+  }
+
+  #[test]
+  fn dated_part_extraction() {
+    assert_eq!(interpret("Dated[100, {2015, 3, 1}][[1]]").unwrap(), "100");
+    assert_eq!(
+      interpret("Dated[100, {2015, 3, 1}][[2]]").unwrap(),
+      "{2015, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn dated_string_value() {
+    assert_eq!(
+      interpret("Dated[\"hello\", {2020}]").unwrap(),
+      "Dated[hello, {2020}]"
+    );
+  }
+}
