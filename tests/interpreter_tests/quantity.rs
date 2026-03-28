@@ -1521,3 +1521,29 @@ fn gigapascals_200_to_pascals() {
     "Quantity[200000000000, Pascals]"
   );
 }
+
+// ─── IndependentUnit ──────────────────────────────────────────────────────────
+
+#[test]
+fn independent_unit_basic() {
+  assert_eq!(
+    interpret("IndependentUnit[\"Foo\"]").unwrap(),
+    "IndependentUnit[Foo]"
+  );
+}
+
+#[test]
+fn independent_unit_head() {
+  assert_eq!(
+    interpret("Head[IndependentUnit[\"Foo\"]]").unwrap(),
+    "IndependentUnit"
+  );
+}
+
+#[test]
+fn independent_unit_with_quantity() {
+  assert_eq!(
+    interpret("Quantity[3, IndependentUnit[\"Foo\"]]").unwrap(),
+    "Quantity[3, IndependentUnit[\"Foo\"]]"
+  );
+}
