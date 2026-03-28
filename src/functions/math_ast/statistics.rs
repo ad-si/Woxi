@@ -265,6 +265,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "PascalDistribution"
         | "DagumDistribution"
         | "HyperbolicDistribution"
+        | "NoncentralFRatioDistribution"
     ) =>
     {
       let (mean, _) =
@@ -434,6 +435,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "PascalDistribution"
         | "DagumDistribution"
         | "HyperbolicDistribution"
+        | "NoncentralFRatioDistribution"
     ) =>
     {
       let (_, variance) =

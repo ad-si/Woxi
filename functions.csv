@@ -2832,7 +2832,7 @@ LocalObject,,🚫,,10.2,2894
 WeatherForecastData,,🚫,,10.4,2894
 FindGeoLocation,,🚫,,7.0,2900
 MangoldtLambda,Von Mangoldt function,✅,none,7.0,2900
-NoncentralFRatioDistribution,,,,6.0,2900
+NoncentralFRatioDistribution,Noncentral F-ratio distribution with PDF Mean and Variance,✅,pure,6.0,2900
 ProcessEstimator,,🚫,,9.0,2900
 SessionSubmit,,🚫,,11.2,2900
 CantorStaircase,Compute the Cantor staircase (devil's staircase) function,✅,pure,10.0,2911

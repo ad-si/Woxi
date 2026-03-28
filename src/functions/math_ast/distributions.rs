@@ -160,6 +160,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PascalDistribution" => pdf_pascal(dargs, x),
     "DagumDistribution" => pdf_dagum(dargs, x),
     "HyperbolicDistribution" => pdf_hyperbolic(dargs, x),
+    "NoncentralFRatioDistribution" => pdf_noncentral_f(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1733,6 +1734,40 @@ fn distribution_mean_variance(
       let var = minus(second_moment, power(mean.clone(), int(2)));
       Ok((mean, var))
     }
+    "NoncentralFRatioDistribution" => {
+      if dargs.len() != 3 {
+        return Err(InterpreterError::EvaluationError(
+          "NoncentralFRatioDistribution expects 3 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let m = dargs[1].clone();
+      let l = dargs[2].clone();
+
+      // Mean = Piecewise[{{m*(l+n)/((m-2)*n), m > 2}}, Indeterminate]
+      // For symbolic form, return the direct expression
+      let mean = divide(
+        times(m.clone(), plus(l.clone(), n.clone())),
+        times(minus(m.clone(), int(2)), n.clone()),
+      );
+
+      // Variance = 2*m^2*((l+n)^2 + (m-2)*(2*l+n)) / ((m-4)*(m-2)^2*n^2)
+      let l_plus_n = plus(l.clone(), n.clone());
+      let var_num = times(
+        times(int(2), power(m.clone(), int(2))),
+        plus(
+          power(l_plus_n, int(2)),
+          times(minus(m.clone(), int(2)), plus(times(int(2), l), n.clone())),
+        ),
+      );
+      let var_den = times(
+        times(minus(m.clone(), int(4)), power(minus(m, int(2)), int(2))),
+        power(n, int(2)),
+      );
+      let var = divide(var_num, var_den);
+
+      Ok((mean, var))
+    }
     "HyperbolicDistribution" => {
       if dargs.len() != 4 {
         return Err(InterpreterError::EvaluationError(
@@ -3047,4 +3082,65 @@ fn pdf_hyperbolic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
 
   eval(divide(numerator, denominator))
+}
+
+/// PDF[NoncentralFRatioDistribution[n, m, l], x]
+/// = m^(m/2)*n^(n/2)*x^((n-2)/2)*(m+n*x)^(-(m+n)/2)
+///   *Hypergeometric1F1[(m+n)/2, n/2, l*n*x/(2*(m+n*x))]
+///   / (E^(l/2)*Beta[n/2, m/2])
+/// for x > 0, else 0
+fn pdf_noncentral_f(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "NoncentralFRatioDistribution expects 3 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let m = dargs[1].clone();
+  let l = dargs[2].clone();
+
+  let half = |e: Expr| divide(e, int(2));
+
+  let beta = |a: Expr, b: Expr| Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![a, b],
+  };
+
+  let hyp1f1 = |a: Expr, b: Expr, z: Expr| Expr::FunctionCall {
+    name: "Hypergeometric1F1".to_string(),
+    args: vec![a, b, z],
+  };
+
+  // numerator pieces
+  let m_half = power(m.clone(), half(m.clone()));
+  let n_half = power(n.clone(), half(n.clone()));
+  let x_pow = power(x.clone(), half(minus(n.clone(), int(2))));
+  let bracket = power(
+    plus(m.clone(), times(n.clone(), x.clone())),
+    times(int(-1), half(plus(m.clone(), n.clone()))),
+  );
+  let hyp = hyp1f1(
+    half(plus(m.clone(), n.clone())),
+    half(n.clone()),
+    divide(
+      times(times(l.clone(), n), x.clone()),
+      times(int(2), plus(m.clone(), times(dargs[0].clone(), x.clone()))),
+    ),
+  );
+
+  let numerator =
+    times(times(times(m_half, n_half), times(x_pow, bracket)), hyp);
+
+  // denominator: E^(l/2) * Beta[n/2, m/2]
+  let denominator =
+    times(power(e(), half(l)), beta(half(dargs[0].clone()), half(m)));
+
+  let density = divide(numerator, denominator);
+
+  let cond = Expr::FunctionCall {
+    name: "Greater".to_string(),
+    args: vec![x, int(0)],
+  };
+
+  eval(piecewise(vec![(density, cond)], int(0)))
 }

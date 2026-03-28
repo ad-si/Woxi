@@ -2123,3 +2123,71 @@ mod arcsin_distribution {
     );
   }
 }
+
+mod noncentral_f_ratio_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("NoncentralFRatioDistribution[3, 5, 2]").unwrap(),
+      "NoncentralFRatioDistribution[3, 5, 2]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[NoncentralFRatioDistribution[n, m, l], x]").unwrap(),
+      "Piecewise[{{((m^(m/2)*n^(n/2)*x^((n - 2)/2)*Hypergeometric1F1[(m + n)/2, n/2, (l*n*x)/(2*(m + n*x))])/(m + n*x)^((m + n)/2))/(E^(l/2)*Beta[n/2, m/2]), Greater[x, 0]}}, 0]"
+    );
+  }
+
+  #[test]
+  fn pdf_zero() {
+    assert_eq!(
+      interpret("PDF[NoncentralFRatioDistribution[3, 5, 2], 0]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_negative() {
+    assert_eq!(
+      interpret("PDF[NoncentralFRatioDistribution[3, 5, 2], -1]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[NoncentralFRatioDistribution[3, 5, 2]]").unwrap(),
+      "25/9"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[NoncentralFRatioDistribution[n, m, l]]").unwrap(),
+      "(m*(l + n))/(n*(-2 + m))"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[NoncentralFRatioDistribution[3, 5, 2]]").unwrap(),
+      "2300/81"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[NoncentralFRatioDistribution[n, m, l]]").unwrap(),
+      "(2*m^2*((l + n)^2 + (-2 + m)*(2*l + n)))/(n^2*(-2 + m)^2*(-4 + m))"
+    );
+  }
+}
