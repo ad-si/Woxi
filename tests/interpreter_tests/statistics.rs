@@ -2139,7 +2139,7 @@ mod noncentral_f_ratio_distribution {
   fn pdf_symbolic() {
     assert_eq!(
       interpret("PDF[NoncentralFRatioDistribution[n, m, l], x]").unwrap(),
-      "Piecewise[{{((m^(m/2)*n^(n/2)*x^((n - 2)/2)*Hypergeometric1F1[(m + n)/2, n/2, (l*n*x)/(2*(m + n*x))])/(m + n*x)^((m + n)/2))/(E^(l/2)*Beta[n/2, m/2]), Greater[x, 0]}}, 0]"
+      "Piecewise[{{(m^(m/2)*n^(n/2)*x^((-2 + n)/2)*(m + n*x)^((-m - n)/2)*Hypergeometric1F1[(m + n)/2, n/2, (l*n*x)/(2*(m + n*x))])/(E^(l/2)*Beta[n/2, m/2]), x > 0}}, 0]"
     );
   }
 
@@ -2171,7 +2171,7 @@ mod noncentral_f_ratio_distribution {
   fn mean_symbolic() {
     assert_eq!(
       interpret("Mean[NoncentralFRatioDistribution[n, m, l]]").unwrap(),
-      "(m*(l + n))/(n*(-2 + m))"
+      "Piecewise[{{(m*(l + n))/((-2 + m)*n), m > 2}}, Indeterminate]"
     );
   }
 
@@ -2187,7 +2187,31 @@ mod noncentral_f_ratio_distribution {
   fn variance_symbolic() {
     assert_eq!(
       interpret("Variance[NoncentralFRatioDistribution[n, m, l]]").unwrap(),
-      "(2*m^2*((l + n)^2 + (-2 + m)*(2*l + n)))/(n^2*(-2 + m)^2*(-4 + m))"
+      "Piecewise[{{(2*m^2*((l + n)^2 + (-2 + m)*(2*l + n)))/((-4 + m)*(-2 + m)^2*n^2), m > 4}}, Indeterminate]"
+    );
+  }
+
+  #[test]
+  fn mean_indeterminate_when_m_leq_2() {
+    assert_eq!(
+      interpret("Mean[NoncentralFRatioDistribution[3, 2, 1]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Mean[NoncentralFRatioDistribution[3, 1, 1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn variance_indeterminate_when_m_leq_4() {
+    assert_eq!(
+      interpret("Variance[NoncentralFRatioDistribution[3, 4, 1]]").unwrap(),
+      "Indeterminate"
+    );
+    assert_eq!(
+      interpret("Variance[NoncentralFRatioDistribution[3, 3, 1]]").unwrap(),
+      "Indeterminate"
     );
   }
 }
