@@ -628,6 +628,10 @@ fn unit_convert_kwh_to_joules() {
       .unwrap(),
     "Quantity[3600000, Joules]"
   );
+}
+
+#[test]
+fn unit_convert_kwh_abbreviation_to_joules() {
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"kWh\"], \"Joules\"]").unwrap(),
     "Quantity[3600000, Joules]"
@@ -892,7 +896,7 @@ fn unit_convert_nautical_miles_to_kilometers() {
 fn unit_convert_tonnes_to_kilograms() {
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Tonnes\"], \"Kilograms\"]").unwrap(),
-    "UnitConvert[Quantity[1, Tonnes], Kilograms]"
+    "Quantity[1000, Kilograms]"
   );
 }
 

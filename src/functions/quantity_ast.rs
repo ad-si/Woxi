@@ -1314,40 +1314,13 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
   }
 }
 
-/// Unit abbreviations/names that wolframscript does NOT natively recognize.
-/// These require the "Interpreting unit" entity-framework step which fails
-/// in batch/Quiet contexts. They should be preserved as-is in normalize_unit.
-/// Check if a unit expression contains any non-native unit strings.
-fn has_non_native_unit(expr: &Expr) -> bool {
-  match expr {
-    Expr::String(s) | Expr::Identifier(s) => is_non_native_string_unit(s),
-    Expr::BinaryOp { left, right, .. } => {
-      has_non_native_unit(left) || has_non_native_unit(right)
-    }
-    Expr::FunctionCall { args, .. } => args.iter().any(has_non_native_unit),
-    _ => false,
-  }
-}
-
-/// Unit names that require Wolfram's entity framework to resolve.
-/// These are preserved as-is at evaluation time. UnitConvert and
-/// CompatibleUnitQ return unevaluated for these. Entity resolution
-/// happens only at format/display time for top-level Quantity expressions.
-fn is_non_native_string_unit(s: &str) -> bool {
-  matches!(s, "Tonnes")
-}
-
 /// Recursively normalize unit expressions at evaluation time.
 /// Expands native abbreviations, "Per" compounds, singular forms, and compound
-/// strings. Non-native unit names (entity-dependent) are preserved as-is.
+/// strings.
 fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
-      // Non-native unit strings are preserved as-is at evaluation time
-      if is_non_native_string_unit(&s) {
-        return Expr::String(s);
-      }
       if let Some(compound) = format_expand_compound_unit(&s) {
         compound
       } else if get_unit_info(&s).is_some() {
@@ -1361,9 +1334,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       } else {
         // Try singular → plural normalization
         let plural = normalize_singular_to_plural(&s);
-        if is_non_native_string_unit(&plural) {
-          Expr::String(s)
-        } else if get_unit_info(&plural).is_some() {
+        if get_unit_info(&plural).is_some() {
           Expr::String(canonical_unit_name(&plural).to_string())
         } else {
           Expr::String(s)
@@ -1399,9 +1370,6 @@ fn normalize_unit(mut unit: Expr) -> Expr {
     }
     Expr::Identifier(s) => {
       let s = s.clone();
-      if is_non_native_string_unit(&s) {
-        return Expr::String(s);
-      }
       if let Some(compound) = format_expand_compound_unit(&s) {
         return compound;
       }
@@ -1419,9 +1387,6 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       }
       // Try singular → plural normalization
       let plural = normalize_singular_to_plural(&s);
-      if is_non_native_string_unit(&plural) {
-        return Expr::String(s);
-      }
       if let Some(compound) = format_expand_compound_unit(&plural) {
         return compound;
       }
@@ -1663,10 +1628,6 @@ pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     &args[1]
   };
-  // Non-native units → Wolfram returns False (can't determine compatibility)
-  if has_non_native_unit(u1) || has_non_native_unit(u2) {
-    return Ok(Expr::Identifier("False".to_string()));
-  }
   let result = units_compatible(u1, u2);
   Ok(Expr::Identifier(
     if result { "True" } else { "False" }.to_string(),
@@ -1715,14 +1676,6 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // E.g. Kilometers/Seconds^2 is symbolic, not a unit specification.
     // Only string-based units like "Kilometers/Seconds^2" work.
     if is_compound_unit_expr(unit) && has_bare_identifier_units(unit) {
-      return Ok(Expr::FunctionCall {
-        name: "UnitConvert".to_string(),
-        args: args.to_vec(),
-      });
-    }
-
-    // Non-native unit names that wolframscript can't resolve → return unevaluated
-    if has_non_native_unit(unit) || has_non_native_unit(target) {
       return Ok(Expr::FunctionCall {
         name: "UnitConvert".to_string(),
         args: args.to_vec(),
