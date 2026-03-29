@@ -1775,6 +1775,24 @@ fn match_pattern_impl(
       }
       None
     }
+    // Condition[pattern, test] - matches if pattern matches AND test evaluates to True
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Condition" && pat_args.len() == 2 => {
+      // First match the pattern part
+      if let Some(bindings) = match_pattern(expr, &pat_args[0]) {
+        // Substitute bindings into the test expression and evaluate
+        let test_expr = apply_bindings(&pat_args[1], &bindings)
+          .unwrap_or(pat_args[1].clone());
+        match evaluate_expr_to_expr(&test_expr) {
+          Ok(Expr::Identifier(ref s)) if s == "True" => Some(bindings),
+          _ => None,
+        }
+      } else {
+        None
+      }
+    }
     Expr::FunctionCall {
       name: pat_name,
       args: pat_args,

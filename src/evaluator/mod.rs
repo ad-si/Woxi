@@ -44,7 +44,7 @@ mod function_application;
 mod listable;
 mod part_extraction;
 mod pattern_functions;
-mod pattern_matching;
+pub(crate) mod pattern_matching;
 mod scoping;
 mod string_replace;
 mod type_helpers;

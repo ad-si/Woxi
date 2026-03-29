@@ -1131,6 +1131,93 @@ mod condition_function {
   }
 }
 
+mod condition_pattern_matching {
+  use super::*;
+
+  #[test]
+  fn matchq_with_condition_true() {
+    assert_eq!(interpret("MatchQ[4, x_ /; x > 3]").unwrap(), "True");
+  }
+
+  #[test]
+  fn matchq_with_condition_false() {
+    assert_eq!(interpret("MatchQ[2, x_ /; x > 3]").unwrap(), "False");
+  }
+
+  #[test]
+  fn matchq_with_trivial_condition() {
+    assert_eq!(interpret("MatchQ[4, _ /; True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn matchq_with_false_condition() {
+    assert_eq!(interpret("MatchQ[4, _ /; False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn matchq_with_evenq_condition() {
+    assert_eq!(interpret("MatchQ[4, x_ /; EvenQ[x]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[3, x_ /; EvenQ[x]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn cases_with_condition() {
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, x_ /; x > 3]").unwrap(),
+      "{4, 5}"
+    );
+  }
+
+  #[test]
+  fn cases_with_condition_and_rule_delayed() {
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, x_ /; x > 3 :> x^2]").unwrap(),
+      "{16, 25}"
+    );
+  }
+
+  #[test]
+  fn cases_with_condition_evenq_rule() {
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, x_ /; EvenQ[x] :> x^2]").unwrap(),
+      "{4, 16}"
+    );
+  }
+
+  #[test]
+  fn replace_all_with_condition() {
+    assert_eq!(
+      interpret("{1, 2, 3, 4, 5} /. x_ /; x > 3 :> x^2").unwrap(),
+      "{1, 2, 3, 16, 25}"
+    );
+  }
+
+  #[test]
+  fn replace_all_with_condition_in_list() {
+    assert_eq!(
+      interpret("ReplaceAll[{1, 2, 3, 4, 5}, {x_ /; EvenQ[x] :> x^2}]")
+        .unwrap(),
+      "{1, 4, 3, 16, 5}"
+    );
+  }
+
+  #[test]
+  fn condition_with_head_constraint() {
+    assert_eq!(
+      interpret("MatchQ[42, x_Integer /; x > 10]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[5, x_Integer /; x > 10]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[\"hello\", x_Integer /; x > 10]").unwrap(),
+      "False"
+    );
+  }
+}
+
 mod axes_label_symbol {
   use super::*;
 

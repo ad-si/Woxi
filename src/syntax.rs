@@ -1898,15 +1898,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // 3 children: pattern /; condition -> replacement
       let (pattern, replacement) = if children.len() == 3 {
         // pattern /; condition :> replacement
-        // Store as Raw so the string-based pattern matcher can handle the /; condition
+        // Build a proper Condition[pattern, test] AST node
         let pattern_expr = pair_to_expr(children[0].clone());
         let condition_expr = pair_to_expr(children[1].clone());
-        let pattern_str = format!(
-          "{} /; {}",
-          expr_to_string(&pattern_expr),
-          expr_to_string(&condition_expr)
-        );
-        (Expr::Raw(pattern_str), pair_to_expr(children[2].clone()))
+        (
+          Expr::FunctionCall {
+            name: "Condition".to_string(),
+            args: vec![pattern_expr, condition_expr],
+          },
+          pair_to_expr(children[2].clone()),
+        )
       } else {
         (
           pair_to_expr(children[0].clone()),
