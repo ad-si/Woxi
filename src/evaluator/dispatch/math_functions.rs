@@ -1265,6 +1265,12 @@ pub fn dispatch_math_functions(
     "BitShiftLeft" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::bit_shift_left_ast(args));
     }
+    "BitSet" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::bit_set_ast(args));
+    }
+    "BitClear" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::bit_clear_ast(args));
+    }
     "IntegerExponent" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::integer_exponent_ast(args));
     }

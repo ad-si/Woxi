@@ -4018,6 +4018,53 @@ mod cantor_staircase {
   }
 }
 
+mod cap {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Cap[x, y]").unwrap(), "x \u{2322} y");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("Cap[x]").unwrap(), "Cap[x]");
+  }
+}
+
+mod bit_set {
+  use super::*;
+
+  #[test]
+  fn set_bit() {
+    assert_eq!(interpret("BitSet[0, 3]").unwrap(), "8");
+  }
+
+  #[test]
+  fn already_set() {
+    assert_eq!(interpret("BitSet[7, 0]").unwrap(), "7");
+  }
+
+  #[test]
+  fn set_new() {
+    assert_eq!(interpret("BitSet[5, 1]").unwrap(), "7");
+  }
+}
+
+mod bit_clear {
+  use super::*;
+
+  #[test]
+  fn clear_bit() {
+    assert_eq!(interpret("BitClear[7, 1]").unwrap(), "5");
+  }
+
+  #[test]
+  fn clear_lowest() {
+    assert_eq!(interpret("BitClear[7, 0]").unwrap(), "6");
+  }
+}
+
 mod window_functions {
   use super::*;
 
