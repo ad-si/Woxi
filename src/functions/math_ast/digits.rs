@@ -866,6 +866,134 @@ pub fn bigfloat_to_digits(
   Ok((ascii_digits, exponent as i64))
 }
 
+/// Extract numerator and denominator from a Rational expression.
+/// Returns Some((numer, denom)) for Rational[n,d] or Integer n, None otherwise.
+fn extract_rational_for_digits(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+        Some((*a, *b))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Compute RealDigits for a rational number using long division with cycle detection.
+/// Returns the digit list (with repeating part wrapped in a List) and the exponent.
+fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
+  use std::collections::HashMap;
+
+  let mut n = numer.abs();
+  let d = denom.abs();
+
+  // Compute exponent: number of digits in integer part
+  // First extract the integer part to determine the exponent
+  let integer_part = n / d;
+
+  let exponent: i128;
+  if integer_part == 0 {
+    // For numbers < 1, exponent is 0 or negative
+    // Count leading zeros after decimal point
+    let mut temp = n * 10;
+    let mut leading_zeros: i128 = 0;
+    while temp < d && temp > 0 {
+      leading_zeros += 1;
+      temp *= 10;
+    }
+    exponent = -leading_zeros;
+  } else {
+    // Count digits in integer part
+    let mut count = 0i128;
+    let mut temp = integer_part;
+    while temp > 0 {
+      count += 1;
+      temp /= 10;
+    }
+    exponent = count;
+  }
+
+  // Perform long division to extract all digits with cycle detection
+  let mut remainder = n;
+  let mut digits: Vec<i128> = Vec::new();
+  let mut remainder_positions: HashMap<i128, usize> = HashMap::new();
+  let mut cycle_start: Option<usize> = None;
+
+  // Extract integer part digits, then continue with fractional part
+
+  // But Wolfram combines them into one digit stream.
+  // Let's just do: digit_i = floor(remainder * 10 / d), new_remainder = (remainder * 10) % d
+  // But first handle the case where n >= d
+
+  // Normalize: bring remainder into [0, d) range and extract integer part digits
+  let int_part = remainder / d;
+  remainder = remainder % d;
+
+  // Extract integer part digits
+  let mut int_digits: Vec<i128> = Vec::new();
+  if int_part > 0 {
+    let mut temp = int_part;
+    while temp > 0 {
+      int_digits.push(temp % 10);
+      temp /= 10;
+    }
+    int_digits.reverse();
+  }
+
+  // Now do long division for the fractional part
+  // Track remainder -> position for cycle detection
+  digits = int_digits;
+  let frac_start = digits.len();
+
+  // For terminating decimals, we'll stop when remainder becomes 0
+  // For repeating, we stop when we see a repeated remainder
+  loop {
+    if remainder == 0 {
+      // Terminating decimal
+      break;
+    }
+
+    if let Some(&pos) = remainder_positions.get(&remainder) {
+      // Found a cycle starting at position pos
+      cycle_start = Some(pos);
+      break;
+    }
+
+    remainder_positions.insert(remainder, digits.len());
+    remainder *= 10;
+    let digit = remainder / d;
+    remainder = remainder % d;
+    digits.push(digit);
+  }
+
+  // Build the result
+  if let Some(cycle_pos) = cycle_start {
+    // Split into non-repeating and repeating parts
+    let non_repeating: Vec<Expr> = digits[..cycle_pos]
+      .iter()
+      .map(|&d| Expr::Integer(d))
+      .collect();
+    let repeating: Vec<Expr> = digits[cycle_pos..]
+      .iter()
+      .map(|&d| Expr::Integer(d))
+      .collect();
+
+    let mut result = non_repeating;
+    result.push(Expr::List(repeating));
+    (result, exponent)
+  } else {
+    // Terminating decimal - just return the digits
+    let digit_exprs: Vec<Expr> =
+      digits.iter().map(|&d| Expr::Integer(d)).collect();
+    (digit_exprs, exponent)
+  }
+}
+
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
 /// Returns {digit_list, exponent}.
 pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -893,7 +1021,9 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let num_digits: usize = if args.len() >= 3 {
+  let explicit_num_digits = args.len() >= 3;
+
+  let num_digits: usize = if explicit_num_digits {
     match expr_to_i128(&args[2]) {
       Some(n) if n > 0 => n as usize,
       _ => {
@@ -936,6 +1066,19 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_zero {
     let digits = vec![Expr::Integer(0); num_digits];
     return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(0)]));
+  }
+
+  // For rationals without explicit num_digits, use long division with cycle detection
+  if !explicit_num_digits {
+    if let Some((numer, denom)) = extract_rational_for_digits(&abs_expr) {
+      if denom != 0 {
+        let (digit_list, exponent) = real_digits_rational(numer, denom);
+        return Ok(Expr::List(vec![
+          Expr::List(digit_list),
+          Expr::Integer(exponent),
+        ]));
+      }
+    }
   }
 
   // Compute with extra precision to avoid rounding errors in the last digits
