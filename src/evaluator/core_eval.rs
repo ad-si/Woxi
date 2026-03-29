@@ -280,10 +280,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Dynamically grow the stack when running low. This prevents stack
   // overflows in debug builds where the massive evaluate_function_call_ast_inner
-  // function uses large stack frames.  The 256 KB red zone triggers a 2 MB
-  // growth so that even deep user-defined recursion (e.g. naive Fibonacci)
-  // succeeds regardless of the initial thread stack size.
-  stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || {
+  // function uses large stack frames.  The 2 MB red zone triggers a 4 MB
+  // growth so that even deep user-defined recursion (e.g. naive Fibonacci,
+  // n-queens) succeeds regardless of the initial thread stack size.
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
     evaluate_expr_to_expr_impl(expr)
   })
 }
