@@ -9903,6 +9903,48 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("SequenceCount[{1, 2, 3}, {4, 5}]").unwrap(), "0");
   }
   #[test]
+  fn sequence_position_basic() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3, 1, 2}, {1, 2}]").unwrap(),
+      "{{1, 2}, {4, 5}}"
+    );
+  }
+  #[test]
+  fn sequence_position_no_match() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 2, 3}, {4, 5}]").unwrap(),
+      "{}"
+    );
+  }
+  #[test]
+  fn sequence_position_overlapping() {
+    assert_eq!(
+      interpret("SequencePosition[{1, 1, 1}, {1, 1}]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+  #[test]
+  fn sequence_position_symbolic() {
+    assert_eq!(
+      interpret("SequencePosition[{a, b, c, a, b, c}, {a, b}]").unwrap(),
+      "{{1, 2}, {4, 5}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_literal() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4, 1, 2}, {1, 2}]").unwrap(),
+      "{{1, 2}, {1, 2}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_pattern() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4, 1, 2}, {_, _}]").unwrap(),
+      "{{1, 2}, {3, 4}, {1, 2}}"
+    );
+  }
+  #[test]
   fn chebyshev_distance_basic() {
     assert_eq!(interpret("ChebyshevDistance[{1, 2}, {3, 5}]").unwrap(), "3");
   }
