@@ -4018,6 +4018,38 @@ mod cantor_staircase {
   }
 }
 
+mod prime_zeta_p {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("PrimeZetaP[2]").unwrap(), "PrimeZetaP[2]");
+  }
+
+  #[test]
+  fn numeric_2() {
+    assert_eq!(interpret("PrimeZetaP[2.0]").unwrap(), "0.45224742004106566");
+  }
+
+  #[test]
+  fn numeric_via_n() {
+    assert_eq!(
+      interpret("N[PrimeZetaP[2]]").unwrap(),
+      "0.45224742004106566"
+    );
+  }
+
+  #[test]
+  fn numeric_3() {
+    assert_eq!(interpret("PrimeZetaP[3.0]").unwrap(), "0.17476263929944316");
+  }
+
+  #[test]
+  fn symbolic_var() {
+    assert_eq!(interpret("PrimeZetaP[s]").unwrap(), "PrimeZetaP[s]");
+  }
+}
+
 mod norlund_b {
   use super::*;
 

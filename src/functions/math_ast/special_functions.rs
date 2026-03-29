@@ -7997,3 +7997,88 @@ fn rat_add_inplace(target: &mut (i128, i128), tn: i128, td: i128) {
     *rd = -*rd;
   }
 }
+
+/// PrimeZetaP[s] - Prime zeta function: P(s) = sum_{p prime} 1/p^s.
+/// Computed via Möbius inversion: P(s) = sum_{k=1}^∞ μ(k)/k * log(ζ(ks)).
+pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "PrimeZetaP".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Only evaluate numerically for Real (approximate) arguments
+  let s = match &args[0] {
+    Expr::Real(v) if *v > 1.0 => *v,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PrimeZetaP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Use Möbius inversion: P(s) = sum_{k=1}^K μ(k)/k * log(ζ(ks))
+  // For s > 1, the series converges very rapidly.
+  let max_k = 60;
+  let mut result = 0.0_f64;
+
+  for k in 1..=max_k {
+    let mu = mobius(k);
+    if mu == 0 {
+      continue;
+    }
+    let ks = (k as f64) * s;
+    // Use the evaluator's Zeta function for accuracy
+    let zeta_expr =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Zeta".to_string(),
+          args: vec![Expr::Real(ks)],
+        }],
+      });
+    let zeta_val = match zeta_expr {
+      Ok(ref e) => try_eval_to_f64(e).unwrap_or(1.0),
+      Err(_) => 1.0,
+    };
+    if zeta_val <= 1.0 {
+      continue;
+    }
+    let term = (mu as f64) / (k as f64) * zeta_val.ln();
+    result += term;
+    if k > 5 && term.abs() < 1e-16 {
+      break;
+    }
+  }
+
+  Ok(Expr::Real(result))
+}
+
+/// Compute the Möbius function μ(n).
+fn mobius(n: usize) -> i32 {
+  if n == 0 {
+    return 0;
+  }
+  if n == 1 {
+    return 1;
+  }
+  let mut m = n;
+  let mut num_factors = 0;
+  let mut d = 2;
+  while d * d <= m {
+    if m % d == 0 {
+      m /= d;
+      if m % d == 0 {
+        return 0; // p^2 divides n
+      }
+      num_factors += 1;
+    }
+    d += 1;
+  }
+  if m > 1 {
+    num_factors += 1;
+  }
+  if num_factors % 2 == 0 { 1 } else { -1 }
+}
