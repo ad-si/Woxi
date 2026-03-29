@@ -889,7 +889,7 @@ fn extract_rational_for_digits(expr: &Expr) -> Option<(i128, i128)> {
 fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
   use std::collections::HashMap;
 
-  let mut n = numer.abs();
+  let n = numer.abs();
   let d = denom.abs();
 
   // Compute exponent: number of digits in integer part
@@ -920,7 +920,7 @@ fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
 
   // Perform long division to extract all digits with cycle detection
   let mut remainder = n;
-  let mut digits: Vec<i128> = Vec::new();
+  let mut digits: Vec<i128>;
   let mut remainder_positions: HashMap<i128, usize> = HashMap::new();
   let mut cycle_start: Option<usize> = None;
 
@@ -948,7 +948,7 @@ fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
   // Now do long division for the fractional part
   // Track remainder -> position for cycle detection
   digits = int_digits;
-  let frac_start = digits.len();
+  let _frac_start = digits.len();
 
   // For terminating decimals, we'll stop when remainder becomes 0
   // For repeating, we stop when we see a repeated remainder
