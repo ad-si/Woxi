@@ -451,6 +451,9 @@ fn named_char_to_expr(s: &str) -> Expr {
     "Element" => "\u{2208}",
     "NotElement" => "\u{2209}",
     "ReverseElement" => "\u{220B}",
+    // Edge operators (when used as identifiers)
+    "DirectedEdge" => "\u{F3D1}",
+    "UndirectedEdge" => "\u{F3D0}",
     // Unknown: keep original name as identifier
     _ => return Expr::Identifier(name.to_string()),
   };
@@ -2805,6 +2808,8 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[NotElement]" | "\u{2209}" => 7, // NotElement (same level as comparisons)
     "\\[ReverseElement]" | "\u{220B}" => 7, // ReverseElement (same level as comparisons)
     "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
+    "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
+    "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 7, // Comparisons
     "~~" => 8,          // StringExpression (lower than Alternatives)
     "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
@@ -2949,6 +2954,14 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[ReverseElement]" | "\u{220B}" => Expr::FunctionCall {
       name: "ReverseElement".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "\\[DirectedEdge]" | "\u{F3D1}" => Expr::FunctionCall {
+      name: "DirectedEdge".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "\\[UndirectedEdge]" | "\u{F3D0}" => Expr::FunctionCall {
+      name: "UndirectedEdge".to_string(),
       args: vec![left.clone(), right.clone()],
     },
     "~~" => {

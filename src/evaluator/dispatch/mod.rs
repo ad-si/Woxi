@@ -4711,7 +4711,7 @@ pub fn evaluate_function_call_ast_inner(
       | "ColorSetter"
       | "DistanceMatrix"
       | "InverseWaveletTransform"
-      | "TreeGraph"
+      // TreeGraph is now implemented in plotting.rs
       | "PadeApproximant"
       | "FillingTransform"
       | "SamplingPeriod"

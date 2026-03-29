@@ -56,6 +56,9 @@ pub fn dispatch_plotting(
         args: args.to_vec(),
       }))
     }
+    "TreeGraph" if !args.is_empty() => {
+      Some(crate::functions::tree_form::tree_graph_ast(args))
+    }
     "Graphics3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::graphics3d_ast(args))
     }
