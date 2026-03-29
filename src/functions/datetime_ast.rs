@@ -935,6 +935,13 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return date_string_ast(&[]);
   }
 
+  // DateString["string"] with no format spec returns the string as-is (Wolfram behavior)
+  if args.len() == 1 {
+    if let Expr::String(s) = &date_arg {
+      return Ok(Expr::String(s.clone()));
+    }
+  }
+
   // Extract date components — handle DateObject[{y,m,d,...}, ...] by extracting first arg
   let date_expr = if let Expr::FunctionCall { name, args: dargs } = &date_arg {
     if name == "DateObject" && !dargs.is_empty() {
@@ -989,83 +996,66 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let format_specs = match &fmt_arg {
     Expr::List(items) => items.clone(),
     Expr::String(s) => {
-      // Named date format specifications
+      // Named date format specifications — handle directly for correct padding
+      let dow = day_of_week(y, m, d);
       match s.as_str() {
-        "ISODateTime" => vec![
-          Expr::String("Year".to_string()),
-          Expr::String("-".to_string()),
-          Expr::String("Month".to_string()),
-          Expr::String("-".to_string()),
-          Expr::String("Day2".to_string()),
-          Expr::String("T".to_string()),
-          Expr::String("Hour".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Minute".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Second".to_string()),
-        ],
-        "ISODate" => vec![
-          Expr::String("Year".to_string()),
-          Expr::String("-".to_string()),
-          Expr::String("Month".to_string()),
-          Expr::String("-".to_string()),
-          Expr::String("Day2".to_string()),
-        ],
-        "DateTime" => vec![
-          Expr::String("DayName".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Day".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("MonthName".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Year".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Hour".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Minute".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Second".to_string()),
-        ],
-        "DateTimeShort" => vec![
-          Expr::String("DayNameShort".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Day".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("MonthNameShort".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Year".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Hour".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Minute".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Second".to_string()),
-        ],
-        "Date" => vec![
-          Expr::String("DayName".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Day".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("MonthName".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Year".to_string()),
-        ],
-        "DateShort" => vec![
-          Expr::String("DayNameShort".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Day".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("MonthNameShort".to_string()),
-          Expr::String(" ".to_string()),
-          Expr::String("Year".to_string()),
-        ],
-        "Time" => vec![
-          Expr::String("Hour".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Minute".to_string()),
-          Expr::String(":".to_string()),
-          Expr::String("Second".to_string()),
-        ],
+        "ISODateTime" => {
+          return Ok(Expr::String(format!(
+            "{}-{:02}-{:02}T{:02}:{:02}:{:02}",
+            y, m, d, h, min, sec as i64
+          )));
+        }
+        "ISODate" => {
+          return Ok(Expr::String(format!("{}-{:02}-{:02}", y, m, d)));
+        }
+        "DateTime" => {
+          return Ok(Expr::String(format!(
+            "{} {} {} {} {:02}:{:02}:{:02}",
+            day_name(dow),
+            d,
+            month_name(m),
+            y,
+            h,
+            min,
+            sec as i64
+          )));
+        }
+        "DateTimeShort" => {
+          return Ok(Expr::String(format!(
+            "{} {} {} {} {:02}:{:02}:{:02}",
+            day_name_short(dow),
+            d,
+            month_name_short(m),
+            y,
+            h,
+            min,
+            sec as i64
+          )));
+        }
+        "Date" => {
+          return Ok(Expr::String(format!(
+            "{} {} {} {}",
+            day_name(dow),
+            d,
+            month_name(m),
+            y
+          )));
+        }
+        "DateShort" => {
+          return Ok(Expr::String(format!(
+            "{} {} {} {}",
+            day_name_short(dow),
+            d,
+            month_name_short(m),
+            y
+          )));
+        }
+        "Time" => {
+          return Ok(Expr::String(format!(
+            "{:02}:{:02}:{:02}",
+            h, min, sec as i64
+          )));
+        }
         // Single format element as a string (e.g. DateString[Now, "Year"])
         _ => vec![Expr::String(s.clone())],
       }
@@ -1087,8 +1077,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Month" => result.push_str(&format!("{:02}", m)),
         "MonthName" => result.push_str(month_name(m)),
         "MonthNameShort" => result.push_str(month_name_short(m)),
-        "Day" => result.push_str(&format!("{}", d)),
-        "Day2" => result.push_str(&format!("{:02}", d)),
+        "Day" => result.push_str(&format!("{:02}", d)),
         "DayName" => result.push_str(day_name(day_of_week(y, m, d))),
         "DayNameShort" => result.push_str(day_name_short(day_of_week(y, m, d))),
         "Hour" => result.push_str(&format!("{:02}", h)),
