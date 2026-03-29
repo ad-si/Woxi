@@ -2345,7 +2345,7 @@ TensorTranspose,tensor algebra,🚫,None,9.0,2394
 CircleThrough,Finds the circumscribed circle through given points,✅,None,12.0,2399
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1.0,2399
 ReshapeLayer,neural network,🚫,None,11.0,2399
-Stack,layout primitive,🚫,None,2.0,2399
+Stack,Return the current evaluation call stack as a list of function names,✅,pure,2.0,2399
 HaarWavelet,wavelet function,🚫,None,8.0,2404
 LineIntegralConvolutionPlot,visualization,🚫,None,7.0,2404
 PolynomialExtendedGCD,Extended GCD for polynomials,🚫,None,6.0,2404

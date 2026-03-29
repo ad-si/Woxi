@@ -50,6 +50,12 @@ thread_local! {
     // Inline OptionsPattern defaults: func_name -> Vec of Option<Vec<Expr>> per overload
     // When OptionsPattern[{a -> a0, ...}] is used, stores the inline defaults for that overload
     pub static FUNC_OPTS_INLINE: RefCell<HashMap<String, Vec<Option<Vec<syntax::Expr>>>>> = RefCell::new(HashMap::new());
+    // Evaluation stack: tracks the chain of function calls currently being evaluated.
+    // Used to produce stack traces when evaluation errors/messages occur.
+    pub static EVAL_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    // Last captured stack trace: set when an EvaluationError propagates through
+    // the function call evaluation, so the top-level handler can print it.
+    pub static LAST_ERROR_TRACE: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 #[derive(Error, Debug)]
@@ -462,21 +468,78 @@ pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>, Vec<String>)) {
   CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.2);
 }
 
+/// Capture the current evaluation stack trace for the most recent error.
+/// Called when an error propagates through function call evaluation.
+/// Only captures if no trace has been captured yet (preserves the deepest trace).
+pub fn capture_error_trace() {
+  LAST_ERROR_TRACE.with(|t| {
+    if t.borrow().is_none() {
+      if let Some(trace) = format_stack_trace() {
+        *t.borrow_mut() = Some(trace);
+      }
+    }
+  });
+}
+
+/// Take the last captured error stack trace (clears it).
+pub fn take_error_trace() -> Option<String> {
+  LAST_ERROR_TRACE.with(|t| t.borrow_mut().take())
+}
+
+/// Push a function name onto the evaluation stack.
+pub fn push_eval_stack(name: &str) {
+  EVAL_STACK.with(|s| s.borrow_mut().push(name.to_string()));
+}
+
+/// Pop the top entry from the evaluation stack.
+pub fn pop_eval_stack() {
+  EVAL_STACK.with(|s| {
+    s.borrow_mut().pop();
+  });
+}
+
+/// Get a snapshot of the current evaluation stack (bottom to top).
+pub fn get_eval_stack() -> Vec<String> {
+  EVAL_STACK.with(|s| s.borrow().clone())
+}
+
+/// Format the evaluation stack as a human-readable stack trace string.
+/// Returns None if the stack is empty.
+fn format_stack_trace() -> Option<String> {
+  let stack = get_eval_stack();
+  if stack.is_empty() {
+    return None;
+  }
+  let mut trace = String::from("  during evaluation of:");
+  for (i, name) in stack.iter().rev().enumerate() {
+    trace.push_str(&format!("\n    {:>3}. {}", i + 1, name));
+  }
+  Some(trace)
+}
+
 /// Emit a Wolfram-style message (e.g. "Power::infy: Infinite expression 1/0 encountered.").
 /// Suppressed when inside Quiet[]. Tracked in CAPTURED_MESSAGES for Check[] interaction.
 /// When messages_to_stdout is enabled, prints to stdout (matching wolframscript).
+/// Includes a stack trace showing the chain of function calls.
 pub fn emit_message(msg: &str) {
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());
   });
   if !is_quiet() {
     let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
+    let trace = format_stack_trace();
     if to_stdout {
       println!();
       println!("{}", msg);
+      if let Some(trace) = trace {
+        println!("{}", trace);
+      }
     } else {
       eprintln!();
       eprintln!("{}", msg);
+      if let Some(trace) = trace {
+        eprintln!("{}", trace);
+      }
     }
   }
 }
@@ -616,6 +679,8 @@ pub fn clear_state() {
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
   RECURSION_DEPTH.with(|d| d.set(0));
+  EVAL_STACK.with(|s| s.borrow_mut().clear());
+  LAST_ERROR_TRACE.with(|t| *t.borrow_mut() = None);
   unseed_rng();
   clear_captured_stdout();
   clear_captured_graphics();

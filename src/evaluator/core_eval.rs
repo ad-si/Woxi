@@ -505,72 +505,155 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(Expr::List(evaluated))
     }
     Expr::FunctionCall { name, args } => {
-      // Special handling for If - lazy evaluation of branches
-      if name == "If" && (args.len() == 2 || args.len() == 3) {
-        let cond = evaluate_expr_to_expr(&args[0])?;
-        if matches!(&cond, Expr::Identifier(s) if s == "True") {
-          return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
-        } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
-          if args.len() == 3 {
-            return Err(InterpreterError::TailCall(Box::new(args[2].clone())));
+      // Track function calls on the evaluation stack for stack traces.
+      crate::push_eval_stack(name);
+      let result: Result<Expr, InterpreterError> = (|| {
+        // Special handling for If - lazy evaluation of branches
+        if name == "If" && (args.len() == 2 || args.len() == 3) {
+          let cond = evaluate_expr_to_expr(&args[0])?;
+          if matches!(&cond, Expr::Identifier(s) if s == "True") {
+            return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
+          } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
+            if args.len() == 3 {
+              return Err(InterpreterError::TailCall(Box::new(
+                args[2].clone(),
+              )));
+            } else {
+              return Ok(Expr::Identifier("Null".to_string()));
+            }
           } else {
-            return Ok(Expr::Identifier("Null".to_string()));
+            // Condition didn't evaluate to True/False - return unevaluated
+            let mut new_args = vec![cond];
+            for arg in args.iter().skip(1) {
+              new_args.push(arg.clone());
+            }
+            return Ok(Expr::FunctionCall {
+              name: name.clone(),
+              args: new_args,
+            });
           }
-        } else {
-          // Condition didn't evaluate to True/False - return unevaluated
-          let mut new_args = vec![cond];
-          for arg in args.iter().skip(1) {
-            new_args.push(arg.clone());
-          }
-          return Ok(Expr::FunctionCall {
-            name: name.clone(),
-            args: new_args,
-          });
         }
-      }
-      // Special handling for Module/Block/Assuming - don't evaluate args (body needs local bindings first)
-      if name == "Module" {
-        return module_ast(args);
-      }
-      if name == "Block" {
-        return block_ast(args);
-      }
-      if name == "Assuming" && args.len() == 2 {
-        return assuming_ast(args);
-      }
-      // Special handling for Set - first arg must be identifier or Part, second gets evaluated
-      if name == "Set" && args.len() == 2 {
-        return set_ast(&args[0], &args[1]);
-      }
-      // Special handling for SetDelayed - stores function definitions
-      if name == "SetDelayed" && args.len() == 2 {
-        return set_delayed_ast(&args[0], &args[1]);
-      }
-      // Special handling for TagSetDelayed - stores upvalue definitions
-      if name == "TagSetDelayed" && args.len() == 3 {
-        return tag_set_delayed_ast(&args[0], &args[1], &args[2], false);
-      }
-      // Special handling for TagSet - stores evaluated upvalue definitions
-      if name == "TagSet" && args.len() == 3 {
-        return tag_set_delayed_ast(&args[0], &args[1], &args[2], true);
-      }
-      // Special handling for UpSet - automatically determines tags from LHS
-      if name == "UpSet" && args.len() == 2 {
-        return upset_ast(&args[0], &args[1]);
-      }
-      // Special handling for UpSetDelayed - like UpSet but delayed (no RHS evaluation)
-      if name == "UpSetDelayed" && args.len() == 2 {
-        return upset_delayed_ast(&args[0], &args[1]);
-      }
-      // Special handling for Increment/Decrement - x++ / x--
-      // and PreIncrement/PreDecrement - ++x / --x
-      if (name == "Increment"
-        || name == "Decrement"
-        || name == "PreIncrement"
-        || name == "PreDecrement")
-        && args.len() == 1
-      {
-        if let Expr::Identifier(var_name) = &args[0] {
+        // Special handling for Module/Block/Assuming - don't evaluate args (body needs local bindings first)
+        if name == "Module" {
+          return module_ast(args);
+        }
+        if name == "Block" {
+          return block_ast(args);
+        }
+        if name == "Assuming" && args.len() == 2 {
+          return assuming_ast(args);
+        }
+        // Special handling for Set - first arg must be identifier or Part, second gets evaluated
+        if name == "Set" && args.len() == 2 {
+          return set_ast(&args[0], &args[1]);
+        }
+        // Special handling for SetDelayed - stores function definitions
+        if name == "SetDelayed" && args.len() == 2 {
+          return set_delayed_ast(&args[0], &args[1]);
+        }
+        // Special handling for TagSetDelayed - stores upvalue definitions
+        if name == "TagSetDelayed" && args.len() == 3 {
+          return tag_set_delayed_ast(&args[0], &args[1], &args[2], false);
+        }
+        // Special handling for TagSet - stores evaluated upvalue definitions
+        if name == "TagSet" && args.len() == 3 {
+          return tag_set_delayed_ast(&args[0], &args[1], &args[2], true);
+        }
+        // Special handling for UpSet - automatically determines tags from LHS
+        if name == "UpSet" && args.len() == 2 {
+          return upset_ast(&args[0], &args[1]);
+        }
+        // Special handling for UpSetDelayed - like UpSet but delayed (no RHS evaluation)
+        if name == "UpSetDelayed" && args.len() == 2 {
+          return upset_delayed_ast(&args[0], &args[1]);
+        }
+        // Special handling for Increment/Decrement - x++ / x--
+        // and PreIncrement/PreDecrement - ++x / --x
+        if (name == "Increment"
+          || name == "Decrement"
+          || name == "PreIncrement"
+          || name == "PreDecrement")
+          && args.len() == 1
+        {
+          if let Expr::Identifier(var_name) = &args[0] {
+            let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+            let current_val = match current {
+              Some(StoredValue::ExprVal(e)) => e,
+              Some(StoredValue::Raw(s)) => {
+                crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+              }
+              _ => Expr::Integer(0),
+            };
+            let delta = if name == "Increment" || name == "PreIncrement" {
+              Expr::Integer(1)
+            } else {
+              Expr::Integer(-1)
+            };
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(current_val.clone()),
+              right: Box::new(delta),
+            })?;
+            ENV.with(|e| {
+              e.borrow_mut().insert(
+                var_name.clone(),
+                StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+              );
+            });
+            // Post-increment/decrement returns old value; pre returns new value
+            if name == "PreIncrement" || name == "PreDecrement" {
+              return Ok(new_val);
+            }
+            return Ok(current_val);
+          }
+          // Handle Part expressions: ++x[[i]], --x[[i]], x[[i]]++, x[[i]]--
+          if let Expr::Part { .. } = &args[0] {
+            // Get the current value at the part position
+            let current_val = evaluate_expr_to_expr(&args[0])?;
+            let delta = if name == "Increment" || name == "PreIncrement" {
+              Expr::Integer(1)
+            } else {
+              Expr::Integer(-1)
+            };
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(current_val.clone()),
+              right: Box::new(delta),
+            })?;
+            // Use Set to assign the new value back to the part
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            if name == "PreIncrement" || name == "PreDecrement" {
+              return Ok(new_val);
+            }
+            return Ok(current_val);
+          }
+        }
+        // Special handling for Unset - x =. (removes definition)
+        if name == "Unset" && args.len() == 1 {
+          if let Expr::Identifier(var_name) = &args[0] {
+            ENV.with(|e| {
+              e.borrow_mut().remove(var_name);
+            });
+          }
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
+        // Special handling for Information/Definition/FullDefinition - hold argument unevaluated
+        if (name == "Information"
+          || name == "Definition"
+          || name == "FullDefinition")
+          && args.len() == 1
+        {
+          return dispatch::evaluate_function_call_ast(name, args);
+        }
+        // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
+        if (name == "AddTo"
+          || name == "SubtractFrom"
+          || name == "TimesBy"
+          || name == "DivideBy")
+          && args.len() == 2
+          && let Expr::Identifier(var_name) = &args[0]
+        {
+          let rhs = evaluate_expr_to_expr(&args[1])?;
           let current = ENV.with(|e| e.borrow().get(var_name).cloned());
           let current_val = match current {
             Some(StoredValue::ExprVal(e)) => e,
@@ -579,304 +662,231 @@ pub fn evaluate_expr_to_expr_inner(
             }
             _ => Expr::Integer(0),
           };
-          let delta = if name == "Increment" || name == "PreIncrement" {
-            Expr::Integer(1)
-          } else {
-            Expr::Integer(-1)
+          let op = match name.as_str() {
+            "AddTo" => crate::syntax::BinaryOperator::Plus,
+            "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
+            "TimesBy" => crate::syntax::BinaryOperator::Times,
+            "DivideBy" => crate::syntax::BinaryOperator::Divide,
+            _ => unreachable!(),
           };
           let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
-            left: Box::new(current_val.clone()),
-            right: Box::new(delta),
+            op,
+            left: Box::new(current_val),
+            right: Box::new(rhs),
           })?;
+          ENV.with(|e| {
+            e.borrow_mut()
+              .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
+          });
+          return Ok(new_val);
+        }
+        // Special handling for AppendTo, PrependTo - x = Append[x, elem]
+        if (name == "AppendTo" || name == "PrependTo")
+          && args.len() == 2
+          && let Expr::Identifier(var_name) = &args[0]
+        {
+          let elem = evaluate_expr_to_expr(&args[1])?;
+          let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+          let mut current_val = match current {
+            Some(StoredValue::ExprVal(e)) => e,
+            Some(StoredValue::Raw(s)) => {
+              crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
+            }
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "{} requires a variable with a list value",
+                name
+              )));
+            }
+          };
+          let new_val = match &mut current_val {
+            Expr::List(items) => {
+              let mut items = std::mem::take(items);
+              if name == "AppendTo" {
+                items.push(elem);
+              } else {
+                items.insert(0, elem);
+              }
+              Expr::List(items)
+            }
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "{}: {} is not a list",
+                name, var_name
+              )));
+            }
+          };
           ENV.with(|e| {
             e.borrow_mut().insert(
               var_name.clone(),
               StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
             );
           });
-          // Post-increment/decrement returns old value; pre returns new value
-          if name == "PreIncrement" || name == "PreDecrement" {
-            return Ok(new_val);
-          }
-          return Ok(current_val);
+          return Ok(new_val);
         }
-        // Handle Part expressions: ++x[[i]], --x[[i]], x[[i]]++, x[[i]]--
-        if let Expr::Part { .. } = &args[0] {
-          // Get the current value at the part position
-          let current_val = evaluate_expr_to_expr(&args[0])?;
-          let delta = if name == "Increment" || name == "PreIncrement" {
-            Expr::Integer(1)
+        // Special handling for Return - raises ReturnValue to short-circuit evaluation
+        if name == "Return" {
+          let val = if args.is_empty() {
+            Expr::Identifier("Null".to_string())
           } else {
-            Expr::Integer(-1)
+            evaluate_expr_to_expr(&args[0])?
           };
-          let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
-            left: Box::new(current_val.clone()),
-            right: Box::new(delta),
-          })?;
-          // Use Set to assign the new value back to the part
-          crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
-          if name == "PreIncrement" || name == "PreDecrement" {
-            return Ok(new_val);
-          }
-          return Ok(current_val);
+          return Err(InterpreterError::ReturnValue(Box::new(val)));
         }
-      }
-      // Special handling for Unset - x =. (removes definition)
-      if name == "Unset" && args.len() == 1 {
-        if let Expr::Identifier(var_name) = &args[0] {
-          ENV.with(|e| {
-            e.borrow_mut().remove(var_name);
-          });
+        // Special handling for Break[] - raises BreakSignal
+        if name == "Break" && args.is_empty() {
+          return Err(InterpreterError::BreakSignal);
         }
-        return Ok(Expr::Identifier("Null".to_string()));
-      }
-      // Special handling for Information/Definition/FullDefinition - hold argument unevaluated
-      if (name == "Information"
-        || name == "Definition"
-        || name == "FullDefinition")
-        && args.len() == 1
-      {
-        return dispatch::evaluate_function_call_ast(name, args);
-      }
-      // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
-      if (name == "AddTo"
-        || name == "SubtractFrom"
-        || name == "TimesBy"
-        || name == "DivideBy")
-        && args.len() == 2
-        && let Expr::Identifier(var_name) = &args[0]
-      {
-        let rhs = evaluate_expr_to_expr(&args[1])?;
-        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
-        let current_val = match current {
-          Some(StoredValue::ExprVal(e)) => e,
-          Some(StoredValue::Raw(s)) => {
-            crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
-          }
-          _ => Expr::Integer(0),
-        };
-        let op = match name.as_str() {
-          "AddTo" => crate::syntax::BinaryOperator::Plus,
-          "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
-          "TimesBy" => crate::syntax::BinaryOperator::Times,
-          "DivideBy" => crate::syntax::BinaryOperator::Divide,
-          _ => unreachable!(),
-        };
-        let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-          op,
-          left: Box::new(current_val),
-          right: Box::new(rhs),
-        })?;
-        ENV.with(|e| {
-          e.borrow_mut()
-            .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
-        });
-        return Ok(new_val);
-      }
-      // Special handling for AppendTo, PrependTo - x = Append[x, elem]
-      if (name == "AppendTo" || name == "PrependTo")
-        && args.len() == 2
-        && let Expr::Identifier(var_name) = &args[0]
-      {
-        let elem = evaluate_expr_to_expr(&args[1])?;
-        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
-        let mut current_val = match current {
-          Some(StoredValue::ExprVal(e)) => e,
-          Some(StoredValue::Raw(s)) => {
-            crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "{} requires a variable with a list value",
-              name
-            )));
-          }
-        };
-        let new_val = match &mut current_val {
-          Expr::List(items) => {
-            let mut items = std::mem::take(items);
-            if name == "AppendTo" {
-              items.push(elem);
-            } else {
-              items.insert(0, elem);
-            }
-            Expr::List(items)
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "{}: {} is not a list",
-              name, var_name
-            )));
-          }
-        };
-        ENV.with(|e| {
-          e.borrow_mut().insert(
-            var_name.clone(),
-            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
-          );
-        });
-        return Ok(new_val);
-      }
-      // Special handling for Return - raises ReturnValue to short-circuit evaluation
-      if name == "Return" {
-        let val = if args.is_empty() {
-          Expr::Identifier("Null".to_string())
-        } else {
-          evaluate_expr_to_expr(&args[0])?
-        };
-        return Err(InterpreterError::ReturnValue(Box::new(val)));
-      }
-      // Special handling for Break[] - raises BreakSignal
-      if name == "Break" && args.is_empty() {
-        return Err(InterpreterError::BreakSignal);
-      }
-      // Special handling for Continue[] - raises ContinueSignal
-      if name == "Continue" && args.is_empty() {
-        return Err(InterpreterError::ContinueSignal);
-      }
-      // Label[tag] is not evaluated — it stays symbolic.
-      // CompoundExpression handles it via find_label_index on the AST.
-      // Special handling for Goto[tag] — evaluates the tag then raises GotoSignal
-      if name == "Goto" && args.len() == 1 {
-        let tag = evaluate_expr_to_expr(&args[0])?;
-        return Err(InterpreterError::GotoSignal(Box::new(tag)));
-      }
-      // Special handling for Throw[value] and Throw[value, tag]
-      if name == "Throw" && !args.is_empty() && args.len() <= 2 {
-        let val = evaluate_expr_to_expr(&args[0])?;
-        let tag = if args.len() == 2 {
-          Some(Box::new(evaluate_expr_to_expr(&args[1])?))
-        } else {
-          None
-        };
-        return Err(InterpreterError::ThrowValue(Box::new(val), tag));
-      }
-      // Special handling for Catch[expr] and Catch[expr, form]
-      if name == "Catch" && !args.is_empty() && args.len() <= 2 {
-        let tag_pattern = if args.len() == 2 {
-          Some(evaluate_expr_to_expr(&args[1])?)
-        } else {
-          None
-        };
-        match evaluate_expr_to_expr(&args[0]) {
-          Ok(result) => return Ok(result),
-          Err(InterpreterError::ThrowValue(val, thrown_tag)) => {
-            // If Catch has a tag pattern, check if it matches
-            if let Some(ref pattern) = tag_pattern {
-              if let Some(ref tag) = thrown_tag
-                && crate::syntax::expr_to_string(pattern)
-                  == crate::syntax::expr_to_string(tag)
-              {
-                return Ok(*val);
+        // Special handling for Continue[] - raises ContinueSignal
+        if name == "Continue" && args.is_empty() {
+          return Err(InterpreterError::ContinueSignal);
+        }
+        // Label[tag] is not evaluated — it stays symbolic.
+        // CompoundExpression handles it via find_label_index on the AST.
+        // Special handling for Goto[tag] — evaluates the tag then raises GotoSignal
+        if name == "Goto" && args.len() == 1 {
+          let tag = evaluate_expr_to_expr(&args[0])?;
+          return Err(InterpreterError::GotoSignal(Box::new(tag)));
+        }
+        // Special handling for Throw[value] and Throw[value, tag]
+        if name == "Throw" && !args.is_empty() && args.len() <= 2 {
+          let val = evaluate_expr_to_expr(&args[0])?;
+          let tag = if args.len() == 2 {
+            Some(Box::new(evaluate_expr_to_expr(&args[1])?))
+          } else {
+            None
+          };
+          return Err(InterpreterError::ThrowValue(Box::new(val), tag));
+        }
+        // Special handling for Catch[expr] and Catch[expr, form]
+        if name == "Catch" && !args.is_empty() && args.len() <= 2 {
+          let tag_pattern = if args.len() == 2 {
+            Some(evaluate_expr_to_expr(&args[1])?)
+          } else {
+            None
+          };
+          match evaluate_expr_to_expr(&args[0]) {
+            Ok(result) => return Ok(result),
+            Err(InterpreterError::ThrowValue(val, thrown_tag)) => {
+              // If Catch has a tag pattern, check if it matches
+              if let Some(ref pattern) = tag_pattern {
+                if let Some(ref tag) = thrown_tag
+                  && crate::syntax::expr_to_string(pattern)
+                    == crate::syntax::expr_to_string(tag)
+                {
+                  return Ok(*val);
+                }
+                // Tag doesn't match - re-throw
+                return Err(InterpreterError::ThrowValue(val, thrown_tag));
               }
-              // Tag doesn't match - re-throw
-              return Err(InterpreterError::ThrowValue(val, thrown_tag));
+              // No tag pattern - catch everything
+              return Ok(*val);
             }
-            // No tag pattern - catch everything
-            return Ok(*val);
+            Err(e) => return Err(e),
           }
-          Err(e) => return Err(e),
         }
-      }
-      // Special handling for Abort[] - abort computation
-      if name == "Abort" && args.is_empty() {
-        return Err(InterpreterError::Abort);
-      }
-      // Quit[] / Exit[] - terminate the process
-      if (name == "Quit" || name == "Exit") && args.len() <= 1 {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-          let code = if args.len() == 1 {
-            if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
-              crate::functions::math_ast::try_eval_to_f64(&val)
-                .map(|f| f as i32)
-                .unwrap_or(0)
-            } else {
-              0
-            }
-          } else {
-            0
-          };
-          std::process::exit(code);
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
+        // Special handling for Abort[] - abort computation
+        if name == "Abort" && args.is_empty() {
           return Err(InterpreterError::Abort);
         }
-      }
-      // Interrupt[] behaves like Abort[] in batch mode
-      if name == "Interrupt" && args.is_empty() {
-        return Err(InterpreterError::Abort);
-      }
-      // Pause[n] - sleep for n seconds and return Null
-      if name == "Pause" && args.len() == 1 {
-        if let Ok(val) = evaluate_expr_to_expr(&args[0])
-          && let Some(secs) = crate::functions::math_ast::try_eval_to_f64(&val)
-          && secs > 0.0
-        {
-          std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-        }
-        return Ok(Expr::Identifier("Null".to_string()));
-      }
-      // Special handling for CheckAbort[expr, failexpr]
-      if name == "CheckAbort" && args.len() == 2 {
-        match evaluate_expr_to_expr(&args[0]) {
-          Ok(result) => return Ok(result),
-          Err(InterpreterError::Abort) => {
-            return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
+        // Quit[] / Exit[] - terminate the process
+        if (name == "Quit" || name == "Exit") && args.len() <= 1 {
+          #[cfg(not(target_arch = "wasm32"))]
+          {
+            let code = if args.len() == 1 {
+              if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
+                crate::functions::math_ast::try_eval_to_f64(&val)
+                  .map(|f| f as i32)
+                  .unwrap_or(0)
+              } else {
+                0
+              }
+            } else {
+              0
+            };
+            std::process::exit(code);
           }
-          Err(e) => return Err(e),
+          #[cfg(target_arch = "wasm32")]
+          {
+            return Err(InterpreterError::Abort);
+          }
         }
-      }
-      // Special handling for Check[expr, failexpr]
-      if name == "Check" && args.len() == 2 {
-        let warnings_before = crate::get_captured_warnings().len();
-        match evaluate_expr_to_expr(&args[0]) {
-          Ok(result) => {
-            let warnings_after = crate::get_captured_warnings().len();
-            if warnings_after > warnings_before {
+        // Interrupt[] behaves like Abort[] in batch mode
+        if name == "Interrupt" && args.is_empty() {
+          return Err(InterpreterError::Abort);
+        }
+        // Pause[n] - sleep for n seconds and return Null
+        if name == "Pause" && args.len() == 1 {
+          if let Ok(val) = evaluate_expr_to_expr(&args[0])
+            && let Some(secs) =
+              crate::functions::math_ast::try_eval_to_f64(&val)
+            && secs > 0.0
+          {
+            std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+          }
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
+        // Special handling for CheckAbort[expr, failexpr]
+        if name == "CheckAbort" && args.len() == 2 {
+          match evaluate_expr_to_expr(&args[0]) {
+            Ok(result) => return Ok(result),
+            Err(InterpreterError::Abort) => {
               return Err(InterpreterError::TailCall(Box::new(
                 args[1].clone(),
               )));
             }
-            return Ok(result);
-          }
-          Err(_) => {
-            return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
+            Err(e) => return Err(e),
           }
         }
-      }
-      // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
-      if name == "Quiet" {
-        if args.is_empty() || args.len() > 3 {
-          crate::emit_message(&format!(
-            "Quiet::argb: Quiet called with {} arguments; between 1 and 3 arguments are expected.",
-            args.len()
-          ));
-          return Ok(Expr::FunctionCall {
-            name: "Quiet".to_string(),
-            args: args.to_vec(),
-          });
+        // Special handling for Check[expr, failexpr]
+        if name == "Check" && args.len() == 2 {
+          let warnings_before = crate::get_captured_warnings().len();
+          match evaluate_expr_to_expr(&args[0]) {
+            Ok(result) => {
+              let warnings_after = crate::get_captured_warnings().len();
+              if warnings_after > warnings_before {
+                return Err(InterpreterError::TailCall(Box::new(
+                  args[1].clone(),
+                )));
+              }
+              return Ok(result);
+            }
+            Err(_) => {
+              return Err(InterpreterError::TailCall(Box::new(
+                args[1].clone(),
+              )));
+            }
+          }
         }
-        return crate::functions::control_flow_ast::quiet_ast(args);
-      }
-      // Special handling for Switch - lazy evaluation of branches
-      if name == "Switch" && args.len() >= 3 {
-        return crate::functions::control_flow_ast::switch_ast(args);
-      }
-      // Special handling for Piecewise - lazy evaluation of branches
-      if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
-        return crate::functions::control_flow_ast::piecewise_ast(args);
-      }
-      // Special handling for TraceScan - traces evaluation of sub-expressions
-      if name == "TraceScan" && args.len() >= 2 && args.len() <= 3 {
-        return crate::functions::control_flow_ast::trace_scan_ast(args);
-      }
-      // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
-      // These functions take unevaluated expressions as first argument
-      if name == "Table"
+        // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
+        if name == "Quiet" {
+          if args.is_empty() || args.len() > 3 {
+            crate::emit_message(&format!(
+              "Quiet::argb: Quiet called with {} arguments; between 1 and 3 arguments are expected.",
+              args.len()
+            ));
+            return Ok(Expr::FunctionCall {
+              name: "Quiet".to_string(),
+              args: args.to_vec(),
+            });
+          }
+          return crate::functions::control_flow_ast::quiet_ast(args);
+        }
+        // Special handling for Switch - lazy evaluation of branches
+        if name == "Switch" && args.len() >= 3 {
+          return crate::functions::control_flow_ast::switch_ast(args);
+        }
+        // Special handling for Piecewise - lazy evaluation of branches
+        if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
+          return crate::functions::control_flow_ast::piecewise_ast(args);
+        }
+        // Special handling for TraceScan - traces evaluation of sub-expressions
+        if name == "TraceScan" && args.len() >= 2 && args.len() <= 3 {
+          return crate::functions::control_flow_ast::trace_scan_ast(args);
+        }
+        // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
+        // These functions take unevaluated expressions as first argument
+        if name == "Table"
         || name == "Do"
         || name == "With"
         || name == "Block"
@@ -908,56 +918,66 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "GraphicsColumn"
         || name == "GraphicsGrid"
         || name == "BooleanTable"
-      {
-        // Flatten Sequence even in held args (unless SequenceHold)
-        let args = flatten_sequences(name, args);
-        // Pass unevaluated args to the function dispatcher
-        return evaluate_function_call_ast(name, &args);
-      }
-      // Check if name is a variable holding a callable value (Function, FunctionCall like Composition)
-      let var_val = ENV.with(|e| e.borrow().get(name).cloned());
-      if let Some(StoredValue::ExprVal(stored_expr)) = &var_val {
-        match stored_expr {
-          Expr::Function { .. }
-          | Expr::NamedFunction { .. }
-          | Expr::FunctionCall { .. } => {
-            let evaluated_args: Vec<Expr> = args
-              .iter()
-              .map(evaluate_expr_to_expr)
-              .collect::<Result<_, _>>()?;
-            return apply_curried_call(stored_expr, &evaluated_args);
-          }
-          _ => {}
+        {
+          // Flatten Sequence even in held args (unless SequenceHold)
+          let args = flatten_sequences(name, args);
+          // Pass unevaluated args to the function dispatcher
+          return evaluate_function_call_ast(name, &args);
         }
-      }
-      // Variable holds a symbol name (e.g. t = Flatten) — re-dispatch as that function
-      if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
-        return Err(InterpreterError::TailCall(Box::new(Expr::FunctionCall {
-          name: resolved_name,
-          args: args.to_vec(),
-        })));
-      }
-      // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
-      if let Some(StoredValue::Association(_)) = var_val {
-        // Evaluate arguments and perform nested access
-        let evaluated_args: Vec<Expr> = args
-          .iter()
-          .map(evaluate_expr_to_expr)
-          .collect::<Result<_, _>>()?;
-        return association_nested_access(name, &evaluated_args);
-      }
+        // Check if name is a variable holding a callable value (Function, FunctionCall like Composition)
+        let var_val = ENV.with(|e| e.borrow().get(name).cloned());
+        if let Some(StoredValue::ExprVal(stored_expr)) = &var_val {
+          match stored_expr {
+            Expr::Function { .. }
+            | Expr::NamedFunction { .. }
+            | Expr::FunctionCall { .. } => {
+              let evaluated_args: Vec<Expr> = args
+                .iter()
+                .map(evaluate_expr_to_expr)
+                .collect::<Result<_, _>>()?;
+              return apply_curried_call(stored_expr, &evaluated_args);
+            }
+            _ => {}
+          }
+        }
+        // Variable holds a symbol name (e.g. t = Flatten) — re-dispatch as that function
+        if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
+          return Err(InterpreterError::TailCall(Box::new(
+            Expr::FunctionCall {
+              name: resolved_name,
+              args: args.to_vec(),
+            },
+          )));
+        }
+        // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
+        if let Some(StoredValue::Association(_)) = var_val {
+          // Evaluate arguments and perform nested access
+          let evaluated_args: Vec<Expr> = args
+            .iter()
+            .map(evaluate_expr_to_expr)
+            .collect::<Result<_, _>>()?;
+          return association_nested_access(name, &evaluated_args);
+        }
 
-      // Try early dispatch for held functions
-      if let Some(result) = evaluate_expr_to_expr_early_dispatch(name, args)? {
-        return Ok(result);
-      }
+        // Try early dispatch for held functions
+        if let Some(result) = evaluate_expr_to_expr_early_dispatch(name, args)?
+        {
+          return Ok(result);
+        }
 
-      // Evaluate arguments (respecting Hold attributes)
-      let evaluated_args = evaluate_args_with_hold(name, args)?;
-      // Flatten Sequence arguments (unless function has SequenceHold attribute)
-      let evaluated_args = flatten_sequences(name, &evaluated_args);
-      // Dispatch to function implementation
-      evaluate_function_call_ast(name, &evaluated_args)
+        // Evaluate arguments (respecting Hold attributes)
+        let evaluated_args = evaluate_args_with_hold(name, args)?;
+        // Flatten Sequence arguments (unless function has SequenceHold attribute)
+        let evaluated_args = flatten_sequences(name, &evaluated_args);
+        // Dispatch to function implementation
+        evaluate_function_call_ast(name, &evaluated_args)
+      })(); // end of closure for stack tracking
+      // Capture stack trace before popping, so errors carry context
+      if matches!(&result, Err(InterpreterError::EvaluationError(_))) {
+        crate::capture_error_trace();
+      }
+      crate::pop_eval_stack();
+      result
     }
     Expr::BinaryOp { op, left, right } => {
       // Short-circuit evaluation for And (&&) and Or (||):
