@@ -4009,6 +4009,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2236} ");
       }
+      // Special case: Cap[a, b, ...] displays as a ⌢ b ⌢ ...
+      if name == "Cap" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{2322} ");
+      }
       // Special case: Congruent[a, b, ...] displays as a ≡ b ≡ ...
       if name == "Congruent" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
@@ -5572,6 +5577,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2236} ");
       }
+      // Special case: Cap[a, b, ...] displays as a ⌢ b ⌢ ...
+      if name == "Cap" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{2322} ");
+      }
       // Special case: Congruent[a, b, ...] displays as a ≡ b ≡ ...
       if name == "Congruent" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
@@ -6699,6 +6709,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Colon" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2236} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Cap" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2322} ")
     }
     Expr::FunctionCall { name, args }
       if name == "Congruent" && args.len() >= 2 =>

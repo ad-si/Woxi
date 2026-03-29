@@ -2939,7 +2939,7 @@ PascalDistribution,Pascal distribution (number of trials until n successes),✅,
 QFactorial,Compute the q-analog of the factorial,✅,pure,7.0,3008
 RegionBinarize,,🚫,,8.0,3008
 TensorDimensions,,,,9.0,3008
-Cap,,,,3.0,3020
+Cap,Inert operator displayed with frown symbol,✅,pure,3.0,3020
 CommonestFilter,,,,7.0,3020
 ComplexStreamPlot,,🚫,,12.1,3020
 DagumDistribution,Dagum distribution for income and wealth modeling,✅,pure,8.0,3020
@@ -2953,7 +2953,7 @@ TotalVariationFilter,,🚫,,8.0,3020
 UniformSumDistribution,,,,8.0,3020
 AbsoluteFileName,,,,7.0,3031
 AudioTrim,,🚫,,11.0,3031
-BitSet,,,,6.0,3031
+BitSet,Set a bit in an integer,✅,pure,6.0,3031
 DeBruijnGraph,,,,8.0,3031
 MeshCellHighlight,,🚫,,10.2,3031
 MeshCellIndex,,🚫,,10.0,3031
@@ -4309,7 +4309,7 @@ AskedValue,,🚫,,10.4,4479
 AudioSpectralTransformation,,🚫,,11.1,4479
 AudioTimeStretch,,🚫,,11.0,4479
 BinaryDistance,Binary distance between vectors,✅,none,10.2,4479
-BitClear,,,,6.0,4479
+BitClear,Clear a bit in an integer,✅,pure,6.0,4479
 ChannelReceiverFunction,,🚫,,11.2,4479
 CloudObjectNameFormat,,🚫,,12.0,4479
 ConicGradientFilling,,,,12.2,4479

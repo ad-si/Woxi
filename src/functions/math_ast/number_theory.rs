@@ -3108,3 +3108,102 @@ pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   }
 }
+
+/// BitSet[n, k] - set the k-th bit (0-indexed) of n to 1: n | (1 << k)
+/// BitSet[n, {k1, k2, ...}] - map over list of bit positions
+pub fn bit_set_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "BitSet".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Handle list of bit positions
+  if let Expr::List(positions) = &args[1] {
+    let results: Vec<Expr> = positions
+      .iter()
+      .map(|pos| {
+        bit_set_ast(&[args[0].clone(), pos.clone()]).unwrap_or_else(|_| {
+          Expr::FunctionCall {
+            name: "BitSet".to_string(),
+            args: vec![args[0].clone(), pos.clone()],
+          }
+        })
+      })
+      .collect();
+    return Ok(Expr::List(results));
+  }
+
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "BitSet".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 => *k as u64,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BitSet".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let bit = BigInt::from(1) << k;
+  Ok(bigint_to_expr(n | bit))
+}
+
+/// BitClear[n, k] - clear the k-th bit (0-indexed) of n to 0: n & ~(1 << k)
+/// BitClear[n, {k1, k2, ...}] - map over list of bit positions
+pub fn bit_clear_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "BitClear".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  if let Expr::List(positions) = &args[1] {
+    let results: Vec<Expr> = positions
+      .iter()
+      .map(|pos| {
+        bit_clear_ast(&[args[0].clone(), pos.clone()]).unwrap_or_else(|_| {
+          Expr::FunctionCall {
+            name: "BitClear".to_string(),
+            args: vec![args[0].clone(), pos.clone()],
+          }
+        })
+      })
+      .collect();
+    return Ok(Expr::List(results));
+  }
+
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "BitClear".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 => *k as u64,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BitClear".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let bit = BigInt::from(1) << k;
+  Ok(bigint_to_expr(n & !bit))
+}
