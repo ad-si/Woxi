@@ -175,6 +175,24 @@ fn distribute_args_to_params(
   param_defaults: &[Option<Expr>],
   param_idx: usize,
 ) -> Option<Vec<Vec<Expr>>> {
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    distribute_args_to_params_impl(
+      args,
+      blank_types,
+      param_heads,
+      param_defaults,
+      param_idx,
+    )
+  })
+}
+
+fn distribute_args_to_params_impl(
+  args: &[Expr],
+  blank_types: &[u8],
+  param_heads: &[Option<String>],
+  param_defaults: &[Option<Expr>],
+  param_idx: usize,
+) -> Option<Vec<Vec<Expr>>> {
   if param_idx >= blank_types.len() {
     return if args.is_empty() { Some(vec![]) } else { None };
   }

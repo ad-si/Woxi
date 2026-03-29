@@ -253,6 +253,17 @@ pub fn try_ast_pattern_replace(
   replacement: &Expr,
   condition: Option<&str>,
 ) -> Result<Option<Expr>, InterpreterError> {
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    try_ast_pattern_replace_impl(expr, pattern, replacement, condition)
+  })
+}
+
+fn try_ast_pattern_replace_impl(
+  expr: &Expr,
+  pattern: &Expr,
+  replacement: &Expr,
+  condition: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
   // Check if pattern contains any Expr::Pattern nodes
   if !contains_pattern(pattern) {
     return Ok(None);
@@ -1560,6 +1571,15 @@ fn match_args_with_sequences(
 
 /// Match a pattern against an expression, returning bindings if successful
 pub fn match_pattern(
+  expr: &Expr,
+  pattern: &Expr,
+) -> Option<Vec<(String, Expr)>> {
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    match_pattern_impl(expr, pattern)
+  })
+}
+
+fn match_pattern_impl(
   expr: &Expr,
   pattern: &Expr,
 ) -> Option<Vec<(String, Expr)>> {
