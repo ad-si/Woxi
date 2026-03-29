@@ -462,12 +462,12 @@ fn generate_svg_with_options(
   let has_y_axis_label =
     opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
 
-  let top_margin = if has_plot_label { 25 * s } else { 10 * s };
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
 
   // Label areas and margins computed per-axis.
   // Setting a label area to 0 suppresses that axis line in plotters.
   let bottom_extra = if show_x_axis && show_ticks && has_x_axis_label {
-    16.0 * sf
+    24.0 * sf
   } else {
     0.0
   };
@@ -476,14 +476,14 @@ fn generate_svg_with_options(
   } else if !show_ticks {
     5 * RESOLUTION_SCALE
   } else {
-    25 * RESOLUTION_SCALE + bottom_extra as u32
+    40 * RESOLUTION_SCALE + bottom_extra as u32
   };
   let y_label_area: u32 = if !show_y_axis {
     0
   } else if !show_ticks {
     5 * RESOLUTION_SCALE
   } else {
-    40 * RESOLUTION_SCALE
+    65 * RESOLUTION_SCALE
   };
   let margin_left: u32 = if show_y_axis {
     10 * s as u32
@@ -583,7 +583,7 @@ fn generate_svg_with_options(
       })
       .axis_style(axis_style)
       .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
           .into_font()
           .color(&dark_gray),
       )
@@ -675,8 +675,8 @@ fn generate_svg_with_options(
     let plot_h =
       render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
     let axis_y = margin_top + plot_h;
-    let font_size = sf * 11.0;
-    let title_font_size = sf * 13.0;
+    let font_size = sf * 18.0;
+    let title_font_size = sf * 22.0;
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut labels_svg = String::new();
@@ -786,8 +786,8 @@ pub(crate) fn generate_scatter_svg_with_options(
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
-      .x_label_area_size(25 * RESOLUTION_SCALE)
-      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .x_label_area_size(40 * RESOLUTION_SCALE)
+      .y_label_area_size(65 * RESOLUTION_SCALE)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
@@ -819,7 +819,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
       .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
           .into_font()
           .color(&dark_gray),
       )
@@ -933,19 +933,19 @@ pub(crate) fn generate_bar_svg(
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
-  let top_margin = if has_plot_label { 25 * s } else { 10 * s };
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   let label_extra = if has_rotated_labels {
-    30.0 * sf // more space for angled labels
+    50.0 * sf // more space for angled labels
   } else if has_chart_labels {
-    15.0 * sf
+    24.0 * sf
   } else {
     0.0
   };
   let bottom_extra =
-    label_extra + if has_x_axis_label { 16.0 * sf } else { 0.0 };
-  let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
-  let y_label_area = 40 * RESOLUTION_SCALE;
+    label_extra + if has_x_axis_label { 24.0 * sf } else { 0.0 };
+  let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
+  let y_label_area = 65 * RESOLUTION_SCALE;
 
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
@@ -989,7 +989,7 @@ pub(crate) fn generate_bar_svg(
         }
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(("sans-serif", sf * 11.0).into_font().color(&dark_gray))
+      .label_style(("sans-serif", sf * 18.0).into_font().color(&dark_gray))
       .set_tick_mark_size(LabelAreaPosition::Left, tick)
       .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
       .draw()
@@ -1049,8 +1049,8 @@ pub(crate) fn generate_bar_svg(
     render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
-  let font_size = sf * 11.0;
-  let title_font_size = sf * 13.0;
+  let font_size = sf * 18.0;
+  let title_font_size = sf * 22.0;
 
   // Insert label SVG elements before </svg>
   if let Some(insert_pos) = buf.rfind("</svg>") {
@@ -1185,7 +1185,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   let (_bg_color, _dark_gray, _light_gray, label_fill, _title_fill) =
     plot_theme();
 
-  let font_size = sf * 11.0;
+  let font_size = sf * 18.0;
   let line_height = font_size * 1.6;
   let swatch_len = sf * 20.0;
   let swatch_gap = sf * 6.0;
@@ -1340,8 +1340,8 @@ pub(crate) fn generate_histogram_svg(
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
-      .x_label_area_size(25 * RESOLUTION_SCALE)
-      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .x_label_area_size(40 * RESOLUTION_SCALE)
+      .y_label_area_size(65 * RESOLUTION_SCALE)
       .build_cartesian_2d(x_lo..x_hi, 0.0..y_max)
       .map_err(|e| {
         InterpreterError::EvaluationError(format!("Histogram: {e}"))
@@ -1375,7 +1375,7 @@ pub(crate) fn generate_histogram_svg(
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
       .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
           .into_font()
           .color(&dark_gray),
       )
@@ -1494,14 +1494,14 @@ pub(crate) fn generate_axes_only_opts(
       .unwrap_or(10 * RESOLUTION_SCALE);
     let x_label_area = margins.map(|m| m.x_label_area).unwrap_or(
       if x_tick_positions.is_some() {
-        8 * RESOLUTION_SCALE
+        12 * RESOLUTION_SCALE
       } else {
-        25 * RESOLUTION_SCALE
+        40 * RESOLUTION_SCALE
       },
     );
     let y_label_area = margins
       .map(|m| m.y_label_area)
-      .unwrap_or(40 * RESOLUTION_SCALE);
+      .unwrap_or(65 * RESOLUTION_SCALE);
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin)
       .margin_right(10 * s as u32)
@@ -1533,7 +1533,7 @@ pub(crate) fn generate_axes_only_opts(
         })
         .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
         .label_style(
-          ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+          ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
             .into_font()
             .color(&dark_gray),
         )
@@ -1567,7 +1567,7 @@ pub(crate) fn generate_axes_only_opts(
         })
         .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
         .label_style(
-          ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+          ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
             .into_font()
             .color(&dark_gray),
         )
@@ -1598,12 +1598,12 @@ pub(crate) fn generate_axes_only_opts(
   let margin = 10.0 * s;
   let top_margin_f = margins.map(|m| m.top_margin as f64).unwrap_or(margin);
   let y_label_area_f =
-    margins.map(|m| m.y_label_area as f64).unwrap_or(40.0 * s);
+    margins.map(|m| m.y_label_area as f64).unwrap_or(65.0 * s);
   let x_label_area_f = margins.map(|m| m.x_label_area as f64).unwrap_or(
     if x_tick_positions.is_some() {
-      8.0 * s
+      12.0 * s
     } else {
-      25.0 * s
+      40.0 * s
     },
   );
   let plot_x0 = margin + y_label_area_f;

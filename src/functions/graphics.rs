@@ -1761,7 +1761,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
         axis_y_px + 6.0,
         svg_escape(&label),
       ));
@@ -1787,7 +1787,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
+        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
         axis_x_px - 6.0,
         svg_escape(&label),
       ));
