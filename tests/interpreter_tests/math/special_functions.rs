@@ -4018,6 +4018,58 @@ mod cantor_staircase {
   }
 }
 
+mod norlund_b {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("NorlundB[0, a]").unwrap(), "1");
+  }
+
+  #[test]
+  fn one_symbolic() {
+    assert_eq!(interpret("NorlundB[1, a]").unwrap(), "-1/2*a");
+  }
+
+  #[test]
+  fn two_symbolic() {
+    assert_eq!(interpret("NorlundB[2, a]").unwrap(), "-1/12*a + a^2/4");
+  }
+
+  #[test]
+  fn three_symbolic() {
+    assert_eq!(interpret("NorlundB[3, a]").unwrap(), "a^2/8 - a^3/8");
+  }
+
+  #[test]
+  fn four_symbolic() {
+    assert_eq!(
+      interpret("NorlundB[4, a]").unwrap(),
+      "a/120 + a^2/48 - a^3/8 + a^4/16"
+    );
+  }
+
+  #[test]
+  fn numeric_three_one() {
+    assert_eq!(interpret("NorlundB[3, 1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_two_one() {
+    assert_eq!(interpret("NorlundB[2, 1]").unwrap(), "1/6");
+  }
+
+  #[test]
+  fn numeric_ten_one() {
+    assert_eq!(interpret("NorlundB[10, 1]").unwrap(), "5/66");
+  }
+
+  #[test]
+  fn numeric_five_two() {
+    assert_eq!(interpret("NorlundB[5, 2]").unwrap(), "1/6");
+  }
+}
+
 mod congruent {
   use super::*;
 

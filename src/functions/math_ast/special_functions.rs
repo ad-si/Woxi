@@ -7747,3 +7747,253 @@ fn legendre_p_and_deriv(n: usize, x: f64) -> (f64, f64) {
 
   (p1, dp1)
 }
+
+/// NorlundB[n, a] - Nörlund generalized Bernoulli polynomial B_n^(a).
+/// Computed via power series: (t/(e^t-1))^a = sum h_k t^k, B_n^(a) = n! * h_n.
+/// Each h_k is a polynomial in a with rational coefficients.
+pub fn norlund_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "NorlundB".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NorlundB".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let a_expr = &args[1];
+
+  // Compute B_n^(a) as polynomial in a: vec of (num, den) pairs for a^0, a^1, ..., a^n
+  let poly = norlund_b_poly(n);
+
+  // If a is numeric, evaluate the polynomial
+  if let Some(a_val) = try_eval_to_f64(a_expr) {
+    // Check if a is an integer for exact computation
+    if a_val == a_val.round() && a_val.abs() < 1e15 {
+      let a_int = a_val as i128;
+      // Evaluate polynomial at integer a using exact arithmetic
+      let mut result_n: i128 = 0;
+      let mut result_d: i128 = 1;
+      let mut a_pow: i128 = 1; // a^k
+      for &(cn, cd) in &poly {
+        if cn != 0 {
+          // result += cn/cd * a^k
+          let term_n = cn.checked_mul(a_pow);
+          if let Some(tn) = term_n {
+            let new_n = result_n
+              .checked_mul(cd)
+              .and_then(|x| x.checked_add(tn.checked_mul(result_d)?));
+            let new_d = result_d.checked_mul(cd);
+            if let (Some(nn), Some(nd)) = (new_n, new_d) {
+              let g = gcd(nn.abs(), nd.abs());
+              result_n = nn / g;
+              result_d = nd / g;
+            } else {
+              // Overflow - fall through to symbolic
+              return evaluate_norlund_symbolic(&poly, a_expr);
+            }
+          } else {
+            return evaluate_norlund_symbolic(&poly, a_expr);
+          }
+        }
+        a_pow = match a_pow.checked_mul(a_int) {
+          Some(v) => v,
+          None => return evaluate_norlund_symbolic(&poly, a_expr),
+        };
+      }
+      if result_d < 0 {
+        result_n = -result_n;
+        result_d = -result_d;
+      }
+      return Ok(crate::functions::math_ast::make_rational(
+        result_n, result_d,
+      ));
+    }
+  }
+
+  // Symbolic case: build the polynomial expression
+  evaluate_norlund_symbolic(&poly, a_expr)
+}
+
+/// Build the symbolic polynomial expression from coefficients.
+fn evaluate_norlund_symbolic(
+  poly: &[(i128, i128)],
+  a: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, &(cn, cd)) in poly.iter().enumerate() {
+    if cn == 0 {
+      continue;
+    }
+    let coeff = crate::functions::math_ast::make_rational(cn, cd);
+    let term = if k == 0 {
+      coeff
+    } else {
+      let a_pow = if k == 1 {
+        a.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![a.clone(), Expr::Integer(k as i128)],
+        }
+      };
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff, a_pow],
+      }
+    };
+    terms.push(term);
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return crate::evaluator::evaluate_expr_to_expr(&terms.pop().unwrap());
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
+/// Compute B_n^(a) as polynomial in a: returns vec of (num, den) for coefficients of a^0, a^1, ..., a^n.
+/// Uses power series: f(t) = t/(e^t-1), h_k = coeff of t^k in f(t)^a, B_n^(a) = n! * h_n.
+/// Recurrence: h_0 = 1, h_k = (1/k) * sum_{j=1}^{k} ((a+1)*j - k) * s_j * h_{k-j}
+/// where s_j = B_j / j! (Bernoulli number divided by factorial).
+fn norlund_b_poly(n: usize) -> Vec<(i128, i128)> {
+  // s_j = B_j / j! as (numerator, denominator)
+  let mut s: Vec<(i128, i128)> = Vec::with_capacity(n + 1);
+  let mut factorial: i128 = 1;
+  for j in 0..=n {
+    if j > 0 {
+      factorial *= j as i128;
+    }
+    if let Some((bn, bd)) = bernoulli_number(j) {
+      let g = gcd(bn.abs(), factorial.abs());
+      s.push((bn / g, bd * (factorial / g)));
+    } else {
+      s.push((0, 1));
+    }
+  }
+  // Simplify s values
+  for sval in &mut s {
+    let g = gcd(sval.0.abs(), sval.1.abs());
+    if g > 0 {
+      sval.0 /= g;
+      sval.1 /= g;
+    }
+    if sval.1 < 0 {
+      sval.0 = -sval.0;
+      sval.1 = -sval.1;
+    }
+  }
+
+  // h_k is a polynomial in a of degree k, stored as Vec<(i128, i128)>
+  // h_k[i] = coefficient of a^i
+  let mut h: Vec<Vec<(i128, i128)>> = Vec::with_capacity(n + 1);
+  h.push(vec![(1, 1)]); // h_0 = 1
+
+  for k in 1..=n {
+    // h_k = (1/k) * sum_{j=1}^{k} ((a+1)*j - k) * s_j * h_{k-j}
+    //      = (1/k) * sum_{j=1}^{k} s_j * (j*a*h_{k-j} + (j-k)*h_{k-j})
+    let max_deg = k;
+    let mut hk = vec![(0i128, 1i128); max_deg + 1];
+
+    for j in 1..=k {
+      let (sn, sd) = s[j];
+      if sn == 0 {
+        continue;
+      }
+      let h_prev = &h[k - j];
+
+      // Add s_j * (j-k) * h_{k-j} to hk (no shift in a)
+      let scale = (j as i128) - (k as i128); // j - k
+      if scale != 0 {
+        for (i, &(pn, pd)) in h_prev.iter().enumerate() {
+          if pn == 0 {
+            continue;
+          }
+          // term = sn/sd * scale * pn/pd = (sn * scale * pn) / (sd * pd)
+          let tn = sn * scale * pn;
+          let td = sd * pd;
+          rat_add_inplace(&mut hk[i], tn, td);
+        }
+      }
+
+      // Add s_j * j * a * h_{k-j} to hk (shift by 1 in a)
+      let j_val = j as i128;
+      for (i, &(pn, pd)) in h_prev.iter().enumerate() {
+        if pn == 0 {
+          continue;
+        }
+        let tn = sn * j_val * pn;
+        let td = sd * pd;
+        rat_add_inplace(&mut hk[i + 1], tn, td);
+      }
+    }
+
+    // Divide by k
+    for coeff in &mut hk {
+      coeff.1 *= k as i128;
+      let g = gcd(coeff.0.abs(), coeff.1.abs());
+      if g > 0 {
+        coeff.0 /= g;
+        coeff.1 /= g;
+      }
+      if coeff.1 < 0 {
+        coeff.0 = -coeff.0;
+        coeff.1 = -coeff.1;
+      }
+    }
+
+    h.push(hk);
+  }
+
+  // B_n^(a) = n! * h_n
+  let mut factorial: i128 = 1;
+  for i in 1..=n {
+    factorial *= i as i128;
+  }
+  let mut result = h[n].clone();
+  for coeff in &mut result {
+    coeff.0 *= factorial;
+    let g = gcd(coeff.0.abs(), coeff.1.abs());
+    if g > 0 {
+      coeff.0 /= g;
+      coeff.1 /= g;
+    }
+    if coeff.1 < 0 {
+      coeff.0 = -coeff.0;
+      coeff.1 = -coeff.1;
+    }
+  }
+  result
+}
+
+/// Add rational tn/td to the value at *target in-place.
+fn rat_add_inplace(target: &mut (i128, i128), tn: i128, td: i128) {
+  let (rn, rd) = target;
+  let new_n = *rn * td + tn * *rd;
+  let new_d = *rd * td;
+  let g = gcd(new_n.abs(), new_d.abs());
+  if g > 0 {
+    *rn = new_n / g;
+    *rd = new_d / g;
+  } else {
+    *rn = new_n;
+    *rd = new_d;
+  }
+  if *rd < 0 {
+    *rn = -*rn;
+    *rd = -*rd;
+  }
+}
