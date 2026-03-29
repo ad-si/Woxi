@@ -2,7 +2,7 @@ use plotters::prelude::*;
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::chart::{LabelPosition, StyledLabel};
+use crate::functions::chart::{ChartLabel, LabelPosition, StyledLabel};
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
@@ -906,7 +906,7 @@ pub(crate) fn generate_bar_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
-  chart_labels: &[String],
+  chart_labels: &[ChartLabel],
   chart_label_position: LabelPosition,
   plot_label: Option<&StyledLabel>,
   axes_label: Option<(&str, &str)>,
@@ -934,8 +934,16 @@ pub(crate) fn generate_bar_svg(
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
-  let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
-    + if has_x_axis_label { 16.0 * sf } else { 0.0 };
+  let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
+  let label_extra = if has_rotated_labels {
+    30.0 * sf // more space for angled labels
+  } else if has_chart_labels {
+    15.0 * sf
+  } else {
+    0.0
+  };
+  let bottom_extra =
+    label_extra + if has_x_axis_label { 16.0 * sf } else { 0.0 };
   let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 40 * RESOLUTION_SCALE;
 
@@ -1067,12 +1075,32 @@ pub(crate) fn generate_bar_svg(
           }
           LabelPosition::Below => (axis_y + font_size * 1.5, label_fill),
         };
-        labels_svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"{fill}\">{}</text>\n",
-          html_escape(label)
-        ));
+        // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
+        let svg_rotation_deg = -label.rotation.to_degrees();
+        let is_rotated = svg_rotation_deg.abs() > 0.01;
+        if is_rotated {
+          // With text-anchor=middle and rotation, the left half of the text
+          // swings upward. Offset the pivot down so the highest point
+          // (pivot_y - half_width * sin(angle)) stays below the axis.
+          let char_width_estimate = font_size * 0.6;
+          let half_text_w = label.text.len() as f64 * char_width_estimate / 2.0;
+          let sin_a = svg_rotation_deg.to_radians().sin().abs();
+          let offset = half_text_w * sin_a + font_size * 0.5;
+          let ay = axis_y + offset;
+          labels_svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{ay:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ay:.1})\">{}</text>\n",
+            html_escape(&label.text)
+          ));
+        } else {
+          labels_svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{fill}\">{}</text>\n",
+            html_escape(&label.text)
+          ));
+        }
       }
     }
 

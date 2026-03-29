@@ -104,11 +104,28 @@ pub(crate) struct ChartOptions {
   pub svg_width: u32,
   pub svg_height: u32,
   pub full_width: bool,
-  pub chart_labels: Vec<String>,
+  pub chart_labels: Vec<ChartLabel>,
   pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
+}
+
+/// A chart label with optional rotation angle (in radians).
+#[derive(Clone)]
+pub(crate) struct ChartLabel {
+  pub text: String,
+  /// Rotation angle in radians (0.0 = no rotation, negative = clockwise).
+  pub rotation: f64,
+}
+
+impl ChartLabel {
+  pub fn plain(text: String) -> Self {
+    Self {
+      text,
+      rotation: 0.0,
+    }
+  }
 }
 
 /// Extract a string from an Expr (Identifier or String).
@@ -118,6 +135,26 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     Expr::Identifier(s) => Some(s.clone()),
     _ => None,
   }
+}
+
+/// Extract a chart label from an Expr, supporting Rotate[label, angle].
+fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
+  // Rotate["label", angle]
+  if let Expr::FunctionCall { name, args } = e {
+    if name == "Rotate" && args.len() >= 2 {
+      let text = expr_to_label(&args[0])?;
+      let angle = try_eval_to_f64(
+        &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+      )
+      .unwrap_or(0.0);
+      return Some(ChartLabel {
+        text,
+        rotation: angle,
+      });
+    }
+  }
+  // Plain label
+  expr_to_label(e).map(ChartLabel::plain)
 }
 
 /// Parse options from chart arguments.
@@ -169,8 +206,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
             if let Expr::List(items) = &labels_val {
               for item in items {
-                if let Some(s) = expr_to_label(item) {
-                  opts.chart_labels.push(s);
+                if let Some(cl) = expr_to_chart_label(item) {
+                  opts.chart_labels.push(cl);
                 }
               }
             }
@@ -179,8 +216,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               .unwrap_or(*replacement.clone());
             if let Expr::List(items) = &val {
               for item in items {
-                if let Some(s) = expr_to_label(item) {
-                  opts.chart_labels.push(s);
+                if let Some(cl) = expr_to_chart_label(item) {
+                  opts.chart_labels.push(cl);
                 }
               }
             }
@@ -477,8 +514,17 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     10 * s as u32
   };
-  let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
-    + if has_x_axis_label { 16.0 * sf } else { 0.0 };
+  let has_rotated_labels =
+    opts.chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
+  let label_extra = if has_rotated_labels {
+    30.0 * sf
+  } else if has_chart_labels {
+    15.0 * sf
+  } else {
+    0.0
+  };
+  let bottom_extra =
+    label_extra + if has_x_axis_label { 16.0 * sf } else { 0.0 };
   let x_label_area = 8 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 40 * RESOLUTION_SCALE;
 
@@ -577,13 +623,30 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_chart_labels {
     for (i, label) in opts.chart_labels.iter().enumerate().take(n) {
       let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
-      let ly = axis_y + font_size * 1.5;
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{chart_label_fill}\">{}</text>\n",
-        html_escape(label)
-      ));
+      // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
+      let svg_rotation_deg = -label.rotation.to_degrees();
+      let is_rotated = svg_rotation_deg.abs() > 0.01;
+      if is_rotated {
+        let char_width_estimate = font_size * 0.6;
+        let half_text_w = label.text.len() as f64 * char_width_estimate / 2.0;
+        let sin_a = svg_rotation_deg.to_radians().sin().abs();
+        let offset = half_text_w * sin_a + font_size * 0.5;
+        let ay = axis_y + offset;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ay:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{chart_label_fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ay:.1})\">{}</text>\n",
+          html_escape(&label.text)
+        ));
+      } else {
+        let ly = axis_y + font_size * 1.5;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{chart_label_fill}\">{}</text>\n",
+          html_escape(&label.text)
+        ));
+      }
     }
   }
 

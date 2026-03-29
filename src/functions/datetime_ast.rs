@@ -949,10 +949,22 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let components = match extract_date_components(date_expr) {
     Some(c) => c,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "DateString".to_string(),
-        args: args.to_vec(),
-      });
+      // Try parsing a date string like "2025-09-24" or "6 June 1991"
+      if let Expr::String(s) = date_expr {
+        if let Some((y, m, d)) = parse_date_string(s) {
+          vec![y as f64, m as f64, d as f64, 0.0, 0.0, 0.0]
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "DateString".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "DateString".to_string(),
+          args: args.to_vec(),
+        });
+      }
     }
   };
 

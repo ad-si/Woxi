@@ -122,8 +122,10 @@ fn main() {
           .join(&file)
       };
 
-      // Set $ScriptCommandLine: first element is the script path, rest are args
-      let mut cmd_line = vec![absolute_path.to_string_lossy().to_string()];
+      // Set $InputFileName and $ScriptCommandLine
+      let abs_str = absolute_path.to_string_lossy().to_string();
+      woxi::set_system_variable("$InputFileName", &format!("\"{}\"", abs_str));
+      let mut cmd_line = vec![abs_str];
       cmd_line.extend(args);
       set_script_command_line(&cmd_line);
 
@@ -167,8 +169,10 @@ fn main() {
           .join(&file)
       };
 
-      // Set $ScriptCommandLine with absolute path and all args
-      let mut cmd_line = vec![absolute_path.to_string_lossy().to_string()];
+      // Set $InputFileName and $ScriptCommandLine
+      let abs_str = absolute_path.to_string_lossy().to_string();
+      woxi::set_system_variable("$InputFileName", &format!("\"{}\"", abs_str));
+      let mut cmd_line = vec![abs_str];
       cmd_line.extend(args.into_iter().skip(1));
       set_script_command_line(&cmd_line);
 

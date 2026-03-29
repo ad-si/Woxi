@@ -289,6 +289,40 @@ mod date_string {
       result
     );
   }
+
+  #[test]
+  fn date_string_from_string_date() {
+    assert_eq!(
+      interpret("DateString[\"2025-09-24\", {\"Year\", \"-\", \"Month\"}]")
+        .unwrap(),
+      "2025-09"
+    );
+  }
+
+  #[test]
+  fn date_string_from_string_date_default_format() {
+    assert_eq!(
+      interpret("DateString[\"2025-09-24\"]").unwrap(),
+      "Wed 24 Sep 2025 00:00:00"
+    );
+  }
+
+  #[test]
+  fn date_string_from_string_date_iso() {
+    assert_eq!(
+      interpret("DateString[\"2025-09-24\", \"ISODate\"]").unwrap(),
+      "2025-09-24"
+    );
+  }
+
+  #[test]
+  fn date_string_from_natural_language_date() {
+    assert_eq!(
+      interpret("DateString[\"6 June 1991\", {\"Year\", \"-\", \"Month\", \"-\", \"Day2\"}]")
+        .unwrap(),
+      "1991-06-06"
+    );
+  }
 }
 
 /// Helper: extract {y, m, d} from "DateObject[{y, m, d}, \"Day\"]"
