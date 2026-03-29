@@ -215,6 +215,51 @@ mod bin_counts {
   }
 }
 
+mod bin_lists {
+  use super::*;
+
+  #[test]
+  fn bin_lists_explicit_bins() {
+    assert_eq!(
+      interpret("BinLists[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {0, 10, 2}]")
+        .unwrap(),
+      "{{1}, {2, 3}, {4, 5}, {6, 7}, {8, 9}}"
+    );
+  }
+
+  #[test]
+  fn bin_lists_with_dx() {
+    assert_eq!(
+      interpret("BinLists[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{{1}, {2, 3}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn bin_lists_out_of_range() {
+    assert_eq!(
+      interpret("BinLists[{-5, 0, 5, 15}, {0, 10, 5}]").unwrap(),
+      "{{0}, {5}}"
+    );
+  }
+
+  #[test]
+  fn bin_lists_empty_bins() {
+    assert_eq!(
+      interpret("BinLists[{1, 9}, {0, 10, 2}]").unwrap(),
+      "{{1}, {}, {}, {}, {9}}"
+    );
+  }
+
+  #[test]
+  fn bin_lists_symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("BinLists[x, {0, 10, 1}]").unwrap(),
+      "BinLists[x, {0, 10, 1}]"
+    );
+  }
+}
+
 mod histogram_list {
   use super::*;
 

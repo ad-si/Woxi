@@ -585,10 +585,9 @@ fn quantity_meters_per_second() {
 
 #[test]
 fn quantity_miles_per_hour() {
-  // "MilesPerHour" is non-native — preserved as-is
   assert_eq!(
     interpret("Quantity[60, \"MilesPerHour\"]").unwrap(),
-    "Quantity[60, MilesPerHour]"
+    "Quantity[60, Miles/Hours]"
   );
 }
 
@@ -624,34 +623,35 @@ fn unit_convert_joules_to_millijoules() {
 
 #[test]
 fn unit_convert_kwh_to_joules() {
-  // "KilowattHours" and "kWh" are non-native — UnitConvert returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"KilowattHours\"], \"Joules\"]")
       .unwrap(),
-    "UnitConvert[Quantity[1, KilowattHours], Joules]"
+    "Quantity[3600000, Joules]"
   );
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"kWh\"], \"Joules\"]").unwrap(),
-    "UnitConvert[Quantity[1, kWh], Joules]"
+    "Quantity[3600000, Joules]"
   );
 }
 
 #[test]
 fn quantity_kwh_display() {
-  // String unit names are preserved as-is in display
   assert_eq!(
     interpret("Quantity[1, \"KilowattHours\"]").unwrap(),
-    "Quantity[1, KilowattHours]"
+    "Quantity[1, Hours*Kilowatts]"
   );
   assert_eq!(
     interpret("Quantity[1, \"kWh\"]").unwrap(),
-    "Quantity[1, kWh]"
+    "Quantity[1, Hours*Kilowatts]"
   );
   assert_eq!(
     interpret("Quantity[1, \"WattHours\"]").unwrap(),
-    "Quantity[1, WattHours]"
+    "Quantity[1, Hours*Watts]"
   );
-  assert_eq!(interpret("Quantity[1, \"Wh\"]").unwrap(), "Quantity[1, Wh]");
+  assert_eq!(
+    interpret("Quantity[1, \"Wh\"]").unwrap(),
+    "Quantity[1, Hours*Watts]"
+  );
 }
 
 #[test]
@@ -890,7 +890,6 @@ fn unit_convert_nautical_miles_to_kilometers() {
 
 #[test]
 fn unit_convert_tonnes_to_kilograms() {
-  // "Tonnes" is non-native — returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Tonnes\"], \"Kilograms\"]").unwrap(),
     "UnitConvert[Quantity[1, Tonnes], Kilograms]"
@@ -944,30 +943,27 @@ fn unit_convert_atmospheres_to_bars() {
 
 #[test]
 fn unit_convert_calories_to_joules() {
-  // "Calories" is non-native — returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Calories\"], \"Joules\"]").unwrap(),
-    "UnitConvert[Quantity[1, Calories], Joules]"
+    "Quantity[4184, Joules]"
   );
 }
 
 #[test]
 fn unit_convert_kilocalories_to_joules() {
-  // "Kilocalories" is non-native — returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Joules\"]")
       .unwrap(),
-    "UnitConvert[Quantity[1, Kilocalories], Joules]"
+    "Quantity[4184, Joules]"
   );
 }
 
 #[test]
 fn unit_convert_kilocalories_to_calories() {
-  // Both "Kilocalories" and "Calories" are non-native — returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Calories\"]")
       .unwrap(),
-    "UnitConvert[Quantity[1, Kilocalories], Calories]"
+    "Quantity[1, DietaryCalories]"
   );
 }
 
@@ -1089,7 +1085,7 @@ fn quantity_abbreviation_ms() {
 fn quantity_abbreviation_us() {
   assert_eq!(
     interpret("Quantity[100, \"us\"]").unwrap(),
-    "Quantity[100, us]"
+    "Quantity[100, Microseconds]"
   );
 }
 
@@ -1105,7 +1101,7 @@ fn quantity_abbreviation_ns() {
 fn quantity_abbreviation_um() {
   assert_eq!(
     interpret("Quantity[10, \"um\"]").unwrap(),
-    "Quantity[10, um]"
+    "Quantity[10, Micrometers]"
   );
 }
 
@@ -1127,7 +1123,10 @@ fn quantity_abbreviation_nmi() {
 
 #[test]
 fn quantity_abbreviation_t() {
-  assert_eq!(interpret("Quantity[5, \"t\"]").unwrap(), "Quantity[5, t]");
+  assert_eq!(
+    interpret("Quantity[5, \"t\"]").unwrap(),
+    "Quantity[5, MetricTons]"
+  );
 }
 
 #[test]
@@ -1158,7 +1157,7 @@ fn quantity_abbreviation_atm() {
 fn quantity_abbreviation_cal() {
   assert_eq!(
     interpret("Quantity[100, \"cal\"]").unwrap(),
-    "Quantity[100, cal]"
+    "Quantity[100, ThermochemicalCalories]"
   );
 }
 
@@ -1166,7 +1165,7 @@ fn quantity_abbreviation_cal() {
 fn quantity_abbreviation_kcal() {
   assert_eq!(
     interpret("Quantity[2, \"kcal\"]").unwrap(),
-    "Quantity[2, kcal]"
+    "Quantity[2, ThermochemicalKilocalories]"
   );
 }
 
@@ -1222,7 +1221,7 @@ fn quantity_abbreviation_tesla() {
 fn quantity_abbreviation_mt() {
   assert_eq!(
     interpret("Quantity[50, \"mT\"]").unwrap(),
-    "Quantity[50, mT]"
+    "Quantity[50, Milliteslas]"
   );
 }
 
@@ -1230,7 +1229,7 @@ fn quantity_abbreviation_mt() {
 fn quantity_abbreviation_kn() {
   assert_eq!(
     interpret("Quantity[30, \"kn\"]").unwrap(),
-    "Quantity[30, kn]"
+    "Quantity[30, Knots]"
   );
 }
 
@@ -1269,13 +1268,12 @@ fn compatible_unit_q_bars_pascals() {
 
 #[test]
 fn compatible_unit_q_calories_joules() {
-  // "Calories" is non-native — CompatibleUnitQ returns False
   assert_eq!(
     interpret(
       "CompatibleUnitQ[Quantity[1, \"Calories\"], Quantity[1, \"Joules\"]]"
     )
     .unwrap(),
-    "False"
+    "True"
   );
 }
 
@@ -1318,19 +1316,17 @@ fn quantity_singular_compound() {
 
 #[test]
 fn quantity_singular_foot() {
-  // "Foot" is non-native — preserved as-is
   assert_eq!(
     interpret("Quantity[100, \"Foot\"]").unwrap(),
-    "Quantity[100, Foot]"
+    "Quantity[100, Feet]"
   );
 }
 
 #[test]
 fn quantity_singular_inch() {
-  // "Inch" is non-native — preserved as-is
   assert_eq!(
     interpret("Quantity[5, \"Inch\"]").unwrap(),
-    "Quantity[5, Inch]"
+    "Quantity[5, Inches]"
   );
 }
 
@@ -1418,19 +1414,17 @@ fn unit_convert_singular_target_kilometer_hour() {
 
 #[test]
 fn unit_convert_singular_target_foot() {
-  // "Foot" is non-native — UnitConvert returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Meters\"], \"Foot\"]").unwrap(),
-    "UnitConvert[Quantity[1, Meters], Foot]"
+    "Quantity[1250/381, Feet]"
   );
 }
 
 #[test]
 fn unit_convert_singular_target_inch() {
-  // "Inch" is non-native — UnitConvert returns unevaluated
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Meters\"], \"Inch\"]").unwrap(),
-    "UnitConvert[Quantity[1, Meters], Inch]"
+    "Quantity[5000/127, Inches]"
   );
 }
 

@@ -44,6 +44,30 @@ pub fn dispatch_io_functions(
     "ReadList" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::read_list_ast(args));
     }
+    // ReadString["file"] — read file contents as a string
+    #[cfg(not(target_arch = "wasm32"))]
+    "ReadString" if args.len() == 1 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "ReadString".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      let content = match std::fs::read_to_string(&filename) {
+        Ok(c) => c,
+        Err(_) => {
+          crate::emit_message(&format!(
+            "ReadString::noopen: Cannot open {}.",
+            filename
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
+      };
+      return Some(Ok(Expr::String(content)));
+    }
     // Get[file] — read and evaluate a file, returning the last result
     #[cfg(not(target_arch = "wasm32"))]
     "Get" if args.len() == 1 => {

@@ -1289,6 +1289,41 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// MedianDeviation[list] - median absolute deviation from the median
+pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Err(InterpreterError::EvaluationError(
+        "MedianDeviation: list must not be empty".into(),
+      ));
+    }
+    // Compute median
+    let median_expr = crate::functions::list_helpers_ast::median_ast(&args[0])?;
+    // Compute absolute deviations |xi - median|
+    let mut abs_devs = Vec::new();
+    for item in items {
+      let diff = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(item.clone()),
+        right: Box::new(median_expr.clone()),
+      };
+      let abs_diff = Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![diff],
+      };
+      abs_devs.push(crate::evaluator::evaluate_expr_to_expr(&abs_diff)?);
+    }
+    // Return median of the absolute deviations
+    let devs_list = Expr::List(abs_devs);
+    crate::functions::list_helpers_ast::median_ast(&devs_list)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "MedianDeviation".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
 // ─── LocationTest ─────────────────────────────────────────────────────
 
 /// LocationTest[data] - test if mean is 0 (one-sample t-test, returns p-value)

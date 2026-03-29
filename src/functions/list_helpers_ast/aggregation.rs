@@ -690,6 +690,152 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(counts.into_iter().map(Expr::Integer).collect()))
 }
 
+/// BinLists[data, {min, max, dx}] - group data points into equal-width bins
+/// Returns lists of elements per bin instead of counts
+pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BinLists".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract numeric values paired with original expressions
+  let values: Vec<(f64, &Expr)> = data
+    .iter()
+    .filter_map(|e| expr_to_f64(e).map(|v| (v, e)))
+    .collect();
+
+  let (min_val, max_val, dx) = if args.len() == 1 {
+    if values.is_empty() {
+      return Ok(Expr::List(vec![]));
+    }
+    let data_min = values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
+    let data_max = values
+      .iter()
+      .map(|(v, _)| *v)
+      .fold(f64::NEG_INFINITY, f64::max);
+    let dx = 1.0;
+    let mut lo = (data_min / dx).floor() * dx;
+    if (data_min - lo).abs() < 1e-12 {
+      lo -= dx;
+    }
+    let mut hi = (data_max / dx).ceil() * dx;
+    if (data_max - hi).abs() < 1e-12 {
+      hi += dx;
+    }
+    (lo, hi, dx)
+  } else if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(dx_int) => {
+        if values.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let data_min =
+          values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
+        let data_max = values
+          .iter()
+          .map(|(v, _)| *v)
+          .fold(f64::NEG_INFINITY, f64::max);
+        let dx = *dx_int as f64;
+        let mut lo = (data_min / dx).floor() * dx;
+        if (data_min - lo).abs() < 1e-12 {
+          lo -= dx;
+        }
+        let mut hi = (data_max / dx).ceil() * dx;
+        if (data_max - hi).abs() < 1e-12 {
+          hi += dx;
+        }
+        (lo, hi, dx)
+      }
+      Expr::Real(dx_f) => {
+        if values.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let data_min =
+          values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
+        let data_max = values
+          .iter()
+          .map(|(v, _)| *v)
+          .fold(f64::NEG_INFINITY, f64::max);
+        let dx = *dx_f;
+        let mut lo = (data_min / dx).floor() * dx;
+        if (data_min - lo).abs() < 1e-12 {
+          lo -= dx;
+        }
+        let mut hi = (data_max / dx).ceil() * dx;
+        if (data_max - hi).abs() < 1e-12 {
+          hi += dx;
+        }
+        (lo, hi, dx)
+      }
+      Expr::List(spec) if spec.len() == 3 => {
+        let min_v = match expr_to_f64(&spec[0]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinLists".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let max_v = match expr_to_f64(&spec[1]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinLists".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let dx = match expr_to_f64(&spec[2]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinLists".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        (min_v, max_v, dx)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "BinLists".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    return Ok(Expr::FunctionCall {
+      name: "BinLists".to_string(),
+      args: args.to_vec(),
+    });
+  };
+
+  if dx <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "BinLists: bin width must be positive".into(),
+    ));
+  }
+
+  let num_bins = ((max_val - min_val) / dx).round() as usize;
+  let mut bins: Vec<Vec<Expr>> = vec![Vec::new(); num_bins];
+
+  for &(v, ref expr) in &values {
+    if v >= min_val && v < max_val {
+      let bin = ((v - min_val) / dx) as usize;
+      let bin = bin.min(num_bins - 1);
+      bins[bin].push((*expr).clone());
+    }
+  }
+
+  Ok(Expr::List(bins.into_iter().map(Expr::List).collect()))
+}
+
 /// Round a positive value to the nearest "nice" number (1, 2, 5, 10, 20, 50, …)
 /// using log-scale distance to decide which is closest.
 fn nice_number(x: f64) -> f64 {

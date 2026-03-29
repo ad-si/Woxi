@@ -1274,7 +1274,7 @@ FindDivisions,,🚫,,7.0,1291
 FileExistsQ,Tests whether a file or directory exists,✅,2,7.0,1293
 FrontEndToken,,🚫,,3.0,1293
 GeometricMean,Returns the geometric mean of a list,✅,pure,6.0,1294
-TextWords,,🚫,,10.1,1295
+TextWords,Split text into a list of words,✅,pure,10.1,1295
 WindowTitle,,🚫,,3.0,1296
 CurrentImage,,🚫,,8.0,1298
 Equivalent,Logical equivalence,✅,pure,7.0,1298
@@ -2102,7 +2102,7 @@ Underscript,Typesetting subscript,🚫,,6.0,2144
 EntityProperties,Properties of an entity,🚫,,10.0,2147
 KeyTake,Takes specified keys from an association,✅,pure,10.0,2147
 Paneled,Panel wrapper for display,🚫,,6.0,2147
-BinLists,Bin data into lists,🚫,,6.0,2149
+BinLists,Group data points into equal-width bins,✅,pure,6.0,2149
 VertexIndex,Index of vertex in graph,🚫,,8.0,2149
 BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7.0,2152
 CircleMinus,Circle minus operator,🚫,,3.0,2152
@@ -2231,7 +2231,7 @@ ProbabilityScalePlot,Statistical visualization,🚫,None,8.0,2278
 VectorDensityPlot,Visualization,🚫,None,7.0,2278
 GeoProjectionData,,🚫,,7.0,2282
 KeyExistsQ,Checks if a key exists in an association,✅,pure,10.0,2282
-ReadString,File I O,🚫,None,10.0,2282
+ReadString,Read file contents as a string,✅,None,10.0,2282
 WriteLine,File I O,🚫,None,10.0,2282
 BoundingRegion,Geometric region,🚫,None,10.4,2286
 CellDingbat,Notebook UI,🚫,None,3.0,2286
@@ -3315,7 +3315,7 @@ HamiltonianGraphQ,,,,8.0,3402
 HoeffdingD,,,,9.0,3402
 LevyDistribution,,,,7.0,3402
 MeanShift,,🚫,,8.0,3402
-MedianDeviation,,,,6.0,3402
+MedianDeviation,Median absolute deviation from the median,✅,pure,6.0,3402
 ShowCellTags,,🚫,,3.0,3402
 TukeyLambdaDistribution,,,,8.0,3402
 DeviceConfigure,,🚫,,10.0,3413
@@ -3480,7 +3480,7 @@ FeedbackLinearize,,🚫,,10.0,3578
 FunctionInjective,,,,12.2,3578
 LinearFractionalTransform,,,,6.0,3578
 MorletWavelet,,🚫,,8.0,3578
-MovingMedian,,,,6.0,3578
+MovingMedian,Compute moving median of a list,✅,pure,6.0,3578
 StringToByteArray,,,,11.2,3578
 WebSearch,,🚫,,11.1,3578
 CircularRealMatrixDistribution,,,,10.3,3593

@@ -212,6 +212,22 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::Association(pairs)));
       }
     }
+    "TextWords" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        // Split into words, stripping punctuation from each word
+        let words: Vec<Expr> = s
+          .split_whitespace()
+          .map(|w| {
+            let trimmed: String =
+              w.chars().filter(|c| c.is_alphanumeric()).collect();
+            trimmed
+          })
+          .filter(|w| !w.is_empty())
+          .map(|w| Expr::String(w))
+          .collect();
+        return Some(Ok(Expr::List(words)));
+      }
+    }
     "WordCounts" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
         let mut counts: Vec<(String, i128, usize)> = Vec::new();

@@ -1071,6 +1071,36 @@ mod grid_graphics {
   }
 }
 
+mod read_string {
+  use super::*;
+
+  #[test]
+  fn basic_file() {
+    use std::io::Write;
+    let path = "/tmp/woxi_readstring_test.txt";
+    let mut file = std::fs::File::create(path).unwrap();
+    file.write_all(b"hello world\nfoo bar").unwrap();
+    drop(file);
+
+    let code = format!("ReadString[\"{}\"]", path);
+    assert_eq!(interpret(&code).unwrap(), "hello world\nfoo bar");
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn nonexistent_file() {
+    assert_eq!(
+      interpret("ReadString[\"/tmp/woxi_no_such_file_12345.txt\"]").unwrap(),
+      "$Failed"
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(interpret("ReadString[x]").unwrap(), "ReadString[x]");
+  }
+}
+
 mod read_list {
   use super::*;
 
