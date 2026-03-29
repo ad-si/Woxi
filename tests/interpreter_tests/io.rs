@@ -2054,3 +2054,28 @@ mod read_line {
     assert_eq!(result, "{only, EndOfFile}");
   }
 }
+
+mod streams_function {
+  use super::*;
+
+  #[test]
+  fn no_args() {
+    assert_eq!(
+      interpret("Streams[]").unwrap(),
+      "{OutputStream[stdout, 1], OutputStream[stderr, 2]}"
+    );
+  }
+
+  #[test]
+  fn filter_stdout() {
+    assert_eq!(
+      interpret("Streams[\"stdout\"]").unwrap(),
+      "{OutputStream[stdout, 1]}"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Streams[]]").unwrap(), "List");
+  }
+}

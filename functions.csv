@@ -2891,7 +2891,7 @@ NorlundB,Nörlund generalized Bernoulli polynomial,✅,pure,6.0,2960
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1.0,2960
 ReplaceImageValue,,🚫,,9.0,2960
 ShearingMatrix,Shearing transformation matrix,✅,none,6.0,2960
-Streams,,,,2.0,2960
+Streams,List currently open streams,✅,io,2.0,2960
 ConvexOptimization,,,,12.2,2971
 CreateCloudExpression,,🚫,,10.4,2971
 GraphCenter,Vertices with minimum eccentricity,✅,1,8.0,2971

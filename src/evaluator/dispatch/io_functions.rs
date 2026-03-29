@@ -11,6 +11,35 @@ pub fn dispatch_io_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    // Streams[] — return list of open streams (stdout and stderr)
+    "Streams" if args.is_empty() => {
+      return Some(Ok(Expr::List(vec![
+        Expr::FunctionCall {
+          name: "OutputStream".to_string(),
+          args: vec![Expr::String("stdout".to_string()), Expr::Integer(1)],
+        },
+        Expr::FunctionCall {
+          name: "OutputStream".to_string(),
+          args: vec![Expr::String("stderr".to_string()), Expr::Integer(2)],
+        },
+      ])));
+    }
+    // Streams["name"] — filter streams by name
+    "Streams" if args.len() == 1 => {
+      if let Expr::String(name_filter) = &args[0] {
+        let all_streams = vec![("stdout", 1), ("stderr", 2)];
+        let matching: Vec<Expr> = all_streams
+          .iter()
+          .filter(|(n, _)| *n == name_filter.as_str())
+          .map(|(n, id)| Expr::FunctionCall {
+            name: "OutputStream".to_string(),
+            args: vec![Expr::String(n.to_string()), Expr::Integer(*id)],
+          })
+          .collect();
+        return Some(Ok(Expr::List(matching)));
+      }
+      return Some(Ok(Expr::List(vec![])));
+    }
     // ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
     "ReadList" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::read_list_ast(args));
