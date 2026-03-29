@@ -1035,6 +1035,57 @@ mod real_digits {
       "{2, 0, 1, 9, 8}"
     );
   }
+
+  #[test]
+  fn rational_repeating_one_seventh() {
+    // 1/7 = 0.142857142857... (all repeating)
+    assert_eq!(
+      interpret("RealDigits[1/7]").unwrap(),
+      "{{{1, 4, 2, 8, 5, 7}}, 0}"
+    );
+  }
+
+  #[test]
+  fn rational_repeating_one_third() {
+    // 1/3 = 0.333... (single repeating digit)
+    assert_eq!(interpret("RealDigits[1/3]").unwrap(), "{{{3}}, 0}");
+  }
+
+  #[test]
+  fn rational_mixed_repeating() {
+    // 7/12 = 0.58333... (non-repeating "58" then repeating "3")
+    assert_eq!(interpret("RealDigits[7/12]").unwrap(), "{{5, 8, {3}}, 0}");
+  }
+
+  #[test]
+  fn rational_mixed_repeating_one_sixth() {
+    // 1/6 = 0.1666... (non-repeating "1" then repeating "6")
+    assert_eq!(interpret("RealDigits[1/6]").unwrap(), "{{1, {6}}, 0}");
+  }
+
+  #[test]
+  fn rational_terminating() {
+    // 1/4 = 0.25 (terminating decimal)
+    assert_eq!(interpret("RealDigits[1/4]").unwrap(), "{{2, 5}, 0}");
+  }
+
+  #[test]
+  fn rational_greater_than_one() {
+    // 22/7 = 3.142857142857... (integer part 3, then repeating)
+    assert_eq!(
+      interpret("RealDigits[22/7]").unwrap(),
+      "{{3, {1, 4, 2, 8, 5, 7}}, 1}"
+    );
+  }
+
+  #[test]
+  fn rational_with_explicit_digits_no_repeat() {
+    // With explicit num_digits, repeating pattern should NOT be detected
+    assert_eq!(
+      interpret("RealDigits[1/7, 10, 12]").unwrap(),
+      "{{1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7}, 0}"
+    );
+  }
 }
 
 mod coprime_q {
