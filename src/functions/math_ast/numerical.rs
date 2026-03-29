@@ -3142,3 +3142,484 @@ pub fn list_fourier_sequence_transform_ast(
 
   evaluate_expr_to_expr(&sum)
 }
+
+/// BandpassFilter[data, {omega1, omega2}] or BandpassFilter[data, {omega1, omega2}, n]
+/// Applies a bandpass FIR filter using a windowed-sinc kernel with exact Hamming window.
+/// Default order n = length of data. Default SampleRate = 1.
+pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 4 {
+    return Ok(Expr::FunctionCall {
+      name: "BandpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Extract data list
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract {omega1, omega2}
+  let (omega1, omega2) = match &args[1] {
+    Expr::List(freqs) if freqs.len() == 2 => {
+      let o1 = match try_eval_to_f64(&freqs[0]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BandpassFilter".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let o2 = match try_eval_to_f64(&freqs[1]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BandpassFilter".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (o1, o2)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Parse optional order (3rd argument, if numeric) and options (Rule arguments)
+  let mut order = items.len(); // default order = signal length
+  let mut sample_rate = 1.0_f64;
+
+  for i in 2..args.len() {
+    match &args[i] {
+      Expr::Integer(n) if *n > 0 => {
+        order = *n as usize;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(name) = pattern.as_ref() {
+          if name == "SampleRate" {
+            if let Some(v) = try_eval_to_f64(replacement) {
+              sample_rate = v;
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  // Scale frequencies by sample rate
+  let w1 = omega1 / sample_rate;
+  let w2 = omega2 / sample_rate;
+
+  // Extract numeric data
+  let data: Vec<f64> =
+    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  if data.len() != items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "BandpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Compute FIR kernel using windowed-sinc with exact Hamming window (alpha = 25/46)
+  let n = order;
+  let kernel = bandpass_kernel(n, w1, w2);
+
+  // Apply convolution with edge-padding (repeat boundary values)
+  let result = convolve_edge_padded(&data, &kernel);
+
+  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+}
+
+/// Compute the bandpass FIR kernel of length n using windowed-sinc with exact Hamming window.
+fn bandpass_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
+  let mut kernel = Vec::with_capacity(n);
+  for j in 0..n {
+    let t = j as f64 - (n as f64 - 1.0) / 2.0;
+
+    // Exact Hamming window: alpha = 25/46
+    let w = if n <= 1 {
+      1.0
+    } else {
+      25.0 / 46.0
+        - 21.0 / 46.0
+          * (2.0 * std::f64::consts::PI * j as f64 / (n as f64 - 1.0)).cos()
+    };
+
+    // Bandpass sinc kernel
+    let sinc_bp = if t.abs() < 1e-15 {
+      (omega2 - omega1) / std::f64::consts::PI
+    } else {
+      ((omega2 * t).sin() - (omega1 * t).sin()) / (std::f64::consts::PI * t)
+    };
+
+    kernel.push(w * sinc_bp);
+  }
+  kernel
+}
+
+/// Convolve data with kernel using edge-padding (repeat boundary values).
+/// Returns output of same length as data.
+fn convolve_edge_padded(data: &[f64], kernel: &[f64]) -> Vec<f64> {
+  let n = kernel.len();
+  let len = data.len();
+  let left_pad = n / 2;
+
+  let mut result = Vec::with_capacity(len);
+  for m in 0..len {
+    let mut sum = 0.0;
+    for j in 0..n {
+      let idx = m as isize + j as isize - left_pad as isize;
+      let val = if idx < 0 {
+        data[0]
+      } else if idx >= len as isize {
+        data[len - 1]
+      } else {
+        data[idx as usize]
+      };
+      sum += kernel[j] * val;
+    }
+    result.push(fourier_round(sum));
+  }
+  result
+}
+
+/// LowpassFilter[data, omega_c] or LowpassFilter[data, omega_c, n]
+/// Applies a lowpass FIR filter using a windowed-sinc kernel with exact Hamming window.
+pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 4 {
+    return Ok(Expr::FunctionCall {
+      name: "LowpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LowpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let omega_c = match try_eval_to_f64(&args[1]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "LowpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut order = items.len();
+  let mut sample_rate = 1.0_f64;
+
+  for i in 2..args.len() {
+    match &args[i] {
+      Expr::Integer(n) if *n > 0 => {
+        order = *n as usize;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(name) = pattern.as_ref() {
+          if name == "SampleRate" {
+            if let Some(v) = try_eval_to_f64(replacement) {
+              sample_rate = v;
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let wc = omega_c / sample_rate;
+
+  let data: Vec<f64> =
+    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  if data.len() != items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "LowpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let kernel = lowpass_kernel(order, wc);
+  let result = convolve_edge_padded(&data, &kernel);
+
+  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+}
+
+/// Compute the lowpass FIR kernel of length n, normalized to sum to 1.
+fn lowpass_kernel(n: usize, omega_c: f64) -> Vec<f64> {
+  let mut kernel = Vec::with_capacity(n);
+  for j in 0..n {
+    let t = j as f64 - (n as f64 - 1.0) / 2.0;
+    let w = if n <= 1 {
+      1.0
+    } else {
+      25.0 / 46.0
+        - 21.0 / 46.0
+          * (2.0 * std::f64::consts::PI * j as f64 / (n as f64 - 1.0)).cos()
+    };
+    let sinc_lp = if t.abs() < 1e-15 {
+      omega_c / std::f64::consts::PI
+    } else {
+      (omega_c * t).sin() / (std::f64::consts::PI * t)
+    };
+    kernel.push(w * sinc_lp);
+  }
+  // Normalize to sum to 1 (unity DC gain)
+  let sum: f64 = kernel.iter().sum();
+  if sum.abs() > 1e-15 {
+    for v in &mut kernel {
+      *v /= sum;
+    }
+  }
+  kernel
+}
+
+/// HighpassFilter[data, omega_c] or HighpassFilter[data, omega_c, n]
+/// Applies a highpass FIR filter using a windowed-sinc kernel with exact Hamming window.
+pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 4 {
+    return Ok(Expr::FunctionCall {
+      name: "HighpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HighpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let omega_c = match try_eval_to_f64(&args[1]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "HighpassFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut order = items.len();
+  let mut sample_rate = 1.0_f64;
+
+  for i in 2..args.len() {
+    match &args[i] {
+      Expr::Integer(n) if *n > 0 => {
+        order = *n as usize;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(name) = pattern.as_ref() {
+          if name == "SampleRate" {
+            if let Some(v) = try_eval_to_f64(replacement) {
+              sample_rate = v;
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let wc = omega_c / sample_rate;
+
+  let data: Vec<f64> =
+    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  if data.len() != items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "HighpassFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let kernel = highpass_kernel(order, wc);
+  let result = convolve_edge_padded(&data, &kernel);
+
+  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+}
+
+/// Compute the highpass FIR kernel of length n.
+/// Highpass = delta - lowpass (spectral inversion).
+fn highpass_kernel(n: usize, omega_c: f64) -> Vec<f64> {
+  let mut kernel = Vec::with_capacity(n);
+  for j in 0..n {
+    let t = j as f64 - (n as f64 - 1.0) / 2.0;
+    let w = if n <= 1 {
+      1.0
+    } else {
+      25.0 / 46.0
+        - 21.0 / 46.0
+          * (2.0 * std::f64::consts::PI * j as f64 / (n as f64 - 1.0)).cos()
+    };
+    // Ideal highpass: delta(t) - sinc_lp(t) for the windowed version
+    let sinc_hp = if t.abs() < 1e-15 {
+      1.0 - omega_c / std::f64::consts::PI
+    } else {
+      -(omega_c * t).sin() / (std::f64::consts::PI * t)
+    };
+    kernel.push(w * sinc_hp);
+  }
+  kernel
+}
+
+/// BandstopFilter[data, {omega1, omega2}] or BandstopFilter[data, {omega1, omega2}, n]
+/// Applies a bandstop (notch) FIR filter.
+pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 4 {
+    return Ok(Expr::FunctionCall {
+      name: "BandstopFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandstopFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let (omega1, omega2) = match &args[1] {
+    Expr::List(freqs) if freqs.len() == 2 => {
+      let o1 = match try_eval_to_f64(&freqs[0]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BandstopFilter".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let o2 = match try_eval_to_f64(&freqs[1]) {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BandstopFilter".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (o1, o2)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BandstopFilter".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut order = items.len();
+  let mut sample_rate = 1.0_f64;
+
+  for i in 2..args.len() {
+    match &args[i] {
+      Expr::Integer(n) if *n > 0 => {
+        order = *n as usize;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(name) = pattern.as_ref() {
+          if name == "SampleRate" {
+            if let Some(v) = try_eval_to_f64(replacement) {
+              sample_rate = v;
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let w1 = omega1 / sample_rate;
+  let w2 = omega2 / sample_rate;
+
+  let data: Vec<f64> =
+    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  if data.len() != items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "BandstopFilter".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let kernel = bandstop_kernel(order, w1, w2);
+  let result = convolve_edge_padded(&data, &kernel);
+
+  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+}
+
+/// Compute the bandstop FIR kernel of length n.
+/// Bandstop = delta - bandpass (spectral inversion).
+fn bandstop_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
+  let mut kernel = Vec::with_capacity(n);
+  for j in 0..n {
+    let t = j as f64 - (n as f64 - 1.0) / 2.0;
+    let w = if n <= 1 {
+      1.0
+    } else {
+      25.0 / 46.0
+        - 21.0 / 46.0
+          * (2.0 * std::f64::consts::PI * j as f64 / (n as f64 - 1.0)).cos()
+    };
+    let sinc_bs = if t.abs() < 1e-15 {
+      1.0 - (omega2 - omega1) / std::f64::consts::PI
+    } else {
+      -((omega2 * t).sin() - (omega1 * t).sin()) / (std::f64::consts::PI * t)
+    };
+    kernel.push(w * sinc_bs);
+  }
+  kernel
+}

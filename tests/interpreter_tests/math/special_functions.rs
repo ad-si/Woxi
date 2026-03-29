@@ -4017,3 +4017,116 @@ mod cantor_staircase {
     );
   }
 }
+
+mod bandpass_filter {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]").unwrap(),
+      "{0.18547982385040732, 0.288059447503783, 0.4244918102099795, 0.5609241729161761, 0.6635037965695517}"
+    );
+  }
+
+  #[test]
+  fn with_order() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 3]").unwrap(),
+      "{0.07991129198211216, 0.14898970746732165, 0.22348456120098245, 0.2979794149346433, 0.3670578304198528}"
+    );
+  }
+
+  #[test]
+  fn order_1() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 1]").unwrap(),
+      "{0.06366197723675814, 0.12732395447351627, 0.1909859317102744, 0.25464790894703254, 0.3183098861837907}"
+    );
+  }
+
+  #[test]
+  fn even_order() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 4]").unwrap(),
+      "{0.11353554513578962, 0.167668935248101, 0.270666950561557, 0.3789337307861797, 0.4819317460996357}"
+    );
+  }
+
+  #[test]
+  fn eight_elements() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 2, 3, 4, 5, 6, 7, 8}, {0.1, 0.3}]")
+        .unwrap(),
+      "{0.3161491615585342, 0.43414813964807336, 0.6126020827245306, 0.8301409615621332, 1.061990802805853, 1.2938406440495724, 1.5113795228871751, 1.6898334659636323}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(
+      interpret("BandpassFilter[{1}, {0.1, 0.3}]").unwrap(),
+      "{0.06366197723675814}"
+    );
+  }
+
+  #[test]
+  fn constant_input() {
+    assert_eq!(
+      interpret("BandpassFilter[{1, 1, 1}, {0.1, 0.3}]").unwrap(),
+      "{0.07449485373366081, 0.07449485373366081, 0.07449485373366081}"
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("BandpassFilter[{a, b, c}, {0.1, 0.3}]").unwrap(),
+      "BandpassFilter[{a, b, c}, {0.1, 0.3}]"
+    );
+  }
+}
+
+mod lowpass_filter {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("LowpassFilter[{1, 2, 3, 4, 5}, 0.3]").unwrap(),
+      "{1.3128492422860063, 2.0366239766680576, 3., 3.963376023331943, 4.687150757713994}"
+    );
+  }
+
+  #[test]
+  fn constant_input() {
+    assert_eq!(
+      interpret("LowpassFilter[{1, 1, 1, 1, 1}, 0.3]").unwrap(),
+      "{1., 1., 1., 1., 1.}"
+    );
+  }
+}
+
+mod highpass_filter {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("HighpassFilter[{1, 2, 3, 4, 5}, 0.3]").unwrap(),
+      "{0.7198793058278876, 1.565448565047395, 2.359894452882456, 3.154340340717517, 3.999909599937024}"
+    );
+  }
+}
+
+mod bandstop_filter {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("BandstopFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]").unwrap(),
+      "{0.8145201761495926, 1.711940552496217, 2.5755081897900203, 3.439075827083824, 4.336496203430448}"
+    );
+  }
+}

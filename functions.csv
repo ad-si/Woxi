@@ -1924,7 +1924,7 @@ OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1.
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6.0,1960
 BinaryFormat,Option for opening streams in binary format,🚫,,3.0,1962
 ImageLines,Find line segments in an image,🚫,,8.0,1964
-LowpassFilter,Apply a lowpass filter to data,🚫,,9.0,1964
+LowpassFilter,Apply a lowpass filter to data,✅,pure,9.0,1964
 Evaluatable,Option for Cell specifying if it should be evaluated,🚫,,3.0,1967
 LinkWrite,Write an expression to a WSTP connection,🚫,,3.0,1967
 URLRead,Send HTTP request and read response,🚫,,11.0,1967
@@ -2878,7 +2878,7 @@ TransferFunctionExpand,,🚫,,8.0,2944
 UnderscriptBoxOptions,,🚫,,4.0,2944
 WebExecute,,🚫,,12.0,2944
 AcyclicGraphQ,True if graph has no cycles,✅,1,8.0,2952
-BandpassFilter,,,,9.0,2952
+BandpassFilter,Apply a bandpass filter to data,✅,pure,9.0,2952
 Colon,,,,3.0,2952
 GeoLength,,🚫,,10.4,2952
 HypercubeGraph,N-dimensional hypercube graph,✅,1,8.0,2952
@@ -2904,7 +2904,7 @@ TextTranslation,,🚫,,11.1,2971
 VertexComponent,,,,8.0,2971
 CapsuleShape,,,,10.2,2978
 FindIndependentVertexSet,,,,8.0,2978
-HighpassFilter,,,,9.0,2978
+HighpassFilter,Apply a highpass filter to data,✅,pure,9.0,2978
 KeyMemberQ,True if key exists in association,✅,1,10.3,2978
 KroneckerSymbol,Generalized Jacobi symbol,✅,1,6.0,2978
 SliceDistribution,,,,9.0,2978
@@ -3499,7 +3499,7 @@ SequenceFoldList,,,,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
 SpearmanRho,,,,9.0,3593
 ApplyTo,,,,12.2,3612
-BandstopFilter,,,,9.0,3612
+BandstopFilter,Apply a bandstop filter to data,✅,pure,9.0,3612
 BlockchainBlockData,,🚫,,11.3,3612
 CloudAccountData,,🚫,,10.0,3612
 CloudConnect,,🚫,,10.0,3612
