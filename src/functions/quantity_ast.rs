@@ -1192,7 +1192,26 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
 fn canonical_unit_name(name: &str) -> &str {
   match name {
     "Calories" | "Kilocalories" => "DietaryCalories",
+    "Tonnes" => "MetricTons",
     _ => name,
+  }
+}
+
+/// Expand compound energy units to their product form (matching Wolfram canonical output).
+/// Used at format time to display entity-resolved compound units.
+pub fn format_expand_compound_unit(name: &str) -> Option<Expr> {
+  match name {
+    "KilowattHours" => Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::String("Hours".to_string())),
+      right: Box::new(Expr::String("Kilowatts".to_string())),
+    }),
+    "WattHours" => Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::String("Hours".to_string())),
+      right: Box::new(Expr::String("Watts".to_string())),
+    }),
+    _ => None,
   }
 }
 
@@ -1223,7 +1242,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
-      if get_unit_info(&s).is_some() {
+      if let Some(compound) = format_expand_compound_unit(&s) {
+        compound
+      } else if get_unit_info(&s).is_some() {
         Expr::String(canonical_unit_name(&s).to_string())
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit_for_output(expanded)
@@ -1233,7 +1254,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         normalize_unit_for_output(parsed)
       } else {
         let plural = normalize_singular_to_plural(&s);
-        if get_unit_info(&plural).is_some() {
+        if let Some(compound) = format_expand_compound_unit(&plural) {
+          compound
+        } else if get_unit_info(&plural).is_some() {
           Expr::String(canonical_unit_name(&plural).to_string())
         } else {
           Expr::String(s)
@@ -1266,6 +1289,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
     }
     Expr::Identifier(s) => {
       let s = s.clone();
+      if let Some(compound) = format_expand_compound_unit(&s) {
+        return compound;
+      }
       if get_unit_info(&s).is_some() {
         return Expr::String(canonical_unit_name(&s).to_string());
       }
@@ -1276,6 +1302,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
         return normalize_unit_for_output(expanded);
       }
       let plural = normalize_singular_to_plural(&s);
+      if let Some(compound) = format_expand_compound_unit(&plural) {
+        return compound;
+      }
       if get_unit_info(&plural).is_some() {
         return Expr::String(canonical_unit_name(&plural).to_string());
       }
@@ -1300,43 +1329,28 @@ fn has_non_native_unit(expr: &Expr) -> bool {
   }
 }
 
+/// Unit names that require Wolfram's entity framework to resolve.
+/// These are preserved as-is at evaluation time. UnitConvert and
+/// CompatibleUnitQ return unevaluated for these. Entity resolution
+/// happens only at format/display time for top-level Quantity expressions.
 fn is_non_native_string_unit(s: &str) -> bool {
-  matches!(
-    s,
-    "us"
-      | "um"
-      | "mT"
-      | "kn"
-      | "t"
-      | "d"
-      | "Pa"
-      | "cal"
-      | "kcal"
-      | "kWh"
-      | "Wh"
-      | "KilowattHours"
-      | "WattHours"
-      | "Tonnes"
-      | "Calories"
-      | "Kilocalories"
-      | "Foot"
-      | "Inch"
-      | "MilesPerHour"
-  )
+  matches!(s, "Tonnes")
 }
 
-/// Recursively normalize unit expressions for display.
+/// Recursively normalize unit expressions at evaluation time.
 /// Expands native abbreviations, "Per" compounds, singular forms, and compound
-/// strings. Preserves non-native unit names that wolframscript can't resolve.
+/// strings. Non-native unit names (entity-dependent) are preserved as-is.
 fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
-      // Non-native unit strings are preserved as-is
+      // Non-native unit strings are preserved as-is at evaluation time
       if is_non_native_string_unit(&s) {
         return Expr::String(s);
       }
-      if get_unit_info(&s).is_some() {
+      if let Some(compound) = format_expand_compound_unit(&s) {
+        compound
+      } else if get_unit_info(&s).is_some() {
         Expr::String(canonical_unit_name(&s).to_string())
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit(expanded)
@@ -1347,7 +1361,9 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       } else {
         // Try singular → plural normalization
         let plural = normalize_singular_to_plural(&s);
-        if get_unit_info(&plural).is_some() {
+        if is_non_native_string_unit(&plural) {
+          Expr::String(s)
+        } else if get_unit_info(&plural).is_some() {
           Expr::String(canonical_unit_name(&plural).to_string())
         } else {
           Expr::String(s)
@@ -1383,6 +1399,12 @@ fn normalize_unit(mut unit: Expr) -> Expr {
     }
     Expr::Identifier(s) => {
       let s = s.clone();
+      if is_non_native_string_unit(&s) {
+        return Expr::String(s);
+      }
+      if let Some(compound) = format_expand_compound_unit(&s) {
+        return compound;
+      }
       // Known unit name: convert Identifier to String for proper InputForm quoting
       if get_unit_info(&s).is_some() {
         return Expr::String(canonical_unit_name(&s).to_string());
@@ -1397,6 +1419,12 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       }
       // Try singular → plural normalization
       let plural = normalize_singular_to_plural(&s);
+      if is_non_native_string_unit(&plural) {
+        return Expr::String(s);
+      }
+      if let Some(compound) = format_expand_compound_unit(&plural) {
+        return compound;
+      }
       if get_unit_info(&plural).is_some() {
         return Expr::String(canonical_unit_name(&plural).to_string());
       }

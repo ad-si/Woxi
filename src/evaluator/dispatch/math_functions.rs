@@ -479,6 +479,9 @@ pub fn dispatch_math_functions(
     "MeanDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_deviation_ast(args));
     }
+    "MedianDeviation" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::median_deviation_ast(args));
+    }
     "GeometricMean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::geometric_mean_ast(args));
     }

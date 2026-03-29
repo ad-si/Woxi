@@ -619,6 +619,12 @@ function main() {
     "Variance[JohnsonDistribution[\"SU\", 1, 2, 3, 4]]",
     "Variance[JohnsonDistribution[\"SL\", gamma, delta, mu, sigma]]",
     "Variance[JohnsonDistribution[\"SL\", 0, 1, 0, 1]]",
+    // Entity-framework-dependent Quantity expressions: wolframscript's
+    // Interpreter["Unit"] resolution for non-standard unit names is
+    // context-dependent (resolves for top-level Quantity but may fail
+    // inside UnitConvert in the same session). Woxi resolves locally.
+    "UnitConvert[Quantity[1, \"KilowattHours\"], \"Joules\"]",
+    "UnitConvert[Quantity[1, \"Tonnes\"], \"Kilograms\"]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

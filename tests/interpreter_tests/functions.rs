@@ -2675,6 +2675,41 @@ mod mean_deviation {
   }
 }
 
+mod median_deviation {
+  use super::*;
+
+  #[test]
+  fn basic_list() {
+    assert_eq!(interpret("MedianDeviation[{1, 2, 3, 4, 5}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn even_list() {
+    assert_eq!(interpret("MedianDeviation[{2, 4, 6, 8}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn identical_values() {
+    assert_eq!(interpret("MedianDeviation[{5, 5, 5}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn odd_data() {
+    assert_eq!(
+      interpret("MedianDeviation[{1, 1, 2, 2, 4, 6, 9}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("MedianDeviation[x]").unwrap(),
+      "MedianDeviation[x]"
+    );
+  }
+}
+
 mod reverse_extended {
   use super::*;
 
@@ -4402,6 +4437,31 @@ mod moving_average {
   #[test]
   fn window_equals_length() {
     assert_eq!(interpret("MovingAverage[{1, 2, 3}, 3]").unwrap(), "{2}");
+  }
+}
+
+mod moving_median {
+  use super::*;
+
+  #[test]
+  fn basic_integers() {
+    assert_eq!(
+      interpret("MovingMedian[{1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn window_two() {
+    assert_eq!(
+      interpret("MovingMedian[{1, 2, 3, 4, 5, 6}, 2]").unwrap(),
+      "{3/2, 5/2, 7/2, 9/2, 11/2}"
+    );
+  }
+
+  #[test]
+  fn window_equals_length() {
+    assert_eq!(interpret("MovingMedian[{1, 2, 3}, 3]").unwrap(), "{2}");
   }
 }
 
@@ -9551,6 +9611,20 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("LetterCounts[\"hello world\"]").unwrap(),
       "<|l -> 3, o -> 2, d -> 1, r -> 1, w -> 1, e -> 1, h -> 1|>"
+    );
+  }
+  #[test]
+  fn text_words_basic() {
+    assert_eq!(
+      interpret("TextWords[\"the cat sat on the mat\"]").unwrap(),
+      "{the, cat, sat, on, the, mat}"
+    );
+  }
+  #[test]
+  fn text_words_with_punctuation() {
+    assert_eq!(
+      interpret("TextWords[\"Hello, World! This is a test.\"]").unwrap(),
+      "{Hello, World, This, is, a, test}"
     );
   }
   #[test]

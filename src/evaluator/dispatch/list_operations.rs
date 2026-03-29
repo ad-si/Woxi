@@ -130,6 +130,35 @@ pub fn dispatch_list_operations(
         }
       }
     }
+    "MovingMedian" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0]
+        && let Some(r) = match &args[1] {
+          Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+          _ => None,
+        }
+      {
+        let n = items.len();
+        if r > n {
+          crate::emit_message(&format!(
+            "MovingMedian::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument.",
+            r, n
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "MovingMedian".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        let mut result = Vec::with_capacity(n - r + 1);
+        for i in 0..=(n - r) {
+          let window = Expr::List(items[i..i + r].to_vec());
+          match list_helpers_ast::median_ast(&window) {
+            Ok(val) => result.push(val),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
     "MovingMap" if args.len() == 3 => {
       // MovingMap[f, list, n] - apply f to sublists of length n+1
       if let Expr::List(items) = &args[1]
@@ -262,6 +291,9 @@ pub fn dispatch_list_operations(
     }
     "BinCounts" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::bin_counts_ast(args));
+    }
+    "BinLists" if !args.is_empty() && args.len() <= 2 => {
+      return Some(list_helpers_ast::bin_lists_ast(args));
     }
     "HistogramList" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::histogram_list_ast(args));
