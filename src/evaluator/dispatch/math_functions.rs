@@ -285,6 +285,20 @@ pub fn dispatch_math_functions(
     "Total" => {
       return Some(crate::functions::math_ast::total_ast(args));
     }
+    "HammingWindow"
+    | "HannWindow"
+    | "BlackmanWindow"
+    | "DirichletWindow"
+    | "BartlettWindow"
+    | "WelchWindow"
+    | "CosineWindow"
+    | "ConnesWindow"
+    | "LanczosWindow"
+    | "ExactBlackmanWindow"
+      if args.len() == 1 =>
+    {
+      return Some(crate::functions::math_ast::window_function_ast(name, args));
+    }
     "BandpassFilter" if args.len() >= 2 && args.len() <= 4 => {
       return Some(crate::functions::math_ast::bandpass_filter_ast(args));
     }

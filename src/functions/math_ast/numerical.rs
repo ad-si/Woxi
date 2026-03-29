@@ -3143,6 +3143,126 @@ pub fn list_fourier_sequence_transform_ast(
   evaluate_expr_to_expr(&sum)
 }
 
+/// Generic window function evaluator.
+/// All window functions are defined on [-1/2, 1/2] and return 0 outside.
+pub fn window_function_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // For exact rational arguments, try exact evaluation
+  if let Expr::FunctionCall {
+    name: fname,
+    args: fargs,
+  } = &args[0]
+  {
+    if fname == "Rational" && fargs.len() == 2 {
+      if let (Some(n), Some(d)) =
+        (try_eval_to_f64(&fargs[0]), try_eval_to_f64(&fargs[1]))
+      {
+        let x = n / d;
+        if x.abs() > 0.5 {
+          return Ok(Expr::Integer(0));
+        }
+      }
+    }
+  }
+
+  let x = match try_eval_to_f64(&args[0]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if x.abs() > 0.5 {
+    return Ok(if matches!(&args[0], Expr::Real(_)) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+
+  let pi = std::f64::consts::PI;
+  let val = match name {
+    "HammingWindow" => 25.0 / 46.0 + 21.0 / 46.0 * (2.0 * pi * x).cos(),
+    "HannWindow" => (1.0 + (2.0 * pi * x).cos()) / 2.0,
+    "BlackmanWindow" => {
+      0.42 + 0.5 * (2.0 * pi * x).cos() + 0.08 * (4.0 * pi * x).cos()
+    }
+    "DirichletWindow" => 1.0,
+    "BartlettWindow" => 1.0 - 2.0 * x.abs(),
+    "WelchWindow" => 1.0 - 4.0 * x * x,
+    "CosineWindow" => (pi * x).cos(),
+    "ConnesWindow" => {
+      let t = 1.0 - 4.0 * x * x;
+      t * t
+    }
+    "LanczosWindow" => {
+      let arg = 2.0 * x;
+      if arg.abs() < 1e-15 {
+        1.0
+      } else {
+        (pi * arg).sin() / (pi * arg)
+      }
+    }
+    "ExactBlackmanWindow" => {
+      3946.0 / 18608.0
+        + 9274.0 / 18608.0 * (2.0 * pi * x).cos()
+        + 5388.0 / 18608.0 * (4.0 * pi * x).cos()
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // For exact arguments, try to return exact results
+  if matches!(&args[0], Expr::Integer(_))
+    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
+  {
+    // Check for common exact values
+    let rounded = fourier_round(val);
+    if (rounded - rounded.round()).abs() < 1e-14 && rounded.abs() < 1e18 {
+      return Ok(Expr::Integer(rounded.round() as i128));
+    }
+    // Try to express as a simple fraction
+    if let Some((n, d)) = approximate_rational(rounded) {
+      return Ok(make_rational(n, d));
+    }
+  }
+
+  Ok(Expr::Real(val))
+}
+
+/// Try to express a float as a simple rational p/q with small denominator.
+fn approximate_rational(val: f64) -> Option<(i128, i128)> {
+  if val == 0.0 {
+    return Some((0, 1));
+  }
+  // Try denominators up to 10000
+  for d in 1..=10000i128 {
+    let n = (val * d as f64).round() as i128;
+    let approx = n as f64 / d as f64;
+    if (approx - val).abs() < 1e-14 {
+      let g = gcd(n.abs(), d);
+      return Some((n / g, d / g));
+    }
+  }
+  None
+}
+
 /// BandpassFilter[data, {omega1, omega2}] or BandpassFilter[data, {omega1, omega2}, n]
 /// Applies a bandpass FIR filter using a windowed-sinc kernel with exact Hamming window.
 /// Default order n = length of data. Default SampleRate = 1.
