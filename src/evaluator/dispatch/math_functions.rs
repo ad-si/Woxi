@@ -285,6 +285,18 @@ pub fn dispatch_math_functions(
     "Total" => {
       return Some(crate::functions::math_ast::total_ast(args));
     }
+    "BandpassFilter" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(crate::functions::math_ast::bandpass_filter_ast(args));
+    }
+    "BandstopFilter" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(crate::functions::math_ast::bandstop_filter_ast(args));
+    }
+    "LowpassFilter" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(crate::functions::math_ast::lowpass_filter_ast(args));
+    }
+    "HighpassFilter" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(crate::functions::math_ast::highpass_filter_ast(args));
+    }
     "Fourier" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::fourier_ast(args));
     }
