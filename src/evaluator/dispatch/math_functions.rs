@@ -1310,6 +1310,9 @@ pub fn dispatch_math_functions(
     "NorlundB" if args.len() == 2 => {
       return Some(crate::functions::math_ast::norlund_b_ast(args));
     }
+    "PrimeZetaP" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::prime_zeta_p_ast(args));
+    }
     "EulerE" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::euler_e_ast(args));
     }

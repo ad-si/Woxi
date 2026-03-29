@@ -2896,7 +2896,7 @@ ConvexOptimization,,,,12.2,2971
 CreateCloudExpression,,🚫,,10.4,2971
 GraphCenter,Vertices with minimum eccentricity,✅,1,8.0,2971
 LeapYearQ,Tests if a year is a leap year,✅,pure,9.0,2971
-PrimeZetaP,,,,7.0,2971
+PrimeZetaP,Prime zeta function,✅,pure,7.0,2971
 Prism,,🚫,,10.0,2971
 RandomPolyhedron,,,,12.0,2971
 TextSearch,,🚫,,10.2,2971
