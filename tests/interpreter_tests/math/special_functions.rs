@@ -4018,6 +4018,38 @@ mod cantor_staircase {
   }
 }
 
+mod colon {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Colon[a, b]").unwrap(), "a \u{2236} b");
+  }
+
+  #[test]
+  fn three_args() {
+    assert_eq!(
+      interpret("Colon[a, b, c]").unwrap(),
+      "a \u{2236} b \u{2236} c"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(interpret("Colon[1, 2]").unwrap(), "1 \u{2236} 2");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("Colon[a]").unwrap(), "Colon[a]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Colon[a, b]]").unwrap(), "Colon");
+  }
+}
+
 mod bandpass_filter {
   use super::*;
 

@@ -1210,6 +1210,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Alternatives"
     | "Offset"
     | "RowBox"
+    | "Colon"
     | "DirectedEdge"
     | "UndirectedEdge"
     | "Entity"

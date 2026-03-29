@@ -2879,7 +2879,7 @@ UnderscriptBoxOptions,,🚫,,4.0,2944
 WebExecute,,🚫,,12.0,2944
 AcyclicGraphQ,True if graph has no cycles,✅,1,8.0,2952
 BandpassFilter,Apply a bandpass filter to data,✅,pure,9.0,2952
-Colon,,,,3.0,2952
+Colon,Inert operator displayed with ratio symbol,✅,pure,3.0,2952
 GeoLength,,🚫,,10.4,2952
 HypercubeGraph,N-dimensional hypercube graph,✅,1,8.0,2952
 MinDetect,,🚫,,8.0,2952
