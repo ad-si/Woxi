@@ -4018,6 +4018,20 @@ mod cantor_staircase {
   }
 }
 
+mod right_tee {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("RightTee[a, b]").unwrap(), "a \u{22A2} b");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("RightTee[a]").unwrap(), "RightTee[a]");
+  }
+}
+
 mod prime_zeta_p {
   use super::*;
 

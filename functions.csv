@@ -2921,7 +2921,7 @@ BlockchainBase,,🚫,,11.3,2993
 Midpoint,Compute the midpoint of two points or a line segment,✅,pure,12.0,2993
 ParagraphSpacing,,,,3.0,2993
 PatternFilling,,,,12.1,2993
-RightTee,,,,3.0,2993
+RightTee,Right tee operator displayed with ⊢ symbol,✅,pure,3.0,2993
 TensorSymmetry,,,,9.0,2993
 URLDownload,,🚫,,11.0,2993
 OpacityFunction,,🚫,,10.2,2999

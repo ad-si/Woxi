@@ -1214,6 +1214,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Colon"
     | "Congruent"
     | "DirectedEdge"
+    | "RightTee"
     | "UndirectedEdge"
     | "Entity"
     | "InfiniteLine"
