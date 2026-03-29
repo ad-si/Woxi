@@ -4018,6 +4018,92 @@ mod cantor_staircase {
   }
 }
 
+mod window_functions {
+  use super::*;
+
+  #[test]
+  fn hamming_zero() {
+    assert_eq!(interpret("HammingWindow[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn hamming_numeric() {
+    assert_eq!(
+      interpret("HammingWindow[0.3]").unwrap(),
+      "0.4024052851766544"
+    );
+  }
+
+  #[test]
+  fn hamming_half() {
+    assert_eq!(interpret("HammingWindow[1/2]").unwrap(), "2/23");
+  }
+
+  #[test]
+  fn hamming_exact_quarter() {
+    assert_eq!(interpret("HammingWindow[1/4]").unwrap(), "25/46");
+  }
+
+  #[test]
+  fn hamming_outside() {
+    assert_eq!(interpret("HammingWindow[0.6]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn hamming_symbolic() {
+    assert_eq!(interpret("HammingWindow[x]").unwrap(), "HammingWindow[x]");
+  }
+
+  #[test]
+  fn hann_numeric() {
+    assert_eq!(interpret("HannWindow[0.3]").unwrap(), "0.34549150281252633");
+  }
+
+  #[test]
+  fn blackman_numeric() {
+    assert_eq!(
+      interpret("BlackmanWindow[0.3]").unwrap(),
+      "0.2007701432625305"
+    );
+  }
+
+  #[test]
+  fn dirichlet_numeric() {
+    assert_eq!(interpret("DirichletWindow[0.3]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn bartlett_numeric() {
+    assert_eq!(interpret("BartlettWindow[0.3]").unwrap(), "0.4");
+  }
+
+  #[test]
+  fn welch_numeric() {
+    assert_eq!(interpret("WelchWindow[0.3]").unwrap(), "0.64");
+  }
+
+  #[test]
+  fn cosine_numeric() {
+    assert_eq!(
+      interpret("CosineWindow[0.3]").unwrap(),
+      "0.5877852522924731"
+    );
+  }
+
+  #[test]
+  fn connes_numeric() {
+    assert_eq!(interpret("ConnesWindow[0.3]").unwrap(), "0.4096");
+  }
+
+  #[test]
+  fn lanczos_numeric() {
+    assert_eq!(
+      interpret("LanczosWindow[0.3]").unwrap(),
+      "0.5045511524271047"
+    );
+  }
+}
+
 mod right_tee {
   use super::*;
 

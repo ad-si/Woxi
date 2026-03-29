@@ -2947,7 +2947,7 @@ DiskSegment,,,,10.2,3020
 FailureDistribution,,,,9.0,3020
 FirstPassageTimeDistribution,,,,9.0,3020
 FisherRatioTest,,,,8.0,3020
-HammingWindow,,,,9.0,3020
+HammingWindow,Compute HammingWindow value,✅,pure,9.0,3020
 NetReplacePart,,🚫,,11.0,3020
 TotalVariationFilter,,🚫,,8.0,3020
 UniformSumDistribution,,,,8.0,3020
@@ -3151,7 +3151,7 @@ FindThreshold,,,,8.0,3233
 GaugeFrameStyle,,🚫,,9.0,3233
 GeoBoundingBox,,🚫,,10.0,3233
 GlobalClusteringCoefficient,,,,9.0,3233
-HannWindow,,,,9.0,3233
+HannWindow,Compute HannWindow value,✅,pure,9.0,3233
 Share,Memory sharing optimization (no-op),✅,none,1.0,3233
 VerticalSeparator,,🚫,,3.0,3233
 AxiomaticTheory,,,,12.0,3242
@@ -3517,7 +3517,7 @@ SatisfiabilityCount,,,,7.0,3612
 StadiumShape,,,,10.2,3612
 BernoulliProcess,,🚫,,9.0,3636
 BinaryDeserialize,,,,11.1,3636
-BlackmanWindow,,,,9.0,3636
+BlackmanWindow,Compute BlackmanWindow value,✅,pure,9.0,3636
 BoundaryMeshRegionQ,,,,10.0,3636
 ButtonSource,,🚫,,3.0,3636
 CalloutStyle,,🚫,,11.0,3636
@@ -3564,7 +3564,7 @@ AroundReplace,,,,12.0,3678
 AssessmentFunction,,🚫,,12.2,3678
 DEigenvalues,,,,10.3,3678
 DeviceReadBuffer,,🚫,,10.0,3678
-DirichletWindow,,,,9.0,3678
+DirichletWindow,Compute DirichletWindow value,✅,pure,9.0,3678
 EdgeRules,,,,8.0,3678
 InitialSeeding,,,,12.0,3678
 JarqueBeraALMTest,,,,8.0,3678
@@ -3745,7 +3745,7 @@ AffineSpace,,,,10.2,3862
 AudioCapture,,🚫,,11.1,3862
 AudioJoin,,🚫,,11.0,3862
 CallPacket,,🚫,,3.0,3862
-CosineWindow,,,,9.0,3862
+CosineWindow,Compute CosineWindow value,✅,pure,9.0,3862
 GrammarRules,,🚫,,10.0,3862
 GraphAutomorphismGroup,,,,10.0,3862
 InverseSpectrogram,,🚫,,12.0,3862
@@ -3786,7 +3786,7 @@ TukeyWindow,,,,9.0,3889
 WaringYuleDistribution,,,,8.0,3889
 AudioPartition,,🚫,,11.0,3916
 AudioPlay,,🚫,,11.2,3916
-BartlettWindow,,,,9.0,3916
+BartlettWindow,Compute BartlettWindow value,✅,pure,9.0,3916
 BenfordDistribution,,,,8.0,3916
 BlockchainGet,,🚫,,11.3,3916
 CellFrameLabelMargins,,🚫,,4.0,3916
@@ -4111,7 +4111,7 @@ CalendarData,,🚫,,9.0,4262
 CauchyWindow,,,,9.0,4262
 ClearCookies,,🚫,,11.0,4262
 ConfirmMatch,,,,12.2,4262
-ConnesWindow,,,,9.0,4262
+ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
 ContinuousWaveletData,,🚫,,8.0,4262
 ErlangC,,,,9.0,4262
 FindSettings,,,,4.0,4262
@@ -4138,7 +4138,7 @@ SnDispersion,,,,11.1,4262
 SokalSneathDissimilarity,,,,6.0,4262
 SortedEntityClass,,🚫,,12.0,4262
 SpellingCorrectionList,,🚫,,10.4,4262
-WelchWindow,,,,9.0,4262
+WelchWindow,Compute WelchWindow value,✅,pure,9.0,4262
 ActiveClassification,,🚫,,11.1,4291
 AudioReverb,,🚫,,11.0,4291
 AugmentedSymmetricPolynomial,,,,8.0,4291
@@ -4235,7 +4235,7 @@ CurrentScreenImage,,🚫,,11.2,4387
 DecryptFile,,🚫,,11.1,4387
 EllipticFilterModel,,,,9.0,4387
 ErlangB,,,,9.0,4387
-ExactBlackmanWindow,,,,9.0,4387
+ExactBlackmanWindow,Compute ExactBlackmanWindow value,✅,pure,9.0,4387
 FeatureDistance,,🚫,,11.0,4387
 FileSystemScan,,,,11.0,4387
 FindChannels,,,,11.0,4387
@@ -4245,7 +4245,7 @@ GaugeFaceElementFunction,,🚫,,9.0,4387
 ImageContents,,🚫,,12.0,4387
 JuliaSetBoettcher,,,,10.0,4387
 KaiserBesselWindow,,,,9.0,4387
-LanczosWindow,,,,9.0,4387
+LanczosWindow,Compute LanczosWindow value,✅,pure,9.0,4387
 MathieuGroupM24,,,,8.0,4387
 PolygonAngle,,,,12.0,4387
 PredictorFunction,,🚫,,10.0,4387
