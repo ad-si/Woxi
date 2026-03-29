@@ -110,7 +110,12 @@ fn main() {
         Err(woxi::InterpreterError::EmptyInput) => {
           // No output for empty/comment-only input
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => {
+          eprintln!("Error: {}", e);
+          if let Some(trace) = woxi::take_error_trace() {
+            eprintln!("{}", trace);
+          }
+        }
       }
     }
     Commands::Run { file, args } => {
@@ -138,7 +143,12 @@ fn main() {
               // when running a script file.  Side-effects (Print[…]) have
               // already been written by the interpreter itself.
             }
-            Err(e) => eprintln!("Error interpreting file: {}", e),
+            Err(e) => {
+              eprintln!("Error interpreting file: {}", e);
+              if let Some(trace) = woxi::take_error_trace() {
+                eprintln!("{}", trace);
+              }
+            }
           }
         }
         Err(e) => eprintln!("Error reading file: {}", e),
@@ -181,7 +191,12 @@ fn main() {
           let code = without_shebang(&content);
           match interpret(&code) {
             Ok(_result) => { /* suppress final value for shebang scripts */ }
-            Err(e) => eprintln!("Error interpreting file: {}", e),
+            Err(e) => {
+              eprintln!("Error interpreting file: {}", e);
+              if let Some(trace) = woxi::take_error_trace() {
+                eprintln!("{}", trace);
+              }
+            }
           }
         }
         Err(e) => eprintln!("Error reading file: {}", e),

@@ -477,6 +477,12 @@ pub fn dispatch_evaluation_control(
         ));
       }
     }
+    // Stack[] - return the current evaluation stack as a list of strings
+    "Stack" if args.is_empty() => {
+      let stack = crate::get_eval_stack();
+      let items: Vec<Expr> = stack.into_iter().map(Expr::String).collect();
+      return Some(Ok(Expr::List(items)));
+    }
     _ => {}
   }
   None

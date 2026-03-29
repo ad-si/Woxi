@@ -1987,4 +1987,52 @@ mod high_level_functions_tests {
       assert_eq!(interpret("Apart[x + 1]").unwrap(), "1 + x");
     }
   }
+
+  mod stack_tests {
+    use super::*;
+    use woxi::clear_state;
+
+    #[test]
+    fn test_stack_at_top_level() {
+      clear_state();
+      // At top level, Stack[] shows only Stack itself
+      assert_eq!(interpret("Stack[]").unwrap(), "{Stack}");
+    }
+
+    #[test]
+    fn test_stack_in_nested_calls() {
+      clear_state();
+      assert_eq!(
+        interpret("f[] := Stack[]; g[] := f[]; g[]").unwrap(),
+        "{g, f, Stack}"
+      );
+    }
+
+    #[test]
+    fn test_stack_trace_on_message() {
+      clear_state();
+      // Part out-of-range emits a message with a stack trace
+      let result =
+        interpret("f[x_] := {1, 2}[[x]]; g[x_] := f[x]; g[10]").unwrap();
+      // The expression returns unevaluated
+      assert_eq!(result, "{1, 2}[[10]]");
+    }
+
+    #[test]
+    fn test_stack_trace_on_evaluation_error() {
+      clear_state();
+      // Division by zero propagates with a stack trace
+      let err = interpret("f[x_] := 1/x; g[x_] := f[x]; g[0]").unwrap_err();
+      let msg = format!("{}", err);
+      assert!(msg.contains("Division by zero"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_stack_empty_after_successful_eval() {
+      clear_state();
+      // After successful evaluation, Stack[] is clean
+      assert_eq!(interpret("f[x_] := x + 1; f[5]").unwrap(), "6");
+      assert_eq!(interpret("Stack[]").unwrap(), "{Stack}");
+    }
+  }
 }
