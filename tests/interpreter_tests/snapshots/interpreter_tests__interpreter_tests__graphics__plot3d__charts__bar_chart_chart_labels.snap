@@ -4,68 +4,68 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24}, ChartLabels -> {\"Anna\", \"Ben
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="499,100 499,1749 "/>
-<text x="420" y="1749" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1509 "/>
+<text x="670" y="1509" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 0
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1749 499,1749 "/>
-<text x="420" y="1625" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1509 749,1509 "/>
+<text x="670" y="1403" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1625 499,1625 "/>
-<text x="420" y="1500" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1403 749,1403 "/>
+<text x="670" y="1296" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1500 499,1500 "/>
-<text x="420" y="1375" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1296 749,1296 "/>
+<text x="670" y="1189" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1375 499,1375 "/>
-<text x="420" y="1250" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1189 749,1189 "/>
+<text x="670" y="1083" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1250 499,1250 "/>
-<text x="420" y="1125" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1083 749,1083 "/>
+<text x="670" y="976" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 10
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1125 499,1125 "/>
-<text x="420" y="1000" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,976 749,976 "/>
+<text x="670" y="869" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1000 499,1000 "/>
-<text x="420" y="875" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,869 749,869 "/>
+<text x="670" y="762" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,875 499,875 "/>
-<text x="420" y="750" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,762 749,762 "/>
+<text x="670" y="656" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,750 499,750 "/>
-<text x="420" y="625" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,656 749,656 "/>
+<text x="670" y="549" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,625 499,625 "/>
-<text x="420" y="500" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,549 749,549 "/>
+<text x="670" y="442" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 20
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,500 499,500 "/>
-<text x="420" y="375" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,442 749,442 "/>
+<text x="670" y="335" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,375 499,375 "/>
-<text x="420" y="250" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,335 749,335 "/>
+<text x="670" y="229" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,250 499,250 "/>
-<text x="420" y="125" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,229 749,229 "/>
+<text x="670" y="122" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 
 </text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,125 499,125 "/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="500,1750 3499,1750 "/>
-<rect x="599" y="1437" width="800" height="312" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="1599" y="1187" width="800" height="562" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="2599" y="250" width="800" height="1499" opacity="1" fill="#5E81B5" stroke="none"/>
-<text x="1000.0" y="1915.0" text-anchor="middle" font-family="sans-serif" font-size="110" fill="#666">Anna</text>
-<text x="2000.0" y="1915.0" text-anchor="middle" font-family="sans-serif" font-size="110" fill="#666">Ben</text>
-<text x="3000.0" y="1915.0" text-anchor="middle" font-family="sans-serif" font-size="110" fill="#666">Carl</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,122 749,122 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1510 3499,1510 "/>
+<rect x="841" y="1243" width="733" height="266" opacity="1" fill="#5E81B5" stroke="none"/>
+<rect x="1757" y="1029" width="734" height="480" opacity="1" fill="#5E81B5" stroke="none"/>
+<rect x="2674" y="229" width="733" height="1280" opacity="1" fill="#5E81B5" stroke="none"/>
+<text x="1208.3" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Anna</text>
+<text x="2125.0" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Ben</text>
+<text x="3041.7" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Carl</text>
 </svg>

@@ -599,7 +599,7 @@ fn draw_axes(
 ) {
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
-  let font_size = 10;
+  let font_size = 13;
 
   // Find the bottom corner (z=-1) closest to the viewer (smallest depth)
   let corners = bounding_box_corners();
