@@ -1082,7 +1082,11 @@ pub fn evaluate_function_call_ast_inner(
     let ctx = crate::pop_context().unwrap_or_else(|| "Global`".to_string());
     return Ok(Expr::String(ctx));
   }
-  // EndPackage[] returns unevaluated (matching wolframscript)
+  // EndPackage[] pops the context stack and returns Null
+  if name == "EndPackage" && args.is_empty() {
+    crate::pop_context();
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
 
   // Needs["pkg`"] returns $Failed (packages not supported in Woxi)
   if name == "Needs" && args.len() == 1 {

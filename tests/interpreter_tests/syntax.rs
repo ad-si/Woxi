@@ -2288,9 +2288,9 @@ mod begin_end_package {
   }
 
   #[test]
-  fn end_package_returns_unevaluated() {
-    // EndPackage[] returns unevaluated (matching wolframscript)
-    assert_eq!(interpret("EndPackage[]").unwrap(), "EndPackage[]");
+  fn end_package_returns_null() {
+    // EndPackage[] returns Null (matching wolframscript)
+    assert_eq!(interpret("EndPackage[]").unwrap(), "Null");
   }
 }
 
