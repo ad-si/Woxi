@@ -1212,6 +1212,7 @@ pub fn evaluate_function_call_ast_inner(
     | "RowBox"
     | "Bond"
     | "Colon"
+    | "Congruent"
     | "DirectedEdge"
     | "UndirectedEdge"
     | "Entity"

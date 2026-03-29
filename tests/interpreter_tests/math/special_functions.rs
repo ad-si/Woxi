@@ -4018,6 +4018,28 @@ mod cantor_staircase {
   }
 }
 
+mod congruent {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Congruent[a, b]").unwrap(), "a \u{2261} b");
+  }
+
+  #[test]
+  fn three_args() {
+    assert_eq!(
+      interpret("Congruent[a, b, c]").unwrap(),
+      "a \u{2261} b \u{2261} c"
+    );
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("Congruent[a]").unwrap(), "Congruent[a]");
+  }
+}
+
 mod bond {
   use super::*;
 
