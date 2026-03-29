@@ -4014,6 +4014,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2261} ");
       }
+      // Special case: RightTee[a, b, ...] displays as a ⊢ b ⊢ ...
+      if name == "RightTee" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{22A2} ");
+      }
       // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
       if name == "LongRightArrow" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
@@ -5572,6 +5577,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2261} ");
       }
+      // Special case: RightTee[a, b, ...] displays as a ⊢ b ⊢ ...
+      if name == "RightTee" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{22A2} ");
+      }
       // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
       if name == "LongRightArrow" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
@@ -6695,6 +6705,12 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{2261} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RightTee" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22A2} ")
     }
     Expr::FunctionCall { name, args }
       if name == "LongRightArrow" && args.len() >= 2 =>
