@@ -4018,6 +4018,23 @@ mod cantor_staircase {
   }
 }
 
+mod bond {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Bond[{\"Single\", 1, 2}]").unwrap(),
+      "Bond[{Single, 1, 2}]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Bond[{\"Single\", 1, 2}]]").unwrap(), "Bond");
+  }
+}
+
 mod planar_graph {
   use super::*;
 
