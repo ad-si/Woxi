@@ -2887,7 +2887,7 @@ PlanarGraph,Create a planar graph from edges,✅,pure,10.4,2952
 StateSpaceTransform,,🚫,,8.0,2952
 Bond,Represent a chemical bond,✅,pure,12.0,2960
 Congruent,Inert operator displayed with identical-to symbol,✅,pure,3.0,2960
-NorlundB,,,,6.0,2960
+NorlundB,Nörlund generalized Bernoulli polynomial,✅,pure,6.0,2960
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1.0,2960
 ReplaceImageValue,,🚫,,9.0,2960
 ShearingMatrix,Shearing transformation matrix,✅,none,6.0,2960
