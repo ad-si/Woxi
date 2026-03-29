@@ -4610,7 +4610,6 @@ pub fn evaluate_function_call_ast_inner(
       | "SectorOrigin"
       | "MaxTrainingRounds"
       | "PolarAxes"
-      | "PolynomialGCD"
       | "SystemDialogInput"
       | "ARProcess"
       | "DiscreteWaveletTransform"

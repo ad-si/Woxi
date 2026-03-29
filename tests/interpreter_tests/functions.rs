@@ -8003,10 +8003,48 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn polynomial_gcd() {
+    // Coprime polynomials in different variables
+    assert_eq!(interpret("PolynomialGCD[x, y]").unwrap(), "1");
+    // Basic GCD: (x-1) is common factor
     assert_eq!(
-      interpret("PolynomialGCD[x, y]").unwrap(),
-      "PolynomialGCD[x, y]"
+      interpret("PolynomialGCD[x^2 - 1, x - 1]").unwrap(),
+      "-1 + x"
     );
+    // GCD of x^2-1 = (x-1)(x+1) and x^2-2x+1 = (x-1)^2
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 1, x^2 - 2x + 1]").unwrap(),
+      "-1 + x"
+    );
+    // GCD with numeric content: 6x^2+3x=3x(2x+1), 4x^2+2x=2x(2x+1)
+    assert_eq!(
+      interpret("PolynomialGCD[6*x^2 + 3*x, 4*x^2 + 2*x]").unwrap(),
+      "x + 2*x^2"
+    );
+    // Integer GCD
+    assert_eq!(interpret("PolynomialGCD[12, 8]").unwrap(), "4");
+    // x^3-1 = (x-1)(x^2+x+1), x^2-1 = (x-1)(x+1)
+    assert_eq!(
+      interpret("PolynomialGCD[x^3 - 1, x^2 - 1]").unwrap(),
+      "-1 + x"
+    );
+    // (x+1)^2 and (x+1)(x+2)
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 + 2*x + 1, x^2 + 3*x + 2]").unwrap(),
+      "1 + x"
+    );
+    // 2(x+1) and (x-1)(x+1)
+    assert_eq!(
+      interpret("PolynomialGCD[2*x + 2, x^2 - 1]").unwrap(),
+      "1 + x"
+    );
+    // Power GCD
+    assert_eq!(interpret("PolynomialGCD[x^2, x^3]").unwrap(), "x^2");
+    // Zero case
+    assert_eq!(interpret("PolynomialGCD[0, x^2 + 1]").unwrap(), "1 + x^2");
+    // GCD with itself
+    assert_eq!(interpret("PolynomialGCD[x + 1, x + 1]").unwrap(), "1 + x");
+    // Coprime polynomials
+    assert_eq!(interpret("PolynomialGCD[x + 1, x + 2]").unwrap(), "1");
   }
   #[test]
   fn system_dialog_input() {
