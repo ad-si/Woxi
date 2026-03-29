@@ -1715,7 +1715,7 @@ BernoulliGraphDistribution,Bernoulli random graph,✅,unevaluated,8.0,1748
 ClusteringComponents,Clustering components,✅,unevaluated,8.0,1748
 MandelbrotSetPlot,Mandelbrot set plot,✅,unevaluated,10.0,1748
 Language,Language option,✅,unevaluated,3.0,1749
-SequenceCases,Find sequence patterns,✅,unevaluated,10.1,1751
+SequenceCases,Find matching subsequences in a list,✅,pure,10.1,1751
 TimeConstraint,Time constraint option,✅,unevaluated,3.0,1751
 DoubleRightTee,Double right tee symbol,✅,unevaluated,3.0,1752
 Matrices,Matrix domain,✅,unevaluated,9.0,1753
@@ -1760,7 +1760,7 @@ Find,Finds a file on the search path,🚧,effectful,2.0,1793
 PaneSelector,Pane selector control,✅,unevaluated,6.0,1793
 URLExecute,Execute URL request,✅,unevaluated,10.0,1794
 FileBaseName,File base name,✅,unevaluated,7.0,1796
-SequencePosition,Position of sequence pattern,✅,unevaluated,10.1,1796
+SequencePosition,Find positions of a subsequence in a list,✅,pure,10.1,1796
 ColorCombine,Combine color channels,✅,unevaluated,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,✅,unevaluated,7.0,1800
 Highlighted,Highlighted display,✅,unevaluated,10.4,1800

@@ -2,6 +2,32 @@
 use super::*;
 use crate::functions::list_helpers_ast;
 
+/// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
+fn has_pattern_element(expr: &Expr) -> bool {
+  match expr {
+    Expr::Pattern { .. }
+    | Expr::PatternOptional { .. }
+    | Expr::PatternTest { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Blank"
+          | "BlankSequence"
+          | "BlankNullSequence"
+          | "Pattern"
+          | "Alternatives"
+          | "PatternTest"
+          | "Condition"
+          | "Repeated"
+          | "RepeatedNull"
+          | "Except"
+      ) || args.iter().any(|a| has_pattern_element(a))
+    }
+    Expr::List(items) => items.iter().any(|i| has_pattern_element(i)),
+    _ => false,
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -1597,6 +1623,94 @@ pub fn dispatch_list_operations(
           seen.insert(expr_to_string(e));
         }
         return Some(Ok(Expr::Integer(seen.len() as i128)));
+      }
+    }
+    // SequencePosition[list, sublist] — find positions of subsequence (overlapping)
+    "SequencePosition" if args.len() == 2 => {
+      if let (Expr::List(list), Expr::List(sub)) = (&args[0], &args[1]) {
+        if sub.is_empty() {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        let sub_len = sub.len();
+        let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
+        let mut results: Vec<Expr> = Vec::new();
+        for i in 0..list.len() {
+          if i + sub_len > list.len() {
+            break;
+          }
+          let mut matches = true;
+          for j in 0..sub_len {
+            if expr_to_string(&list[i + j]) != sub_strs[j] {
+              matches = false;
+              break;
+            }
+          }
+          if matches {
+            results.push(Expr::List(vec![
+              Expr::Integer((i + 1) as i128),
+              Expr::Integer((i + sub_len) as i128),
+            ]));
+          }
+        }
+        return Some(Ok(Expr::List(results)));
+      }
+    }
+    // SequenceCases[list, sublist] — find matching subsequences
+    "SequenceCases" if args.len() == 2 => {
+      if let Expr::List(list) = &args[0] {
+        if let Expr::List(sub) = &args[1] {
+          if sub.is_empty() {
+            return Some(Ok(Expr::List(vec![])));
+          }
+          let sub_len = sub.len();
+          // Check if pattern contains Blank/pattern elements
+          let has_patterns = sub.iter().any(|e| has_pattern_element(e));
+          if has_patterns {
+            // Pattern-based matching using the evaluator's full pattern matching
+            let pattern = Expr::List(sub.clone());
+            let mut results: Vec<Expr> = Vec::new();
+            let mut i = 0;
+            while i + sub_len <= list.len() {
+              let subseq = Expr::List(list[i..i + sub_len].to_vec());
+              let match_result =
+                crate::functions::predicate_ast::match_q_ast(&[
+                  subseq.clone(),
+                  pattern.clone(),
+                ]);
+              if let Ok(Expr::Identifier(s)) = &match_result {
+                if s == "True" {
+                  results.push(subseq);
+                  i += sub_len;
+                  continue;
+                }
+              }
+              i += 1;
+            }
+            return Some(Ok(Expr::List(results)));
+          } else {
+            // Literal subsequence match
+            let sub_strs: Vec<String> =
+              sub.iter().map(expr_to_string).collect();
+            let mut results: Vec<Expr> = Vec::new();
+            let mut i = 0;
+            while i + sub_len <= list.len() {
+              let mut matches = true;
+              for j in 0..sub_len {
+                if expr_to_string(&list[i + j]) != sub_strs[j] {
+                  matches = false;
+                  break;
+                }
+              }
+              if matches {
+                results.push(Expr::List(list[i..i + sub_len].to_vec()));
+                i += sub_len;
+              } else {
+                i += 1;
+              }
+            }
+            return Some(Ok(Expr::List(results)));
+          }
+        }
       }
     }
     // SequenceCount[list, sublist] — count non-overlapping occurrences

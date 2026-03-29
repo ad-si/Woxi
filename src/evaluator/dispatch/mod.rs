@@ -4737,7 +4737,6 @@ pub fn evaluate_function_call_ast_inner(
       | "TimeSeriesModelFit"
       | "PaneSelector"
       | "URLExecute"
-      | "SequencePosition"
       | "FileBaseName"
       | "CoordinatesToolOptions"
       | "ColorCombine"
