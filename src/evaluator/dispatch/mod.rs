@@ -1850,6 +1850,11 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // PlanarGraph[...] is treated as Graph[...] (same construction, different layout hint)
+  if name == "PlanarGraph" {
+    return evaluate_function_call_ast("Graph", args);
+  }
+
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {

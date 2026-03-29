@@ -2883,7 +2883,7 @@ Colon,Inert operator displayed with ratio symbol,✅,pure,3.0,2952
 GeoLength,,🚫,,10.4,2952
 HypercubeGraph,N-dimensional hypercube graph,✅,1,8.0,2952
 MinDetect,,🚫,,8.0,2952
-PlanarGraph,,,,10.4,2952
+PlanarGraph,Create a planar graph from edges,✅,pure,10.4,2952
 StateSpaceTransform,,🚫,,8.0,2952
 Bond,,,,12.0,2960
 Congruent,,,,3.0,2960
