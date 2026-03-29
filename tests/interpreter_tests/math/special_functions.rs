@@ -4292,10 +4292,11 @@ mod planar_graph {
   use super::*;
 
   #[test]
-  fn from_rules() {
+  fn from_rules_with_layout() {
+    // PlanarGraph includes GraphLayout -> "TutteEmbedding" option
     assert_eq!(
       interpret("PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
-      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}, {GraphLayout -> TutteEmbedding}]"
     );
   }
 
@@ -4406,10 +4407,23 @@ mod bandpass_filter {
   }
 
   #[test]
-  fn symbolic_returns_unevaluated() {
-    assert_eq!(
-      interpret("BandpassFilter[{a, b, c}, {0.1, 0.3}]").unwrap(),
-      "BandpassFilter[{a, b, c}, {0.1, 0.3}]"
+  fn symbolic_evaluates() {
+    // BandpassFilter with symbolic data should evaluate using kernel coefficients
+    let result = interpret("BandpassFilter[{a, b, c}, {0.1, 0.3}]").unwrap();
+    assert!(
+      result.contains("*a"),
+      "should contain coefficient*a: {}",
+      result
+    );
+    assert!(
+      result.contains("*b"),
+      "should contain coefficient*b: {}",
+      result
+    );
+    assert!(
+      result.contains("*c"),
+      "should contain coefficient*c: {}",
+      result
     );
   }
 }

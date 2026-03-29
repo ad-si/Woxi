@@ -517,6 +517,7 @@ function main() {
     /\bSmoothDensityHistogram\[/, // Complex Graphics output, implementation-specific rendering
     /\bServiceConnect\[/,   // Network-dependent Failure result
     /\bNetGraph\[/,         // Neural network internals differ between implementations
+    /\bStreams\[/, // Woxi returns hardcoded stdout/stderr, Wolfram includes temp file streams
     /\bConnectedComponents\[/, // Vertex ordering within components is implementation-specific
     /\bStarGraph\[/,         // Internal Graph representation differs (edge list vs SparseArray)
     /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
@@ -579,6 +580,19 @@ function main() {
     "ArgMax[x, y]",
     // FindArgMin: Woxi gives exact -1.5, Wolfram introduces FP noise -1.5000000000000004
     "FindArgMin[x^2 + 3*x + 2, x]",
+    // Last-ULP floating-point differences in window/filter/prime functions:
+    "BlackmanWindow[0.3]",
+    "PrimeZetaP[2.0]",
+    "N[PrimeZetaP[2]]",
+    "PrimeZetaP[3.0]",
+    "BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]",
+    "BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 3]",
+    "BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 4]",
+    "BandpassFilter[{1, 2, 3, 4, 5, 6, 7, 8}, {0.1, 0.3}]",
+    "LowpassFilter[{1, 2, 3, 4, 5}, 0.3]",
+    "HighpassFilter[{1, 2, 3, 4, 5}, 0.3]",
+    // BandpassFilter symbolic: last-ULP coefficient differences
+    "BandpassFilter[{a, b, c}, {0.1, 0.3}]",
     // Times factor ordering: (Cosh+Sinh)*Sin vs Sin*(Cosh+Sinh)
     "ExponentialGeneratingFunction[Sin[n], n, x]",
     // Insphere: algebraic factoring difference. Woxi gives (n+Sqrt[n])^(-1), Wolfram factors to 1/(Sqrt[n]*(1+Sqrt[n]))

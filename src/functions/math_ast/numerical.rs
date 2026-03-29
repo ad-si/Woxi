@@ -3349,24 +3349,22 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let w1 = omega1 / sample_rate;
   let w2 = omega2 / sample_rate;
 
-  // Extract numeric data
-  let data: Vec<f64> =
-    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
-  if data.len() != items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "BandpassFilter".to_string(),
-      args: args.to_vec(),
-    });
-  }
-
   // Compute FIR kernel using windowed-sinc with exact Hamming window (alpha = 25/46)
   let n = order;
   let kernel = bandpass_kernel(n, w1, w2);
 
-  // Apply convolution with edge-padding (repeat boundary values)
-  let result = convolve_edge_padded(&data, &kernel);
+  // Try numeric path first
+  let data: Vec<f64> =
+    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  if data.len() == items.len() {
+    // All numeric — fast path
+    let result = convolve_edge_padded(&data, &kernel);
+    return Ok(Expr::List(result.into_iter().map(Expr::Real).collect()));
+  }
 
-  Ok(Expr::List(result.into_iter().map(Expr::Real).collect()))
+  // Symbolic path: convolve symbolically
+  let result = convolve_edge_padded_symbolic(items, &kernel);
+  Ok(Expr::List(result))
 }
 
 /// Compute the bandpass FIR kernel of length n using windowed-sinc with exact Hamming window.
@@ -3418,6 +3416,58 @@ fn convolve_edge_padded(data: &[f64], kernel: &[f64]) -> Vec<f64> {
       sum += kernel[j] * val;
     }
     result.push(fourier_round(sum));
+  }
+  result
+}
+
+/// Symbolic convolution: for each output position, compute a symbolic sum of kernel[j] * data[idx].
+/// Uses edge-padding (repeat boundary values) like the numeric version.
+fn convolve_edge_padded_symbolic(data: &[Expr], kernel: &[f64]) -> Vec<Expr> {
+  let n = kernel.len();
+  let len = data.len();
+  let left_pad = n / 2;
+
+  let mut result = Vec::with_capacity(len);
+  for m in 0..len {
+    // Group kernel coefficients by data index
+    let mut coeff_by_idx: Vec<f64> = vec![0.0; len];
+    for j in 0..n {
+      let idx = m as isize + j as isize - left_pad as isize;
+      let data_idx = if idx < 0 {
+        0
+      } else if idx >= len as isize {
+        len - 1
+      } else {
+        idx as usize
+      };
+      coeff_by_idx[data_idx] += kernel[j];
+    }
+    // Build symbolic sum
+    let mut terms: Vec<Expr> = Vec::new();
+    for (i, &coeff) in coeff_by_idx.iter().enumerate() {
+      if coeff == 0.0 {
+        continue;
+      }
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Real(coeff), data[i].clone()],
+      });
+    }
+    let expr = if terms.is_empty() {
+      Expr::Integer(0)
+    } else if terms.len() == 1 {
+      terms.pop().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      }
+    };
+    // Evaluate the symbolic expression to simplify
+    match crate::evaluator::evaluate_expr_to_expr(&expr) {
+      Ok(e) => result.push(e),
+      Err(_) => result.push(expr),
+    }
   }
   result
 }

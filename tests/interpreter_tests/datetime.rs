@@ -300,10 +300,19 @@ mod date_string {
   }
 
   #[test]
-  fn date_string_from_string_date_default_format() {
+  fn date_string_from_string_date_returns_as_is() {
+    // DateString["string"] with no format spec returns the string unchanged
     assert_eq!(
       interpret("DateString[\"2025-09-24\"]").unwrap(),
-      "Wed 24 Sep 2025 00:00:00"
+      "2025-09-24"
+    );
+    assert_eq!(
+      interpret("DateString[\"6 June 1991\"]").unwrap(),
+      "6 June 1991"
+    );
+    assert_eq!(
+      interpret("DateString[\"March 5, 2025\"]").unwrap(),
+      "March 5, 2025"
     );
   }
 
@@ -317,10 +326,21 @@ mod date_string {
 
   #[test]
   fn date_string_from_natural_language_date() {
+    // "Day" gives zero-padded day; "Day2" is not a Wolfram element (treated as literal)
+    assert_eq!(
+      interpret("DateString[\"6 June 1991\", {\"Year\", \"-\", \"Month\", \"-\", \"Day\"}]")
+        .unwrap(),
+      "1991-06-06"
+    );
+  }
+
+  #[test]
+  fn date_string_day2_is_literal() {
+    // "Day2" is not a recognized format element — treated as literal text
     assert_eq!(
       interpret("DateString[\"6 June 1991\", {\"Year\", \"-\", \"Month\", \"-\", \"Day2\"}]")
         .unwrap(),
-      "1991-06-06"
+      "1991-06-Day2"
     );
   }
 }

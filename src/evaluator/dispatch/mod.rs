@@ -1854,9 +1854,23 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // PlanarGraph[...] is treated as Graph[...] (same construction, different layout hint)
+  // PlanarGraph[...] is treated as Graph[...] with GraphLayout -> "TutteEmbedding"
   if name == "PlanarGraph" {
-    return evaluate_function_call_ast("Graph", args);
+    let mut graph = evaluate_function_call_ast("Graph", args)?;
+    // Append {GraphLayout -> "TutteEmbedding"} option to the Graph args
+    if let Expr::FunctionCall {
+      name: ref gn,
+      args: ref mut ga,
+    } = graph
+    {
+      if gn == "Graph" {
+        ga.push(Expr::List(vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+          replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
+        }]));
+      }
+    }
+    return Ok(graph);
   }
 
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
@@ -1941,7 +1955,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let Expr::List(_) = &gargs[1]
     {
       return Ok(gargs[1].clone());
@@ -1960,7 +1974,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let Expr::List(_) = &gargs[0]
     {
       return Ok(gargs[0].clone());
@@ -1979,7 +1993,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let Expr::List(edges) = &gargs[1]
   {
     let edge_str = expr_to_string(&args[1]);
@@ -1997,7 +2011,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let Expr::List(edges) = &gargs[1]
     {
       let all_undirected = edges.iter().all(|e| {
@@ -2017,7 +2031,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
@@ -2042,7 +2056,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
@@ -2074,7 +2088,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = graph
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
@@ -2134,7 +2148,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let adj = build_undirected_adj(vertices, edges);
@@ -2154,7 +2168,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
@@ -2199,7 +2213,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
@@ -2235,7 +2249,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
@@ -2265,7 +2279,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
@@ -2324,7 +2338,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
@@ -2378,7 +2392,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let k = &args[1];
@@ -2527,7 +2541,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
@@ -2575,7 +2589,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
       && gname == "Graph"
-      && gargs.len() == 2
+      && gargs.len() >= 2
       && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
     {
       let n = vertices.len();
@@ -2747,7 +2761,7 @@ pub fn evaluate_function_call_ast_inner(
       args: gargs,
     } = &args[0]
     && gname == "Graph"
-    && gargs.len() == 2
+    && gargs.len() >= 2
     && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
   {
     let n = vertices.len();
