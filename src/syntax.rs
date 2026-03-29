@@ -3945,16 +3945,41 @@ fn expr_to_part_index_string(expr: &Expr) -> String {
   expr_to_string(expr)
 }
 
-/// Convert an Expr back to a string representation
-pub fn expr_to_string(expr: &Expr) -> String {
+/// The form to use for formatting expressions.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ExprForm {
+  /// InputForm: strings are quoted, full round-trip syntax
+  Input,
+  /// OutputForm: strings are unquoted, display-oriented
+  Output,
+}
+
+/// Unified expression formatter that handles both InputForm and OutputForm.
+pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
+  let fmt = |e: &Expr| -> String { format_expr(e, form) };
+  let fmt_fn: fn(&Expr) -> String = match form {
+    ExprForm::Input => expr_to_string,
+    ExprForm::Output => expr_to_output,
+  };
+  let is_output = form == ExprForm::Output;
+
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real(*f),
     Expr::BigFloat(digits, prec) => format_bigfloat(digits, *prec),
     Expr::String(s) => {
-      let escaped = escape_string_for_input_form(s);
-      format!("\"{}\"", escaped)
+      if is_output {
+        // Strings containing Wolfram box-syntax Unicode markers render as
+        // DisplayForm[<box expression>] in OutputForm (matching wolframscript).
+        if s.starts_with(crate::functions::string_ast::BOX_START) {
+          return box_string_to_display_form(s);
+        }
+        s.clone() // No quotes for display
+      } else {
+        let escaped = escape_string_for_input_form(s);
+        format!("\"{}\"", escaped)
+      }
     }
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {
@@ -3964,75 +3989,104 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("##{}", n)
     }
     Expr::List(items) => {
-      let parts: Vec<String> = items.iter().map(expr_to_string).collect();
+      let parts: Vec<String> = items.iter().map(|e| fmt(e)).collect();
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
       // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return format!("Inequality[{}]", parts.join(", "));
+      }
+      // Sequence[] (empty sequence) displays as nothing in Wolfram output (OutputForm only)
+      if is_output && name == "Sequence" && args.is_empty() {
+        return String::new();
       }
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
       if name == "Quantity" && args.len() == 2 {
-        let mag_str = expr_to_string(&args[0]);
+        let mag_str = fmt(&args[0]);
         let unit_str = quantity_unit_to_string(&args[1]);
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
-      // Special case: ByteArray["base64"] — InputForm shows ByteArray["base64"]
-      // (no special handling needed — falls through to default formatting)
+      // OutputForm-only: FullForm, CForm, TeXForm, FortranForm wrap inner in output form
+      if is_output && name == "FullForm" && args.len() == 1 {
+        return format!("FullForm[{}]", fmt(&args[0]));
+      }
+      if is_output && name == "CForm" && args.len() == 1 {
+        return format!("CForm[{}]", fmt(&args[0]));
+      }
+      if is_output && name == "TeXForm" && args.len() == 1 {
+        return format!("TeXForm[{}]", fmt(&args[0]));
+      }
+      if is_output && name == "FortranForm" && args.len() == 1 {
+        return format!("FortranForm[{}]", fmt(&args[0]));
+      }
+      // Special case: ByteArray
+      if name == "ByteArray" && args.len() == 1 {
+        if is_output {
+          // OutputForm: ByteArray[<n>]
+          if let Expr::String(b64) = &args[0] {
+            use base64::Engine;
+            let engine = base64::engine::general_purpose::STANDARD;
+            if let Ok(decoded) = engine.decode(b64) {
+              return format!("ByteArray[<{}>]", decoded.len());
+            }
+          }
+          if let Expr::List(items) = &args[0] {
+            return format!("ByteArray[<{}>]", items.len());
+          }
+        }
+        // InputForm: falls through to default formatting (ByteArray["base64"])
+      }
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
       if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
       {
-        return format!(
-          "InterpolatingFunction[{}, <>]",
-          expr_to_string(&args[0])
-        );
+        return format!("InterpolatingFunction[{}, <>]", fmt(&args[0]));
       }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
-        return format!("<<{}>>", expr_to_string(&args[0]));
+        return format!("<<{}>>", fmt(&args[0]));
       }
       // Special case: StringSkeleton[n] displays as <<n>>
       if name == "StringSkeleton" && args.len() == 1 {
-        return format!("<<{}>>", expr_to_string(&args[0]));
+        return format!("<<{}>>", fmt(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
-        return format!("{}..", expr_to_string(&args[0]));
+        return format!("{}..", fmt(&args[0]));
       }
       // Special case: RepeatedNull[x] displays as x...
       if name == "RepeatedNull" && args.len() == 1 {
-        return format!("{}...", expr_to_string(&args[0]));
+        return format!("{}...", fmt(&args[0]));
       }
       // Special case: Colon[a, b, ...] displays as a ∶ b ∶ ...
       if name == "Colon" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2236} ");
       }
       // Special case: Cap[a, b, ...] displays as a ⌢ b ⌢ ...
       if name == "Cap" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2322} ");
       }
       // Special case: Congruent[a, b, ...] displays as a ≡ b ≡ ...
       if name == "Congruent" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2261} ");
       }
       // Special case: RightTee[a, b, ...] displays as a ⊢ b ⊢ ...
       if name == "RightTee" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{22A2} ");
       }
       // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
       if name == "LongRightArrow" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{27F6} ");
       }
       // Special case: Proportional[a, b, ...] displays as a ∝ b ∝ ...
       if name == "Proportional" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{221D} ");
       }
       // BlankSequence[] → __, BlankSequence[h] → __h
@@ -4057,13 +4111,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
           return format!("___{}", h);
         }
       }
+      // OutputForm-only: BaseForm[expr, base]
+      if is_output && name == "BaseForm" && args.len() == 2 {
+        return format!("BaseForm[{}, {}]", fmt(&args[0]), fmt(&args[1]));
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
-        return format!(
-          "{}/{}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{}/{}", fmt(&args[0]), fmt(&args[1]));
       }
       // Special case: Association[...] with Rule/RuleDelayed args displays as <|...|>
       if name == "Association"
@@ -4071,44 +4125,28 @@ pub fn expr_to_string(expr: &Expr) -> String {
           .iter()
           .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
       {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return format!("<|{}|>", parts.join(", "));
       }
       // Special case: Factorial[n] displays as n!
       if name == "Factorial" && args.len() == 1 {
-        return format!("{}!", expr_to_string(&args[0]));
+        return format!("{}!", fmt(&args[0]));
       }
       if name == "Rule" && args.len() == 2 {
-        return format!(
-          "{} -> {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "TwoWayRule" && args.len() == 2 {
-        return format!(
-          "{} <-> {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} <-> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "RuleDelayed" && args.len() == 2 {
-        return format!(
-          "{} :> {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} :> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "Condition" && args.len() == 2 {
-        return format!(
-          "{} /; {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} /; {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "PatternTest" && args.len() == 2 {
-        let pat = expr_to_string(&args[0]);
-        let test = expr_to_string(&args[1]);
+        let pat = fmt(&args[0]);
+        let test = fmt(&args[1]);
         // Simple _ doesn't need parens, everything else does
         if pat == "_" || pat == "__" || pat == "___" {
           return format!("{}?{}", pat, test);
@@ -4116,126 +4154,102 @@ pub fn expr_to_string(expr: &Expr) -> String {
         return format!("({})?{}", pat, test);
       }
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", expr_to_string(&args[0]));
+        return format!("{}++", fmt(&args[0]));
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", expr_to_string(&args[0]));
+        return format!("{}--", fmt(&args[0]));
       }
       if name == "PreIncrement" && args.len() == 1 {
-        return format!("++{}", expr_to_string(&args[0]));
+        return format!("++{}", fmt(&args[0]));
       }
       if name == "PreDecrement" && args.len() == 1 {
-        return format!("--{}", expr_to_string(&args[0]));
+        return format!("--{}", fmt(&args[0]));
       }
       if name == "Optional" && args.len() == 1 {
-        return format!("{}.", expr_to_string(&args[0]));
+        return format!("{}.", fmt(&args[0]));
       }
       if name == "Optional" && args.len() == 2 {
-        return format!(
-          "{}:{}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{}:{}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "NonCommutativeMultiply" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join("**");
       }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2212} ");
       }
       // Special case: ReverseElement[a, b] displays as a ∋ b
       if name == "ReverseElement" && args.len() == 2 {
-        return format!(
-          "{} \u{220B} {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} \u{220B} {}", fmt(&args[0]), fmt(&args[1]));
       }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {
-        return format!(
-          "{} . {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} . {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "Composition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" @* ");
       }
       if name == "RightComposition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" /* ");
       }
       // Special case: Therefore[a, b, ...] displays as a ∴ b ∴ ...
       if name == "Therefore" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2234} ");
       }
       // Special case: Because[a, b, ...] displays as a ∵ b ∵ ...
       if name == "Because" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2235} ");
       }
       // PlusMinus[x] displays as ±x, PlusMinus[a, b] displays as a ± b
       if name == "PlusMinus" {
         if args.len() == 1 {
-          return format!("\u{00B1}{}", expr_to_string(&args[0]));
+          return format!("\u{00B1}{}", fmt(&args[0]));
         }
         if args.len() >= 2 {
-          let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+          let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
           return parts.join(" \u{00B1} ");
         }
       }
       // CircleTimes[a, b, ...] displays as a ⊗ b ⊗ ...
       if name == "CircleTimes" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2297} ");
       }
       // Wedge[a, b, ...] displays as a ∧ b ∧ ...
       if name == "Wedge" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{22C0} ");
       }
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
-        return format!("\u{2207}{}", expr_to_string(&args[0]));
+        return format!("\u{2207}{}", fmt(&args[0]));
       }
       // CirclePlus[a, b, ...] displays as a ⊕ b ⊕ ...
       if name == "CirclePlus" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" \u{2295} ");
       }
       // Subset[a, b] displays as a ⊂ b
       if name == "Subset" && args.len() == 2 {
-        return format!(
-          "{} \u{2282} {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} \u{2282} {}", fmt(&args[0]), fmt(&args[1]));
       }
       // LeftArrow[a, b] displays as a ← b
       if name == "LeftArrow" && args.len() == 2 {
-        return format!(
-          "{} \u{2190} {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} \u{2190} {}", fmt(&args[0]), fmt(&args[1]));
       }
       // DotEqual[a, b] displays as a ≐ b
       if name == "DotEqual" && args.len() == 2 {
-        return format!(
-          "{} \u{2250} {}",
-          expr_to_string(&args[0]),
-          expr_to_string(&args[1])
-        );
+        return format!("{} \u{2250} {}", fmt(&args[0]), fmt(&args[1]));
       }
       // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
       if name == "AngleBracket" && !args.is_empty() {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return format!("\u{2329} {} \u{232A}", parts.join(", "));
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
@@ -4244,7 +4258,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args
           .iter()
           .map(|arg| {
-            let s = expr_to_string(arg);
+            let s = fmt(arg);
             let is_and = matches!(
               arg,
               Expr::BinaryOp {
@@ -4263,7 +4277,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
       // Special case: And[a, b, ...] displays as a && b && ...
       if name == "And" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
         return parts.join(" && ");
       }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
@@ -4279,19 +4293,40 @@ pub fn expr_to_string(expr: &Expr) -> String {
               && inner_name == "Alternatives"
               && inner_args.len() >= 2
             {
-              return format!("({})", expr_to_string(a));
+              return format!("({})", fmt(a));
             }
-            expr_to_string(a)
+            fmt(a)
           })
           .collect();
         return parts.join(" | ");
       }
+      // OutputForm-only: Entity[type, name] preserves string quotes
+      if is_output && name == "Entity" {
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| match a {
+            Expr::String(s) => format!("\"{}\"", s),
+            _ => fmt(a),
+          })
+          .collect();
+        return format!("Entity[{}]", parts.join(", "));
+      }
+      // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
+      if is_output
+        && name == "Row"
+        && (args.len() == 1 || args.len() == 2)
+        && let Some(Expr::List(items)) = args.first()
+      {
+        let parts: Vec<String> = items.iter().map(|e| fmt(e)).collect();
+        if args.len() == 2 {
+          let sep = fmt(&args[1]);
+          return parts.join(&sep);
+        }
+        return parts.concat();
+      }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
-        // Handle Times[Rational[1, d], expr] as "expr/d"
-        // Handle Times[Rational[-1, d], Power[x, neg]] as "-1/d*1/x^n"
-        // This is the Wolfram convention for results like Integrate[1/x^3, x]
-        // Times[Rational[n, d], denom_factor] → n/(d*denom) or 1/(d*denom)
+        // Handle Times[Rational[n, d], denom_factor] — form-specific formatting
         if args.len() == 2
           && let Expr::FunctionCall {
             name: rname,
@@ -4305,28 +4340,36 @@ pub fn expr_to_string(expr: &Expr) -> String {
           && is_denominator_factor(&args[1])
         {
           let denom_form = denominator_form(&args[1]);
-          let denom_str = expr_to_string(&denom_form);
-          let denom_needs_parens = *d > 1
-            || matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times");
-          let full_denom = if *d > 1 {
-            if denom_needs_parens {
-              format!("({}*{})", d, denom_str)
-            } else {
-              format!("{}*{}", d, denom_str)
+          let denom_str = fmt(&denom_form);
+          if is_output {
+            // OutputForm: 1/(d*denom) or n/d*1/denom
+            if *n == 1 {
+              return format!("1/({}*{})", d, denom_str);
             }
+            return format!("{}/{}*1/{}", n, d, denom_str);
           } else {
-            denom_str
-          };
-          if *n == 1 {
-            return format!("1/{}", full_denom);
-          } else if *n == -1 {
-            return format!("-1/{}", full_denom);
-          } else {
-            return format!("{}/{}", n, full_denom);
+            // InputForm: conditional parens on full_denom
+            let denom_needs_parens = *d > 1
+              || matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times");
+            let full_denom = if *d > 1 {
+              if denom_needs_parens {
+                format!("({}*{})", d, denom_str)
+              } else {
+                format!("{}*{}", d, denom_str)
+              }
+            } else {
+              denom_str
+            };
+            if *n == 1 {
+              return format!("1/{}", full_denom);
+            } else if *n == -1 {
+              return format!("-1/{}", full_denom);
+            } else {
+              return format!("{}/{}", n, full_denom);
+            }
           }
         }
-        // Handle Times[Rational[-1, d], expr] as "-expr/d"
-        // Handle Times[Rational[1, d], expr] as "expr/d" (Wolfram convention)
+        // Handle Times[Rational[1, d], expr] as "expr/d" (2-arg)
         if args.len() == 2
           && let Expr::FunctionCall {
             name: rname,
@@ -4337,8 +4380,27 @@ pub fn expr_to_string(expr: &Expr) -> String {
           && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
           && let Expr::Integer(d) = &rargs[1]
         {
-          let inner = expr_to_string(&args[1]);
-          return format!("{}/{}", inner, d);
+          if is_output {
+            // OutputForm wraps Plus/Minus inner in parens
+            let inner = fmt(&args[1]);
+            let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                &args[1],
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              ) {
+              format!("({})", inner)
+            } else {
+              inner
+            };
+            return format!("{}/{}", inner_str, d);
+          } else {
+            // InputForm: no paren wrapping
+            let inner = fmt(&args[1]);
+            return format!("{}/{}", inner, d);
+          }
         }
         // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
         if args.len() == 2
@@ -4354,7 +4416,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
           && *n != -1
           && *d > 0
         {
-          let inner = expr_to_string(&args[1]);
+          let inner = fmt(&args[1]);
           let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
             || matches!(
               &args[1],
@@ -4386,7 +4448,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
             .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
         {
           let fmt_factor = |a: &Expr| -> String {
-            let s = expr_to_string(a);
+            let s = fmt(a);
             if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
               || matches!(
                 a,
@@ -4415,14 +4477,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
           // Check if the rest of the factors need denominator formatting
           if !is_single_symbol_neg_power
             && let Some(frac) =
-              format_times_with_denominator(&args[1..], expr_to_string)
+              format_times_with_denominator(&args[1..], fmt_fn)
           {
             return format!("-({})", frac);
           }
           let rest = args[1..]
             .iter()
             .map(|a| {
-              let s = expr_to_string(a);
+              let s = fmt(a);
               if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
                 || matches!(
                   a,
@@ -4489,7 +4551,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
             } else if numeric_factors.len() == 1 {
               match numeric_factors[0] {
                 Expr::Integer(1) => Some("I".to_string()),
-                Expr::Integer(-1) => Some("(-I)".to_string()),
+                Expr::Integer(-1) => {
+                  // InputForm: "(-I)", OutputForm: "-I"
+                  if is_output {
+                    Some("-I".to_string())
+                  } else {
+                    Some("(-I)".to_string())
+                  }
+                }
                 Expr::Integer(n) => Some(format!("({}*I)", n)),
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational" && ra.len() == 2 =>
@@ -4517,7 +4586,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
               let rest: Vec<String> = symbolic_factors
                 .iter()
                 .map(|a| {
-                  let s = expr_to_string(a);
+                  let s = fmt(a);
                   if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
                     || matches!(
                       a,
@@ -4538,14 +4607,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
           }
         }
         // Check for denominator factors (negative exponents) to format as fraction
-        if let Some(frac) = format_times_with_denominator(args, expr_to_string)
-        {
+        if let Some(frac) = format_times_with_denominator(args, fmt_fn) {
           return frac;
         }
+        // Default Times join
         return args
           .iter()
           .map(|a| {
-            let s = expr_to_string(a);
+            let s = fmt(a);
             if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
               || matches!(
                 a,
@@ -4554,10 +4623,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
                   ..
                 }
               )
-              // Complex numbers (except plain I = Complex[0,1]) need parens in Times
-              || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
+              // Complex numbers (except plain I = Complex[0,1]) need parens in Times (InputForm only)
+              || (!is_output && matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
-                && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
+                && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1)))))
               // Pattern expressions need parens in Times (Wolfram convention)
               || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
             {
@@ -4571,7 +4640,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
       // Special case: Plus displays as infix with + (with spaces)
       if name == "Plus" && args.len() >= 2 {
-        let mut result = expr_to_string(&args[0]);
+        let mut result = fmt(&args[0]);
         for arg in args.iter().skip(1) {
           if let Expr::UnaryOp {
             op: UnaryOperator::Minus,
@@ -4579,7 +4648,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
           } = arg
           {
             result.push_str(" - ");
-            result.push_str(&expr_to_string(operand));
+            result.push_str(&fmt(operand));
           } else if let Expr::BinaryOp {
             op: BinaryOperator::Times,
             left,
@@ -4588,7 +4657,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
           {
             if matches!(left.as_ref(), Expr::Integer(-1)) {
               result.push_str(" - ");
-              result.push_str(&expr_to_string(right));
+              result.push_str(&fmt(right));
             } else if let Expr::Integer(n) = left.as_ref() {
               if *n < 0 {
                 result.push_str(" - ");
@@ -4597,14 +4666,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
                   left: Box::new(Expr::Integer(-n)),
                   right: right.clone(),
                 };
-                result.push_str(&expr_to_string(&pos));
+                result.push_str(&fmt(&pos));
               } else {
                 result.push_str(" + ");
-                result.push_str(&expr_to_string(arg));
+                result.push_str(&fmt(arg));
               }
             } else {
               result.push_str(" + ");
-              result.push_str(&expr_to_string(arg));
+              result.push_str(&fmt(arg));
             }
           } else if let Expr::FunctionCall {
             name: fn_name,
@@ -4672,26 +4741,26 @@ pub fn expr_to_string(expr: &Expr) -> String {
                     }
                   }
                 };
-                result.push_str(&expr_to_string(&pos_term));
+                result.push_str(&fmt(&pos_term));
               } else {
                 result.push_str(" + ");
-                result.push_str(&expr_to_string(arg));
+                result.push_str(&fmt(arg));
               }
             } else {
               result.push_str(" + ");
-              result.push_str(&expr_to_string(arg));
+              result.push_str(&fmt(arg));
             }
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
               result.push_str(" - ");
-              result.push_str(&expr_to_string(&Expr::Integer(-n)));
+              result.push_str(&fmt(&Expr::Integer(-n)));
             } else {
               result.push_str(" + ");
-              result.push_str(&expr_to_string(arg));
+              result.push_str(&fmt(arg));
             }
-          } else {
-            // Fallback: check if the rendered form starts with "-"
-            let s = expr_to_string(arg);
+          } else if !is_output {
+            // InputForm: Fallback check if the rendered form starts with "-"
+            let s = fmt(arg);
             if s.starts_with('-') {
               result.push_str(" - ");
               result.push_str(&s[1..]);
@@ -4699,14 +4768,33 @@ pub fn expr_to_string(expr: &Expr) -> String {
               result.push_str(" + ");
               result.push_str(&s);
             }
+          } else {
+            // OutputForm: no starts_with('-') check
+            result.push_str(" + ");
+            result.push_str(&fmt(arg));
           }
         }
         return result;
       }
       // Special case: Power displays as infix with ^ (no spaces)
       if name == "Power" && args.len() == 2 {
-        let base_str = expr_to_string(&args[0]);
-        let exp_str = expr_to_string(&args[1]);
+        // OutputForm-only: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
+        if is_output {
+          if let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[1]
+            && rname == "Rational"
+            && rargs.len() == 2
+            && matches!(&rargs[0], Expr::Integer(-1))
+            && matches!(&rargs[1], Expr::Integer(2))
+          {
+            let base_str = fmt(&args[0]);
+            return format!("1/Sqrt[{}]", base_str);
+          }
+        }
+        let base_str = fmt(&args[0]);
+        let exp_str = fmt(&args[1]);
         // Wrap base in parens if it's lower precedence than Power or is a negative number
         let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
           || matches!(
@@ -4777,17 +4865,58 @@ pub fn expr_to_string(expr: &Expr) -> String {
         && args.len() >= 2
         && matches!(&args[1], Expr::Identifier(_))
       {
-        let n_str = expr_to_string(&args[0]);
-        let f_str = expr_to_string(&args[1]);
+        let n_str = fmt(&args[0]);
+        let f_str = fmt(&args[1]);
         if args.len() == 3 {
-          let x_str = expr_to_string(&args[2]);
+          let x_str = fmt(&args[2]);
           return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
         }
         return format!("Derivative[{}][{}]", n_str, f_str);
       }
-      let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+      let parts: Vec<String> = args.iter().map(|e| fmt(e)).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
+    // BinaryOp::Times in OutputForm: flatten and check for denominator factors,
+    // then fall through to InputForm for the rest
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } if is_output => {
+      let mut factor_refs = Vec::new();
+      flatten_binary_times(expr, &mut factor_refs);
+      if factor_refs.iter().any(|f| is_denominator_factor(f)) {
+        let factors: Vec<Expr> =
+          factor_refs.iter().map(|f| (*f).clone()).collect();
+        if let Some(frac) =
+          format_times_with_denominator(&factors, expr_to_output)
+        {
+          return frac;
+        }
+      }
+      // Fall through to InputForm handling for non-denominator Times
+      format_expr(expr, ExprForm::Input)
+    }
+    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base] (OutputForm only)
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if is_output
+      && matches!(
+        right.as_ref(),
+        Expr::FunctionCall { name, args }
+          if name == "Rational"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Integer(-1))
+            && matches!(&args[1], Expr::Integer(2))
+      ) =>
+    {
+      let base_str = expr_to_output(left);
+      format!("1/Sqrt[{}]", base_str)
+    }
+    // All other BinaryOps in OutputForm fall through to InputForm
+    Expr::BinaryOp { .. } if is_output => format_expr(expr, ExprForm::Input),
+    // InputForm BinaryOp handling
     Expr::BinaryOp { op, left, right } => {
       // Special case: (-x)/y should display as -(x/y) (Wolfram convention)
       // Only when the numerator is exactly Times[-1, x], not a negative integer coefficient
@@ -5137,8 +5266,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
         format!("{}{}{}", left_formatted, op_str, right_formatted)
       }
     }
+    // UnaryOp, Comparison, CompoundExpr, ReplaceAll, etc.: always use InputForm
+    // (OutputForm falls through to InputForm for these in the original code)
     Expr::UnaryOp { op, operand } => {
-      let inner = expr_to_string(operand);
+      let inner = format_expr(operand, ExprForm::Input);
       if matches!(op, UnaryOperator::Not) {
         // Not: Wolfram formats as " !expr" (leading space) or " !(expr)"
         let needs_parens = matches!(
@@ -5197,13 +5328,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
             ComparisonOp::SameQ => " === ",
             ComparisonOp::UnsameQ => " =!= ",
           };
-          let parts: Vec<String> =
-            operands.iter().map(expr_to_string).collect();
+          let parts: Vec<String> = operands
+            .iter()
+            .map(|e| format_expr(e, ExprForm::Input))
+            .collect();
           parts.join(op_str)
         } else {
           let mut parts = Vec::with_capacity(operands.len() + operators.len());
           for (i, operand) in operands.iter().enumerate() {
-            parts.push(expr_to_string(operand));
+            parts.push(format_expr(operand, ExprForm::Input));
             if i < operators.len() {
               let op_name = match &operators[i] {
                 ComparisonOp::Equal => "Equal",
@@ -5221,7 +5354,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
           format!("Inequality[{}]", parts.join(", "))
         }
       } else {
-        let mut result = expr_to_string(&operands[0]);
+        let mut result = format_expr(&operands[0], ExprForm::Input);
         for (i, op) in operators.iter().enumerate() {
           let op_str = match op {
             ComparisonOp::Equal => "==",
@@ -5238,7 +5371,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
               "{} {} {}",
               result,
               op_str,
-              expr_to_string(&operands[i + 1])
+              format_expr(&operands[i + 1], ExprForm::Input)
             );
           }
         }
@@ -5246,13 +5379,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
     }
     Expr::CompoundExpr(exprs) => {
-      let parts: Vec<String> = exprs.iter().map(expr_to_string).collect();
+      let parts: Vec<String> = exprs
+        .iter()
+        .map(|e| format_expr(e, ExprForm::Input))
+        .collect();
       parts.join("; ")
     }
     Expr::Association(items) => {
       let parts: Vec<String> = items
         .iter()
-        .map(|(k, v)| format!("{} -> {}", expr_to_string(k), expr_to_string(v)))
+        .map(|(k, v)| format!("{} -> {}", fmt(k), fmt(v)))
         .collect();
       format!("<|{}|>", parts.join(", "))
     }
@@ -5260,30 +5396,31 @@ pub fn expr_to_string(expr: &Expr) -> String {
       pattern,
       replacement,
     } => {
-      format!(
-        "{} -> {}",
-        expr_to_string(pattern),
-        expr_to_string(replacement)
-      )
+      format!("{} -> {}", fmt(pattern), fmt(replacement))
     }
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => {
+      format!("{} :> {}", fmt(pattern), fmt(replacement))
+    }
+    // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm
+    Expr::ReplaceAll { expr, rules } => {
       format!(
-        "{} :> {}",
-        expr_to_string(pattern),
-        expr_to_string(replacement)
+        "{} /. {}",
+        format_expr(expr, ExprForm::Input),
+        format_expr(rules, ExprForm::Input)
       )
     }
-    Expr::ReplaceAll { expr, rules } => {
-      format!("{} /. {}", expr_to_string(expr), expr_to_string(rules))
-    }
     Expr::ReplaceRepeated { expr, rules } => {
-      format!("{} //. {}", expr_to_string(expr), expr_to_string(rules))
+      format!(
+        "{} //. {}",
+        format_expr(expr, ExprForm::Input),
+        format_expr(rules, ExprForm::Input)
+      )
     }
     Expr::Map { func, list } => {
-      let func_str = expr_to_string(func);
+      let func_str = format_expr(func, ExprForm::Input);
       // Parenthesize func if it's a Function or NamedFunction (lower precedence than /@ )
       let func_display = match func.as_ref() {
         Expr::Function { .. } | Expr::NamedFunction { .. } => {
@@ -5291,18 +5428,26 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
         _ => func_str,
       };
-      format!("{} /@ {}", func_display, expr_to_string(list))
+      format!("{} /@ {}", func_display, format_expr(list, ExprForm::Input))
     }
     Expr::Apply { func, list } => {
-      format!("{} @@ {}", expr_to_string(func), expr_to_string(list))
+      format!(
+        "{} @@ {}",
+        format_expr(func, ExprForm::Input),
+        format_expr(list, ExprForm::Input)
+      )
     }
     Expr::MapApply { func, list } => {
-      format!("{} @@@ {}", expr_to_string(func), expr_to_string(list))
+      format!(
+        "{} @@@ {}",
+        format_expr(func, ExprForm::Input),
+        format_expr(list, ExprForm::Input)
+      )
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
-      let func_str = expr_to_string(func);
-      let arg_str = expr_to_string(arg);
+      let func_str = format_expr(func, ExprForm::Input);
+      let arg_str = format_expr(arg, ExprForm::Input);
       // Parenthesize func if it's complex (not a simple identifier or function call)
       let func_display = match func.as_ref() {
         Expr::Identifier(_)
@@ -5313,7 +5458,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{}[{}]", func_display, arg_str)
     }
     Expr::Postfix { expr, func } => {
-      format!("{} // {}", expr_to_string(expr), expr_to_string(func))
+      format!(
+        "{} // {}",
+        format_expr(expr, ExprForm::Input),
+        format_expr(func, ExprForm::Input)
+      )
     }
     Expr::Part { expr, index } => {
       // Flatten nested Part into a single [[i, j, k]] notation
@@ -5328,20 +5477,28 @@ pub fn expr_to_string(expr: &Expr) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", expr_to_string(base), indices.join(","))
+      format!(
+        "{}[[{}]]",
+        format_expr(base, ExprForm::Input),
+        indices.join(",")
+      )
     }
     Expr::Function { body } => {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
-      format!("{} & ", expr_to_string(body))
+      format!("{} & ", format_expr(body, ExprForm::Input))
     }
     Expr::NamedFunction { params, body } => {
       if params.len() == 1 {
-        format!("Function[{}, {}]", params[0], expr_to_string(body))
+        format!(
+          "Function[{}, {}]",
+          params[0],
+          format_expr(body, ExprForm::Input)
+        )
       } else {
         format!(
           "Function[{{{}}}, {}]",
           params.join(", "),
-          expr_to_string(body)
+          format_expr(body, ExprForm::Input)
         )
       }
     }
@@ -5362,8 +5519,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
       head,
       default,
     } => match (head, default) {
-      (Some(h), Some(d)) => format!("{}_{}:{}", name, h, expr_to_string(d)),
-      (None, Some(d)) => format!("{}_:{}", name, expr_to_string(d)),
+      (Some(h), Some(d)) => {
+        format!("{}_{}:{}", name, h, format_expr(d, ExprForm::Input))
+      }
+      (None, Some(d)) => {
+        format!("{}_:{}", name, format_expr(d, ExprForm::Input))
+      }
       (Some(h), None) => format!("{}_{}.", name, h),
       (None, None) => format!("{}_.", name),
     },
@@ -5373,7 +5534,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       test,
     } => {
       let blanks = "_".repeat(*blank_type as usize);
-      let test_str = expr_to_string(test);
+      let test_str = format_expr(test, ExprForm::Input);
       // If test is a simple identifier, use x_?Test form; otherwise wrap in parens
       let needs_parens = !matches!(test.as_ref(), Expr::Identifier(_));
       if needs_parens {
@@ -5394,10 +5555,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::CurriedCall { func, args } => {
       // Display as nested calls: f[a][b, c]
-      let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
-      format!("{}[{}]", expr_to_string(func), args_str.join(", "))
+      let args_str: Vec<String> = args.iter().map(|e| fmt(e)).collect();
+      format!("{}[{}]", fmt(func), args_str.join(", "))
     }
   }
+}
+
+/// Convert an Expr back to a string representation (InputForm)
+pub fn expr_to_string(expr: &Expr) -> String {
+  format_expr(expr, ExprForm::Input)
 }
 
 /// Format expression for use in Wolfram-style messages (OutputForm-like).
@@ -5490,977 +5656,7 @@ fn find_matching_bracket(s: &str, start: usize) -> Option<usize> {
 /// Render Expr for display output - strings are shown without quotes.
 /// This is used for the final output in interpret(), not for round-tripping.
 pub fn expr_to_output(expr: &Expr) -> String {
-  match expr {
-    Expr::String(s) => {
-      // Strings containing Wolfram box-syntax Unicode markers render as
-      // DisplayForm[<box expression>] in OutputForm (matching wolframscript).
-      if s.starts_with(crate::functions::string_ast::BOX_START) {
-        return box_string_to_display_form(s);
-      }
-      s.clone() // No quotes for display
-    }
-    Expr::List(items) => {
-      let parts: Vec<String> = items.iter().map(expr_to_output).collect();
-      format!("{{{}}}", parts.join(", "))
-    }
-    Expr::FunctionCall { name, args } => {
-      // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
-      if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return format!("Inequality[{}]", parts.join(", "));
-      }
-      // Sequence[] (empty sequence) displays as nothing in Wolfram output
-      if name == "Sequence" && args.is_empty() {
-        return String::new();
-      }
-      // Special case: Quantity[n, unit] — unit shown as quoted string(s)
-      if name == "Quantity" && args.len() == 2 {
-        let mag_str = expr_to_output(&args[0]);
-        let unit_str = quantity_unit_to_string(&args[1]);
-        return format!("Quantity[{}, {}]", mag_str, unit_str);
-      }
-      // Special case: FullForm[expr] displays as FullForm[<output form of inner>]
-      // This matches wolframscript behavior: FullForm[1/z] → FullForm[z^(-1)]
-      if name == "FullForm" && args.len() == 1 {
-        return format!("FullForm[{}]", expr_to_output(&args[0]));
-      }
-      // CForm[expr] displays as CForm[evaluated_expr] in OutputForm (inside other expressions)
-      if name == "CForm" && args.len() == 1 {
-        return format!("CForm[{}]", expr_to_output(&args[0]));
-      }
-      // TeXForm[expr] displays as TeXForm[evaluated_expr] in OutputForm
-      if name == "TeXForm" && args.len() == 1 {
-        return format!("TeXForm[{}]", expr_to_output(&args[0]));
-      }
-      // FortranForm[expr] displays as FortranForm[evaluated_expr] in OutputForm
-      if name == "FortranForm" && args.len() == 1 {
-        return format!("FortranForm[{}]", expr_to_output(&args[0]));
-      }
-      // Special case: ByteArray["base64"] — display as ByteArray[<n>] in OutputForm
-      if name == "ByteArray" && args.len() == 1 {
-        if let Expr::String(b64) = &args[0] {
-          use base64::Engine;
-          let engine = base64::engine::general_purpose::STANDARD;
-          if let Ok(decoded) = engine.decode(b64) {
-            return format!("ByteArray[<{}>]", decoded.len());
-          }
-        }
-        if let Expr::List(items) = &args[0] {
-          return format!("ByteArray[<{}>]", items.len());
-        }
-      }
-      // Special case: InterpolatingFunction[domain, data(, order)] — hide data with <>
-      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
-      {
-        return format!(
-          "InterpolatingFunction[{}, <>]",
-          expr_to_output(&args[0])
-        );
-      }
-      // Special case: Skeleton[n] displays as <<n>>
-      if name == "Skeleton" && args.len() == 1 {
-        return format!("<<{}>>", expr_to_output(&args[0]));
-      }
-      // Special case: StringSkeleton[n] displays as <<n>>
-      if name == "StringSkeleton" && args.len() == 1 {
-        return format!("<<{}>>", expr_to_output(&args[0]));
-      }
-      // Special case: Repeated[x] displays as x..
-      if name == "Repeated" && args.len() == 1 {
-        return format!("{}..", expr_to_output(&args[0]));
-      }
-      // Special case: RepeatedNull[x] displays as x...
-      if name == "RepeatedNull" && args.len() == 1 {
-        return format!("{}...", expr_to_output(&args[0]));
-      }
-      // Special case: Colon[a, b, ...] displays as a ∶ b ∶ ...
-      if name == "Colon" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2236} ");
-      }
-      // Special case: Cap[a, b, ...] displays as a ⌢ b ⌢ ...
-      if name == "Cap" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
-        return parts.join(" \u{2322} ");
-      }
-      // Special case: Congruent[a, b, ...] displays as a ≡ b ≡ ...
-      if name == "Congruent" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2261} ");
-      }
-      // Special case: RightTee[a, b, ...] displays as a ⊢ b ⊢ ...
-      if name == "RightTee" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{22A2} ");
-      }
-      // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
-      if name == "LongRightArrow" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{27F6} ");
-      }
-      // Special case: Proportional[a, b, ...] displays as a ∝ b ∝ ...
-      if name == "Proportional" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{221D} ");
-      }
-      // BlankSequence[] → __, BlankSequence[h] → __h
-      if name == "BlankSequence" {
-        if args.is_empty() {
-          return "__".to_string();
-        }
-        if args.len() == 1
-          && let Expr::Identifier(h) = &args[0]
-        {
-          return format!("__{}", h);
-        }
-      }
-      // BlankNullSequence[] → ___, BlankNullSequence[h] → ___h
-      if name == "BlankNullSequence" {
-        if args.is_empty() {
-          return "___".to_string();
-        }
-        if args.len() == 1
-          && let Expr::Identifier(h) = &args[0]
-        {
-          return format!("___{}", h);
-        }
-      }
-      // Special case: BaseForm[expr, base] displays as BaseForm[expr, base] in OutputForm
-      // (matching wolframscript; the subscript rendering only appears in notebook cells)
-      if name == "BaseForm" && args.len() == 2 {
-        return format!(
-          "BaseForm[{}, {}]",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // Special case: Rational[num, denom] displays as num/denom
-      if name == "Rational" && args.len() == 2 {
-        return format!(
-          "{}/{}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // Special case: Association[...] with Rule/RuleDelayed args displays as <|...|>
-      if name == "Association"
-        && args
-          .iter()
-          .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-      {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return format!("<|{}|>", parts.join(", "));
-      }
-      // Special case: Factorial[n] displays as n!
-      if name == "Factorial" && args.len() == 1 {
-        return format!("{}!", expr_to_output(&args[0]));
-      }
-      // Special case: TwoWayRule[a, b] displays as a <-> b
-      if name == "TwoWayRule" && args.len() == 2 {
-        return format!(
-          "{} <-> {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
-      if name == "Minus" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2212} ");
-      }
-      // Special case: Plus displays as infix with + (handling - for negative terms)
-      if name == "Plus" && args.len() >= 2 {
-        let mut result = expr_to_output(&args[0]);
-        for arg in args.iter().skip(1) {
-          // Check if this term is a UnaryOp minus - if so, use " - " instead of " + "
-          if let Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            operand,
-          } = arg
-          {
-            result.push_str(" - ");
-            result.push_str(&expr_to_output(operand));
-          } else if let Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left,
-            right,
-          } = arg
-          {
-            if matches!(left.as_ref(), Expr::Integer(-1)) {
-              result.push_str(" - ");
-              result.push_str(&expr_to_output(right));
-            } else if let Expr::Integer(n) = left.as_ref() {
-              if *n < 0 {
-                result.push_str(" - ");
-                // Display as (-n)*right
-                let pos = Expr::BinaryOp {
-                  op: BinaryOperator::Times,
-                  left: Box::new(Expr::Integer(-n)),
-                  right: right.clone(),
-                };
-                result.push_str(&expr_to_output(&pos));
-              } else {
-                result.push_str(" + ");
-                result.push_str(&expr_to_output(arg));
-              }
-            } else {
-              result.push_str(" + ");
-              result.push_str(&expr_to_output(arg));
-            }
-          } else if let Expr::FunctionCall {
-            name: fn_name,
-            args: fn_args,
-          } = arg
-          {
-            if fn_name == "Times" && fn_args.len() >= 2 {
-              // Check if leading factor is negative
-              let neg_coeff = match &fn_args[0] {
-                Expr::Integer(n) if *n < 0 => Some(if *n == -1 {
-                  None // coefficient of -1 means just negate
-                } else {
-                  Some(Expr::Integer(-n))
-                }),
-                Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
-                Expr::FunctionCall { name: rn, args: ra }
-                  if rn == "Rational"
-                    && ra.len() == 2
-                    && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
-                {
-                  if let Expr::Integer(n) = &ra[0] {
-                    if *n == -1 {
-                      Some(Some(Expr::FunctionCall {
-                        name: "Rational".to_string(),
-                        args: vec![Expr::Integer(1), ra[1].clone()],
-                      }))
-                    } else {
-                      Some(Some(Expr::FunctionCall {
-                        name: "Rational".to_string(),
-                        args: vec![Expr::Integer(-n), ra[1].clone()],
-                      }))
-                    }
-                  } else {
-                    None
-                  }
-                }
-                _ => None,
-              };
-              if let Some(pos_coeff) = neg_coeff {
-                result.push_str(" - ");
-                let pos_term = match pos_coeff {
-                  None => {
-                    // Times[-1, rest...] → rest
-                    let pos_args = fn_args[1..].to_vec();
-                    if pos_args.len() == 1 {
-                      pos_args[0].clone()
-                    } else {
-                      Expr::FunctionCall {
-                        name: "Times".to_string(),
-                        args: pos_args,
-                      }
-                    }
-                  }
-                  Some(new_coeff) => {
-                    let mut new_args = vec![new_coeff];
-                    new_args.extend_from_slice(&fn_args[1..]);
-                    if new_args.len() == 1 {
-                      new_args[0].clone()
-                    } else {
-                      Expr::FunctionCall {
-                        name: "Times".to_string(),
-                        args: new_args,
-                      }
-                    }
-                  }
-                };
-                result.push_str(&expr_to_output(&pos_term));
-              } else {
-                result.push_str(" + ");
-                result.push_str(&expr_to_output(arg));
-              }
-            } else {
-              result.push_str(" + ");
-              result.push_str(&expr_to_output(arg));
-            }
-          } else if let Expr::Integer(n) = arg {
-            if *n < 0 {
-              result.push_str(" - ");
-              result.push_str(&expr_to_output(&Expr::Integer(-n)));
-            } else {
-              result.push_str(" + ");
-              result.push_str(&expr_to_output(arg));
-            }
-          } else {
-            result.push_str(" + ");
-            result.push_str(&expr_to_output(arg));
-          }
-        }
-        return result;
-      }
-      // Special case: Times displays as infix with * (no spaces)
-      if name == "Times" && args.len() >= 2 {
-        // Handle Times[Rational[n, d], Power[x, neg]] as fraction
-        // Wolfram canonical form for results like Integrate[1/x^3, x]
-        if args.len() == 2
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[0]
-          && rname == "Rational"
-          && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *d > 0
-          && is_denominator_factor(&args[1])
-        {
-          let denom_form = denominator_form(&args[1]);
-          let denom_str = expr_to_output(&denom_form);
-          // When numerator is 1, render as 1/(d*denom) instead of 1/d*1/denom
-          if *n == 1 {
-            return format!("1/({}*{})", d, denom_str);
-          }
-          return format!("{}/{}*1/{}", n, d, denom_str);
-        }
-        // Handle Times[Rational[1, d], expr] as "expr/d" (2-arg)
-        if args.len() == 2
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[0]
-          && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
-        {
-          let inner = expr_to_output(&args[1]);
-          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
-            || matches!(
-              &args[1],
-              Expr::BinaryOp {
-                op: BinaryOperator::Plus | BinaryOperator::Minus,
-                ..
-              }
-            ) {
-            format!("({})", inner)
-          } else {
-            inner
-          };
-          return format!("{}/{}", inner_str, d);
-        }
-        // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (2-arg, n != 1 and n != -1)
-        if args.len() == 2
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[0]
-          && rname == "Rational"
-          && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *n != 1
-          && *n != -1
-          && *d > 0
-        {
-          let inner = expr_to_output(&args[1]);
-          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
-            || matches!(
-              &args[1],
-              Expr::BinaryOp {
-                op: BinaryOperator::Plus | BinaryOperator::Minus,
-                ..
-              }
-            ) {
-            format!("({})", inner)
-          } else {
-            inner
-          };
-          return format!("({}*{})/{}", n, inner_str, d);
-        }
-        // Handle Times[Rational[1, d], e1, e2, ...] as "(e1*e2*...)/d" (3+ args)
-        // Only when no factor is I (imaginary unit, which pairs with the coefficient)
-        if args.len() >= 3
-          && let Expr::FunctionCall {
-            name: rname,
-            args: rargs,
-          } = &args[0]
-          && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
-          && !args[1..].iter().any(is_denominator_factor)
-          && !args[1..]
-            .iter()
-            .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
-        {
-          let fmt_factor = |a: &Expr| -> String {
-            let s = expr_to_output(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus | BinaryOperator::Minus,
-                  ..
-                }
-              )
-            {
-              format!("({})", s)
-            } else {
-              s
-            }
-          };
-          let rest: Vec<String> =
-            args[1..].iter().map(|a| fmt_factor(a)).collect();
-          let numer = rest.join("*");
-          return format!("({})/{}", numer, d);
-        }
-        // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
-        if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
-          // If the rest is a single Power[symbol, negative_int], use -x^(-n)
-          // notation instead of -(1/x^n), matching wolframscript output
-          let is_single_symbol_neg_power =
-            args.len() == 2 && is_symbol_neg_int_power(&args[1]);
-          // Check if the rest of the factors need denominator formatting
-          if !is_single_symbol_neg_power
-            && let Some(frac) =
-              format_times_with_denominator(&args[1..], expr_to_output)
-          {
-            return format!("-({})", frac);
-          }
-          let rest = args[1..]
-            .iter()
-            .map(|a| {
-              let s = expr_to_output(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-                || matches!(
-                  a,
-                  Expr::BinaryOp {
-                    op: BinaryOperator::Plus | BinaryOperator::Minus,
-                    ..
-                  }
-                )
-              {
-                format!("({})", s)
-              } else {
-                s
-              }
-            })
-            .collect::<Vec<_>>()
-            .join("*");
-          // Wolfram wraps negated products in parens when all remaining factors
-          // are symbolic: -(a*b), -(x*Cos[x]), but -I*a, -2*a*b without parens.
-          let rest_factors = &args[1..];
-          let all_symbolic_factors = rest_factors.iter().all(|a| {
-            !matches!(a, Expr::Integer(_) | Expr::Real(_))
-              && !matches!(a, Expr::Identifier(n) if n == "I")
-              && !matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
-          });
-          let needs_neg_parens = (rest_factors.len() >= 2
-            && all_symbolic_factors)
-            || (args.len() == 2
-              && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
-                || matches!(
-                  &args[1],
-                  Expr::BinaryOp {
-                    op: BinaryOperator::Times | BinaryOperator::Divide,
-                    ..
-                  }
-                )));
-          if needs_neg_parens {
-            return format!("-({})", rest);
-          }
-          return format!("-{}", rest);
-        }
-        // Complex number grouping: Times containing I with non-numeric remaining factors
-        // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
-        let has_imaginary = args
-          .iter()
-          .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
-        if has_imaginary {
-          let mut numeric_factors: Vec<&Expr> = Vec::new();
-          let mut symbolic_factors: Vec<&Expr> = Vec::new();
-          for arg in args.iter() {
-            match arg {
-              Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
-              Expr::Identifier(n) if n == "I" => {}
-              Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
-                numeric_factors.push(arg);
-              }
-              _ => symbolic_factors.push(arg),
-            }
-          }
-          if !symbolic_factors.is_empty() {
-            let i_part_opt: Option<String> = if numeric_factors.is_empty() {
-              Some("I".to_string())
-            } else if numeric_factors.len() == 1 {
-              match numeric_factors[0] {
-                Expr::Integer(1) => Some("I".to_string()),
-                Expr::Integer(-1) => Some("-I".to_string()),
-                Expr::Integer(n) => Some(format!("({}*I)", n)),
-                Expr::FunctionCall { name: rn, args: ra }
-                  if rn == "Rational" && ra.len() == 2 =>
-                {
-                  if let (Expr::Integer(num), Expr::Integer(den)) =
-                    (&ra[0], &ra[1])
-                  {
-                    if *num == 1 {
-                      Some(format!("(I/{})", den))
-                    } else if *num == -1 {
-                      Some(format!("(-(I/{}))", den))
-                    } else {
-                      Some(format!("(({num}*I)/{den})"))
-                    }
-                  } else {
-                    None
-                  }
-                }
-                _ => None,
-              }
-            } else {
-              None
-            };
-            if let Some(i_part) = i_part_opt {
-              let rest: Vec<String> = symbolic_factors
-                .iter()
-                .map(|a| {
-                  let s = expr_to_output(a);
-                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-                    || matches!(
-                      a,
-                      Expr::BinaryOp {
-                        op: BinaryOperator::Plus | BinaryOperator::Minus,
-                        ..
-                      }
-                    )
-                  {
-                    format!("({})", s)
-                  } else {
-                    s
-                  }
-                })
-                .collect();
-              return format!("{}*{}", i_part, rest.join("*"));
-            }
-          }
-        }
-        // Check for denominator factors (negative exponents) to format as fraction
-        if let Some(frac) = format_times_with_denominator(args, expr_to_output)
-        {
-          return frac;
-        }
-        return args
-          .iter()
-          .map(|a| {
-            // Wrap lower-precedence operations in parens
-            let s = expr_to_output(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
-              || matches!(
-                a,
-                Expr::BinaryOp {
-                  op: BinaryOperator::Plus | BinaryOperator::Minus,
-                  ..
-                }
-              )
-              // Pattern expressions need parens in Times (Wolfram convention)
-              || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
-            {
-              format!("({})", s)
-            } else {
-              s
-            }
-          })
-          .collect::<Vec<_>>()
-          .join("*");
-      }
-      // Special case: Power displays as infix with ^ (no spaces)
-      if name == "Power" && args.len() == 2 {
-        // Special case: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
-        if let Expr::FunctionCall {
-          name: rname,
-          args: rargs,
-        } = &args[1]
-          && rname == "Rational"
-          && rargs.len() == 2
-          && matches!(&rargs[0], Expr::Integer(-1))
-          && matches!(&rargs[1], Expr::Integer(2))
-        {
-          let base_str = expr_to_output(&args[0]);
-          return format!("1/Sqrt[{}]", base_str);
-        }
-        let base_str = expr_to_output(&args[0]);
-        let exp_str = expr_to_output(&args[1]);
-        // Wrap base in parens if it's lower precedence than Power or is a negative number
-        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
-          || matches!(
-            &args[0],
-            Expr::BinaryOp {
-              op: BinaryOperator::Plus
-                | BinaryOperator::Minus
-                | BinaryOperator::Times
-                | BinaryOperator::Divide,
-              ..
-            }
-          )
-          || matches!(&args[0], Expr::Integer(n) if *n < 0)
-          || matches!(
-            &args[0],
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ) {
-          format!("({})", base_str)
-        } else {
-          base_str
-        };
-        // Wrap exponent in parens if it's a Plus, negative, Rational, or Times with negative coefficient
-        let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
-          || matches!(
-            &args[1],
-            Expr::BinaryOp {
-              op: BinaryOperator::Plus | BinaryOperator::Minus,
-              ..
-            }
-          )
-          || matches!(&args[1], Expr::Integer(n) if *n < 0)
-          || matches!(
-            &args[1],
-            Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              ..
-            }
-          )
-          || matches!(&args[1], Expr::FunctionCall { name: tname, .. } if tname == "Times")
-          || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
-          || matches!(
-            &args[1],
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              ..
-            }
-          )
-          || matches!(
-            &args[1],
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ) {
-          format!("({})", exp_str)
-        } else {
-          exp_str
-        };
-        return format!("{}^{}", base, exp);
-      }
-      if name == "Rule" && args.len() == 2 {
-        return format!(
-          "{} -> {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      if name == "RuleDelayed" && args.len() == 2 {
-        return format!(
-          "{} :> {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      if name == "Condition" && args.len() == 2 {
-        return format!(
-          "{} /; {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      if name == "PatternTest" && args.len() == 2 {
-        let pat = expr_to_output(&args[0]);
-        let test = expr_to_output(&args[1]);
-        if pat == "_" || pat == "__" || pat == "___" {
-          return format!("{}?{}", pat, test);
-        }
-        return format!("({})?{}", pat, test);
-      }
-      if name == "Increment" && args.len() == 1 {
-        return format!("{}++", expr_to_output(&args[0]));
-      }
-      if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", expr_to_output(&args[0]));
-      }
-      if name == "PreIncrement" && args.len() == 1 {
-        return format!("++{}", expr_to_output(&args[0]));
-      }
-      if name == "PreDecrement" && args.len() == 1 {
-        return format!("--{}", expr_to_output(&args[0]));
-      }
-      if name == "Optional" && args.len() == 1 {
-        return format!("{}.", expr_to_output(&args[0]));
-      }
-      if name == "Optional" && args.len() == 2 {
-        return format!(
-          "{}:{}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      if name == "NonCommutativeMultiply" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join("**");
-      }
-      // Special case: Dot[a, b] displays as a . b (infix notation)
-      if name == "Dot" && args.len() == 2 {
-        return format!(
-          "{} . {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      if name == "Composition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" @* ");
-      }
-      if name == "RightComposition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" /* ");
-      }
-      // Special case: Therefore[a, b, ...] displays as a ∴ b ∴ ...
-      if name == "Therefore" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2234} ");
-      }
-      // Special case: Because[a, b, ...] displays as a ∵ b ∵ ...
-      if name == "Because" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2235} ");
-      }
-      // PlusMinus[x] displays as ±x, PlusMinus[a, b] displays as a ± b
-      if name == "PlusMinus" {
-        if args.len() == 1 {
-          return format!("\u{00B1}{}", expr_to_output(&args[0]));
-        }
-        if args.len() >= 2 {
-          let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-          return parts.join(" \u{00B1} ");
-        }
-      }
-      // CircleTimes[a, b, ...] displays as a ⊗ b ⊗ ...
-      if name == "CircleTimes" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2297} ");
-      }
-      // Wedge[a, b, ...] displays as a ∧ b ∧ ...
-      if name == "Wedge" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{22C0} ");
-      }
-      // Del[f] displays as ∇f
-      if name == "Del" && args.len() == 1 {
-        return format!("\u{2207}{}", expr_to_output(&args[0]));
-      }
-      // CirclePlus[a, b, ...] displays as a ⊕ b ⊕ ...
-      if name == "CirclePlus" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \u{2295} ");
-      }
-      // Subset[a, b] displays as a ⊂ b
-      if name == "Subset" && args.len() == 2 {
-        return format!(
-          "{} \u{2282} {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // LeftArrow[a, b] displays as a ← b
-      if name == "LeftArrow" && args.len() == 2 {
-        return format!(
-          "{} \u{2190} {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // DotEqual[a, b] displays as a ≐ b
-      if name == "DotEqual" && args.len() == 2 {
-        return format!(
-          "{} \u{2250} {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
-      if name == "AngleBracket" && !args.is_empty() {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return format!("\u{2329} {} \u{232A}", parts.join(", "));
-      }
-      // Special case: Or[a, b, ...] displays as a || b || ...
-      // Wolfram wraps And subterms in parens: (a && b) || (c && d)
-      if name == "Or" && args.len() >= 2 {
-        let parts: Vec<String> = args
-          .iter()
-          .map(|arg| {
-            let s = expr_to_output(arg);
-            let is_and = matches!(
-              arg,
-              Expr::BinaryOp {
-                op: BinaryOperator::And,
-                ..
-              }
-            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
-            if is_and {
-              format!("({})", s)
-            } else {
-              s
-            }
-          })
-          .collect();
-        return parts.join(" || ");
-      }
-      // Special case: And[a, b, ...] displays as a && b && ...
-      if name == "And" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" && ");
-      }
-      // Special case: Alternatives[a, b, ...] displays as a | b | ...
-      if name == "Alternatives" && args.len() >= 2 {
-        let parts: Vec<String> = args
-          .iter()
-          .map(|a| {
-            // Wrap nested Alternatives in parentheses
-            if let Expr::FunctionCall {
-              name: inner_name,
-              args: inner_args,
-            } = a
-              && inner_name == "Alternatives"
-              && inner_args.len() >= 2
-            {
-              return format!("({})", expr_to_output(a));
-            }
-            expr_to_output(a)
-          })
-          .collect();
-        return parts.join(" | ");
-      }
-      // Special case: Entity[type, name] preserves string quotes
-      if name == "Entity" {
-        let parts: Vec<String> = args
-          .iter()
-          .map(|a| match a {
-            Expr::String(s) => format!("\"{}\"", s),
-            _ => expr_to_output(a),
-          })
-          .collect();
-        return format!("Entity[{}]", parts.join(", "));
-      }
-      // Special case: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
-      if name == "Row"
-        && (args.len() == 1 || args.len() == 2)
-        && let Some(Expr::List(items)) = args.first()
-      {
-        let parts: Vec<String> = items.iter().map(expr_to_output).collect();
-        if args.len() == 2 {
-          let sep = expr_to_output(&args[1]);
-          return parts.join(&sep);
-        }
-        return parts.concat();
-      }
-      // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
-      // Only when args[1] is an Identifier (old flattened format).
-      if name == "Derivative"
-        && args.len() >= 2
-        && matches!(&args[1], Expr::Identifier(_))
-      {
-        let n_str = expr_to_output(&args[0]);
-        let f_str = expr_to_output(&args[1]);
-        if args.len() == 3 {
-          let x_str = expr_to_output(&args[2]);
-          return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
-        }
-        return format!("Derivative[{}][{}]", n_str, f_str);
-      }
-      // Special case: InterpolatingFunction[domain, data(, order)] — hide data
-      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
-      {
-        return format!(
-          "InterpolatingFunction[{}, <>]",
-          expr_to_output(&args[0])
-        );
-      }
-      // Special case: ReverseElement[a, b] displays as a ∋ b
-      if name == "ReverseElement" && args.len() == 2 {
-        return format!(
-          "{} \u{220B} {}",
-          expr_to_output(&args[0]),
-          expr_to_output(&args[1])
-        );
-      }
-      let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-      format!("{}[{}]", name, parts.join(", "))
-    }
-    Expr::Association(items) => {
-      let parts: Vec<String> = items
-        .iter()
-        .map(|(k, v)| format!("{} -> {}", expr_to_output(k), expr_to_output(v)))
-        .collect();
-      format!("<|{}|>", parts.join(", "))
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => {
-      format!(
-        "{} -> {}",
-        expr_to_output(pattern),
-        expr_to_output(replacement)
-      )
-    }
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => {
-      format!(
-        "{} :> {}",
-        expr_to_output(pattern),
-        expr_to_output(replacement)
-      )
-    }
-    // BinaryOp::Times: flatten into factors and handle denominator formatting
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      ..
-    } => {
-      let mut factor_refs = Vec::new();
-      flatten_binary_times(expr, &mut factor_refs);
-      if factor_refs.iter().any(|f| is_denominator_factor(f)) {
-        let factors: Vec<Expr> =
-          factor_refs.iter().map(|f| (*f).clone()).collect();
-        if let Some(frac) =
-          format_times_with_denominator(&factors, expr_to_output)
-        {
-          return frac;
-        }
-      }
-      expr_to_string(expr)
-    }
-    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base]
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } if matches!(
-      right.as_ref(),
-      Expr::FunctionCall { name, args }
-        if name == "Rational"
-          && args.len() == 2
-          && matches!(&args[0], Expr::Integer(-1))
-          && matches!(&args[1], Expr::Integer(2))
-    ) =>
-    {
-      let base_str = expr_to_output(left);
-      format!("1/Sqrt[{}]", base_str)
-    }
-    // CurriedCall: display as nested calls f[a][b, c] using output form
-    Expr::CurriedCall { func, args } => {
-      let args_str: Vec<String> = args.iter().map(expr_to_output).collect();
-      format!("{}[{}]", expr_to_output(func), args_str.join(", "))
-    }
-    // For all other cases, delegate to expr_to_string
-    _ => expr_to_string(expr),
-  }
+  format_expr(expr, ExprForm::Output)
 }
 
 /// Flatten a nested BinaryOp::Times tree into a list of factors.
