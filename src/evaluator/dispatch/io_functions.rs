@@ -303,6 +303,71 @@ pub fn dispatch_io_functions(
           }
         }
         Expr::FunctionCall {
+          name: tf_name,
+          args: tf_args,
+        } if tf_name == "TreeForm" && !tf_args.is_empty() => {
+          // TreeForm[expr] → render as tree diagram SVG
+          if let Ok(rendered) =
+            crate::functions::tree_form::tree_form_ast(tf_args)
+          {
+            if let Expr::Graphics {
+              svg: ref svg_data, ..
+            } = rendered
+            {
+              svg_data.clone()
+            } else {
+              String::new()
+            }
+          } else {
+            String::new()
+          }
+        }
+        Expr::FunctionCall {
+          name: tg_name,
+          args: tg_args,
+        } if tg_name == "TreeGraph" && !tg_args.is_empty() => {
+          // TreeGraph[{edges...}] → render as tree graph SVG
+          if let Ok(rendered) =
+            crate::functions::tree_form::tree_graph_ast(tg_args)
+          {
+            if let Expr::Graphics {
+              svg: ref svg_data, ..
+            } = rendered
+            {
+              svg_data.clone()
+            } else {
+              String::new()
+            }
+          } else {
+            String::new()
+          }
+        }
+        Expr::FunctionCall {
+          name: g_name,
+          args: g_args,
+        } if g_name == "Graph" && g_args.len() == 2 => {
+          // Graph[{vertices}, {edges}] → render as graph SVG
+          // Extract edges and try to render as tree graph
+          if let Expr::List(edge_list) = &g_args[1] {
+            if let Ok(rendered) = crate::functions::tree_form::tree_graph_ast(
+              &[Expr::List(edge_list.clone())],
+            ) {
+              if let Expr::Graphics {
+                svg: ref svg_data, ..
+              } = rendered
+              {
+                svg_data.clone()
+              } else {
+                String::new()
+              }
+            } else {
+              String::new()
+            }
+          } else {
+            String::new()
+          }
+        }
+        Expr::FunctionCall {
           name: mr_name,
           args: mr_args,
         } if mr_name == "MeshRegion" && mr_args.len() == 2 => {

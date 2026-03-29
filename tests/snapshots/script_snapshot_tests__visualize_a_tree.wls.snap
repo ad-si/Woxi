@@ -1,0 +1,33 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+<svg width="360" height="538" viewBox="0 0 360 538" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polyline points="217.04,46.78 105.93,194.93" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="217.04,46.78 328.15,194.93" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="105.93,194.93 31.85,343.07" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="105.93,194.93 180.00,343.07" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="31.85,343.07 31.85,491.22" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="328.15,194.93 328.15,343.07" fill="none" stroke="rgb(153,153,153)" stroke-width="2.15" stroke-linejoin="round" stroke-linecap="butt"/>
+<rect x="198.52" y="20.11" width="37.04" height="53.33" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="87.41" y="168.26" width="37.04" height="53.33" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="13.33" y="316.41" width="37.04" height="53.33" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="13.33" y="464.56" width="37.04" height="53.33" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="161.48" y="316.41" width="37.04" height="53.33" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<rect x="309.63" y="168.26" width="37.04" height="53.33" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="309.63" y="316.41" width="37.04" height="53.33" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<text x="217.04" y="46.78" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">1</text>
+<text x="105.93" y="194.93" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">2</text>
+<text x="31.85" y="343.07" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">4</text>
+<text x="31.85" y="491.22" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">7</text>
+<text x="180.00" y="343.07" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">5</text>
+<text x="328.15" y="194.93" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">3</text>
+<text x="328.15" y="343.07" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">6</text>
+</svg>
+<svg width="360" height="462" viewBox="0 0 360 462" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polyline points="180.00,73.77 180.00,388.23" fill="none" stroke="rgb(153,153,153)" stroke-width="1.85" stroke-linejoin="round" stroke-linecap="butt"/>
+<rect x="84.09" y="17.16" width="191.82" height="113.21" fill="rgb(255,242,217)" stroke="rgb(214,122,0)" stroke-width="0.50"/>
+<rect x="13.33" y="331.63" width="333.33" height="113.21" fill="rgb(255,255,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+<text x="180.00" y="73.77" fill="rgb(214,122,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Defer</text>
+<text x="180.00" y="388.23" fill="rgb(0,0,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">-Graphics-</text>
+</svg>

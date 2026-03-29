@@ -1,7 +1,8 @@
 use crate::InterpreterError;
 use crate::functions::expr_form::{ExprForm, decompose_expr};
 use crate::functions::graphics::graphics_ast;
-use crate::syntax::{Expr, expr_to_string};
+use crate::syntax::{Expr, expr_to_output, expr_to_string};
+use std::collections::HashMap;
 
 /// A node in the expression tree
 struct TreeNode {
@@ -330,6 +331,290 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Build Graphics[{primitives...}, ImageSize -> width]
+  let content = Expr::List(primitives);
+  let image_size_opt = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::Integer(image_width as i128)),
+  };
+
+  graphics_ast(&[content, image_size_opt])
+}
+
+/// Implementation of TreeGraph[{edges...}, opts...].
+/// Takes a list of DirectedEdge/UndirectedEdge and renders as a tree diagram.
+pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "TreeGraph".to_string(),
+      args: vec![],
+    });
+  }
+
+  // Extract edges list — could be first arg directly or from Graph[vertices, edges]
+  let edges = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TreeGraph".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Check for VertexLabels -> "Name" option
+  let vertex_labels = args.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "VertexLabels")
+      && matches!(replacement.as_ref(), Expr::String(s) if s == "Name"))
+  });
+
+  // Parse edges into (src, dst) pairs
+  let mut edge_pairs: Vec<(Expr, Expr)> = Vec::new();
+  for e in &edges {
+    match e {
+      Expr::FunctionCall { name, args: eargs }
+        if (name == "DirectedEdge" || name == "UndirectedEdge")
+          && eargs.len() == 2 =>
+      {
+        edge_pairs.push((eargs[0].clone(), eargs[1].clone()));
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        edge_pairs.push((*pattern.clone(), *replacement.clone()));
+      }
+      _ => {}
+    }
+  }
+
+  if edge_pairs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "TreeGraph".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Build adjacency: find root (node that appears as src but never as dst)
+  let mut all_vertices: Vec<Expr> = Vec::new();
+  let mut children_map: HashMap<String, Vec<String>> = HashMap::new();
+  let mut vertex_labels_map: HashMap<String, String> = HashMap::new();
+  let mut has_parent: Vec<String> = Vec::new();
+
+  for (src, dst) in &edge_pairs {
+    let src_key = expr_to_output(src);
+    let dst_key = expr_to_output(dst);
+
+    if !all_vertices.iter().any(|v| expr_to_output(v) == src_key) {
+      all_vertices.push(src.clone());
+    }
+    if !all_vertices.iter().any(|v| expr_to_output(v) == dst_key) {
+      all_vertices.push(dst.clone());
+    }
+
+    children_map
+      .entry(src_key.clone())
+      .or_default()
+      .push(dst_key.clone());
+    has_parent.push(dst_key.clone());
+
+    if vertex_labels {
+      vertex_labels_map.insert(src_key.clone(), src_key.clone());
+      vertex_labels_map.insert(dst_key.clone(), dst_key.clone());
+    }
+  }
+
+  // Find root: vertex that has no parent
+  let root_key = all_vertices
+    .iter()
+    .map(|v| expr_to_output(v))
+    .find(|k| !has_parent.contains(k))
+    .unwrap_or_else(|| expr_to_output(&all_vertices[0]));
+
+  // Build tree recursively from adjacency
+  fn build_graph_tree(
+    key: &str,
+    children_map: &HashMap<String, Vec<String>>,
+    vertex_labels: bool,
+  ) -> TreeNode {
+    let children = children_map.get(key).cloned().unwrap_or_default();
+    TreeNode {
+      label: key.to_string(),
+      children: children
+        .iter()
+        .map(|c| build_graph_tree(c, children_map, vertex_labels))
+        .collect(),
+    }
+  }
+
+  let tree = build_graph_tree(&root_key, &children_map, vertex_labels);
+
+  // Reuse the same layout and rendering logic as tree_form_ast
+  tree_to_graphics(&tree)
+}
+
+/// Shared rendering logic: take a TreeNode and produce Graphics SVG
+fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
+  let box_half_height = 0.18;
+  let char_width = 0.09;
+  let box_padding = 0.08;
+
+  let box_half_width = |label: &str| -> f64 {
+    let text_width = label.len() as f64 * char_width;
+    text_width / 2.0 + box_padding
+  };
+
+  let max_bw = max_node_box_width(tree, char_width, box_padding);
+  let leaf_step = (max_bw + 0.1).max(1.0);
+
+  let layout = layout_tree(tree, leaf_step);
+
+  if layout.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "TreeGraph".to_string(),
+      args: vec![],
+    });
+  }
+
+  let coord_x_min = layout
+    .iter()
+    .map(|n| n.x - box_half_width(&n.label))
+    .fold(f64::INFINITY, f64::min);
+  let coord_x_max = layout
+    .iter()
+    .map(|n| n.x + box_half_width(&n.label))
+    .fold(f64::NEG_INFINITY, f64::max);
+  let coord_w = (coord_x_max - coord_x_min).max(0.01);
+
+  let padded_w = coord_w * 1.08;
+
+  let char_px_ratio = 0.6_f64;
+  let max_label_len = layout
+    .iter()
+    .map(|n| n.label.len())
+    .max()
+    .unwrap_or(1)
+    .max(1) as f64;
+  let effective_cw = char_width + 2.0 * box_padding / max_label_len;
+
+  let base_width = 360.0_f64;
+  let ppu_at_base = base_width / padded_w;
+  let max_fs_at_base = effective_cw * ppu_at_base / char_px_ratio;
+
+  let min_fs = 10.0_f64;
+  let max_fs = 14.0_f64;
+
+  let (image_width, font_size) = if max_fs_at_base >= max_fs {
+    (360_i64, max_fs)
+  } else if max_fs_at_base >= min_fs {
+    (360, max_fs_at_base)
+  } else {
+    let scale = min_fs / max_fs_at_base;
+    let needed_w = (base_width * scale).ceil() as i64;
+    let clamped_w = needed_w.min(800);
+    let actual_fs = max_fs_at_base * (clamped_w as f64 / base_width);
+    (clamped_w, actual_fs.min(max_fs))
+  };
+
+  let font_size_int = (font_size.round() as i128).max(8);
+
+  let mut primitives: Vec<Expr> = Vec::new();
+
+  // Edge color: gray
+  primitives.push(Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)],
+  });
+
+  for node in &layout {
+    for &child_idx in &node.children_indices {
+      let child = &layout[child_idx];
+      primitives.push(Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(vec![
+          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)]),
+          Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)]),
+        ])],
+      });
+    }
+  }
+
+  // Boxes for nodes
+  for node in &layout {
+    let is_leaf = node.children_indices.is_empty();
+    let hw = box_half_width(&node.label);
+    let hh = box_half_height;
+
+    if is_leaf {
+      primitives.push(Expr::FunctionCall {
+        name: "EdgeForm".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+        }],
+      });
+      primitives.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
+      });
+    } else {
+      primitives.push(Expr::FunctionCall {
+        name: "EdgeForm".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+        }],
+      });
+      primitives.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
+      });
+    }
+
+    primitives.push(Expr::FunctionCall {
+      name: "Rectangle".to_string(),
+      args: vec![
+        Expr::List(vec![Expr::Real(node.x - hw), Expr::Real(node.y - hh)]),
+        Expr::List(vec![Expr::Real(node.x + hw), Expr::Real(node.y + hh)]),
+      ],
+    });
+  }
+
+  // Text labels
+  primitives.push(Expr::FunctionCall {
+    name: "EdgeForm".to_string(),
+    args: vec![],
+  });
+
+  for node in &layout {
+    let is_leaf = node.children_indices.is_empty();
+    if is_leaf {
+      primitives.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      });
+    } else {
+      primitives.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
+      });
+    }
+
+    primitives.push(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Style".to_string(),
+          args: vec![
+            Expr::String(node.label.clone()),
+            Expr::Integer(font_size_int),
+          ],
+        },
+        Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)]),
+      ],
+    });
+  }
+
   let content = Expr::List(primitives);
   let image_size_opt = Expr::Rule {
     pattern: Box::new(Expr::Identifier("ImageSize".to_string())),

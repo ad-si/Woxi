@@ -3827,6 +3827,43 @@ mod edge_list {
       "{DirectedEdge[1, 2], DirectedEdge[2, 3]}"
     );
   }
+
+  #[test]
+  fn directed_edge_infix_syntax() {
+    // \[DirectedEdge] infix operator should parse as DirectedEdge[a, b]
+    assert_eq!(
+      interpret("1 \\[DirectedEdge] 2").unwrap(),
+      "DirectedEdge[1, 2]"
+    );
+  }
+
+  #[test]
+  fn undirected_edge_infix_syntax() {
+    // \[UndirectedEdge] infix operator should parse as UndirectedEdge[a, b]
+    assert_eq!(
+      interpret("1 \\[UndirectedEdge] 2").unwrap(),
+      "UndirectedEdge[1, 2]"
+    );
+  }
+
+  #[test]
+  fn directed_edge_infix_in_list() {
+    assert_eq!(
+      interpret("{1 \\[DirectedEdge] 2, 3 \\[DirectedEdge] 4}").unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[3, 4]}"
+    );
+  }
+
+  #[test]
+  fn graph_from_directed_edge_infix() {
+    assert_eq!(
+      interpret(
+        "EdgeList[Graph[{1 \\[DirectedEdge] 2, 2 \\[DirectedEdge] 3}]]"
+      )
+      .unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3]}"
+    );
+  }
 }
 
 mod vertex_list {

@@ -8863,6 +8863,16 @@ mod batch_unevaluated_wrappers_2 {
   fn tree_graph() {
     assert_eq!(interpret("TreeGraph[x]").unwrap(), "TreeGraph[x]");
   }
+  #[test]
+  fn tree_graph_edges_renders() {
+    let result =
+      interpret("TreeGraph[{DirectedEdge[1, 2], DirectedEdge[1, 3]}]").unwrap();
+    assert!(
+      result.contains("-Graphics-"),
+      "TreeGraph should render as Graphics, got: {}",
+      result
+    );
+  }
 
   // ─── DuplicateFreeQ ───────────────────────────────────────────────
   #[test]
