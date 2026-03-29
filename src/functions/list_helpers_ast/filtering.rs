@@ -112,9 +112,21 @@ pub fn cases_ast(
     }
   };
 
+  // Check if pattern is a Rule or RuleDelayed: lhs -> rhs or lhs :> rhs
+  let (match_pat, replacement) = extract_rule_parts(pattern);
+
   let mut kept = Vec::new();
   for item in items {
-    if matches_pattern_ast(item, pattern) {
+    if let Some(ref repl) = replacement {
+      // Rule/RuleDelayed form: match against LHS, return RHS with bindings
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(item, match_pat)
+      {
+        let result =
+          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
+        kept.push(result);
+      }
+    } else if matches_pattern_ast(item, pattern) {
       kept.push(item.clone());
     } else {
       // Fall back to string matching for compatibility
@@ -127,6 +139,22 @@ pub fn cases_ast(
   }
 
   Ok(Expr::List(kept))
+}
+
+/// Extract pattern and optional replacement from a Rule or RuleDelayed expression.
+/// Returns (pattern, Some(replacement)) for rules, or (original, None) for plain patterns.
+fn extract_rule_parts(expr: &Expr) -> (&Expr, Option<&Expr>) {
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), Some(replacement.as_ref())),
+    _ => (expr, None),
+  }
 }
 
 /// Simple pattern matching for Cases.
@@ -426,15 +454,20 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         false
       }
     }
+    // Condition[pattern, test] - matches if pattern matches AND test evaluates to True
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Condition" && pat_args.len() == 2 => {
+      // Delegate to match_pattern which handles bindings and condition evaluation
+      crate::evaluator::pattern_matching::match_pattern(expr, pattern).is_some()
+    }
     // Structural matching for function calls: f[_
     Expr::FunctionCall {
       name: pat_name,
       args: pat_args,
     } => {
-      if pat_name == "Except"
-        || pat_name == "PatternTest"
-        || pat_name == "Condition"
-      {
+      if pat_name == "Except" || pat_name == "PatternTest" {
         // Already handled above or not a structural match
         let pattern_str = crate::syntax::expr_to_string(pattern);
         let expr_str = crate::syntax::expr_to_string(expr);
