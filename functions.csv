@@ -1581,7 +1581,7 @@ MaxTrainingRounds,Max training iterations,✅,unevaluated,11.0,1607
 Slider2D,,🚫,,6.0,1608
 Compress,Compresses an expression to a string,✅,pure,6.0,1611
 PolarAxes,Polar axes option,✅,unevaluated,7.0,1611
-PolynomialGCD,Greatest common divisor of polynomials,✅,unevaluated,2.0,1611
+PolynomialGCD,Greatest common divisor of polynomials,✅,pure,2.0,1611
 ARProcess,Autoregressive process,✅,unevaluated,9.0,1614
 DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8.0,1614
 SystemDialogInput,System dialog input,✅,unevaluated,6.0,1614
