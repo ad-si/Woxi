@@ -4018,6 +4018,31 @@ mod cantor_staircase {
   }
 }
 
+mod planar_graph {
+  use super::*;
+
+  #[test]
+  fn from_rules() {
+    assert_eq!(
+      interpret("PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
+      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+    );
+  }
+
+  #[test]
+  fn vertex_list() {
+    assert_eq!(
+      interpret("VertexList[PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[PlanarGraph[{1 -> 2}]]").unwrap(), "Graph");
+  }
+}
+
 mod colon {
   use super::*;
 
