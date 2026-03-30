@@ -5,6 +5,7 @@ authors = ["Adrian Sieber"]
 src = "cli"
 
 [output.html]
+additional-css = ["cli/custom.css"]
 git-repository-url = "https://github.com/ad-si/Woxi"
 edit-url-template = "https://github.com/ad-si/Woxi/edit/main/tests/{path}"
 
