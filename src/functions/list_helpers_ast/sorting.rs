@@ -179,38 +179,56 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// AST-based SortBy: sort elements by the value of a function.
 /// SortBy[{a, b, c}, f] -> elements sorted by f[x]
 pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SortBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+  match list {
+    Expr::List(items) => {
+      let mut keyed: Vec<(Expr, Expr)> = items
+        .iter()
+        .map(|item| {
+          let key = apply_func_ast(func, item)?;
+          Ok((item.clone(), key))
+        })
+        .collect::<Result<_, InterpreterError>>()?;
+
+      keyed.sort_by(|a, b| {
+        let key_ord = canonical_cmp(&a.1, &b.1);
+        if key_ord == std::cmp::Ordering::Equal {
+          canonical_cmp(&a.0, &b.0)
+        } else {
+          key_ord
+        }
       });
+
+      Ok(Expr::List(
+        keyed.into_iter().map(|(item, _)| item).collect(),
+      ))
     }
-  };
+    Expr::Association(pairs) => {
+      let mut keyed: Vec<((Expr, Expr), Expr)> = pairs
+        .iter()
+        .map(|(k, v)| {
+          let key = apply_func_ast(func, v)?;
+          Ok(((k.clone(), v.clone()), key))
+        })
+        .collect::<Result<_, InterpreterError>>()?;
 
-  // Compute keys for each element
-  let mut keyed: Vec<(Expr, Expr)> = items
-    .into_iter()
-    .map(|item| {
-      let key = apply_func_ast(func, &item)?;
-      Ok((item, key))
-    })
-    .collect::<Result<_, InterpreterError>>()?;
+      keyed.sort_by(|a, b| {
+        let key_ord = canonical_cmp(&a.1, &b.1);
+        if key_ord == std::cmp::Ordering::Equal {
+          canonical_cmp(&(a.0).1, &(b.0).1)
+        } else {
+          key_ord
+        }
+      });
 
-  // Sort by key, using canonical ordering as tiebreaker
-  keyed.sort_by(|a, b| {
-    let key_ord = canonical_cmp(&a.1, &b.1);
-    if key_ord == std::cmp::Ordering::Equal {
-      canonical_cmp(&a.0, &b.0)
-    } else {
-      key_ord
+      Ok(Expr::Association(
+        keyed.into_iter().map(|(pair, _)| pair).collect(),
+      ))
     }
-  });
-
-  Ok(Expr::List(
-    keyed.into_iter().map(|(item, _)| item).collect(),
-  ))
+    _ => Ok(Expr::FunctionCall {
+      name: "SortBy".to_string(),
+      args: vec![list.clone(), func.clone()],
+    }),
+  }
 }
 
 ///// Ordering[list
@@ -375,6 +393,11 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       let mut sorted = items.clone();
       sorted.sort_by(canonical_cmp);
       Ok(Expr::List(sorted))
+    }
+    Expr::Association(pairs) => {
+      let mut sorted = pairs.clone();
+      sorted.sort_by(|a, b| canonical_cmp(&a.1, &b.1));
+      Ok(Expr::Association(sorted))
     }
     _ => Ok(Expr::FunctionCall {
       name: "Sort".to_string(),

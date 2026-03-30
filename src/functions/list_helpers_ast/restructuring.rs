@@ -323,6 +323,11 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       reversed.reverse();
       Ok(Expr::List(reversed))
     }
+    Expr::Association(pairs) => {
+      let mut reversed = pairs.clone();
+      reversed.reverse();
+      Ok(Expr::Association(reversed))
+    }
     Expr::FunctionCall { name, args } => {
       let mut reversed = args.clone();
       reversed.reverse();
