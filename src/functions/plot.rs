@@ -291,6 +291,13 @@ pub(crate) enum Filling {
   Value(f64),
 }
 
+/// Mesh mode for line plots.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Mesh {
+  None,
+  All,
+}
+
 impl Filling {
   /// Compute the y-value to fill to, given the current plot y-range.
   /// Returns `None` for `Filling::None`.
@@ -309,6 +316,7 @@ impl Filling {
 pub(crate) fn parse_filling(replacement: &Expr) -> Filling {
   match replacement {
     Expr::Identifier(v) if v == "Axis" => Filling::Axis,
+    Expr::Identifier(v) if v == "Automatic" => Filling::Axis,
     Expr::Identifier(v) if v == "Bottom" => Filling::Bottom,
     Expr::Identifier(v) if v == "Top" => Filling::Top,
     Expr::Identifier(v) if v == "None" => Filling::None,
@@ -360,6 +368,7 @@ pub(crate) struct PlotOptions {
   pub svg_height: u32,
   pub full_width: bool,
   pub filling: Filling,
+  pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub plot_style: Vec<WoxiColor>,
@@ -371,6 +380,10 @@ pub(crate) struct PlotOptions {
   pub plot_points: usize,
   /// Legend labels for each series (empty = no legend)
   pub plot_legends: Vec<String>,
+  /// Show horizontal grid lines (dashed)
+  pub grid_lines_y: bool,
+  /// Use frame (left+bottom border) instead of axes
+  pub frame: bool,
 }
 
 impl Default for PlotOptions {
@@ -380,6 +393,7 @@ impl Default for PlotOptions {
       svg_height: DEFAULT_HEIGHT,
       full_width: false,
       filling: Filling::None,
+      mesh: Mesh::None,
       plot_label: None,
       axes_label: None,
       plot_style: Vec::new(),
@@ -387,6 +401,8 @@ impl Default for PlotOptions {
       ticks: true,
       plot_points: NUM_SAMPLES,
       plot_legends: Vec::new(),
+      grid_lines_y: false,
+      frame: false,
     }
   }
 }
@@ -557,7 +573,10 @@ fn generate_svg_with_options(
       y_tick_size = 0;
     }
     let any_axis = show_x_axis || show_y_axis;
-    let axis_style = if any_axis {
+    let axis_style = if opts.frame {
+      // Frame mode: hide plotters axis lines; we draw frame lines ourselves
+      ShapeStyle::from(&bg_color).stroke_width(0)
+    } else if any_axis {
       dark_gray.stroke_width(RESOLUTION_SCALE)
     } else {
       ShapeStyle::from(&bg_color).stroke_width(0)
@@ -592,23 +611,66 @@ fn generate_svg_with_options(
       .draw()
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    // Draw lighter origin lines through x=0 and y=0 if visible
-    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-    if y_min < 0.0 && y_max > 0.0 {
+    // Draw horizontal grid lines (dashed) when grid_lines_y is enabled
+    if opts.grid_lines_y {
+      let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+      let grid_step = nice_step(y_max - y_min, 5);
+      let mut gy = (y_min / grid_step).ceil() * grid_step;
+      while gy <= y_max {
+        let dash_len = (x_max - x_min) * 0.005;
+        let gap_len = dash_len * 2.0;
+        let mut dx = x_min;
+        while dx < x_max {
+          let end = (dx + dash_len).min(x_max);
+          chart
+            .draw_series(std::iter::once(PathElement::new(
+              vec![(dx, gy), (end, gy)],
+              grid_color.stroke_width(RESOLUTION_SCALE),
+            )))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+          dx += dash_len + gap_len;
+        }
+        gy += grid_step;
+      }
+    }
+
+    // Draw frame (bottom border only) when frame mode is enabled
+    // Business theme: bottom frame line visible, left frame line invisible
+    if opts.frame {
+      let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE * 2);
       chart
         .draw_series(std::iter::once(PathElement::new(
-          vec![(x_min, 0.0), (x_max, 0.0)],
-          origin_line,
+          vec![(x_min, y_min), (x_max, y_min)],
+          frame_style,
         )))
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
-    if x_min < 0.0 && x_max > 0.0 {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(0.0, y_min), (0.0, y_max)],
-          origin_line,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+
+    // Draw lighter origin lines through x=0 and y=0 if visible
+    if !opts.frame {
+      let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
+      if y_min < 0.0 && y_max > 0.0 {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(x_min, 0.0), (x_max, 0.0)],
+            origin_line,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
+      if x_min < 0.0 && x_max > 0.0 {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(0.0, y_min), (0.0, y_max)],
+            origin_line,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
     }
 
     for (series_idx, points) in all_points.iter().enumerate() {
@@ -641,6 +703,25 @@ fn generate_svg_with_options(
             segment.clone(),
             color.stroke_width(15), // 1.5px at display size
           )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
+
+      // Draw mesh dots at each data point when Mesh -> All
+      if opts.mesh == Mesh::All {
+        let marker_size = 3 * RESOLUTION_SCALE;
+        let finite_pts: Vec<(f64, f64)> = points
+          .iter()
+          .copied()
+          .filter(|(x, y)| x.is_finite() && y.is_finite())
+          .collect();
+        chart
+          .draw_series(
+            finite_pts
+              .iter()
+              .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+          )
           .map_err(|e| {
             InterpreterError::EvaluationError(format!("Plot: {e}"))
           })?;

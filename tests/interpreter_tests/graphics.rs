@@ -1516,6 +1516,34 @@ mod plot3d {
     }
 
     #[test]
+    fn list_line_plot_filling_automatic() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Automatic]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_mesh_all() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 2, 3, 2, 1}, Mesh -> All]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_plot_theme_business() {
+      insta::assert_snapshot!(export_svg(
+        r#"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> "Business"]"#
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_combined_options() {
+      insta::assert_snapshot!(export_svg(
+        r#"ListLinePlot[Prime[Range[1, 25]], PlotTheme -> "Business", Filling -> Automatic, Mesh -> All]"#
+      ));
+    }
+
+    #[test]
     fn list_plot_filling_axis() {
       insta::assert_snapshot!(export_svg(
         "ListPlot[{1, 4, 9, 16}, Filling -> Axis]"
