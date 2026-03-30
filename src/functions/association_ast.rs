@@ -425,26 +425,42 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// AssociationThread[keys, values] - Creates an association from lists of keys and values
+/// AssociationThread[keys -> values] - Rule form
 pub fn association_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  let (keys_expr, values_expr) = if args.len() == 2 {
+    (&args[0], &args[1])
+  } else if args.len() == 1 {
+    // Rule form: AssociationThread[{keys} -> {values}]
+    match &args[0] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "AssociationThread expects a rule or two arguments".into(),
+        ));
+      }
+    }
+  } else {
     return Err(InterpreterError::EvaluationError(
-      "AssociationThread expects exactly 2 arguments".into(),
+      "AssociationThread expects 1 or 2 arguments".into(),
     ));
-  }
+  };
 
-  let keys = match &args[0] {
+  let keys = match keys_expr {
     Expr::List(items) => items.clone(),
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "AssociationThread: first argument must be a list".into(),
+        "AssociationThread: keys must be a list".into(),
       ));
     }
   };
-  let values = match &args[1] {
+  let values = match values_expr {
     Expr::List(items) => items.clone(),
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "AssociationThread: second argument must be a list".into(),
+        "AssociationThread: values must be a list".into(),
       ));
     }
   };

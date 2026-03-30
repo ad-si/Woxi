@@ -865,3 +865,35 @@ mod aggregate_association {
     assert_eq!(interpret("Max[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "3");
   }
 }
+
+mod catenate_association {
+  use super::*;
+
+  #[test]
+  fn catenate_associations() {
+    assert_eq!(
+      interpret("Catenate[{<|a -> 1|>, <|b -> 2|>}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn catenate_mixed_lists_and_associations() {
+    assert_eq!(
+      interpret("Catenate[{{1, 2}, <|a -> 3|>}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
+mod association_thread_rule_form {
+  use super::*;
+
+  #[test]
+  fn association_thread_rule_form() {
+    assert_eq!(
+      interpret("AssociationThread[{a, b, c} -> {1, 2, 3}]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+}

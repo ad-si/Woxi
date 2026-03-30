@@ -47,7 +47,7 @@ pub fn dispatch_association_functions(
         args,
       ));
     }
-    "AssociationThread" if args.len() == 2 => {
+    "AssociationThread" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::association_ast::association_thread_ast(
         args,
       ));
