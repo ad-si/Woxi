@@ -886,6 +886,26 @@ mod catenate_association {
   }
 }
 
+mod apply_association {
+  use super::*;
+
+  #[test]
+  fn apply_plus_to_association() {
+    assert_eq!(
+      interpret("Apply[Plus, <|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn apply_f_to_association() {
+    assert_eq!(
+      interpret("Apply[f, <|a -> 1, b -> 2|>]").unwrap(),
+      "f[1, 2]"
+    );
+  }
+}
+
 mod association_thread_rule_form {
   use super::*;
 
