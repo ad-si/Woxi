@@ -219,7 +219,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, Theme, iced::Renderer>
     _tree: &'b mut widget::Tree,
     layout: Layout<'_>,
     _renderer: &iced::Renderer,
-    _viewport: &Rectangle,
+    viewport: &Rectangle,
     translation: Vector,
   ) -> Option<overlay::Element<'b, Message, Theme, iced::Renderer>> {
     if !self.is_open {
@@ -227,10 +227,16 @@ impl<'a, Message: Clone + 'a> Widget<Message, Theme, iced::Renderer>
     }
 
     let bounds = layout.bounds();
-    let position = Point::new(
-      bounds.x + translation.x,
-      bounds.y + bounds.height + translation.y + 2.0,
-    );
+    let menu_height =
+      ITEM_HEIGHT * self.options.len() as f32 + MENU_PADDING * 2.0;
+    let below_y = bounds.y + bounds.height + translation.y + 2.0;
+    let y = if below_y + menu_height > viewport.y + viewport.height {
+      // Not enough space below — open above the button
+      bounds.y + translation.y - menu_height - 2.0
+    } else {
+      below_y
+    };
+    let position = Point::new(bounds.x + translation.x, y);
 
     Some(overlay::Element::new(Box::new(DropdownOverlay {
       options: self.options,
