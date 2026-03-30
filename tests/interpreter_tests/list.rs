@@ -227,6 +227,22 @@ mod inner_extended {
   use super::*;
 
   #[test]
+  fn inner_default_combiner() {
+    assert_eq!(
+      interpret("Inner[f, {a, b, c}, {x, y, z}]").unwrap(),
+      "f[a, x] + f[b, y] + f[c, z]"
+    );
+  }
+
+  #[test]
+  fn inner_times_plus() {
+    assert_eq!(
+      interpret("Inner[Times, {a, b, c}, {x, y, z}, Plus]").unwrap(),
+      "a*x + b*y + c*z"
+    );
+  }
+
+  #[test]
   fn matrix_and_or() {
     assert_eq!(
       interpret("Inner[And, {{False, False}, {False, True}}, {{True, False}, {True, True}}, Or]")

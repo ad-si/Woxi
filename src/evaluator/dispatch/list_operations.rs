@@ -1486,6 +1486,12 @@ pub fn dispatch_list_operations(
     "Outer" if args.len() >= 3 => {
       return Some(list_helpers_ast::outer_ast(&args[0], &args[1..]));
     }
+    "Inner" if args.len() == 3 => {
+      let plus = Expr::Identifier("Plus".to_string());
+      return Some(list_helpers_ast::inner_ast(
+        &args[0], &args[1], &args[2], &plus,
+      ));
+    }
     "Inner" if args.len() == 4 => {
       return Some(list_helpers_ast::inner_ast(
         &args[0], &args[1], &args[2], &args[3],

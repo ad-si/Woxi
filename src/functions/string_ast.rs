@@ -394,54 +394,81 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringStartsQ[s, prefix] - checks if string starts with prefix
 pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringStartsQ expects exactly 2 arguments".into(),
+      "StringStartsQ expects 2 or 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
   let prefix = expr_to_str(&args[1])?;
+  let ignore_case = has_ignore_case_option(args);
+  let result = if ignore_case {
+    s.to_lowercase().starts_with(&prefix.to_lowercase())
+  } else {
+    s.starts_with(&prefix)
+  };
   Ok(Expr::Identifier(
-    if s.starts_with(&prefix) {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
+    if result { "True" } else { "False" }.to_string(),
   ))
 }
 
 /// StringEndsQ[s, suffix] - checks if string ends with suffix
 pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringEndsQ expects exactly 2 arguments".into(),
+      "StringEndsQ expects 2 or 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
   let suffix = expr_to_str(&args[1])?;
+  let ignore_case = has_ignore_case_option(args);
+  let result = if ignore_case {
+    s.to_lowercase().ends_with(&suffix.to_lowercase())
+  } else {
+    s.ends_with(&suffix)
+  };
   Ok(Expr::Identifier(
-    if s.ends_with(&suffix) {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
+    if result { "True" } else { "False" }.to_string(),
   ))
 }
 
 /// StringContainsQ[s, sub] - checks if string contains substring
+/// StringContainsQ[s, sub, IgnoreCase -> True] - case-insensitive
 pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringContainsQ expects exactly 2 arguments".into(),
+      "StringContainsQ expects 2 or 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
   let sub = expr_to_str(&args[1])?;
+  let ignore_case = has_ignore_case_option(args);
+  let result = if ignore_case {
+    s.to_lowercase().contains(&sub.to_lowercase())
+  } else {
+    s.contains(&sub)
+  };
   Ok(Expr::Identifier(
-    if s.contains(&sub) { "True" } else { "False" }.to_string(),
+    if result { "True" } else { "False" }.to_string(),
   ))
+}
+
+/// Check if args contain IgnoreCase -> True option
+fn has_ignore_case_option(args: &[Expr]) -> bool {
+  for arg in args.iter().skip(2) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+    {
+      if crate::syntax::expr_to_string(pattern) == "IgnoreCase"
+        && crate::syntax::expr_to_string(replacement) == "True"
+      {
+        return true;
+      }
+    }
+  }
+  false
 }
 
 /// StringReplace[s, pattern -> replacement] - replaces occurrences
@@ -738,18 +765,25 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StringMatchQ[s, pattern] - test if string matches pattern
+/// StringMatchQ[s, pattern, IgnoreCase -> True] - case-insensitive
 pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringMatchQ expects exactly 2 arguments".into(),
+      "StringMatchQ expects 2 or 3 arguments".into(),
     ));
   }
 
-  let s = expr_to_str(&args[0])?;
+  let ignore_case = has_ignore_case_option(args);
+  let s = if ignore_case {
+    expr_to_str(&args[0])?.to_lowercase()
+  } else {
+    expr_to_str(&args[0])?
+  };
 
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
-    let full_regex = format!("^(?:{})$", regex_str);
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let full_regex = format!("{}^(?:{})$", case_flag, regex_str);
     let re = regex::Regex::new(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!(
         "Invalid string pattern: {}",
@@ -763,7 +797,8 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try RegularExpression pattern
   if let Some(pat) = extract_regex_pattern(&args[1]) {
-    let full_regex = format!("^(?:{})$", pat);
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let full_regex = format!("{}^(?:{})$", case_flag, pat);
     let re = regex::Regex::new(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid regex: {}", e))
     })?;
@@ -773,8 +808,12 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Fall back to string-based wildcard matching
-  let pattern = expr_to_str(&args[1])?;
-  let matches = wildcard_match(&s, &pattern);
+  let pattern_str = if ignore_case {
+    expr_to_str(&args[1])?.to_lowercase()
+  } else {
+    expr_to_str(&args[1])?
+  };
+  let matches = wildcard_match(&s, &pattern_str);
   Ok(Expr::Identifier(
     if matches { "True" } else { "False" }.to_string(),
   ))

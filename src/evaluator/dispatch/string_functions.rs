@@ -30,13 +30,13 @@ pub fn dispatch_string_functions(
     "StringSplit" if !args.is_empty() => {
       return Some(crate::functions::string_ast::string_split_ast(args));
     }
-    "StringStartsQ" if args.len() == 2 => {
+    "StringStartsQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_starts_q_ast(args));
     }
-    "StringEndsQ" if args.len() == 2 => {
+    "StringEndsQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_ends_q_ast(args));
     }
-    "StringContainsQ" if args.len() == 2 => {
+    "StringContainsQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_contains_q_ast(args));
     }
     "StringReplace" if args.len() == 2 || args.len() == 3 => {
@@ -57,7 +57,7 @@ pub fn dispatch_string_functions(
     "StringPosition" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_position_ast(args));
     }
-    "StringMatchQ" if args.len() == 2 => {
+    "StringMatchQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_match_q_ast(args));
     }
     "StringReverse" if args.len() == 1 => {
