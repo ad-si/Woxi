@@ -1690,6 +1690,99 @@ mod sinh_cosh {
   }
 }
 
+mod tanh_sech_csch_coth {
+  use super::*;
+
+  #[test]
+  fn d_tanh() {
+    assert_eq!(interpret("D[Tanh[x], x]").unwrap(), "Sech[x]^2");
+  }
+
+  #[test]
+  fn d_sech() {
+    assert_eq!(interpret("D[Sech[x], x]").unwrap(), "-(Sech[x]*Tanh[x])");
+  }
+
+  #[test]
+  fn d_csch() {
+    assert_eq!(interpret("D[Csch[x], x]").unwrap(), "-(Coth[x]*Csch[x])");
+  }
+
+  #[test]
+  fn d_coth() {
+    assert_eq!(interpret("D[Coth[x], x]").unwrap(), "-Csch[x]^2");
+  }
+
+  #[test]
+  fn d_tanh_chain_rule() {
+    assert_eq!(interpret("D[Tanh[2*x], x]").unwrap(), "2*Sech[2*x]^2");
+  }
+}
+
+mod inverse_trig_derivatives {
+  use super::*;
+
+  #[test]
+  fn d_arcsin() {
+    assert_eq!(interpret("D[ArcSin[x], x]").unwrap(), "1/Sqrt[1 - x^2]");
+  }
+
+  #[test]
+  fn d_arccos() {
+    assert_eq!(interpret("D[ArcCos[x], x]").unwrap(), "-(1/Sqrt[1 - x^2])");
+  }
+
+  #[test]
+  fn d_arctan() {
+    assert_eq!(interpret("D[ArcTan[x], x]").unwrap(), "(1 + x^2)^(-1)");
+  }
+
+  #[test]
+  fn d_arccot() {
+    assert_eq!(interpret("D[ArcCot[x], x]").unwrap(), "-(1/(1 + x^2))");
+  }
+
+  #[test]
+  fn d_arctan_chain_rule() {
+    assert_eq!(interpret("D[ArcTan[2*x], x]").unwrap(), "2/(1 + 4*x^2)");
+  }
+
+  #[test]
+  fn d_arcsin_chain_rule() {
+    assert_eq!(
+      interpret("D[ArcSin[3*x], x]").unwrap(),
+      "3/Sqrt[1 - (3*x)^2]"
+    );
+  }
+}
+
+mod inverse_hyperbolic_derivatives {
+  use super::*;
+
+  #[test]
+  fn d_arcsinh() {
+    assert_eq!(interpret("D[ArcSinh[x], x]").unwrap(), "1/Sqrt[1 + x^2]");
+  }
+
+  #[test]
+  fn d_arccosh() {
+    assert_eq!(interpret("D[ArcCosh[x], x]").unwrap(), "1/Sqrt[-1 + x^2]");
+  }
+
+  #[test]
+  fn d_arctanh() {
+    assert_eq!(interpret("D[ArcTanh[x], x]").unwrap(), "(1 - x^2)^(-1)");
+  }
+
+  #[test]
+  fn d_arcsinh_chain_rule() {
+    assert_eq!(
+      interpret("D[ArcSinh[2*x], x]").unwrap(),
+      "2/Sqrt[1 + (2*x)^2]"
+    );
+  }
+}
+
 mod integrate_log {
   use super::*;
 
