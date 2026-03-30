@@ -954,6 +954,263 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(df),
           }))
         }
+        "Tanh" if args.len() == 1 => {
+          // d/dx[tanh(f(x))] = sech^2(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sech".to_string(),
+                args: args.clone(),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Sech" if args.len() == 1 => {
+          // d/dx[sech(f(x))] = -sech(f(x)) * tanh(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Sech".to_string(),
+                  args: args.clone(),
+                }),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Tanh".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Csch" if args.len() == 1 => {
+          // d/dx[csch(f(x))] = -coth(f(x)) * csch(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Coth".to_string(),
+                  args: args.clone(),
+                }),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Csch".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Coth" if args.len() == 1 => {
+          // d/dx[coth(f(x))] = -csch^2(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Csch".to_string(),
+                  args: args.clone(),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "ArcSin" if args.len() == 1 => {
+          // d/dx[arcsin(f(x))] = f'(x) / sqrt(1 - f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_minus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(args[0].clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+          };
+          let sqrt_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![one_minus_f_sq],
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![sqrt_expr, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcCos" if args.len() == 1 => {
+          // d/dx[arccos(f(x))] = -f'(x) / sqrt(1 - f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_minus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(args[0].clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+          };
+          let sqrt_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![one_minus_f_sq],
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(df),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![sqrt_expr, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcTan" if args.len() == 1 => {
+          // d/dx[arctan(f(x))] = f'(x) / (1 + f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_plus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![one_plus_f_sq, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcCot" if args.len() == 1 => {
+          // d/dx[arccot(f(x))] = -f'(x) / (1 + f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_plus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(df),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![one_plus_f_sq, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcSinh" if args.len() == 1 => {
+          // d/dx[arcsinh(f(x))] = f'(x) / sqrt(1 + f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_plus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          let sqrt_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![one_plus_f_sq],
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![sqrt_expr, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcCosh" if args.len() == 1 => {
+          // d/dx[arccosh(f(x))] = f'(x) / sqrt(f(x)^2 - 1)
+          let df = differentiate(&args[0], var)?;
+          let f_sq_minus_one = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          };
+          let sqrt_expr = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![f_sq_minus_one],
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![sqrt_expr, Expr::Integer(-1)],
+            }),
+          }))
+        }
+        "ArcTanh" if args.len() == 1 => {
+          // d/dx[arctanh(f(x))] = f'(x) / (1 - f(x)^2)
+          let df = differentiate(&args[0], var)?;
+          let one_minus_f_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(args[0].clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![one_minus_f_sq, Expr::Integer(-1)],
+            }),
+          }))
+        }
         "Exp" if args.len() == 1 => {
           // d/dx[e^f(x)] = e^f(x) * f'(x)
           let df = differentiate(&args[0], var)?;
