@@ -1040,6 +1040,33 @@ pub fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // Entity store functions
+  match name {
+    "EntityStore" => {
+      return crate::functions::entity_ast::entity_store_ast(args);
+    }
+    "EntityRegister" => {
+      return crate::functions::entity_ast::entity_register_ast(args);
+    }
+    "EntityUnregister" => {
+      return crate::functions::entity_ast::entity_unregister_ast(args);
+    }
+    "EntityStores" => {
+      return crate::functions::entity_ast::entity_stores_ast(args);
+    }
+    "EntityValue" => {
+      return crate::functions::entity_ast::entity_value_ast(args);
+    }
+    "EntityList" => return crate::functions::entity_ast::entity_list_ast(args),
+    "EntityProperties" => {
+      return crate::functions::entity_ast::entity_properties_ast(args);
+    }
+    "EntityClassList" => {
+      return crate::functions::entity_ast::entity_class_list_ast(args);
+    }
+    _ => {}
+  }
+
   // Check if the variable stores a value that can be called as a function
   // (e.g., anonymous function stored in a variable: f = (# + 1) &; f[5])
   let stored_value = crate::ENV.with(|e| {

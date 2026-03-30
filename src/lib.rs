@@ -681,6 +681,7 @@ pub fn clear_state() {
   RECURSION_DEPTH.with(|d| d.set(0));
   EVAL_STACK.with(|s| s.borrow_mut().clear());
   LAST_ERROR_TRACE.with(|t| *t.borrow_mut() = None);
+  functions::entity_ast::clear_entity_stores();
   unseed_rng();
   clear_captured_stdout();
   clear_captured_graphics();

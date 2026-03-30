@@ -359,6 +359,22 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "Entity" && func_args.len() == 2 => {
+      // Entity["type", "name"]["property"] — property access on entities
+      crate::functions::entity_ast::entity_property_access(func_args, args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "EntityStore" && func_args.len() == 1 => {
+      // EntityStore[...][Entity["type", "name"], "property"] — callable store form
+      crate::functions::entity_ast::entity_store_property_access(
+        func_args, args,
+      )
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "InterpolatingFunction"
       && (func_args.len() == 2 || func_args.len() == 3) =>
     {
@@ -535,6 +551,27 @@ pub fn apply_curried_call(
       } else {
         // Unknown/symbolic curried call: preserve the CurriedCall form
         // e.g. f[g][x] stays as f[g][x], not f[g, x]
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Association(pairs) => {
+      // assoc["key"] — association lookup
+      if args.len() == 1 {
+        let key_str = expr_to_string(&args[0]);
+        for (k, v) in pairs {
+          if expr_to_string(k) == key_str {
+            return Ok(v.clone());
+          }
+        }
+        // Key not found: return Missing["KeyAbsent", key]
+        Ok(Expr::FunctionCall {
+          name: "Missing".to_string(),
+          args: vec![Expr::String("KeyAbsent".to_string()), args[0].clone()],
+        })
+      } else {
         Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
           args: args.to_vec(),
