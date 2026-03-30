@@ -799,3 +799,69 @@ mod association_list_operations {
     );
   }
 }
+
+mod member_q_association {
+  use super::*;
+
+  #[test]
+  fn member_q_value_present() {
+    assert_eq!(interpret("MemberQ[<|a -> 1, b -> 2|>, 2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn member_q_key_not_checked() {
+    assert_eq!(
+      interpret("MemberQ[<|a -> 1, b -> 2|>, a]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn member_q_value_absent() {
+    assert_eq!(
+      interpret("MemberQ[<|a -> 1, b -> 2|>, 3]").unwrap(),
+      "False"
+    );
+  }
+}
+
+mod count_association {
+  use super::*;
+
+  #[test]
+  fn count_matching_values() {
+    assert_eq!(
+      interpret("Count[<|a -> 1, b -> 2, c -> 1|>, 1]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn count_no_matches() {
+    assert_eq!(interpret("Count[<|a -> 1, b -> 2|>, 3]").unwrap(), "0");
+  }
+}
+
+mod aggregate_association {
+  use super::*;
+
+  #[test]
+  fn total_association() {
+    assert_eq!(interpret("Total[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "6");
+  }
+
+  #[test]
+  fn mean_association() {
+    assert_eq!(interpret("Mean[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "2");
+  }
+
+  #[test]
+  fn min_association() {
+    assert_eq!(interpret("Min[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "1");
+  }
+
+  #[test]
+  fn max_association() {
+    assert_eq!(interpret("Max[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "3");
+  }
+}

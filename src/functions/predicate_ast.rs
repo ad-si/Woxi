@@ -630,13 +630,19 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "MemberQ expects exactly 2 arguments".into(),
     ));
   }
-  let list = match &args[0] {
-    Expr::List(items) => items,
+  let items: &[Expr];
+  let assoc_values: Vec<Expr>;
+  match &args[0] {
+    Expr::List(list_items) => items = list_items,
+    Expr::Association(pairs) => {
+      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
+      items = &assoc_values;
+    }
     _ => return Ok(bool_expr(false)),
   };
 
   let target_str = crate::syntax::expr_to_string(&args[1]);
-  for item in list {
+  for item in items {
     if crate::syntax::expr_to_string(item) == target_str {
       return Ok(bool_expr(true));
     }
