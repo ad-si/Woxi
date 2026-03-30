@@ -568,6 +568,56 @@ mod operator_form {
   }
 }
 
+mod ignore_case {
+  use super::*;
+
+  #[test]
+  fn string_contains_q_ignore_case() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[\"Hello World\", \"world\", IgnoreCase -> True]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn string_contains_q_case_sensitive() {
+    assert_eq!(
+      interpret("StringContainsQ[\"Hello World\", \"world\"]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_starts_q_ignore_case() {
+    assert_eq!(
+      interpret("StringStartsQ[\"Hello\", \"hello\", IgnoreCase -> True]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn string_ends_q_ignore_case() {
+    assert_eq!(
+      interpret("StringEndsQ[\"Hello\", \"ELLO\", IgnoreCase -> True]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn string_match_q_ignore_case() {
+    assert_eq!(
+      interpret("StringMatchQ[\"Hello\", \"hello\", IgnoreCase -> True]")
+        .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod string_patterns {
   use super::*;
 
