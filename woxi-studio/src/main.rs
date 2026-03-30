@@ -1013,7 +1013,7 @@ impl WoxiStudio {
         .style(add_cell_button_style),
     )
     .center_x(Fill)
-    .padding([2, 0])
+    .padding([1, 0])
     .into()
   }
 
@@ -1226,7 +1226,7 @@ impl WoxiStudio {
 
     let cell_row = row![gutter, content_el, right_side]
       .spacing(0)
-      .padding([3, 2]);
+      .padding([1, 2]);
 
     container(cell_row).width(Fill).into()
   }
@@ -1545,12 +1545,13 @@ fn export_button_style(
   status: pick_list::Status,
 ) -> pick_list::Style {
   let palette = theme.extended_palette();
-  let (bg, text_color) = match status {
+  let bg = match status {
     pick_list::Status::Hovered | pick_list::Status::Opened { .. } => {
-      (palette.primary.strong.color, palette.primary.strong.text)
+      palette.primary.strong.color
     }
-    _ => (palette.primary.base.color, palette.primary.base.text),
+    _ => palette.primary.base.color,
   };
+  let text_color = Color::WHITE;
   pick_list::Style {
     text_color,
     placeholder_color: text_color,
