@@ -4035,3 +4035,25 @@ mod peak_detect {
     );
   }
 }
+
+mod through {
+  use super::*;
+
+  #[test]
+  fn through_list_of_functions() {
+    assert_eq!(
+      interpret("Through[{Sin, Cos, Tan}[Pi/4]]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2], 1}"
+    );
+  }
+
+  #[test]
+  fn through_min_max() {
+    assert_eq!(interpret("Through[{Min, Max}[3, 1, 2]]").unwrap(), "{1, 3}");
+  }
+
+  #[test]
+  fn through_single_function() {
+    assert_eq!(interpret("Through[{f}[x, y]]").unwrap(), "{f[x, y]}");
+  }
+}

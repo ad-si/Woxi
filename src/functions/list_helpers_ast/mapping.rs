@@ -707,12 +707,15 @@ pub fn through_ast(
         return Ok(expr.clone());
       }
 
-      // Thread: apply each function to the outer args
+      // Thread: apply each function to the outer args, then evaluate
       let threaded: Vec<Expr> = functions
         .iter()
-        .map(|f| Expr::FunctionCall {
-          name: crate::syntax::expr_to_string(f),
-          args: args.clone(),
+        .map(|f| {
+          let call = Expr::FunctionCall {
+            name: crate::syntax::expr_to_string(f),
+            args: args.clone(),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
         })
         .collect();
 
