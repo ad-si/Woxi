@@ -76,6 +76,8 @@ struct CellEditor {
   stdout: Option<String>,
   /// SVG data from Graphics/Plot evaluation.
   graphics_svg: Option<String>,
+  /// Warning messages from evaluation (e.g. unimplemented functions).
+  warnings: Vec<String>,
   /// Undo stack: previous text snapshots.
   undo_stack: Vec<String>,
   /// Redo stack: snapshots restored via undo.
@@ -253,6 +255,7 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
           });
@@ -290,6 +293,7 @@ impl WoxiStudio {
                 output,
                 stdout,
                 graphics_svg: None,
+                warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
               });
@@ -305,6 +309,7 @@ impl WoxiStudio {
                 output: None,
                 stdout: None,
                 graphics_svg: None,
+                warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
               });
@@ -615,6 +620,7 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
           },
@@ -634,6 +640,7 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
           },
@@ -708,6 +715,7 @@ impl WoxiStudio {
                   Some(result.stdout)
                 };
                 self.cell_editors[idx].graphics_svg = result.graphics;
+                self.cell_editors[idx].warnings = result.warnings;
                 self.status =
                   format!("Evaluated cell {} successfully", idx + 1);
               }
@@ -715,6 +723,7 @@ impl WoxiStudio {
                 self.cell_editors[idx].output = Some(format!("Error: {e}"));
                 self.cell_editors[idx].stdout = None;
                 self.cell_editors[idx].graphics_svg = None;
+                self.cell_editors[idx].warnings = Vec::new();
                 self.status = format!("Cell {} evaluation error", idx + 1);
               }
             }
@@ -741,11 +750,13 @@ impl WoxiStudio {
                     Some(result.stdout)
                   };
                   self.cell_editors[idx].graphics_svg = result.graphics;
+                  self.cell_editors[idx].warnings = result.warnings;
                 }
                 Err(e) => {
                   self.cell_editors[idx].output = Some(format!("Error: {e}"));
                   self.cell_editors[idx].stdout = None;
                   self.cell_editors[idx].graphics_svg = None;
+                  self.cell_editors[idx].warnings = Vec::new();
                 }
               }
             }
@@ -1114,6 +1125,21 @@ impl WoxiStudio {
       // Build output section with gray background
       let mut output_col = Column::new().spacing(0).width(Fill);
 
+      // Warnings (e.g. unimplemented functions)
+      if !editor.warnings.is_empty() {
+        let warning_text = editor.warnings.join("\n");
+        let warning_display = container(
+          text(warning_text)
+            .size(12)
+            .font(Font::MONOSPACE)
+            .color(Color::from_rgb(0.85, 0.55, 0.10)),
+        )
+        .padding(6)
+        .width(Fill);
+
+        output_col = output_col.push(warning_display);
+      }
+
       // Stdout (Print output)
       if let Some(ref stdout) = editor.stdout {
         let stdout_display =
@@ -1153,6 +1179,22 @@ impl WoxiStudio {
         .push(container(output_col).width(Fill).style(output_area_style));
     } else {
       // Non-grouped: show outputs inline without special styling
+
+      // Warnings
+      if !editor.warnings.is_empty() {
+        let warning_text = editor.warnings.join("\n");
+        let warning_display = container(
+          text(warning_text)
+            .size(12)
+            .font(Font::MONOSPACE)
+            .color(Color::from_rgb(0.85, 0.55, 0.10)),
+        )
+        .padding(6)
+        .width(Fill);
+
+        content_col = content_col.push(warning_display);
+      }
+
       if let Some(ref stdout) = editor.stdout {
         let stdout_display =
           container(text(stdout).size(12).font(Font::MONOSPACE))
