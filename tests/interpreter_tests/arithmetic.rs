@@ -2142,3 +2142,40 @@ mod plus_term_ordering {
     assert_eq!(interpret("Plus[Sqrt[b], b]").unwrap(), "Sqrt[b] + b");
   }
 }
+
+mod complex_division {
+  use super::*;
+
+  #[test]
+  fn basic_complex_over_complex() {
+    assert_eq!(interpret("(2 + 3 I) / (1 - I)").unwrap(), "-1/2 + (5*I)/2");
+  }
+
+  #[test]
+  fn complex_over_complex_2() {
+    assert_eq!(
+      interpret("(3 + 4 I) / (1 + 2 I)").unwrap(),
+      "11/5 - (2*I)/5"
+    );
+  }
+
+  #[test]
+  fn one_over_complex() {
+    assert_eq!(interpret("1/(2 + I)").unwrap(), "2/5 - I/5");
+  }
+
+  #[test]
+  fn imaginary_over_complex() {
+    assert_eq!(interpret("I / (1 + I)").unwrap(), "1/2 + I/2");
+  }
+
+  #[test]
+  fn complex_self_division() {
+    assert_eq!(interpret("(1 + I) / (1 + I)").unwrap(), "1");
+  }
+
+  #[test]
+  fn one_over_i() {
+    assert_eq!(interpret("1/I").unwrap(), "-I");
+  }
+}

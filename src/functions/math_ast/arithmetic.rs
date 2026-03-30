@@ -3035,6 +3035,86 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Complex / complex division: (a + b*I) / (c + d*I)
+  // Multiply by conjugate: ((a+bi)(c-di)) / (c² + d²)
+  if let (Some(((an, ad), (bn, bd))), Some(((cn, cd), (dn, dd)))) =
+    (try_extract_complex_exact(a), try_extract_complex_exact(b))
+  {
+    // Only proceed if denominator has nonzero imaginary part
+    if dn != 0 {
+      // Compute denominator magnitude squared: c² + d² (as rational)
+      // |denom|² = (cn/cd)² + (dn/dd)² = (cn²·dd² + dn²·cd²) / (cd²·dd²)
+      if let (Some(cn2), Some(cd2), Some(dn2), Some(dd2)) = (
+        cn.checked_mul(cn),
+        cd.checked_mul(cd),
+        dn.checked_mul(dn),
+        dd.checked_mul(dd),
+      ) {
+        if let (Some(t1), Some(t2), Some(mag_den)) = (
+          cn2.checked_mul(dd2),
+          dn2.checked_mul(cd2),
+          cd2.checked_mul(dd2),
+        ) {
+          if let Some(mag_num) = t1.checked_add(t2) {
+            if mag_num != 0 {
+              // Real part of result: (an·cn·bd·dd + bn·dn·ad·cd) / (ad·bd·mag)
+              // Actually, let's compute properly:
+              // num_real = (an/ad)*(cn/cd) + (bn/bd)*(dn/dd)
+              //          = (an*cn*bd*dd + bn*dn*ad*cd) / (ad*cd*bd*dd)
+              // num_imag = (bn/bd)*(cn/cd) - (an/ad)*(dn/dd)
+              //          = (bn*cn*ad*dd - an*dn*bd*cd) / (ad*cd*bd*dd)
+              // result = (num_real + num_imag*I) / (mag_num / mag_den)
+              //        = (num_real * mag_den + num_imag * mag_den * I) / (common_den * mag_num)
+              if let (Some(nr1), Some(nr2)) = (
+                an.checked_mul(cn)
+                  .and_then(|v| v.checked_mul(bd))
+                  .and_then(|v| v.checked_mul(dd)),
+                bn.checked_mul(dn)
+                  .and_then(|v| v.checked_mul(ad))
+                  .and_then(|v| v.checked_mul(cd)),
+              ) {
+                if let (Some(ni1), Some(ni2)) = (
+                  bn.checked_mul(cn)
+                    .and_then(|v| v.checked_mul(ad))
+                    .and_then(|v| v.checked_mul(dd)),
+                  an.checked_mul(dn)
+                    .and_then(|v| v.checked_mul(bd))
+                    .and_then(|v| v.checked_mul(cd)),
+                ) {
+                  if let (Some(num_re), Some(num_im)) =
+                    (nr1.checked_add(nr2), ni1.checked_sub(ni2))
+                  {
+                    let common_den = ad
+                      .checked_mul(cd)
+                      .and_then(|v| v.checked_mul(bd))
+                      .and_then(|v| v.checked_mul(dd));
+                    if let Some(cden) = common_den {
+                      // result = (num_re / cden + num_im / cden * I) / (mag_num / mag_den)
+                      //        = (num_re * mag_den) / (cden * mag_num) + (num_im * mag_den) / (cden * mag_num) * I
+                      if let (
+                        Some(final_re_n),
+                        Some(final_im_n),
+                        Some(final_den),
+                      ) = (
+                        num_re.checked_mul(mag_den),
+                        num_im.checked_mul(mag_den),
+                        cden.checked_mul(mag_num),
+                      ) {
+                        return Ok(complex_rational_to_expr(
+                          final_re_n, final_den, final_im_n, final_den,
+                        ));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Exact rational division: Rational/Rational, Rational/Integer, Integer/Rational
   // (a_n/a_d) / (b_n/b_d) = (a_n * b_d) / (a_d * b_n)
   if let (Some((a_n, a_d)), Some((b_n, b_d))) =
