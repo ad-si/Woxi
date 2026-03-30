@@ -1048,7 +1048,7 @@ mod weibull_distribution {
   fn pdf_numeric() {
     assert_eq!(
       interpret("PDF[WeibullDistribution[2, 3], 1]").unwrap(),
-      "2/3/(3*E^(1/9))"
+      "2/(9*E^(1/9))"
     );
   }
 
@@ -1426,7 +1426,7 @@ mod hyperbolic_distribution {
   fn variance_symbolic() {
     assert_eq!(
       interpret("Variance[HyperbolicDistribution[a, b, d, m]]").unwrap(),
-      "(d*BesselK[2, Sqrt[a^2 - b^2]*d])/(Sqrt[a^2 - b^2]*BesselK[1, Sqrt[a^2 - b^2]*d]) + (b^2*d^2*BesselK[3, Sqrt[a^2 - b^2]*d])/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]) - (b^2*d^2*BesselK[2, Sqrt[a^2 - b^2]*d]^2)/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]^2)"
+      "-((b^2*d^2*BesselK[2, Sqrt[a^2 - b^2]*d]^2)/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]^2)) + (b^2*d^2*BesselK[3, Sqrt[a^2 - b^2]*d])/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]) + (d*BesselK[2, Sqrt[a^2 - b^2]*d])/(Sqrt[a^2 - b^2]*BesselK[1, Sqrt[a^2 - b^2]*d])"
     );
   }
 
@@ -2350,7 +2350,7 @@ mod johnson_distribution {
   fn pdf_sb_numeric() {
     assert_eq!(
       interpret(r#"PDF[JohnsonDistribution["SB", 0, 1, 0, 1], 1/2]"#).unwrap(),
-      "1/(Sqrt[2*Pi]/4)"
+      "4/Sqrt[2*Pi]"
     );
   }
 
@@ -2521,7 +2521,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SU", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "(sigma^2*(-1 + E^(1/delta^2))*(1 + E^(1/delta^2)*Cosh[(2*gamma)/delta]))/2"
+      "(sigma^2*(-1 + E^delta^(-2))*(1 + E^delta^(-2)*Cosh[(2*gamma)/delta]))/2"
     );
   }
 
@@ -2540,7 +2540,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "E^((1 - 2*delta*gamma)/delta^2)*sigma^2*(-1 + E^(1/delta^2))"
+      "E^((1 - 2*delta*gamma)/delta^2)*sigma^2*(-1 + E^delta^(-2))"
     );
   }
 

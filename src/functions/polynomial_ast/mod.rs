@@ -24,7 +24,7 @@ mod reduce;
 mod resultant;
 mod simplify;
 pub mod solve;
-mod together;
+pub mod together;
 
 pub use apart::*;
 pub use cancel::*;
@@ -48,4 +48,4 @@ pub use reduce::*;
 pub use resultant::*;
 pub use simplify::*;
 pub use solve::*;
-pub use together::*;
+pub use together::{together_ast, together_expr};

@@ -205,6 +205,17 @@ mod simplify {
     assert_eq!(interpret("Simplify[x]").unwrap(), "x");
   }
 
+  /// Regression test for issue #93: Simplify must handle canonical
+  /// Times[Power[]] form identically to Divide form
+  #[test]
+  fn simplify_canonical_division_form() {
+    assert_eq!(interpret("Simplify[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+    assert_eq!(
+      interpret("Simplify[(x^2 - 1) * (x - 1)^-1]").unwrap(),
+      "1 + x"
+    );
+  }
+
   #[test]
   fn pythagorean_identity() {
     assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
@@ -481,6 +492,18 @@ mod cancel {
   fn cancel_quadratic() {
     assert_eq!(
       interpret("Cancel[(x^2 + 2*x + 1)/(x + 1)]").unwrap(),
+      "1 + x"
+    );
+  }
+
+  /// Regression test for issue #93: Cancel must handle canonical
+  /// Times[Power[]] form identically to Divide form
+  #[test]
+  fn cancel_canonical_times_power_form() {
+    // Both forms must produce the same result
+    assert_eq!(interpret("Cancel[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+    assert_eq!(
+      interpret("Cancel[(x^2 - 1) * (x - 1)^-1]").unwrap(),
       "1 + x"
     );
   }

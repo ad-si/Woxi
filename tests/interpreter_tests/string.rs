@@ -1593,6 +1593,12 @@ mod c_form {
   }
 
   #[test]
+  fn division_to_string() {
+    // ToString[CForm[1/x], InputForm] produces C division notation
+    assert_eq!(interpret("ToString[CForm[1/x], InputForm]").unwrap(), "1/x");
+  }
+
+  #[test]
   fn to_string_form() {
     // ToString[expr, CForm] produces the actual C representation
     assert_eq!(

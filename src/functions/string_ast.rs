@@ -2222,7 +2222,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
 
-    // Times → RowBox with space separators
+    // Times → RowBox with space separators, or FractionBox for fractions
     "Times" if args.len() >= 2 => {
       // Leading -1
       if matches!(&args[0], Expr::Integer(-1)) {
@@ -2231,6 +2231,20 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
         }
         let rest = box_function_call("Times", &args[1..]);
         return format!("RowBox[{{\"-\", {}}}]", rest);
+      }
+      // Check for fraction form: Times[..., Power[den, -1]]
+      let full_expr = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: args.to_vec(),
+      };
+      let (num, den) =
+        crate::functions::polynomial_ast::together::extract_num_den(&full_expr);
+      if !matches!(&den, Expr::Integer(1)) {
+        return format!(
+          "FractionBox[{}, {}]",
+          expr_to_boxes(&num),
+          expr_to_boxes(&den)
+        );
       }
       let parts: Vec<String> = args.iter().map(expr_to_boxes).collect();
       format!("RowBox[{{{}}}]", parts.join(", \" \", "))
@@ -3868,7 +3882,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
       }
       "Power" if args.len() == 2 => {
         if matches!(&args[1], Expr::Integer(-1)) {
-          format!("1./{}", c_paren(&args[0]))
+          format!("1/{}", c_paren(&args[0]))
         } else if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
         {
           format!("Sqrt({})", expr_to_c(&args[0]))
@@ -3889,7 +3903,16 @@ pub fn expr_to_c(expr: &Expr) -> String {
         BinaryOperator::Minus => format!("{} - {}", l, r),
         BinaryOperator::Times => format!("{}*{}", l, r),
         BinaryOperator::Divide => format!("{}/{}", l, r),
-        BinaryOperator::Power => format!("Power({},{})", l, r),
+        BinaryOperator::Power => {
+          if matches!(right.as_ref(), Expr::Integer(-1)) {
+            format!("1/{}", c_paren(left))
+          } else if matches!(right.as_ref(), Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
+          {
+            format!("Sqrt({})", expr_to_c(left))
+          } else {
+            format!("Power({},{})", l, r)
+          }
+        }
         _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
       }
     }
@@ -3957,6 +3980,14 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         // Handle Times[-1, x] as -x
         if args.len() == 2 && matches!(&args[0], Expr::Integer(-1)) {
           return format!("-{}", fortran_paren(&args[1]));
+        }
+        // Handle fraction form: Times[..., Power[den, -1]]
+        let (num, den) =
+          crate::functions::polynomial_ast::together::extract_num_den(expr);
+        if !matches!(&den, Expr::Integer(1)) {
+          let num_str = expr_to_fortran(&num);
+          let den_str = expr_to_fortran(&den);
+          return format!("{}/{}", num_str, den_str);
         }
         let parts: Vec<String> = args
           .iter()

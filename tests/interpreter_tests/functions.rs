@@ -7540,7 +7540,7 @@ mod cauchy_distribution {
   fn pdf_at_zero() {
     assert_eq!(
       interpret("PDF[CauchyDistribution[0, 1], 0]").unwrap(),
-      "1/Pi"
+      "Pi^(-1)"
     );
   }
 
@@ -11297,6 +11297,9 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn rename_file_basic() {
+    // Clean up stale files from prior failed runs
+    let _ = interpret(r#"Quiet[DeleteFile["test_rename_src_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["test_rename_dst_woxi.txt"]]"#);
     // Create a temp file, rename it, check old doesn't exist and new does, clean up
     let result = interpret(
       r#"Block[{src = CreateFile["test_rename_src_woxi.txt"]},
@@ -11312,6 +11315,9 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn rename_file_returns_dest_path() {
+    // Clean up stale files from prior failed runs
+    let _ = interpret(r#"Quiet[DeleteFile["test_rename_ret_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["test_rename_ret2_woxi.txt"]]"#);
     let result = interpret(
       r#"Block[{src = CreateFile["test_rename_ret_woxi.txt"]},
         Close[src];

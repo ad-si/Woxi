@@ -501,6 +501,7 @@ function main() {
     /\bSeedRandom\[/,
     /\bShare\[/,
     /\bNames\[/,
+    /\bStack\[/,        // Returns internal evaluation stack (different call frames per implementation)
     /\bRasterize\[/,
     /\bN\[Erf\[/,    // Arbitrary-precision Erf differs in low-order digits (different algorithm)
     /\bN\[Erfc\[/,   // Same as Erf (Erfc = 1 - Erf)

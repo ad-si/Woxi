@@ -2175,7 +2175,7 @@ pub fn apply_replace_all_multi_ast(
           && sym == name
         {
           return match replacement {
-            Expr::Identifier(h) => Ok(Expr::FunctionCall {
+            Expr::Identifier(h) => evaluate_expr_to_expr(&Expr::FunctionCall {
               name: h.clone(),
               args: new_args,
             }),

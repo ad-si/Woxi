@@ -3508,6 +3508,34 @@ fn quantity_unit_to_input_form(unit: &Expr) -> String {
   }
 }
 
+/// Extract (base, negative_exponent) from a Power expression with a negative integer exponent.
+/// Returns `Some((base, neg_exp))` for both FunctionCall and BinaryOp Power forms.
+pub fn extract_neg_power_info(expr: &Expr) -> Option<(&Expr, i128)> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n < 0) =>
+    {
+      let Expr::Integer(n) = &args[1] else {
+        unreachable!()
+      };
+      Some((&args[0], *n))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+      let Expr::Integer(n) = right.as_ref() else {
+        unreachable!()
+      };
+      Some((left.as_ref(), *n))
+    }
+    _ => None,
+  }
+}
+
 /// Format a Quantity unit expression without quoting.
 /// Wolfram displays units unquoted: Meters, Miles/Hours, Meters/Seconds^2
 fn quantity_unit_to_string(unit: &Expr) -> String {
@@ -3560,9 +3588,32 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       format!("{}^{}", quantity_unit_to_string(&args[0]), exp_fmt)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      let parts: Vec<String> =
-        args.iter().map(quantity_unit_to_string).collect();
-      parts.join("*")
+      // Check for fraction form: Times[..., Power[den, -1]]
+      let mut numer_parts: Vec<String> = Vec::new();
+      let mut denom_parts: Vec<String> = Vec::new();
+      for a in args {
+        if let Some((base, neg_exp)) = extract_neg_power_info(a) {
+          let base_str = quantity_unit_to_string(base);
+          if neg_exp == -1 {
+            denom_parts.push(base_str);
+          } else {
+            denom_parts.push(format!("{}^{}", base_str, -neg_exp));
+          }
+        } else {
+          numer_parts.push(quantity_unit_to_string(a));
+        }
+      }
+      if denom_parts.is_empty() {
+        numer_parts.join("*")
+      } else {
+        let numer = if numer_parts.is_empty() {
+          "1".to_string()
+        } else {
+          numer_parts.join("*")
+        };
+        let denom = denom_parts.join("*");
+        format!("{}/{}", numer, denom)
+      }
     }
     _ => expr_to_string(unit),
   }
@@ -3629,9 +3680,32 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
       format!("{}^{}", quantity_unit_to_abbrev(&args[0]), exp_fmt)
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      let parts: Vec<String> =
-        args.iter().map(quantity_unit_to_abbrev).collect();
-      parts.join("*")
+      // Check for fraction form: Times[..., Power[den, -1]]
+      let mut numer_parts: Vec<String> = Vec::new();
+      let mut denom_parts: Vec<String> = Vec::new();
+      for a in args {
+        if let Some((base, neg_exp)) = extract_neg_power_info(a) {
+          let base_str = quantity_unit_to_abbrev(base);
+          if neg_exp == -1 {
+            denom_parts.push(base_str);
+          } else {
+            denom_parts.push(format!("{}^{}", base_str, -neg_exp));
+          }
+        } else {
+          numer_parts.push(quantity_unit_to_abbrev(a));
+        }
+      }
+      if denom_parts.is_empty() {
+        numer_parts.join("*")
+      } else {
+        let numer = if numer_parts.is_empty() {
+          "1".to_string()
+        } else {
+          numer_parts.join("*")
+        };
+        let denom = denom_parts.join("*");
+        format!("{}/{}", numer, denom)
+      }
     }
     _ => expr_to_string(unit),
   }
@@ -3689,7 +3763,7 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     Expr::FunctionCall { name: tn, args: ta }
       if tn == "Times"
         && !ta.is_empty()
-        && matches!(&ta[0], Expr::Integer(-1)) =>
+        && matches!(&ta[0], Expr::Integer(n) if *n < 0) =>
     {
       true
     }
@@ -3747,15 +3821,35 @@ fn denominator_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name: tn, args: ta }
       if tn == "Times"
         && ta.len() >= 2
-        && matches!(&ta[0], Expr::Integer(-1)) =>
+        && matches!(&ta[0], Expr::Integer(n) if *n < 0) =>
     {
-      if ta.len() == 2 {
-        ta[1].clone()
-      } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: ta[1..].to_vec(),
+      if let Expr::Integer(n) = &ta[0] {
+        let pos_coeff = Expr::Integer(-n);
+        if matches!(pos_coeff, Expr::Integer(1)) {
+          // Times[-1, a, b, ...] → Times[a, b, ...]
+          if ta.len() == 2 {
+            ta[1].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: ta[1..].to_vec(),
+            }
+          }
+        } else {
+          // Times[-n, a, b, ...] → Times[n, a, b, ...]
+          let mut new_args = vec![pos_coeff];
+          new_args.extend_from_slice(&ta[1..]);
+          if new_args.len() == 1 {
+            new_args.remove(0)
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: new_args,
+            }
+          }
         }
+      } else {
+        unreachable!()
       }
     }
     Expr::FunctionCall { name: tn, args: ta }
@@ -4341,14 +4435,20 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         {
           let denom_form = denominator_form(&args[1]);
           let denom_str = fmt(&denom_form);
+          // When numerator is -1, Wolfram separates the rational
+          // from the power term: -1/d*1/base^exp (e.g. -1/2*1/x^2)
+          if *n == -1 {
+            let power_str = format!("1/{}", denom_str);
+            return format!("-1/{}*{}", d, power_str);
+          }
           if is_output {
-            // OutputForm: 1/(d*denom) or n/d*1/denom
+            // OutputForm: combine Rational denominator with Power denominator
             if *n == 1 {
               return format!("1/({}*{})", d, denom_str);
             }
-            return format!("{}/{}*1/{}", n, d, denom_str);
+            return format!("{}/({}*{})", n, d, denom_str);
           } else {
-            // InputForm: conditional parens on full_denom
+            // For other numerators, combine into n/(d*base^exp)
             let denom_needs_parens = *d > 1
               || matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times");
             let full_denom = if *d > 1 {
@@ -4362,8 +4462,6 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             };
             if *n == 1 {
               return format!("1/{}", full_denom);
-            } else if *n == -1 {
-              return format!("-1/{}", full_denom);
             } else {
               return format!("{}/{}", n, full_denom);
             }

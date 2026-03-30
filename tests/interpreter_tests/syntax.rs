@@ -434,6 +434,15 @@ mod full_form {
     assert_eq!(interpret("FullForm[1/z]").unwrap(), "Power[z, -1]");
   }
 
+  /// Division is canonicalized to Times[a, Power[b, -1]]
+  #[test]
+  fn full_form_division_canonical() {
+    assert_eq!(
+      interpret("FullForm[x/y]").unwrap(),
+      "Times[x, Power[y, -1]]"
+    );
+  }
+
   #[test]
   fn full_form_sqrt() {
     assert_eq!(
@@ -444,11 +453,10 @@ mod full_form {
 
   #[test]
   fn full_form_complex_expression() {
-    // decompose_expr does structural decomposition only — no canonicalization.
-    // x/Sqrt[5] remains as Times[x, Power[Sqrt[5], -1]] internally.
+    // x/Sqrt[5] canonicalizes to Times[Power[5, Rational[-1, 2]], x]
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
-      "Plus[Times[x, Power[Power[5, Rational[1, 2]], -1]], Power[y, 2], Power[z, -1]]"
+      "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
     );
   }
 

@@ -1714,6 +1714,29 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     ) = (a, b)
       && na == nb
     {
+      // For Power, use sort-key comparison on bases to match Wolfram's
+      // Times ordering (e.g. Power[Plus[a,b],-2] before Power[s,-1]
+      // because sort key "b" < "s")
+      if na == "Power" && aa.len() == 2 && ab.len() == 2 {
+        let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(&aa[0]);
+        let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(&ab[0]);
+        let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+        if ord > 0 {
+          return std::cmp::Ordering::Less;
+        }
+        if ord < 0 {
+          return std::cmp::Ordering::Greater;
+        }
+        // Equal base sort keys: compare exponents
+        let exp_ord = crate::functions::list_helpers_ast::compare_exprs(&aa[1], &ab[1]);
+        if exp_ord > 0 {
+          return std::cmp::Ordering::Less;
+        }
+        if exp_ord < 0 {
+          return std::cmp::Ordering::Greater;
+        }
+        return std::cmp::Ordering::Equal;
+      }
       // Same head: compare arguments using Wolfram canonical ordering
       for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
         let ord =
@@ -1727,22 +1750,14 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       }
       return aa.len().cmp(&ab.len());
     }
-    // For same top-level type (e.g. both BinaryOp::Power), use canonical
-    // comparison which correctly orders a^4 before (1+s)^(3/2) by comparing
-    // bases structurally. For different types (e.g. Identifier vs FunctionCall),
-    // use string comparison which gives correct case-sensitive ordering
-    // (e.g. Sqrt[a] before x since 'S' < 'x').
-    //
-    // Special case: when comparing BinaryOp::Power with FunctionCall (Power/Sqrt),
-    // compare by base sort keys using case-insensitive ordering to avoid
-    // case-sensitivity artifacts (e.g. n^(1/2+n) should sort before Sqrt[2*Pi]
-    // because 'n' < 'p' case-insensitively).
+    // For power-like expressions, use sort-key comparison on bases
+    // to match Wolfram's Times ordering. This handles both same-variant
+    // (e.g. both BinaryOp::Power) and cross-variant (BinaryOp vs FunctionCall) cases.
     let is_power_like = |e: &Expr| -> bool {
       matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, .. })
         || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2) || (name == "Sqrt" && args.len() == 1))
     };
-    if is_power_like(a) && is_power_like(b) && std::mem::discriminant(a) != std::mem::discriminant(b) {
-      // Both are power-like but different Expr variants: compare by sort key
+    if is_power_like(a) && is_power_like(b) {
       let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
       let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
       let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
@@ -1751,7 +1766,44 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       } else if ord < 0 {
         return std::cmp::Ordering::Greater;
       }
-      // Equal keys: fall through to string comparison
+      // Equal sort keys: when both bases are function calls with the same head
+      // (e.g. f[1] vs f[2]), compare structurally to disambiguate.
+      // This matches Wolfram's ordering where Power[f[1], -2] sorts before
+      // Power[f[2], 2] (base argument 1 < 2).
+      let (base_a, exp_a) = extract_base_exponent(a);
+      let (base_b, exp_b) = extract_base_exponent(b);
+      let same_fn_base = matches!(
+        (&base_a, &base_b),
+        (Expr::FunctionCall { name: na, .. }, Expr::FunctionCall { name: nb, .. })
+          if na == nb && na != "Plus" && na != "Times"
+      );
+      if same_fn_base {
+        let base_cmp = compare_expr_canonical(&base_a, &base_b);
+        if base_cmp != std::cmp::Ordering::Equal {
+          return base_cmp;
+        }
+        // Same base: compare exponents
+        let exp_ord = crate::functions::list_helpers_ast::compare_exprs(&exp_a, &exp_b);
+        if exp_ord > 0 {
+          return std::cmp::Ordering::Less;
+        } else if exp_ord < 0 {
+          return std::cmp::Ordering::Greater;
+        }
+      }
+      // Fall back to string length then alphabetical
+      let as_str = crate::syntax::expr_to_string(a);
+      let bs_str = crate::syntax::expr_to_string(b);
+      let len_cmp = as_str.len().cmp(&bs_str.len());
+      if len_cmp != std::cmp::Ordering::Equal {
+        return len_cmp;
+      }
+      let str_ord = crate::functions::list_helpers_ast::wolfram_string_order(&as_str, &bs_str);
+      if str_ord > 0 {
+        return std::cmp::Ordering::Less;
+      } else if str_ord < 0 {
+        return std::cmp::Ordering::Greater;
+      }
+      // Exactly equal: fall through
     }
     if std::mem::discriminant(a) == std::mem::discriminant(b) {
       compare_expr_canonical(a, b)
@@ -1906,24 +1958,34 @@ pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
       left,
       right,
     } => {
-      // Recursively extract base from nested powers: (x^a)^b → (x, a*b)
-      let (inner_base, inner_exp) = extract_base_exponent(left);
-      if matches!(inner_exp, Expr::Integer(1)) {
-        (*left.clone(), *right.clone())
+      // Only recurse into nested powers when the outer exponent is an integer.
+      // For symbolic exponents like (x^(-1))^(1+n/2), keep the inner Power
+      // as the base to match Wolfram's canonical form.
+      if matches!(right.as_ref(), Expr::Integer(_)) {
+        let (inner_base, inner_exp) = extract_base_exponent(left);
+        if matches!(inner_exp, Expr::Integer(1)) {
+          (*left.clone(), *right.clone())
+        } else {
+          (inner_base, multiply_exponents(&inner_exp, right))
+        }
       } else {
-        (inner_base, multiply_exponents(&inner_exp, right))
+        (*left.clone(), *right.clone())
       }
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       (args[0].clone(), make_rational(1, 2))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      // Power[Sqrt[x], n] etc.
-      let (inner_base, inner_exp) = extract_base_exponent(&args[0]);
-      if matches!(inner_exp, Expr::Integer(1)) {
-        (args[0].clone(), args[1].clone())
+      // Only recurse when outer exponent is integer
+      if matches!(&args[1], Expr::Integer(_)) {
+        let (inner_base, inner_exp) = extract_base_exponent(&args[0]);
+        if matches!(inner_exp, Expr::Integer(1)) {
+          (args[0].clone(), args[1].clone())
+        } else {
+          (inner_base, multiply_exponents(&inner_exp, &args[1]))
+        }
       } else {
-        (inner_base, multiply_exponents(&inner_exp, &args[1]))
+        (args[0].clone(), args[1].clone())
       }
     }
     _ => (expr.clone(), Expr::Integer(1)),
@@ -2917,14 +2979,9 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Flatten nested divisions: (a/b)/c → a/(b*c), a/(b/c) → (a*c)/b
-      let (num, den) = flatten_division(a, b);
-
-      Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
-        left: Box::new(num),
-        right: Box::new(den),
-      })
+      // Canonicalize: a/b → Times[a, Power[b, -1]]
+      let den_inv = power_two(b, &Expr::Integer(-1))?;
+      times_ast(&[a.clone(), den_inv])
     }
   }
 }
@@ -2993,6 +3050,43 @@ pub fn build_times_simple(a: &Expr, b: &Expr) -> Expr {
     op: crate::syntax::BinaryOperator::Times,
     left: Box::new(a.clone()),
     right: Box::new(b.clone()),
+  }
+}
+
+/// Build the canonical form of `a / b` structurally (without evaluation).
+/// Returns `Times[a, Power[b, -1]]` as a FunctionCall.
+/// Use this when constructing symbolic results; for evaluated division use `divide_two`.
+pub fn make_divide(a: Expr, b: Expr) -> Expr {
+  // a / 1 → a
+  if matches!(&b, Expr::Integer(1)) {
+    return a;
+  }
+  // 0 / b → 0
+  if matches!(&a, Expr::Integer(0)) {
+    return Expr::Integer(0);
+  }
+  let b_inv = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![b, Expr::Integer(-1)],
+  };
+  // 1 / b → Power[b, -1]
+  if matches!(&a, Expr::Integer(1)) {
+    return b_inv;
+  }
+  // Flatten: if a is already Times, merge b_inv into its args
+  if let Expr::FunctionCall { name, args } = &a {
+    if name == "Times" {
+      let mut new_args = args.clone();
+      new_args.push(b_inv);
+      return Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      };
+    }
+  }
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![a, b_inv],
   }
 }
 
@@ -3115,7 +3209,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
             return power_two(inner_base, &new_exp);
           }
         }
-        _ => {}
+        // (constant^symbolic_exp)^n → constant^(symbolic_exp * n) for E, Pi, integers
+        _ => {
+          let is_const_base =
+            matches!(inner_base, Expr::Constant(_) | Expr::Integer(_));
+          if is_const_base {
+            let new_exp = times_ast(&[inner_exp.clone(), Expr::Integer(*e2)])?;
+            return power_two(inner_base, &new_exp);
+          }
+        }
       }
     }
   }
@@ -3436,6 +3538,25 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // (-1)^(p/q) → simplify via simplify_neg1_rational_power
     if *b == -1 {
       return simplify_neg1_rational_power(*numer, *denom);
+    }
+    // Handle negative rational exponents for integer bases: b^(-p/q) = 1 / b^(p/q)
+    // This allows the positive prime factorization code below to simplify the radical.
+    // Only applies when base is a positive integer (not symbolic expressions).
+    if *numer < 0 && *denom > 0 && *b > 1 {
+      let pos_exp = make_rational(-*numer, *denom);
+      let pos_result = power_two(base, &pos_exp)?;
+      // Only simplify if the positive power actually reduced
+      // (avoid infinite recursion when the positive power stays symbolic)
+      if !matches!(
+        &pos_result,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          ..
+        }
+      ) && !matches!(&pos_result, Expr::FunctionCall { name, .. } if name == "Power" || name == "Sqrt")
+      {
+        return divide_ast(&[Expr::Integer(1), pos_result]);
+      }
     }
     // Simplify n^(p/q) by prime factorization
     // n = p1^k1 * p2^k2 * ...
