@@ -683,6 +683,99 @@ fn extract_earliest_variable(e: &Expr) -> Option<String> {
   }
 }
 
+/// Count distinct free (symbolic) variables in an expression.
+fn count_free_variables(e: &Expr) -> usize {
+  fn collect(e: &Expr, vars: &mut std::collections::BTreeSet<String>) {
+    match e {
+      Expr::Identifier(s)
+        if !matches!(
+          s.as_str(),
+          "Pi"
+            | "E"
+            | "I"
+            | "Infinity"
+            | "True"
+            | "False"
+            | "Null"
+            | "None"
+            | "All"
+            | "Automatic"
+            | "ComplexInfinity"
+            | "Indeterminate"
+            | "EulerGamma"
+            | "GoldenRatio"
+            | "Degree"
+            | "Catalan"
+        ) && s
+          .chars()
+          .next()
+          .map(|c| c.is_alphabetic())
+          .unwrap_or(false) =>
+      {
+        vars.insert(s.clone());
+      }
+      Expr::FunctionCall { args, .. } => {
+        for arg in args {
+          collect(arg, vars);
+        }
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        collect(left, vars);
+        collect(right, vars);
+      }
+      Expr::UnaryOp { operand, .. } => collect(operand, vars),
+      _ => {}
+    }
+  }
+  let mut vars = std::collections::BTreeSet::new();
+  collect(e, &mut vars);
+  vars.len()
+}
+
+/// Extract the latest (alphabetically greatest) free variable in an expression.
+fn extract_latest_variable(e: &Expr) -> Option<String> {
+  match e {
+    Expr::Identifier(s)
+      if !matches!(
+        s.as_str(),
+        "Pi"
+          | "E"
+          | "I"
+          | "Infinity"
+          | "True"
+          | "False"
+          | "Null"
+          | "None"
+          | "All"
+          | "Automatic"
+          | "ComplexInfinity"
+          | "Indeterminate"
+          | "EulerGamma"
+          | "GoldenRatio"
+          | "Degree"
+          | "Catalan"
+      ) && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) =>
+    {
+      Some(s.clone())
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().filter_map(extract_latest_variable).max()
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      let l = extract_latest_variable(left);
+      let r = extract_latest_variable(right);
+      match (l, r) {
+        (Some(a), Some(b)) => Some(if a >= b { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+      }
+    }
+    Expr::UnaryOp { operand, .. } => extract_latest_variable(operand),
+    _ => None,
+  }
+}
+
 /// Extract sort key for a Plus term (fallback for non-polynomial terms).
 /// Strip the numeric coefficient so that e.g. `3*Sin[x]` and `5*Cos[x]` sort by
 /// their base rather than by the coefficient digits.
@@ -735,6 +828,12 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       if let Expr::Identifier(s) = &args[0] {
         let exp = expr_to_f64(&args[1])?;
         return Some(vec![(s.clone(), exp)]);
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      if let Expr::Identifier(s) = &args[0] {
+        return Some(vec![(s.clone(), 0.5)]);
       }
       None
     }
@@ -967,25 +1066,42 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           };
         }
         // For compound algebraic terms with free variables, compare by
-        // earliest variable name. Same or later variable → monomial first.
+        // latest variable relative to the monomial's variable:
+        //   latest > monomial → monomial first (e.g. b + Sqrt[a*c])
+        //   latest < monomial → compound first (e.g. Sqrt[a] + b)
+        //   latest == monomial → monomial first if compound has extra
+        //     variables (e.g. b + Sqrt[a+b]), compound first otherwise
+        //     (e.g. Sqrt[x] + x)
         if has_free_variables(&none_base) {
           let (_, pair_base) = decompose_term(pair_term);
           let pair_earliest = extract_earliest_variable(&pair_base);
+          let none_latest = extract_latest_variable(&none_base);
+          if let (Some(pv), Some(nlv)) = (&pair_earliest, &none_latest) {
+            if nlv > pv {
+              // Non-pair has a later variable → monomial first
+              return if a_has_pairs {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+            if nlv == pv && count_free_variables(&none_base) > 1 {
+              // Same latest variable but compound has extra vars → monomial first
+              return if a_has_pairs {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+          }
           let none_earliest = extract_earliest_variable(&none_base);
           if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest) {
             if nv < pv {
-              // Non-pair term has earlier variable → it comes first
+              // All non-pair variables < monomial's → non-pair first
               return if a_has_pairs {
                 std::cmp::Ordering::Greater
               } else {
                 std::cmp::Ordering::Less
-              };
-            } else if nv > pv {
-              // Later variable → pair (monomial) first
-              return if a_has_pairs {
-                std::cmp::Ordering::Less
-              } else {
-                std::cmp::Ordering::Greater
               };
             }
             // Same earliest variable → fall through to string comparison

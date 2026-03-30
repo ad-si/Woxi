@@ -1285,6 +1285,14 @@ mod solve {
   }
 
   #[test]
+  fn symbolic_quadratic_general() {
+    assert_eq!(
+      interpret("Solve[a*x^2 + b*x + c == 0, x]").unwrap(),
+      "{{x -> (-b - Sqrt[b^2 - 4*a*c])/(2*a)}, {x -> (-b + Sqrt[b^2 - 4*a*c])/(2*a)}}"
+    );
+  }
+
+  #[test]
   fn quartic_factor_based() {
     assert_eq!(
       interpret("Solve[x^4 - x == 0, x]").unwrap(),

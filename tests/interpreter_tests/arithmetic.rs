@@ -2102,3 +2102,43 @@ mod qfactorial {
     assert_eq!(interpret("QFactorial[4, 1/2]").unwrap(), "315/64");
   }
 }
+
+mod plus_term_ordering {
+  use super::*;
+
+  #[test]
+  fn monomial_before_multi_var_sqrt() {
+    // When Sqrt has more variables than the monomial, monomial comes first
+    assert_eq!(
+      interpret("Plus[Sqrt[b^2 - 4*a*c], b]").unwrap(),
+      "b + Sqrt[b^2 - 4*a*c]"
+    );
+    assert_eq!(
+      interpret("Plus[-b, -Sqrt[b^2 - 4*a*c]]").unwrap(),
+      "-b - Sqrt[b^2 - 4*a*c]"
+    );
+  }
+
+  #[test]
+  fn monomial_before_multi_var_power() {
+    assert_eq!(interpret("Plus[(a+c)^2, b]").unwrap(), "b + (a + c)^2");
+    assert_eq!(interpret("Plus[Sqrt[a*c], b]").unwrap(), "b + Sqrt[a*c]");
+  }
+
+  #[test]
+  fn compound_before_monomial_when_all_vars_earlier() {
+    // When all compound vars are alphabetically before the monomial
+    assert_eq!(interpret("Plus[(a+b)^2, c]").unwrap(), "(a + b)^2 + c");
+    assert_eq!(
+      interpret("Plus[5*(5*a + b), c]").unwrap(),
+      "5*(5*a + b) + c"
+    );
+  }
+
+  #[test]
+  fn single_var_sqrt_before_later_monomial() {
+    assert_eq!(interpret("Plus[Sqrt[a], b]").unwrap(), "Sqrt[a] + b");
+    assert_eq!(interpret("Plus[Sqrt[x], x]").unwrap(), "Sqrt[x] + x");
+    assert_eq!(interpret("Plus[Sqrt[b], b]").unwrap(), "Sqrt[b] + b");
+  }
+}

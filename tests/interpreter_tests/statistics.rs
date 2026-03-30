@@ -2285,7 +2285,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "delta/(E^(((delta*(-mu + x))/sigma + gamma)^2/2)*Sqrt[2*Pi]*sigma)"
+      "delta/(E^((gamma + (delta*(-mu + x))/sigma)^2/2)*Sqrt[2*Pi]*sigma)"
     );
   }
 
@@ -2304,7 +2304,7 @@ mod johnson_distribution {
         r#"PDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "delta/(E^((delta*ArcSinh[(-mu + x)/sigma] + gamma)^2/2)*Sqrt[2*Pi]*Sqrt[(-mu + x)^2 + sigma^2])"
+      "delta/(E^((gamma + delta*ArcSinh[(-mu + x)/sigma])^2/2)*Sqrt[2*Pi]*Sqrt[sigma^2 + (-mu + x)^2])"
     );
   }
 
@@ -2363,7 +2363,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SN", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Erfc[(-((delta*(-mu + x))/sigma) - gamma)/Sqrt[2]]/2"
+      "Erfc[(-gamma - (delta*(-mu + x))/sigma)/Sqrt[2]]/2"
     );
   }
 
@@ -2382,7 +2382,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SU", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "(1 + Erf[(delta*ArcSinh[(-mu + x)/sigma] + gamma)/Sqrt[2]])/2"
+      "(1 + Erf[(gamma + delta*ArcSinh[(-mu + x)/sigma])/Sqrt[2]])/2"
     );
   }
 
@@ -2473,7 +2473,7 @@ mod johnson_distribution {
     assert_eq!(
       interpret(r#"Mean[JohnsonDistribution["SL", gamma, delta, mu, sigma]]"#)
         .unwrap(),
-      "E^((1 - 2*delta*gamma)/(2*delta^2))*sigma + mu"
+      "mu + E^((1 - 2*delta*gamma)/(2*delta^2))*sigma"
     );
   }
 
