@@ -717,4 +717,30 @@ mod association_list_operations {
       "<|c -> 3|>"
     );
   }
+
+  #[test]
+  fn first_of_association() {
+    assert_eq!(interpret("First[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "1");
+  }
+
+  #[test]
+  fn last_of_association() {
+    assert_eq!(interpret("Last[<|a -> 1, b -> 2, c -> 3|>]").unwrap(), "3");
+  }
+
+  #[test]
+  fn drop_from_association() {
+    assert_eq!(
+      interpret("Drop[<|a -> 1, b -> 2, c -> 3|>, 1]").unwrap(),
+      "<|b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn drop_negative_from_association() {
+    assert_eq!(
+      interpret("Drop[<|a -> 1, b -> 2, c -> 3|>, -1]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
 }

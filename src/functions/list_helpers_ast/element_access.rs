@@ -60,6 +60,18 @@ pub fn first_ast(
   default: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   match list {
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        if let Some(d) = default {
+          return Ok(d.clone());
+        }
+        return Ok(Expr::FunctionCall {
+          name: "First".to_string(),
+          args: vec![list.clone()],
+        });
+      }
+      return Ok(pairs[0].1.clone());
+    }
     Expr::List(items) => {
       if items.is_empty() {
         if let Some(d) = default {
@@ -128,6 +140,18 @@ pub fn last_ast(
   default: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   match list {
+    Expr::Association(pairs) => {
+      if pairs.is_empty() {
+        if let Some(d) = default {
+          return Ok(d.clone());
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Last".to_string(),
+          args: vec![list.clone()],
+        });
+      }
+      return Ok(pairs[pairs.len() - 1].1.clone());
+    }
     Expr::List(items) => {
       if items.is_empty() {
         if let Some(d) = default {
@@ -460,6 +484,38 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Drop: drop first n elements.
 pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle associations: convert to rules, apply Drop, convert back
+  if let Expr::Association(pairs) = list {
+    let rules: Vec<Expr> = pairs
+      .iter()
+      .map(|(k, v)| Expr::Rule {
+        pattern: Box::new(k.clone()),
+        replacement: Box::new(v.clone()),
+      })
+      .collect();
+    let result = drop_ast(&Expr::List(rules), n)?;
+    if let Expr::List(items) = &result {
+      let mut new_pairs = Vec::new();
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => {
+            new_pairs.push((*pattern.clone(), *replacement.clone()));
+          }
+          _ => return Ok(result),
+        }
+      }
+      return Ok(Expr::Association(new_pairs));
+    }
+    return Ok(result);
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {
