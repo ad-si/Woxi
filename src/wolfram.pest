@@ -285,6 +285,7 @@ Term = _{
   | Identifier
   | SlotSequence
   | Slot
+  | AssociationExtended
   | Association
   | ParenExtended
   | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
@@ -336,6 +337,7 @@ TermNoImplicit = _{
   | Identifier
   | SlotSequence
   | Slot
+  | AssociationExtended
   | Association
   | ParenExtended
   | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
@@ -455,6 +457,11 @@ ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSpanSep ~ SpanExpr | Express
 
 AssociationItem = { ConditionExpr ~ "->" ~ ConditionExpr }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
+// AssociationExtended handles bracket access on association literals:
+//   <|...|>["key"]      — key lookup (CurriedCall)
+//   <|...|>[["key"]]    — Part extraction
+AssociationCallSuffix = { BracketArgs+ }
+AssociationExtended = { Association ~ (PartIndexSuffix | AssociationCallSuffix) }
 
 // Function calls (supports chained calls like f[x][y])
 // Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term

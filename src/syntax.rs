@@ -1872,6 +1872,59 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         Expr::CompoundExpr(exprs)
       }
     }
+    Rule::AssociationExtended => {
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      // First child is always the Association
+      let base_expr = pair_to_expr(inner_pairs[0].clone());
+      // Check whether this is a bracket call or Part extraction
+      let has_call_suffix = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix));
+      if has_call_suffix {
+        // <|...|>[args] -> CurriedCall
+        let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::AssociationCallSuffix))
+          .flat_map(|p| p.clone().into_inner())
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| {
+            bracket
+              .into_inner()
+              .filter(|p| {
+                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+              })
+              .map(pair_to_expr)
+              .collect()
+          })
+          .collect();
+        let mut result = Expr::CurriedCall {
+          func: Box::new(base_expr),
+          args: bracket_sequences[0].clone(),
+        };
+        for args in bracket_sequences.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        result
+      } else {
+        // <|...|>[[index]] -> Part[assoc, index]
+        let part_indices: Vec<Expr> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+          .collect();
+        let mut result = base_expr;
+        for idx in &part_indices {
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        result
+      }
+    }
     Rule::Association => {
       let items: Vec<(Expr, Expr)> = pair
         .into_inner()

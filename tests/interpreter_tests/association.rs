@@ -97,6 +97,58 @@ mod association_part_assignment {
   }
 }
 
+mod association_literal_access {
+  use super::*;
+
+  #[test]
+  fn literal_single_bracket_access() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>["a"]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn literal_single_bracket_access_middle_key() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>["b"]"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn literal_single_bracket_missing_key() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2|>["d"]"#).unwrap(),
+      "Missing[KeyAbsent, d]"
+    );
+  }
+
+  #[test]
+  fn literal_double_bracket_access() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[["a"]]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn literal_nested_access() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> <|"x" -> 10|>|>["b"]["x"]"#).unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn literal_integer_key_access() {
+    assert_eq!(
+      interpret(r#"<|1 -> "one", 2 -> "two"|>[1]"#).unwrap(),
+      "one"
+    );
+  }
+}
+
 mod association_nested_access {
   use super::*;
 
