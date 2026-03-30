@@ -369,6 +369,61 @@ mod reverse_rule {
   }
 }
 
+mod reverse_association {
+  use super::*;
+
+  #[test]
+  fn reverse_association() {
+    assert_eq!(
+      interpret("Reverse[<|a -> 1, b -> 2, c -> 3|>]").unwrap(),
+      "<|c -> 3, b -> 2, a -> 1|>"
+    );
+  }
+
+  #[test]
+  fn reverse_empty_association() {
+    assert_eq!(interpret("Reverse[<||>]").unwrap(), "<||>");
+  }
+
+  #[test]
+  fn reverse_single_element_association() {
+    assert_eq!(interpret("Reverse[<|a -> 1|>]").unwrap(), "<|a -> 1|>");
+  }
+}
+
+mod sort_association {
+  use super::*;
+
+  #[test]
+  fn sort_association_by_values() {
+    assert_eq!(
+      interpret("Sort[<|c -> 3, a -> 1, b -> 2|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn sort_empty_association() {
+    assert_eq!(interpret("Sort[<||>]").unwrap(), "<||>");
+  }
+
+  #[test]
+  fn sort_by_association() {
+    assert_eq!(
+      interpret("SortBy[<|c -> 3, a -> 1, b -> 2|>, Identity]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn sort_by_association_descending() {
+    assert_eq!(
+      interpret("SortBy[<|c -> 3, a -> 1, b -> 2|>, Minus]").unwrap(),
+      "<|c -> 3, b -> 2, a -> 1|>"
+    );
+  }
+}
+
 mod value_q {
   use super::*;
 
