@@ -1084,7 +1084,7 @@ Histogram3D,,🚫,,7.0,1096
 ImageCrop,Crops an image to a specified region,✅,pure,7.0,1097
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7.0,1098
 SubtractFrom,Subtracts a value from a variable,✅,stateful,1.0,1099
-EntityList,,🚫,,10.0,1100
+EntityList,Lists all entities of a given type,✅,pure,10.0,1100
 FieldSize,,🚫,,6.0,1102
 LogNormalDistribution,Represents a log-normal distribution,✅,1,6.0,1102
 UpperTriangularize,Zero out elements below a diagonal,✅,pure,7.0,1103
@@ -2099,7 +2099,7 @@ ServiceExecute,Execute external service,🚫,,10.0,2141
 ArgMin,Find argument minimizing expression,🚫,,7.0,2144
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2.0,2144
 Underscript,Typesetting subscript,🚫,,6.0,2144
-EntityProperties,Properties of an entity,🚫,,10.0,2147
+EntityProperties,Lists properties available for an entity type,✅,pure,10.0,2147
 KeyTake,Takes specified keys from an association,✅,pure,10.0,2147
 Paneled,Panel wrapper for display,🚫,,6.0,2147
 BinLists,Group data points into equal-width bins,✅,pure,6.0,2149
@@ -3264,7 +3264,7 @@ SurvivalModelFit,,,,9.0,3344
 AlternativeHypothesis,,,,8.0,3353
 ClipPlanesStyle,,🚫,,10.0,3353
 CreateSearchIndex,,🚫,,10.2,3353
-EntityClassList,,🚫,,10.0,3353
+EntityClassList,List entity classes for a type,✅,,10.0,3353
 FindTransientRepeat,,,,10.4,3353
 InverseContinuousWaveletTransform,,🚫,,8.0,3353
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
@@ -3587,7 +3587,7 @@ BirnbaumSaundersDistribution,,,,8.0,3697
 BorelTannerDistribution,,,,8.0,3697
 CloudLoggingData,,🚫,,10.2,3697
 DynamicGeoGraphics,,🚫,,10.4,3697
-EntityStore,,🚫,,11.0,3697
+EntityStore,Represents an entity store for custom entity types,✅,pure,11.0,3697
 ExtractArchive,,,,8.0,3697
 FactorSquareFreeList,Returns the square-free factorization of a polynomial as a list of factor-multiplicity pairs,✅,pure,1.0,3697
 FindGeometricConjectures,,,,12.0,3697
@@ -3977,7 +3977,7 @@ AutoItalicWords,,,,3.0,4104
 CircularOrthogonalMatrixDistribution,,,,10.3,4104
 DayHemisphere,,,,10.0,4104
 DayNightTerminator,,🚫,,10.0,4104
-EntityRegister,,🚫,,11.3,4104
+EntityRegister,Registers an entity store for use with Entity,✅,effectful,11.3,4104
 GenerateHTTPResponse,,🚫,,10.3,4104
 GroupElementPosition,,,,8.0,4104
 HTTPRedirect,,🚫,,10.0,4104
@@ -5190,7 +5190,7 @@ DihedralAngle,,,,12.0,5486
 DoubleLeftTee,,,,3.0,5486
 DownTee,,,,3.0,5486
 EmptySpaceF,,,,12.2,5486
-EntityUnregister,,🚫,,11.3,5486
+EntityUnregister,Unregisters entities from a registered entity store,✅,effectful,11.3,5486
 EulerCharacteristic,,,,12.0,5486
 ExcludePods,,,,8.0,5486
 ExcludedPhysicalQuantities,,,,10.0,5486
@@ -5552,7 +5552,7 @@ EmbeddedSQLEntityClass,,,,12.2,
 EmbeddedSQLExpression,,,,12.2,
 EndDialogPacket,,🚫,,3.0,
 English,,,,,
-EntityStores,,🚫,,11.3,
+EntityStores,Lists all currently registered entity stores,✅,pure,11.3,
 EntityType,,🚫,,13.3,
 EstimatedPointNormals,,,,13.1,
 EstimatedVariogramModel,,,,13.0,

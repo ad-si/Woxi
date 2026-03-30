@@ -1,0 +1,11 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+DateObject[{2016, 7, 23}, Day]
+DateObject[{2016, 7, 23}, Day]
+{EntityClass[Pet, Cats], EntityClass[Pet, Dogs]}
+{Entity[Pet, Sam], Entity[Pet, Rocky]}
+Quantity[3537, Days]
+Quantity[3336, Days]
+{Entity[Pet, Sam], Entity[Pet, Rocky], Entity[Pet, Daisy], Entity[Pet, Scout]}

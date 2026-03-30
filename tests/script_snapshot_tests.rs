@@ -243,6 +243,8 @@ script_test!(
 script_test!(script_visualize_a_tree, "visualize_a_tree.wls");
 script_test!(script_voronoi_diagram_index, "voronoi_diagram_index.wls");
 
+script_test!(script_entity_store, "entity_store.wls");
+
 #[test]
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);

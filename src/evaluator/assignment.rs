@@ -358,6 +358,23 @@ pub fn set_options_from_value(
 
 /// AST-based Set implementation to handle Part assignment on associations and lists
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle Entity property mutation: Entity["type", "name"]["property"] = value
+  if let Expr::CurriedCall { func, args } = lhs {
+    if let Expr::FunctionCall {
+      name,
+      args: entity_args,
+    } = func.as_ref()
+    {
+      if name == "Entity" && entity_args.len() == 2 {
+        return crate::functions::entity_ast::entity_property_set(
+          entity_args,
+          args,
+          rhs,
+        );
+      }
+    }
+  }
+
   // Handle Part assignment: var[[indices]] = value
   if let Expr::Part { .. } = lhs {
     // Flatten nested Part to get base variable and list of indices
