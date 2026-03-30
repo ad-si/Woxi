@@ -4417,15 +4417,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           .collect();
         return parts.join(" | ");
       }
-      // OutputForm-only: Entity[type, name] preserves string quotes
+      // OutputForm: Entity[type, name] strips string quotes (matching wolframscript)
       if is_output && name == "Entity" {
-        let parts: Vec<String> = args
-          .iter()
-          .map(|a| match a {
-            Expr::String(s) => format!("\"{}\"", s),
-            _ => fmt(a),
-          })
-          .collect();
+        let parts: Vec<String> = args.iter().map(|a| fmt(a)).collect();
         return format!("Entity[{}]", parts.join(", "));
       }
       // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator

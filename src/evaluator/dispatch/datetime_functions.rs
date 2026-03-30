@@ -60,8 +60,19 @@ pub fn dispatch_datetime_functions(
         args: args.to_vec(),
       }));
     }
-    // DateObject is a data container — return as-is
+    // DateObject is a data container — normalize granularity
     "DateObject" => {
+      // DateObject[{y,m,d}] → DateObject[{y,m,d}, Day]
+      if args.len() == 1 {
+        if let Expr::List(items) = &args[0] {
+          if items.len() == 3 {
+            return Some(Ok(Expr::FunctionCall {
+              name: "DateObject".to_string(),
+              args: vec![args[0].clone(), Expr::Identifier("Day".to_string())],
+            }));
+          }
+        }
+      }
       return Some(Ok(Expr::FunctionCall {
         name: "DateObject".to_string(),
         args: args.to_vec(),

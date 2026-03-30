@@ -3408,20 +3408,17 @@ mod entity {
   use super::*;
 
   #[test]
-  fn entity_preserves_string_args() {
-    // Entity preserves string quotes in output
+  fn entity_strips_string_quotes_in_output() {
+    // Entity strips string quotes in output (matching wolframscript)
     assert_eq!(
       interpret("Entity[\"Country\", \"France\"]").unwrap(),
-      "Entity[\"Country\", \"France\"]"
+      "Entity[Country, France]"
     );
   }
 
   #[test]
   fn entity_single_arg() {
-    assert_eq!(
-      interpret("Entity[\"Country\"]").unwrap(),
-      "Entity[\"Country\"]"
-    );
+    assert_eq!(interpret("Entity[\"Country\"]").unwrap(), "Entity[Country]");
   }
 
   #[test]
@@ -3445,7 +3442,7 @@ mod entity {
     // Entity expressions are inert - they evaluate to themselves
     assert_eq!(
       interpret("Entity[\"City\", \"Paris\"]").unwrap(),
-      "Entity[\"City\", \"Paris\"]"
+      "Entity[City, Paris]"
     );
   }
 
@@ -3454,7 +3451,7 @@ mod entity {
     // Entity with mixed arg types preserves strings but evaluates others
     assert_eq!(
       interpret("Entity[\"Planet\", \"Mars\"]").unwrap(),
-      "Entity[\"Planet\", \"Mars\"]"
+      "Entity[Planet, Mars]"
     );
   }
 }
