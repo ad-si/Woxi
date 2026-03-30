@@ -35,7 +35,7 @@ mod entity_store_tests {
         "store = EntityStore[{\"Dog\" -> <|\"Entities\" -> <||>, \"Properties\" -> <||>|>, \"Cat\" -> <|\"Entities\" -> <||>, \"Properties\" -> <||>|>}]; EntityRegister[store]"
       )
       .unwrap(),
-      "{Dog, Cat}"
+      "{Cat, Dog}"
     );
   }
 

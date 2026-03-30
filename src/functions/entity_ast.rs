@@ -288,6 +288,18 @@ pub fn entity_register_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     stores.borrow_mut().push(store_types);
   });
 
+  type_names.sort_by(|a, b| {
+    let a_str = match a {
+      Expr::String(s) => s.as_str(),
+      _ => "",
+    };
+    let b_str = match b {
+      Expr::String(s) => s.as_str(),
+      _ => "",
+    };
+    a_str.cmp(b_str)
+  });
+
   Ok(Expr::List(type_names))
 }
 

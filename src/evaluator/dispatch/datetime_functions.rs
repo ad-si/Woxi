@@ -68,7 +68,7 @@ pub fn dispatch_datetime_functions(
           if items.len() == 3 {
             return Some(Ok(Expr::FunctionCall {
               name: "DateObject".to_string(),
-              args: vec![args[0].clone(), Expr::Identifier("Day".to_string())],
+              args: vec![args[0].clone(), Expr::String("Day".to_string())],
             }));
           }
         }
