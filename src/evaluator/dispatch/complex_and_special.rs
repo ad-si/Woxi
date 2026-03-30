@@ -1010,6 +1010,9 @@ pub fn dispatch_complex_and_special(
     "Replace" if args.len() == 2 => {
       return Some(apply_replace_ast(&args[0], &args[1]));
     }
+    "Replace" if args.len() == 3 => {
+      return Some(apply_replace_with_level_ast(&args[0], &args[1], &args[2]));
+    }
 
     // Format[expr, OutputForm] and OutputForm[expr] → 2D rendering
     "Format"

@@ -578,6 +578,86 @@ pub fn apply_replace_ast(
   }
 }
 
+/// Apply Replace with level specification: Replace[expr, rules, levelspec]
+/// Traverses the expression and applies rules at the specified levels.
+pub fn apply_replace_with_level_ast(
+  expr: &Expr,
+  rules: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec: {n} = exactly level n, n = levels 0..n, {min, max} = range
+  let (min_level, max_level) = match level_spec {
+    Expr::Integer(n) => (0i64, *n as i64),
+    Expr::List(items) if items.len() == 1 => {
+      if let Some(n) = crate::evaluator::type_helpers::expr_to_i128(&items[0]) {
+        (n as i64, n as i64)
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Replace".to_string(),
+          args: vec![expr.clone(), rules.clone(), level_spec.clone()],
+        });
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let min = crate::evaluator::type_helpers::expr_to_i128(&items[0])
+        .unwrap_or(0) as i64;
+      let max = crate::evaluator::type_helpers::expr_to_i128(&items[1])
+        .unwrap_or(0) as i64;
+      (min, max)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Replace".to_string(),
+        args: vec![expr.clone(), rules.clone(), level_spec.clone()],
+      });
+    }
+  };
+
+  replace_at_depth(expr, rules, 0, min_level, max_level)
+}
+
+/// Recursively apply Replace rules at specified levels (bottom-up, like Mathematica)
+fn replace_at_depth(
+  expr: &Expr,
+  rules: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> Result<Expr, InterpreterError> {
+  // First recurse into children
+  let recursed = match expr {
+    Expr::List(items) => {
+      let mapped: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| {
+          replace_at_depth(item, rules, current_depth + 1, min_level, max_level)
+        })
+        .collect();
+      Expr::List(mapped?)
+    }
+    Expr::FunctionCall { name, args } => {
+      let mapped: Result<Vec<Expr>, _> = args
+        .iter()
+        .map(|item| {
+          replace_at_depth(item, rules, current_depth + 1, min_level, max_level)
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: mapped?,
+      }
+    }
+    _ => expr.clone(),
+  };
+
+  // Then try replacement at this depth if in range
+  if current_depth >= min_level && current_depth <= max_level {
+    apply_replace_ast(&recursed, rules)
+  } else {
+    Ok(recursed)
+  }
+}
+
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
 /// when wrapped in a function call. Returns the matched indices and bindings.
 pub fn find_orderless_subset_match(
