@@ -11,6 +11,31 @@ pub fn select_ast(
   pred: &Expr,
   n: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  let limit = match n {
+    Some(expr) => match expr {
+      Expr::Integer(i) => Some(*i as usize),
+      _ => None,
+    },
+    None => None,
+  };
+
+  // Handle associations: Select on values, preserve key-value pairs
+  if let Expr::Association(pairs) = list {
+    let mut kept = Vec::new();
+    for (key, val) in pairs {
+      let result = apply_func_ast(pred, val)?;
+      if expr_to_bool(&result) == Some(true) {
+        kept.push((key.clone(), val.clone()));
+        if let Some(lim) = limit
+          && kept.len() >= lim
+        {
+          break;
+        }
+      }
+    }
+    return Ok(Expr::Association(kept));
+  }
+
   // Select works on any expression with arguments, preserving the head
   let (items, head_name): (&[Expr], Option<String>) = match list {
     Expr::List(items) => (items.as_slice(), None),
@@ -25,14 +50,6 @@ pub fn select_ast(
         args,
       });
     }
-  };
-
-  let limit = match n {
-    Some(expr) => match expr {
-      Expr::Integer(i) => Some(*i as usize),
-      _ => None,
-    },
-    None => None,
   };
 
   let mut kept = Vec::new();

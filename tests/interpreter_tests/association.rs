@@ -616,3 +616,68 @@ mod key_union {
     );
   }
 }
+
+mod association_list_operations {
+  use super::*;
+
+  #[test]
+  fn append_to_association() {
+    assert_eq!(
+      interpret("Append[<|a -> 1, b -> 2|>, c -> 3]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn append_to_empty_association() {
+    assert_eq!(interpret("Append[<||>, a -> 1]").unwrap(), "<|a -> 1|>");
+  }
+
+  #[test]
+  fn prepend_to_association() {
+    assert_eq!(
+      interpret("Prepend[<|a -> 1, b -> 2|>, c -> 3]").unwrap(),
+      "<|c -> 3, a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn join_two_associations() {
+    assert_eq!(
+      interpret("Join[<|a -> 1|>, <|b -> 2|>]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn join_three_associations() {
+    assert_eq!(
+      interpret("Join[<|a -> 1|>, <|b -> 2|>, <|c -> 3|>]").unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn select_from_association() {
+    assert_eq!(
+      interpret("Select[<|a -> 1, b -> 2, c -> 3|>, (# > 1) &]").unwrap(),
+      "<|b -> 2, c -> 3|>"
+    );
+  }
+
+  #[test]
+  fn select_none_from_association() {
+    assert_eq!(
+      interpret("Select[<|a -> 1, b -> 2|>, (# > 10) &]").unwrap(),
+      "<||>"
+    );
+  }
+
+  #[test]
+  fn select_with_limit_from_association() {
+    assert_eq!(
+      interpret("Select[<|a -> 1, b -> 2, c -> 3|>, (# > 0) &, 2]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+}

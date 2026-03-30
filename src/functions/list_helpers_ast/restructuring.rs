@@ -3,6 +3,21 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
+/// Extract key-value pair from a Rule expression for use in associations.
+fn extract_rule_pair(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((*pattern.clone(), *replacement.clone())),
+    _ => None,
+  }
+}
+
 /// AST-based Partition: break list into sublists of length n.
 /// Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
 pub fn partition_ast(
@@ -731,6 +746,17 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
+  // Check if all arguments are associations
+  if lists.iter().all(|l| matches!(l, Expr::Association(_))) {
+    let mut result = Vec::new();
+    for list in lists {
+      if let Expr::Association(pairs) = list {
+        result.extend(pairs.iter().cloned());
+      }
+    }
+    return Ok(Expr::Association(result));
+  }
+
   // Determine the common head
   let head: Option<&str> = match &lists[0] {
     Expr::List(_) => None, // List head
@@ -771,6 +797,19 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 /// AST-based Append: append element to list.
 pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   match list {
+    Expr::Association(pairs) => {
+      // Append a rule to an association
+      if let Some((k, v)) = extract_rule_pair(elem) {
+        let mut result = pairs.clone();
+        result.push((k, v));
+        Ok(Expr::Association(result))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Append".to_string(),
+          args: vec![list.clone(), elem.clone()],
+        })
+      }
+    }
     Expr::List(items) => {
       let mut result = items.clone();
       result.push(elem.clone());
@@ -794,6 +833,19 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
 /// AST-based Prepend: prepend element to list.
 pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   match list {
+    Expr::Association(pairs) => {
+      // Prepend a rule to an association
+      if let Some((k, v)) = extract_rule_pair(elem) {
+        let mut result = vec![(k, v)];
+        result.extend(pairs.iter().cloned());
+        Ok(Expr::Association(result))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Prepend".to_string(),
+          args: vec![list.clone(), elem.clone()],
+        })
+      }
+    }
     Expr::List(items) => {
       let mut result = vec![elem.clone()];
       result.extend(items.iter().cloned());
