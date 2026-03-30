@@ -1423,6 +1423,13 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    "MapApply" if args.len() == 2 => {
+      return Some(
+        crate::evaluator::function_application::apply_map_apply_ast(
+          &args[0], &args[1],
+        ),
+      );
+    }
     "Identity" if args.len() == 1 => {
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }

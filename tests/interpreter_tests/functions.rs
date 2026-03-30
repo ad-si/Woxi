@@ -13262,3 +13262,131 @@ fn stationary_distribution_with_markov() {
     "StationaryDistribution[DiscreteMarkovProcess[{1, 0}, {{0.5, 0.5}, {0.3, 0.7}}]]"
   );
 }
+
+mod map_apply_function {
+  use super::*;
+
+  #[test]
+  fn map_apply_basic() {
+    assert_eq!(
+      interpret("MapApply[f, {{a, b}, {c, d}}]").unwrap(),
+      "{f[a, b], f[c, d]}"
+    );
+  }
+
+  #[test]
+  fn map_apply_with_plus() {
+    assert_eq!(
+      interpret("MapApply[Plus, {{1, 2}, {3, 4}}]").unwrap(),
+      "{3, 7}"
+    );
+  }
+
+  #[test]
+  fn map_apply_with_times() {
+    assert_eq!(
+      interpret("MapApply[Times, {{2, 3}, {4, 5}}]").unwrap(),
+      "{6, 20}"
+    );
+  }
+
+  #[test]
+  fn map_apply_matches_operator_form() {
+    // MapApply[f, list] should give the same result as f @@@ list
+    assert_eq!(
+      interpret("MapApply[f, {{a, b}, {c, d}}]").unwrap(),
+      interpret("f @@@ {{a, b}, {c, d}}").unwrap()
+    );
+  }
+
+  #[test]
+  fn map_apply_with_user_function() {
+    assert_eq!(
+      interpret("g[x_, y_] := x + y; MapApply[g, {{1, 2}, {3, 4}}]").unwrap(),
+      "{3, 7}"
+    );
+  }
+
+  #[test]
+  fn map_apply_empty_list() {
+    assert_eq!(interpret("MapApply[f, {}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn map_apply_single_element() {
+    assert_eq!(
+      interpret("MapApply[f, {{a, b, c}}]").unwrap(),
+      "{f[a, b, c]}"
+    );
+  }
+
+  #[test]
+  fn map_apply_with_pure_function() {
+    assert_eq!(
+      interpret("MapApply[Function[{x, y}, x^y], {{2, 3}, {3, 2}}]").unwrap(),
+      "{8, 9}"
+    );
+  }
+}
+
+mod replace_with_levels {
+  use super::*;
+
+  #[test]
+  fn replace_at_level_2() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {2}]").unwrap(),
+      "{1, {4, {3}}}"
+    );
+  }
+
+  #[test]
+  fn replace_at_level_1() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x + 10, {1}]").unwrap(),
+      "{11, {2, {3}}}"
+    );
+  }
+
+  #[test]
+  fn replace_at_level_0() {
+    // At level 0, only the whole expression is checked
+    assert_eq!(
+      interpret("Replace[{1, 2, 3}, x_Integer :> x^2]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn replace_at_level_range() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {1, 2}]").unwrap(),
+      "{1, {4, {3}}}"
+    );
+  }
+
+  #[test]
+  fn replace_all_levels() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {1, 3}]").unwrap(),
+      "{1, {4, {9}}}"
+    );
+  }
+
+  #[test]
+  fn replace_at_level_in_function_call() {
+    assert_eq!(
+      interpret("Replace[f[a, g[b]], x_ :> h[x], {1}]").unwrap(),
+      "f[h[a], h[g[b]]]"
+    );
+  }
+
+  #[test]
+  fn replace_with_rule_at_level() {
+    assert_eq!(
+      interpret("Replace[{a, {b, {c}}}, x_Symbol :> ToString[x], {2}]")
+        .unwrap(),
+      "{a, {b, {c}}}"
+    );
+  }
+}
