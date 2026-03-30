@@ -9,6 +9,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
+  if let Some(result) = try_date_object_subtraction(args) {
+    return result;
+  }
+
   // Handle Quantity arithmetic before anything else
   if let Some(result) = crate::functions::quantity_ast::try_quantity_plus(args)
   {
@@ -4208,4 +4213,78 @@ fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
   } else {
     formatted
   }
+}
+
+/// Check if Plus args represent DateObject subtraction (d1 - d2) and handle it.
+/// Returns Some(Ok(Quantity[n, "Days"])) if applicable.
+fn try_date_object_subtraction(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 2 {
+    return None;
+  }
+
+  fn is_date_object(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "DateObject")
+  }
+
+  fn extract_negated_date(e: &Expr) -> Option<&Expr> {
+    // Matches Times[-1, DateObject[...]] or UnaryOp(Minus, DateObject[...])
+    match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        if matches!(left.as_ref(), Expr::Integer(-1)) && is_date_object(right) {
+          Some(right)
+        } else if matches!(right.as_ref(), Expr::Integer(-1))
+          && is_date_object(left)
+        {
+          Some(left)
+        } else {
+          None
+        }
+      }
+      Expr::FunctionCall { name, args: fargs }
+        if name == "Times" && fargs.len() == 2 =>
+      {
+        if matches!(&fargs[0], Expr::Integer(-1)) && is_date_object(&fargs[1]) {
+          Some(&fargs[1])
+        } else if matches!(&fargs[1], Expr::Integer(-1))
+          && is_date_object(&fargs[0])
+        {
+          Some(&fargs[0])
+        } else {
+          None
+        }
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } if is_date_object(operand) => Some(operand),
+      _ => None,
+    }
+  }
+
+  // Pattern: DateObject[...] + Times[-1, DateObject[...]]
+  // i.e. d1 - d2
+  if is_date_object(&args[0]) {
+    if let Some(d2) = extract_negated_date(&args[1]) {
+      return Some(crate::functions::datetime_ast::date_difference_ast(&[
+        d2.clone(),
+        args[0].clone(),
+      ]));
+    }
+  }
+  if is_date_object(&args[1]) {
+    if let Some(d1) = extract_negated_date(&args[0]) {
+      return Some(crate::functions::datetime_ast::date_difference_ast(&[
+        args[1].clone(),
+        d1.clone(),
+      ]));
+    }
+  }
+
+  None
 }

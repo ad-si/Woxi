@@ -151,6 +151,34 @@ mod date_difference {
       "Quantity[40200, Hours]"
     );
   }
+
+  #[test]
+  fn date_object_subtraction() {
+    assert_eq!(
+      interpret("DateObject[{2026, 3, 30}] - DateObject[{2016, 7, 23}]")
+        .unwrap(),
+      "Quantity[3537, Days]"
+    );
+  }
+
+  #[test]
+  fn date_difference_with_date_objects() {
+    assert_eq!(
+      interpret(
+        "DateDifference[DateObject[{2020, 1, 1}], DateObject[{2020, 1, 11}]]"
+      )
+      .unwrap(),
+      "Quantity[10, Days]"
+    );
+  }
+
+  #[test]
+  fn date_object_normalizes_granularity() {
+    assert_eq!(
+      interpret("DateObject[{2016, 7, 23}]").unwrap(),
+      "DateObject[{2016, 7, 23}, Day]"
+    );
+  }
 }
 
 mod date_string {

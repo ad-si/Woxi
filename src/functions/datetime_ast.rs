@@ -206,6 +206,12 @@ fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
       }
       Some(components)
     }
+    // DateObject[{y, m, d, ...}, ...] — extract the date list from first arg
+    Expr::FunctionCall { name, args }
+      if name == "DateObject" && !args.is_empty() =>
+    {
+      extract_date_components(&args[0])
+    }
     _ => None,
   }
 }
