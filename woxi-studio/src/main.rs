@@ -1155,7 +1155,17 @@ impl WoxiStudio {
       .id(iced::widget::Id::from(format!("cell-{idx}")))
       .on_action(move |action| Message::CellAction(idx, action))
       .key_binding(move |key_press| {
-        let text_editor::KeyPress { key, modifiers, .. } = &key_press;
+        let text_editor::KeyPress {
+          key,
+          modifiers,
+          status,
+          ..
+        } = &key_press;
+        // Only handle custom bindings when this editor is focused;
+        // iced dispatches key events to ALL text_editors in the tree.
+        if !matches!(status, text_editor::Status::Focused { .. }) {
+          return text_editor::Binding::from_key_press(key_press);
+        }
         if modifiers.command() {
           match key.as_ref() {
             keyboard::Key::Character("z") if modifiers.shift() => {
