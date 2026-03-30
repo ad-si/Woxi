@@ -2036,10 +2036,12 @@ mod set_directory {
   #[test]
   fn set_and_check() {
     // SetDirectory returns the new directory path as a string
-    let result = interpret(r#"StringQ[SetDirectory["src"]]"#).unwrap();
+    // Use a single interpret call to avoid affecting other parallel tests
+    let result = interpret(
+      r#"Block[{}, result = StringQ[SetDirectory["src"]]; ResetDirectory[]; result]"#,
+    )
+    .unwrap();
     assert_eq!(result, "True");
-    // Reset back
-    let _ = interpret(r#"SetDirectory[".."]"#);
   }
 }
 
