@@ -364,6 +364,11 @@ fn named_char_to_expr(s: &str) -> Expr {
   match s {
     "\u{20AC}" => return Expr::Identifier("\u{20AC}".to_string()), // €
     "\u{03F5}" => return Expr::Identifier("\u{03F5}".to_string()), // ϵ
+    "\u{03C0}" => return Expr::Constant("Pi".to_string()),         // π
+    "\u{212F}" => return Expr::Constant("E".to_string()),          // ℯ
+    "\u{00B0}" => return Expr::Constant("Degree".to_string()),     // °
+    "\u{221E}" => return Expr::Identifier("Infinity".to_string()), // ∞
+    "\u{2148}" => return Expr::Identifier("I".to_string()),        // ⅈ
     _ => {}
   }
 
