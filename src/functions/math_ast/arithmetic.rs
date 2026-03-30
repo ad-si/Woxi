@@ -4075,6 +4075,11 @@ pub fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
   for arg in args {
     match arg {
       Expr::List(items) => result.extend(flatten_lists(items)),
+      Expr::Association(pairs) => {
+        for (_, v) in pairs {
+          result.push(v);
+        }
+      }
       _ => result.push(arg),
     }
   }

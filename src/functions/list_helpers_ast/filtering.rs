@@ -708,8 +708,13 @@ pub fn count_ast_level(
   pattern: &Expr,
   level_spec: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
+  let assoc_values: Vec<Expr>;
   let items = match list {
-    Expr::List(items) => items,
+    Expr::List(items) => items.as_slice(),
+    Expr::Association(pairs) => {
+      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
+      assoc_values.as_slice()
+    }
     _ => {
       let mut args = vec![list.clone(), pattern.clone()];
       if let Some(ls) = level_spec {

@@ -49,6 +49,10 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     Expr::List(_) => total_with_level(&args[0], &level_spec),
+    Expr::Association(pairs) => {
+      let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+      total_with_level(&Expr::List(values), &level_spec)
+    }
     // Total[x] for non-list returns x
     other => Ok(other.clone()),
   }
@@ -314,6 +318,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Quantity".to_string(),
         args: vec![inner_mean, dargs[1].clone()],
       })
+    }
+    Expr::Association(pairs) => {
+      let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+      mean_ast(&[Expr::List(values)])
     }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
