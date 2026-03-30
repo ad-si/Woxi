@@ -680,4 +680,41 @@ mod association_list_operations {
       "<|a -> 1, b -> 2|>"
     );
   }
+
+  #[test]
+  fn association_constructor_from_list() {
+    assert_eq!(
+      interpret("Association[{a -> 1, b -> 2}]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn association_constructor_from_rules() {
+    assert_eq!(
+      interpret("Association[a -> 1, b -> 2]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn association_constructor_empty_list() {
+    assert_eq!(interpret("Association[{}]").unwrap(), "<||>");
+  }
+
+  #[test]
+  fn take_from_association() {
+    assert_eq!(
+      interpret("Take[<|a -> 1, b -> 2, c -> 3|>, 2]").unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn take_negative_from_association() {
+    assert_eq!(
+      interpret("Take[<|a -> 1, b -> 2, c -> 3|>, -1]").unwrap(),
+      "<|c -> 3|>"
+    );
+  }
 }
