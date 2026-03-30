@@ -1843,7 +1843,19 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         if ord < 0 {
           return std::cmp::Ordering::Greater;
         }
-        // Equal base sort keys: compare exponents
+        // Equal sort keys: tie-break with full base string comparison
+        // e.g. Plus[-1, x] vs Plus[1, x] both have sort key "x"
+        // but "-1 + x" < "1 + x" lexicographically
+        let full_a = crate::syntax::expr_to_string(&aa[0]);
+        let full_b = crate::syntax::expr_to_string(&ab[0]);
+        let full_ord = crate::functions::list_helpers_ast::wolfram_string_order(&full_a, &full_b);
+        if full_ord > 0 {
+          return std::cmp::Ordering::Less;
+        }
+        if full_ord < 0 {
+          return std::cmp::Ordering::Greater;
+        }
+        // Equal bases: compare exponents
         let exp_ord = crate::functions::list_helpers_ast::compare_exprs(&aa[1], &ab[1]);
         if exp_ord > 0 {
           return std::cmp::Ordering::Less;
@@ -1893,7 +1905,17 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         (Expr::FunctionCall { name: na, .. }, Expr::FunctionCall { name: nb, .. })
           if na == nb && na != "Plus" && na != "Times"
       );
-      if same_fn_base {
+      // For Plus bases with the same arity, compare structurally.
+      // e.g. Plus[-1, x] vs Plus[1, x]: both have sort key "x" and same
+      // arg count, but -1 < 1 so (-1+x)^(-1/2) should sort before (1+x)^(-1/2).
+      // Don't do this for different arities — let string-length fallback handle
+      // e.g. Plus[a, b] vs Plus[1, a, b] where shorter is "simpler".
+      let same_arity_plus_base = matches!(
+        (&base_a, &base_b),
+        (Expr::FunctionCall { name: na, args: aa }, Expr::FunctionCall { name: nb, args: ab })
+          if na == "Plus" && nb == "Plus" && aa.len() == ab.len()
+      );
+      if same_fn_base || same_arity_plus_base {
         let base_cmp = compare_expr_canonical(&base_a, &base_b);
         if base_cmp != std::cmp::Ordering::Equal {
           return base_cmp;

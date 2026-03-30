@@ -3721,22 +3721,40 @@ pub fn quantity_to_visual_string(mag: &Expr, unit: &Expr) -> String {
 
 /// Check if an expression is Power[symbol, negative_integer].
 /// Used to decide when to keep x^(-n) notation instead of fraction form.
-fn is_symbol_neg_int_power(expr: &Expr) -> bool {
-  match expr {
+/// Check if an expression is Power[base, negative_integer] where base is symbolic
+/// (contains variables, not a purely numeric expression like Sqrt[2]).
+/// Symbols and Plus/Times expressions containing identifiers are considered symbolic.
+fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
+  let (base, neg_exp) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } => {
-      matches!(left.as_ref(), Expr::Identifier(_))
-        && matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
-    }
+    } => (
+      left.as_ref(),
+      matches!(right.as_ref(), Expr::Integer(n) if *n < 0),
+    ),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      matches!(&args[0], Expr::Identifier(_))
-        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+      (&args[0], matches!(&args[1], Expr::Integer(n) if *n < 0))
     }
-    _ => false,
+    _ => return false,
+  };
+  if !neg_exp {
+    return false;
   }
+  // Check if base contains any identifiers (symbolic, not purely numeric)
+  fn has_identifier(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(has_identifier),
+      Expr::BinaryOp { left, right, .. } => {
+        has_identifier(left) || has_identifier(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_identifier(operand),
+      _ => false,
+    }
+  }
+  has_identifier(base)
 }
 
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
@@ -4568,12 +4586,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
-          // If the rest is a single Power[symbol, negative_int], use -x^(-n)
-          // notation instead of -(1/x^n), matching wolframscript output
-          let is_single_symbol_neg_power =
-            args.len() == 2 && is_symbol_neg_int_power(&args[1]);
+          // If the rest is a single Power[symbolic_base, negative_int], use -base^(-n)
+          // notation instead of -(1/base^n), matching wolframscript output
+          let is_single_symbolic_neg_power =
+            args.len() == 2 && is_symbolic_neg_int_power(&args[1]);
           // Check if the rest of the factors need denominator formatting
-          if !is_single_symbol_neg_power
+          if !is_single_symbolic_neg_power
             && let Some(frac) =
               format_times_with_denominator(&args[1..], fmt_fn)
           {

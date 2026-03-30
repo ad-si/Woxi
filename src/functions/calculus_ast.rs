@@ -1163,27 +1163,38 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }))
         }
         "ArcCosh" if args.len() == 1 => {
-          // d/dx[arccosh(f(x))] = f'(x) / sqrt(f(x)^2 - 1)
+          // d/dx[arccosh(f(x))] = f'(x) / (sqrt(f(x) - 1) * sqrt(f(x) + 1))
+          // Using factored form to match Wolfram's branch-cut-aware convention
           let df = differentiate(&args[0], var)?;
-          let f_sq_minus_one = Expr::BinaryOp {
+          let f_minus_one = Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Plus,
             left: Box::new(Expr::Integer(-1)),
-            right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left: Box::new(args[0].clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
+            right: Box::new(args[0].clone()),
           };
-          let sqrt_expr = Expr::FunctionCall {
+          let f_plus_one = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(args[0].clone()),
+          };
+          let sqrt_minus = Expr::FunctionCall {
             name: "Sqrt".to_string(),
-            args: vec![f_sq_minus_one],
+            args: vec![f_minus_one],
+          };
+          let sqrt_plus = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![f_plus_one],
+          };
+          // f'(x) / (Sqrt[f-1] * Sqrt[f+1])
+          let denom = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![sqrt_minus, sqrt_plus],
           };
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
             left: Box::new(df),
             right: Box::new(Expr::FunctionCall {
               name: "Power".to_string(),
-              args: vec![sqrt_expr, Expr::Integer(-1)],
+              args: vec![denom, Expr::Integer(-1)],
             }),
           }))
         }
@@ -4668,6 +4679,14 @@ pub fn simplify(mut expr: Expr) -> Expr {
         _ => {}
       }
 
+      // For Power, delegate to power_two for proper expansion (e.g. (3*x)^2 → 9*x^2)
+      // Only for non-negative exponents to preserve canonical form
+      if matches!(op, Power)
+        && matches!(&right, Expr::Integer(n) if *n >= 0)
+        && let Ok(result) = crate::functions::math_ast::power_two(&left, &right)
+      {
+        return result;
+      }
       // For Times, delegate to times_ast for proper flattening and sorting
       if matches!(op, Times)
         && let Ok(result) =
@@ -4706,6 +4725,36 @@ pub fn simplify(mut expr: Expr) -> Expr {
         op,
         operand: Box::new(operand),
       }
+    }
+    Expr::FunctionCall { name, args } => {
+      let name = std::mem::take(name);
+      let args: Vec<Expr> =
+        std::mem::take(args).into_iter().map(simplify).collect();
+
+      // Delegate Power[base, exp] to power_two for proper expansion
+      // Only for non-negative exponents to avoid distributing (a*b)^(-n)
+      // which changes canonical form (e.g. Sqrt[-1+x]*Sqrt[1+x] factor ordering)
+      if name == "Power" && args.len() == 2 {
+        let is_non_neg = matches!(&args[1], Expr::Integer(n) if *n >= 0);
+        if is_non_neg {
+          if let Ok(result) =
+            crate::functions::math_ast::power_two(&args[0], &args[1])
+          {
+            return result;
+          }
+        }
+      }
+      // Delegate Sqrt to handle Sqrt[0] → 0, Sqrt[1] → 1, etc.
+      if name == "Sqrt" && args.len() == 1 {
+        if let Expr::Integer(0) = &args[0] {
+          return Expr::Integer(0);
+        }
+        if let Expr::Integer(1) = &args[0] {
+          return Expr::Integer(1);
+        }
+      }
+
+      Expr::FunctionCall { name, args }
     }
     _ => expr,
   }
