@@ -27,6 +27,13 @@ mod tests {
   }
 
   #[test]
+  fn test_parse_unicode_pi() {
+    let input = "Sin[π]";
+    let pair = parse(input).unwrap().next().unwrap();
+    assert_eq!(pair.as_rule(), Rule::Program);
+  }
+
+  #[test]
   fn test_parse_function_definition() {
     let input = "f[x_] := x^2 + 2*x + 1";
     let pair = parse(input).unwrap().next().unwrap();

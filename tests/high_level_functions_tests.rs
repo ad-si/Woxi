@@ -2035,4 +2035,68 @@ mod high_level_functions_tests {
       assert_eq!(interpret("Stack[]").unwrap(), "{Stack}");
     }
   }
+
+  mod unicode_constants_tests {
+    use super::*;
+
+    #[test]
+    fn test_unicode_pi_is_pi() {
+      assert_eq!(interpret("π").unwrap(), "Pi");
+    }
+
+    #[test]
+    fn test_unicode_pi_in_expression() {
+      assert_eq!(interpret("Sin[π]").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_unicode_pi_numeric() {
+      assert_eq!(interpret("N[π]").unwrap(), "3.141592653589793");
+    }
+
+    #[test]
+    fn test_unicode_pi_implicit_multiply() {
+      assert_eq!(interpret("2 π").unwrap(), "2*Pi");
+    }
+
+    #[test]
+    fn test_unicode_exponential_e() {
+      assert_eq!(interpret("ℯ").unwrap(), "E");
+    }
+
+    #[test]
+    fn test_unicode_exponential_e_numeric() {
+      assert_eq!(interpret("N[ℯ]").unwrap(), "2.718281828459045");
+    }
+
+    #[test]
+    fn test_unicode_degree() {
+      assert_eq!(interpret("°").unwrap(), "Degree");
+    }
+
+    #[test]
+    fn test_unicode_degree_numeric() {
+      assert_eq!(interpret("N[180 °]").unwrap(), "3.141592653589793");
+    }
+
+    #[test]
+    fn test_unicode_infinity() {
+      assert_eq!(interpret("∞").unwrap(), "Infinity");
+    }
+
+    #[test]
+    fn test_unicode_infinity_in_expression() {
+      assert_eq!(interpret("1/∞").unwrap(), "0");
+    }
+
+    #[test]
+    fn test_unicode_imaginary_i() {
+      assert_eq!(interpret("ⅈ").unwrap(), "I");
+    }
+
+    #[test]
+    fn test_unicode_imaginary_i_squared() {
+      assert_eq!(interpret("ⅈ^2").unwrap(), "-1");
+    }
+  }
 }
