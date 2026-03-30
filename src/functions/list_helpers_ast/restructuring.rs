@@ -871,7 +871,7 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Catenate[{list1, list2, ...}] - concatenates lists
+/// Catenate[{list1, list2, ...}] - concatenates lists or associations
 pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
   let outer = match list_of_lists {
     Expr::List(items) => items,
@@ -885,9 +885,12 @@ pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
   for item in outer {
     match item {
       Expr::List(inner) => result.extend(inner.clone()),
+      Expr::Association(pairs) => {
+        result.extend(pairs.iter().map(|(_, v)| v.clone()));
+      }
       _ => {
         return Err(InterpreterError::EvaluationError(
-          "Catenate expects all elements to be lists".into(),
+          "Catenate expects all elements to be lists or associations".into(),
         ));
       }
     }
