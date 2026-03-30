@@ -528,6 +528,8 @@ function main() {
     /\bStationaryDistribution\[/, // Complex computation, Woxi keeps as inert wrapper
     /\bDatedUnit\[/,        // Version-specific evaluation behavior
     /\bVoronoiMesh\[/,      // Different bounding box and vertex coordinates
+    /\bEntityStores\[/,     // EntityStores accumulates across the batch session; ClearAll doesn't reset the global registry
+    /\bEntityUnregister\[/, // Depends on EntityStores isolation (prior registrations persist in wolframscript batch)
     /\bQuantity/,           // Wolfram's unit interpretation uses an online entity framework
                             // (Interpreter["Unit"]) that requires internet and produces
                             // flaky results in batch mode. All Quantity, UnitConvert,
@@ -625,6 +627,10 @@ function main() {
     "Variance[JohnsonDistribution[\"SU\", 1, 2, 3, 4]]",
     "Variance[JohnsonDistribution[\"SL\", gamma, delta, mu, sigma]]",
     "Variance[JohnsonDistribution[\"SL\", 0, 1, 0, 1]]",
+    // Entity state accumulation: in the batch wolframscript session, EntityStores
+    // from prior test cases persist (ClearAll doesn't reset the global registry),
+    // so this "unregistered" lookup finds entities from earlier tests.
+    "Entity[\"Pet\", \"cat1\"][\"Name\"]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
