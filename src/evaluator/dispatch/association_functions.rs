@@ -67,7 +67,66 @@ pub fn dispatch_association_functions(
     "KeyDrop" if args.len() == 2 => {
       return Some(crate::functions::association_ast::key_drop_ast(args));
     }
+    // Association[{a -> 1, b -> 2}] or Association[a -> 1, b -> 2]
+    "Association" => {
+      return Some(association_constructor(args));
+    }
     _ => {}
   }
   None
+}
+
+/// Convert Association[...] function call to Expr::Association
+fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Association[{a -> 1, b -> 2}] - single list argument containing rules
+  if args.len() == 1 {
+    if let Expr::List(items) = &args[0] {
+      let mut pairs = Vec::new();
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => {
+            pairs.push((*pattern.clone(), *replacement.clone()));
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Association".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      return Ok(Expr::Association(pairs));
+    }
+  }
+
+  // Association[a -> 1, b -> 2] - direct rule arguments
+  let mut pairs = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        pairs.push((*pattern.clone(), *replacement.clone()));
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Association".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  Ok(Expr::Association(pairs))
 }

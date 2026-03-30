@@ -327,6 +327,39 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(list.clone());
   }
 
+  // Handle associations: Take on values, reconstruct association
+  if let Expr::Association(pairs) = list {
+    let rules: Vec<Expr> = pairs
+      .iter()
+      .map(|(k, v)| Expr::Rule {
+        pattern: Box::new(k.clone()),
+        replacement: Box::new(v.clone()),
+      })
+      .collect();
+    let result = take_ast(&Expr::List(rules), n)?;
+    // Convert result back to association
+    if let Expr::List(items) = &result {
+      let mut new_pairs = Vec::new();
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => {
+            new_pairs.push((*pattern.clone(), *replacement.clone()));
+          }
+          _ => return Ok(result),
+        }
+      }
+      return Ok(Expr::Association(new_pairs));
+    }
+    return Ok(result);
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {
