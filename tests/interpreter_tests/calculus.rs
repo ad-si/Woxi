@@ -1739,7 +1739,7 @@ mod inverse_trig_derivatives {
 
   #[test]
   fn d_arccot() {
-    assert_eq!(interpret("D[ArcCot[x], x]").unwrap(), "-(1/(1 + x^2))");
+    assert_eq!(interpret("D[ArcCot[x], x]").unwrap(), "-(1 + x^2)^(-1)");
   }
 
   #[test]
@@ -1749,10 +1749,7 @@ mod inverse_trig_derivatives {
 
   #[test]
   fn d_arcsin_chain_rule() {
-    assert_eq!(
-      interpret("D[ArcSin[3*x], x]").unwrap(),
-      "3/Sqrt[1 - (3*x)^2]"
-    );
+    assert_eq!(interpret("D[ArcSin[3*x], x]").unwrap(), "3/Sqrt[1 - 9*x^2]");
   }
 }
 
@@ -1766,7 +1763,10 @@ mod inverse_hyperbolic_derivatives {
 
   #[test]
   fn d_arccosh() {
-    assert_eq!(interpret("D[ArcCosh[x], x]").unwrap(), "1/Sqrt[-1 + x^2]");
+    assert_eq!(
+      interpret("D[ArcCosh[x], x]").unwrap(),
+      "1/(Sqrt[-1 + x]*Sqrt[1 + x])"
+    );
   }
 
   #[test]
@@ -1778,7 +1778,7 @@ mod inverse_hyperbolic_derivatives {
   fn d_arcsinh_chain_rule() {
     assert_eq!(
       interpret("D[ArcSinh[2*x], x]").unwrap(),
-      "2/Sqrt[1 + (2*x)^2]"
+      "2/Sqrt[1 + 4*x^2]"
     );
   }
 }
