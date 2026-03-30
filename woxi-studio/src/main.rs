@@ -33,6 +33,7 @@ fn main() -> iced::Result {
     .subscription(WoxiStudio::subscription)
     .theme(|state: &WoxiStudio| state.theme.clone())
     .default_font(Font::MONOSPACE)
+    .exit_on_close_request(false)
     .run()
 }
 
@@ -125,6 +126,10 @@ enum Message {
 
   // Preview mode
   TogglePreview,
+
+  // Window
+  CloseRequested(iced::window::Id),
+  CloseConfirmed(iced::window::Id, rfd::MessageDialogResult),
 
   // Keyboard
   KeyPressed(keyboard::Key, keyboard::Modifiers),
@@ -344,6 +349,33 @@ impl WoxiStudio {
 
   fn update(&mut self, message: Message) -> Task<Message> {
     match message {
+      Message::CloseRequested(id) => {
+        if !self.is_dirty {
+          return iced::window::close(id);
+        }
+        Task::perform(
+          async {
+            rfd::AsyncMessageDialog::new()
+              .set_title("Unsaved Changes")
+              .set_description(
+                "You have unsaved changes. Are you sure you want to quit?",
+              )
+              .set_buttons(rfd::MessageButtons::YesNo)
+              .show()
+              .await
+          },
+          move |result| Message::CloseConfirmed(id, result),
+        )
+      }
+
+      Message::CloseConfirmed(id, result) => {
+        if result == rfd::MessageDialogResult::Yes {
+          iced::window::close(id)
+        } else {
+          Task::none()
+        }
+      }
+
       Message::NewNotebook => {
         self.file_path = None;
         self.notebook = Notebook::new();
@@ -651,7 +683,22 @@ impl WoxiStudio {
         {
           let code = self.cell_editors[idx].content.text().trim().to_string();
           if !code.is_empty() {
+            // Clear state and silently re-evaluate all preceding cells
+            // so their side effects (variable assignments, function
+            // definitions, etc.) are available in the current cell.
             woxi::clear_state();
+            for prev in 0..idx {
+              if matches!(
+                self.cell_editors[prev].style,
+                CellStyle::Input | CellStyle::Code
+              ) {
+                let prev_code =
+                  self.cell_editors[prev].content.text().trim().to_string();
+                if !prev_code.is_empty() {
+                  let _ = woxi::interpret_with_stdout(&prev_code);
+                }
+              }
+            }
             match woxi::interpret_with_stdout(&code) {
               Ok(result) => {
                 self.cell_editors[idx].output = Some(result.result);
@@ -771,7 +818,7 @@ impl WoxiStudio {
           }
         }
 
-        // Shift+Enter to evaluate current cell
+        // Shift+Enter to evaluate current cell and create a new one below
         if modifiers.shift() {
           if let keyboard::Key::Named(keyboard::key::Named::Enter) =
             key.as_ref()
@@ -781,7 +828,9 @@ impl WoxiStudio {
               self.cell_editors[idx].content.perform(
                 text_editor::Action::Edit(text_editor::Edit::Backspace),
               );
-              return self.update(Message::EvaluateCell(idx));
+              let eval_task = self.update(Message::EvaluateCell(idx));
+              let add_task = self.update(Message::AddCellBelow(idx));
+              return Task::batch([eval_task, add_task]);
             }
           }
         }
@@ -1045,8 +1094,6 @@ impl WoxiStudio {
       .style(move |theme, status| {
         if in_preview {
           preview_editor_style(theme, status, cell_style)
-        } else if is_grouped {
-          grouped_editor_style(theme, status, cell_style)
         } else {
           cell_editor_style(theme, status, cell_style)
         }
@@ -1062,55 +1109,84 @@ impl WoxiStudio {
     content_col = content_col.push(cell_editor);
 
     if is_grouped {
-      // Thin separator between input and output
-      content_col =
-        content_col.push(rule::horizontal(1).style(separator_style));
-    }
+      // Small gap between input and output
+      content_col = content_col.push(container(text("")).height(4).width(Fill));
+      // Build output section with gray background
+      let mut output_col = Column::new().spacing(0).width(Fill);
 
-    // Stdout (Print output)
-    if let Some(ref stdout) = editor.stdout {
-      let stdout_display =
-        container(text(stdout).size(12).font(Font::MONOSPACE))
-          .padding(6)
-          .width(Fill);
-
-      content_col = content_col.push(stdout_display);
-    }
-
-    // Graphics SVG rendering
-    if let Some(ref svg_data) = editor.graphics_svg {
-      let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
-      let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
-
-      content_col = content_col.push(container(svg_widget).padding(4));
-    }
-
-    // Text output (filter out graphics placeholders)
-    if let Some(ref output) = editor.output {
-      let display = output
-        .replace("-Graphics-", "")
-        .replace("-Graphics3D-", "")
-        .replace("-Image-", "");
-      let display = display.trim().to_string();
-      if !display.is_empty() {
-        let output_display =
-          container(text(display).size(12).font(Font::MONOSPACE))
+      // Stdout (Print output)
+      if let Some(ref stdout) = editor.stdout {
+        let stdout_display =
+          container(text(stdout).size(12).font(Font::MONOSPACE))
             .padding(6)
             .width(Fill);
 
-        content_col = content_col.push(output_display);
+        output_col = output_col.push(stdout_display);
+      }
+
+      // Graphics SVG rendering
+      if let Some(ref svg_data) = editor.graphics_svg {
+        let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
+        let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+
+        output_col = output_col.push(container(svg_widget).padding(4));
+      }
+
+      // Text output (filter out graphics placeholders)
+      if let Some(ref output) = editor.output {
+        let display = output
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        let display = display.trim().to_string();
+        if !display.is_empty() {
+          let output_display =
+            container(text(display).size(12).font(Font::MONOSPACE))
+              .padding(6)
+              .width(Fill);
+
+          output_col = output_col.push(output_display);
+        }
+      }
+
+      content_col = content_col
+        .push(container(output_col).width(Fill).style(output_area_style));
+    } else {
+      // Non-grouped: show outputs inline without special styling
+      if let Some(ref stdout) = editor.stdout {
+        let stdout_display =
+          container(text(stdout).size(12).font(Font::MONOSPACE))
+            .padding(6)
+            .width(Fill);
+
+        content_col = content_col.push(stdout_display);
+      }
+
+      if let Some(ref svg_data) = editor.graphics_svg {
+        let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
+        let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+
+        content_col = content_col.push(container(svg_widget).padding(4));
+      }
+
+      if let Some(ref output) = editor.output {
+        let display = output
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        let display = display.trim().to_string();
+        if !display.is_empty() {
+          let output_display =
+            container(text(display).size(12).font(Font::MONOSPACE))
+              .padding(6)
+              .width(Fill);
+
+          content_col = content_col.push(output_display);
+        }
       }
     }
 
-    // Wrap grouped input+output in a single rounded container
-    let content_el: Element<'a, Message> = if is_grouped {
-      container(content_col)
-        .width(Fill)
-        .style(grouped_cell_style)
-        .into()
-    } else {
-      content_col.into()
-    };
+    let content_el: Element<'a, Message> = content_col.into();
 
     // ── Right side: play button + trash ──
     let right_side: Element<'a, Message> = if !self.preview_mode {
@@ -1163,6 +1239,10 @@ fn handle_event(
   _status: iced::event::Status,
   _id: iced::window::Id,
 ) -> Option<Message> {
+  if let iced::Event::Window(iced::window::Event::CloseRequested) = &event {
+    return Some(Message::CloseRequested(_id));
+  }
+
   if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
     key,
     modifiers,
@@ -1226,14 +1306,12 @@ fn editor_style(
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
-    // Slightly brighter than the app background
-    style.background = Background::Color(Color::from_rgb(0.16, 0.16, 0.18));
+    style.background = Background::Color(Color::from_rgb(0.20, 0.20, 0.23));
     if matches!(status, text_editor::Status::Focused { .. }) {
       style.border.color = Color::from_rgb(0.30, 0.30, 0.38);
     }
   } else {
-    // Light mode: subtle off-white background for input cells
-    style.background = Background::Color(Color::from_rgb(0.97, 0.97, 0.98));
+    style.background = Background::Color(Color::from_rgb(0.98, 0.98, 0.99));
     style.border.color = Color::from_rgb(0.82, 0.82, 0.85);
     if matches!(status, text_editor::Status::Focused { .. }) {
       style.border.color = Color::from_rgb(0.55, 0.55, 0.65);
@@ -1291,36 +1369,16 @@ fn cell_editor_style(
   style
 }
 
-fn grouped_cell_style(theme: &Theme) -> container::Style {
-  let is_dark = !matches!(theme, Theme::Light);
+fn output_area_style(_theme: &Theme) -> container::Style {
   container::Style {
     background: None,
     border: Border {
-      color: if is_dark {
-        Color::from_rgb(0.22, 0.22, 0.25)
-      } else {
-        Color::from_rgb(0.78, 0.78, 0.80)
-      },
-      width: 1.0,
+      color: Color::TRANSPARENT,
+      width: 0.0,
       radius: 6.0.into(),
     },
     ..container::Style::default()
   }
-}
-
-fn grouped_editor_style(
-  theme: &Theme,
-  status: text_editor::Status,
-  cell_style: CellStyle,
-) -> text_editor::Style {
-  let mut style = cell_editor_style(theme, status, cell_style);
-  // No border — the outer grouped container provides it
-  style.border = Border {
-    color: Color::TRANSPARENT,
-    width: 0.0,
-    radius: 0.0.into(),
-  };
-  style
 }
 
 fn preview_editor_style(
