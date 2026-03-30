@@ -1,6 +1,7 @@
 # Summary
 
 - [Introduction](introduction.md)
+- [Comparison](comparison.md)
 - [Syntax](syntax.md)
   - [Basics](basics.md)
   - [Strings](strings.md)
