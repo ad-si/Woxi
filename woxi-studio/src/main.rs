@@ -4,7 +4,7 @@ mod notebook;
 
 use iced::keyboard;
 use iced::overlay::menu;
-use iced::widget::operation::focus_next;
+use iced::widget::operation::focus;
 use iced::widget::{
   Column, button, column, container, pick_list, row, rule, scrollable, space,
   svg, text, text_editor,
@@ -60,6 +60,8 @@ struct WoxiStudio {
   theme_choice: ThemeChoice,
   /// Which cell has its type menu open (if any).
   cell_type_menu_open: Option<usize>,
+  /// Which add-cell divider is focused (index = cell above the divider).
+  focused_divider: Option<usize>,
   /// Style to use for new cells.
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
@@ -132,6 +134,10 @@ enum Message {
   // Window
   CloseRequested(iced::window::Id),
   CloseConfirmed(iced::window::Id, rfd::MessageDialogResult),
+
+  // Cell navigation
+  FocusDividerBelow(usize),
+  FocusDividerAbove(usize),
 
   // Keyboard
   KeyPressed(keyboard::Key, keyboard::Modifiers),
@@ -230,6 +236,7 @@ impl WoxiStudio {
         theme: detect_system_theme(),
         theme_choice: ThemeChoice::Auto,
         cell_type_menu_open: None,
+        focused_divider: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
       },
@@ -538,6 +545,7 @@ impl WoxiStudio {
       Message::CellAction(idx, action) => {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
+          self.focused_divider = None;
           let is_edit = action.is_edit();
           if is_edit {
             // Snapshot current text for undo
@@ -606,7 +614,24 @@ impl WoxiStudio {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
         }
+        self.focused_divider = None;
         self.cell_type_menu_open = None;
+        Task::none()
+      }
+
+      Message::FocusDividerBelow(idx) => {
+        if idx < self.cell_editors.len() {
+          self.focused_divider = Some(idx);
+          self.focused_cell = None;
+        }
+        Task::none()
+      }
+
+      Message::FocusDividerAbove(idx) => {
+        if idx > 0 {
+          self.focused_divider = Some(idx - 1);
+          self.focused_cell = None;
+        }
         Task::none()
       }
 
@@ -626,8 +651,9 @@ impl WoxiStudio {
           },
         );
         self.focused_cell = Some(insert_at);
+        self.focused_divider = None;
         self.is_dirty = true;
-        focus_next()
+        focus(iced::widget::Id::from(format!("cell-{insert_at}")))
       }
 
       Message::AddCellAbove(idx) => {
@@ -646,8 +672,9 @@ impl WoxiStudio {
           },
         );
         self.focused_cell = Some(insert_at);
+        self.focused_divider = None;
         self.is_dirty = true;
-        focus_next()
+        focus(iced::widget::Id::from(format!("cell-{insert_at}")))
       }
 
       Message::DeleteCell(idx) => {
@@ -846,6 +873,38 @@ impl WoxiStudio {
           }
         }
 
+        // Divider navigation (when a "+" divider is focused)
+        if let Some(div_idx) = self.focused_divider {
+          let no_mods =
+            !modifiers.shift() && !modifiers.command() && !modifiers.control();
+          if no_mods {
+            match key.as_ref() {
+              keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                let next_cell = div_idx + 1;
+                if next_cell < self.cell_editors.len() {
+                  self.focused_divider = None;
+                  self.focused_cell = Some(next_cell);
+                  return focus(iced::widget::Id::from(format!(
+                    "cell-{next_cell}"
+                  )));
+                }
+              }
+              keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                self.focused_divider = None;
+                self.focused_cell = Some(div_idx);
+                return focus(iced::widget::Id::from(format!(
+                  "cell-{div_idx}"
+                )));
+              }
+              keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                self.focused_divider = None;
+                return self.update(Message::AddCellBelow(div_idx));
+              }
+              _ => {}
+            }
+          }
+        }
+
         Task::none()
       }
     }
@@ -1017,11 +1076,17 @@ impl WoxiStudio {
 
   /// Small "+" divider between cells.
   fn view_add_cell_divider(&self, idx: usize) -> Element<'_, Message> {
+    let is_focused = self.focused_divider == Some(idx);
+    let style_fn = if is_focused {
+      focused_add_cell_button_style
+    } else {
+      add_cell_button_style
+    };
     container(
       button(text("+").size(10))
         .on_press(Message::AddCellBelow(idx))
         .padding([0, 8])
-        .style(add_cell_button_style),
+        .style(style_fn),
     )
     .center_x(Fill)
     .padding([1, 0])
@@ -1081,7 +1146,13 @@ impl WoxiStudio {
         !d.trim().is_empty()
       });
     let is_grouped = is_input && has_output && !in_preview;
+    let cursor_line = editor.content.cursor().position.line;
+    let line_count = editor.content.line_count();
+    let at_last_line = cursor_line >= line_count.saturating_sub(1);
+    let at_first_line = cursor_line == 0;
+    let cell_count = self.cell_editors.len();
     let cell_editor = text_editor(&editor.content)
+      .id(iced::widget::Id::from(format!("cell-{idx}")))
       .on_action(move |action| Message::CellAction(idx, action))
       .key_binding(move |key_press| {
         let text_editor::KeyPress { key, modifiers, .. } = &key_press;
@@ -1094,6 +1165,31 @@ impl WoxiStudio {
               return Some(text_editor::Binding::Custom(Message::Undo(idx)));
             }
             _ => {}
+          }
+        }
+        // Arrow key navigation between cells
+        let no_mods =
+          !modifiers.shift() && !modifiers.command() && !modifiers.control();
+        if no_mods {
+          if let keyboard::Key::Named(keyboard::key::Named::ArrowDown) =
+            key.as_ref()
+          {
+            if at_last_line && idx < cell_count.saturating_sub(1) {
+              return Some(text_editor::Binding::Sequence(vec![
+                text_editor::Binding::Unfocus,
+                text_editor::Binding::Custom(Message::FocusDividerBelow(idx)),
+              ]));
+            }
+          }
+          if let keyboard::Key::Named(keyboard::key::Named::ArrowUp) =
+            key.as_ref()
+          {
+            if at_first_line && idx > 0 {
+              return Some(text_editor::Binding::Sequence(vec![
+                text_editor::Binding::Unfocus,
+                text_editor::Binding::Custom(Message::FocusDividerAbove(idx)),
+              ]));
+            }
           }
         }
         text_editor::Binding::from_key_press(key_press)
@@ -1278,7 +1374,7 @@ impl WoxiStudio {
 
 fn handle_event(
   event: iced::Event,
-  _status: iced::event::Status,
+  status: iced::event::Status,
   _id: iced::window::Id,
 ) -> Option<Message> {
   if let iced::Event::Window(iced::window::Event::CloseRequested) = &event {
@@ -1291,6 +1387,25 @@ fn handle_event(
     ..
   }) = event
   {
+    // When no widget captured the event (e.g. divider is focused),
+    // handle arrow keys and Enter for navigation.
+    if matches!(status, iced::event::Status::Ignored) {
+      let no_mods =
+        !modifiers.shift() && !modifiers.command() && !modifiers.control();
+      if no_mods {
+        match key.as_ref() {
+          keyboard::Key::Named(
+            keyboard::key::Named::ArrowDown
+            | keyboard::key::Named::ArrowUp
+            | keyboard::key::Named::Enter,
+          ) => {
+            return Some(Message::KeyPressed(key, modifiers));
+          }
+          _ => {}
+        }
+      }
+    }
+
     // Shift+Enter: always handle (even when text editor has focus)
     if modifiers.shift() {
       if let keyboard::Key::Named(keyboard::key::Named::Enter) = key.as_ref() {
@@ -1546,6 +1661,38 @@ fn add_cell_button_style(
       ..Border::default()
     },
     ..button::text(theme, status)
+  }
+}
+
+fn focused_add_cell_button_style(
+  theme: &Theme,
+  _status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let text_color = if is_dark {
+    Color::from_rgb(0.85, 0.85, 0.85)
+  } else {
+    Color::from_rgb(0.2, 0.2, 0.2)
+  };
+  let bg = if is_dark {
+    Color::from_rgba(0.4, 0.6, 1.0, 0.2)
+  } else {
+    Color::from_rgba(0.2, 0.4, 0.8, 0.12)
+  };
+  let border_color = if is_dark {
+    Color::from_rgba(0.4, 0.6, 1.0, 0.5)
+  } else {
+    Color::from_rgba(0.2, 0.4, 0.8, 0.4)
+  };
+  button::Style {
+    text_color,
+    background: Some(Background::Color(bg)),
+    border: Border {
+      radius: 4.0.into(),
+      width: 1.0,
+      color: border_color,
+    },
+    ..button::text(theme, _status)
   }
 }
 
