@@ -360,6 +360,9 @@ pub fn dispatch_math_functions(
     "StandardDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::standard_deviation_ast(args));
     }
+    "Standardize" if args.len() >= 1 && args.len() <= 3 => {
+      return Some(standardize_ast(args));
+    }
     "TrimmedMean" if args.len() == 2 => {
       // TrimmedMean[list, frac] — mean after removing frac fraction from each end
       if let Expr::List(elems) = &args[0]
@@ -3839,4 +3842,59 @@ fn expr_to_f64(expr: &Expr) -> Option<f64> {
     }
     _ => None,
   }
+}
+
+/// Standardize[data] — subtract mean and divide by standard deviation
+/// Standardize[data, f1, f2] — use f1 for location and f2 for scale
+fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = &args[0];
+  let items = match data {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Standardize".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(data.clone());
+  }
+
+  // Compute location (mean) and scale (standard deviation)
+  let (location, scale): (Expr, Expr) = if args.len() >= 3 {
+    let loc =
+      crate::functions::list_helpers_ast::apply_func_ast(&args[1], data)?;
+    let sc =
+      crate::functions::list_helpers_ast::apply_func_ast(&args[2], data)?;
+    (loc, sc)
+  } else if args.len() == 2 {
+    let loc =
+      crate::functions::list_helpers_ast::apply_func_ast(&args[1], data)?;
+    let sc =
+      crate::functions::math_ast::standard_deviation_ast(&[data.clone()])?;
+    (loc, sc)
+  } else {
+    let loc = crate::functions::math_ast::mean_ast(&[data.clone()])?;
+    let sc =
+      crate::functions::math_ast::standard_deviation_ast(&[data.clone()])?;
+    (loc, sc)
+  };
+
+  // Compute (x - location) / scale for each element
+  // Use evaluate_function_call_ast to call Subtract and Divide
+  let mut result = Vec::new();
+  for item in items {
+    let diff = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[item.clone(), location.clone()],
+    )?;
+    let standardized = crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[diff, scale.clone()],
+    )?;
+    result.push(standardized);
+  }
+  Ok(Expr::List(result))
 }

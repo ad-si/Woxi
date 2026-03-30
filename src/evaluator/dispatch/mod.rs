@@ -4789,7 +4789,6 @@ pub fn evaluate_function_call_ast_inner(
       | "PermutationReplace"
       | "DiscreteVariables"
       | "StripOnInput"
-      | "Standardize"
       | "SubMinus"
       | "CornerNeighbors"
       | "TriangularDistribution"

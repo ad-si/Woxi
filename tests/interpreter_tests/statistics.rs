@@ -2560,3 +2560,32 @@ mod johnson_distribution {
     );
   }
 }
+
+mod standardize {
+  use super::*;
+
+  #[test]
+  fn standardize_middle_element_is_zero() {
+    // Middle element of odd-length symmetric range is always 0
+    assert_eq!(interpret("Standardize[{1, 2, 3, 4, 5}][[3]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn standardize_preserves_length() {
+    assert_eq!(
+      interpret("Length[Standardize[{1, 2, 3, 4, 5}]]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn standardize_two_elements() {
+    // Standardize[{0, 2}]: mean=1, sd=Sqrt[2]
+    // (0-1)/Sqrt[2] and (2-1)/Sqrt[2]
+    assert_eq!(
+      interpret("Standardize[{0, 2}][[1]] + Standardize[{0, 2}][[2]] // Chop")
+        .unwrap(),
+      "0"
+    );
+  }
+}
