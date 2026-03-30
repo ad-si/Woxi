@@ -11298,15 +11298,15 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn rename_file_basic() {
     // Clean up stale files from prior failed runs
-    let _ = interpret(r#"Quiet[DeleteFile["test_rename_src_woxi.txt"]]"#);
-    let _ = interpret(r#"Quiet[DeleteFile["test_rename_dst_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_src_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_dst_woxi.txt"]]"#);
     // Create a temp file, rename it, check old doesn't exist and new does, clean up
     let result = interpret(
-      r#"Block[{src = CreateFile["test_rename_src_woxi.txt"]},
+      r#"Block[{src = CreateFile["/tmp/test_rename_src_woxi.txt"]},
         Close[src];
-        RenameFile["test_rename_src_woxi.txt", "test_rename_dst_woxi.txt"];
-        result = {FileExistsQ["test_rename_src_woxi.txt"], FileExistsQ["test_rename_dst_woxi.txt"]};
-        DeleteFile["test_rename_dst_woxi.txt"];
+        RenameFile["/tmp/test_rename_src_woxi.txt", "/tmp/test_rename_dst_woxi.txt"];
+        result = {FileExistsQ["/tmp/test_rename_src_woxi.txt"], FileExistsQ["/tmp/test_rename_dst_woxi.txt"]};
+        DeleteFile["/tmp/test_rename_dst_woxi.txt"];
         result]"#,
     )
     .unwrap();
@@ -11316,13 +11316,13 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn rename_file_returns_dest_path() {
     // Clean up stale files from prior failed runs
-    let _ = interpret(r#"Quiet[DeleteFile["test_rename_ret_woxi.txt"]]"#);
-    let _ = interpret(r#"Quiet[DeleteFile["test_rename_ret2_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_ret_woxi.txt"]]"#);
+    let _ = interpret(r#"Quiet[DeleteFile["/tmp/test_rename_ret2_woxi.txt"]]"#);
     let result = interpret(
-      r#"Block[{src = CreateFile["test_rename_ret_woxi.txt"]},
+      r#"Block[{src = CreateFile["/tmp/test_rename_ret_woxi.txt"]},
         Close[src];
-        result = RenameFile["test_rename_ret_woxi.txt", "test_rename_ret2_woxi.txt"];
-        DeleteFile["test_rename_ret2_woxi.txt"];
+        result = RenameFile["/tmp/test_rename_ret_woxi.txt", "/tmp/test_rename_ret2_woxi.txt"];
+        DeleteFile["/tmp/test_rename_ret2_woxi.txt"];
         result]"#,
     )
     .unwrap();
