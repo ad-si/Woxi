@@ -368,12 +368,17 @@ fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
 
 /// Apply[f, list] - applies f to the elements of list (f @@ list)
 pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match expr_children(list) {
-    Some(items) => items,
-    None => {
-      return Err(InterpreterError::EvaluationError(
-        "Apply expects a list or expression as second argument".into(),
-      ));
+  // For associations, Apply operates on values (not rules)
+  let items = if let Expr::Association(pairs) = list {
+    pairs.iter().map(|(_, v)| v.clone()).collect()
+  } else {
+    match expr_children(list) {
+      Some(items) => items,
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "Apply expects a list or expression as second argument".into(),
+        ));
+      }
     }
   };
   match func {
