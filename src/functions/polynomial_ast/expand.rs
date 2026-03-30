@@ -1013,10 +1013,10 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         left: base.clone(),
         right: Box::new(pos_exp),
       });
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(expanded),
-        right: exp.clone(),
+      // The expansion absorbs the positive exponent, so always use -1
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![expanded, Expr::Integer(-1)],
       }
     }
 
@@ -1030,9 +1030,10 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         name: "Power".to_string(),
         args: vec![args[0].clone(), pos_exp],
       });
+      // The expansion absorbs the positive exponent, so always use -1
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![expanded, args[1].clone()],
+        args: vec![expanded, Expr::Integer(-1)],
       }
     }
 
@@ -1054,10 +1055,10 @@ fn expand_denominator_in_product(factor: &Expr) -> Expr {
         left: base.clone(),
         right: Box::new(pos_exp),
       });
-      Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(expanded),
-        right: exp.clone(),
+      // The expansion absorbs the positive exponent, so always use -1
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![expanded, Expr::Integer(-1)],
       }
     }
     Expr::FunctionCall { name, args }
@@ -1070,9 +1071,10 @@ fn expand_denominator_in_product(factor: &Expr) -> Expr {
         name: "Power".to_string(),
         args: vec![args[0].clone(), pos_exp],
       });
+      // The expansion absorbs the positive exponent, so always use -1
       Expr::FunctionCall {
         name: "Power".to_string(),
-        args: vec![expanded, args[1].clone()],
+        args: vec![expanded, Expr::Integer(-1)],
       }
     }
     Expr::BinaryOp {

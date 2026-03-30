@@ -326,9 +326,18 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
   // Apply trig identities
   let trig_simplified = apply_trig_identities(&expanded);
 
-  // Keep track of the best (simplest) form using leaf count as complexity
+  // Keep track of the best (simplest) form using leaf count as complexity.
+  // Include the pre-expansion simplified form as a candidate — expand_and_combine
+  // can undo fraction-combining done by Simplify.
   let mut best = trig_simplified.clone();
   let mut best_complexity = leaf_count(&best);
+  {
+    let c = leaf_count(&simplified);
+    if c <= best_complexity {
+      best = simplified.clone();
+      best_complexity = c;
+    }
+  }
 
   // Try factoring (Factor[expr]) — prefer factored forms (use <=)
   if let Ok(factored) =
@@ -356,6 +365,15 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
 
     // Try extracting common symbolic factors from all terms
     if let Some(factored) = factor_common_symbolic(&trig_simplified, &terms) {
+      let c = leaf_count(&factored);
+      if c <= best_complexity {
+        best = factored;
+        best_complexity = c;
+      }
+    }
+
+    // Try factoring out minimum power of common base
+    if let Some(factored) = factor_common_power_base(&terms) {
       let c = leaf_count(&factored);
       if c <= best_complexity {
         best = factored;
@@ -488,10 +506,21 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
         }
         best
       }
-      "Times" if args.len() == 2 => {
-        let l = simplify_expr(&args[0]);
-        let r = simplify_expr(&args[1]);
-        simplify_product(&l, &r)
+      "Times" => {
+        // Check for fraction form: Times[..., Power[den, -1]]
+        let (num, den) = super::together::extract_num_den(expr);
+        if !matches!(&den, Expr::Integer(1)) {
+          let s_num = simplify_expr(&num);
+          let s_den = simplify_expr(&den);
+          return simplify_division(&s_num, &s_den);
+        }
+        if args.len() == 2 {
+          let l = simplify_expr(&args[0]);
+          let r = simplify_expr(&args[1]);
+          simplify_product(&l, &r)
+        } else {
+          expr.clone()
+        }
       }
       "Power" if args.len() == 2 => {
         let base = simplify_expr(&args[0]);
@@ -716,11 +745,13 @@ pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
     return quotient;
   }
 
-  simplify(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(num_expanded),
-    right: Box::new(den_expanded),
-  })
+  // Use divide_two for proper evaluation (distributes powers, creates Rationals, etc.)
+  if let Ok(result) =
+    crate::functions::math_ast::divide_two(&num_expanded, &den_expanded)
+  {
+    return result;
+  }
+  crate::functions::math_ast::make_divide(num_expanded, den_expanded)
 }
 
 /// Find a single variable in an expression (for univariate polynomial division).
@@ -907,7 +938,7 @@ fn combine_like_denominator_terms(expr: &Expr) -> Expr {
 
   // Extract (numerator, denominator) for each term
   let fractions: Vec<(Expr, Expr)> =
-    terms.iter().map(extract_num_den).collect();
+    terms.iter().map(super::together::extract_num_den).collect();
 
   // Group terms by denominator string
   let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (den_str, den_expr, numerators)
@@ -969,7 +1000,13 @@ fn try_together_simplify(expr: &Expr) -> Expr {
       let factored_num = factor_numerator_fully(&num);
 
       // Cancel common factors between numerator and denominator
-      cancel_symbolic_factors(&factored_num, &den)
+      let result = cancel_symbolic_factors(&factored_num, &den);
+      // Evaluate to canonicalize (flatten nested Times, distribute powers, sort factors)
+      if let Ok(canonical) = crate::evaluator::evaluate_expr_to_expr(&result) {
+        canonical
+      } else {
+        result
+      }
     }
     _ => combined,
   }
@@ -1240,4 +1277,233 @@ fn factor_common_symbolic(_expr: &Expr, terms: &[Expr]) -> Option<Expr> {
   factors.push(final_remainder);
 
   Some(build_product(factors))
+}
+
+/// Factor out the minimum power of a common base from additive terms.
+/// E.g. (1+s)^(-3/2) + (1+s)^(9/4) → (1+s)^(-3/2) * (1 + (1+s)^(15/4))
+///
+/// Works by:
+/// 1. Decomposing each additive term into (coefficient, base, rational_exponent) triples
+/// 2. Finding a base that appears in all terms with rational exponents
+/// 3. Factoring out the minimum exponent
+fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
+  if terms.len() < 2 {
+    return None;
+  }
+
+  // For each term, extract the multiplicative factors and find power-like bases
+  // A term like k*q*(1+s)^(-3/2)/(2*a^4) has factors: [k, q, (1+s)^(-3/2), Power[a^4,-1], Rational[1,2]]
+  // We look for bases that appear as powers across all terms
+
+  // Extract (coefficient_factors, base_string, rational_exponent) for each term
+  struct PowerInfo {
+    base_str: String,
+    base: Expr,
+    numer: i128,
+    denom: i128,
+  }
+
+  fn extract_rational_exp(exp: &Expr) -> Option<(i128, i128)> {
+    match exp {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n, *d))
+        } else {
+          None
+        }
+      }
+      // Handle Times[-1, Rational[p, q]] → (-p, q)
+      Expr::FunctionCall { name, args }
+        if name == "Times"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::FunctionCall { name: rn, args: ra }
+            if rn == "Rational" && ra.len() == 2) =>
+      {
+        if let Expr::FunctionCall { args: ra, .. } = &args[1] {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
+            Some((-n, *d))
+          } else {
+            None
+          }
+        } else {
+          None
+        }
+      }
+      // Handle BinaryOp representations
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        if let (Expr::Integer(n), Expr::Integer(d)) =
+          (left.as_ref(), right.as_ref())
+        {
+          Some((*n, *d))
+        } else {
+          None
+        }
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => extract_rational_exp(operand).map(|(n, d)| (-n, d)),
+      _ => None,
+    }
+  }
+
+  // For each term, collect multiplicative factors and extract power bases
+  fn get_power_bases(factors: &[Expr]) -> Vec<PowerInfo> {
+    let mut result = Vec::new();
+    for f in factors {
+      let (base, exp) = extract_base_and_exp(f);
+      // Skip atoms — we only want compound bases like (1+s)
+      if matches!(
+        &base,
+        Expr::Integer(_) | Expr::Constant(_) | Expr::Identifier(_)
+      ) {
+        continue;
+      }
+      if let Some((n, d)) = extract_rational_exp(&exp) {
+        let bs = expr_to_string(&base);
+        result.push(PowerInfo {
+          base_str: bs,
+          base,
+          numer: n,
+          denom: d,
+        });
+      }
+    }
+    result
+  }
+
+  let term_factors: Vec<Vec<Expr>> = terms
+    .iter()
+    .map(|t| collect_multiplicative_factors(t))
+    .collect();
+  let term_powers: Vec<Vec<PowerInfo>> =
+    term_factors.iter().map(|f| get_power_bases(f)).collect();
+
+  // Find bases that appear in ALL terms
+  if term_powers.is_empty() || term_powers[0].is_empty() {
+    return None;
+  }
+
+  for candidate in &term_powers[0] {
+    let bs = &candidate.base_str;
+    // Check if this base appears in all other terms
+    let in_all = term_powers[1..]
+      .iter()
+      .all(|tp| tp.iter().any(|p| &p.base_str == bs));
+    if !in_all {
+      continue;
+    }
+
+    // Find the minimum exponent across all terms
+    let mut min_n = candidate.numer;
+    let mut min_d = candidate.denom;
+    for tp in &term_powers[1..] {
+      for p in tp {
+        if &p.base_str == bs {
+          // Compare p.numer/p.denom with min_n/min_d
+          if p.numer * min_d < min_n * p.denom {
+            min_n = p.numer;
+            min_d = p.denom;
+          }
+          break;
+        }
+      }
+    }
+
+    // Factor out base^(min_n/min_d) from each term
+    let mut new_terms = Vec::new();
+    for (i, _term) in terms.iter().enumerate() {
+      // Find the exponent of this base in this term
+      let pi = term_powers[i].iter().find(|p| &p.base_str == bs).unwrap();
+      // Subtract min exponent: new_exp = pi.exp - min_exp
+      let diff_n = pi.numer * min_d - min_n * pi.denom;
+      let diff_d = pi.denom * min_d;
+      // Simplify the fraction
+      let g = crate::functions::math_ast::gcd(diff_n, diff_d);
+      let sn = diff_n / g;
+      let sd = diff_d / g;
+
+      // Remove the old power factor and replace with the new exponent
+      let factors = &term_factors[i];
+      let mut new_factors: Vec<Expr> = Vec::new();
+      let mut replaced = false;
+      for f in factors {
+        let (fb, _fe) = extract_base_and_exp(f);
+        if !replaced && expr_to_string(&fb) == *bs {
+          replaced = true;
+          if sn == 0 {
+            // base^0 = 1, skip it
+          } else if sn == 1 && sd == 1 {
+            new_factors.push(candidate.base.clone());
+          } else if sd == 1 {
+            new_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(candidate.base.clone()),
+              right: Box::new(Expr::Integer(sn)),
+            });
+          } else {
+            new_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(candidate.base.clone()),
+              right: Box::new(crate::functions::math_ast::make_rational(
+                sn, sd,
+              )),
+            });
+          }
+        } else {
+          new_factors.push(f.clone());
+        }
+      }
+      if new_factors.is_empty() {
+        new_terms.push(Expr::Integer(1));
+      } else if new_factors.len() == 1 {
+        new_terms.push(new_factors.remove(0));
+      } else {
+        new_terms.push(build_product(new_factors));
+      }
+    }
+
+    // Build: base^(min_exp) * (sum of new_terms)
+    let min_power = if min_n == 1 && min_d == 1 {
+      candidate.base.clone()
+    } else if min_d == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(candidate.base.clone()),
+        right: Box::new(Expr::Integer(min_n)),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(candidate.base.clone()),
+        right: Box::new(crate::functions::math_ast::make_rational(
+          min_n, min_d,
+        )),
+      }
+    };
+    let inner_sum = build_sum(new_terms);
+    // Evaluate the inner sum to simplify
+    let simplified_sum =
+      if let Ok(s) = crate::evaluator::evaluate_expr_to_expr(&inner_sum) {
+        s
+      } else {
+        inner_sum
+      };
+    let result = build_product(vec![min_power, simplified_sum]);
+    // Evaluate to get canonical form
+    if let Ok(r) = crate::evaluator::evaluate_expr_to_expr(&result) {
+      return Some(r);
+    }
+    return Some(result);
+  }
+
+  None
 }

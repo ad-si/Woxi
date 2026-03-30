@@ -3048,9 +3048,37 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
       )
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
-      let parts: Vec<String> =
-        args.iter().map(quantity_unit_to_svg_abbrev).collect();
-      parts.join("\u{22c5}")
+      // Check for fraction form: Times[..., Power[den, -n]]
+      let mut numer_parts: Vec<String> = Vec::new();
+      let mut denom_parts: Vec<String> = Vec::new();
+      for a in args {
+        if let Some((base, neg_exp)) = crate::syntax::extract_neg_power_info(a)
+        {
+          let base_str = quantity_unit_to_svg_abbrev(base);
+          if neg_exp == -1 {
+            denom_parts.push(base_str);
+          } else {
+            // For SVG, use superscript for the positive exponent
+            denom_parts.push(format!(
+              "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+              base_str, -neg_exp
+            ));
+          }
+        } else {
+          numer_parts.push(quantity_unit_to_svg_abbrev(a));
+        }
+      }
+      if denom_parts.is_empty() {
+        numer_parts.join("\u{22c5}")
+      } else {
+        let numer = if numer_parts.is_empty() {
+          "1".to_string()
+        } else {
+          numer_parts.join("\u{22c5}")
+        };
+        let denom = denom_parts.join("\u{22c5}");
+        format!("{}/{}", numer, denom)
+      }
     }
     _ => expr_to_svg_markup(unit),
   }

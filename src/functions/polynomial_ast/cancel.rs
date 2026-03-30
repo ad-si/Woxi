@@ -16,15 +16,17 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn cancel_expr(expr: &Expr) -> Expr {
-  // Look for division
-  match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      let num = expand_and_combine(left);
-      let den = expand_and_combine(right);
+  // Rationals are already in simplest form
+  if matches!(expr, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+  {
+    return expr.clone();
+  }
+  // Look for division (handles both BinaryOp::Divide and Times[..., Power[..., -1]])
+  let (raw_num, raw_den) = super::together::extract_num_den(expr);
+  if !matches!(&raw_den, Expr::Integer(1)) {
+    {
+      let num = expand_and_combine(&raw_num);
+      let den = expand_and_combine(&raw_den);
 
       // Try polynomial division
       if let Some(var) = find_single_variable_both(&num, &den)
@@ -73,11 +75,7 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
             if new_den == [1] {
               return num_expr;
             }
-            return Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(num_expr),
-              right: Box::new(den_expr),
-            };
+            return crate::functions::math_ast::make_divide(num_expr, den_expr);
           }
         }
       }
@@ -330,11 +328,10 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
                 return new_num_expr;
               }
               // Recursively cancel in case more simplification is possible
-              return cancel_expr(&Expr::BinaryOp {
-                op: BinaryOperator::Divide,
-                left: Box::new(new_num_expr),
-                right: Box::new(new_den_expr),
-              });
+              return cancel_expr(&crate::functions::math_ast::make_divide(
+                new_num_expr,
+                new_den_expr,
+              ));
             }
           }
         }
@@ -342,28 +339,23 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
 
       // Try symbolic factor cancellation for products (e.g. (a*b)/(a*c) → b/c)
       let result = cancel_symbolic_factors(&num, &den);
-      if let Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: ref rl,
-        right: ref rr,
-      } = result
+      let (res_num, res_den) = super::together::extract_num_den(&result);
+      if matches!(&res_den, Expr::Integer(1)) {
+        // Fully cancelled (not a fraction anymore)
+        return result;
+      }
+      // Still a fraction — only accept if something actually changed
+      if expr_to_string(&res_num) != expr_to_string(&num)
+        || expr_to_string(&res_den) != expr_to_string(&den)
       {
-        // Only accept if something actually changed
-        if expr_to_string(rl) != expr_to_string(&num)
-          || expr_to_string(rr) != expr_to_string(&den)
-        {
-          return result;
-        }
-      } else {
-        // Result is not a division (fully cancelled), return it
         return result;
       }
 
       // Fall back to simplify_division
-      simplify_division(&num, &den)
+      return simplify_division(&num, &den);
     }
-    _ => expand_and_combine(expr),
   }
+  expand_and_combine(expr)
 }
 
 /// Cancel common symbolic factors between numerator and denominator.
@@ -618,11 +610,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 
   if !changed && !numeric_changed {
     // Nothing was cancelled, return original
-    return Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(num.clone()),
-      right: Box::new(den.clone()),
-    };
+    return crate::functions::math_ast::make_divide(num.clone(), den.clone());
   }
 
   // Rebuild numerator and denominator
@@ -652,11 +640,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   if let Expr::Integer(1) = &new_den {
     new_num
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(new_num),
-      right: Box::new(new_den),
-    }
+    crate::functions::math_ast::make_divide(new_num, new_den)
   }
 }
 

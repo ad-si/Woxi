@@ -95,13 +95,9 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Differentiate the expression and cancel common factors in fractions
   let result = differentiate(&args[0], &var_name)?;
   // Only apply Cancel when the result is a fraction to avoid expanding products
-  if matches!(
-    &result,
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      ..
-    }
-  ) {
+  let (_, den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&result);
+  if !matches!(&den, Expr::Integer(1)) {
     Ok(crate::functions::polynomial_ast::cancel_expr(&result))
   } else {
     Ok(result)
@@ -3997,6 +3993,33 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               return integrate(&expanded, var);
             }
           }
+          // base^(-n) where base depends on var: treat as 1/base^n (rational)
+          if let Expr::Integer(n) = right.as_ref()
+            && *n < 0
+            && !is_constant_wrt(left, var)
+          {
+            let denom = if *n == -1 {
+              left.as_ref().clone()
+            } else {
+              Expr::BinaryOp {
+                op: Power,
+                left: left.clone(),
+                right: Box::new(Expr::Integer(-*n)),
+              }
+            };
+            // Try exp over linear
+            if let Some(result) =
+              try_match_exp_over_linear(&Expr::Integer(1), &denom, var)
+            {
+              return Some(result);
+            }
+            // Try rational function integration
+            if let Some(result) =
+              try_integrate_rational(&Expr::Integer(1), &denom, var)
+            {
+              return Some(result);
+            }
+          }
           None
         }
         _ => None,
@@ -4141,7 +4164,125 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(Expr::Identifier(var.to_string())),
             })
           } else {
-            // Multiple variable-dependent factors: try integration by parts
+            // Multiple variable-dependent factors: check for fraction form
+            // Times[..., Power[den, -1]] → treat as numerator / denominator
+            let mut num_var_factors: Vec<Expr> = Vec::new();
+            let mut den_factors: Vec<Expr> = Vec::new();
+            for vf in &var_factors {
+              // Extract base and negative exponent from Power[base, -n]
+              let neg_power = match vf {
+                Expr::FunctionCall {
+                  name: pname,
+                  args: pargs,
+                } if pname == "Power" && pargs.len() == 2 => {
+                  if let Expr::Integer(n) = &pargs[1] {
+                    if *n < 0 {
+                      Some((pargs[0].clone(), *n))
+                    } else {
+                      None
+                    }
+                  } else {
+                    None
+                  }
+                }
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left,
+                  right,
+                } => {
+                  if let Expr::Integer(n) = right.as_ref() {
+                    if *n < 0 {
+                      Some((*left.clone(), *n))
+                    } else {
+                      None
+                    }
+                  } else {
+                    None
+                  }
+                }
+                _ => None,
+              };
+              if let Some((base, neg_exp)) = neg_power {
+                if neg_exp == -1 {
+                  den_factors.push(base);
+                } else {
+                  den_factors.push(Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Power,
+                    left: Box::new(base),
+                    right: Box::new(Expr::Integer(-neg_exp)),
+                  });
+                }
+              } else {
+                num_var_factors.push((*vf).clone());
+              }
+            }
+            if !den_factors.is_empty() {
+              let numerator = if num_var_factors.is_empty() {
+                Expr::Integer(1)
+              } else if num_var_factors.len() == 1 {
+                num_var_factors.remove(0)
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: num_var_factors,
+                }
+              };
+              let denominator = if den_factors.len() == 1 {
+                den_factors.remove(0)
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: den_factors,
+                }
+              };
+              // Helper to multiply constant factors back to a result
+              let apply_const = |result: Expr| -> Expr {
+                if const_factors.is_empty() {
+                  result
+                } else {
+                  let const_expr = if const_factors.len() == 1 {
+                    const_factors[0].clone()
+                  } else {
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: const_factors
+                        .iter()
+                        .map(|e| (*e).clone())
+                        .collect(),
+                    }
+                  };
+                  Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Times,
+                    left: Box::new(const_expr),
+                    right: Box::new(result),
+                  }
+                }
+              };
+              // Try the same logic as the Divide arm
+              if is_constant_wrt(&denominator, var) {
+                if let Some(int_num) = integrate(&numerator, var) {
+                  return Some(apply_const(
+                    crate::functions::math_ast::make_divide(
+                      int_num,
+                      denominator,
+                    ),
+                  ));
+                }
+              }
+              // Try exp over linear: ∫ E^(a*x) / (c*x) dx
+              if let Some(result) =
+                try_match_exp_over_linear(&numerator, &denominator, var)
+              {
+                return Some(apply_const(result));
+              }
+              // Try rational function integration
+              if let Some(result) =
+                try_integrate_rational(&numerator, &denominator, var)
+              {
+                return Some(apply_const(result));
+              }
+            }
+            // Fall through to integration by parts
             let var_refs: Vec<&Expr> = var_factors.to_vec();
             if let Some(ibp_result) = try_integration_by_parts(&var_refs, var) {
               // Multiply back the constant factors
@@ -4166,6 +4307,15 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               None
             }
           }
+        }
+        // Power[base, exp] as FunctionCall → normalize to BinaryOp and recurse
+        "Power" if args.len() == 2 => {
+          let as_binop = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(args[1].clone()),
+          };
+          integrate(&as_binop, var)
         }
         _ => None,
       }

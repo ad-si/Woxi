@@ -1349,6 +1349,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       }
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Check for fraction form: Times[..., Power[den, -1]]
+      let (num, den) =
+        crate::functions::polynomial_ast::together::extract_num_den(expr);
+      if !matches!(&den, Expr::Integer(1)) {
+        return Expr::FunctionCall {
+          name: "FractionBox".to_string(),
+          args: vec![expr_to_box_form(&num), expr_to_box_form(&den)],
+        };
+      }
       // General Times: RowBox[{a, " ", b, " ", ...}]
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {

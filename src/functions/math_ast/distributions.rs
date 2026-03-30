@@ -752,7 +752,9 @@ fn pdf_inverse_chi_square(
   }
   let n = dargs[0].clone();
 
-  // (x^(-1))^(1 + n/2) = x^(-(1 + n/2))
+  // (x^(-1))^(1 + n/2) / (2^(n/2) * E^(1/(2*x)) * Gamma[n/2])
+  // Use BinaryOp Power for (x^(-1))^(1+n/2) which the evaluator flattens.
+  // Then wrap in divide which puts it in the numerator.
   let x_part = power(
     power(x.clone(), int(-1)),
     Expr::BinaryOp {

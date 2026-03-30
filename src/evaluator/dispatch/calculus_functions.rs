@@ -2217,14 +2217,15 @@ fn gf_inner(
   }
 
   // Handle Divide explicitly (before as_func_args normalizes it)
-  if let Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left,
-    right,
-  } = expr
-    && let Some(result) = gf_divide(left, right, n, x)?
+  // Also handle canonical Times[..., Power[..., -1]] and Power[..., -1] forms
   {
-    return Ok(Some(result));
+    let (num, den) =
+      crate::functions::polynomial_ast::together::extract_num_den(expr);
+    if !matches!(&den, Expr::Integer(1)) {
+      if let Some(result) = gf_divide(&num, &den, n, x)? {
+        return Ok(Some(result));
+      }
+    }
   }
 
   // Handle Minus: a - b => a + (-b)
