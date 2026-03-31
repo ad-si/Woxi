@@ -684,9 +684,18 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     matches!(form, Expr::Identifier(s) if s == name)
   }
 
-  fn contains_form(expr: &Expr, form: &Expr, form_str: &str) -> bool {
-    // Check exact match via string comparison
-    if crate::syntax::expr_to_string(expr) == form_str {
+  fn contains_form(
+    expr: &Expr,
+    form: &Expr,
+    form_str: &str,
+    use_pattern: bool,
+  ) -> bool {
+    // Check pattern match or exact string match
+    if use_pattern {
+      if crate::functions::list_helpers_ast::matches_pattern_ast(expr, form) {
+        return true;
+      }
+    } else if crate::syntax::expr_to_string(expr) == form_str {
       return true;
     }
     match expr {
@@ -695,7 +704,9 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_form_symbol(form, "List") {
           return true;
         }
-        items.iter().any(|e| contains_form(e, form, form_str))
+        items
+          .iter()
+          .any(|e| contains_form(e, form, form_str, use_pattern))
       }
       Expr::FunctionCall {
         name,
@@ -708,20 +719,24 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // For Flat+Orderless functions (Plus, Times), check if form's args
         // are a subset of this function's args
-        if let Expr::FunctionCall {
-          name: form_name,
-          args: form_args,
-          ..
-        } = form
-          && name == form_name
-          && !form_args.is_empty()
-          && form_args.len() < fn_args.len()
-          && (name == "Plus" || name == "Times")
-          && is_args_subset(fn_args, form_args)
-        {
-          return true;
+        if !use_pattern {
+          if let Expr::FunctionCall {
+            name: form_name,
+            args: form_args,
+            ..
+          } = form
+            && name == form_name
+            && !form_args.is_empty()
+            && form_args.len() < fn_args.len()
+            && (name == "Plus" || name == "Times")
+            && is_args_subset(fn_args, form_args)
+          {
+            return true;
+          }
         }
-        fn_args.iter().any(|e| contains_form(e, form, form_str))
+        fn_args
+          .iter()
+          .any(|e| contains_form(e, form, form_str, use_pattern))
       }
       Expr::BinaryOp {
         op, left, right, ..
@@ -740,15 +755,41 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return true;
           }
         }
-        contains_form(left, form, form_str)
-          || contains_form(right, form, form_str)
+        contains_form(left, form, form_str, use_pattern)
+          || contains_form(right, form, form_str, use_pattern)
       }
-      Expr::UnaryOp { operand, .. } => contains_form(operand, form, form_str),
+      Expr::UnaryOp { operand, .. } => {
+        contains_form(operand, form, form_str, use_pattern)
+      }
       _ => false,
     }
   }
 
-  Ok(bool_expr(!contains_form(&args[0], form, &form_str)))
+  // Detect if the form is a pattern (contains Blank, Pattern, etc.)
+  let use_pattern = matches!(
+    form,
+    Expr::Pattern { .. }
+      | Expr::PatternTest { .. }
+      | Expr::PatternOptional { .. }
+  ) || matches!(form, Expr::FunctionCall { name, .. }
+      if name == "Blank" || name == "BlankSequence" || name == "BlankNullSequence"
+        || name == "Alternatives" || name == "Repeated" || name == "RepeatedNull"
+        || name == "Pattern" || name == "Except" || name == "Condition"
+        || name == "PatternTest"
+  ) || matches!(
+    form,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      ..
+    }
+  );
+
+  Ok(bool_expr(!contains_form(
+    &args[0],
+    form,
+    &form_str,
+    use_pattern,
+  )))
 }
 
 /// SquareFreeQ[n] - Tests if an integer has no repeated prime factors
