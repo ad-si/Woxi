@@ -2628,6 +2628,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(coeff);
   }
 
+  // 0 * Infinity = Indeterminate (check before the general 0 * anything = 0 rule)
+  if combined_numer == 0 && symbolic_args.iter().any(|a| is_infinity_like(a)) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // 0 * anything = 0
   if combined_numer == 0 {
     return Ok(Expr::Integer(0));

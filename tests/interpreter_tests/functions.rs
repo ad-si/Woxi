@@ -1922,8 +1922,13 @@ mod free_q {
   }
 
   #[test]
-  fn free_q_with_blank_pattern_true() {
-    assert_eq!(interpret("FreeQ[{1, 2, 3}, _Symbol]").unwrap(), "True");
+  fn free_q_with_blank_pattern_all_integers() {
+    // {1, 2, 3} still contains a Symbol: the head "List" is a Symbol.
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, _Symbol]").unwrap(), "False");
+    // An integer atom is truly free of symbols
+    assert_eq!(interpret("FreeQ[1, _Symbol]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[3.14, _Symbol]").unwrap(), "True");
+    assert_eq!(interpret(r#"FreeQ["hello", _Symbol]"#).unwrap(), "True");
   }
 
   #[test]

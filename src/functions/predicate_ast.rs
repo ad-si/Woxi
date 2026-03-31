@@ -704,6 +704,17 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_form_symbol(form, "List") {
           return true;
         }
+        // When using pattern matching, also check if the head identifier
+        // itself matches the pattern (e.g. _Symbol matches "List" since
+        // Head[List] is Symbol).
+        if use_pattern {
+          let head_expr = Expr::Identifier("List".to_string());
+          if crate::functions::list_helpers_ast::matches_pattern_ast(
+            &head_expr, form,
+          ) {
+            return true;
+          }
+        }
         items
           .iter()
           .any(|e| contains_form(e, form, form_str, use_pattern))
@@ -716,6 +727,16 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Check if form is a symbol matching this function's head
         if is_form_symbol(form, name) {
           return true;
+        }
+        // When using pattern matching, also check if the head identifier
+        // itself matches the pattern.
+        if use_pattern {
+          let head_expr = Expr::Identifier(name.clone());
+          if crate::functions::list_helpers_ast::matches_pattern_ast(
+            &head_expr, form,
+          ) {
+            return true;
+          }
         }
         // For Flat+Orderless functions (Plus, Times), check if form's args
         // are a subset of this function's args
