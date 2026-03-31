@@ -4469,7 +4469,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       {
         let parts: Vec<String> = items.iter().map(|e| fmt(e)).collect();
         if args.len() == 2 {
-          let sep = fmt(&args[1]);
+          // Spacer[w] / Spacer[{w, ...}] as separator: convert printer's
+          // points to approximate character widths (~7 pt per char).
+          let sep = if let Some(pts) = spacer_width_pts(&args[1]) {
+            let n_chars = (pts / 7.0).round().max(0.0) as usize;
+            " ".repeat(n_chars)
+          } else {
+            fmt(&args[1])
+          };
           return parts.join(&sep);
         }
         return parts.concat();
@@ -5805,6 +5812,29 @@ fn find_matching_bracket(s: &str, start: usize) -> Option<usize> {
     }
   }
   None
+}
+
+/// Extract the width in printer's points from a `Spacer` expression.
+/// Supports `Spacer[w]`, `Spacer[{w, ...}]`.
+pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Spacer"
+    && args.len() == 1
+  {
+    match &args[0] {
+      Expr::Integer(v) => Some(*v as f64),
+      Expr::Real(v) => Some(*v),
+      // Spacer[{w, h}] or Spacer[{w, h, dh}] — extract w
+      Expr::List(elems) if !elems.is_empty() => match &elems[0] {
+        Expr::Integer(v) => Some(*v as f64),
+        Expr::Real(v) => Some(*v),
+        _ => None,
+      },
+      _ => None,
+    }
+  } else {
+    None
+  }
 }
 
 /// Render Expr for display output - strings are shown without quotes.
