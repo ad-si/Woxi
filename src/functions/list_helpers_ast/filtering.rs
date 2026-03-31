@@ -212,7 +212,10 @@ fn matches_pattern_simple(value: &str, pattern: &str) -> bool {
 struct SeqInfoBool {
   head: Option<String>,
   min_count: usize,
+  max_count: Option<usize>,
   test: Option<Box<Expr>>,
+  /// For Repeated/RepeatedNull: the element pattern to match against each arg.
+  element_pattern: Option<Box<Expr>>,
 }
 
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
@@ -225,7 +228,9 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       Some(SeqInfoBool {
         head: head.clone(),
         min_count: min,
+        max_count: None,
         test: None,
+        element_pattern: None,
       })
     }
     Expr::PatternTest {
@@ -235,7 +240,9 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       Some(SeqInfoBool {
         head: None,
         min_count: min,
+        max_count: None,
         test: Some(test.clone()),
+        element_pattern: None,
       })
     }
     Expr::FunctionCall { name, args }
@@ -254,7 +261,64 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       Some(SeqInfoBool {
         head,
         min_count: min,
+        max_count: None,
         test: None,
+        element_pattern: None,
+      })
+    }
+    // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
+    // RepeatedNull[pat] or RepeatedNull[pat, {min, max}] — matches 0+ elements
+    Expr::FunctionCall { name, args }
+      if (name == "Repeated" || name == "RepeatedNull")
+        && !args.is_empty()
+        && args.len() <= 2 =>
+    {
+      let is_null = name == "RepeatedNull";
+      let (mut min, mut max): (usize, Option<usize>) =
+        if is_null { (0, None) } else { (1, None) };
+
+      // Parse optional count spec: {n}, {min, max}, or just n
+      if args.len() == 2 {
+        let spec_items: Option<&[Expr]> = match &args[1] {
+          Expr::List(items) => Some(items),
+          Expr::FunctionCall {
+            name: list_name,
+            args: spec,
+          } if list_name == "List" => Some(spec),
+          _ => None,
+        };
+        if let Some(items) = spec_items {
+          match items.len() {
+            1 => {
+              if let Expr::Integer(n) = &items[0] {
+                let n = *n as usize;
+                min = n;
+                max = Some(n);
+              }
+            }
+            2 => {
+              if let Expr::Integer(lo) = &items[0] {
+                min = *lo as usize;
+              }
+              if let Expr::Integer(hi) = &items[1] {
+                max = Some(*hi as usize);
+              }
+            }
+            _ => {}
+          }
+        } else if let Expr::Integer(n) = &args[1] {
+          let n = *n as usize;
+          min = n;
+          max = Some(n);
+        }
+      }
+
+      Some(SeqInfoBool {
+        head: None,
+        min_count: min,
+        max_count: max,
+        test: None,
+        element_pattern: Some(Box::new(args[0].clone())),
       })
     }
     _ => None,
@@ -313,11 +377,18 @@ fn args_match_with_sequences(expr_args: &[Expr], pat_args: &[Expr]) -> bool {
         }
       })
       .sum();
-    let max_count = if expr_args.len() >= rest_min {
+    let mut max_count = if expr_args.len() >= rest_min {
       expr_args.len() - rest_min
     } else {
       return false;
     };
+
+    // Apply explicit max_count from Repeated[pat, {min, max}]
+    if let Some(explicit_max) = seq.max_count {
+      if explicit_max < max_count {
+        max_count = explicit_max;
+      }
+    }
 
     if max_count < seq.min_count {
       return false;
@@ -334,6 +405,12 @@ fn args_match_with_sequences(expr_args: &[Expr], pat_args: &[Expr]) -> bool {
       // Check PatternTest for all elements
       if let Some(ref test) = seq.test
         && !seq_args.iter().all(|a| apply_test_bool(test, a))
+      {
+        continue;
+      }
+      // Check element pattern for Repeated/RepeatedNull
+      if let Some(ref elem_pat) = seq.element_pattern
+        && !seq_args.iter().all(|a| matches_pattern_ast(a, elem_pat))
       {
         continue;
       }

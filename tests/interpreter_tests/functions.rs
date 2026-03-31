@@ -4404,6 +4404,171 @@ mod pattern_constructs {
   }
 }
 
+mod repeated_pattern {
+  use super::*;
+
+  #[test]
+  fn matchq_repeated_literal() {
+    assert_eq!(
+      interpret("MatchQ[f[a, a, a], f[Repeated[a]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_single_element() {
+    assert_eq!(interpret("MatchQ[f[a], f[Repeated[a]]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn matchq_repeated_mismatch() {
+    assert_eq!(
+      interpret("MatchQ[f[a, b, a], f[Repeated[a]]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_blank_integer() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {Repeated[_Integer]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_blank_mixed_types() {
+    assert_eq!(
+      interpret(r#"MatchQ[{1, "a", 2}, {Repeated[_Integer]}]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_with_exact_count() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {Repeated[_Integer, {2}]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_count_mismatch() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {Repeated[_Integer, {2}]}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_with_range() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {Repeated[_Integer, {2, 4}]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_range_too_few() {
+    assert_eq!(
+      interpret("MatchQ[{1}, {Repeated[_Integer, {2, 4}]}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_null_empty() {
+    assert_eq!(
+      interpret("MatchQ[{}, {RepeatedNull[_Integer]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_empty_fails() {
+    assert_eq!(
+      interpret("MatchQ[{}, {Repeated[_Integer]}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn matchq_repeated_null_with_elements() {
+    assert_eq!(
+      interpret("MatchQ[{1, 2}, {RepeatedNull[_Integer]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn replace_all_with_repeated() {
+    assert_eq!(
+      interpret("ReplaceAll[f[1, 2, 3], f[Repeated[_Integer]] :> \"ints\"]")
+        .unwrap(),
+      "ints"
+    );
+  }
+
+  #[test]
+  fn replace_all_repeated_no_match() {
+    assert_eq!(
+      interpret(r#"ReplaceAll[f[1, "a", 3], f[Repeated[_Integer]] :> "ints"]"#)
+        .unwrap(),
+      r#"f[1, a, 3]"#
+    );
+  }
+
+  #[test]
+  fn cases_with_repeated() {
+    assert_eq!(
+      interpret("Cases[{f[1, 2], f[a, b], g[1, 2, 3]}, f[Repeated[_Integer]]]")
+        .unwrap(),
+      "{f[1, 2]}"
+    );
+  }
+
+  #[test]
+  fn postfix_repeated_in_matchq() {
+    assert_eq!(interpret("MatchQ[f[a, a, a], f[a..]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn postfix_repeated_null_in_matchq() {
+    assert_eq!(interpret("MatchQ[f[], f[a...]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn repeated_with_string_expression() {
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["abc123", LetterCharacter.. ~~ DigitCharacter..]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn repeated_with_string_expression_no_match() {
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["123abc", LetterCharacter.. ~~ DigitCharacter..]"#
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn repeated_combined_with_other_patterns() {
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3, x], f[Repeated[_Integer], _Symbol]]")
+        .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod moving_average {
   use super::*;
 
