@@ -2183,6 +2183,11 @@ pub fn combine_like_bases(
       let combined_exp = plus_ast(&exponents)?;
       if matches!(&combined_exp, Expr::Integer(0)) {
         // x^0 = 1, skip (will be absorbed into coefficient)
+        // But Infinity^0 and ComplexInfinity^0 are Indeterminate
+        let is_inf = matches!(&base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity");
+        if is_inf {
+          return Ok(vec![Expr::Identifier("Indeterminate".to_string())]);
+        }
         continue;
       }
       result.push(power_two(&base, &combined_exp)?);
@@ -2861,6 +2866,11 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Infinity / Infinity → Indeterminate
+  if is_infinity_like(a) && is_infinity_like(b) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // finite / Infinity or finite / DirectedInfinity[z] → 0
   if is_infinity_like(b) && !is_infinity_like(a) {
     return Ok(Expr::Integer(0));
@@ -3357,6 +3367,118 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && !matches!(base, Expr::Real(f) if *f == 0.0)
   {
     return Ok(Expr::Integer(1));
+  }
+
+  // Handle Power with Infinity in base or exponent
+  let base_is_pos_inf = matches!(base, Expr::Identifier(s) if s == "Infinity");
+  let base_is_neg_inf =
+    crate::functions::math_ast::special_functions::is_neg_infinity(base);
+  let exp_is_pos_inf = matches!(exp, Expr::Identifier(s) if s == "Infinity");
+  let exp_is_neg_inf =
+    crate::functions::math_ast::special_functions::is_neg_infinity(exp);
+  let base_is_complex_inf =
+    matches!(base, Expr::Identifier(s) if s == "ComplexInfinity");
+  let exp_is_complex_inf =
+    matches!(exp, Expr::Identifier(s) if s == "ComplexInfinity");
+
+  // Infinity^n: Infinity for positive n, 0 for negative n, ComplexInfinity for complex
+  if base_is_pos_inf {
+    if let Some(n) = expr_to_num(exp) {
+      if n > 0.0 {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      } else if n < 0.0 {
+        return Ok(Expr::Integer(0));
+      }
+    }
+    if exp_is_pos_inf {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if exp_is_neg_inf {
+      return Ok(Expr::Integer(0));
+    }
+  }
+
+  // (-Infinity)^n for integer n: Infinity if n>0 even, -Infinity if n>0 odd, 0 if n<0
+  if base_is_neg_inf {
+    if let Expr::Integer(n) = exp {
+      if *n > 0 {
+        if n % 2 == 0 {
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        } else {
+          return Ok(negate_expr(Expr::Identifier("Infinity".to_string())));
+        }
+      } else if *n < 0 {
+        return Ok(Expr::Integer(0));
+      }
+    }
+    if exp_is_pos_inf {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+  }
+
+  // E^Infinity → Infinity, E^(-Infinity) → 0
+  let base_is_e = matches!(base, Expr::Constant(c) if c == "E")
+    || matches!(base, Expr::Identifier(s) if s == "E");
+  if base_is_e {
+    if exp_is_pos_inf {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if exp_is_neg_inf {
+      return Ok(Expr::Integer(0));
+    }
+  }
+
+  // base^Infinity where base is a known positive real > 1 → Infinity
+  // base^Infinity where 0 < base < 1 → 0
+  // base^(-Infinity) where base > 1 → 0
+  // base^(-Infinity) where 0 < base < 1 → Infinity
+  if exp_is_pos_inf || exp_is_neg_inf {
+    if let Some(b) = expr_to_num(base) {
+      if b > 1.0 {
+        return Ok(if exp_is_pos_inf {
+          Expr::Identifier("Infinity".to_string())
+        } else {
+          Expr::Integer(0)
+        });
+      } else if b > 0.0 && b < 1.0 {
+        return Ok(if exp_is_pos_inf {
+          Expr::Integer(0)
+        } else {
+          Expr::Identifier("Infinity".to_string())
+        });
+      } else if b == 1.0 {
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      } else if b == 0.0 {
+        if exp_is_pos_inf {
+          return Ok(Expr::Integer(0));
+        }
+        if exp_is_neg_inf {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
+      }
+      // Negative base with infinite exponent
+      if b < 0.0 {
+        if exp_is_pos_inf || exp_is_neg_inf {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
+      }
+    }
+  }
+
+  // ComplexInfinity^n → ComplexInfinity for positive n, 0 for negative n
+  if base_is_complex_inf {
+    if let Some(n) = expr_to_num(exp) {
+      if n > 0.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      } else if n < 0.0 {
+        return Ok(Expr::Integer(0));
+      }
+    }
+  }
+
+  // n^ComplexInfinity → Indeterminate for most cases
+  if exp_is_complex_inf {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
   // (a * b * ...)^n → Times[a^n, b^n, ...] for integer n
