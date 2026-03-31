@@ -5895,6 +5895,104 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   Some(svg)
 }
 
+/// Render `Row[{items...}]` or `Row[{items...}, sep]` as a horizontal SVG layout.
+/// When `sep` is `Spacer[n]`, uses `n` points of horizontal space between items.
+/// When `sep` is any other expression, renders it as text between items.
+pub fn row_to_svg(args: &[Expr]) -> Option<String> {
+  if args.is_empty() {
+    return None;
+  }
+
+  // First argument must be a list
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+
+  if items.is_empty() {
+    return None;
+  }
+
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let pad_y: f64 = 8.0;
+
+  // Determine separator: either Spacer[n] (pixel gap) or rendered expression
+  enum Separator {
+    Gap(f64),          // pixel gap (from Spacer[n])
+    Text(String, f64), // rendered text and its width
+  }
+
+  let separator = if args.len() >= 2 {
+    if let Some(pts) = crate::syntax::spacer_width_pts(&args[1]) {
+      Separator::Gap(pts)
+    } else {
+      let text = expr_to_svg_markup(&args[1]);
+      let w = estimate_display_width(&args[1]) * char_width;
+      Separator::Text(text, w)
+    }
+  } else {
+    Separator::Gap(0.0) // no separator
+  };
+
+  // Compute item widths
+  let item_widths: Vec<f64> = items
+    .iter()
+    .map(|item| estimate_display_width(item) * char_width)
+    .collect();
+
+  let sep_width = match &separator {
+    Separator::Gap(g) => *g,
+    Separator::Text(_, w) => *w,
+  };
+
+  let items_width: f64 = item_widths.iter().sum();
+  let seps_total = if items.len() > 1 {
+    (items.len() - 1) as f64 * sep_width
+  } else {
+    0.0
+  };
+  let total_w = items_width + seps_total;
+  let total_h = font_size + pad_y;
+
+  let svg_w = total_w.ceil().max(1.0) as u32;
+  let svg_h = total_h.ceil() as u32;
+
+  let mut svg = String::with_capacity(1024);
+  svg.push_str(&format!(
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+  ));
+
+  let mid_y = total_h / 2.0;
+  let text_fill = theme().text_primary;
+
+  let mut x: f64 = 0.0;
+  for (i, item) in items.iter().enumerate() {
+    if i > 0 {
+      match &separator {
+        Separator::Gap(g) => x += g,
+        Separator::Text(text, w) => {
+          let cx = x + w / 2.0;
+          svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{text}</text>\n"
+          ));
+          x += w;
+        }
+      }
+    }
+
+    let cx = x + item_widths[i] / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      expr_to_svg_markup(item)
+    ));
+    x += item_widths[i];
+  }
+
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
 /// Handles nested Framed by recursively rendering inner content as embedded SVG.
 pub fn framed_to_svg(args: &[Expr]) -> Option<String> {

@@ -1050,6 +1050,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           let result_expr = render_tableform_if_needed(result_expr);
           let result_expr = render_matrixform_if_needed(result_expr);
           let result_expr = render_column_if_needed(result_expr);
+          let result_expr = render_row_if_needed(result_expr);
           render_framed_if_needed(result_expr)
         } else {
           result_expr
@@ -1451,6 +1452,22 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if name == "Column" && !args.is_empty() =>
     {
       if let Some(svg) = functions::graphics::column_to_svg(args) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is `Row[{…}]` or `Row[{…}, sep]`, render as a horizontal SVG row.
+fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Row" && !args.is_empty() =>
+    {
+      if let Some(svg) = functions::graphics::row_to_svg(args) {
         graphics_result(svg)
       } else {
         expr

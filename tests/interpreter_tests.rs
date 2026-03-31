@@ -308,6 +308,7 @@ mod interpreter_tests {
   mod math;
   mod property;
   mod quantity;
+  mod row;
   mod statistics;
   mod string;
   mod syntax;
