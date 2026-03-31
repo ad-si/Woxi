@@ -836,6 +836,82 @@ mod infinity_arithmetic {
   fn neg_infinity_plus_finite() {
     assert_eq!(interpret("-Infinity + 100").unwrap(), "-Infinity");
   }
+
+  #[test]
+  fn e_to_infinity() {
+    assert_eq!(interpret("E^Infinity").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn e_to_neg_infinity() {
+    assert_eq!(interpret("E^(-Infinity)").unwrap(), "0");
+  }
+
+  #[test]
+  fn exp_infinity() {
+    assert_eq!(interpret("Exp[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn exp_neg_infinity() {
+    assert_eq!(interpret("Exp[-Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn infinity_to_positive_power() {
+    assert_eq!(interpret("Infinity^2").unwrap(), "Infinity");
+    assert_eq!(interpret("Infinity^10").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn infinity_to_negative_power() {
+    assert_eq!(interpret("Infinity^(-1)").unwrap(), "0");
+    assert_eq!(interpret("Infinity^(-3)").unwrap(), "0");
+  }
+
+  #[test]
+  fn neg_infinity_to_integer_power() {
+    assert_eq!(interpret("(-Infinity)^2").unwrap(), "Infinity");
+    assert_eq!(interpret("(-Infinity)^3").unwrap(), "-Infinity");
+    assert_eq!(interpret("(-Infinity)^(-1)").unwrap(), "0");
+  }
+
+  #[test]
+  fn base_to_infinity() {
+    assert_eq!(interpret("2^Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("Power[1/2, Infinity]").unwrap(), "0");
+    assert_eq!(interpret("1^Infinity").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn base_to_neg_infinity() {
+    assert_eq!(interpret("2^(-Infinity)").unwrap(), "0");
+    assert_eq!(interpret("Power[1/2, -Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn infinity_divide_infinity() {
+    assert_eq!(interpret("Infinity / Infinity").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn complex_infinity_power() {
+    assert_eq!(interpret("ComplexInfinity^2").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ComplexInfinity^(-1)").unwrap(), "0");
+  }
+
+  #[test]
+  fn infinity_times_zero() {
+    assert_eq!(interpret("Infinity * 0").unwrap(), "0");
+  }
+
+  #[test]
+  fn integral_with_infinity_boundary() {
+    assert_eq!(
+      interpret("Integrate[x^2 Exp[-x], {x, 0, Infinity}]").unwrap(),
+      "2"
+    );
+  }
 }
 
 mod infinity_comparisons {
