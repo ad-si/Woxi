@@ -9352,6 +9352,45 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("FirstCase[x, y]").unwrap(), "Missing[NotFound]");
   }
   #[test]
+  fn first_case_with_pattern() {
+    assert_eq!(
+      interpret(r#"FirstCase[{1, "hello", 2}, _String]"#).unwrap(),
+      "hello"
+    );
+  }
+  #[test]
+  fn first_case_integer() {
+    assert_eq!(interpret("FirstCase[{a, 1, b, 2}, _Integer]").unwrap(), "1");
+  }
+  #[test]
+  fn first_case_no_match() {
+    assert_eq!(
+      interpret("FirstCase[{1, 2, 3}, _String]").unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+  #[test]
+  fn first_case_with_default() {
+    assert_eq!(
+      interpret(r#"FirstCase[{1, 2, 3}, _String, "none"]"#).unwrap(),
+      "none"
+    );
+  }
+  #[test]
+  fn first_case_with_condition() {
+    assert_eq!(
+      interpret("FirstCase[{1, 2, 3, 4}, x_ /; x > 2]").unwrap(),
+      "3"
+    );
+  }
+  #[test]
+  fn first_case_with_rule_delayed() {
+    assert_eq!(
+      interpret("FirstCase[{1, 2, 3, 4}, x_ /; x > 2 :> x^2]").unwrap(),
+      "9"
+    );
+  }
+  #[test]
   fn weierstrass_sigma() {
     assert_eq!(
       interpret("WeierstrassSigma[x, y]").unwrap(),

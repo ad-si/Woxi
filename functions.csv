@@ -1813,7 +1813,7 @@ DynamicWrapper,,🚫,,8.0,1846
 PolarTicks,Polar ticks option,✅,unevaluated,7.0,1846
 BeckmannDistribution,Beckmann distribution,✅,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
-FirstCase,First matching case,✅,unevaluated,10.0,1849
+FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Mathieu C function,✅,unevaluated,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3.0,1852
