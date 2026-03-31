@@ -1453,12 +1453,15 @@ pub fn apply_rules_once(
   }
 }
 
-/// Sequence pattern info: name, head constraint, min count, optional test function.
+/// Sequence pattern info: name, head constraint, min/max count, optional test function.
 struct SeqInfo {
   name: String,
   head: Option<String>,
   min_count: usize,
+  max_count: Option<usize>, // None means unlimited
   test: Option<Box<Expr>>,
+  /// For Repeated/RepeatedNull: the element pattern to match against each arg.
+  element_pattern: Option<Box<Expr>>,
 }
 
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
@@ -1474,7 +1477,9 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         name: name.clone(),
         head: head.clone(),
         min_count: min,
+        max_count: None,
         test: None,
+        element_pattern: None,
       })
     }
     // PatternTest with BlankSequence: x__?IntegerQ or __?IntegerQ
@@ -1488,7 +1493,9 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         name: name.clone(),
         head: None,
         min_count: min,
+        max_count: None,
         test: Some(test.clone()),
+        element_pattern: None,
       })
     }
     // BlankSequence[] or BlankSequence[h] as FunctionCall
@@ -1509,7 +1516,65 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         name: String::new(),
         head,
         min_count: min,
+        max_count: None,
         test: None,
+        element_pattern: None,
+      })
+    }
+    // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
+    // RepeatedNull[pat] or RepeatedNull[pat, {min, max}] — matches 0+ elements
+    Expr::FunctionCall { name, args }
+      if (name == "Repeated" || name == "RepeatedNull")
+        && !args.is_empty()
+        && args.len() <= 2 =>
+    {
+      let is_null = name == "RepeatedNull";
+      let (mut min, mut max): (usize, Option<usize>) =
+        if is_null { (0, None) } else { (1, None) };
+
+      // Parse optional count spec: {n}, {min, max}, or just n
+      if args.len() == 2 {
+        let spec_items: Option<&[Expr]> = match &args[1] {
+          Expr::List(items) => Some(items),
+          Expr::FunctionCall {
+            name: list_name,
+            args: spec,
+          } if list_name == "List" => Some(spec),
+          _ => None,
+        };
+        if let Some(items) = spec_items {
+          match items.len() {
+            1 => {
+              if let Expr::Integer(n) = &items[0] {
+                let n = *n as usize;
+                min = n;
+                max = Some(n);
+              }
+            }
+            2 => {
+              if let Expr::Integer(lo) = &items[0] {
+                min = *lo as usize;
+              }
+              if let Expr::Integer(hi) = &items[1] {
+                max = Some(*hi as usize);
+              }
+            }
+            _ => {}
+          }
+        } else if let Expr::Integer(n) = &args[1] {
+          let n = *n as usize;
+          min = n;
+          max = Some(n);
+        }
+      }
+
+      Some(SeqInfo {
+        name: String::new(),
+        head: None,
+        min_count: min,
+        max_count: max,
+        test: None,
+        element_pattern: Some(Box::new(args[0].clone())),
       })
     }
     _ => None,
@@ -1581,11 +1646,18 @@ fn match_args_with_sequences(
   if let Some(seq) = get_sequence_info(pat) {
     // Sequence pattern: try consuming different numbers of args
     let rest_min = min_args_for_patterns(rest_pats);
-    let max_count = if expr_args.len() >= rest_min {
+    let mut max_count = if expr_args.len() >= rest_min {
       expr_args.len() - rest_min
     } else {
       return None;
     };
+
+    // Apply explicit max_count from Repeated[pat, {min, max}]
+    if let Some(explicit_max) = seq.max_count {
+      if explicit_max < max_count {
+        max_count = explicit_max;
+      }
+    }
 
     if max_count < seq.min_count {
       return None;
@@ -1605,6 +1677,52 @@ fn match_args_with_sequences(
       if let Some(ref test) = seq.test
         && !seq_args.iter().all(|a| apply_pattern_test(test, a))
       {
+        continue;
+      }
+
+      // Check element pattern for Repeated/RepeatedNull
+      if let Some(ref elem_pat) = seq.element_pattern {
+        let mut all_match = true;
+        let mut elem_bindings: Vec<(String, Expr)> = vec![];
+        for arg in seq_args {
+          if let Some(b) = match_pattern(arg, elem_pat) {
+            if !merge_bindings(&mut elem_bindings, b) {
+              all_match = false;
+              break;
+            }
+          } else {
+            all_match = false;
+            break;
+          }
+        }
+        if !all_match {
+          continue;
+        }
+        // Recursively match the rest
+        if let Some(rest_bindings) =
+          match_args_with_sequences(&expr_args[count..], rest_pats)
+        {
+          if merge_bindings(&mut elem_bindings, rest_bindings) {
+            // Add binding for this sequence name (if any)
+            if !seq.name.is_empty() {
+              let bound_value = if count == 0 {
+                Expr::FunctionCall {
+                  name: "Sequence".to_string(),
+                  args: vec![],
+                }
+              } else if count == 1 {
+                seq_args[0].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Sequence".to_string(),
+                  args: seq_args.to_vec(),
+                }
+              };
+              elem_bindings.insert(0, (seq.name.clone(), bound_value));
+            }
+            return Some(elem_bindings);
+          }
+        }
         continue;
       }
 

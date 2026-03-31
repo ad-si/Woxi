@@ -2549,17 +2549,6 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   }
   postfix_funcs.reverse(); // restore left-to-right order
 
-  // Check for Repeated/RepeatedNull suffix (.., ...)
-  let repeated_suffix = if inner.last().is_some_and(|p| {
-    p.as_rule() == Rule::RepeatedSuffix
-      || p.as_rule() == Rule::RepeatedNullSuffix
-  }) {
-    let suffix = inner.pop().unwrap();
-    Some(suffix.as_rule() == Rule::RepeatedNullSuffix)
-  } else {
-    None
-  };
-
   // Check for trailing ReplaceAll/ReplaceRepeated suffix:
   // Term (Operator Term)* (ReplaceAllSuffix | ReplaceRepeatedSuffix)?
   let replace_rules = if inner.last().is_some_and(|p| {
@@ -2575,12 +2564,8 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     None
   };
 
-  // Single term case (no operators, no replace, no repeated, no post-& continuation)
-  if inner.len() == 1
-    && replace_rules.is_none()
-    && repeated_suffix.is_none()
-    && post_anon_pairs.is_empty()
-  {
+  // Single term case (no operators, no replace, no post-& continuation)
+  if inner.len() == 1 && replace_rules.is_none() && post_anon_pairs.is_empty() {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
       let func = parse_postfix_function(func_pair);
@@ -2653,6 +2638,20 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           });
         }
       }
+      Rule::RepeatedSuffix | Rule::RepeatedNullSuffix => {
+        // x.. → Repeated[x], x... → RepeatedNull[x]
+        if let Some(last) = terms.pop() {
+          let func_name = if item.as_rule() == Rule::RepeatedNullSuffix {
+            "RepeatedNull"
+          } else {
+            "Repeated"
+          };
+          terms.push(Expr::FunctionCall {
+            name: func_name.to_string(),
+            args: vec![last],
+          });
+        }
+      }
       _ => {
         if leading_minus {
           terms.push(Expr::Integer(0));
@@ -2709,19 +2708,6 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       build_binary_tree(terms, operators)
     }
   };
-
-  // Apply Repeated/RepeatedNull suffix if present
-  if let Some(is_repeated_null) = repeated_suffix {
-    let name = if is_repeated_null {
-      "RepeatedNull"
-    } else {
-      "Repeated"
-    };
-    result = Expr::FunctionCall {
-      name: name.to_string(),
-      args: vec![result],
-    };
-  }
 
   // Apply ReplaceAll/ReplaceRepeated if present.
   // In Wolfram Language, /. has higher precedence than = and :=, so:

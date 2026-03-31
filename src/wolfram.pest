@@ -210,11 +210,10 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
-    ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -345,11 +344,10 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))*
-    ~ (RepeatedNullSuffix | RepeatedSuffix)?
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
