@@ -1,7 +1,7 @@
-/*-checkpoint.ipynb
 /.direnv
 /.env
 /.jupyterlite.doit.db
+/*-checkpoint.ipynb
 /examples
 /target
 /tests/_*
@@ -9,3 +9,4 @@
 /tests/cli/jupyterlite
 /tests/cli/playground/pkg
 /tests/scripts/_*
+/todos.md
