@@ -1915,6 +1915,34 @@ mod free_q {
   fn free_q_basic_false() {
     assert_eq!(interpret("FreeQ[{1, 2, 3}, 2]").unwrap(), "False");
   }
+
+  #[test]
+  fn free_q_with_blank_pattern() {
+    assert_eq!(interpret("FreeQ[{1, 2, x, 3}, _Symbol]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_with_blank_pattern_true() {
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, _Symbol]").unwrap(), "True");
+  }
+
+  #[test]
+  fn free_q_with_integer_pattern() {
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, _Integer]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_with_string_pattern() {
+    assert_eq!(
+      interpret(r#"FreeQ[{1, "a", 3}, _String]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn free_q_with_string_pattern_true() {
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, _String]").unwrap(), "True");
+  }
 }
 
 mod subsets {
