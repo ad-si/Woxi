@@ -2214,9 +2214,21 @@ fn try_fast_function_call(
       if args.len() != 2 {
         return None;
       }
+      let elem_expr = args[1].trim();
+
+      // If the second argument looks like a pattern, skip the fast path
+      // and let the full evaluator handle it with proper pattern matching
+      if elem_expr.contains('_')
+        || elem_expr.starts_with("Repeated")
+        || elem_expr.starts_with("Alternatives")
+        || elem_expr.contains("Pattern[")
+        || elem_expr.contains("Blank[")
+      {
+        return None;
+      }
+
       // First arg should be a list, second is the element to find
       let list_str = args[0].trim();
-      let elem_expr = args[1].trim();
 
       // Evaluate the element expression
       let target = match interpret(elem_expr) {

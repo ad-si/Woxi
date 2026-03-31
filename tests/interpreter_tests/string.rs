@@ -557,6 +557,48 @@ mod operator_form {
   }
 
   #[test]
+  fn member_q_with_blank_pattern() {
+    assert_eq!(interpret("MemberQ[{1, 2, 3}, _Integer]").unwrap(), "True");
+  }
+
+  #[test]
+  fn member_q_with_blank_pattern_no_match() {
+    assert_eq!(interpret("MemberQ[{1, 2, 3}, _String]").unwrap(), "False");
+  }
+
+  #[test]
+  fn member_q_with_string_pattern() {
+    assert_eq!(
+      interpret(r#"MemberQ[{1, "a", 2}, _String]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn member_q_with_head_pattern() {
+    assert_eq!(
+      interpret("MemberQ[{f[1], g[2], h[3]}, _f]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn member_q_with_condition_pattern() {
+    assert_eq!(
+      interpret("MemberQ[{1, 2, 3, 4, 5}, _?(# > 3 &)]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn member_q_with_condition_pattern_no_match() {
+    assert_eq!(
+      interpret("MemberQ[{1, 2, 3}, _?(# > 10 &)]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
   fn select_with_curried_string_starts_q() {
     assert_eq!(
       interpret(
