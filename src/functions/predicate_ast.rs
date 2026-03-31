@@ -641,9 +641,9 @@ pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(bool_expr(false)),
   };
 
-  let target_str = crate::syntax::expr_to_string(&args[1]);
+  let pattern = &args[1];
   for item in items {
-    if crate::syntax::expr_to_string(item) == target_str {
+    if crate::functions::list_helpers_ast::matches_pattern_ast(item, pattern) {
       return Ok(bool_expr(true));
     }
   }
