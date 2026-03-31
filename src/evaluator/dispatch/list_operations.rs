@@ -314,6 +314,11 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    // FirstCase[list, pattern] or FirstCase[list, pattern, default]
+    // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
+    "FirstCase" if args.len() >= 2 && args.len() <= 3 => {
+      return Some(list_helpers_ast::first_case_ast(args));
+    }
     "Position" if args.len() == 2 => {
       return Some(list_helpers_ast::position_ast(&args[0], &args[1]));
     }

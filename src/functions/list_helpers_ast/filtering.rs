@@ -114,6 +114,55 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// AST-based FirstCase: return first element matching a pattern.
+/// FirstCase[list, pattern] — returns first match or Missing["NotFound"]
+/// FirstCase[list, pattern, default] — returns first match or default
+/// FirstCase[list, pattern :> rhs] — returns rhs with bindings from first match
+pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list = &args[0];
+  let pattern = &args[1];
+  let default = if args.len() >= 3 {
+    Some(&args[2])
+  } else {
+    None
+  };
+
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      // Non-list: return Missing["NotFound"] or default
+      return Ok(default.cloned().unwrap_or_else(|| Expr::FunctionCall {
+        name: "Missing".to_string(),
+        args: vec![Expr::String("NotFound".to_string())],
+      }));
+    }
+  };
+
+  // Check if pattern is a Rule or RuleDelayed: lhs -> rhs or lhs :> rhs
+  let (match_pat, replacement) = extract_rule_parts(pattern);
+
+  for item in items {
+    if let Some(ref repl) = replacement {
+      // Rule/RuleDelayed form: match against LHS, return RHS with bindings
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(item, match_pat)
+      {
+        let result =
+          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
+        return Ok(result);
+      }
+    } else if matches_pattern_ast(item, match_pat) {
+      return Ok(item.clone());
+    }
+  }
+
+  // No match found
+  Ok(default.cloned().unwrap_or_else(|| Expr::FunctionCall {
+    name: "Missing".to_string(),
+    args: vec![Expr::String("NotFound".to_string())],
+  }))
+}
+
 /// AST-based Cases: select elements matching a pattern.
 pub fn cases_ast(
   list: &Expr,
