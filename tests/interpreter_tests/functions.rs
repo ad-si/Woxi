@@ -10135,6 +10135,35 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn sequence_cases_blank_sequence() {
+    assert_eq!(
+      interpret("SequenceCases[{a, 1, 2, b, 3}, {__Integer}]").unwrap(),
+      "{{1, 2}, {3}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_blank_sequence_all() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3}, {__Integer}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_blank_sequence_none() {
+    assert_eq!(
+      interpret("SequenceCases[{a, b, c}, {__Integer}]").unwrap(),
+      "{}"
+    );
+  }
+  #[test]
+  fn sequence_cases_repeated_pattern() {
+    assert_eq!(
+      interpret("SequenceCases[{a, 1, 2, 3, b, 4, 5}, {Repeated[_Integer]}]")
+        .unwrap(),
+      "{{1, 2, 3}, {4, 5}}"
+    );
+  }
+  #[test]
   fn chebyshev_distance_basic() {
     assert_eq!(interpret("ChebyshevDistance[{1, 2}, {3, 5}]").unwrap(), "3");
   }

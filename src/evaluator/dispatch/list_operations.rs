@@ -28,6 +28,20 @@ fn has_pattern_element(expr: &Expr) -> bool {
   }
 }
 
+/// Check if a pattern contains sequence-matching elements (BlankSequence, BlankNullSequence,
+/// Repeated, RepeatedNull) that can match variable numbers of list elements.
+fn has_sequence_pattern(expr: &Expr) -> bool {
+  match expr {
+    Expr::Pattern { blank_type, .. } => *blank_type >= 2,
+    Expr::PatternTest { blank_type, .. } => *blank_type >= 2,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "BlankSequence" | "BlankNullSequence" | "Repeated" | "RepeatedNull"
+    ),
+    _ => false,
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -1675,33 +1689,53 @@ pub fn dispatch_list_operations(
           if sub.is_empty() {
             return Some(Ok(Expr::List(vec![])));
           }
-          let sub_len = sub.len();
-          // Check if pattern contains Blank/pattern elements
+          // Check if pattern contains Blank/pattern/sequence elements
           let has_patterns = sub.iter().any(|e| has_pattern_element(e));
+          // Check if pattern contains sequence patterns (__, ___)
+          // that can match variable numbers of elements
+          let has_sequence = sub.iter().any(|e| has_sequence_pattern(e));
           if has_patterns {
-            // Pattern-based matching using the evaluator's full pattern matching
             let pattern = Expr::List(sub.clone());
             let mut results: Vec<Expr> = Vec::new();
             let mut i = 0;
-            while i + sub_len <= list.len() {
-              let subseq = Expr::List(list[i..i + sub_len].to_vec());
-              let match_result =
-                crate::functions::predicate_ast::match_q_ast(&[
-                  subseq.clone(),
-                  pattern.clone(),
-                ]);
-              if let Ok(Expr::Identifier(s)) = &match_result {
-                if s == "True" {
-                  results.push(subseq);
-                  i += sub_len;
-                  continue;
+            while i < list.len() {
+              let mut matched = false;
+              // Try subsequences of different lengths (longest first
+              // for greedy matching)
+              let remaining = list.len() - i;
+              let min_len = if has_sequence { 1 } else { sub.len() };
+              let try_max = if has_sequence { remaining } else { sub.len() };
+              // Skip if not enough elements remaining
+              if remaining < min_len {
+                break;
+              }
+              let try_max = try_max.min(remaining);
+              // Try longest match first
+              let range: Vec<usize> = (min_len..=try_max).rev().collect();
+              for len in range {
+                let subseq = Expr::List(list[i..i + len].to_vec());
+                let match_result =
+                  crate::functions::predicate_ast::match_q_ast(&[
+                    subseq.clone(),
+                    pattern.clone(),
+                  ]);
+                if let Ok(Expr::Identifier(s)) = &match_result {
+                  if s == "True" {
+                    results.push(subseq);
+                    i += len;
+                    matched = true;
+                    break;
+                  }
                 }
               }
-              i += 1;
+              if !matched {
+                i += 1;
+              }
             }
             return Some(Ok(Expr::List(results)));
           } else {
             // Literal subsequence match
+            let sub_len = sub.len();
             let sub_strs: Vec<String> =
               sub.iter().map(expr_to_string).collect();
             let mut results: Vec<Expr> = Vec::new();
