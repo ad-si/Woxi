@@ -245,10 +245,40 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let antideriv = crate::evaluator::evaluate_expr_to_expr(&antideriv)
         .unwrap_or(antideriv);
       // F(hi) - F(lo)
-      let at_hi = crate::syntax::substitute_variable(&antideriv, &var_name, hi);
-      let at_lo = crate::syntax::substitute_variable(&antideriv, &var_name, lo);
-      let at_hi = crate::evaluator::evaluate_expr_to_expr(&at_hi)?;
-      let at_lo = crate::evaluator::evaluate_expr_to_expr(&at_lo)?;
+      // When a boundary is ±Infinity, use Limit instead of direct substitution
+      // to correctly handle indeterminate forms like 0 * Infinity.
+      let at_hi = if is_infinity(hi) || is_negative_infinity(hi) {
+        let limit_expr = Expr::FunctionCall {
+          name: "Limit".to_string(),
+          args: vec![
+            antideriv.clone(),
+            Expr::FunctionCall {
+              name: "Rule".to_string(),
+              args: vec![Expr::Identifier(var_name.clone()), hi.clone()],
+            },
+          ],
+        };
+        crate::evaluator::evaluate_expr_to_expr(&limit_expr)?
+      } else {
+        let sub = crate::syntax::substitute_variable(&antideriv, &var_name, hi);
+        crate::evaluator::evaluate_expr_to_expr(&sub)?
+      };
+      let at_lo = if is_infinity(lo) || is_negative_infinity(lo) {
+        let limit_expr = Expr::FunctionCall {
+          name: "Limit".to_string(),
+          args: vec![
+            antideriv.clone(),
+            Expr::FunctionCall {
+              name: "Rule".to_string(),
+              args: vec![Expr::Identifier(var_name.clone()), lo.clone()],
+            },
+          ],
+        };
+        crate::evaluator::evaluate_expr_to_expr(&limit_expr)?
+      } else {
+        let sub = crate::syntax::substitute_variable(&antideriv, &var_name, lo);
+        crate::evaluator::evaluate_expr_to_expr(&sub)?
+      };
       let result = simplify(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Minus,
         left: Box::new(at_hi),

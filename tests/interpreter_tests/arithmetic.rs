@@ -902,7 +902,12 @@ mod infinity_arithmetic {
 
   #[test]
   fn infinity_times_zero() {
-    assert_eq!(interpret("Infinity * 0").unwrap(), "0");
+    assert_eq!(interpret("Infinity * 0").unwrap(), "Indeterminate");
+    assert_eq!(interpret("0 * Infinity").unwrap(), "Indeterminate");
+    assert_eq!(interpret("-Infinity * 0").unwrap(), "Indeterminate");
+    assert_eq!(interpret("0 * (-Infinity)").unwrap(), "Indeterminate");
+    assert_eq!(interpret("ComplexInfinity * 0").unwrap(), "Indeterminate");
+    assert_eq!(interpret("0 * ComplexInfinity").unwrap(), "Indeterminate");
   }
 
   #[test]
