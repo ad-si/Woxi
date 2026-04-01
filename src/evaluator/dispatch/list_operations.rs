@@ -247,6 +247,9 @@ pub fn dispatch_list_operations(
         Some(&args[2]),
       ));
     }
+    "AllSameBy" if args.len() == 2 => {
+      return Some(list_helpers_ast::all_same_by_ast(args));
+    }
     "AllTrue" if args.len() == 2 => {
       return Some(list_helpers_ast::all_true_ast(&args[0], &args[1]));
     }

@@ -960,6 +960,50 @@ mod all_match {
   }
 }
 
+mod all_same_by {
+  use super::*;
+
+  #[test]
+  fn same_parity() {
+    assert_eq!(
+      interpret("AllSameBy[{1, 3, 7, 5}, Mod[#, 2] &]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn different_parity() {
+    assert_eq!(
+      interpret("AllSameBy[{1, 3, 7, 4}, Mod[#, 2] &]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("AllSameBy[{}, f]").unwrap(), "True");
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("AllSameBy[{1}, f]").unwrap(), "True");
+  }
+
+  #[test]
+  fn all_same_identity() {
+    assert_eq!(interpret("AllSameBy[{1, 1, 1}, # &]").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_string_length() {
+    assert_eq!(
+      interpret("AllSameBy[{\"abc\", \"def\", \"ghi\"}, StringLength]")
+        .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod any_match {
   use super::*;
 
