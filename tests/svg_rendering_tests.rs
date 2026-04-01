@@ -476,4 +476,63 @@ mod svg_rendering_tests {
       markup
     );
   }
+
+  // ── Digit grouping in graphics ──
+
+  #[test]
+  fn test_svg_digit_grouping_small_number_no_grouping() {
+    // 4-digit numbers should NOT be grouped
+    let markup = expr_to_svg_markup(&Expr::Integer(1234));
+    assert_eq!(markup, "1234");
+  }
+
+  #[test]
+  fn test_svg_digit_grouping_5_digits() {
+    // 5-digit numbers should be grouped: 12 345
+    let markup = expr_to_svg_markup(&Expr::Integer(12345));
+    assert!(
+      markup.contains("12<tspan dx=\"0.3ch\">345</tspan>"),
+      "5-digit number should be grouped: got '{}'",
+      markup
+    );
+  }
+
+  #[test]
+  fn test_svg_digit_grouping_large_number() {
+    // 13-digit number: 2 000 000 000 000
+    let markup = expr_to_svg_markup(&Expr::Integer(2000000000000));
+    assert!(
+      markup.contains(
+        "2<tspan dx=\"0.3ch\">000</tspan><tspan dx=\"0.3ch\">000</tspan>\
+         <tspan dx=\"0.3ch\">000</tspan><tspan dx=\"0.3ch\">000</tspan>"
+      ),
+      "Large number should have grouped digits: got '{}'",
+      markup
+    );
+  }
+
+  #[test]
+  fn test_svg_digit_grouping_negative_number() {
+    // Negative numbers: sign preserved, digits grouped
+    let markup = expr_to_svg_markup(&Expr::Integer(-12345678));
+    assert!(
+      markup.contains(
+        "−12<tspan dx=\"0.3ch\">345</tspan><tspan dx=\"0.3ch\">678</tspan>"
+      ),
+      "Negative number should be grouped with minus sign: got '{}'",
+      markup
+    );
+  }
+
+  #[test]
+  fn test_svg_digit_grouping_width_accounts_for_gaps() {
+    // Width of a 13-digit number should include extra space for 4 separators
+    let w = estimate_display_width(&Expr::Integer(2000000000000));
+    // 13 chars + 4 * 0.3 = 14.2
+    assert!(
+      (w - 14.2).abs() < 0.01,
+      "Width should account for digit group gaps: got {}",
+      w
+    );
+  }
 }

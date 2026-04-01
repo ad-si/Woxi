@@ -3082,6 +3082,56 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
   }
 }
 
+/// Group digits of a number string in threes (from the right) with thin spaces
+/// for SVG display, matching Wolfram's graphical output.
+/// Only applies to numbers with 5 or more digits.
+/// Handles an optional leading minus sign.
+fn group_digits_svg(s: &str) -> String {
+  let (sign, digits) = if let Some(rest) = s.strip_prefix('-') {
+    ("−", rest) // use Unicode minus for display
+  } else {
+    ("", s.as_ref())
+  };
+
+  if digits.len() < 5 || !digits.chars().all(|c| c.is_ascii_digit()) {
+    return svg_escape(s);
+  }
+
+  // Group from the right in threes.
+  // Wrap every group after the first in a <tspan dx="0.3ch"> so that
+  // the dx offset actually shifts the characters inside the tspan.
+  let remainder = digits.len() % 3;
+  let mut result = String::with_capacity(s.len() + 20);
+  result.push_str(sign);
+
+  if remainder > 0 {
+    result.push_str(&digits[..remainder]);
+  }
+  for (i, chunk) in digits[remainder..].as_bytes().chunks(3).enumerate() {
+    let chunk_str = std::str::from_utf8(chunk).unwrap();
+    if i > 0 || remainder > 0 {
+      // Thin space between groups (~30% of a monospace character width)
+      result.push_str("<tspan dx=\"0.3ch\">");
+      result.push_str(chunk_str);
+      result.push_str("</tspan>");
+    } else {
+      result.push_str(chunk_str);
+    }
+  }
+  result
+}
+
+/// Calculate the extra display width added by digit grouping.
+/// Returns the number of thin-space separators × 0.3 character widths.
+fn digit_group_extra_width(digit_count: usize) -> f64 {
+  if digit_count < 5 {
+    return 0.0;
+  }
+  let remainder = digit_count % 3;
+  let num_groups = digit_count / 3 + if remainder > 0 { 1 } else { 0 };
+  (num_groups - 1) as f64 * 0.3
+}
+
 /// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
@@ -3123,11 +3173,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         svg_escape(&parts.mantissa)
       }
     }
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::BigInteger(_)
-    | Expr::Constant(_)
-    | Expr::Slot(_) => svg_escape(&expr_to_output(expr)),
+    Expr::Integer(n) => group_digits_svg(&n.to_string()),
+    Expr::BigInteger(n) => group_digits_svg(&n.to_string()),
+    Expr::Real(_) | Expr::Constant(_) | Expr::Slot(_) => {
+      svg_escape(&expr_to_output(expr))
+    }
 
     // ── List → {a, b, c} ──
     Expr::List(items) => {
@@ -3450,11 +3500,19 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         parts.mantissa.len() as f64
       }
     }
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::BigInteger(_)
-    | Expr::Constant(_)
-    | Expr::Slot(_) => expr_to_output(expr).len() as f64,
+    Expr::Integer(n) => {
+      let s = n.to_string();
+      let digit_count = s.trim_start_matches('-').len();
+      s.len() as f64 + digit_group_extra_width(digit_count)
+    }
+    Expr::BigInteger(n) => {
+      let s = n.to_string();
+      let digit_count = s.trim_start_matches('-').len();
+      s.len() as f64 + digit_group_extra_width(digit_count)
+    }
+    Expr::Real(_) | Expr::Constant(_) | Expr::Slot(_) => {
+      expr_to_output(expr).len() as f64
+    }
 
     // List → {a, b, c}: 2 for braces + items + separators
     Expr::List(items) => {
