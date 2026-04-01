@@ -638,6 +638,19 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
+    Expr::FunctionCall {
+      name,
+      args: fn_args,
+    } if name == "DateObject" && !fn_args.is_empty() => {
+      if let Some(date_list) = resolve_date_to_list(&arg) {
+        Ok(date_list)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "DateList".to_string(),
+          args: vec![arg],
+        })
+      }
+    }
     _ => Ok(Expr::FunctionCall {
       name: "DateList".to_string(),
       args: vec![arg],
