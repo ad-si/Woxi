@@ -138,11 +138,71 @@ mod date_plus {
   }
 
   #[test]
+  fn date_plus_date_object_returns_date_object() {
+    assert_eq!(
+      interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], 7]]")
+        .unwrap(),
+      "DateObject[List[2026, 4, 8], \"Day\"]"
+    );
+  }
+
+  #[test]
   fn date_plus_multi_unit() {
     assert_eq!(
       interpret("DatePlus[{2010, 2, 5}, {{8, \"Week\"}, {1, \"Day\"}}]")
         .unwrap(),
       "{2010, 4, 3}"
+    );
+  }
+  #[test]
+  fn date_plus_quantity_days() {
+    assert_eq!(
+      interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[7, \"Days\"]]]")
+        .unwrap(),
+      "DateObject[List[2026, 4, 8], \"Day\"]"
+    );
+  }
+
+  #[test]
+  fn date_plus_quantity_weeks() {
+    assert_eq!(
+      interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[4, \"Weeks\"]]]")
+        .unwrap(),
+      "DateObject[List[2026, 4, 29], \"Day\"]"
+    );
+  }
+
+  #[test]
+  fn date_plus_quantity_months() {
+    assert_eq!(
+      interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[5, \"Months\"]]]")
+        .unwrap(),
+      "DateObject[List[2026, 9, 1], \"Day\"]"
+    );
+  }
+
+  #[test]
+  fn date_plus_quantity_months_with_day_clamping() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 1, 31}, Quantity[1, \"Months\"]]").unwrap(),
+      "{2026, 2, 28}"
+    );
+  }
+
+  #[test]
+  fn date_plus_quantity_years() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 4, 1}, Quantity[2, \"Years\"]]").unwrap(),
+      "{2028, 4, 1}"
+    );
+  }
+
+  #[test]
+  fn day_name_date_plus_quantity() {
+    assert_eq!(
+      interpret("DayName[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[5, \"Months\"]]]")
+        .unwrap(),
+      "Tuesday"
     );
   }
 }
