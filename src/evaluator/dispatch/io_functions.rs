@@ -304,7 +304,7 @@ pub fn dispatch_io_functions(
             // Fallback: render as text SVG
             let markup =
               crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 8.4_f64;
+            let char_width = 9.8_f64;
             let font_size = 14_usize;
             let display_width =
               crate::functions::graphics::estimate_display_width(&args[0]);
@@ -336,7 +336,7 @@ pub fn dispatch_io_functions(
           } else {
             let markup =
               crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 8.4_f64;
+            let char_width = 9.8_f64;
             let font_size = 14_usize;
             let display_width =
               crate::functions::graphics::estimate_display_width(&args[0]);
@@ -432,7 +432,7 @@ pub fn dispatch_io_functions(
           } else {
             let markup =
               crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 8.4_f64;
+            let char_width = 9.8_f64;
             let font_size = 14_usize;
             let display_width =
               crate::functions::graphics::estimate_display_width(&args[0]);
@@ -454,7 +454,7 @@ pub fn dispatch_io_functions(
         other => {
           // Non-graphics: render expression as SVG text with superscripts
           let markup = crate::functions::graphics::expr_to_svg_markup(other);
-          let char_width = 8.4_f64;
+          let char_width = 9.8_f64;
           let font_size = 14_usize;
           let display_width =
             crate::functions::graphics::estimate_display_width(other);
