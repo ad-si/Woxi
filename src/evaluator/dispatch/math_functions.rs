@@ -19,19 +19,8 @@ pub fn dispatch_math_functions(
     "Subtract" if args.len() == 2 => {
       return Some(crate::functions::math_ast::subtract_ast(args));
     }
-    "Divide" => {
-      if args.len() == 2 {
-        return Some(crate::functions::math_ast::divide_ast(args));
-      } else {
-        crate::emit_message(&format!(
-          "Divide::argrx: Divide called with {} arguments; 2 arguments are expected.",
-          args.len()
-        ));
-        return Some(Ok(Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: args.to_vec(),
-        }));
-      }
+    "Divide" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::divide_ast(args));
     }
     "Power" if args.len() == 1 => {
       // OneIdentity: Power[x] -> x

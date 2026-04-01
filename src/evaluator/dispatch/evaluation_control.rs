@@ -453,28 +453,21 @@ pub fn dispatch_evaluation_control(
     "Piecewise" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::control_flow_ast::piecewise_ast(args));
     }
-    "If" => {
-      if args.len() >= 2 && args.len() <= 4 {
-        let cond = match evaluate_expr_to_expr(&args[0]) {
-          Ok(c) => c,
-          Err(e) => return Some(Err(e)),
-        };
-        if matches!(&cond, Expr::Identifier(s) if s == "True") {
-          return Some(evaluate_expr_to_expr(&args[1]));
-        } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
-          if args.len() >= 3 {
-            return Some(evaluate_expr_to_expr(&args[2]));
-          } else {
-            return Some(Ok(Expr::Identifier("Null".to_string())));
-          }
-        } else if args.len() == 4 {
-          return Some(evaluate_expr_to_expr(&args[3]));
+    "If" if args.len() >= 2 && args.len() <= 4 => {
+      let cond = match evaluate_expr_to_expr(&args[0]) {
+        Ok(c) => c,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&cond, Expr::Identifier(s) if s == "True") {
+        return Some(evaluate_expr_to_expr(&args[1]));
+      } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
+        if args.len() >= 3 {
+          return Some(evaluate_expr_to_expr(&args[2]));
+        } else {
+          return Some(Ok(Expr::Identifier("Null".to_string())));
         }
-      } else if args.len() < 2 || args.len() > 4 {
-        crate::emit_message(&format!(
-          "If::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
-          args.len()
-        ));
+      } else if args.len() == 4 {
+        return Some(evaluate_expr_to_expr(&args[3]));
       }
     }
     // Stack[] - return the current evaluation stack as a list of strings

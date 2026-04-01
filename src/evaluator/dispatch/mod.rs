@@ -11,6 +11,7 @@ pub(crate) use crate::{
   ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result, interpret,
 };
 
+pub mod arg_count;
 mod association_functions;
 mod attributes;
 mod boolean_functions;
@@ -956,6 +957,11 @@ pub fn evaluate_function_call_ast_inner(
         _ => return result,
       }
     }
+  }
+
+  // Check argument count for known built-in functions
+  if let Some(result) = arg_count::check_arg_count(name, args) {
+    return result;
   }
 
   // Dispatch through built-in submodules (after user-defined functions)

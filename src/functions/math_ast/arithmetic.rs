@@ -2814,12 +2814,7 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Use times_ast for proper distribution: -(a+b) → -a - b
     times_ast(&[Expr::Integer(-1), args[0].clone()])
   } else {
-    // Wrong arity - print error to stderr and return unevaluated expression
-    crate::emit_message(&format!(
-      "Minus::argx: Minus called with {} arguments; 1 argument is expected.",
-      args.len()
-    ));
-    // Return unevaluated (like Wolfram) — expr_to_string handles display
+    // Return unevaluated (like Wolfram) — error message emitted by centralized arg_count check
     Ok(Expr::FunctionCall {
       name: "Minus".to_string(),
       args: args.to_vec(),
