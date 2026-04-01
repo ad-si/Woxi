@@ -823,17 +823,17 @@ mod high_level_functions_tests {
     #[test]
     fn test_scan_list() {
       // Scan returns Null and applies function for side effects
-      assert_eq!(interpret("Scan[Print, {1, 2, 3}]").unwrap(), "Null");
+      assert_eq!(interpret("Scan[Print, {1, 2, 3}]").unwrap(), "\0");
     }
     #[test]
     fn test_scan_non_list_expression() {
       // Scan should work on any expression, not just lists
-      assert_eq!(interpret("Scan[Print, f[a, b, c]]").unwrap(), "Null");
+      assert_eq!(interpret("Scan[Print, f[a, b, c]]").unwrap(), "\0");
     }
     #[test]
     fn test_scan_power_expression() {
       // Scan over Power[x, -1] should iterate over parts x and -1
-      assert_eq!(interpret("Scan[Print, Power[x, -1]]").unwrap(), "Null");
+      assert_eq!(interpret("Scan[Print, Power[x, -1]]").unwrap(), "\0");
     }
     #[test]
     fn test_scan_with_throw_in_non_list() {
@@ -859,7 +859,7 @@ mod high_level_functions_tests {
     #[test]
     fn test_scan_atom() {
       // Scan on an atom (no parts) should return Null without error
-      assert_eq!(interpret("Scan[Print, 42]").unwrap(), "Null");
+      assert_eq!(interpret("Scan[Print, 42]").unwrap(), "\0");
     }
   }
 
@@ -941,7 +941,7 @@ mod high_level_functions_tests {
     fn test_save_variable_to_stdout() {
       let result =
         interpret_with_stdout(r#"a = 5; Save["stdout", a]"#).unwrap();
-      assert_eq!(result.result, "Null");
+      assert_eq!(result.result, "\0");
       assert!(result.stdout.contains("a = 5"));
     }
 
@@ -949,7 +949,7 @@ mod high_level_functions_tests {
     fn test_save_function_to_stdout() {
       let result =
         interpret_with_stdout(r#"f[x_] := x + 1; Save["stdout", f]"#).unwrap();
-      assert_eq!(result.result, "Null");
+      assert_eq!(result.result, "\0");
       assert!(result.stdout.contains("f[x_] := x + 1"));
     }
 
@@ -1024,7 +1024,7 @@ mod high_level_functions_tests {
     fn test_save_undefined_symbol() {
       let result =
         interpret_with_stdout(r#"Save["stdout", undefined]"#).unwrap();
-      assert_eq!(result.result, "Null");
+      assert_eq!(result.result, "\0");
     }
 
     #[test]
@@ -1038,7 +1038,7 @@ mod high_level_functions_tests {
     fn test_save_to_file() {
       let result =
         interpret(r#"a = 5; Save["/tmp/woxi_save_test.wl", a]"#).unwrap();
-      assert_eq!(result, "Null");
+      assert_eq!(result, "\0");
       let content = std::fs::read_to_string("/tmp/woxi_save_test.wl").unwrap();
       assert!(content.contains("a = 5"));
       std::fs::remove_file("/tmp/woxi_save_test.wl").ok();
@@ -1083,7 +1083,7 @@ mod high_level_functions_tests {
     fn test_save_returns_null() {
       assert_eq!(
         interpret(r#"a = 5; Save["/tmp/woxi_save_null.wl", a]"#).unwrap(),
-        "Null"
+        "\0"
       );
       std::fs::remove_file("/tmp/woxi_save_null.wl").ok();
     }

@@ -102,19 +102,19 @@ mod trailing_semicolon {
   #[test]
   fn trailing_semicolon_returns_null() {
     // expr; is CompoundExpression[expr, Null] — result is Null
-    assert_eq!(interpret("1 + 2;").unwrap(), "Null");
+    assert_eq!(interpret("1 + 2;").unwrap(), "\0");
   }
 
   #[test]
   fn trailing_semicolon_with_print() {
     // Print[1]; should still execute Print, result is Null
-    assert_eq!(interpret("Print[1];").unwrap(), "Null");
+    assert_eq!(interpret("Print[1];").unwrap(), "\0");
   }
 
   #[test]
   fn trailing_semicolon_with_postfix() {
     // {1,2,3} // Map[Print]; should print and return Null
-    assert_eq!(interpret("{1,2,3} // Map[Print];").unwrap(), "Null");
+    assert_eq!(interpret("{1,2,3} // Map[Print];").unwrap(), "\0");
   }
 
   #[test]
@@ -126,13 +126,27 @@ mod trailing_semicolon {
   #[test]
   fn compound_expression_with_trailing_semicolon() {
     // x = 5; x + 1; should return Null
-    assert_eq!(interpret("x = 5; x + 1;").unwrap(), "Null");
+    assert_eq!(interpret("x = 5; x + 1;").unwrap(), "\0");
   }
 
   #[test]
   fn compound_expression_without_trailing_semicolon() {
     // x = 5; x + 1 should show the final result
     assert_eq!(interpret("x = 5; x + 1").unwrap(), "6");
+  }
+
+  #[test]
+  fn null_symbol_uses_sentinel() {
+    // The Null symbol should use the "\0" sentinel so visual contexts
+    // (Studio, JupyterLite) can suppress it without confusing it
+    // with the string "Null".
+    assert_eq!(interpret("Clear[x]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn string_null_is_not_suppressed() {
+    // The string "Null" must remain as "Null", not be suppressed
+    assert_eq!(interpret(r#""Null""#).unwrap(), "Null");
   }
 }
 
@@ -2070,7 +2084,7 @@ mod off_function {
 
   #[test]
   fn off_returns_null() {
-    assert_eq!(interpret("Off[f]").unwrap(), "Null");
+    assert_eq!(interpret("Off[f]").unwrap(), "\0");
   }
 
   #[test]
@@ -2087,7 +2101,7 @@ mod remove_function {
 
   #[test]
   fn remove_returns_null() {
-    assert_eq!(interpret("Remove[x]").unwrap(), "Null");
+    assert_eq!(interpret("Remove[x]").unwrap(), "\0");
   }
 
   #[test]
@@ -2298,7 +2312,7 @@ mod begin_end_package {
   #[test]
   fn end_package_returns_null() {
     // EndPackage[] returns Null (matching wolframscript)
-    assert_eq!(interpret("EndPackage[]").unwrap(), "Null");
+    assert_eq!(interpret("EndPackage[]").unwrap(), "\0");
   }
 }
 
@@ -2344,7 +2358,7 @@ mod unset_function {
 
   #[test]
   fn unset_returns_null() {
-    assert_eq!(interpret("x = 5; Unset[x]").unwrap(), "Null");
+    assert_eq!(interpret("x = 5; Unset[x]").unwrap(), "\0");
   }
 
   #[test]
@@ -2929,7 +2943,7 @@ mod optional_function {
         "Int[x_^m_., x_Symbol] := x^(m + 1)/(m + 1) /; FreeQ[m, x] && NeQ[m, -1]"
       )
       .unwrap(),
-      "Null"
+      "\0"
     );
   }
 }
@@ -3236,7 +3250,7 @@ mod compound_expression {
 
   #[test]
   fn function_form_no_args_returns_null() {
-    assert_eq!(interpret("CompoundExpression[]").unwrap(), "Null");
+    assert_eq!(interpret("CompoundExpression[]").unwrap(), "\0");
   }
 
   #[test]
@@ -3736,7 +3750,7 @@ mod tag_set_delayed {
   fn upvalue_returns_null() {
     // TagSetDelayed returns Null
     clear_state();
-    assert_eq!(interpret("g /: f[g[x_]] := fg[x]").unwrap(), "Null");
+    assert_eq!(interpret("g /: f[g[x_]] := fg[x]").unwrap(), "\0");
   }
 
   #[test]
@@ -3879,7 +3893,7 @@ mod upset_delayed {
   fn upset_delayed_returns_null() {
     // UpSetDelayed returns Null (unlike UpSet which returns evaluated RHS)
     clear_state();
-    assert_eq!(interpret("f[g] ^:= 1 + 2").unwrap(), "Null");
+    assert_eq!(interpret("f[g] ^:= 1 + 2").unwrap(), "\0");
   }
 
   #[test]

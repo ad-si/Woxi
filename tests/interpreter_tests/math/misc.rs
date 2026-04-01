@@ -213,7 +213,7 @@ mod implicit_times_with_patterns {
     // The expression from compare_output.sh
     assert_eq!(
       interpret("Int[(a_.+b_.*x_+c_. x_^2)^n_,x_Symbol] := Foo[x]").unwrap(),
-      "Null"
+      "\0"
     );
   }
 }

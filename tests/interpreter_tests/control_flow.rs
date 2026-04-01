@@ -15,7 +15,7 @@ mod for_loop {
   #[test]
   fn for_returns_null() {
     clear_state();
-    assert_eq!(interpret("For[i = 0, i < 3, i++, i]").unwrap(), "Null");
+    assert_eq!(interpret("For[i = 0, i < 3, i++, i]").unwrap(), "\0");
   }
 
   #[test]
@@ -77,7 +77,7 @@ mod while_loop {
   #[test]
   fn while_returns_null() {
     clear_state();
-    assert_eq!(interpret("i = 0; While[i < 3, i++]").unwrap(), "Null");
+    assert_eq!(interpret("i = 0; While[i < 3, i++]").unwrap(), "\0");
   }
 
   #[test]
@@ -102,7 +102,7 @@ mod while_loop {
   #[test]
   fn while_false_condition() {
     clear_state();
-    assert_eq!(interpret("While[False, Print[1]]").unwrap(), "Null");
+    assert_eq!(interpret("While[False, Print[1]]").unwrap(), "\0");
   }
 }
 
@@ -547,7 +547,7 @@ mod which {
   #[test]
   fn all_false_returns_null() {
     clear_state();
-    assert_eq!(interpret("Which[False, a, False, b]").unwrap(), "Null");
+    assert_eq!(interpret("Which[False, a, False, b]").unwrap(), "\0");
   }
 }
 
@@ -783,7 +783,7 @@ mod pause {
   #[test]
   fn pause_returns_null() {
     clear_state();
-    assert_eq!(interpret("Pause[0.01]").unwrap(), "Null");
+    assert_eq!(interpret("Pause[0.01]").unwrap(), "\0");
   }
 }
 
@@ -811,7 +811,7 @@ mod goto_label {
   fn goto_no_label_returns_null() {
     clear_state();
     // Goto with no matching label returns Null (with stderr message)
-    assert_eq!(interpret("Goto[x]").unwrap(), "Null");
+    assert_eq!(interpret("Goto[x]").unwrap(), "\0");
   }
 
   #[test]
@@ -967,7 +967,7 @@ mod return_in_loops {
     clear_state();
     assert_eq!(
       interpret("Do[If[i > 3, Return[]]; Print[i], {i, 10}]").unwrap(),
-      "Null"
+      "\0"
     );
   }
 

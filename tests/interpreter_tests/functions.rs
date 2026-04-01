@@ -7336,12 +7336,12 @@ mod clear_system_cache {
 
   #[test]
   fn returns_null() {
-    assert_eq!(interpret("ClearSystemCache[]").unwrap(), "Null");
+    assert_eq!(interpret("ClearSystemCache[]").unwrap(), "\0");
   }
 
   #[test]
   fn with_arg_returns_null() {
-    assert_eq!(interpret("ClearSystemCache[\"Numeric\"]").unwrap(), "Null");
+    assert_eq!(interpret("ClearSystemCache[\"Numeric\"]").unwrap(), "\0");
   }
 }
 
@@ -8784,7 +8784,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn parallel_do() {
-    assert_eq!(interpret("ParallelDo[x]").unwrap(), "Null");
+    assert_eq!(interpret("ParallelDo[x]").unwrap(), "\0");
   }
   #[test]
   fn barnes_g() {
@@ -9221,7 +9221,7 @@ mod batch_unevaluated_wrappers_2 {
   // ─── Unevaluated batch 10 ─────────────────────────────────────────
   #[test]
   fn set_shared_variable() {
-    assert_eq!(interpret("SetSharedVariable[x]").unwrap(), "Null");
+    assert_eq!(interpret("SetSharedVariable[x]").unwrap(), "\0");
   }
   #[test]
   fn pade_approximant() {
@@ -9536,7 +9536,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn print_temporary() {
-    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "Null");
+    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "\0");
   }
   #[test]
   fn image_value() {

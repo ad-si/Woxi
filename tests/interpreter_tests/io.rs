@@ -159,7 +159,7 @@ mod get {
   fn function_definition_returns_null() {
     let path = write_temp("get_null", "getnullfn[x_] := x + 1");
     let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     std::fs::remove_file(path).ok();
   }
 }
@@ -297,7 +297,7 @@ mod streams {
     let result =
       interpret(r#"f = OpenWrite[CreateFile[]]; WriteString[f, "test"]"#)
         .unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
   }
 }
 
@@ -1212,7 +1212,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_single.wl";
     let result = interpret(&format!("Put[3, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "3\n");
     std::fs::remove_file(path).ok();
@@ -1223,7 +1223,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_multi.wl";
     let result = interpret(&format!("Put[1, 2, 3, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "1\n2\n3\n");
     std::fs::remove_file(path).ok();
@@ -1234,7 +1234,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_list.wl";
     let result = interpret(&format!("Put[{{1, 2, 3}}, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "{1, 2, 3}\n");
     std::fs::remove_file(path).ok();
@@ -1245,7 +1245,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_sym.wl";
     let result = interpret(&format!("Put[x + y, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "x + y\n");
     std::fs::remove_file(path).ok();
@@ -1256,7 +1256,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_eval.wl";
     let result = interpret(&format!("Put[1 + 2, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "3\n");
     std::fs::remove_file(path).ok();
@@ -1267,7 +1267,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_empty.wl";
     let result = interpret(&format!("Put[\"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "");
     std::fs::remove_file(path).ok();
@@ -1278,7 +1278,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_rat.wl";
     let result = interpret(&format!("Put[1/3, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "1/3\n");
     std::fs::remove_file(path).ok();
@@ -1289,7 +1289,7 @@ mod put {
     clear_state();
     let path = "/tmp/woxi_test_put_op.wl";
     let result = interpret(&format!("42 >> \"{path}\"")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "42\n");
     std::fs::remove_file(path).ok();
@@ -1325,7 +1325,7 @@ mod put_append {
     let path = "/tmp/woxi_test_putappend.wl";
     interpret(&format!("Put[1, \"{path}\"]")).unwrap();
     let result = interpret(&format!("PutAppend[2, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "1\n2\n");
     std::fs::remove_file(path).ok();
@@ -1359,7 +1359,7 @@ mod put_append {
     let path = "/tmp/woxi_test_putappend_create.wl";
     std::fs::remove_file(path).ok();
     let result = interpret(&format!("PutAppend[42, \"{path}\"]")).unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     let content = std::fs::read_to_string(path).unwrap();
     assert_eq!(content, "42\n");
     std::fs::remove_file(path).ok();
@@ -1430,7 +1430,7 @@ mod write {
       "str = OpenWrite[\"{path}\"]; r = Write[str, 1]; Close[str]; r"
     ))
     .unwrap();
-    assert_eq!(result, "Null");
+    assert_eq!(result, "\0");
     std::fs::remove_file(path).ok();
   }
 }

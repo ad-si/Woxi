@@ -1846,7 +1846,7 @@ mod seed_random {
   #[test]
   fn returns_null() {
     woxi::clear_state();
-    assert_eq!(interpret("SeedRandom[42]").unwrap(), "Null");
+    assert_eq!(interpret("SeedRandom[42]").unwrap(), "\0");
   }
 
   #[test]
@@ -1854,7 +1854,7 @@ mod seed_random {
     woxi::clear_state();
     // After SeedRandom[], results should no longer be deterministic
     // (in practice we just check it doesn't error)
-    assert_eq!(interpret("SeedRandom[]").unwrap(), "Null");
+    assert_eq!(interpret("SeedRandom[]").unwrap(), "\0");
     // Should still produce valid results
     let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
     assert!(result >= 0.0 && result < 1.0);

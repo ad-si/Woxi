@@ -735,7 +735,11 @@ impl WoxiStudio {
             }
             match woxi::interpret_with_stdout(&code) {
               Ok(result) => {
-                self.cell_editors[idx].output = Some(result.result);
+                self.cell_editors[idx].output = if result.result == "\0" {
+                  None
+                } else {
+                  Some(result.result)
+                };
                 self.cell_editors[idx].stdout = if result.stdout.is_empty() {
                   None
                 } else {
@@ -770,7 +774,11 @@ impl WoxiStudio {
             if !code.is_empty() {
               match woxi::interpret_with_stdout(&code) {
                 Ok(result) => {
-                  self.cell_editors[idx].output = Some(result.result);
+                  self.cell_editors[idx].output = if result.result == "\0" {
+                    None
+                  } else {
+                    Some(result.result)
+                  };
                   self.cell_editors[idx].stdout = if result.stdout.is_empty() {
                     None
                   } else {
