@@ -326,7 +326,6 @@ pre.output-box {
 
 .output-box.graphics-box {
   background: var(--surface);
-  text-align: center;
 }
 
 .output-box.graphics-box svg {
