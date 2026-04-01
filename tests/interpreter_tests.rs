@@ -310,6 +310,7 @@ mod interpreter_tests {
   }
 
   mod algebra;
+  mod arg_count;
   mod arithmetic;
   mod association;
   mod calculus;

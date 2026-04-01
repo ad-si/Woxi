@@ -861,14 +861,11 @@ pub fn evaluate_expr_to_expr_inner(
         // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
         if name == "Quiet" {
           if args.is_empty() || args.len() > 3 {
-            crate::emit_message(&format!(
-              "Quiet::argb: Quiet called with {} arguments; between 1 and 3 arguments are expected.",
-              args.len()
-            ));
-            return Ok(Expr::FunctionCall {
-              name: "Quiet".to_string(),
-              args: args.to_vec(),
-            });
+            if let Some(result) =
+              dispatch::arg_count::check_arg_count(name, args)
+            {
+              return result;
+            }
           }
           return crate::functions::control_flow_ast::quiet_ast(args);
         }

@@ -1978,7 +1978,7 @@ ShowCellBracket,Notebook cell bracket display option (GUI),🚫,,3.0,2015
 FileByteCount,Count bytes in file (file I/O),🚫,,2.0,2018
 NegativeBinomialDistribution,Discrete distribution for number of failures before n successes,✅,none,6.0,2018
 RandomWord,Generate random words (requires dictionary),🚫,,10.3,2018
-NMaxValue,Numerical maximum value optimization (numerical optimization),🚫,,7.0,2020
+NMaxValue,Numerical maximum value optimization (numerical optimization),✅,,7.0,2020
 UnitSimplify,Simplify physical units (unit system),🚫,,9.0,2020
 AirTemperatureData,,🚫,,10.0,2024
 ListVectorPlot,Vector field plot from list data (plotting),🚫,,7.0,2024
@@ -2268,7 +2268,7 @@ MissingQ,Test whether an expression is a Missing value,✅,1,10.2,2317
 PlanckRadiationLaw,physics formula (external data),🚫,None,10.0,2317
 Raster3D,3D graphics primitive,🚫,None,9.0,2317
 GeoGridLines,geographic visualization,🚫,None,10.0,2320
-NArgMax,numeric optimization,🚫,None,7.0,2320
+NArgMax,numeric optimization,✅,None,7.0,2320
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6.0,2320
 ControllerLinking,dynamic interaction,🚫,None,6.0,2321
 KeyValuePattern,pattern matching extension,🚫,None,10.4,2324

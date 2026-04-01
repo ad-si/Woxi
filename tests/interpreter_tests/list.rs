@@ -2193,6 +2193,28 @@ mod range {
   fn range_negative_to_positive() {
     assert_eq!(interpret("Range[-2, 2]").unwrap(), "{-2, -1, 0, 1, 2}");
   }
+
+  #[test]
+  fn range_too_many_args() {
+    clear_state();
+    let result = interpret_with_stdout("Range[2, 12, 3, 1]").unwrap();
+    assert_eq!(result.result, "Range[2, 12, 3, 1]");
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains(
+      "Range::argb: Range called with 4 arguments; between 1 and 3 arguments are expected."
+    ));
+  }
+
+  #[test]
+  fn range_no_args() {
+    clear_state();
+    let result = interpret_with_stdout("Range[]").unwrap();
+    assert_eq!(result.result, "Range[]");
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains(
+      "Range::argb: Range called with 0 arguments; between 1 and 3 arguments are expected."
+    ));
+  }
 }
 
 mod intersection_sorting {
