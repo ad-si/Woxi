@@ -684,6 +684,9 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let date_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
   let delta_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
 
+  // Track whether the input is a DateObject so we can wrap the result
+  let input_is_date_object = matches!(&date_arg, Expr::FunctionCall { name, .. } if name == "DateObject");
+
   let components = match extract_date_components(&date_arg) {
     Some(c) => c,
     None => {
@@ -745,19 +748,81 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
               let new_day = day.min(days_in_month(new_year, new_month));
               return Ok(make_date_result(
-                new_year, new_month, new_day, input_len,
+                new_year,
+                new_month,
+                new_day,
+                input_len,
+                input_is_date_object,
               ));
             }
             "Year" => {
               let new_year = year + n;
               let new_day = day.min(days_in_month(new_year, month));
-              return Ok(make_date_result(new_year, month, new_day, input_len));
+              return Ok(make_date_result(
+                new_year,
+                month,
+                new_day,
+                input_len,
+                input_is_date_object,
+              ));
             }
             _ => n,
           };
         }
       }
       total
+    }
+    // Quantity[n, "unit"] — treat as a single {n, "unit"} pair
+    Expr::FunctionCall {
+      name: fname,
+      args: qargs,
+    } if fname == "Quantity" && qargs.len() == 2 => {
+      let n = match &qargs[0] {
+        Expr::Integer(n) => *n as i64,
+        Expr::Real(f) => *f as i64,
+        _ => 0,
+      };
+      let unit = match &qargs[1] {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        _ => String::new(),
+      };
+      match unit.as_str() {
+        "Day" | "Days" | "days" | "day" => n,
+        "Week" | "Weeks" | "weeks" | "week" => n * 7,
+        "Month" | "Months" | "months" | "month" => {
+          let mut new_month = month + n;
+          let mut new_year = year;
+          while new_month > 12 {
+            new_month -= 12;
+            new_year += 1;
+          }
+          while new_month < 1 {
+            new_month += 12;
+            new_year -= 1;
+          }
+          let new_day = day.min(days_in_month(new_year, new_month));
+          return Ok(make_date_result(
+            new_year,
+            new_month,
+            new_day,
+            input_len,
+            input_is_date_object,
+          ));
+        }
+        "Year" | "Years" | "years" | "year" => {
+          let new_year = year + n;
+          let new_day = day.min(days_in_month(new_year, month));
+          return Ok(make_date_result(
+            new_year,
+            month,
+            new_day,
+            input_len,
+            input_is_date_object,
+          ));
+        }
+        _ => n,
+      }
     }
     _ => {
       return Ok(Expr::FunctionCall {
@@ -769,11 +834,35 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let abs_days = date_to_absolute_days(year, month, day) + total_days;
   let (ny, nm, nd) = absolute_days_to_date(abs_days);
-  Ok(make_date_result(ny, nm, nd, input_len))
+  Ok(make_date_result(
+    ny,
+    nm,
+    nd,
+    input_len,
+    input_is_date_object,
+  ))
 }
 
-fn make_date_result(y: i64, m: i64, d: i64, input_len: usize) -> Expr {
-  if input_len <= 3 {
+fn make_date_result(
+  y: i64,
+  m: i64,
+  d: i64,
+  input_len: usize,
+  as_date_object: bool,
+) -> Expr {
+  if as_date_object {
+    Expr::FunctionCall {
+      name: "DateObject".to_string(),
+      args: vec![
+        Expr::List(vec![
+          Expr::Integer(y as i128),
+          Expr::Integer(m as i128),
+          Expr::Integer(d as i128),
+        ]),
+        Expr::String("Day".to_string()),
+      ],
+    }
+  } else if input_len <= 3 {
     Expr::List(vec![
       Expr::Integer(y as i128),
       Expr::Integer(m as i128),
