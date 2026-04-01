@@ -733,31 +733,8 @@ impl WoxiStudio {
                 }
               }
             }
-            match woxi::interpret_with_stdout(&code) {
-              Ok(result) => {
-                self.cell_editors[idx].output = if result.result == "\0" {
-                  None
-                } else {
-                  Some(result.result)
-                };
-                self.cell_editors[idx].stdout = if result.stdout.is_empty() {
-                  None
-                } else {
-                  Some(result.stdout)
-                };
-                self.cell_editors[idx].graphics_svg = result.graphics;
-                self.cell_editors[idx].warnings = result.warnings;
-                self.status =
-                  format!("Evaluated cell {} successfully", idx + 1);
-              }
-              Err(e) => {
-                self.cell_editors[idx].output = Some(format!("Error: {e}"));
-                self.cell_editors[idx].stdout = None;
-                self.cell_editors[idx].graphics_svg = None;
-                self.cell_editors[idx].warnings = Vec::new();
-                self.status = format!("Cell {} evaluation error", idx + 1);
-              }
-            }
+            evaluate_cell_statements(&mut self.cell_editors[idx], &code);
+            self.status = format!("Evaluated cell {} successfully", idx + 1);
           }
         }
         Task::none()
@@ -772,28 +749,7 @@ impl WoxiStudio {
           ) {
             let code = self.cell_editors[idx].content.text().trim().to_string();
             if !code.is_empty() {
-              match woxi::interpret_with_stdout(&code) {
-                Ok(result) => {
-                  self.cell_editors[idx].output = if result.result == "\0" {
-                    None
-                  } else {
-                    Some(result.result)
-                  };
-                  self.cell_editors[idx].stdout = if result.stdout.is_empty() {
-                    None
-                  } else {
-                    Some(result.stdout)
-                  };
-                  self.cell_editors[idx].graphics_svg = result.graphics;
-                  self.cell_editors[idx].warnings = result.warnings;
-                }
-                Err(e) => {
-                  self.cell_editors[idx].output = Some(format!("Error: {e}"));
-                  self.cell_editors[idx].stdout = None;
-                  self.cell_editors[idx].graphics_svg = None;
-                  self.cell_editors[idx].warnings = Vec::new();
-                }
-              }
+              evaluate_cell_statements(&mut self.cell_editors[idx], &code);
             }
           }
         }
@@ -1454,6 +1410,61 @@ fn handle_event(
     }
   }
   None
+}
+
+// ── Cell evaluation ─────────────────────────────────────────────────
+
+/// Evaluate all statements in a cell and collect their results.
+/// When a cell contains multiple newline-separated expressions,
+/// each expression's output is included (matching Mathematica behavior).
+fn evaluate_cell_statements(editor: &mut CellEditor, code: &str) {
+  let statements = woxi::split_into_statements(code);
+
+  let mut outputs: Vec<String> = Vec::new();
+  let mut all_stdout = String::new();
+  let mut last_graphics: Option<String> = None;
+  let mut all_warnings: Vec<String> = Vec::new();
+  let mut had_error = false;
+
+  for stmt in &statements {
+    match woxi::interpret_with_stdout(stmt) {
+      Ok(result) => {
+        if !result.stdout.is_empty() {
+          all_stdout.push_str(&result.stdout);
+        }
+        all_warnings.extend(result.warnings);
+
+        if let Some(svg) = result.graphics {
+          if result.result != "\0" {
+            last_graphics = Some(svg);
+          }
+        }
+
+        if result.result != "\0" {
+          outputs.push(result.result);
+        }
+      }
+      Err(woxi::InterpreterError::EmptyInput) => {}
+      Err(e) => {
+        outputs.push(format!("Error: {e}"));
+        had_error = true;
+      }
+    }
+  }
+
+  editor.output = if outputs.is_empty() {
+    None
+  } else {
+    Some(outputs.join("\n"))
+  };
+  editor.stdout = if all_stdout.is_empty() {
+    None
+  } else {
+    Some(all_stdout)
+  };
+  editor.graphics_svg = last_graphics;
+  editor.warnings = all_warnings;
+  let _ = had_error;
 }
 
 // ── Custom styles ───────────────────────────────────────────────────
