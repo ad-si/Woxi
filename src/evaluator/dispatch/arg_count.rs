@@ -222,6 +222,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DigitQ" => Some((1, 1)),
     "DigitSum" => Some((1, 2)),
     "Dimensions" => Some((1, 1)),
+    "DirichletEta" => Some((1, 1)),
     "DirectedInfinity" => Some((0, 1)),
     "DirectoryName" => Some((1, 2)),
     "DiscreteAsymptotic" => Some((2, 3)),

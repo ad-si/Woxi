@@ -8082,3 +8082,50 @@ fn mobius(n: usize) -> i32 {
   }
   if num_factors % 2 == 0 { 1 } else { -1 }
 }
+
+/// DirichletEta[s] — the Dirichlet eta function: (1 - 2^(1-s)) * Zeta[s]
+pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DirichletEta expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Handle special case s=1: eta(1) = ln(2)
+  if matches!(&args[0], Expr::Integer(1)) {
+    return Ok(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(2)],
+    });
+  }
+
+  // For numeric (Real) input, compute directly
+  if let Expr::Real(f) = &args[0] {
+    // Special case: s=1.0 gives ln(2)
+    if *f == 1.0 {
+      return Ok(Expr::Real(2.0_f64.ln()));
+    }
+    let eta = (1.0 - 2.0_f64.powf(1.0 - f)) * zeta_numeric(*f);
+    return Ok(num_to_expr(eta));
+  }
+
+  // For integer and rational inputs, compute the factor (1 - 2^(1-s)) exactly first
+  let factor = {
+    let one_minus_s = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[Expr::Integer(1), args[0].clone()],
+    )?;
+    let two_pow = crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[Expr::Integer(2), one_minus_s],
+    )?;
+    crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[Expr::Integer(1), two_pow],
+    )?
+  };
+
+  let zeta =
+    crate::evaluator::evaluate_function_call_ast("Zeta", &[args[0].clone()])?;
+  crate::evaluator::evaluate_function_call_ast("Times", &[factor, zeta])
+}

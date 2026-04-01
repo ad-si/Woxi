@@ -2981,7 +2981,7 @@ TestReport,,,,10.0,3048
 BetaPrimeDistribution,,,,8.0,3059
 ChromaticityPlot3D,,🚫,,10.0,3059
 DefaultOptions,,,,6.0,3059
-DirichletEta,,,,10.0,3059
+DirichletEta,Dirichlet eta function,✅,pure,10.0,3059
 EndOfBuffer,,,,10.0,3059
 FacialFeatures,,🚫,,11.3,3059
 LessThan,Operator form of Less,✅,none,10.3,3059
