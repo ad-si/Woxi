@@ -1195,6 +1195,43 @@ mod pattern_matching {
     }
 
     #[test]
+    fn blank_vs_blank_sequence_specificity() {
+      // Blank (u_) should take priority over BlankSequence (u__) for single args
+      // Regression test for https://github.com/ad-si/Woxi/issues/95
+      assert_eq!(
+        interpret("f[u_] := \"single\"; f[u__] := \"multi\"; f[a]").unwrap(),
+        "single"
+      );
+      assert_eq!(interpret("f[a, b]").unwrap(), "multi");
+    }
+
+    #[test]
+    fn blank_vs_blank_sequence_specificity_reversed_definition() {
+      // Even when BlankSequence is defined first, Blank should match single arg
+      clear_state();
+      assert_eq!(
+        interpret("g[u__] := \"multi\"; g[u_] := \"single\"; g[a]").unwrap(),
+        "single"
+      );
+      assert_eq!(interpret("g[a, b, c]").unwrap(), "multi");
+    }
+
+    #[test]
+    fn blank_vs_blank_sequence_zeroq_issue_95() {
+      // The exact example from issue #95
+      clear_state();
+      assert_eq!(
+        interpret(
+          "ZeroQ[u_] := PossibleZeroQ[u]; \
+           ZeroQ[u__] := Catch[Scan[Function[If[ZeroQ[#],Null,Throw[False]]],{u}];True]; \
+           ZeroQ[1*a-0*b]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
     fn anonymous_blank_in_matchq() {
       // Standalone _ matches any single expression
       assert_eq!(interpret("MatchQ[42, _]").unwrap(), "True");

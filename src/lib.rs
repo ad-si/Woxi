@@ -2678,13 +2678,32 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       // For simplicity, just append - Wolfram keeps all conditional defs
     } else {
       // Unconditional definition: remove only other unconditional defs with same arity
-      // (keep conditional definitions - they are more specific)
-      entry.retain(|(p, conds, _, _, _, _)| {
-        p.len() != arity || conds.iter().any(|c| c.is_some())
+      // AND same blank_types (keep conditional definitions and defs with different
+      // blank patterns, e.g. f[u_] and f[u__] are distinct overloads)
+      entry.retain(|(p, conds, _, _, bt, _)| {
+        p.len() != arity
+          || bt != &blank_types
+          || conds.iter().any(|c| c.is_some())
       });
     }
-    // Add the new definition with parsed AST, conditions, defaults, and head constraints
-    entry.push((params, conditions, defaults, heads, blank_types, body_expr));
+    // Add the new definition with parsed AST, conditions, defaults, and head constraints.
+    // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
+    let score = crate::evaluator::assignment::pattern_specificity_score(
+      &blank_types,
+      &heads,
+      &conditions,
+    );
+    let pos = entry
+      .iter()
+      .position(|(_, c, _, h, bt, _)| {
+        crate::evaluator::assignment::pattern_specificity_score(bt, h, c)
+          > score
+      })
+      .unwrap_or(entry.len());
+    entry.insert(
+      pos,
+      (params, conditions, defaults, heads, blank_types, body_expr),
+    );
   });
   Ok(())
 }

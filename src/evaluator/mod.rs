@@ -35,7 +35,7 @@ pub fn is_known_wolfram_function(name: &str) -> bool {
   KNOWN_WOLFRAM_FUNCTIONS.contains(name)
 }
 
-mod assignment;
+pub(crate) mod assignment;
 mod attributes;
 mod binary_ops;
 mod core_eval;
