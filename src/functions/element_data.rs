@@ -68,21 +68,21 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
 fn missing_not_available() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::Identifier("NotAvailable".to_string())],
+    args: vec![Expr::String("NotAvailable".to_string())],
   }
 }
 
 fn missing_not_applicable() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::Identifier("NotApplicable".to_string())],
+    args: vec![Expr::String("NotApplicable".to_string())],
   }
 }
 
 fn missing_not_found() -> Expr {
   Expr::FunctionCall {
     name: "Missing".to_string(),
-    args: vec![Expr::Identifier("NotFound".to_string())],
+    args: vec![Expr::String("NotFound".to_string())],
   }
 }
 
@@ -2277,7 +2277,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       Some(g) => Expr::Integer(g),
       None => Expr::FunctionCall {
         name: "Missing".to_string(),
-        args: vec![Expr::Identifier("Undefined".to_string())],
+        args: vec![Expr::String("Undefined".to_string())],
       },
     },
     "Period" => Expr::Integer(elem.period),

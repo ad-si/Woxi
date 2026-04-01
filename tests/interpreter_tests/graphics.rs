@@ -4538,6 +4538,6 @@ mod parametric_plot3d {
     let result =
       interpret("Head[ParametricPlot3D[{u, v, u + v}, {u, 0, 1}, {v, 0, 1}]]")
         .unwrap();
-    assert_eq!(result, "Graphics");
+    assert_eq!(result, "Graphics3D");
   }
 }

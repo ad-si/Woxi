@@ -195,7 +195,7 @@ mod element_data_tests {
     clear_state();
     assert_eq!(
       interpret(r#"ElementData["Helium", "Electronegativity"]"#).unwrap(),
-      "Missing[NotApplicable]"
+      r#"Missing[NotApplicable]"#
     );
   }
 
@@ -204,7 +204,7 @@ mod element_data_tests {
     clear_state();
     assert_eq!(
       interpret(r#"ElementData["Lanthanum", "Group"]"#).unwrap(),
-      "Missing[Undefined]"
+      r#"Missing[Undefined]"#
     );
   }
 
