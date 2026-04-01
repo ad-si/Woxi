@@ -886,3 +886,114 @@ mod tautology_q {
     );
   }
 }
+
+mod all_match {
+  use super::*;
+
+  #[test]
+  fn all_integers() {
+    assert_eq!(interpret("AllMatch[{1, 2, 3}, _Integer]").unwrap(), "True");
+  }
+
+  #[test]
+  fn mixed_types() {
+    assert_eq!(
+      interpret("AllMatch[{1, 2, \"a\"}, _Integer]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn pattern_matching() {
+    assert_eq!(interpret("AllMatch[{x^2, x^3, x^5}, x^_]").unwrap(), "True");
+    assert_eq!(
+      interpret("AllMatch[{x^2, y^3, x^5}, x^_]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("AllMatch[{}, _Integer]").unwrap(), "True");
+  }
+
+  #[test]
+  fn non_list() {
+    assert_eq!(interpret("AllMatch[x, _Integer]").unwrap(), "True");
+  }
+
+  #[test]
+  fn level_spec() {
+    assert_eq!(
+      interpret("AllMatch[{{1, 2}, {3, 4}}, _Integer, 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AllMatch[{{1, 2}, {3, 4}}, _Integer, 1]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("AllMatch[{{1, 2}, {3, 4}}, _List, 1]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("AllMatch[_Integer][{1, 2, 3}]").unwrap(), "True");
+    assert_eq!(
+      interpret("AllMatch[_Integer][{1, \"a\", 3}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn association() {
+    assert_eq!(
+      interpret("AllMatch[<|\"a\" -> 1, \"b\" -> 2|>, _Integer]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("AllMatch[<|\"a\" -> 1, \"b\" -> \"x\"|>, _Integer]").unwrap(),
+      "False"
+    );
+  }
+}
+
+mod any_match {
+  use super::*;
+
+  #[test]
+  fn some_match() {
+    assert_eq!(
+      interpret("AnyMatch[{1, \"a\", \"b\"}, _Integer]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn none_match() {
+    assert_eq!(
+      interpret("AnyMatch[{\"a\", \"b\"}, _Integer]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn pattern_matching() {
+    assert_eq!(interpret("AnyMatch[{x^2, y^3}, x^_]").unwrap(), "True");
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("AnyMatch[{}, _Integer]").unwrap(), "False");
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(
+      interpret("AnyMatch[_Integer][{\"a\", 2, \"c\"}]").unwrap(),
+      "True"
+    );
+  }
+}
