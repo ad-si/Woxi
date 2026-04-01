@@ -319,6 +319,7 @@ mod interpreter_tests {
   mod control_flow;
   mod dataset;
   mod datetime;
+  mod element_data;
   mod entity;
   mod functions;
   mod graphics;
