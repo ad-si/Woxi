@@ -5907,11 +5907,23 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     "start"
   };
 
+  // Parse optional spacing from third arg in ems (default: 0)
+  let spacing_ems: f64 = if args.len() >= 3 {
+    match &args[2] {
+      Expr::Integer(n) => *n as f64,
+      Expr::Real(f) => *f,
+      _ => 0.0,
+    }
+  } else {
+    0.0
+  };
+
   let char_width: f64 = 8.4;
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
   let row_height = font_size + pad_y;
+  let gap = spacing_ems * font_size;
 
   // Compute column width from widest item
   let col_width: f64 = items
@@ -5919,7 +5931,8 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     .map(|item| estimate_display_width(item) * char_width + pad_x)
     .fold(0.0_f64, f64::max);
 
-  let total_height = row_height * items.len() as f64;
+  let n = items.len() as f64;
+  let total_height = row_height * n + gap * (n - 1.0);
   let total_width = col_width;
 
   let svg_w = total_width.ceil() as u32;
@@ -5940,7 +5953,7 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
 
   let text_fill = theme().text_primary;
   for (i, item) in items.iter().enumerate() {
-    let cy = i as f64 * row_height + row_height / 2.0;
+    let cy = i as f64 * (row_height + gap) + row_height / 2.0;
     svg.push_str(&format!(
       "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
       expr_to_svg_markup(item)

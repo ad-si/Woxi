@@ -77,6 +77,15 @@ mod column_text_mode {
       "{Column[{1, 2}], Column[{3, 4}]}"
     );
   }
+
+  #[test]
+  fn column_with_spacing() {
+    clear_state();
+    assert_eq!(
+      interpret("Column[{1, 2, 3}, Center, 4]").unwrap(),
+      "Column[{1, 2, 3}, Center, 4]"
+    );
+  }
 }
 
 mod column_visual_mode {
@@ -149,5 +158,54 @@ mod column_visual_mode {
     clear_state();
     let result = interpret_with_stdout("Column[1]").unwrap();
     assert_eq!(result.result, "Column[1]");
+  }
+
+  #[test]
+  fn column_spacing_increases_height() {
+    clear_state();
+    // Without spacing
+    let no_gap = interpret_with_stdout("Column[{1, 2, 3}]").unwrap();
+    let svg_no_gap = no_gap.graphics.unwrap();
+    // With spacing of 10
+    let with_gap =
+      interpret_with_stdout("Column[{1, 2, 3}, Left, 10]").unwrap();
+    let svg_with_gap = with_gap.graphics.unwrap();
+
+    // Extract height from SVG
+    let height_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
+    let h1: u32 = height_re.captures(&svg_no_gap).unwrap()[1].parse().unwrap();
+    let h2: u32 = height_re.captures(&svg_with_gap).unwrap()[1]
+      .parse()
+      .unwrap();
+    assert!(
+      h2 > h1,
+      "SVG with spacing should be taller: {} vs {}",
+      h2,
+      h1
+    );
+  }
+
+  #[test]
+  fn column_spacing_default_zero() {
+    clear_state();
+    // Column with explicit 0 spacing should match no-spacing version
+    let no_gap = interpret_with_stdout("Column[{1, 2}]").unwrap();
+    let with_zero = interpret_with_stdout("Column[{1, 2}, Left, 0]").unwrap();
+    assert_eq!(no_gap.graphics.unwrap(), with_zero.graphics.unwrap());
+  }
+
+  #[test]
+  fn column_spacing_with_center_alignment() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{\"a\", \"bbb\", \"ccccc\"}, Center, 4]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("text-anchor=\"middle\""));
+    // Verify all items rendered
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">bbb</text>"));
+    assert!(svg.contains(">ccccc</text>"));
   }
 }
