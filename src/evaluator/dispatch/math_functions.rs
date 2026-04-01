@@ -842,6 +842,42 @@ pub fn dispatch_math_functions(
     "Cot" if args.len() == 1 => {
       return Some(crate::functions::math_ast::cot_ast(args));
     }
+    "SinDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::sin_degrees_ast(args));
+    }
+    "CosDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::cos_degrees_ast(args));
+    }
+    "TanDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::tan_degrees_ast(args));
+    }
+    "CotDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::cot_degrees_ast(args));
+    }
+    "SecDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::sec_degrees_ast(args));
+    }
+    "CscDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::csc_degrees_ast(args));
+    }
+    "ArcSinDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arcsin_degrees_ast(args));
+    }
+    "ArcCosDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arccos_degrees_ast(args));
+    }
+    "ArcTanDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arctan_degrees_ast(args));
+    }
+    "ArcCotDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arccot_degrees_ast(args));
+    }
+    "ArcSecDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arcsec_degrees_ast(args));
+    }
+    "ArcCscDegrees" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::arccsc_degrees_ast(args));
+    }
     "Sinc" if args.len() == 1 => {
       // Sinc[0] = 1
       let is_zero = match &args[0] {
