@@ -1,6 +1,38 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Compute a specificity score for a pattern rule based on its conditions,
+/// blank types, and head constraints. Lower score = more specific = should be
+/// tried first. Ordering: literal (SameQ) > head-constrained Blank > Blank >
+/// BlankSequence > BlankNullSequence.
+pub fn pattern_specificity_score(
+  blank_types: &[u8],
+  heads: &[Option<String>],
+  conditions: &[Option<Expr>],
+) -> u32 {
+  // Literal definitions (SameQ conditions) are most specific
+  let is_literal = conditions.iter().any(|c| {
+    if let Some(Expr::Comparison { operators, .. }) = c {
+      operators
+        .iter()
+        .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+    } else {
+      false
+    }
+  });
+  if is_literal {
+    return 0;
+  }
+  // Use the maximum blank_type as primary score (higher = less specific)
+  let max_blank = blank_types.iter().copied().max().unwrap_or(1) as u32;
+  // Head constraints make a pattern more specific (subtract 1 for each)
+  let head_bonus = heads.iter().filter(|h| h.is_some()).count() as u32;
+  // Conditions (PatternTest, Condition) also add specificity
+  let cond_bonus = conditions.iter().filter(|c| c.is_some()).count() as u32;
+  // Score: higher blank_type dominates, head/condition constraints reduce score
+  max_blank * 10 - head_bonus - cond_bonus
+}
+
 /// Collect all operands for an associative binary operator (Plus, Times, Alternatives),
 /// flattening nested applications of the same operator.
 fn collect_binary_children(
@@ -655,14 +687,26 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           ),
         );
       } else {
-        entry.push((
-          params,
-          conditions,
-          defaults,
-          heads,
-          blank_types,
-          rhs_value.clone(),
-        ));
+        // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
+        let score =
+          pattern_specificity_score(&blank_types, &heads, &conditions);
+        let pos = entry
+          .iter()
+          .position(|(_, c, _, h, bt, _)| {
+            pattern_specificity_score(bt, h, c) > score
+          })
+          .unwrap_or(entry.len());
+        entry.insert(
+          pos,
+          (
+            params,
+            conditions,
+            defaults,
+            heads,
+            blank_types,
+            rhs_value.clone(),
+          ),
+        );
       }
     });
 
@@ -902,22 +946,24 @@ pub fn set_delayed_ast(
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
-      if has_literal_conditions {
+      let insert_pos = if has_literal_conditions {
         // Literal-match definitions go first for priority
-        entry.insert(
-          0,
-          (params, conditions, defaults, heads, blank_types, final_body),
-        );
+        0
       } else {
-        entry.push((
-          params,
-          conditions,
-          defaults,
-          heads,
-          blank_types,
-          final_body,
-        ));
-      }
+        // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
+        let score =
+          pattern_specificity_score(&blank_types, &heads, &conditions);
+        entry
+          .iter()
+          .position(|(_, c, _, h, bt, _)| {
+            pattern_specificity_score(bt, h, c) > score
+          })
+          .unwrap_or(entry.len())
+      };
+      entry.insert(
+        insert_pos,
+        (params, conditions, defaults, heads, blank_types, final_body),
+      );
       // Store inline OptionsPattern defaults, keeping in sync with FUNC_DEFS entries
       crate::FUNC_OPTS_INLINE.with(|oi| {
         let mut inline_map = oi.borrow_mut();
@@ -927,13 +973,9 @@ pub fn set_delayed_ast(
         while inline_entry.len() < entry.len() {
           inline_entry.push(None);
         }
-        // Set the inline defaults for this overload
+        // Set the inline defaults for this overload at the correct position
         if let Some(ref opts) = inline_opts_defaults {
-          if has_literal_conditions {
-            inline_entry[0] = Some(opts.clone());
-          } else {
-            *inline_entry.last_mut().unwrap() = Some(opts.clone());
-          }
+          inline_entry[insert_pos] = Some(opts.clone());
         }
       });
     });
