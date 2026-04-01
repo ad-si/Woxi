@@ -49,6 +49,57 @@ fn quantity_unit_normalized_to_identifier() {
   assert!(result.contains("Kilometers"));
 }
 
+// ─── Lowercase unit names ───────────────────────────────────────────────────
+
+#[test]
+fn quantity_lowercase_days() {
+  assert_eq!(
+    interpret("Quantity[7, \"days\"]").unwrap(),
+    "Quantity[7, Days]"
+  );
+}
+
+#[test]
+fn quantity_lowercase_weeks() {
+  assert_eq!(
+    interpret("Quantity[2, \"weeks\"]").unwrap(),
+    "Quantity[2, Weeks]"
+  );
+}
+
+#[test]
+fn quantity_lowercase_addition() {
+  assert_eq!(
+    interpret("Quantity[7, \"days\"] + Quantity[2, \"weeks\"]").unwrap(),
+    "Quantity[21, Days]"
+  );
+}
+
+#[test]
+fn quantity_lowercase_meters() {
+  assert_eq!(
+    interpret("Quantity[5, \"meters\"]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+}
+
+#[test]
+fn quantity_lowercase_kilometers() {
+  assert_eq!(
+    interpret("Quantity[1, \"kilometers\"] + Quantity[500, \"meters\"]")
+      .unwrap(),
+    "Quantity[3/2, Kilometers]"
+  );
+}
+
+#[test]
+fn quantity_lowercase_hours_minutes() {
+  assert_eq!(
+    interpret("Quantity[3, \"hours\"] + Quantity[30, \"minutes\"]").unwrap(),
+    "Quantity[7/2, Hours]"
+  );
+}
+
 // ─── Compound units ─────────────────────────────────────────────────────────
 
 #[test]

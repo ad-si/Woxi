@@ -494,6 +494,36 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
   Some(info)
 }
 
+/// Try to resolve a lowercase unit name by capitalizing the first letter.
+/// E.g. "days" → "Days", "kilometers" → "Kilometers", "feet" → "Feet".
+/// Returns the canonical name if found, None otherwise.
+fn resolve_lowercase_unit(name: &str) -> Option<String> {
+  if name.is_empty() {
+    return None;
+  }
+  // Only attempt if the first character is lowercase
+  let first = name.chars().next()?;
+  if !first.is_ascii_lowercase() {
+    return None;
+  }
+  let capitalized = {
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    let rest: String = chars.collect();
+    format!("{}{}", first.to_uppercase(), rest)
+  };
+  // Check direct match
+  if get_unit_info(&capitalized).is_some() {
+    return Some(capitalized);
+  }
+  // Try singular → plural on the capitalized form
+  let plural = normalize_singular_to_plural(&capitalized);
+  if get_unit_info(&plural).is_some() {
+    return Some(plural);
+  }
+  None
+}
+
 fn gcd(mut a: i128, mut b: i128) -> i128 {
   a = a.abs();
   b = b.abs();
@@ -837,6 +867,17 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           si_denom: info.to_si_denom,
           dimensions: info.dimensions,
         });
+      }
+      // Try lowercase → canonical (e.g. "days" → "Days")
+      if let Some(canonical) = resolve_lowercase_unit(name) {
+        if let Some(info) = get_unit_info(&canonical) {
+          return Some(CompoundUnitInfo {
+            components: vec![(canonical, 1)],
+            si_numer: info.to_si_numer,
+            si_denom: info.to_si_denom,
+            dimensions: info.dimensions,
+          });
+        }
       }
       None
     }
@@ -1258,6 +1299,8 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
           compound
         } else if get_unit_info(&plural).is_some() {
           Expr::String(canonical_unit_name(&plural).to_string())
+        } else if let Some(canonical) = resolve_lowercase_unit(&s) {
+          Expr::String(canonical_unit_name(&canonical).to_string())
         } else {
           Expr::String(s)
         }
@@ -1308,6 +1351,9 @@ fn normalize_unit_for_output(mut unit: Expr) -> Expr {
       if get_unit_info(&plural).is_some() {
         return Expr::String(canonical_unit_name(&plural).to_string());
       }
+      if let Some(canonical) = resolve_lowercase_unit(&s) {
+        return Expr::String(canonical_unit_name(&canonical).to_string());
+      }
       unit
     }
     _ => unit,
@@ -1336,6 +1382,8 @@ fn normalize_unit(mut unit: Expr) -> Expr {
         let plural = normalize_singular_to_plural(&s);
         if get_unit_info(&plural).is_some() {
           Expr::String(canonical_unit_name(&plural).to_string())
+        } else if let Some(canonical) = resolve_lowercase_unit(&s) {
+          Expr::String(canonical_unit_name(&canonical).to_string())
         } else {
           Expr::String(s)
         }
@@ -1392,6 +1440,10 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       }
       if get_unit_info(&plural).is_some() {
         return Expr::String(canonical_unit_name(&plural).to_string());
+      }
+      // Try lowercase → canonical (e.g. "days" → "Days")
+      if let Some(canonical) = resolve_lowercase_unit(&s) {
+        return Expr::String(canonical_unit_name(&canonical).to_string());
       }
       unit
     }
