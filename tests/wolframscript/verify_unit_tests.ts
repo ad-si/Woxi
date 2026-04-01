@@ -682,6 +682,8 @@ function main() {
       // implementations (different renderers, coordinate systems, fonts) so
       // byte-level comparison is meaningless.
       && !r.woxiResult.startsWith("<svg")
+      && !r.woxiResult.startsWith('"<svg')
+      && !r.woxiResult.startsWith('"<?xml')
   );
   const renderedSkipped = beforeFilter - filteredResults.length;
   if (renderedSkipped > 0) {
