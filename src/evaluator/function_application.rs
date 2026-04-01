@@ -304,6 +304,8 @@ pub fn apply_function_to_arg(
           | "StringCases"
           | "MemberQ"
           | "Select"
+          | "AllMatch"
+          | "AnyMatch"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -479,6 +481,8 @@ pub fn apply_curried_call(
           | "FreeQ"
           | "MatchQ"
           | "Count"
+          | "AllMatch"
+          | "AnyMatch"
       ) && func_args.len() == 1
         && args.len() == 1
       {

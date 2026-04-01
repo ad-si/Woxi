@@ -250,8 +250,28 @@ pub fn dispatch_list_operations(
     "AllTrue" if args.len() == 2 => {
       return Some(list_helpers_ast::all_true_ast(&args[0], &args[1]));
     }
+    "AllMatch" if (2..=3).contains(&args.len()) => {
+      return Some(list_helpers_ast::all_match_ast(args));
+    }
+    "AllMatch" if args.len() == 1 => {
+      // Operator form: return unevaluated for currying
+      return Some(Ok(Expr::FunctionCall {
+        name: "AllMatch".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "AnyTrue" if args.len() == 2 => {
       return Some(list_helpers_ast::any_true_ast(&args[0], &args[1]));
+    }
+    "AnyMatch" if (2..=3).contains(&args.len()) => {
+      return Some(list_helpers_ast::any_match_ast(args));
+    }
+    "AnyMatch" if args.len() == 1 => {
+      // Operator form: return unevaluated for currying
+      return Some(Ok(Expr::FunctionCall {
+        name: "AnyMatch".to_string(),
+        args: args.to_vec(),
+      }));
     }
     "NoneTrue" if args.len() == 2 => {
       return Some(list_helpers_ast::none_true_ast(&args[0], &args[1]));

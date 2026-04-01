@@ -81,6 +81,100 @@ pub fn none_true_ast(
   Ok(bool_to_expr(true))
 }
 
+/// Helper: collect all parts at a given level depth.
+/// Level 0 = the expression itself, level 1 = direct sub-parts, etc.
+fn collect_at_level(expr: &Expr, level: usize, result: &mut Vec<Expr>) {
+  if level == 0 {
+    result.push(expr.clone());
+    return;
+  }
+  match expr {
+    Expr::List(items) => {
+      for item in items {
+        collect_at_level(item, level - 1, result);
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for item in args {
+        collect_at_level(item, level - 1, result);
+      }
+    }
+    Expr::Association(pairs) => {
+      // Association level 1 parts are the values
+      for (_key, value) in pairs {
+        collect_at_level(value, level - 1, result);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// AllMatch[list, pattern] - True if all elements at level 1 match pattern
+/// AllMatch[list, pattern, n] - True if all elements at level n match pattern
+pub fn all_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "AllMatch expects 2 or 3 arguments".into(),
+    ));
+  }
+  let level = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AllMatch".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  let mut parts = Vec::new();
+  collect_at_level(&args[0], level, &mut parts);
+
+  for part in &parts {
+    if !matches_pattern_ast(part, &args[1]) {
+      return Ok(bool_to_expr(false));
+    }
+  }
+  Ok(bool_to_expr(true))
+}
+
+/// AnyMatch[list, pattern] - True if any element at level 1 matches pattern
+/// AnyMatch[list, pattern, n] - True if any element at level n matches pattern
+pub fn any_match_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "AnyMatch expects 2 or 3 arguments".into(),
+    ));
+  }
+  let level = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AnyMatch".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  let mut parts = Vec::new();
+  collect_at_level(&args[0], level, &mut parts);
+
+  for part in &parts {
+    if matches_pattern_ast(part, &args[1]) {
+      return Ok(bool_to_expr(true));
+    }
+  }
+  Ok(bool_to_expr(false))
+}
+
 /// AST-based CountBy: count elements by the value of a function.
 /// CountBy[{a, b, c}, f] -> association of f[x] -> count
 pub fn count_by_ast(
