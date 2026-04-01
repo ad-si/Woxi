@@ -661,6 +661,64 @@ mod xor_logical {
   }
 }
 
+mod xnor_logical {
+  use super::*;
+
+  #[test]
+  fn xnor_no_args() {
+    clear_state();
+    assert_eq!(interpret("Xnor[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn xnor_true_false() {
+    clear_state();
+    assert_eq!(interpret("Xnor[True, False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn xnor_true_true() {
+    clear_state();
+    assert_eq!(interpret("Xnor[True, True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn xnor_false_false() {
+    clear_state();
+    assert_eq!(interpret("Xnor[False, False]").unwrap(), "True");
+  }
+
+  #[test]
+  fn xnor_three_true() {
+    clear_state();
+    assert_eq!(interpret("Xnor[True, True, True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn xnor_three_mixed() {
+    clear_state();
+    assert_eq!(interpret("Xnor[True, False, False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn xnor_symbolic() {
+    clear_state();
+    assert_eq!(interpret("Xnor[a, b]").unwrap(), "Xnor[a, b]");
+  }
+
+  #[test]
+  fn xnor_single_true() {
+    clear_state();
+    assert_eq!(interpret("Xnor[True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn xnor_single_false() {
+    clear_state();
+    assert_eq!(interpret("Xnor[False]").unwrap(), "True");
+  }
+}
+
 mod not_logical {
   use super::*;
 

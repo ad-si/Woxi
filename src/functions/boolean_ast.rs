@@ -133,6 +133,40 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
+pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Xnor[] => True (0 true values, even)
+  if args.is_empty() {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  // Xnor is the negation of Xor (returns True when even number of args are True)
+  let mut true_count = 0;
+  let mut remaining = Vec::new();
+  for arg in args {
+    let evaluated = evaluate_expr_to_expr(arg)?;
+    match as_bool(&evaluated) {
+      Some(true) => true_count += 1,
+      Some(false) => {} // Skip False
+      None => remaining.push(evaluated),
+    }
+  }
+  if !remaining.is_empty() {
+    // Symbolic case: Xnor[...] stays unevaluated
+    let mut all_args = Vec::new();
+    if true_count % 2 == 1 {
+      all_args.push(Expr::Identifier("True".to_string()));
+    }
+    all_args.extend(remaining);
+    return Ok(Expr::FunctionCall {
+      name: "Xnor".to_string(),
+      args: all_args,
+    });
+  }
+  // All boolean: True when even number of True values
+  Ok(Expr::Identifier(
+    if true_count % 2 == 0 { "True" } else { "False" }.to_string(),
+  ))
+}
+
 /// SameQ[expr1, expr2] - Tests whether expressions are identical
 pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // SameQ[] and SameQ[x] return True (vacuously true)

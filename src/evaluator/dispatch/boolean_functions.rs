@@ -18,6 +18,9 @@ pub fn dispatch_boolean_functions(
     "Xor" if !args.is_empty() => {
       return Some(crate::functions::boolean_ast::xor_ast(args));
     }
+    "Xnor" => {
+      return Some(crate::functions::boolean_ast::xnor_ast(args));
+    }
     "Equivalent" if args.len() >= 2 => {
       return Some(crate::functions::boolean_ast::equivalent_ast(args));
     }
