@@ -862,6 +862,20 @@ mod grid_graphics {
   }
 
   #[test]
+  fn grid_frame_viewbox_has_padding_for_strokes() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b, c}, {x, y^2, z^3}}, Frame -> All]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    // viewBox must start at -0.5 so border strokes aren't clipped
+    assert!(
+      svg.contains("viewBox=\"-0.5 -0.5"),
+      "Frame -> All viewBox should have -0.5 offset to avoid clipping strokes"
+    );
+  }
+
+  #[test]
   fn grid_no_frame_no_lines() {
     clear_state();
     let result = interpret_with_stdout("Grid[{{1, 2}, {3, 4}}]").unwrap();
@@ -1068,6 +1082,203 @@ mod grid_graphics {
     let result = interpret_with_stdout("{{1, 2}, {3, 4}} // Grid").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn grid_frame_true_outer_only() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1, 2}, {3, 4}}, Frame -> True]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<line"), "Frame -> True should produce lines");
+    // 2x2 grid with Frame -> True: 2 horizontal (top/bottom) + 2 vertical (left/right) = 4 lines
+    let line_count = svg.matches("<line").count();
+    assert_eq!(
+      line_count, 4,
+      "Frame -> True on 2x2 should have 4 outer lines, got {}",
+      line_count
+    );
+  }
+
+  #[test]
+  fn grid_dividers_all() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1, 2, 3}, {4, 5, 6}}, Dividers -> All]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<line"),
+      "Dividers -> All should produce lines"
+    );
+  }
+
+  #[test]
+  fn grid_dividers_col_only() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2, 3}, {4, 5, 6}}, Dividers -> {All, None}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Should have vertical divider lines but no horizontal ones
+    let lines: Vec<&str> =
+      svg.lines().filter(|l| l.contains("<line")).collect();
+    assert!(!lines.is_empty(), "Should have vertical divider lines");
+    // All lines should be vertical (x1 == x2, y values differ)
+    for line in &lines {
+      if let (Some(x1_pos), Some(x2_pos)) =
+        (line.find("x1=\""), line.find("x2=\""))
+      {
+        let x1 =
+          &line[x1_pos + 4..line[x1_pos + 4..].find('"').unwrap() + x1_pos + 4];
+        let x2 =
+          &line[x2_pos + 4..line[x2_pos + 4..].find('"').unwrap() + x2_pos + 4];
+        assert_eq!(
+          x1, x2,
+          "Dividers -> {{All, None}} should only have vertical lines"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn grid_background_uniform() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1, 2}, {3, 4}}, Background -> LightGray]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<rect") && svg.contains("rgb(217,217,217)"),
+      "Background -> LightGray should produce gray rect elements"
+    );
+  }
+
+  #[test]
+  fn grid_background_per_column() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> {{LightBlue, LightYellow}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Should have both colors
+    assert!(svg.contains("<rect"), "Should have background rects");
+    // 4 cells total, 2 blue columns, 2 yellow columns
+    let rect_count = svg.matches("<rect").count();
+    assert_eq!(rect_count, 4, "Should have 4 background rects for 2x2 grid");
+  }
+
+  #[test]
+  fn grid_background_per_row() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> {{}, {LightGreen, LightRed}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<rect"), "Should have background rects");
+  }
+
+  #[test]
+  fn grid_alignment_left() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}, {c, d}}, Alignment -> Left]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "Alignment -> Left should use text-anchor start"
+    );
+    assert!(
+      !svg.contains("text-anchor=\"middle\""),
+      "Should not have middle alignment"
+    );
+  }
+
+  #[test]
+  fn grid_alignment_right() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}, {c, d}}, Alignment -> Right]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("text-anchor=\"end\""),
+      "Alignment -> Right should use text-anchor end"
+    );
+  }
+
+  #[test]
+  fn grid_alignment_center_default() {
+    clear_state();
+    let result = interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("text-anchor=\"middle\""),
+      "Default alignment should be center (middle)"
+    );
+  }
+
+  #[test]
+  fn grid_frame_all_with_background() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Frame -> All, Background -> LightYellow]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<rect"), "Should have background rects");
+    assert!(svg.contains("<line"), "Should have frame lines");
+  }
+
+  #[test]
+  fn grid_background_with_none() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> {{LightBlue, None}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Only column 1 should have background, column 2 should not
+    let rect_count = svg.matches("<rect").count();
+    assert_eq!(
+      rect_count, 2,
+      "Only 2 cells (column 1) should have backgrounds"
+    );
+  }
+
+  #[test]
+  fn grid_background_rgbcolor() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}}, Background -> RGBColor[1, 0.9, 0.8]]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<rect") && svg.contains("rgb(255,230,204)"),
+      "Should render RGBColor background"
+    );
+  }
+
+  #[test]
+  fn grid_dividers_with_frame_true() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, Frame -> True, Dividers -> All]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let line_count = svg.matches("<line").count();
+    // 4 horizontal + 4 vertical = 8 lines (outer + inner)
+    assert_eq!(
+      line_count, 8,
+      "Frame -> True + Dividers -> All on 3x3 should have 8 lines, got {}",
+      line_count
+    );
   }
 }
 
