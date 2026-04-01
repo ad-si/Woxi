@@ -3207,3 +3207,59 @@ pub fn bit_clear_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bit = BigInt::from(1) << k;
   Ok(bigint_to_expr(n & !bit))
 }
+
+/// BitFlip[n, k] - flip the k-th bit of n: n XOR (1 << k)
+/// For k >= 0: flip bit k (0-indexed from LSB)
+/// For k < 0: flip bit (BitLength(n) + k) from LSB
+pub fn bit_flip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "BitFlip".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "BitFlip".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = match &args[1] {
+    Expr::Integer(k) => *k,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BitFlip".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let bit_pos = if k >= 0 {
+    k as u64
+  } else {
+    // Negative index: count from MSB
+    let bit_length = n.bits();
+    if bit_length == 0 {
+      return Ok(Expr::FunctionCall {
+        name: "BitFlip".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    let pos = bit_length as i128 + k;
+    if pos < 0 {
+      return Ok(Expr::FunctionCall {
+        name: "BitFlip".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    pos as u64
+  };
+
+  let bit = BigInt::from(1) << bit_pos;
+  Ok(bigint_to_expr(n ^ bit))
+}
