@@ -1102,7 +1102,13 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Pattern { .. } => "Pattern",
     Expr::PatternTest { .. } => "PatternTest",
     Expr::Image { .. } => "Image",
-    Expr::Graphics { .. } => "Graphics",
+    Expr::Graphics { is_3d, .. } => {
+      if *is_3d {
+        "Graphics3D"
+      } else {
+        "Graphics"
+      }
+    }
     Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
