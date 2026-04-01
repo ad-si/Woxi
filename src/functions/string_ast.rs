@@ -4338,3 +4338,84 @@ pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+/// URLEncode[string] - percent-encode a string for use in URLs
+pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  match &evaluated {
+    Expr::String(s) => Ok(Expr::String(percent_encode(s))),
+    Expr::Integer(n) => Ok(Expr::String(n.to_string())),
+    Expr::Real(f) => Ok(Expr::String(format!("{}", f))),
+    Expr::BigFloat(digits, _) => Ok(Expr::String(digits.clone())),
+    Expr::Identifier(id) if id == "None" => Ok(Expr::String(String::new())),
+    Expr::FunctionCall { name, .. } if name == "Missing" => {
+      Ok(Expr::String(String::new()))
+    }
+    Expr::List(items) => {
+      // Thread over lists
+      let encoded: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| url_encode_ast(&[item.clone()]))
+        .collect();
+      Ok(Expr::List(encoded?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "URLEncode".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// URLDecode[string] - decode a percent-encoded URL string
+pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  match &evaluated {
+    Expr::String(s) => Ok(Expr::String(percent_decode(s))),
+    Expr::List(items) => {
+      let decoded: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| url_decode_ast(&[item.clone()]))
+        .collect();
+      Ok(Expr::List(decoded?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "URLDecode".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+fn percent_encode(s: &str) -> String {
+  let mut result = String::with_capacity(s.len() * 3);
+  for byte in s.as_bytes() {
+    match *byte {
+      // Unreserved characters (RFC 3986): ALPHA / DIGIT / "-" / "." / "_" / "~"
+      b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+        result.push(*byte as char);
+      }
+      _ => {
+        result.push('%');
+        result.push_str(&format!("{:02X}", byte));
+      }
+    }
+  }
+  result
+}
+
+fn percent_decode(s: &str) -> String {
+  let mut result = Vec::new();
+  let bytes = s.as_bytes();
+  let mut i = 0;
+  while i < bytes.len() {
+    if bytes[i] == b'%' && i + 2 < bytes.len() {
+      if let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+        result.push(byte);
+        i += 3;
+        continue;
+      }
+    }
+    result.push(bytes[i]);
+    i += 1;
+  }
+  String::from_utf8_lossy(&result).to_string()
+}

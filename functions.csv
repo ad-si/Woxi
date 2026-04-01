@@ -2959,7 +2959,7 @@ MeshCellHighlight,,🚫,,10.2,3031
 MeshCellIndex,,🚫,,10.0,3031
 MomentOfInertia,,,,10.4,3031
 NetMeasurements,,🚫,,12.0,3031
-URLEncode,,,,10.0,3031
+URLEncode,Percent-encode a string for use in URLs,✅,pure,10.0,3031
 WaveletImagePlot,,🚫,,8.0,3031
 Xnor,Logical XNOR (true when even number of args are true),✅,pure,7.0,3031
 AbsoluteCorrelationFunction,,,,9.0,3048
@@ -3912,7 +3912,7 @@ RecognitionPrior,,🚫,,10.1,4027
 SatelliteData,,🚫,,10.0,4027
 TextElement,,🚫,,10.3,4027
 TransferFunctionTransform,,🚫,,9.0,4027
-URLDecode,,,,10.0,4027
+URLDecode,Decode a percent-encoded URL string,✅,pure,10.0,4027
 VertexCapacity,,,,9.0,4027
 WeaklyConnectedGraphQ,,,,9.0,4027
 WindowStatusArea,,🚫,,6.0,4027
