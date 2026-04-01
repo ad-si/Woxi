@@ -1069,6 +1069,61 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         }
       }
     }
+    Rule::IntegerScientific | Rule::UnsignedIntegerScientific => {
+      let s = pair.as_str();
+      let idx = s.find("*^").unwrap();
+      let mantissa_str = &s[..idx];
+      let exponent_str = &s[idx + 2..];
+      let mantissa: i128 = mantissa_str.parse().unwrap_or(0);
+      let exponent: i32 = exponent_str.parse().unwrap_or(0);
+      if exponent >= 0 {
+        // Positive exponent: multiply mantissa by 10^exp → Integer
+        let factor = 10_i128.checked_pow(exponent as u32);
+        match factor.and_then(|f| mantissa.checked_mul(f)) {
+          Some(n) => Expr::Integer(n),
+          None => {
+            // Overflow: use BigInteger
+            let m = num_bigint::BigInt::from(mantissa);
+            let f = num_bigint::BigInt::from(10).pow(exponent as u32);
+            Expr::BigInteger(m * f)
+          }
+        }
+      } else {
+        // Negative exponent: mantissa / 10^|exp| → Rational
+        let abs_exp = (-exponent) as u32;
+        let denom = 10_i128.checked_pow(abs_exp);
+        match denom {
+          Some(d) => {
+            // Simplify the fraction
+            fn gcd(mut a: i128, mut b: i128) -> i128 {
+              a = a.abs();
+              b = b.abs();
+              while b != 0 {
+                let t = b;
+                b = a % b;
+                a = t;
+              }
+              a
+            }
+            let g = gcd(mantissa, d);
+            let num = mantissa / g;
+            let den = d / g;
+            if den == 1 {
+              Expr::Integer(num)
+            } else {
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(num), Expr::Integer(den)],
+              }
+            }
+          }
+          None => {
+            // Overflow: fall back to Real
+            Expr::Real(mantissa as f64 * 10_f64.powi(exponent))
+          }
+        }
+      }
+    }
     Rule::Real | Rule::UnsignedReal => {
       let s = pair.as_str();
       // Handle Wolfram's *^ scientific notation (e.g. 2.7*^7 = 2.7e7)
