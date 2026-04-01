@@ -853,6 +853,30 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       };
       return Ok(syntax::expr_to_output(&expr));
     }
+    #[cfg(target_arch = "wasm32")]
+    if trimmed == "Now" {
+      let now = js_sys::Date::new_0();
+      let seconds =
+        now.get_seconds() as f64 + now.get_milliseconds() as f64 / 1000.0;
+      let tz_offset_hours = -(now.get_timezone_offset() / 60.0);
+      let expr = syntax::Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: vec![
+          syntax::Expr::List(vec![
+            syntax::Expr::Integer(now.get_full_year() as i128),
+            syntax::Expr::Integer((now.get_month() + 1) as i128),
+            syntax::Expr::Integer(now.get_date() as i128),
+            syntax::Expr::Integer(now.get_hours() as i128),
+            syntax::Expr::Integer(now.get_minutes() as i128),
+            syntax::Expr::Real(seconds),
+          ]),
+          syntax::Expr::String("Instant".to_string()),
+          syntax::Expr::String("Gregorian".to_string()),
+          syntax::Expr::Real(tz_offset_hours),
+        ],
+      };
+      return Ok(syntax::expr_to_output(&expr));
+    }
     // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
     #[cfg(not(target_arch = "wasm32"))]
     if trimmed == "Today" || trimmed == "Tomorrow" || trimmed == "Yesterday" {
@@ -876,6 +900,29 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             syntax::Expr::Integer(
               date.format("%d").to_string().parse::<i128>().unwrap(),
             ),
+          ]),
+          syntax::Expr::String("Day".to_string()),
+        ],
+      };
+      return Ok(syntax::expr_to_output(&expr));
+    }
+    #[cfg(target_arch = "wasm32")]
+    if trimmed == "Today" || trimmed == "Tomorrow" || trimmed == "Yesterday" {
+      let now = js_sys::Date::new_0();
+      let offset_days: i32 = match trimmed {
+        "Tomorrow" => 1,
+        "Yesterday" => -1,
+        _ => 0,
+      };
+      let ms = now.get_time() + (offset_days as f64) * 86_400_000.0;
+      let d = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms));
+      let expr = syntax::Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: vec![
+          syntax::Expr::List(vec![
+            syntax::Expr::Integer(d.get_full_year() as i128),
+            syntax::Expr::Integer((d.get_month() + 1) as i128),
+            syntax::Expr::Integer(d.get_date() as i128),
           ]),
           syntax::Expr::String("Day".to_string()),
         ],
