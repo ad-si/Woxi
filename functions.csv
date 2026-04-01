@@ -538,7 +538,7 @@ Delete,Deletes an element at a given position,✅,pure,2.0,542
 JacobiDN,Jacobi elliptic function dn,✅,pure,1.0,543
 JacobiSN,Jacobi elliptic function sn,✅,pure,1.0,544
 Ordering,Returns positions that would sort a list,✅,pure,4.1,545
-ElementData,,🚫,,6.0,546
+ElementData,Returns properties of chemical elements,✅,pure,6.0,546
 Dividers,Option for dividing lines in Grid,✅,none,6.0,547
 SetPrecision,Sets the precision of a number to a specified number of digits,✅,pure,2.0,548
 Locator,Interactive locator object,✅,none,6.0,549

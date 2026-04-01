@@ -1046,6 +1046,11 @@ pub fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // Element data function
+  if name == "ElementData" {
+    return crate::functions::element_data::element_data_ast(args);
+  }
+
   // Entity store functions
   match name {
     "EntityStore" => {

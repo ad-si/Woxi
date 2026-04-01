@@ -8,6 +8,7 @@ pub mod control_flow_ast;
 pub mod csv_ast;
 pub mod dataset_ast;
 pub mod datetime_ast;
+pub mod element_data;
 pub mod entity_ast;
 pub mod expr_form;
 pub mod field_plot;
