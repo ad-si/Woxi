@@ -1240,3 +1240,33 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     with_keys.into_iter().take(n).map(|(_, v)| v).collect();
   Ok(Expr::List(result))
 }
+
+/// AllSameBy[list, f] - True if f[x] gives the same value for all elements
+pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "AllSameBy expects 2 arguments".into(),
+    ));
+  }
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "AllSameBy".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(bool_to_expr(true));
+  }
+  let first_val = apply_func_ast(&args[1], &items[0])?;
+  let first_str = crate::syntax::expr_to_string(&first_val);
+  for item in &items[1..] {
+    let val = apply_func_ast(&args[1], item)?;
+    if crate::syntax::expr_to_string(&val) != first_str {
+      return Ok(bool_to_expr(false));
+    }
+  }
+  Ok(bool_to_expr(true))
+}
