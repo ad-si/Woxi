@@ -66,6 +66,30 @@ mod date_list {
   }
 
   #[test]
+  fn date_list_date_object() {
+    assert_eq!(
+      interpret("DateList[DateObject[{2026, 3, 15}]]").unwrap(),
+      "{2026, 3, 15, 0, 0, 0.}"
+    );
+  }
+
+  #[test]
+  fn date_list_date_object_with_time() {
+    assert_eq!(
+      interpret("DateList[DateObject[{2026, 3, 15, 10, 30, 45}]]").unwrap(),
+      "{2026, 3, 15, 10, 30, 45.}"
+    );
+  }
+
+  #[test]
+  fn date_list_date_object_partial() {
+    assert_eq!(
+      interpret("DateList[DateObject[{2026, 3}]]").unwrap(),
+      "{2026, 3, 1, 0, 0, 0.}"
+    );
+  }
+
+  #[test]
   fn date_list_overflow_days() {
     assert_eq!(
       interpret("DateList[{2012, 1, 300., 10}]").unwrap(),
