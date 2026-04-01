@@ -4471,3 +4471,71 @@ mod bandstop_filter {
     );
   }
 }
+
+mod dirichlet_eta {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("DirichletEta[0]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("DirichletEta[1]").unwrap(), "Log[2]");
+  }
+
+  #[test]
+  fn at_two() {
+    assert_eq!(interpret("DirichletEta[2]").unwrap(), "Pi^2/12");
+  }
+
+  #[test]
+  fn at_four() {
+    assert_eq!(interpret("DirichletEta[4]").unwrap(), "(7*Pi^4)/720");
+  }
+
+  #[test]
+  fn at_six() {
+    assert_eq!(interpret("DirichletEta[6]").unwrap(), "(31*Pi^6)/30240");
+  }
+
+  #[test]
+  fn at_negative_one() {
+    assert_eq!(interpret("DirichletEta[-1]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn at_negative_two() {
+    assert_eq!(interpret("DirichletEta[-2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_three() {
+    assert_eq!(interpret("DirichletEta[3]").unwrap(), "(3*Zeta[3])/4");
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("DirichletEta[1.0]").unwrap(),
+      "0.6931471805599453"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("DirichletEta[x]").unwrap(),
+      "(1 - 2^(1 - x))*Zeta[x]"
+    );
+  }
+
+  #[test]
+  fn at_half() {
+    assert_eq!(
+      interpret("DirichletEta[1/2]").unwrap(),
+      "(1 - Sqrt[2])*Zeta[1/2]"
+    );
+  }
+}
