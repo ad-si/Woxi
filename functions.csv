@@ -4302,7 +4302,7 @@ VertexCoverQ,,,,8.0,4437
 WikipediaSearch,,🚫,,10.0,4437
 WordSearch,,,,2.0,4437
 AggregatedEntityClass,,🚫,,12.0,4479
-AiryAiPrime,,,,2.0,4479
+AiryAiPrime,Derivative of Airy function Ai,✅,pure,2.0,4479
 AllowedDimensions,,,,9.0,4479
 AnimationRunTime,,🚫,,10.0,4479
 AskedValue,,🚫,,10.4,4479
@@ -4550,7 +4550,7 @@ URLResponseTime,,🚫,,11.1,4707
 VerifyDigitalSignature,,🚫,,12.0,4707
 WebAudioSearch,,🚫,,12.0,4707
 WikidataSearch,,🚫,,12.1,4707
-AiryBiPrime,,,,2.0,4747
+AiryBiPrime,Derivative of Airy function Bi,✅,pure,2.0,4747
 AiryBiZero,,,,6.0,4747
 AssociationFormat,,,,10.0,4747
 CircularSymplecticMatrixDistribution,,,,10.3,4747
