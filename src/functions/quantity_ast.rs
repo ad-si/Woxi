@@ -1138,7 +1138,7 @@ pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
     "Nanoseconds" => Some("ns"),
     "Minutes" => Some("min"),
     "Hours" => Some("h"),
-    "Days" => Some("d"),
+    "Days" => Some("days"),
     // Volume
     "Liters" => Some("L"),
     "Milliliters" => Some("mL"),

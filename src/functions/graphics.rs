@@ -3460,6 +3460,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "Quantity" if args.len() == 2 => {
           let mag = expr_to_svg_markup(&args[0]);
           let unit = quantity_unit_to_svg_abbrev(&args[1]);
+          let unit = crate::syntax::singularize_unit_if_one(&args[0], &unit);
           format!("{} {}", mag, unit)
         }
 

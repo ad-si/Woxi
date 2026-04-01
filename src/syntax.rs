@@ -3815,7 +3815,21 @@ fn quantity_unit_to_abbrev(unit: &Expr) -> String {
 pub fn quantity_to_visual_string(mag: &Expr, unit: &Expr) -> String {
   let mag_str = expr_to_output(mag);
   let unit_str = quantity_unit_to_abbrev(unit);
+  let unit_str = singularize_unit_if_one(mag, &unit_str);
   format!("{} {}", mag_str, unit_str)
+}
+
+/// If the magnitude is exactly 1, singularize unit display names
+/// that are full words (e.g. "days" → "day").
+pub fn singularize_unit_if_one(mag: &Expr, unit_str: &str) -> String {
+  let is_one = matches!(mag, Expr::Integer(1));
+  if is_one && unit_str.ends_with('s') && unit_str.len() > 2 {
+    // Only singularize word-like units (e.g. "days"), not abbreviations (e.g. "ms")
+    if unit_str.chars().all(|c| c.is_ascii_lowercase()) {
+      return unit_str[..unit_str.len() - 1].to_string();
+    }
+  }
+  unit_str.to_string()
 }
 
 /// Check if an expression is Power[symbol, negative_integer].
