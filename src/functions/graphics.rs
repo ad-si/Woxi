@@ -2916,9 +2916,9 @@ fn times_svg_separator(left: &Expr, right: &Expr) -> &'static str {
 }
 
 /// Render a stacked fraction (numerator over denominator) as SVG tspan markup.
-/// Uses `<tspan>` elements with `dy`/`dx` positioning:
-/// numerator shifted up, fraction bar (─ characters), denominator shifted down,
-/// all at 70% font-size, then baseline reset.
+/// Uses `<tspan>` elements with `dy`/`dx` positioning in `ch` units so that
+/// the layout adapts to the actual monospace character width of the browser,
+/// avoiding compounding drift from hard-coded pixel offsets.
 fn stacked_fraction_svg(
   num_markup: &str,
   den_markup: &str,
@@ -2927,31 +2927,29 @@ fn stacked_fraction_svg(
 ) -> String {
   let frac_chars = num_w.max(den_w).ceil() as usize;
   let frac_chars = frac_chars.max(1);
+  let frac_w = frac_chars as f64;
 
-  let char_px = 5.88_f64; // 8.4 * 0.7 (monospace char width at 70% font-size)
-  let num_px = num_w * char_px;
-  let den_px = den_w * char_px;
-  let bar_px = frac_chars as f64 * char_px;
-
-  // Center offsets for numerator and denominator
-  let num_center = (bar_px - num_px) / 2.0;
-  let den_center = (bar_px - den_px) / 2.0;
-
-  // dx offsets for positioning
-  let back_from_num = -(num_center + num_px); // go back to start after numerator
-  let dx_den = den_center - bar_px; // center denominator after bar
-  let advance = den_center; // advance cursor to fraction end
+  // All horizontal offsets are in `ch` units (= 1 monospace character width
+  // at the current font-size, i.e. the 70% tspan).  This makes the layout
+  // independent of the actual pixel width of the font.
+  let num_center = (frac_w - num_w) / 2.0;
+  let back_from_num = -(num_center + num_w);
+  let dx_den = (frac_w - den_w) / 2.0 - frac_w;
+  // After the denominator, advance cursor to the right edge of the fraction.
+  // This is `den_center` characters at 70% size.  The advance tspan sits
+  // *inside* the 70% tspan so `ch` still refers to the reduced size.
+  let advance = (frac_w - den_w) / 2.0;
 
   // Fraction bar using box-drawing character
   let bar: String = "\u{2500}".repeat(frac_chars);
 
   format!(
     "<tspan font-size=\"70%\">\
-     <tspan dx=\"{num_center:.1}\" dy=\"-4\">{num_markup}</tspan>\
-     <tspan dx=\"{back_from_num:.1}\" dy=\"6\">{bar}</tspan>\
-     <tspan dx=\"{dx_den:.1}\" dy=\"6\">{den_markup}</tspan>\
-     </tspan>\
-     <tspan dx=\"{advance:.1}\" dy=\"-8\" font-size=\"1\"> </tspan>"
+     <tspan dx=\"{num_center:.2}ch\" dy=\"-4\">{num_markup}</tspan>\
+     <tspan dx=\"{back_from_num:.2}ch\" dy=\"6\">{bar}</tspan>\
+     <tspan dx=\"{dx_den:.2}ch\" dy=\"6\">{den_markup}</tspan>\
+     <tspan dx=\"{advance:.2}ch\" dy=\"-8\" font-size=\"1\"> </tspan>\
+     </tspan>"
   )
 }
 
