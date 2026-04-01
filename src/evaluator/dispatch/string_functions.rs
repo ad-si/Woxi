@@ -297,6 +297,12 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::Integer(count as i128)));
       }
     }
+    "URLEncode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::url_encode_ast(args));
+    }
+    "URLDecode" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::url_decode_ast(args));
+    }
     _ => {}
   }
   None

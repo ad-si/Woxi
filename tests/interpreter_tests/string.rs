@@ -2159,3 +2159,90 @@ mod dictionary_word_q {
     );
   }
 }
+
+mod url_encode_tests {
+  use super::*;
+
+  #[test]
+  fn url_encode_simple_string() {
+    assert_eq!(
+      interpret(r#"URLEncode["Hello, World!"]"#).unwrap(),
+      "Hello%2C%20World%21"
+    );
+  }
+
+  #[test]
+  fn url_encode_spaces() {
+    assert_eq!(
+      interpret(r#"URLEncode["hello world"]"#).unwrap(),
+      "hello%20world"
+    );
+  }
+
+  #[test]
+  fn url_encode_special_chars() {
+    assert_eq!(
+      interpret(r#"URLEncode["a=1&b=2"]"#).unwrap(),
+      "a%3D1%26b%3D2"
+    );
+  }
+
+  #[test]
+  fn url_encode_none() {
+    assert_eq!(interpret("URLEncode[None]").unwrap(), "");
+  }
+
+  #[test]
+  fn url_encode_integer() {
+    assert_eq!(interpret("URLEncode[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn url_encode_real() {
+    assert_eq!(interpret("URLEncode[1.3]").unwrap(), "1.3");
+  }
+
+  #[test]
+  fn url_encode_threads_over_list() {
+    assert_eq!(
+      interpret(r#"URLEncode[{"a", "b c"}]"#).unwrap(),
+      "{a, b%20c}"
+    );
+  }
+
+  #[test]
+  fn url_encode_unreserved_chars() {
+    assert_eq!(
+      interpret(r#"URLEncode["abc123-._~"]"#).unwrap(),
+      "abc123-._~"
+    );
+  }
+}
+
+mod url_decode_tests {
+  use super::*;
+
+  #[test]
+  fn url_decode_simple() {
+    assert_eq!(
+      interpret(r#"URLDecode["Hello%2C%20World%21"]"#).unwrap(),
+      "Hello, World!"
+    );
+  }
+
+  #[test]
+  fn url_decode_special_chars() {
+    assert_eq!(
+      interpret(r#"URLDecode["a%3D1%26b%3D2"]"#).unwrap(),
+      "a=1&b=2"
+    );
+  }
+
+  #[test]
+  fn url_decode_roundtrip() {
+    assert_eq!(
+      interpret(r#"URLDecode[URLEncode["test string!@#"]]"#).unwrap(),
+      "test string!@#"
+    );
+  }
+}
