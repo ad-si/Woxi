@@ -1305,6 +1305,9 @@ pub fn dispatch_math_functions(
     "BitShiftLeft" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::bit_shift_left_ast(args));
     }
+    "BitFlip" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::bit_flip_ast(args));
+    }
     "BitSet" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bit_set_ast(args));
     }

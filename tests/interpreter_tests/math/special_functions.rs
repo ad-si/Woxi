@@ -4065,6 +4065,52 @@ mod bit_clear {
   }
 }
 
+mod bit_flip {
+  use super::*;
+
+  #[test]
+  fn flip_bit_zero() {
+    assert_eq!(interpret("BitFlip[5, 0]").unwrap(), "4");
+  }
+
+  #[test]
+  fn flip_bit_one() {
+    assert_eq!(interpret("BitFlip[5, 1]").unwrap(), "7");
+  }
+
+  #[test]
+  fn flip_bit_two() {
+    assert_eq!(interpret("BitFlip[5, 2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn flip_bit_three() {
+    assert_eq!(interpret("BitFlip[5, 3]").unwrap(), "13");
+  }
+
+  #[test]
+  fn flip_zero() {
+    assert_eq!(interpret("BitFlip[0, 1]").unwrap(), "2");
+  }
+
+  #[test]
+  fn flip_high_bit() {
+    assert_eq!(interpret("BitFlip[255, 8]").unwrap(), "511");
+  }
+
+  #[test]
+  fn negative_index() {
+    assert_eq!(interpret("BitFlip[5, -1]").unwrap(), "1");
+    assert_eq!(interpret("BitFlip[5, -2]").unwrap(), "7");
+    assert_eq!(interpret("BitFlip[5, -3]").unwrap(), "4");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("BitFlip[x, 1]").unwrap(), "BitFlip[x, 1]");
+  }
+}
+
 mod window_functions {
   use super::*;
 
