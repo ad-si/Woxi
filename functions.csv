@@ -202,7 +202,7 @@ Rational,Head type for rational numbers,✅,pure,1.0,206
 Bold,Style directive for bold text,✅,pure,6.0,207
 Normal,Converts a special form to a normal expression,✅,pure,1.0,208
 Hyperlink,Interactive hyperlink element,🚫,effectful,6.0,209
-ParametricPlot3D,3D parametric plot,🚫,none,2.0,210
+ParametricPlot3D,3D parametric plot,✅,none,2.0,210
 GridLines,Option specifying grid lines in a plot,✅,none,2.0,211
 Method,Option symbol for specifying computational methods,✅,pure,4.0,212
 Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure,1.0,213
