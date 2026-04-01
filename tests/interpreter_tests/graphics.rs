@@ -3081,6 +3081,174 @@ mod graphics_grid {
   }
 }
 
+mod grid_frame_and_background {
+  use super::*;
+
+  #[test]
+  fn grid_frame_with_color_expression() {
+    // Frame -> Darker[Gray, .6] should enable the frame and use the color
+    let svg = export_svg(
+      "Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}, Frame -> Darker[Gray, .6]]",
+    );
+    // Should have frame lines with the darkened gray color
+    assert!(svg.contains("<line"), "Should have frame lines");
+    assert!(
+      svg.contains("rgb(51,51,51)"),
+      "Frame should use Darker[Gray, .6] color"
+    );
+    // viewBox should have -0.5 offset for frame padding
+    assert!(
+      svg.contains("viewBox=\"-0.5 -0.5"),
+      "Should have frame padding in viewBox"
+    );
+  }
+
+  #[test]
+  fn grid_frame_true() {
+    let svg =
+      export_svg("Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}, Frame -> True]");
+    assert!(svg.contains("<line"), "Should have frame lines");
+  }
+
+  #[test]
+  fn grid_background_with_blend() {
+    // Lighter[Blend[{Blue, Green}], .8] should produce a light teal
+    let svg = export_svg(
+      "Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}, Background -> Lighter[Blend[{Blue, Green}], .8]]",
+    );
+    // Blend[{Blue, Green}] = RGBColor[0, 1/2, 1/2]
+    // Lighter[..., 0.8] = RGBColor[4/5, 9/10, 9/10] = rgb(204, 230, 230)
+    assert!(
+      svg.contains("rgb(204,230,230)"),
+      "Background should be Lighter[Blend[Blue,Green], .8]"
+    );
+  }
+
+  #[test]
+  fn grid_background_repeating_rows() {
+    // {Yellow, {White, Green}} means row0=Yellow, then alternate White/Green
+    let svg = export_svg(
+      "Grid[{{\"a\"}, {\"b\"}, {\"c\"}, {\"d\"}}, Background -> {None, {Yellow, {White, Green}}}]",
+    );
+    // Row 0: Yellow = rgb(255,255,0)
+    assert!(svg.contains("rgb(255,255,0)"), "First row should be Yellow");
+    // Row 1: White = rgb(255,255,255)
+    assert!(
+      svg.contains("rgb(255,255,255)"),
+      "Second row should be White"
+    );
+    // Row 2: Green = rgb(0,255,0)
+    assert!(svg.contains("rgb(0,255,0)"), "Third row should be Green");
+  }
+
+  #[test]
+  fn parse_color_blend_equal() {
+    // Blend[{Red, Blue}] = RGBColor[1/2, 0, 1/2] = rgb(128, 0, 128)
+    let svg = export_svg("Grid[{{\"x\"}}, Background -> Blend[{Red, Blue}]]");
+    assert!(
+      svg.contains("rgb(128,0,128)"),
+      "Blend[Red,Blue] should give purple"
+    );
+  }
+
+  #[test]
+  fn parse_color_blend_weighted() {
+    // Blend[{Red, Blue}, 0] = Red = rgb(255, 0, 0)
+    let svg =
+      export_svg("Grid[{{\"x\"}}, Background -> Blend[{Red, Blue}, 0]]");
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "Blend at 0 should give first color"
+    );
+  }
+
+  #[test]
+  fn grid_per_column_alignment() {
+    // Alignment -> {{Left, Right, {Left}}} means col0=Left, col1=Right, rest=Left
+    let svg = export_svg(
+      "Grid[{{\"a\", \"b\", \"c\"}}, Alignment -> {{Left, Right, {Left}}}]",
+    );
+    // Column 0 should be left-aligned
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "Should have left-aligned column"
+    );
+    // Column 1 should be right-aligned
+    assert!(
+      svg.contains("text-anchor=\"end\""),
+      "Should have right-aligned column"
+    );
+  }
+
+  #[test]
+  fn grid_dividers_per_position_with_colors() {
+    // Dividers with per-position specs: draw after header, not between data rows
+    let svg = export_svg(
+      "Grid[{{\"h\"}, {\"a\"}, {\"b\"}}, Dividers -> {All, {Darker[Gray, .6], Darker[Gray, .6], {False}, Darker[Gray, .6]}}]",
+    );
+    // Should have the header divider (position 1)
+    let lines: Vec<&str> = svg
+      .lines()
+      .filter(|l| l.contains("<line") && l.contains("y1"))
+      .collect();
+    // There should be horizontal lines for top, after header, and bottom
+    let h_lines: Vec<&str> = lines
+      .iter()
+      .filter(|l| l.contains("x2=") && !l.contains("y2=\"0\""))
+      .copied()
+      .collect();
+    assert!(
+      h_lines.len() >= 3,
+      "Should have at least 3 horizontal lines (top, header, bottom), got {}",
+      h_lines.len()
+    );
+  }
+
+  #[test]
+  fn grid_divider_at_row_boundary() {
+    // The divider between rows should be at the visual boundary (midpoint of gap),
+    // so all rows have equal visual height.
+    // With Spacings -> 2, row_gap = 2*14 = 28, base_row_height = 16.
+    // Visual row height = 16 + 28 = 44, so divider is at y=44.0.
+    let svg = export_svg(
+      "Grid[{{\"h\"}, {\"a\"}}, Dividers -> {None, All}, Spacings -> {Automatic, 2}]",
+    );
+    assert!(
+      svg.contains("y1=\"44.0\""),
+      "Divider should be at visual row boundary (y=44.0)"
+    );
+  }
+
+  #[test]
+  fn grid_spacings_equal_row_heights() {
+    // All rows (including first and last) should have the same visual height
+    // when Spacings vertical is set.
+    let svg = export_svg(
+      "Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}, {\"e\", \"f\"}}, \
+       Background -> {None, {LightYellow, LightBlue}}, \
+       Spacings -> {Automatic, .8}]",
+    );
+    // Extract all background rect heights
+    let heights: Vec<f64> = svg
+      .lines()
+      .filter(|l| l.contains("<rect"))
+      .filter_map(|l| {
+        let h_start = l.find("height=\"")? + 8;
+        let h_end = l[h_start..].find('"')? + h_start;
+        l[h_start..h_end].parse::<f64>().ok()
+      })
+      .collect();
+    assert!(!heights.is_empty(), "Should have background rects");
+    let first = heights[0];
+    for (i, &h) in heights.iter().enumerate() {
+      assert!(
+        (h - first).abs() < 0.01,
+        "Row rect {i} height {h} differs from first row height {first}"
+      );
+    }
+  }
+}
+
 mod grid_rasterize {
   use super::*;
 

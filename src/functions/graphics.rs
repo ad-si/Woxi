@@ -536,6 +536,55 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         };
         Some(base.lighter(amount))
       }
+      "Blend" => {
+        if args.is_empty() {
+          return None;
+        }
+        if let Expr::List(colors) = &args[0] {
+          if colors.len() < 2 {
+            return None;
+          }
+          let parsed: Vec<Color> = colors
+            .iter()
+            .map(|c| parse_color(c))
+            .collect::<Option<Vec<_>>>()?;
+          let n = parsed.len() as f64;
+          if args.len() == 1 {
+            // Equal blend (average)
+            let r = parsed.iter().map(|c| c.r).sum::<f64>() / n;
+            let g = parsed.iter().map(|c| c.g).sum::<f64>() / n;
+            let b = parsed.iter().map(|c| c.b).sum::<f64>() / n;
+            Some(Color::new(r, g, b))
+          } else {
+            // Weighted blend: Blend[{c1, c2, ...}, t]
+            let t = expr_to_f64(&args[1])?.clamp(0.0, 1.0);
+            let nc = parsed.len();
+            if nc == 2 {
+              let c1 = &parsed[0];
+              let c2 = &parsed[1];
+              Some(Color::new(
+                c1.r * (1.0 - t) + c2.r * t,
+                c1.g * (1.0 - t) + c2.g * t,
+                c1.b * (1.0 - t) + c2.b * t,
+              ))
+            } else {
+              let segments = (nc - 1) as f64;
+              let pos = t * segments;
+              let seg_idx = (pos as usize).min(nc - 2);
+              let local_t = pos - seg_idx as f64;
+              let c1 = &parsed[seg_idx];
+              let c2 = &parsed[seg_idx + 1];
+              Some(Color::new(
+                c1.r * (1.0 - local_t) + c2.r * local_t,
+                c1.g * (1.0 - local_t) + c2.g * local_t,
+                c1.b * (1.0 - local_t) + c2.b * local_t,
+              ))
+            }
+          }
+        } else {
+          None
+        }
+      }
       _ => None,
     },
     _ => None,
@@ -4028,6 +4077,45 @@ fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   }
 }
 
+/// Convert a WL alignment identifier to SVG text-anchor value.
+fn alignment_to_anchor(expr: &Expr) -> &'static str {
+  if let Expr::Identifier(val) = expr {
+    match val.as_str() {
+      "Left" => "start",
+      "Right" => "end",
+      _ => "middle",
+    }
+  } else {
+    "middle"
+  }
+}
+
+/// Parse a divider entry: a color expression means "draw with this color",
+/// False/None means "don't draw".
+fn parse_divider_entry(expr: &Expr) -> Option<Color> {
+  match expr {
+    Expr::Identifier(n) if n == "False" || n == "None" => None,
+    Expr::FunctionCall { name, .. } if name == "False" || name == "None" => {
+      None
+    }
+    Expr::Identifier(n) if n == "True" || n == "All" => {
+      // True means draw with default color — use a sentinel black
+      Some(Color::new(0.0, 0.0, 0.0))
+    }
+    _ => parse_color(expr),
+  }
+}
+
+/// Parse a color from a Background list entry, treating "None" as None.
+fn parse_bg_color(expr: &Expr) -> Option<Color> {
+  if let Expr::Identifier(n) = expr {
+    if n == "None" {
+      return None;
+    }
+  }
+  parse_color(expr)
+}
+
 fn grid_svg_internal(
   args: &[Expr],
   group_gaps: &[usize],
@@ -4064,16 +4152,38 @@ fn grid_svg_internal(
   // Parse options from remaining args
   let mut frame_outer = false; // Frame -> True: outer border only
   let mut frame_all = false; // Frame -> All: all gridlines
+  let mut frame_color: Option<Color> = None; // custom frame color
   let mut row_headings: Vec<Expr> = Vec::new();
   let mut col_headings: Vec<Expr> = Vec::new();
   let mut spacings_h: Option<f64> = None; // horizontal spacing override
   let mut spacings_v: Option<f64> = None; // vertical spacing override
   let mut dividers_col = false; // vertical divider lines between columns
   let mut dividers_row = false; // horizontal divider lines between rows
+  // Per-position divider specs: Some(color) = draw with color, None = don't draw
+  // These use the same repeating-list pattern as backgrounds
+  let mut col_dividers: Vec<Option<Color>> = Vec::new(); // vertical lines (ncols+1 positions)
+  let mut row_dividers: Vec<Option<Color>> = Vec::new(); // horizontal lines (nrows+1 positions)
+  let mut col_div_explicit_start: Vec<Option<Color>> = Vec::new();
+  let mut col_div_repeating: Vec<Option<Color>> = Vec::new();
+  let mut col_div_explicit_end: Vec<Option<Color>> = Vec::new();
+  let mut col_div_has_repeating = false;
+  let mut row_div_explicit_start: Vec<Option<Color>> = Vec::new();
+  let mut row_div_repeating: Vec<Option<Color>> = Vec::new();
+  let mut row_div_explicit_end: Vec<Option<Color>> = Vec::new();
+  let mut row_div_has_repeating = false;
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
-  let mut alignment_h: &str = "middle"; // SVG text-anchor value
+  // For WL repeating-list patterns like {first, {repeat1, repeat2}, last}
+  let mut row_bg_explicit_start: Vec<Option<Color>> = Vec::new();
+  let mut row_bg_repeating: Vec<Option<Color>> = Vec::new();
+  let mut row_bg_explicit_end: Vec<Option<Color>> = Vec::new();
+  let mut row_bg_has_repeating = false;
+  let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
+  let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
+  let mut col_align_explicit_start: Vec<&str> = Vec::new();
+  let mut col_align_repeating: Vec<&str> = Vec::new();
+  let mut col_align_has_repeating = false;
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
@@ -4090,7 +4200,13 @@ fn grid_svg_internal(
           Expr::FunctionCall { name: fn_name, .. } if fn_name == "True" => {
             frame_outer = true;
           }
-          _ => {}
+          expr => {
+            // A color expression means Frame -> True with that color
+            if let Some(color) = parse_color(expr) {
+              frame_outer = true;
+              frame_color = Some(color);
+            }
+          }
         },
         "Dividers" => match replacement.as_ref() {
           Expr::Identifier(val) if val == "All" || val == "True" => {
@@ -4103,18 +4219,67 @@ fn grid_svg_internal(
           }
           Expr::List(items) => {
             // Dividers -> {col_spec, row_spec}
-            if !items.is_empty() {
-              if let Expr::Identifier(v) = &items[0] {
-                if v == "All" || v == "True" {
-                  dividers_col = true;
+            // Each spec can be: True/All, or a list with optional repeating pattern
+            for (idx, spec) in items.iter().enumerate() {
+              match spec {
+                Expr::Identifier(v) if v == "All" || v == "True" => {
+                  if idx == 0 {
+                    dividers_col = true;
+                  } else {
+                    dividers_row = true;
+                  }
                 }
-              }
-            }
-            if items.len() >= 2 {
-              if let Expr::Identifier(v) = &items[1] {
-                if v == "All" || v == "True" {
-                  dividers_row = true;
+                Expr::List(positions) => {
+                  // Per-position spec with optional repeating pattern
+                  let has_nested =
+                    positions.iter().any(|c| matches!(c, Expr::List(_)));
+                  let (
+                    target_dividers,
+                    explicit_start,
+                    repeating,
+                    explicit_end,
+                    has_rep_flag,
+                  ) = if idx == 0 {
+                    (
+                      &mut col_dividers,
+                      &mut col_div_explicit_start,
+                      &mut col_div_repeating,
+                      &mut col_div_explicit_end,
+                      &mut col_div_has_repeating,
+                    )
+                  } else {
+                    (
+                      &mut row_dividers,
+                      &mut row_div_explicit_start,
+                      &mut row_div_repeating,
+                      &mut row_div_explicit_end,
+                      &mut row_div_has_repeating,
+                    )
+                  };
+                  if has_nested {
+                    *has_rep_flag = true;
+                    let mut before_repeat = true;
+                    for p in positions {
+                      if let Expr::List(rep_items) = p {
+                        before_repeat = false;
+                        *repeating = rep_items
+                          .iter()
+                          .map(|e| parse_divider_entry(e))
+                          .collect();
+                      } else if before_repeat {
+                        explicit_start.push(parse_divider_entry(p));
+                      } else {
+                        explicit_end.push(parse_divider_entry(p));
+                      }
+                    }
+                  } else {
+                    *target_dividers = positions
+                      .iter()
+                      .map(|e| parse_divider_entry(e))
+                      .collect();
+                  }
                 }
+                _ => {}
               }
             }
           }
@@ -4128,18 +4293,8 @@ fn grid_svg_internal(
             // Background -> {{col_colors...}, {row_colors...}}
             if !items.is_empty() {
               if let Expr::List(cols) = &items[0] {
-                col_backgrounds = cols
-                  .iter()
-                  .map(|c| {
-                    if let Expr::Identifier(n) = c
-                      && n == "None"
-                    {
-                      None
-                    } else {
-                      parse_color(c)
-                    }
-                  })
-                  .collect();
+                col_backgrounds =
+                  cols.iter().map(|c| parse_bg_color(c)).collect();
               } else if parse_color(&items[0]).is_some() {
                 // Background -> {color} (single color in list)
                 background_color = parse_color(&items[0]);
@@ -4147,18 +4302,29 @@ fn grid_svg_internal(
             }
             if items.len() >= 2 {
               if let Expr::List(row_cols) = &items[1] {
-                row_backgrounds = row_cols
-                  .iter()
-                  .map(|c| {
-                    if let Expr::Identifier(n) = c
-                      && n == "None"
-                    {
-                      None
+                // Check for repeating-list pattern: {first..., {repeat...}, last...}
+                let has_nested =
+                  row_cols.iter().any(|c| matches!(c, Expr::List(_)));
+                if has_nested {
+                  row_bg_has_repeating = true;
+                  let mut before_repeat = true;
+                  for c in row_cols {
+                    if let Expr::List(repeat_items) = c {
+                      before_repeat = false;
+                      row_bg_repeating = repeat_items
+                        .iter()
+                        .map(|rc| parse_bg_color(rc))
+                        .collect();
+                    } else if before_repeat {
+                      row_bg_explicit_start.push(parse_bg_color(c));
                     } else {
-                      parse_color(c)
+                      row_bg_explicit_end.push(parse_bg_color(c));
                     }
-                  })
-                  .collect();
+                  }
+                } else {
+                  row_backgrounds =
+                    row_cols.iter().map(|c| parse_bg_color(c)).collect();
+                }
               }
             }
           }
@@ -4168,14 +4334,46 @@ fn grid_svg_internal(
           Expr::Identifier(val) => match val.as_str() {
             "Left" => alignment_h = "start",
             "Right" => alignment_h = "end",
-            _ => alignment_h = "middle", // Center or anything else
+            _ => alignment_h = "middle",
           },
           Expr::List(items) => {
-            if let Some(Expr::Identifier(val)) = items.first() {
-              match val.as_str() {
-                "Left" => alignment_h = "start",
-                "Right" => alignment_h = "end",
-                _ => alignment_h = "middle",
+            // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
+            // col_spec can be: Left, {Left, Right, {Left}}, etc.
+            if let Some(first) = items.first() {
+              match first {
+                Expr::Identifier(val) => match val.as_str() {
+                  "Left" => alignment_h = "start",
+                  "Right" => alignment_h = "end",
+                  _ => alignment_h = "middle",
+                },
+                Expr::List(col_specs) => {
+                  // Per-column alignment with optional repeating pattern
+                  let has_nested =
+                    col_specs.iter().any(|c| matches!(c, Expr::List(_)));
+                  if has_nested {
+                    col_align_has_repeating = true;
+                    let mut before_repeat = true;
+                    for spec in col_specs {
+                      if let Expr::List(rep_items) = spec {
+                        before_repeat = false;
+                        col_align_repeating = rep_items
+                          .iter()
+                          .map(|e| alignment_to_anchor(e))
+                          .collect();
+                      } else if before_repeat {
+                        col_align_explicit_start
+                          .push(alignment_to_anchor(spec));
+                      }
+                      // Note: trailing explicit not common for alignment
+                    }
+                  } else {
+                    col_alignments = col_specs
+                      .iter()
+                      .map(|e| alignment_to_anchor(e))
+                      .collect();
+                  }
+                }
+                _ => {}
               }
             }
           }
@@ -4290,7 +4488,7 @@ fn grid_svg_internal(
     Some(h) => h * char_width, // Spacings h in ems → pixel padding
     None => 12.0,              // default horizontal padding per cell
   };
-  let pad_y: f64 = 8.0; // vertical padding per cell (each side = 4)
+  let pad_y: f64 = 2.0; // vertical padding per cell (each side = 1)
   let row_gap: f64 = match spacings_v {
     Some(v) => v * font_size, // Spacings v in ems → pixel gap between rows
     None => 0.0,              // default: no extra row gap
@@ -4345,21 +4543,101 @@ fn grid_svg_internal(
 
   let grid_width: f64 = col_widths.iter().sum();
   let total_gap: f64 = group_gaps.len() as f64 * group_gap;
-  // Add row_gap between each pair of adjacent rows
+  // Add row_gap between each pair of adjacent rows, plus half-gap padding
+  // at top and bottom so that all rows (including first/last) have equal
+  // visual height.
   let row_gaps_total: f64 = if num_rows > 1 {
     (num_rows - 1) as f64 * row_gap
   } else {
     0.0
   };
+  let edge_pad: f64 = if num_rows > 1 { row_gap } else { 0.0 };
   let total_height: f64 =
-    row_heights.iter().sum::<f64>() + total_gap + row_gaps_total;
+    row_heights.iter().sum::<f64>() + total_gap + row_gaps_total + edge_pad;
+
+  // Expand repeating row background pattern into flat row_backgrounds
+  if row_bg_has_repeating && !row_bg_repeating.is_empty() {
+    let start_len = row_bg_explicit_start.len();
+    let end_len = row_bg_explicit_end.len();
+    let repeat_len = row_bg_repeating.len();
+    row_backgrounds = Vec::with_capacity(num_rows);
+    for i in 0..num_rows {
+      if i < start_len {
+        row_backgrounds.push(row_bg_explicit_start[i].clone());
+      } else if end_len > 0 && i >= num_rows - end_len {
+        let end_idx = i - (num_rows - end_len);
+        row_backgrounds.push(row_bg_explicit_end[end_idx].clone());
+      } else {
+        let repeat_idx = (i - start_len) % repeat_len;
+        row_backgrounds.push(row_bg_repeating[repeat_idx].clone());
+      }
+    }
+  }
+
+  // Expand repeating divider patterns
+  // Row dividers have num_rows+1 positions (top, between each row, bottom)
+  if row_div_has_repeating && !row_div_repeating.is_empty() {
+    let n = num_rows + 1;
+    let start_len = row_div_explicit_start.len();
+    let end_len = row_div_explicit_end.len();
+    let rep_len = row_div_repeating.len();
+    row_dividers = Vec::with_capacity(n);
+    for i in 0..n {
+      if i < start_len {
+        row_dividers.push(row_div_explicit_start[i].clone());
+      } else if end_len > 0 && i >= n - end_len {
+        let end_idx = i - (n - end_len);
+        row_dividers.push(row_div_explicit_end[end_idx].clone());
+      } else {
+        let rep_idx = (i - start_len) % rep_len;
+        row_dividers.push(row_div_repeating[rep_idx].clone());
+      }
+    }
+  }
+  // Column dividers have num_cols+1 positions (left, between each col, right)
+  if col_div_has_repeating && !col_div_repeating.is_empty() {
+    let n = num_cols + 1;
+    let start_len = col_div_explicit_start.len();
+    let end_len = col_div_explicit_end.len();
+    let rep_len = col_div_repeating.len();
+    col_dividers = Vec::with_capacity(n);
+    for i in 0..n {
+      if i < start_len {
+        col_dividers.push(col_div_explicit_start[i].clone());
+      } else if end_len > 0 && i >= n - end_len {
+        let end_idx = i - (n - end_len);
+        col_dividers.push(col_div_explicit_end[end_idx].clone());
+      } else {
+        let rep_idx = (i - start_len) % rep_len;
+        col_dividers.push(col_div_repeating[rep_idx].clone());
+      }
+    }
+  }
+
+  // Expand repeating column alignment pattern
+  if col_align_has_repeating && !col_align_repeating.is_empty() {
+    let start_len = col_align_explicit_start.len();
+    let rep_len = col_align_repeating.len();
+    col_alignments = Vec::with_capacity(num_cols);
+    for j in 0..num_cols {
+      if j < start_len {
+        col_alignments.push(col_align_explicit_start[j]);
+      } else {
+        let rep_idx = (j - start_len) % rep_len;
+        col_alignments.push(col_align_repeating[rep_idx]);
+      }
+    }
+  }
+
+  let has_per_pos_dividers =
+    !row_dividers.is_empty() || !col_dividers.is_empty();
 
   // When parentheses are enabled, reserve space on left and right
   let paren_margin: f64 = if parens { 12.0 } else { 0.0 };
   let total_width: f64 = grid_width + 2.0 * paren_margin;
 
   // Build SVG — add padding when frame borders are drawn so strokes aren't clipped
-  let has_frame = frame_all || frame_outer;
+  let has_frame = frame_all || frame_outer || has_per_pos_dividers;
   let frame_pad: f64 = if has_frame { 0.5 } else { 0.0 };
   let svg_w = (total_width + 2.0 * frame_pad).ceil() as u32;
   let svg_h = (total_height + 2.0 * frame_pad).ceil() as u32;
@@ -4403,18 +4681,62 @@ fn grid_svg_internal(
     ));
   }
 
-  // Draw cell backgrounds and contents
-  let mut y_offset: f64 = 0.0;
-  for (i, row) in rows.iter().enumerate() {
-    // Add group gap before this row if it's a group boundary
-    if group_gaps.contains(&i) {
-      y_offset += group_gap;
+  // Precompute divider/frame drawing flags (needed for visual bounds below)
+  let draw_outer = frame_all || frame_outer;
+  let draw_inner_h = frame_all || dividers_row;
+  let draw_inner_v = frame_all || dividers_col;
+  let has_row_div = !row_dividers.is_empty();
+  let has_col_div = !col_dividers.is_empty();
+
+  // Precompute per-row visual bounds for backgrounds and text centering.
+  // Compute content y-start and divider y for each row position.
+  // Start with row_gap/2 top padding so first/last rows have equal visual height.
+  let mut content_y_starts: Vec<f64> = Vec::with_capacity(num_rows);
+  let mut divider_ys: Vec<f64> = Vec::with_capacity(num_rows + 1);
+  {
+    let mut y = row_gap / 2.0;
+    for i in 0..=num_rows {
+      divider_ys.push(y);
+      if i > 0 && i < num_rows {
+        y += row_gap;
+        if group_gaps.contains(&i) {
+          y += group_gap;
+        }
+      }
+      if i < num_rows {
+        content_y_starts.push(y);
+        y += row_heights[i];
+      }
     }
-    let rh = row_heights[i];
+  }
+  // Visual top/bottom for each row — backgrounds always split gaps at midpoint
+  let mut visual_tops: Vec<f64> = Vec::with_capacity(num_rows);
+  let mut visual_bottoms: Vec<f64> = Vec::with_capacity(num_rows);
+  for i in 0..num_rows {
+    let top = if i == 0 {
+      0.0
+    } else {
+      // Midpoint of gap between row i-1 and row i
+      let prev_bottom = content_y_starts[i - 1] + row_heights[i - 1];
+      (prev_bottom + content_y_starts[i]) / 2.0
+    };
+    let bottom = if i == num_rows - 1 {
+      total_height
+    } else {
+      let this_bottom = content_y_starts[i] + row_heights[i];
+      (this_bottom + content_y_starts[i + 1]) / 2.0
+    };
+    visual_tops.push(top);
+    visual_bottoms.push(bottom);
+  }
+
+  // Draw cell backgrounds
+  for (i, row) in rows.iter().enumerate() {
+    let bg_y = visual_tops[i];
+    let bg_h = visual_bottoms[i] - visual_tops[i];
     let mut x_offset: f64 = paren_margin;
     for (j, _cell) in row.iter().enumerate() {
       let col_w = col_widths[j];
-      // Determine background color: per-cell > per-row > per-column > uniform
       let bg = row_backgrounds
         .get(i % row_backgrounds.len().max(1))
         .and_then(|c| c.as_ref())
@@ -4427,34 +4749,27 @@ fn grid_svg_internal(
       if let Some(color) = bg {
         svg.push_str(&format!(
           "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{}/>\n",
-          x_offset, y_offset, col_w, rh, color.to_svg_rgb(), color.opacity_attr()
+          x_offset, bg_y, col_w, bg_h, color.to_svg_rgb(), color.opacity_attr()
         ));
       }
       x_offset += col_w;
     }
-    y_offset += rh;
-    if i + 1 < num_rows {
-      y_offset += row_gap;
-    }
   }
 
-  // Draw cell contents (shifted right by paren_margin when parens are enabled)
-  let mut y_offset: f64 = 0.0;
+  // Draw cell contents — text is centered within visual row bounds
   for (i, row) in rows.iter().enumerate() {
-    // Add group gap before this row if it's a group boundary
-    if group_gaps.contains(&i) {
-      y_offset += group_gap;
-    }
-    let rh = row_heights[i];
     let mut x_offset: f64 = paren_margin;
     for (j, cell) in row.iter().enumerate() {
       let col_w = col_widths[j];
-      let cx = match alignment_h {
+      let col_align = col_alignments.get(j).copied().unwrap_or(alignment_h);
+      let cx = match col_align {
         "start" => x_offset + pad_x / 2.0,
         "end" => x_offset + col_w - pad_x / 2.0,
-        _ => x_offset + col_w / 2.0, // middle (default)
+        _ => x_offset + col_w / 2.0,
       };
-      let cy = y_offset + rh / 2.0;
+      // Shift text down slightly to compensate for ascenders being taller
+      // than descenders, which makes mathematical centering look top-heavy.
+      let cy = (visual_tops[i] + visual_bottoms[i]) / 2.0 - 1.0;
 
       // Check if the cell (possibly inside Style) is an Image
       if let Some(img) = unwrap_to_image(cell) {
@@ -4471,7 +4786,8 @@ fn grid_svg_internal(
           let draw_w = avail_w;
           let draw_h = (*ih as f64) * scale;
           let ix = x_offset + pad_x / 2.0;
-          let iy = y_offset + (rh - draw_h) / 2.0;
+          let vis_h = visual_bottoms[i] - visual_tops[i];
+          let iy = visual_tops[i] + (vis_h - draw_h) / 2.0;
 
           // Encode image as base64 PNG
           let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
@@ -4508,52 +4824,81 @@ fn grid_svg_internal(
         };
         let text_fill = theme().text_primary;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{alignment_h}\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
         ));
       }
       x_offset += col_w;
     }
-    y_offset += rh;
-    // Add row_gap between rows (not after the last row)
-    if i + 1 < num_rows {
-      y_offset += row_gap;
-    }
   }
 
   // Draw frame and divider lines
-  let frame_stroke = theme().stroke_default;
-  let draw_outer = frame_all || frame_outer;
-  let draw_inner_h = frame_all || dividers_row;
-  let draw_inner_v = frame_all || dividers_col;
+  let default_stroke = frame_color
+    .as_ref()
+    .map(|c| c.to_svg_rgb())
+    .unwrap_or_else(|| theme().stroke_default.to_string());
 
-  if draw_outer || draw_inner_h {
-    // Horizontal lines
-    let mut y = 0.0_f64;
+  {
+    // Horizontal lines (row dividers)
+    // Divider position i is between row i-1 and row i (at the row boundary).
+    // Frame borders (i=0 / i=num_rows) are drawn at the grid edges (0 / total_height).
     for i in 0..=num_rows {
       let is_border = i == 0 || i == num_rows;
-      if (is_border && draw_outer) || (!is_border && draw_inner_h) {
+      // Check per-position divider spec first, then fall back to boolean flags
+      let (should_draw, stroke) = if has_row_div {
+        if let Some(Some(color)) = row_dividers.get(i) {
+          (true, color.to_svg_rgb())
+        } else {
+          if is_border && draw_outer {
+            (true, default_stroke.clone())
+          } else {
+            (false, String::new())
+          }
+        }
+      } else if (is_border && draw_outer) || (!is_border && draw_inner_h) {
+        (true, default_stroke.clone())
+      } else {
+        (false, String::new())
+      };
+      if should_draw {
+        // Frame borders at 0 / total_height; inner dividers at visual row boundaries
+        let draw_y = if i == 0 {
+          0.0
+        } else if i == num_rows {
+          total_height
+        } else {
+          visual_tops[i]
+        };
         svg.push_str(&format!(
-          "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+          "<line x1=\"{paren_margin:.1}\" y1=\"{draw_y:.1}\" x2=\"{:.1}\" y2=\"{draw_y:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n",
           paren_margin + grid_width
         ));
       }
-      if i < num_rows {
-        y += row_heights[i];
-        if i + 1 < num_rows {
-          y += row_gap;
-        }
-      }
     }
   }
-  if draw_outer || draw_inner_v {
-    // Vertical lines
+  {
+    // Vertical lines (column dividers)
     let mut x_offset: f64 = paren_margin;
     for j in 0..=num_cols {
       let is_border = j == 0 || j == num_cols;
-      if (is_border && draw_outer) || (!is_border && draw_inner_v) {
+      let (should_draw, stroke) = if has_col_div {
+        if let Some(Some(color)) = col_dividers.get(j) {
+          (true, color.to_svg_rgb())
+        } else {
+          if is_border && draw_outer {
+            (true, default_stroke.clone())
+          } else {
+            (false, String::new())
+          }
+        }
+      } else if (is_border && draw_outer) || (!is_border && draw_inner_v) {
+        (true, default_stroke.clone())
+      } else {
+        (false, String::new())
+      };
+      if should_draw {
         svg.push_str(&format!(
-          "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+          "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
         ));
       }
       if j < num_cols {
