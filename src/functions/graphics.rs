@@ -4062,11 +4062,18 @@ fn grid_svg_internal(
   };
 
   // Parse options from remaining args
-  let mut frame_all = false;
+  let mut frame_outer = false; // Frame -> True: outer border only
+  let mut frame_all = false; // Frame -> All: all gridlines
   let mut row_headings: Vec<Expr> = Vec::new();
   let mut col_headings: Vec<Expr> = Vec::new();
   let mut spacings_h: Option<f64> = None; // horizontal spacing override
   let mut spacings_v: Option<f64> = None; // vertical spacing override
+  let mut dividers_col = false; // vertical divider lines between columns
+  let mut dividers_row = false; // horizontal divider lines between rows
+  let mut background_color: Option<Color> = None; // uniform background
+  let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
+  let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
+  let mut alignment_h: &str = "middle"; // SVG text-anchor value
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
@@ -4077,13 +4084,103 @@ fn grid_svg_internal(
       && let Expr::Identifier(name) = pattern.as_ref()
     {
       match name.as_str() {
-        "Frame" => {
-          if let Expr::Identifier(val) = replacement.as_ref()
-            && val == "All"
-          {
-            frame_all = true;
+        "Frame" => match replacement.as_ref() {
+          Expr::Identifier(val) if val == "All" => frame_all = true,
+          Expr::Identifier(val) if val == "True" => frame_outer = true,
+          Expr::FunctionCall { name: fn_name, .. } if fn_name == "True" => {
+            frame_outer = true;
           }
-        }
+          _ => {}
+        },
+        "Dividers" => match replacement.as_ref() {
+          Expr::Identifier(val) if val == "All" || val == "True" => {
+            dividers_col = true;
+            dividers_row = true;
+          }
+          Expr::Identifier(val) if val == "Center" => {
+            dividers_col = true;
+            dividers_row = true;
+          }
+          Expr::List(items) => {
+            // Dividers -> {col_spec, row_spec}
+            if !items.is_empty() {
+              if let Expr::Identifier(v) = &items[0] {
+                if v == "All" || v == "True" {
+                  dividers_col = true;
+                }
+              }
+            }
+            if items.len() >= 2 {
+              if let Expr::Identifier(v) = &items[1] {
+                if v == "All" || v == "True" {
+                  dividers_row = true;
+                }
+              }
+            }
+          }
+          _ => {}
+        },
+        "Background" => match replacement.as_ref() {
+          expr if parse_color(expr).is_some() => {
+            background_color = parse_color(expr);
+          }
+          Expr::List(items) => {
+            // Background -> {{col_colors...}, {row_colors...}}
+            if !items.is_empty() {
+              if let Expr::List(cols) = &items[0] {
+                col_backgrounds = cols
+                  .iter()
+                  .map(|c| {
+                    if let Expr::Identifier(n) = c
+                      && n == "None"
+                    {
+                      None
+                    } else {
+                      parse_color(c)
+                    }
+                  })
+                  .collect();
+              } else if parse_color(&items[0]).is_some() {
+                // Background -> {color} (single color in list)
+                background_color = parse_color(&items[0]);
+              }
+            }
+            if items.len() >= 2 {
+              if let Expr::List(row_cols) = &items[1] {
+                row_backgrounds = row_cols
+                  .iter()
+                  .map(|c| {
+                    if let Expr::Identifier(n) = c
+                      && n == "None"
+                    {
+                      None
+                    } else {
+                      parse_color(c)
+                    }
+                  })
+                  .collect();
+              }
+            }
+          }
+          _ => {}
+        },
+        "Alignment" => match replacement.as_ref() {
+          Expr::Identifier(val) => match val.as_str() {
+            "Left" => alignment_h = "start",
+            "Right" => alignment_h = "end",
+            _ => alignment_h = "middle", // Center or anything else
+          },
+          Expr::List(items) => {
+            if let Some(Expr::Identifier(val)) = items.first() {
+              match val.as_str() {
+                "Left" => alignment_h = "start",
+                "Right" => alignment_h = "end",
+                _ => alignment_h = "middle",
+              }
+            }
+          }
+          _ => {}
+        },
         "Spacings" => {
           // Spacings -> {h, v} or Spacings -> n
           match replacement.as_ref() {
@@ -4261,14 +4358,23 @@ fn grid_svg_internal(
   let paren_margin: f64 = if parens { 12.0 } else { 0.0 };
   let total_width: f64 = grid_width + 2.0 * paren_margin;
 
-  // Build SVG
-  let svg_w = total_width.ceil() as u32;
-  let svg_h = total_height.ceil() as u32;
+  // Build SVG — add padding when frame borders are drawn so strokes aren't clipped
+  let has_frame = frame_all || frame_outer;
+  let frame_pad: f64 = if has_frame { 0.5 } else { 0.0 };
+  let svg_w = (total_width + 2.0 * frame_pad).ceil() as u32;
+  let svg_h = (total_height + 2.0 * frame_pad).ceil() as u32;
   let mut svg = String::with_capacity(2048);
-  svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    svg_w, svg_h, svg_w, svg_h
-  ));
+  if has_frame {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"-0.5 -0.5 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_w, svg_h, svg_w, svg_h
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_w, svg_h, svg_w, svg_h
+    ));
+  }
 
   // Draw round parentheses if enabled
   if parens {
@@ -4297,6 +4403,41 @@ fn grid_svg_internal(
     ));
   }
 
+  // Draw cell backgrounds and contents
+  let mut y_offset: f64 = 0.0;
+  for (i, row) in rows.iter().enumerate() {
+    // Add group gap before this row if it's a group boundary
+    if group_gaps.contains(&i) {
+      y_offset += group_gap;
+    }
+    let rh = row_heights[i];
+    let mut x_offset: f64 = paren_margin;
+    for (j, _cell) in row.iter().enumerate() {
+      let col_w = col_widths[j];
+      // Determine background color: per-cell > per-row > per-column > uniform
+      let bg = row_backgrounds
+        .get(i % row_backgrounds.len().max(1))
+        .and_then(|c| c.as_ref())
+        .or_else(|| {
+          col_backgrounds
+            .get(j % col_backgrounds.len().max(1))
+            .and_then(|c| c.as_ref())
+        })
+        .or(background_color.as_ref());
+      if let Some(color) = bg {
+        svg.push_str(&format!(
+          "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{}/>\n",
+          x_offset, y_offset, col_w, rh, color.to_svg_rgb(), color.opacity_attr()
+        ));
+      }
+      x_offset += col_w;
+    }
+    y_offset += rh;
+    if i + 1 < num_rows {
+      y_offset += row_gap;
+    }
+  }
+
   // Draw cell contents (shifted right by paren_margin when parens are enabled)
   let mut y_offset: f64 = 0.0;
   for (i, row) in rows.iter().enumerate() {
@@ -4308,7 +4449,11 @@ fn grid_svg_internal(
     let mut x_offset: f64 = paren_margin;
     for (j, cell) in row.iter().enumerate() {
       let col_w = col_widths[j];
-      let cx = x_offset + col_w / 2.0;
+      let cx = match alignment_h {
+        "start" => x_offset + pad_x / 2.0,
+        "end" => x_offset + col_w - pad_x / 2.0,
+        _ => x_offset + col_w / 2.0, // middle (default)
+      };
       let cy = y_offset + rh / 2.0;
 
       // Check if the cell (possibly inside Style) is an Image
@@ -4363,7 +4508,7 @@ fn grid_svg_internal(
         };
         let text_fill = theme().text_primary;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{alignment_h}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
         ));
       }
@@ -4376,16 +4521,23 @@ fn grid_svg_internal(
     }
   }
 
-  // Draw frame lines if Frame -> All
-  if frame_all {
-    let frame_stroke = theme().stroke_default;
-    // Horizontal lines (num_rows + 1 lines)
+  // Draw frame and divider lines
+  let frame_stroke = theme().stroke_default;
+  let draw_outer = frame_all || frame_outer;
+  let draw_inner_h = frame_all || dividers_row;
+  let draw_inner_v = frame_all || dividers_col;
+
+  if draw_outer || draw_inner_h {
+    // Horizontal lines
     let mut y = 0.0_f64;
     for i in 0..=num_rows {
-      svg.push_str(&format!(
-        "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-        paren_margin + grid_width
-      ));
+      let is_border = i == 0 || i == num_rows;
+      if (is_border && draw_outer) || (!is_border && draw_inner_h) {
+        svg.push_str(&format!(
+          "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+          paren_margin + grid_width
+        ));
+      }
       if i < num_rows {
         y += row_heights[i];
         if i + 1 < num_rows {
@@ -4393,12 +4545,17 @@ fn grid_svg_internal(
         }
       }
     }
-    // Vertical lines (num_cols + 1 lines)
+  }
+  if draw_outer || draw_inner_v {
+    // Vertical lines
     let mut x_offset: f64 = paren_margin;
     for j in 0..=num_cols {
-      svg.push_str(&format!(
-        "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
-      ));
+      let is_border = j == 0 || j == num_cols;
+      if (is_border && draw_outer) || (!is_border && draw_inner_v) {
+        svg.push_str(&format!(
+          "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+        ));
+      }
       if j < num_cols {
         x_offset += col_widths[j];
       }
