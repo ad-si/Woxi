@@ -364,6 +364,28 @@ mod dimensions {
   fn dimensions_ragged() {
     assert_eq!(interpret("Dimensions[{{1, 2}, {3}}]").unwrap(), "{2}");
   }
+
+  #[test]
+  fn tensor_dimensions_2d() {
+    assert_eq!(
+      interpret("TensorDimensions[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn tensor_dimensions_scalar() {
+    assert_eq!(interpret("TensorDimensions[5]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn tensor_dimensions_3d() {
+    assert_eq!(
+      interpret("TensorDimensions[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]")
+        .unwrap(),
+      "{2, 2, 2}"
+    );
+  }
 }
 
 mod nothing {

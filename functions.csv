@@ -2938,7 +2938,7 @@ ImageAspectRatio,,🚫,,8.0,3008
 PascalDistribution,Pascal distribution (number of trials until n successes),✅,pure,8.0,3008
 QFactorial,Compute the q-analog of the factorial,✅,pure,7.0,3008
 RegionBinarize,,🚫,,8.0,3008
-TensorDimensions,,,,9.0,3008
+TensorDimensions,Returns the dimensions of a tensor (alias for Dimensions),✅,pure,9.0,3008
 Cap,Inert operator displayed with frown symbol,✅,pure,3.0,3020
 CommonestFilter,,,,7.0,3020
 ComplexStreamPlot,,🚫,,12.1,3020
