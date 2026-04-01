@@ -4472,6 +4472,66 @@ mod bandstop_filter {
   }
 }
 
+mod airy_ai_prime {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(
+      interpret("AiryAiPrime[0.0]").unwrap(),
+      "-0.2588194037928068"
+    );
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(
+      interpret("AiryAiPrime[1.0]").unwrap(),
+      "-0.15914744129679328"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("AiryAiPrime[x]").unwrap(), "AiryAiPrime[x]");
+  }
+
+  #[test]
+  fn negative_arg() {
+    assert_eq!(
+      interpret("AiryAiPrime[-1.0]").unwrap(),
+      "-0.010160567116645175"
+    );
+  }
+}
+
+mod airy_bi_prime {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("AiryBiPrime[0.0]").unwrap(), "0.4482883573538264");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("AiryBiPrime[1.0]").unwrap(), "0.9324359333927756");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("AiryBiPrime[x]").unwrap(), "AiryBiPrime[x]");
+  }
+
+  #[test]
+  fn negative_arg() {
+    assert_eq!(
+      interpret("AiryBiPrime[-1.0]").unwrap(),
+      "0.5923756264227923"
+    );
+  }
+}
+
 mod dirichlet_eta {
   use super::*;
 
