@@ -678,6 +678,10 @@ function main() {
       // code points in wolframscript but plain ASCII in Woxi — the visual output
       // is identical but byte-level comparison fails.
       && !r.woxiResult.startsWith("DisplayForm[")
+      // SVG output from ExportString[_, "SVG"] differs structurally between
+      // implementations (different renderers, coordinate systems, fonts) so
+      // byte-level comparison is meaningless.
+      && !r.woxiResult.startsWith("<svg")
   );
   const renderedSkipped = beforeFilter - filteredResults.length;
   if (renderedSkipped > 0) {
