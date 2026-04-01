@@ -2789,6 +2789,46 @@ mod tree_form_graphics {
     clear_state();
     assert_eq!(interpret("TreeForm[]").unwrap(), "TreeForm[]");
   }
+
+  #[test]
+  fn tree_form_arithmetic_expression() {
+    // TreeForm[a b + c d] stays as wrapper in OutputForm
+    clear_state();
+    assert_eq!(
+      interpret("TreeForm[a b + c d]").unwrap(),
+      "TreeForm[a*b + c*d]"
+    );
+  }
+
+  #[test]
+  fn tree_form_arithmetic_exports_svg() {
+    // TreeForm[a b + c d] should produce valid SVG via ExportString
+    clear_state();
+    let result =
+      interpret("ExportString[TreeForm[a b + c d], \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"), "Expected SVG output");
+    assert!(result.contains("Plus"), "Expected Plus node in tree");
+    assert!(result.contains("Times"), "Expected Times node in tree");
+  }
+
+  #[test]
+  fn tree_form_nested_arithmetic() {
+    clear_state();
+    assert_eq!(
+      interpret("TreeForm[x^2 + y^2]").unwrap(),
+      "TreeForm[x^2 + y^2]"
+    );
+  }
+
+  #[test]
+  fn tree_form_nested_arithmetic_exports_svg() {
+    clear_state();
+    let result =
+      interpret("ExportString[TreeForm[x^2 + y^2], \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"), "Expected SVG output");
+    assert!(result.contains("Plus"), "Expected Plus node in tree");
+    assert!(result.contains("Power"), "Expected Power node in tree");
+  }
 }
 
 mod graphics_row {
