@@ -647,7 +647,7 @@ mod graphics {
       let result =
         woxi::interpret_with_stdout("Plot[Sin[x], {x, 0, 2 Pi}];").unwrap();
       assert_eq!(
-        result.result, "Null",
+        result.result, "\0",
         "Trailing semicolon should suppress result to Null"
       );
     }
@@ -657,7 +657,7 @@ mod graphics {
       let result =
         woxi::interpret_with_stdout("p = Plot[Sin[x], {x, 0, 2 Pi}];").unwrap();
       assert_eq!(
-        result.result, "Null",
+        result.result, "\0",
         "Assignment with trailing semicolon should suppress result to Null"
       );
     }

@@ -483,7 +483,7 @@ mod clear {
 
   #[test]
   fn clear_returns_null() {
-    assert_eq!(interpret("x = 5; Clear[x]").unwrap(), "Null");
+    assert_eq!(interpret("x = 5; Clear[x]").unwrap(), "\0");
   }
 }
 
@@ -532,7 +532,7 @@ mod multiline_association {
     )
     .unwrap();
     assert_eq!(res.stdout.trim(), "<|1c -> 230, 2c -> 306|>");
-    assert_eq!(res.result, "Null");
+    assert_eq!(res.result, "\0");
   }
 
   #[test]

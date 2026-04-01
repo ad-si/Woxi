@@ -102,8 +102,12 @@ fn main() {
       woxi::set_messages_to_stdout(true);
       match interpret(&expression) {
         Ok(result) => {
-          // "\0" is a sentinel value indicating output was already printed (e.g., Part error)
-          if result != "\0" {
+          // "\0" is a sentinel for suppressed output (Null symbol, trailing semicolon,
+          // or output already printed e.g. Part error).
+          // In CLI mode, display "Null" to match wolframscript behavior.
+          if result == "\0" {
+            println!("Null");
+          } else {
             println!("{result}");
           }
         }

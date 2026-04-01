@@ -1086,23 +1086,29 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         } else {
           syntax::top_level_output(&result_expr)
         };
-        // Convert to output string (strips quotes from strings for display)
-        last_result = Some(output_text);
+        // Convert to output string (strips quotes from strings for display).
+        // Use "\0" sentinel for the Null symbol so consumers can suppress it
+        // without confusing it with the string "Null".
+        if matches!(&result_expr, syntax::Expr::Identifier(s) if s == "Null") {
+          last_result = Some("\0".to_string());
+        } else {
+          last_result = Some(output_text);
+        }
         any_nonempty = true;
       }
       ProgramStmt::FunctionDefinition(node) => {
         store_function_definition(node.clone())?;
-        last_result = Some("Null".to_string());
+        last_result = Some("\0".to_string());
         any_nonempty = true;
       }
       ProgramStmt::TagSetDelayed(node) => {
         store_tag_set_delayed(node.clone(), false)?;
-        last_result = Some("Null".to_string());
+        last_result = Some("\0".to_string());
         any_nonempty = true;
       }
       ProgramStmt::TagSet(node) => {
         store_tag_set_delayed(node.clone(), true)?;
-        last_result = Some("Null".to_string());
+        last_result = Some("\0".to_string());
         any_nonempty = true;
       }
       ProgramStmt::TrailingSemicolon => {
@@ -1122,7 +1128,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 
   if any_nonempty {
     if trailing_semicolon {
-      Ok("Null".to_string())
+      Ok("\0".to_string())
     } else {
       last_result.ok_or(InterpreterError::EmptyInput)
     }

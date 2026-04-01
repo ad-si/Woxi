@@ -238,7 +238,7 @@ impl WoxiKernel {
 
           // Graphics result
           if let Some(ref svg) = result.graphics {
-            if result.result != "Null" && result.result != "\0" {
+            if result.result != "\0" {
               let mut media = jupyter_protocol::media::Media::default();
               media
                 .content
@@ -254,7 +254,7 @@ impl WoxiKernel {
               };
               self.iopub.send(execute_result.as_child_of(parent)).await?;
             }
-          } else if result.result != "Null" && result.result != "\0" {
+          } else if result.result != "\0" {
             // Text result with optional SVG rendering
             let mut media = jupyter_protocol::media::Media::default();
             media

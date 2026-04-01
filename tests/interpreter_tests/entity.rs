@@ -192,7 +192,7 @@ mod entity_store_tests {
         "store = EntityStore[{\"Pet\" -> <|\"Entities\" -> <||>, \"Properties\" -> <||>|>}]; EntityRegister[store]; EntityUnregister[\"Pet\"]"
       )
       .unwrap(),
-      "Null"
+      "\0"
     );
   }
 
