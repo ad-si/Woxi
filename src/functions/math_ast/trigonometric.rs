@@ -2365,6 +2365,19 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => return Ok(negative_pi_over_2()), // -Pi/2
     _ => {}
   }
+  // For exact (non-Real) numeric args, compute ArcSin[1/x]
+  if !matches!(&args[0], Expr::Real(_)) {
+    let reciprocal = crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[args[0].clone(), Expr::Integer(-1)],
+    )?;
+    let result =
+      crate::evaluator::evaluate_function_call_ast("ArcSin", &[reciprocal])?;
+    // If ArcSin returned an exact result (not unevaluated), return it
+    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "ArcSin") {
+      return Ok(result);
+    }
+  }
   if let Some(f) = try_eval_to_f64(&args[0])
     && f.abs() >= 1.0
   {
@@ -2386,6 +2399,19 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Integer(-1) => return Ok(Expr::Identifier("Pi".to_string())),
     _ => {}
+  }
+  // For exact (non-Real) numeric args, compute ArcCos[1/x]
+  if !matches!(&args[0], Expr::Real(_)) {
+    let reciprocal = crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[args[0].clone(), Expr::Integer(-1)],
+    )?;
+    let result =
+      crate::evaluator::evaluate_function_call_ast("ArcCos", &[reciprocal])?;
+    // If ArcCos returned an exact result (not unevaluated), return it
+    if !matches!(&result, Expr::FunctionCall { name, .. } if name == "ArcCos") {
+      return Ok(result);
+    }
   }
   if let Some(f) = try_eval_to_f64(&args[0])
     && f.abs() >= 1.0
@@ -2567,6 +2593,133 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "LogisticSigmoid".to_string(),
     args: args.to_vec(),
   })
+}
+
+// ─── Degree Trig Functions ──────────────────────────────────────────────
+
+/// Helper: multiply argument by Degree (Pi/180) and evaluate trig function
+fn trig_degrees_ast(
+  func_name: &str,
+  degrees_name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects 1 argument",
+      degrees_name
+    )));
+  }
+  // Convert degrees to radians: x * Degree
+  let radians = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[args[0].clone(), Expr::Constant("Degree".to_string())],
+  )?;
+  let result =
+    crate::evaluator::evaluate_function_call_ast(func_name, &[radians])?;
+  // If the result is still unevaluated (symbolic), return unevaluated degree form
+  if let Expr::FunctionCall { name, .. } = &result {
+    if name == func_name {
+      return Ok(Expr::FunctionCall {
+        name: degrees_name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+  Ok(result)
+}
+
+/// Helper: evaluate inverse trig function and convert result from radians to degrees
+fn arc_trig_degrees_ast(
+  func_name: &str,
+  degrees_name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects 1 argument",
+      degrees_name
+    )));
+  }
+  let radians = crate::evaluator::evaluate_function_call_ast(
+    func_name,
+    &[args[0].clone()],
+  )?;
+  // If the result is still unevaluated (symbolic), return unevaluated
+  if let Expr::FunctionCall { name, .. } = &radians {
+    if name == func_name {
+      return Ok(Expr::FunctionCall {
+        name: degrees_name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+  // For numeric results, convert radians to degrees (keep as Real)
+  if let Expr::Real(f) = &radians {
+    return Ok(Expr::Real(f.to_degrees()));
+  }
+  // For exact results, multiply by 180/Pi
+  crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[
+      radians,
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(180), Expr::Integer(1)],
+      },
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+      },
+    ],
+  )
+}
+
+pub fn sin_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Sin", "SinDegrees", args)
+}
+
+pub fn cos_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Cos", "CosDegrees", args)
+}
+
+pub fn tan_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Tan", "TanDegrees", args)
+}
+
+pub fn cot_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Cot", "CotDegrees", args)
+}
+
+pub fn sec_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Sec", "SecDegrees", args)
+}
+
+pub fn csc_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  trig_degrees_ast("Csc", "CscDegrees", args)
+}
+
+pub fn arcsin_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcSin", "ArcSinDegrees", args)
+}
+
+pub fn arccos_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcCos", "ArcCosDegrees", args)
+}
+
+pub fn arctan_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcTan", "ArcTanDegrees", args)
+}
+
+pub fn arccot_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcCot", "ArcCotDegrees", args)
+}
+
+pub fn arcsec_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcSec", "ArcSecDegrees", args)
+}
+
+pub fn arccsc_degrees_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  arc_trig_degrees_ast("ArcCsc", "ArcCscDegrees", args)
 }
 
 // ─── TrigExpand ─────────────────────────────────────────────────────────
