@@ -1447,6 +1447,24 @@ fn quantity_svg_kilogram() {
 }
 
 #[test]
+fn quantity_svg_days_plural() {
+  clear_state();
+  let result = interpret_with_stdout("Quantity[21, \"Days\"]").unwrap();
+  assert_eq!(result.result, "21 days");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(svg.contains("21 days"), "SVG should show 'days': {svg}");
+}
+
+#[test]
+fn quantity_svg_days_singular() {
+  clear_state();
+  let result = interpret_with_stdout("Quantity[1, \"Days\"]").unwrap();
+  assert_eq!(result.result, "1 day");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(svg.contains("1 day"), "SVG should show 'day': {svg}");
+}
+
+#[test]
 fn quantity_svg_singular_compound() {
   clear_state();
   let result =
