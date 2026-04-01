@@ -1051,6 +1051,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           let result_expr = render_matrixform_if_needed(result_expr);
           let result_expr = render_column_if_needed(result_expr);
           let result_expr = render_row_if_needed(result_expr);
+          let result_expr = render_treeform_if_needed(result_expr);
           render_framed_if_needed(result_expr)
         } else {
           result_expr
@@ -1511,6 +1512,21 @@ fn contains_framed(expr: &syntax::Expr) -> bool {
     syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
     syntax::Expr::List(items) => items.iter().any(contains_framed),
     _ => false,
+  }
+}
+
+/// If `expr` is `TreeForm[...]`, render it as a tree diagram graphic.
+fn render_treeform_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TreeForm" && !args.is_empty() =>
+    {
+      match functions::tree_form::tree_form_ast(args) {
+        Ok(result) => result,
+        Err(_) => expr,
+      }
+    }
+    _ => expr,
   }
 }
 
