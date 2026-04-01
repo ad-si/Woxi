@@ -94,16 +94,16 @@ mod svg_rendering_tests {
   // ── Implicit multiplication (no * symbol) ──
 
   #[test]
-  fn test_svg_times_number_identifier_no_star() {
-    // Times[10, x] → "10x" (no separator)
+  fn test_svg_times_number_identifier_space() {
+    // Times[10, x] → "10 x" (space separator, matching Wolfram Language)
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
-      markup, "10x",
-      "Number*identifier should be implicit: got '{}'",
+      markup, "10 x",
+      "Number*identifier should use space: got '{}'",
       markup
     );
   }
@@ -173,7 +173,7 @@ mod svg_rendering_tests {
 
   #[test]
   fn test_svg_binary_times_number_identifier() {
-    // BinaryOp: 10 * x → "10x"
+    // BinaryOp: 10 * x → "10 x"
     let expr = Expr::BinaryOp {
       op: BinaryOperator::Times,
       left: Box::new(Expr::Integer(10)),
@@ -181,8 +181,8 @@ mod svg_rendering_tests {
     };
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
-      markup, "10x",
-      "BinaryOp Times number*id should be implicit: got '{}'",
+      markup, "10 x",
+      "BinaryOp Times number*id should use space: got '{}'",
       markup
     );
   }
@@ -347,16 +347,16 @@ mod svg_rendering_tests {
 
   #[test]
   fn test_width_times_number_identifier() {
-    // Times[10, x] → "10x" (no separator)
+    // Times[10, x] → "10 x" (space separator)
     let expr = Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())],
     };
     let w = estimate_display_width(&expr);
-    // "10x" = 3 chars: factors = 2+1 = 3, sep = 0
+    // "10 x" = 4 chars: factors = 2+1 = 3, sep = 1
     assert!(
-      (w - 3.0).abs() < 0.01,
-      "Times[10, x] width should be 3: got {}",
+      (w - 4.0).abs() < 0.01,
+      "Times[10, x] width should be 4: got {}",
       w
     );
   }
@@ -466,7 +466,7 @@ mod svg_rendering_tests {
       markup
     );
     assert!(
-      markup.contains("(18 + 10x + y)<tspan"),
+      markup.contains("(18 + 10 x + y)<tspan"),
       "Second Power should have parens: got '{}'",
       markup
     );

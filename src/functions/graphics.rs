@@ -2928,17 +2928,9 @@ fn is_additive_expr(e: &Expr) -> bool {
   ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
 }
 
-/// Check if an expression is a simple numeric atom (integer, real, etc.).
-fn is_numeric_atom(e: &Expr) -> bool {
-  matches!(
-    e,
-    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..)
-  )
-}
-
 /// Determine the separator between two adjacent factors in Times SVG rendering.
 /// Returns `""` (no separator) or `" "` (space) — never `"*"`.
-fn times_svg_separator(left: &Expr, right: &Expr) -> &'static str {
+fn times_svg_separator(_left: &Expr, right: &Expr) -> &'static str {
   // Right side is additive → will be wrapped in parens → no separator (e.g. 9(x + y))
   if is_additive_expr(right) {
     return "";
@@ -2946,17 +2938,6 @@ fn times_svg_separator(left: &Expr, right: &Expr) -> &'static str {
   // Right is Power with additive base → rendered starting with "(" → no separator
   if let Some((base, _)) = as_power(right)
     && is_additive_expr(base)
-  {
-    return "";
-  }
-  // Number followed by identifier → no separator (e.g. 10x)
-  if is_numeric_atom(left) && matches!(right, Expr::Identifier(_)) {
-    return "";
-  }
-  // Number followed by Power of identifier → no separator (e.g. 10x²)
-  if is_numeric_atom(left)
-    && let Some((base, _)) = as_power(right)
-    && matches!(base, Expr::Identifier(_))
   {
     return "";
   }
