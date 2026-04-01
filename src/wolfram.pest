@@ -18,12 +18,15 @@ PartIndexSuffix = { ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
 PartExtract = { (Slot | Identifier) ~ ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
+// Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
+IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
 Real = @{
     ("-")?
     ~ ((ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*) | ("." ~ ASCII_DIGIT+))
     ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
 }
 UnsignedInteger = @{ ASCII_DIGIT+ }
+UnsignedIntegerScientific = @{ ASCII_DIGIT+ ~ "*^" ~ ("-")? ~ ASCII_DIGIT+ }
 UnsignedReal = @{
     (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
     ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
@@ -46,8 +49,8 @@ UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010)
 BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ (ASCII_ALPHANUMERIC)+ }
 Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
-NumericValue = { BasePrefix | PrecisionReal | Real | Integer | Constant }
-UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedInteger | UnsignedConstant }
+NumericValue = { BasePrefix | PrecisionReal | Real | IntegerScientific | Integer | Constant }
+UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedIntegerScientific | UnsignedInteger | UnsignedConstant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores

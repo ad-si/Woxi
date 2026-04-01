@@ -763,6 +763,31 @@ mod exact_value_returns {
   }
 
   #[test]
+  fn integer_scientific_notation() {
+    // Integer *^ with positive exponent produces Integer
+    assert_eq!(interpret("5*^3").unwrap(), "5000");
+    assert_eq!(interpret("5*^0").unwrap(), "5");
+    assert_eq!(interpret("1*^6").unwrap(), "1000000");
+    assert_eq!(interpret("Head[5*^3]").unwrap(), "Integer");
+
+    // Integer *^ with negative exponent produces Rational
+    assert_eq!(interpret("5*^-13").unwrap(), "1/2000000000000");
+    assert_eq!(interpret("Head[5*^-13]").unwrap(), "Rational");
+    assert_eq!(interpret("12*^-3").unwrap(), "3/250");
+    assert_eq!(interpret("100*^-2").unwrap(), "1");
+
+    // Negative mantissa
+    assert_eq!(interpret("-5*^3").unwrap(), "-5000");
+    assert_eq!(interpret("-5*^-13").unwrap(), "-1/2000000000000");
+
+    // Works in Quantity
+    assert_eq!(
+      interpret("Quantity[5*^-13, \"Bars\"]").unwrap(),
+      "Quantity[1/2000000000000, Bars]"
+    );
+  }
+
+  #[test]
   fn mean_returns_rational() {
     // Mean[{0, 0, 0, 10}] = 10/4 = 5/2
     assert_eq!(interpret("Mean[{0, 0, 0, 10}]").unwrap(), "5/2");
