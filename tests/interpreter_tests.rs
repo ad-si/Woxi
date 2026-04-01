@@ -288,6 +288,27 @@ mod interpreter_tests {
     );
   }
 
+  #[test]
+  fn test_multi_statement_results() {
+    // When a cell has multiple expressions, each should produce output
+    clear_state();
+    let statements = split_into_statements("a = 1 + 2\n2^a");
+    assert_eq!(statements, vec!["a = 1 + 2", "2^a"]);
+
+    let mut results = Vec::new();
+    for stmt in &statements {
+      match interpret_with_stdout(stmt) {
+        Ok(result) => {
+          if result.result != "\0" {
+            results.push(result.result);
+          }
+        }
+        Err(_) => {}
+      }
+    }
+    assert_eq!(results, vec!["3", "8"]);
+  }
+
   mod algebra;
   mod arithmetic;
   mod association;
