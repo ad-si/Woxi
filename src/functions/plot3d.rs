@@ -3323,3 +3323,296 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(crate::graphics3d_result(svg))
 }
+
+/// Evaluate a parametric triple {fx(u,v), fy(u,v), fz(u,v)} at given u, v values.
+fn evaluate_parametric_at_uv(
+  fx: &Expr,
+  fy: &Expr,
+  fz: &Expr,
+  uvar: &str,
+  vvar: &str,
+  uval: f64,
+  vval: f64,
+) -> Option<(f64, f64, f64)> {
+  let eval_one = |body: &Expr| -> Option<f64> {
+    let sub1 = substitute_var(body, uvar, &Expr::Real(uval));
+    let sub2 = substitute_var(&sub1, vvar, &Expr::Real(vval));
+    let result = evaluate_expr_to_expr(&sub2).ok()?;
+    try_eval_to_f64(&result)
+  };
+  let x = eval_one(fx)?;
+  let y = eval_one(fy)?;
+  let z = eval_one(fz)?;
+  if x.is_finite() && y.is_finite() && z.is_finite() {
+    Some((x, y, z))
+  } else {
+    None
+  }
+}
+
+/// Implementation of ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}]
+pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ParametricPlot3D requires at least 3 arguments: ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}]".into(),
+    ));
+  }
+
+  let body = &args[0];
+
+  // Parse iterators
+  let (uvar, u_min, u_max) = parse_iterator(&args[1], "first")?;
+  let (vvar, v_min, v_max) = parse_iterator(&args[2], "second")?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_mesh = true;
+  let mut show_axes = true;
+
+  for opt in &args[3..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          {
+            show_mesh = false;
+          }
+        }
+        Expr::Identifier(name) if name == "Boxed" => {
+          match replacement.as_ref() {
+            Expr::Identifier(s) if s == "False" => show_axes = false,
+            Expr::Identifier(s) if s == "True" => show_axes = true,
+            _ => {}
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Parse parametric surfaces: body must be {fx, fy, fz} or {{fx1, fy1, fz1}, ...}
+  struct ParametricSurface<'a> {
+    fx: &'a Expr,
+    fy: &'a Expr,
+    fz: &'a Expr,
+  }
+
+  let surfaces: Vec<ParametricSurface> = match body {
+    Expr::List(items) if !items.is_empty() => {
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
+        vec![ParametricSurface {
+          fx: &items[0],
+          fy: &items[1],
+          fz: &items[2],
+        }]
+      } else if items
+        .iter()
+        .all(|item| matches!(item, Expr::List(sub) if sub.len() == 3))
+      {
+        items
+          .iter()
+          .map(|item| {
+            if let Expr::List(sub) = item {
+              ParametricSurface {
+                fx: &sub[0],
+                fy: &sub[1],
+                fz: &sub[2],
+              }
+            } else {
+              unreachable!()
+            }
+          })
+          .collect()
+      } else {
+        vec![ParametricSurface {
+          fx: &items[0],
+          fy: &items[1],
+          fz: &items[2],
+        }]
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
+      ));
+    }
+  };
+
+  let camera = Camera::default();
+  let u_step = (u_max - u_min) / GRID_N as f64;
+  let v_step = (v_max - v_min) / GRID_N as f64;
+
+  // Phase 1: Sample all parametric surfaces and compute global ranges
+  let mut all_surface_points: Vec<Vec<Vec<Option<(f64, f64, f64)>>>> =
+    Vec::new();
+  let mut gx_min = f64::INFINITY;
+  let mut gx_max = f64::NEG_INFINITY;
+  let mut gy_min = f64::INFINITY;
+  let mut gy_max = f64::NEG_INFINITY;
+  let mut gz_min = f64::INFINITY;
+  let mut gz_max = f64::NEG_INFINITY;
+
+  for surface in &surfaces {
+    let mut points = vec![vec![None; GRID_N + 1]; GRID_N + 1];
+    for i in 0..=GRID_N {
+      let uval = u_min + i as f64 * u_step;
+      for j in 0..=GRID_N {
+        let vval = v_min + j as f64 * v_step;
+        if let Some((x, y, z)) = evaluate_parametric_at_uv(
+          surface.fx, surface.fy, surface.fz, &uvar, &vvar, uval, vval,
+        ) {
+          points[i][j] = Some((x, y, z));
+          gx_min = gx_min.min(x);
+          gx_max = gx_max.max(x);
+          gy_min = gy_min.min(y);
+          gy_max = gy_max.max(y);
+          gz_min = gz_min.min(z);
+          gz_max = gz_max.max(z);
+        }
+      }
+    }
+    all_surface_points.push(points);
+  }
+
+  if !gx_min.is_finite() || !gy_min.is_finite() || !gz_min.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "ParametricPlot3D: parametric function produced no finite values".into(),
+    ));
+  }
+
+  let rx = if (gx_max - gx_min).abs() < 1e-15 {
+    1.0
+  } else {
+    gx_max - gx_min
+  };
+  let ry = if (gy_max - gy_min).abs() < 1e-15 {
+    1.0
+  } else {
+    gy_max - gy_min
+  };
+  let rz = if (gz_max - gz_min).abs() < 1e-15 {
+    1.0
+  } else {
+    gz_max - gz_min
+  };
+
+  // Phase 2: Build triangles
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  for sg in &all_surface_points {
+    for i in 0..GRID_N {
+      for j in 0..GRID_N {
+        let p00 = sg[i][j];
+        let p10 = sg[i + 1][j];
+        let p01 = sg[i][j + 1];
+        let p11 = sg[i + 1][j + 1];
+
+        let normalize = |p: (f64, f64, f64)| -> Point3D {
+          Point3D {
+            x: ((p.0 - gx_min) / rx) * 2.0 - 1.0,
+            y: ((p.1 - gy_min) / ry) * 2.0 - 1.0,
+            z: ((p.2 - gz_min) / rz) * 2.0 * Z_SCALE - Z_SCALE,
+          }
+        };
+
+        let z_norm = |z: f64| -> f64 { (z - gz_min) / rz };
+
+        // Triangle 1
+        if let (Some(a), Some(b), Some(c)) = (p00, p10, p01) {
+          let v0 = normalize(a);
+          let v1 = normalize(b);
+          let v2 = normalize(c);
+          let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
+          let base_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let color = apply_lighting(base_color, normal);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
+          all_triangles.push(Triangle {
+            projected: [
+              project(v0, &camera),
+              project(v1, &camera),
+              project(v2, &camera),
+            ],
+            depth: depth(center, &camera),
+            color,
+          });
+        }
+
+        // Triangle 2
+        if let (Some(a), Some(b), Some(c)) = (p11, p01, p10) {
+          let v0 = normalize(a);
+          let v1 = normalize(b);
+          let v2 = normalize(c);
+          let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
+          let base_color = height_color(avg_z_norm);
+          let normal = triangle_normal(v0, v1, v2);
+          let color = apply_lighting(base_color, normal);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
+          all_triangles.push(Triangle {
+            projected: [
+              project(v0, &camera),
+              project(v1, &camera),
+              project(v2, &camera),
+            ],
+            depth: depth(center, &camera),
+            color,
+          });
+        }
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ParametricPlot3D: parametric function produced no finite values".into(),
+    ));
+  }
+
+  let (z_axis_min, z_axis_max) = if (gz_min - gz_max).abs() < 1e-15 {
+    (gz_min - 0.5, gz_max + 0.5)
+  } else {
+    (gz_min, gz_max)
+  };
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (gx_min, gx_max),
+    (gy_min, gy_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+    show_axes,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}

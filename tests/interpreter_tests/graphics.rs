@@ -4514,3 +4514,30 @@ mod find_spanning_tree {
     );
   }
 }
+
+mod parametric_plot3d {
+  use super::*;
+
+  #[test]
+  fn parametric_surface() {
+    insta::assert_snapshot!(export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u] + Cos[v], Sin[v]}, {u, 0, 2 Pi}, {v, -Pi, Pi}]"
+    ));
+  }
+
+  #[test]
+  fn sphere() {
+    insta::assert_snapshot!(export_svg(
+      "ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]"
+    ));
+  }
+
+  #[test]
+  fn returns_graphics3d() {
+    clear_state();
+    let result =
+      interpret("Head[ParametricPlot3D[{u, v, u + v}, {u, 0, 1}, {v, 0, 1}]]")
+        .unwrap();
+    assert_eq!(result, "Graphics");
+  }
+}

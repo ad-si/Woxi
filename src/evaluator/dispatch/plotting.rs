@@ -31,6 +31,9 @@ pub fn dispatch_plotting(
     "Plot3D" if args.len() >= 3 => {
       Some(crate::functions::plot3d::plot3d_ast(args))
     }
+    "ParametricPlot3D" if args.len() >= 3 => {
+      Some(crate::functions::plot3d::parametric_plot3d_ast(args))
+    }
     "Graphics" if !args.is_empty() => {
       // Keep Graphics as a FunctionCall during evaluation so that Show[]
       // can merge primitives from multiple Graphics expressions.
