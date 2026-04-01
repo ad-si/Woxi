@@ -5867,6 +5867,7 @@ dependencies = [
  "getrandom 0.2.16",
  "image",
  "insta",
+ "js-sys",
  "jupyter-protocol",
  "libc",
  "log",

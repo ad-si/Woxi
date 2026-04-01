@@ -392,6 +392,29 @@ pub fn evaluate_expr_to_expr_inner(
             ],
           });
         }
+        #[cfg(target_arch = "wasm32")]
+        if name == "Now" {
+          let now = js_sys::Date::new_0();
+          let seconds =
+            now.get_seconds() as f64 + now.get_milliseconds() as f64 / 1000.0;
+          let tz_offset_hours = -(now.get_timezone_offset() / 60.0);
+          return Ok(Expr::FunctionCall {
+            name: "DateObject".to_string(),
+            args: vec![
+              Expr::List(vec![
+                Expr::Integer(now.get_full_year() as i128),
+                Expr::Integer((now.get_month() + 1) as i128),
+                Expr::Integer(now.get_date() as i128),
+                Expr::Integer(now.get_hours() as i128),
+                Expr::Integer(now.get_minutes() as i128),
+                Expr::Real(seconds),
+              ]),
+              Expr::String("Instant".to_string()),
+              Expr::String("Gregorian".to_string()),
+              Expr::Real(tz_offset_hours),
+            ],
+          });
+        }
         // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
         #[cfg(not(target_arch = "wasm32"))]
         if name == "Today" || name == "Tomorrow" || name == "Yesterday" {
@@ -415,6 +438,28 @@ pub fn evaluate_expr_to_expr_inner(
                 Expr::Integer(
                   date.format("%d").to_string().parse::<i128>().unwrap(),
                 ),
+              ]),
+              Expr::String("Day".to_string()),
+            ],
+          });
+        }
+        #[cfg(target_arch = "wasm32")]
+        if name == "Today" || name == "Tomorrow" || name == "Yesterday" {
+          let now = js_sys::Date::new_0();
+          let offset_days: i32 = match name.as_str() {
+            "Tomorrow" => 1,
+            "Yesterday" => -1,
+            _ => 0,
+          };
+          let ms = now.get_time() + (offset_days as f64) * 86_400_000.0;
+          let d = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms));
+          return Ok(Expr::FunctionCall {
+            name: "DateObject".to_string(),
+            args: vec![
+              Expr::List(vec![
+                Expr::Integer(d.get_full_year() as i128),
+                Expr::Integer((d.get_month() + 1) as i128),
+                Expr::Integer(d.get_date() as i128),
               ]),
               Expr::String("Day".to_string()),
             ],
