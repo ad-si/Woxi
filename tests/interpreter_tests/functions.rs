@@ -11419,6 +11419,36 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // IndexGraph
+  #[test]
+  fn index_graph_basic() {
+    assert_eq!(
+      interpret(r#"IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]"#).unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+    );
+  }
+  #[test]
+  fn index_graph_with_start() {
+    assert_eq!(
+      interpret(r#"IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]"#).unwrap(),
+      "Graph[{5, 6, 7}, {UndirectedEdge[5, 6], UndirectedEdge[6, 7]}]"
+    );
+  }
+  #[test]
+  fn index_graph_directed() {
+    assert_eq!(
+      interpret("IndexGraph[Graph[{1 -> 2, 3 -> 1}]]").unwrap(),
+      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[3, 1]}]"
+    );
+  }
+  #[test]
+  fn index_graph_complete() {
+    assert_eq!(
+      interpret("IndexGraph[CompleteGraph[3], 10]").unwrap(),
+      "Graph[{10, 11, 12}, {UndirectedEdge[10, 11], UndirectedEdge[10, 12], UndirectedEdge[11, 12]}]"
+    );
+  }
+
   // DirectedGraphQ
   #[test]
   fn directed_graph_q_true() {

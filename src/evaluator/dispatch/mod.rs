@@ -2061,6 +2061,76 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // IndexGraph[graph] or IndexGraph[graph, r] — reindex vertices to integers
+  if (name == "IndexGraph")
+    && (args.len() == 1 || args.len() == 2)
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let Expr::List(vertices) = &gargs[0]
+    && let Expr::List(edges) = &gargs[1]
+  {
+    let start: i128 = if args.len() == 2 {
+      match &args[1] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    } else {
+      1
+    };
+
+    // Build mapping from old vertex to new integer index
+    let mut vertex_map = std::collections::HashMap::new();
+    for (i, v) in vertices.iter().enumerate() {
+      vertex_map.insert(expr_to_string(v), Expr::Integer(start + i as i128));
+    }
+
+    let new_vertices: Vec<Expr> = (0..vertices.len())
+      .map(|i| Expr::Integer(start + i as i128))
+      .collect();
+
+    let new_edges: Vec<Expr> = edges
+      .iter()
+      .map(|e| {
+        if let Expr::FunctionCall {
+          name: ename,
+          args: eargs,
+        } = e
+          && eargs.len() == 2
+        {
+          let new_args: Vec<Expr> = eargs
+            .iter()
+            .map(|a| {
+              vertex_map
+                .get(&expr_to_string(a))
+                .cloned()
+                .unwrap_or_else(|| a.clone())
+            })
+            .collect();
+          Expr::FunctionCall {
+            name: ename.clone(),
+            args: new_args,
+          }
+        } else {
+          e.clone()
+        }
+      })
+      .collect();
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(new_vertices), Expr::List(new_edges)],
+    });
+  }
+
   // EdgeQ[graph, edge] — True if edge exists in graph
   if name == "EdgeQ"
     && args.len() == 2

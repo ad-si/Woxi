@@ -3019,7 +3019,7 @@ EdgeCapacity,,,,9.0,3094
 EdgeQ,True if edge exists in graph,✅,1,8.0,3094
 EvaluatePacket,,🚫,,3.0,3094
 FindEquationalProof,,,,11.3,3094
-IndexGraph,,,,8.0,3094
+IndexGraph,Replace graph vertices with integer indices,✅,pure,8.0,3094
 MenuView,,🚫,,6.0,3094
 MinStableDistribution,,,,8.0,3094
 NHoldAll,,,,3.0,3094
