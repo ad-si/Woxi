@@ -1640,6 +1640,55 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // TuranGraph[n, k] — complete k-partite graph with n vertices, partitions as equal as possible
+  if name == "TuranGraph"
+    && args.len() == 2
+    && let Expr::Integer(n) = &args[0]
+    && let Expr::Integer(k) = &args[1]
+  {
+    let n = *n as usize;
+    let k = *k as usize;
+    let vertices: Vec<Expr> =
+      (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+
+    // Assign each vertex to a partition
+    // Partition sizes: n%k partitions of ceil(n/k), rest of floor(n/k)
+    let mut partition = vec![0usize; n];
+    let base = n / k;
+    let extra = n % k;
+    let mut idx = 0;
+    for p in 0..k {
+      let size = base + if p < extra { 1 } else { 0 };
+      for _ in 0..size {
+        if idx < n {
+          partition[idx] = p;
+          idx += 1;
+        }
+      }
+    }
+
+    // Add edges between vertices in different partitions
+    let mut edges = Vec::new();
+    for i in 0..n {
+      for j in (i + 1)..n {
+        if partition[i] != partition[j] {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![
+              Expr::Integer((i + 1) as i128),
+              Expr::Integer((j + 1) as i128),
+            ],
+          });
+        }
+      }
+    }
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
   if name == "RecurrenceFilter"
     && args.len() == 2
