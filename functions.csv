@@ -2954,7 +2954,7 @@ UniformSumDistribution,,,,8.0,3020
 AbsoluteFileName,,,,7.0,3031
 AudioTrim,,🚫,,11.0,3031
 BitSet,Set a bit in an integer,✅,pure,6.0,3031
-DeBruijnGraph,,,,8.0,3031
+DeBruijnGraph,Generate a De Bruijn graph with m symbols and n dimensions,✅,pure,8.0,3031
 MeshCellHighlight,,🚫,,10.2,3031
 MeshCellIndex,,🚫,,10.0,3031
 MomentOfInertia,,,,10.4,3031

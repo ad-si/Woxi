@@ -11419,6 +11419,35 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // DeBruijnGraph
+  #[test]
+  fn debruijn_graph_vertex_count() {
+    // DeBruijnGraph[2, 3] has 2^3 = 8 vertices
+    assert_eq!(interpret("VertexCount[DeBruijnGraph[2, 3]]").unwrap(), "8");
+  }
+  #[test]
+  fn debruijn_graph_edge_count() {
+    // DeBruijnGraph[2, 3] has 2^3 * 2 = 16 edges (each vertex has m=2 outgoing edges)
+    assert_eq!(interpret("EdgeCount[DeBruijnGraph[2, 3]]").unwrap(), "16");
+  }
+  #[test]
+  fn debruijn_graph_is_directed() {
+    assert_eq!(
+      interpret("DirectedGraphQ[DeBruijnGraph[2, 2]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn debruijn_graph_2_2_vertex_count() {
+    // DeBruijnGraph[2, 2] has 4 vertices
+    assert_eq!(interpret("VertexCount[DeBruijnGraph[2, 2]]").unwrap(), "4");
+  }
+  #[test]
+  fn debruijn_graph_2_2_edge_count() {
+    // DeBruijnGraph[2, 2] has 8 edges
+    assert_eq!(interpret("EdgeCount[DeBruijnGraph[2, 2]]").unwrap(), "8");
+  }
+
   // TuranGraph
   #[test]
   fn turan_graph_4_2() {
