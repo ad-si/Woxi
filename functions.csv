@@ -1817,7 +1817,7 @@ FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Mathieu C function,✅,unevaluated,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3.0,1852
-StringReplacePart,Replace part of string,✅,unevaluated,3.0,1853
+StringReplacePart,Replace part of string,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association,✅,pure,10.0,1855
 MetaInformation,Meta information option,✅,unevaluated,9.0,1855
 NotebookSave,Save notebook,✅,unevaluated,3.0,1857
