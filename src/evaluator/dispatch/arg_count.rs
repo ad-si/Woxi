@@ -276,6 +276,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Erf" => Some((1, 1)),
     "Erfc" => Some((1, 1)),
     "Erfi" => Some((1, 1)),
+    "InverseErf" => Some((1, 1)),
     "EuclideanDistance" => Some((2, 2)),
     "EulerAngles" => Some((1, 1)),
     "EulerE" => Some((1, 2)),

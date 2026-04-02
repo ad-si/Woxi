@@ -4854,7 +4854,6 @@ pub fn evaluate_function_call_ast_inner(
       | "SpatialGraphDistribution"
       | "UniformGraphDistribution"
       | "Databin"
-      | "InverseErf"
       | "SmoothDensityHistogram"
       | "NetExtract"
       | "HankelH1"
