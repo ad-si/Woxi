@@ -770,12 +770,14 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Substitute all bindings into the body
-  let mut substituted = body_expr.clone();
-  for (var_name, val) in &bindings {
-    substituted =
-      crate::syntax::substitute_variable(&substituted, var_name, val);
-  }
+  // Substitute all bindings into the body simultaneously
+  // to prevent variable name leakage across bindings
+  let binding_refs: Vec<(&str, &Expr)> = bindings
+    .iter()
+    .map(|(name, val)| (name.as_str(), val))
+    .collect();
+  let substituted =
+    crate::syntax::substitute_variables(body_expr, &binding_refs);
 
   // Evaluate the substituted body
   evaluate_expr_to_expr(&substituted)

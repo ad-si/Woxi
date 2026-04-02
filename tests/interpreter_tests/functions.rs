@@ -793,6 +793,42 @@ mod function_head {
     assert_eq!(interpret("Function[x, x][10]").unwrap(), "10");
   }
 
+  // Regression test for https://github.com/ad-si/Woxi/issues/96
+  // Pattern variable names must not leak across parameters in lambdas.
+  #[test]
+  fn function_named_param_no_variable_leak() {
+    assert_eq!(
+      interpret("Function[{u, a}, {u, a}][a + 1, 42]").unwrap(),
+      "{1 + a, 42}"
+    );
+  }
+
+  #[test]
+  fn function_named_param_no_variable_leak_apply() {
+    assert_eq!(
+      interpret("Apply[Function[{u, a}, {u, a}], {a + 1, 42}]").unwrap(),
+      "{1 + a, 42}"
+    );
+  }
+
+  #[test]
+  fn function_named_param_no_variable_leak_select() {
+    // Select uses the two-arg utility path
+    assert_eq!(
+      interpret("Select[{1, 2, 3}, Function[a, a > 1]]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  // With[] must also use simultaneous substitution.
+  #[test]
+  fn with_no_variable_leak() {
+    assert_eq!(
+      interpret("With[{u = a + 1, a = 42}, {u, a}]").unwrap(),
+      "{1 + a, 42}"
+    );
+  }
+
   #[test]
   fn function_display_one_arg() {
     // Function[body] displays as body &

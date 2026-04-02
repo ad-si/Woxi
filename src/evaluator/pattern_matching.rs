@@ -2262,10 +2262,12 @@ pub fn apply_bindings(
   replacement: &Expr,
   bindings: &[(String, Expr)],
 ) -> Result<Expr, InterpreterError> {
-  let mut result = replacement.clone();
-  for (name, value) in bindings {
-    result = crate::syntax::substitute_variable(&result, name, value);
-  }
+  // Use simultaneous substitution to prevent variable name leakage
+  let binding_refs: Vec<(&str, &Expr)> = bindings
+    .iter()
+    .map(|(name, value)| (name.as_str(), value))
+    .collect();
+  let result = crate::syntax::substitute_variables(replacement, &binding_refs);
   // Evaluate the result after substitution
   evaluate_expr_to_expr(&result)
 }
@@ -2324,13 +2326,14 @@ pub fn apply_replace_all_multi_ast(
       continue;
     }
     if let Some(bindings) = match_pattern(expr, pattern) {
-      // Substitute bindings into the replacement
-      let mut result = (*replacement).clone();
-      for (name, val) in &bindings {
-        if !name.is_empty() {
-          result = crate::syntax::substitute_variable(&result, name, val);
-        }
-      }
+      // Use simultaneous substitution to prevent variable name leakage
+      let binding_refs: Vec<(&str, &Expr)> = bindings
+        .iter()
+        .filter(|(name, _)| !name.is_empty())
+        .map(|(name, val)| (name.as_str(), val))
+        .collect();
+      let result =
+        crate::syntax::substitute_variables(replacement, &binding_refs);
       return evaluate_expr_to_expr(&result);
     }
   }

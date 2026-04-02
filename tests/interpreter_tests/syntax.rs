@@ -848,6 +848,21 @@ mod rule_display {
   fn rule_delayed_display() {
     assert_eq!(interpret("RuleDelayed[a, b]").unwrap(), "a :> b");
   }
+
+  // Regression test for https://github.com/ad-si/Woxi/issues/96
+  // Pattern variable names must not leak across bindings in rules.
+  #[test]
+  fn rule_pattern_variable_no_leak() {
+    assert_eq!(
+      interpret("f[a + 1, b + 2] /. f[u_, a_] -> {u, a}").unwrap(),
+      "{1 + a, 2 + b}"
+    );
+  }
+
+  #[test]
+  fn rule_pattern_variable_no_leak_single_rule() {
+    assert_eq!(interpret("{a + 1} /. {a_} -> a^2").unwrap(), "(1 + a)^2");
+  }
 }
 
 mod blank_function {
