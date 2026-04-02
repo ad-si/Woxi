@@ -140,6 +140,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Close" => Some((1, 1)),
     "Coefficient" => Some((2, 3)),
     "CoefficientList" => Some((2, 2)),
+    "CoefficientRules" => Some((2, 2)),
     "Collect" => Some((2, 2)),
     "ColorConvert" => Some((2, 2)),
     "ColorNegate" => Some((1, 1)),
