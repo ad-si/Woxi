@@ -11419,6 +11419,33 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // DirectedGraphQ
+  #[test]
+  fn directed_graph_q_true() {
+    assert_eq!(
+      interpret("DirectedGraphQ[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn directed_graph_q_false_undirected() {
+    assert_eq!(
+      interpret("DirectedGraphQ[CompleteGraph[3]]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn directed_graph_q_non_graph() {
+    assert_eq!(interpret("DirectedGraphQ[5]").unwrap(), "False");
+  }
+  #[test]
+  fn directed_graph_q_adjacency_directed() {
+    assert_eq!(
+      interpret("DirectedGraphQ[AdjacencyGraph[{{0, 1}, {0, 0}}]]").unwrap(),
+      "True"
+    );
+  }
+
   // TreeGraphQ
   #[test]
   fn tree_graph_q_star() {

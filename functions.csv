@@ -3103,7 +3103,7 @@ WaveletMatrixPlot,,🚫,,8.0,3176
 WishartMatrixDistribution,,,,10.3,3176
 AllowedHeads,,,,12.0,3191
 BilateralFilter,,🚫,,8.0,3191
-DirectedGraphQ,,,,8.0,3191
+DirectedGraphQ,Test whether a graph is a directed graph,✅,pure,8.0,3191
 DocumentGenerator,,🚫,,10.0,3191
 GraphIntersection,,,,8.0,3191
 IconData,,🚫,,10.0,3191
