@@ -1219,22 +1219,18 @@ pub fn evaluate_expr_to_expr_inner(
               l == r
             } else if expr_to_string(left) == expr_to_string(right) {
               true
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord == std::cmp::Ordering::Equal
+            } else if has_free_symbols(left) || has_free_symbols(right) {
+              // Symbolic: return unevaluated
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
             } else {
-              if let Some(ord) =
-                crate::functions::quantity_ast::try_quantity_compare(
-                  left, right,
-                )
-              {
-                ord == std::cmp::Ordering::Equal
-              } else if has_free_symbols(left) || has_free_symbols(right) {
-                // Symbolic: return unevaluated
-                return Ok(Expr::Comparison {
-                  operands: values,
-                  operators: operators.clone(),
-                });
-              } else {
-                false
-              }
+              false
             }
           }
           ComparisonOp::UnsameQ => {
