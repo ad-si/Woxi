@@ -13693,3 +13693,69 @@ mod replace_with_levels {
     );
   }
 }
+
+mod string_to_byte_array {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("StringToByteArray[\"Hello\"]").unwrap(),
+      "ByteArray[<5>]"
+    );
+  }
+
+  #[test]
+  fn normal_form() {
+    assert_eq!(
+      interpret("Normal[StringToByteArray[\"Hello\"]]").unwrap(),
+      "{72, 101, 108, 108, 111}"
+    );
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(
+      interpret("StringToByteArray[\"\"]").unwrap(),
+      "ByteArray[<0>]"
+    );
+  }
+
+  #[test]
+  fn roundtrip() {
+    assert_eq!(
+      interpret("ByteArrayToString[StringToByteArray[\"Hello World\"]]")
+        .unwrap(),
+      "Hello World"
+    );
+  }
+}
+
+mod byte_array_to_string {
+  use super::*;
+
+  #[test]
+  fn from_list() {
+    assert_eq!(
+      interpret("ByteArrayToString[ByteArray[{72, 101, 108, 108, 111}]]")
+        .unwrap(),
+      "Hello"
+    );
+  }
+
+  #[test]
+  fn from_base64() {
+    assert_eq!(
+      interpret("ByteArrayToString[ByteArray[\"SGVsbG8=\"]]").unwrap(),
+      "Hello"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("ByteArrayToString[x]").unwrap(),
+      "ByteArrayToString[x]"
+    );
+  }
+}

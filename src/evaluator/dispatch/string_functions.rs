@@ -303,6 +303,16 @@ pub fn dispatch_string_functions(
     "URLDecode" if args.len() == 1 => {
       return Some(crate::functions::string_ast::url_decode_ast(args));
     }
+    "StringToByteArray" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::string_ast::string_to_byte_array_ast(
+        args,
+      ));
+    }
+    "ByteArrayToString" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::string_ast::byte_array_to_string_ast(
+        args,
+      ));
+    }
     _ => {}
   }
   None
