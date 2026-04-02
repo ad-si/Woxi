@@ -9827,13 +9827,12 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("InverseErf[1]").unwrap(), "Infinity");
     // InverseErf[-1] = -Infinity
     assert_eq!(interpret("InverseErf[-1]").unwrap(), "-Infinity");
-    // Symbolic
+    // Symbolic — returns unevaluated (Wolfram does not simplify symbolically)
     assert_eq!(interpret("InverseErf[x]").unwrap(), "InverseErf[x]");
-    // Odd function: InverseErf[-x] = -InverseErf[x]
-    assert_eq!(interpret("InverseErf[-x]").unwrap(), "-InverseErf[x]");
+    assert_eq!(interpret("InverseErf[-x]").unwrap(), "InverseErf[-x]");
     // Out of range returns unevaluated
     assert_eq!(interpret("InverseErf[2]").unwrap(), "InverseErf[2]");
-    assert_eq!(interpret("InverseErf[-2]").unwrap(), "-InverseErf[2]");
+    assert_eq!(interpret("InverseErf[-2]").unwrap(), "InverseErf[-2]");
     // Numeric evaluation
     let result = interpret("InverseErf[0.5]").unwrap();
     assert!(result.starts_with("0.476936"), "InverseErf[0.5] = {result}");
