@@ -8227,9 +8227,9 @@ fn mobius(n: usize) -> i32 {
   let mut num_factors = 0;
   let mut d = 2;
   while d * d <= m {
-    if m % d == 0 {
+    if m.is_multiple_of(d) {
       m /= d;
-      if m % d == 0 {
+      if m.is_multiple_of(d) {
         return 0; // p^2 divides n
       }
       num_factors += 1;

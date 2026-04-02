@@ -1383,9 +1383,17 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(Expr::Real(x.ln() / base.ln()));
       }
-      Ok(Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: args.to_vec(),
+      // Canonicalize Log[base, x] → Log[x]/Log[base]
+      Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![args[1].clone()],
+        }),
+        right: Box::new(Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![args[0].clone()],
+        }),
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -2581,13 +2589,13 @@ fn trig_degrees_ast(
   let result =
     crate::evaluator::evaluate_function_call_ast(func_name, &[radians])?;
   // If the result is still unevaluated (symbolic), return unevaluated degree form
-  if let Expr::FunctionCall { name, .. } = &result {
-    if name == func_name {
-      return Ok(Expr::FunctionCall {
-        name: degrees_name.to_string(),
-        args: args.to_vec(),
-      });
-    }
+  if let Expr::FunctionCall { name, .. } = &result
+    && name == func_name
+  {
+    return Ok(Expr::FunctionCall {
+      name: degrees_name.to_string(),
+      args: args.to_vec(),
+    });
   }
   Ok(result)
 }
@@ -2609,13 +2617,13 @@ fn arc_trig_degrees_ast(
     &[args[0].clone()],
   )?;
   // If the result is still unevaluated (symbolic), return unevaluated
-  if let Expr::FunctionCall { name, .. } = &radians {
-    if name == func_name {
-      return Ok(Expr::FunctionCall {
-        name: degrees_name.to_string(),
-        args: args.to_vec(),
-      });
-    }
+  if let Expr::FunctionCall { name, .. } = &radians
+    && name == func_name
+  {
+    return Ok(Expr::FunctionCall {
+      name: degrees_name.to_string(),
+      args: args.to_vec(),
+    });
   }
   // For numeric results, convert radians to degrees (keep as Real)
   if let Expr::Real(f) = &radians {

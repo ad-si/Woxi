@@ -919,11 +919,11 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let num_bins = ((max_val - min_val) / dx).round() as usize;
   let mut bins: Vec<Vec<Expr>> = vec![Vec::new(); num_bins];
 
-  for &(v, ref expr) in &values {
+  for &(v, expr) in &values {
     if v >= min_val && v < max_val {
       let bin = ((v - min_val) / dx) as usize;
       let bin = bin.min(num_bins - 1);
-      bins[bin].push((*expr).clone());
+      bins[bin].push(expr.clone());
     }
   }
 

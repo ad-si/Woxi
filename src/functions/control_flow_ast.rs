@@ -295,10 +295,10 @@ fn maybe_trace(
   f: &Expr,
   form: Option<&Expr>,
 ) -> Result<bool, InterpreterError> {
-  if let Some(form_pat) = form {
-    if crate::evaluator::match_pattern(expr, form_pat).is_none() {
-      return Ok(false);
-    }
+  if let Some(form_pat) = form
+    && crate::evaluator::match_pattern(expr, form_pat).is_none()
+  {
+    return Ok(false);
   }
   do_trace(expr, f)?;
   Ok(true)

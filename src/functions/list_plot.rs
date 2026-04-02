@@ -167,11 +167,11 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
           }
         }
         "PlotTheme" => {
-          if let Expr::String(theme) = replacement.as_ref() {
-            if theme == "Business" {
-              opts.frame = true;
-              opts.grid_lines_y = true;
-            }
+          if let Expr::String(theme) = replacement.as_ref()
+            && theme == "Business"
+          {
+            opts.frame = true;
+            opts.grid_lines_y = true;
           }
         }
         _ => {}

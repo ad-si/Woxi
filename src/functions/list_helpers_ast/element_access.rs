@@ -70,7 +70,7 @@ pub fn first_ast(
           args: vec![list.clone()],
         });
       }
-      return Ok(pairs[0].1.clone());
+      Ok(pairs[0].1.clone())
     }
     Expr::List(items) => {
       if items.is_empty() {
@@ -150,7 +150,7 @@ pub fn last_ast(
           args: vec![list.clone()],
         });
       }
-      return Ok(pairs[pairs.len() - 1].1.clone());
+      Ok(pairs[pairs.len() - 1].1.clone())
     }
     Expr::List(items) => {
       if items.is_empty() {

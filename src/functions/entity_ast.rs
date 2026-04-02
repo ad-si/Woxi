@@ -183,15 +183,15 @@ fn parse_entity_type_data(data: &Expr) -> Option<EntityTypeData> {
                   Expr::String(s) => s.clone(),
                   _ => expr_to_string(cmk),
                 };
-                if cmk_str == "Entities" {
-                  if let Expr::List(items) = cmv {
-                    for item in items {
-                      let name = match item {
-                        Expr::String(s) => s.clone(),
-                        _ => expr_to_string(item),
-                      };
-                      members.push(name);
-                    }
+                if cmk_str == "Entities"
+                  && let Expr::List(items) = cmv
+                {
+                  for item in items {
+                    let name = match item {
+                      Expr::String(s) => s.clone(),
+                      _ => expr_to_string(item),
+                    };
+                    members.push(name);
                   }
                 }
               }
@@ -469,17 +469,17 @@ pub fn entity_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let property = &args[1];
 
       // EntityValue["type", "Properties"] — list properties for a type
-      if let Expr::String(type_name) = entity {
-        if let Expr::String(prop_query) = property {
-          if prop_query == "Properties" {
-            return entity_properties_for_type(type_name);
-          }
-          if prop_query == "Entities" {
-            return entity_list_for_type(type_name);
-          }
-          if prop_query == "EntityCount" {
-            return entity_count_for_type(type_name);
-          }
+      if let Expr::String(type_name) = entity
+        && let Expr::String(prop_query) = property
+      {
+        if prop_query == "Properties" {
+          return entity_properties_for_type(type_name);
+        }
+        if prop_query == "Entities" {
+          return entity_list_for_type(type_name);
+        }
+        if prop_query == "EntityCount" {
+          return entity_count_for_type(type_name);
         }
       }
 
@@ -488,93 +488,89 @@ pub fn entity_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name,
         args: entity_args,
       } = entity
+        && name == "Entity"
+        && entity_args.len() == 2
       {
-        if name == "Entity" && entity_args.len() == 2 {
-          let type_name = match &entity_args[0] {
-            Expr::String(s) => s.clone(),
-            _ => expr_to_string(&entity_args[0]),
-          };
-          let entity_name = match &entity_args[1] {
-            Expr::String(s) => s.clone(),
-            _ => expr_to_string(&entity_args[1]),
-          };
+        let type_name = match &entity_args[0] {
+          Expr::String(s) => s.clone(),
+          _ => expr_to_string(&entity_args[0]),
+        };
+        let entity_name = match &entity_args[1] {
+          Expr::String(s) => s.clone(),
+          _ => expr_to_string(&entity_args[1]),
+        };
 
-          // Single property
-          if let Expr::String(prop_name) = property {
-            return resolve_entity_lookup(&type_name, &entity_name, prop_name);
-          }
+        // Single property
+        if let Expr::String(prop_name) = property {
+          return resolve_entity_lookup(&type_name, &entity_name, prop_name);
+        }
 
-          // Multiple properties: EntityValue[entity, {"prop1", "prop2"}]
-          if let Expr::List(prop_list) = property {
-            let mut results = Vec::new();
-            for p in prop_list {
-              let prop_name = match p {
-                Expr::String(s) => s.clone(),
-                Expr::FunctionCall { name, args }
-                  if name == "EntityProperty" && args.len() == 2 =>
-                {
-                  match &args[1] {
-                    Expr::String(s) => s.clone(),
-                    _ => expr_to_string(&args[1]),
-                  }
+        // Multiple properties: EntityValue[entity, {"prop1", "prop2"}]
+        if let Expr::List(prop_list) = property {
+          let mut results = Vec::new();
+          for p in prop_list {
+            let prop_name = match p {
+              Expr::String(s) => s.clone(),
+              Expr::FunctionCall { name, args }
+                if name == "EntityProperty" && args.len() == 2 =>
+              {
+                match &args[1] {
+                  Expr::String(s) => s.clone(),
+                  _ => expr_to_string(&args[1]),
                 }
-                _ => expr_to_string(p),
-              };
-              let val =
-                resolve_entity_lookup(&type_name, &entity_name, &prop_name)?;
-              results.push(val);
-            }
-            return Ok(Expr::List(results));
+              }
+              _ => expr_to_string(p),
+            };
+            let val =
+              resolve_entity_lookup(&type_name, &entity_name, &prop_name)?;
+            results.push(val);
           }
+          return Ok(Expr::List(results));
+        }
 
-          // EntityProperty form
-          if let Expr::FunctionCall {
-            name: pname,
-            args: pargs,
-          } = property
-          {
-            if pname == "EntityProperty" && pargs.len() == 2 {
-              let prop_name = match &pargs[1] {
-                Expr::String(s) => s.clone(),
-                _ => expr_to_string(&pargs[1]),
-              };
-              return resolve_entity_lookup(
-                &type_name,
-                &entity_name,
-                &prop_name,
-              );
-            }
-          }
+        // EntityProperty form
+        if let Expr::FunctionCall {
+          name: pname,
+          args: pargs,
+        } = property
+          && pname == "EntityProperty"
+          && pargs.len() == 2
+        {
+          let prop_name = match &pargs[1] {
+            Expr::String(s) => s.clone(),
+            _ => expr_to_string(&pargs[1]),
+          };
+          return resolve_entity_lookup(&type_name, &entity_name, &prop_name);
         }
       }
 
       // EntityValue[{entity1, entity2, ...}, property] — multiple entities
-      if let Expr::List(entities) = entity {
-        if let Expr::String(prop_name) = property {
-          let mut results = Vec::new();
-          for e in entities {
-            if let Expr::FunctionCall {
-              name,
-              args: entity_args,
-            } = e
-            {
-              if name == "Entity" && entity_args.len() == 2 {
-                let type_name = match &entity_args[0] {
-                  Expr::String(s) => s.clone(),
-                  _ => expr_to_string(&entity_args[0]),
-                };
-                let entity_name = match &entity_args[1] {
-                  Expr::String(s) => s.clone(),
-                  _ => expr_to_string(&entity_args[1]),
-                };
-                let val =
-                  resolve_entity_lookup(&type_name, &entity_name, prop_name)?;
-                results.push(val);
-              }
-            }
+      if let Expr::List(entities) = entity
+        && let Expr::String(prop_name) = property
+      {
+        let mut results = Vec::new();
+        for e in entities {
+          if let Expr::FunctionCall {
+            name,
+            args: entity_args,
+          } = e
+            && name == "Entity"
+            && entity_args.len() == 2
+          {
+            let type_name = match &entity_args[0] {
+              Expr::String(s) => s.clone(),
+              _ => expr_to_string(&entity_args[0]),
+            };
+            let entity_name = match &entity_args[1] {
+              Expr::String(s) => s.clone(),
+              _ => expr_to_string(&entity_args[1]),
+            };
+            let val =
+              resolve_entity_lookup(&type_name, &entity_name, prop_name)?;
+            results.push(val);
           }
-          return Ok(Expr::List(results));
         }
+        return Ok(Expr::List(results));
       }
 
       // Fallback: return unevaluated
@@ -979,36 +975,36 @@ pub fn entity_store_property_access(
 
   // Look up the property directly from the store's normalized form
   // The store is EntityStore[<|Types -> <|type -> <|Entities -> ...|>|>|>]
-  if store_args.len() == 1 {
-    if let Expr::Association(outer) = &store_args[0] {
-      for (k, v) in outer {
-        let ks = match k {
-          Expr::String(s) => s.clone(),
-          _ => expr_to_string(k),
-        };
-        if ks == "Types" {
-          if let Expr::Association(types) = v {
-            for (tk, tv) in types {
-              let tks = match tk {
-                Expr::String(s) => s.clone(),
-                _ => expr_to_string(tk),
-              };
-              if tks == type_name {
-                if let Some(data) = parse_entity_type_data(tv) {
-                  for (ename, props) in &data.entities {
-                    if ename == &entity_name {
-                      for (pname, pval) in props {
-                        if pname == &property {
-                          return Ok(pval.clone());
-                        }
-                      }
-                      return Ok(Expr::FunctionCall {
-                        name: "Missing".to_string(),
-                        args: vec![Expr::String("NotAvailable".to_string())],
-                      });
-                    }
+  if store_args.len() == 1
+    && let Expr::Association(outer) = &store_args[0]
+  {
+    for (k, v) in outer {
+      let ks = match k {
+        Expr::String(s) => s.clone(),
+        _ => expr_to_string(k),
+      };
+      if ks == "Types"
+        && let Expr::Association(types) = v
+      {
+        for (tk, tv) in types {
+          let tks = match tk {
+            Expr::String(s) => s.clone(),
+            _ => expr_to_string(tk),
+          };
+          if tks == type_name
+            && let Some(data) = parse_entity_type_data(tv)
+          {
+            for (ename, props) in &data.entities {
+              if ename == &entity_name {
+                for (pname, pval) in props {
+                  if pname == &property {
+                    return Ok(pval.clone());
                   }
                 }
+                return Ok(Expr::FunctionCall {
+                  name: "Missing".to_string(),
+                  args: vec![Expr::String("NotAvailable".to_string())],
+                });
               }
             }
           }

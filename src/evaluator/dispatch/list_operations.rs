@@ -21,9 +21,9 @@ fn has_pattern_element(expr: &Expr) -> bool {
           | "Repeated"
           | "RepeatedNull"
           | "Except"
-      ) || args.iter().any(|a| has_pattern_element(a))
+      ) || args.iter().any(has_pattern_element)
     }
-    Expr::List(items) => items.iter().any(|i| has_pattern_element(i)),
+    Expr::List(items) => items.iter().any(has_pattern_element),
     _ => false,
   }
 }
@@ -1712,79 +1712,78 @@ pub fn dispatch_list_operations(
     }
     // SequenceCases[list, sublist] — find matching subsequences
     "SequenceCases" if args.len() == 2 => {
-      if let Expr::List(list) = &args[0] {
-        if let Expr::List(sub) = &args[1] {
-          if sub.is_empty() {
-            return Some(Ok(Expr::List(vec![])));
-          }
-          // Check if pattern contains Blank/pattern/sequence elements
-          let has_patterns = sub.iter().any(|e| has_pattern_element(e));
-          // Check if pattern contains sequence patterns (__, ___)
-          // that can match variable numbers of elements
-          let has_sequence = sub.iter().any(|e| has_sequence_pattern(e));
-          if has_patterns {
-            let pattern = Expr::List(sub.clone());
-            let mut results: Vec<Expr> = Vec::new();
-            let mut i = 0;
-            while i < list.len() {
-              let mut matched = false;
-              // Try subsequences of different lengths (longest first
-              // for greedy matching)
-              let remaining = list.len() - i;
-              let min_len = if has_sequence { 1 } else { sub.len() };
-              let try_max = if has_sequence { remaining } else { sub.len() };
-              // Skip if not enough elements remaining
-              if remaining < min_len {
+      if let Expr::List(list) = &args[0]
+        && let Expr::List(sub) = &args[1]
+      {
+        if sub.is_empty() {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        // Check if pattern contains Blank/pattern/sequence elements
+        let has_patterns = sub.iter().any(has_pattern_element);
+        // Check if pattern contains sequence patterns (__, ___)
+        // that can match variable numbers of elements
+        let has_sequence = sub.iter().any(has_sequence_pattern);
+        if has_patterns {
+          let pattern = Expr::List(sub.clone());
+          let mut results: Vec<Expr> = Vec::new();
+          let mut i = 0;
+          while i < list.len() {
+            let mut matched = false;
+            // Try subsequences of different lengths (longest first
+            // for greedy matching)
+            let remaining = list.len() - i;
+            let min_len = if has_sequence { 1 } else { sub.len() };
+            let try_max = if has_sequence { remaining } else { sub.len() };
+            // Skip if not enough elements remaining
+            if remaining < min_len {
+              break;
+            }
+            let try_max = try_max.min(remaining);
+            // Try longest match first
+            let range: Vec<usize> = (min_len..=try_max).rev().collect();
+            for len in range {
+              let subseq = Expr::List(list[i..i + len].to_vec());
+              let match_result =
+                crate::functions::predicate_ast::match_q_ast(&[
+                  subseq.clone(),
+                  pattern.clone(),
+                ]);
+              if let Ok(Expr::Identifier(s)) = &match_result
+                && s == "True"
+              {
+                results.push(subseq);
+                i += len;
+                matched = true;
                 break;
               }
-              let try_max = try_max.min(remaining);
-              // Try longest match first
-              let range: Vec<usize> = (min_len..=try_max).rev().collect();
-              for len in range {
-                let subseq = Expr::List(list[i..i + len].to_vec());
-                let match_result =
-                  crate::functions::predicate_ast::match_q_ast(&[
-                    subseq.clone(),
-                    pattern.clone(),
-                  ]);
-                if let Ok(Expr::Identifier(s)) = &match_result {
-                  if s == "True" {
-                    results.push(subseq);
-                    i += len;
-                    matched = true;
-                    break;
-                  }
-                }
-              }
-              if !matched {
-                i += 1;
-              }
             }
-            return Some(Ok(Expr::List(results)));
-          } else {
-            // Literal subsequence match
-            let sub_len = sub.len();
-            let sub_strs: Vec<String> =
-              sub.iter().map(expr_to_string).collect();
-            let mut results: Vec<Expr> = Vec::new();
-            let mut i = 0;
-            while i + sub_len <= list.len() {
-              let mut matches = true;
-              for j in 0..sub_len {
-                if expr_to_string(&list[i + j]) != sub_strs[j] {
-                  matches = false;
-                  break;
-                }
-              }
-              if matches {
-                results.push(Expr::List(list[i..i + sub_len].to_vec()));
-                i += sub_len;
-              } else {
-                i += 1;
-              }
+            if !matched {
+              i += 1;
             }
-            return Some(Ok(Expr::List(results)));
           }
+          return Some(Ok(Expr::List(results)));
+        } else {
+          // Literal subsequence match
+          let sub_len = sub.len();
+          let sub_strs: Vec<String> = sub.iter().map(expr_to_string).collect();
+          let mut results: Vec<Expr> = Vec::new();
+          let mut i = 0;
+          while i + sub_len <= list.len() {
+            let mut matches = true;
+            for j in 0..sub_len {
+              if expr_to_string(&list[i + j]) != sub_strs[j] {
+                matches = false;
+                break;
+              }
+            }
+            if matches {
+              results.push(Expr::List(list[i..i + sub_len].to_vec()));
+              i += sub_len;
+            } else {
+              i += 1;
+            }
+          }
+          return Some(Ok(Expr::List(results)));
         }
       }
     }

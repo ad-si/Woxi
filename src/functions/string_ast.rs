@@ -460,12 +460,10 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
       pattern,
       replacement,
     } = arg
+      && crate::syntax::expr_to_string(pattern) == "IgnoreCase"
+      && crate::syntax::expr_to_string(replacement) == "True"
     {
-      if crate::syntax::expr_to_string(pattern) == "IgnoreCase"
-        && crate::syntax::expr_to_string(replacement) == "True"
-      {
-        return true;
-      }
+      return true;
     }
   }
   false
@@ -3084,14 +3082,10 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (true, c1, c2)
     }
     (Expr::List(l1), Expr::List(l2)) => {
-      let c1: Vec<String> = l1
-        .iter()
-        .map(|e| crate::syntax::expr_to_output(e))
-        .collect();
-      let c2: Vec<String> = l2
-        .iter()
-        .map(|e| crate::syntax::expr_to_output(e))
-        .collect();
+      let c1: Vec<String> =
+        l1.iter().map(crate::syntax::expr_to_output).collect();
+      let c2: Vec<String> =
+        l2.iter().map(crate::syntax::expr_to_output).collect();
       (false, c1, c2)
     }
     _ => {
@@ -4090,10 +4084,10 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
     },
     Expr::BinaryOp { op, left, right } => {
       // Power[x, Rational[1, 2]] → Sqrt(x) in Fortran
-      if matches!(op, BinaryOperator::Power) {
-        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
-          return format!("Sqrt({})", expr_to_fortran(sqrt_arg));
-        }
+      if matches!(op, BinaryOperator::Power)
+        && let Some(sqrt_arg) = crate::functions::is_sqrt(expr)
+      {
+        return format!("Sqrt({})", expr_to_fortran(sqrt_arg));
       }
       let l = expr_to_fortran(left);
       let r = expr_to_fortran(right);
@@ -4420,12 +4414,13 @@ fn percent_decode(s: &str) -> String {
   let bytes = s.as_bytes();
   let mut i = 0;
   while i < bytes.len() {
-    if bytes[i] == b'%' && i + 2 < bytes.len() {
-      if let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-        result.push(byte);
-        i += 3;
-        continue;
-      }
+    if bytes[i] == b'%'
+      && i + 2 < bytes.len()
+      && let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+    {
+      result.push(byte);
+      i += 3;
+      continue;
     }
     result.push(bytes[i]);
     i += 1;
@@ -4478,33 +4473,33 @@ pub fn byte_array_to_string_ast(
     name,
     args: ba_args,
   } = &args[0]
+    && name == "ByteArray"
+    && ba_args.len() == 1
   {
-    if name == "ByteArray" && ba_args.len() == 1 {
-      let bytes: Vec<u8> = match &ba_args[0] {
-        Expr::String(b64) => {
-          use base64::Engine;
-          let engine = base64::engine::general_purpose::STANDARD;
-          engine.decode(b64).unwrap_or_default()
-        }
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::Integer(n) = item {
-              Some(*n as u8)
-            } else {
-              None
-            }
-          })
-          .collect(),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "ByteArrayToString".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      };
-      return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
-    }
+    let bytes: Vec<u8> = match &ba_args[0] {
+      Expr::String(b64) => {
+        use base64::Engine;
+        let engine = base64::engine::general_purpose::STANDARD;
+        engine.decode(b64).unwrap_or_default()
+      }
+      Expr::List(items) => items
+        .iter()
+        .filter_map(|item| {
+          if let Expr::Integer(n) = item {
+            Some(*n as u8)
+          } else {
+            None
+          }
+        })
+        .collect(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ByteArrayToString".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
   }
   Ok(Expr::FunctionCall {
     name: "ByteArrayToString".to_string(),

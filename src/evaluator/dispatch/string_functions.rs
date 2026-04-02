@@ -223,7 +223,7 @@ pub fn dispatch_string_functions(
             trimmed
           })
           .filter(|w| !w.is_empty())
-          .map(|w| Expr::String(w))
+          .map(Expr::String)
           .collect();
         return Some(Ok(Expr::List(words)));
       }

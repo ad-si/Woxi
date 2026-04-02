@@ -63,15 +63,14 @@ pub fn dispatch_datetime_functions(
     // DateObject is a data container — normalize granularity
     "DateObject" => {
       // DateObject[{y,m,d}] → DateObject[{y,m,d}, Day]
-      if args.len() == 1 {
-        if let Expr::List(items) = &args[0] {
-          if items.len() == 3 {
-            return Some(Ok(Expr::FunctionCall {
-              name: "DateObject".to_string(),
-              args: vec![args[0].clone(), Expr::String("Day".to_string())],
-            }));
-          }
-        }
+      if args.len() == 1
+        && let Expr::List(items) = &args[0]
+        && items.len() == 3
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "DateObject".to_string(),
+          args: vec![args[0].clone(), Expr::String("Day".to_string())],
+        }));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "DateObject".to_string(),

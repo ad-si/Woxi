@@ -1448,9 +1448,10 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(f) = try_eval_to_f64(&args[0]) {
         Ok(Expr::Real(f.signum() * f.abs().cbrt()))
       } else {
+        // Canonicalize CubeRoot[x] → Surd[x, 3]
         Ok(Expr::FunctionCall {
-          name: "CubeRoot".to_string(),
-          args: args.to_vec(),
+          name: "Surd".to_string(),
+          args: vec![args[0].clone(), Expr::Integer(3)],
         })
       }
     }

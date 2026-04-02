@@ -870,15 +870,15 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         });
       }
       // Try lowercase → canonical (e.g. "days" → "Days")
-      if let Some(canonical) = resolve_lowercase_unit(name) {
-        if let Some(info) = get_unit_info(&canonical) {
-          return Some(CompoundUnitInfo {
-            components: vec![(canonical, 1)],
-            si_numer: info.to_si_numer,
-            si_denom: info.to_si_denom,
-            dimensions: info.dimensions,
-          });
-        }
+      if let Some(canonical) = resolve_lowercase_unit(name)
+        && let Some(info) = get_unit_info(&canonical)
+      {
+        return Some(CompoundUnitInfo {
+          components: vec![(canonical, 1)],
+          si_numer: info.to_si_numer,
+          si_denom: info.to_si_denom,
+          dimensions: info.dimensions,
+        });
       }
       None
     }

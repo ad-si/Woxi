@@ -905,12 +905,11 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
         if name == "Quiet" {
-          if args.is_empty() || args.len() > 3 {
-            if let Some(result) =
+          if (args.is_empty() || args.len() > 3)
+            && let Some(result) =
               dispatch::arg_count::check_arg_count(name, args)
-            {
-              return result;
-            }
+          {
+            return result;
           }
           return crate::functions::control_flow_ast::quiet_ast(args);
         }
@@ -1220,25 +1219,27 @@ pub fn evaluate_expr_to_expr_inner(
               l == r
             } else if expr_to_string(left) == expr_to_string(right) {
               true
-            } else if {
+            } else {
               // Normalize Divide to Times[..., Power[..., -1]] for comparison
               let nl = normalize_divide_to_times(left);
               let nr = normalize_divide_to_times(right);
-              expr_to_string(&nl) == expr_to_string(&nr)
-            } {
-              true
-            } else if let Some(ord) =
-              crate::functions::quantity_ast::try_quantity_compare(left, right)
-            {
-              ord == std::cmp::Ordering::Equal
-            } else if has_free_symbols(left) || has_free_symbols(right) {
-              // Symbolic: return unevaluated
-              return Ok(Expr::Comparison {
-                operands: values,
-                operators: operators.clone(),
-              });
-            } else {
-              false
+              if expr_to_string(&nl) == expr_to_string(&nr) {
+                true
+              } else if let Some(ord) =
+                crate::functions::quantity_ast::try_quantity_compare(
+                  left, right,
+                )
+              {
+                ord == std::cmp::Ordering::Equal
+              } else if has_free_symbols(left) || has_free_symbols(right) {
+                // Symbolic: return unevaluated
+                return Ok(Expr::Comparison {
+                  operands: values,
+                  operators: operators.clone(),
+                });
+              } else {
+                false
+              }
             }
           }
           ComparisonOp::UnsameQ => {

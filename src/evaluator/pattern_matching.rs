@@ -1653,10 +1653,10 @@ fn match_args_with_sequences(
     };
 
     // Apply explicit max_count from Repeated[pat, {min, max}]
-    if let Some(explicit_max) = seq.max_count {
-      if explicit_max < max_count {
-        max_count = explicit_max;
-      }
+    if let Some(explicit_max) = seq.max_count
+      && explicit_max < max_count
+    {
+      max_count = explicit_max;
     }
 
     if max_count < seq.min_count {
@@ -1701,27 +1701,26 @@ fn match_args_with_sequences(
         // Recursively match the rest
         if let Some(rest_bindings) =
           match_args_with_sequences(&expr_args[count..], rest_pats)
+          && merge_bindings(&mut elem_bindings, rest_bindings)
         {
-          if merge_bindings(&mut elem_bindings, rest_bindings) {
-            // Add binding for this sequence name (if any)
-            if !seq.name.is_empty() {
-              let bound_value = if count == 0 {
-                Expr::FunctionCall {
-                  name: "Sequence".to_string(),
-                  args: vec![],
-                }
-              } else if count == 1 {
-                seq_args[0].clone()
-              } else {
-                Expr::FunctionCall {
-                  name: "Sequence".to_string(),
-                  args: seq_args.to_vec(),
-                }
-              };
-              elem_bindings.insert(0, (seq.name.clone(), bound_value));
-            }
-            return Some(elem_bindings);
+          // Add binding for this sequence name (if any)
+          if !seq.name.is_empty() {
+            let bound_value = if count == 0 {
+              Expr::FunctionCall {
+                name: "Sequence".to_string(),
+                args: vec![],
+              }
+            } else if count == 1 {
+              seq_args[0].clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Sequence".to_string(),
+                args: seq_args.to_vec(),
+              }
+            };
+            elem_bindings.insert(0, (seq.name.clone(), bound_value));
           }
+          return Some(elem_bindings);
         }
         continue;
       }

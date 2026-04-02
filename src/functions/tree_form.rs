@@ -427,7 +427,7 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Find root: vertex that has no parent
   let root_key = all_vertices
     .iter()
-    .map(|v| expr_to_output(v))
+    .map(expr_to_output)
     .find(|k| !has_parent.contains(k))
     .unwrap_or_else(|| expr_to_output(&all_vertices[0]));
 

@@ -1638,10 +1638,10 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "N".to_string(),
       args: vec![product.clone()],
     };
-    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&n_expr) {
-      if try_eval_to_f64(&result).is_some() {
-        return Ok(result);
-      }
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&n_expr)
+      && try_eval_to_f64(&result).is_some()
+    {
+      return Ok(result);
     }
   }
   Ok(product)
@@ -1910,10 +1910,10 @@ fn extract_geo_coords(expr: &Expr) -> Option<(Expr, Expr)> {
     Expr::FunctionCall { name, args }
       if name == "GeoPosition" && args.len() == 1 =>
     {
-      if let Expr::List(items) = &args[0] {
-        if items.len() >= 2 {
-          return Some((items[0].clone(), items[1].clone()));
-        }
+      if let Expr::List(items) = &args[0]
+        && items.len() >= 2
+      {
+        return Some((items[0].clone(), items[1].clone()));
       }
       None
     }
@@ -2036,13 +2036,13 @@ fn dihedral_group_generators(n: usize) -> Expr {
 
   // Reflection: for even n pairs (i, n+1-i); for odd n pairs (i, n+2-i) for i>=2
   let mut reflection_cycles = Vec::new();
-  if n % 2 == 0 {
+  if n.is_multiple_of(2) {
     for i in 1..=(n / 2) {
       reflection_cycles.push(vec![i as i128, (n + 1 - i) as i128]);
     }
   } else {
     // Odd n: element 1 is fixed, pairs are (2,n), (3,n-1), ...
-    for i in 2..=((n + 1) / 2) {
+    for i in 2..=n.div_ceil(2) {
       reflection_cycles.push(vec![i as i128, (n + 2 - i) as i128]);
     }
   }
@@ -2314,10 +2314,10 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     Expr::FunctionCall { name, args }
       if name == "Binomial" && args.len() == 2 =>
     {
-      if is_pure_var(&args[0], var) {
-        if let Some(result) = asymptotic_binomial(&args[0], &args[1], var) {
-          return Some(result);
-        }
+      if is_pure_var(&args[0], var)
+        && let Some(result) = asymptotic_binomial(&args[0], &args[1], var)
+      {
+        return Some(result);
       }
       None
     }

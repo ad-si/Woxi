@@ -473,10 +473,10 @@ pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>, Vec<String>)) {
 /// Only captures if no trace has been captured yet (preserves the deepest trace).
 pub fn capture_error_trace() {
   LAST_ERROR_TRACE.with(|t| {
-    if t.borrow().is_none() {
-      if let Some(trace) = format_stack_trace() {
-        *t.borrow_mut() = Some(trace);
-      }
+    if t.borrow().is_none()
+      && let Some(trace) = format_stack_trace()
+    {
+      *t.borrow_mut() = Some(trace);
     }
   });
 }
