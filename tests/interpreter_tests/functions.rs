@@ -9764,7 +9764,29 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn inverse_erf() {
+    // InverseErf[0] = 0
+    assert_eq!(interpret("InverseErf[0]").unwrap(), "0");
+    // InverseErf[1] = Infinity
+    assert_eq!(interpret("InverseErf[1]").unwrap(), "Infinity");
+    // InverseErf[-1] = -Infinity
+    assert_eq!(interpret("InverseErf[-1]").unwrap(), "-Infinity");
+    // Symbolic
     assert_eq!(interpret("InverseErf[x]").unwrap(), "InverseErf[x]");
+    // Odd function: InverseErf[-x] = -InverseErf[x]
+    assert_eq!(interpret("InverseErf[-x]").unwrap(), "-InverseErf[x]");
+    // Out of range returns unevaluated
+    assert_eq!(interpret("InverseErf[2]").unwrap(), "InverseErf[2]");
+    assert_eq!(interpret("InverseErf[-2]").unwrap(), "-InverseErf[2]");
+    // Numeric evaluation
+    let result = interpret("InverseErf[0.5]").unwrap();
+    assert!(result.starts_with("0.476936"), "InverseErf[0.5] = {result}");
+    let result = interpret("InverseErf[-0.5]").unwrap();
+    assert!(
+      result.starts_with("-0.476936"),
+      "InverseErf[-0.5] = {result}"
+    );
+    let result = interpret("InverseErf[0.9]").unwrap();
+    assert!(result.starts_with("1.16308"), "InverseErf[0.9] = {result}");
   }
   #[test]
   fn smooth_density_histogram() {

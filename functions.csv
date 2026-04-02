@@ -1868,7 +1868,7 @@ Databin,Databin cloud storage,✅,unevaluated,10.0,1905
 Interpretation,Interpretation wrapper,✅,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
 SymmetricGroup,Symmetric group,✅,unevaluated,8.0,1905
-InverseErf,Inverse error function,✅,unevaluated,3.0,1906
+InverseErf,Inverse error function,✅,pure,3.0,1906
 SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8.0,1907
 NetExtract,Extract net components,✅,unevaluated,11.0,1908
 Friday,Friday day name,✅,unevaluated,9.0,1910
