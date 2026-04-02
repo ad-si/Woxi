@@ -1558,7 +1558,7 @@ Tolerance,Tolerance specification,✅,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,✅,unevaluated,11.0,1584
 BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10.0,1586
 Cumulant,Statistical cumulant,✅,unevaluated,8.0,1586
-BooleanConvert,Convert Boolean expressions,✅,unevaluated,7.0,1588
+BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,✅,unevaluated,10.0,1593

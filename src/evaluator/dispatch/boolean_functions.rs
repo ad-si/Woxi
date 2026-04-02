@@ -89,6 +89,9 @@ pub fn dispatch_boolean_functions(
     "BooleanMinimize" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::boolean_minimize_ast(args));
     }
+    "BooleanConvert" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::boolean_ast::boolean_convert_ast(args));
+    }
     _ => {}
   }
   None

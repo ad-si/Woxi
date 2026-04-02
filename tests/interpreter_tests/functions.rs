@@ -8190,7 +8190,32 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn boolean_convert() {
+    // Simple pass-through
     assert_eq!(interpret("BooleanConvert[x]").unwrap(), "x");
+    assert_eq!(interpret("BooleanConvert[a || b]").unwrap(), "a || b");
+    assert_eq!(interpret("BooleanConvert[a && b]").unwrap(), "a && b");
+    // Default (DNF): eliminate compound connectives
+    assert_eq!(
+      interpret("BooleanConvert[Implies[a, b]]").unwrap(),
+      " !a || b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nand[a, b]]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nor[a, b]]").unwrap(),
+      " !a &&  !b"
+    );
+    // CNF form
+    assert_eq!(
+      interpret("BooleanConvert[Implies[a, b], \"CNF\"]").unwrap(),
+      " !a || b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[a && b, \"CNF\"]").unwrap(),
+      "a && b"
+    );
   }
   #[test]
   fn select_components() {
