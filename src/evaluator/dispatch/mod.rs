@@ -58,7 +58,34 @@ pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  evaluate_function_call_ast_inner(name, args)
+  // Track recursion depth to prevent stack overflow from mutually-recursive
+  // rules (e.g. ArcSec ↔ ArcCos cycles through built-in + user rules).
+  // This catches cycles that bypass the depth guard in evaluate_expr_to_expr_impl
+  // because they stay entirely within evaluate_function_call_ast_inner.
+  let depth = crate::RECURSION_DEPTH.with(|d| {
+    let cur = d.get();
+    d.set(cur + 1);
+    cur
+  });
+  struct DepthGuard;
+  impl Drop for DepthGuard {
+    fn drop(&mut self) {
+      crate::RECURSION_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+  }
+  let _guard = DepthGuard;
+
+  const RECURSION_LIMIT: usize = 1024;
+  if depth > RECURSION_LIMIT {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
+    evaluate_function_call_ast_inner(name, args)
+  })
 }
 
 /// Helper for Read: read a single value of a given type from remaining stream content.

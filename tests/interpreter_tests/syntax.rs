@@ -5023,3 +5023,50 @@ mod boolean_minimize {
     );
   }
 }
+
+mod recursion_limit {
+  use super::*;
+
+  #[test]
+  fn mutually_recursive_protected_symbol_rules_no_stack_overflow() {
+    // Regression test for https://github.com/ad-si/Woxi/issues/99
+    // Mutually recursive rules on protected symbols caused stack overflow
+    clear_state();
+    let result = interpret(
+      "Unprotect[ArcSec, ArcCos]; \
+       ArcCos[1/u_] := ArcSec[u]; \
+       ArcSec[1/u_] := ArcCos[u]; \
+       f[ArcSec[x_]] := 0",
+    );
+    // Should not stack overflow — returns Null from SetDelayed
+    assert!(result.is_ok());
+  }
+
+  #[test]
+  fn mutually_recursive_rules_symbolic_arg() {
+    // ArcSec[y] with mutual recursion should not stack overflow
+    clear_state();
+    let result = interpret(
+      "Unprotect[ArcSec, ArcCos]; \
+       ArcCos[1/u_] := ArcSec[u]; \
+       ArcSec[1/u_] := ArcCos[u]; \
+       ArcSec[y]",
+    );
+    assert!(result.is_ok());
+    // Should return ArcSec[y] unevaluated (recursion limit prevents infinite loop)
+    assert_eq!(result.unwrap(), "ArcSec[y]");
+  }
+
+  #[test]
+  fn concrete_value_still_works_with_recursive_rules() {
+    // Concrete numeric values should still evaluate correctly
+    clear_state();
+    let result = interpret(
+      "Unprotect[ArcSec, ArcCos]; \
+       ArcCos[1/u_] := ArcSec[u]; \
+       ArcSec[1/u_] := ArcCos[u]; \
+       ArcSec[2]",
+    );
+    assert_eq!(result.unwrap(), "Pi/3");
+  }
+}
