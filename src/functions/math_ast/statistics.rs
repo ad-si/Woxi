@@ -1028,16 +1028,10 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if root * root == numer {
             return Ok(Expr::Integer(root));
           }
-          return Ok(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(numer)],
-          });
+          return Ok(make_sqrt(Expr::Integer(numer)));
         }
         // Return Sqrt[Rational[numer, denom]]
-        return Ok(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![make_rational(numer, denom)],
-        });
+        return Ok(make_sqrt(make_rational(numer, denom)));
       }
       if has_real || !all_int {
         let mut vals = Vec::new();
@@ -2182,13 +2176,10 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             ],
           },
           // Sqrt[2*Pi]
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-            }],
-          },
+          make_sqrt(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+          }),
           // E^(-n)
           Expr::FunctionCall {
             name: "Power".to_string(),
@@ -2308,12 +2299,10 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     }
 
     // Sqrt[expr]
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      let inner = discrete_asymptotic_leading(&args[0], var)?;
-      Some(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![inner],
-      })
+    expr if is_sqrt(expr).is_some() => {
+      let sqrt_arg = is_sqrt(expr).unwrap();
+      let inner = discrete_asymptotic_leading(sqrt_arg, var)?;
+      Some(make_sqrt(inner))
     }
 
     // Log[expr] - keep as is if it depends on var
@@ -2386,13 +2375,10 @@ fn stirling_approx(var: &str) -> Expr {
         ],
       },
       // Sqrt[2*Pi]
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-        }],
-      },
+      make_sqrt(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+      }),
       // E^(-n)
       Expr::FunctionCall {
         name: "Power".to_string(),
@@ -2455,8 +2441,8 @@ fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
       Some(300.0) // factorial grows faster than exponential
     }
 
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      growth_order(&args[0], var).map(|o| o * 0.5)
+    expr if is_sqrt(expr).is_some() => {
+      growth_order(is_sqrt(expr).unwrap(), var).map(|o| o * 0.5)
     }
 
     // BinaryOp variants
@@ -2577,14 +2563,8 @@ fn asymptotic_binomial(
           Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
-              Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: vec![n],
-              },
-              Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: vec![Expr::Constant("Pi".to_string())],
-              },
+              make_sqrt(n),
+              make_sqrt(Expr::Constant("Pi".to_string())),
             ],
           },
           Expr::Integer(-1),

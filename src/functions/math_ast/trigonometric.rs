@@ -253,18 +253,12 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(2)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(2))),
     },
     // sin(Pi/3) = Sqrt[3]/2
     (1, 3) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      left: Box::new(make_sqrt(Expr::Integer(3))),
       right: Box::new(Expr::Integer(2)),
     },
     // sin(Pi/2) = 1
@@ -309,20 +303,14 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     // cos(Pi/6) = Sqrt[3]/2
     (1, 6) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      left: Box::new(make_sqrt(Expr::Integer(3))),
       right: Box::new(Expr::Integer(2)),
     },
     // cos(Pi/4) = 1/Sqrt[2]
     (1, 4) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(2)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(2))),
     },
     // cos(Pi/3) = 1/2
     (1, 3) => make_rational(1, 2),
@@ -370,18 +358,12 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
     (1, 6) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     // tan(Pi/4) = 1
     (1, 4) => Expr::Integer(1),
     // tan(Pi/3) = Sqrt[3]
-    (1, 3) => Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::Integer(3)],
-    },
+    (1, 3) => make_sqrt(Expr::Integer(3)),
     _ => return None,
   };
 
@@ -421,16 +403,10 @@ pub fn exact_sec(k: i64, n: i64) -> Option<Expr> {
     (1, 6) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(2)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     // Sec(Pi/4) = Sqrt[2]
-    (1, 4) => Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::Integer(2)],
-    },
+    (1, 4) => make_sqrt(Expr::Integer(2)),
     // Sec(Pi/3) = 2
     (1, 3) => Expr::Integer(2),
     _ => return None,
@@ -469,18 +445,12 @@ pub fn exact_csc(k: i64, n: i64) -> Option<Expr> {
     // Csc(Pi/6) = 2
     (1, 6) => Expr::Integer(2),
     // Csc(Pi/4) = Sqrt[2]
-    (1, 4) => Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::Integer(2)],
-    },
+    (1, 4) => make_sqrt(Expr::Integer(2)),
     // Csc(Pi/3) = 2/Sqrt[3]
     (1, 3) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(2)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     _ => return None,
   };
@@ -516,20 +486,14 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 
   let val = match (kr, nr) {
     // Cot(Pi/6) = Sqrt[3]
-    (1, 6) => Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::Integer(3)],
-    },
+    (1, 6) => make_sqrt(Expr::Integer(3)),
     // Cot(Pi/4) = 1
     (1, 4) => Expr::Integer(1),
     // Cot(Pi/3) = 1/Sqrt[3]
     (1, 3) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(Expr::Integer(1)),
-      right: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(3)],
-      }),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
     },
     _ => return None,
   };

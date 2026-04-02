@@ -419,6 +419,55 @@ pub fn make_rational(numer: i128, denom: i128) -> Expr {
   }
 }
 
+/// Create a canonical Sqrt expression: Power[x, Rational[1, 2]]
+/// In Wolfram Language, Sqrt[x] is just syntactic sugar for Power[x, 1/2].
+pub fn make_sqrt(arg: Expr) -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(arg),
+    right: Box::new(make_rational(1, 2)),
+  }
+}
+
+/// Check if an expression is a Sqrt (i.e. Power[x, Rational[1, 2]])
+/// and return the argument if so.
+pub fn is_sqrt(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if is_half(right) {
+        Some(left)
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && is_half(&args[1]) =>
+    {
+      Some(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
+/// Check if an expression is Rational[1, 2]
+pub(super) fn is_half(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(1))
+        && matches!(&args[1], Expr::Integer(2))
+  )
+}
+
 /// Convert complex rational components to an Expr.
 /// Given (re_num/re_den) + (im_num/im_den)*I, produce the canonical expression.
 pub fn complex_rational_to_expr(

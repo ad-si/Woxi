@@ -30,10 +30,7 @@ fn minus(a: Expr, b: Expr) -> Expr {
 }
 
 fn sqrt(a: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![a],
-  }
+  make_sqrt(a)
 }
 
 fn factorial(a: Expr) -> Expr {

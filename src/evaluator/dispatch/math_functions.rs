@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::make_sqrt;
 
 pub fn dispatch_math_functions(
   name: &str,
@@ -935,10 +936,7 @@ pub fn dispatch_math_functions(
     }
     "InverseHaversine" if args.len() == 1 => {
       // InverseHaversine[x] = 2 * ArcSin[Sqrt[x]]
-      let sqrt_expr = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      };
+      let sqrt_expr = make_sqrt(args[0].clone());
       let asin_expr = Expr::FunctionCall {
         name: "ArcSin".to_string(),
         args: vec![sqrt_expr],
@@ -1461,22 +1459,19 @@ pub fn dispatch_math_functions(
       {
         let x = &elems[0];
         let y = &elems[1];
-        let r = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(y.clone()),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          }],
-        };
+        let r = make_sqrt(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(x.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(y.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        });
         let theta = Expr::FunctionCall {
           name: "ArcTan".to_string(),
           args: vec![x.clone(), y.clone()],
@@ -1562,10 +1557,7 @@ pub fn dispatch_math_functions(
             right: Box::new(Expr::Integer(2)),
           }),
         };
-        let r = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![sum_sq],
-        };
+        let r = make_sqrt(sum_sq);
         let xy_sq = Expr::BinaryOp {
           op: BinaryOperator::Plus,
           left: Box::new(Expr::BinaryOp {
@@ -1581,13 +1573,7 @@ pub fn dispatch_math_functions(
         };
         let theta = Expr::FunctionCall {
           name: "ArcTan".to_string(),
-          args: vec![
-            z.clone(),
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![xy_sq],
-            },
-          ],
+          args: vec![z.clone(), make_sqrt(xy_sq)],
         };
         let phi_expr = Expr::FunctionCall {
           name: "ArcTan".to_string(),
@@ -1691,18 +1677,15 @@ pub fn dispatch_math_functions(
       let cy = Expr::BinaryOp {
         op: BinaryOperator::Times,
         left: Box::new(b.clone()),
-        right: Box::new(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::BinaryOp {
-            op: BinaryOperator::Minus,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(cos_a),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          }],
-        }),
+        right: Box::new(make_sqrt(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(cos_a),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        })),
       };
       let cx_eval = crate::evaluator::evaluate_expr_to_expr(&cx).unwrap_or(cx);
       let cy_eval = crate::evaluator::evaluate_expr_to_expr(&cy).unwrap_or(cy);
@@ -1911,30 +1894,27 @@ pub fn dispatch_math_functions(
           let h_eval = crate::evaluator::evaluate_expr_to_expr(&h).unwrap_or(h);
           let k_eval = crate::evaluator::evaluate_expr_to_expr(&k).unwrap_or(k);
           // r = sqrt((x1-h)^2 + (y1-k)^2)
-          let r = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::BinaryOp {
-              op: BinaryOperator::Plus,
+          let r = make_sqrt(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
               left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(x1.clone()),
-                  right: Box::new(h_eval.clone()),
-                }),
-                right: Box::new(Expr::Integer(2)),
+                op: BinaryOperator::Minus,
+                left: Box::new(x1.clone()),
+                right: Box::new(h_eval.clone()),
               }),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Minus,
-                  left: Box::new(y1.clone()),
-                  right: Box::new(k_eval.clone()),
-                }),
-                right: Box::new(Expr::Integer(2)),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(y1.clone()),
+                right: Box::new(k_eval.clone()),
               }),
-            }],
-          };
+              right: Box::new(Expr::Integer(2)),
+            }),
+          });
           let r_eval = crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
           return Some(Ok(Expr::FunctionCall {
             name: "Circle".to_string(),

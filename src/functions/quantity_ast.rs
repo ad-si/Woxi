@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::Expr;
 use std::collections::BTreeMap;
 
@@ -1706,9 +1707,10 @@ fn has_bare_identifier_units(e: &Expr) -> bool {
     Expr::BinaryOp { left, right, .. } => {
       has_bare_identifier_units(left) || has_bare_identifier_units(right)
     }
-    Expr::FunctionCall { name, args }
-      if name == "Power" || name == "Times" || name == "Sqrt" =>
-    {
+    expr if is_sqrt(expr).is_some() => {
+      has_bare_identifier_units(is_sqrt(expr).unwrap())
+    }
+    Expr::FunctionCall { name, args } if name == "Power" || name == "Times" => {
       args.iter().any(has_bare_identifier_units)
     }
     _ => false,
@@ -2101,10 +2103,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
       }
     } else if abs_rn == 1 && rd == 2 {
       // Power[base, 1/2] → Sqrt[base] (matching Wolfram convention for units)
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![base],
-      }
+      make_sqrt(base)
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Power,

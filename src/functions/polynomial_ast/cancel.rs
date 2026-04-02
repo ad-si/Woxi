@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::{BinaryOperator, Expr, expr_to_string};
 
 // ─── Cancel ─────────────────────────────────────────────────────────
@@ -422,10 +423,9 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
         }
       }
       // Sqrt[x] → base=x, exp=1/2
-      Expr::FunctionCall { name, args }
-        if name == "Sqrt" && args.len() == 1 =>
-      {
-        (expr_to_string(&args[0]), (1, 2))
+      expr if is_sqrt(expr).is_some() => {
+        let sqrt_arg = is_sqrt(expr).unwrap();
+        (expr_to_string(sqrt_arg), (1, 2))
       }
       _ => (expr_to_string(f), (1, 1)),
     }
@@ -468,11 +468,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
           _ => f.clone(),
         }
       }
-      Expr::FunctionCall { name, args }
-        if name == "Sqrt" && args.len() == 1 =>
-      {
-        args[0].clone()
-      }
+      expr if is_sqrt(expr).is_some() => is_sqrt(expr).unwrap().clone(),
       _ => f.clone(),
     }
   }
@@ -492,10 +488,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
       })
     } else if n == 1 && d == 2 {
       // exp = 1/2: use Sqrt[base]
-      Some(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![base.clone()],
-      })
+      Some(make_sqrt(base.clone()))
     } else {
       // Rational exponent: base^Rational[n, d]
       Some(Expr::BinaryOp {

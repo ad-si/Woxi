@@ -4,6 +4,7 @@
 //! and integration.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::Expr;
 
 /// D[expr, var] or D[expr, {var, n}] - Symbolic differentiation
@@ -361,18 +362,12 @@ fn try_definite_integral(
   {
     // coeff is 'a' in E^(-a*x^2): result = Sqrt[Pi/a]
     return Some(match coeff {
-      Expr::Integer(1) => Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Constant("Pi".to_string())],
-      },
-      _ => Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(Expr::Constant("Pi".to_string())),
-          right: Box::new(coeff),
-        }],
-      },
+      Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
+      _ => make_sqrt(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(coeff),
+      }),
     });
   }
 
@@ -382,18 +377,12 @@ fn try_definite_integral(
     && let Some(coeff) = match_gaussian(integrand, var)
   {
     let sqrt_part = match coeff {
-      Expr::Integer(1) => Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Constant("Pi".to_string())],
-      },
-      _ => Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(Expr::Constant("Pi".to_string())),
-          right: Box::new(coeff),
-        }],
-      },
+      Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
+      _ => make_sqrt(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(coeff),
+      }),
     };
     return Some(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -1078,10 +1067,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               }),
             }),
           };
-          let sqrt_expr = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![one_minus_f_sq],
-          };
+          let sqrt_expr = make_sqrt(one_minus_f_sq);
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
             left: Box::new(df),
@@ -1106,10 +1092,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               }),
             }),
           };
-          let sqrt_expr = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![one_minus_f_sq],
-          };
+          let sqrt_expr = make_sqrt(one_minus_f_sq);
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
             left: Box::new(Expr::UnaryOp {
@@ -1179,10 +1162,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               right: Box::new(Expr::Integer(2)),
             }),
           };
-          let sqrt_expr = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![one_plus_f_sq],
-          };
+          let sqrt_expr = make_sqrt(one_plus_f_sq);
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
             left: Box::new(df),
@@ -1206,18 +1186,13 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             left: Box::new(Expr::Integer(1)),
             right: Box::new(args[0].clone()),
           };
-          let sqrt_minus = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![f_minus_one],
-          };
-          let sqrt_plus = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![f_plus_one],
-          };
+          let sqrt_minus = make_sqrt(f_minus_one);
+          let sqrt_plus = make_sqrt(f_plus_one);
           // f'(x) / (Sqrt[f-1] * Sqrt[f+1])
-          let denom = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![sqrt_minus, sqrt_plus],
+          let denom = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(sqrt_minus),
+            right: Box::new(sqrt_plus),
           };
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
@@ -1363,10 +1338,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Times,
               left: Box::new(Expr::Integer(2)),
-              right: Box::new(Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: args.clone(),
-              }),
+              right: Box::new(make_sqrt(args[0].clone())),
             }),
           }))
         }
@@ -1583,10 +1555,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let two_over_sqrt_pi = Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Divide,
             left: Box::new(Expr::Integer(2)),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::Constant("Pi".to_string())],
-            }),
+            right: Box::new(make_sqrt(Expr::Constant("Pi".to_string()))),
           };
           let result = simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
@@ -1628,10 +1597,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let two_over_sqrt_pi = Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Divide,
             left: Box::new(Expr::Integer(2)),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::Constant("Pi".to_string())],
-            }),
+            right: Box::new(make_sqrt(Expr::Constant("Pi".to_string()))),
           };
           let result = simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
@@ -1667,10 +1633,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let two_over_sqrt_pi = Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Divide,
             left: Box::new(Expr::Integer(2)),
-            right: Box::new(Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::Constant("Pi".to_string())],
-            }),
+            right: Box::new(make_sqrt(Expr::Constant("Pi".to_string()))),
           };
           let result = simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
@@ -2124,50 +2087,32 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
   let (erf_arg, prefix) = match coeff {
     Expr::Integer(1) => {
       // a=1: Erf[x], prefix = Sqrt[Pi]
-      (
-        var_expr,
-        Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::Constant("Pi".to_string())],
-        },
-      )
+      (var_expr, make_sqrt(Expr::Constant("Pi".to_string())))
     }
     Expr::Integer(n) if *n != 1 => {
       // concrete integer a: (Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2 — matches Wolfram output
-      let sqrt_a = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![coeff.clone()],
-      };
+      let sqrt_a = make_sqrt(coeff.clone());
       let erf_arg = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(sqrt_a),
         right: Box::new(var_expr),
       };
-      let prefix = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(Expr::Constant("Pi".to_string())),
-          right: Box::new(coeff.clone()),
-        }],
-      };
+      let prefix = make_sqrt(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(coeff.clone()),
+      });
       (erf_arg, prefix)
     }
     _ => {
       // symbolic a: (Sqrt[Pi]*Erf[Sqrt[a]*x])/(2*Sqrt[a]) — matches Wolfram output
-      let sqrt_a = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![coeff.clone()],
-      };
+      let sqrt_a = make_sqrt(coeff.clone());
       let erf_arg = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(sqrt_a.clone()),
         right: Box::new(var_expr),
       };
-      let prefix = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Constant("Pi".to_string())],
-      };
+      let prefix = make_sqrt(Expr::Constant("Pi".to_string()));
       let erf_expr = Expr::FunctionCall {
         name: "Erf".to_string(),
         args: vec![erf_arg],
@@ -3290,18 +3235,12 @@ fn try_integrate_rational(
           Some(Expr::Integer(k_reduced))
         }
       } else if k_reduced <= 1 {
-        Some(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::Integer(m)],
-        })
+        Some(make_sqrt(Expr::Integer(m)))
       } else {
         Some(Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(k_reduced)),
-          right: Box::new(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(m)],
-          }),
+          right: Box::new(make_sqrt(Expr::Integer(m))),
         })
       };
 
@@ -3360,18 +3299,12 @@ fn try_integrate_rational(
       let effective_sqrt = if m == 1 {
         Expr::Integer(int_factor)
       } else if int_factor == 1 {
-        Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::Integer(m)],
-        }
+        make_sqrt(Expr::Integer(m))
       } else {
         Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(int_factor)),
-          right: Box::new(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(m)],
-          }),
+          right: Box::new(make_sqrt(Expr::Integer(m))),
         }
       };
 
@@ -4776,11 +4709,14 @@ pub fn simplify(mut expr: Expr) -> Expr {
       }
       // Delegate Sqrt to handle Sqrt[0] → 0, Sqrt[1] → 1, etc.
       if name == "Sqrt" && args.len() == 1 {
-        if let Expr::Integer(0) = &args[0] {
-          return Expr::Integer(0);
-        }
-        if let Expr::Integer(1) = &args[0] {
-          return Expr::Integer(1);
+        let canonical = make_sqrt(args[0].clone());
+        if let Some(inner) = is_sqrt(&canonical) {
+          if matches!(inner, Expr::Integer(0)) {
+            return Expr::Integer(0);
+          }
+          if matches!(inner, Expr::Integer(1)) {
+            return Expr::Integer(1);
+          }
         }
       }
 
@@ -7190,10 +7126,7 @@ pub fn frenet_serret_system_ast(
   let speed_sq = eval(&speed_sq)?;
 
   // speed = Sqrt[speed_sq]
-  let speed = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![speed_sq.clone()],
-  };
+  let speed = make_sqrt(speed_sq.clone());
 
   // T = r' / speed (unit tangent)
   let tangent: Vec<Expr> = r1
@@ -7284,10 +7217,7 @@ pub fn frenet_serret_system_ast(
     }
 
     // norm_cross = ||cross||
-    let norm_cross = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![norm_cross_sq.clone()],
-    };
+    let norm_cross = make_sqrt(norm_cross_sq.clone());
 
     // κ = ||cross|| / ||r'||^3 = norm_cross / speed_sq^(3/2)
     let speed_cubed = Expr::BinaryOp {

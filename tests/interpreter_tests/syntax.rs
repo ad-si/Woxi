@@ -474,6 +474,25 @@ mod full_form {
     );
   }
 
+  // Issue #97: Sqrt[x] should canonicalize to Power[x, Rational[1, 2]]
+  #[test]
+  fn head_of_sqrt() {
+    assert_eq!(interpret("Head[Sqrt[x]]").unwrap(), "Power");
+  }
+
+  #[test]
+  fn sqrt_identical_to_power_half() {
+    assert_eq!(interpret("Sqrt[x] === Power[x, 1/2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn sqrt_parts() {
+    assert_eq!(
+      interpret("{Sqrt[x][[0]], Sqrt[x][[1]], Sqrt[x][[2]]}").unwrap(),
+      "{Power, x, 1/2}"
+    );
+  }
+
   #[test]
   fn full_form_no_canonicalization_regression() {
     // Regression test for issue #91: FullForm must not canonicalize Divide.

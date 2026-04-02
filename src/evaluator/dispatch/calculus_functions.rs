@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::is_sqrt;
 
 pub fn dispatch_calculus_functions(
   name: &str,
@@ -1849,11 +1850,12 @@ fn collect_domain_constraints(
       }
     }
     // Sqrt[x] → x >= 0
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      collect_domain_constraints(&args[0], var, constraints);
-      if contains_variable(&args[0], var) {
+    expr if is_sqrt(expr).is_some() => {
+      let sqrt_arg = is_sqrt(expr).unwrap();
+      collect_domain_constraints(sqrt_arg, var, constraints);
+      if contains_variable(sqrt_arg, var) {
         constraints.push(Expr::Comparison {
-          operands: vec![args[0].clone(), Expr::Integer(0)],
+          operands: vec![sqrt_arg.clone(), Expr::Integer(0)],
           operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
         });
       }
@@ -2446,10 +2448,7 @@ fn gf_power(
         Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(2)),
-          right: Box::new(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![x.clone()],
-          }),
+          right: Box::new(crate::functions::math_ast::make_sqrt(x.clone())),
         },
       ],
     }));

@@ -559,11 +559,11 @@ pub fn expr_sort_key(e: &Expr) -> String {
         }
         return expr_sort_key(&args[0]);
       }
-      if name == "Sqrt" && args.len() == 1 {
-        if is_atom_expr(&args[0]) {
-          return crate::syntax::expr_to_string(&args[0]);
+      if let Some(sqrt_arg) = crate::functions::math_ast::is_sqrt(e) {
+        if is_atom_expr(sqrt_arg) {
+          return crate::syntax::expr_to_string(sqrt_arg);
         }
-        return expr_sort_key(&args[0]);
+        return expr_sort_key(sqrt_arg);
       }
       // For other function calls (like C[1], Sin[x]), use the function name
       name.clone()

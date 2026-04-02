@@ -5,6 +5,7 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
+use crate::functions::math_ast::make_sqrt;
 
 // ─── Reduce ──────────────────────────────────────────────────────────
 
@@ -761,26 +762,14 @@ pub fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
   let sqrt_part = if si == 1 {
     Expr::Integer(1)
   } else if so == 1 {
-    Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::Integer(si)],
-    }
+    make_sqrt(Expr::Integer(si))
   } else if so == -1 {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
-      operand: Box::new(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(si)],
-      }),
+      operand: Box::new(make_sqrt(Expr::Integer(si))),
     }
   } else {
-    multiply_exprs(
-      &Expr::Integer(so),
-      &Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(si)],
-      },
-    )
+    multiply_exprs(&Expr::Integer(so), &make_sqrt(Expr::Integer(si)))
   };
 
   let num = if nb == 0 {

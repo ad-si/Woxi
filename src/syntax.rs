@@ -3640,6 +3640,11 @@ pub fn extract_neg_power_info(expr: &Expr) -> Option<(&Expr, i128)> {
 fn quantity_unit_to_string(unit: &Expr) -> String {
   match unit {
     Expr::Identifier(s) | Expr::String(s) => s.clone(),
+    // Sqrt (Power[x, 1/2]) → Sqrt[base_str]
+    expr if crate::functions::is_sqrt(expr).is_some() => {
+      let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
+      format!("Sqrt[{}]", expr_to_string(sqrt_arg))
+    }
     // Power must come before the general BinaryOp arm to avoid being shadowed
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -4028,10 +4033,7 @@ fn denominator_form(expr: &Expr) -> Expr {
   // If positive exponent is 1/2, return Sqrt[base]
   } else if matches!(&pos_exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
   {
-    Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![base.clone()],
-    }
+    crate::functions::math_ast::make_sqrt(base.clone())
   } else {
     Expr::FunctionCall {
       name: "Power".to_string(),
@@ -5008,6 +5010,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       }
       // Special case: Power displays as infix with ^ (no spaces)
       if name == "Power" && args.len() == 2 {
+        // Power[x, Rational[1, 2]] → Sqrt[x]
+        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
+          return format!("Sqrt[{}]", fmt(sqrt_arg));
+        }
         // OutputForm-only: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
         if is_output {
           if let Expr::FunctionCall {
@@ -5346,6 +5352,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         BinaryOperator::StringJoin => ("<>", false),
         BinaryOperator::Alternatives => ("|", true),
       };
+
+      // Display Power[x, Rational[1, 2]] as Sqrt[x]
+      if matches!(op, BinaryOperator::Power) {
+        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
+          return format!("Sqrt[{}]", expr_to_string(sqrt_arg));
+        }
+      }
 
       // Helper to check if expr is a lower-precedence additive expression
       let is_additive = |e: &Expr| -> bool {
@@ -7225,6 +7238,12 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
     Expr::String(s) => TextBox::atom(s),
     Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
     Expr::Raw(s) => TextBox::atom(s),
+
+    // Power[base, 1/2] → Sqrt[base] display
+    expr if crate::functions::is_sqrt(expr).is_some() => {
+      let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
+      TextBox::atom(&format!("Sqrt[{}]", expr_to_string(sqrt_arg)))
+    }
 
     // Power[base, exp]
     Expr::BinaryOp {
