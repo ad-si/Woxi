@@ -474,7 +474,7 @@ Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SoundNote,Represents a musical note for sound generation,✅,pure,6.0,479
 Accumulate,Returns cumulative sums of a list,✅,pure,6.0,480
 XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481
-Zeta,Riemann zeta function,✅,pure,1.0,482
+Zeta,Riemann and Hurwitz zeta function,✅,pure,1.0,482
 RowReduce,Returns the row echelon form of a matrix,✅,pure,1.0,483
 Direction,Option specifying the direction for operations,✅,none,2.0,484
 ControlPlacement,Option for specifying placement of interactive controls,✅,pure,6.0,486

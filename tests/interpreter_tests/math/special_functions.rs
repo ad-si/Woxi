@@ -1215,6 +1215,80 @@ mod zeta {
   }
 }
 
+mod hurwitz_zeta {
+  use super::*;
+
+  #[test]
+  fn zeta_s_1_reduces_to_riemann() {
+    assert_eq!(interpret("Zeta[4, 1]").unwrap(), "Pi^4/90");
+    assert_eq!(interpret("Zeta[2, 1]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("Zeta[3, 1]").unwrap(), "Zeta[3]");
+  }
+
+  #[test]
+  fn pole_at_s_1() {
+    assert_eq!(interpret("Zeta[1, 1/2]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Zeta[1, 3]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn half_even() {
+    assert_eq!(interpret("Zeta[4, 1/2]").unwrap(), "Pi^4/6");
+    assert_eq!(interpret("Zeta[2, 1/2]").unwrap(), "Pi^2/2");
+    assert_eq!(interpret("Zeta[6, 1/2]").unwrap(), "Pi^6/15");
+  }
+
+  #[test]
+  fn half_odd() {
+    assert_eq!(interpret("Zeta[3, 1/2]").unwrap(), "7*Zeta[3]");
+  }
+
+  #[test]
+  fn s_zero() {
+    assert_eq!(interpret("Zeta[0, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[0, 3]").unwrap(), "-5/2");
+  }
+
+  #[test]
+  fn negative_integer_s() {
+    assert_eq!(interpret("Zeta[-1, 1/2]").unwrap(), "1/24");
+    assert_eq!(interpret("Zeta[-1, 2]").unwrap(), "-13/12");
+    assert_eq!(interpret("Zeta[-2, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[-3, 1/2]").unwrap(), "-7/960");
+    assert_eq!(interpret("Zeta[-3, 2]").unwrap(), "-119/120");
+  }
+
+  #[test]
+  fn positive_integer_a() {
+    assert_eq!(interpret("Zeta[4, 2]").unwrap(), "-1 + Pi^4/90");
+    assert_eq!(interpret("Zeta[4, 3]").unwrap(), "-17/16 + Pi^4/90");
+    assert_eq!(interpret("Zeta[2, 2]").unwrap(), "-1 + Pi^2/6");
+    assert_eq!(interpret("Zeta[2, 3]").unwrap(), "-5/4 + Pi^2/6");
+  }
+
+  #[test]
+  fn numeric_float() {
+    let result: f64 = interpret("Zeta[2, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 4.934802200544678).abs() < 1e-10);
+
+    let result: f64 = interpret("Zeta[4, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 16.234848505667077).abs() < 1e-8);
+
+    let result: f64 = interpret("Zeta[2.5, 3]").unwrap().parse().unwrap();
+    assert!((result - 0.1647105619542803).abs() < 1e-10);
+
+    let result: f64 = interpret("Zeta[0.5, 2.0]").unwrap().parse().unwrap();
+    assert!((result - (-2.4603545088095875)).abs() < 1e-8);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("Zeta[0, a]").unwrap(), "Zeta[0, a]");
+    assert_eq!(interpret("Zeta[x, y]").unwrap(), "Zeta[x, y]");
+    assert_eq!(interpret("Zeta[s, 1/2]").unwrap(), "(-1 + 2^s)*Zeta[s]");
+  }
+}
+
 mod jacobi_dn {
   use super::*;
 
