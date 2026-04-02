@@ -8108,9 +8108,46 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn coefficient_rules() {
+    // Single variable, single term
+    assert_eq!(interpret("CoefficientRules[x, x]").unwrap(), "{{1} -> 1}");
+    // Single variable polynomial
     assert_eq!(
-      interpret("CoefficientRules[x, y]").unwrap(),
-      "CoefficientRules[x, y]"
+      interpret("CoefficientRules[x^2 + 3*x + 5, x]").unwrap(),
+      "{{2} -> 1, {1} -> 3, {0} -> 5}"
+    );
+    // Symbolic coefficients
+    assert_eq!(
+      interpret("CoefficientRules[a*x^2 + b*x + c, x]").unwrap(),
+      "{{2} -> a, {1} -> b, {0} -> c}"
+    );
+    // Multivariate
+    assert_eq!(
+      interpret("CoefficientRules[(x + y)^3, {x, y}]").unwrap(),
+      "{{3, 0} -> 1, {2, 1} -> 3, {1, 2} -> 3, {0, 3} -> 1}"
+    );
+    // Constant polynomial
+    assert_eq!(interpret("CoefficientRules[5, x]").unwrap(), "{{0} -> 5}");
+    // Zero polynomial
+    assert_eq!(interpret("CoefficientRules[0, x]").unwrap(), "{}");
+    // Variable list form, single variable
+    assert_eq!(
+      interpret("CoefficientRules[x^2 + 3*x + 5, {x}]").unwrap(),
+      "{{2} -> 1, {1} -> 3, {0} -> 5}"
+    );
+    // Mixed multivariate
+    assert_eq!(
+      interpret("CoefficientRules[x^2 + y^2 + 1, {x, y}]").unwrap(),
+      "{{2, 0} -> 1, {0, 2} -> 1, {0, 0} -> 1}"
+    );
+    // Multivariate with symbolic coefficients
+    assert_eq!(
+      interpret("CoefficientRules[a*x^2*y + b*x + c*y^3, {x, y}]").unwrap(),
+      "{{2, 1} -> a, {1, 0} -> b, {0, 3} -> c}"
+    );
+    // Non-variable second arg returns unevaluated
+    assert_eq!(
+      interpret("CoefficientRules[x, 5]").unwrap(),
+      "CoefficientRules[x, 5]"
     );
   }
   #[test]

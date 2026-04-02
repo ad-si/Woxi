@@ -1547,7 +1547,7 @@ Animator,Animated control element,✅,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,✅,unevaluated,10.0,1573
 PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3.0,1574
 AutoScroll,Auto-scrolling option,✅,unevaluated,3.0,1578
-CoefficientRules,Coefficient rules for polynomials,✅,unevaluated,7.0,1578
+CoefficientRules,Coefficient rules for polynomials,✅,pure,7.0,1578
 ConfidenceLevel,Confidence level specification,✅,unevaluated,7.0,1578
 TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
 CreatePalette,Create a palette notebook,✅,unevaluated,6.0,1579
