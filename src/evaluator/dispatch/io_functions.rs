@@ -27,7 +27,7 @@ pub fn dispatch_io_functions(
     // Streams["name"] — filter streams by name
     "Streams" if args.len() == 1 => {
       if let Expr::String(name_filter) = &args[0] {
-        let all_streams = vec![("stdout", 1), ("stderr", 2)];
+        let all_streams = [("stdout", 1), ("stderr", 2)];
         let matching: Vec<Expr> = all_streams
           .iter()
           .filter(|(n, _)| *n == name_filter.as_str())

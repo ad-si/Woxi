@@ -4490,15 +4490,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 }
               };
               // Try the same logic as the Divide arm
-              if is_constant_wrt(&denominator, var) {
-                if let Some(int_num) = integrate(&numerator, var) {
-                  return Some(apply_const(
-                    crate::functions::math_ast::make_divide(
-                      int_num,
-                      denominator,
-                    ),
-                  ));
-                }
+              if is_constant_wrt(&denominator, var)
+                && let Some(int_num) = integrate(&numerator, var)
+              {
+                return Some(apply_const(
+                  crate::functions::math_ast::make_divide(int_num, denominator),
+                ));
               }
               // Try exp over linear: ∫ E^(a*x) / (c*x) dx
               if let Some(result) =
@@ -4699,12 +4696,11 @@ pub fn simplify(mut expr: Expr) -> Expr {
       // which changes canonical form (e.g. Sqrt[-1+x]*Sqrt[1+x] factor ordering)
       if name == "Power" && args.len() == 2 {
         let is_non_neg = matches!(&args[1], Expr::Integer(n) if *n >= 0);
-        if is_non_neg {
-          if let Ok(result) =
+        if is_non_neg
+          && let Ok(result) =
             crate::functions::math_ast::power_two(&args[0], &args[1])
-          {
-            return result;
-          }
+        {
+          return result;
         }
       }
       // Delegate Sqrt to handle Sqrt[0] → 0, Sqrt[1] → 1, etc.
@@ -4938,13 +4934,13 @@ fn one_sided_limit_ast(
   let result = limit_ast(&[args[0].clone(), args[1].clone(), direction_opt])?;
 
   // Check if result is unevaluated Limit
-  if let Expr::FunctionCall { name, .. } = &result {
-    if name == "Limit" {
-      return Ok(Expr::FunctionCall {
-        name: fn_name.to_string(),
-        args: args.to_vec(),
-      });
-    }
+  if let Expr::FunctionCall { name, .. } = &result
+    && name == "Limit"
+  {
+    return Ok(Expr::FunctionCall {
+      name: fn_name.to_string(),
+      args: args.to_vec(),
+    });
   }
 
   Ok(result)
@@ -7098,7 +7094,7 @@ pub fn frenet_serret_system_ast(
   };
 
   let n = components.len();
-  if n < 2 || n > 3 {
+  if !(2..=3).contains(&n) {
     return Ok(Expr::FunctionCall {
       name: "FrenetSerretSystem".to_string(),
       args: args.to_vec(),
@@ -7499,12 +7495,11 @@ pub fn arc_curvature_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fss = frenet_serret_system_ast(args)?;
   // FrenetSerretSystem returns {{κ, ...}, {T, N, ...}}
   // Extract first element of first list
-  if let Expr::List(outer) = &fss {
-    if let Some(Expr::List(curvatures)) = outer.first() {
-      if let Some(kappa) = curvatures.first() {
-        return Ok(kappa.clone());
-      }
-    }
+  if let Expr::List(outer) = &fss
+    && let Some(Expr::List(curvatures)) = outer.first()
+    && let Some(kappa) = curvatures.first()
+  {
+    return Ok(kappa.clone());
   }
   // Fallback: return unevaluated
   Ok(Expr::FunctionCall {
@@ -7687,7 +7682,7 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
       coeff,
       Expr::FunctionCall {
         name: "Sin".to_string(),
-        args: vec![Expr::from(half_delta)],
+        args: vec![half_delta],
       },
       Expr::FunctionCall {
         name: "Sin".to_string(),
@@ -7802,10 +7797,7 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Expand".to_string(),
       args: vec![diff],
     };
-    current = match crate::evaluator::evaluate_expr_to_expr(&expanded) {
-      Ok(v) => v,
-      Err(e) => return Err(e),
-    };
+    current = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
   }
 
   Ok(current)

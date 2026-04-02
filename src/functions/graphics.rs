@@ -544,10 +544,8 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
           if colors.len() < 2 {
             return None;
           }
-          let parsed: Vec<Color> = colors
-            .iter()
-            .map(|c| parse_color(c))
-            .collect::<Option<Vec<_>>>()?;
+          let parsed: Vec<Color> =
+            colors.iter().map(parse_color).collect::<Option<Vec<_>>>()?;
           let n = parsed.len() as f64;
           if args.len() == 1 {
             // Equal blend (average)
@@ -3120,7 +3118,7 @@ fn group_digits_svg(s: &str) -> String {
   let (sign, digits) = if let Some(rest) = s.strip_prefix('-') {
     ("−", rest) // use Unicode minus for display
   } else {
-    ("", s.as_ref())
+    ("", s)
   };
 
   if digits.len() < 5 || !digits.chars().all(|c| c.is_ascii_digit()) {
@@ -3806,16 +3804,15 @@ fn mesh_region_to_graphics_prims(
   };
   let mut vertices: Vec<(f64, f64)> = Vec::new();
   for v in vertices_list {
-    if let Expr::List(coords) = v {
-      if coords.len() == 2 {
-        if let (Some(x), Some(y)) = (
-          crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-          crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-        ) {
-          vertices.push((x, y));
-          continue;
-        }
-      }
+    if let Expr::List(coords) = v
+      && coords.len() == 2
+      && let (Some(x), Some(y)) = (
+        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
+        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
+      )
+    {
+      vertices.push((x, y));
+      continue;
     }
     return None;
   }
@@ -3837,34 +3834,32 @@ fn mesh_region_to_graphics_prims(
   });
 
   for prim in prims {
-    if let Expr::FunctionCall { name, args } = prim {
-      if name == "Polygon" && args.len() == 1 {
-        if let Expr::List(index_lists) = &args[0] {
-          for idx_list in index_lists {
-            if let Expr::List(indices) = idx_list {
-              let points: Vec<Expr> = indices
-                .iter()
-                .filter_map(|idx| {
-                  crate::functions::math_ast::try_eval_to_f64(idx).and_then(
-                    |i| {
-                      let i = i as usize;
-                      if i >= 1 && i <= vertices.len() {
-                        let (x, y) = vertices[i - 1];
-                        Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
-                      } else {
-                        None
-                      }
-                    },
-                  )
-                })
-                .collect();
-              if points.len() >= 3 {
-                result.push(Expr::FunctionCall {
-                  name: "Polygon".to_string(),
-                  args: vec![Expr::List(points)],
-                });
-              }
-            }
+    if let Expr::FunctionCall { name, args } = prim
+      && name == "Polygon"
+      && args.len() == 1
+      && let Expr::List(index_lists) = &args[0]
+    {
+      for idx_list in index_lists {
+        if let Expr::List(indices) = idx_list {
+          let points: Vec<Expr> = indices
+            .iter()
+            .filter_map(|idx| {
+              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+                let i = i as usize;
+                if i >= 1 && i <= vertices.len() {
+                  let (x, y) = vertices[i - 1];
+                  Some(Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+                } else {
+                  None
+                }
+              })
+            })
+            .collect();
+          if points.len() >= 3 {
+            result.push(Expr::FunctionCall {
+              name: "Polygon".to_string(),
+              args: vec![Expr::List(points)],
+            });
           }
         }
       }
@@ -4090,10 +4085,10 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
 
 /// Parse a color from a Background list entry, treating "None" as None.
 fn parse_bg_color(expr: &Expr) -> Option<Color> {
-  if let Expr::Identifier(n) = expr {
-    if n == "None" {
-      return None;
-    }
+  if let Expr::Identifier(n) = expr
+    && n == "None"
+  {
+    return None;
   }
   parse_color(expr)
 }
@@ -4244,10 +4239,8 @@ fn grid_svg_internal(
                     for p in positions {
                       if let Expr::List(rep_items) = p {
                         before_repeat = false;
-                        *repeating = rep_items
-                          .iter()
-                          .map(|e| parse_divider_entry(e))
-                          .collect();
+                        *repeating =
+                          rep_items.iter().map(parse_divider_entry).collect();
                       } else if before_repeat {
                         explicit_start.push(parse_divider_entry(p));
                       } else {
@@ -4255,10 +4248,8 @@ fn grid_svg_internal(
                       }
                     }
                   } else {
-                    *target_dividers = positions
-                      .iter()
-                      .map(|e| parse_divider_entry(e))
-                      .collect();
+                    *target_dividers =
+                      positions.iter().map(parse_divider_entry).collect();
                   }
                 }
                 _ => {}
@@ -4275,38 +4266,34 @@ fn grid_svg_internal(
             // Background -> {{col_colors...}, {row_colors...}}
             if !items.is_empty() {
               if let Expr::List(cols) = &items[0] {
-                col_backgrounds =
-                  cols.iter().map(|c| parse_bg_color(c)).collect();
+                col_backgrounds = cols.iter().map(parse_bg_color).collect();
               } else if parse_color(&items[0]).is_some() {
                 // Background -> {color} (single color in list)
                 background_color = parse_color(&items[0]);
               }
             }
-            if items.len() >= 2 {
-              if let Expr::List(row_cols) = &items[1] {
-                // Check for repeating-list pattern: {first..., {repeat...}, last...}
-                let has_nested =
-                  row_cols.iter().any(|c| matches!(c, Expr::List(_)));
-                if has_nested {
-                  row_bg_has_repeating = true;
-                  let mut before_repeat = true;
-                  for c in row_cols {
-                    if let Expr::List(repeat_items) = c {
-                      before_repeat = false;
-                      row_bg_repeating = repeat_items
-                        .iter()
-                        .map(|rc| parse_bg_color(rc))
-                        .collect();
-                    } else if before_repeat {
-                      row_bg_explicit_start.push(parse_bg_color(c));
-                    } else {
-                      row_bg_explicit_end.push(parse_bg_color(c));
-                    }
+            if items.len() >= 2
+              && let Expr::List(row_cols) = &items[1]
+            {
+              // Check for repeating-list pattern: {first..., {repeat...}, last...}
+              let has_nested =
+                row_cols.iter().any(|c| matches!(c, Expr::List(_)));
+              if has_nested {
+                row_bg_has_repeating = true;
+                let mut before_repeat = true;
+                for c in row_cols {
+                  if let Expr::List(repeat_items) = c {
+                    before_repeat = false;
+                    row_bg_repeating =
+                      repeat_items.iter().map(parse_bg_color).collect();
+                  } else if before_repeat {
+                    row_bg_explicit_start.push(parse_bg_color(c));
+                  } else {
+                    row_bg_explicit_end.push(parse_bg_color(c));
                   }
-                } else {
-                  row_backgrounds =
-                    row_cols.iter().map(|c| parse_bg_color(c)).collect();
                 }
+              } else {
+                row_backgrounds = row_cols.iter().map(parse_bg_color).collect();
               }
             }
           }
@@ -4545,13 +4532,13 @@ fn grid_svg_internal(
     row_backgrounds = Vec::with_capacity(num_rows);
     for i in 0..num_rows {
       if i < start_len {
-        row_backgrounds.push(row_bg_explicit_start[i].clone());
+        row_backgrounds.push(row_bg_explicit_start[i]);
       } else if end_len > 0 && i >= num_rows - end_len {
         let end_idx = i - (num_rows - end_len);
-        row_backgrounds.push(row_bg_explicit_end[end_idx].clone());
+        row_backgrounds.push(row_bg_explicit_end[end_idx]);
       } else {
         let repeat_idx = (i - start_len) % repeat_len;
-        row_backgrounds.push(row_bg_repeating[repeat_idx].clone());
+        row_backgrounds.push(row_bg_repeating[repeat_idx]);
       }
     }
   }
@@ -4566,13 +4553,13 @@ fn grid_svg_internal(
     row_dividers = Vec::with_capacity(n);
     for i in 0..n {
       if i < start_len {
-        row_dividers.push(row_div_explicit_start[i].clone());
+        row_dividers.push(row_div_explicit_start[i]);
       } else if end_len > 0 && i >= n - end_len {
         let end_idx = i - (n - end_len);
-        row_dividers.push(row_div_explicit_end[end_idx].clone());
+        row_dividers.push(row_div_explicit_end[end_idx]);
       } else {
         let rep_idx = (i - start_len) % rep_len;
-        row_dividers.push(row_div_repeating[rep_idx].clone());
+        row_dividers.push(row_div_repeating[rep_idx]);
       }
     }
   }
@@ -4585,13 +4572,13 @@ fn grid_svg_internal(
     col_dividers = Vec::with_capacity(n);
     for i in 0..n {
       if i < start_len {
-        col_dividers.push(col_div_explicit_start[i].clone());
+        col_dividers.push(col_div_explicit_start[i]);
       } else if end_len > 0 && i >= n - end_len {
         let end_idx = i - (n - end_len);
-        col_dividers.push(col_div_explicit_end[end_idx].clone());
+        col_dividers.push(col_div_explicit_end[end_idx]);
       } else {
         let rep_idx = (i - start_len) % rep_len;
-        col_dividers.push(col_div_repeating[rep_idx].clone());
+        col_dividers.push(col_div_repeating[rep_idx]);
       }
     }
   }
@@ -4830,12 +4817,10 @@ fn grid_svg_internal(
       let (should_draw, stroke) = if has_row_div {
         if let Some(Some(color)) = row_dividers.get(i) {
           (true, color.to_svg_rgb())
+        } else if is_border && draw_outer {
+          (true, default_stroke.clone())
         } else {
-          if is_border && draw_outer {
-            (true, default_stroke.clone())
-          } else {
-            (false, String::new())
-          }
+          (false, String::new())
         }
       } else if (is_border && draw_outer) || (!is_border && draw_inner_h) {
         (true, default_stroke.clone())
@@ -4866,12 +4851,10 @@ fn grid_svg_internal(
       let (should_draw, stroke) = if has_col_div {
         if let Some(Some(color)) = col_dividers.get(j) {
           (true, color.to_svg_rgb())
+        } else if is_border && draw_outer {
+          (true, default_stroke.clone())
         } else {
-          if is_border && draw_outer {
-            (true, default_stroke.clone())
-          } else {
-            (false, String::new())
-          }
+          (false, String::new())
         }
       } else if (is_border && draw_outer) || (!is_border && draw_inner_v) {
         (true, default_stroke.clone())

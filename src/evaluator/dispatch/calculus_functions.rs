@@ -2223,10 +2223,10 @@ fn gf_inner(
   {
     let (num, den) =
       crate::functions::polynomial_ast::together::extract_num_den(expr);
-    if !matches!(&den, Expr::Integer(1)) {
-      if let Some(result) = gf_divide(&num, &den, n, x)? {
-        return Ok(Some(result));
-      }
+    if !matches!(&den, Expr::Integer(1))
+      && let Some(result) = gf_divide(&num, &den, n, x)?
+    {
+      return Ok(Some(result));
     }
   }
 
@@ -3022,10 +3022,10 @@ fn egf_poly_part(
       }
       "Power" if fargs.len() == 2 => {
         // n^k where k is a non-negative integer => P(x) = factored Stirling polynomial
-        if matches!(fargs[0], Expr::Identifier(name) if name == n) {
-          if let Some(k) = egf_expr_to_nonneg_int(fargs[1]) {
-            return Ok(Some(egf_stirling_polynomial(k, x)));
-          }
+        if matches!(fargs[0], Expr::Identifier(name) if name == n)
+          && let Some(k) = egf_expr_to_nonneg_int(fargs[1])
+        {
+          return Ok(Some(egf_stirling_polynomial(k, x)));
         }
       }
       _ => {}
@@ -3038,12 +3038,10 @@ fn egf_poly_part(
     left,
     right,
   } = expr
+    && matches!(left.as_ref(), Expr::Identifier(name) if name == n)
+    && let Some(k) = egf_expr_to_nonneg_int(right)
   {
-    if matches!(left.as_ref(), Expr::Identifier(name) if name == n) {
-      if let Some(k) = egf_expr_to_nonneg_int(right) {
-        return Ok(Some(egf_stirling_polynomial(k, x)));
-      }
-    }
+    return Ok(Some(egf_stirling_polynomial(k, x)));
   }
 
   Ok(None)
@@ -3351,19 +3349,19 @@ fn egf_power(
 
   // Case: n^k where k is a non-negative integer
   // EGF[n^k, n, x] = e^x * Sum[S(k,j) * x^j, {j=0..k}]
-  if matches!(base, Expr::Identifier(name) if name == n) {
-    if let Some(k) = egf_expr_to_nonneg_int(exp) {
-      let poly = egf_stirling_polynomial(k, x);
-      return Ok(Some(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Constant("E".to_string())),
-          right: Box::new(x.clone()),
-        }),
-        right: Box::new(poly),
-      }));
-    }
+  if matches!(base, Expr::Identifier(name) if name == n)
+    && let Some(k) = egf_expr_to_nonneg_int(exp)
+  {
+    let poly = egf_stirling_polynomial(k, x);
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Constant("E".to_string())),
+        right: Box::new(x.clone()),
+      }),
+      right: Box::new(poly),
+    }));
   }
 
   Ok(None)
@@ -3666,30 +3664,29 @@ fn fourier_sin_cos_transform_inner(
   }
 
   // FST[t, t, w] — just the variable itself
-  if let Expr::Identifier(name) = expr {
-    if name == t && is_sin {
-      // FST[t, t, w] = sqrt(2/Pi) * ... not well-defined (diverges)
-      return None;
-    }
+  if let Expr::Identifier(name) = expr
+    && name == t
+    && is_sin
+  {
+    // FST[t, t, w] = sqrt(2/Pi) * ... not well-defined (diverges)
+    return None;
   }
 
   // FST[1/t, t, w] = sqrt(Pi/2) (for w > 0)
-  if is_sin {
-    if let Some((fname, fargs)) = as_func_args(expr) {
-      if fname == "Power"
-        && fargs.len() == 2
-        && matches!(&fargs[0], Expr::Identifier(v) if v == t)
-        && matches!(&fargs[1], Expr::Integer(-1))
-      {
-        return Some(make_sqrt(make_times(vec![
-          Expr::Constant("Pi".to_string()),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)],
-          },
-        ])));
-      }
-    }
+  if is_sin
+    && let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+    && matches!(&fargs[0], Expr::Identifier(v) if v == t)
+    && matches!(&fargs[1], Expr::Integer(-1))
+  {
+    return Some(make_sqrt(make_times(vec![
+      Expr::Constant("Pi".to_string()),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+    ])));
   }
 
   None
@@ -3699,51 +3696,51 @@ fn fourier_sin_cos_transform_inner(
 fn is_exp_of(expr: &Expr) -> Option<&Expr> {
   if let Some((fname, fargs)) = as_func_args(expr) {
     if fname == "Exp" && fargs.len() == 1 {
-      return Some(&fargs[0]);
+      return Some(fargs[0]);
     }
-    if fname == "Power" && fargs.len() == 2 {
-      if matches!(&fargs[0], Expr::Identifier(e) | Expr::Constant(e) if e == "E")
-      {
-        return Some(&fargs[1]);
-      }
+    if fname == "Power"
+      && fargs.len() == 2
+      && matches!(&fargs[0], Expr::Identifier(e) | Expr::Constant(e) if e == "E")
+    {
+      return Some(fargs[1]);
     }
   }
   None
 }
 
 /// If expr = -a * t where a doesn't depend on t, return a.
-fn extract_neg_linear_coeff<'a>(expr: &'a Expr, t: &str) -> Option<Expr> {
-  if let Some((fname, fargs)) = as_func_args(expr) {
-    if fname == "Times" {
-      let mut has_t = false;
-      let mut has_neg = false;
-      let mut coeffs = Vec::new();
-      for a in fargs {
-        if let Expr::Identifier(v) = a {
-          if v == t {
-            has_t = true;
-            continue;
-          }
-        }
-        if matches!(a, Expr::Integer(-1)) {
-          has_neg = true;
-          continue;
-        }
-        if !depends_on(a, t) {
-          coeffs.push(a.clone());
-        } else {
-          return None;
-        }
+fn extract_neg_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Times"
+  {
+    let mut has_t = false;
+    let mut has_neg = false;
+    let mut coeffs = Vec::new();
+    for a in fargs {
+      if let Expr::Identifier(v) = a
+        && v == t
+      {
+        has_t = true;
+        continue;
       }
-      if has_t && has_neg {
-        return Some(if coeffs.is_empty() {
-          Expr::Integer(1)
-        } else if coeffs.len() == 1 {
-          coeffs.into_iter().next().unwrap()
-        } else {
-          make_times(coeffs)
-        });
+      if matches!(a, Expr::Integer(-1)) {
+        has_neg = true;
+        continue;
       }
+      if !depends_on(a, t) {
+        coeffs.push(a.clone());
+      } else {
+        return None;
+      }
+    }
+    if has_t && has_neg {
+      return Some(if coeffs.is_empty() {
+        Expr::Integer(1)
+      } else if coeffs.len() == 1 {
+        coeffs.into_iter().next().unwrap()
+      } else {
+        make_times(coeffs)
+      });
     }
   }
   // Check if it's -t directly: BinaryOp Times(-1, t)
@@ -3752,12 +3749,10 @@ fn extract_neg_linear_coeff<'a>(expr: &'a Expr, t: &str) -> Option<Expr> {
     left,
     right,
   } = expr
+    && matches!(left.as_ref(), Expr::Integer(-1))
+    && matches!(right.as_ref(), Expr::Identifier(v) if v == t)
   {
-    if matches!(left.as_ref(), Expr::Integer(-1))
-      && matches!(right.as_ref(), Expr::Identifier(v) if v == t)
-    {
-      return Some(Expr::Integer(1));
-    }
+    return Some(Expr::Integer(1));
   }
   None
 }

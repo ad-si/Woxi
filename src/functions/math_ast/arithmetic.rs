@@ -1101,19 +1101,19 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             }
           }
           let none_earliest = extract_earliest_variable(&none_base);
-          if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest) {
-            if nv < pv {
-              // All non-pair variables < monomial's → non-pair first
-              return if a_has_pairs {
-                std::cmp::Ordering::Greater
-              } else {
-                std::cmp::Ordering::Less
-              };
-            }
-            // Same earliest variable → fall through to string comparison
-            // so that e.g. E^x sorts before x (since "E^x" < "x") but
-            // a sorts before E^a (since "a" < "E^a"), matching Wolfram.
+          if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest)
+            && nv < pv
+          {
+            // All non-pair variables < monomial's → non-pair first
+            return if a_has_pairs {
+              std::cmp::Ordering::Greater
+            } else {
+              std::cmp::Ordering::Less
+            };
           }
+          // Same earliest variable → fall through to string comparison
+          // so that e.g. E^x sorts before x (since "E^x" < "x") but
+          // a sorts before E^a (since "a" < "E^a"), matching Wolfram.
         }
       }
       // When both terms lack polynomial pairs, are algebraic (priority 0),
@@ -2635,7 +2635,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // 0 * Infinity = Indeterminate (check before the general 0 * anything = 0 rule)
-  if combined_numer == 0 && symbolic_args.iter().any(|a| is_infinity_like(a)) {
+  if combined_numer == 0 && symbolic_args.iter().any(is_infinity_like) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
@@ -2751,37 +2751,36 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: rname,
     args: rargs,
   } = &coeff
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(cn), Expr::Integer(cd)) = (&rargs[0], &rargs[1])
   {
-    if rname == "Rational" && rargs.len() == 2 {
-      if let (Expr::Integer(cn), Expr::Integer(cd)) = (&rargs[0], &rargs[1]) {
-        let cd_abs = cd.unsigned_abs();
-        if cd_abs > 1 {
-          for i in 0..symbolic_args.len() {
-            let (base, exp) = extract_base_exponent(&symbolic_args[i]);
-            if let Expr::Integer(bv) = &base {
-              let bv_abs = bv.unsigned_abs();
-              // Only for positive fractional exponents and when denominator is divisible by base
-              let exp_is_positive_frac = match &exp {
-                Expr::FunctionCall { name: en, args: ea }
-                  if en == "Rational" && ea.len() == 2 =>
-                {
-                  matches!(&ea[0], Expr::Integer(n) if *n > 0)
-                }
-                _ => false,
-              };
-              if bv_abs > 1 && exp_is_positive_frac && cd_abs % bv_abs == 0 {
-                // Absorb one factor of base from denominator into the power
-                let new_exp = plus_ast(&[Expr::Integer(-1), exp])?;
-                if matches!(&new_exp, Expr::Integer(0)) {
-                  symbolic_args.remove(i);
-                } else {
-                  symbolic_args[i] = power_two(&base, &new_exp)?;
-                }
-                let new_cd = (*cd as i128) / (*bv as i128);
-                coeff = make_rational(*cn, new_cd);
-                break;
-              }
+    let cd_abs = cd.unsigned_abs();
+    if cd_abs > 1 {
+      for i in 0..symbolic_args.len() {
+        let (base, exp) = extract_base_exponent(&symbolic_args[i]);
+        if let Expr::Integer(bv) = &base {
+          let bv_abs = bv.unsigned_abs();
+          // Only for positive fractional exponents and when denominator is divisible by base
+          let exp_is_positive_frac = match &exp {
+            Expr::FunctionCall { name: en, args: ea }
+              if en == "Rational" && ea.len() == 2 =>
+            {
+              matches!(&ea[0], Expr::Integer(n) if *n > 0)
             }
+            _ => false,
+          };
+          if bv_abs > 1 && exp_is_positive_frac && cd_abs % bv_abs == 0 {
+            // Absorb one factor of base from denominator into the power
+            let new_exp = plus_ast(&[Expr::Integer(-1), exp])?;
+            if matches!(&new_exp, Expr::Integer(0)) {
+              symbolic_args.remove(i);
+            } else {
+              symbolic_args[i] = power_two(&base, &new_exp)?;
+            }
+            let new_cd = *cd / *bv;
+            coeff = make_rational(*cn, new_cd);
+            break;
           }
         }
       }
@@ -3052,65 +3051,53 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         cd.checked_mul(cd),
         dn.checked_mul(dn),
         dd.checked_mul(dd),
-      ) {
-        if let (Some(t1), Some(t2), Some(mag_den)) = (
-          cn2.checked_mul(dd2),
-          dn2.checked_mul(cd2),
-          cd2.checked_mul(dd2),
-        ) {
-          if let Some(mag_num) = t1.checked_add(t2) {
-            if mag_num != 0 {
-              // Real part of result: (an·cn·bd·dd + bn·dn·ad·cd) / (ad·bd·mag)
-              // Actually, let's compute properly:
-              // num_real = (an/ad)*(cn/cd) + (bn/bd)*(dn/dd)
-              //          = (an*cn*bd*dd + bn*dn*ad*cd) / (ad*cd*bd*dd)
-              // num_imag = (bn/bd)*(cn/cd) - (an/ad)*(dn/dd)
-              //          = (bn*cn*ad*dd - an*dn*bd*cd) / (ad*cd*bd*dd)
-              // result = (num_real + num_imag*I) / (mag_num / mag_den)
-              //        = (num_real * mag_den + num_imag * mag_den * I) / (common_den * mag_num)
-              if let (Some(nr1), Some(nr2)) = (
-                an.checked_mul(cn)
-                  .and_then(|v| v.checked_mul(bd))
-                  .and_then(|v| v.checked_mul(dd)),
-                bn.checked_mul(dn)
-                  .and_then(|v| v.checked_mul(ad))
-                  .and_then(|v| v.checked_mul(cd)),
-              ) {
-                if let (Some(ni1), Some(ni2)) = (
-                  bn.checked_mul(cn)
-                    .and_then(|v| v.checked_mul(ad))
-                    .and_then(|v| v.checked_mul(dd)),
-                  an.checked_mul(dn)
-                    .and_then(|v| v.checked_mul(bd))
-                    .and_then(|v| v.checked_mul(cd)),
-                ) {
-                  if let (Some(num_re), Some(num_im)) =
-                    (nr1.checked_add(nr2), ni1.checked_sub(ni2))
-                  {
-                    let common_den = ad
-                      .checked_mul(cd)
-                      .and_then(|v| v.checked_mul(bd))
-                      .and_then(|v| v.checked_mul(dd));
-                    if let Some(cden) = common_den {
-                      // result = (num_re / cden + num_im / cden * I) / (mag_num / mag_den)
-                      //        = (num_re * mag_den) / (cden * mag_num) + (num_im * mag_den) / (cden * mag_num) * I
-                      if let (
-                        Some(final_re_n),
-                        Some(final_im_n),
-                        Some(final_den),
-                      ) = (
-                        num_re.checked_mul(mag_den),
-                        num_im.checked_mul(mag_den),
-                        cden.checked_mul(mag_num),
-                      ) {
-                        return Ok(complex_rational_to_expr(
-                          final_re_n, final_den, final_im_n, final_den,
-                        ));
-                      }
-                    }
-                  }
-                }
-              }
+      ) && let (Some(t1), Some(t2), Some(mag_den)) = (
+        cn2.checked_mul(dd2),
+        dn2.checked_mul(cd2),
+        cd2.checked_mul(dd2),
+      ) && let Some(mag_num) = t1.checked_add(t2)
+        && mag_num != 0
+      {
+        // Real part of result: (an·cn·bd·dd + bn·dn·ad·cd) / (ad·bd·mag)
+        // Actually, let's compute properly:
+        // num_real = (an/ad)*(cn/cd) + (bn/bd)*(dn/dd)
+        //          = (an*cn*bd*dd + bn*dn*ad*cd) / (ad*cd*bd*dd)
+        // num_imag = (bn/bd)*(cn/cd) - (an/ad)*(dn/dd)
+        //          = (bn*cn*ad*dd - an*dn*bd*cd) / (ad*cd*bd*dd)
+        // result = (num_real + num_imag*I) / (mag_num / mag_den)
+        //        = (num_real * mag_den + num_imag * mag_den * I) / (common_den * mag_num)
+        if let (Some(nr1), Some(nr2)) = (
+          an.checked_mul(cn)
+            .and_then(|v| v.checked_mul(bd))
+            .and_then(|v| v.checked_mul(dd)),
+          bn.checked_mul(dn)
+            .and_then(|v| v.checked_mul(ad))
+            .and_then(|v| v.checked_mul(cd)),
+        ) && let (Some(ni1), Some(ni2)) = (
+          bn.checked_mul(cn)
+            .and_then(|v| v.checked_mul(ad))
+            .and_then(|v| v.checked_mul(dd)),
+          an.checked_mul(dn)
+            .and_then(|v| v.checked_mul(bd))
+            .and_then(|v| v.checked_mul(cd)),
+        ) && let (Some(num_re), Some(num_im)) =
+          (nr1.checked_add(nr2), ni1.checked_sub(ni2))
+        {
+          let common_den = ad
+            .checked_mul(cd)
+            .and_then(|v| v.checked_mul(bd))
+            .and_then(|v| v.checked_mul(dd));
+          if let Some(cden) = common_den {
+            // result = (num_re / cden + num_im / cden * I) / (mag_num / mag_den)
+            //        = (num_re * mag_den) / (cden * mag_num) + (num_im * mag_den) / (cden * mag_num) * I
+            if let (Some(final_re_n), Some(final_im_n), Some(final_den)) = (
+              num_re.checked_mul(mag_den),
+              num_im.checked_mul(mag_den),
+              cden.checked_mul(mag_num),
+            ) {
+              return Ok(complex_rational_to_expr(
+                final_re_n, final_den, final_im_n, final_den,
+              ));
             }
           }
         }
@@ -3165,42 +3152,39 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         name: dn,
         args: dargs,
       } = b
+        && dn == "Times"
       {
-        if dn == "Times" {
-          let num_factors = match a {
-            Expr::FunctionCall { name, args } if name == "Times" => {
-              args.clone()
-            }
-            _ => vec![a.clone()],
-          };
-          let den_factors = dargs.clone();
-          let has_int_num = num_factors.iter().any(|f| matches!(f, Expr::Integer(_))
+        let num_factors = match a {
+          Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
+          _ => vec![a.clone()],
+        };
+        let den_factors = dargs.clone();
+        let has_int_num = num_factors.iter().any(|f| matches!(f, Expr::Integer(_))
               || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational"));
-          let has_int_den = den_factors.iter().any(|f| matches!(f, Expr::Integer(_))
+        let has_int_den = den_factors.iter().any(|f| matches!(f, Expr::Integer(_))
               || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational"));
-          if has_int_num && has_int_den {
-            // Only apply when integer factors have GCD > 1 (can actually simplify)
-            let num_int = num_factors
-              .iter()
-              .find_map(|f| match f {
-                Expr::Integer(n) => Some(n.unsigned_abs()),
-                _ => None,
-              })
-              .unwrap_or(1);
-            let den_int = den_factors
-              .iter()
-              .find_map(|f| match f {
-                Expr::Integer(n) => Some(n.unsigned_abs()),
-                _ => None,
-              })
-              .unwrap_or(1);
-            if gcd(num_int as i128, den_int as i128) > 1 {
-              let mut all_factors = num_factors;
-              for df in den_factors {
-                all_factors.push(power_two(&df, &Expr::Integer(-1))?);
-              }
-              return times_ast(&all_factors);
+        if has_int_num && has_int_den {
+          // Only apply when integer factors have GCD > 1 (can actually simplify)
+          let num_int = num_factors
+            .iter()
+            .find_map(|f| match f {
+              Expr::Integer(n) => Some(n.unsigned_abs()),
+              _ => None,
+            })
+            .unwrap_or(1);
+          let den_int = den_factors
+            .iter()
+            .find_map(|f| match f {
+              Expr::Integer(n) => Some(n.unsigned_abs()),
+              _ => None,
+            })
+            .unwrap_or(1);
+          if gcd(num_int as i128, den_int as i128) > 1 {
+            let mut all_factors = num_factors;
+            for df in den_factors {
+              all_factors.push(power_two(&df, &Expr::Integer(-1))?);
             }
+            return times_ast(&all_factors);
           }
         }
       }
@@ -3300,15 +3284,15 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
     return b_inv;
   }
   // Flatten: if a is already Times, merge b_inv into its args
-  if let Expr::FunctionCall { name, args } = &a {
-    if name == "Times" {
-      let mut new_args = args.clone();
-      new_args.push(b_inv);
-      return Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_args,
-      };
-    }
+  if let Expr::FunctionCall { name, args } = &a
+    && name == "Times"
+  {
+    let mut new_args = args.clone();
+    new_args.push(b_inv);
+    return Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: new_args,
+    };
   }
   Expr::FunctionCall {
     name: "Times".to_string(),
@@ -3425,47 +3409,43 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // base^Infinity where 0 < base < 1 → 0
   // base^(-Infinity) where base > 1 → 0
   // base^(-Infinity) where 0 < base < 1 → Infinity
-  if exp_is_pos_inf || exp_is_neg_inf {
-    if let Some(b) = expr_to_num(base) {
-      if b > 1.0 {
-        return Ok(if exp_is_pos_inf {
-          Expr::Identifier("Infinity".to_string())
-        } else {
-          Expr::Integer(0)
-        });
-      } else if b > 0.0 && b < 1.0 {
-        return Ok(if exp_is_pos_inf {
-          Expr::Integer(0)
-        } else {
-          Expr::Identifier("Infinity".to_string())
-        });
-      } else if b == 1.0 {
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
-      } else if b == 0.0 {
-        if exp_is_pos_inf {
-          return Ok(Expr::Integer(0));
-        }
-        if exp_is_neg_inf {
-          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-        }
+  if (exp_is_pos_inf || exp_is_neg_inf)
+    && let Some(b) = expr_to_num(base)
+  {
+    if b > 1.0 {
+      return Ok(if exp_is_pos_inf {
+        Expr::Identifier("Infinity".to_string())
+      } else {
+        Expr::Integer(0)
+      });
+    } else if b > 0.0 && b < 1.0 {
+      return Ok(if exp_is_pos_inf {
+        Expr::Integer(0)
+      } else {
+        Expr::Identifier("Infinity".to_string())
+      });
+    } else if b == 1.0 {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    } else if b == 0.0 {
+      if exp_is_pos_inf {
+        return Ok(Expr::Integer(0));
       }
-      // Negative base with infinite exponent
-      if b < 0.0 {
-        if exp_is_pos_inf || exp_is_neg_inf {
-          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-        }
+      if exp_is_neg_inf {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
       }
+    }
+    // Negative base with infinite exponent
+    if b < 0.0 && (exp_is_pos_inf || exp_is_neg_inf) {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
   }
 
   // ComplexInfinity^n → ComplexInfinity for positive n, 0 for negative n
-  if base_is_complex_inf {
-    if let Some(n) = expr_to_num(exp) {
-      if n > 0.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-      } else if n < 0.0 {
-        return Ok(Expr::Integer(0));
-      }
+  if base_is_complex_inf && let Some(n) = expr_to_num(exp) {
+    if n > 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    } else if n < 0.0 {
+      return Ok(Expr::Integer(0));
     }
   }
 
@@ -3891,7 +3871,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           ..
         }
       ) && !matches!(&pos_result, Expr::FunctionCall { name, .. } if name == "Power")
-        && !is_sqrt(&pos_result).is_some()
+        && is_sqrt(&pos_result).is_none()
       {
         return divide_ast(&[Expr::Integer(1), pos_result]);
       }
@@ -4445,21 +4425,21 @@ fn try_date_object_subtraction(
 
   // Pattern: DateObject[...] + Times[-1, DateObject[...]]
   // i.e. d1 - d2
-  if is_date_object(&args[0]) {
-    if let Some(d2) = extract_negated_date(&args[1]) {
-      return Some(crate::functions::datetime_ast::date_difference_ast(&[
-        d2.clone(),
-        args[0].clone(),
-      ]));
-    }
+  if is_date_object(&args[0])
+    && let Some(d2) = extract_negated_date(&args[1])
+  {
+    return Some(crate::functions::datetime_ast::date_difference_ast(&[
+      d2.clone(),
+      args[0].clone(),
+    ]));
   }
-  if is_date_object(&args[1]) {
-    if let Some(d1) = extract_negated_date(&args[0]) {
-      return Some(crate::functions::datetime_ast::date_difference_ast(&[
-        args[1].clone(),
-        d1.clone(),
-      ]));
-    }
+  if is_date_object(&args[1])
+    && let Some(d1) = extract_negated_date(&args[0])
+  {
+    return Some(crate::functions::datetime_ast::date_difference_ast(&[
+      args[1].clone(),
+      d1.clone(),
+    ]));
   }
 
   None

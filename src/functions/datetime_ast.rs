@@ -1044,10 +1044,10 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // DateString["string"] with no format spec returns the string as-is (Wolfram behavior)
-  if args.len() == 1 {
-    if let Expr::String(s) = &date_arg {
-      return Ok(Expr::String(s.clone()));
-    }
+  if args.len() == 1
+    && let Expr::String(s) = &date_arg
+  {
+    return Ok(Expr::String(s.clone()));
   }
 
   // Extract date components — handle DateObject[{y,m,d,...}, ...] by extracting first arg

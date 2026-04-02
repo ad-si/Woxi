@@ -509,7 +509,7 @@ fn can_group(n: usize, k: usize) -> bool {
     return false;
   }
   // n = 1 + m*(k-1) for some m >= 1
-  (n - 1) % (k - 1) == 0
+  (n - 1).is_multiple_of(k - 1)
 }
 
 /// Generate all binary groupings of a contiguous slice of elements

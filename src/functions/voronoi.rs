@@ -31,16 +31,15 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse input points
   let mut sites: Vec<(f64, f64)> = Vec::new();
   for pt in pts_expr {
-    if let Expr::List(coords) = pt {
-      if coords.len() == 2 {
-        if let (Some(x), Some(y)) = (
-          crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-          crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-        ) {
-          sites.push((x, y));
-          continue;
-        }
-      }
+    if let Expr::List(coords) = pt
+      && coords.len() == 2
+      && let (Some(x), Some(y)) = (
+        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
+        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
+      )
+    {
+      sites.push((x, y));
+      continue;
     }
     // Non-numeric or malformed points: return EmptyRegion[2]
     return Ok(Expr::FunctionCall {
@@ -709,14 +708,12 @@ fn ray_direction(
     } else {
       ob // Only one triangle, pick either
     }
+  } else if ordered.len() > 1 {
+    let prev_tri = &all_triangles[ordered[ordered.len() - 2]];
+    let (pa, pb) = other_verts(prev_tri, site_idx);
+    if oa == pa || oa == pb { ob } else { oa }
   } else {
-    if ordered.len() > 1 {
-      let prev_tri = &all_triangles[ordered[ordered.len() - 2]];
-      let (pa, pb) = other_verts(prev_tri, site_idx);
-      if oa == pa || oa == pb { ob } else { oa }
-    } else {
-      oa
-    }
+    oa
   };
 
   // The ray is perpendicular to the edge (site_idx, unshared_neighbor),
@@ -857,16 +854,15 @@ pub fn mesh_region_to_svg(
   };
   let mut vertices: Vec<(f64, f64)> = Vec::new();
   for v in vertices_list {
-    if let Expr::List(coords) = v {
-      if coords.len() == 2 {
-        if let (Some(x), Some(y)) = (
-          crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-          crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-        ) {
-          vertices.push((x, y));
-          continue;
-        }
-      }
+    if let Expr::List(coords) = v
+      && coords.len() == 2
+      && let (Some(x), Some(y)) = (
+        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
+        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
+      )
+    {
+      vertices.push((x, y));
+      continue;
     }
     return None;
   }

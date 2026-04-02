@@ -350,7 +350,7 @@ pub fn dispatch_math_functions(
     "StandardDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::standard_deviation_ast(args));
     }
-    "Standardize" if args.len() >= 1 && args.len() <= 3 => {
+    "Standardize" if !args.is_empty() && args.len() <= 3 => {
       return Some(standardize_ast(args));
     }
     "TrimmedMean" if args.len() == 2 => {

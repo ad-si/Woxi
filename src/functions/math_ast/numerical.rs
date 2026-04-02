@@ -3148,16 +3148,14 @@ pub fn window_function_ast(
     name: fname,
     args: fargs,
   } = &args[0]
+    && fname == "Rational"
+    && fargs.len() == 2
+    && let (Some(n), Some(d)) =
+      (try_eval_to_f64(&fargs[0]), try_eval_to_f64(&fargs[1]))
   {
-    if fname == "Rational" && fargs.len() == 2 {
-      if let (Some(n), Some(d)) =
-        (try_eval_to_f64(&fargs[0]), try_eval_to_f64(&fargs[1]))
-      {
-        let x = n / d;
-        if x.abs() > 0.5 {
-          return Ok(Expr::Integer(0));
-        }
-      }
+    let x = n / d;
+    if x.abs() > 0.5 {
+      return Ok(Expr::Integer(0));
     }
   }
 
@@ -3320,12 +3318,11 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        if let Expr::Identifier(name) = pattern.as_ref() {
-          if name == "SampleRate" {
-            if let Some(v) = try_eval_to_f64(replacement) {
-              sample_rate = v;
-            }
-          }
+        if let Expr::Identifier(name) = pattern.as_ref()
+          && name == "SampleRate"
+          && let Some(v) = try_eval_to_f64(replacement)
+        {
+          sample_rate = v;
         }
       }
       _ => {}
@@ -3341,8 +3338,7 @@ pub fn bandpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let kernel = bandpass_kernel(n, w1, w2);
 
   // Try numeric path first
-  let data: Vec<f64> =
-    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() == items.len() {
     // All numeric — fast path
     let result = convolve_edge_padded(&data, &kernel);
@@ -3505,12 +3501,11 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        if let Expr::Identifier(name) = pattern.as_ref() {
-          if name == "SampleRate" {
-            if let Some(v) = try_eval_to_f64(replacement) {
-              sample_rate = v;
-            }
-          }
+        if let Expr::Identifier(name) = pattern.as_ref()
+          && name == "SampleRate"
+          && let Some(v) = try_eval_to_f64(replacement)
+        {
+          sample_rate = v;
         }
       }
       _ => {}
@@ -3519,8 +3514,7 @@ pub fn lowpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let wc = omega_c / sample_rate;
 
-  let data: Vec<f64> =
-    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "LowpassFilter".to_string(),
@@ -3609,12 +3603,11 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        if let Expr::Identifier(name) = pattern.as_ref() {
-          if name == "SampleRate" {
-            if let Some(v) = try_eval_to_f64(replacement) {
-              sample_rate = v;
-            }
-          }
+        if let Expr::Identifier(name) = pattern.as_ref()
+          && name == "SampleRate"
+          && let Some(v) = try_eval_to_f64(replacement)
+        {
+          sample_rate = v;
         }
       }
       _ => {}
@@ -3623,8 +3616,7 @@ pub fn highpass_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let wc = omega_c / sample_rate;
 
-  let data: Vec<f64> =
-    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "HighpassFilter".to_string(),
@@ -3728,12 +3720,11 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        if let Expr::Identifier(name) = pattern.as_ref() {
-          if name == "SampleRate" {
-            if let Some(v) = try_eval_to_f64(replacement) {
-              sample_rate = v;
-            }
-          }
+        if let Expr::Identifier(name) = pattern.as_ref()
+          && name == "SampleRate"
+          && let Some(v) = try_eval_to_f64(replacement)
+        {
+          sample_rate = v;
         }
       }
       _ => {}
@@ -3743,8 +3734,7 @@ pub fn bandstop_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let w1 = omega1 / sample_rate;
   let w2 = omega2 / sample_rate;
 
-  let data: Vec<f64> =
-    items.iter().filter_map(|e| try_eval_to_f64(e)).collect();
+  let data: Vec<f64> = items.iter().filter_map(try_eval_to_f64).collect();
   if data.len() != items.len() {
     return Ok(Expr::FunctionCall {
       name: "BandstopFilter".to_string(),

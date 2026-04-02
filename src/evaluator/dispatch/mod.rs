@@ -1196,10 +1196,11 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // DiffusionPDETerm[{u, x}, c] → 0 (PDE term evaluates to zero outside solver context)
-  if name == "DiffusionPDETerm" && args.len() == 2 {
-    if let Expr::List(_) = &args[0] {
-      return Ok(Expr::Integer(0));
-    }
+  if name == "DiffusionPDETerm"
+    && args.len() == 2
+    && let Expr::List(_) = &args[0]
+  {
+    return Ok(Expr::Integer(0));
   }
 
   // Disk[] → Disk[{0, 0}] (default center)
@@ -1619,226 +1620,225 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
-  if name == "RecurrenceFilter" && args.len() == 2 {
-    if let (Expr::List(coeffs), Expr::List(data)) = (&args[0], &args[1]) {
-      if coeffs.len() == 2 {
-        if let (Expr::List(a_coeffs), Expr::List(b_coeffs)) =
-          (&coeffs[0], &coeffs[1])
-        {
-          if !a_coeffs.is_empty() {
-            // y[n] = (sum_j b[j]*x[n-j] - sum_i(i>0) a[i]*y[n-i]) / a[0]
-            let n = data.len();
-            let mut output: Vec<Expr> = Vec::with_capacity(n);
-            for i in 0..n {
-              // Feedforward: sum b[j] * x[n-j]
-              let mut sum = Expr::Integer(0);
-              for (j, bj) in b_coeffs.iter().enumerate() {
-                if i >= j {
-                  let term = Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
-                    left: Box::new(bj.clone()),
-                    right: Box::new(data[i - j].clone()),
-                  };
-                  sum = Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Plus,
-                    left: Box::new(sum),
-                    right: Box::new(term),
-                  };
-                }
-              }
-              // Feedback: subtract a[k]*y[n-k] for k >= 1
-              for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
-                if i >= k {
-                  let term = Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Times,
-                    left: Box::new(ak.clone()),
-                    right: Box::new(output[i - k].clone()),
-                  };
-                  sum = Expr::BinaryOp {
-                    op: crate::syntax::BinaryOperator::Minus,
-                    left: Box::new(sum),
-                    right: Box::new(term),
-                  };
-                }
-              }
-              // Divide by a[0]
-              let result = Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Divide,
-                left: Box::new(sum),
-                right: Box::new(a_coeffs[0].clone()),
-              };
-              match evaluate_expr_to_expr(&result) {
-                Ok(v) => output.push(v),
-                Err(e) => return Err(e),
-              }
-            }
-            return Ok(Expr::List(output));
-          }
+  if name == "RecurrenceFilter"
+    && args.len() == 2
+    && let (Expr::List(coeffs), Expr::List(data)) = (&args[0], &args[1])
+    && coeffs.len() == 2
+    && let (Expr::List(a_coeffs), Expr::List(b_coeffs)) =
+      (&coeffs[0], &coeffs[1])
+    && !a_coeffs.is_empty()
+  {
+    // y[n] = (sum_j b[j]*x[n-j] - sum_i(i>0) a[i]*y[n-i]) / a[0]
+    let n = data.len();
+    let mut output: Vec<Expr> = Vec::with_capacity(n);
+    for i in 0..n {
+      // Feedforward: sum b[j] * x[n-j]
+      let mut sum = Expr::Integer(0);
+      for (j, bj) in b_coeffs.iter().enumerate() {
+        if i >= j {
+          let term = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(bj.clone()),
+            right: Box::new(data[i - j].clone()),
+          };
+          sum = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(sum),
+            right: Box::new(term),
+          };
         }
       }
+      // Feedback: subtract a[k]*y[n-k] for k >= 1
+      for (k, ak) in a_coeffs.iter().enumerate().skip(1) {
+        if i >= k {
+          let term = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(ak.clone()),
+            right: Box::new(output[i - k].clone()),
+          };
+          sum = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(sum),
+            right: Box::new(term),
+          };
+        }
+      }
+      // Divide by a[0]
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(sum),
+        right: Box::new(a_coeffs[0].clone()),
+      };
+      match evaluate_expr_to_expr(&result) {
+        Ok(v) => output.push(v),
+        Err(e) => return Err(e),
+      }
     }
+    return Ok(Expr::List(output));
   }
 
   // CantorMesh[n] → Cantor set at level n as a MeshRegion
-  if name == "CantorMesh" && args.len() == 1 {
-    if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
-      let n = n as usize;
-      let mut segments: Vec<(f64, f64)> = vec![(0.0, 1.0)];
-      for _ in 0..n {
-        let mut new_segs = Vec::with_capacity(segments.len() * 2);
-        for (a, b) in &segments {
-          let third = (b - a) / 3.0;
-          new_segs.push((*a, a + third));
-          new_segs.push((a + 2.0 * third, *b));
-        }
-        segments = new_segs;
-      }
-      let mut points: Vec<f64> = Vec::new();
+  if name == "CantorMesh"
+    && args.len() == 1
+    && let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+  {
+    let n = n as usize;
+    let mut segments: Vec<(f64, f64)> = vec![(0.0, 1.0)];
+    for _ in 0..n {
+      let mut new_segs = Vec::with_capacity(segments.len() * 2);
       for (a, b) in &segments {
-        points.push(*a);
-        points.push(*b);
+        let third = (b - a) / 3.0;
+        new_segs.push((*a, a + third));
+        new_segs.push((a + 2.0 * third, *b));
       }
-      let vertex_exprs: Vec<Expr> = points
-        .iter()
-        .map(|x| Expr::List(vec![Expr::Real(*x)]))
-        .collect();
-      let line_pairs: Vec<Expr> = (0..segments.len())
-        .map(|i| {
-          Expr::List(vec![
-            Expr::Integer((2 * i + 1) as i128),
-            Expr::Integer((2 * i + 2) as i128),
-          ])
-        })
-        .collect();
-      return Ok(Expr::FunctionCall {
-        name: "MeshRegion".to_string(),
-        args: vec![
-          Expr::List(vertex_exprs),
-          Expr::List(vec![Expr::FunctionCall {
-            name: "Line".to_string(),
-            args: vec![Expr::List(line_pairs)],
-          }]),
-        ],
-      });
+      segments = new_segs;
     }
+    let mut points: Vec<f64> = Vec::new();
+    for (a, b) in &segments {
+      points.push(*a);
+      points.push(*b);
+    }
+    let vertex_exprs: Vec<Expr> = points
+      .iter()
+      .map(|x| Expr::List(vec![Expr::Real(*x)]))
+      .collect();
+    let line_pairs: Vec<Expr> = (0..segments.len())
+      .map(|i| {
+        Expr::List(vec![
+          Expr::Integer((2 * i + 1) as i128),
+          Expr::Integer((2 * i + 2) as i128),
+        ])
+      })
+      .collect();
+    return Ok(Expr::FunctionCall {
+      name: "MeshRegion".to_string(),
+      args: vec![
+        Expr::List(vertex_exprs),
+        Expr::List(vec![Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(line_pairs)],
+        }]),
+      ],
+    });
   }
 
   // ArrayMesh[matrix] → MeshRegion from a binary 2D array
-  if name == "ArrayMesh" && args.len() == 1 {
-    if let Expr::List(rows) = &args[0] {
-      let nrows = rows.len();
-      if nrows == 0 {
+  if name == "ArrayMesh"
+    && args.len() == 1
+    && let Expr::List(rows) = &args[0]
+  {
+    let nrows = rows.len();
+    if nrows == 0 {
+      return Ok(Expr::FunctionCall {
+        name: "ArrayMesh".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    // Parse the matrix
+    let mut matrix: Vec<Vec<bool>> = Vec::new();
+    let mut ncols = 0usize;
+    for row in rows {
+      if let Expr::List(cols) = row {
+        if ncols == 0 {
+          ncols = cols.len();
+        }
+        let row_vals: Vec<bool> = cols
+          .iter()
+          .map(|e| !matches!(e, Expr::Integer(0)))
+          .collect();
+        matrix.push(row_vals);
+      } else {
         return Ok(Expr::FunctionCall {
           name: "ArrayMesh".to_string(),
           args: args.to_vec(),
         });
       }
-      // Parse the matrix
-      let mut matrix: Vec<Vec<bool>> = Vec::new();
-      let mut ncols = 0usize;
-      for row in rows {
-        if let Expr::List(cols) = row {
-          if ncols == 0 {
-            ncols = cols.len();
-          }
-          let row_vals: Vec<bool> = cols
-            .iter()
-            .map(|e| !matches!(e, Expr::Integer(0)))
-            .collect();
-          matrix.push(row_vals);
-        } else {
-          return Ok(Expr::FunctionCall {
-            name: "ArrayMesh".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      }
-
-      // Collect vertices: process columns left-to-right, within each column rows bottom-to-top
-      // Each cell corner is (x_left/x_right, y_bottom/y_top) added as BL, TL, BR, TR
-      let mut vertices: Vec<(f64, f64)> = Vec::new();
-      let mut vertex_index =
-        std::collections::HashMap::<(i64, i64), usize>::new();
-
-      let add_vertex =
-        |x: i64,
-         y: i64,
-         vertices: &mut Vec<(f64, f64)>,
-         index: &mut std::collections::HashMap<(i64, i64), usize>|
-         -> usize {
-          if let Some(&idx) = index.get(&(x, y)) {
-            idx
-          } else {
-            let idx = vertices.len() + 1; // 1-indexed
-            vertices.push((x as f64, y as f64));
-            index.insert((x, y), idx);
-            idx
-          }
-        };
-
-      // Phase 1: collect vertices in the right order
-      for col in 0..ncols {
-        for row in (0..nrows).rev() {
-          if matrix[row][col] {
-            let y_bottom = (nrows - 1 - row) as i64;
-            let y_top = y_bottom + 1;
-            let x_left = col as i64;
-            let x_right = x_left + 1;
-            // BL, TL, BR, TR order
-            add_vertex(x_left, y_bottom, &mut vertices, &mut vertex_index);
-            add_vertex(x_left, y_top, &mut vertices, &mut vertex_index);
-            add_vertex(x_right, y_bottom, &mut vertices, &mut vertex_index);
-            add_vertex(x_right, y_top, &mut vertices, &mut vertex_index);
-          }
-        }
-      }
-
-      // Phase 2: create polygons in row-major order (top-to-bottom, left-to-right)
-      let mut polygons: Vec<Expr> = Vec::new();
-      for row in 0..nrows {
-        for col in 0..ncols {
-          if matrix[row][col] {
-            let y_bottom = (nrows - 1 - row) as i64;
-            let y_top = y_bottom + 1;
-            let x_left = col as i64;
-            let x_right = x_left + 1;
-            // CCW: BR, TR, TL, BL
-            let br = vertex_index[&(x_right, y_bottom)];
-            let tr = vertex_index[&(x_right, y_top)];
-            let tl = vertex_index[&(x_left, y_top)];
-            let bl = vertex_index[&(x_left, y_bottom)];
-            polygons.push(Expr::List(vec![
-              Expr::Integer(br as i128),
-              Expr::Integer(tr as i128),
-              Expr::Integer(tl as i128),
-              Expr::Integer(bl as i128),
-            ]));
-          }
-        }
-      }
-
-      // Build MeshRegion[vertices, {Polygon[polygons]}]
-      let vertex_exprs: Vec<Expr> = vertices
-        .iter()
-        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
-        .collect();
-
-      return Ok(Expr::FunctionCall {
-        name: "MeshRegion".to_string(),
-        args: vec![
-          Expr::List(vertex_exprs),
-          Expr::List(vec![Expr::FunctionCall {
-            name: "Polygon".to_string(),
-            args: vec![Expr::List(polygons)],
-          }]),
-        ],
-      });
     }
+
+    // Collect vertices: process columns left-to-right, within each column rows bottom-to-top
+    // Each cell corner is (x_left/x_right, y_bottom/y_top) added as BL, TL, BR, TR
+    let mut vertices: Vec<(f64, f64)> = Vec::new();
+    let mut vertex_index =
+      std::collections::HashMap::<(i64, i64), usize>::new();
+
+    let add_vertex =
+      |x: i64,
+       y: i64,
+       vertices: &mut Vec<(f64, f64)>,
+       index: &mut std::collections::HashMap<(i64, i64), usize>|
+       -> usize {
+        if let Some(&idx) = index.get(&(x, y)) {
+          idx
+        } else {
+          let idx = vertices.len() + 1; // 1-indexed
+          vertices.push((x as f64, y as f64));
+          index.insert((x, y), idx);
+          idx
+        }
+      };
+
+    // Phase 1: collect vertices in the right order
+    for col in 0..ncols {
+      for row in (0..nrows).rev() {
+        if matrix[row][col] {
+          let y_bottom = (nrows - 1 - row) as i64;
+          let y_top = y_bottom + 1;
+          let x_left = col as i64;
+          let x_right = x_left + 1;
+          // BL, TL, BR, TR order
+          add_vertex(x_left, y_bottom, &mut vertices, &mut vertex_index);
+          add_vertex(x_left, y_top, &mut vertices, &mut vertex_index);
+          add_vertex(x_right, y_bottom, &mut vertices, &mut vertex_index);
+          add_vertex(x_right, y_top, &mut vertices, &mut vertex_index);
+        }
+      }
+    }
+
+    // Phase 2: create polygons in row-major order (top-to-bottom, left-to-right)
+    let mut polygons: Vec<Expr> = Vec::new();
+    for row in 0..nrows {
+      for col in 0..ncols {
+        if matrix[row][col] {
+          let y_bottom = (nrows - 1 - row) as i64;
+          let y_top = y_bottom + 1;
+          let x_left = col as i64;
+          let x_right = x_left + 1;
+          // CCW: BR, TR, TL, BL
+          let br = vertex_index[&(x_right, y_bottom)];
+          let tr = vertex_index[&(x_right, y_top)];
+          let tl = vertex_index[&(x_left, y_top)];
+          let bl = vertex_index[&(x_left, y_bottom)];
+          polygons.push(Expr::List(vec![
+            Expr::Integer(br as i128),
+            Expr::Integer(tr as i128),
+            Expr::Integer(tl as i128),
+            Expr::Integer(bl as i128),
+          ]));
+        }
+      }
+    }
+
+    // Build MeshRegion[vertices, {Polygon[polygons]}]
+    let vertex_exprs: Vec<Expr> = vertices
+      .iter()
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .collect();
+
+    return Ok(Expr::FunctionCall {
+      name: "MeshRegion".to_string(),
+      args: vec![
+        Expr::List(vertex_exprs),
+        Expr::List(vec![Expr::FunctionCall {
+          name: "Polygon".to_string(),
+          args: vec![Expr::List(polygons)],
+        }]),
+      ],
+    });
   }
 
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "VoronoiMesh" && args.len() == 1 {
-    return crate::functions::voronoi::voronoi_mesh_ast(&args);
+    return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
   // ExpressionGraph[expr] → Graph of the expression tree
@@ -1918,13 +1918,12 @@ pub fn evaluate_function_call_ast_inner(
       name: ref gn,
       args: ref mut ga,
     } = graph
+      && gn == "Graph"
     {
-      if gn == "Graph" {
-        ga.push(Expr::List(vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
-          replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
-        }]));
-      }
+      ga.push(Expr::List(vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+        replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
+      }]));
     }
     return Ok(graph);
   }
@@ -3331,12 +3330,12 @@ pub fn evaluate_function_call_ast_inner(
           components += 1;
           let mut stack = vec![v];
           while let Some(u) = stack.pop() {
-            if visited.insert(u) {
-              if let Some(neighbors) = adj.get(&u) {
-                for &n in neighbors {
-                  if !visited.contains(&n) {
-                    stack.push(n);
-                  }
+            if visited.insert(u)
+              && let Some(neighbors) = adj.get(&u)
+            {
+              for &n in neighbors {
+                if !visited.contains(&n) {
+                  stack.push(n);
                 }
               }
             }
@@ -3499,31 +3498,32 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // BoundedRegionQ[region] — test if a geometric region is bounded
-  if name == "BoundedRegionQ" && args.len() == 1 {
-    if let Expr::FunctionCall {
+  if name == "BoundedRegionQ"
+    && args.len() == 1
+    && let Expr::FunctionCall {
       name: rname,
       args: _,
     } = &args[0]
-    {
-      let result = match rname.as_str() {
-        // Bounded regions
-        "Disk" | "Ball" | "Rectangle" | "Cuboid" | "Polygon" | "Triangle"
-        | "Line" | "BezierCurve" | "BSplineCurve" | "Circle" | "Sphere"
-        | "Ellipsoid" | "Cone" | "Cylinder" | "Tetrahedron" | "Hexahedron"
-        | "Prism" | "Pyramid" | "Point" | "Interval" | "Simplex"
-        | "Parallelepiped" | "Annulus" | "StadiumShape" | "DiskSegment"
-        | "SphericalShell" | "CapsuleShape" => Some(true),
-        // Unbounded regions
-        "HalfPlane" | "HalfSpace" | "InfiniteLine" | "InfinitePlane"
-        | "HalfLine" | "ConicHullRegion" | "AffineHalfSpace"
-        | "AffineSpace" => Some(false),
-        _ => None,
-      };
-      if let Some(b) = result {
-        return Ok(Expr::Identifier(
-          if b { "True" } else { "False" }.to_string(),
-        ));
+  {
+    let result = match rname.as_str() {
+      // Bounded regions
+      "Disk" | "Ball" | "Rectangle" | "Cuboid" | "Polygon" | "Triangle"
+      | "Line" | "BezierCurve" | "BSplineCurve" | "Circle" | "Sphere"
+      | "Ellipsoid" | "Cone" | "Cylinder" | "Tetrahedron" | "Hexahedron"
+      | "Prism" | "Pyramid" | "Point" | "Interval" | "Simplex"
+      | "Parallelepiped" | "Annulus" | "StadiumShape" | "DiskSegment"
+      | "SphericalShell" | "CapsuleShape" => Some(true),
+      // Unbounded regions
+      "HalfPlane" | "HalfSpace" | "InfiniteLine" | "InfinitePlane"
+      | "HalfLine" | "ConicHullRegion" | "AffineHalfSpace" | "AffineSpace" => {
+        Some(false)
       }
+      _ => None,
+    };
+    if let Some(b) = result {
+      return Ok(Expr::Identifier(
+        if b { "True" } else { "False" }.to_string(),
+      ));
     }
   }
 
@@ -3842,8 +3842,7 @@ pub fn evaluate_function_call_ast_inner(
           operands,
           operators,
         } = cond
-        {
-          if operands.len() == 2
+          && operands.len() == 2
             && operators.len() == 1
             && matches!(operators[0], ComparisonOp::Greater | ComparisonOp::GreaterEqual)
             && matches!(&operands[0], Expr::Identifier(s) if var_names.contains(s))
@@ -3851,17 +3850,15 @@ pub fn evaluate_function_call_ast_inner(
           {
             return true;
           }
-        }
         // Also check FunctionCall form (Greater[x, 0])
-        if let Expr::FunctionCall { name: op, args: cargs } = cond {
-          if (op == "Greater" || op == "GreaterEqual")
+        if let Expr::FunctionCall { name: op, args: cargs } = cond
+          && (op == "Greater" || op == "GreaterEqual")
             && cargs.len() == 2
             && matches!(&cargs[0], Expr::Identifier(s) if var_names.contains(s))
             && matches!(&cargs[1], Expr::Integer(0))
           {
             return true;
           }
-        }
         false
       });
 
@@ -4539,10 +4536,9 @@ pub fn evaluate_function_call_ast_inner(
   // Morphological operations: Opening, Closing, Erosion, Dilation
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
+    && let Some(result) = morphological_op(name, &args[0], &args[1])
   {
-    if let Some(result) = morphological_op(name, &args[0], &args[1]) {
-      return result;
-    }
+    return result;
   }
 
   // Formatting wrappers and symbolic heads that stay unevaluated
@@ -5472,7 +5468,7 @@ fn min_max_filter_1d(data: &[f64], radius: usize, use_min: bool) -> Vec<f64> {
   let n = data.len();
   let mut result = vec![0.0; n];
   for i in 0..n {
-    let lo = if i >= radius { i - radius } else { 0 };
+    let lo = i.saturating_sub(radius);
     let hi = if i + radius < n { i + radius } else { n - 1 };
     let mut val = data[lo];
     for j in (lo + 1)..=hi {
@@ -5501,13 +5497,13 @@ fn min_max_filter_2d(
   let mut result = vec![vec![0.0; ncols]; nrows];
   for r in 0..nrows {
     for c in 0..ncols {
-      let r_lo = if r >= radius { r - radius } else { 0 };
+      let r_lo = r.saturating_sub(radius);
       let r_hi = if r + radius < nrows {
         r + radius
       } else {
         nrows - 1
       };
-      let c_lo = if c >= radius { c - radius } else { 0 };
+      let c_lo = c.saturating_sub(radius);
       let c_hi = if c + radius < ncols {
         c + radius
       } else {
@@ -5533,7 +5529,7 @@ fn min_max_filter_2d(
 fn expr_list_to_f64(list: &[Expr]) -> Option<Vec<f64>> {
   list
     .iter()
-    .map(|e| crate::functions::math_ast::try_eval_to_f64(e))
+    .map(crate::functions::math_ast::try_eval_to_f64)
     .collect()
 }
 
@@ -5690,16 +5686,12 @@ fn find_maximum_flow_impl(
       name: ename,
       args: eargs,
     } = edge
+      && eargs.len() == 2
+      && let (Some(u), Some(v)) = (vertex_idx(&eargs[0]), vertex_idx(&eargs[1]))
     {
-      if eargs.len() == 2 {
-        if let (Some(u), Some(v)) =
-          (vertex_idx(&eargs[0]), vertex_idx(&eargs[1]))
-        {
-          cap[u][v] += 1;
-          if ename == "UndirectedEdge" {
-            cap[v][u] += 1;
-          }
-        }
+      cap[u][v] += 1;
+      if ename == "UndirectedEdge" {
+        cap[v][u] += 1;
       }
     }
   }
@@ -5780,8 +5772,8 @@ fn find_graph_isomorphism_impl(
   };
 
   // Build adjacency matrices using string comparison
-  let v1_strs: Vec<String> = verts1.iter().map(|v| expr_to_string(v)).collect();
-  let v2_strs: Vec<String> = verts2.iter().map(|v| expr_to_string(v)).collect();
+  let v1_strs: Vec<String> = verts1.iter().map(expr_to_string).collect();
+  let v2_strs: Vec<String> = verts2.iter().map(expr_to_string).collect();
 
   let mut adj1 = vec![vec![false; n]; n];
   let mut adj2 = vec![vec![false; n]; n];
@@ -5806,29 +5798,29 @@ fn find_graph_isomorphism_impl(
   };
 
   for edge in edges1 {
-    if let Some((s, t, undirected)) = edge_endpoints(edge) {
-      if let (Some(i), Some(j)) = (
+    if let Some((s, t, undirected)) = edge_endpoints(edge)
+      && let (Some(i), Some(j)) = (
         v1_strs.iter().position(|v| *v == s),
         v1_strs.iter().position(|v| *v == t),
-      ) {
-        adj1[i][j] = true;
-        if undirected {
-          adj1[j][i] = true;
-        }
+      )
+    {
+      adj1[i][j] = true;
+      if undirected {
+        adj1[j][i] = true;
       }
     }
   }
 
   for edge in edges2 {
-    if let Some((s, t, undirected)) = edge_endpoints(edge) {
-      if let (Some(i), Some(j)) = (
+    if let Some((s, t, undirected)) = edge_endpoints(edge)
+      && let (Some(i), Some(j)) = (
         v2_strs.iter().position(|v| *v == s),
         v2_strs.iter().position(|v| *v == t),
-      ) {
-        adj2[i][j] = true;
-        if undirected {
-          adj2[j][i] = true;
-        }
+      )
+    {
+      adj2[i][j] = true;
+      if undirected {
+        adj2[j][i] = true;
       }
     }
   }
@@ -5953,7 +5945,7 @@ fn find_spanning_tree_impl(
     });
   }
 
-  let v_strs: Vec<String> = verts.iter().map(|v| expr_to_string(v)).collect();
+  let v_strs: Vec<String> = verts.iter().map(expr_to_string).collect();
 
   // Helper to extract edge endpoints
   let edge_endpoints = |edge: &Expr| -> Option<(usize, usize)> {
@@ -6008,12 +6000,12 @@ fn find_spanning_tree_impl(
   // Kruskal's: add edges that don't form cycles
   let mut tree_edges: Vec<Expr> = Vec::new();
   for edge in edges {
-    if let Some((i, j)) = edge_endpoints(edge) {
-      if union(&mut parent, &mut rank, i, j) {
-        tree_edges.push(edge.clone());
-        if tree_edges.len() == n - 1 {
-          break;
-        }
+    if let Some((i, j)) = edge_endpoints(edge)
+      && union(&mut parent, &mut rank, i, j)
+    {
+      tree_edges.push(edge.clone());
+      if tree_edges.len() == n - 1 {
+        break;
       }
     }
   }

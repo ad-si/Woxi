@@ -2847,11 +2847,11 @@ pub fn find_integer_null_vector_ast(
 
   // Normalize: make the first nonzero coefficient positive
   let mut coeffs = result;
-  if let Some(&first_nonzero) = coeffs.iter().find(|&&c| c != 0) {
-    if first_nonzero < 0 {
-      for c in &mut coeffs {
-        *c = -*c;
-      }
+  if let Some(&first_nonzero) = coeffs.iter().find(|&&c| c != 0)
+    && first_nonzero < 0
+  {
+    for c in &mut coeffs {
+      *c = -*c;
     }
   }
 
@@ -4278,7 +4278,7 @@ fn build_wedge_tensor(
       name: "Plus".to_string(),
       args: terms,
     };
-    return Ok(evaluate_expr_to_expr(&sum_expr)?);
+    return evaluate_expr_to_expr(&sum_expr);
   }
 
   // Build the next level of the tensor

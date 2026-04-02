@@ -932,7 +932,7 @@ fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
 
   // Normalize: bring remainder into [0, d) range and extract integer part digits
   let int_part = remainder / d;
-  remainder = remainder % d;
+  remainder %= d;
 
   // Extract integer part digits
   let mut int_digits: Vec<i128> = Vec::new();
@@ -967,7 +967,7 @@ fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
     remainder_positions.insert(remainder, digits.len());
     remainder *= 10;
     let digit = remainder / d;
-    remainder = remainder % d;
+    remainder %= d;
     digits.push(digit);
   }
 
@@ -1069,16 +1069,15 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // For rationals without explicit num_digits, use long division with cycle detection
-  if !explicit_num_digits {
-    if let Some((numer, denom)) = extract_rational_for_digits(&abs_expr) {
-      if denom != 0 {
-        let (digit_list, exponent) = real_digits_rational(numer, denom);
-        return Ok(Expr::List(vec![
-          Expr::List(digit_list),
-          Expr::Integer(exponent),
-        ]));
-      }
-    }
+  if !explicit_num_digits
+    && let Some((numer, denom)) = extract_rational_for_digits(&abs_expr)
+    && denom != 0
+  {
+    let (digit_list, exponent) = real_digits_rational(numer, denom);
+    return Ok(Expr::List(vec![
+      Expr::List(digit_list),
+      Expr::Integer(exponent),
+    ]));
   }
 
   // Compute with extra precision to avoid rounding errors in the last digits

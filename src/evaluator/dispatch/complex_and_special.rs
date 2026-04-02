@@ -3173,7 +3173,7 @@ fn compute_region_equal(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try to normalize all regions
   let normalized: Vec<Option<Expr>> =
-    args.iter().map(|a| normalize_region(a)).collect();
+    args.iter().map(normalize_region).collect();
 
   // If any region is not recognized, return unevaluated
   if normalized.iter().any(|n| n.is_none()) {
@@ -3709,7 +3709,7 @@ fn region_within(
             1 => {
               if let Expr::List(coords) = &rargs[0] {
                 let c: Vec<f64> =
-                  coords.iter().filter_map(|e| expr_to_number(e)).collect();
+                  coords.iter().filter_map(expr_to_number).collect();
                 if c.len() == coords.len() {
                   (c, 1.0)
                 } else {
@@ -3722,7 +3722,7 @@ fn region_within(
             2 => {
               let c = if let Expr::List(coords) = &rargs[0] {
                 let c: Vec<f64> =
-                  coords.iter().filter_map(|e| expr_to_number(e)).collect();
+                  coords.iter().filter_map(expr_to_number).collect();
                 if c.len() == coords.len() {
                   c
                 } else {
@@ -3751,8 +3751,7 @@ fn region_within(
       && rargs.len() == 1
       && let Expr::List(coords) = &rargs[0]
     {
-      let c: Vec<f64> =
-        coords.iter().filter_map(|e| expr_to_number(e)).collect();
+      let c: Vec<f64> = coords.iter().filter_map(expr_to_number).collect();
       if c.len() == coords.len() {
         Some(c)
       } else {
@@ -3764,41 +3763,39 @@ fn region_within(
   };
 
   // Point within Disk/Ball
-  if let Some(pt) = parse_point(reg2) {
-    if let Some((_, center, radius)) = parse_disk_ball(reg1) {
-      if pt.len() == center.len() {
-        let dist_sq: f64 = pt
-          .iter()
-          .zip(center.iter())
-          .map(|(a, b)| (a - b).powi(2))
-          .sum();
-        return if dist_sq <= radius * radius + 1e-10 {
-          true_expr()
-        } else {
-          false_expr()
-        };
-      }
-    }
+  if let Some(pt) = parse_point(reg2)
+    && let Some((_, center, radius)) = parse_disk_ball(reg1)
+    && pt.len() == center.len()
+  {
+    let dist_sq: f64 = pt
+      .iter()
+      .zip(center.iter())
+      .map(|(a, b)| (a - b).powi(2))
+      .sum();
+    return if dist_sq <= radius * radius + 1e-10 {
+      true_expr()
+    } else {
+      false_expr()
+    };
   }
 
   // Disk/Ball within Disk/Ball
   if let (Some((_, c1, r1)), Some((_, c2, r2))) =
     (parse_disk_ball(reg1), parse_disk_ball(reg2))
+    && c1.len() == c2.len()
   {
-    if c1.len() == c2.len() {
-      let dist: f64 = c1
-        .iter()
-        .zip(c2.iter())
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<f64>()
-        .sqrt();
-      // reg2 is within reg1 if dist(centers) + r2 <= r1
-      return if dist + r2 <= r1 + 1e-10 {
-        true_expr()
-      } else {
-        false_expr()
-      };
-    }
+    let dist: f64 = c1
+      .iter()
+      .zip(c2.iter())
+      .map(|(a, b)| (a - b).powi(2))
+      .sum::<f64>()
+      .sqrt();
+    // reg2 is within reg1 if dist(centers) + r2 <= r1
+    return if dist + r2 <= r1 + 1e-10 {
+      true_expr()
+    } else {
+      false_expr()
+    };
   }
 
   unevaluated()

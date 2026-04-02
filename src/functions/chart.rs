@@ -140,18 +140,19 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
 /// Extract a chart label from an Expr, supporting Rotate[label, angle].
 fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
   // Rotate["label", angle]
-  if let Expr::FunctionCall { name, args } = e {
-    if name == "Rotate" && args.len() >= 2 {
-      let text = expr_to_label(&args[0])?;
-      let angle = try_eval_to_f64(
-        &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
-      )
-      .unwrap_or(0.0);
-      return Some(ChartLabel {
-        text,
-        rotation: angle,
-      });
-    }
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Rotate"
+    && args.len() >= 2
+  {
+    let text = expr_to_label(&args[0])?;
+    let angle = try_eval_to_f64(
+      &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+    )
+    .unwrap_or(0.0);
+    return Some(ChartLabel {
+      text,
+      rotation: angle,
+    });
   }
   // Plain label
   expr_to_label(e).map(ChartLabel::plain)

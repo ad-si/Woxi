@@ -57,12 +57,12 @@ fn format_real_for_precision(value: f64, _sig_digits: usize) -> String {
   let abs_val = value.abs();
   let s = format!("{:.15}", abs_val);
   let s = s.trim_end_matches('0');
-  let s = if s.ends_with('.') {
+
+  if s.ends_with('.') {
     format!("{}{}", sign, s)
   } else {
     format!("{}{}", sign, s)
-  };
-  s
+  }
 }
 
 fn missing_not_available() -> Expr {
@@ -2226,7 +2226,7 @@ fn find_element(identifier: &Expr) -> Option<&'static Element> {
   match identifier {
     Expr::Integer(n) => {
       let n = *n;
-      if n >= 1 && n <= 118 {
+      if (1..=118).contains(&n) {
         Some(&ELEMENTS[(n - 1) as usize])
       } else {
         None
@@ -2252,12 +2252,10 @@ fn find_element_by_string(s: &str) -> Option<&'static Element> {
       return Some(elem);
     }
   }
-  for elem in ELEMENTS.iter() {
-    if elem.abbreviation.to_lowercase() == lower {
-      return Some(elem);
-    }
-  }
-  None
+  ELEMENTS
+    .iter()
+    .find(|&elem| elem.abbreviation.to_lowercase() == lower)
+    .map(|v| v as _)
 }
 
 fn get_property(elem: &Element, property: &str) -> Expr {

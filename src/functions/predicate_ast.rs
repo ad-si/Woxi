@@ -740,20 +740,19 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // For Flat+Orderless functions (Plus, Times), check if form's args
         // are a subset of this function's args
-        if !use_pattern {
-          if let Expr::FunctionCall {
+        if !use_pattern
+          && let Expr::FunctionCall {
             name: form_name,
             args: form_args,
             ..
           } = form
-            && name == form_name
-            && !form_args.is_empty()
-            && form_args.len() < fn_args.len()
-            && (name == "Plus" || name == "Times")
-            && is_args_subset(fn_args, form_args)
-          {
-            return true;
-          }
+          && name == form_name
+          && !form_args.is_empty()
+          && form_args.len() < fn_args.len()
+          && (name == "Plus" || name == "Times")
+          && is_args_subset(fn_args, form_args)
+        {
+          return true;
         }
         fn_args
           .iter()

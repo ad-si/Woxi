@@ -1874,8 +1874,8 @@ pub fn euler_phi_i128(n: i128) -> i128 {
   let mut result = n as u128;
   let mut p: u128 = 2;
   while p * p <= num {
-    if num % p == 0 {
-      while num % p == 0 {
+    if num.is_multiple_of(p) {
+      while num.is_multiple_of(p) {
         num /= p;
       }
       result -= result / p;

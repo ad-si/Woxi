@@ -142,7 +142,7 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (match_pat, replacement) = extract_rule_parts(pattern);
 
   for item in items {
-    if let Some(ref repl) = replacement {
+    if let Some(repl) = replacement {
       // Rule/RuleDelayed form: match against LHS, return RHS with bindings
       if let Some(bindings) =
         crate::evaluator::pattern_matching::match_pattern(item, match_pat)
@@ -183,7 +183,7 @@ pub fn cases_ast(
 
   let mut kept = Vec::new();
   for item in items {
-    if let Some(ref repl) = replacement {
+    if let Some(repl) = replacement {
       // Rule/RuleDelayed form: match against LHS, return RHS with bindings
       if let Some(bindings) =
         crate::evaluator::pattern_matching::match_pattern(item, match_pat)
@@ -433,10 +433,10 @@ fn args_match_with_sequences(expr_args: &[Expr], pat_args: &[Expr]) -> bool {
     };
 
     // Apply explicit max_count from Repeated[pat, {min, max}]
-    if let Some(explicit_max) = seq.max_count {
-      if explicit_max < max_count {
-        max_count = explicit_max;
-      }
+    if let Some(explicit_max) = seq.max_count
+      && explicit_max < max_count
+    {
+      max_count = explicit_max;
     }
 
     if max_count < seq.min_count {

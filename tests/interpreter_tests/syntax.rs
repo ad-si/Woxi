@@ -493,6 +493,28 @@ mod full_form {
     );
   }
 
+  // Log[b, x] should canonicalize to Log[x]/Log[b]
+  #[test]
+  fn head_of_log_two_arg() {
+    assert_eq!(interpret("Head[Log[2, x]]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn log_two_arg_identical_to_quotient() {
+    assert_eq!(interpret("Log[2, x] === Log[x]/Log[2]").unwrap(), "True");
+  }
+
+  // CubeRoot[x] should canonicalize to Surd[x, 3]
+  #[test]
+  fn head_of_cube_root() {
+    assert_eq!(interpret("Head[CubeRoot[x]]").unwrap(), "Surd");
+  }
+
+  #[test]
+  fn cube_root_identical_to_surd() {
+    assert_eq!(interpret("CubeRoot[x] === Surd[x, 3]").unwrap(), "True");
+  }
+
   #[test]
   fn full_form_no_canonicalization_regression() {
     // Regression test for issue #91: FullForm must not canonicalize Divide.

@@ -1378,10 +1378,8 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
     result
   }
 
-  let term_factors: Vec<Vec<Expr>> = terms
-    .iter()
-    .map(|t| collect_multiplicative_factors(t))
-    .collect();
+  let term_factors: Vec<Vec<Expr>> =
+    terms.iter().map(collect_multiplicative_factors).collect();
   let term_powers: Vec<Vec<PowerInfo>> =
     term_factors.iter().map(|f| get_power_bases(f)).collect();
 
