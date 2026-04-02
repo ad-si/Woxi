@@ -2100,6 +2100,26 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // DirectedGraphQ[graph] — True if all edges are directed
+  if name == "DirectedGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(edges) = &gargs[1]
+    {
+      let all_directed = edges.iter().all(|e| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+      });
+      return Ok(Expr::Identifier(
+        if all_directed { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // TreeGraphQ[graph] — True if graph is a tree (connected, n-1 edges for n vertices)
   if name == "TreeGraphQ" && args.len() == 1 {
     if let Expr::FunctionCall {
