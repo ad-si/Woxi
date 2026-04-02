@@ -3052,7 +3052,7 @@ InverseFourierSinTransform,,,,4.0,3121
 LocalTime,,,,10.0,3121
 CycleIndexPolynomial,,,,9.0,3124
 Dodecahedron,,,,12.0,3124
-EulerianGraphQ,,,,8.0,3124
+EulerianGraphQ,Test whether a graph has an Eulerian circuit,✅,pure,8.0,3124
 CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
 DayMatchQ,,,,9.0,3134
