@@ -390,11 +390,12 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {
-      let mut substituted = (**body).clone();
-      for (param, arg) in params.iter().zip(items.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(items.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -489,11 +490,12 @@ fn apply_func_as_head(
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {
-      let mut substituted = (**body).clone();
-      for (param, arg) in params.iter().zip(items.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(items.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     _ => Err(InterpreterError::EvaluationError(

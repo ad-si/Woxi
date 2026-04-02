@@ -204,11 +204,12 @@ pub fn apply_apply_ast(
     }
     Expr::NamedFunction { params, body } => {
       // Named-parameter function applied to list items
-      let mut substituted = (**body).clone();
-      for (param, arg) in params.iter().zip(items.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(items.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       evaluate_expr_to_expr(&substituted)
     }
     _ => Ok(Expr::Apply {
@@ -351,11 +352,12 @@ pub fn apply_curried_call(
     }
     Expr::NamedFunction { params, body } => {
       // Named-parameter function: substitute each param with corresponding arg
-      let mut substituted = (**body).clone();
-      for (param, arg) in params.iter().zip(args.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(args.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall {
@@ -440,11 +442,12 @@ pub fn apply_curried_call(
           other => other.clone(),
         })
         .collect();
-      let mut substituted = body.clone();
-      for (param, arg) in params.iter().zip(num_args.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(num_args.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       let result = evaluate_expr_to_expr(&substituted)?;
       // Ensure the result is numerical
       match &result {

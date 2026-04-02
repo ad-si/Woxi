@@ -1792,6 +1792,24 @@ mod high_level_functions_tests {
       );
     }
 
+    // Regression test for https://github.com/ad-si/Woxi/issues/96
+    // Pattern variable names must not leak into other matched arguments.
+    #[test]
+    fn set_delayed_pattern_variable_no_leak() {
+      assert_eq!(
+        interpret("f[u_, a_] := {u, a}; f[a + 1, 42]").unwrap(),
+        "{1 + a, 42}"
+      );
+    }
+
+    #[test]
+    fn set_delayed_pattern_variable_no_leak_reversed() {
+      assert_eq!(
+        interpret("g[a_, u_] := {a, u}; g[42, a + 1]").unwrap(),
+        "{42, 1 + a}"
+      );
+    }
+
     #[test]
     fn set_delayed_variable_dependency() {
       let r = interpret("Clear[a, b]; a := 5; b := a + 1; FullDefinition[b]")

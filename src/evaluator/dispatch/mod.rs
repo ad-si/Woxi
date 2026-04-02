@@ -617,18 +617,16 @@ pub fn evaluate_function_call_ast_inner(
             }
             continue;
           }
-          let mut substituted_cond = cond_expr.clone();
+          // Build combined bindings for simultaneous substitution
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
           for (param, arg) in params.iter().zip(effective_args.iter()) {
-            substituted_cond =
-              crate::syntax::substitute_variable(&substituted_cond, param, arg);
+            all_bindings.push((param.as_str(), arg));
           }
           for (bind_name, bind_val) in &structural_bindings {
-            substituted_cond = crate::syntax::substitute_variable(
-              &substituted_cond,
-              bind_name,
-              bind_val,
-            );
+            all_bindings.push((bind_name.as_str(), bind_val));
           }
+          let substituted_cond =
+            crate::syntax::substitute_variables(cond_expr, &all_bindings);
           match evaluate_expr_to_expr(&substituted_cond) {
             Ok(Expr::Identifier(ref s)) if s == "True" => {}
             _ => {
@@ -640,19 +638,18 @@ pub fn evaluate_function_call_ast_inner(
         if !conditions_met {
           continue;
         }
-        // Substitute and evaluate body
-        let mut substituted = body_expr.clone();
-        for (param, arg) in params.iter().zip(effective_args.iter()) {
-          substituted =
-            crate::syntax::substitute_variable(&substituted, param, arg);
-        }
-        for (bind_name, bind_val) in &structural_bindings {
-          substituted = crate::syntax::substitute_variable(
-            &substituted,
-            bind_name,
-            bind_val,
-          );
-        }
+        // Substitute and evaluate body — use simultaneous substitution
+        // to prevent parameter values from leaking into other arguments
+        let substituted = {
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            all_bindings.push((param.as_str(), arg));
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            all_bindings.push((bind_name.as_str(), bind_val));
+          }
+          crate::syntax::substitute_variables(body_expr, &all_bindings)
+        };
         // Push option context if this overload uses OptionsPattern
         let inline_opts = inline_opts_overloads
           .as_ref()
@@ -874,20 +871,16 @@ pub fn evaluate_function_call_ast_inner(
             }
             continue;
           }
-          // Substitute all parameters with their argument values in the condition
-          let mut substituted_cond = cond_expr.clone();
+          // Build combined bindings for simultaneous substitution
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
           for (param, arg) in params.iter().zip(effective_args.iter()) {
-            substituted_cond =
-              crate::syntax::substitute_variable(&substituted_cond, param, arg);
+            all_bindings.push((param.as_str(), arg));
           }
-          // Also substitute structural pattern bindings into conditions
           for (bind_name, bind_val) in &structural_bindings {
-            substituted_cond = crate::syntax::substitute_variable(
-              &substituted_cond,
-              bind_name,
-              bind_val,
-            );
+            all_bindings.push((bind_name.as_str(), bind_val));
           }
+          let substituted_cond =
+            crate::syntax::substitute_variables(cond_expr, &all_bindings);
           // Evaluate the condition - it must return True
           match evaluate_expr_to_expr(&substituted_cond) {
             Ok(Expr::Identifier(ref s)) if s == "True" => {} // condition met
@@ -902,16 +895,17 @@ pub fn evaluate_function_call_ast_inner(
         continue;
       }
       // All conditions met - substitute parameters with arguments and evaluate body
-      let mut substituted = body_expr.clone();
-      for (param, arg) in params.iter().zip(effective_args.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
-      // Also substitute structural pattern bindings (e.g., x from 1/x_ matching 1/y → x=y)
-      for (bind_name, bind_val) in &structural_bindings {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, bind_name, bind_val);
-      }
+      // Use simultaneous substitution to prevent variable name leakage
+      let substituted = {
+        let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+        for (param, arg) in params.iter().zip(effective_args.iter()) {
+          all_bindings.push((param.as_str(), arg));
+        }
+        for (bind_name, bind_val) in &structural_bindings {
+          all_bindings.push((bind_name.as_str(), bind_val));
+        }
+        crate::syntax::substitute_variables(body_expr, &all_bindings)
+      };
       // Push option context if this overload uses OptionsPattern
       let inline_opts2 = inline_opts_overloads
         .as_ref()

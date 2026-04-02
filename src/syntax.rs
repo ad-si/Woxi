@@ -7071,6 +7071,181 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
   }
 }
 
+/// Perform simultaneous substitution of multiple variables.
+/// Unlike calling `substitute_variable` in a loop, this replaces all
+/// variables in a single pass so that substituted values cannot be
+/// accidentally captured by later substitutions.
+pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
+  if bindings.is_empty() {
+    return expr.clone();
+  }
+  match expr {
+    Expr::Identifier(name) => {
+      for &(var_name, value) in bindings {
+        if name == var_name {
+          return value.clone();
+        }
+      }
+      expr.clone()
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_variables(e, bindings))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|e| substitute_variables(e, bindings))
+        .collect();
+      // Check if the function name itself is being substituted
+      for &(var_name, value) in bindings {
+        if name == var_name {
+          return Expr::CurriedCall {
+            func: Box::new(value.clone()),
+            args: new_args,
+          };
+        }
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_variables(left, bindings)),
+      right: Box::new(substitute_variables(right, bindings)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_variables(operand, bindings)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| substitute_variables(e, bindings))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
+      exprs
+        .iter()
+        .map(|e| substitute_variables(e, bindings))
+        .collect(),
+    ),
+    Expr::Association(items) => Expr::Association(
+      items
+        .iter()
+        .map(|(k, v)| {
+          (
+            substitute_variables(k, bindings),
+            substitute_variables(v, bindings),
+          )
+        })
+        .collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_variables(pattern, bindings)),
+      replacement: Box::new(substitute_variables(replacement, bindings)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(substitute_variables(pattern, bindings)),
+      replacement: Box::new(substitute_variables(replacement, bindings)),
+    },
+    Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
+      expr: Box::new(substitute_variables(e, bindings)),
+      rules: Box::new(substitute_variables(rules, bindings)),
+    },
+    Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(substitute_variables(e, bindings)),
+      rules: Box::new(substitute_variables(rules, bindings)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(substitute_variables(func, bindings)),
+      list: Box::new(substitute_variables(list, bindings)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(substitute_variables(func, bindings)),
+      list: Box::new(substitute_variables(list, bindings)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(substitute_variables(func, bindings)),
+      list: Box::new(substitute_variables(list, bindings)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(substitute_variables(func, bindings)),
+      arg: Box::new(substitute_variables(arg, bindings)),
+    },
+    Expr::Postfix { expr: e, func } => Expr::Postfix {
+      expr: Box::new(substitute_variables(e, bindings)),
+      func: Box::new(substitute_variables(func, bindings)),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(substitute_variables(e, bindings)),
+      index: Box::new(substitute_variables(index, bindings)),
+    },
+    Expr::Function { body } => Expr::Function {
+      body: Box::new(substitute_variables(body, bindings)),
+    },
+    Expr::NamedFunction { params, body } => {
+      // Filter out bindings that are shadowed by the function's own parameters
+      let filtered: Vec<(&str, &Expr)> = bindings
+        .iter()
+        .filter(|&&(var_name, _)| !params.contains(&var_name.to_string()))
+        .copied()
+        .collect();
+      if filtered.is_empty() {
+        expr.clone()
+      } else {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(substitute_variables(body, &filtered)),
+        }
+      }
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: default
+        .as_ref()
+        .map(|d| Box::new(substitute_variables(d, bindings))),
+    },
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => Expr::PatternTest {
+      name: name.clone(),
+      blank_type: *blank_type,
+      test: Box::new(substitute_variables(test, bindings)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_variables(func, bindings)),
+      args: args
+        .iter()
+        .map(|e| substitute_variables(e, bindings))
+        .collect(),
+    },
+    // Atoms that don't contain the variable
+    _ => expr.clone(),
+  }
+}
+
 // ─── 2D OutputForm rendering ───────────────────────────────────────────
 
 /// A rectangular block of text used for 2D layout.

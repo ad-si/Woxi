@@ -43,12 +43,13 @@ pub fn apply_func_to_two_args(
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {
-      let mut substituted = (**body).clone();
       let args_vec = [arg1, arg2];
-      for (param, arg) in params.iter().zip(args_vec.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(args_vec.iter())
+        .map(|(p, a)| (p.as_str(), *a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall { name, args } => {
@@ -108,11 +109,12 @@ pub fn apply_func_to_n_args(
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {
-      let mut substituted = (**body).clone();
-      for (param, arg) in params.iter().zip(args.iter()) {
-        substituted =
-          crate::syntax::substitute_variable(&substituted, param, arg);
-      }
+      let bindings: Vec<(&str, &Expr)> = params
+        .iter()
+        .zip(args.iter())
+        .map(|(p, a)| (p.as_str(), a))
+        .collect();
+      let substituted = crate::syntax::substitute_variables(body, &bindings);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall { name, args: fa } => {
