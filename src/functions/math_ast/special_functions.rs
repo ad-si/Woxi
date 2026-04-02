@@ -3571,11 +3571,10 @@ fn contains_float(expr: &Expr) -> bool {
 }
 
 /// Zeta[s] - Riemann zeta function
+/// Zeta[s, a] - Hurwitz zeta function
 pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "Zeta expects exactly 1 argument".into(),
-    ));
+  if args.len() == 2 {
+    return hurwitz_zeta_ast(&args[0], &args[1], args);
   }
 
   match &args[0] {
@@ -3638,6 +3637,368 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Zeta".to_string(),
         args: args.to_vec(),
       })
+    }
+  }
+}
+
+/// Hurwitz zeta function Zeta[s, a]
+fn hurwitz_zeta_ast(
+  s_expr: &Expr,
+  a_expr: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Zeta[s, 1] = Zeta[s]
+  if matches!(a_expr, Expr::Integer(1)) {
+    return zeta_ast(&[s_expr.clone()]);
+  }
+
+  // Zeta[1, a] = ComplexInfinity (pole)
+  if matches!(s_expr, Expr::Integer(1)) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  // Zeta[s, 1/2] = (-1 + 2^s) * Zeta[s] for all s
+  if matches!(
+    a_expr,
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2
+        && matches!(&rargs[0], Expr::Integer(1))
+        && matches!(&rargs[1], Expr::Integer(2))
+  ) {
+    // (-1 + 2^s) * Zeta[s]
+    let two_pow_s = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(s_expr.clone()),
+    };
+    let factor = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(two_pow_s),
+    };
+    let zeta_s = Expr::FunctionCall {
+      name: "Zeta".to_string(),
+      args: vec![s_expr.clone()],
+    };
+    // Evaluate the product so integer cases simplify fully
+    let product = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(factor),
+      right: Box::new(zeta_s),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&product);
+  }
+
+  // Extract a as rational p/q if possible
+  let a_rational: Option<(i128, i128)> = match a_expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
+        Some((*p, *q))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  };
+
+  match s_expr {
+    Expr::Integer(s) => {
+      let s = *s;
+
+      // Zeta[0, a] = 1/2 - a
+      if s == 0 {
+        if let Some((p, q)) = a_rational {
+          // 1/2 - p/q = (q - 2p) / (2q)
+          if let Some(two_p) = 2_i128.checked_mul(p) {
+            let num = q - two_p;
+            let den = 2 * q;
+            return Ok(make_rational(num, den));
+          }
+        }
+        // Symbolic a: return unevaluated
+        return Ok(Expr::FunctionCall {
+          name: "Zeta".to_string(),
+          args: args.to_vec(),
+        });
+      }
+
+      // Zeta[-n, a] for non-negative integer n: uses Bernoulli polynomials
+      // Zeta[-n, a] = -B_{n+1}(a) / (n+1)
+      if s < 0 {
+        if let Some((p, q)) = a_rational {
+          let abs_n = (-s) as usize;
+          if let Some((num, den)) =
+            bernoulli_polynomial_rational(abs_n + 1, p, q)
+          {
+            // -B_{n+1}(a) / (n+1)
+            let result_num = -num;
+            let result_den = den.checked_mul((abs_n + 1) as i128);
+            if let Some(result_den) = result_den {
+              return Ok(make_rational(result_num, result_den));
+            }
+          }
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Zeta".to_string(),
+          args: args.to_vec(),
+        });
+      }
+
+      // Positive integer s >= 2 with positive integer a:
+      // Zeta[s, n] = Zeta[s] - sum_{k=1}^{n-1} 1/k^s
+      if s >= 2
+        && let Some((a_int, 1)) = a_rational
+        && a_int >= 2
+      {
+        let zeta_s = zeta_ast(&[Expr::Integer(s)])?;
+        // Compute sum_{k=1}^{a-1} 1/k^s as exact rational
+        let mut sum_num: i128 = 0;
+        let mut sum_den: i128 = 1;
+        for k in 1..a_int {
+          // Add 1/k^s to sum
+          let k_pow = k.checked_pow(s as u32);
+          if let Some(k_pow) = k_pow {
+            // sum_num/sum_den + 1/k_pow
+            let new_num = sum_num
+              .checked_mul(k_pow)
+              .and_then(|v| v.checked_add(sum_den));
+            let new_den = sum_den.checked_mul(k_pow);
+            if let (Some(new_num), Some(new_den)) = (new_num, new_den) {
+              let g = gcd(new_num.abs(), new_den.abs());
+              sum_num = new_num / g;
+              sum_den = new_den / g;
+            } else {
+              return Ok(Expr::FunctionCall {
+                name: "Zeta".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Zeta".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        let sum_rational = make_rational(sum_num, sum_den);
+        return Ok(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(sum_rational),
+          }),
+          right: Box::new(zeta_s),
+        });
+      }
+
+      // If a is a float, evaluate numerically
+      if let Some(a_f) = expr_to_f64(a_expr)
+        && contains_float(a_expr)
+      {
+        return Ok(Expr::Real(hurwitz_zeta_numeric(s as f64, a_f)));
+      }
+
+      // Return unevaluated
+      Ok(Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    Expr::Real(s_f) => {
+      // Numeric evaluation
+      let s = *s_f;
+      match a_expr {
+        Expr::Real(a) => {
+          let result = hurwitz_zeta_numeric(s, *a);
+          Ok(Expr::Real(result))
+        }
+        Expr::Integer(a) => {
+          let result = hurwitz_zeta_numeric(s, *a as f64);
+          Ok(Expr::Real(result))
+        }
+        Expr::FunctionCall { name, args: rargs }
+          if name == "Rational" && rargs.len() == 2 =>
+        {
+          if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
+            let a = *p as f64 / *q as f64;
+            let result = hurwitz_zeta_numeric(s, a);
+            return Ok(Expr::Real(result));
+          }
+          Ok(Expr::FunctionCall {
+            name: "Zeta".to_string(),
+            args: args.to_vec(),
+          })
+        }
+        _ => {
+          if contains_float(a_expr)
+            && let Some((re, _im)) =
+              crate::functions::math_ast::try_extract_complex_float(a_expr)
+          {
+            let result = hurwitz_zeta_numeric(s, re);
+            return Ok(Expr::Real(result));
+          }
+          Ok(Expr::FunctionCall {
+            name: "Zeta".to_string(),
+            args: args.to_vec(),
+          })
+        }
+      }
+    }
+    _ => {
+      // Check for numeric float arguments
+      if (contains_float(s_expr) || contains_float(a_expr))
+        && let Some(s_f) = expr_to_f64(s_expr)
+        && let Some(a_f) = expr_to_f64(a_expr)
+      {
+        let result = hurwitz_zeta_numeric(s_f, a_f);
+        return Ok(Expr::Real(result));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Evaluate Bernoulli polynomial B_n(x) at rational x = p/q.
+/// Returns the result as (numerator, denominator) or None on overflow.
+fn bernoulli_polynomial_rational(
+  n: usize,
+  p: i128,
+  q: i128,
+) -> Option<(i128, i128)> {
+  // B_n(x) = sum_{k=0}^{n} C(n,k) * B_k * x^{n-k}
+  let mut sum_num: i128 = 0;
+  let mut sum_den: i128 = 1;
+
+  let mut binom: i128 = 1; // C(n, 0) = 1
+  for k in 0..=n {
+    if k > 0 {
+      binom = binom.checked_mul((n + 1 - k) as i128)? / (k as i128);
+    }
+    let (bk_num, bk_den) = bernoulli_number(k)?;
+    if bk_num == 0 {
+      continue;
+    }
+
+    // x^{n-k} = p^{n-k} / q^{n-k}
+    let exp = n - k;
+    let x_num = p.checked_pow(exp as u32)?;
+    let x_den = q.checked_pow(exp as u32)?;
+
+    // term = binom * B_k * x^{n-k}
+    let term_num = binom.checked_mul(bk_num)?.checked_mul(x_num)?;
+    let term_den = bk_den.checked_mul(x_den)?;
+
+    // sum += term
+    let new_num = sum_num
+      .checked_mul(term_den)?
+      .checked_add(term_num.checked_mul(sum_den)?)?;
+    let new_den = sum_den.checked_mul(term_den)?;
+    let g = gcd(new_num.abs(), new_den.abs());
+    sum_num = new_num / g;
+    sum_den = new_den / g;
+  }
+
+  // Normalize sign
+  if sum_den < 0 {
+    sum_num = -sum_num;
+    sum_den = -sum_den;
+  }
+  Some((sum_num, sum_den))
+}
+
+/// Numeric evaluation of the Hurwitz zeta function ζ(s, a)
+/// using Euler-Maclaurin summation.
+fn hurwitz_zeta_numeric(s: f64, a: f64) -> f64 {
+  if (s - 1.0).abs() < 1e-15 {
+    return f64::INFINITY;
+  }
+
+  // For s < 0.5, use the series representation directly with more terms
+  // since the reflection formula is more complex for Hurwitz zeta.
+  // For a = 1, reduce to Riemann zeta
+  if (a - 1.0).abs() < 1e-15 {
+    return zeta_numeric(s);
+  }
+
+  // Euler-Maclaurin summation for Hurwitz zeta
+  // ζ(s, a) = sum_{k=0}^{N-1} (k+a)^{-s} + (N+a)^{1-s}/(s-1)
+  //           + (N+a)^{-s}/2 + Bernoulli corrections
+  let n: usize = 30;
+  let nf = n as f64;
+
+  let mut sum = 0.0;
+  for k in 0..n {
+    let term = k as f64 + a;
+    if term > 0.0 {
+      sum += term.powf(-s);
+    }
+  }
+
+  let na = nf + a;
+  // Integral correction
+  sum += na.powf(1.0 - s) / (s - 1.0);
+  // Endpoint correction
+  sum += 0.5 * na.powf(-s);
+
+  // Bernoulli corrections
+  let bof: [f64; 10] = [
+    1.0 / 12.0,
+    -1.0 / 720.0,
+    1.0 / 30240.0,
+    -1.0 / 1209600.0,
+    1.0 / 47900160.0,
+    -691.0 / 1307674368000.0,
+    7.0 / 523069747200.0,
+    -3617.0 / 10670622842880000.0,
+    43867.0 / 5109094217170944000.0,
+    -174611.0 / 802857662698291200000.0,
+  ];
+
+  for (p_idx, &coeff) in bof.iter().enumerate() {
+    let two_p = 2 * (p_idx + 1);
+    let mut rising = 1.0;
+    for j in 0..(two_p - 1) {
+      rising *= s + j as f64;
+    }
+    sum += coeff * rising * na.powf(-(s + (two_p - 1) as f64));
+  }
+
+  sum
+}
+
+/// Try to extract a float value from an expression
+fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Real(f) => Some(*f),
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(*p as f64 / *q as f64)
+      } else {
+        None
+      }
+    }
+    _ => {
+      if contains_float(expr) {
+        if let Some((re, _im)) =
+          crate::functions::math_ast::try_extract_complex_float(expr)
+        {
+          Some(re)
+        } else {
+          None
+        }
+      } else {
+        None
+      }
     }
   }
 }

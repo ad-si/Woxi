@@ -999,7 +999,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Write" => Some((2, usize::MAX)),
     "WriteString" => Some((2, usize::MAX)),
     "Wronskian" => Some((2, 2)),
-    "Zeta" => Some((1, 1)),
+    "Zeta" => Some((1, 2)),
     _ => None,
   }
 }

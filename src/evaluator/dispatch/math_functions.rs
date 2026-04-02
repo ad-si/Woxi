@@ -594,7 +594,7 @@ pub fn dispatch_math_functions(
     "EllipticNomeQ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_nome_q_ast(args));
     }
-    "Zeta" if args.len() == 1 => {
+    "Zeta" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::zeta_ast(args));
     }
     "DirichletEta" if args.len() == 1 => {
