@@ -2992,6 +2992,56 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // ConnectedGraphComponents[graph] — returns subgraphs for each connected component
+  if name == "ConnectedGraphComponents" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(_vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      // Get connected components as vertex lists by delegating to ConnectedComponents
+      let comp_result =
+        evaluate_function_call_ast_inner("ConnectedComponents", args)?;
+      if let Expr::List(comp_lists) = &comp_result {
+        let mut subgraphs = Vec::new();
+        for comp in comp_lists {
+          if let Expr::List(comp_verts) = comp {
+            let vert_set: std::collections::HashSet<String> =
+              comp_verts.iter().map(expr_to_string).collect();
+            // Collect edges where both endpoints are in this component
+            let sub_edges: Vec<Expr> = edges
+              .iter()
+              .filter(|e| {
+                if let Expr::FunctionCall { args: eargs, .. } = e
+                  && eargs.len() == 2
+                {
+                  let from = expr_to_string(&eargs[0]);
+                  let to = expr_to_string(&eargs[1]);
+                  vert_set.contains(&from) && vert_set.contains(&to)
+                } else {
+                  false
+                }
+              })
+              .cloned()
+              .collect();
+            subgraphs.push(Expr::FunctionCall {
+              name: "Graph".to_string(),
+              args: vec![Expr::List(comp_verts.clone()), Expr::List(sub_edges)],
+            });
+          }
+        }
+        return Ok(Expr::List(subgraphs));
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // WeaklyConnectedComponents[graph] — connected components ignoring edge direction
   if name == "WeaklyConnectedComponents"
     && args.len() == 1
