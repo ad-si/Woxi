@@ -4,6 +4,7 @@
 //! NDSolve solves initial-value problems numerically using RK4.
 
 use crate::InterpreterError;
+use crate::functions::math_ast::make_sqrt;
 use crate::syntax::{BinaryOperator, Expr};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
@@ -1361,21 +1362,12 @@ fn f64_to_nice_expr(f: f64) -> Expr {
         let d = denom as i128;
         // f = Sqrt[n/d]
         if d == 1 {
-          return Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(n)],
-          };
+          return make_sqrt(Expr::Integer(n));
         }
         return Expr::BinaryOp {
           op: BinaryOperator::Divide,
-          left: Box::new(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(n)],
-          }),
-          right: Box::new(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(d)],
-          }),
+          left: Box::new(make_sqrt(Expr::Integer(n))),
+          right: Box::new(make_sqrt(Expr::Integer(d))),
         };
       }
     }

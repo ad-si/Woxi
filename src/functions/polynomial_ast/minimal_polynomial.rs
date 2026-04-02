@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::functions::math_ast::{expr_to_f64, expr_to_i128};
+use crate::functions::math_ast::{expr_to_f64, expr_to_i128, is_sqrt};
 use crate::syntax::{BinaryOperator, Expr};
 
 /// MinimalPolynomial[α, x] - Computes the minimal polynomial of an algebraic number α
@@ -121,10 +121,11 @@ fn compute_minpoly_coeffs(
     Expr::FunctionCall { name, args } if name == "Plus" => handle_plus(args),
 
     // Sqrt[n] → Power[n, 1/2]
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+    expr if is_sqrt(expr).is_some() => {
+      let sqrt_arg = is_sqrt(expr).unwrap();
       let power_expr = Expr::BinaryOp {
         op: BinaryOperator::Power,
-        left: Box::new(args[0].clone()),
+        left: Box::new(sqrt_arg.clone()),
         right: Box::new(Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(1), Expr::Integer(2)],

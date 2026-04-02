@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::{is_sqrt, make_sqrt};
 
 pub fn dispatch_complex_and_special(
   name: &str,
@@ -219,10 +220,7 @@ pub fn dispatch_complex_and_special(
               let normalized = Expr::BinaryOp {
                 op: crate::syntax::BinaryOperator::Divide,
                 left: Box::new(args[0].clone()),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![sqrt_arg],
-                }),
+                right: Box::new(make_sqrt(sqrt_arg)),
               };
               let normalized = match evaluate_expr_to_expr(&normalized) {
                 Ok(v) => v,
@@ -1432,10 +1430,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       }
     }
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+    expr if is_sqrt(expr).is_some() => {
+      let sqrt_arg = is_sqrt(expr).unwrap();
       Expr::FunctionCall {
         name: "SqrtBox".to_string(),
-        args: vec![expr_to_box_form(&args[0])],
+        args: vec![expr_to_box_form(sqrt_arg)],
       }
     }
     Expr::FunctionCall { name, args }
@@ -2366,13 +2365,10 @@ fn compute_line_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       });
     }
-    let seg_length = Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: sq_terms,
-      }],
-    };
+    let seg_length = make_sqrt(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: sq_terms,
+    });
 
     length_terms.push(seg_length.clone());
 
@@ -2974,13 +2970,10 @@ fn compute_polyline_length(
         ],
       });
     }
-    segment_lengths.push(Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: sq_terms,
-      }],
-    });
+    segment_lengths.push(make_sqrt(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: sq_terms,
+    }));
   }
 
   if segment_lengths.len() == 1 {
@@ -3284,13 +3277,10 @@ fn compute_planar_angle(
       args: vec![a.clone(), Expr::Integer(2)],
     })
     .collect();
-  let mag1 = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: mag1_terms,
-    }],
-  };
+  let mag1 = make_sqrt(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: mag1_terms,
+  });
 
   let mag2_terms: Vec<Expr> = v2_comps
     .iter()
@@ -3299,13 +3289,10 @@ fn compute_planar_angle(
       args: vec![a.clone(), Expr::Integer(2)],
     })
     .collect();
-  let mag2 = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: mag2_terms,
-    }],
-  };
+  let mag2 = make_sqrt(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: mag2_terms,
+  });
 
   // ArcCos[dot / (mag1 * mag2)]
   let cos_angle = Expr::FunctionCall {
@@ -3426,10 +3413,7 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
 
 /// Helper: build Sqrt[expr]
 fn insphere_sqrt(e: Expr) -> Expr {
-  Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![e],
-  }
+  make_sqrt(e)
 }
 
 /// Helper: build a + b

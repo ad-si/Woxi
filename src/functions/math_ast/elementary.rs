@@ -26,9 +26,7 @@ fn is_known_non_negative(expr: &Expr) -> bool {
       true
     }
     // Sqrt[anything] is always non-negative (for real results)
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      true
-    }
+    expr if is_sqrt(expr).is_some() => true,
     _ => false,
   }
 }
@@ -86,10 +84,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(make_rational(num_sqrt, den_sqrt));
       }
       // Return Sqrt[num2/den2]
-      return Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![make_rational(num2, den2)],
-      });
+      return Ok(make_sqrt(make_rational(num2, den2)));
     }
   }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
@@ -187,10 +182,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // = (a + b*I) / Sqrt[|z|^2]
         // Build (a + b*I) * (1/Sqrt[|z|^2])
         let z_expr = build_complex_expr(rn, rd, in_, id);
-        let abs_expr = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![make_rational(abs2_n, abs2_d)],
-        };
+        let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(z_expr),
@@ -249,18 +241,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(outside as i128),
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::Integer(inside as i128)],
-            },
+            make_sqrt(Expr::Integer(inside as i128)),
           ],
         });
       }
       // Not a perfect square, return symbolic
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      })
+      Ok(make_sqrt(args[0].clone()))
     }
     // Sqrt[Rational[a, b]] — simplify by extracting perfect square factors
     Expr::FunctionCall { name, args: rargs }
@@ -293,10 +279,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         if d_in == 1 {
           // Result: (n_out / d_out) * Sqrt[n_in]
-          let sqrt_part = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(n_in as i128)],
-          };
+          let sqrt_part = make_sqrt(Expr::Integer(n_in as i128));
           if n_out == 1 && d_out == 1 {
             return Ok(sqrt_part);
           }
@@ -305,19 +288,13 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else if n_in == 1 {
           // Result: n_out / (d_out * Sqrt[d_in])
           let denom = if d_out == 1 {
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![Expr::Integer(d_in as i128)],
-            }
+            make_sqrt(Expr::Integer(d_in as i128))
           } else {
             Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
                 Expr::Integer(d_out as i128),
-                Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![Expr::Integer(d_in as i128)],
-                },
+                make_sqrt(Expr::Integer(d_in as i128)),
               ],
             }
           };
@@ -328,10 +305,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         } else {
           // General case: (n_out / d_out) * Sqrt[n_in / d_in]
-          let sqrt_part = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![make_rational(n_in as i128, d_in as i128)],
-          };
+          let sqrt_part = make_sqrt(make_rational(n_in as i128, d_in as i128));
           if n_out == 1 && d_out == 1 {
             return Ok(sqrt_part);
           }
@@ -339,10 +313,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return times_ast(&[coeff, sqrt_part]);
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      })
+      Ok(make_sqrt(args[0].clone()))
     }
     // Sqrt[-n] for negative integer → I * Sqrt[n]
     Expr::Integer(n) if *n < 0 => {
@@ -371,10 +342,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      })
+      Ok(make_sqrt(args[0].clone()))
     }
     // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors
     Expr::BinaryOp {
@@ -471,10 +439,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(result) = try_sqrt_gaussian(&args[0]) {
           return Ok(result);
         }
-        return Ok(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: args.to_vec(),
-        });
+        return Ok(make_sqrt(args[0].clone()));
       }
 
       // Build outside factors
@@ -504,10 +469,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           crate::functions::polynomial_ast::build_product(inside)
         };
-        let sqrt_part = Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![inside_expr],
-        };
+        let sqrt_part = make_sqrt(inside_expr);
         times_ast(&[outside_expr, sqrt_part])
       }
     }
@@ -521,20 +483,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = try_sqrt_gaussian(&args[0]) {
         return Ok(result);
       }
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      })
+      Ok(make_sqrt(args[0].clone()))
     }
     // Sqrt[a + b*I] for Gaussian integers — try to find exact Gaussian integer sqrt
     _ => {
       if let Some(result) = try_sqrt_gaussian(&args[0]) {
         return Ok(result);
       }
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: args.to_vec(),
-      })
+      Ok(make_sqrt(args[0].clone()))
     }
   }
 }
@@ -660,10 +616,7 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
     }
   };
 
-  let sqrt_part = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![new_sum],
-  };
+  let sqrt_part = make_sqrt(new_sum);
 
   if sqrt_factor == 1 {
     Some(sqrt_part)

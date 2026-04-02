@@ -111,12 +111,13 @@ fn refine_expr(
   match expr {
     // Sqrt[var^2] → var when var > 0
     // Sqrt[var^(2n)] → var^n when var > 0
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+    expr if crate::functions::is_sqrt(expr).is_some() => {
+      let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
       if let Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: base,
         right: exp,
-      } = &args[0]
+      } = sqrt_arg
         && let Expr::Integer(n) = exp.as_ref()
         && *n > 0
         && n % 2 == 0
@@ -138,11 +139,8 @@ fn refine_expr(
         }
       }
       // Recurse into the Sqrt argument
-      let refined_arg = refine_expr(&args[0], positive_vars, assumption);
-      Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![refined_arg],
-      }
+      let refined_arg = refine_expr(sqrt_arg, positive_vars, assumption);
+      crate::functions::make_sqrt(refined_arg)
     }
 
     // Abs[var] → var when var > 0

@@ -836,8 +836,9 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       }
       None
     }
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      if let Expr::Identifier(s) = &args[0] {
+    expr if is_sqrt(expr).is_some() => {
+      let sqrt_arg = is_sqrt(expr).unwrap();
+      if let Expr::Identifier(s) = sqrt_arg {
         return Some(vec![(s.clone(), 0.5)]);
       }
       None
@@ -1888,7 +1889,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     // (e.g. both BinaryOp::Power) and cross-variant (BinaryOp vs FunctionCall) cases.
     let is_power_like = |e: &Expr| -> bool {
       matches!(e, Expr::BinaryOp { op: crate::syntax::BinaryOperator::Power, .. })
-        || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2) || (name == "Sqrt" && args.len() == 1))
+        || matches!(e, Expr::FunctionCall { name, args } if (name == "Power" && args.len() == 2))
+        || is_sqrt(e).is_some()
     };
     if is_power_like(a) && is_power_like(b) {
       let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
@@ -1919,6 +1921,10 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         (&base_a, &base_b),
         (Expr::FunctionCall { name: na, args: aa }, Expr::FunctionCall { name: nb, args: ab })
           if na == "Plus" && nb == "Plus" && aa.len() == ab.len()
+      ) || matches!(
+        (&base_a, &base_b),
+        (Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus, .. },
+         Expr::BinaryOp { op: crate::syntax::BinaryOperator::Plus, .. })
       );
       if same_fn_base || same_arity_plus_base {
         let base_cmp = compare_expr_canonical(&base_a, &base_b);
@@ -2115,8 +2121,8 @@ pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
         (*left.clone(), *right.clone())
       }
     }
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
-      (args[0].clone(), make_rational(1, 2))
+    expr if is_sqrt(expr).is_some() => {
+      (is_sqrt(expr).unwrap().clone(), make_rational(1, 2))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       // Only recurse when outer exponent is integer
@@ -2957,13 +2963,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // Skip for |n|<=1 since 1/Sqrt[m] is already the canonical display form
   if let Expr::Integer(n) = a
     && n.unsigned_abs() > 1
-    && let Expr::FunctionCall {
-      name,
-      args: sqrt_args,
-    } = b
-    && name == "Sqrt"
-    && sqrt_args.len() == 1
-    && matches!(&sqrt_args[0], Expr::Integer(m) if *m > 0)
+    && is_sqrt(b).is_some()
+    && matches!(is_sqrt(b).unwrap(), Expr::Integer(m) if *m > 0)
   {
     let b_inv = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -2979,13 +2980,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // to avoid infinite loops (e.g. Sqrt[3]/4 would loop through Sqrt[3/16] → (1/4)*Sqrt[3] → ...)
   if let Expr::Integer(d) = b
     && *d != 0
-    && let Expr::FunctionCall {
-      name,
-      args: sqrt_args,
-    } = a
-    && name == "Sqrt"
-    && sqrt_args.len() == 1
-    && let Expr::Integer(n) = &sqrt_args[0]
+    && is_sqrt(a).is_some()
+    && let Expr::Integer(n) = is_sqrt(a).unwrap()
     && *n > 0
   {
     let denom = d * d;
@@ -3016,11 +3012,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     && name == "Times"
     && targs.len() == 2
   {
-    let has_sqrt_int = matches!(&targs[1],
-      Expr::FunctionCall { name: sname, args: sqrt_args }
-        if sname == "Sqrt" && sqrt_args.len() == 1
-        && matches!(&sqrt_args[0], Expr::Integer(n) if *n > 0)
-    );
+    let has_sqrt_int = is_sqrt(&targs[1]).is_some()
+      && matches!(is_sqrt(&targs[1]).unwrap(), Expr::Integer(n) if *n > 0);
     let has_numeric_coeff = matches!(&targs[0], Expr::Integer(_))
       || matches!(&targs[0], Expr::FunctionCall { name: rn, .. } if rn == "Rational");
     if has_sqrt_int && has_numeric_coeff {
@@ -3507,16 +3500,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Sqrt[x]^n → x^(n/2)
-  if let Expr::FunctionCall { name, args: fargs } = base
-    && name == "Sqrt"
-    && fargs.len() == 1
+  if is_sqrt(base).is_some()
     && let Expr::Integer(n) = exp
   {
+    let sqrt_arg = is_sqrt(base).unwrap();
     if *n == 2 {
-      return Ok(fargs[0].clone());
+      return Ok(sqrt_arg.clone());
     }
     // Sqrt[x]^n = x^(n/2)
-    return power_two(&fargs[0], &make_rational(*n, 2));
+    return power_two(sqrt_arg, &make_rational(*n, 2));
   }
 
   // (base^exp1)^exp2 -> base^(exp1*exp2) when outer exponent is integer
@@ -3898,7 +3890,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           op: crate::syntax::BinaryOperator::Power,
           ..
         }
-      ) && !matches!(&pos_result, Expr::FunctionCall { name, .. } if name == "Power" || name == "Sqrt")
+      ) && !matches!(&pos_result, Expr::FunctionCall { name, .. } if name == "Power")
+        && !is_sqrt(&pos_result).is_some()
       {
         return divide_ast(&[Expr::Integer(1), pos_result]);
       }
@@ -3959,12 +3952,6 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // (prevents infinite recursion: 6^(1/3) → 2^(1/3)*3^(1/3) → 6^(1/3) ...)
       if !has_outside && radical_factors.len() > 1 {
         // No simplification possible, keep original form
-        if *numer == 1 && *denom == 2 {
-          return Ok(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![base.clone()],
-          });
-        }
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,
           left: Box::new(base.clone()),
@@ -3982,10 +3969,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           // Integer power
           rad_parts.push(Expr::Integer(prime.pow(reduced_num as u32)));
         } else if reduced_num == 1 && reduced_den == 2 {
-          rad_parts.push(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(*prime)],
-          });
+          rad_parts.push(make_sqrt(Expr::Integer(*prime)));
         } else {
           rad_parts.push(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Power,
@@ -4008,13 +3992,6 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       return times_ast(&all_factors);
     }
 
-    // If exponent is 1/2, display as Sqrt[base]
-    if *numer == 1 && *denom == 2 && *b > 0 {
-      return Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![base.clone()],
-      });
-    }
     // Not exact — keep symbolic
     return Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -4041,6 +4018,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(bigint_to_expr(result));
   }
 
+  // x^(1/2) → delegate to sqrt_ast for symbolic simplification
+  // This must come before the numeric evaluation to preserve exact results.
+  if is_half(exp) {
+    return crate::functions::sqrt_ast(&[base.clone()]);
+  }
+
   // If either operand is Real, result is Real (even if whole number)
   let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
 
@@ -4054,25 +4037,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Ok(num_to_expr(result))
       }
     }
-    _ => {
-      // x^(1/2) → Sqrt[x]
-      if let Expr::FunctionCall { name, args: rargs } = exp
-        && name == "Rational"
-        && rargs.len() == 2
-        && matches!(&rargs[0], Expr::Integer(1))
-        && matches!(&rargs[1], Expr::Integer(2))
-      {
-        return Ok(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![base.clone()],
-        });
-      }
-      Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
-        left: Box::new(base.clone()),
-        right: Box::new(exp.clone()),
-      })
-    }
+    _ => Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(base.clone()),
+      right: Box::new(exp.clone()),
+    }),
   }
 }
 

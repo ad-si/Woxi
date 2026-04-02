@@ -5,18 +5,20 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
+use crate::functions::math_ast::{is_sqrt, make_sqrt};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
 fn strip_sqrt_square(expr: Expr) -> Expr {
   match &expr {
     // Sqrt[base^(2n)] → base^n
-    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+    e if is_sqrt(e).is_some() => {
+      let sqrt_arg = is_sqrt(e).unwrap();
       if let Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: base,
         right: exp,
-      } = &args[0]
+      } = sqrt_arg
         && let Expr::Integer(n) = exp.as_ref()
         && *n > 0
         && n % 2 == 0
@@ -880,17 +882,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               (nb, so, den)
             };
             let sqrt_part = if so == 1 {
-              Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: vec![Expr::Integer(sqrt_in)],
-              }
+              make_sqrt(Expr::Integer(sqrt_in))
             } else {
               multiply_exprs(
                 &Expr::Integer(so),
-                &Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![Expr::Integer(sqrt_in)],
-                },
+                &make_sqrt(Expr::Integer(sqrt_in)),
               )
             };
             let make_sol = |sign_minus: bool| -> Expr {
@@ -1008,17 +1004,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let sqrt_part = multiply_exprs(
               &Expr::Identifier("I".to_string()),
               &if so == 1 {
-                Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![Expr::Integer(sqrt_in)],
-                }
+                make_sqrt(Expr::Integer(sqrt_in))
               } else {
                 multiply_exprs(
                   &Expr::Integer(so),
-                  &Expr::FunctionCall {
-                    name: "Sqrt".to_string(),
-                    args: vec![Expr::Integer(sqrt_in)],
-                  },
+                  &make_sqrt(Expr::Integer(sqrt_in)),
                 )
               },
             );
@@ -1074,10 +1064,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let sqrt_numer = {
           let raw = crate::functions::sqrt_ast(&[numer_under_sqrt.clone()])
-            .unwrap_or_else(|_| Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![numer_under_sqrt],
-            });
+            .unwrap_or_else(|_| make_sqrt(numer_under_sqrt));
           let evaled =
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw);
           // In Solve context, Sqrt[expr^2] → expr because ± handles sign
@@ -1086,10 +1073,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let sqrt_denom =
           crate::functions::sqrt_ast(&[denom_under_sqrt.clone()])
-            .unwrap_or_else(|_| Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![denom_under_sqrt],
-            });
+            .unwrap_or_else(|_| make_sqrt(denom_under_sqrt));
         let sol_pos = if matches!(&sqrt_denom, Expr::Integer(1)) {
           sqrt_numer.clone()
         } else {
@@ -1108,10 +1092,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .unwrap_or(discriminant.clone());
       // Try to evaluate Sqrt of the discriminant symbolically
       let sqrt_disc_raw = crate::functions::sqrt_ast(&[disc_eval])
-        .unwrap_or_else(|_| Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![discriminant.clone()],
-        });
+        .unwrap_or_else(|_| make_sqrt(discriminant.clone()));
       let sqrt_disc = crate::evaluator::evaluate_expr_to_expr(&sqrt_disc_raw)
         .unwrap_or(sqrt_disc_raw);
       // Evaluate numerators first so complex arithmetic simplifies before dividing
@@ -1135,7 +1116,27 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(sqrt_disc),
       });
       let sol2 = eval_expr(solve_divide(&num2, &two_a));
-      Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]))
+      // Wolfram convention: negative root first. When the leading coefficient
+      // is negative, dividing by 2a flips the root order, so swap.
+      let leading_negative = match a {
+        Expr::Integer(n) => *n < 0,
+        Expr::FunctionCall { name, args: ta }
+          if name == "Times" && !ta.is_empty() =>
+        {
+          matches!(&ta[0], Expr::Integer(n) if *n < 0)
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          ..
+        } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
+        _ => false,
+      };
+      if leading_negative {
+        Ok(Expr::List(vec![make_rule(sol2), make_rule(sol1)]))
+      } else {
+        Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]))
+      }
     }
     _ => {
       // Higher degree: try Factor-based solving
@@ -1392,13 +1393,11 @@ fn try_solve_factoring_powers(
     let mut result = Vec::new();
     for f in &factors {
       // Handle Sqrt[expr] as expr^(1/2)
-      if let Expr::FunctionCall { name, args } = f
-        && name == "Sqrt"
-        && args.len() == 1
-        && !is_constant_wrt(&args[0], var)
+      if let Some(sqrt_arg) = is_sqrt(f)
+        && !is_constant_wrt(sqrt_arg, var)
       {
         result.push(PowerFactor {
-          base_str: expr_to_string(&args[0]),
+          base_str: expr_to_string(sqrt_arg),
           exp_num: 1,
           exp_den: 2,
         });
@@ -1496,11 +1495,8 @@ fn try_solve_factoring_powers(
 
       // Helper: get the base string from a factor (handles Sqrt and Power)
       let factor_base_str = |f: &Expr| -> Option<String> {
-        if let Expr::FunctionCall { name, args } = f
-          && name == "Sqrt"
-          && args.len() == 1
-        {
-          return Some(expr_to_string(&args[0]));
+        if let Some(sqrt_arg) = is_sqrt(f) {
+          return Some(expr_to_string(sqrt_arg));
         }
         let (base, _) = extract_base_and_exp(f);
         if expr_to_string(&base) != expr_to_string(f)
@@ -1539,17 +1535,12 @@ fn try_solve_factoring_powers(
               let new_den = new_den / g;
 
               // Get the base expression
-              let base_expr = if let Expr::FunctionCall { name, args } =
-                &remaining_factors[idx]
-              {
-                if name == "Sqrt" && args.len() == 1 {
-                  args[0].clone()
+              let base_expr =
+                if let Some(sqrt_arg) = is_sqrt(&remaining_factors[idx]) {
+                  sqrt_arg.clone()
                 } else {
                   extract_base_and_exp(&remaining_factors[idx]).0
-                }
-              } else {
-                extract_base_and_exp(&remaining_factors[idx]).0
-              };
+                };
 
               if new_num == 0 {
                 // Remove this factor entirely
@@ -2455,17 +2446,11 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               (nb, so, den)
             };
             let sqrt_part = if so == 1 {
-              Expr::FunctionCall {
-                name: "Sqrt".to_string(),
-                args: vec![Expr::Integer(sqrt_in)],
-              }
+              make_sqrt(Expr::Integer(sqrt_in))
             } else {
               multiply_exprs(
                 &Expr::Integer(so),
-                &Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![Expr::Integer(sqrt_in)],
-                },
+                &make_sqrt(Expr::Integer(sqrt_in)),
               )
             };
             for sign_minus in [true, false] {

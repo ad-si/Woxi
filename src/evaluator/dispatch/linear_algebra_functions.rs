@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::math_ast::make_sqrt;
 
 pub fn dispatch_linear_algebra_functions(
   name: &str,
@@ -1280,10 +1281,7 @@ pub fn dispatch_linear_algebra_functions(
           // n is a power of 2: Sylvester construction, normalized by 1/Sqrt[n]
           let mat = hadamard_sylvester(n);
           // Evaluate 1/Sqrt[n] first
-          let sqrt_n_expr = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(n as i128)],
-          };
+          let sqrt_n_expr = make_sqrt(Expr::Integer(n as i128));
           let sqrt_n =
             evaluate_expr_to_expr(&sqrt_n_expr).unwrap_or(sqrt_n_expr);
           // Compute 1/Sqrt[n] once (evaluated)

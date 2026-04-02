@@ -1226,10 +1226,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if root * root == sum_sq {
             return Ok(Expr::Integer(root));
           }
-          return Ok(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(sum_sq)],
-          });
+          return Ok(make_sqrt(Expr::Integer(sum_sq)));
         }
         Ok(num_to_expr(result))
       } else {
@@ -1270,10 +1267,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               args: abs_sq_items,
             }
           };
-          Ok(Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![sum],
-          })
+          Ok(make_sqrt(sum))
         } else {
           Ok(Expr::FunctionCall {
             name: "Norm".to_string(),
@@ -1341,10 +1335,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: squared_terms,
               }
             };
-            let norm_expr = Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![sum_of_squares],
-            };
+            let norm_expr = make_sqrt(sum_of_squares);
             let result: Vec<Expr> = items
               .iter()
               .map(|e| Expr::BinaryOp {
@@ -1385,10 +1376,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::BinaryOp {
                 op: crate::syntax::BinaryOperator::Divide,
                 left: Box::new(Expr::Integer(*x)),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![Expr::Integer(sum_sq)],
-                }),
+                right: Box::new(make_sqrt(Expr::Integer(sum_sq))),
               }
             }
           })
@@ -1606,11 +1594,10 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         Some((args[0].clone(), args[1].clone()))
       }
       // Sqrt[x] = Power[x, 1/2]
-      Expr::FunctionCall { name, args }
-        if name == "Sqrt" && args.len() == 1 =>
-      {
+      expr if is_sqrt(expr).is_some() => {
+        let sqrt_arg = is_sqrt(expr).unwrap();
         Some((
-          args[0].clone(),
+          sqrt_arg.clone(),
           Expr::FunctionCall {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(1), Expr::Integer(2)],

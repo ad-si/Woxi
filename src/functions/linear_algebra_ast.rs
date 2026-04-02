@@ -4,7 +4,7 @@
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::math_ast::{make_sqrt, try_eval_to_f64};
 use crate::syntax::Expr;
 
 /// Transpose a matrix (Vec<Vec<Expr>>)
@@ -1226,10 +1226,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
   let reduced_b = neg_b / common;
   let reduced_outer = outer as i128 / common;
 
-  let sqrt_expr = Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![Expr::Integer(inner as i128)],
-  };
+  let sqrt_expr = make_sqrt(Expr::Integer(inner as i128));
 
   let reduced_sqrt = if reduced_outer == 1 {
     sqrt_expr.clone()
@@ -1679,10 +1676,7 @@ fn eigenvectors_2x2_symbolic(int_matrix: &[Vec<i128>]) -> Vec<Vec<Expr>> {
       let ro = (signed_outer / g).abs();
       let rden = denom / g;
 
-      let sqrt_expr = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(inner as i128)],
-      };
+      let sqrt_expr = make_sqrt(Expr::Integer(inner as i128));
 
       let sqrt_term = if ro == 1 {
         sqrt_expr
@@ -3810,10 +3804,7 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..n.min(m) {
     // Compute norm of u[i]
     let norm_sq = eval_dot_product(&u[i], &u[i])?;
-    let norm = eval_expr(&Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![norm_sq.clone()],
-    })?;
+    let norm = eval_expr(&make_sqrt(norm_sq.clone()))?;
 
     // R[i][i] = norm
     r_entries[i][i] = norm.clone();
@@ -3983,10 +3974,7 @@ pub fn principal_components_ast(
     let norm = if matches!(&norm_sq, Expr::Integer(1)) {
       Expr::Integer(1)
     } else {
-      eval_expr(&Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![norm_sq],
-      })?
+      eval_expr(&make_sqrt(norm_sq))?
     };
     let mut normalized: Vec<Expr> = vec
       .iter()

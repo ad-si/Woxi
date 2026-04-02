@@ -84,25 +84,10 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head: "List".to_string(),
       children: items.clone(),
     },
-    Expr::FunctionCall { name, args } => {
-      // Sqrt[x] → Power[x, Rational[1, 2]] in FullForm
-      if name == "Sqrt" && args.len() == 1 {
-        return ExprForm::Composite {
-          head: "Power".to_string(),
-          children: vec![
-            args[0].clone(),
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(1), Expr::Integer(2)],
-            },
-          ],
-        };
-      }
-      ExprForm::Composite {
-        head: name.clone(),
-        children: args.clone(),
-      }
-    }
+    Expr::FunctionCall { name, args } => ExprForm::Composite {
+      head: name.clone(),
+      children: args.clone(),
+    },
     Expr::Rule {
       pattern,
       replacement,

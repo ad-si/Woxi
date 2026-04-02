@@ -1812,6 +1812,10 @@ fn mathml_inner(expr: &Expr, depth: usize) -> String {
         format!("{}<mfrac>\n{}\n{}\n{}</mfrac>", indent, l, r, indent)
       }
       BinaryOperator::Power => {
+        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
+          let b = mathml_inner(sqrt_arg, depth + 1);
+          return format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent);
+        }
         let b = mathml_inner(left, depth + 1);
         let e = mathml_inner(right, depth + 1);
         format!("{}<msup>\n{}\n{}\n{}</msup>", indent, b, e, indent)
@@ -2147,6 +2151,9 @@ fn expr_to_boxes(expr: &Expr) -> String {
         )
       }
       BinaryOperator::Power => {
+        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
+          return format!("SqrtBox[{}]", expr_to_boxes(sqrt_arg));
+        }
         format!(
           "SuperscriptBox[{}, {}]",
           expr_to_boxes(left),
@@ -4082,6 +4089,12 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
       _ => format!("{}({})", name, fortran_args(args)),
     },
     Expr::BinaryOp { op, left, right } => {
+      // Power[x, Rational[1, 2]] → Sqrt(x) in Fortran
+      if matches!(op, BinaryOperator::Power) {
+        if let Some(sqrt_arg) = crate::functions::is_sqrt(expr) {
+          return format!("Sqrt({})", expr_to_fortran(sqrt_arg));
+        }
+      }
       let l = expr_to_fortran(left);
       let r = expr_to_fortran(right);
       match op {
