@@ -2236,6 +2236,79 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
+  // EulerianGraphQ[graph] — True if graph has an Eulerian circuit
+  if name == "EulerianGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      if n == 0 || edges.is_empty() {
+        return Ok(Expr::Identifier("True".to_string()));
+      }
+
+      let is_directed = edges.iter().any(|e| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+      });
+
+      if is_directed {
+        // Directed: connected + every vertex has equal in-degree and out-degree
+        let vertex_index: std::collections::HashMap<String, usize> = vertices
+          .iter()
+          .enumerate()
+          .map(|(i, v)| (expr_to_string(v), i))
+          .collect();
+        let mut in_deg = vec![0usize; n];
+        let mut out_deg = vec![0usize; n];
+        let mut adj = vec![vec![]; n];
+        for edge in edges {
+          if let Expr::FunctionCall { args: eargs, .. } = edge
+            && eargs.len() == 2
+          {
+            let from_str = expr_to_string(&eargs[0]);
+            let to_str = expr_to_string(&eargs[1]);
+            if let (Some(&fi), Some(&ti)) =
+              (vertex_index.get(&from_str), vertex_index.get(&to_str))
+            {
+              out_deg[fi] += 1;
+              in_deg[ti] += 1;
+              adj[fi].push(ti);
+              adj[ti].push(fi);
+            }
+          }
+        }
+        let balanced = (0..n).all(|i| in_deg[i] == out_deg[i]);
+        let connected = is_connected(&adj, n);
+        return Ok(Expr::Identifier(
+          if balanced && connected {
+            "True"
+          } else {
+            "False"
+          }
+          .to_string(),
+        ));
+      } else {
+        // Undirected: connected + all vertices have even degree
+        let adj = build_undirected_adj(vertices, edges);
+        let all_even = adj.iter().all(|neighbors| neighbors.len() % 2 == 0);
+        let connected = is_connected(&adj, n);
+        return Ok(Expr::Identifier(
+          if all_even && connected {
+            "True"
+          } else {
+            "False"
+          }
+          .to_string(),
+        ));
+      }
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
   // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
   if (name == "GraphDiameter"
     || name == "VertexEccentricity"

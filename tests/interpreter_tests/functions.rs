@@ -11492,6 +11492,57 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("AcyclicGraphQ[StarGraph[4]]").unwrap(), "True");
   }
 
+  // EulerianGraphQ
+  #[test]
+  fn eulerian_graph_q_cycle() {
+    // A cycle (all vertices have degree 2) is Eulerian
+    assert_eq!(
+      interpret("EulerianGraphQ[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[4, 1]}]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn eulerian_graph_q_complete_odd() {
+    // CompleteGraph[3] = K3 is a triangle, all degrees 2, Eulerian
+    assert_eq!(
+      interpret("EulerianGraphQ[CompleteGraph[3]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn eulerian_graph_q_path_false() {
+    // A path graph has vertices of degree 1 at endpoints, not Eulerian
+    assert_eq!(
+      interpret("EulerianGraphQ[PathGraph[{1, 2, 3}]]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn eulerian_graph_q_star_false() {
+    // Star graph: center has degree n-1, leaves have degree 1
+    assert_eq!(interpret("EulerianGraphQ[StarGraph[4]]").unwrap(), "False");
+  }
+  #[test]
+  fn eulerian_graph_q_non_graph() {
+    assert_eq!(interpret("EulerianGraphQ[42]").unwrap(), "False");
+  }
+  #[test]
+  fn eulerian_graph_q_directed() {
+    // Directed cycle: each vertex has in-degree 1, out-degree 1
+    assert_eq!(
+      interpret("EulerianGraphQ[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn eulerian_graph_q_complete_even_false() {
+    // CompleteGraph[4] = K4: all vertices have degree 3 (odd), not Eulerian
+    assert_eq!(
+      interpret("EulerianGraphQ[CompleteGraph[4]]").unwrap(),
+      "False"
+    );
+  }
+
   // GraphDiameter
   #[test]
   fn graph_diameter_path() {
