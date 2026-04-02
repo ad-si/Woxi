@@ -825,7 +825,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         "Implies" if args.len() == 2 => {
-          // Implies[a, b] → Or[b, Not[a]] (Wolfram puts b first)
+          // Implies[a, b] → Or[b, Not[a]]
           let a = eliminate_connectives(&args[0]);
           let b = eliminate_connectives(&args[1]);
           Expr::FunctionCall {
@@ -1171,6 +1171,281 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
+}
+
+/// Convert an expression to conjunctive normal form (CNF).
+/// Steps: eliminate compound connectives → push Not inward → distribute Or over And → simplify.
+fn to_cnf(expr: &Expr) -> Expr {
+  let eliminated = eliminate_connectives(expr);
+  let negated = push_not_inward(&eliminated);
+  let cnf = distribute_or_over_and(&negated);
+  simplify_cnf(&cnf)
+}
+
+/// Remove tautological clauses from CNF (clauses containing x and Not[x]).
+fn simplify_cnf(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "And" => {
+      let simplified: Vec<Expr> = args
+        .iter()
+        .map(simplify_cnf)
+        .filter(|clause| !is_tautological_clause(clause))
+        .collect();
+      if simplified.is_empty() {
+        Expr::Identifier("True".to_string())
+      } else if simplified.len() == 1 {
+        simplified.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: simplified,
+        }
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Check if an Or clause is a tautology (contains both x and Not[x]).
+fn is_tautological_clause(clause: &Expr) -> bool {
+  let literals = match clause {
+    Expr::FunctionCall { name, args } if name == "Or" => args.clone(),
+    _ => return false,
+  };
+
+  for lit in &literals {
+    // Check if the negation of this literal also appears
+    match lit {
+      Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+        // This is Not[x] — check if x appears
+        let inner = &args[0];
+        for other in &literals {
+          if expr_eq(other, inner) {
+            return true;
+          }
+        }
+      }
+      _ => {
+        // This is x — check if Not[x] appears
+        for other in &literals {
+          if let Expr::FunctionCall { name, args } = other
+            && name == "Not"
+            && args.len() == 1
+            && expr_eq(&args[0], lit)
+          {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  false
+}
+
+/// Simple structural equality check for expressions
+fn expr_eq(a: &Expr, b: &Expr) -> bool {
+  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+}
+
+/// Distribute Or over And to achieve CNF (AND of ORs).
+/// This is the dual of distribute_and_over_or.
+fn distribute_or_over_and(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      // First recursively convert all sub-expressions
+      let sub: Vec<Expr> = args.iter().map(distribute_or_over_and).collect();
+
+      // Cross-product: distribute Or over And
+      let mut or_groups: Vec<Vec<Expr>> = vec![vec![]];
+
+      for term in &sub {
+        match term {
+          Expr::FunctionCall {
+            name: tn,
+            args: targs,
+          } if tn == "And" => {
+            let mut new_groups = Vec::new();
+            for existing in &or_groups {
+              for alt in targs {
+                let alt_literals = match alt {
+                  Expr::FunctionCall {
+                    name: on,
+                    args: oargs,
+                  } if on == "Or" => oargs.clone(),
+                  _ => vec![alt.clone()],
+                };
+                let mut group = existing.clone();
+                group.extend(alt_literals);
+                new_groups.push(group);
+              }
+            }
+            or_groups = new_groups;
+          }
+          Expr::FunctionCall {
+            name: on,
+            args: oargs,
+          } if on == "Or" => {
+            for group in &mut or_groups {
+              group.extend(oargs.clone());
+            }
+          }
+          _ => {
+            for group in &mut or_groups {
+              group.push(term.clone());
+            }
+          }
+        }
+      }
+
+      // Build result: And of Ors
+      let and_terms: Vec<Expr> = or_groups
+        .into_iter()
+        .map(|group| {
+          if group.len() == 1 {
+            group.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: group,
+            }
+          }
+        })
+        .collect();
+
+      if and_terms.len() == 1 {
+        and_terms.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: and_terms,
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      let mut result = Vec::new();
+      for arg in args {
+        let mut converted = distribute_or_over_and(arg);
+        let is_and = matches!(&converted, Expr::FunctionCall { name, .. } if name == "And");
+        if is_and {
+          if let Expr::FunctionCall {
+            args: ref mut aargs,
+            ..
+          } = converted
+          {
+            result.append(aargs);
+          }
+        } else {
+          result.push(converted);
+        }
+      }
+      if result.len() == 1 {
+        result.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: result,
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> =
+        args.iter().map(distribute_or_over_and).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+// ─── BooleanConvert ────────────────────────────────────────────────
+
+/// BooleanConvert[expr] or BooleanConvert[expr, form]
+/// Convert boolean expressions to different normal forms.
+/// Supported forms: "DNF", "CNF", or default (eliminate compound connectives).
+pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BooleanConvert expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let expr = &args[0];
+  // Helper: sort literals within And/Or clauses for canonical output
+  // BooleanConvert puts negated variables before positive ones
+  fn sort_boolean_expr(expr: &Expr) -> Expr {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
+        let mut sorted_args: Vec<Expr> =
+          args.iter().map(sort_boolean_expr).collect();
+        sorted_args.sort_by(|a, b| {
+          let key = |e: &Expr| -> (u8, String) {
+            match e {
+              Expr::FunctionCall { name, args }
+                if name == "Not" && args.len() == 1 =>
+              {
+                (0, crate::syntax::expr_to_string(&args[0]))
+              }
+              Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Not,
+                operand,
+              } => (0, crate::syntax::expr_to_string(operand)),
+              _ => (1, crate::syntax::expr_to_string(e)),
+            }
+          };
+          key(a).cmp(&key(b))
+        });
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: sorted_args,
+        }
+      }
+      _ => expr.clone(),
+    }
+  }
+
+  let form = if args.len() == 2 {
+    match &args[1] {
+      Expr::String(s) => s.as_str().to_string(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "BooleanConvert".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    "DNF".to_string()
+  };
+
+  let result = match form.as_str() {
+    "DNF" => {
+      let dnf = to_dnf(expr);
+      sort_boolean_expr(&normalize_not(&dnf))
+    }
+    "CNF" => {
+      let cnf = to_cnf(expr);
+      sort_boolean_expr(&normalize_not(&cnf))
+    }
+    "OR" => {
+      let eliminated = eliminate_connectives(expr);
+      let negated = push_not_inward(&eliminated);
+      sort_boolean_expr(&normalize_not(&negated))
+    }
+    "AND" => {
+      let cnf = to_cnf(expr);
+      sort_boolean_expr(&normalize_not(&cnf))
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BooleanConvert".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  Ok(result)
 }
 
 /// Extract free boolean variables (identifiers) from a boolean expression.

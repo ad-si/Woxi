@@ -8108,9 +8108,46 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn coefficient_rules() {
+    // Single variable, single term
+    assert_eq!(interpret("CoefficientRules[x, x]").unwrap(), "{{1} -> 1}");
+    // Single variable polynomial
     assert_eq!(
-      interpret("CoefficientRules[x, y]").unwrap(),
-      "CoefficientRules[x, y]"
+      interpret("CoefficientRules[x^2 + 3*x + 5, x]").unwrap(),
+      "{{2} -> 1, {1} -> 3, {0} -> 5}"
+    );
+    // Symbolic coefficients
+    assert_eq!(
+      interpret("CoefficientRules[a*x^2 + b*x + c, x]").unwrap(),
+      "{{2} -> a, {1} -> b, {0} -> c}"
+    );
+    // Multivariate
+    assert_eq!(
+      interpret("CoefficientRules[(x + y)^3, {x, y}]").unwrap(),
+      "{{3, 0} -> 1, {2, 1} -> 3, {1, 2} -> 3, {0, 3} -> 1}"
+    );
+    // Constant polynomial
+    assert_eq!(interpret("CoefficientRules[5, x]").unwrap(), "{{0} -> 5}");
+    // Zero polynomial
+    assert_eq!(interpret("CoefficientRules[0, x]").unwrap(), "{}");
+    // Variable list form, single variable
+    assert_eq!(
+      interpret("CoefficientRules[x^2 + 3*x + 5, {x}]").unwrap(),
+      "{{2} -> 1, {1} -> 3, {0} -> 5}"
+    );
+    // Mixed multivariate
+    assert_eq!(
+      interpret("CoefficientRules[x^2 + y^2 + 1, {x, y}]").unwrap(),
+      "{{2, 0} -> 1, {0, 2} -> 1, {0, 0} -> 1}"
+    );
+    // Multivariate with symbolic coefficients
+    assert_eq!(
+      interpret("CoefficientRules[a*x^2*y + b*x + c*y^3, {x, y}]").unwrap(),
+      "{{2, 1} -> a, {1, 0} -> b, {0, 3} -> c}"
+    );
+    // Non-variable second arg returns unevaluated
+    assert_eq!(
+      interpret("CoefficientRules[x, 5]").unwrap(),
+      "CoefficientRules[x, 5]"
     );
   }
   #[test]
@@ -8153,7 +8190,32 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn boolean_convert() {
+    // Simple pass-through
     assert_eq!(interpret("BooleanConvert[x]").unwrap(), "x");
+    assert_eq!(interpret("BooleanConvert[a || b]").unwrap(), "a || b");
+    assert_eq!(interpret("BooleanConvert[a && b]").unwrap(), "a && b");
+    // Default (DNF): eliminate compound connectives
+    assert_eq!(
+      interpret("BooleanConvert[Implies[a, b]]").unwrap(),
+      " !a || b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nand[a, b]]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[Nor[a, b]]").unwrap(),
+      " !a &&  !b"
+    );
+    // CNF form
+    assert_eq!(
+      interpret("BooleanConvert[Implies[a, b], \"CNF\"]").unwrap(),
+      " !a || b"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[a && b, \"CNF\"]").unwrap(),
+      "a && b"
+    );
   }
   #[test]
   fn select_components() {
@@ -9481,6 +9543,38 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn string_replace_part() {
+    // Basic single range replacement
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdefghijk\", \"XY\", {2, 5}]").unwrap(),
+      "aXYfghijk"
+    );
+    // Replace with empty string (deletion)
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdef\", \"\", {3, 4}]").unwrap(),
+      "abef"
+    );
+    // Multiple ranges with same replacement
+    assert_eq!(
+      interpret(
+        "StringReplacePart[\"abcdefghijk\", \"XY\", {{1, 1}, {3, 5}, {-3, -1}}]"
+      )
+      .unwrap(),
+      "XYbXYfghXY"
+    );
+    // Different replacements for each range
+    assert_eq!(
+      interpret(
+        "StringReplacePart[\"abcdef\", {\"X\", \"Y\"}, {{1, 2}, {5, 6}}]"
+      )
+      .unwrap(),
+      "XcdY"
+    );
+    // Negative indices
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdef\", \"XY\", {-3, -1}]").unwrap(),
+      "abcXY"
+    );
+    // Non-string first arg returns unevaluated
     assert_eq!(
       interpret("StringReplacePart[x, y, z]").unwrap(),
       "StringReplacePart[x, y, z]"
@@ -9727,7 +9821,28 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn inverse_erf() {
+    // InverseErf[0] = 0
+    assert_eq!(interpret("InverseErf[0]").unwrap(), "0");
+    // InverseErf[1] = Infinity
+    assert_eq!(interpret("InverseErf[1]").unwrap(), "Infinity");
+    // InverseErf[-1] = -Infinity
+    assert_eq!(interpret("InverseErf[-1]").unwrap(), "-Infinity");
+    // Symbolic — returns unevaluated (Wolfram does not simplify symbolically)
     assert_eq!(interpret("InverseErf[x]").unwrap(), "InverseErf[x]");
+    assert_eq!(interpret("InverseErf[-x]").unwrap(), "InverseErf[-x]");
+    // Out of range returns unevaluated
+    assert_eq!(interpret("InverseErf[2]").unwrap(), "InverseErf[2]");
+    assert_eq!(interpret("InverseErf[-2]").unwrap(), "InverseErf[-2]");
+    // Numeric evaluation
+    let result = interpret("InverseErf[0.5]").unwrap();
+    assert!(result.starts_with("0.476936"), "InverseErf[0.5] = {result}");
+    let result = interpret("InverseErf[-0.5]").unwrap();
+    assert!(
+      result.starts_with("-0.476936"),
+      "InverseErf[-0.5] = {result}"
+    );
+    let result = interpret("InverseErf[0.9]").unwrap();
+    assert!(result.starts_with("1.16308"), "InverseErf[0.9] = {result}");
   }
   #[test]
   fn smooth_density_histogram() {

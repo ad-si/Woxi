@@ -403,3 +403,120 @@ fn term_power_of_var(term: &Expr, var: &str) -> i128 {
     _ => 0,
   }
 }
+
+// ─── CoefficientRules ────────────────────────────────────────────────
+
+/// CoefficientRules[poly, var] or CoefficientRules[poly, {x, y, ...}]
+/// Returns a list of rules mapping exponent vectors to coefficients,
+/// sorted in descending lexicographic order of the exponent vectors.
+pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CoefficientRules expects 2 arguments".into(),
+    ));
+  }
+
+  // Extract variable names
+  let vars: Vec<String> = match &args[1] {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|item| {
+        if let Expr::Identifier(name) = item {
+          Some(name.clone())
+        } else {
+          None
+        }
+      })
+      .collect(),
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CoefficientRules".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if vars.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "CoefficientRules".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Expand the polynomial
+  let expanded = super::expand::expand_and_combine(&args[0]);
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+
+  // Collect additive terms
+  let terms = collect_additive_terms(&expanded);
+
+  // For each term, compute the exponent vector and coefficient
+  // We need to accumulate coefficients for identical exponent vectors
+  let mut exponent_map: std::collections::BTreeMap<Vec<i128>, Vec<Expr>> =
+    std::collections::BTreeMap::new();
+
+  for term in &terms {
+    let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
+
+    // Extract the coefficient by peeling off all variable powers
+    let mut exponents = Vec::new();
+    let mut remaining = evaled.clone();
+
+    for var in &vars {
+      let power = term_power_of_var(&remaining, var);
+      exponents.push(power);
+      // Extract the coefficient with respect to this variable at this power
+      let (_, coeff) = term_var_power_and_coeff(&remaining, var);
+      remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+    }
+
+    exponent_map.entry(exponents).or_default().push(remaining);
+  }
+
+  // Build the result: sort by descending lexicographic order
+  let mut entries: Vec<(Vec<i128>, Expr)> = Vec::new();
+  for (exps, coeffs) in exponent_map {
+    // Sum all coefficients for this exponent vector
+    let coeff = if coeffs.len() == 1 {
+      coeffs.into_iter().next().unwrap()
+    } else {
+      let sum_expr =
+        coeffs.into_iter().reduce(|a, b| add_exprs(&a, &b)).unwrap();
+      crate::evaluator::evaluate_expr_to_expr(&sum_expr)?
+    };
+
+    // Skip zero coefficients
+    if matches!(coeff, Expr::Integer(0)) {
+      continue;
+    }
+
+    entries.push((exps, coeff));
+  }
+
+  // Sort descending lexicographic
+  entries.sort_by(|a, b| {
+    for (ea, eb) in a.0.iter().zip(b.0.iter()) {
+      match eb.cmp(ea) {
+        std::cmp::Ordering::Equal => continue,
+        other => return other,
+      }
+    }
+    std::cmp::Ordering::Equal
+  });
+
+  // Build the list of rules
+  let rules: Vec<Expr> = entries
+    .into_iter()
+    .map(|(exps, coeff)| {
+      let exp_list = Expr::List(exps.into_iter().map(Expr::Integer).collect());
+      Expr::Rule {
+        pattern: Box::new(exp_list),
+        replacement: Box::new(coeff),
+      }
+    })
+    .collect();
+
+  // Return empty list for zero polynomial
+  Ok(Expr::List(rules))
+}

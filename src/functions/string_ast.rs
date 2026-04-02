@@ -2924,6 +2924,138 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(result))
 }
 
+// ─── StringReplacePart ─────────────────────────────────────────────
+
+/// StringReplacePart["string", "new", {m, n}] - replace characters m through n
+/// StringReplacePart["string", "new", {{m1,n1},{m2,n2},...}] - replace multiple ranges
+/// StringReplacePart["string", {"s1","s2",...}, {{m1,n1},{m2,n2},...}] - different replacements
+pub fn string_replace_part_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "StringReplacePart expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let s = match expr_to_str(&args[0]) {
+    Ok(s) => s,
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "StringReplacePart".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let chars: Vec<char> = s.chars().collect();
+  let len = chars.len() as i128;
+
+  // Helper to resolve a position index (1-based, negative from end)
+  let resolve_index = |n: i128| -> Result<usize, InterpreterError> {
+    let idx = if n > 0 { n - 1 } else { len + n };
+    if idx < 0 || idx >= len {
+      return Err(InterpreterError::EvaluationError(format!(
+        "StringReplacePart: index {} out of range for string of length {}",
+        n, len
+      )));
+    }
+    Ok(idx as usize)
+  };
+
+  // Parse a range {m, n} into (start, end) 0-based inclusive
+  let parse_range =
+    |elems: &[Expr]| -> Result<(usize, usize), InterpreterError> {
+      if elems.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringReplacePart: range must be a list of two integers".into(),
+        ));
+      }
+      let m = expr_to_int(&elems[0])?;
+      let n = expr_to_int(&elems[1])?;
+      let start = resolve_index(m)?;
+      let end = resolve_index(n)?;
+      Ok((start, end))
+    };
+
+  // Determine ranges and replacements
+  match &args[2] {
+    // Single range: {m, n}
+    Expr::List(elems)
+      if elems.len() == 2 && !matches!(&elems[0], Expr::List(_)) =>
+    {
+      let (start, end) = parse_range(elems)?;
+      let replacement = expr_to_str(&args[1])?;
+      let mut result = String::new();
+      result.extend(&chars[..start]);
+      result.push_str(&replacement);
+      if end + 1 < chars.len() {
+        result.extend(&chars[end + 1..]);
+      }
+      Ok(Expr::String(result))
+    }
+    // Multiple ranges: {{m1,n1}, {m2,n2}, ...}
+    Expr::List(ranges) => {
+      let mut range_vec: Vec<(usize, usize)> = Vec::new();
+      for range in ranges {
+        if let Expr::List(elems) = range {
+          range_vec.push(parse_range(elems)?);
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "StringReplacePart: expected list of ranges".into(),
+          ));
+        }
+      }
+
+      // Get replacements (single string or list of strings)
+      let replacements: Vec<String> = match &args[1] {
+        Expr::List(repls) => {
+          if repls.len() != range_vec.len() {
+            return Err(InterpreterError::EvaluationError(
+              "StringReplacePart: number of replacements must match number of ranges".into(),
+            ));
+          }
+          repls
+            .iter()
+            .map(expr_to_str)
+            .collect::<Result<Vec<_>, _>>()?
+        }
+        _ => {
+          let r = expr_to_str(&args[1])?;
+          vec![r; range_vec.len()]
+        }
+      };
+
+      // Sort ranges by start position, along with their replacements
+      let mut indexed: Vec<(usize, (usize, usize), &str)> = range_vec
+        .iter()
+        .zip(replacements.iter())
+        .enumerate()
+        .map(|(i, (&range, repl))| (i, range, repl.as_str()))
+        .collect();
+      indexed.sort_by_key(|&(_, (start, _), _)| start);
+
+      // Build result
+      let mut result = String::new();
+      let mut pos = 0;
+      for (_, (start, end), repl) in &indexed {
+        if *start > pos {
+          result.extend(&chars[pos..*start]);
+        }
+        result.push_str(repl);
+        pos = end + 1;
+      }
+      if pos < chars.len() {
+        result.extend(&chars[pos..]);
+      }
+      Ok(Expr::String(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "StringReplacePart".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 // ─── StringDelete ──────────────────────────────────────────────────
 
 /// StringDelete[string, sub] - deletes all occurrences of sub from string

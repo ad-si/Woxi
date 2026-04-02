@@ -972,6 +972,7 @@ fn contains_opaque_fn_call(e: &Expr) -> bool {
           | "Log"
           | "Erf"
           | "Erfc"
+          | "InverseErf"
           | "Factorial"
           | "Binomial"
           | "Re"

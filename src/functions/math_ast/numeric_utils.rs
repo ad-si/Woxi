@@ -91,6 +91,57 @@ pub fn erfc_cf(x: f64) -> f64 {
   (-x * x).exp() / (f * std::f64::consts::PI.sqrt())
 }
 
+/// Compute the inverse error function using a rational approximation
+/// followed by Newton-Raphson refinement.
+/// Uses the approach from J.M. Blair, "Rational Chebyshev approximations
+/// for the inverse of the error function" (1976).
+pub fn inverse_erf_f64(x: f64) -> f64 {
+  if x == 0.0 {
+    return 0.0;
+  }
+  // InverseErf is odd
+  let sign = if x < 0.0 { -1.0 } else { 1.0 };
+  let x = x.abs();
+
+  if x >= 1.0 {
+    return sign * f64::INFINITY;
+  }
+
+  // Initial approximation using rational approximation
+  let mut result = if x <= 0.7 {
+    // Central region: use series around 0
+    let a = x * std::f64::consts::FRAC_PI_2.sqrt();
+    // Approximate: InverseErf(x) ≈ sqrt(pi)/2 * (x + pi/12 * x^3 + ...)
+    let x2 = a * a;
+    a * (1.0 + x2 * (1.0 / 3.0 + x2 * (7.0 / 30.0 + x2 * (127.0 / 630.0))))
+  } else {
+    // Tail region: use asymptotic approximation
+    // InverseErf(x) ≈ sqrt(-ln(1-x^2)) * correction
+    let t = (-((1.0 - x) * (1.0 + x)).ln()).sqrt();
+    // Rational approximation for the tail
+    let p = 0.3275911;
+    t * (1.0 - p * (t - 1.0) / (t + 1.0))
+  };
+
+  // Newton-Raphson refinement: f(y) = erf(y) - x = 0
+  // f'(y) = 2/sqrt(pi) * exp(-y^2)
+  let target = sign * x;
+  for _ in 0..10 {
+    let err = erf_f64(result) - x;
+    let deriv = 2.0 / std::f64::consts::PI.sqrt() * (-result * result).exp();
+    if deriv.abs() < 1e-300 {
+      break;
+    }
+    let correction = err / deriv;
+    result -= correction;
+    if correction.abs() < 1e-15 * result.abs() {
+      break;
+    }
+  }
+
+  if target < 0.0 { -result } else { result }
+}
+
 /// Compute the imaginary error function erfi(x) using the Taylor series.
 /// erfi(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} x^(2n+1) / (n! * (2n+1))
 pub fn erfi_f64(x: f64) -> f64 {
@@ -226,6 +277,15 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
       }
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
+      "InverseErf" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).and_then(|v| {
+          if v > -1.0 && v < 1.0 {
+            Some(inverse_erf_f64(v))
+          } else {
+            None
+          }
+        })
+      }
       "Log" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.ln()) } else { None }),
       "Log" if args.len() == 2 => {

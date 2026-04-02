@@ -1547,7 +1547,7 @@ Animator,Animated control element,✅,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,✅,unevaluated,10.0,1573
 PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3.0,1574
 AutoScroll,Auto-scrolling option,✅,unevaluated,3.0,1578
-CoefficientRules,Coefficient rules for polynomials,✅,unevaluated,7.0,1578
+CoefficientRules,Coefficient rules for polynomials,✅,pure,7.0,1578
 ConfidenceLevel,Confidence level specification,✅,unevaluated,7.0,1578
 TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
 CreatePalette,Create a palette notebook,✅,unevaluated,6.0,1579
@@ -1558,7 +1558,7 @@ Tolerance,Tolerance specification,✅,unevaluated,2.0,1583
 NetInitialize,Initialize a neural net,✅,unevaluated,11.0,1584
 BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10.0,1586
 Cumulant,Statistical cumulant,✅,unevaluated,8.0,1586
-BooleanConvert,Convert Boolean expressions,✅,unevaluated,7.0,1588
+BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
 GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
 MeshCellStyle,Style mesh cells,✅,unevaluated,10.0,1593
@@ -1817,7 +1817,7 @@ FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Mathieu C function,✅,unevaluated,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3.0,1852
-StringReplacePart,Replace part of string,✅,unevaluated,3.0,1853
+StringReplacePart,Replace part of string,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association,✅,pure,10.0,1855
 MetaInformation,Meta information option,✅,unevaluated,9.0,1855
 NotebookSave,Save notebook,✅,unevaluated,3.0,1857
@@ -1868,7 +1868,7 @@ Databin,Databin cloud storage,✅,unevaluated,10.0,1905
 Interpretation,Interpretation wrapper,✅,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
 SymmetricGroup,Symmetric group,✅,unevaluated,8.0,1905
-InverseErf,Inverse error function,✅,unevaluated,3.0,1906
+InverseErf,Inverse error function,✅,pure,3.0,1906
 SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8.0,1907
 NetExtract,Extract net components,✅,unevaluated,11.0,1908
 Friday,Friday day name,✅,unevaluated,9.0,1910

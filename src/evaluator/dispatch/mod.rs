@@ -4432,7 +4432,6 @@ pub fn evaluate_function_call_ast_inner(
   if matches!(
     name,
     "PermutationProduct"
-      | "BooleanConvert"
       | "HornerForm"
       | "Parallelize"
       | "Setting"
@@ -4811,7 +4810,6 @@ pub fn evaluate_function_call_ast_inner(
       | "BeckmannDistribution"
       | "WeierstrassSigma"
       | "MathieuC"
-      | "StringReplacePart"
       | "MetaInformation"
       | "NotebookSave"
       | "ListContourPlot3D"
@@ -4854,7 +4852,6 @@ pub fn evaluate_function_call_ast_inner(
       | "SpatialGraphDistribution"
       | "UniformGraphDistribution"
       | "Databin"
-      | "InverseErf"
       | "SmoothDensityHistogram"
       | "NetExtract"
       | "HankelH1"

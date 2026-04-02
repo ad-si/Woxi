@@ -1201,6 +1201,43 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseErf expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // InverseErf[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // InverseErf[1] = Infinity
+    Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
+    // InverseErf[-1] = -Infinity
+    Expr::Integer(-1) => Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    }),
+    // Numeric evaluation for Real arguments in (-1, 1)
+    Expr::Real(f) => {
+      if *f > -1.0 && *f < 1.0 {
+        Ok(Expr::Real(
+          crate::functions::math_ast::numeric_utils::inverse_erf_f64(*f),
+        ))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "InverseErf".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    // Otherwise symbolic — return unevaluated
+    _ => Ok(Expr::FunctionCall {
+      name: "InverseErf".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
