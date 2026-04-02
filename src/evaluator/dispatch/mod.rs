@@ -3084,6 +3084,9 @@ pub fn evaluate_function_call_ast_inner(
           components.push(component);
         }
 
+        // Sort components by size (largest first), matching undirected behavior
+        components.sort_by(|a, b| b.len().cmp(&a.len()));
+
         // Convert to Expr lists
         components
           .into_iter()

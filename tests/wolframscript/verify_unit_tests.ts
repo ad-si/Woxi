@@ -524,6 +524,9 @@ function main() {
     /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
     /\bSymmetrize\[/,        // Woxi returns dense list, Wolfram returns SymmetrizedArray
     /\bTensorWedge\[/,      // Woxi returns dense list, Wolfram returns SymmetrizedArray
+    /\bVertexAdd\[/,        // Returns Graph object (edge list vs SparseArray representation)
+    /\bIndexGraph\[/,       // Returns Graph object (edge list vs SparseArray representation)
+    /\bConnectedGraphComponents\[/, // Returns Graph objects (edge list vs SparseArray representation)
     /\bFindSpanningTree\[/, // Wolfram uses SparseArray internal Graph representation
     /\bStationaryDistribution\[/, // Complex computation, Woxi keeps as inert wrapper
     /\bDatedUnit\[/,        // Version-specific evaluation behavior
