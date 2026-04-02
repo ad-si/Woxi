@@ -3040,7 +3040,7 @@ Typed,,,,12.0,3108
 AlphaChannel,,🚫,,8.0,3121
 AutoDelete,,,,3.0,3121
 CellProlog,,🚫,,6.0,3121
-ConnectedGraphComponents,,,,10.4,3121
+ConnectedGraphComponents,Return connected components as subgraphs,✅,pure,10.4,3121
 CurvatureFlowFilter,,🚫,,8.0,3121
 CyclicGroup,,,,8.0,3121
 DimensionReduce,,🚫,,10.1,3121
