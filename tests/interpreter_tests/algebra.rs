@@ -52,6 +52,21 @@ mod exponent {
   fn linear_exponent() {
     assert_eq!(interpret("Exponent[3*x + 1, x]").unwrap(), "1");
   }
+
+  #[test]
+  fn rational_exponent() {
+    assert_eq!(interpret("Exponent[b*x^(3/2), x]").unwrap(), "3/2");
+    assert_eq!(interpret("Exponent[x^(1/2) + x^(5/2), x]").unwrap(), "5/2");
+    assert_eq!(interpret("Exponent[x^(1/3) + x^(2/3), x]").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn rational_exponent_min() {
+    assert_eq!(
+      interpret("Exponent[x^(1/2) + x^(5/2), x, Min]").unwrap(),
+      "1/2"
+    );
+  }
 }
 
 mod coefficient {

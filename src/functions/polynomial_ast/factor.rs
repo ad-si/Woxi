@@ -2043,7 +2043,7 @@ fn kronecker_factor_multivar(
   // Compute D = max degree over all variables + 1
   let mut max_deg: i128 = 0;
   for var in sorted_vars {
-    if let Some(d) = max_power(poly, var) {
+    if let Some(d) = max_power_int(poly, var) {
       max_deg = max_deg.max(d);
     }
   }

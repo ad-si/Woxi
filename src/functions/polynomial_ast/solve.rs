@@ -134,7 +134,7 @@ fn try_nsolve_quadratic(
     }
   };
   let terms = collect_additive_terms(&expanded);
-  let degree = max_power(&expanded, &var)? as usize;
+  let degree = max_power_int(&expanded, &var)? as usize;
 
   // Only handle quadratics
   if degree != 2 {
@@ -741,7 +741,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let terms = collect_additive_terms(&expanded);
 
   // Find maximum degree
-  let degree = match max_power(&expanded, var) {
+  let degree = match max_power_int(&expanded, var) {
     Some(d) => d,
     None => {
       // Non-polynomial: try factoring out common fractional-power sub-expressions
@@ -1583,7 +1583,7 @@ fn try_solve_factoring_powers(
     // Factor out common terms that are constant w.r.t. the solve variable
     // e.g. 2*a^2*k*q - 4*k*q*x^2 → factor out 2*k*q → a^2 - 2*x^2
     let remaining = factor_out_constant_factors(&remaining, var);
-    if max_power(&remaining, var).is_some() {
+    if max_power_int(&remaining, var).is_some() {
       // Recursively solve
       let new_eq = Expr::Comparison {
         operands: vec![remaining, Expr::Integer(0)],
@@ -2627,7 +2627,7 @@ fn reduce_fraction(n: i128, d: i128) -> (i128, i128) {
 /// Returns None if not a polynomial with integer coefficients.
 fn minimize_extract_int_coeffs(poly: &Expr, var: &str) -> Option<Vec<i128>> {
   let expanded = expand_and_combine(poly);
-  let degree = max_power(&expanded, var)? as usize;
+  let degree = max_power_int(&expanded, var)? as usize;
   let terms = collect_additive_terms(&expanded);
   // Pre-check: ensure all terms are polynomial in var (sentinel -1 = non-polynomial)
   for term in &terms {
@@ -2658,7 +2658,7 @@ fn minimize_extract_int_coeffs(poly: &Expr, var: &str) -> Option<Vec<i128>> {
 fn minimize_poly_bounded_below(f: &Expr, var: &str) -> Option<bool> {
   // Only use polynomial analysis for verified polynomials with integer coefficients
   let expanded = expand_and_combine(f);
-  let degree = max_power(&expanded, var)?;
+  let degree = max_power_int(&expanded, var)?;
   if degree == 0 {
     // Might be a constant OR a non-polynomial term like E^x with "degree 0"
     // We can't distinguish here, return None to use numerical check
@@ -3452,7 +3452,7 @@ fn minimize_extract_linear_expr(
 
   // Check degree <= 1 in each variable
   for var in vars {
-    let deg = max_power(&expanded, var);
+    let deg = max_power_int(&expanded, var);
     if matches!(deg, Some(d) if d > 1) {
       return None;
     }
@@ -3797,7 +3797,7 @@ fn minimize_extract_linear_constraint(
 
   // Check this is a polynomial of degree <= 1 in all vars
   for (i, var) in vars.iter().enumerate() {
-    let deg = max_power(&expanded, var);
+    let deg = max_power_int(&expanded, var);
     match deg {
       Some(d) if d > 1 => return None, // non-linear
       _ => {}

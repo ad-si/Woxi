@@ -85,8 +85,8 @@ pub fn poly_divide_symbolic(
   let p_expanded = expand_and_combine(p);
   let q_expanded = expand_and_combine(q);
 
-  let p_deg = max_power(&p_expanded, var).unwrap_or(0);
-  let q_deg = max_power(&q_expanded, var).unwrap_or(0);
+  let p_deg = max_power_int(&p_expanded, var).unwrap_or(0);
+  let q_deg = max_power_int(&q_expanded, var).unwrap_or(0);
 
   if q_deg == 0 {
     // Dividing by a constant - check if it's zero
