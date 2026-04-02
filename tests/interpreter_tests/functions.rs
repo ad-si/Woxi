@@ -11419,6 +11419,37 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // VertexAdd
+  #[test]
+  fn vertex_add_single() {
+    assert_eq!(
+      interpret("VertexAdd[CompleteGraph[3], 4]").unwrap(),
+      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+    );
+  }
+  #[test]
+  fn vertex_add_multiple() {
+    assert_eq!(
+      interpret("VertexAdd[CompleteGraph[2], {3, 4}]").unwrap(),
+      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2]}]"
+    );
+  }
+  #[test]
+  fn vertex_add_existing_ignored() {
+    // Adding an existing vertex does nothing
+    assert_eq!(
+      interpret("VertexAdd[CompleteGraph[3], 1]").unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+    );
+  }
+  #[test]
+  fn vertex_add_to_directed() {
+    assert_eq!(
+      interpret("VertexAdd[Graph[{1 -> 2}], 3]").unwrap(),
+      "Graph[{1, 2, 3}, {DirectedEdge[1, 2]}]"
+    );
+  }
+
   // IndexGraph
   #[test]
   fn index_graph_basic() {

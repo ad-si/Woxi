@@ -2131,6 +2131,39 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // VertexAdd[graph, v] or VertexAdd[graph, {v1, v2, ...}] — add vertices to a graph
+  if name == "VertexAdd"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() >= 2
+    && let Expr::List(vertices) = &gargs[0]
+    && let Expr::List(edges) = &gargs[1]
+  {
+    let existing: std::collections::HashSet<String> =
+      vertices.iter().map(expr_to_string).collect();
+    let mut new_vertices = vertices.clone();
+
+    let to_add = match &args[1] {
+      Expr::List(vs) => vs.clone(),
+      other => vec![other.clone()],
+    };
+
+    for v in to_add {
+      if !existing.contains(&expr_to_string(&v)) {
+        new_vertices.push(v);
+      }
+    }
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(new_vertices), Expr::List(edges.clone())],
+    });
+  }
+
   // EdgeQ[graph, edge] — True if edge exists in graph
   if name == "EdgeQ"
     && args.len() == 2
