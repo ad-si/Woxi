@@ -87,7 +87,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expanded = expand_and_combine(&args[0]);
 
   // Find the degree
-  let degree = match max_power(&expanded, var) {
+  let degree = match max_power_int(&expanded, var) {
     Some(d) => d,
     None => {
       return Ok(Expr::FunctionCall {

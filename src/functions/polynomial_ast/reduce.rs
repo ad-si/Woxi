@@ -416,7 +416,7 @@ pub fn reduce_inequality(
   }
 
   // Try to find the degree
-  let degree = max_power(&expanded, var);
+  let degree = max_power_int(&expanded, var);
 
   match degree {
     Some(1) => reduce_linear_inequality(&expanded, var, op, domain),
@@ -1408,7 +1408,7 @@ pub fn reduce_multi_var_and(
         if is_constant_wrt(&expanded, var) {
           continue;
         }
-        if let Some(deg) = max_power(&expanded, var)
+        if let Some(deg) = max_power_int(&expanded, var)
           && (best.is_none() || deg < best.as_ref().unwrap().4)
         {
           best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));

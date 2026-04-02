@@ -97,7 +97,7 @@ pub fn solve_for_var(eq: &Expr, var: &str) -> Option<Expr> {
   let expanded = expand_and_combine(&poly);
 
   // Check degree
-  let degree = max_power(&expanded, var)?;
+  let degree = max_power_int(&expanded, var)?;
   if degree != 1 {
     // For non-linear, fall back to Solve
     let solutions =
@@ -189,7 +189,7 @@ pub fn eliminate_one_variable(
       };
       let expanded = expand_and_combine(&diff);
       if contains_var(&expanded, var)
-        && let Some(d) = max_power(&expanded, var)
+        && let Some(d) = max_power_int(&expanded, var)
         && d < solve_degree
       {
         solve_degree = d;
@@ -668,7 +668,7 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
     if term_vars.len() > 1 {
       return false; // product of variables
     }
-    max_power(term, &term_vars[0]).is_some_and(|d| d <= 1)
+    max_power_int(term, &term_vars[0]).is_some_and(|d| d <= 1)
   });
 
   // Single variable, linear: solve for it → var == value

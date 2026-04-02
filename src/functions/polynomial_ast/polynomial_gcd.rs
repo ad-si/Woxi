@@ -62,8 +62,8 @@ fn poly_gcd_pair(
   }
 
   // Check degrees in the main variable
-  let p_deg = max_power(&expand_and_combine(p), var).unwrap_or(0);
-  let q_deg = max_power(&expand_and_combine(q), var).unwrap_or(0);
+  let p_deg = max_power_int(&expand_and_combine(p), var).unwrap_or(0);
+  let q_deg = max_power_int(&expand_and_combine(q), var).unwrap_or(0);
 
   if p_deg == 0 && q_deg == 0 {
     // Both are constants w.r.t. this variable - compute numeric GCD
@@ -110,7 +110,7 @@ fn poly_gcd_pair(
 
   // If the result has degree 0 in the main variable and is symbolic
   // (not a pure number), the polynomials are coprime in this variable
-  let a_deg = max_power(&expand_and_combine(&a), var).unwrap_or(0);
+  let a_deg = max_power_int(&expand_and_combine(&a), var).unwrap_or(0);
   if a_deg == 0 && !is_numeric_expr(&a) {
     return Ok(content_gcd);
   }
@@ -139,7 +139,7 @@ fn poly_integer_content(
   var: &str,
 ) -> Result<Expr, InterpreterError> {
   let expanded = expand_and_combine(poly);
-  let deg = max_power(&expanded, var).unwrap_or(0);
+  let deg = max_power_int(&expanded, var).unwrap_or(0);
 
   let mut int_coeffs = Vec::new();
   for i in 0..=deg {
@@ -230,7 +230,7 @@ fn normalize_poly_sign(
   var: &str,
 ) -> Result<Expr, InterpreterError> {
   let expanded = expand_and_combine(poly);
-  let deg = max_power(&expanded, var).unwrap_or(0);
+  let deg = max_power_int(&expanded, var).unwrap_or(0);
 
   let lead_coeff = coefficient_ast(&[
     poly.clone(),

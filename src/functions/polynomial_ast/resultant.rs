@@ -28,7 +28,7 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Get degrees
-  let deg1 = match max_power(poly1, &var) {
+  let deg1 = match max_power_int(poly1, &var) {
     Some(d) => d,
     None => {
       return Ok(Expr::FunctionCall {
@@ -37,7 +37,7 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let deg2 = match max_power(poly2, &var) {
+  let deg2 = match max_power_int(poly2, &var) {
     Some(d) => d,
     None => {
       return Ok(Expr::FunctionCall {
