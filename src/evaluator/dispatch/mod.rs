@@ -1689,6 +1689,42 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // DeBruijnGraph[m, n] — n-dimensional De Bruijn graph with m symbols
+  if name == "DeBruijnGraph"
+    && args.len() == 2
+    && let Expr::Integer(m) = &args[0]
+    && let Expr::Integer(n) = &args[1]
+  {
+    let m = *m as usize;
+    let n = *n as usize;
+    let num_vertices = m.pow(n as u32);
+    let vertices: Vec<Expr> = (1..=num_vertices)
+      .map(|i| Expr::Integer(i as i128))
+      .collect();
+
+    // For each vertex v (0-indexed), successors are: (v % m^(n-1)) * m + c for c in 0..m
+    let shift = m.pow((n as u32).saturating_sub(1));
+    let mut edges = Vec::new();
+    for v in 0..num_vertices {
+      let base = (v % shift) * m;
+      for c in 0..m {
+        let w = base + c;
+        edges.push(Expr::FunctionCall {
+          name: "DirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer((v + 1) as i128),
+            Expr::Integer((w + 1) as i128),
+          ],
+        });
+      }
+    }
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(vertices), Expr::List(edges)],
+    });
+  }
+
   // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
   if name == "RecurrenceFilter"
     && args.len() == 2
