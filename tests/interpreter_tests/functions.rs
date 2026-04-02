@@ -9518,6 +9518,38 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn string_replace_part() {
+    // Basic single range replacement
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdefghijk\", \"XY\", {2, 5}]").unwrap(),
+      "aXYfghijk"
+    );
+    // Replace with empty string (deletion)
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdef\", \"\", {3, 4}]").unwrap(),
+      "abef"
+    );
+    // Multiple ranges with same replacement
+    assert_eq!(
+      interpret(
+        "StringReplacePart[\"abcdefghijk\", \"XY\", {{1, 1}, {3, 5}, {-3, -1}}]"
+      )
+      .unwrap(),
+      "XYbXYfghXY"
+    );
+    // Different replacements for each range
+    assert_eq!(
+      interpret(
+        "StringReplacePart[\"abcdef\", {\"X\", \"Y\"}, {{1, 2}, {5, 6}}]"
+      )
+      .unwrap(),
+      "XcdY"
+    );
+    // Negative indices
+    assert_eq!(
+      interpret("StringReplacePart[\"abcdef\", \"XY\", {-3, -1}]").unwrap(),
+      "abcXY"
+    );
+    // Non-string first arg returns unevaluated
     assert_eq!(
       interpret("StringReplacePart[x, y, z]").unwrap(),
       "StringReplacePart[x, y, z]"

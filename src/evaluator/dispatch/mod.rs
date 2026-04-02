@@ -4811,7 +4811,6 @@ pub fn evaluate_function_call_ast_inner(
       | "BeckmannDistribution"
       | "WeierstrassSigma"
       | "MathieuC"
-      | "StringReplacePart"
       | "MetaInformation"
       | "NotebookSave"
       | "ListContourPlot3D"

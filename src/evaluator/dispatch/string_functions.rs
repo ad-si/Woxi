@@ -140,6 +140,9 @@ pub fn dispatch_string_functions(
     "StringInsert" if args.len() == 3 => {
       return Some(crate::functions::string_ast::string_insert_ast(args));
     }
+    "StringReplacePart" if args.len() == 3 => {
+      return Some(crate::functions::string_ast::string_replace_part_ast(args));
+    }
     "StringDelete" if args.len() == 2 => {
       return Some(crate::functions::string_ast::string_delete_ast(args));
     }
