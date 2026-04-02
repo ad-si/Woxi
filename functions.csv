@@ -3481,7 +3481,7 @@ FunctionInjective,,,,12.2,3578
 LinearFractionalTransform,,,,6.0,3578
 MorletWavelet,,🚫,,8.0,3578
 MovingMedian,Compute moving median of a list,✅,pure,6.0,3578
-StringToByteArray,,,,11.2,3578
+StringToByteArray,Convert string to byte array,✅,pure,11.2,3578
 WebSearch,,🚫,,11.1,3578
 CircularRealMatrixDistribution,,,,10.3,3593
 ColorsNear,,🚫,,12.0,3593
@@ -3761,7 +3761,7 @@ TemplateIf,,,,10.0,3862
 TracyWidomDistribution,,,,10.3,3862
 AsymptoticLessEqual,,,,11.3,3889
 BirnbaumImportance,,,,9.0,3889
-ByteArrayToString,,,,11.2,3889
+ByteArrayToString,Convert byte array to string,✅,pure,11.2,3889
 CellBracketOptions,,🚫,,4.0,3889
 ChannelObject,,🚫,,11.0,3889
 ControllabilityMatrix,,,,8.0,3889

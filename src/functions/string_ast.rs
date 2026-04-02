@@ -4419,3 +4419,82 @@ fn percent_decode(s: &str) -> String {
   }
   String::from_utf8_lossy(&result).to_string()
 }
+
+/// StringToByteArray[string] - convert a string to a ByteArray (UTF-8 encoding)
+/// StringToByteArray[string, encoding] - with specified encoding (only UTF-8 supported)
+pub fn string_to_byte_array_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringToByteArray expects 1 or 2 arguments".into(),
+    ));
+  }
+  let s = match &args[0] {
+    Expr::String(s) => s,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "StringToByteArray".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  // Encode as UTF-8 bytes and create ByteArray
+  let bytes = s.as_bytes();
+  use base64::Engine;
+  let engine = base64::engine::general_purpose::STANDARD;
+  let b64 = engine.encode(bytes);
+  Ok(Expr::FunctionCall {
+    name: "ByteArray".to_string(),
+    args: vec![Expr::String(b64)],
+  })
+}
+
+/// ByteArrayToString[bytearray] - convert a ByteArray to a string (UTF-8 decoding)
+/// ByteArrayToString[bytearray, encoding] - with specified encoding (only UTF-8 supported)
+pub fn byte_array_to_string_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ByteArrayToString expects 1 or 2 arguments".into(),
+    ));
+  }
+  // Extract bytes from ByteArray
+  if let Expr::FunctionCall {
+    name,
+    args: ba_args,
+  } = &args[0]
+  {
+    if name == "ByteArray" && ba_args.len() == 1 {
+      let bytes: Vec<u8> = match &ba_args[0] {
+        Expr::String(b64) => {
+          use base64::Engine;
+          let engine = base64::engine::general_purpose::STANDARD;
+          engine.decode(b64).unwrap_or_default()
+        }
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Integer(n) = item {
+              Some(*n as u8)
+            } else {
+              None
+            }
+          })
+          .collect(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "ByteArrayToString".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "ByteArrayToString".to_string(),
+    args: args.to_vec(),
+  })
+}
