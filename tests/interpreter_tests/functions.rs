@@ -11625,7 +11625,7 @@ mod batch_unevaluated_wrappers_2 {
   fn connected_graph_components_directed() {
     assert_eq!(
       interpret("ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]]").unwrap(),
-      "{Graph[{3}, {}], Graph[{1, 2}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]}"
+      "{Graph[{1, 2}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}], Graph[{3}, {}]}"
     );
   }
 
