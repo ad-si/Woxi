@@ -2164,6 +2164,60 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // GraphIntersection[g1, g2, ...] — intersection of graphs (union vertices, intersect edges)
+  if name == "GraphIntersection" && args.len() >= 2 {
+    // Extract all graphs
+    let mut graphs = Vec::new();
+    for arg in args {
+      if let Expr::FunctionCall { name: gn, args: ga } = arg
+        && gn == "Graph"
+        && ga.len() >= 2
+        && let (Expr::List(vs), Expr::List(es)) = (&ga[0], &ga[1])
+      {
+        graphs.push((vs, es));
+      } else {
+        // Not a graph, return unevaluated
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+
+    // Union of all vertices (preserving order, no duplicates)
+    let mut seen = std::collections::HashSet::new();
+    let mut all_vertices = Vec::new();
+    for (vs, _) in &graphs {
+      for v in *vs {
+        let key = expr_to_string(v);
+        if seen.insert(key) {
+          all_vertices.push(v.clone());
+        }
+      }
+    }
+
+    // Intersection of edges: keep only edges present in all graphs
+    let (_, first_edges) = &graphs[0];
+    let edge_sets: Vec<std::collections::HashSet<String>> = graphs[1..]
+      .iter()
+      .map(|(_, es)| es.iter().map(expr_to_string).collect())
+      .collect();
+
+    let common_edges: Vec<Expr> = first_edges
+      .iter()
+      .filter(|e| {
+        let es = expr_to_string(e);
+        edge_sets.iter().all(|set| set.contains(&es))
+      })
+      .cloned()
+      .collect();
+
+    return Ok(Expr::FunctionCall {
+      name: "Graph".to_string(),
+      args: vec![Expr::List(all_vertices), Expr::List(common_edges)],
+    });
+  }
+
   // EdgeQ[graph, edge] — True if edge exists in graph
   if name == "EdgeQ"
     && args.len() == 2

@@ -11419,6 +11419,34 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // GraphIntersection
+  #[test]
+  fn graph_intersection_basic() {
+    // K3 ∩ path{1,2,3} = union vertices, intersect edges
+    assert_eq!(
+      interpret("GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}]]")
+        .unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+    );
+  }
+  #[test]
+  fn graph_intersection_disjoint() {
+    // No common edges
+    assert_eq!(
+      interpret("GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]").unwrap(),
+      "Graph[{1, 2, 3, 4}, {}]"
+    );
+  }
+  #[test]
+  fn graph_intersection_same() {
+    // Intersection with itself
+    assert_eq!(
+      interpret("GraphIntersection[CompleteGraph[3], CompleteGraph[3]]")
+        .unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+    );
+  }
+
   // VertexAdd
   #[test]
   fn vertex_add_single() {
