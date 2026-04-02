@@ -11419,6 +11419,32 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // TuranGraph
+  #[test]
+  fn turan_graph_4_2() {
+    // T(4,2) = complete bipartite K_{2,2} = 4 edges
+    assert_eq!(interpret("EdgeCount[TuranGraph[4, 2]]").unwrap(), "4");
+  }
+  #[test]
+  fn turan_graph_n_1() {
+    // T(n,1) = no edges (all in same partition)
+    assert_eq!(interpret("EdgeCount[TuranGraph[5, 1]]").unwrap(), "0");
+  }
+  #[test]
+  fn turan_graph_n_n() {
+    // T(n,n) = complete graph K_n
+    assert_eq!(interpret("EdgeCount[TuranGraph[4, 4]]").unwrap(), "6");
+  }
+  #[test]
+  fn turan_graph_vertex_count() {
+    assert_eq!(interpret("VertexCount[TuranGraph[6, 3]]").unwrap(), "6");
+  }
+  #[test]
+  fn turan_graph_5_2_edges() {
+    // T(5,2): partitions of size 3 and 2 → 3*2 = 6 edges
+    assert_eq!(interpret("EdgeCount[TuranGraph[5, 2]]").unwrap(), "6");
+  }
+
   // GraphIntersection
   #[test]
   fn graph_intersection_basic() {

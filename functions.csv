@@ -3113,7 +3113,7 @@ PERTDistribution,,,,8.0,3191
 PageHeaders,,🚫,,4.0,3191
 PointValuePlot,,🚫,,12.2,3191
 RamanujanTauL,,,,6.0,3191
-TuranGraph,,,,8.0,3191
+TuranGraph,Generate a Turán graph with n vertices and k partitions,✅,pure,8.0,3191
 VertexAdd,Add vertices to a graph,✅,pure,8.0,3191
 Boxes,,🚫,,6.0,3200
 CalendarType,,,,9.0,3200
