@@ -8902,6 +8902,133 @@ fn appell_f1_numeric(a: f64, b1: f64, b2: f64, c: f64, x: f64, y: f64) -> f64 {
   total
 }
 
+/// AppellF2[a, b1, b2, c1, c2, x, y] - Appell hypergeometric function F2
+/// F2(a, b1, b2; c1, c2; x, y) = Σ_{m,n≥0} (a)_{m+n} (b1)_m (b2)_n / ((c1)_m (c2)_n m! n!) x^m y^n
+pub fn appell_f2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 7 {
+    return Err(InterpreterError::EvaluationError(
+      "AppellF2 expects exactly 7 arguments".into(),
+    ));
+  }
+
+  let a = &args[0];
+  let b1 = &args[1];
+  let b2 = &args[2];
+  let c1 = &args[3];
+  let c2 = &args[4];
+  let x = &args[5];
+  let y = &args[6];
+
+  // a = 0 => 1
+  if matches!(a, Expr::Integer(0)) || matches!(a, Expr::Real(v) if *v == 0.0) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Check if x or y is zero
+  let x_zero =
+    matches!(x, Expr::Integer(0)) || matches!(x, Expr::Real(v) if *v == 0.0);
+  let y_zero =
+    matches!(y, Expr::Integer(0)) || matches!(y, Expr::Real(v) if *v == 0.0);
+
+  // x = 0, y = 0 => 1
+  if x_zero && y_zero {
+    return Ok(Expr::Integer(1));
+  }
+
+  // b1 = 0 or x = 0 => Hypergeometric2F1[a, b2, c2, y]
+  let b1_zero =
+    matches!(b1, Expr::Integer(0)) || matches!(b1, Expr::Real(v) if *v == 0.0);
+  if b1_zero || x_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a.clone(), b2.clone(), c2.clone(), y.clone()],
+    );
+  }
+
+  // b2 = 0 or y = 0 => Hypergeometric2F1[a, b1, c1, x]
+  let b2_zero =
+    matches!(b2, Expr::Integer(0)) || matches!(b2, Expr::Real(v) if *v == 0.0);
+  if b2_zero || y_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a.clone(), b1.clone(), c1.clone(), x.clone()],
+    );
+  }
+
+  // Numeric evaluation when all args are numeric and at least one is Real
+  let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
+  let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
+  if vals.iter().all(|v| v.is_some()) && has_real {
+    let a = vals[0].unwrap();
+    let b1 = vals[1].unwrap();
+    let b2 = vals[2].unwrap();
+    let c1 = vals[3].unwrap();
+    let c2 = vals[4].unwrap();
+    let x = vals[5].unwrap();
+    let y = vals[6].unwrap();
+    return Ok(Expr::Real(appell_f2_numeric(a, b1, b2, c1, c2, x, y)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "AppellF2".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute F2(a, b1, b2; c1, c2; x, y) using double series
+fn appell_f2_numeric(
+  a: f64,
+  b1: f64,
+  b2: f64,
+  c1: f64,
+  c2: f64,
+  x: f64,
+  y: f64,
+) -> f64 {
+  // F2 = Σ_{m=0}^∞ Σ_{n=0}^∞ (a)_{m+n} (b1)_m (b2)_n / ((c1)_m (c2)_n m! n!) x^m y^n
+  // term(m, n+1) / term(m, n) = (a+m+n)(b2+n) / ((c2+n)(n+1)) * y
+  // For each m, the n=0 base term relative to (m-1, 0):
+  //   coeff_m *= (a+m-1)(b1+m-1) / ((c1+m-1) * m) * x
+  // But (a)_{m+n} = (a)_m * prod_{k=0..n-1}(a+m+k), so splitting:
+  //   base_m = (a)_m (b1)_m / ((c1)_m m!) x^m
+  //   inner_n = (a+m)_n (b2)_n / ((c2)_n n!) y^n
+
+  let mut total = 0.0;
+  let mut coeff_m = 1.0; // (a)_m (b1)_m / ((c1)_m m!) x^m
+
+  for m in 0..200 {
+    // Inner sum over n
+    let mut inner_sum = 1.0; // n=0 term
+    let mut coeff_n = 1.0;
+
+    for n in 1..200 {
+      coeff_n *= (a + m as f64 + n as f64 - 1.0) * (b2 + n as f64 - 1.0)
+        / ((c2 + n as f64 - 1.0) * n as f64)
+        * y;
+      inner_sum += coeff_n;
+      if coeff_n.abs() < 1e-16 * inner_sum.abs().max(1e-300) {
+        break;
+      }
+    }
+
+    total += coeff_m * inner_sum;
+
+    // Update coeff_m for m+1
+    if m < 199 {
+      coeff_m *= (a + m as f64) * (b1 + m as f64)
+        / ((c1 + m as f64) * (m as f64 + 1.0))
+        * x;
+      if coeff_m.abs() < 1e-16 * total.abs().max(1e-300) {
+        break;
+      }
+    }
+  }
+
+  total
+}
+
 /// Hypergeometric1F1Regularized[a, b, z] = Hypergeometric1F1[a, b, z] / Gamma[b]
 pub fn hypergeometric_1f1_regularized_ast(
   args: &[Expr],

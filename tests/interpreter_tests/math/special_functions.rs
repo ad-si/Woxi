@@ -4771,6 +4771,84 @@ mod appell_f1 {
   }
 }
 
+mod appell_f2 {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("AppellF2[a, b1, b2, c1, c2, x, y]").unwrap(),
+      "AppellF2[a, b1, b2, c1, c2, x, y]"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("AppellF2[2, 1, 1, 3, 4, 0.1, 0.2]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.1992911364736902).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_basic_2() {
+    let result: f64 = interpret("AppellF2[1, 2, 3, 4, 5, 0.3, 0.4]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.6902006090348043).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_zero() {
+    // F2(a, b1, b2; c1, c2; 0, 0) = 1
+    assert_eq!(interpret("AppellF2[a, b1, b2, c1, c2, 0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn a_zero() {
+    // F2(0, b1, b2; c1, c2; x, y) = 1
+    assert_eq!(interpret("AppellF2[0, b1, b2, c1, c2, x, y]").unwrap(), "1");
+  }
+
+  #[test]
+  fn b1_zero_reduces_to_2f1() {
+    // F2(a, 0, b2; c1, c2; x, y) = 2F1(a, b2; c2; y)
+    assert_eq!(
+      interpret("AppellF2[a, 0, b2, c1, c2, x, y]").unwrap(),
+      "Hypergeometric2F1[a, b2, c2, y]"
+    );
+  }
+
+  #[test]
+  fn b2_zero_reduces_to_2f1() {
+    // F2(a, b1, 0; c1, c2; x, y) = 2F1(a, b1; c1; x)
+    assert_eq!(
+      interpret("AppellF2[a, b1, 0, c1, c2, x, y]").unwrap(),
+      "Hypergeometric2F1[a, b1, c1, x]"
+    );
+  }
+
+  #[test]
+  fn x_zero_reduces_to_2f1() {
+    // F2(a, b1, b2; c1, c2; 0, y) = 2F1(a, b2; c2; y)
+    assert_eq!(
+      interpret("AppellF2[a, b1, b2, c1, c2, 0, y]").unwrap(),
+      "Hypergeometric2F1[a, b2, c2, y]"
+    );
+  }
+
+  #[test]
+  fn y_zero_reduces_to_2f1() {
+    // F2(a, b1, b2; c1, c2; x, 0) = 2F1(a, b1; c1; x)
+    assert_eq!(
+      interpret("AppellF2[a, b1, b2, c1, c2, x, 0]").unwrap(),
+      "Hypergeometric2F1[a, b1, c1, x]"
+    );
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
