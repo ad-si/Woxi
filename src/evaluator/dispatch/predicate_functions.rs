@@ -404,10 +404,45 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::Integer(rss_bytes)));
     }
     // Introspection functions - return {} for symbols without stored definitions
-    "Messages" | "DownValues" | "OwnValues" | "SubValues" | "NValues"
-    | "FormatValues" | "DefaultValues"
+    "Messages" | "OwnValues" | "SubValues" | "NValues" | "FormatValues"
+    | "DefaultValues"
       if args.len() == 1 =>
     {
+      return Some(Ok(Expr::List(vec![])));
+    }
+    "DownValues" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        let func_defs = crate::FUNC_DEFS
+          .with(|m| m.borrow().get(sym).cloned().unwrap_or_default());
+        if func_defs.is_empty() {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        let rules: Vec<Expr> = func_defs
+          .iter()
+          .map(|(params, _conds, _defaults, heads, blank_types, body)| {
+            let pattern_args: Vec<Expr> = params
+              .iter()
+              .enumerate()
+              .map(|(i, p)| Expr::Pattern {
+                name: p.clone(),
+                head: heads.get(i).and_then(|h| h.clone()),
+                blank_type: blank_types.get(i).copied().unwrap_or(1),
+              })
+              .collect();
+            Expr::RuleDelayed {
+              pattern: Box::new(Expr::FunctionCall {
+                name: "HoldPattern".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: sym.clone(),
+                  args: pattern_args,
+                }],
+              }),
+              replacement: Box::new(body.clone()),
+            }
+          })
+          .collect();
+        return Some(Ok(Expr::List(rules)));
+      }
       return Some(Ok(Expr::List(vec![])));
     }
     "UpValues" if args.len() == 1 => {

@@ -168,10 +168,10 @@ InformationQuery = { "?" ~ !"?" ~ Identifier }
 Unset = { Identifier ~ "=." }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
-AddTo = { Identifier ~ "+=" ~ Expression }
-SubtractFrom = { Identifier ~ "-=" ~ Expression }
-TimesBy = { Identifier ~ "*=" ~ Expression }
-DivideBy = { Identifier ~ "/=" ~ Expression }
+AddTo = { (PartExtract | Identifier) ~ "+=" ~ Expression }
+SubtractFrom = { (PartExtract | Identifier) ~ "-=" ~ Expression }
+TimesBy = { (PartExtract | Identifier) ~ "*=" ~ Expression }
+DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that

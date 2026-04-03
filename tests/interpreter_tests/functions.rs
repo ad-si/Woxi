@@ -1026,6 +1026,33 @@ mod down_values {
       "55"
     );
   }
+
+  #[test]
+  fn down_values_introspection() {
+    clear_state();
+    assert_eq!(
+      interpret("F[x_] := x + 2; DownValues[F]").unwrap(),
+      "{HoldPattern[F[x_]] :> x + 2}"
+    );
+  }
+
+  #[test]
+  fn down_values_multiple_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g[x_Integer] := x^2; g[x_String] := StringLength[x]; DownValues[g]"
+      )
+      .unwrap(),
+      "{HoldPattern[g[x_Integer]] :> x^2, HoldPattern[g[x_String]] :> StringLength[x]}"
+    );
+  }
+
+  #[test]
+  fn down_values_empty() {
+    clear_state();
+    assert_eq!(interpret("DownValues[undefined]").unwrap(), "{}");
+  }
 }
 
 mod pattern_matching {
