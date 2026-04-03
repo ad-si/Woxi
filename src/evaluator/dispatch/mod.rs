@@ -4968,28 +4968,13 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Functions that return their single argument unchanged (identity/pass-through)
-  if matches!(
-    name,
-    "PermutationProduct" | "Parallelize" | "Setting" | "TrigFactor"
-  ) && args.len() == 1
-  {
+  if matches!(name, "PermutationProduct") && args.len() == 1 {
     return Ok(args[0].clone());
   }
 
   // Functions that return empty list
-  if matches!(
-    name,
-    "SyntaxInformation"
-      | "SystemOptions"
-      | "LaunchKernels"
-      | "DistributeDefinitions"
-  ) {
+  if matches!(name, "SyntaxInformation" | "LaunchKernels") {
     return Ok(Expr::List(vec![]));
-  }
-
-  // Parallel/system functions that return Null (no-op in single-process mode)
-  if matches!(name, "ParallelDo" | "SetSharedVariable" | "PrintTemporary") {
-    return Ok(Expr::Identifier("Null".to_string()));
   }
 
   // FilePrint[path] — print the contents of a file
@@ -5044,28 +5029,6 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("False".to_string()));
   }
 
-  // Vectors[x] defaults to Vectors[x, Complexes]
-  if name == "Vectors" && args.len() == 1 {
-    return Ok(Expr::FunctionCall {
-      name: "Vectors".to_string(),
-      args: vec![args[0].clone(), Expr::Identifier("Complexes".to_string())],
-    });
-  }
-
-  // AbsArg[x] → {Abs[x], Arg[x]}
-  if name == "AbsArg" && args.len() == 1 {
-    return Ok(Expr::List(vec![
-      Expr::FunctionCall {
-        name: "Abs".to_string(),
-        args: vec![args[0].clone()],
-      },
-      Expr::FunctionCall {
-        name: "Arg".to_string(),
-        args: vec![args[0].clone()],
-      },
-    ]));
-  }
-
   // FirstCase[x, y] returns Missing["NotFound"] when x is not a list
   if name == "FirstCase"
     && args.len() == 2
@@ -5078,25 +5041,7 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Neural network layer/model functions return $Failed for invalid arguments
-  if matches!(
-    name,
-    "TotalLayer"
-      | "NetEncoder"
-      | "ElementwiseLayer"
-      | "SoftmaxLayer"
-      | "PoolingLayer"
-      | "BatchNormalizationLayer"
-      | "NetModel"
-      | "NetDecoder"
-  ) {
-    return Ok(Expr::Identifier("$Failed".to_string()));
-  }
-
-  // System/UI functions that return $Failed for unsupported operations
-  if matches!(
-    name,
-    "CreatePalette" | "DialogInput" | "CopyToClipboard" | "ResourceObject"
-  ) {
+  if matches!(name, "TotalLayer" | "NetEncoder") {
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
 
@@ -5183,258 +5128,10 @@ pub fn evaluate_function_call_ast_inner(
       | "NotebookGet"
       | "Visible"
       | "TruncatedDistribution"
-      | "NotebookFind"
-      | "ClassifierMeasurements"
-      | "EstimatedProcess"
-      | "HighlightMesh"
-      | "Animator"
-      | "AutoScroll"
-      | "ConfidenceLevel"
       | "CoefficientRules"
-      | "Thinning"
-      | "Tolerance"
-      | "NetInitialize"
-      | "BoundaryMeshRegion"
-      | "GeometricBrownianMotionProcess"
-      | "SelectComponents"
-      | "MeshCellStyle"
-      | "NotebookPut"
-      | "TextSentences"
-      | "PolynomialReduce"
-      | "Cumulant"
-      | "ThreeJSymbol"
-
-      | "Magnify"
-      | "ScriptBaselineShifts"
-      | "LineSpacing"
-      | "FunctionRange"
-      | "SectorOrigin"
-      | "MaxTrainingRounds"
-      | "PolarAxes"
-      | "SystemDialogInput"
-      | "ARProcess"
-      | "DiscreteWaveletTransform"
-      | "RelationGraph"
-      | "ImagePartition"
-      | "PetersenGraph"
-      | "RSolveValue"
-      | "FeatureExtraction"
-      | "GraphDistance"
-      | "CellStyle"
-      | "ImageIdentify"
-      | "Asymptotic"
-      | "CoordinateTransform"
-      | "WindowMargins"
-      | "AffineTransform"
-      | "RadioButton"
-      | "LegendMarkers"
       | "PowersRepresentations"
-      | "ShowStringCharacters"
-      | "NDEigensystem"
-      | "TextureCoordinateFunction"
-      | "FindDistribution"
-      | "TextCases"
-      | "Multicolumn"
-      | "Record"
-      | "WhittakerM"
-      | "InterpretationBox"
-      | "IncludePods"
-      | "RulePlot"
-      | "MathieuGroupM11"
-      | "Trig"
-      | "Overlaps"
-      | "ItoProcess"
-      | "RotationAction"
-      | "Ket"
-      | "DiscreteMarkovProcess"
-      | "BoundaryDiscretizeGraphics"
-      | "TradingChart"
-      | "FindMaxValue"
-      | "FormPage"
-      | "NearestNeighborGraph"
-
-      | "RiemannSiegelZ"
-      | "ChartBaseStyle"
-      | "MoonPhase"
-      | "HazardFunction"
-      | "ContentSize"
-      | "WordBoundary"
-      | "NExpectation"
-      | "Mouseover"
-      | "RectangleChart"
-      | "AffineStateSpaceModel"
-      | "LogLikelihood"
-      | "SpanFromAbove"
-      | "MinValue"
-      | "SubPlus"
-      | "Extension"
-      | "WeightedAdjacencyGraph"
-      | "CellFrame"
-      | "Compiled"
-      | "AudioGenerator"
-      | "Underlined"
-      | "FourierCoefficient"
-      | "Overscript"
-      | "Primes"
-      | "CommunityGraphPlot"
-      | "RandomPrime"
-      | "SuperDagger"
-      | "ReImPlot"
-      | "ExponentFunction"
-      | "ProductDistribution"
-      | "TogglerBar"
-      | "RegionDimension"
-      | "FeatureExtractor"
-      | "ArgMax"
-      | "VertexNormals"
-      | "CorrelationFunction"
-      | "BellY"
       | "BarnesG"
-      | "URL"
-      | "FindGeometricTransform"
-      | "Deployed"
-      | "DirichletDistribution"
-      | "RiemannSiegelTheta"
-      | "RandomInstance"
-      | "NotebookDelete"
-      | "FindFormula"
-      | "Graph3D"
-      | "WhittakerW"
-      | "MaxDetect"
-      | "GeometricScene"
-      | "ClusteringComponents"
-      | "BernoulliGraphDistribution"
-      | "MandelbrotSetPlot"
-      | "Language"
       | "SequenceCases"
-      | "TimeConstraint"
-      | "DoubleRightTee"
-      | "Matrices"
-      | "JoinedCurve"
-      | "RunProcess"
-      | "StartingStepSize"
-      | "DefaultButton"
-      | "Trigger"
-      | "GeoMarker"
-      | "ContentSelectable"
-      | "ExportForm"
-      | "ParallelSubmit"
-      | "Application"
-      | "FindFile"
-      | "DistanceTransform"
-      | "TimelinePlot"
-      | "PassEventsDown"
-      | "CircleDot"
-      | "VectorScaling"
-      | "FindGeneratingFunction"
-      | "AssociateTo"
-      | "HistogramDistribution"
-      | "GaussianMatrix"
-      | "TextRecognize"
-      | "NumberSigns"
-      | "WeierstrassZeta"
-      | "ListSurfacePlot3D"
-      | "FRatioDistribution"
-      | "DateValue"
-      | "DensityPlot3D"
-      | "GeoRegionValuePlot"
-      | "MaxExtraConditions"
-      | "TimeSeriesModelFit"
-      | "PaneSelector"
-      | "URLExecute"
-
-      | "CoordinatesToolOptions"
-      | "ColorCombine"
-      | "Highlighted"
-      | "TextGrid"
-      | "NumericFunction"
-      | "Scrollbars"
-      | "ColorSetter"
-      | "DistanceMatrix"
-      | "InverseWaveletTransform"
-      // TreeGraph is now implemented in plotting.rs
-      | "PadeApproximant"
-      | "FillingTransform"
-      | "SamplingPeriod"
-      | "FindCycle"
-      | "TimeSeriesForecast"
-      | "Cube"
-      | "CharacteristicFunction"
-      | "PermutationReplace"
-      | "DiscreteVariables"
-      | "StripOnInput"
-      | "SubMinus"
-      | "CornerNeighbors"
-      | "TriangularDistribution"
-      | "RealExponent"
-      | "ColorQuantize"
-      | "BinaryWrite"
-      | "CheckboxBar"
-      | "TooltipDelay"
-      | "RandomPermutation"
-      | "WatershedComponents"
-      | "FactorialMoment"
-      | "ViewCenter"
-      | "QuantilePlot"
-      | "FourierSinSeries"
-      | "MathieuCharacteristicA"
-
-      | "StieltjesGamma"
-      | "PolarTicks"
-      | "BeckmannDistribution"
-      | "WeierstrassSigma"
-      | "MathieuC"
-      | "MetaInformation"
-      | "NotebookSave"
-      | "ListContourPlot3D"
-      | "ResamplingMethod"
-      | "AngularGauge"
-      | "ColorReplace"
-      | "GraphPlot3D"
-      | "ButtonFunction"
-      | "Sunday"
-      | "FrobeniusSolve"
-      | "ImageValue"
-      | "GeneratedParameters"
-      | "PlotRegion"
-      | "MatrixLog"
-      | "DensityHistogram"
-      | "DistributionChart"
-      | "InverseZTransform"
-      | "IncidenceMatrix"
-      | "Notebooks"
-      | "ZTransform"
-      | "LeastSquares"
-      | "FeatureTypes"
-      | "CovarianceFunction"
-      | "XYZColor"
-      | "GraphHighlightStyle"
-      | "ImageTrim"
-      | "BSplineSurface"
-      | "SingularValueList"
-      | "MorphologicalBinarize"
-      | "VertexWeight"
-      | "SingleLetterItalics"
-      | "PolarGridLines"
-      | "RootApproximant"
-      | "Interpretation"
-      | "SymmetricGroup"
-      | "DihedralGroup"
-      | "AlternatingGroup"
-      | "WattsStrogatzGraphDistribution"
-      | "BarabasiAlbertGraphDistribution"
-      | "SpatialGraphDistribution"
-      | "UniformGraphDistribution"
-      | "Databin"
-      | "SmoothDensityHistogram"
-      | "NetExtract"
-      | "HankelH1"
-      | "Friday"
-      | "CloudImport"
-      | "Temporary"
-      | "ServiceConnect"
-      | "NonlinearStateSpaceModel"
-      | "DefaultDuration"
       | "EndOfLine"
       | "RowLines"
       | "DeleteContents"
