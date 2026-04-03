@@ -1803,7 +1803,7 @@ FactorialMoment,Factorial moment,✅,unevaluated,8.0,1836
 WatershedComponents,Watershed components,✅,unevaluated,8.0,1836
 LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
 ViewCenter,View center option,✅,unevaluated,2.0,1838
-FileType,File type,✅,unevaluated,2.0,1842
+FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,✅,unevaluated,7.0,1842
 MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3.0,1842
 QuantilePlot,Quantile plot,✅,unevaluated,8.0,1842

@@ -4958,6 +4958,24 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // FileType[path] — return the type of a file/directory
+  if name == "FileType"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    let p = std::path::Path::new(path);
+    let result = if !p.exists() {
+      "None"
+    } else if p.is_dir() {
+      "Directory"
+    } else if p.is_file() {
+      "File"
+    } else {
+      "Special"
+    };
+    return Ok(Expr::Identifier(result.to_string()));
+  }
+
   // DirectoryQ[path] — check if path is a directory
   if name == "DirectoryQ" && args.len() == 1 {
     if let Expr::String(path) = &args[0] {
@@ -5303,7 +5321,7 @@ pub fn evaluate_function_call_ast_inner(
       | "QuantilePlot"
       | "FourierSinSeries"
       | "MathieuCharacteristicA"
-      | "FileType"
+
       | "StieltjesGamma"
       | "PolarTicks"
       | "BeckmannDistribution"
