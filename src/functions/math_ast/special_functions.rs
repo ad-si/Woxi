@@ -9029,6 +9029,121 @@ fn appell_f2_numeric(
   total
 }
 
+/// AppellF3[a1, a2, b1, b2, c, x, y] - Appell hypergeometric function F3
+/// F3(a1, a2, b1, b2; c; x, y) = Σ_{m,n≥0} (a1)_m (a2)_n (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
+pub fn appell_f3_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 7 {
+    return Err(InterpreterError::EvaluationError(
+      "AppellF3 expects exactly 7 arguments".into(),
+    ));
+  }
+
+  let a1 = &args[0];
+  let a2 = &args[1];
+  let b1 = &args[2];
+  let b2 = &args[3];
+  let c = &args[4];
+  let x = &args[5];
+  let y = &args[6];
+
+  let is_zero = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+  };
+
+  let x_zero = is_zero(x);
+  let y_zero = is_zero(y);
+
+  // x = 0, y = 0 => 1
+  if x_zero && y_zero {
+    return Ok(Expr::Integer(1));
+  }
+
+  // a1 = 0 or b1 = 0 or x = 0 => Hypergeometric2F1[a2, b2, c, y]
+  if is_zero(a1) || is_zero(b1) || x_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a2.clone(), b2.clone(), c.clone(), y.clone()],
+    );
+  }
+
+  // a2 = 0 or b2 = 0 or y = 0 => Hypergeometric2F1[a1, b1, c, x]
+  if is_zero(a2) || is_zero(b2) || y_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a1.clone(), b1.clone(), c.clone(), x.clone()],
+    );
+  }
+
+  // Numeric evaluation when all args are numeric and at least one is Real
+  let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
+  let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
+  if vals.iter().all(|v| v.is_some()) && has_real {
+    let a1 = vals[0].unwrap();
+    let a2 = vals[1].unwrap();
+    let b1 = vals[2].unwrap();
+    let b2 = vals[3].unwrap();
+    let c = vals[4].unwrap();
+    let x = vals[5].unwrap();
+    let y = vals[6].unwrap();
+    return Ok(Expr::Real(appell_f3_numeric(a1, a2, b1, b2, c, x, y)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "AppellF3".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute F3(a1, a2, b1, b2; c; x, y) using double series
+fn appell_f3_numeric(
+  a1: f64,
+  a2: f64,
+  b1: f64,
+  b2: f64,
+  c: f64,
+  x: f64,
+  y: f64,
+) -> f64 {
+  // F3 = Σ_{m=0}^∞ Σ_{n=0}^∞ (a1)_m (a2)_n (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
+  // The m-loop base (n=0): (a1)_m (b1)_m / ((c)_m m!) x^m
+  // For each m, inner n: ratio = (a2+n-1)(b2+n-1) / ((c+m+n-1) n) * y
+
+  let mut total = 0.0;
+  let mut coeff_m = 1.0; // (a1)_m (b1)_m / ((c)_m m!) x^m
+
+  for m in 0..200 {
+    // Inner sum over n
+    let mut inner_sum = 1.0;
+    let mut coeff_n = 1.0;
+
+    for n in 1..200 {
+      coeff_n *= (a2 + n as f64 - 1.0) * (b2 + n as f64 - 1.0)
+        / ((c + m as f64 + n as f64 - 1.0) * n as f64)
+        * y;
+      inner_sum += coeff_n;
+      if coeff_n.abs() < 1e-16 * inner_sum.abs().max(1e-300) {
+        break;
+      }
+    }
+
+    total += coeff_m * inner_sum;
+
+    // Update coeff_m for m+1
+    if m < 199 {
+      coeff_m *= (a1 + m as f64) * (b1 + m as f64)
+        / ((c + m as f64) * (m as f64 + 1.0))
+        * x;
+      if coeff_m.abs() < 1e-16 * total.abs().max(1e-300) {
+        break;
+      }
+    }
+  }
+
+  total
+}
+
 /// Hypergeometric1F1Regularized[a, b, z] = Hypergeometric1F1[a, b, z] / Gamma[b]
 pub fn hypergeometric_1f1_regularized_ast(
   args: &[Expr],
