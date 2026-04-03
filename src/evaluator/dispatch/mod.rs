@@ -4496,6 +4496,34 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // CopyFile[source, dest] — copy a file
+  if name == "CopyFile"
+    && args.len() == 2
+    && let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1])
+  {
+    if !std::path::Path::new(source).exists() {
+      crate::emit_message(&format!(
+        "CopyFile::fdnfnd: Directory or file \"{}\" not found.",
+        source
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+    if std::path::Path::new(dest).exists() {
+      crate::emit_message(&format!(
+        "CopyFile::eexist: {} already exists.",
+        dest
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+    match std::fs::copy(source, dest) {
+      Ok(_) => return Ok(Expr::String(dest.clone())),
+      Err(e) => {
+        crate::emit_message(&format!("CopyFile::failed: {}", e));
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+    }
+  }
+
   // CreateDirectory[path] — create a directory (including intermediate dirs)
   // CreateDirectory[] — create a temporary directory
   if name == "CreateDirectory" {
@@ -5098,7 +5126,7 @@ pub fn evaluate_function_call_ast_inner(
       | "PolynomialReduce"
       | "Cumulant"
       | "ThreeJSymbol"
-      | "CopyFile"
+
       | "Magnify"
       | "ScriptBaselineShifts"
       | "LineSpacing"
