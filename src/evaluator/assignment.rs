@@ -1322,6 +1322,8 @@ pub fn tag_set_delayed_ast(
       defaults.clone(),
       heads.clone(),
       final_body.clone(),
+      lhs.clone(),
+      body.clone(),
     ));
   });
 
