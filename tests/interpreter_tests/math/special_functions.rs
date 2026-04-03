@@ -4719,3 +4719,116 @@ mod dirichlet_eta {
     );
   }
 }
+
+mod sinh_integral {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("SinhIntegral[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("SinhIntegral[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("SinhIntegral[-Infinity]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("SinhIntegral[x]").unwrap(), "SinhIntegral[x]");
+  }
+
+  #[test]
+  fn integer_unevaluated() {
+    assert_eq!(interpret("SinhIntegral[1]").unwrap(), "SinhIntegral[1]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("SinhIntegral[1.0]").unwrap().parse().unwrap();
+    assert!((result - 1.0572508753757286).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("SinhIntegral[2.0]").unwrap().parse().unwrap();
+    assert!((result - 2.501567433354976).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_five() {
+    let result: f64 = interpret("SinhIntegral[5.0]").unwrap().parse().unwrap();
+    assert!((result - 20.093211825697225).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 = interpret("SinhIntegral[-1.0]").unwrap().parse().unwrap();
+    assert!((result - (-1.0572508753757286)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_of_integer() {
+    let result: f64 = interpret("N[SinhIntegral[1]]").unwrap().parse().unwrap();
+    assert!((result - 1.0572508753757286).abs() < 1e-10);
+  }
+}
+
+mod cosh_integral {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("CoshIntegral[0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("CoshIntegral[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("CoshIntegral[x]").unwrap(), "CoshIntegral[x]");
+  }
+
+  #[test]
+  fn integer_unevaluated() {
+    assert_eq!(interpret("CoshIntegral[1]").unwrap(), "CoshIntegral[1]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("CoshIntegral[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.8378669409802083).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("CoshIntegral[2.0]").unwrap().parse().unwrap();
+    assert!((result - 2.452666922646914).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_five() {
+    let result: f64 = interpret("CoshIntegral[5.0]").unwrap().parse().unwrap();
+    assert!((result - 20.092063530105946).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_small() {
+    let result: f64 = interpret("CoshIntegral[0.1]").unwrap().parse().unwrap();
+    assert!((result - (-1.7228683861943335)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_of_integer() {
+    let result: f64 = interpret("N[CoshIntegral[1]]").unwrap().parse().unwrap();
+    assert!((result - 0.8378669409802083).abs() < 1e-10);
+  }
+}

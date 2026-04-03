@@ -8649,3 +8649,185 @@ pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_function_call_ast("Zeta", &[args[0].clone()])?;
   crate::evaluator::evaluate_function_call_ast("Times", &[factor, zeta])
 }
+
+/// SinhIntegral[z] - Hyperbolic sine integral Shi(z)
+/// Shi(z) = ∫₀ᶻ sinh(t)/t dt
+pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "SinhIntegral expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // SinhIntegral[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // SinhIntegral[Infinity] = Infinity
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(sinh_integral_numeric(*x))),
+    other => {
+      if is_neg_infinity(other) {
+        // SinhIntegral[-Infinity] = -Infinity
+        return Ok(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(-1),
+            Expr::Identifier("Infinity".to_string()),
+          ],
+        });
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "SinhIntegral".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Shi(z) numerically for real z
+/// Shi(z) = Σ_{n=0}^∞ z^(2n+1) / ((2n+1) · (2n+1)!)
+fn sinh_integral_numeric(z: f64) -> f64 {
+  if z.abs() < 40.0 {
+    // Power series: Shi(z) = Σ z^(2n+1) / ((2n+1) · (2n+1)!)
+    let z2 = z * z;
+    let mut sum = z;
+    let mut term = z;
+    for n in 1..200 {
+      let n2 = (2 * n) as f64;
+      let n2p1 = n2 + 1.0;
+      // term *= z^2 / (2n * (2n+1))
+      term *= z2 / (n2 * n2p1);
+      sum += term / n2p1;
+      if (term / n2p1).abs() < 1e-16 * sum.abs().max(1e-300) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // For large |z|, use relationship: Shi(z) = (E1(-z) - E1(z)) / 2 + ln|z| - ln|z|
+    // Actually, use: Shi(z) = (exp(z)/(2z)) * Σ ... asymptotic
+    // Simpler: Shi(z) = (Ei(z) - E1(z)) / 2  where Ei is exponential integral
+    // Or directly: Shi(z) = cosh(z)/z * f(z) + sinh(z)/z * g(z)
+    // where the asymptotic expansion mirrors Si but with hyperbolic functions
+    // For practical purposes, use: Shi(z) = (e^z/(2z)) * Σ_{k=0} k! / z^k
+    //                                      - (e^{-z}/(2z)) * Σ_{k=0} (-1)^k k! / z^k
+    // This is divergent but gives good results when truncated
+    let sign = z.signum();
+    let az = z.abs();
+    // Shi(z) is odd, so Shi(z) = sign * Shi(|z|)
+    // Use: Shi(z) = (e^z - e^{-z})/(2z) + integral correction
+    // Better: use direct series for moderate z and Ei for large z
+    // Shi(z) = -i * Si(i*z) ... but let's just extend the series range or use Ei
+    // Shi(z) = (Ei(z) + Ei(-z))/2 + ... no, Shi(z) = (Ei(z) - Ei(-z))/2 - (ln(z) - ln(-z))/2
+    // For real z > 0: Shi(z) = (Ei(z) - E1(z)) / 2
+    // where Ei(z) = -E1(-z) + i*pi for z > 0... this gets complex.
+    // Let's just use the continued fraction / asymptotic for e^z and e^{-z} terms.
+    // Shi(z) = e^z/(2z) * Σ n!/(z^n) (even terms) - e^{-z}/(2z) * Σ n!/(z^n) (alt signs)
+    // Actually simpler: just use the power series with higher precision cutoff
+    // For z up to ~700 (before exp overflow), the asymptotic expansion works
+    let mut sum_p = 1.0_f64; // positive exponential coefficient
+    let mut sum_n = 1.0_f64; // negative exponential coefficient
+    let mut term = 1.0_f64;
+    for k in 1..100 {
+      term *= (k as f64) / az;
+      sum_p += term;
+      sum_n += if k % 2 == 0 { term } else { -term };
+      if term.abs() < 1e-15 {
+        break;
+      }
+      // Divergent asymptotic series: stop when terms start growing
+      if term > (k as f64) / az * term {
+        break;
+      }
+    }
+    if az < 500.0 {
+      sign * (az.exp() * sum_p - (-az).exp() * sum_n) / (2.0 * az)
+    } else {
+      // For very large z, e^{-z} term is negligible
+      sign * az.exp() * sum_p / (2.0 * az)
+    }
+  }
+}
+
+/// CoshIntegral[z] - Hyperbolic cosine integral Chi(z)
+/// Chi(z) = γ + ln(z) + ∫₀ᶻ (cosh(t)-1)/t dt
+pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CoshIntegral expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // CoshIntegral[0] = -Infinity
+    Expr::Integer(0) => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+    }),
+    // CoshIntegral[Infinity] = Infinity
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(cosh_integral_numeric(*x))),
+    other => {
+      if is_neg_infinity(other) {
+        // CoshIntegral[-Infinity] = Infinity (real part)
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "CoshIntegral".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Chi(z) numerically for real z
+/// Chi(z) = γ + ln|z| + ∫₀ᶻ (cosh(t)-1)/t dt
+/// = γ + ln|z| + Σ_{n=1}^∞ z^(2n) / (2n · (2n)!)
+fn cosh_integral_numeric(z: f64) -> f64 {
+  let euler_gamma = 0.5772156649015329;
+
+  if z.abs() < 40.0 {
+    // Power series: Chi(z) = γ + ln|z| + Σ z^(2n) / (2n · (2n)!)
+    let mut sum = euler_gamma + z.abs().ln();
+    let z2 = z * z;
+    let mut term = 1.0; // Will build up z^(2n) / (2n)!
+    for n in 1..200 {
+      let n2 = (2 * n) as f64;
+      // term *= z^2 / ((2n-1) * 2n)
+      term *= z2 / ((n2 - 1.0) * n2);
+      sum += term / n2;
+      if (term / n2).abs() < 1e-16 * sum.abs().max(1e-300) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Asymptotic expansion for large |z|
+    // Chi(z) ≈ e^z/(2z) * Σ + e^{-z}/(2z) * Σ (alternating)
+    let az = z.abs();
+    let mut sum_p = 1.0_f64;
+    let mut sum_n = 1.0_f64;
+    let mut term = 1.0_f64;
+    for k in 1..100 {
+      term *= (k as f64) / az;
+      sum_p += term;
+      sum_n += if k % 2 == 0 { term } else { -term };
+      if term.abs() < 1e-15 {
+        break;
+      }
+    }
+    if az < 500.0 {
+      (az.exp() * sum_p + (-az).exp() * sum_n) / (2.0 * az)
+    } else {
+      az.exp() * sum_p / (2.0 * az)
+    }
+  }
+}
