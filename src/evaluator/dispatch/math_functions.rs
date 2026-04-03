@@ -650,6 +650,9 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::hypergeometric_1f1_regularized_ast(args),
       );
     }
+    "AppellF1" if args.len() == 6 => {
+      return Some(crate::functions::math_ast::appell_f1_ast(args));
+    }
     "BesselI" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_i_ast(args));
     }

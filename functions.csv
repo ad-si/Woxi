@@ -1151,7 +1151,7 @@ WindowSize,,🚫,,3.0,1164
 ValueQ,Tests if a symbol has a value assigned,✅,pure,1.0,1165
 MovingAverage,Computes the moving average of a list,✅,1,6.0,1166
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1.0,1167
-AppellF1,Appell hypergeometric function F1,✅,1,4.0,1168
+AppellF1,Appell hypergeometric function F1(a b1 b2; c; x y),✅,pure,4.0,1168
 Glow,Graphics directive for glow effect,✅,1,6.0,1169
 Cone,3D cone graphics primitive,✅,none,7.0,1170
 DistanceFunction,,🚫,,6.0,1171

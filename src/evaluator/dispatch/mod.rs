@@ -1359,7 +1359,6 @@ pub fn evaluate_function_call_ast_inner(
     | "HoldAllComplete"
     | "CirclePlus"
     | "Glow"
-    | "AppellF1"
     | "PrincipalValue"
     | "UpTo"
     | "LetterCharacter"

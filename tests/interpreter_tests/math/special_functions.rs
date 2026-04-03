@@ -4720,6 +4720,57 @@ mod dirichlet_eta {
   }
 }
 
+mod appell_f1 {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("AppellF1[a, b1, b2, c, x, y]").unwrap(),
+      "AppellF1[a, b1, b2, c, x, y]"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("AppellF1[2, 1, 1, 3, 0.7, 0.3]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.655223346206384).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_zero() {
+    // F1(a, b1, b2; c; 0, 0) = 1
+    let result: f64 = interpret("AppellF1[1, 1, 1, 2, 0.0, 0.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn a_zero() {
+    // F1(0, b1, b2; c; x, y) = 1 (since (0)_{m+n} = 0 for m+n > 0)
+    let result: f64 = interpret("AppellF1[0, 1, 1, 2, 0.5, 0.3]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn y_zero_reduces_to_2f1() {
+    // F1(a, b1, b2; c; x, 0) = 2F1(a, b1; c; x)
+    let result: f64 = interpret("AppellF1[1, 1, 1, 2, 0.5, 0.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.38629436111989).abs() < 1e-8);
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
