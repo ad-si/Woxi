@@ -2284,4 +2284,19 @@ mod complex_division {
   fn one_over_i() {
     assert_eq!(interpret("1/I").unwrap(), "-I");
   }
+
+  #[test]
+  fn plus_sort_total_order_with_opaque_fn() {
+    // Regression test for #107: sorting Plus terms with a mix of
+    // constants, polynomials, and opaque function calls must not panic.
+    let result = interpret(
+      "Simplify[Int[(2+3*x)^2*(4+5*x)^3,x] - (2+3*x)^3*(4+5*x)^3/(3*8) \
+       + (3*(3*4-2*5))/(3*8)*((2*(2 + 3*x)^3)/405 \
+       + ((2 + 3*x)^3*(4 + 5*x)^2)/15 + ((2 + 3*x)^3*(4 + 5*x))/45)]",
+    );
+    assert!(
+      result.is_ok(),
+      "should not panic with total order violation"
+    );
+  }
 }

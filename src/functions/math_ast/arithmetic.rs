@@ -998,6 +998,40 @@ fn contains_opaque_fn_call(e: &Expr) -> bool {
   }
 }
 
+/// Returns true if `e` is a purely numeric/known-constant expression with
+/// no symbolic function calls. Unlike `has_free_variables`, this treats
+/// `f[0]` as non-numeric (it is a symbolic call even though its argument
+/// is numeric). Used for Plus term sorting to identify true constants like
+/// `512 * Rational[-1, 24]` or `(1 + Pi) / 2`.
+fn is_numeric_constant(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => true,
+    Expr::Constant(_) => true,
+    Expr::Identifier(name) => {
+      matches!(name.as_str(), "I" | "Infinity")
+    }
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Rational"
+          | "Complex"
+          | "Times"
+          | "Plus"
+          | "Power"
+          | "Sqrt"
+          | "Log"
+          | "Exp"
+          | "DirectedInfinity"
+      ) && args.iter().all(is_numeric_constant)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      is_numeric_constant(left) && is_numeric_constant(right)
+    }
+    Expr::UnaryOp { operand, .. } => is_numeric_constant(operand),
+    _ => false,
+  }
+}
+
 /// Compare two Plus terms using Wolfram-compatible canonical ordering.
 /// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
 /// each term's pairs are sorted by variable name descending, then compared
@@ -1063,9 +1097,11 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             std::cmp::Ordering::Greater
           };
         }
-        // Constant (no free variables) non-pair term sorts before pair terms
+        // Purely numeric constant non-pair term sorts before pair terms
         // (e.g. (1+Pi)/2 comes before x, matching Wolfram).
-        if !has_free_variables(&none_base) {
+        // Uses is_numeric_constant (not just !has_free_variables) so that
+        // symbolic function calls like f[0] are not treated as constants.
+        if is_numeric_constant(&none_base) {
           return if a_has_pairs {
             std::cmp::Ordering::Greater
           } else {
@@ -1112,9 +1148,35 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
               std::cmp::Ordering::Less
             };
           }
-          // Same earliest variable → fall through to string comparison
-          // so that e.g. E^x sorts before x (since "E^x" < "x") but
-          // a sorts before E^a (since "a" < "E^a"), matching Wolfram.
+        }
+        // Fall back: pair term sorts first (before the non-pair term).
+        // This is consistent with the "no free vars → non-pair first"
+        // early return above: constants are the only terms that sort
+        // before polynomials; all other non-pair terms sort after.
+        // Using a simple consistent rule here prevents transitivity
+        // violations that occur when canonical comparison disagrees
+        // with the early returns above.
+        return if a_has_pairs {
+          std::cmp::Ordering::Less
+        } else {
+          std::cmp::Ordering::Greater
+        };
+      }
+      // When both terms lack polynomial pairs, sort purely numeric
+      // constants before non-constant terms. This mirrors the
+      // asymmetric block's "numeric constant → non-pair first" rule
+      // and prevents transitivity cycles: without it, a constant C,
+      // a polynomial P, and a non-pair term T with free vars can form
+      // C < P (asymmetric), T > P (asymmetric fallback), C > T
+      // (canonical), violating C < P < T ↔ C < T.
+      if !a_has_pairs && !b_has_pairs && pa == 0 {
+        let a_const = is_numeric_constant(&base_a);
+        let b_const = is_numeric_constant(&base_b);
+        if a_const && !b_const {
+          return std::cmp::Ordering::Less;
+        }
+        if b_const && !a_const {
+          return std::cmp::Ordering::Greater;
         }
       }
       // When both terms lack polynomial pairs, are algebraic (priority 0),
