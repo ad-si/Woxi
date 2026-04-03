@@ -1807,6 +1807,72 @@ mod information {
     assert!(result.contains("Attributes -> {Listable}"));
     assert!(result.contains("h[x_] :> x^2"));
   }
+
+  #[test]
+  fn builtin_function_brief() {
+    clear_state();
+    let result = interpret("?Plus").unwrap();
+    assert!(result.contains("Name -> Plus"));
+    assert!(result.contains("Usage -> Adds numbers together"));
+    assert!(result.contains("False]"));
+  }
+
+  #[test]
+  fn builtin_function_full() {
+    clear_state();
+    let result = interpret("??Plus").unwrap();
+    assert!(result.contains("Name -> Plus"));
+    assert!(result.contains("Usage -> Adds numbers together"));
+    assert!(result.contains("Attributes -> {"));
+    assert!(result.contains("Protected"));
+    assert!(result.contains("Flat"));
+    assert!(result.contains("FullName -> System`Plus"));
+    assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn builtin_function_information_call() {
+    clear_state();
+    let result = interpret("Information[Sin]").unwrap();
+    assert!(result.contains("Name -> Sin"));
+    assert!(result.contains("Usage -> Returns the sine"));
+  }
+
+  #[test]
+  fn builtin_function_information_full_call() {
+    clear_state();
+    let result = interpret("Information[Sin, \"Full\"]").unwrap();
+    assert!(result.contains("Attributes -> {"));
+    assert!(result.contains("Listable"));
+    assert!(result.contains("NumericFunction"));
+    assert!(result.contains("FullName -> System`Sin"));
+    assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn double_question_mark_user_defined() {
+    clear_state();
+    let result = interpret("f[x_] := x^2; ??f").unwrap();
+    assert!(result.contains("DownValues -> Information`InformationValueForm"));
+    assert!(result.contains("f[x_] :> x^2"));
+    assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn unknown_symbol() {
+    clear_state();
+    let result = interpret("?xyzNotAFunction").unwrap();
+    assert!(result.contains("Missing[UnknownSymbol"));
+  }
+
+  #[test]
+  fn builtin_symbol_without_attributes() {
+    // A built-in symbol that exists in functions.csv but has no attributes
+    clear_state();
+    let result = interpret("?Table").unwrap();
+    assert!(result.contains("Name -> Table"));
+    assert!(result.contains("Usage ->"));
+  }
 }
 
 mod directory_name {

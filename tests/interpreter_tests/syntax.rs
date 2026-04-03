@@ -2629,6 +2629,24 @@ mod information_function {
       "{Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn double_question_mark_parses() {
+    clear_state();
+    let result = interpret("??Sin").unwrap();
+    // ??symbol parses as Information[symbol, "Full"] which includes attributes
+    assert!(result.contains("Attributes"));
+    assert!(result.contains("FullName -> System`Sin"));
+    assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn single_question_mark_parses() {
+    clear_state();
+    let result = interpret("?Sin").unwrap();
+    assert!(result.contains("Name -> Sin"));
+    assert!(result.contains("False]"));
+  }
 }
 
 mod message_function {

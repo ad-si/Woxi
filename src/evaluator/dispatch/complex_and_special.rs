@@ -288,24 +288,38 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(args[0].clone()));
     }
 
-    // Information[symbol] - returns InformationData about a symbol
-    // ?symbol is syntactic sugar that parses as Information[symbol]
-    // Output matches wolframscript: InformationData[<|...|>, False]
-    "Information" if args.len() == 1 => {
+    // Information[symbol] or Information[symbol, "Full"]
+    // ?symbol parses as Information[symbol]
+    // ??symbol parses as Information[symbol, "Full"]
+    "Information" if args.len() == 1 || args.len() == 2 => {
+      let is_full =
+        args.len() == 2 && matches!(&args[1], Expr::String(s) if s == "Full");
+
       if let Expr::Identifier(sym) = &args[0] {
-        // Look up OwnValues (variable assignments)
+        // Check if this is a built-in function (in functions.csv)
+        let builtin_info = crate::evaluator::get_builtin_function_info(sym);
+        let builtin_attrs =
+          crate::evaluator::attributes::get_builtin_attributes(sym);
+
+        if builtin_info.is_some() || !builtin_attrs.is_empty() {
+          // Built-in symbol
+          return Some(Ok(format_builtin_information(
+            sym,
+            builtin_info,
+            &builtin_attrs,
+            is_full,
+          )));
+        }
+
+        // User-defined symbol: check OwnValues, DownValues, Attributes
         let own_value = crate::ENV.with(|e| {
           let env = e.borrow();
           env.get(sym).cloned()
         });
-
-        // Look up DownValues (function definitions)
         let down_values = crate::FUNC_DEFS.with(|m| {
           let defs = m.borrow();
           defs.get(sym).cloned()
         });
-
-        // Look up user-set Attributes
         let user_attrs =
           crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
 
@@ -314,7 +328,6 @@ pub fn dispatch_complex_and_special(
         let has_attrs = user_attrs.as_ref().is_some_and(|a| !a.is_empty());
 
         if !has_own && !has_down && !has_attrs {
-          // Undefined symbol → Missing[UnknownSymbol, name]
           return Some(Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
             args: vec![
@@ -324,106 +337,13 @@ pub fn dispatch_complex_and_special(
           }));
         }
 
-        // Build OwnValues field
-        let own_str = if let Some(stored) = own_value {
-          let val_str = match stored {
-            crate::StoredValue::ExprVal(e) => expr_to_string(&e),
-            crate::StoredValue::Raw(val) => val,
-            crate::StoredValue::Association(items) => {
-              let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> =
-                items
-                  .iter()
-                  .map(|(k, v)| {
-                    let key_expr = crate::syntax::string_to_expr(k)
-                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
-                    let val_expr = crate::syntax::string_to_expr(v)
-                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
-                    (key_expr, val_expr)
-                  })
-                  .collect();
-              expr_to_string(&crate::syntax::Expr::Association(items_expr))
-            }
-          };
-          format!(
-            "Information`InformationValueForm[OwnValues, {}, {{{} -> {}}}]",
-            sym, sym, val_str
-          )
-        } else {
-          "None".to_string()
-        };
-
-        // Build DownValues field
-        let down_str = if let Some(overloads) = down_values {
-          let rules: Vec<String> = overloads
-            .iter()
-            .map(|(params, conds, _defaults, heads, _blank_types, body)| {
-              let params_str = params
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                  // Check if this param has a literal-match condition (SameQ)
-                  if let Some(Some(Expr::Comparison {
-                    operands,
-                    operators,
-                  })) = conds.get(i)
-                    && operators.iter().any(|op| {
-                      matches!(op, crate::syntax::ComparisonOp::SameQ)
-                    })
-                    && let Some(literal_val) = operands.get(1)
-                  {
-                    return expr_to_string(literal_val);
-                  }
-                  if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
-                    format!("{}_{}", p, head)
-                  } else {
-                    format!("{}_", p)
-                  }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-              let body_str = expr_to_string(body);
-              format!("{}[{}] :> {}", sym, params_str, body_str)
-            })
-            .collect();
-          format!(
-            "Information`InformationValueForm[DownValues, {}, {{{}}}]",
-            sym,
-            rules.join(", ")
-          )
-        } else {
-          "None".to_string()
-        };
-
-        // Build Attributes field
-        let attrs_str = if let Some(attrs) = user_attrs {
-          if attrs.is_empty() {
-            "{}".to_string()
-          } else {
-            format!("{{{}}}", attrs.join(", "))
-          }
-        } else {
-          "{}".to_string()
-        };
-
-        // Build InformationData output matching wolframscript
-        let result_str = format!(
-          "InformationData[<|ObjectType -> Symbol, \
-           Usage -> Global`{sym}, \
-           Documentation -> None, \
-           OwnValues -> {own_str}, \
-           UpValues -> None, \
-           DownValues -> {down_str}, \
-           SubValues -> None, \
-           DefaultValues -> None, \
-           NValues -> None, \
-           FormatValues -> None, \
-           Options -> None, \
-           Attributes -> {attrs_str}, \
-           FullName -> Global`{sym}|>, False]"
-        );
-
-        // Parse the result string back into an Expr for proper output
-        return Some(Ok(Expr::Raw(result_str)));
+        return Some(Ok(format_user_information(
+          sym,
+          own_value,
+          down_values,
+          user_attrs,
+          is_full,
+        )));
       }
 
       // Non-identifier argument — return unevaluated
@@ -1231,6 +1151,223 @@ pub fn dispatch_complex_and_special(
     _ => {}
   }
   None
+}
+
+/// Format Information output for a built-in symbol.
+fn format_builtin_information(
+  sym: &str,
+  info: Option<&crate::evaluator::BuiltinFunctionInfo>,
+  builtin_attrs: &[&str],
+  is_full: bool,
+) -> Expr {
+  // Collect user-set attributes (merged with built-in)
+  let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+  let mut all_attrs: Vec<String> =
+    builtin_attrs.iter().map(|a| a.to_string()).collect();
+  if let Some(ua) = user_attrs {
+    for a in ua {
+      if !all_attrs.contains(&a) {
+        all_attrs.push(a);
+      }
+    }
+  }
+  all_attrs.sort();
+
+  let description = info.map(|i| i.description).unwrap_or("");
+
+  // Build association fields
+  let mut fields: Vec<String> = Vec::new();
+  fields.push(format!("Name -> {}", sym));
+  if !description.is_empty() {
+    fields.push(format!("Usage -> {}", description));
+  }
+
+  if is_full {
+    // Full output: include all fields
+    fields.push("ObjectType -> Symbol".to_string());
+
+    // Options
+    let stored_opts =
+      crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+    if let Some(opts) = stored_opts
+      && !opts.is_empty()
+    {
+      let opts_str = opts
+        .iter()
+        .map(expr_to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+      fields.push(format!("Options -> {{{}}}", opts_str));
+    } else {
+      fields.push("Options -> {}".to_string());
+    }
+
+    // Attributes
+    if all_attrs.is_empty() {
+      fields.push("Attributes -> {}".to_string());
+    } else {
+      fields.push(format!("Attributes -> {{{}}}", all_attrs.join(", ")));
+    }
+
+    fields.push(format!("FullName -> System`{}", sym));
+  }
+
+  let result_str = format!(
+    "InformationData[<|{}|>, {}]",
+    fields.join(", "),
+    if is_full { "True" } else { "False" }
+  );
+  Expr::Raw(result_str)
+}
+
+/// Format Information output for a user-defined symbol.
+fn format_user_information(
+  sym: &str,
+  own_value: Option<crate::StoredValue>,
+  down_values: Option<
+    Vec<(
+      Vec<String>,
+      Vec<Option<Expr>>,
+      Vec<Option<Expr>>,
+      Vec<Option<String>>,
+      Vec<u8>,
+      Expr,
+    )>,
+  >,
+  user_attrs: Option<Vec<String>>,
+  is_full: bool,
+) -> Expr {
+  // Build OwnValues field
+  let own_str = if let Some(stored) = own_value {
+    let val_str = match stored {
+      crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+      crate::StoredValue::Raw(val) => val,
+      crate::StoredValue::Association(items) => {
+        let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> = items
+          .iter()
+          .map(|(k, v)| {
+            let key_expr = crate::syntax::string_to_expr(k)
+              .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
+            let val_expr = crate::syntax::string_to_expr(v)
+              .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+            (key_expr, val_expr)
+          })
+          .collect();
+        expr_to_string(&crate::syntax::Expr::Association(items_expr))
+      }
+    };
+    format!(
+      "Information`InformationValueForm[OwnValues, {}, {{{} -> {}}}]",
+      sym, sym, val_str
+    )
+  } else {
+    "None".to_string()
+  };
+
+  // Build DownValues field
+  let down_str = if let Some(overloads) = down_values {
+    let rules: Vec<String> = overloads
+      .iter()
+      .map(|(params, conds, _defaults, heads, _blank_types, body)| {
+        let params_str = params
+          .iter()
+          .enumerate()
+          .map(|(i, p)| {
+            if let Some(Some(Expr::Comparison {
+              operands,
+              operators,
+            })) = conds.get(i)
+              && operators
+                .iter()
+                .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+              && let Some(literal_val) = operands.get(1)
+            {
+              return expr_to_string(literal_val);
+            }
+            if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+              format!("{}_{}", p, head)
+            } else {
+              format!("{}_", p)
+            }
+          })
+          .collect::<Vec<_>>()
+          .join(", ");
+        let body_str = expr_to_string(body);
+        format!("{}[{}] :> {}", sym, params_str, body_str)
+      })
+      .collect();
+    format!(
+      "Information`InformationValueForm[DownValues, {}, {{{}}}]",
+      sym,
+      rules.join(", ")
+    )
+  } else {
+    "None".to_string()
+  };
+
+  // Build Attributes field
+  let attrs_str = if let Some(attrs) = user_attrs {
+    if attrs.is_empty() {
+      "{}".to_string()
+    } else {
+      format!("{{{}}}", attrs.join(", "))
+    }
+  } else {
+    "{}".to_string()
+  };
+
+  if is_full {
+    // Full output: all fields
+    // Options
+    let stored_opts =
+      crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+    let opts_str = if let Some(opts) = stored_opts
+      && !opts.is_empty()
+    {
+      let s = opts
+        .iter()
+        .map(expr_to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+      format!("{{{}}}", s)
+    } else {
+      "None".to_string()
+    };
+
+    let result_str = format!(
+      "InformationData[<|ObjectType -> Symbol, \
+       Usage -> Global`{sym}, \
+       Documentation -> None, \
+       OwnValues -> {own_str}, \
+       UpValues -> None, \
+       DownValues -> {down_str}, \
+       SubValues -> None, \
+       DefaultValues -> None, \
+       NValues -> None, \
+       FormatValues -> None, \
+       Options -> {opts_str}, \
+       Attributes -> {attrs_str}, \
+       FullName -> Global`{sym}|>, True]"
+    );
+    Expr::Raw(result_str)
+  } else {
+    let result_str = format!(
+      "InformationData[<|ObjectType -> Symbol, \
+       Usage -> Global`{sym}, \
+       Documentation -> None, \
+       OwnValues -> {own_str}, \
+       UpValues -> None, \
+       DownValues -> {down_str}, \
+       SubValues -> None, \
+       DefaultValues -> None, \
+       NValues -> None, \
+       FormatValues -> None, \
+       Options -> None, \
+       Attributes -> {attrs_str}, \
+       FullName -> Global`{sym}|>, False]"
+    );
+    Expr::Raw(result_str)
+  }
 }
 
 /// Return the built-in Default value for a symbol as an Expr, if one exists.

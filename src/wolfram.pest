@@ -163,6 +163,8 @@ PreDecrement = { "--" ~ (PartExtract | Identifier) }
 
 // InformationQuery: ?symbol shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ Identifier }
+// FullInformationQuery: ??symbol shorthand for Information[symbol, "Full"]
+FullInformationQuery = { "??" ~ Identifier }
 
 // Unset: x =. (removes definition for simple identifiers)
 // Function call unsets (f[x] =.) are handled by UnsetSuffix in Expression.
@@ -288,6 +290,7 @@ Term = _{
   | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
+  | FullInformationQuery
   | InformationQuery
   | NamedCharIdentifier
   | Identifier

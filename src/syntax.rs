@@ -1204,6 +1204,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(symbol_name)],
       }
     }
+    Rule::FullInformationQuery => {
+      let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
+      Expr::FunctionCall {
+        name: "Information".to_string(),
+        args: vec![
+          Expr::Identifier(symbol_name),
+          Expr::String("Full".to_string()),
+        ],
+      }
+    }
     Rule::NamedCharIdentifier => {
       let s = pair.as_str();
       named_char_to_expr(s)
