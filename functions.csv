@@ -1539,7 +1539,7 @@ TruncatedDistribution,Truncated probability distribution,✅,pure,8.0,1564
 NotebookFind,Search in a notebook,✅,unevaluated,3.0,1565
 ElementwiseLayer,Neural net elementwise layer,✅,unevaluated,11.0,1566
 ClassifierMeasurements,Classifier performance measurements,✅,unevaluated,10.0,1569
-CreateDirectory,Create a directory,✅,unevaluated,2.0,1569
+CreateDirectory,Creates a directory including intermediate directories,✅,filesystem,2.0,1569
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7.0,1569
 CopyFile,Copy a file,✅,unevaluated,2.0,1571
 EstimatedProcess,Estimated stochastic process,✅,unevaluated,9.0,1571

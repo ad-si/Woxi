@@ -12394,6 +12394,54 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn create_directory_basic() {
+    let dir = "/tmp/woxi_test_create_dir_basic";
+    // Clean up if left over from previous test
+    let _ = std::fs::remove_dir_all(dir);
+    assert_eq!(
+      interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
+      dir
+    );
+    assert!(std::path::Path::new(dir).is_dir());
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn create_directory_nested() {
+    let dir = "/tmp/woxi_test_create_dir_nested/sub1/sub2";
+    let base = "/tmp/woxi_test_create_dir_nested";
+    let _ = std::fs::remove_dir_all(base);
+    assert_eq!(
+      interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap(),
+      dir
+    );
+    assert!(std::path::Path::new(dir).is_dir());
+    std::fs::remove_dir_all(base).unwrap();
+  }
+
+  #[test]
+  fn create_directory_already_exists() {
+    let dir = "/tmp/woxi_test_create_dir_exists";
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir).unwrap();
+    let result = interpret(&format!(r#"CreateDirectory["{}"]"#, dir)).unwrap();
+    assert_eq!(result, "$Failed");
+    std::fs::remove_dir_all(dir).unwrap();
+  }
+
+  #[test]
+  fn create_directory_no_args() {
+    let result = interpret("CreateDirectory[]").unwrap();
+    // Should return a string path (temp directory)
+    assert!(result.starts_with('/'), "Expected a path, got: {}", result);
+  }
+
+  #[test]
+  fn create_directory_non_string() {
+    assert_eq!(interpret("CreateDirectory[123]").unwrap(), "$Failed");
+  }
+
+  #[test]
   fn betweenness_centrality_line() {
     assert_eq!(
       interpret("BetweennessCentrality[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3]}]]").unwrap(),
