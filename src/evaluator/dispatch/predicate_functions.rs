@@ -419,14 +419,28 @@ pub fn dispatch_predicate_functions(
         }
         let rules: Vec<Expr> = func_defs
           .iter()
-          .map(|(params, _conds, _defaults, heads, blank_types, body)| {
+          .map(|(params, conds, _defaults, heads, blank_types, body)| {
             let pattern_args: Vec<Expr> = params
               .iter()
               .enumerate()
-              .map(|(i, p)| Expr::Pattern {
-                name: p.clone(),
-                head: heads.get(i).and_then(|h| h.clone()),
-                blank_type: blank_types.get(i).copied().unwrap_or(1),
+              .map(|(i, p)| {
+                // Check if this param has a literal-match condition (SameQ)
+                if let Some(Some(Expr::Comparison {
+                  operands,
+                  operators,
+                })) = conds.get(i)
+                  && operators
+                    .iter()
+                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                  && let Some(literal_val) = operands.get(1)
+                {
+                  return literal_val.clone();
+                }
+                Expr::Pattern {
+                  name: p.clone(),
+                  head: heads.get(i).and_then(|h| h.clone()),
+                  blank_type: blank_types.get(i).copied().unwrap_or(1),
+                }
               })
               .collect();
             Expr::RuleDelayed {

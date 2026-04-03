@@ -356,11 +356,23 @@ pub fn dispatch_complex_and_special(
         let down_str = if let Some(overloads) = down_values {
           let rules: Vec<String> = overloads
             .iter()
-            .map(|(params, _conds, _defaults, heads, _blank_types, body)| {
+            .map(|(params, conds, _defaults, heads, _blank_types, body)| {
               let params_str = params
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
+                  // Check if this param has a literal-match condition (SameQ)
+                  if let Some(Some(Expr::Comparison {
+                    operands,
+                    operators,
+                  })) = conds.get(i)
+                    && operators.iter().any(|op| {
+                      matches!(op, crate::syntax::ComparisonOp::SameQ)
+                    })
+                    && let Some(literal_val) = operands.get(1)
+                  {
+                    return expr_to_string(literal_val);
+                  }
                   if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
                     format!("{}_{}", p, head)
                   } else {
