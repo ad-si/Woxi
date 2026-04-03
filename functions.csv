@@ -1596,7 +1596,7 @@ CellStyle,Cell style specification,✅,unevaluated,9.0,1625
 GraphDistance,Distance between graph vertices,✅,unevaluated,8.0,1625
 Asymptotic,Asymptotic approximation,✅,unevaluated,12.1,1629
 CoordinateTransform,Coordinate system transformation,✅,unevaluated,9.0,1629
-DirectoryQ,Test if path is a directory,✅,unevaluated,7.0,1629
+DirectoryQ,Tests if a path is an existing directory,✅,filesystem,7.0,1629
 ImageIdentify,Identify objects in images,✅,unevaluated,10.1,1629
 DiscreteDelta,Discrete delta function,✅,computation,4.0,1632
 LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7.0,1632

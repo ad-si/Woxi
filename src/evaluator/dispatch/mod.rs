@@ -4958,11 +4958,13 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
-  // DirectoryQ[x] returns False for non-string arguments
-  if name == "DirectoryQ" {
-    if let Some(Expr::String(_)) = args.first() {
-      // For string arguments, check actual filesystem
-      return Ok(Expr::Identifier("False".to_string()));
+  // DirectoryQ[path] — check if path is a directory
+  if name == "DirectoryQ" && args.len() == 1 {
+    if let Expr::String(path) = &args[0] {
+      let is_dir = std::path::Path::new(path).is_dir();
+      return Ok(Expr::Identifier(
+        if is_dir { "True" } else { "False" }.to_string(),
+      ));
     }
     return Ok(Expr::Identifier("False".to_string()));
   }

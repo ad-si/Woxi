@@ -8489,6 +8489,31 @@ mod batch_unevaluated_wrappers_2 {
   fn directory_q() {
     assert_eq!(interpret("DirectoryQ[x]").unwrap(), "False");
   }
+
+  #[test]
+  fn directory_q_true() {
+    assert_eq!(interpret(r#"DirectoryQ["/tmp"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn directory_q_nonexistent() {
+    assert_eq!(
+      interpret(r#"DirectoryQ["/nonexistent_dir_xyz"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn directory_q_file() {
+    let file = "/tmp/woxi_test_directoryq_file.txt";
+    std::fs::write(file, "test").unwrap();
+    assert_eq!(
+      interpret(&format!(r#"DirectoryQ["{}"]"#, file)).unwrap(),
+      "False"
+    );
+    std::fs::remove_file(file).unwrap();
+  }
+
   #[test]
   fn image_identify() {
     assert_eq!(interpret("ImageIdentify[x]").unwrap(), "ImageIdentify[x]");
