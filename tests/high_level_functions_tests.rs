@@ -2117,4 +2117,106 @@ mod high_level_functions_tests {
       assert_eq!(interpret("ⅈ^2").unwrap(), "-1");
     }
   }
+
+  mod style_grid_tests {
+    use super::*;
+
+    #[test]
+    fn test_style_grid_renders() {
+      // Style[Grid[...], Bold, Red] should produce graphical output
+      assert_eq!(
+        interpret("Style[Grid[{{a, b}, {c, d}}], Bold, Red]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn test_style_grid_bold_propagates() {
+      // All cells should have font-weight="bold"
+      let svg =
+        interpret("ExportString[Style[Grid[{{a, b}, {c, d}}], Bold], \"SVG\"]")
+          .unwrap();
+      assert!(
+        svg.contains("font-weight=\"bold\""),
+        "Expected bold text in SVG: {}",
+        svg
+      );
+      // Count bold attributes — should be 4 (one per cell)
+      let bold_count = svg.matches("font-weight=\"bold\"").count();
+      assert_eq!(bold_count, 4, "All 4 cells should be bold");
+    }
+
+    #[test]
+    fn test_style_grid_color_propagates() {
+      // All cells should have red fill when Style[..., Red]
+      let svg =
+        interpret("ExportString[Style[Grid[{{a, b}, {c, d}}], Red], \"SVG\"]")
+          .unwrap();
+      let red_count = svg.matches("fill=\"rgb(255,0,0)\"").count();
+      assert_eq!(red_count, 4, "All 4 cells should be red");
+    }
+
+    #[test]
+    fn test_style_grid_inner_style_overrides_color() {
+      // Inner Style[e, Green] overrides outer Red for that cell
+      let svg = interpret(
+        "ExportString[Style[Grid[{{a, Style[b, Green]}, {c, d}}], Red], \"SVG\"]",
+      )
+      .unwrap();
+      let red_count = svg.matches("fill=\"rgb(255,0,0)\"").count();
+      assert_eq!(red_count, 3, "3 cells should be red");
+      assert!(
+        svg.contains("fill=\"rgb(0,255,0)\""),
+        "Cell b should be green"
+      );
+    }
+
+    #[test]
+    fn test_style_grid_inner_style_inherits_bold() {
+      // Inner Style[e, Italic, Green] should still inherit Bold from outer
+      let svg = interpret(
+        "ExportString[Style[Grid[{{a, Style[b, Italic, Green]}}], Bold, Red], \"SVG\"]",
+      )
+      .unwrap();
+      // Cell a should be bold+red
+      assert!(svg.contains("font-weight=\"bold\""));
+      // Cell b should be bold (inherited) + italic (inner) + green (inner)
+      assert!(
+        svg.contains("font-style=\"italic\""),
+        "Cell b should be italic"
+      );
+      assert!(
+        svg.contains("fill=\"rgb(0,255,0)\""),
+        "Cell b should be green"
+      );
+      // Both cells should have bold
+      let bold_count = svg.matches("font-weight=\"bold\"").count();
+      assert_eq!(bold_count, 2, "Both cells should inherit bold");
+    }
+
+    #[test]
+    fn test_style_grid_frame_dividers_use_style_color() {
+      // Frame and divider lines should use the Style color
+      let svg = interpret(
+        "ExportString[Style[Grid[{{a, b}, {c, d}}, Frame -> True, Dividers -> All], Red], \"SVG\"]",
+      )
+      .unwrap();
+      // Lines should have red stroke
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\""),
+        "Frame lines should be red: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_style_grid_italic() {
+      // Style[Grid[...], Italic] should make all cells italic
+      let svg =
+        interpret("ExportString[Style[Grid[{{x, y}}], Italic], \"SVG\"]")
+          .unwrap();
+      let italic_count = svg.matches("font-style=\"italic\"").count();
+      assert_eq!(italic_count, 2, "Both cells should be italic");
+    }
+  }
 }
