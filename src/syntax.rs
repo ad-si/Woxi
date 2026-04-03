@@ -2662,6 +2662,9 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
   for item in inner {
     match item.as_rule() {
+      Rule::LeadingPlus => {
+        // Unary plus is a no-op: +expr is just expr. Simply skip.
+      }
       Rule::LeadingMinus => {
         // Insert synthetic 0 and "NEGATE" operator so that -x^2 becomes 0 - x^2
         // NEGATE has higher precedence than * but lower than ^, matching
