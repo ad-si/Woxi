@@ -2746,12 +2746,15 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
       // that have the exact same conditions (re-definition of same pattern)
       // For simplicity, just append - Wolfram keeps all conditional defs
     } else {
-      // Unconditional definition: remove only other unconditional defs with same arity
-      // AND same blank_types (keep conditional definitions and defs with different
-      // blank patterns, e.g. f[u_] and f[u__] are distinct overloads)
-      entry.retain(|(p, conds, _, _, bt, _)| {
+      // Unconditional definition: remove only other unconditional defs with same arity,
+      // same blank_types, AND same head constraints (keep conditional definitions and defs
+      // with different blank patterns or different heads,
+      // e.g. f[u_] and f[u__] are distinct overloads,
+      // and f[x_Integer] and f[x_String] are distinct overloads)
+      entry.retain(|(p, conds, _, h, bt, _)| {
         p.len() != arity
           || bt != &blank_types
+          || h != &heads
           || conds.iter().any(|c| c.is_some())
       });
     }

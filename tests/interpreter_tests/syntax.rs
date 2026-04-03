@@ -2247,6 +2247,50 @@ mod add_to_function {
       "{HoldFirst, Protected}"
     );
   }
+
+  #[test]
+  fn add_to_part() {
+    clear_state();
+    assert_eq!(
+      interpret("x = {1, 2, 3}; x[[2]] += 9; x").unwrap(),
+      "{1, 11, 3}"
+    );
+  }
+
+  #[test]
+  fn subtract_from_part() {
+    clear_state();
+    assert_eq!(
+      interpret("x = {10, 20, 30}; x[[1]] -= 3; x").unwrap(),
+      "{7, 20, 30}"
+    );
+  }
+
+  #[test]
+  fn times_by_part() {
+    clear_state();
+    assert_eq!(
+      interpret("x = {2, 3, 4}; x[[3]] *= 5; x").unwrap(),
+      "{2, 3, 20}"
+    );
+  }
+
+  #[test]
+  fn divide_by_part() {
+    clear_state();
+    assert_eq!(
+      interpret("x = {10, 20, 30}; x[[2]] /= 4; x").unwrap(),
+      "{10, 5, 30}"
+    );
+  }
+
+  #[test]
+  fn add_to_part_in_function_def() {
+    // Parsing test: F[x_] := x[[2]] += 9 should parse without error
+    clear_state();
+    // FunctionDefinition returns "\0" (suppressed Null)
+    assert!(interpret("F[x_] := x[[2]] += 9").is_ok());
+  }
 }
 
 mod subtract_from_function {

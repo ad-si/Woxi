@@ -696,17 +696,7 @@ pub fn evaluate_expr_to_expr_inner(
           || name == "TimesBy"
           || name == "DivideBy")
           && args.len() == 2
-          && let Expr::Identifier(var_name) = &args[0]
         {
-          let rhs = evaluate_expr_to_expr(&args[1])?;
-          let current = ENV.with(|e| e.borrow().get(var_name).cloned());
-          let current_val = match current {
-            Some(StoredValue::ExprVal(e)) => e,
-            Some(StoredValue::Raw(s)) => {
-              crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
-            }
-            _ => Expr::Integer(0),
-          };
           let op = match name.as_str() {
             "AddTo" => crate::syntax::BinaryOperator::Plus,
             "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
@@ -714,16 +704,40 @@ pub fn evaluate_expr_to_expr_inner(
             "DivideBy" => crate::syntax::BinaryOperator::Divide,
             _ => unreachable!(),
           };
-          let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-            op,
-            left: Box::new(current_val),
-            right: Box::new(rhs),
-          })?;
-          ENV.with(|e| {
-            e.borrow_mut()
-              .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
-          });
-          return Ok(new_val);
+          if let Expr::Identifier(var_name) = &args[0] {
+            let rhs = evaluate_expr_to_expr(&args[1])?;
+            let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+            let current_val = match current {
+              Some(StoredValue::ExprVal(e)) => e,
+              Some(StoredValue::Raw(s)) => {
+                crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+              }
+              _ => Expr::Integer(0),
+            };
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op,
+              left: Box::new(current_val),
+              right: Box::new(rhs),
+            })?;
+            ENV.with(|e| {
+              e.borrow_mut().insert(
+                var_name.clone(),
+                StoredValue::ExprVal(new_val.clone()),
+              );
+            });
+            return Ok(new_val);
+          }
+          if let Expr::Part { .. } = &args[0] {
+            let rhs = evaluate_expr_to_expr(&args[1])?;
+            let current_val = evaluate_expr_to_expr(&args[0])?;
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op,
+              left: Box::new(current_val),
+              right: Box::new(rhs),
+            })?;
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            return Ok(new_val);
+          }
         }
         // Special handling for AppendTo, PrependTo - x = Append[x, elem]
         if (name == "AppendTo" || name == "PrependTo")
