@@ -187,8 +187,16 @@ pub fn dispatch_attributes(
           crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
           let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
           if let Some(up_defs) = up_defs {
-            for (outer_func, params, _conds, _defaults, _heads, body) in
-              &up_defs
+            for (
+              outer_func,
+              params,
+              _conds,
+              _defaults,
+              _heads,
+              body,
+              _orig_lhs,
+              _orig_body,
+            ) in &up_defs
             {
               let body_str = expr_to_string(body);
               crate::FUNC_DEFS.with(|m| {

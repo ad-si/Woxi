@@ -33,9 +33,9 @@ thread_local! {
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
     pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
-    // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body)
+    // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)
     // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
-    pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr, syntax::Expr, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Track Part evaluation nesting depth for Part::partd warnings
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Track evaluation recursion depth for $RecursionLimit enforcement
@@ -2834,7 +2834,7 @@ fn store_tag_set_delayed(
   let mut conditions: Vec<Option<syntax::Expr>> = Vec::new();
   let mut defaults: Vec<Option<syntax::Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
-  let mut final_body = body_expr;
+  let mut final_body = body_expr.clone();
 
   for (i, arg) in lhs_args.iter().enumerate() {
     match arg {
@@ -2917,6 +2917,8 @@ fn store_tag_set_delayed(
       defaults.clone(),
       heads.clone(),
       final_body.clone(),
+      func_call_expr.clone(),
+      body_expr.clone(),
     ));
   });
 

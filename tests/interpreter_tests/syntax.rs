@@ -3924,6 +3924,50 @@ mod tag_set_delayed {
       "5"
     );
   }
+
+  #[test]
+  fn upvalues_display_basic() {
+    // UpValues should display the original pattern and body
+    clear_state();
+    assert_eq!(
+      interpret("f /: g[f[x_]] := x^2; UpValues[f]").unwrap(),
+      "{HoldPattern[g[f[x_]]] :> x^2}"
+    );
+  }
+
+  #[test]
+  fn upvalues_display_multi_arg() {
+    clear_state();
+    assert_eq!(
+      interpret("f /: g[f[x_], y_] := x^2 + y; UpValues[f]").unwrap(),
+      "{HoldPattern[g[f[x_], y_]] :> x^2 + y}"
+    );
+  }
+
+  #[test]
+  fn upvalues_display_multiple_rules() {
+    clear_state();
+    assert_eq!(
+      interpret("f /: g[f[x_]] := x^2; f /: h[f[y_]] := y + 1; UpValues[f]")
+        .unwrap(),
+      "{HoldPattern[g[f[x_]]] :> x^2, HoldPattern[h[f[y_]]] :> y + 1}"
+    );
+  }
+
+  #[test]
+  fn upvalues_display_binary_op() {
+    clear_state();
+    assert_eq!(
+      interpret("f /: f + g := fg; UpValues[f]").unwrap(),
+      "{HoldPattern[f + g] :> fg}"
+    );
+  }
+
+  #[test]
+  fn upvalues_empty() {
+    clear_state();
+    assert_eq!(interpret("UpValues[x]").unwrap(), "{}");
+  }
 }
 
 mod upset {

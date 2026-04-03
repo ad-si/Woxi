@@ -466,21 +466,29 @@ pub fn dispatch_predicate_functions(
         if up_defs.is_empty() {
           return Some(Ok(Expr::List(vec![])));
         }
-        // Return a list of RuleDelayed expressions
+        // Return a list of RuleDelayed expressions using the original LHS and body
         let rules: Vec<Expr> = up_defs
           .iter()
-          .map(|(outer_func, _params, _conds, _defaults, _heads, body)| {
-            Expr::RuleDelayed {
-              pattern: Box::new(Expr::FunctionCall {
-                name: "HoldPattern".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: outer_func.clone(),
-                  args: vec![Expr::Identifier("__".to_string())],
-                }],
-              }),
-              replacement: Box::new(body.clone()),
-            }
-          })
+          .map(
+            |(
+              _outer_func,
+              _params,
+              _conds,
+              _defaults,
+              _heads,
+              _body,
+              orig_lhs,
+              orig_body,
+            )| {
+              Expr::RuleDelayed {
+                pattern: Box::new(Expr::FunctionCall {
+                  name: "HoldPattern".to_string(),
+                  args: vec![orig_lhs.clone()],
+                }),
+                replacement: Box::new(orig_body.clone()),
+              }
+            },
+          )
           .collect();
         return Some(Ok(Expr::List(rules)));
       }
