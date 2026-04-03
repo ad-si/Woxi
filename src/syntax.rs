@@ -4392,6 +4392,73 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         return format!("{} :> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "Condition" && args.len() == 2 {
+        // When the LHS is Plus (BinaryOp or FunctionCall), parenthesize
+        // the last Pattern-like argument to avoid visual ambiguity:
+        //   x + (y_) /; test  vs  x + y_ /; test
+        // (Wolfram always adds these parens for readability)
+        let is_pattern_like = |e: &Expr| -> bool {
+          match e {
+            Expr::Pattern { .. }
+            | Expr::PatternOptional { .. }
+            | Expr::PatternTest { .. } => true,
+            Expr::FunctionCall { name: n, .. } => {
+              n == "Pattern"
+                || n == "Blank"
+                || n == "BlankSequence"
+                || n == "BlankNullSequence"
+                || n == "Optional"
+            }
+            _ => false,
+          }
+        };
+        // Handle BinaryOp Plus (the common case for parsed expressions)
+        if let Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left,
+          right,
+        } = &args[0]
+          && is_pattern_like(right)
+        {
+          return format!(
+            "{} + ({}) /; {}",
+            fmt(left),
+            fmt(right),
+            fmt(&args[1])
+          );
+        }
+        // Handle FunctionCall Plus (normalized form)
+        if let Expr::FunctionCall {
+          name: ref pname,
+          args: ref pargs,
+        } = args[0]
+          && pname == "Plus"
+          && pargs.len() >= 2
+        {
+          let last = &pargs[pargs.len() - 1];
+          if is_pattern_like(last) {
+            // Re-format the Plus with the last arg parenthesized
+            let mut plus_str = fmt(&pargs[0]);
+            for (i, arg) in pargs.iter().enumerate().skip(1) {
+              let s = fmt(arg);
+              let s = if i == pargs.len() - 1 {
+                format!("({})", s)
+              } else {
+                s
+              };
+              if s.starts_with('-') {
+                plus_str.push_str(" - ");
+                plus_str.push_str(&s[1..]);
+              } else if s.starts_with("(-") {
+                plus_str.push_str(" - ");
+                plus_str.push_str(&format!("({}", &s[2..]));
+              } else {
+                plus_str.push_str(" + ");
+                plus_str.push_str(&s);
+              }
+            }
+            return format!("{} /; {}", plus_str, fmt(&args[1]));
+          }
+        }
         return format!("{} /; {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "PatternTest" && args.len() == 2 {

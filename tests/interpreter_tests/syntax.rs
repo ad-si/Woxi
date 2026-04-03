@@ -4076,7 +4076,7 @@ mod tag_set_delayed {
     assert_eq!(
       interpret("ClearAll[x,y,f]; x /: x + y_ /; y > -2 := f[y]; UpValues[x]")
         .unwrap(),
-      "{HoldPattern[x + y_ /; y > -2] :> f[y]}"
+      "{HoldPattern[x + (y_) /; y > -2] :> f[y]}"
     );
   }
 
