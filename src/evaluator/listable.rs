@@ -107,6 +107,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "BetaRegularized"
       | "GammaRegularized"
       | "Hypergeometric1F1Regularized"
+      | "Unitize"
+      | "UnitStep"
   )
 }
 

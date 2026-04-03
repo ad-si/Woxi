@@ -1155,6 +1155,19 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Handle list first argument: thread Clip over each element
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|item| {
+        let mut new_args = args.to_vec();
+        new_args[0] = item.clone();
+        clip_ast(&new_args)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let x = match expr_to_num(&args[0]) {
     Some(v) => v,
     None => {
