@@ -632,6 +632,9 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "BarnesG" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::barnes_g_ast(args));
+    }
     "LerchPhi" if args.len() == 3 => {
       return Some(crate::functions::math_ast::lerch_phi_ast(args));
     }

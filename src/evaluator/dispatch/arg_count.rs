@@ -702,6 +702,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PerfectNumber" => Some((1, 1)),
     "RamanujanTau" => Some((1, 1)),
     "PowersRepresentations" => Some((3, 3)),
+    "BarnesG" => Some((1, 1)),
     "Pick" => Some((2, 3)),
     "Piecewise" => Some((1, 2)),
     "PlanarAngle" => Some((1, 1)),

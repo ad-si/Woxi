@@ -1692,7 +1692,7 @@ CorrelationFunction,Correlation function,,unevaluated,9.0,1723
 RandomImage,Generates a random image with given dimensions,✅,pure,8.0,1723
 BellY,Bell Y polynomial,,unevaluated,8.0,1725
 ParallelDo,Parallel Do loop,,unevaluated,7.0,1725
-BarnesG,Barnes G function,,unevaluated,7.0,1727
+BarnesG,Barnes G-function (double gamma function),✅,pure,7.0,1727
 URL,URL wrapper,,unevaluated,11.0,1727
 Between,Tests if a value is between bounds,✅,pure,10.3,1728
 Deployed,Deployed option,,unevaluated,6.0,1730
