@@ -1814,17 +1814,19 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     let sa = times_factor_subpriority(a);
     let sb = times_factor_subpriority(b);
     if sa != sb {
-      // Special case: an additive expression (x-y) sorts BEFORE an identifier y
-      // when y appears with a negative coefficient in the additive expression.
-      // This matches Wolfram's canonical ordering: (x-y)*y not y*(x-y).
+      // Special case: an additive expression sorts BEFORE an identifier when:
+      // 1. The identifier appears with a negative coefficient: (x-y)*y not y*(x-y)
+      // 2. The additive is Plus[n, var] where n < 0 and var is the same identifier:
+      //    (-3+x)*x not x*(-3+x)   (monic linear factor with negative constant)
+      // This matches Wolfram's canonical ordering.
       if sa == 0 && sb == 1 {
-        // a is Identifier, b is additive — check if a appears negated in b
-        if additive_contains_negated(b, a) {
+        // a is Identifier, b is additive
+        if additive_contains_negated(b, a) || additive_is_neg_const_plus_ident(b, a) {
           return std::cmp::Ordering::Greater; // b (additive) before a (identifier)
         }
       } else if sa == 1 && sb == 0 {
-        // a is additive, b is Identifier — check if b appears negated in a
-        if additive_contains_negated(a, b) {
+        // a is additive, b is Identifier
+        if additive_contains_negated(a, b) || additive_is_neg_const_plus_ident(a, b) {
           return std::cmp::Ordering::Less; // a (additive) before b (identifier)
         }
       }
@@ -1978,7 +1980,7 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
 
 /// Check if an additive expression contains a given identifier with a negative coefficient.
 /// For example, `(x - y)` contains `y` negated, but `(x + y)` does not.
-fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
+pub fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
   let ident_name = match ident {
     Expr::Identifier(name) => name.as_str(),
     Expr::Constant(name) => name.as_str(),
@@ -2040,6 +2042,48 @@ fn has_negated_ident(expr: &Expr, ident_name: &str) -> bool {
     }
     _ => false,
   }
+}
+
+/// Check if `additive` is Plus[n, var] where n is a negative number
+/// and var is the same identifier as `ident`.
+/// This handles the case (-3 + x)*x where the constant is negative
+/// but x itself is not negated in the Plus.
+pub fn additive_is_neg_const_plus_ident(additive: &Expr, ident: &Expr) -> bool {
+  let ident_name = match ident {
+    Expr::Identifier(name) | Expr::Constant(name) => name.as_str(),
+    _ => return false,
+  };
+
+  let is_same_ident = |a: &Expr| -> bool {
+    matches!(a, Expr::Identifier(n) | Expr::Constant(n) if n == ident_name)
+  };
+
+  // Check for FunctionCall Plus with exactly 2 args: negative number and same variable
+  if let Expr::FunctionCall { name, args } = additive
+    && name == "Plus"
+    && args.len() == 2
+  {
+    let has_neg_num =
+      args.iter().any(|a| matches!(a, Expr::Integer(n) if *n < 0));
+    let has_ident = args.iter().any(&is_same_ident);
+    return has_neg_num && has_ident;
+  }
+
+  // Check for BinaryOp Plus with negative number and same variable
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left,
+    right,
+  } = additive
+  {
+    let (l, r) = (left.as_ref(), right.as_ref());
+    let has_neg_num = matches!(l, Expr::Integer(n) if *n < 0)
+      || matches!(r, Expr::Integer(n) if *n < 0);
+    let has_ident = is_same_ident(l) || is_same_ident(r);
+    return has_neg_num && has_ident;
+  }
+
+  false
 }
 
 /// Multiply two exponent expressions, simplifying common cases.
