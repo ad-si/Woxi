@@ -1605,7 +1605,7 @@ AffineTransform,Affine geometric transformation,,unevaluated,6.0,1633
 CellGroupData,,🚫,,3.0,1635
 RadioButton,Radio button control,,unevaluated,6.0,1635
 LegendMarkers,Legend marker specification,,unevaluated,9.0,1637
-PowersRepresentations,Representations as sums of powers,,unevaluated,6.0,1637
+PowersRepresentations,Gives all representations of n as a sum of k non-negative p-th powers,✅,pure,6.0,1637
 ShowStringCharacters,Show string quote characters,,unevaluated,3.0,1639
 TakeWhile,Takes elements from start while predicate is true,✅,pure,6.0,1639
 ImageCollage,Creates a collage from a list of images with optional weights and fitting,✅,pure,10.0,1641
