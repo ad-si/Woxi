@@ -4849,6 +4849,89 @@ mod appell_f2 {
   }
 }
 
+mod appell_f3 {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("AppellF3[a1, a2, b1, b2, c, x, y]").unwrap(),
+      "AppellF3[a1, a2, b1, b2, c, x, y]"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("AppellF3[2, 1, 3, 2, 4, 0.1, 0.2]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.2989163569406097).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_basic_2() {
+    let result: f64 = interpret("AppellF3[1, 2, 3, 4, 5, 0.3, 0.4]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.638819453892733).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("AppellF3[a1, a2, b1, b2, c, 0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn a1_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[0, a2, b1, b2, c, x, y]").unwrap(),
+      "Hypergeometric2F1[a2, b2, c, y]"
+    );
+  }
+
+  #[test]
+  fn a2_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[a1, 0, b1, b2, c, x, y]").unwrap(),
+      "Hypergeometric2F1[a1, b1, c, x]"
+    );
+  }
+
+  #[test]
+  fn b1_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[a1, a2, 0, b2, c, x, y]").unwrap(),
+      "Hypergeometric2F1[a2, b2, c, y]"
+    );
+  }
+
+  #[test]
+  fn b2_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[a1, a2, b1, 0, c, x, y]").unwrap(),
+      "Hypergeometric2F1[a1, b1, c, x]"
+    );
+  }
+
+  #[test]
+  fn x_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[a1, a2, b1, b2, c, 0, y]").unwrap(),
+      "Hypergeometric2F1[a2, b2, c, y]"
+    );
+  }
+
+  #[test]
+  fn y_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF3[a1, a2, b1, b2, c, x, 0]").unwrap(),
+      "Hypergeometric2F1[a1, b1, c, x]"
+    );
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
