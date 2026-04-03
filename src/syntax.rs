@@ -6241,22 +6241,19 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
-    // TraditionalForm[expr] → DisplayForm[FormBox[boxes, TraditionalForm]] in InputForm
+    // TraditionalForm[expr] → \!\(\*FormBox[boxes, TraditionalForm]\) in InputForm
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
-      let boxes =
-        crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          &args[0],
-        );
-      let display_expr = Expr::FunctionCall {
-        name: "DisplayForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "FormBox".to_string(),
-          args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
-        }],
+      use crate::functions::string_ast::{
+        BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START,
       };
-      expr_to_input_form(&display_expr)
+      let box_str = crate::functions::string_ast::expr_to_boxes(&args[0]);
+      let s = format!(
+        "{}{}{}FormBox[{}, TraditionalForm]{}",
+        BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
+      );
+      escape_string_for_input_form(&s)
     }
     // Inequality[...] in InputForm always uses the head form Inequality[a, Less, b, Less, c],
     // even when all operators are the same (infix is only used in OutputForm).
