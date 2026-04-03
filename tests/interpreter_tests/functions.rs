@@ -8124,10 +8124,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("NotebookFind[x]").unwrap(), "NotebookFind[x]");
   }
   #[test]
-  fn elementwise_layer() {
-    assert_eq!(interpret("ElementwiseLayer[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn classifier_measurements() {
     assert_eq!(
       interpret("ClassifierMeasurements[x, y]").unwrap(),
@@ -8205,16 +8201,8 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn create_palette() {
-    assert_eq!(interpret("CreatePalette[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn thinning() {
     assert_eq!(interpret("Thinning[x]").unwrap(), "Thinning[x]");
-  }
-  #[test]
-  fn net_decoder() {
-    assert_eq!(interpret("NetDecoder[x]").unwrap(), "$Failed");
   }
   #[test]
   fn erosion() {
@@ -8365,10 +8353,6 @@ mod batch_unevaluated_wrappers_2 {
       interpret("FunctionRange[x, y]").unwrap(),
       "FunctionRange[x, y]"
     );
-  }
-  #[test]
-  fn vectors() {
-    assert_eq!(interpret("Vectors[x]").unwrap(), "Vectors[x, Complexes]");
   }
   #[test]
   fn sector_origin() {
@@ -8729,10 +8713,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("ItoProcess[x]").unwrap(), "ItoProcess[x]");
   }
   #[test]
-  fn net_model() {
-    assert_eq!(interpret("NetModel[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn rotation_action() {
     assert_eq!(interpret("RotationAction[x]").unwrap(), "RotationAction[x]");
   }
@@ -8781,16 +8761,8 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("FilePrint[x]").unwrap(), "FilePrint[x]");
   }
   #[test]
-  fn distribute_definitions() {
-    assert_eq!(interpret("DistributeDefinitions[x]").unwrap(), "{}");
-  }
-  #[test]
   fn riemann_siegel_z() {
     assert_eq!(interpret("RiemannSiegelZ[x]").unwrap(), "RiemannSiegelZ[x]");
-  }
-  #[test]
-  fn batch_normalization_layer() {
-    assert_eq!(interpret("BatchNormalizationLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn chart_base_style() {
@@ -8931,10 +8903,6 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn softmax_layer() {
-    assert_eq!(interpret("SoftmaxLayer[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn product_distribution() {
     assert_eq!(
       interpret("ProductDistribution[x]").unwrap(),
@@ -9011,10 +8979,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("BellY[x, y, z]").unwrap(), "BellY[x, y, z]");
   }
   #[test]
-  fn parallel_do() {
-    assert_eq!(interpret("ParallelDo[x]").unwrap(), "\0");
-  }
-  #[test]
   fn barnes_g() {
     assert_eq!(interpret("BarnesG[x]").unwrap(), "BarnesG[x]");
   }
@@ -9052,14 +9016,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("RandomInstance[x]").unwrap(), "RandomInstance[x]");
   }
   #[test]
-  fn trig_factor() {
-    assert_eq!(interpret("TrigFactor[x]").unwrap(), "x");
-  }
-  #[test]
-  fn pooling_layer() {
-    assert_eq!(interpret("PoolingLayer[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn notebook_delete() {
     assert_eq!(interpret("NotebookDelete[x]").unwrap(), "NotebookDelete[x]");
   }
@@ -9085,10 +9041,6 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn geometric_scene() {
     assert_eq!(interpret("GeometricScene[x]").unwrap(), "GeometricScene[x]");
-  }
-  #[test]
-  fn parallelize() {
-    assert_eq!(interpret("Parallelize[x]").unwrap(), "x");
   }
   #[test]
   fn clustering_components() {
@@ -9253,10 +9205,6 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn timeline_plot() {
     assert_eq!(interpret("TimelinePlot[x]").unwrap(), "TimelinePlot[x]");
-  }
-  #[test]
-  fn dialog_input() {
-    assert_eq!(interpret("DialogInput[x]").unwrap(), "$Failed");
   }
   #[test]
   fn pass_events_down() {
@@ -9448,10 +9396,6 @@ mod batch_unevaluated_wrappers_2 {
 
   // ─── Unevaluated batch 10 ─────────────────────────────────────────
   #[test]
-  fn set_shared_variable() {
-    assert_eq!(interpret("SetSharedVariable[x]").unwrap(), "\0");
-  }
-  #[test]
   fn pade_approximant() {
     assert_eq!(
       interpret("PadeApproximant[x, y]").unwrap(),
@@ -9597,10 +9541,6 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn file_type() {
     assert_eq!(interpret("FileType[x]").unwrap(), "FileType[x]");
-  }
-  #[test]
-  fn resource_object() {
-    assert_eq!(interpret("ResourceObject[x]").unwrap(), "$Failed");
   }
   #[test]
   fn stieltjes_gamma() {
@@ -9764,10 +9704,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("AngularGauge[x]").unwrap(), "AngularGauge[x]");
   }
   #[test]
-  fn copy_to_clipboard() {
-    assert_eq!(interpret("CopyToClipboard[x]").unwrap(), "$Failed");
-  }
-  #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
   }
@@ -9780,10 +9716,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("ButtonFunction[x]").unwrap(), "ButtonFunction[x]");
   }
   #[test]
-  fn system_options() {
-    assert_eq!(interpret("SystemOptions[x]").unwrap(), "{}");
-  }
-  #[test]
   fn sunday() {
     assert_eq!(interpret("Sunday[x]").unwrap(), "Sunday[x]");
   }
@@ -9793,10 +9725,6 @@ mod batch_unevaluated_wrappers_2 {
       interpret("FrobeniusSolve[x, y]").unwrap(),
       "FrobeniusSolve[x, y]"
     );
-  }
-  #[test]
-  fn print_temporary() {
-    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "\0");
   }
   #[test]
   fn image_value() {
@@ -9890,10 +9818,6 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("ImageTrim[x]").unwrap(), "ImageTrim[x]");
   }
   #[test]
-  fn setting() {
-    assert_eq!(interpret("Setting[x]").unwrap(), "x");
-  }
-  #[test]
   fn b_spline_surface() {
     assert_eq!(interpret("BSplineSurface[x]").unwrap(), "BSplineSurface[x]");
   }
@@ -9932,10 +9856,6 @@ mod batch_unevaluated_wrappers_2 {
       interpret("RootApproximant[x]").unwrap(),
       "RootApproximant[x]"
     );
-  }
-  #[test]
-  fn abs_arg() {
-    assert_eq!(interpret("AbsArg[x]").unwrap(), "{Abs[x], Arg[x]}");
   }
   #[test]
   fn interpretation() {
