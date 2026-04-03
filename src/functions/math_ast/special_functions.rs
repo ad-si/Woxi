@@ -9610,3 +9610,62 @@ pub fn polygonal_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   crate::evaluator::evaluate_function_call_ast("Times", &[n, inner, half])
 }
+
+/// PerfectNumber[n] - gives the nth perfect number
+/// Perfect numbers are 2^(p-1) * (2^p - 1) where 2^p - 1 is a Mersenne prime.
+pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PerfectNumber expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 1 => *n as usize,
+    Expr::Integer(_) | Expr::Real(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "PerfectNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PerfectNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Known Mersenne prime exponents (sufficient for the first 51 known perfect numbers)
+  let mersenne_exponents: &[u32] = &[
+    2, 3, 5, 7, 13, 17, 19, 31, 61, 89, 107, 127, 521, 607, 1279, 2203, 2281,
+    3217, 4253, 4423, 9689, 9941, 11213, 19937, 21701, 23209, 44497, 86243,
+    110503, 132049, 216091, 756839, 859433, 1257787, 1398269, 2976221, 3021377,
+    6972593, 13466917, 20996011, 24036583, 25964951, 30402457, 32582657,
+    37156667, 42643801, 43112609, 57885161, 74207281, 77232917, 82589933,
+  ];
+
+  if n > mersenne_exponents.len() {
+    return Ok(Expr::FunctionCall {
+      name: "PerfectNumber".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let p = mersenne_exponents[n - 1];
+
+  // Compute 2^(p-1) * (2^p - 1) using BigInt
+  let two = BigInt::from(2);
+  let two_p = two.pow(p);
+  let two_p_minus_1 = &two_p - BigInt::from(1);
+  let two_p_minus_1_exp = two.pow(p - 1);
+  let perfect = two_p_minus_1_exp * two_p_minus_1;
+
+  // Try to fit in i128, otherwise use BigInteger
+  use num_traits::ToPrimitive;
+  if let Some(val) = perfect.to_i128() {
+    Ok(Expr::Integer(val))
+  } else {
+    Ok(Expr::BigInteger(perfect))
+  }
+}

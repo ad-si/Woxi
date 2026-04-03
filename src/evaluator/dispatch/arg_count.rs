@@ -699,6 +699,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PermutationPower" => Some((2, 2)),
     "Permutations" => Some((1, 2)),
     "PermutationSupport" => Some((1, 1)),
+    "PerfectNumber" => Some((1, 1)),
     "Pick" => Some((2, 3)),
     "Piecewise" => Some((1, 2)),
     "PlanarAngle" => Some((1, 1)),
