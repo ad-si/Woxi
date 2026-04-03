@@ -1370,7 +1370,6 @@ pub fn evaluate_function_call_ast_inner(
     | "AngleBracket"
     | "Larger"
     | "ZetaZero"
-    | "Hypergeometric1F1Regularized"
     | "MixtureDistribution"
     | "Inactivate"
     | "LegendLabel" => {

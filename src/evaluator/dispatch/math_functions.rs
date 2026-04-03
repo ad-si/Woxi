@@ -645,6 +645,11 @@ pub fn dispatch_math_functions(
     "GammaRegularized" if args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_regularized_ast(args));
     }
+    "Hypergeometric1F1Regularized" if args.len() == 3 => {
+      return Some(
+        crate::functions::math_ast::hypergeometric_1f1_regularized_ast(args),
+      );
+    }
     "BesselI" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_i_ast(args));
     }
