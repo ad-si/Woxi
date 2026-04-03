@@ -1126,6 +1126,29 @@ pub fn tag_set_delayed_ast(
     body.clone()
   };
 
+  // Extract Condition from body: Condition[actual_body, test] → (actual_body, Some(test))
+  let (body, body_condition) = if let Expr::FunctionCall { name, args } = &body
+    && name == "Condition"
+    && args.len() == 2
+  {
+    (args[0].clone(), Some(args[1].clone()))
+  } else {
+    (body, None)
+  };
+
+  // Unwrap Condition from LHS: x + y_ /; y > -2 is parsed as
+  // Condition[Plus[x, y_], Greater[y, -2]]. Extract the inner LHS and condition.
+  // Keep original_lhs for UPVALUES display (includes the Condition wrapper).
+  let original_lhs = lhs;
+  let (lhs, lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
+    && name == "Condition"
+    && args.len() == 2
+  {
+    (&args[0], Some(&args[1]))
+  } else {
+    (lhs, None)
+  };
+
   // Extract outer function name and args from the LHS
   // Handles FunctionCall directly, and converts BinaryOp/UnaryOp/Comparison
   // to their canonical function call form (e.g. Plus[a, b] for a + b).
@@ -1272,8 +1295,26 @@ pub fn tag_set_delayed_ast(
         defaults.push(None);
       }
       _ => {
-        let (pat_name, head, _blank_type) = extract_pattern_info(arg);
-        if pat_name.is_empty() && head.is_none() {
+        // Check if this argument is actually a pattern (contains _ or is a Pattern node)
+        // Plain identifiers like `x` are literal symbols, not patterns.
+        let is_pattern = match arg {
+          Expr::Identifier(name) => name.contains('_'),
+          Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
+          _ => crate::evaluator::pattern_matching::contains_pattern(arg),
+        };
+        if is_pattern {
+          let (pat_name, head, _blank_type) = extract_pattern_info(arg);
+          if pat_name.is_empty() && head.is_none() {
+            // Anonymous pattern — use generated name
+            let param_name = format!("_up{}", i);
+            params.push(param_name);
+          } else {
+            params.push(pat_name);
+          }
+          conditions.push(None);
+          heads.push(head);
+        } else {
+          // Literal argument — must match exactly via SameQ
           let param_name = format!("_up{}", i);
           let eval_arg = evaluate_expr_to_expr(arg)?;
           conditions.push(Some(Expr::Comparison {
@@ -1281,12 +1322,11 @@ pub fn tag_set_delayed_ast(
             operators: vec![crate::syntax::ComparisonOp::SameQ],
           }));
           params.push(param_name);
-        } else {
-          params.push(pat_name);
-          conditions.push(None);
+          defaults.push(None);
+          heads.push(None);
+          continue;
         }
         defaults.push(None);
-        heads.push(head);
       }
     }
   }
@@ -1311,9 +1351,43 @@ pub fn tag_set_delayed_ast(
     conditions[last_idx] = Some(combined);
   }
 
+  // Attach any conditions from the LHS (/;) or body to condition slots
+  for extra_cond in lhs_condition.into_iter().chain(body_condition.as_ref()) {
+    let mut attached = false;
+    for c in conditions.iter_mut() {
+      if c.is_none() {
+        *c = Some(extra_cond.clone());
+        attached = true;
+        break;
+      }
+    }
+    if !attached && !conditions.is_empty() {
+      // All slots have conditions - combine with first non-SameQ one using And
+      let combine_idx = conditions.iter().position(|c| {
+        !matches!(
+          c,
+          Some(Expr::Comparison { operators, .. })
+          if operators.iter().any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+        )
+      }).unwrap_or(0);
+      let existing = conditions[combine_idx].take().unwrap();
+      conditions[combine_idx] = Some(Expr::FunctionCall {
+        name: "And".to_string(),
+        args: vec![existing, extra_cond.clone()],
+      });
+    } else if !attached {
+      // No condition slots at all — add a new one
+      conditions.push(Some(extra_cond.clone()));
+      params.push(String::new());
+      defaults.push(None);
+      heads.push(None);
+    }
+  }
+
   // Store in UPVALUES for introspection and cleanup.
   // If an upvalue with the same original LHS already exists, replace it.
-  let lhs_str = crate::syntax::expr_to_string(lhs);
+  // Use original_lhs (with Condition wrapper) for display purposes.
+  let lhs_str = crate::syntax::expr_to_string(original_lhs);
   crate::UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
@@ -1329,7 +1403,7 @@ pub fn tag_set_delayed_ast(
         defaults.clone(),
         heads.clone(),
         final_body.clone(),
-        lhs.clone(),
+        original_lhs.clone(),
         body.clone(),
       );
     } else {
@@ -1340,24 +1414,53 @@ pub fn tag_set_delayed_ast(
         defaults.clone(),
         heads.clone(),
         final_body.clone(),
-        lhs.clone(),
+        original_lhs.clone(),
         body.clone(),
       ));
     }
   });
 
   // Store in FUNC_DEFS under the outer function name.
-  // Remove any existing upvalue definition with the same params/heads
+  // Remove any existing upvalue definition with the same params/heads/conditions
   // before inserting the new one (to avoid duplicates on redefinition).
+  // Only remove if conditions also match (different conditions = different rules).
   let blank_types = vec![1u8; params.len()];
+  let cond_strs: Vec<String> = conditions
+    .iter()
+    .map(|c| {
+      c.as_ref()
+        .map_or(String::new(), crate::syntax::expr_to_string)
+    })
+    .collect();
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
-    entry.retain(|(p, _, _, h, bt, _)| {
-      !(p == &params && h == &heads && bt == &blank_types)
+    entry.retain(|(p, c, _, h, bt, _)| {
+      if p == &params && h == &heads && bt == &blank_types {
+        // Only remove if conditions also match
+        let existing_cond_strs: Vec<String> = c
+          .iter()
+          .map(|cond| {
+            cond
+              .as_ref()
+              .map_or(String::new(), crate::syntax::expr_to_string)
+          })
+          .collect();
+        existing_cond_strs != cond_strs
+      } else {
+        true
+      }
     });
+    // Insert after existing upvalue entries (params starting with _up)
+    // to maintain definition order, but before DownValues.
+    let upvalue_count = entry
+      .iter()
+      .take_while(|(p, _, _, _, _, _)| {
+        p.iter().any(|name| name.starts_with("_up"))
+      })
+      .count();
     entry.insert(
-      0,
+      upvalue_count,
       (params, conditions, defaults, heads, blank_types, final_body),
     );
   });
