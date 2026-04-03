@@ -3700,7 +3700,7 @@ MatrixTDistribution,,,,10.3,3803
 NetArrayLayer,,🚫,,12.2,3803
 PersonData,,🚫,,10.0,3803
 QuartileDeviation,,,,6.0,3803
-RamanujanTau,,,,6.0,3803
+RamanujanTau,Ramanujan tau function,✅,pure,6.0,3803
 RowMinHeight,,,,3.0,3803
 StateSpaceRealization,,🚫,,8.0,3803
 Underoverscript,,,,3.0,3803

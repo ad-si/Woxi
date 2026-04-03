@@ -9669,3 +9669,75 @@ pub fn perfect_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(Expr::BigInteger(perfect))
   }
 }
+
+/// RamanujanTau[n] - Ramanujan tau function
+/// τ(n) is the coefficient of q^n in q * ∏_{k=1}^∞ (1-q^k)^24
+pub fn ramanujan_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RamanujanTau expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      let n = *n;
+      if n <= 0 {
+        return Ok(Expr::Integer(0));
+      }
+      let n = n as usize;
+      let tau = ramanujan_tau_compute(n);
+      Ok(Expr::Integer(tau))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "RamanujanTau".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute τ(n) by expanding q * ∏_{k=1}^{n} (1-q^k)^24 as a power series
+/// and extracting the coefficient of q^n.
+fn ramanujan_tau_compute(n: usize) -> i128 {
+  // We need coefficients of q * ∏(1-q^k)^24 up to q^n
+  // Start with polynomial [1] (constant 1), multiply by (1-q^k)^24
+  // for k = 1, 2, ..., n, tracking coefficients up to degree n-1
+  // (since the final result has an extra factor of q, shifting by 1).
+  //
+  // Actually: Δ(q) = q * ∏_{k≥1} (1-q^k)^24
+  // So coeff of q^n in Δ = coeff of q^{n-1} in ∏_{k≥1} (1-q^k)^24
+
+  let target = n - 1; // We need the (n-1)th coeff of the product
+  let mut coeffs = vec![0i128; target + 1];
+  coeffs[0] = 1;
+
+  // Multiply by (1-q^k)^24 for k = 1..n
+  // (1-q^k)^24 = Σ_{j=0}^{24} C(24,j) (-1)^j q^{jk}
+  let binom24: Vec<i128> = (0..=24)
+    .map(|j| {
+      let mut c: i128 = 1;
+      for i in 0..j {
+        c = c * (24 - i as i128) / (i as i128 + 1);
+      }
+      if j % 2 == 1 { -c } else { c }
+    })
+    .collect();
+
+  for k in 1..=n {
+    // Multiply coeffs by (1-q^k)^24
+    // Process in place from high to low degree
+    for i in (0..=target).rev() {
+      let mut sum = 0i128;
+      for (j, &bj) in binom24.iter().enumerate().skip(1) {
+        let deg = j * k;
+        if deg > i {
+          break;
+        }
+        sum += bj * coeffs[i - deg];
+      }
+      coeffs[i] += sum;
+    }
+  }
+
+  coeffs[target]
+}

@@ -5110,6 +5110,43 @@ mod perfect_number {
   }
 }
 
+mod ramanujan_tau {
+  use super::*;
+
+  #[test]
+  fn first_fifteen() {
+    assert_eq!(
+      interpret("Table[RamanujanTau[n], {n, 1, 15}]").unwrap(),
+      "{1, -24, 252, -1472, 4830, -6048, -16744, 84480, -113643, -115920, 534612, -370944, -577738, 401856, 1217160}"
+    );
+  }
+
+  #[test]
+  fn tau_one() {
+    assert_eq!(interpret("RamanujanTau[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn tau_two() {
+    assert_eq!(interpret("RamanujanTau[2]").unwrap(), "-24");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("RamanujanTau[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("RamanujanTau[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("RamanujanTau[n]").unwrap(), "RamanujanTau[n]");
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
