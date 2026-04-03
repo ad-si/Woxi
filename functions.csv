@@ -1536,349 +1536,349 @@ StringToStream,Creates an input stream from a string,✅,pure,2.0,1562
 SubsetQ,Tests if one list is a subset of another,✅,pure,10.0,1562
 Visible,Visibility option,✅,pure,3.0,1563
 TruncatedDistribution,Truncated probability distribution,✅,pure,8.0,1564
-NotebookFind,Search in a notebook,✅,unevaluated,3.0,1565
-ElementwiseLayer,Neural net elementwise layer,✅,unevaluated,11.0,1566
-ClassifierMeasurements,Classifier performance measurements,✅,unevaluated,10.0,1569
+NotebookFind,Search in a notebook,,unevaluated,3.0,1565
+ElementwiseLayer,Neural net elementwise layer,,unevaluated,11.0,1566
+ClassifierMeasurements,Classifier performance measurements,,unevaluated,10.0,1569
 CreateDirectory,Creates a directory including intermediate directories,✅,filesystem,2.0,1569
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7.0,1569
 CopyFile,Copies a file to a new location,✅,filesystem,2.0,1571
-EstimatedProcess,Estimated stochastic process,✅,unevaluated,9.0,1571
-Animator,Animated control element,✅,unevaluated,6.0,1573
-HighlightMesh,Highlight mesh elements,✅,unevaluated,10.0,1573
-PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3.0,1574
-AutoScroll,Auto-scrolling option,✅,unevaluated,3.0,1578
+EstimatedProcess,Estimated stochastic process,,unevaluated,9.0,1571
+Animator,Animated control element,,unevaluated,6.0,1573
+HighlightMesh,Highlight mesh elements,,unevaluated,10.0,1573
+PolynomialReduce,Reduce polynomial modulo ideal,,unevaluated,3.0,1574
+AutoScroll,Auto-scrolling option,,unevaluated,3.0,1578
 CoefficientRules,Coefficient rules for polynomials,✅,pure,7.0,1578
-ConfidenceLevel,Confidence level specification,✅,unevaluated,7.0,1578
-TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
-CreatePalette,Create a palette notebook,✅,unevaluated,6.0,1579
+ConfidenceLevel,Confidence level specification,,unevaluated,7.0,1578
+TextSentences,Extract sentences from text,,unevaluated,10.1,1578
+CreatePalette,Create a palette notebook,,unevaluated,6.0,1579
 Erosion,Morphological erosion (min filter),✅,pure,7.0,1582
-NetDecoder,Neural net decoder,✅,unevaluated,11.0,1582
-Thinning,Morphological thinning,✅,unevaluated,8.0,1582
-Tolerance,Tolerance specification,✅,unevaluated,2.0,1583
-NetInitialize,Initialize a neural net,✅,unevaluated,11.0,1584
-BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10.0,1586
-Cumulant,Statistical cumulant,✅,unevaluated,8.0,1586
+NetDecoder,Neural net decoder,,unevaluated,11.0,1582
+Thinning,Morphological thinning,,unevaluated,8.0,1582
+Tolerance,Tolerance specification,,unevaluated,2.0,1583
+NetInitialize,Initialize a neural net,,unevaluated,11.0,1584
+BoundaryMeshRegion,Boundary mesh region,,unevaluated,10.0,1586
+Cumulant,Statistical cumulant,,unevaluated,8.0,1586
 BooleanConvert,Convert Boolean expressions,✅,pure,7.0,1588
-GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9.0,1588
+GeometricBrownianMotionProcess,Geometric Brownian motion,,unevaluated,9.0,1588
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6.0,1593
-MeshCellStyle,Style mesh cells,✅,unevaluated,10.0,1593
+MeshCellStyle,Style mesh cells,,unevaluated,10.0,1593
 MovingMap,Apply a function to a sliding window,✅,computation,10.0,1593
-SelectComponents,Select image components,✅,unevaluated,8.0,1593
+SelectComponents,Select image components,,unevaluated,8.0,1593
 CoprimeQ,Tests if two integers are coprime,✅,pure,6.0,1597
-NotebookPut,Create notebook from expression,✅,unevaluated,3.0,1597
+NotebookPut,Create notebook from expression,,unevaluated,3.0,1597
 PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6.0,1597
-ThreeJSymbol,Wigner 3-j symbol,✅,unevaluated,2.0,1597
-Magnify,Magnify a display object,✅,unevaluated,6.0,1599
-ScriptBaselineShifts,Script baseline shift option,✅,unevaluated,3.0,1599
+ThreeJSymbol,Wigner 3-j symbol,,unevaluated,2.0,1597
+Magnify,Magnify a display object,,unevaluated,6.0,1599
+ScriptBaselineShifts,Script baseline shift option,,unevaluated,3.0,1599
 HoldRest,Attribute holding all but first argument,✅,pure,1.0,1600
-LineSpacing,Line spacing specification,✅,unevaluated,3.0,1601
-FunctionRange,Range of a function,✅,unevaluated,10.0,1604
+LineSpacing,Line spacing specification,,unevaluated,3.0,1601
+FunctionRange,Range of a function,,unevaluated,10.0,1604
 StringInsert,Inserts a string at a specified position,✅,pure,2.0,1604
-Vectors,Vector space domain,✅,unevaluated,9.0,1604
-SectorOrigin,Sector origin in pie charts,✅,unevaluated,7.0,1605
+Vectors,Vector space domain,,unevaluated,9.0,1604
+SectorOrigin,Sector origin in pie charts,,unevaluated,7.0,1605
 JacobiSymbol,Compute the Jacobi symbol for quadratic residue testing,✅,pure,1.0,1606
-MaxTrainingRounds,Max training iterations,✅,unevaluated,11.0,1607
+MaxTrainingRounds,Max training iterations,,unevaluated,11.0,1607
 Slider2D,,🚫,,6.0,1608
 Compress,Compresses an expression to a string,✅,pure,6.0,1611
-PolarAxes,Polar axes option,✅,unevaluated,7.0,1611
+PolarAxes,Polar axes option,,unevaluated,7.0,1611
 PolynomialGCD,Greatest common divisor of polynomials,✅,pure,2.0,1611
-ARProcess,Autoregressive process,✅,unevaluated,9.0,1614
-DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8.0,1614
-SystemDialogInput,System dialog input,✅,unevaluated,6.0,1614
+ARProcess,Autoregressive process,,unevaluated,9.0,1614
+DiscreteWaveletTransform,Discrete wavelet transform,,unevaluated,8.0,1614
+SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
-ImagePartition,Partition an image,✅,unevaluated,7.0,1617
-RelationGraph,Graph from a relation,✅,unevaluated,10.2,1617
-PetersenGraph,Petersen graph,✅,unevaluated,8.0,1620
-RSolveValue,Solution value of recurrence,✅,unevaluated,10.0,1621
+ImagePartition,Partition an image,,unevaluated,7.0,1617
+RelationGraph,Graph from a relation,,unevaluated,10.2,1617
+PetersenGraph,Petersen graph,,unevaluated,8.0,1620
+RSolveValue,Solution value of recurrence,,unevaluated,10.0,1621
 ArrayDepth,Returns the depth of a nested array,✅,pure,5.0,1622
-FeatureExtraction,Extract features from data,✅,unevaluated,11.0,1623
-CellStyle,Cell style specification,✅,unevaluated,9.0,1625
-GraphDistance,Distance between graph vertices,✅,unevaluated,8.0,1625
-Asymptotic,Asymptotic approximation,✅,unevaluated,12.1,1629
-CoordinateTransform,Coordinate system transformation,✅,unevaluated,9.0,1629
+FeatureExtraction,Extract features from data,,unevaluated,11.0,1623
+CellStyle,Cell style specification,,unevaluated,9.0,1625
+GraphDistance,Distance between graph vertices,,unevaluated,8.0,1625
+Asymptotic,Asymptotic approximation,,unevaluated,12.1,1629
+CoordinateTransform,Coordinate system transformation,,unevaluated,9.0,1629
 DirectoryQ,Tests if a path is an existing directory,✅,filesystem,7.0,1629
-ImageIdentify,Identify objects in images,✅,unevaluated,10.1,1629
+ImageIdentify,Identify objects in images,,unevaluated,10.1,1629
 DiscreteDelta,Discrete delta function,✅,computation,4.0,1632
 LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7.0,1632
-WindowMargins,Window margin specification,✅,unevaluated,3.0,1632
-AffineTransform,Affine geometric transformation,✅,unevaluated,6.0,1633
+WindowMargins,Window margin specification,,unevaluated,3.0,1632
+AffineTransform,Affine geometric transformation,,unevaluated,6.0,1633
 CellGroupData,,🚫,,3.0,1635
-RadioButton,Radio button control,✅,unevaluated,6.0,1635
-LegendMarkers,Legend marker specification,✅,unevaluated,9.0,1637
-PowersRepresentations,Representations as sums of powers,✅,unevaluated,6.0,1637
-ShowStringCharacters,Show string quote characters,✅,unevaluated,3.0,1639
+RadioButton,Radio button control,,unevaluated,6.0,1635
+LegendMarkers,Legend marker specification,,unevaluated,9.0,1637
+PowersRepresentations,Representations as sums of powers,,unevaluated,6.0,1637
+ShowStringCharacters,Show string quote characters,,unevaluated,3.0,1639
 TakeWhile,Takes elements from start while predicate is true,✅,pure,6.0,1639
 ImageCollage,Creates a collage from a list of images with optional weights and fitting,✅,pure,10.0,1641
-NDEigensystem,Numerical eigensystem,✅,unevaluated,10.2,1641
-FindDistribution,Find matching distribution,✅,unevaluated,10.3,1643
-TextureCoordinateFunction,Texture coordinate function,✅,unevaluated,8.0,1643
-TextCases,Extract text patterns,✅,unevaluated,10.2,1644
+NDEigensystem,Numerical eigensystem,,unevaluated,10.2,1641
+FindDistribution,Find matching distribution,,unevaluated,10.3,1643
+TextureCoordinateFunction,Texture coordinate function,,unevaluated,8.0,1643
+TextCases,Extract text patterns,,unevaluated,10.2,1644
 DirectoryName,Extract the directory name from a file path,✅,pure,3.0,1646
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9.0,1646
-Multicolumn,Multi-column layout,✅,unevaluated,10.0,1648
-Record,Record data structure,✅,unevaluated,2.0,1648
+Multicolumn,Multi-column layout,,unevaluated,10.0,1648
+Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
 InversePermutation,Inverse of a permutation,✅,computation,8.0,1650
-WhittakerM,Whittaker M function,✅,unevaluated,6.0,1651
-InterpretationBox,Interpretation box,✅,unevaluated,3.0,1652
-IncludePods,Include pods in computation,✅,unevaluated,8.0,1653
-MathieuGroupM11,Mathieu group M11,✅,unevaluated,8.0,1656
-RulePlot,Plot rules,✅,unevaluated,11.0,1656
-Overlaps,Overlap specification,✅,unevaluated,5.1,1658
-Trig,Trigonometric functions option,✅,unevaluated,2.0,1658
-ItoProcess,Ito stochastic process,✅,unevaluated,9.0,1659
-NetModel,Neural net model,✅,unevaluated,11.1,1660
-RotationAction,Rotation action option,✅,unevaluated,6.0,1661
-BoundaryDiscretizeGraphics,Boundary discretize graphics,✅,unevaluated,10.0,1665
+WhittakerM,Whittaker M function,,unevaluated,6.0,1651
+InterpretationBox,Interpretation box,,unevaluated,3.0,1652
+IncludePods,Include pods in computation,,unevaluated,8.0,1653
+MathieuGroupM11,Mathieu group M11,,unevaluated,8.0,1656
+RulePlot,Plot rules,,unevaluated,11.0,1656
+Overlaps,Overlap specification,,unevaluated,5.1,1658
+Trig,Trigonometric functions option,,unevaluated,2.0,1658
+ItoProcess,Ito stochastic process,,unevaluated,9.0,1659
+NetModel,Neural net model,,unevaluated,11.1,1660
+RotationAction,Rotation action option,,unevaluated,6.0,1661
+BoundaryDiscretizeGraphics,Boundary discretize graphics,,unevaluated,10.0,1665
 ClearAttributes,Removes attributes from a symbol,✅,stateful,1.0,1665
-DiscreteMarkovProcess,Discrete Markov process,✅,unevaluated,9.0,1665
-Ket,Dirac ket notation,✅,unevaluated,13.3,1665
-TradingChart,Financial trading chart,✅,unevaluated,8.0,1666
+DiscreteMarkovProcess,Discrete Markov process,,unevaluated,9.0,1665
+Ket,Dirac ket notation,,unevaluated,13.3,1665
+TradingChart,Financial trading chart,,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
-FindMaxValue,Find maximum value,✅,unevaluated,7.0,1668
-DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7.0,1672
+FindMaxValue,Find maximum value,,unevaluated,7.0,1668
+DistributeDefinitions,Distribute definitions to kernels,,unevaluated,7.0,1672
 FilePrint,Prints the contents of a file to standard output,✅,io,6.0,1672
-FormPage,Form page interface,✅,unevaluated,10.3,1672
-NearestNeighborGraph,Nearest neighbor graph,✅,unevaluated,10.2,1672
-BatchNormalizationLayer,Batch normalization layer,✅,unevaluated,11.0,1675
-ChartBaseStyle,Chart base style,✅,unevaluated,7.0,1675
-RiemannSiegelZ,Riemann-Siegel Z function,✅,unevaluated,2.0,1675
-MoonPhase,Phase of the moon,✅,unevaluated,10.0,1676
+FormPage,Form page interface,,unevaluated,10.3,1672
+NearestNeighborGraph,Nearest neighbor graph,,unevaluated,10.2,1672
+BatchNormalizationLayer,Batch normalization layer,,unevaluated,11.0,1675
+ChartBaseStyle,Chart base style,,unevaluated,7.0,1675
+RiemannSiegelZ,Riemann-Siegel Z function,,unevaluated,2.0,1675
+MoonPhase,Phase of the moon,,unevaluated,10.0,1676
 BubbleChart,Creates a bubble chart from data,✅,pure,7.0,1679
-ContentSize,Content size option,✅,unevaluated,7.0,1679
-HazardFunction,Hazard function,✅,unevaluated,8.0,1679
-HornerForm,Horner polynomial form,✅,unevaluated,6.0,1682
-NExpectation,Numerical expectation,✅,unevaluated,8.0,1682
-WordBoundary,Word boundary pattern,✅,unevaluated,5.1,1682
-Mouseover,Mouseover display,✅,unevaluated,6.0,1683
-AffineStateSpaceModel,Affine state-space model,✅,unevaluated,10.0,1687
-LogLikelihood,Log-likelihood function,✅,unevaluated,8.0,1687
-RectangleChart,Rectangle chart,✅,unevaluated,7.0,1687
-SpanFromAbove,Span from above,✅,unevaluated,6.0,1687
+ContentSize,Content size option,,unevaluated,7.0,1679
+HazardFunction,Hazard function,,unevaluated,8.0,1679
+HornerForm,Horner polynomial form,,unevaluated,6.0,1682
+NExpectation,Numerical expectation,,unevaluated,8.0,1682
+WordBoundary,Word boundary pattern,,unevaluated,5.1,1682
+Mouseover,Mouseover display,,unevaluated,6.0,1683
+AffineStateSpaceModel,Affine state-space model,,unevaluated,10.0,1687
+LogLikelihood,Log-likelihood function,,unevaluated,8.0,1687
+RectangleChart,Rectangle chart,,unevaluated,7.0,1687
+SpanFromAbove,Span from above,,unevaluated,6.0,1687
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1.0,1688
-MinValue,Minimum value,✅,unevaluated,7.0,1690
+MinValue,Minimum value,,unevaluated,7.0,1690
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1.0,1692
-SubPlus,Subscript plus notation,✅,unevaluated,6.0,1692
-Extension,Extension option,✅,unevaluated,3.0,1693
+SubPlus,Subscript plus notation,,unevaluated,6.0,1692
+Extension,Extension option,,unevaluated,3.0,1693
 KeySort,Sorts an association by its keys,✅,pure,10.0,1694
-WeightedAdjacencyGraph,Weighted adjacency graph,✅,unevaluated,8.0,1695
-CellFrame,Cell frame option,✅,unevaluated,3.0,1696
-Compiled,Compiled option,✅,unevaluated,2.0,1697
-AudioGenerator,Audio generator,✅,unevaluated,11.0,1698
-FourierCoefficient,Fourier coefficient,✅,unevaluated,7.0,1701
+WeightedAdjacencyGraph,Weighted adjacency graph,,unevaluated,8.0,1695
+CellFrame,Cell frame option,,unevaluated,3.0,1696
+Compiled,Compiled option,,unevaluated,2.0,1697
+AudioGenerator,Audio generator,,unevaluated,11.0,1698
+FourierCoefficient,Fourier coefficient,,unevaluated,7.0,1701
 PageWidth,Option specifying the page width for output formatting,✅,pure,1.0,1701
-Underlined,Underlined text,✅,unevaluated,6.0,1701
+Underlined,Underlined text,,unevaluated,6.0,1701
 Constant,Attribute indicating zero derivative with respect to all parameters,✅,pure,1.0,1704
-Overscript,Overscript notation,✅,unevaluated,3.0,1704
+Overscript,Overscript notation,,unevaluated,3.0,1704
 UpValues,Returns the up values of a symbol,✅,pure,2.0,1704
-CommunityGraphPlot,Community graph plot,✅,unevaluated,9.0,1707
+CommunityGraphPlot,Community graph plot,,unevaluated,9.0,1707
 Multinomial,Returns the multinomial coefficient,✅,pure,1.0,1707
-Primes,Domain of primes,✅,unevaluated,4.0,1707
-RandomPrime,Random prime number,✅,unevaluated,6.0,1709
-SuperDagger,Dagger superscript,✅,unevaluated,6.0,1709
-ReImPlot,Real and imaginary plot,✅,unevaluated,12.0,1710
-ExponentFunction,Exponent display function,✅,unevaluated,2.0,1712
-SoftmaxLayer,Softmax neural layer,✅,unevaluated,11.0,1712
-ProductDistribution,Product of distributions,✅,unevaluated,8.0,1713
+Primes,Domain of primes,,unevaluated,4.0,1707
+RandomPrime,Random prime number,,unevaluated,6.0,1709
+SuperDagger,Dagger superscript,,unevaluated,6.0,1709
+ReImPlot,Real and imaginary plot,,unevaluated,12.0,1710
+ExponentFunction,Exponent display function,,unevaluated,2.0,1712
+SoftmaxLayer,Softmax neural layer,,unevaluated,11.0,1712
+ProductDistribution,Product of distributions,,unevaluated,8.0,1713
 Save,Saves definitions associated with symbols to a file,✅,effectful,1.0,1714
-RegionDimension,Dimension of a region,✅,unevaluated,10.0,1716
-TogglerBar,Toggler bar control,✅,unevaluated,6.0,1716
+RegionDimension,Dimension of a region,,unevaluated,10.0,1716
+TogglerBar,Toggler bar control,,unevaluated,6.0,1716
 GeoElevationData,,🚫,,10.0,1717
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1.0,1718
-FeatureExtractor,Feature extractor,✅,unevaluated,11.0,1719
-ArgMax,Position of maximum,✅,unevaluated,7.0,1721
-VertexNormals,Vertex normal vectors,✅,unevaluated,6.0,1721
-CorrelationFunction,Correlation function,✅,unevaluated,9.0,1723
+FeatureExtractor,Feature extractor,,unevaluated,11.0,1719
+ArgMax,Position of maximum,,unevaluated,7.0,1721
+VertexNormals,Vertex normal vectors,,unevaluated,6.0,1721
+CorrelationFunction,Correlation function,,unevaluated,9.0,1723
 RandomImage,Generates a random image with given dimensions,✅,pure,8.0,1723
-BellY,Bell Y polynomial,✅,unevaluated,8.0,1725
-ParallelDo,Parallel Do loop,✅,unevaluated,7.0,1725
-BarnesG,Barnes G function,✅,unevaluated,7.0,1727
-URL,URL wrapper,✅,unevaluated,11.0,1727
+BellY,Bell Y polynomial,,unevaluated,8.0,1725
+ParallelDo,Parallel Do loop,,unevaluated,7.0,1725
+BarnesG,Barnes G function,,unevaluated,7.0,1727
+URL,URL wrapper,,unevaluated,11.0,1727
 Between,Tests if a value is between bounds,✅,pure,10.3,1728
-Deployed,Deployed option,✅,unevaluated,6.0,1730
-FindGeometricTransform,Find geometric transformation,✅,unevaluated,8.0,1730
-DirichletDistribution,Dirichlet distribution,✅,unevaluated,8.0,1733
+Deployed,Deployed option,,unevaluated,6.0,1730
+FindGeometricTransform,Find geometric transformation,,unevaluated,8.0,1730
+DirichletDistribution,Dirichlet distribution,,unevaluated,8.0,1733
 StringDelete,Deletes all occurrences of a substring,✅,pure,10.1,1733
-RiemannSiegelTheta,Riemann-Siegel theta function,✅,unevaluated,2.0,1734
-RandomInstance,Random geometric instance,✅,unevaluated,12.0,1736
-TrigFactor,Factor trigonometric expressions,✅,unevaluated,3.0,1736
-PoolingLayer,Neural net pooling layer,✅,unevaluated,11.0,1737
-FindFormula,Find formula fitting data,✅,unevaluated,10.2,1740
-Graph3D,3D graph visualization,✅,unevaluated,10.0,1740
-NotebookDelete,Delete notebook cells,✅,unevaluated,3.0,1740
-WhittakerW,Whittaker W function,✅,unevaluated,6.0,1741
-GeometricScene,Geometric scene,✅,unevaluated,12.0,1743
-MaxDetect,Detect local maxima,✅,unevaluated,8.0,1743
+RiemannSiegelTheta,Riemann-Siegel theta function,,unevaluated,2.0,1734
+RandomInstance,Random geometric instance,,unevaluated,12.0,1736
+TrigFactor,Factor trigonometric expressions,,unevaluated,3.0,1736
+PoolingLayer,Neural net pooling layer,,unevaluated,11.0,1737
+FindFormula,Find formula fitting data,,unevaluated,10.2,1740
+Graph3D,3D graph visualization,,unevaluated,10.0,1740
+NotebookDelete,Delete notebook cells,,unevaluated,3.0,1740
+WhittakerW,Whittaker W function,,unevaluated,6.0,1741
+GeometricScene,Geometric scene,,unevaluated,12.0,1743
+MaxDetect,Detect local maxima,,unevaluated,8.0,1743
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1.0,1745
-Parallelize,Parallelize computation,✅,unevaluated,7.0,1745
-BernoulliGraphDistribution,Bernoulli random graph,✅,unevaluated,8.0,1748
-ClusteringComponents,Clustering components,✅,unevaluated,8.0,1748
-MandelbrotSetPlot,Mandelbrot set plot,✅,unevaluated,10.0,1748
-Language,Language option,✅,unevaluated,3.0,1749
+Parallelize,Parallelize computation,,unevaluated,7.0,1745
+BernoulliGraphDistribution,Bernoulli random graph,,unevaluated,8.0,1748
+ClusteringComponents,Clustering components,,unevaluated,8.0,1748
+MandelbrotSetPlot,Mandelbrot set plot,,unevaluated,10.0,1748
+Language,Language option,,unevaluated,3.0,1749
 SequenceCases,Find matching subsequences in a list,✅,pure,10.1,1751
-TimeConstraint,Time constraint option,✅,unevaluated,3.0,1751
-DoubleRightTee,Double right tee symbol,✅,unevaluated,3.0,1752
-Matrices,Matrix domain,✅,unevaluated,9.0,1753
-JoinedCurve,Joined curve primitive,✅,unevaluated,8.0,1754
-DefaultButton,Default button control,✅,unevaluated,6.0,1760
-GeoMarker,Geographic marker,✅,unevaluated,10.0,1760
+TimeConstraint,Time constraint option,,unevaluated,3.0,1751
+DoubleRightTee,Double right tee symbol,,unevaluated,3.0,1752
+Matrices,Matrix domain,,unevaluated,9.0,1753
+JoinedCurve,Joined curve primitive,,unevaluated,8.0,1754
+DefaultButton,Default button control,,unevaluated,6.0,1760
+GeoMarker,Geographic marker,,unevaluated,10.0,1760
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4.0,1760
-RunProcess,Run external process,✅,unevaluated,10.0,1760
-StartingStepSize,Starting step size option,✅,unevaluated,4.0,1760
-Trigger,Trigger control,✅,unevaluated,6.0,1760
-ContentSelectable,Content selectable option,✅,unevaluated,6.0,1761
+RunProcess,Run external process,,unevaluated,10.0,1760
+StartingStepSize,Starting step size option,,unevaluated,4.0,1760
+Trigger,Trigger control,,unevaluated,6.0,1760
+ContentSelectable,Content selectable option,,unevaluated,6.0,1761
 TakeList,Take successive sublists of given lengths,✅,computation,11.2,1762
-ExportForm,Export form wrapper,✅,unevaluated,10.0,1763
-ParallelSubmit,Submit parallel task,✅,unevaluated,7.0,1764
-Application,Application wrapper,✅,unevaluated,12.2,1766
-FindFile,Find file,✅,unevaluated,7.0,1766
-DistanceTransform,Distance transform,✅,unevaluated,7.0,1768
-DialogInput,Dialog input,✅,unevaluated,6.0,1770
-TimelinePlot,Timeline plot,✅,unevaluated,10.1,1770
-PassEventsDown,Pass events down option,✅,unevaluated,6.0,1771
-AssociateTo,Append to association,✅,unevaluated,10.0,1776
-CircleDot,Circle dot operator,✅,unevaluated,3.0,1776
-FindGeneratingFunction,Find generating function,✅,unevaluated,7.0,1776
-HistogramDistribution,Histogram distribution,✅,unevaluated,8.0,1776
-VectorScaling,Vector scaling option,✅,unevaluated,12.1,1776
-GaussianMatrix,Gaussian matrix,✅,unevaluated,7.0,1779
-NumberSigns,Number sign display,✅,unevaluated,2.0,1779
-TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
+ExportForm,Export form wrapper,,unevaluated,10.0,1763
+ParallelSubmit,Submit parallel task,,unevaluated,7.0,1764
+Application,Application wrapper,,unevaluated,12.2,1766
+FindFile,Find file,,unevaluated,7.0,1766
+DistanceTransform,Distance transform,,unevaluated,7.0,1768
+DialogInput,Dialog input,,unevaluated,6.0,1770
+TimelinePlot,Timeline plot,,unevaluated,10.1,1770
+PassEventsDown,Pass events down option,,unevaluated,6.0,1771
+AssociateTo,Append to association,,unevaluated,10.0,1776
+CircleDot,Circle dot operator,,unevaluated,3.0,1776
+FindGeneratingFunction,Find generating function,,unevaluated,7.0,1776
+HistogramDistribution,Histogram distribution,,unevaluated,8.0,1776
+VectorScaling,Vector scaling option,,unevaluated,12.1,1776
+GaussianMatrix,Gaussian matrix,,unevaluated,7.0,1779
+NumberSigns,Number sign display,,unevaluated,2.0,1779
+TextRecognize,Recognize text in image,,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
-WeierstrassZeta,Weierstrass zeta function,✅,unevaluated,3.0,1781
+WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781
 CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
-DateValue,Date value extraction,✅,unevaluated,10.0,1788
-DensityPlot3D,3D density plot,✅,unevaluated,10.2,1788
+DateValue,Date value extraction,,unevaluated,10.0,1788
+DensityPlot3D,3D density plot,,unevaluated,10.2,1788
 DynamicModuleValues,,🚫,,6.0,1788
-FRatioDistribution,F-ratio distribution,✅,unevaluated,6.0,1788
+FRatioDistribution,F-ratio distribution,,unevaluated,6.0,1788
 LaplaceDistribution,Laplace distribution,✅,computation,6.0,1788
-ListSurfacePlot3D,3D surface plot from points,✅,unevaluated,6.0,1788
-GeoRegionValuePlot,Geographic region value plot,✅,unevaluated,10.0,1789
-MaxExtraConditions,Max extra conditions option,✅,unevaluated,8.0,1791
-TimeSeriesModelFit,Time series model fit,✅,unevaluated,10.0,1791
+ListSurfacePlot3D,3D surface plot from points,,unevaluated,6.0,1788
+GeoRegionValuePlot,Geographic region value plot,,unevaluated,10.0,1789
+MaxExtraConditions,Max extra conditions option,,unevaluated,8.0,1791
+TimeSeriesModelFit,Time series model fit,,unevaluated,10.0,1791
 Find,Finds a file on the search path,🚧,effectful,2.0,1793
-PaneSelector,Pane selector control,✅,unevaluated,6.0,1793
-URLExecute,Execute URL request,✅,unevaluated,10.0,1794
+PaneSelector,Pane selector control,,unevaluated,6.0,1793
+URLExecute,Execute URL request,,unevaluated,10.0,1794
 FileBaseName,Returns the base name of a file (without directory and extension),✅,pure,7.0,1796
 SequencePosition,Find positions of a subsequence in a list,✅,pure,10.1,1796
-ColorCombine,Combine color channels,✅,unevaluated,7.0,1800
-CoordinatesToolOptions,Coordinates tool options,✅,unevaluated,7.0,1800
-Highlighted,Highlighted display,✅,unevaluated,10.4,1800
-TextGrid,Text grid layout,✅,unevaluated,10.3,1800
-NumericFunction,Numeric function attribute,✅,unevaluated,3.0,1801
-ColorSetter,Color setter control,✅,unevaluated,6.0,1803
-Scrollbars,Scrollbars option,✅,unevaluated,7.0,1803
-DistanceMatrix,Distance matrix,✅,unevaluated,10.3,1806
-InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8.0,1806
+ColorCombine,Combine color channels,,unevaluated,7.0,1800
+CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
+Highlighted,Highlighted display,,unevaluated,10.4,1800
+TextGrid,Text grid layout,,unevaluated,10.3,1800
+NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
+ColorSetter,Color setter control,,unevaluated,6.0,1803
+Scrollbars,Scrollbars option,,unevaluated,7.0,1803
+DistanceMatrix,Distance matrix,,unevaluated,10.3,1806
+InverseWaveletTransform,Inverse wavelet transform,,unevaluated,8.0,1806
 RayleighDistribution,Rayleigh distribution,✅,computation,6.0,1806
-SetSharedVariable,Set shared variable,✅,unevaluated,7.0,1808
+SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
 TreeGraph,Tree graph from directed edges with tree layout visualization,✅,pure,8.0,1808
-PadeApproximant,Pade approximant,✅,unevaluated,6.0,1809
-FillingTransform,Morphological filling,✅,unevaluated,8.0,1810
-SamplingPeriod,Sampling period option,✅,unevaluated,8.0,1811
-Cube,Cube primitive,✅,unevaluated,12.0,1815
-FindCycle,Find graph cycles,✅,unevaluated,10.0,1815
-TimeSeriesForecast,Time series forecast,✅,unevaluated,9.0,1815
+PadeApproximant,Pade approximant,,unevaluated,6.0,1809
+FillingTransform,Morphological filling,,unevaluated,8.0,1810
+SamplingPeriod,Sampling period option,,unevaluated,8.0,1811
+Cube,Cube primitive,,unevaluated,12.0,1815
+FindCycle,Find graph cycles,,unevaluated,10.0,1815
+TimeSeriesForecast,Time series forecast,,unevaluated,9.0,1815
 WordFrequencyData,,🚫,,10.4,1815
-CharacteristicFunction,Characteristic function,✅,unevaluated,6.0,1817
+CharacteristicFunction,Characteristic function,,unevaluated,6.0,1817
 FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1.0,1817
-DiscreteVariables,Discrete variables option,✅,unevaluated,9.0,1819
-PermutationReplace,Replace by permutation,✅,unevaluated,8.0,1819
+DiscreteVariables,Discrete variables option,,unevaluated,9.0,1819
+PermutationReplace,Replace by permutation,,unevaluated,8.0,1819
 Standardize,Standardizes data by subtracting the mean and dividing by the standard deviation,✅,pure,7.0,1822
-StripOnInput,Strip on input option,✅,unevaluated,6.0,1822
-SubMinus,Subscript minus,✅,unevaluated,6.0,1822
-ColorQuantize,Quantize image colors,✅,unevaluated,7.0,1827
-CornerNeighbors,Corner neighbors option,✅,unevaluated,7.0,1827
+StripOnInput,Strip on input option,,unevaluated,6.0,1822
+SubMinus,Subscript minus,,unevaluated,6.0,1822
+ColorQuantize,Quantize image colors,,unevaluated,7.0,1827
+CornerNeighbors,Corner neighbors option,,unevaluated,7.0,1827
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2.0,1827
-RealExponent,Real exponent,✅,unevaluated,6.0,1827
-TriangularDistribution,Triangular distribution,✅,unevaluated,6.0,1827
-BinaryWrite,Write binary data,✅,unevaluated,5.1,1833
-CheckboxBar,Checkbox bar control,✅,unevaluated,6.0,1833
+RealExponent,Real exponent,,unevaluated,6.0,1827
+TriangularDistribution,Triangular distribution,,unevaluated,6.0,1827
+BinaryWrite,Write binary data,,unevaluated,5.1,1833
+CheckboxBar,Checkbox bar control,,unevaluated,6.0,1833
 DuplicateFreeQ,Test if list has no duplicates,✅,computation,10.0,1833
 OutputForm,Converts expression to output form,✅,pure,1.0,1833
-RandomPermutation,Random permutation,✅,unevaluated,8.0,1833
-TooltipDelay,Tooltip delay option,✅,unevaluated,7.0,1833
+RandomPermutation,Random permutation,,unevaluated,8.0,1833
+TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
 Catalan,Catalan constant approximately 0.9159655,✅,pure,1.0,1836
-FactorialMoment,Factorial moment,✅,unevaluated,8.0,1836
-WatershedComponents,Watershed components,✅,unevaluated,8.0,1836
+FactorialMoment,Factorial moment,,unevaluated,8.0,1836
+WatershedComponents,Watershed components,,unevaluated,8.0,1836
 LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6.0,1838
-ViewCenter,View center option,✅,unevaluated,2.0,1838
+ViewCenter,View center option,,unevaluated,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
-FourierSinSeries,Fourier sine series,✅,unevaluated,7.0,1842
-MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3.0,1842
-QuantilePlot,Quantile plot,✅,unevaluated,8.0,1842
-ResourceObject,Resource object,✅,unevaluated,11.0,1844
-StieltjesGamma,Stieltjes gamma constant,✅,unevaluated,3.0,1844
+FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
+MathieuCharacteristicA,Mathieu characteristic A,,unevaluated,3.0,1842
+QuantilePlot,Quantile plot,,unevaluated,8.0,1842
+ResourceObject,Resource object,,unevaluated,11.0,1844
+StieltjesGamma,Stieltjes gamma constant,,unevaluated,3.0,1844
 DynamicWrapper,,🚫,,8.0,1846
-PolarTicks,Polar ticks option,✅,unevaluated,7.0,1846
-BeckmannDistribution,Beckmann distribution,✅,unevaluated,8.0,1849
+PolarTicks,Polar ticks option,,unevaluated,7.0,1846
+BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
-MathieuC,Mathieu C function,✅,unevaluated,3.0,1852
-WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3.0,1852
+MathieuC,Mathieu C function,,unevaluated,3.0,1852
+WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
 StringReplacePart,Replace part of string,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association,✅,pure,10.0,1855
-MetaInformation,Meta information option,✅,unevaluated,9.0,1855
-NotebookSave,Save notebook,✅,unevaluated,3.0,1857
+MetaInformation,Meta information option,,unevaluated,9.0,1855
+NotebookSave,Save notebook,,unevaluated,3.0,1857
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅,pure,2.0,1857
-ListContourPlot3D,3D contour plot from data,✅,unevaluated,6.0,1858
-ResamplingMethod,Resampling method option,✅,unevaluated,10.0,1859
-AngularGauge,Angular gauge,✅,unevaluated,9.0,1860
-CopyToClipboard,Copy to clipboard,✅,unevaluated,8.0,1861
-ColorReplace,Replace colors in image,✅,unevaluated,9.0,1864
+ListContourPlot3D,3D contour plot from data,,unevaluated,6.0,1858
+ResamplingMethod,Resampling method option,,unevaluated,10.0,1859
+AngularGauge,Angular gauge,,unevaluated,9.0,1860
+CopyToClipboard,Copy to clipboard,,unevaluated,8.0,1861
+ColorReplace,Replace colors in image,,unevaluated,9.0,1864
 Format,Display wrapper that formats an expression in a given form,✅,pure,1.0,1864
-GraphPlot3D,3D graph plot,✅,unevaluated,6.0,1864
+GraphPlot3D,3D graph plot,,unevaluated,6.0,1864
 InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1.0,1865
-ButtonFunction,Button function option,✅,unevaluated,3.0,1866
-SystemOptions,System options,✅,unevaluated,6.0,1867
-FrobeniusSolve,Frobenius equation solver,✅,unevaluated,6.0,1869
-Sunday,Sunday day name,✅,unevaluated,9.0,1869
-PrintTemporary,Print temporary expression,✅,unevaluated,6.0,1870
+ButtonFunction,Button function option,,unevaluated,3.0,1866
+SystemOptions,System options,,unevaluated,6.0,1867
+FrobeniusSolve,Frobenius equation solver,,unevaluated,6.0,1869
+Sunday,Sunday day name,,unevaluated,9.0,1869
+PrintTemporary,Print temporary expression,,unevaluated,6.0,1870
 Constants,Option for Simplify specifying which symbols are constants,✅,pure,1.0,1873
-GeneratedParameters,Generated parameters option,✅,unevaluated,5.0,1873
-ImageValue,Image pixel value,✅,unevaluated,8.0,1873
-MatrixLog,Matrix logarithm,✅,unevaluated,9.0,1875
-PlotRegion,Plot region option,✅,unevaluated,2.0,1875
-DensityHistogram,Density histogram,✅,unevaluated,8.0,1877
+GeneratedParameters,Generated parameters option,,unevaluated,5.0,1873
+ImageValue,Image pixel value,,unevaluated,8.0,1873
+MatrixLog,Matrix logarithm,,unevaluated,9.0,1875
+PlotRegion,Plot region option,,unevaluated,2.0,1875
+DensityHistogram,Density histogram,,unevaluated,8.0,1877
 DigitCount,Counts occurrences of each digit in a number,✅,pure,4.0,1877
-DistributionChart,Distribution chart,✅,unevaluated,8.0,1880
-IncidenceMatrix,Graph incidence matrix,✅,unevaluated,8.0,1880
-InverseZTransform,Inverse Z-transform,✅,unevaluated,4.0,1880
-Notebooks,List open notebooks,✅,unevaluated,3.0,1883
-ZTransform,Z-transform,✅,unevaluated,4.0,1883
-FeatureTypes,Feature types option,✅,unevaluated,10.1,1885
-LeastSquares,Least squares solution,✅,unevaluated,6.0,1885
-CovarianceFunction,Covariance function,✅,unevaluated,9.0,1887
-XYZColor,XYZ color specification,✅,unevaluated,10.0,1887
-GraphHighlightStyle,Graph highlight style,✅,unevaluated,8.0,1889
-ImageTrim,Trim image,✅,unevaluated,8.0,1889
-BSplineSurface,B-spline surface,✅,unevaluated,7.0,1891
-Setting,Setting wrapper,✅,unevaluated,6.0,1891
-SingularValueList,Singular value list,✅,unevaluated,5.0,1892
+DistributionChart,Distribution chart,,unevaluated,8.0,1880
+IncidenceMatrix,Graph incidence matrix,,unevaluated,8.0,1880
+InverseZTransform,Inverse Z-transform,,unevaluated,4.0,1880
+Notebooks,List open notebooks,,unevaluated,3.0,1883
+ZTransform,Z-transform,,unevaluated,4.0,1883
+FeatureTypes,Feature types option,,unevaluated,10.1,1885
+LeastSquares,Least squares solution,,unevaluated,6.0,1885
+CovarianceFunction,Covariance function,,unevaluated,9.0,1887
+XYZColor,XYZ color specification,,unevaluated,10.0,1887
+GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
+ImageTrim,Trim image,,unevaluated,8.0,1889
+BSplineSurface,B-spline surface,,unevaluated,7.0,1891
+Setting,Setting wrapper,,unevaluated,6.0,1891
+SingularValueList,Singular value list,,unevaluated,5.0,1892
 Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
-MorphologicalBinarize,Morphological binarize,✅,unevaluated,8.0,1895
-VertexWeight,Vertex weight option,✅,unevaluated,8.0,1895
-SingleLetterItalics,Single letter italics option,✅,unevaluated,3.0,1897
-AbsArg,Absolute value and argument,✅,unevaluated,10.1,1901
+MorphologicalBinarize,Morphological binarize,,unevaluated,8.0,1895
+VertexWeight,Vertex weight option,,unevaluated,8.0,1895
+SingleLetterItalics,Single letter italics option,,unevaluated,3.0,1897
+AbsArg,Absolute value and argument,,unevaluated,10.1,1901
 Haversine,Haversine function,✅,computation,7.0,1901
-PolarGridLines,Polar grid lines option,✅,unevaluated,7.0,1901
-RootApproximant,Root approximant,✅,unevaluated,6.0,1901
-Databin,Databin cloud storage,✅,unevaluated,10.0,1905
-Interpretation,Interpretation wrapper,✅,unevaluated,6.0,1905
+PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
+RootApproximant,Root approximant,,unevaluated,6.0,1901
+Databin,Databin cloud storage,,unevaluated,10.0,1905
+Interpretation,Interpretation wrapper,,unevaluated,6.0,1905
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1.0,1905
-SymmetricGroup,Symmetric group,✅,unevaluated,8.0,1905
+SymmetricGroup,Symmetric group,,unevaluated,8.0,1905
 InverseErf,Inverse error function,✅,pure,3.0,1906
-SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8.0,1907
-NetExtract,Extract net components,✅,unevaluated,11.0,1908
-Friday,Friday day name,✅,unevaluated,9.0,1910
-HankelH1,Hankel function H1,✅,unevaluated,6.0,1910
-CloudImport,Import from cloud,✅,unevaluated,10.0,1912
-Temporary,Temporary option,✅,unevaluated,2.0,1912
-NonlinearStateSpaceModel,Nonlinear state-space model,✅,unevaluated,10.0,1914
-ServiceConnect,Connect to service,✅,unevaluated,10.0,1914
+SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
+NetExtract,Extract net components,,unevaluated,11.0,1908
+Friday,Friday day name,,unevaluated,9.0,1910
+HankelH1,Hankel function H1,,unevaluated,6.0,1910
+CloudImport,Import from cloud,,unevaluated,10.0,1912
+Temporary,Temporary option,,unevaluated,2.0,1912
+NonlinearStateSpaceModel,Nonlinear state-space model,,unevaluated,10.0,1914
+ServiceConnect,Connect to service,,unevaluated,10.0,1914
 Closing,Morphological closing (dilation followed by erosion),✅,pure,7.0,1916
-DefaultDuration,Default duration option,✅,unevaluated,6.0,1916
+DefaultDuration,Default duration option,,unevaluated,6.0,1916
 EditDistance,Returns the edit distance between two strings,✅,pure,6.0,1921
 NotElement,Test non-membership of an expression in a mathematical domain,✅,pure,6.0,1921
 SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3.0,1921
@@ -2597,7 +2597,7 @@ SelfLoopStyle,option for self-loop style in graphs,✅,Symbolic,6.0,2656
 StringPart,Extracts characters from a string by index,✅,pure,11.0,2656
 TransformationFunction,Represents a geometric transformation as a matrix,✅,pure,6.0,2656
 DatabinAdd,,🚫,,10.0,2662
-DihedralGroup,Dihedral group of order 2n,✅,unevaluated,8.0,2662
+DihedralGroup,Dihedral group of order 2n,,unevaluated,8.0,2662
 DistributedContexts,,🚫,,8.0,2662
 FunctionContinuous,Test whether a function is continuous,✅,1,12.2,2662
 ScaleDivisions,option for scale divisions,✅,Symbolic,9.0,2662
@@ -2646,7 +2646,7 @@ MeanShiftFilter,,🚫,,8.0,2707
 PrintingStyleEnvironment,,🚫,,3.0,2707
 ShowAutoStyles,,🚫,,4.0,2707
 SpheroidalEigenvalue,,🚫,,6.0,2707
-WattsStrogatzGraphDistribution,Watts-Strogatz small-world graph distribution,✅,unevaluated,8.0,2707
+WattsStrogatzGraphDistribution,Watts-Strogatz small-world graph distribution,,unevaluated,8.0,2707
 DictionaryWordQ,Tests whether a string is a recognized dictionary word,✅,pure,10.4,2712
 GompertzMakehamDistribution,represents a Gompertz-Makeham distribution,✅,Computation,8.0,2712
 LinearGradientFilling,Specifies a linear gradient color filling for graphics,✅,pure,12.2,2712
@@ -2705,7 +2705,7 @@ ImageChannels,Returns the number of channels in an image,✅,pure,7.0,2767
 ImageClip,,🚫,,8.0,2767
 TakeSmallestBy,Takes the n smallest elements by a criterion,✅,pure,10.1,2767
 WeaklyConnectedComponents,weakly connected components of a graph,✅,Computation,9.0,2767
-BarabasiAlbertGraphDistribution,Barabasi-Albert random graph distribution,✅,unevaluated,8.0,2777
+BarabasiAlbertGraphDistribution,Barabasi-Albert random graph distribution,,unevaluated,8.0,2777
 GraphComplement,Complement of a graph,✅,1,8.0,2777
 Groupings,Generates all ways to group elements with an operator of given arity,✅,pure,11.0,2777
 KochCurve,Generates a Koch fractal curve as a Line primitive,✅,pure,11.1,2777
@@ -2760,7 +2760,7 @@ ImageDistance,,🚫,,9.0,2821
 Modal,,🚫,,6.0,2821
 StackedListPlot,,🚫,,11.2,2821
 AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅,pure,10.3,2828
-AlternatingGroup,Alternating group of degree n,✅,unevaluated,8.0,2828
+AlternatingGroup,Alternating group of degree n,,unevaluated,8.0,2828
 BoundedRegionQ,,🚫,,10.0,2828
 CloudObjects,,🚫,,10.0,2828
 Pruning,,🚫,,8.0,2828
@@ -2778,7 +2778,7 @@ UniformPolyhedron,,🚫,,12.0,2837
 ControllableModelQ,,🚫,,8.0,2842
 KeyUnion,Extends associations to have the union of all keys with Missing for absent keys,✅,pure,10.0,2842
 LinkProtocol,,🚫,,3.0,2842
-SpatialGraphDistribution,Spatial random graph distribution,✅,unevaluated,9.0,2842
+SpatialGraphDistribution,Spatial random graph distribution,,unevaluated,9.0,2842
 UnderoverscriptBoxOptions,,🚫,,4.0,2842
 BooleanQ,Tests if an expression is True or False,✅,pure,10.0,2845
 IndependentUnit,Represents a user-defined independent unit,✅,pure,9.0,2845
@@ -2855,7 +2855,7 @@ GaugeStyle,,🚫,,9.0,2921
 QuantityDistribution,Probability distribution with physical units,✅,pure,10.4,2921
 SequenceCount,Count non-overlapping occurrences of a subsequence,✅,none,10.1,2921
 SpheroidalS2Prime,,🚫,,6.0,2921
-UniformGraphDistribution,Uniform random graph distribution,✅,unevaluated,8.0,2921
+UniformGraphDistribution,Uniform random graph distribution,,unevaluated,8.0,2921
 DateListStepPlot,,🚫,,10.3,2929
 EarthquakeData,,🚫,,10.0,2929
 ExcludedForms,Option to specify patterns excluded from an operation,✅,pure,3.0,2929
