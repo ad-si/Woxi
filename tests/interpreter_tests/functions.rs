@@ -12345,6 +12345,55 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn file_base_name_basic() {
+    assert_eq!(interpret(r#"FileBaseName["file.txt"]"#).unwrap(), "file");
+  }
+
+  #[test]
+  fn file_base_name_with_path() {
+    assert_eq!(
+      interpret(r#"FileBaseName["/path/to/file.txt"]"#).unwrap(),
+      "file"
+    );
+  }
+
+  #[test]
+  fn file_base_name_multi_extension() {
+    assert_eq!(
+      interpret(r#"FileBaseName["file.tar.gz"]"#).unwrap(),
+      "file.tar"
+    );
+  }
+
+  #[test]
+  fn file_base_name_no_extension() {
+    assert_eq!(interpret(r#"FileBaseName["noext"]"#).unwrap(), "noext");
+  }
+
+  #[test]
+  fn file_base_name_hidden_file() {
+    assert_eq!(interpret(r#"FileBaseName[".hidden"]"#).unwrap(), ".hidden");
+  }
+
+  #[test]
+  fn file_base_name_empty() {
+    assert_eq!(interpret(r#"FileBaseName[""]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn file_base_name_non_string() {
+    assert_eq!(
+      interpret(r#"FileBaseName[123]"#).unwrap(),
+      "FileBaseName[123]"
+    );
+  }
+
+  #[test]
+  fn file_base_name_path_with_multi_ext() {
+    assert_eq!(interpret(r#"FileBaseName["a/b/c.d.e"]"#).unwrap(), "c.d");
+  }
+
+  #[test]
   fn betweenness_centrality_line() {
     assert_eq!(
       interpret("BetweennessCentrality[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3]}]]").unwrap(),
