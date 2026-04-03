@@ -8823,6 +8823,101 @@ fn lgamma(x: f64) -> f64 {
   }
 }
 
+/// GammaRegularized[a, z] - Regularized upper incomplete gamma function Q(a, z)
+/// Q(a, z) = Gamma(a, z) / Gamma(a) = 1 - P(a, z)
+pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GammaRegularized expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let a_expr = &args[0];
+  let z_expr = &args[1];
+
+  // GammaRegularized[a, 0] = 1
+  if is_expr_zero(z_expr) && is_positive_numeric(a_expr) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // GammaRegularized[a, Infinity] = 0
+  if matches!(z_expr, Expr::Identifier(s) if s == "Infinity") {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  let a_val = expr_to_f64(a_expr);
+  let z_val = expr_to_f64(z_expr);
+  let has_real =
+    matches!(a_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_));
+
+  if let (Some(a), Some(z)) = (a_val, z_val)
+    && has_real
+  {
+    return Ok(Expr::Real(gamma_regularized_numeric(a, z)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Q(a, z) = 1 - P(a, z) numerically
+fn gamma_regularized_numeric(a: f64, z: f64) -> f64 {
+  if z <= 0.0 {
+    return 1.0;
+  }
+
+  if z < a + 1.0 {
+    // Series expansion for P(a, z)
+    let ln_prefix = a * z.ln() - z - lgamma(a);
+    let prefix = ln_prefix.exp();
+
+    let mut sum = 1.0 / a;
+    let mut term = 1.0 / a;
+    for n in 1..200 {
+      term *= z / (a + n as f64);
+      sum += term;
+      if term.abs() < 1e-15 * sum.abs() {
+        break;
+      }
+    }
+    1.0 - prefix * sum
+  } else {
+    // Continued fraction for Q(a, z) using Lentz's method
+    let ln_prefix = a * z.ln() - z - lgamma(a);
+    let prefix = ln_prefix.exp();
+
+    let b0 = z - a + 1.0;
+    let mut f = if b0.abs() < 1e-30 { 1e-30 } else { b0 };
+    let mut c = f;
+    let mut d;
+
+    for n in 1..200 {
+      let an = (n as f64) * (a - n as f64);
+      let bn = z - a + 2.0 * n as f64 + 1.0;
+
+      d = bn + an / f;
+      if d.abs() < 1e-30 {
+        d = 1e-30;
+      }
+      c = bn + an / c;
+      if c.abs() < 1e-30 {
+        c = 1e-30;
+      }
+      let delta = c / d;
+      f *= delta;
+      if (delta - 1.0).abs() < 1e-15 {
+        break;
+      }
+    }
+
+    prefix / f
+  }
+}
+
 /// SinhIntegral[z] - Hyperbolic sine integral Shi(z)
 /// Shi(z) = ∫₀ᶻ sinh(t)/t dt
 pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -372,6 +372,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FunctionDomain" => Some((2, 3)),
     "Gamma" => Some((1, 2)),
     "GammaDistribution" => Some((2, 2)),
+    "GammaRegularized" => Some((2, 2)),
     "Gather" => Some((1, 1)),
     "GatherBy" => Some((2, 2)),
     "GegenbauerC" => Some((3, 3)),

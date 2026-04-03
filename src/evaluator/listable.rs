@@ -105,6 +105,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "SinhIntegral"
       | "CoshIntegral"
       | "BetaRegularized"
+      | "GammaRegularized"
   )
 }
 
