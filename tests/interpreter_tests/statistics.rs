@@ -914,7 +914,7 @@ mod lognormal_distribution {
   fn variance_numeric() {
     assert_eq!(
       interpret("Variance[LogNormalDistribution[0, 1]]").unwrap(),
-      "E*(-1 + E)"
+      "(-1 + E)*E"
     );
   }
 
@@ -2548,7 +2548,7 @@ mod johnson_distribution {
   fn variance_sl_numeric() {
     assert_eq!(
       interpret(r#"Variance[JohnsonDistribution["SL", 0, 1, 0, 1]]"#).unwrap(),
-      "E*(-1 + E)"
+      "(-1 + E)*E"
     );
   }
 

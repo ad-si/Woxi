@@ -3522,7 +3522,7 @@ mod horner_form {
     let result =
       interpret("HornerForm[(11 x^3 - 4 x^2 + 7 x + 2)/(x^2 - 3 x + 1)]")
         .unwrap();
-    assert_eq!(result, "(2 + x*(7 + x*(-4 + 11*x)))/(1 + x*(-3 + x))");
+    assert_eq!(result, "(2 + x*(7 + x*(-4 + 11*x)))/(1 + (-3 + x)*x)");
   }
 
   #[test]

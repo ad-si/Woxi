@@ -483,6 +483,11 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       }
       (true, false) => {
         // Atom vs compound: compare atom with compound's sort key
+        // Special case: Plus[neg, atom] with same atom sorts before the atom
+        // (Wolfram: (-3+x)*x not x*(-3+x))
+        if crate::functions::additive_is_neg_const_plus_ident(b, a) {
+          return -1; // compound (Plus) comes before atom
+        }
         let b_key = expr_sort_key(b);
         let a_str = crate::syntax::expr_to_string(a);
         let cmp = wolfram_string_order(&a_str, &b_key);
@@ -494,6 +499,9 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       }
       (false, true) => {
         // Compound vs atom: reverse of above
+        if crate::functions::additive_is_neg_const_plus_ident(a, b) {
+          return 1; // compound (Plus) comes before atom
+        }
         let a_key = expr_sort_key(a);
         let b_str = crate::syntax::expr_to_string(b);
         let cmp = wolfram_string_order(&a_key, &b_str);
