@@ -1406,6 +1406,24 @@ mod full_simplify {
   }
 
   #[test]
+  fn abs_quotient() {
+    // Abs[a]/Abs[b] → Abs[a/b] with expansion
+    assert_eq!(
+      interpret("FullSimplify[Abs[1 + x^3]/Abs[x]]").unwrap(),
+      "Abs[x^(-1) + x^2]"
+    );
+  }
+
+  #[test]
+  fn abs_product() {
+    // Abs[a]*Abs[b] → Abs[a*b]
+    assert_eq!(
+      interpret("FullSimplify[Abs[x]*Abs[y]]").unwrap(),
+      "Abs[x*y]"
+    );
+  }
+
+  #[test]
   fn combine_fractions_different_denominators() {
     assert_eq!(
       interpret(

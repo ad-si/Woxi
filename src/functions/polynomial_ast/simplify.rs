@@ -315,8 +315,11 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     return Expr::List(results);
   }
 
+  // Combine Abs quotients/products before other simplification
+  let abs_combined = simplify_abs_products(expr);
+
   // First apply regular simplification
-  let simplified = simplify_expr(expr);
+  let simplified = simplify_expr(&abs_combined);
 
   // Then expand fully and combine
   let expanded = expand_and_combine(&simplified);
@@ -1067,6 +1070,113 @@ fn extract_and_factor_inner_sum(expr: &Expr) -> Expr {
   }
 
   expr.clone()
+}
+
+/// Combine Abs quotients: Abs[a]/Abs[b] → Abs[a/b], Abs[a]*Abs[b] → Abs[a*b]
+/// Then expand the inner expression so e.g. Abs[1+x^3]/Abs[x] → Abs[x^(-1)+x^2]
+fn simplify_abs_products(expr: &Expr) -> Expr {
+  let factors = collect_multiplicative_factors(expr);
+  if factors.len() < 2 {
+    return expr.clone();
+  }
+
+  let mut abs_numerators: Vec<Expr> = Vec::new();
+  let mut abs_denominators: Vec<Expr> = Vec::new();
+  let mut other_factors: Vec<Expr> = Vec::new();
+
+  for factor in &factors {
+    match factor {
+      // Abs[x] in the numerator
+      Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+        abs_numerators.push(args[0].clone());
+      }
+      // Power[Abs[x], -1] i.e. 1/Abs[x]
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(-1))
+        || matches!(
+          right.as_ref(),
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand
+          } if matches!(operand.as_ref(), Expr::Integer(1))
+        ) =>
+      {
+        if let Expr::FunctionCall { name, args } = left.as_ref() {
+          if name == "Abs" && args.len() == 1 {
+            abs_denominators.push(args[0].clone());
+          } else {
+            other_factors.push(factor.clone());
+          }
+        } else {
+          other_factors.push(factor.clone());
+        }
+      }
+      // FunctionCall Power[Abs[x], -1]
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(-1)) =>
+      {
+        if let Expr::FunctionCall {
+          name: inner_name,
+          args: inner_args,
+        } = &args[0]
+        {
+          if inner_name == "Abs" && inner_args.len() == 1 {
+            abs_denominators.push(inner_args[0].clone());
+          } else {
+            other_factors.push(factor.clone());
+          }
+        } else {
+          other_factors.push(factor.clone());
+        }
+      }
+      _ => {
+        other_factors.push(factor.clone());
+      }
+    }
+  }
+
+  // Only combine if we have at least 2 Abs factors (numerator + denominator)
+  if abs_numerators.len() + abs_denominators.len() < 2 {
+    return expr.clone();
+  }
+
+  // Build inner numerator
+  let inner_num = if abs_numerators.is_empty() {
+    Expr::Integer(1)
+  } else {
+    build_product(abs_numerators)
+  };
+
+  // Build inner expression: multiply numerators with Power[denominator, -1]
+  let mut inner_parts = vec![inner_num];
+  for d in abs_denominators {
+    inner_parts.push(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(d),
+      right: Box::new(Expr::Integer(-1)),
+    });
+  }
+  let inner = build_product(inner_parts);
+
+  // Expand the inner expression so (1+x^3)/x becomes x^(-1)+x^2
+  let inner_expanded = expand_and_combine(&inner);
+
+  let combined_abs = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![inner_expanded],
+  };
+
+  if other_factors.is_empty() {
+    combined_abs
+  } else {
+    other_factors.push(combined_abs);
+    build_product(other_factors)
+  }
 }
 
 /// Count the complexity of an expression (leaf nodes + internal nodes).
