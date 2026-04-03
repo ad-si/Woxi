@@ -4932,6 +4932,67 @@ mod appell_f3 {
   }
 }
 
+mod appell_f4 {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("AppellF4[a, b, c1, c2, x, y]").unwrap(),
+      "AppellF4[a, b, c1, c2, x, y]"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("AppellF4[2, 1, 3, 4, 0.1, 0.2]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.2178867552064807).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_basic_2() {
+    let result: f64 = interpret("AppellF4[1, 2, 3, 4, 0.05, 0.1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0940276371588293).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("AppellF4[a, b, c1, c2, 0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn a_zero() {
+    assert_eq!(interpret("AppellF4[0, b, c1, c2, x, y]").unwrap(), "1");
+  }
+
+  #[test]
+  fn b_zero() {
+    assert_eq!(interpret("AppellF4[a, 0, c1, c2, x, y]").unwrap(), "1");
+  }
+
+  #[test]
+  fn x_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF4[a, b, c1, c2, 0, y]").unwrap(),
+      "Hypergeometric2F1[a, b, c2, y]"
+    );
+  }
+
+  #[test]
+  fn y_zero_reduces_to_2f1() {
+    assert_eq!(
+      interpret("AppellF4[a, b, c1, c2, x, 0]").unwrap(),
+      "Hypergeometric2F1[a, b, c1, x]"
+    );
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
