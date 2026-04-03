@@ -12442,6 +12442,47 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn copy_file_basic() {
+    let src = "/tmp/woxi_test_copy_src.txt";
+    let dst = "/tmp/woxi_test_copy_dst.txt";
+    let _ = std::fs::remove_file(dst);
+    std::fs::write(src, "hello").unwrap();
+    assert_eq!(
+      interpret(&format!(r#"CopyFile["{}", "{}"]"#, src, dst)).unwrap(),
+      dst
+    );
+    assert_eq!(std::fs::read_to_string(dst).unwrap(), "hello");
+    std::fs::remove_file(src).unwrap();
+    std::fs::remove_file(dst).unwrap();
+  }
+
+  #[test]
+  fn copy_file_source_not_found() {
+    let result =
+      interpret(r#"CopyFile["/tmp/woxi_nonexistent_file", "/tmp/woxi_out"]"#)
+        .unwrap();
+    assert_eq!(result, "$Failed");
+  }
+
+  #[test]
+  fn copy_file_dest_exists() {
+    let src = "/tmp/woxi_test_copy_exists_src.txt";
+    let dst = "/tmp/woxi_test_copy_exists_dst.txt";
+    std::fs::write(src, "hello").unwrap();
+    std::fs::write(dst, "world").unwrap();
+    let result =
+      interpret(&format!(r#"CopyFile["{}", "{}"]"#, src, dst)).unwrap();
+    assert_eq!(result, "$Failed");
+    std::fs::remove_file(src).unwrap();
+    std::fs::remove_file(dst).unwrap();
+  }
+
+  #[test]
+  fn copy_file_non_string_args() {
+    assert_eq!(interpret("CopyFile[x, y]").unwrap(), "CopyFile[x, y]");
+  }
+
+  #[test]
   fn betweenness_centrality_line() {
     assert_eq!(
       interpret("BetweennessCentrality[Graph[{1,2,3},{UndirectedEdge[1,2],UndirectedEdge[2,3]}]]").unwrap(),

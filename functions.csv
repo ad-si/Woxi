@@ -1541,7 +1541,7 @@ ElementwiseLayer,Neural net elementwise layer,✅,unevaluated,11.0,1566
 ClassifierMeasurements,Classifier performance measurements,✅,unevaluated,10.0,1569
 CreateDirectory,Creates a directory including intermediate directories,✅,filesystem,2.0,1569
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7.0,1569
-CopyFile,Copy a file,✅,unevaluated,2.0,1571
+CopyFile,Copies a file to a new location,✅,filesystem,2.0,1571
 EstimatedProcess,Estimated stochastic process,✅,unevaluated,9.0,1571
 Animator,Animated control element,✅,unevaluated,6.0,1573
 HighlightMesh,Highlight mesh elements,✅,unevaluated,10.0,1573
