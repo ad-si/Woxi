@@ -214,6 +214,10 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
 // Handled in parse_expression as a synthetic 0 - expr with proper precedence
 LeadingMinus = { "-" ~ !ASCII_DIGIT }
+// LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
+// Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
+// ++ would be Increment). Semantically +expr is just expr.
+LeadingPlus = { "+" ~ !"+" ~ !"=" }
 // LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
 // Must not be followed by "=" (which would be != operator)
 LeadingNot = { "!" ~ !"=" ~ !"!" }
@@ -221,10 +225,10 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code

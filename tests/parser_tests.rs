@@ -134,4 +134,13 @@ mod tests {
     let pair = parse(&input).unwrap().next().unwrap();
     assert_eq!(pair.as_rule(), Rule::Program);
   }
+
+  #[test]
+  fn test_parse_unary_plus() {
+    let inputs = vec!["(+q)", "+x", "+5", "1 + +2", "+x^2"];
+    for input in inputs {
+      let pair = parse(input).unwrap().next().unwrap();
+      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {}", input);
+    }
+  }
 }

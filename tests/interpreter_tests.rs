@@ -309,6 +309,16 @@ mod interpreter_tests {
     assert_eq!(results, vec!["3", "8"]);
   }
 
+  #[test]
+  fn test_unary_plus() {
+    clear_state();
+    assert_eq!(interpret("(+q)").unwrap(), "q");
+    assert_eq!(interpret("+5").unwrap(), "5");
+    assert_eq!(interpret("+x").unwrap(), "x");
+    assert_eq!(interpret("1 + +2").unwrap(), "3");
+    assert_eq!(interpret("+x^2").unwrap(), "x^2");
+  }
+
   mod algebra;
   mod arg_count;
   mod arithmetic;
