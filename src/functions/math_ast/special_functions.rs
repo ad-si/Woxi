@@ -8823,6 +8823,49 @@ fn lgamma(x: f64) -> f64 {
   }
 }
 
+/// Hypergeometric1F1Regularized[a, b, z] = Hypergeometric1F1[a, b, z] / Gamma[b]
+pub fn hypergeometric_1f1_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Hypergeometric1F1Regularized expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // Numeric evaluation when all args are numeric and at least one is Real
+  let a_val = expr_to_f64(&args[0]);
+  let b_val = expr_to_f64(&args[1]);
+  let z_val = expr_to_f64(&args[2]);
+  let has_real = matches!(args[0], Expr::Real(_))
+    || matches!(args[1], Expr::Real(_))
+    || matches!(args[2], Expr::Real(_));
+
+  if let (Some(_a), Some(b), Some(_z)) = (a_val, b_val, z_val)
+    && has_real
+  {
+    // Compute 1F1(a, b, z) then divide by Gamma(b)
+    let h1f1 = crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric1F1",
+      &[
+        Expr::Real(a_val.unwrap()),
+        Expr::Real(b),
+        Expr::Real(z_val.unwrap()),
+      ],
+    )?;
+    if let Some(h_val) = expr_to_f64(&h1f1) {
+      let gamma_b = lgamma(b).exp();
+      return Ok(Expr::Real(h_val / gamma_b));
+    }
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Hypergeometric1F1Regularized".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// GammaRegularized[a, z] - Regularized upper incomplete gamma function Q(a, z)
 /// Q(a, z) = Gamma(a, z) / Gamma(a) = 1 - P(a, z)
 pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

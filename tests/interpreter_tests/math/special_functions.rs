@@ -4720,6 +4720,55 @@ mod dirichlet_eta {
   }
 }
 
+mod hypergeometric_1f1_regularized {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Hypergeometric1F1Regularized[a, b, z]").unwrap(),
+      "Hypergeometric1F1Regularized[a, b, z]"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("Hypergeometric1F1Regularized[1, 2, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.7182818284590455).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_fractional_params() {
+    let result: f64 = interpret("Hypergeometric1F1Regularized[0.5, 1.5, 2.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.668000514199284).abs() < 1e-10);
+  }
+
+  #[test]
+  fn at_z_zero() {
+    // 1F1(a, b, 0) = 1, so regularized = 1/Gamma(b)
+    let result: f64 = interpret("Hypergeometric1F1Regularized[1, 2, 0.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-10); // 1/Gamma(2) = 1/1 = 1
+  }
+
+  #[test]
+  fn n_of_expression() {
+    let result: f64 = interpret("N[Hypergeometric1F1Regularized[1, 2, 1.0]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.7182818284590455).abs() < 1e-10);
+  }
+}
+
 mod gamma_regularized {
   use super::*;
 

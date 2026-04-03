@@ -1321,7 +1321,7 @@ ZetaZero,,✅,,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342
-Hypergeometric1F1Regularized,,✅,,3.0,1342
+Hypergeometric1F1Regularized,Regularized confluent hypergeometric function 1F1(a b z)/Gamma(b),✅,pure,3.0,1342
 DistributionFitTest,,🚫,,8.0,1343
 DiskMatrix,Creates a disk-shaped matrix of ones,✅,pure,7.0,1345
 ExtentSize,,🚫,,8.0,1345
