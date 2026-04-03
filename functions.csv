@@ -1258,7 +1258,7 @@ HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1.
 NetPort,,🚫,,11.0,1278
 OpenRead,Opens a file for reading,✅,effectful,1.0,1278
 StreamScale,,🚫,,7.0,1278
-GammaRegularized,Regularized incomplete gamma function,✅,1,2.0,1279
+GammaRegularized,Regularized upper incomplete gamma function Q(a z),✅,pure,2.0,1279
 FrontEndTokenExecute,,🚫,,4.0,1280
 GeoNearest,,🚫,,10.0,1281
 GenerateConditions,Option for generating conditions in results,✅,1,3.0,1282

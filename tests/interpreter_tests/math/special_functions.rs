@@ -4720,6 +4720,74 @@ mod dirichlet_eta {
   }
 }
 
+mod gamma_regularized {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("GammaRegularized[2, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("GammaRegularized[2, Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("GammaRegularized[a, z]").unwrap(),
+      "GammaRegularized[a, z]"
+    );
+  }
+
+  #[test]
+  fn numeric_exp_one() {
+    // GammaRegularized[1, 1] = e^{-1}
+    let result: f64 = interpret("GammaRegularized[1, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - (-1.0_f64).exp()).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a2_z1() {
+    let result: f64 = interpret("GammaRegularized[2, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.7357588823428847).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a_half() {
+    let result: f64 = interpret("GammaRegularized[0.5, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.15729920705028513).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a3_z2() {
+    let result: f64 = interpret("GammaRegularized[3, 2.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.6766764161830635).abs() < 1e-8);
+  }
+
+  #[test]
+  fn n_of_integer_args() {
+    let result: f64 = interpret("N[GammaRegularized[2, 1.0]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.7357588823428847).abs() < 1e-10);
+  }
+}
+
 mod beta_regularized {
   use super::*;
 
