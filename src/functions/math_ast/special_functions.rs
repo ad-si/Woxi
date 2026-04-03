@@ -9883,3 +9883,168 @@ fn powers_rep_search(
     val += 1;
   }
 }
+
+/// BarnesG[z] - Barnes G-function.
+/// For positive integers n: G(n) = product of factorials = prod_{k=0}^{n-2} k!
+/// G(1) = 1, G(n+1) = Gamma(n) * G(n)
+/// For non-positive integers: G(n) = 0
+/// For real values: numerical computation via log Barnes G
+pub fn barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "BarnesG expects 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      let n = *n;
+      if n <= 0 {
+        return Ok(Expr::Integer(0));
+      }
+      if n == 1 {
+        return Ok(Expr::Integer(1));
+      }
+      // G(n) = product_{k=0}^{n-2} k!
+      // Use recurrence: G(n+1) = Gamma(n) * G(n) = (n-1)! * G(n)
+      // G(1) = 1, G(2) = 1, G(3) = 1, G(4) = 2, G(5) = 12, ...
+      let mut result = num_bigint::BigInt::from(1);
+      let mut factorial = num_bigint::BigInt::from(1);
+      // factorial tracks (k-1)! as we compute G(k+1) = (k-1)! * G(k)
+      for k in 1..n - 1 {
+        factorial *= num_bigint::BigInt::from(k);
+        result *= &factorial;
+      }
+      // Try to convert to i128
+      use num_traits::ToPrimitive;
+      match result.to_i128() {
+        Some(v) => Ok(Expr::Integer(v)),
+        None => Ok(Expr::BigInteger(result)),
+      }
+    }
+    Expr::Real(x) => {
+      let val = barnes_g_float(*x);
+      Ok(Expr::Real(val))
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      // For N[BarnesG[rational]], return unevaluated; N[] will handle conversion
+      Ok(Expr::FunctionCall {
+        name: "BarnesG".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "BarnesG".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute Barnes G function for real z numerically.
+/// Shifts z to [1, 2] via recurrence, then uses the Taylor series
+/// derived from the Weierstrass product.
+fn barnes_g_float(z: f64) -> f64 {
+  if z == f64::INFINITY {
+    return f64::INFINITY;
+  }
+  if z.is_nan() || z == f64::NEG_INFINITY {
+    return f64::NAN;
+  }
+
+  // For non-positive integers, return 0
+  if z <= 0.0 && z == z.floor() {
+    return 0.0;
+  }
+
+  // Shift z to [1, 2] using recurrence G(z+1) = Gamma(z) * G(z)
+  let mut z_shifted = z;
+  let mut log_correction = 0.0_f64;
+
+  while z_shifted < 1.0 {
+    log_correction -= lgamma(z_shifted);
+    z_shifted += 1.0;
+  }
+  while z_shifted > 1.5 {
+    z_shifted -= 1.0;
+    log_correction += lgamma(z_shifted);
+  }
+
+  let w = z_shifted - 1.0; // w in [0, 1]
+  let log_g = log_barnes_g_series(w);
+
+  (log_g + log_correction).exp()
+}
+
+/// Taylor series for ln G(1+z), valid for |z| ≤ 1.
+/// Derived from the Weierstrass product:
+/// ln G(1+z) = z/2 * ln(2π) - [z + (1+γ)z²]/2
+///             + Σ_{m=2}^{∞} (-1)^m ζ(m)/(m+1) * z^{m+1}
+fn log_barnes_g_series(z: f64) -> f64 {
+  if z.abs() < 1e-15 {
+    return 0.0;
+  }
+
+  let log_2pi = (2.0 * std::f64::consts::PI).ln();
+  let gamma_e = 0.5772156649015329;
+
+  let mut result = z / 2.0 * log_2pi - (z + (1.0 + gamma_e) * z * z) / 2.0;
+
+  // Precomputed ζ(m) values for m=2..40
+  let zeta: [f64; 39] = [
+    1.6449340668482264,    // ζ(2)
+    1.2020569031595943,    // ζ(3)
+    1.0823232337111382,    // ζ(4)
+    1.036_927_755_143_37,  // ζ(5)
+    1.017_343_061_984_449, // ζ(6)
+    1.0083492773819228,    // ζ(7)
+    1.0040773561979443,    // ζ(8)
+    1.0020083928260822,    // ζ(9)
+    1.0009945751278181,    // ζ(10)
+    1.0004941886041195,    // ζ(11)
+    1.000_246_086_553_308, // ζ(12)
+    1.0001227133475785,    // ζ(13)
+    1.0000612481350587,    // ζ(14)
+    1.000_030_588_236_307, // ζ(15)
+    1.0000152822594086,    // ζ(16)
+    1.0000076371976379,    // ζ(17)
+    1.000_003_817_293_265, // ζ(18)
+    1.0000019082127165,    // ζ(19)
+    1.0000009539620339,    // ζ(20)
+    1.0000004769329868,    // ζ(21)
+    1.0000002384505027,    // ζ(22)
+    1.000_000_119_219_926, // ζ(23)
+    1.000_000_059_608_189, // ζ(24)
+    1.0000000298035035,    // ζ(25)
+    1.0000000149015548,    // ζ(26)
+    1.0000000074507118,    // ζ(27)
+    1.000_000_003_725_334, // ζ(28)
+    1.0000000018626598,    // ζ(29)
+    1.0000000009313274,    // ζ(30)
+    1.0000000004656629,    // ζ(31)
+    1.0000000002328312,    // ζ(32)
+    1.0000000001164155,    // ζ(33)
+    1.0000000000582077,    // ζ(34)
+    1.0000000000291039,    // ζ(35)
+    1.000_000_000_014_552, // ζ(36)
+    1.000_000_000_007_276, // ζ(37)
+    1.000_000_000_003_638, // ζ(38)
+    1.000_000_000_001_819, // ζ(39)
+    1.0000000000009095,    // ζ(40)
+  ];
+
+  let mut z_power = z * z * z; // z^3 (m=2 gives z^{m+1} = z^3)
+  for (i, &zeta_m) in zeta.iter().enumerate() {
+    let m = (i + 2) as f64;
+    let sign = if (i + 2) % 2 == 0 { 1.0 } else { -1.0 };
+    let term = sign * zeta_m / (m + 1.0) * z_power;
+    result += term;
+    if term.abs() < 1e-17 {
+      break;
+    }
+    z_power *= z;
+  }
+
+  result
+}

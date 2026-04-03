@@ -5445,6 +5445,53 @@ mod cosh_integral {
   }
 }
 
+mod barnes_g {
+  use super::*;
+
+  #[test]
+  fn integer_values() {
+    assert_eq!(
+      interpret("Table[BarnesG[n], {n, 0, 10}]").unwrap(),
+      "{0, 1, 1, 1, 2, 12, 288, 34560, 24883200, 125411328000, 5056584744960000}"
+    );
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("BarnesG[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_integers() {
+    assert_eq!(interpret("BarnesG[-1]").unwrap(), "0");
+    assert_eq!(interpret("BarnesG[-2]").unwrap(), "0");
+    assert_eq!(interpret("BarnesG[-10]").unwrap(), "0");
+  }
+
+  #[test]
+  fn float_value() {
+    let result: f64 = interpret("BarnesG[3.5]").unwrap().parse().unwrap();
+    assert!((result - 1.2596482574951955).abs() < 1e-10);
+  }
+
+  #[test]
+  fn float_half() {
+    let result: f64 = interpret("BarnesG[0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.6032442812094462).abs() < 1e-10);
+  }
+
+  #[test]
+  fn float_integer_point() {
+    let result: f64 = interpret("BarnesG[5.0]").unwrap().parse().unwrap();
+    assert!((result - 12.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("BarnesG[x]").unwrap(), "BarnesG[x]");
+  }
+}
+
 mod powers_representations {
   use super::*;
 
