@@ -9572,3 +9572,41 @@ fn cosh_integral_numeric(z: f64) -> f64 {
     }
   }
 }
+
+/// PolygonalNumber[n] - nth triangular number = n*(n+1)/2
+/// PolygonalNumber[r, n] - nth r-gonal number = n*((r-2)*n - r + 4) / 2
+pub fn polygonal_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (r, n) = match args.len() {
+    1 => (Expr::Integer(3), args[0].clone()),
+    2 => (args[0].clone(), args[1].clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "PolygonalNumber expects 1 or 2 arguments".into(),
+      ));
+    }
+  };
+
+  // Rewrite to: n * ((r - 2) * n - r + 4) / 2
+  // Evaluate: Times[n, Plus[Times[Plus[r, -2], n], Times[-1, r], 4], Power[2, -1]]
+  let r_minus_2 = crate::evaluator::evaluate_function_call_ast(
+    "Plus",
+    &[r.clone(), Expr::Integer(-2)],
+  )?;
+  let r_minus_2_times_n = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[r_minus_2, n.clone()],
+  )?;
+  let neg_r = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[Expr::Integer(-1), r],
+  )?;
+  let inner = crate::evaluator::evaluate_function_call_ast(
+    "Plus",
+    &[r_minus_2_times_n, neg_r, Expr::Integer(4)],
+  )?;
+  let half = crate::evaluator::evaluate_function_call_ast(
+    "Power",
+    &[Expr::Integer(2), Expr::Integer(-1)],
+  )?;
+  crate::evaluator::evaluate_function_call_ast("Times", &[n, inner, half])
+}

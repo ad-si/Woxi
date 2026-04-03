@@ -4993,6 +4993,88 @@ mod appell_f4 {
   }
 }
 
+mod polygonal_number {
+  use super::*;
+
+  #[test]
+  fn triangular_numbers() {
+    assert_eq!(
+      interpret("Table[PolygonalNumber[n], {n, 0, 10}]").unwrap(),
+      "{0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55}"
+    );
+  }
+
+  #[test]
+  fn square_numbers() {
+    assert_eq!(
+      interpret("Table[PolygonalNumber[4, n], {n, 0, 5}]").unwrap(),
+      "{0, 1, 4, 9, 16, 25}"
+    );
+  }
+
+  #[test]
+  fn pentagonal_numbers() {
+    assert_eq!(
+      interpret("Table[PolygonalNumber[5, n], {n, 0, 5}]").unwrap(),
+      "{0, 1, 5, 12, 22, 35}"
+    );
+  }
+
+  #[test]
+  fn hexagonal_numbers() {
+    assert_eq!(
+      interpret("Table[PolygonalNumber[6, n], {n, 0, 5}]").unwrap(),
+      "{0, 1, 6, 15, 28, 45}"
+    );
+  }
+
+  #[test]
+  fn symbolic_one_arg() {
+    assert_eq!(interpret("PolygonalNumber[n]").unwrap(), "(n*(1 + n))/2");
+  }
+
+  #[test]
+  fn symbolic_two_arg() {
+    // Wolfram outputs: (n*(4 + n*(-2 + r) - r))/2
+    // Our canonical form may reorder Plus terms
+    let result = interpret("PolygonalNumber[r, n]").unwrap();
+    assert!(
+      result == "(n*(4 + n*(-2 + r) - r))/2"
+        || result == "(n*(4 - r + n*(-2 + r)))/2",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("PolygonalNumber[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_input() {
+    assert_eq!(interpret("PolygonalNumber[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn real_input() {
+    assert_eq!(interpret("PolygonalNumber[3.5, 4]").unwrap(), "13.");
+  }
+
+  #[test]
+  fn rational_input() {
+    assert_eq!(interpret("PolygonalNumber[1/2]").unwrap(), "3/8");
+  }
+
+  #[test]
+  fn r_gonal_10th() {
+    assert_eq!(
+      interpret("Table[PolygonalNumber[r, 10], {r, 3, 10}]").unwrap(),
+      "{55, 100, 145, 190, 235, 280, 325, 370}"
+    );
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 

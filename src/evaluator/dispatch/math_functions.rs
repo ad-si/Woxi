@@ -618,6 +618,9 @@ pub fn dispatch_math_functions(
     "PolyLog" if args.len() == 2 => {
       return Some(crate::functions::math_ast::polylog_ast(args));
     }
+    "PolygonalNumber" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::polygonal_number_ast(args));
+    }
     "LerchPhi" if args.len() == 3 => {
       return Some(crate::functions::math_ast::lerch_phi_ast(args));
     }

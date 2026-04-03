@@ -3552,7 +3552,7 @@ LCHColor,,,,10.0,3656
 LocationEquivalenceTest,,,,8.0,3656
 NearestFunction,,,,6.0,3656
 PairedZTest,,,,8.0,3656
-PolygonalNumber,,,,10.4,3656
+PolygonalNumber,Gives the nth r-gonal polygonal number,✅,pure,10.4,3656
 ReliefImage,,🚫,,8.0,3656
 SampleDepth,,,,2.0,3656
 SequenceSplit,,,,11.3,3656

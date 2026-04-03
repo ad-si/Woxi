@@ -712,6 +712,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PolynomialGCD" => Some((2, usize::MAX)),
     "PolynomialLCM" => Some((2, usize::MAX)),
     "PolynomialMod" => Some((2, 2)),
+    "PolygonalNumber" => Some((1, 2)),
     "PolynomialQ" => Some((1, 2)),
     "PolynomialQuotient" => Some((3, 3)),
     "PolynomialQuotientRemainder" => Some((3, 3)),
