@@ -81,5 +81,9 @@ libc = "0.2"
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
 
+[profile.release]
+codegen-units = 1
+lto = true
+
 [patch.crates-io]
 astro-float-num = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
