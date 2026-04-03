@@ -292,6 +292,35 @@ pub fn dispatch_io_functions(
           }
         }
         Expr::FunctionCall {
+          name: style_name,
+          args: style_args,
+        } if style_name == "Style"
+          && style_args.len() >= 2
+          && matches!(
+            &style_args[0],
+            Expr::FunctionCall { name, args }
+            if name == "Grid" && !args.is_empty()
+          ) =>
+        {
+          // Style[Grid[...], directives...] → render grid with inherited style
+          if let Expr::FunctionCall {
+            args: grid_args, ..
+          } = &style_args[0]
+          {
+            let style =
+              crate::functions::graphics::parse_grid_style(&style_args[1..]);
+            if crate::functions::graphics::grid_ast_styled(grid_args, &style)
+              .is_ok()
+            {
+              crate::get_captured_graphics().unwrap_or_default()
+            } else {
+              String::new()
+            }
+          } else {
+            String::new()
+          }
+        }
+        Expr::FunctionCall {
           name: ds_name,
           args: ds_args,
         } if ds_name == "Dataset" && !ds_args.is_empty() => {

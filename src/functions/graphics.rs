@@ -3966,6 +3966,15 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_with_gaps(args, &[])
 }
 
+/// Render a grid with default styles inherited from an outer Style wrapper.
+pub fn grid_ast_styled(
+  args: &[Expr],
+  style: &GridStyle,
+) -> Result<Expr, InterpreterError> {
+  let svg = grid_svg_styled_internal(args, &[], false, style)?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// Render a grid enclosed with large parentheses (for MatrixForm).
 pub fn grid_ast_with_parens(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_internal(args, &[], true)
@@ -4002,9 +4011,20 @@ fn grid_ast_internal(
   Ok(crate::graphics_result(svg))
 }
 
+/// Default style inherited from an outer Style[Grid[...], directives...].
+#[derive(Clone, Default)]
+pub struct GridStyle {
+  pub font_weight: Option<&'static str>,
+  pub font_style: Option<&'static str>,
+  pub font_size: Option<f64>,
+  pub(crate) color: Option<Color>,
+}
+
 /// Extract style info from a Style[content, directives...] cell.
-/// Returns (content, font_size, font_weight, font_style).
-fn extract_cell_style(cell: &Expr) -> (&Expr, Option<f64>, &str, &str) {
+/// Returns (content, font_size, font_weight, font_style, color).
+fn extract_cell_style(
+  cell: &Expr,
+) -> (&Expr, Option<f64>, &str, &str, Option<Color>) {
   if let Expr::FunctionCall { name, args } = cell
     && name == "Style"
     && !args.is_empty()
@@ -4013,6 +4033,7 @@ fn extract_cell_style(cell: &Expr) -> (&Expr, Option<f64>, &str, &str) {
     let mut fs: Option<f64> = None;
     let mut fw = "normal";
     let mut fst = "normal";
+    let mut color: Option<Color> = None;
     for directive in &args[1..] {
       match directive {
         Expr::Identifier(s) if s == "Bold" => fw = "bold",
@@ -4033,12 +4054,49 @@ fn extract_cell_style(cell: &Expr) -> (&Expr, Option<f64>, &str, &str) {
             }
           }
         }
-        _ => {}
+        _ => {
+          if let Some(c) = parse_color(directive) {
+            color = Some(c);
+          }
+        }
       }
     }
-    return (content, fs, fw, fst);
+    return (content, fs, fw, fst, color);
   }
-  (cell, None, "normal", "normal")
+  (cell, None, "normal", "normal", None)
+}
+
+/// Parse Style directives into a GridStyle.
+pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
+  let mut gs = GridStyle::default();
+  for d in directives {
+    match d {
+      Expr::Identifier(s) if s == "Bold" => gs.font_weight = Some("bold"),
+      Expr::Identifier(s) if s == "Italic" => gs.font_style = Some("italic"),
+      Expr::Integer(n) => gs.font_size = Some(*n as f64),
+      Expr::Real(f) => gs.font_size = Some(*f),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(k) = pattern.as_ref()
+          && k == "FontSize"
+        {
+          match replacement.as_ref() {
+            Expr::Integer(n) => gs.font_size = Some(*n as f64),
+            Expr::Real(f) => gs.font_size = Some(*f),
+            _ => {}
+          }
+        }
+      }
+      _ => {
+        if let Some(c) = parse_color(d) {
+          gs.color = Some(c);
+        }
+      }
+    }
+  }
+  gs
 }
 
 /// Check if a cell is or contains an Expr::Image (unwrapping Style).
@@ -4097,6 +4155,15 @@ fn grid_svg_internal(
   args: &[Expr],
   group_gaps: &[usize],
   parens: bool,
+) -> Result<String, InterpreterError> {
+  grid_svg_styled_internal(args, group_gaps, parens, &GridStyle::default())
+}
+
+fn grid_svg_styled_internal(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+  default_style: &GridStyle,
 ) -> Result<String, InterpreterError> {
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -4779,19 +4846,37 @@ fn grid_svg_internal(
         }
       } else {
         // Text cell — extract optional Style attributes
-        let (content, cell_fs, cell_fw, cell_fst) = extract_cell_style(cell);
-        let fs = cell_fs.unwrap_or(font_size);
-        let fw_attr = if cell_fw != "normal" {
-          format!(" font-weight=\"{}\"", cell_fw)
+        let (content, cell_fs, cell_fw, cell_fst, cell_color) =
+          extract_cell_style(cell);
+        let fs = cell_fs.or(default_style.font_size).unwrap_or(font_size);
+        // Cell style overrides default style; default style overrides "normal"
+        let eff_fw = if cell_fw != "normal" {
+          cell_fw
+        } else {
+          default_style.font_weight.unwrap_or("normal")
+        };
+        let eff_fst = if cell_fst != "normal" {
+          cell_fst
+        } else {
+          default_style.font_style.unwrap_or("normal")
+        };
+        let fw_attr = if eff_fw != "normal" {
+          format!(" font-weight=\"{}\"", eff_fw)
         } else {
           String::new()
         };
-        let fst_attr = if cell_fst != "normal" {
-          format!(" font-style=\"{}\"", cell_fst)
+        let fst_attr = if eff_fst != "normal" {
+          format!(" font-style=\"{}\"", eff_fst)
         } else {
           String::new()
         };
-        let text_fill = theme().text_primary;
+        let text_fill = if let Some(ref c) = cell_color {
+          c.to_svg_rgb()
+        } else if let Some(ref c) = default_style.color {
+          c.to_svg_rgb()
+        } else {
+          theme().text_primary.to_string()
+        };
         svg.push_str(&format!(
           "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
@@ -4802,8 +4887,10 @@ fn grid_svg_internal(
   }
 
   // Draw frame and divider lines
+  // Frame color takes priority, then outer Style color, then theme default
   let default_stroke = frame_color
     .as_ref()
+    .or(default_style.color.as_ref())
     .map(|c| c.to_svg_rgb())
     .unwrap_or_else(|| theme().stroke_default.to_string());
 

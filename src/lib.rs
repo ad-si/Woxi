@@ -1208,6 +1208,29 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
+    // Style[Grid[...], directives...] — propagate style into grid
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(
+          &args[0],
+          syntax::Expr::FunctionCall { name: inner, args: inner_args }
+          if inner == "Grid" && !inner_args.is_empty()
+        ) =>
+    {
+      if let syntax::Expr::FunctionCall {
+        args: grid_args, ..
+      } = &args[0]
+      {
+        let style = functions::graphics::parse_grid_style(&args[1..]);
+        match functions::graphics::grid_ast_styled(grid_args, &style) {
+          Ok(result) => result,
+          Err(_) => expr,
+        }
+      } else {
+        expr
+      }
+    }
     syntax::Expr::List(items) => {
       let new_items: Vec<syntax::Expr> =
         items.iter().cloned().map(render_grid_if_needed).collect();
