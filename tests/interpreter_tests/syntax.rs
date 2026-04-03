@@ -1791,7 +1791,7 @@ mod traditional_form {
   fn wraps_expression() {
     assert_eq!(
       interpret("TraditionalForm[x + y]").unwrap(),
-      "DisplayForm[FormBox[RowBox[{x, +, y}], TraditionalForm]]"
+      "TraditionalForm[x + y]"
     );
   }
 
@@ -1807,7 +1807,7 @@ mod traditional_form {
   fn evaluates_argument() {
     assert_eq!(
       interpret("TraditionalForm[1 + 2]").unwrap(),
-      "DisplayForm[FormBox[3, TraditionalForm]]"
+      "TraditionalForm[3]"
     );
   }
 
@@ -1815,7 +1815,31 @@ mod traditional_form {
   fn nested_expression() {
     assert_eq!(
       interpret("TraditionalForm[Sin[Pi/4]]").unwrap(),
-      "DisplayForm[FormBox[FractionBox[1, SqrtBox[2]], TraditionalForm]]"
+      "TraditionalForm[1/Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn to_string() {
+    assert_eq!(
+      interpret("ToString[TraditionalForm[x + y]]").unwrap(),
+      "DisplayForm[FormBox[RowBox[{x, +, y}], TraditionalForm]]"
+    );
+  }
+
+  #[test]
+  fn to_string_evaluates() {
+    assert_eq!(
+      interpret("ToString[TraditionalForm[1 + 2]]").unwrap(),
+      "DisplayForm[FormBox[3, TraditionalForm]]"
+    );
+  }
+
+  #[test]
+  fn polynomial() {
+    assert_eq!(
+      interpret("TraditionalForm[6 + 6 x^2 - 12 x]").unwrap(),
+      "TraditionalForm[6 - 12*x + 6*x^2]"
     );
   }
 }

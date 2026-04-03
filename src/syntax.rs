@@ -7819,23 +7819,6 @@ pub fn top_level_output(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
     }
-    // TraditionalForm[expr] → DisplayForm[FormBox[boxes, TraditionalForm]] at display time
-    Expr::FunctionCall { name, args }
-      if name == "TraditionalForm" && args.len() == 1 =>
-    {
-      let boxes =
-        crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          &args[0],
-        );
-      let display_expr = Expr::FunctionCall {
-        name: "DisplayForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "FormBox".to_string(),
-          args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
-        }],
-      };
-      expr_to_output(&display_expr)
-    }
     _ => expr_to_output(expr),
   }
 }

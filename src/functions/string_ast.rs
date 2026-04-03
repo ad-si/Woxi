@@ -1057,6 +1057,28 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(expr_to_box_form(&inner_args[0])));
   }
 
+  // If the expression is TraditionalForm[inner], produce DisplayForm[FormBox[boxes, TraditionalForm]]
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "TraditionalForm"
+    && inner_args.len() == 1
+  {
+    let boxes =
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+        &inner_args[0],
+      );
+    let display_expr = Expr::FunctionCall {
+      name: "DisplayForm".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "FormBox".to_string(),
+        args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
+      }],
+    };
+    return Ok(Expr::String(crate::syntax::expr_to_output(&display_expr)));
+  }
+
   // If the expression is TeXForm[inner], produce TeX representation
   if let Expr::FunctionCall {
     name,
