@@ -4496,6 +4496,51 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // CreateDirectory[path] — create a directory (including intermediate dirs)
+  // CreateDirectory[] — create a temporary directory
+  if name == "CreateDirectory" {
+    if args.is_empty() {
+      // Create a temporary directory
+      match std::env::temp_dir()
+        .to_str()
+        .map(|t| format!("{}/woxi_{}", t, std::process::id()))
+      {
+        Some(tmp_path) => match std::fs::create_dir_all(&tmp_path) {
+          Ok(()) => return Ok(Expr::String(tmp_path)),
+          Err(e) => {
+            crate::emit_message(&format!("CreateDirectory::failed: {}", e));
+            return Ok(Expr::Identifier("$Failed".to_string()));
+          }
+        },
+        None => {
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
+      }
+    }
+    if args.len() == 1 {
+      if let Expr::String(path) = &args[0] {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+          crate::emit_message(&format!(
+            "CreateDirectory::eexist: {} already exists.",
+            path
+          ));
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
+        match std::fs::create_dir_all(path) {
+          Ok(()) => return Ok(Expr::String(path.clone())),
+          Err(e) => {
+            crate::emit_message(&format!("CreateDirectory::failed: {}", e));
+            return Ok(Expr::Identifier("$Failed".to_string()));
+          }
+        }
+      } else {
+        // Non-string argument
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+    }
+  }
+
   // DeleteMissing[list] — remove Missing[] elements from a list
   if name == "DeleteMissing"
     && args.len() == 1
@@ -4945,11 +4990,7 @@ pub fn evaluate_function_call_ast_inner(
   // System/UI functions that return $Failed for unsupported operations
   if matches!(
     name,
-    "CreatePalette"
-      | "CreateDirectory"
-      | "DialogInput"
-      | "CopyToClipboard"
-      | "ResourceObject"
+    "CreatePalette" | "DialogInput" | "CopyToClipboard" | "ResourceObject"
   ) {
     return Ok(Expr::Identifier("$Failed".to_string()));
   }
