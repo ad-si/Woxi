@@ -6,6 +6,9 @@ pub fn dispatch_polynomial_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    "HornerForm" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::horner_form_ast(args));
+    }
     "Distribute" if !args.is_empty() && args.len() <= 3 => {
       return Some(distribute_ast(args));
     }
