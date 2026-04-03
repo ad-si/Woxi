@@ -8823,6 +8823,85 @@ fn lgamma(x: f64) -> f64 {
   }
 }
 
+/// AppellF1[a, b1, b2, c, x, y] - Appell hypergeometric function F1
+/// F1(a, b1, b2; c; x, y) = Σ_{m,n≥0} (a)_{m+n} (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
+pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 6 {
+    return Err(InterpreterError::EvaluationError(
+      "AppellF1 expects exactly 6 arguments".into(),
+    ));
+  }
+
+  // Numeric evaluation when all args are numeric and at least one is Real
+  let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
+  let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
+  if vals.iter().all(|v| v.is_some()) && has_real {
+    let a = vals[0].unwrap();
+    let b1 = vals[1].unwrap();
+    let b2 = vals[2].unwrap();
+    let c = vals[3].unwrap();
+    let x = vals[4].unwrap();
+    let y = vals[5].unwrap();
+    return Ok(Expr::Real(appell_f1_numeric(a, b1, b2, c, x, y)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "AppellF1".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute F1(a, b1, b2; c; x, y) using double series
+fn appell_f1_numeric(a: f64, b1: f64, b2: f64, c: f64, x: f64, y: f64) -> f64 {
+  // F1 = Σ_{m=0}^∞ Σ_{n=0}^∞ (a)_{m+n} (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
+  // We sum the outer m-loop, for each m summing over n
+  let mut total = 0.0;
+
+  // Pochhammer ratio terms for outer loop (m)
+  let _a_m = 1.0; // (a)_m at current m... actually we need (a)_{m+n} which depends on n
+  // Let's use a different approach: compute each term incrementally
+  // term(m, n) = (a)_{m+n} (b1)_m (b2)_n / ((c)_{m+n} m! n!) x^m y^n
+  // term(m, n+1) / term(m, n) = (a+m+n)(b2+n) / ((c+m+n)(n+1)) * y
+  // term(m+1, n) / term(m, n) = (a+m+n)(b1+m) / ((c+m+n)(m+1)) * x
+
+  // For each m, sum over n
+  let mut coeff_m = 1.0; // (a)_m * (b1)_m / ((c)_m * m!) * x^m for the m-th outer term at n=0
+  // But (a)_{m+n} = (a)_m * (a+m)_n, and (c)_{m+n} = (c)_m * (c+m)_n
+
+  for m in 0..200 {
+    // Inner sum over n for this m
+    // term(m, n) = coeff_m * (a+m)_n * (b2)_n / ((c+m)_n * n!) * y^n
+    let mut inner_sum = 1.0; // n=0 term is 1
+    let mut coeff_n = 1.0;
+
+    for n in 1..200 {
+      coeff_n *= (a + m as f64 + n as f64 - 1.0) * (b2 + n as f64 - 1.0)
+        / ((c + m as f64 + n as f64 - 1.0) * n as f64)
+        * y;
+      inner_sum += coeff_n;
+      if coeff_n.abs() < 1e-16 * inner_sum.abs().max(1e-300) {
+        break;
+      }
+    }
+
+    total += coeff_m * inner_sum;
+
+    // Update coeff_m for m+1
+    if m < 199 {
+      coeff_m *= (a + m as f64) * (b1 + m as f64)
+        / ((c + m as f64) * (m as f64 + 1.0))
+        * x;
+      if coeff_m.abs() < 1e-16 * total.abs().max(1e-300) {
+        break;
+      }
+    }
+  }
+
+  total
+}
+
 /// Hypergeometric1F1Regularized[a, b, z] = Hypergeometric1F1[a, b, z] / Gamma[b]
 pub fn hypergeometric_1f1_regularized_ast(
   args: &[Expr],

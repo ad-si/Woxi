@@ -29,6 +29,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "AnyTrue" => Some((2, 2)),
     "Apart" => Some((1, 2)),
     "Append" => Some((2, 2)),
+    "AppellF1" => Some((6, 6)),
     "Apply" => Some((2, 3)),
     "ApplySides" => Some((2, 2)),
     "ArcCos" => Some((1, 1)),
