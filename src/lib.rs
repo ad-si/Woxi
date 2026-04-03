@@ -2916,29 +2916,53 @@ fn store_tag_set_delayed(
     }
   }
 
-  // Store in UPVALUES for introspection and cleanup
+  // Store in UPVALUES for introspection and cleanup.
+  // If an upvalue with the same original LHS already exists, replace it.
+  let lhs_str = syntax::expr_to_string(&func_call_expr);
   UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
-    entry.push((
-      outer_func.clone(),
-      params.clone(),
-      conditions.clone(),
-      defaults.clone(),
-      heads.clone(),
-      final_body.clone(),
-      func_call_expr.clone(),
-      body_expr.clone(),
-    ));
+    if let Some(pos) =
+      entry.iter().position(|(_, _, _, _, _, _, orig_lhs, _)| {
+        syntax::expr_to_string(orig_lhs) == lhs_str
+      })
+    {
+      entry[pos] = (
+        outer_func.clone(),
+        params.clone(),
+        conditions.clone(),
+        defaults.clone(),
+        heads.clone(),
+        final_body.clone(),
+        func_call_expr.clone(),
+        body_expr.clone(),
+      );
+    } else {
+      entry.push((
+        outer_func.clone(),
+        params.clone(),
+        conditions.clone(),
+        defaults.clone(),
+        heads.clone(),
+        final_body.clone(),
+        func_call_expr.clone(),
+        body_expr.clone(),
+      ));
+    }
   });
 
   // Also store in FUNC_DEFS under the outer function name so that
-  // the existing function matching infrastructure picks it up
+  // the existing function matching infrastructure picks it up.
+  // Remove any existing upvalue definition with the same params/heads
+  // before inserting (to avoid duplicates on redefinition).
+  let blank_types = vec![1u8; params.len()];
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
+    entry.retain(|(p, _, _, h, bt, _)| {
+      !(p == &params && h == &heads && bt == &blank_types)
+    });
     // UpValue definitions go at the beginning for priority
-    let blank_types = vec![1u8; params.len()];
     entry.insert(
       0,
       (params, conditions, defaults, heads, blank_types, final_body),
