@@ -3816,6 +3816,36 @@ mod tag_set_delayed {
   }
 
   #[test]
+  fn tag_set_returns_rhs() {
+    // TagSet returns the evaluated RHS (unlike TagSetDelayed which returns Null)
+    clear_state();
+    assert_eq!(interpret("g /: f[g[x_]] = 1 + 2").unwrap(), "3");
+  }
+
+  #[test]
+  fn tag_set_functional_form_returns_rhs() {
+    // TagSet[tag, lhs, rhs] also returns evaluated RHS
+    clear_state();
+    assert_eq!(interpret("TagSet[g, f[g[x_]], 1 + 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn tag_set_attributes() {
+    assert_eq!(
+      interpret("Attributes[TagSet]").unwrap(),
+      "{HoldAll, Protected, SequenceHold}"
+    );
+  }
+
+  #[test]
+  fn tag_set_delayed_attributes() {
+    assert_eq!(
+      interpret("Attributes[TagSetDelayed]").unwrap(),
+      "{HoldAll, Protected, SequenceHold}"
+    );
+  }
+
+  #[test]
   fn functional_form() {
     // TagSetDelayed[tag, lhs, rhs] as function call
     clear_state();
@@ -3970,6 +4000,73 @@ mod tag_set_delayed {
   }
 }
 
+mod tag_unset {
+  use super::*;
+
+  #[test]
+  fn basic_tag_unset_syntax() {
+    // g /: f[g[x_]] =. removes the upvalue
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := x^2; g /: f[g[x_]] =.; f[g[3]]").unwrap(),
+      "f[g[3]]"
+    );
+  }
+
+  #[test]
+  fn tag_unset_clears_upvalues() {
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := x^2; g /: f[g[x_]] =.; UpValues[g]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn tag_unset_functional_form() {
+    // TagUnset[g, f[g[x_]]] as functional form
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := x^2; TagUnset[g, f[g[x_]]]; f[g[3]]")
+        .unwrap(),
+      "f[g[3]]"
+    );
+  }
+
+  #[test]
+  fn tag_unset_preserves_other_upvalues() {
+    // Removing one upvalue should not affect others
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g /: f[g[x_]] := x^2; g /: h[g[x_]] := x + 1; g /: f[g[x_]] =.; h[g[5]]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn tag_unset_with_tag_set() {
+    // TagUnset should also remove TagSet (not just TagSetDelayed) definitions
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] = x^2; g /: f[g[x_]] =.; f[g[3]]").unwrap(),
+      "f[g[3]]"
+    );
+  }
+
+  #[test]
+  fn tag_unset_returns_null() {
+    // TagUnset should suppress output (return Null)
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := x^2; g /: f[g[x_]] =.").unwrap(),
+      "\0"
+    );
+  }
+}
+
 mod upset {
   use super::*;
 
@@ -4019,7 +4116,7 @@ mod upset {
   fn upset_attributes() {
     assert_eq!(
       interpret("Attributes[UpSet]").unwrap(),
-      "{HoldFirst, Protected, SequenceHold}"
+      "{HoldAll, Protected, SequenceHold}"
     );
   }
 }

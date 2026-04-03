@@ -1009,6 +1009,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     FunctionDefinition(Pair<'a, Rule>),
     TagSetDelayed(Pair<'a, Rule>),
     TagSet(Pair<'a, Rule>),
+    TagUnset(Pair<'a, Rule>),
     TrailingSemicolon,
   }
   let mut stmts: Vec<ProgramStmt> = Vec::new();
@@ -1026,6 +1027,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       }
       Rule::TagSetDelayed => stmts.push(ProgramStmt::TagSetDelayed(node)),
       Rule::TagSet => stmts.push(ProgramStmt::TagSet(node)),
+      Rule::TagUnset => stmts.push(ProgramStmt::TagUnset(node)),
       Rule::TrailingSemicolon => stmts.push(ProgramStmt::TrailingSemicolon),
       _ => {} // ignore EOI, etc.
     }
@@ -1154,7 +1156,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         any_nonempty = true;
       }
       ProgramStmt::TagSet(node) => {
-        store_tag_set_delayed(node.clone(), true)?;
+        if let Some(rhs_str) = store_tag_set_delayed(node.clone(), true)? {
+          last_result = Some(rhs_str);
+        } else {
+          last_result = Some("\0".to_string());
+        }
+        any_nonempty = true;
+      }
+      ProgramStmt::TagUnset(node) => {
+        execute_tag_unset(node.clone())?;
         last_result = Some("\0".to_string());
         any_nonempty = true;
       }
@@ -2787,7 +2797,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
 fn store_tag_set_delayed(
   pair: Pair<Rule>,
   evaluate_rhs: bool,
-) -> Result<(), InterpreterError> {
+) -> Result<Option<String>, InterpreterError> {
   let mut inner = pair.into_inner();
 
   // First child: tag identifier (e.g., "g" in "g /: f[g[x_]] := ...")
@@ -2934,6 +2944,89 @@ fn store_tag_set_delayed(
       (params, conditions, defaults, heads, blank_types, final_body),
     );
   });
+
+  if evaluate_rhs {
+    Ok(Some(syntax::expr_to_string(&body_expr)))
+  } else {
+    Ok(None)
+  }
+}
+
+/// Handle TagUnset: tag /: f[args...] =.  (removes an upvalue)
+fn execute_tag_unset(pair: Pair<Rule>) -> Result<(), InterpreterError> {
+  let mut inner = pair.into_inner();
+
+  // First child: tag identifier
+  let tag_name = inner.next().unwrap().as_str().to_owned();
+
+  // Next child: BaseFunctionCall (the LHS pattern)
+  let func_call_pair = inner.next().unwrap();
+  let func_call_expr = syntax::pair_to_expr(func_call_pair);
+
+  // Extract outer function name from the LHS
+  let outer_func = match &func_call_expr {
+    syntax::Expr::FunctionCall { name, .. } => name.clone(),
+    syntax::Expr::CurriedCall { func, .. } => {
+      if let syntax::Expr::FunctionCall { name, .. } = func.as_ref() {
+        name.clone()
+      } else {
+        return Ok(());
+      }
+    }
+    _ => return Ok(()),
+  };
+
+  let lhs_str = syntax::expr_to_string(&func_call_expr);
+
+  // Remove matching entries from UPVALUES
+  let removed = UPVALUES.with(|m| {
+    let mut defs = m.borrow_mut();
+    let mut removed_entries = Vec::new();
+    let mut should_remove_key = false;
+    if let Some(entry) = defs.get_mut(&tag_name) {
+      entry.retain(
+        |(
+          _of,
+          _params,
+          _conds,
+          _defaults,
+          _heads,
+          _body,
+          orig_lhs,
+          _orig_body,
+        )| {
+          let orig_lhs_str = syntax::expr_to_string(orig_lhs);
+          if orig_lhs_str == lhs_str {
+            removed_entries
+              .push((_params.clone(), syntax::expr_to_string(_body)));
+            false
+          } else {
+            true
+          }
+        },
+      );
+      if entry.is_empty() {
+        should_remove_key = true;
+      }
+    }
+    if should_remove_key {
+      defs.remove(&tag_name);
+    }
+    removed_entries
+  });
+
+  // Also remove from FUNC_DEFS
+  if !removed.is_empty() {
+    FUNC_DEFS.with(|m| {
+      if let Some(entry) = m.borrow_mut().get_mut(&outer_func) {
+        for (params, body_str) in &removed {
+          entry.retain(|(p, _, _, _, _, b)| {
+            !(p == params && syntax::expr_to_string(b) == *body_str)
+          });
+        }
+      }
+    });
+  }
 
   Ok(())
 }

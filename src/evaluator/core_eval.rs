@@ -604,6 +604,10 @@ pub fn evaluate_expr_to_expr_inner(
         if name == "TagSet" && args.len() == 3 {
           return tag_set_delayed_ast(&args[0], &args[1], &args[2], true);
         }
+        // Special handling for TagUnset - removes upvalue definitions
+        if name == "TagUnset" && args.len() == 2 {
+          return tag_unset_ast(&args[0], &args[1]);
+        }
         // Special handling for UpSet - automatically determines tags from LHS
         if name == "UpSet" && args.len() == 2 {
           return upset_ast(&args[0], &args[1]);
