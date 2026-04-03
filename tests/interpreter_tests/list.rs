@@ -803,6 +803,27 @@ mod clip {
     assert_eq!(interpret("Clip[0, {0, 10}]").unwrap(), "0");
     assert_eq!(interpret("Clip[10, {0, 10}]").unwrap(), "10");
   }
+
+  #[test]
+  fn clip_list_default() {
+    assert_eq!(interpret("Clip[{-2, 0.5, 3}]").unwrap(), "{-1, 0.5, 1}");
+  }
+
+  #[test]
+  fn clip_list_with_range() {
+    assert_eq!(
+      interpret("Clip[{-2, 0.5, 3}, {0, 1}]").unwrap(),
+      "{0, 0.5, 1}"
+    );
+  }
+
+  #[test]
+  fn clip_list_with_replacements() {
+    assert_eq!(
+      interpret("Clip[{-2, 0.5, 3}, {0, 1}, {a, b}]").unwrap(),
+      "{a, 0.5, b}"
+    );
+  }
 }
 
 mod random_choice {
