@@ -1,0 +1,152 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Wolfram 14.3' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       154,          7]
+NotebookDataLength[      4927,        144]
+NotebookOptionsPosition[      3207,        107]
+NotebookOutlinePosition[      3662,        124]
+CellTagsIndexPosition[      3619,        121]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Layout & Typography", "Title",
+ CellChangeTimes->{{3.983938437408802*^9, 
+  3.983938496102591*^9}},ExpressionUUID->"99096b65-9879-4e08-bf3e-\
+8130730b3630"],
+
+Cell["\<\
+Showcasing all layout and typography features of Wolfram notebooks.\
+\>", "Subtitle",
+ CellChangeTimes->{{3.983938473872097*^9, 
+  3.9839385054441977`*^9}},ExpressionUUID->"62ee6213-d613-4b61-9987-\
+fd14d89a6c26"],
+
+Cell["\<\
+This is just some text. It could include descriptions, further information, \
+or just about anything you want to talk about.\
+\>", "Text",
+ CellChangeTimes->{{3.9839385278526697`*^9, 3.9839386032059793`*^9}, {
+  3.9839411448051777`*^9, 3.983941171994504*^9}, {3.98394141041811*^9, 
+  3.9839414587876062`*^9}},ExpressionUUID->"eb04416c-cb42-401f-aae5-\
+b55c6f5e554a"],
+
+Cell[CellGroupData[{
+
+Cell["Chapter 1", "Chapter",
+ CellChangeTimes->{{3.983938617595253*^9, 
+  3.98393862075917*^9}},ExpressionUUID->"4435e253-fca9-4f71-87ee-\
+4d1134ae63e4"],
+
+Cell[CellGroupData[{
+
+Cell["Section 1", "Section",
+ CellChangeTimes->{{3.983938654028274*^9, 3.983938656203019*^9}, {
+  3.983947724001528*^9, 3.983947724295144*^9}, {3.983947910461993*^9, 
+  3.983947910922677*^9}},ExpressionUUID->"6dcf481e-849a-4108-a5c1-\
+3ddc2e0025e2"],
+
+Cell[CellGroupData[{
+
+Cell["Subsection 1", "Subsection",
+ CellChangeTimes->{{3.9839387111610537`*^9, 
+  3.983938718467495*^9}},ExpressionUUID->"c5c45ab4-06c8-4ccb-a583-\
+96393e4da4ef"],
+
+Cell["Subsubsection 1", "Subsubsection",
+ CellChangeTimes->{{3.983938780565987*^9, 
+  3.983938784315743*^9}},ExpressionUUID->"29eb2a27-0e99-4ee9-ab00-\
+a181204e6e13"],
+
+Cell["Subsubsection 2", "Subsubsection",
+ CellChangeTimes->{{3.983938786963229*^9, 
+  3.983938790459261*^9}},ExpressionUUID->"7c3ee0ca-f3fe-4d74-8126-\
+1e9a4f014ab5"]
+}, Open  ]],
+
+Cell["Subsection 2", "Subsection",
+ CellChangeTimes->{{3.983938722305614*^9, 
+  3.983938725076867*^9}},ExpressionUUID->"45de9181-a380-4f08-9dad-\
+c1f66776d083"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Section 2", "Section",
+ CellChangeTimes->{{3.983938659568758*^9, 
+  3.983938661258366*^9}},ExpressionUUID->"84301cf0-0971-4232-af05-\
+f7843573469c"],
+
+Cell["Subsection 1", "Subsection",
+ CellChangeTimes->{{3.983939356958194*^9, 
+  3.9839393590288353`*^9}},ExpressionUUID->"d14f2ecd-677a-480a-8bec-\
+f63ca4ee62ac"]
+}, Open  ]]
+}, Open  ]],
+
+Cell["Chapter 2", "Chapter",
+ CellChangeTimes->{{3.983938627177696*^9, 
+  3.9839386360670223`*^9}},ExpressionUUID->"01dc7f53-dbb4-4e78-967e-\
+a143714f39c8"],
+
+Cell["Chapter 3", "Chapter",
+ CellChangeTimes->{{3.983938639554825*^9, 
+  3.983938641660981*^9}},ExpressionUUID->"88c6d226-6734-4231-a9c3-\
+d4365608eb74"]
+}, Open  ]]
+},
+WindowSize->{900, 1097},
+WindowMargins->{{0, Automatic}, {0, Automatic}},
+TaggingRules-><|"SlideshowSettings" -> <|"Toolbar" -> True|>|>,
+FrontEndVersion->"14.3 for Mac OS X ARM (64-bit) (July 8, 2025)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"6c7ad160-5a64-4ea4-bc2e-b2bf60ca66fc"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[576, 22, 162, 3, 96, "Title",ExpressionUUID->"99096b65-9879-4e08-bf3e-8130730b3630"],
+Cell[741, 27, 223, 5, 52, "Subtitle",ExpressionUUID->"62ee6213-d613-4b61-9987-fd14d89a6c26"],
+Cell[967, 34, 376, 7, 33, "Text",ExpressionUUID->"eb04416c-cb42-401f-aae5-b55c6f5e554a"],
+Cell[CellGroupData[{
+Cell[1368, 45, 153, 3, 67, "Chapter",ExpressionUUID->"4435e253-fca9-4f71-87ee-4d1134ae63e4"],
+Cell[CellGroupData[{
+Cell[1546, 52, 249, 4, 66, "Section",ExpressionUUID->"6dcf481e-849a-4108-a5c1-3ddc2e0025e2"],
+Cell[CellGroupData[{
+Cell[1820, 60, 162, 3, 53, "Subsection",ExpressionUUID->"c5c45ab4-06c8-4ccb-a583-96393e4da4ef"],
+Cell[1985, 65, 166, 3, 43, "Subsubsection",ExpressionUUID->"29eb2a27-0e99-4ee9-ab00-a181204e6e13"],
+Cell[2154, 70, 166, 3, 35, "Subsubsection",ExpressionUUID->"7c3ee0ca-f3fe-4d74-8126-1e9a4f014ab5"]
+}, Open  ]],
+Cell[2335, 76, 160, 3, 53, "Subsection",ExpressionUUID->"45de9181-a380-4f08-9dad-c1f66776d083"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2532, 84, 154, 3, 66, "Section",ExpressionUUID->"84301cf0-0971-4232-af05-f7843573469c"],
+Cell[2689, 89, 162, 3, 53, "Subsection",ExpressionUUID->"d14f2ecd-677a-480a-8bec-f63ca4ee62ac"]
+}, Open  ]]
+}, Open  ]],
+Cell[2878, 96, 156, 3, 67, "Chapter",ExpressionUUID->"01dc7f53-dbb4-4e78-967e-a143714f39c8"],
+Cell[3037, 101, 154, 3, 56, "Chapter",ExpressionUUID->"88c6d226-6734-4231-a9c3-d4365608eb74"]
+}, Open  ]]
+}
+]
+*)
+

@@ -5444,3 +5444,97 @@ mod cosh_integral {
     assert!((result - 0.8378669409802083).abs() < 1e-10);
   }
 }
+
+mod powers_representations {
+  use super::*;
+
+  #[test]
+  fn taxicab_number() {
+    assert_eq!(
+      interpret("PowersRepresentations[1729, 2, 3]").unwrap(),
+      "{{1, 12}, {9, 10}}"
+    );
+  }
+
+  #[test]
+  fn sum_of_two_squares() {
+    assert_eq!(
+      interpret("PowersRepresentations[100, 2, 2]").unwrap(),
+      "{{0, 10}, {6, 8}}"
+    );
+  }
+
+  #[test]
+  fn no_representation() {
+    assert_eq!(interpret("PowersRepresentations[3, 2, 2]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(
+      interpret("PowersRepresentations[0, 2, 2]").unwrap(),
+      "{{0, 0}}"
+    );
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("PowersRepresentations[-5, 2, 2]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn single_term() {
+    assert_eq!(
+      interpret("PowersRepresentations[1, 1, 2]").unwrap(),
+      "{{1}}"
+    );
+  }
+
+  #[test]
+  fn power_one_partitions() {
+    assert_eq!(
+      interpret("PowersRepresentations[10, 2, 1]").unwrap(),
+      "{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6}, {5, 5}}"
+    );
+  }
+
+  #[test]
+  fn sum_of_three_squares() {
+    assert_eq!(
+      interpret("PowersRepresentations[30, 3, 2]").unwrap(),
+      "{{1, 2, 5}}"
+    );
+  }
+
+  #[test]
+  fn nine_as_sum_of_two_squares() {
+    assert_eq!(
+      interpret("PowersRepresentations[9, 2, 2]").unwrap(),
+      "{{0, 3}}"
+    );
+  }
+
+  #[test]
+  fn fifty_as_sum_of_two_squares() {
+    assert_eq!(
+      interpret("PowersRepresentations[50, 2, 2]").unwrap(),
+      "{{1, 7}, {5, 5}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("PowersRepresentations[x, 2, 2]").unwrap(),
+      "PowersRepresentations[x, 2, 2]"
+    );
+  }
+
+  #[test]
+  fn ten_as_sum_of_three_squares() {
+    assert_eq!(
+      interpret("PowersRepresentations[10, 3, 2]").unwrap(),
+      "{{0, 1, 3}}"
+    );
+  }
+}

@@ -9741,3 +9741,145 @@ fn ramanujan_tau_compute(n: usize) -> i128 {
 
   coeffs[target]
 }
+
+/// PowersRepresentations[n, k, p] gives all representations of n as a sum of
+/// k non-negative integers each raised to the power p.
+pub fn powers_representations_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PowersRepresentations expects 3 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(v) => *v,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PowersRepresentations".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = match &args[1] {
+    Expr::Integer(v) if *v >= 0 => *v as usize,
+    Expr::Integer(_) => return Ok(Expr::List(vec![])),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PowersRepresentations".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let p = match &args[2] {
+    Expr::Integer(v) if *v >= 1 => *v as u32,
+    Expr::Integer(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "PowersRepresentations".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PowersRepresentations".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Negative numbers have no representations as sums of powers
+  if n < 0 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let n = n as u128;
+
+  let mut results: Vec<Vec<u128>> = Vec::new();
+  let mut current: Vec<u128> = Vec::new();
+  powers_rep_search(n, k, p, 0, &mut current, &mut results);
+
+  // Convert to Expr
+  let expr_results: Vec<Expr> = results
+    .into_iter()
+    .map(|rep| {
+      Expr::List(rep.into_iter().map(|v| Expr::Integer(v as i128)).collect())
+    })
+    .collect();
+
+  Ok(Expr::List(expr_results))
+}
+
+/// Recursive search for power representations.
+/// Find all non-decreasing sequences of `remaining` non-negative integers,
+/// each >= `min_val`, whose `p`-th powers sum to `target`.
+fn powers_rep_search(
+  target: u128,
+  remaining: usize,
+  p: u32,
+  min_val: u128,
+  current: &mut Vec<u128>,
+  results: &mut Vec<Vec<u128>>,
+) {
+  if remaining == 0 {
+    if target == 0 {
+      results.push(current.clone());
+    }
+    return;
+  }
+
+  // Maximum value that could contribute
+  // val^p <= target, so val <= target^(1/p)
+  let max_val = if target == 0 {
+    0
+  } else {
+    // Integer p-th root via binary search
+    let mut lo = min_val;
+    let mut hi = if p == 1 {
+      target
+    } else if p == 2 {
+      (target as f64).sqrt() as u128 + 2
+    } else {
+      (target as f64).powf(1.0 / p as f64) as u128 + 2
+    };
+    while lo < hi {
+      let mid = lo + (hi - lo).div_ceil(2);
+      if let Some(power) = mid.checked_pow(p) {
+        if power <= target {
+          lo = mid;
+        } else {
+          hi = mid - 1;
+        }
+      } else {
+        // Overflow means too large
+        hi = mid - 1;
+      }
+    }
+    lo
+  };
+
+  let start = min_val;
+  let mut val = start;
+  loop {
+    if val > max_val {
+      break;
+    }
+    let power = match val.checked_pow(p) {
+      Some(v) if v <= target => v,
+      _ => break,
+    };
+    // Pruning: remaining values are all >= val, so minimum sum is
+    // remaining * val^p. If that exceeds target, stop.
+    if let Some(min_remaining_sum) = power.checked_mul(remaining as u128)
+      && min_remaining_sum > target
+    {
+      break;
+    }
+    current.push(val);
+    powers_rep_search(target - power, remaining - 1, p, val, current, results);
+    current.pop();
+    val += 1;
+  }
+}
