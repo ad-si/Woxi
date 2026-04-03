@@ -4000,7 +4000,88 @@ mod tag_set_delayed {
   }
 
   #[test]
-  fn upvalues_redefinition_replaces() {
+  fn upvalue_literal_symbol_plus() {
+    // x /: x + y_ := f[y] — x is a literal symbol, y_ is a pattern
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[x,y,f]; x /: x + y_ := f[y]; x + 1").unwrap(),
+      "f[1]"
+    );
+  }
+
+  #[test]
+  fn upvalue_literal_symbol_plus_symbolic() {
+    // Symbolic argument should also work
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[x,y,f,a]; x /: x + y_ := f[y]; x + a").unwrap(),
+      "f[a]"
+    );
+  }
+
+  #[test]
+  fn upvalue_with_condition_on_lhs() {
+    // x /: x + y_ /; y > -2 := f[y] — condition on the LHS
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[x,y,f]; x /: x + y_ /; y > -2 := f[y]; x + 1")
+        .unwrap(),
+      "f[1]"
+    );
+  }
+
+  #[test]
+  fn upvalue_with_condition_no_match() {
+    // Condition not satisfied — rule should not fire
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[x,y,f]; x /: x + y_ /; y > 5 := f[y]; x + 1")
+        .unwrap(),
+      "1 + x"
+    );
+  }
+
+  #[test]
+  fn upvalue_multiple_conditions_ordering() {
+    // Multiple upvalue rules with conditions — first matching rule wins
+    clear_state();
+    assert_eq!(
+      interpret(
+        "x /: x + y_ /; y > -2 := f[y]; \
+         x /: x + y_ /; y < 2 := g[y]; \
+         {x + 1, x + (-3), x + 5}"
+      )
+      .unwrap(),
+      "{f[1], g[-3], f[5]}"
+    );
+  }
+
+  #[test]
+  fn upvalue_condition_on_body() {
+    // Condition can also be on the body side (rhs /;)
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[x,y,f]; x /: x + y_ := f[y] /; y > 0; {x + 1, x + (-1)}"
+      )
+      .unwrap(),
+      "{f[1], -1 + x}"
+    );
+  }
+
+  #[test]
+  fn upvalues_display_with_condition() {
+    // UpValues display should include the condition
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[x,y,f]; x /: x + y_ /; y > -2 := f[y]; UpValues[x]")
+        .unwrap(),
+      "{HoldPattern[x + y_ /; y > -2] :> f[y]}"
+    );
+  }
+
+  #[test]
+  fn upvalue_redefinition_replaces() {
     // Redefining an upvalue with the same LHS should replace, not duplicate
     clear_state();
     assert_eq!(
