@@ -8544,6 +8544,28 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn file_print_basic() {
+    let file = "/tmp/woxi_test_fileprint.txt";
+    std::fs::write(file, "Hello World\nLine 2\nLine 3").unwrap();
+    let result =
+      interpret_with_stdout(&format!(r#"FilePrint["{}"]"#, file)).unwrap();
+    assert_eq!(result.stdout, "Hello World\nLine 2\nLine 3\n");
+    assert_eq!(result.result, "\0");
+    std::fs::remove_file(file).unwrap();
+  }
+
+  #[test]
+  fn file_print_nonexistent() {
+    let result = interpret(r#"FilePrint["/nonexistent_xyz"]"#).unwrap();
+    assert_eq!(result, "FilePrint[/nonexistent_xyz]");
+  }
+
+  #[test]
+  fn file_print_non_string() {
+    assert_eq!(interpret("FilePrint[x]").unwrap(), "FilePrint[x]");
+  }
+
+  #[test]
   fn image_identify() {
     assert_eq!(interpret("ImageIdentify[x]").unwrap(), "ImageIdentify[x]");
   }
