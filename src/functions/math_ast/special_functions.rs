@@ -9144,6 +9144,115 @@ fn appell_f3_numeric(
   total
 }
 
+/// AppellF4[a, b, c1, c2, x, y] - Appell hypergeometric function F4
+/// F4(a, b; c1, c2; x, y) = Σ_{m,n≥0} (a)_{m+n} (b)_{m+n} / ((c1)_m (c2)_n m! n!) x^m y^n
+pub fn appell_f4_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 6 {
+    return Err(InterpreterError::EvaluationError(
+      "AppellF4 expects exactly 6 arguments".into(),
+    ));
+  }
+
+  let a = &args[0];
+  let b = &args[1];
+  let c1 = &args[2];
+  let c2 = &args[3];
+  let x = &args[4];
+  let y = &args[5];
+
+  let is_zero = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+  };
+
+  // a = 0 or b = 0 => 1
+  if is_zero(a) || is_zero(b) {
+    return Ok(Expr::Integer(1));
+  }
+
+  let x_zero = is_zero(x);
+  let y_zero = is_zero(y);
+
+  // x = 0, y = 0 => 1
+  if x_zero && y_zero {
+    return Ok(Expr::Integer(1));
+  }
+
+  // x = 0 => Hypergeometric2F1[a, b, c2, y]
+  if x_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a.clone(), b.clone(), c2.clone(), y.clone()],
+    );
+  }
+
+  // y = 0 => Hypergeometric2F1[a, b, c1, x]
+  if y_zero {
+    return crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[a.clone(), b.clone(), c1.clone(), x.clone()],
+    );
+  }
+
+  // Numeric evaluation when all args are numeric and at least one is Real
+  let vals: Vec<Option<f64>> = args.iter().map(expr_to_f64).collect();
+  let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
+  if vals.iter().all(|v| v.is_some()) && has_real {
+    let a = vals[0].unwrap();
+    let b = vals[1].unwrap();
+    let c1 = vals[2].unwrap();
+    let c2 = vals[3].unwrap();
+    let x = vals[4].unwrap();
+    let y = vals[5].unwrap();
+    return Ok(Expr::Real(appell_f4_numeric(a, b, c1, c2, x, y)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "AppellF4".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute F4(a, b; c1, c2; x, y) using double series
+fn appell_f4_numeric(a: f64, b: f64, c1: f64, c2: f64, x: f64, y: f64) -> f64 {
+  // F4 = Σ_{m=0}^∞ Σ_{n=0}^∞ (a)_{m+n} (b)_{m+n} / ((c1)_m (c2)_n m! n!) x^m y^n
+  // Base at n=0: (a)_m (b)_m / ((c1)_m m!) x^m
+  // Inner ratio n→n+1: (a+m+n)(b+m+n) / ((c2+n)(n+1)) * y
+
+  let mut total = 0.0;
+  let mut coeff_m = 1.0;
+
+  for m in 0..200 {
+    let mut inner_sum = 1.0;
+    let mut coeff_n = 1.0;
+
+    for n in 1..200 {
+      coeff_n *= (a + m as f64 + n as f64 - 1.0)
+        * (b + m as f64 + n as f64 - 1.0)
+        / ((c2 + n as f64 - 1.0) * n as f64)
+        * y;
+      inner_sum += coeff_n;
+      if coeff_n.abs() < 1e-16 * inner_sum.abs().max(1e-300) {
+        break;
+      }
+    }
+
+    total += coeff_m * inner_sum;
+
+    if m < 199 {
+      coeff_m *= (a + m as f64) * (b + m as f64)
+        / ((c1 + m as f64) * (m as f64 + 1.0))
+        * x;
+      if coeff_m.abs() < 1e-16 * total.abs().max(1e-300) {
+        break;
+      }
+    }
+  }
+
+  total
+}
+
 /// Hypergeometric1F1Regularized[a, b, z] = Hypergeometric1F1[a, b, z] / Gamma[b]
 pub fn hypergeometric_1f1_regularized_ast(
   args: &[Expr],

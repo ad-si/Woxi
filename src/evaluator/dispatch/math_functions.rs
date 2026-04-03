@@ -659,6 +659,9 @@ pub fn dispatch_math_functions(
     "AppellF3" if args.len() == 7 => {
       return Some(crate::functions::math_ast::appell_f3_ast(args));
     }
+    "AppellF4" if args.len() == 6 => {
+      return Some(crate::functions::math_ast::appell_f4_ast(args));
+    }
     "BesselI" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_i_ast(args));
     }
