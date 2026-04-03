@@ -8515,6 +8515,35 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   #[test]
+  fn file_type_directory() {
+    assert_eq!(interpret(r#"FileType["/tmp"]"#).unwrap(), "Directory");
+  }
+
+  #[test]
+  fn file_type_file() {
+    let file = "/tmp/woxi_test_filetype.txt";
+    std::fs::write(file, "test").unwrap();
+    assert_eq!(
+      interpret(&format!(r#"FileType["{}"]"#, file)).unwrap(),
+      "File"
+    );
+    std::fs::remove_file(file).unwrap();
+  }
+
+  #[test]
+  fn file_type_nonexistent() {
+    assert_eq!(
+      interpret(r#"FileType["/nonexistent_xyz"]"#).unwrap(),
+      "None"
+    );
+  }
+
+  #[test]
+  fn file_type_non_string() {
+    assert_eq!(interpret("FileType[x]").unwrap(), "FileType[x]");
+  }
+
+  #[test]
   fn image_identify() {
     assert_eq!(interpret("ImageIdentify[x]").unwrap(), "ImageIdentify[x]");
   }
