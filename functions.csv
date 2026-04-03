@@ -1637,7 +1637,7 @@ TradingChart,Financial trading chart,✅,unevaluated,8.0,1666
 ArrayQ,Tests if an expression is a full array,✅,pure,5.0,1668
 FindMaxValue,Find maximum value,✅,unevaluated,7.0,1668
 DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7.0,1672
-FilePrint,Print file contents,✅,unevaluated,6.0,1672
+FilePrint,Prints the contents of a file to standard output,✅,io,6.0,1672
 FormPage,Form page interface,✅,unevaluated,10.3,1672
 NearestNeighborGraph,Nearest neighbor graph,✅,unevaluated,10.2,1672
 BatchNormalizationLayer,Batch normalization layer,✅,unevaluated,11.0,1675

@@ -4958,6 +4958,29 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // FilePrint[path] — print the contents of a file
+  if name == "FilePrint"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    match std::fs::read_to_string(path) {
+      Ok(contents) => {
+        if !crate::is_quiet_print() {
+          print!("{}", contents);
+        }
+        crate::capture_stdout(contents.trim_end_matches('\n'));
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+      Err(_) => {
+        crate::emit_message(&format!("General::noopen: Cannot open {}.", path));
+        return Ok(Expr::FunctionCall {
+          name: "FilePrint".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
   // FileType[path] — return the type of a file/directory
   if name == "FileType"
     && args.len() == 1
@@ -5195,7 +5218,7 @@ pub fn evaluate_function_call_ast_inner(
       | "FindMaxValue"
       | "FormPage"
       | "NearestNeighborGraph"
-      | "FilePrint"
+
       | "RiemannSiegelZ"
       | "ChartBaseStyle"
       | "MoonPhase"
