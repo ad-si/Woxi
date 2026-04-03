@@ -164,8 +164,14 @@ PreDecrement = { "--" ~ (PartExtract | Identifier) }
 // InformationQuery: ?symbol shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ Identifier }
 
-// Unset: x =. (removes definition)
-Unset = { Identifier ~ "=." }
+// Unset: x =. (removes definition for simple identifiers)
+// Function call unsets (f[x] =.) are handled by UnsetSuffix in Expression.
+Unset = { Identifier ~ "=." ~ !ASCII_DIGIT }
+
+// UnsetSuffix: "=." postfix operator used within Expression to handle f[x] =.
+// This is separate from Term-level Unset because it needs to participate in
+// operator precedence (same level as = assignment).
+UnsetSuffix = { "=." ~ !ASCII_DIGIT }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
 AddTo = { (PartExtract | Identifier) ~ "+=" ~ Expression }
@@ -213,7 +219,7 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
     ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
@@ -347,7 +353,7 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
     ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
