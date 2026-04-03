@@ -3347,6 +3347,439 @@ fn cos_integral_numeric(z: f64) -> f64 {
   }
 }
 
+/// FresnelS[z] - Fresnel sine integral S(z) = ∫₀ᶻ sin(π t²/2) dt
+pub fn fresnel_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FresnelS expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Helper: negate FresnelS (odd function)
+  let negate_fresnel_s = |inner: Expr| -> Expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::FunctionCall {
+        name: "FresnelS".to_string(),
+        args: vec![inner],
+      }),
+    }
+  };
+
+  match &args[0] {
+    // FresnelS[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // FresnelS[Infinity] = 1/2
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(crate::functions::math_ast::make_rational(1, 2))
+    }
+    // FresnelS[ComplexInfinity] = Indeterminate
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      Ok(Expr::Identifier("Indeterminate".to_string()))
+    }
+    // FresnelS[I] = -I*FresnelS[1]
+    Expr::Identifier(s) if s == "I" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Integer(-1),
+          Expr::Identifier("I".to_string()),
+          Expr::FunctionCall {
+            name: "FresnelS".to_string(),
+            args: vec![Expr::Integer(1)],
+          },
+        ],
+      )
+    }
+    // FresnelS[-x] = -FresnelS[x] (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      // Check for -Infinity first
+      if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") {
+        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+      }
+      Ok(negate_fresnel_s(*operand.clone()))
+    }
+    // FresnelS[Times[-1, x]] = -FresnelS[x]
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times" && fargs.len() == 2 =>
+    {
+      if matches!(&fargs[0], Expr::Integer(-1)) {
+        return Ok(negate_fresnel_s(fargs[1].clone()));
+      }
+      if matches!(&fargs[1], Expr::Integer(-1)) {
+        return Ok(negate_fresnel_s(fargs[0].clone()));
+      }
+      // Negative integer coefficient: Times[-n, x] -> -FresnelS[Times[n, x]]
+      if let Expr::Integer(n) = &fargs[0]
+        && *n < 0
+      {
+        let pos_arg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+        };
+        return Ok(negate_fresnel_s(pos_arg));
+      }
+      // FresnelS[I*z] = -I*FresnelS[z]
+      if matches!(&fargs[0], Expr::Identifier(s) if s == "I") {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[
+            Expr::Integer(-1),
+            Expr::Identifier("I".to_string()),
+            Expr::FunctionCall {
+              name: "FresnelS".to_string(),
+              args: vec![fargs[1].clone()],
+            },
+          ],
+        );
+      }
+      Ok(Expr::FunctionCall {
+        name: "FresnelS".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // FresnelS[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => Ok(negate_fresnel_s(Expr::Integer(-*n))),
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(fresnel_s_numeric(*x))),
+    // Check for -Infinity (Times[-1, Infinity] form)
+    other => {
+      if is_neg_infinity(other) {
+        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "FresnelS".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute S(x) = ∫₀ˣ sin(π t²/2) dt numerically
+/// Uses the identity: S(x) = Im[(1+i)/2 · erf(√π/2 · (1+i) · x)]
+fn fresnel_s_numeric(x: f64) -> f64 {
+  if x == 0.0 {
+    return 0.0;
+  }
+  let (_, s) = fresnel_cs_via_erf(x);
+  s
+}
+
+/// FresnelC[z] - Fresnel cosine integral C(z) = ∫₀ᶻ cos(π t²/2) dt
+pub fn fresnel_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FresnelC expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Helper: negate FresnelC (odd function)
+  let negate_fresnel_c = |inner: Expr| -> Expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::FunctionCall {
+        name: "FresnelC".to_string(),
+        args: vec![inner],
+      }),
+    }
+  };
+
+  match &args[0] {
+    // FresnelC[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // FresnelC[Infinity] = 1/2
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(crate::functions::math_ast::make_rational(1, 2))
+    }
+    // FresnelC[ComplexInfinity] = Indeterminate
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      Ok(Expr::Identifier("Indeterminate".to_string()))
+    }
+    // FresnelC[I] = I*FresnelC[1]
+    Expr::Identifier(s) if s == "I" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Identifier("I".to_string()),
+          Expr::FunctionCall {
+            name: "FresnelC".to_string(),
+            args: vec![Expr::Integer(1)],
+          },
+        ],
+      )
+    }
+    // FresnelC[-x] = -FresnelC[x] (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      // Check for -Infinity first
+      if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") {
+        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+      }
+      Ok(negate_fresnel_c(*operand.clone()))
+    }
+    // FresnelC[Times[-1, x]] = -FresnelC[x]
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times" && fargs.len() == 2 =>
+    {
+      if matches!(&fargs[0], Expr::Integer(-1)) {
+        return Ok(negate_fresnel_c(fargs[1].clone()));
+      }
+      if matches!(&fargs[1], Expr::Integer(-1)) {
+        return Ok(negate_fresnel_c(fargs[0].clone()));
+      }
+      // Negative integer coefficient
+      if let Expr::Integer(n) = &fargs[0]
+        && *n < 0
+      {
+        let pos_arg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+        };
+        return Ok(negate_fresnel_c(pos_arg));
+      }
+      // FresnelC[I*z] = I*FresnelC[z]
+      if matches!(&fargs[0], Expr::Identifier(s) if s == "I") {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[
+            Expr::Identifier("I".to_string()),
+            Expr::FunctionCall {
+              name: "FresnelC".to_string(),
+              args: vec![fargs[1].clone()],
+            },
+          ],
+        );
+      }
+      Ok(Expr::FunctionCall {
+        name: "FresnelC".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // FresnelC[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => Ok(negate_fresnel_c(Expr::Integer(-*n))),
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(fresnel_c_numeric(*x))),
+    // Check for -Infinity (Times[-1, Infinity] form)
+    other => {
+      if is_neg_infinity(other) {
+        return Ok(crate::functions::math_ast::make_rational(-1, 2));
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "FresnelC".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute C(x) = ∫₀ˣ cos(π t²/2) dt numerically
+/// Uses the identity: C(x) = Re[(1+i)/2 · erf(√π/2 · (1+i) · x)]
+fn fresnel_c_numeric(x: f64) -> f64 {
+  if x == 0.0 {
+    return 0.0;
+  }
+  let (c, _) = fresnel_cs_via_erf(x);
+  c
+}
+
+/// Compute both Fresnel integrals C(x) and S(x) via the error function identity:
+///   C(x) + i·S(x) = (1+i)/2 · erf(√π/2 · (1+i) · x)
+/// Returns (C(x), S(x)).
+fn fresnel_cs_via_erf(x: f64) -> (f64, f64) {
+  // z = √π/2 · (1+i) · x = (√π/2 · x) + i·(√π/2 · x)
+  let sqrt_pi_half = std::f64::consts::PI.sqrt() / 2.0;
+  let t = sqrt_pi_half * x;
+  let (er, ei) = erf_complex(t, t);
+  // Using: C = (E_r + E_i)/2, S = (E_r - E_i)/2
+  // where erf((1+i)·t) = E_r + i·E_i
+  let c = (er + ei) / 2.0;
+  let s = (er - ei) / 2.0;
+  (c, s)
+}
+
+/// Compute the complex error function erf(a + bi) = (u, v) where result = u + iv.
+/// Uses the identity erf(z) = 1 - exp(-z²)·w(iz) where w is the Faddeeva function.
+/// The Faddeeva function is computed via the Laplace continued fraction for Im(z) > 0.
+fn erf_complex(a: f64, b: f64) -> (f64, f64) {
+  // Compute w(iz) where iz = -b + ai
+  let (wz_re, wz_im) = faddeeva(-b, a);
+  // exp(-z²) where z = a + bi, z² = a²-b² + 2abi
+  let z2_re = a * a - b * b;
+  let z2_im = 2.0 * a * b;
+  let exp_re = (-z2_re).exp() * (-z2_im).cos();
+  let exp_im = (-z2_re).exp() * (-z2_im).sin();
+  // erf(z) = 1 - exp(-z²)·w(iz)
+  let prod_re = exp_re * wz_re - exp_im * wz_im;
+  let prod_im = exp_re * wz_im + exp_im * wz_re;
+  (1.0 - prod_re, -prod_im)
+}
+
+/// Compute the Faddeeva function w(z) = exp(-z²)·erfc(-iz) for complex z.
+/// Uses the algorithm from Poppe & Wijers (1990) / Weideman (1994).
+/// For Im(z) >= 0, uses the Laplace continued fraction.
+/// Returns (Re(w), Im(w)).
+fn faddeeva(a: f64, b: f64) -> (f64, f64) {
+  // For Im(z) < 0, use the reflection: w(z) = 2·exp(-z²) - w(-z)
+  if b < 0.0 {
+    let (wr, wi) = faddeeva(-a, -b);
+    let z2_re = a * a - b * b;
+    let z2_im = 2.0 * a * b;
+    let exp_re = (-z2_re).exp() * (-z2_im).cos();
+    let exp_im = (-z2_re).exp() * (-z2_im).sin();
+    return (2.0 * exp_re - wr, 2.0 * exp_im - wi);
+  }
+
+  let r2 = a * a + b * b;
+
+  if r2 < 3.0 {
+    // For small |z|, use Taylor series for erf then convert:
+    // w(z) = exp(-z²) · (1 - erf(-iz))
+    // But this has the same cancellation issue. Instead, use the direct series:
+    // w(z) = Σ_{n=0}^∞ (iz)^n / Γ(n/2 + 1)
+    // which is equivalent to the power series for the Faddeeva function.
+    //
+    // For small |z|, compute w(z) = exp(-z²)·(1 - erf(-iz)) using Taylor series.
+    // erf(-iz) = erf(b - ai)
+    let (erf_niz_re, erf_niz_im) = erf_complex_taylor(b, -a);
+    // w(z) = exp(-z²) · (1 - erf(-iz))
+    let wz2_re = a * a - b * b;
+    let wz2_im = 2.0 * a * b;
+    let wexp_re = (-wz2_re).exp() * (-wz2_im).cos();
+    let wexp_im = (-wz2_re).exp() * (-wz2_im).sin();
+    let erfc_re = 1.0 - erf_niz_re;
+    let erfc_im = -erf_niz_im;
+    (
+      wexp_re * erfc_re - wexp_im * erfc_im,
+      wexp_re * erfc_im + wexp_im * erfc_re,
+    )
+  } else {
+    // For large |z| with Im(z) >= 0, use the Laplace continued fraction:
+    // w(z) = i/(√π) · 1/(z - 1/2/(z - 1/(z - 3/2/(z - 2/(z - ...)))))
+    // Evaluated using modified Lentz's algorithm.
+    let inv_sqrt_pi = 1.0 / std::f64::consts::PI.sqrt();
+
+    // Modified Lentz's method for complex continued fraction
+    // w(z) = i/√π · CF where CF = 1/(z - a₁/(z - a₂/(z - ...)))
+    // with aₙ = n/2
+    let tiny = 1e-30;
+    let mut f_re = a;
+    let mut f_im = b;
+    if f_re.abs() < tiny && f_im.abs() < tiny {
+      f_re = tiny;
+    }
+    let mut c_re = f_re;
+    let mut c_im = f_im;
+    let mut d_re = 0.0;
+    let mut d_im = 0.0;
+
+    for n in 1..300 {
+      let a_n = n as f64 * 0.5;
+      // d = z + a_n * d → d = (a + a_n*d_re, b + a_n*d_im)
+      // Actually: continued fraction b_n + a_n / ... where b_n = z, a_n = -n/2
+      // The CF is: z - (1/2)/(z - 1/(z - (3/2)/(z - ...)))
+      // In standard form: b₀ = z, a₁ = -1/2, b₁ = z, a₂ = -1, b₂ = z, ...
+      // aₙ = -n/2, bₙ = z for n >= 1
+
+      // d = b_n + a_n · d = z - (n/2) · d
+      let nd_re = a + (-a_n) * d_re;
+      let nd_im = b + (-a_n) * d_im;
+      d_re = nd_re;
+      d_im = nd_im;
+
+      // d = 1/d
+      let mag2 = d_re * d_re + d_im * d_im;
+      if mag2 < tiny * tiny {
+        d_re = tiny;
+        d_im = 0.0;
+      } else {
+        let inv_re = d_re / mag2;
+        let inv_im = -d_im / mag2;
+        d_re = inv_re;
+        d_im = inv_im;
+      }
+
+      // c = b_n + a_n / c = z - (n/2) / c
+      let c_mag2 = c_re * c_re + c_im * c_im;
+      let inv_c_re = c_re / c_mag2;
+      let inv_c_im = -c_im / c_mag2;
+      c_re = a + (-a_n) * inv_c_re;
+      c_im = b + (-a_n) * inv_c_im;
+
+      // delta = c * d
+      let delta_re = c_re * d_re - c_im * d_im;
+      let delta_im = c_re * d_im + c_im * d_re;
+
+      // f *= delta
+      let nf_re = f_re * delta_re - f_im * delta_im;
+      let nf_im = f_re * delta_im + f_im * delta_re;
+      f_re = nf_re;
+      f_im = nf_im;
+
+      if (delta_re - 1.0).abs() + delta_im.abs() < 1e-15 {
+        break;
+      }
+    }
+
+    // w(z) = i/(√π · f)  →  i/f = i/(f_re + i·f_im) = (f_im + i·f_re) / |f|²
+    // Wait: 1/f first, then multiply by i.
+    let f_mag2 = f_re * f_re + f_im * f_im;
+    let inv_f_re = f_re / f_mag2;
+    let inv_f_im = -f_im / f_mag2;
+    // i · (inv_f_re + i·inv_f_im) = -inv_f_im + i·inv_f_re
+    (-inv_f_im * inv_sqrt_pi, inv_f_re * inv_sqrt_pi)
+  }
+}
+
+/// Compute erf(a+bi) using Taylor series with reverse summation for precision.
+fn erf_complex_taylor(a: f64, b: f64) -> (f64, f64) {
+  let two_over_sqrt_pi = 2.0 / std::f64::consts::PI.sqrt();
+  let z2_re = a * a - b * b;
+  let z2_im = 2.0 * a * b;
+  let mut terms_re = Vec::new();
+  let mut terms_im = Vec::new();
+  let mut term_re = a;
+  let mut term_im = b;
+  terms_re.push(term_re);
+  terms_im.push(term_im);
+  for n in 1..300 {
+    let new_re = -(term_re * z2_re - term_im * z2_im) / n as f64;
+    let new_im = -(term_re * z2_im + term_im * z2_re) / n as f64;
+    term_re = new_re;
+    term_im = new_im;
+    let denom = (2 * n + 1) as f64;
+    terms_re.push(term_re / denom);
+    terms_im.push(term_im / denom);
+    if (term_re / denom).abs() + (term_im / denom).abs() < 1e-20 {
+      break;
+    }
+  }
+  // Sum from smallest to largest for better precision
+  let mut sum_re = 0.0;
+  let mut sum_im = 0.0;
+  for i in (0..terms_re.len()).rev() {
+    sum_re += terms_re[i];
+    sum_im += terms_im[i];
+  }
+  (two_over_sqrt_pi * sum_re, two_over_sqrt_pi * sum_im)
+}
+
+/// Public wrapper for FresnelS numeric computation (used by try_eval_to_f64)
+pub fn fresnel_s_numeric_pub(x: f64) -> f64 {
+  fresnel_s_numeric(x)
+}
+
+/// Public wrapper for FresnelC numeric computation (used by try_eval_to_f64)
+pub fn fresnel_c_numeric_pub(x: f64) -> f64 {
+  fresnel_c_numeric(x)
+}
+
 /// SinIntegral[z] - Sine integral Si(z)
 /// Si(z) = ∫₀ᶻ sin(t)/t dt
 pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
