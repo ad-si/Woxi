@@ -4421,6 +4421,19 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // FileBaseName[path] — get file name without extension
+  if name == "FileBaseName"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+  {
+    let base = std::path::Path::new(path)
+      .file_stem()
+      .and_then(|s| s.to_str())
+      .unwrap_or("")
+      .to_string();
+    return Ok(Expr::String(base));
+  }
+
   // FileExtension[path] — get file extension
   if name == "FileExtension"
     && args.len() == 1
@@ -5183,7 +5196,7 @@ pub fn evaluate_function_call_ast_inner(
       | "TimeSeriesModelFit"
       | "PaneSelector"
       | "URLExecute"
-      | "FileBaseName"
+
       | "CoordinatesToolOptions"
       | "ColorCombine"
       | "Highlighted"
