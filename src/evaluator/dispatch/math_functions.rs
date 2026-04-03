@@ -650,6 +650,12 @@ pub fn dispatch_math_functions(
     "SinIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::sin_integral_ast(args));
     }
+    "FresnelS" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::fresnel_s_ast(args));
+    }
+    "FresnelC" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::fresnel_c_ast(args));
+    }
     "SinhIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::sinh_integral_ast(args));
     }

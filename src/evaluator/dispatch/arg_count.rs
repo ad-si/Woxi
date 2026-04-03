@@ -360,6 +360,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FractionalPart" => Some((1, 1)),
     "FrechetDistribution" => Some((2, 2)),
     "FreeQ" => Some((2, 2)),
+    "FresnelC" => Some((1, 1)),
+    "FresnelS" => Some((1, 1)),
     "FrenetSerretSystem" => Some((2, 2)),
     "FrobeniusNumber" => Some((1, 1)),
     "FromCharacterCode" => Some((1, 1)),

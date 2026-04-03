@@ -2052,6 +2052,186 @@ mod sin_integral {
   }
 }
 
+mod fresnel_s {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("FresnelS[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("FresnelS[Infinity]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("FresnelS[-Infinity]").unwrap(), "-1/2");
+  }
+
+  #[test]
+  fn at_complex_infinity() {
+    assert_eq!(
+      interpret("FresnelS[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("FresnelS[x]").unwrap(), "FresnelS[x]");
+  }
+
+  #[test]
+  fn odd_function() {
+    assert_eq!(interpret("FresnelS[-x]").unwrap(), "-FresnelS[x]");
+    assert_eq!(interpret("FresnelS[-2]").unwrap(), "-FresnelS[2]");
+  }
+
+  #[test]
+  fn pure_imaginary() {
+    // FresnelS[I*z] = -I*FresnelS[z]
+    assert_eq!(interpret("FresnelS[I]").unwrap(), "-I*FresnelS[1]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("FresnelS[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.43825914739035476).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("FresnelS[2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.34341567836369946).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("FresnelS[0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.06473243285999927).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_three_point_five() {
+    let result: f64 = interpret("FresnelS[3.5]").unwrap().parse().unwrap();
+    assert!((result - 0.41524801197243752).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 = interpret("FresnelS[-2.0]").unwrap().parse().unwrap();
+    assert!((result - (-0.34341567836369946)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_zero() {
+    assert_eq!(interpret("FresnelS[0.0]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn n_fresnel_s() {
+    let result = interpret("N[FresnelS[1]]").unwrap();
+    assert!(result.starts_with("0.4382591"));
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(interpret("FresnelS[{0, Infinity}]").unwrap(), "{0, 1/2}");
+  }
+}
+
+mod fresnel_c {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("FresnelC[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("FresnelC[Infinity]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("FresnelC[-Infinity]").unwrap(), "-1/2");
+  }
+
+  #[test]
+  fn at_complex_infinity() {
+    assert_eq!(
+      interpret("FresnelC[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("FresnelC[x]").unwrap(), "FresnelC[x]");
+  }
+
+  #[test]
+  fn odd_function() {
+    assert_eq!(interpret("FresnelC[-x]").unwrap(), "-FresnelC[x]");
+    assert_eq!(interpret("FresnelC[-2]").unwrap(), "-FresnelC[2]");
+  }
+
+  #[test]
+  fn pure_imaginary() {
+    // FresnelC[I*z] = I*FresnelC[z]
+    assert_eq!(interpret("FresnelC[I]").unwrap(), "I*FresnelC[1]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("FresnelC[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.7798934003768226).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("FresnelC[2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.48825340607534046).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("FresnelC[0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.49234422587144633).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_three_point_five() {
+    let result: f64 = interpret("FresnelC[3.5]").unwrap().parse().unwrap();
+    assert!((result - 0.5325724350715935).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 = interpret("FresnelC[-2.0]").unwrap().parse().unwrap();
+    assert!((result - (-0.48825340607534046)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_zero() {
+    assert_eq!(interpret("FresnelC[0.0]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn n_fresnel_c() {
+    let result = interpret("N[FresnelC[1]]").unwrap();
+    assert!(result.starts_with("0.7798934"));
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(interpret("FresnelC[{0, Infinity}]").unwrap(), "{0, 1/2}");
+  }
+}
+
 mod chebyshev_t {
   use super::*;
 

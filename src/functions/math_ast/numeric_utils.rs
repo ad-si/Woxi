@@ -277,6 +277,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
       }
       "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
+      "FresnelS" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .map(super::special_functions::fresnel_s_numeric_pub),
+      "FresnelC" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .map(super::special_functions::fresnel_c_numeric_pub),
       "InverseErf" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).and_then(|v| {
           if v > -1.0 && v < 1.0 {

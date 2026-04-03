@@ -1176,7 +1176,7 @@ SetSystemOptions,,🚫,,6.0,1189
 GeoRange,,🚫,,10.0,1190
 Orthogonalize,,🚫,,6.0,1191
 AnatomyData,,🚫,,10.3,1192
-FresnelS,,🚫,,3.0,1193
+FresnelS,Returns the Fresnel sine integral,✅,pure,3.0,1193
 CometData,,🚫,,10.0,1195
 HighlightImage,,🚫,,9.0,1195
 Subgraph,,🚫,,8.0,1197
@@ -1190,7 +1190,7 @@ ParallelMap,Applies a function in parallel to each element,✅,1,7.0,1204
 ButtonData,,🚫,,3.0,1205
 Evaluator,,🚫,,3.0,1206
 DateDifference,Difference between two dates,✅,pure,6.0,1208
-FresnelC,,🚫,,3.0,1208
+FresnelC,Returns the Fresnel cosine integral,✅,pure,3.0,1208
 PathGraph,Creates a path graph from a list of vertices,✅,1,8.0,1209
 DateRange,,🚫,,9.0,1210
 ToRadicals,Attempts to express in terms of radicals,✅,1,3.0,1211

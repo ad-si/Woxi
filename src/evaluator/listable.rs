@@ -104,6 +104,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Accuracy"
       | "SinhIntegral"
       | "CoshIntegral"
+      | "FresnelS"
+      | "FresnelC"
       | "BetaRegularized"
       | "GammaRegularized"
       | "Hypergeometric1F1Regularized"
