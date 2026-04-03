@@ -180,6 +180,7 @@ enum ExportFormat {
   Markdown,
   LaTeX,
   Typst,
+  Pdf,
 }
 
 impl std::fmt::Display for ExportFormat {
@@ -194,6 +195,7 @@ impl std::fmt::Display for ExportFormat {
       ExportFormat::Markdown => write!(f, "Markdown"),
       ExportFormat::LaTeX => write!(f, "LaTeX"),
       ExportFormat::Typst => write!(f, "Typst"),
+      ExportFormat::Pdf => write!(f, "PDF"),
     }
   }
 }
@@ -205,6 +207,7 @@ impl ExportFormat {
     ExportFormat::Markdown,
     ExportFormat::LaTeX,
     ExportFormat::Typst,
+    ExportFormat::Pdf,
   ];
 }
 
@@ -491,39 +494,60 @@ impl WoxiStudio {
           return Task::none();
         }
         self.sync_notebook_from_editors();
-        let (content, filter_name, extension) = match format {
-          ExportFormat::MathematicaNotebook => (
-            self.notebook.to_string(),
-            String::from("Mathematica Notebook"),
-            String::from("nb"),
-          ),
-          ExportFormat::JupyterNotebook => (
-            self.notebook.to_jupyter(),
-            String::from("Jupyter Notebook"),
-            String::from("ipynb"),
-          ),
-          ExportFormat::Markdown => (
-            self.notebook.to_markdown(),
-            String::from("Markdown"),
-            String::from("md"),
-          ),
-          ExportFormat::LaTeX => (
-            self.notebook.to_latex(),
-            String::from("LaTeX"),
-            String::from("tex"),
-          ),
-          ExportFormat::Typst => (
-            self.notebook.to_typst(),
-            String::from("Typst"),
-            String::from("typ"),
-          ),
-        };
-        self.is_loading = true;
-        self.status = format!("Exporting as {format}...");
-        Task::perform(
-          export_file(filter_name, extension, content),
-          Message::FileExported,
-        )
+        if format == ExportFormat::Pdf {
+          // Collect all Input cell code for PDF export
+          let mut code_parts = Vec::new();
+          for editor in &self.cell_editors {
+            if editor.style == CellStyle::Input
+              || editor.style == CellStyle::Code
+            {
+              let text = editor.content.text();
+              let trimmed = text.trim();
+              if !trimmed.is_empty() {
+                code_parts.push(trimmed.to_string());
+              }
+            }
+          }
+          let notebook_code = code_parts.join("\n");
+          self.is_loading = true;
+          self.status = String::from("Exporting as PDF...");
+          Task::perform(export_pdf(notebook_code), Message::FileExported)
+        } else {
+          let (content, filter_name, extension) = match format {
+            ExportFormat::MathematicaNotebook => (
+              self.notebook.to_string(),
+              String::from("Mathematica Notebook"),
+              String::from("nb"),
+            ),
+            ExportFormat::JupyterNotebook => (
+              self.notebook.to_jupyter(),
+              String::from("Jupyter Notebook"),
+              String::from("ipynb"),
+            ),
+            ExportFormat::Markdown => (
+              self.notebook.to_markdown(),
+              String::from("Markdown"),
+              String::from("md"),
+            ),
+            ExportFormat::LaTeX => (
+              self.notebook.to_latex(),
+              String::from("LaTeX"),
+              String::from("tex"),
+            ),
+            ExportFormat::Typst => (
+              self.notebook.to_typst(),
+              String::from("Typst"),
+              String::from("typ"),
+            ),
+            ExportFormat::Pdf => unreachable!(),
+          };
+          self.is_loading = true;
+          self.status = format!("Exporting as {format}...");
+          Task::perform(
+            export_file(filter_name, extension, content),
+            Message::FileExported,
+          )
+        }
       }
 
       Message::FileExported(result) => {
@@ -1931,6 +1955,29 @@ async fn export_file(
   tokio::fs::write(&path, &contents)
     .await
     .map_err(|e| FileError::IoError(e.kind()))?;
+
+  Ok(path)
+}
+
+async fn export_pdf(notebook_code: String) -> Result<PathBuf, FileError> {
+  let path = rfd::AsyncFileDialog::new()
+    .set_title("Export as PDF")
+    .add_filter("PDF", &["pdf"])
+    .save_file()
+    .await
+    .map(|h| h.path().to_owned())
+    .ok_or(FileError::DialogClosed)?;
+
+  // Use Woxi's Export to generate the PDF file
+  let path_str = path
+    .display()
+    .to_string()
+    .replace('\\', "\\\\")
+    .replace('"', "\\\"");
+  let escaped_code = notebook_code.replace('\\', "\\\\").replace('"', "\\\"");
+  let export_code = format!("Export[\"{path_str}\", {escaped_code}, \"PDF\"]");
+  woxi::interpret(&export_code)
+    .map_err(|_| FileError::IoError(std::io::ErrorKind::Other))?;
 
   Ok(path)
 }

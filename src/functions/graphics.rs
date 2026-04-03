@@ -2962,19 +2962,21 @@ fn stacked_fraction_svg(
   // independent of the actual pixel width of the font.
   let num_center = (frac_w - num_w) / 2.0;
   let back_from_num = -(num_center + num_w);
+  // The denominator is positioned relative to the end of the bar-spacer.
+  // The bar-spacer has width `frac_w` characters, so we go back by frac_w
+  // and then add the centering offset.
   let dx_den = (frac_w - den_w) / 2.0 - frac_w;
   // After the denominator, advance cursor to the right edge of the fraction.
-  // This is `den_center` characters at 70% size.  The advance tspan sits
-  // *inside* the 70% tspan so `ch` still refers to the reduced size.
   let advance = (frac_w - den_w) / 2.0;
 
-  // Fraction bar using box-drawing character
-  let bar: String = "\u{2500}".repeat(frac_chars);
+  // The fraction bar is an overline on a run of spaces (one per frac_char).
+  // Using text-decoration="overline" avoids reliance on box-drawing glyphs.
+  let bar_spaces: String = "\u{00A0}".repeat(frac_chars);
 
   format!(
     "<tspan font-size=\"70%\">\
      <tspan dx=\"{num_center:.2}ch\" dy=\"-4\">{num_markup}</tspan>\
-     <tspan dx=\"{back_from_num:.2}ch\" dy=\"6\">{bar}</tspan>\
+     <tspan dx=\"{back_from_num:.2}ch\" dy=\"6\" text-decoration=\"overline\">{bar_spaces}</tspan>\
      <tspan dx=\"{dx_den:.2}ch\" dy=\"6\">{den_markup}</tspan>\
      <tspan dx=\"{advance:.2}ch\" dy=\"-8\" font-size=\"1\"> </tspan>\
      </tspan>"
