@@ -1311,27 +1311,51 @@ pub fn tag_set_delayed_ast(
     conditions[last_idx] = Some(combined);
   }
 
-  // Store in UPVALUES for introspection and cleanup
+  // Store in UPVALUES for introspection and cleanup.
+  // If an upvalue with the same original LHS already exists, replace it.
+  let lhs_str = crate::syntax::expr_to_string(lhs);
   crate::UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
-    entry.push((
-      outer_func.clone(),
-      params.clone(),
-      conditions.clone(),
-      defaults.clone(),
-      heads.clone(),
-      final_body.clone(),
-      lhs.clone(),
-      body.clone(),
-    ));
+    if let Some(pos) =
+      entry.iter().position(|(_, _, _, _, _, _, orig_lhs, _)| {
+        crate::syntax::expr_to_string(orig_lhs) == lhs_str
+      })
+    {
+      entry[pos] = (
+        outer_func.clone(),
+        params.clone(),
+        conditions.clone(),
+        defaults.clone(),
+        heads.clone(),
+        final_body.clone(),
+        lhs.clone(),
+        body.clone(),
+      );
+    } else {
+      entry.push((
+        outer_func.clone(),
+        params.clone(),
+        conditions.clone(),
+        defaults.clone(),
+        heads.clone(),
+        final_body.clone(),
+        lhs.clone(),
+        body.clone(),
+      ));
+    }
   });
 
-  // Store in FUNC_DEFS under the outer function name
+  // Store in FUNC_DEFS under the outer function name.
+  // Remove any existing upvalue definition with the same params/heads
+  // before inserting the new one (to avoid duplicates on redefinition).
   let blank_types = vec![1u8; params.len()];
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
+    entry.retain(|(p, _, _, h, bt, _)| {
+      !(p == &params && h == &heads && bt == &blank_types)
+    });
     entry.insert(
       0,
       (params, conditions, defaults, heads, blank_types, final_body),

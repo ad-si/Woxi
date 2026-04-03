@@ -3998,6 +3998,19 @@ mod tag_set_delayed {
     clear_state();
     assert_eq!(interpret("UpValues[x]").unwrap(), "{}");
   }
+
+  #[test]
+  fn upvalues_redefinition_replaces() {
+    // Redefining an upvalue with the same LHS should replace, not duplicate
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := x^2; g /: f[g[x_]] := x^3; UpValues[g]")
+        .unwrap(),
+      "{HoldPattern[f[g[x_]]] :> x^3}"
+    );
+    // The new definition should be used for evaluation
+    assert_eq!(interpret("f[g[3]]").unwrap(), "27");
+  }
 }
 
 mod tag_unset {
