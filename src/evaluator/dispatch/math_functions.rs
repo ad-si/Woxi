@@ -621,6 +621,9 @@ pub fn dispatch_math_functions(
     "PolygonalNumber" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::polygonal_number_ast(args));
     }
+    "PerfectNumber" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::perfect_number_ast(args));
+    }
     "LerchPhi" if args.len() == 3 => {
       return Some(crate::functions::math_ast::lerch_phi_ast(args));
     }

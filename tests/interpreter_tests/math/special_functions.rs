@@ -5075,6 +5075,41 @@ mod polygonal_number {
   }
 }
 
+mod perfect_number {
+  use super::*;
+
+  #[test]
+  fn first_eight() {
+    assert_eq!(
+      interpret("Table[PerfectNumber[n], {n, 1, 8}]").unwrap(),
+      "{6, 28, 496, 8128, 33550336, 8589869056, 137438691328, 2305843008139952128}"
+    );
+  }
+
+  #[test]
+  fn ninth_big_integer() {
+    assert_eq!(
+      interpret("PerfectNumber[9]").unwrap(),
+      "2658455991569831744654692615953842176"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("PerfectNumber[n]").unwrap(), "PerfectNumber[n]");
+  }
+
+  #[test]
+  fn zero_unevaluated() {
+    assert_eq!(interpret("PerfectNumber[0]").unwrap(), "PerfectNumber[0]");
+  }
+
+  #[test]
+  fn negative_unevaluated() {
+    assert_eq!(interpret("PerfectNumber[-1]").unwrap(), "PerfectNumber[-1]");
+  }
+}
+
 mod hypergeometric_1f1_regularized {
   use super::*;
 
