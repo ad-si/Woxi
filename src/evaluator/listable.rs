@@ -102,6 +102,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "MixedFractionParts"
       | "Precision"
       | "Accuracy"
+      | "SinhIntegral"
+      | "CoshIntegral"
   )
 }
 

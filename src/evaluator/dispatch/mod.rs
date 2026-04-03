@@ -1369,8 +1369,6 @@ pub fn evaluate_function_call_ast_inner(
     | "GammaRegularized"
     | "GenerateConditions"
     | "OverTilde"
-    | "SinhIntegral"
-    | "CoshIntegral"
     | "AngleBracket"
     | "Larger"
     | "ZetaZero"

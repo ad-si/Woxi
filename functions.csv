@@ -1288,7 +1288,7 @@ MaxValue,,🚫,,7.0,1305
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
 KelvinKei,,🚫,,6.0,1307
 TabView,,🚫,,6.0,1308
-SinhIntegral,Hyperbolic sine integral function,✅,1,3.0,1309
+SinhIntegral,Hyperbolic sine integral Shi(z),✅,pure,3.0,1309
 KelvinKer,,🚫,,6.0,1310
 ComplexPlot3D,,🚫,,12.0,1311
 ControlActive,,🚫,,6.0,1312
@@ -1325,7 +1325,7 @@ Hypergeometric1F1Regularized,,✅,,3.0,1342
 DistributionFitTest,,🚫,,8.0,1343
 DiskMatrix,Creates a disk-shaped matrix of ones,✅,pure,7.0,1345
 ExtentSize,,🚫,,8.0,1345
-CoshIntegral,Hyperbolic cosine integral function,✅,1,3.0,1347
+CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
 SampleRate,,🚫,,2.0,1347
 LegendLayout,,🚫,,9.0,1348
 CentralMoment,Computes the k-th central moment of a list,✅,pure,6.0,1349
