@@ -1053,6 +1053,33 @@ mod down_values {
     clear_state();
     assert_eq!(interpret("DownValues[undefined]").unwrap(), "{}");
   }
+
+  #[test]
+  fn down_values_literal_args() {
+    clear_state();
+    assert_eq!(
+      interpret("f[1] := a; f[2] := b; DownValues[f]").unwrap(),
+      "{HoldPattern[f[1]] :> a, HoldPattern[f[2]] :> b}"
+    );
+  }
+
+  #[test]
+  fn down_values_mixed_literal_and_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret("g[x_] := x^2; g[1] := one; DownValues[g]").unwrap(),
+      "{HoldPattern[g[1]] :> one, HoldPattern[g[x_]] :> x^2}"
+    );
+  }
+
+  #[test]
+  fn down_values_partial_literal_args() {
+    clear_state();
+    assert_eq!(
+      interpret("h[x_, 1] := x; h[x_, y_] := x + y; DownValues[h]").unwrap(),
+      "{HoldPattern[h[x_, 1]] :> x, HoldPattern[h[x_, y_]] :> x + y}"
+    );
+  }
 }
 
 mod pattern_matching {

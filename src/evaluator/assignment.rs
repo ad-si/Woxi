@@ -673,9 +673,25 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
       if has_literal_conditions {
-        // Literal-match definitions go first for priority
+        // Literal-match definitions go before pattern definitions but after
+        // existing literal definitions (preserving definition order).
+        let pos = entry
+          .iter()
+          .position(|(_, c, _, _, _, _)| {
+            // Find the first non-literal (pattern) definition
+            !c.iter().any(|cond| {
+              if let Some(Expr::Comparison { operators, .. }) = cond {
+                operators
+                  .iter()
+                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+              } else {
+                false
+              }
+            })
+          })
+          .unwrap_or(entry.len());
         entry.insert(
-          0,
+          pos,
           (
             params,
             conditions,
@@ -946,8 +962,22 @@ pub fn set_delayed_ast(
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
       let insert_pos = if has_literal_conditions {
-        // Literal-match definitions go first for priority
-        0
+        // Literal-match definitions go before pattern definitions but after
+        // existing literal definitions (preserving definition order).
+        entry
+          .iter()
+          .position(|(_, c, _, _, _, _)| {
+            !c.iter().any(|cond| {
+              if let Some(Expr::Comparison { operators, .. }) = cond {
+                operators
+                  .iter()
+                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+              } else {
+                false
+              }
+            })
+          })
+          .unwrap_or(entry.len())
       } else {
         // Insert by pattern specificity: Blank < BlankSequence < BlankNullSequence
         let score =
