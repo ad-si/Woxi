@@ -8650,6 +8650,179 @@ pub fn dirichlet_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast("Times", &[factor, zeta])
 }
 
+/// BetaRegularized[z, a, b] - Regularized incomplete beta function I_z(a, b)
+/// I_z(a, b) = B(z; a, b) / B(a, b) where B(z; a, b) = ∫₀ᶻ t^(a-1) (1-t)^(b-1) dt
+pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "BetaRegularized expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let z_expr = &args[0];
+  let a_expr = &args[1];
+  let b_expr = &args[2];
+
+  // BetaRegularized[0, a, b] = 0 (when a > 0)
+  if is_expr_zero(z_expr) && is_positive_numeric(a_expr) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // BetaRegularized[1, a, b] = 1 (when b > 0)
+  if matches!(z_expr, Expr::Integer(1)) && is_positive_numeric(b_expr) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Numeric evaluation when all arguments are numeric and at least one is Real
+  let z_val = expr_to_f64(z_expr);
+  let a_val = expr_to_f64(a_expr);
+  let b_val = expr_to_f64(b_expr);
+  let has_real = matches!(z_expr, Expr::Real(_))
+    || matches!(a_expr, Expr::Real(_))
+    || matches!(b_expr, Expr::Real(_));
+
+  if let (Some(z), Some(a), Some(b)) = (z_val, a_val, b_val)
+    && has_real
+  {
+    return Ok(Expr::Real(beta_regularized_numeric(z, a, b)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Check if an expression is a positive number
+fn is_positive_numeric(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n > 0,
+    Expr::Real(x) => *x > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        (*n > 0 && *d > 0) || (*n < 0 && *d < 0)
+      } else {
+        false
+      }
+    }
+    _ => false,
+  }
+}
+
+/// Compute the regularized incomplete beta function I_x(a, b) numerically
+/// Uses the continued fraction representation (Lentz's algorithm)
+fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
+  if x <= 0.0 {
+    return 0.0;
+  }
+  if x >= 1.0 {
+    return 1.0;
+  }
+
+  // Use symmetry relation: I_x(a,b) = 1 - I_{1-x}(b,a) when x > (a+1)/(a+b+2)
+  // This ensures convergence of the continued fraction
+  if x > (a + 1.0) / (a + b + 2.0) {
+    return 1.0 - beta_regularized_numeric(1.0 - x, b, a);
+  }
+
+  // Compute using the continued fraction representation
+  // I_x(a,b) = x^a * (1-x)^b / (a * B(a,b)) * 1/(1+ d1/(1+ d2/(1+ ...)))
+  // where d_{2m+1} = -(a+m)(a+b+m) x / ((a+2m)(a+2m+1))
+  //       d_{2m}   = m(b-m) x / ((a+2m-1)(a+2m))
+
+  let ln_prefix = a * x.ln() + b * (1.0 - x).ln() - a.ln() - ln_beta(a, b);
+  let prefix = ln_prefix.exp();
+
+  // Lentz's continued fraction method
+  let mut c = 1.0_f64;
+  let mut d = 1.0 - (a + b) * x / (a + 1.0);
+  if d.abs() < 1e-30 {
+    d = 1e-30;
+  }
+  d = 1.0 / d;
+  let mut result = d;
+
+  for m in 1..200 {
+    let m_f = m as f64;
+
+    // Even step: d_{2m}
+    let numerator =
+      m_f * (b - m_f) * x / ((a + 2.0 * m_f - 1.0) * (a + 2.0 * m_f));
+    d = 1.0 + numerator * d;
+    if d.abs() < 1e-30 {
+      d = 1e-30;
+    }
+    c = 1.0 + numerator / c;
+    if c.abs() < 1e-30 {
+      c = 1e-30;
+    }
+    d = 1.0 / d;
+    result *= d * c;
+
+    // Odd step: d_{2m+1}
+    let numerator = -(a + m_f) * (a + b + m_f) * x
+      / ((a + 2.0 * m_f) * (a + 2.0 * m_f + 1.0));
+    d = 1.0 + numerator * d;
+    if d.abs() < 1e-30 {
+      d = 1e-30;
+    }
+    c = 1.0 + numerator / c;
+    if c.abs() < 1e-30 {
+      c = 1e-30;
+    }
+    d = 1.0 / d;
+    let delta = d * c;
+    result *= delta;
+
+    if (delta - 1.0).abs() < 1e-15 {
+      break;
+    }
+  }
+
+  prefix * result
+}
+
+/// Compute ln(Beta(a, b)) = ln(Gamma(a)) + ln(Gamma(b)) - ln(Gamma(a+b))
+fn ln_beta(a: f64, b: f64) -> f64 {
+  lgamma(a) + lgamma(b) - lgamma(a + b)
+}
+
+/// Log-gamma function using Lanczos approximation
+fn lgamma(x: f64) -> f64 {
+  // Use the standard library's ln_gamma if available via f64 methods
+  // Otherwise use Lanczos approximation
+  let g = 7.0;
+  let coefs = [
+    0.999_999_999_999_809_9,
+    676.5203681218851,
+    -1259.1392167224028,
+    771.323_428_777_653_1,
+    -176.615_029_162_140_6,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.984_369_578_019_572e-6,
+    1.5056327351493116e-7,
+  ];
+
+  if x < 0.5 {
+    // Reflection formula: Gamma(1-x) * Gamma(x) = pi / sin(pi*x)
+    let log_pi = std::f64::consts::PI.ln();
+    log_pi - (std::f64::consts::PI * x).sin().abs().ln() - lgamma(1.0 - x)
+  } else {
+    let x = x - 1.0;
+    let mut base = coefs[0];
+    for (i, &c) in coefs.iter().enumerate().skip(1) {
+      base += c / (x + i as f64);
+    }
+    let t = x + g + 0.5;
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (t.ln() * (x + 0.5)) - t
+      + base.ln()
+  }
+}
+
 /// SinhIntegral[z] - Hyperbolic sine integral Shi(z)
 /// Shi(z) = ∫₀ᶻ sinh(t)/t dt
 pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

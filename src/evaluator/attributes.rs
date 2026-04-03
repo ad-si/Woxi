@@ -134,7 +134,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "BitShiftRight"
     | "BitShiftLeft"
     | "SinhIntegral"
-    | "CoshIntegral" => {
+    | "CoshIntegral"
+    | "BetaRegularized" => {
       vec!["Listable", "NumericFunction", "Protected"]
     }
 

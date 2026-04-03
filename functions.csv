@@ -1243,7 +1243,7 @@ RandomComplex,,🚫,,6.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
 InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
 Longest,Pattern wrapper for longest matching,✅,1,6.0,1261
-BetaRegularized,Regularized incomplete beta function,✅,1,2.0,1263
+BetaRegularized,Regularized incomplete beta function I_z(a b),✅,pure,2.0,1263
 Gather,Groups identical elements together,✅,pure,7.0,1264
 MapAll,Apply a function to every subexpression,✅,pure,1.0,1265
 HurwitzLerchPhi,,🚫,,7.0,1267

@@ -4720,6 +4720,74 @@ mod dirichlet_eta {
   }
 }
 
+mod beta_regularized {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("BetaRegularized[0, 2, 3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("BetaRegularized[1, 2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("BetaRegularized[z, 2, 3]").unwrap(),
+      "BetaRegularized[z, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("BetaRegularized[0.5, 2.0, 3.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.6875).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_uniform() {
+    // BetaRegularized[x, 1, 1] = x
+    let result: f64 = interpret("BetaRegularized[0.3, 1.0, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.3).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half_half() {
+    let result: f64 = interpret("BetaRegularized[0.3, 0.5, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.3690101195655453).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_params() {
+    let result: f64 = interpret("BetaRegularized[0.5, 10.0, 10.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.5).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_of_integer_args() {
+    let result: f64 = interpret("N[BetaRegularized[0.5, 2.0, 3.0]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.6875).abs() < 1e-10);
+  }
+}
+
 mod sinh_integral {
   use super::*;
 
