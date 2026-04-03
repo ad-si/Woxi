@@ -74,6 +74,11 @@ version = "0.47"
 default-features = false
 features = ["text", "raster-images"]
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.svg2pdf]
+version = "0.13"
+default-features = false
+features = ["text"]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
 

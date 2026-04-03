@@ -2219,4 +2219,58 @@ mod high_level_functions_tests {
       assert_eq!(italic_count, 2, "Both cells should be italic");
     }
   }
+
+  mod pdf_export_tests {
+    use super::*;
+
+    #[test]
+    fn test_export_pdf_creates_valid_file() {
+      let tmp = std::env::temp_dir().join("woxi_test_export.pdf");
+      let path = tmp.display().to_string();
+      let result =
+        interpret(&format!("Export[\"{path}\", (x^2 + 3)/7, \"PDF\"]"))
+          .unwrap();
+      assert_eq!(result, path);
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert!(bytes.starts_with(b"%PDF"), "File should be a valid PDF");
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_pdf_by_extension() {
+      let tmp = std::env::temp_dir().join("woxi_test_ext.pdf");
+      let path = tmp.display().to_string();
+      let result = interpret(&format!("Export[\"{path}\", x + 1]")).unwrap();
+      assert_eq!(result, path);
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert!(bytes.starts_with(b"%PDF"), "File should be a valid PDF");
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_pdf_integer() {
+      let tmp = std::env::temp_dir().join("woxi_test_int.pdf");
+      let path = tmp.display().to_string();
+      let result =
+        interpret(&format!("Export[\"{path}\", 42, \"PDF\"]")).unwrap();
+      assert_eq!(result, path);
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert!(bytes.starts_with(b"%PDF"));
+      assert!(bytes.len() > 100, "PDF should have substantial content");
+      std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_export_pdf_symbolic_expression() {
+      let tmp = std::env::temp_dir().join("woxi_test_sym.pdf");
+      let path = tmp.display().to_string();
+      let result =
+        interpret(&format!("Export[\"{path}\", Sin[x] + Cos[y], \"PDF\"]"))
+          .unwrap();
+      assert_eq!(result, path);
+      let bytes = std::fs::read(&tmp).unwrap();
+      assert!(bytes.starts_with(b"%PDF"));
+      std::fs::remove_file(&tmp).ok();
+    }
+  }
 }

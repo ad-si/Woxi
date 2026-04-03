@@ -208,6 +208,25 @@ pub fn dispatch_io_functions(
         }
         return Some(Ok(Expr::String(filename)));
       }
+      // Determine if PDF export is requested (by extension or explicit format)
+      let is_pdf = filename.ends_with(".pdf")
+        || args
+          .get(2)
+          .is_some_and(|a| matches!(a, Expr::String(s) if s == "PDF"));
+      if is_pdf {
+        let svg = expr_to_svg(&args[1]);
+        match svg_to_pdf_bytes(&svg) {
+          Ok(pdf_bytes) => {
+            if let Err(e) = std::fs::write(&filename, &pdf_bytes).map_err(|e| {
+              InterpreterError::EvaluationError(format!("Export: {e}"))
+            }) {
+              return Some(Err(e));
+            }
+            return Some(Ok(Expr::String(filename)));
+          }
+          Err(e) => return Some(Err(e)),
+        }
+      }
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
@@ -233,7 +252,7 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::String(filename)));
     }
     "ExportString" if args.len() == 2 => {
-      // ExportString[expr, "SVG"] - return SVG string representation
+      // ExportString[expr, "format"] - return string representation
       let format_str = match &args[1] {
         Expr::String(s) => s.clone(),
         _ => {
@@ -244,265 +263,39 @@ pub fn dispatch_io_functions(
           }));
         }
       };
-      if format_str == "PDF" {
-        // Generate minimal PDF with expression text
-        let text = crate::syntax::expr_to_output(&args[0]);
-        return Some(Ok(Expr::String(generate_minimal_pdf(&text))));
+      if format_str == "SVG" || format_str == "PDF" {
+        let svg = expr_to_svg(&args[0]);
+        if format_str == "PDF" {
+          #[cfg(not(target_arch = "wasm32"))]
+          {
+            match svg_to_pdf_bytes(&svg) {
+              Ok(pdf_bytes) => {
+                // Return raw PDF bytes as a String (binary content)
+                let pdf_str =
+                  pdf_bytes.into_iter().map(|b| b as char).collect::<String>();
+                return Some(Ok(Expr::String(pdf_str)));
+              }
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          #[cfg(target_arch = "wasm32")]
+          {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ExportString".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+        return Some(Ok(Expr::String(svg)));
       }
-      if format_str != "SVG" {
+      if format_str != "SVG" && format_str != "PDF" {
         // Return unevaluated for unsupported formats
         return Some(Ok(Expr::FunctionCall {
           name: "ExportString".to_string(),
           args: args.to_vec(),
         }));
       }
-      let svg = match &args[0] {
-        Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
-        Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
-          crate::get_captured_graphics().unwrap_or_default()
-        }
-        Expr::FunctionCall {
-          name: gfx_name,
-          args: gfx_args,
-        } if (gfx_name == "Graphics" || gfx_name == "Graphics3D")
-          && !gfx_args.is_empty() =>
-        {
-          // Unevaluated Graphics[{...}] FunctionCall (e.g. from VoronoiMesh)
-          if let Ok(ref rendered) =
-            crate::functions::graphics::graphics_ast(gfx_args)
-          {
-            if let Expr::Graphics { svg: svg_data, .. } = rendered {
-              svg_data.clone()
-            } else {
-              String::new()
-            }
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: grid_name,
-          args: grid_args,
-        } if grid_name == "Grid" && !grid_args.is_empty() => {
-          // Grid[...] → render as SVG table
-          if crate::functions::graphics::grid_ast(grid_args).is_ok() {
-            crate::get_captured_graphics().unwrap_or_default()
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: style_name,
-          args: style_args,
-        } if style_name == "Style"
-          && style_args.len() >= 2
-          && matches!(
-            &style_args[0],
-            Expr::FunctionCall { name, args }
-            if name == "Grid" && !args.is_empty()
-          ) =>
-        {
-          // Style[Grid[...], directives...] → render grid with inherited style
-          if let Expr::FunctionCall {
-            args: grid_args, ..
-          } = &style_args[0]
-          {
-            let style =
-              crate::functions::graphics::parse_grid_style(&style_args[1..]);
-            if crate::functions::graphics::grid_ast_styled(grid_args, &style)
-              .is_ok()
-            {
-              crate::get_captured_graphics().unwrap_or_default()
-            } else {
-              String::new()
-            }
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: ds_name,
-          args: ds_args,
-        } if ds_name == "Dataset" && !ds_args.is_empty() => {
-          // Dataset[data, ...] → render as SVG table
-          if let Some(svg) =
-            crate::functions::graphics::dataset_to_svg(&ds_args[0])
-          {
-            svg
-          } else {
-            // Fallback: render as text SVG
-            let markup =
-              crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 9.8_f64;
-            let font_size = 14_usize;
-            let display_width =
-              crate::functions::graphics::estimate_display_width(&args[0]);
-            let width = (display_width * char_width).ceil() as usize;
-            let (height, text_y) =
-              if crate::functions::graphics::has_fraction(&args[0]) {
-                (32_usize, 18_usize)
-              } else {
-                (font_size + 4, font_size)
-              };
-            format!(
-              "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-               <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
-               </svg>",
-              width, height
-            )
-          }
-        }
-        Expr::FunctionCall {
-          name: tab_name,
-          args: tab_args,
-        } if tab_name == "Tabular" && tab_args.len() >= 2 => {
-          // Tabular[data, schema] → render as SVG table
-          if let Some(svg) = crate::functions::graphics::tabular_to_svg(
-            &tab_args[0],
-            &tab_args[1],
-          ) {
-            svg
-          } else {
-            let markup =
-              crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 9.8_f64;
-            let font_size = 14_usize;
-            let display_width =
-              crate::functions::graphics::estimate_display_width(&args[0]);
-            let width = (display_width * char_width).ceil() as usize;
-            let (height, text_y) =
-              if crate::functions::graphics::has_fraction(&args[0]) {
-                (32_usize, 18_usize)
-              } else {
-                (font_size + 4, font_size)
-              };
-            format!(
-              "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-               <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
-               </svg>",
-              width, height
-            )
-          }
-        }
-        Expr::FunctionCall {
-          name: tf_name,
-          args: tf_args,
-        } if tf_name == "TreeForm" && !tf_args.is_empty() => {
-          // TreeForm[expr] → render as tree diagram SVG
-          if let Ok(rendered) =
-            crate::functions::tree_form::tree_form_ast(tf_args)
-          {
-            if let Expr::Graphics {
-              svg: ref svg_data, ..
-            } = rendered
-            {
-              svg_data.clone()
-            } else {
-              String::new()
-            }
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: tg_name,
-          args: tg_args,
-        } if tg_name == "TreeGraph" && !tg_args.is_empty() => {
-          // TreeGraph[{edges...}] → render as tree graph SVG
-          if let Ok(rendered) =
-            crate::functions::tree_form::tree_graph_ast(tg_args)
-          {
-            if let Expr::Graphics {
-              svg: ref svg_data, ..
-            } = rendered
-            {
-              svg_data.clone()
-            } else {
-              String::new()
-            }
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: g_name,
-          args: g_args,
-        } if g_name == "Graph" && g_args.len() == 2 => {
-          // Graph[{vertices}, {edges}] → render as graph SVG
-          // Extract edges and try to render as tree graph
-          if let Expr::List(edge_list) = &g_args[1] {
-            if let Ok(rendered) = crate::functions::tree_form::tree_graph_ast(
-              &[Expr::List(edge_list.clone())],
-            ) {
-              if let Expr::Graphics {
-                svg: ref svg_data, ..
-              } = rendered
-              {
-                svg_data.clone()
-              } else {
-                String::new()
-              }
-            } else {
-              String::new()
-            }
-          } else {
-            String::new()
-          }
-        }
-        Expr::FunctionCall {
-          name: mr_name,
-          args: mr_args,
-        } if mr_name == "MeshRegion" && mr_args.len() == 2 => {
-          if let Some(svg) = crate::functions::voronoi::mesh_region_to_svg(
-            &mr_args[0],
-            &mr_args[1],
-          ) {
-            svg
-          } else {
-            let markup =
-              crate::functions::graphics::expr_to_svg_markup(&args[0]);
-            let char_width = 9.8_f64;
-            let font_size = 14_usize;
-            let display_width =
-              crate::functions::graphics::estimate_display_width(&args[0]);
-            let width = (display_width * char_width).ceil() as usize;
-            let (height, text_y) =
-              if crate::functions::graphics::has_fraction(&args[0]) {
-                (32_usize, 18_usize)
-              } else {
-                (font_size + 4, font_size)
-              };
-            format!(
-              "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-               <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
-               </svg>",
-              width, height
-            )
-          }
-        }
-        other => {
-          // Non-graphics: render expression as SVG text with superscripts
-          let markup = crate::functions::graphics::expr_to_svg_markup(other);
-          let char_width = 9.8_f64;
-          let font_size = 14_usize;
-          let display_width =
-            crate::functions::graphics::estimate_display_width(other);
-          let width = (display_width * char_width).ceil() as usize;
-          let (height, text_y) =
-            if crate::functions::graphics::has_fraction(other) {
-              (32_usize, 18_usize)
-            } else {
-              (font_size + 4, font_size)
-            };
-          format!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-             <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
-             </svg>",
-            width, height
-          )
-        }
-      };
-      return Some(Ok(Expr::String(svg)));
+      unreachable!()
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Find" if args.len() == 2 => {
@@ -1736,70 +1529,224 @@ fn glob_match_impl(pattern: &[char], text: &[char]) -> bool {
   }
 }
 
-/// Generate a minimal valid PDF containing the given text.
-fn generate_minimal_pdf(text: &str) -> String {
-  // Escape special PDF characters in text
-  let escaped: String = text
-    .chars()
-    .map(|c| match c {
-      '(' => "\\(".to_string(),
-      ')' => "\\)".to_string(),
-      '\\' => "\\\\".to_string(),
-      _ => c.to_string(),
-    })
-    .collect();
+/// Render a text-mode SVG fallback for non-graphics expressions.
+fn expr_text_svg(expr: &Expr) -> String {
+  let markup = crate::functions::graphics::expr_to_svg_markup(expr);
+  let char_width = 9.8_f64;
+  let font_size = 14_usize;
+  let display_width = crate::functions::graphics::estimate_display_width(expr);
+  let width = (display_width * char_width).ceil() as usize;
+  let (height, text_y) = if crate::functions::graphics::has_fraction(expr) {
+    (32_usize, 18_usize)
+  } else {
+    (font_size + 4, font_size)
+  };
+  format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
+     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
+     </svg>",
+    width, height
+  )
+}
 
-  let content_stream = format!("BT /F1 12 Tf 72 720 Td ({}) Tj ET", escaped);
-  let content_len = content_stream.len();
-
-  let mut pdf = String::new();
-  let mut offsets: Vec<usize> = Vec::new();
-
-  pdf.push_str("%PDF-1.4\n");
-
-  // Object 1: Catalog
-  offsets.push(pdf.len());
-  pdf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-  // Object 2: Pages
-  offsets.push(pdf.len());
-  pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-
-  // Object 3: Page
-  offsets.push(pdf.len());
-  pdf.push_str(
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n   \
-     /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
-  );
-
-  // Object 4: Content stream
-  offsets.push(pdf.len());
-  pdf.push_str(&format!(
-    "4 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
-    content_len, content_stream
-  ));
-
-  // Object 5: Font
-  offsets.push(pdf.len());
-  pdf.push_str(
-    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
-  );
-
-  // Cross-reference table
-  let xref_offset = pdf.len();
-  let num_objects = offsets.len() + 1; // +1 for the free object 0
-  pdf.push_str("xref\n");
-  pdf.push_str(&format!("0 {}\n", num_objects));
-  pdf.push_str("0000000000 65535 f \n");
-  for offset in &offsets {
-    pdf.push_str(&format!("{:010} 00000 n \n", offset));
+/// Convert an expression to its SVG string representation.
+fn expr_to_svg(expr: &Expr) -> String {
+  match expr {
+    Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
+      crate::get_captured_graphics().unwrap_or_default()
+    }
+    Expr::FunctionCall {
+      name: gfx_name,
+      args: gfx_args,
+    } if (gfx_name == "Graphics" || gfx_name == "Graphics3D")
+      && !gfx_args.is_empty() =>
+    {
+      if let Ok(ref rendered) =
+        crate::functions::graphics::graphics_ast(gfx_args)
+      {
+        if let Expr::Graphics { svg: svg_data, .. } = rendered {
+          svg_data.clone()
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: grid_name,
+      args: grid_args,
+    } if grid_name == "Grid" && !grid_args.is_empty() => {
+      if crate::functions::graphics::grid_ast(grid_args).is_ok() {
+        crate::get_captured_graphics().unwrap_or_default()
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: style_name,
+      args: style_args,
+    } if style_name == "Style"
+      && style_args.len() >= 2
+      && matches!(
+        &style_args[0],
+        Expr::FunctionCall { name, args }
+        if name == "Grid" && !args.is_empty()
+      ) =>
+    {
+      if let Expr::FunctionCall {
+        args: grid_args, ..
+      } = &style_args[0]
+      {
+        let style =
+          crate::functions::graphics::parse_grid_style(&style_args[1..]);
+        if crate::functions::graphics::grid_ast_styled(grid_args, &style)
+          .is_ok()
+        {
+          crate::get_captured_graphics().unwrap_or_default()
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: ds_name,
+      args: ds_args,
+    } if ds_name == "Dataset" && !ds_args.is_empty() => {
+      if let Some(svg) = crate::functions::graphics::dataset_to_svg(&ds_args[0])
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall {
+      name: tab_name,
+      args: tab_args,
+    } if tab_name == "Tabular" && tab_args.len() >= 2 => {
+      if let Some(svg) =
+        crate::functions::graphics::tabular_to_svg(&tab_args[0], &tab_args[1])
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall {
+      name: tf_name,
+      args: tf_args,
+    } if tf_name == "TreeForm" && !tf_args.is_empty() => {
+      if let Ok(rendered) = crate::functions::tree_form::tree_form_ast(tf_args)
+      {
+        if let Expr::Graphics {
+          svg: ref svg_data, ..
+        } = rendered
+        {
+          svg_data.clone()
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: tg_name,
+      args: tg_args,
+    } if tg_name == "TreeGraph" && !tg_args.is_empty() => {
+      if let Ok(rendered) = crate::functions::tree_form::tree_graph_ast(tg_args)
+      {
+        if let Expr::Graphics {
+          svg: ref svg_data, ..
+        } = rendered
+        {
+          svg_data.clone()
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: g_name,
+      args: g_args,
+    } if g_name == "Graph" && g_args.len() == 2 => {
+      if let Expr::List(edge_list) = &g_args[1] {
+        if let Ok(rendered) =
+          crate::functions::tree_form::tree_graph_ast(&[Expr::List(
+            edge_list.clone(),
+          )])
+        {
+          if let Expr::Graphics {
+            svg: ref svg_data, ..
+          } = rendered
+          {
+            svg_data.clone()
+          } else {
+            String::new()
+          }
+        } else {
+          String::new()
+        }
+      } else {
+        String::new()
+      }
+    }
+    Expr::FunctionCall {
+      name: mr_name,
+      args: mr_args,
+    } if mr_name == "MeshRegion" && mr_args.len() == 2 => {
+      if let Some(svg) =
+        crate::functions::voronoi::mesh_region_to_svg(&mr_args[0], &mr_args[1])
+      {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    other => expr_text_svg(other),
   }
+}
 
-  // Trailer
-  pdf.push_str(&format!(
-    "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-    num_objects, xref_offset
-  ));
+/// Convert an SVG string to PDF bytes using svg2pdf.
+#[cfg(not(target_arch = "wasm32"))]
+fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
+  use std::sync::Arc as StdArc;
 
-  pdf
+  let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
+  fontdb.load_font_data(
+    include_bytes!("../../../resources/CourierPrime-Regular.ttf").to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../../resources/CourierPrime-Bold.ttf").to_vec(),
+  );
+  fontdb.set_monospace_family("Courier Prime");
+  // Load system fonts as fallback for any remaining missing glyphs
+  fontdb.load_system_fonts();
+
+  let mut opt = svg2pdf::usvg::Options::default();
+  opt.fontdb = StdArc::new(fontdb);
+
+  let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Export PDF: SVG parse error: {e}"
+    ))
+  })?;
+
+  let pdf_bytes = svg2pdf::to_pdf(
+    &tree,
+    svg2pdf::ConversionOptions::default(),
+    svg2pdf::PageOptions::default(),
+  )
+  .map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Export PDF: conversion error: {e}"
+    ))
+  })?;
+
+  Ok(pdf_bytes)
 }

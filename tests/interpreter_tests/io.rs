@@ -1038,10 +1038,10 @@ mod grid_graphics {
       svg.contains("dy=\"6\">11</tspan>"),
       "3/11 denominator should be in stacked fraction"
     );
-    // Fraction bar character
+    // Fraction bar rendered as overline on non-breaking spaces
     assert!(
-      svg.contains("\u{2500}"),
-      "stacked fraction should contain box-drawing bar character"
+      svg.contains("text-decoration=\"overline\""),
+      "stacked fraction should use overline for fraction bar"
     );
   }
 
