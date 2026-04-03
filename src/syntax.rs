@@ -3141,9 +3141,12 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       args: vec![left.clone(), right.clone()],
     },
     "/:" => {
-      // TagSet or TagSetDelayed: tag /: lhs = rhs  or  tag /: lhs := rhs
+      // TagSet or TagSetDelayed or TagUnset:
+      //   tag /: lhs = rhs   -> TagSet[tag, lhs, rhs]
+      //   tag /: lhs := rhs  -> TagSetDelayed[tag, lhs, rhs]
+      //   tag /: lhs =.      -> TagUnset[tag, lhs]
       // The right side has already been parsed with the = or := operator,
-      // producing Set[lhs, rhs] or SetDelayed[lhs, rhs].
+      // producing Set[lhs, rhs], SetDelayed[lhs, rhs], or Unset[lhs].
       match right {
         Expr::FunctionCall { name, args }
           if (name == "SetDelayed" || name == "Set") && args.len() == 2 =>
@@ -3156,6 +3159,14 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
           Expr::FunctionCall {
             name: tag_name.to_string(),
             args: vec![left.clone(), args[0].clone(), args[1].clone()],
+          }
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Unset" && args.len() == 1 =>
+        {
+          Expr::FunctionCall {
+            name: "TagUnset".to_string(),
+            args: vec![left.clone(), args[0].clone()],
           }
         }
         _ => {

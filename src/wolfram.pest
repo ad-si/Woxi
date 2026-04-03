@@ -484,10 +484,12 @@ FunctionDefinition = { Identifier ~ "[" ~ (FunctionDefinitionPattern ~ ("," ~ Fu
 
 // TagSetDelayed: tag /: f[patterns...] := body — stores an upvalue for tag
 // TagSet: tag /: f[patterns...] = body — stores an evaluated upvalue for tag
+// TagUnset: tag /: f[patterns...] =. — removes an upvalue for tag
 TagSetDelayed = { Identifier ~ "/:" ~ BaseFunctionCall ~ ":=" ~ ExpressionNoImplicit }
 TagSet = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=" ~ !("." | "=" | "!") ~ ExpressionNoImplicit }
+TagUnset = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=." }
 
-Statement = _{ TagSetDelayed | TagSet | FunctionDefinition | Expression }
+Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | Expression }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 StatementSeparator = _{ (";" ~ !";")?  }

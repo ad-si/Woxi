@@ -2575,7 +2575,7 @@ Opening,Morphological opening (erosion followed by dilation),✅,pure,7.0,2632
 Subsequences,Returns all contiguous subsequences of a list,✅,pure,10.4,2632
 GraphPropertyDistribution,Distribution of a graph property over a graph distribution,✅,1,9.0,2635
 HatchFilling,option for hatch filling in plots,✅,Symbolic,12.1,2635
-TagUnset,Symbol for removing tagged definitions,✅,pure,1.0,2635
+TagUnset,Removes an upvalue assignment associated with a tag symbol,✅,stateful,1.0,2635
 CDFDeploy,,🚫,,8.0,2642
 FourierMatrix,Discrete Fourier transform matrix,✅,1,9.0,2642
 RecurrenceFilter,Apply an IIR/FIR recurrence filter to data,✅,pure,9.0,2642

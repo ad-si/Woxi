@@ -1338,6 +1338,85 @@ pub fn tag_set_delayed_ast(
     );
   });
 
+  if evaluate_rhs {
+    Ok(body)
+  } else {
+    Ok(Expr::Identifier("Null".to_string()))
+  }
+}
+
+/// TagUnset[tag, lhs] — removes an upvalue definition for tag.
+/// g /: f[g[x_]] =. removes the upvalue stored for g under f.
+pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
+  let tag_name = match tag {
+    Expr::Identifier(s) => s.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "TagUnset: first argument must be a symbol".into(),
+      ));
+    }
+  };
+
+  let outer_func = match lhs {
+    Expr::FunctionCall { name, .. } => name.clone(),
+    Expr::CurriedCall { func, .. } => {
+      if let Expr::FunctionCall { name, .. } = func.as_ref() {
+        name.clone()
+      } else {
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+    }
+    _ => return Ok(Expr::Identifier("Null".to_string())),
+  };
+
+  let lhs_str = crate::syntax::expr_to_string(lhs);
+
+  // Remove matching entries from UPVALUES
+  let removed = crate::UPVALUES.with(|m| {
+    let mut defs = m.borrow_mut();
+    let mut removed_entries = Vec::new();
+    if let Some(entry) = defs.get_mut(&tag_name) {
+      entry.retain(
+        |(
+          _of,
+          _params,
+          _conds,
+          _defaults,
+          _heads,
+          _body,
+          orig_lhs,
+          _orig_body,
+        )| {
+          let orig_lhs_str = crate::syntax::expr_to_string(orig_lhs);
+          if orig_lhs_str == lhs_str {
+            removed_entries
+              .push((_params.clone(), crate::syntax::expr_to_string(_body)));
+            false
+          } else {
+            true
+          }
+        },
+      );
+      if entry.is_empty() {
+        defs.remove(&tag_name);
+      }
+    }
+    removed_entries
+  });
+
+  // Also remove from FUNC_DEFS
+  if !removed.is_empty() {
+    crate::FUNC_DEFS.with(|m| {
+      if let Some(entry) = m.borrow_mut().get_mut(&outer_func) {
+        for (params, body_str) in &removed {
+          entry.retain(|(p, _, _, _, _, b)| {
+            !(p == params && crate::syntax::expr_to_string(b) == *body_str)
+          });
+        }
+      }
+    });
+  }
+
   Ok(Expr::Identifier("Null".to_string()))
 }
 
