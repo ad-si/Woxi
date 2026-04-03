@@ -4129,7 +4129,7 @@ mod upset {
   fn upset_attributes() {
     assert_eq!(
       interpret("Attributes[UpSet]").unwrap(),
-      "{HoldAll, Protected, SequenceHold}"
+      "{HoldFirst, Protected, SequenceHold}"
     );
   }
 }

@@ -2667,6 +2667,13 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().trim().to_string());
       }
+      Rule::UnsetSuffix => {
+        // f[x] =. → Unset[f[x]]: push "=." as an operator with a dummy
+        // right operand so the precedence-climbing algorithm can handle it
+        // like any other operator (at assignment precedence level 2).
+        operators.push("=.".to_string());
+        terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
+      }
       Rule::TildeInfix => {
         // a ~f~ b → f[a, b]: encode as "~funcName~" operator string
         // The inner pair is either BaseFunctionCall or Identifier
@@ -2897,9 +2904,9 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 /// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u8 {
   match op {
-    ">>" | ">>>" => 0, // Put/PutAppend (lowest precedence)
+    ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
     "/:" => 1, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
-    "=" | ":=" => 2, // Assignment
+    "=" | ":=" | "=." => 2, // Assignment / Unset
     "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
     "/;" => 3, // Condition (higher than assignment, lower than Rule)
     "->" | ":>" => 4, // Rule/RuleDelayed (lower than boolean operators)
@@ -2999,6 +3006,13 @@ fn build_expr_with_precedence(
 /// Create a binary operation from two expressions and an operator string
 fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
   match op_str {
+    "=." => {
+      // Unset (postfix): f[x] =. → Unset[f[x]], right operand is a dummy
+      Expr::FunctionCall {
+        name: "Unset".to_string(),
+        args: vec![left.clone()],
+      }
+    }
     "+" => Expr::BinaryOp {
       op: BinaryOperator::Plus,
       left: Box::new(left.clone()),

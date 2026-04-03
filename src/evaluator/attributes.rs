@@ -214,7 +214,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
       vec!["HoldAll", "Protected", "SequenceHold"]
     }
-    "TagSet" | "UpSet" => vec!["HoldAll", "Protected", "SequenceHold"],
+    "TagSet" => vec!["HoldAll", "Protected", "SequenceHold"],
+    "UpSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
 
     // HoldRest + Protected
     "If" | "PatternTest" | "Save" => vec!["HoldRest", "Protected"],
