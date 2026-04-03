@@ -3427,3 +3427,117 @@ mod find_sequence_function {
     );
   }
 }
+
+mod horner_form {
+  use super::*;
+
+  #[test]
+  fn basic_univariate() {
+    assert_eq!(
+      interpret("HornerForm[11 x^3 - 4 x^2 + 7 x + 2]").unwrap(),
+      "2 + x*(7 + x*(-4 + 11*x))"
+    );
+  }
+
+  #[test]
+  fn explicit_variable() {
+    assert_eq!(
+      interpret("HornerForm[a + b x + c x^2, x]").unwrap(),
+      "a + x*(b + c*x)"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("HornerForm[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("HornerForm[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn single_variable() {
+    assert_eq!(interpret("HornerForm[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn monomial() {
+    assert_eq!(interpret("HornerForm[x^3]").unwrap(), "x^3");
+  }
+
+  #[test]
+  fn linear_polynomial() {
+    assert_eq!(interpret("HornerForm[x + 2]").unwrap(), "2 + x");
+  }
+
+  #[test]
+  fn non_polynomial() {
+    assert_eq!(interpret("HornerForm[Sin[x]]").unwrap(), "Sin[x]");
+  }
+
+  #[test]
+  fn degree_four() {
+    assert_eq!(
+      interpret("HornerForm[x^4 + 2 x^3 - x + 5]").unwrap(),
+      "5 + x*(-1 + x^2*(2 + x))"
+    );
+  }
+
+  #[test]
+  fn univariate_in_a() {
+    assert_eq!(
+      interpret("HornerForm[a^2 + 3 a + 1]").unwrap(),
+      "1 + a*(3 + a)"
+    );
+  }
+
+  #[test]
+  fn multivariate_explicit_x() {
+    assert_eq!(
+      interpret("HornerForm[x^2 + 2 x y + y^2, x]").unwrap(),
+      "y^2 + x*(x + 2*y)"
+    );
+  }
+
+  #[test]
+  fn multivariate_explicit_y() {
+    assert_eq!(
+      interpret("HornerForm[x^2 + 2 x y + y^2, y]").unwrap(),
+      "x^2 + y*(2*x + y)"
+    );
+  }
+
+  #[test]
+  fn unrelated_variable() {
+    assert_eq!(
+      interpret("HornerForm[3 x^2 + 2 x + 1, y]").unwrap(),
+      "1 + 2*x + 3*x^2"
+    );
+  }
+
+  #[test]
+  fn rational_function() {
+    let result =
+      interpret("HornerForm[(11 x^3 - 4 x^2 + 7 x + 2)/(x^2 - 3 x + 1)]")
+        .unwrap();
+    assert_eq!(result, "(2 + x*(7 + x*(-4 + 11*x)))/(1 + x*(-3 + x))");
+  }
+
+  #[test]
+  fn all_numeric_coefficients() {
+    assert_eq!(
+      interpret("HornerForm[1 + 2 x + 3 x^2 + 4 x^3]").unwrap(),
+      "1 + x*(2 + x*(3 + 4*x))"
+    );
+  }
+
+  #[test]
+  fn quadratic() {
+    assert_eq!(
+      interpret("HornerForm[x^2 + 5 x + 6]").unwrap(),
+      "6 + x*(5 + x)"
+    );
+  }
+}

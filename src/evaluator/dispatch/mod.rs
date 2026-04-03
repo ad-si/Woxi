@@ -4970,11 +4970,7 @@ pub fn evaluate_function_call_ast_inner(
   // Functions that return their single argument unchanged (identity/pass-through)
   if matches!(
     name,
-    "PermutationProduct"
-      | "HornerForm"
-      | "Parallelize"
-      | "Setting"
-      | "TrigFactor"
+    "PermutationProduct" | "Parallelize" | "Setting" | "TrigFactor"
   ) && args.len() == 1
   {
     return Ok(args[0].clone());
