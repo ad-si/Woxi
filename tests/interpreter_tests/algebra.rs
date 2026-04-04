@@ -2983,6 +2983,41 @@ mod refine {
     assert_eq!(interpret("Refine[Sqrt[x^2], x < 0]").unwrap(), "-x");
   }
 
+  // --- General (x^n)^(1/m) simplification ---
+
+  #[test]
+  fn cube_root_x_cubed_positive() {
+    assert_eq!(interpret("Refine[(x^3)^(1/3), x >= 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn fifth_root_x_fifth_positive() {
+    assert_eq!(interpret("Refine[(x^5)^(1/5), x >= 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn fourth_root_x_fourth_positive() {
+    assert_eq!(interpret("Refine[(x^4)^(1/4), x >= 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn fourth_root_x_fourth_negative() {
+    // x^4 is always positive, (x^4)^(1/4) = |x| = -x when x < 0
+    assert_eq!(interpret("Refine[(x^4)^(1/4), x < 0]").unwrap(), "-x");
+  }
+
+  #[test]
+  fn sixth_power_cube_root_positive() {
+    // (x^6)^(1/3) = x^2 when x >= 0
+    assert_eq!(interpret("Refine[(x^6)^(1/3), x >= 0]").unwrap(), "x^2");
+  }
+
+  #[test]
+  fn sixth_power_cube_root_negative() {
+    // (x^6)^(1/3) = x^2 when x < 0 (x^6 always positive, result is |x|^2 = x^2)
+    assert_eq!(interpret("Refine[(x^6)^(1/3), x < 0]").unwrap(), "x^2");
+  }
+
   // --- Sign function ---
 
   #[test]
