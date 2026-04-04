@@ -1035,6 +1035,45 @@ mod big_o {
   }
 }
 
+mod mixed_partial_derivatives {
+  use super::*;
+
+  #[test]
+  fn d_two_variables() {
+    assert_eq!(interpret("D[x^2 y, x, y]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn d_two_variables_higher() {
+    assert_eq!(interpret("D[x^2 y^3, x, y]").unwrap(), "6*x*y^2");
+  }
+
+  #[test]
+  fn d_same_variable_twice() {
+    assert_eq!(interpret("D[x^3, x, x]").unwrap(), "6*x");
+  }
+
+  #[test]
+  fn d_three_variables() {
+    assert_eq!(interpret("D[x^2 y^3, x, x, y]").unwrap(), "6*y^2");
+  }
+
+  #[test]
+  fn d_mixed_with_list_spec() {
+    assert_eq!(interpret("D[x^2 y^3, {x, 2}, y]").unwrap(), "6*y^2");
+  }
+
+  #[test]
+  fn d_mixed_trig() {
+    let result = interpret("D[Sin[x] Cos[y], x, y]").unwrap();
+    assert!(
+      result == "-(Cos[x]*Sin[y])" || result == "-Sin[y]*Cos[x]",
+      "Got: {}",
+      result
+    );
+  }
+}
+
 mod find_minimum {
   use super::*;
 

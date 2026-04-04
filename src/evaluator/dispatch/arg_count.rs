@@ -202,7 +202,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CubeRoot" => Some((1, 1)),
     "Curl" => Some((2, 2)),
     "Cyclotomic" => Some((2, 2)),
-    "D" => Some((2, 2)),
+    "D" => Some((2, usize::MAX)),
     "DateDifference" => Some((2, usize::MAX)),
     "DateInterval" => Some((1, 1)),
     "DatePlus" => Some((2, 2)),
