@@ -335,11 +335,9 @@ fn render_number_line_svg(
   let axis_area_top = PADDING_TOP as f64 * sf;
   let axis_area_bottom = PADDING_BOTTOM as f64 * sf;
   let usable_height = render_height as f64 - axis_area_top - axis_area_bottom;
-  let row_height = if num_rows <= 1 {
-    usable_height
-  } else {
-    usable_height / num_rows as f64
-  };
+  // Divide usable height into equal gaps: one between the axis and the
+  // first series, plus one between each pair of series.
+  let row_spacing = usable_height / (num_rows as f64 + 1.0);
 
   // Map x value to pixel coordinate.
   let x_to_px = |x: f64| -> f64 {
@@ -357,29 +355,21 @@ fn render_number_line_svg(
     render_width, render_height, bg_color
   ));
 
-  // Offset for data above the axis line.
-  let data_offset = 10.0 * sf;
   let axis_x0 = margin_left;
   let axis_x1 = margin_left + plot_width;
 
   // Single axis line at the bottom of the plot area.
-  let axis_y = axis_area_top
-    + if num_rows <= 1 {
-      usable_height / 2.0
-    } else {
-      (num_rows - 1) as f64 * row_height + row_height / 2.0
-    };
+  let axis_y = axis_area_top + usable_height;
   svg.push_str(&format!(
     "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
      stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
     axis_x0, axis_y, axis_x1, axis_y, axis_color, sf
   ));
 
-  // Draw each series row (first series on top, last at the bottom near axis).
+  // Draw each series row (first series closest to axis, rest stacked upward).
   for (row_idx, data) in series.iter().enumerate() {
     let color = series_color(row_idx);
-    // First series closest to the axis, subsequent series stacked upward.
-    let data_y = axis_y - data_offset - row_idx as f64 * row_height;
+    let data_y = axis_y - (row_idx + 1) as f64 * row_spacing;
 
     match data {
       NumberLineData::Points(pts) => {
