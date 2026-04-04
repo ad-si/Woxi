@@ -8,6 +8,24 @@ expression: "export_svg(\"NumberLinePlot[{1, 2, 3}, ImageSize -> 200]\")"
 <circle cx="682.8" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
 <circle cx="1200.0" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
 <circle cx="1717.2" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
+<line x1="631.0" y1="225.0" x2="631.0" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="734.5" y1="225.0" x2="734.5" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="786.2" y1="225.0" x2="786.2" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="837.9" y1="225.0" x2="837.9" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="889.7" y1="225.0" x2="889.7" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="993.1" y1="225.0" x2="993.1" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1044.8" y1="225.0" x2="1044.8" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1096.6" y1="225.0" x2="1096.6" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1148.3" y1="225.0" x2="1148.3" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1251.7" y1="225.0" x2="1251.7" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1303.4" y1="225.0" x2="1303.4" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1355.2" y1="225.0" x2="1355.2" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1406.9" y1="225.0" x2="1406.9" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1510.3" y1="225.0" x2="1510.3" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1562.1" y1="225.0" x2="1562.1" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1613.8" y1="225.0" x2="1613.8" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1665.5" y1="225.0" x2="1665.5" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1769.0" y1="225.0" x2="1769.0" y2="255.0" stroke="#666666" stroke-width="5"/>
 <line x1="682.8" y1="225.0" x2="682.8" y2="275.0" stroke="#666666" stroke-width="10"/>
 <text x="682.8" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
 <line x1="941.4" y1="225.0" x2="941.4" y2="275.0" stroke="#666666" stroke-width="10"/>

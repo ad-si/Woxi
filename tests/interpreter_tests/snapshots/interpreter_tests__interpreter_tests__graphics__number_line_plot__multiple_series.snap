@@ -47,6 +47,23 @@ expression: "export_svg(\"NumberLinePlot[{Range[20], 2*Range[10], 3*Range[6], 5*
 <circle cx="3206.9" cy="650.0" r="40.0" fill="rgb(217,81,25)"/>
 <circle cx="1555.4" cy="250.0" r="40.0" fill="rgb(107,72,157)"/>
 <circle cx="2444.6" cy="250.0" r="40.0" fill="rgb(107,72,157)"/>
+<line x1="793.1" y1="1950.0" x2="793.1" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="920.1" y1="1950.0" x2="920.1" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1047.2" y1="1950.0" x2="1047.2" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1174.2" y1="1950.0" x2="1174.2" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1428.3" y1="1950.0" x2="1428.3" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1555.4" y1="1950.0" x2="1555.4" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1682.4" y1="1950.0" x2="1682.4" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="1809.4" y1="1950.0" x2="1809.4" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2063.5" y1="1950.0" x2="2063.5" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2190.6" y1="1950.0" x2="2190.6" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2317.6" y1="1950.0" x2="2317.6" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2444.6" y1="1950.0" x2="2444.6" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2698.7" y1="1950.0" x2="2698.7" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2825.8" y1="1950.0" x2="2825.8" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="2952.8" y1="1950.0" x2="2952.8" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="3079.9" y1="1950.0" x2="3079.9" y2="1980.0" stroke="#666666" stroke-width="5"/>
+<line x1="3333.9" y1="1950.0" x2="3333.9" y2="1980.0" stroke="#666666" stroke-width="5"/>
 <line x1="666.1" y1="1950.0" x2="666.1" y2="2000.0" stroke="#666666" stroke-width="10"/>
 <text x="666.1" y="2154.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1301.3" y1="1950.0" x2="1301.3" y2="2000.0" stroke="#666666" stroke-width="10"/>
