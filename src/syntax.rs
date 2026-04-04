@@ -4732,9 +4732,21 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             };
             return format!("{}/{}", inner_str, d);
           } else {
-            // InputForm: no paren wrapping
+            // InputForm: wrap Plus in parens like OutputForm
             let inner = fmt(&args[1]);
-            return format!("{}/{}", inner, d);
+            let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                &args[1],
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              ) {
+              format!("({})", inner)
+            } else {
+              inner
+            };
+            return format!("{}/{}", inner_str, d);
           }
         }
         // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)

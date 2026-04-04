@@ -201,4 +201,101 @@ mod list_tests {
       "{{1, 2}, {3, 4}}"
     );
   }
+
+  // --- SubsetPosition ---
+  #[test]
+  fn subset_position_literal() {
+    assert_eq!(
+      interpret("SubsetPosition[{a, b, c, d, e, f}, {b, d}]").unwrap(),
+      "{{2, 4}}"
+    );
+  }
+
+  #[test]
+  fn subset_position_pattern() {
+    assert_eq!(
+      interpret("SubsetPosition[{a, b, c, d, e, f}, {_, c}]").unwrap(),
+      "{{1, 3}, {2, 3}, {4, 3}, {5, 3}, {6, 3}}"
+    );
+  }
+
+  #[test]
+  fn subset_position_all_pairs() {
+    assert_eq!(
+      interpret("SubsetPosition[{1, 2, 3, 4, 5}, {_, _}]").unwrap(),
+      "{{1, 2}, {1, 3}, {1, 4}, {1, 5}, {2, 3}, {2, 4}, {2, 5}, {3, 4}, {3, 5}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn subset_position_pattern_test() {
+    assert_eq!(
+      interpret("SubsetPosition[{1, 2, 3, 4, 5}, {_?(# > 3 &)}]").unwrap(),
+      "{{4}, {5}}"
+    );
+  }
+
+  // --- SubsetCases ---
+  #[test]
+  fn subset_cases_basic() {
+    assert_eq!(
+      interpret("SubsetCases[{1, 2, 3, 4, 5}, {_, _}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn subset_cases_triples() {
+    assert_eq!(
+      interpret("SubsetCases[{1, 2, 3, 4, 5, 6}, {_, _, _}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+  }
+
+  #[test]
+  fn subset_cases_with_pattern() {
+    assert_eq!(
+      interpret("SubsetCases[{1, 2, 3, 4, 5}, {_?(# > 3 &)}]").unwrap(),
+      "{{4}, {5}}"
+    );
+  }
+
+  #[test]
+  fn subset_cases_with_condition() {
+    assert_eq!(
+      interpret("SubsetCases[{a, b, c, d}, {x_, y_} /; OrderedQ[{x, y}]]")
+        .unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn subset_cases_with_limit() {
+    assert_eq!(
+      interpret("SubsetCases[{1, 2, 3, 4, 5}, {_, _}, 1]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
+
+  // --- SubsetCount ---
+  #[test]
+  fn subset_count_basic() {
+    assert_eq!(interpret("SubsetCount[{a, b, c, d}, {a, c}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn subset_count_pairs() {
+    assert_eq!(
+      interpret("SubsetCount[{1, 2, 3, 4, 5}, {_, _}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn subset_count_pattern_test() {
+    assert_eq!(
+      interpret("SubsetCount[{1, 2, 3, 4, 5}, {_?(# > 3 &)}]").unwrap(),
+      "2"
+    );
+  }
 }
