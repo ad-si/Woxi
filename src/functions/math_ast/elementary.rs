@@ -366,20 +366,25 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(n) => {
             int_product *= n;
           }
-          // expr^2 → move expr outside
+          // expr^2 → move expr outside only if expr is known non-negative
           Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Power,
             left: base,
             right: exp,
-          } if matches!(exp.as_ref(), Expr::Integer(2)) => {
+          } if matches!(exp.as_ref(), Expr::Integer(2))
+            && is_known_non_negative(base) =>
+          {
             outside.push(*base.clone());
           }
           // expr^(2n) → move expr^n outside (for any even n, including negative)
+          // only if expr is known non-negative
           Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Power,
             left: base,
             right: exp,
-          } if matches!(exp.as_ref(), Expr::Integer(n) if n % 2 == 0 && *n != 0) => {
+          } if matches!(exp.as_ref(), Expr::Integer(n) if n % 2 == 0 && *n != 0)
+            && is_known_non_negative(base) =>
+          {
             if let Expr::Integer(n) = exp.as_ref() {
               let half = n / 2;
               if half == 1 {
@@ -394,12 +399,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
           // Power[base, even_n] (FunctionCall form) → move base^(n/2) outside
+          // only if base is known non-negative
           Expr::FunctionCall {
             name: pname,
             args: pargs,
           } if pname == "Power"
             && pargs.len() == 2
-            && matches!(&pargs[1], Expr::Integer(n) if n % 2 == 0 && *n != 0) =>
+            && matches!(&pargs[1], Expr::Integer(n) if n % 2 == 0 && *n != 0)
+            && is_known_non_negative(&pargs[0]) =>
           {
             if let Expr::Integer(n) = &pargs[1] {
               let half = n / 2;

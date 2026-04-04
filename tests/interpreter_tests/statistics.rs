@@ -1265,10 +1265,11 @@ mod negative_binomial_distribution {
 
   #[test]
   fn standard_deviation_symbolic() {
+    // p is symbolic (unknown sign), so Sqrt[.../p^2] stays unsimplified
     assert_eq!(
       interpret("StandardDeviation[NegativeBinomialDistribution[n, p]]")
         .unwrap(),
-      "Sqrt[n*(1 - p)]/p"
+      "Sqrt[(n*(1 - p))/p^2]"
     );
   }
 }
