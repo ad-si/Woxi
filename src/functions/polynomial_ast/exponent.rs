@@ -140,11 +140,34 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Expand and combine like terms first to handle things like (x^2+1)^3-1
   let expanded = expand_and_combine(&args[0]);
 
-  // Determine if we need Max (default) or Min
+  // Determine if we need Max (default), Min, or List
   let use_min =
     args.len() == 3 && matches!(&args[2], Expr::Identifier(s) if s == "Min");
+  let use_list =
+    args.len() == 3 && matches!(&args[2], Expr::Identifier(s) if s == "List");
 
-  if use_min {
+  if use_list {
+    match collect_powers(&expanded, var) {
+      Some(powers) => {
+        let mut sorted: Vec<Rat> = powers;
+        // Sort ascending by rational value
+        sorted.sort_by(|a, b| {
+          let lhs = a.n * b.d;
+          let rhs = b.n * a.d;
+          lhs.cmp(&rhs)
+        });
+        // Deduplicate
+        sorted.dedup_by(|a, b| a.n * b.d == b.n * a.d);
+        let elems: Vec<Expr> =
+          sorted.into_iter().map(|r| r.to_expr()).collect();
+        Ok(Expr::List(elems))
+      }
+      None => Ok(Expr::FunctionCall {
+        name: "Exponent".to_string(),
+        args: args.to_vec(),
+      }),
+    }
+  } else if use_min {
     match min_power(&expanded, var) {
       Some(r) => Ok(r.to_expr()),
       None => Ok(Expr::FunctionCall {
@@ -254,6 +277,107 @@ pub fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
     _ => {
       if is_constant_wrt(expr, var) {
         Some(Rat::zero())
+      } else {
+        None
+      }
+    }
+  }
+}
+
+/// Collect all distinct powers of `var` appearing as additive terms in `expr`.
+fn collect_powers(expr: &Expr, var: &str) -> Option<Vec<Rat>> {
+  match expr {
+    // A constant term has power 0
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
+      Some(vec![Rat::zero()])
+    }
+    Expr::Identifier(name) => {
+      if name == var {
+        Some(vec![Rat::from_int(1)])
+      } else {
+        Some(vec![Rat::zero()])
+      }
+    }
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus => {
+        let mut l = collect_powers(left, var)?;
+        let r = collect_powers(right, var)?;
+        l.extend(r);
+        Some(l)
+      }
+      BinaryOperator::Times => {
+        // Power of a product = sum of powers of factors
+        let l = max_power(left, var)?;
+        let r = max_power(right, var)?;
+        Some(vec![l.add(r)])
+      }
+      BinaryOperator::Power => {
+        if is_constant_wrt(left, var) {
+          Some(vec![Rat::zero()])
+        } else if is_constant_wrt(right, var) {
+          let exp = expr_to_rat(right)?;
+          let base_pow = max_power(left, var)?;
+          Some(vec![Rat::new(base_pow.n * exp.n, base_pow.d * exp.d)])
+        } else {
+          None
+        }
+      }
+      BinaryOperator::Divide => {
+        if is_constant_wrt(right, var) {
+          collect_powers(left, var)
+        } else {
+          None
+        }
+      }
+      _ => {
+        if is_constant_wrt(expr, var) {
+          Some(vec![Rat::zero()])
+        } else {
+          None
+        }
+      }
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => collect_powers(operand, var),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => {
+        let mut all = Vec::new();
+        for a in args {
+          all.extend(collect_powers(a, var)?);
+        }
+        Some(all)
+      }
+      "Times" => {
+        let mut s = Rat::zero();
+        for a in args {
+          s = s.add(max_power(a, var)?);
+        }
+        Some(vec![s])
+      }
+      "Power" if args.len() == 2 => {
+        if is_constant_wrt(&args[0], var) {
+          Some(vec![Rat::zero()])
+        } else if is_constant_wrt(&args[1], var) {
+          let exp = expr_to_rat(&args[1])?;
+          let base_pow = max_power(&args[0], var)?;
+          Some(vec![Rat::new(base_pow.n * exp.n, base_pow.d * exp.d)])
+        } else {
+          None
+        }
+      }
+      _ => {
+        if is_constant_wrt(expr, var) {
+          Some(vec![Rat::zero()])
+        } else {
+          None
+        }
+      }
+    },
+    _ => {
+      if is_constant_wrt(expr, var) {
+        Some(vec![Rat::zero()])
       } else {
         None
       }
