@@ -140,6 +140,19 @@ mod rescale {
   fn rescale_boundary() {
     assert_eq!(interpret("Rescale[3, {1, 5}]").unwrap(), "1/2");
   }
+
+  #[test]
+  fn rescale_list_with_range() {
+    // Rescale should thread over list first argument
+    assert_eq!(
+      interpret("Rescale[{0, 5, 10}, {0, 10}]").unwrap(),
+      "{0, 1/2, 1}"
+    );
+    assert_eq!(
+      interpret("Rescale[{2, 4, 6}, {0, 10}, {0, 100}]").unwrap(),
+      "{20, 40, 60}"
+    );
+  }
 }
 
 mod bin_counts {
