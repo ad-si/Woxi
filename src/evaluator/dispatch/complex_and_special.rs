@@ -981,6 +981,91 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec(),
       }));
     }
+    // Low-level typesetting box constructors — these are inert and return themselves.
+    "FractionBox" if args.len() == 2 || args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "SqrtBox" if args.len() == 1 || args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "SuperscriptBox" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "SubscriptBox" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "SubsuperscriptBox" if args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "OverscriptBox" if args.len() == 2 || args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "UnderscriptBox" if args.len() == 2 || args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "UnderoverscriptBox" if args.len() == 3 || args.len() == 4 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "RadicalBox" if args.len() == 2 || args.len() == 3 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "FrameBox" if !args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "StyleBox" if !args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "GridBox" if !args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "TagBox" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "InterpretationBox" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
       return Some(compute_area(&args[0]));

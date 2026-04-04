@@ -1,7 +1,7 @@
 use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
   box_has_fraction, boxes_to_svg, estimate_box_display_width,
-  estimate_display_width, expr_to_svg_markup,
+  estimate_display_width, expr_to_svg_markup, layout_box, layout_to_svg,
 };
 use woxi::syntax::{BinaryOperator, Expr};
 
@@ -1235,5 +1235,73 @@ mod box_representation_tests {
     // Should have two subscript tspans
     let sub_count = svg.matches("baseline-shift=\"sub\"").count();
     assert_eq!(sub_count, 2, "Should have 2 subscripts, got {sub_count}");
+  }
+
+  #[test]
+  fn style_box_font_color_renders_red() {
+    // StyleBox["red text", Rule[FontColor, RGBColor[1, 0, 0]]]
+    let inner = Expr::FunctionCall {
+      name: "StyleBox".to_string(),
+      args: vec![
+        Expr::String("red text".to_string()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontColor".to_string())),
+          replacement: Box::new(Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)],
+          }),
+        },
+      ],
+    };
+    let layout = layout_box(&inner, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "StyleBox with FontColor->Red should render red: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn style_box_font_size_renders_larger() {
+    // StyleBox["big", Rule[FontSize, 24]]
+    let inner = Expr::FunctionCall {
+      name: "StyleBox".to_string(),
+      args: vec![
+        Expr::String("big".to_string()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontSize".to_string())),
+          replacement: Box::new(Expr::Integer(24)),
+        },
+      ],
+    };
+    let layout = layout_box(&inner, 14.0);
+    let svg = layout_to_svg(&layout, "currentColor");
+    assert!(
+      svg.contains("font-size=\"24.0\""),
+      "StyleBox with FontSize->24 should render at size 24: got '{svg}'"
+    );
+  }
+
+  #[test]
+  fn style_box_font_color_in_text_svg() {
+    // Test boxes_to_svg path for StyleBox with FontColor
+    let inner = Expr::FunctionCall {
+      name: "StyleBox".to_string(),
+      args: vec![
+        Expr::String("colored".to_string()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontColor".to_string())),
+          replacement: Box::new(Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(1.0)],
+          }),
+        },
+      ],
+    };
+    let svg = boxes_to_svg(&inner);
+    assert!(
+      svg.contains("fill=\"rgb(0,0,255)\""),
+      "StyleBox text SVG should include fill color: got '{svg}'"
+    );
   }
 }

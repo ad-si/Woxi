@@ -2952,39 +2952,529 @@ fn times_svg_separator(_left: &Expr, right: &Expr) -> &'static str {
 /// Uses `<tspan>` elements with `dy`/`dx` positioning in `ch` units so that
 /// the layout adapts to the actual monospace character width of the browser,
 /// avoiding compounding drift from hard-coded pixel offsets.
+/// Legacy stacked fraction for the old `expr_to_svg_markup` / `boxes_to_svg`
+/// text-based paths (used by Grid cell rendering). Renders as "num/den" inline.
 fn stacked_fraction_svg(
   num_markup: &str,
   den_markup: &str,
-  num_w: f64,
-  den_w: f64,
+  _num_w: f64,
+  _den_w: f64,
 ) -> String {
-  let frac_chars = num_w.max(den_w).ceil() as usize;
-  let frac_chars = frac_chars.max(1);
-  let frac_w = frac_chars as f64;
+  format!("{}/{}", num_markup, den_markup)
+}
 
-  // All horizontal offsets are in `ch` units (= 1 monospace character width
-  // at the current font-size, i.e. the 70% tspan).  This makes the layout
-  // independent of the actual pixel width of the font.
-  let num_center = (frac_w - num_w) / 2.0;
-  let back_from_num = -(num_center + num_w);
-  // The denominator is positioned relative to the end of the bar-spacer.
-  // The bar-spacer has width `frac_w` characters, so we go back by frac_w
-  // and then add the centering offset.
-  let dx_den = (frac_w - den_w) / 2.0 - frac_w;
-  // After the denominator, advance cursor to the right edge of the fraction.
-  let advance = (frac_w - den_w) / 2.0;
+/// A rendered box layout node. Each node carries its pixel dimensions,
+/// the vertical offset of the baseline from the top, and the SVG elements
+/// needed to draw it (positioned relative to (0, 0) of the node).
+#[derive(Clone)]
+pub struct BoxLayout {
+  pub width: f64,
+  pub height: f64,
+  /// Distance from top of the box to the text baseline.
+  pub baseline: f64,
+  /// SVG elements as a string, positioned relative to (0, baseline).
+  /// Can contain `<text>`, `<line>`, nested `<g>`, etc.
+  pub elements: String,
+}
 
-  // The fraction bar is an overline on a run of spaces (one per frac_char).
-  // Using text-decoration="overline" avoids reliance on box-drawing glyphs.
-  let bar_spaces: String = "\u{00A0}".repeat(frac_chars);
+impl BoxLayout {
+  /// Create a layout for a simple text atom.
+  fn text(s: &str, font_size: f64) -> Self {
+    let ch = font_size * 0.6; // approximate monospace char width
+    let w = s.chars().count() as f64 * ch;
+    let ascent = font_size * 0.8; // approximate ascent
+    let descent = font_size * 0.25; // approximate descent
+    let height = ascent + descent;
+    let escaped = svg_escape(s);
+    BoxLayout {
+      width: w,
+      height,
+      baseline: ascent,
+      elements: format!(
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\">{escaped}</text>"
+      ),
+    }
+  }
 
+  /// Translate this layout by (dx, dy) by wrapping in a `<g transform>`.
+  fn translate(&self, dx: f64, dy: f64) -> String {
+    format!(
+      "<g transform=\"translate({dx:.1},{dy:.1})\">{}</g>",
+      self.elements
+    )
+  }
+}
+
+/// Recursively lay out a box expression into a `BoxLayout`.
+/// This is the main bottom-up tree renderer for the box language.
+pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
+  let ch = font_size * 0.6;
+
+  match expr {
+    Expr::String(s) => BoxLayout::text(s, font_size),
+    Expr::Identifier(s) => BoxLayout::text(s, font_size),
+    Expr::Integer(n) => {
+      BoxLayout::text(&group_digits_str(&n.to_string()), font_size)
+    }
+    Expr::BigInteger(n) => {
+      BoxLayout::text(&group_digits_str(&n.to_string()), font_size)
+    }
+
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // RowBox: lay out children left-to-right, align baselines
+      "RowBox" if args.len() == 1 => {
+        let items = match &args[0] {
+          Expr::List(items) => items.as_slice(),
+          other => return layout_box(other, font_size),
+        };
+        if items.is_empty() {
+          return BoxLayout::text("", font_size);
+        }
+        let children: Vec<BoxLayout> =
+          items.iter().map(|e| layout_box(e, font_size)).collect();
+        // Find the maximum baseline and maximum below-baseline
+        let max_baseline =
+          children.iter().map(|c| c.baseline).fold(0.0_f64, f64::max);
+        let max_below = children
+          .iter()
+          .map(|c| c.height - c.baseline)
+          .fold(0.0_f64, f64::max);
+
+        let mut elements = String::new();
+        let mut x = 0.0_f64;
+        for (i, child) in children.iter().enumerate() {
+          let dy = max_baseline - child.baseline;
+          elements.push_str(&child.translate(x, dy));
+          x += child.width;
+          // Add space after bare comma
+          if matches!(&items[i], Expr::String(s) if s == ",")
+            && i + 1 < items.len()
+          {
+            x += ch * 0.5;
+          }
+        }
+        BoxLayout {
+          width: x,
+          height: max_baseline + max_below,
+          baseline: max_baseline,
+          elements,
+        }
+      }
+
+      // FractionBox: numerator above line above denominator
+      "FractionBox" if args.len() == 2 => {
+        let num = layout_box(&args[0], font_size * 0.75);
+        let den = layout_box(&args[1], font_size * 0.75);
+        let frac_w = num.width.max(den.width) + 4.0;
+        let gap = 3.0;
+        let line_thickness = 0.8;
+
+        // Numerator centered above line
+        let num_x = (frac_w - num.width) / 2.0;
+        let num_y = 0.0;
+        // Line below numerator
+        let line_y = num.height + gap;
+        // Denominator centered below line
+        let den_x = (frac_w - den.width) / 2.0;
+        let den_y = line_y + line_thickness + gap;
+
+        let total_h = den_y + den.height;
+        // Baseline of the fraction = at the line (so it aligns with surrounding text)
+        let baseline = line_y;
+
+        let elements = format!(
+          "{}\
+           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness}\"/>\
+           {}",
+          num.translate(num_x, num_y),
+          den.translate(den_x, den_y),
+        );
+        BoxLayout {
+          width: frac_w,
+          height: total_h,
+          baseline,
+          elements,
+        }
+      }
+
+      // SuperscriptBox: base with raised exponent
+      "SuperscriptBox" if args.len() == 2 => {
+        let base = layout_box(&args[0], font_size);
+        let sup = layout_box(&args[1], font_size * 0.7);
+        // Superscript top aligns with top of base
+        let sup_y = 0.0;
+        let base_y = sup.height * 0.4; // base shifted down so sup overlaps top
+        let elements = format!(
+          "{}{}",
+          base.translate(0.0, base_y),
+          sup.translate(base.width, sup_y),
+        );
+        BoxLayout {
+          width: base.width + sup.width,
+          height: (base_y + base.height).max(sup.height),
+          baseline: base_y + base.baseline,
+          elements,
+        }
+      }
+
+      // SubscriptBox: base with lowered subscript
+      "SubscriptBox" if args.len() == 2 => {
+        let base = layout_box(&args[0], font_size);
+        let sub = layout_box(&args[1], font_size * 0.7);
+        let sub_y = base.height * 0.4;
+        let elements = format!(
+          "{}{}",
+          base.translate(0.0, 0.0),
+          sub.translate(base.width, sub_y),
+        );
+        BoxLayout {
+          width: base.width + sub.width,
+          height: (sub_y + sub.height).max(base.height),
+          baseline: base.baseline,
+          elements,
+        }
+      }
+
+      // SubsuperscriptBox: base with both
+      "SubsuperscriptBox" if args.len() == 3 => {
+        let base = layout_box(&args[0], font_size);
+        let sub = layout_box(&args[1], font_size * 0.7);
+        let sup = layout_box(&args[2], font_size * 0.7);
+        let sup_y = 0.0;
+        let base_y = sup.height * 0.4;
+        let sub_y = base_y + base.height * 0.4;
+        let script_x = base.width;
+        let script_w = sub.width.max(sup.width);
+        let elements = format!(
+          "{}{}{}",
+          base.translate(0.0, base_y),
+          sup.translate(script_x, sup_y),
+          sub.translate(script_x, sub_y),
+        );
+        BoxLayout {
+          width: base.width + script_w,
+          height: (sub_y + sub.height).max(base_y + base.height),
+          baseline: base_y + base.baseline,
+          elements,
+        }
+      }
+
+      // SqrtBox: √ symbol + overline (vinculum) above content
+      "SqrtBox" if args.len() == 1 => {
+        let content = layout_box(&args[0], font_size);
+        let radical = BoxLayout::text("\u{221A}", font_size);
+        let pad = 2.0; // space above content for the vinculum
+        let line_y = pad * 0.5;
+        let content_x = radical.width;
+        let w = radical.width + content.width;
+        let h = content.height + pad;
+        let elements = format!(
+          "{}\
+           <line x1=\"{content_x:.1}\" y1=\"{line_y:.1}\" x2=\"{w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"0.8\"/>\
+           {}",
+          radical.translate(0.0, pad),
+          content.translate(content_x, pad),
+        );
+        BoxLayout {
+          width: w,
+          height: h,
+          baseline: pad + content.baseline,
+          elements,
+        }
+      }
+
+      // RadicalBox: index + √ symbol + overline above content
+      "RadicalBox" if args.len() == 2 => {
+        let content = layout_box(&args[0], font_size);
+        let index = layout_box(&args[1], font_size * 0.7);
+        let radical = BoxLayout::text("\u{221A}", font_size);
+        let pad = 2.0;
+        let index_dy = 0.0;
+        let body_dy = index.height * 0.3 + pad;
+        let content_x = index.width + radical.width;
+        let w = content_x + content.width;
+        let line_y = body_dy - pad * 0.5;
+        let elements = format!(
+          "{}{}\
+           <line x1=\"{content_x:.1}\" y1=\"{line_y:.1}\" x2=\"{w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"0.8\"/>\
+           {}",
+          index.translate(0.0, index_dy),
+          radical.translate(index.width, body_dy),
+          content.translate(content_x, body_dy),
+        );
+        BoxLayout {
+          width: w,
+          height: body_dy + content.height,
+          baseline: body_dy + content.baseline,
+          elements,
+        }
+      }
+
+      // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now
+      "OverscriptBox" if args.len() >= 2 => {
+        let base = layout_box(&args[0], font_size);
+        let over = layout_box(&args[1], font_size * 0.7);
+        let base_y = over.height;
+        let elements = format!(
+          "{}{}",
+          over.translate((base.width - over.width) / 2.0, 0.0),
+          base.translate(0.0, base_y)
+        );
+        BoxLayout {
+          width: base.width.max(over.width),
+          height: base_y + base.height,
+          baseline: base_y + base.baseline,
+          elements,
+        }
+      }
+      "UnderscriptBox" if args.len() >= 2 => {
+        let base = layout_box(&args[0], font_size);
+        let under = layout_box(&args[1], font_size * 0.7);
+        let under_y = base.height;
+        let elements = format!(
+          "{}{}",
+          base.translate(0.0, 0.0),
+          under.translate((base.width - under.width) / 2.0, under_y)
+        );
+        BoxLayout {
+          width: base.width.max(under.width),
+          height: under_y + under.height,
+          baseline: base.baseline,
+          elements,
+        }
+      }
+      "UnderoverscriptBox" if args.len() >= 3 => {
+        let base = layout_box(&args[0], font_size);
+        let under = layout_box(&args[1], font_size * 0.7);
+        let over = layout_box(&args[2], font_size * 0.7);
+        let base_y = over.height;
+        let under_y = base_y + base.height;
+        let w = base.width.max(under.width).max(over.width);
+        let elements = format!(
+          "{}{}{}",
+          over.translate((w - over.width) / 2.0, 0.0),
+          base.translate((w - base.width) / 2.0, base_y),
+          under.translate((w - under.width) / 2.0, under_y),
+        );
+        BoxLayout {
+          width: w,
+          height: under_y + under.height,
+          baseline: base_y + base.baseline,
+          elements,
+        }
+      }
+
+      // FrameBox
+      "FrameBox" if !args.is_empty() => {
+        let content = layout_box(&args[0], font_size);
+        let pad = 4.0;
+        let stroke_w = 0.5;
+        let margin = stroke_w; // keep border fully inside the SVG viewport
+        let inner_w = content.width + pad * 2.0;
+        let inner_h = content.height + pad * 2.0;
+        let w = inner_w + margin * 2.0;
+        let h = inner_h + margin * 2.0;
+        let elements = format!(
+          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{stroke_w}\"/>\
+           {}",
+          content.translate(margin + pad, margin + pad),
+        );
+        BoxLayout {
+          width: w,
+          height: h,
+          baseline: margin + pad + content.baseline,
+          elements,
+        }
+      }
+
+      // TagBox, InterpretationBox — delegate to content
+      "TagBox" if args.len() == 2 => layout_box(&args[0], font_size),
+      "InterpretationBox" if args.len() == 2 => layout_box(&args[0], font_size),
+
+      // StyleBox — apply FontSize, FontColor, and Background from options
+      "StyleBox" if !args.is_empty() => {
+        let mut effective_font_size = font_size;
+        let mut font_color: Option<Color> = None;
+        let mut background: Option<Color> = None;
+        // Scan style options (Rule expressions) in args[1..]
+        for opt in &args[1..] {
+          let (key, val) = match opt {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => (pattern.as_ref(), replacement.as_ref()),
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rule" && ra.len() == 2 =>
+            {
+              (&ra[0], &ra[1])
+            }
+            _ => continue,
+          };
+          if let Expr::Identifier(k) = key {
+            match k.as_str() {
+              "FontSize" => {
+                if let Some(sz) = expr_to_f64(val) {
+                  effective_font_size = sz;
+                }
+              }
+              "FontColor" => {
+                font_color = parse_color(val);
+              }
+              "Background" => {
+                background = parse_color(val);
+              }
+              _ => {}
+            }
+          }
+        }
+        let content = layout_box(&args[0], effective_font_size);
+        let mut elements = String::new();
+        // Background rectangle behind content
+        if let Some(bg) = background {
+          elements.push_str(&format!(
+            "<rect x=\"0\" y=\"0\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"{}/>",
+            content.width, content.height, bg.to_svg_rgb(), bg.opacity_attr(),
+          ));
+        }
+        if let Some(color) = font_color {
+          elements.push_str(&format!(
+            "<g fill=\"{}\"{}>{}</g>",
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+            content.elements,
+          ));
+        } else {
+          elements.push_str(&content.elements);
+        }
+        BoxLayout {
+          elements,
+          ..content
+        }
+      }
+
+      // GridBox
+      "GridBox" if !args.is_empty() => {
+        if let Expr::List(rows) = &args[0] {
+          let gap_x = ch;
+          let gap_y = font_size * 0.4;
+          let laid_out: Vec<Vec<BoxLayout>> = rows
+            .iter()
+            .map(|row| {
+              if let Expr::List(cells) = row {
+                cells.iter().map(|c| layout_box(c, font_size)).collect()
+              } else {
+                vec![layout_box(row, font_size)]
+              }
+            })
+            .collect();
+
+          let n_cols = laid_out.iter().map(|r| r.len()).max().unwrap_or(0);
+          // Column widths
+          let col_widths: Vec<f64> = (0..n_cols)
+            .map(|c| {
+              laid_out
+                .iter()
+                .filter_map(|r| r.get(c))
+                .map(|l| l.width)
+                .fold(0.0_f64, f64::max)
+            })
+            .collect();
+          // Row heights and baselines
+          let row_metrics: Vec<(f64, f64)> = laid_out
+            .iter()
+            .map(|r| {
+              let bl = r.iter().map(|c| c.baseline).fold(0.0_f64, f64::max);
+              let below = r
+                .iter()
+                .map(|c| c.height - c.baseline)
+                .fold(0.0_f64, f64::max);
+              (bl, bl + below)
+            })
+            .collect();
+
+          let total_w: f64 =
+            col_widths.iter().sum::<f64>() + gap_x * (n_cols.max(1) - 1) as f64;
+          let total_h: f64 = row_metrics.iter().map(|(_, h)| h).sum::<f64>()
+            + gap_y * (row_metrics.len().max(1) - 1) as f64;
+
+          let mut elements = String::new();
+          let mut y = 0.0;
+          for (ri, row) in laid_out.iter().enumerate() {
+            let (row_bl, row_h) = row_metrics[ri];
+            let mut x = 0.0;
+            for (ci, cell) in row.iter().enumerate() {
+              let dy = row_bl - cell.baseline;
+              elements.push_str(&cell.translate(x, y + dy));
+              x += col_widths.get(ci).unwrap_or(&0.0) + gap_x;
+            }
+            y += row_h + gap_y;
+          }
+          let first_bl =
+            row_metrics.first().map(|(bl, _)| *bl).unwrap_or(font_size);
+          BoxLayout {
+            width: total_w,
+            height: total_h,
+            baseline: first_bl,
+            elements,
+          }
+        } else {
+          layout_box(&args[0], font_size)
+        }
+      }
+
+      // Unknown function: render as text
+      _ => {
+        let text = crate::syntax::expr_to_output(expr);
+        BoxLayout::text(&text, font_size)
+      }
+    },
+
+    Expr::List(items) => {
+      // Concatenate like RowBox
+      let children: Vec<BoxLayout> =
+        items.iter().map(|e| layout_box(e, font_size)).collect();
+      let max_bl = children.iter().map(|c| c.baseline).fold(0.0_f64, f64::max);
+      let max_below = children
+        .iter()
+        .map(|c| c.height - c.baseline)
+        .fold(0.0_f64, f64::max);
+      let mut elements = String::new();
+      let mut x = 0.0;
+      for child in &children {
+        let dy = max_bl - child.baseline;
+        elements.push_str(&child.translate(x, dy));
+        x += child.width;
+      }
+      BoxLayout {
+        width: x,
+        height: max_bl + max_below,
+        baseline: max_bl,
+        elements,
+      }
+    }
+
+    _ => {
+      let text = crate::syntax::expr_to_output(expr);
+      BoxLayout::text(&text, font_size)
+    }
+  }
+}
+
+/// Helper: group digits with thin spaces, returning plain text (not SVG).
+fn group_digits_str(s: &str) -> String {
+  // Just return the number as-is for simplicity in layout
+  s.to_string()
+}
+
+/// Render a `BoxLayout` into a complete SVG string.
+pub fn layout_to_svg(layout: &BoxLayout, fill: &str) -> String {
+  let width = layout.width.ceil().max(1.0) as usize;
+  let height = layout.height.ceil().max(1.0) as usize;
   format!(
-    "<tspan font-size=\"70%\">\
-     <tspan dx=\"{num_center:.2}ch\" dy=\"-4\">{num_markup}</tspan>\
-     <tspan dx=\"{back_from_num:.2}ch\" dy=\"6\" text-decoration=\"overline\">{bar_spaces}</tspan>\
-     <tspan dx=\"{dx_den:.2}ch\" dy=\"6\">{den_markup}</tspan>\
-     <tspan dx=\"{advance:.2}ch\" dy=\"-8\" font-size=\"1\"> </tspan>\
-     </tspan>"
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\">\
+     <g fill=\"{fill}\" stroke=\"{fill}\">{}</g>\
+     </svg>",
+    layout.elements,
   )
 }
 
@@ -3793,9 +4283,19 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
 
     Expr::FunctionCall { name, args } => match name.as_str() {
       // RowBox[{e1, e2, ...}] → concatenate children
+      // Commas get a trailing space for readability (matching Wolfram rendering).
       "RowBox" if args.len() == 1 => {
         if let Expr::List(items) = &args[0] {
-          items.iter().map(boxes_to_svg).collect::<Vec<_>>().join("")
+          let mut result = String::new();
+          for (i, item) in items.iter().enumerate() {
+            let rendered = boxes_to_svg(item);
+            result.push_str(&rendered);
+            // Add space after comma separators (bare "," strings)
+            if rendered == "," && i + 1 < items.len() {
+              result.push(' ');
+            }
+          }
+          result
         } else {
           // Single non-list arg: just render it
           boxes_to_svg(&args[0])
@@ -3843,24 +4343,109 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         stacked_fraction_svg(&num_svg, &den_svg, num_w, den_w)
       }
 
-      // SqrtBox[expr] → √(content)
+      // SqrtBox[expr] → √content with overline
       "SqrtBox" if args.len() == 1 => {
         let content = boxes_to_svg(&args[0]);
-        format!("\u{221A}({})", content) // √
+        format!(
+          "\u{221A}<tspan text-decoration=\"overline\">{}</tspan>",
+          content
+        )
       }
 
-      // RadicalBox[expr, n] → expr^(1/n) display
+      // RadicalBox[expr, n] → index√content with overline
       "RadicalBox" if args.len() == 2 => {
         let content = boxes_to_svg(&args[0]);
         let index = boxes_to_svg(&args[1]);
         format!(
-          "<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>\u{221A}({})",
+          "<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>\u{221A}<tspan text-decoration=\"overline\">{}</tspan>",
           index, content
         )
       }
 
-      // StyleBox[content, ...] → render content only
-      "StyleBox" if !args.is_empty() => boxes_to_svg(&args[0]),
+      // OverscriptBox[base, over] → base with overscript
+      "OverscriptBox" if args.len() >= 2 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let over_svg = boxes_to_svg(&args[1]);
+        format!(
+          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          base_svg, over_svg
+        )
+      }
+
+      // UnderscriptBox[base, under] → base with underscript
+      "UnderscriptBox" if args.len() >= 2 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let under_svg = boxes_to_svg(&args[1]);
+        format!(
+          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+          base_svg, under_svg
+        )
+      }
+
+      // UnderoverscriptBox[base, under, over] → base with both
+      "UnderoverscriptBox" if args.len() >= 3 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let under_svg = boxes_to_svg(&args[1]);
+        let over_svg = boxes_to_svg(&args[2]);
+        format!(
+          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          base_svg, under_svg, over_svg
+        )
+      }
+
+      // FrameBox[content, ...] → content with frame markers
+      "FrameBox" if !args.is_empty() => {
+        let content = boxes_to_svg(&args[0]);
+        format!("[{}]", content)
+      }
+
+      // TagBox[boxes, tag] → render boxes, ignore tag
+      "TagBox" if args.len() == 2 => boxes_to_svg(&args[0]),
+
+      // InterpretationBox[display, interpretation] → render display part only
+      "InterpretationBox" if args.len() == 2 => boxes_to_svg(&args[0]),
+
+      // StyleBox[content, ...] → render content with style attributes
+      "StyleBox" if !args.is_empty() => {
+        let content = boxes_to_svg(&args[0]);
+        let mut font_size_attr = String::new();
+        let mut color_attr = String::new();
+        for opt in &args[1..] {
+          let (key, val) = match opt {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => (pattern.as_ref(), replacement.as_ref()),
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rule" && ra.len() == 2 =>
+            {
+              (&ra[0], &ra[1])
+            }
+            _ => continue,
+          };
+          if let Expr::Identifier(k) = key {
+            match k.as_str() {
+              "FontSize" => {
+                if let Some(sz) = expr_to_f64(val) {
+                  font_size_attr = format!(" font-size=\"{}\"", sz);
+                }
+              }
+              "FontColor" => {
+                if let Some(color) = parse_color(val) {
+                  color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
+                }
+              }
+              _ => {}
+            }
+          }
+        }
+        if font_size_attr.is_empty() && color_attr.is_empty() {
+          content
+        } else {
+          format!("<tspan{}{}>{}</tspan>", font_size_attr, color_attr, content)
+        }
+      }
 
       // GridBox[{{...}, ...}] → simple text rendering
       "GridBox" if !args.is_empty() => {
@@ -3907,6 +4492,9 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
 }
 
 /// Estimate the display width of a box-form expression in character units.
+/// Assemble box markup into a complete SVG string.
+/// Handles fraction markers by splitting text around nested `<svg>` elements
+/// with `<line>` for fraction bars.
 pub fn estimate_box_display_width(expr: &Expr) -> f64 {
   match expr {
     Expr::String(s) => s.len() as f64,
@@ -3958,6 +4546,27 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
           + estimate_box_display_width(&args[0])
       }
       "StyleBox" if !args.is_empty() => estimate_box_display_width(&args[0]),
+      "OverscriptBox" if args.len() >= 2 => {
+        estimate_box_display_width(&args[0])
+          + estimate_box_display_width(&args[1]) * 0.7
+      }
+      "UnderscriptBox" if args.len() >= 2 => {
+        estimate_box_display_width(&args[0])
+          + estimate_box_display_width(&args[1]) * 0.7
+      }
+      "UnderoverscriptBox" if args.len() >= 3 => {
+        let base = estimate_box_display_width(&args[0]);
+        let under = estimate_box_display_width(&args[1]) * 0.7;
+        let over = estimate_box_display_width(&args[2]) * 0.7;
+        base + under.max(over)
+      }
+      "FrameBox" if !args.is_empty() => {
+        estimate_box_display_width(&args[0]) + 2.0
+      }
+      "TagBox" if args.len() == 2 => estimate_box_display_width(&args[0]),
+      "InterpretationBox" if args.len() == 2 => {
+        estimate_box_display_width(&args[0])
+      }
       _ => {
         let args_width: f64 = args.iter().map(estimate_box_display_width).sum();
         let seps = if args.len() > 1 {

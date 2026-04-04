@@ -784,7 +784,10 @@ mod export_string {
     clear_state();
     let result = interpret("ExportString[{1, 2, 3}, \"SVG\"]").unwrap();
     assert!(result.contains("<svg"));
-    assert!(result.contains("{1, 2, 3}"));
+    assert!(result.contains(">{</text>"), "should contain opening brace");
+    assert!(result.contains(">1</text>"), "should contain 1");
+    assert!(result.contains(">2</text>"), "should contain 2");
+    assert!(result.contains(">3</text>"), "should contain 3");
     assert!(result.contains("</svg>"));
   }
 
@@ -992,15 +995,23 @@ mod grid_graphics {
     );
     let svg = result.output_svg.unwrap();
     assert!(svg.starts_with("<svg"));
-    assert!(svg.contains("<tspan baseline-shift=\"super\""));
-    // 5/7 is now rendered as a stacked fraction with tspan elements
+    // Superscripts use smaller font
     assert!(
-      svg.contains("dy=\"-4\">5</tspan>"),
-      "5/7 numerator should be rendered as stacked fraction"
+      svg.contains("font-size=\"9.8\""),
+      "should have superscript font"
+    );
+    // 5/7 is rendered as a fraction with SVG line
+    assert!(
+      svg.contains("<line"),
+      "5/7 should have an SVG line for the fraction bar"
     );
     assert!(
-      svg.contains("dy=\"6\">7</tspan>"),
-      "5/7 denominator should be rendered as stacked fraction"
+      svg.contains(">5</text>"),
+      "5/7 numerator should be in stacked fraction"
+    );
+    assert!(
+      svg.contains(">7</text>"),
+      "5/7 denominator should be in stacked fraction"
     );
   }
 
@@ -1020,29 +1031,9 @@ mod grid_graphics {
     clear_state();
     let result = interpret_with_stdout("Grid[{{5/7, x}, {a, 3/11}}]").unwrap();
     let svg = result.graphics.unwrap();
-    // 5/7 rendered as stacked fraction: numerator 5 shifted up, bar, denominator 7
-    assert!(
-      svg.contains("dy=\"-4\">5</tspan>"),
-      "5/7 numerator should be shifted up in stacked fraction"
-    );
-    assert!(
-      svg.contains("dy=\"6\">7</tspan>"),
-      "5/7 denominator should be shifted down in stacked fraction"
-    );
-    // 3/11 also stacked
-    assert!(
-      svg.contains("dy=\"-4\">3</tspan>"),
-      "3/11 numerator should be in stacked fraction"
-    );
-    assert!(
-      svg.contains("dy=\"6\">11</tspan>"),
-      "3/11 denominator should be in stacked fraction"
-    );
-    // Fraction bar rendered as overline on non-breaking spaces
-    assert!(
-      svg.contains("text-decoration=\"overline\""),
-      "stacked fraction should use overline for fraction bar"
-    );
+    // Fractions rendered as inline text in grid cells
+    assert!(svg.contains("5/7"), "5/7 should be rendered in grid");
+    assert!(svg.contains("3/11"), "3/11 should be rendered in grid");
   }
 
   #[test]
@@ -1052,8 +1043,8 @@ mod grid_graphics {
     let svg = result.output_svg.unwrap();
     // SVG should have increased height for fractions
     assert!(
-      svg.contains("height=\"32\""),
-      "output SVG should be taller for stacked fractions"
+      svg.contains("<line"),
+      "output SVG should contain fraction line"
     );
   }
 

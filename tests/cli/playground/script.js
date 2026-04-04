@@ -224,14 +224,6 @@ function renderOutputItems(items) {
         div.className = "output-box text-box"
         div.innerHTML = item.svg
         outputsEl.appendChild(div)
-        // Resize SVG to match actual rendered text dimensions
-        const svg = div.querySelector("svg")
-        const text = svg && svg.querySelector("text")
-        if (text) {
-          const bbox = text.getBBox()
-          svg.setAttribute("width", Math.ceil(bbox.x + bbox.width + 2))
-          svg.setAttribute("height", Math.ceil(bbox.y + bbox.height + 2))
-        }
       } else if (item.text) {
         const pre = document.createElement("pre")
         pre.className = "output-box text-box"

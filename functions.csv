@@ -883,7 +883,7 @@ TimeZone,,🚫,,2.0,892
 InfiniteLine,Geometric primitive representing an infinite line,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1.0,894
 SetterBar,,🚫,,6.0,895
-StyleBox,,🚫,,3.0,896
+StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
 PadLeft,Pads a list on the left to a specified length,✅,pure,4.0,897
 Counts,Returns association of element counts,✅,pure,10.0,898
 PaddedForm,,🚫,,2.0,900
@@ -979,7 +979,7 @@ FormBox,,🚫,,3.0,991
 RegionDifference,,🚫,,10.0,991
 UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1.0,992
 Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1.0,993
-SuperscriptBox,,🚫,,3.0,994
+SuperscriptBox,Low-level box construct for superscript display,✅,pure,3.0,994
 Erfi,Returns the imaginary error function value,✅,pure,1.0,995
 NeumannValue,,🚫,,10.0,996
 Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,✅,pure,10.0,997
@@ -997,7 +997,7 @@ TemporalData,,🚫,,9.0,1008
 Parallelization,,🚫,,8.0,1009
 Dispatch,Optimized rule dispatch for pattern matching,✅,none,2.0,1010
 TranslationTransform,Creates an affine translation transformation,✅,none,6.0,1011
-TagBox,,🚫,,3.0,1012
+TagBox,Low-level box construct that associates a tag with box content,✅,pure,3.0,1012
 Divisible,Tests if one number is divisible by another,✅,pure,6.0,1013
 PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3.0,1014
 Callout,,🚫,,11.0,1015
@@ -1126,7 +1126,7 @@ EmpiricalDistribution,,🚫,,8.0,1139
 LightGreen,Named light color evaluating to RGBColor[0.88 1 0.88],✅,pure,6.0,1140
 NotebookSelection,,🚫,,3.0,1141
 CellTags,,🚫,,3.0,1142
-FractionBox,,🚫,,3.0,1143
+FractionBox,Low-level box construct for fraction display,✅,pure,3.0,1143
 Magnification,,🚫,,3.0,1145
 Refresh,,🚫,,6.0,1145
 KelvinBer,,🚫,,6.0,1146
@@ -1226,7 +1226,7 @@ StringRiffle,Joins a list of strings with a separator,✅,pure,10.1,1241
 HurwitzZeta,,🚫,,7.0,1242
 Clock,,🚫,,6.0,1244
 SeriesData,Represents a power series expansion,✅,pure,1.0,1244
-GridBox,,🚫,,3.0,1245
+GridBox,Low-level box construct for grid/table display,✅,pure,3.0,1245
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1.0,1246
 SmoothKernelDistribution,,🚫,,8.0,1247
 OceanData,,🚫,,10.0,1248
@@ -1620,7 +1620,7 @@ Record,Record data structure,,unevaluated,2.0,1648
 FlattenAt,Flatten at specific positions,✅,computation,2.0,1649
 InversePermutation,Inverse of a permutation,✅,computation,8.0,1650
 WhittakerM,Whittaker M function,,unevaluated,6.0,1651
-InterpretationBox,Interpretation box,,unevaluated,3.0,1652
+InterpretationBox,Low-level box that displays one expression but interprets as another,✅,pure,3.0,1652
 IncludePods,Include pods in computation,,unevaluated,8.0,1653
 MathieuGroupM11,Mathieu group M11,,unevaluated,8.0,1656
 RulePlot,Plot rules,,unevaluated,11.0,1656
@@ -1957,7 +1957,7 @@ EdgeAdd,Add edges to a graph (graph theory),🚫,,8.0,1995
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7.0,1995
 DeclarePackage,Declare package for autoloading (package management),🚫,,2.0,1997
 FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6.0,1997
-SqrtBox,Low-level box construct for square root display (typesetting),🚫,,3.0,1999
+SqrtBox,Low-level box construct for square root display,✅,pure,3.0,1999
 Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10.0,1999
 BlockMap,Apply a function to non-overlapping or sliding blocks of a list,✅,none,10.2,2002
 MarginalDistribution,Marginal distribution of multivariate distribution (complex statistics),🚫,,8.0,2002
@@ -2175,7 +2175,7 @@ SphericalHankelH1,Special function,🚫,None,6.0,2219
 ToNumberField,Algebraic number theory,🚫,None,6.0,2219
 HarmonicMean,Returns the harmonic mean of a list,✅,pure,6.0,2223
 Masking,Image processing masking option,🚫,None,8.0,2223
-OverscriptBox,Typesetting box,🚫,None,3.0,2223
+OverscriptBox,Low-level box construct for overscript display,✅,pure,3.0,2223
 PermutationList,Converts cycle notation to permutation list,✅,none,8.0,2223
 EmbeddedHTML,Web embedding,🚫,None,10.0,2225
 MittagLefflerE,Special function,🚫,None,9.0,2225
@@ -2319,7 +2319,7 @@ CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371
 ImageDeconvolve,image processing,🚫,None,8.0,2371
 WaveletPhi,wavelet function,🚫,None,8.0,2371
-FrameBox,typesetting box,🚫,None,3.0,2374
+FrameBox,Low-level box construct for framed content display,✅,pure,3.0,2374
 IrreduciblePolynomialQ,polynomial ring theory,🚫,None,7.0,2374
 ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
 BubbleSizes,chart option,🚫,None,7.0,2380
@@ -3493,7 +3493,7 @@ InverseHaversine,Inverse haversine function,✅,computation,7.0,3593
 LocalSubmit,,🚫,,11.2,3593
 PolygonCoordinates,,,,12.0,3593
 RadialGradientImage,,🚫,,10.0,3593
-RadicalBox,,,,3.0,3593
+RadicalBox,Low-level box construct for nth root display,✅,pure,3.0,3593
 SaveConnection,,🚫,,12.0,3593
 SequenceFoldList,,,,10.2,3593
 ShapiroWilkTest,,,,8.0,3593
