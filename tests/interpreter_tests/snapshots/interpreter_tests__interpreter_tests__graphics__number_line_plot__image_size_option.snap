@@ -1,0 +1,21 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"NumberLinePlot[{1, 2, 3}, ImageSize -> 200]\")"
+---
+<svg width="200" height="60" viewBox="0 0 2000 600" xmlns="http://www.w3.org/2000/svg">
+<rect width="2000" height="600" fill="#ffffff"/>
+<line x1="600.0" y1="225.0" x2="1800.0" y2="225.0" stroke="#666666" stroke-width="10"/>
+<circle cx="682.8" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1200.0" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1717.2" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<line x1="682.8" y1="225.0" x2="682.8" y2="275.0" stroke="#666666" stroke-width="10"/>
+<text x="682.8" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
+<line x1="941.4" y1="225.0" x2="941.4" y2="275.0" stroke="#666666" stroke-width="10"/>
+<text x="941.4" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1.5</text>
+<line x1="1200.0" y1="225.0" x2="1200.0" y2="275.0" stroke="#666666" stroke-width="10"/>
+<text x="1200.0" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">2</text>
+<line x1="1458.6" y1="225.0" x2="1458.6" y2="275.0" stroke="#666666" stroke-width="10"/>
+<text x="1458.6" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">2.5</text>
+<line x1="1717.2" y1="225.0" x2="1717.2" y2="275.0" stroke="#666666" stroke-width="10"/>
+<text x="1717.2" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">3</text>
+</svg>

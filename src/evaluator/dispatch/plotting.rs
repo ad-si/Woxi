@@ -182,6 +182,9 @@ pub fn dispatch_plotting(
     "DateListPlot" if !args.is_empty() => {
       Some(crate::functions::chart::date_list_plot_ast(args))
     }
+    "NumberLinePlot" if !args.is_empty() => Some(
+      crate::functions::number_line_plot::number_line_plot_ast(args),
+    ),
     "WordCloud" if !args.is_empty() => {
       Some(crate::functions::chart::word_cloud_ast(args))
     }
