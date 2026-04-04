@@ -3031,6 +3031,20 @@ mod join_non_list {
   }
 
   #[test]
+  fn flatten_non_list_head_with_level() {
+    // Flatten[f[f[a, b], f[c, d]], 1] flattens one level
+    assert_eq!(
+      interpret("Flatten[f[f[a, b], f[c, d]], 1]").unwrap(),
+      "f[a, b, c, d]"
+    );
+    // Flatten[f[f[a, f[b, c]], d], 1] flattens only one level
+    assert_eq!(
+      interpret("Flatten[f[f[a, f[b, c]], d], 1]").unwrap(),
+      "f[a, f[b, c], d]"
+    );
+  }
+
+  #[test]
   fn permutations_up_to_length() {
     assert_eq!(
       interpret("Permutations[{1, 2, 3}, 2]").unwrap(),

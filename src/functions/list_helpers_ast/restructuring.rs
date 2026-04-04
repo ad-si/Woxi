@@ -127,6 +127,26 @@ pub fn flatten_level_ast(
     }
   }
 
+  fn flatten_head_to_depth(
+    head: &str,
+    expr: &Expr,
+    depth: i128,
+    result: &mut Vec<Expr>,
+  ) {
+    if depth <= 0 {
+      result.push(expr.clone());
+      return;
+    }
+    match expr {
+      Expr::FunctionCall { name, args } if name == head => {
+        for arg in args {
+          flatten_head_to_depth(head, arg, depth - 1, result);
+        }
+      }
+      _ => result.push(expr.clone()),
+    }
+  }
+
   match list {
     Expr::List(items) => {
       let mut result = Vec::new();
@@ -134,6 +154,16 @@ pub fn flatten_level_ast(
         flatten_to_depth(item, depth, &mut result);
       }
       Ok(Expr::List(result))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut result = Vec::new();
+      for arg in args {
+        flatten_head_to_depth(name, arg, depth, &mut result);
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: result,
+      })
     }
     _ => Ok(list.clone()),
   }
