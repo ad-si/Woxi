@@ -149,6 +149,20 @@ mod apply_head_replacement {
   fn apply_on_rule() {
     assert_eq!(interpret("Apply[List, a -> b]").unwrap(), "{a, b}");
   }
+
+  #[test]
+  fn apply_on_atom_returns_atom() {
+    assert_eq!(interpret("Apply[Plus, 1]").unwrap(), "1");
+    assert_eq!(interpret("Apply[f, 42]").unwrap(), "42");
+    assert_eq!(interpret("Apply[Plus, x]").unwrap(), "x");
+    assert_eq!(interpret("Apply[f, \"hello\"]").unwrap(), "hello");
+  }
+
+  #[test]
+  fn apply_operator_on_atom() {
+    assert_eq!(interpret("Plus @@ 1").unwrap(), "1");
+    assert_eq!(interpret("f @@ x").unwrap(), "x");
+  }
 }
 
 mod fixed_point {
