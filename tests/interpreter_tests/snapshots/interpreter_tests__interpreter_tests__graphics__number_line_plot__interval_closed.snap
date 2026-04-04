@@ -4,44 +4,44 @@ expression: "export_svg(\"NumberLinePlot[Interval[{0, 1}]]\")"
 ---
 <svg width="360" height="60" viewBox="0 0 3600 600" xmlns="http://www.w3.org/2000/svg">
 <rect width="3600" height="600" fill="#ffffff"/>
-<line x1="600.0" y1="225.0" x2="3400.0" y2="225.0" stroke="#666666" stroke-width="10"/>
-<rect x="793.1" y="110.0" width="2413.8" height="30.0" fill="rgb(94,129,181)"/>
-<circle cx="793.1" cy="125.0" r="35.0" fill="rgb(94,129,181)"/>
-<circle cx="3206.9" cy="125.0" r="35.0" fill="rgb(94,129,181)"/>
-<line x1="600.0" y1="225.0" x2="600.0" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="696.6" y1="225.0" x2="696.6" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="889.7" y1="225.0" x2="889.7" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="986.2" y1="225.0" x2="986.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1082.8" y1="225.0" x2="1082.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1179.3" y1="225.0" x2="1179.3" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1372.4" y1="225.0" x2="1372.4" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1469.0" y1="225.0" x2="1469.0" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1565.5" y1="225.0" x2="1565.5" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1662.1" y1="225.0" x2="1662.1" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1855.2" y1="225.0" x2="1855.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1951.7" y1="225.0" x2="1951.7" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2048.3" y1="225.0" x2="2048.3" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2144.8" y1="225.0" x2="2144.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2337.9" y1="225.0" x2="2337.9" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2434.5" y1="225.0" x2="2434.5" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2531.0" y1="225.0" x2="2531.0" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2627.6" y1="225.0" x2="2627.6" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2820.7" y1="225.0" x2="2820.7" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2917.2" y1="225.0" x2="2917.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3013.8" y1="225.0" x2="3013.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3110.3" y1="225.0" x2="3110.3" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3303.4" y1="225.0" x2="3303.4" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3400.0" y1="225.0" x2="3400.0" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="793.1" y1="225.0" x2="793.1" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="793.1" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
-<line x1="1275.9" y1="225.0" x2="1275.9" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="1275.9" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.2</text>
-<line x1="1758.6" y1="225.0" x2="1758.6" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="1758.6" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.4</text>
-<line x1="2241.4" y1="225.0" x2="2241.4" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="2241.4" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.6</text>
-<line x1="2724.1" y1="225.0" x2="2724.1" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="2724.1" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.8</text>
-<line x1="3206.9" y1="225.0" x2="3206.9" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="3206.9" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
+<line x1="600.0" y1="300.0" x2="3400.0" y2="300.0" stroke="#666666" stroke-width="10"/>
+<rect x="793.1" y="210.0" width="2413.8" height="30.0" fill="rgb(94,129,181)"/>
+<circle cx="793.1" cy="225.0" r="35.0" fill="rgb(94,129,181)"/>
+<circle cx="3206.9" cy="225.0" r="35.0" fill="rgb(94,129,181)"/>
+<line x1="600.0" y1="300.0" x2="600.0" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="696.6" y1="300.0" x2="696.6" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="889.7" y1="300.0" x2="889.7" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="986.2" y1="300.0" x2="986.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1082.8" y1="300.0" x2="1082.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1179.3" y1="300.0" x2="1179.3" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1372.4" y1="300.0" x2="1372.4" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1469.0" y1="300.0" x2="1469.0" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1565.5" y1="300.0" x2="1565.5" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1662.1" y1="300.0" x2="1662.1" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1855.2" y1="300.0" x2="1855.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1951.7" y1="300.0" x2="1951.7" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2048.3" y1="300.0" x2="2048.3" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2144.8" y1="300.0" x2="2144.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2337.9" y1="300.0" x2="2337.9" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2434.5" y1="300.0" x2="2434.5" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2531.0" y1="300.0" x2="2531.0" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2627.6" y1="300.0" x2="2627.6" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2820.7" y1="300.0" x2="2820.7" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2917.2" y1="300.0" x2="2917.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3013.8" y1="300.0" x2="3013.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3110.3" y1="300.0" x2="3110.3" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3303.4" y1="300.0" x2="3303.4" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3400.0" y1="300.0" x2="3400.0" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="793.1" y1="300.0" x2="793.1" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="793.1" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
+<line x1="1275.9" y1="300.0" x2="1275.9" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="1275.9" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.2</text>
+<line x1="1758.6" y1="300.0" x2="1758.6" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="1758.6" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.4</text>
+<line x1="2241.4" y1="300.0" x2="2241.4" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="2241.4" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.6</text>
+<line x1="2724.1" y1="300.0" x2="2724.1" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="2724.1" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0.8</text>
+<line x1="3206.9" y1="300.0" x2="3206.9" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="3206.9" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
 </svg>

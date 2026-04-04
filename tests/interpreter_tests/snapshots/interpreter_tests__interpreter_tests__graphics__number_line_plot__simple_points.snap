@@ -4,38 +4,38 @@ expression: "export_svg(\"NumberLinePlot[{1, 2, 3, 4, 5}]\")"
 ---
 <svg width="360" height="60" viewBox="0 0 3600 600" xmlns="http://www.w3.org/2000/svg">
 <rect width="3600" height="600" fill="#ffffff"/>
-<line x1="600.0" y1="225.0" x2="3400.0" y2="225.0" stroke="#666666" stroke-width="10"/>
-<circle cx="793.1" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1396.6" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2000.0" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2603.4" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="3206.9" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
-<line x1="672.4" y1="225.0" x2="672.4" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="913.8" y1="225.0" x2="913.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1034.5" y1="225.0" x2="1034.5" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1155.2" y1="225.0" x2="1155.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1275.9" y1="225.0" x2="1275.9" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1517.2" y1="225.0" x2="1517.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1637.9" y1="225.0" x2="1637.9" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1758.6" y1="225.0" x2="1758.6" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="1879.3" y1="225.0" x2="1879.3" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2120.7" y1="225.0" x2="2120.7" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2241.4" y1="225.0" x2="2241.4" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2362.1" y1="225.0" x2="2362.1" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2482.8" y1="225.0" x2="2482.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2724.1" y1="225.0" x2="2724.1" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2844.8" y1="225.0" x2="2844.8" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="2965.5" y1="225.0" x2="2965.5" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3086.2" y1="225.0" x2="3086.2" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="3327.6" y1="225.0" x2="3327.6" y2="255.0" stroke="#666666" stroke-width="5"/>
-<line x1="793.1" y1="225.0" x2="793.1" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="793.1" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
-<line x1="1396.6" y1="225.0" x2="1396.6" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="1396.6" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">2</text>
-<line x1="2000.0" y1="225.0" x2="2000.0" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="2000.0" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">3</text>
-<line x1="2603.4" y1="225.0" x2="2603.4" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="2603.4" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">4</text>
-<line x1="3206.9" y1="225.0" x2="3206.9" y2="275.0" stroke="#666666" stroke-width="10"/>
-<text x="3206.9" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">5</text>
+<line x1="600.0" y1="300.0" x2="3400.0" y2="300.0" stroke="#666666" stroke-width="10"/>
+<circle cx="793.1" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1396.6" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2000.0" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2603.4" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="3206.9" cy="225.0" r="40.0" fill="rgb(94,129,181)"/>
+<line x1="672.4" y1="300.0" x2="672.4" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="913.8" y1="300.0" x2="913.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1034.5" y1="300.0" x2="1034.5" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1155.2" y1="300.0" x2="1155.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1275.9" y1="300.0" x2="1275.9" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1517.2" y1="300.0" x2="1517.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1637.9" y1="300.0" x2="1637.9" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1758.6" y1="300.0" x2="1758.6" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="1879.3" y1="300.0" x2="1879.3" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2120.7" y1="300.0" x2="2120.7" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2241.4" y1="300.0" x2="2241.4" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2362.1" y1="300.0" x2="2362.1" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2482.8" y1="300.0" x2="2482.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2724.1" y1="300.0" x2="2724.1" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2844.8" y1="300.0" x2="2844.8" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="2965.5" y1="300.0" x2="2965.5" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3086.2" y1="300.0" x2="3086.2" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="3327.6" y1="300.0" x2="3327.6" y2="330.0" stroke="#666666" stroke-width="5"/>
+<line x1="793.1" y1="300.0" x2="793.1" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="793.1" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">1</text>
+<line x1="1396.6" y1="300.0" x2="1396.6" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="1396.6" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">2</text>
+<line x1="2000.0" y1="300.0" x2="2000.0" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="2000.0" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">3</text>
+<line x1="2603.4" y1="300.0" x2="2603.4" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="2603.4" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">4</text>
+<line x1="3206.9" y1="300.0" x2="3206.9" y2="350.0" stroke="#666666" stroke-width="10"/>
+<text x="3206.9" y="504.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">5</text>
 </svg>
