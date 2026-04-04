@@ -1080,6 +1080,19 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Handle list first argument: Rescale[{x1, x2, ...}, range] maps over elements
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|item| {
+        let mut new_args = args.to_vec();
+        new_args[0] = item.clone();
+        rescale_ast(&new_args)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   // Rescale[x, {xmin, xmax}] or Rescale[x, {xmin, xmax}, {ymin, ymax}]
   let range = match &args[1] {
     Expr::List(r) if r.len() == 2 => r,
