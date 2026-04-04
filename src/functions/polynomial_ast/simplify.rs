@@ -370,50 +370,48 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       expr.clone()
     }
 
-    // Sqrt[var^2] → var when var > 0, -var when var < 0
-    expr if crate::functions::is_sqrt(expr).is_some() => {
-      let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
+    // (var^n)^(1/m) → var^(n/m) when var >= 0 and n divisible by m
+    // Also handles Sqrt[var^2] as special case (m=2, n=2)
+    // For var < 0: only simplifies when n is even
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: outer_base,
+      right: outer_exp,
+    } if extract_rational_1_over(outer_exp).is_some() => {
+      let m = extract_rational_1_over(outer_exp).unwrap();
       if let Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: base,
         right: exp,
-      } = sqrt_arg
+      } = outer_base.as_ref()
         && let Expr::Integer(n) = exp.as_ref()
         && *n > 0
-        && n % 2 == 0
+        && n % m == 0
         && let Expr::Identifier(var_name) = base.as_ref()
       {
-        let half = n / 2;
+        let reduced = n / m;
         if info.positive_vars.contains(var_name) {
-          return if half == 1 {
-            *base.clone()
-          } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: base.clone(),
-              right: Box::new(Expr::Integer(half)),
-            }
-          };
+          return make_power_or_identity(base, reduced);
         }
-        if info.negative_vars.contains(var_name) {
-          let base_power = if half == 1 {
-            *base.clone()
-          } else {
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: base.clone(),
-              right: Box::new(Expr::Integer(half)),
-            }
-          };
+        if info.negative_vars.contains(var_name) && n % 2 == 0 {
+          // x^n is positive when n is even, so (x^n)^(1/m) = |x|^(n/m)
+          let abs_power = make_power_or_identity(base, reduced);
+          // If reduced is even, (-x)^reduced = x^reduced
+          if reduced % 2 == 0 {
+            return abs_power;
+          }
           return Expr::UnaryOp {
             op: UnaryOperator::Minus,
-            operand: Box::new(base_power),
+            operand: Box::new(abs_power),
           };
         }
       }
-      // Recurse into the Sqrt argument
-      let refined_arg = refine_expr(sqrt_arg, info, assumption);
-      crate::functions::make_sqrt(refined_arg)
+      // Recurse
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(refine_expr(outer_base, info, assumption)),
+        right: Box::new(refine_expr(outer_exp, info, assumption)),
+      }
     }
 
     // Abs[var] → var when var > 0, -var when var < 0
@@ -571,6 +569,36 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
 
     // Everything else: return as-is
     _ => expr.clone(),
+  }
+}
+
+/// Extract m from Rational[1, m] (i.e. check if expr is 1/m for positive integer m).
+fn extract_rational_1_over(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(1), Expr::Integer(d)) = (&args[0], &args[1])
+        && *d > 0
+      {
+        return Some(*d);
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Build Power[base, exp] or just base if exp == 1.
+fn make_power_or_identity(base: &Expr, exp: i128) -> Expr {
+  if exp == 1 {
+    base.clone()
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base.clone()),
+      right: Box::new(Expr::Integer(exp)),
+    }
   }
 }
 
