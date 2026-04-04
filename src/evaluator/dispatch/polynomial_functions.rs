@@ -68,7 +68,7 @@ pub fn dispatch_polynomial_functions(
     "FullSimplify" if args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::full_simplify_ast(args));
     }
-    "Refine" if args.len() == 2 => {
+    "Refine" if args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::refine_ast(args));
     }
     "Coefficient" if args.len() >= 2 && args.len() <= 3 => {
