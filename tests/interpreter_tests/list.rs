@@ -3012,6 +3012,25 @@ mod join_non_list {
   }
 
   #[test]
+  fn flatten_non_list_head() {
+    // Flatten[f[f[a, b], f[c, d]]] flattens subexpressions with the same head
+    assert_eq!(
+      interpret("Flatten[f[f[a, b], f[c, d]]]").unwrap(),
+      "f[a, b, c, d]"
+    );
+    // Nested same head
+    assert_eq!(
+      interpret("Flatten[f[f[a, f[b, c]], d]]").unwrap(),
+      "f[a, b, c, d]"
+    );
+    // Only flattens matching heads
+    assert_eq!(
+      interpret("Flatten[f[g[a, b], f[c, d]]]").unwrap(),
+      "f[g[a, b], c, d]"
+    );
+  }
+
+  #[test]
   fn permutations_up_to_length() {
     assert_eq!(
       interpret("Permutations[{1, 2, 3}, 2]").unwrap(),
