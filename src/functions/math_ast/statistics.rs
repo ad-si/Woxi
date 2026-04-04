@@ -648,12 +648,143 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(_)
     | Expr::Real(_)
     | Expr::FunctionCall { .. }
-    | Expr::BinaryOp { .. } => sqrt_ast(&[var.clone()]),
+    | Expr::BinaryOp { .. } => {
+      // For distribution arguments, extract even negative power factors from
+      // the variance. Distribution parameters are always positive, so
+      // Sqrt[a * p^(-2)] = Sqrt[a] / p (no Abs needed).
+      // E.g. Variance = n*(1-p)/p^2 → SD = Sqrt[n*(1-p)] / p
+      if is_distribution_arg(&args[0])
+        && let Some(result) = try_sqrt_extract_denom_factors(&var)?
+      {
+        return Ok(result);
+      }
+      sqrt_ast(&[var.clone()])
+    }
     _ => Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
       args: args.to_vec(),
     }),
   }
+}
+
+/// Check if expr is a distribution function call.
+fn is_distribution_arg(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+  if matches!(name.as_str(),
+    "NormalDistribution"
+      | "UniformDistribution"
+      | "ExponentialDistribution"
+      | "PoissonDistribution"
+      | "BernoulliDistribution"
+      | "GammaDistribution"
+      | "BetaDistribution"
+      | "StudentTDistribution"
+      | "LogNormalDistribution"
+      | "ChiSquareDistribution"
+      | "ParetoDistribution"
+      | "WeibullDistribution"
+      | "GeometricDistribution"
+      | "CauchyDistribution"
+      | "DiscreteUniformDistribution"
+      | "LaplaceDistribution"
+      | "RayleighDistribution"
+      | "NegativeBinomialDistribution"
+      | "ArcSinDistribution"
+      | "PascalDistribution"
+      | "DagumDistribution"
+      | "HyperbolicDistribution"
+      | "NoncentralFRatioDistribution"
+      | "BinomialDistribution"
+      | "JohnsonDistribution"
+  ))
+}
+
+/// Try to extract even negative power factors from a product and split the Sqrt.
+/// E.g. Sqrt[n * (1-p) * p^(-2)] → Sqrt[n*(1-p)] / p
+/// Returns None if there are no extractable factors.
+fn try_sqrt_extract_denom_factors(
+  var: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::functions::polynomial_ast::{
+    build_product, collect_multiplicative_factors,
+  };
+  use crate::syntax::BinaryOperator;
+
+  let factors = collect_multiplicative_factors(var);
+  let mut numerator_factors: Vec<Expr> = Vec::new();
+  let mut denominator_factors: Vec<Expr> = Vec::new();
+
+  for f in &factors {
+    match f {
+      // x^(-2n) where n > 0: extract x^n into denominator
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } if matches!(exp.as_ref(), Expr::Integer(n) if *n < 0 && n % 2 == 0) => {
+        if let Expr::Integer(n) = exp.as_ref() {
+          let half = (-n) / 2;
+          if half == 1 {
+            denominator_factors.push(*base.clone());
+          } else {
+            denominator_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: base.clone(),
+              right: Box::new(Expr::Integer(half)),
+            });
+          }
+        }
+      }
+      // FunctionCall Power[x, -2n]
+      Expr::FunctionCall {
+        name: pname,
+        args: pargs,
+      } if pname == "Power"
+        && pargs.len() == 2
+        && matches!(&pargs[1], Expr::Integer(n) if *n < 0 && n % 2 == 0) =>
+      {
+        if let Expr::Integer(n) = &pargs[1] {
+          let half = (-n) / 2;
+          if half == 1 {
+            denominator_factors.push(pargs[0].clone());
+          } else {
+            denominator_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(pargs[0].clone()),
+              right: Box::new(Expr::Integer(half)),
+            });
+          }
+        }
+      }
+      _ => numerator_factors.push(f.clone()),
+    }
+  }
+
+  if denominator_factors.is_empty() {
+    return Ok(None);
+  }
+
+  let num_expr = if numerator_factors.is_empty() {
+    Expr::Integer(1)
+  } else if numerator_factors.len() == 1 {
+    numerator_factors.remove(0)
+  } else {
+    build_product(numerator_factors)
+  };
+
+  let sqrt_num = sqrt_ast(&[num_expr])?;
+
+  let denom_expr = if denominator_factors.len() == 1 {
+    denominator_factors.remove(0)
+  } else {
+    build_product(denominator_factors)
+  };
+
+  Ok(Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(sqrt_num),
+    right: Box::new(denom_expr),
+  }))
 }
 
 /// GeometricMean[list] - Geometric mean: (product of elements)^(1/n)
