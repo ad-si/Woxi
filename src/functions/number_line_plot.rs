@@ -11,7 +11,7 @@ use crate::syntax::Expr;
 const DEFAULT_NLP_WIDTH: u32 = 360;
 const DEFAULT_NLP_HEIGHT: u32 = 60;
 /// Height per row when multiple series are displayed.
-const ROW_HEIGHT: u32 = 40;
+const ROW_HEIGHT: u32 = 20;
 /// Top/bottom padding for the overall plot.
 const PADDING_TOP: u32 = 15;
 const PADDING_BOTTOM: u32 = 30;
