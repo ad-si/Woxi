@@ -395,7 +395,7 @@ fn render_number_line_svg(
         }
       }
       NumberLineData::Intervals(intervals) => {
-        let bar_half = 2.5 * sf;
+        let bar_half = 1.5 * sf;
         let circle_r = 3.5 * sf;
         for span in intervals {
           let px_lo = if span.lo.is_infinite() {
@@ -430,7 +430,8 @@ fn render_number_line_svg(
               span.lo_inclusive,
             );
           } else {
-            draw_arrow_left(&mut svg, axis_x0, data_y, bar_half, &color);
+            let arrow_size = 5.0 * sf;
+            draw_arrow_left(&mut svg, axis_x0, data_y, arrow_size, &color);
           }
           if span.hi.is_finite() {
             draw_endpoint(
@@ -443,7 +444,8 @@ fn render_number_line_svg(
               span.hi_inclusive,
             );
           } else {
-            draw_arrow_right(&mut svg, axis_x1, data_y, bar_half, &color);
+            let arrow_size = 5.0 * sf;
+            draw_arrow_right(&mut svg, axis_x1, data_y, arrow_size, &color);
           }
         }
       }
@@ -454,7 +456,7 @@ fn render_number_line_svg(
         xmax,
       } => {
         let intervals = sample_predicate(body, var, *xmin, *xmax);
-        let bar_half = 2.5 * sf;
+        let bar_half = 1.5 * sf;
         let circle_r = 3.5 * sf;
         for span in &intervals {
           let px_lo = x_to_px(span.lo);
