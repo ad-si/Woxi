@@ -1282,12 +1282,13 @@ mod solve {
   #[test]
   fn fractional_power_equation() {
     // Physics: find extrema of E-field on axis of ring charge
+    // Sqrt[2*a^2*k^2*q^2] stays unsimplified since a,k,q are symbolic (unknown sign)
     assert_eq!(
       interpret(
         "Solve[(2*k*q*(a^2 + x^2)^(3/2) - 6*k*q*x^2*(a^2 + x^2)^(1/2))/(a^2 + x^2)^3 == 0, x]"
       )
       .unwrap(),
-      "{{x -> -(a/Sqrt[2])}, {x -> a/Sqrt[2]}}"
+      "{{x -> (-1*Sqrt[2*a^2*k^2*q^2])/(2*k*q)}, {x -> Sqrt[2*a^2*k^2*q^2]/(2*k*q)}}"
     );
   }
 
@@ -3126,6 +3127,194 @@ mod refine {
       interpret("Refine[Abs[x], Element[x, Reals] && x >= 0]").unwrap(),
       "x"
     );
+  }
+
+  // --- Element with Alternatives pattern ---
+
+  #[test]
+  fn element_alternatives_reals() {
+    assert_eq!(
+      interpret("Refine[Re[a + b I], Element[a | b, Reals]]").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
+  fn element_alternatives_integers() {
+    assert_eq!(
+      interpret("Refine[Floor[x], Element[x, Integers]]").unwrap(),
+      "x"
+    );
+  }
+
+  // --- Sqrt[x^2] with x ∈ Reals → Abs[x] ---
+
+  #[test]
+  fn sqrt_x_squared_real() {
+    assert_eq!(
+      interpret("Refine[Sqrt[x^2], Element[x, Reals]]").unwrap(),
+      "Abs[x]"
+    );
+  }
+
+  // --- Power rules ---
+
+  #[test]
+  fn power_of_power_bounded_exp() {
+    assert_eq!(interpret("Refine[(a^b)^c, -1 < b < 1]").unwrap(), "a^(b*c)");
+  }
+
+  #[test]
+  fn combine_power_product_positive_bases() {
+    assert_eq!(
+      interpret("Refine[a^p b^p, a > 0 && b > 0]").unwrap(),
+      "(a*b)^p"
+    );
+  }
+
+  // --- Log simplifications ---
+
+  #[test]
+  fn log_negative_var() {
+    assert_eq!(
+      interpret("Refine[Log[x], x < 0]").unwrap(),
+      "I*Pi + Log[-x]"
+    );
+  }
+
+  #[test]
+  fn log_power_bounded_exp() {
+    assert_eq!(
+      interpret("Refine[Log[x^p], -1 < p < 1]").unwrap(),
+      "p*Log[x]"
+    );
+  }
+
+  // --- Trig with integer multiples of Pi ---
+
+  #[test]
+  fn sin_k_pi_integer() {
+    assert_eq!(
+      interpret("Refine[Sin[k Pi], Element[k, Integers]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn cos_x_plus_k_pi_integer() {
+    assert_eq!(
+      interpret("Refine[Cos[x + k Pi], Element[k, Integers]]").unwrap(),
+      "(-1)^k*Cos[x]"
+    );
+  }
+
+  // --- ArcTan[Tan[x]] ---
+
+  #[test]
+  fn arctan_tan_in_range() {
+    assert_eq!(
+      interpret("Refine[ArcTan[Tan[x]], -Pi/2 < Re[x] < Pi/2]").unwrap(),
+      "x"
+    );
+  }
+
+  // --- Algebraic comparisons ---
+
+  #[test]
+  fn equation_by_substitution() {
+    assert_eq!(
+      interpret("Refine[a^2 - b^2 + 1 == 0, a + b == 0]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn quadratic_form_nonneg() {
+    assert_eq!(
+      interpret("Refine[a^2 - a b + b^2 >= 0, Element[a | b, Reals]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn sign_positive_definite() {
+    assert_eq!(
+      interpret("Refine[Sign[x^2 - x y + y^2 + 1], Element[x | y, Reals]]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  // --- Element membership ---
+
+  #[test]
+  fn element_real_positive_division() {
+    assert_eq!(
+      interpret(
+        "Refine[Element[(2 x + x^p)/(x Gamma[x + 2]), Reals], x > 0 && p > 0]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn element_integer_floor_power() {
+    assert_eq!(
+      interpret("Refine[Element[2 k^3 Floor[x]^k, Integers], Element[k, Integers] && k > 0 && Element[x, Reals]]").unwrap(),
+      "True"
+    );
+  }
+
+  // --- Floor/Ceiling with compound expressions ---
+
+  #[test]
+  fn floor_integer_linear() {
+    assert_eq!(
+      interpret("Refine[Floor[2 a + 1], Element[a, Integers]]").unwrap(),
+      "1 + 2*a"
+    );
+  }
+
+  #[test]
+  fn ceiling_bounded_var() {
+    assert_eq!(interpret("Refine[Ceiling[x], 2 < x <= 3]").unwrap(), "3");
+  }
+
+  // --- FractionalPart and Mod ---
+
+  #[test]
+  fn fractional_part_negative_with_mod() {
+    assert_eq!(
+      interpret("Refine[FractionalPart[a], a < 0 && Mod[a, 1] == 1/3]")
+        .unwrap(),
+      "-2/3"
+    );
+  }
+
+  #[test]
+  fn mod_from_integer_element() {
+    assert_eq!(
+      interpret("Refine[Mod[a, 4], Element[(a + 3)/4, Integers]]").unwrap(),
+      "1"
+    );
+  }
+
+  // --- Assuming + Refine ---
+
+  #[test]
+  fn assuming_refine_compound_comparison() {
+    assert_eq!(
+      interpret("Assuming[x >= 0 && y < 0, Refine[x - y > 0]]").unwrap(),
+      "True"
+    );
+  }
+
+  // --- Nonnegative variable handling ---
+
+  #[test]
+  fn sqrt_x_squared_nonneg() {
+    assert_eq!(interpret("Refine[Sqrt[x^2], x >= 0]").unwrap(), "x");
   }
 }
 
