@@ -288,21 +288,27 @@ fn sample_predicate(body: &Expr, var: &str, xmin: f64, xmax: f64) -> Vec<Span> {
       region_start = x;
       in_region = true;
     } else if !val && in_region {
+      // Region ended: lo is inclusive if it started at domain boundary,
+      // hi is always exclusive (predicate just became false).
+      let at_domain_start = (region_start - xmin).abs() < step * 0.5;
       intervals.push(Span {
         lo: region_start,
         hi: x - step,
-        lo_inclusive: false,
+        lo_inclusive: at_domain_start,
         hi_inclusive: false,
       });
       in_region = false;
     }
   }
   if in_region {
+    // Region extends to the domain end: hi is inclusive (at domain boundary),
+    // lo is inclusive if it also started at domain boundary.
+    let at_domain_start = (region_start - xmin).abs() < step * 0.5;
     intervals.push(Span {
       lo: region_start,
       hi: xmax,
-      lo_inclusive: false,
-      hi_inclusive: false,
+      lo_inclusive: at_domain_start,
+      hi_inclusive: true,
     });
   }
   intervals
