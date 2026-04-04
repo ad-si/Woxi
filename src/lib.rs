@@ -748,6 +748,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains("//")
       && !trimmed.contains("/@")
       && !trimmed.contains("@@")
+      && !trimmed.contains('!')
       && !trimmed.contains('+')
       && !trimmed.contains('-')
       && !trimmed.contains('*')
