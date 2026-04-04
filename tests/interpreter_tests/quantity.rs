@@ -1472,6 +1472,62 @@ fn quantity_svg_singular_compound() {
   assert_eq!(result.result, "12.345 m/s");
 }
 
+// ─── Box representation for Quantity ─────────────────────────────────────────
+
+#[test]
+fn quantity_box_simple_unit() {
+  assert_eq!(
+    interpret("ToBoxes[Quantity[5, \"Meters\"]]").unwrap(),
+    "RowBox[{5,  , m}]"
+  );
+}
+
+#[test]
+fn quantity_box_compound_divide() {
+  assert_eq!(
+    interpret("ToBoxes[Quantity[12.345, \"Meters\"/\"Seconds\"]]").unwrap(),
+    "RowBox[{12.345,  , RowBox[{m, /, s}]}]"
+  );
+}
+
+#[test]
+fn quantity_box_power_unit() {
+  let result =
+    interpret("ToBoxes[Quantity[9.8, \"Meters\"/\"Seconds\"^2]]").unwrap();
+  assert!(
+    result.contains("SuperscriptBox"),
+    "Power unit box should contain SuperscriptBox: {result}"
+  );
+  assert!(
+    result.contains("FractionBox") || result.contains("/"),
+    "Compound unit box should show division: {result}"
+  );
+}
+
+#[test]
+fn quantity_box_kilogram() {
+  assert_eq!(
+    interpret("ToBoxes[Quantity[70, \"Kilograms\"]]").unwrap(),
+    "RowBox[{70,  , kg}]"
+  );
+}
+
+#[test]
+fn quantity_box_days_plural() {
+  assert_eq!(
+    interpret("ToBoxes[Quantity[21, \"Days\"]]").unwrap(),
+    "RowBox[{21,  , days}]"
+  );
+}
+
+#[test]
+fn quantity_box_days_singular() {
+  assert_eq!(
+    interpret("ToBoxes[Quantity[1, \"Days\"]]").unwrap(),
+    "RowBox[{1,  , day}]"
+  );
+}
+
 // ─── UnitConvert with singular unit names ───────────────────────────────────
 
 #[test]

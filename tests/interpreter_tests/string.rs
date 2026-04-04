@@ -2055,6 +2055,183 @@ mod to_boxes {
   }
 }
 
+mod make_boxes {
+  use super::*;
+
+  #[test]
+  fn make_boxes_integer() {
+    assert_eq!(interpret("MakeBoxes[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn make_boxes_symbol() {
+    assert_eq!(interpret("MakeBoxes[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn make_boxes_power() {
+    assert_eq!(interpret("MakeBoxes[x^2]").unwrap(), "SuperscriptBox[x, 2]");
+  }
+
+  #[test]
+  fn make_boxes_plus() {
+    assert_eq!(interpret("MakeBoxes[a + b]").unwrap(), "RowBox[{a, +, b}]");
+  }
+
+  #[test]
+  fn make_boxes_times() {
+    assert_eq!(interpret("MakeBoxes[a b]").unwrap(), "RowBox[{a,  , b}]");
+  }
+
+  #[test]
+  fn make_boxes_fraction() {
+    assert_eq!(interpret("MakeBoxes[a/b]").unwrap(), "FractionBox[a, b]");
+  }
+
+  #[test]
+  fn make_boxes_sqrt() {
+    assert_eq!(interpret("MakeBoxes[Sqrt[x]]").unwrap(), "SqrtBox[x]");
+  }
+
+  #[test]
+  fn make_boxes_list() {
+    assert_eq!(
+      interpret("MakeBoxes[{1, 2, 3}]").unwrap(),
+      "RowBox[{{, RowBox[{1, ,, 2, ,, 3}], }}]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_function_call() {
+    assert_eq!(
+      interpret("MakeBoxes[f[x, y]]").unwrap(),
+      "RowBox[{f, [, RowBox[{x, ,, y}], ]}]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_holds_argument() {
+    // MakeBoxes should NOT evaluate its argument
+    assert_eq!(interpret("MakeBoxes[1 + 2]").unwrap(), "RowBox[{1, +, 2}]");
+  }
+
+  #[test]
+  fn make_boxes_rational() {
+    assert_eq!(interpret("MakeBoxes[2/3]").unwrap(), "FractionBox[2, 3]");
+  }
+
+  #[test]
+  fn make_boxes_subscript() {
+    assert_eq!(
+      interpret("MakeBoxes[Subscript[x, 0]]").unwrap(),
+      "SubscriptBox[x, 0]"
+    );
+  }
+
+  #[test]
+  fn make_boxes_subsuperscript() {
+    assert_eq!(
+      interpret("MakeBoxes[Subscript[a, b]^c]").unwrap(),
+      "SubsuperscriptBox[a, b, c]"
+    );
+  }
+}
+
+mod raw_boxes {
+  use super::*;
+
+  #[test]
+  fn raw_boxes_identity() {
+    // RawBoxes wraps its content without modification
+    assert_eq!(
+      interpret(r#"RawBoxes[SuperscriptBox["x", "2"]]"#).unwrap(),
+      "RawBoxes[SuperscriptBox[x, 2]]"
+    );
+  }
+
+  #[test]
+  fn raw_boxes_with_make_boxes() {
+    // RawBoxes[MakeBoxes[...]] should work end-to-end
+    assert_eq!(
+      interpret("RawBoxes[MakeBoxes[x^2]]").unwrap(),
+      "RawBoxes[SuperscriptBox[x, 2]]"
+    );
+  }
+}
+
+mod display_form {
+  use super::*;
+
+  #[test]
+  fn display_form_identity() {
+    // DisplayForm wraps its content without modification
+    assert_eq!(
+      interpret(r#"DisplayForm[SuperscriptBox["x", "2"]]"#).unwrap(),
+      "DisplayForm[SuperscriptBox[x, 2]]"
+    );
+  }
+
+  #[test]
+  fn display_form_head() {
+    assert_eq!(
+      interpret(r#"Head[DisplayForm[SuperscriptBox["x", "2"]]]"#).unwrap(),
+      "DisplayForm"
+    );
+  }
+
+  #[test]
+  fn display_form_with_make_boxes() {
+    assert_eq!(
+      interpret("DisplayForm[MakeBoxes[x^2]]").unwrap(),
+      "DisplayForm[SuperscriptBox[x, 2]]"
+    );
+  }
+
+  #[test]
+  fn display_form_subscript_box() {
+    assert_eq!(
+      interpret(r#"DisplayForm[SubscriptBox["a", "i"]]"#).unwrap(),
+      "DisplayForm[SubscriptBox[a, i]]"
+    );
+  }
+
+  #[test]
+  fn display_form_row_box() {
+    assert_eq!(
+      interpret(
+        r#"DisplayForm[RowBox[{SubscriptBox["a", "1"], SubscriptBox["b", "2"]}]]"#
+      )
+      .unwrap(),
+      "DisplayForm[RowBox[{SubscriptBox[a, 1], SubscriptBox[b, 2]}]]"
+    );
+  }
+
+  #[test]
+  fn display_form_fraction_box() {
+    assert_eq!(
+      interpret(r#"DisplayForm[FractionBox["x", "y"]]"#).unwrap(),
+      "DisplayForm[FractionBox[x, y]]"
+    );
+  }
+
+  #[test]
+  fn display_form_sqrt_box() {
+    assert_eq!(
+      interpret(r#"DisplayForm[SqrtBox["x"]]"#).unwrap(),
+      "DisplayForm[SqrtBox[x]]"
+    );
+  }
+
+  #[test]
+  fn display_form_complex_expression() {
+    // RawBoxes[MakeBoxes[...]] // DisplayForm — end-to-end
+    assert_eq!(
+      interpret("DisplayForm[MakeBoxes[a + b]]").unwrap(),
+      "DisplayForm[RowBox[{a, +, b}]]"
+    );
+  }
+}
+
 mod template_apply {
   use super::*;
 

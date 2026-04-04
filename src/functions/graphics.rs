@@ -2900,6 +2900,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ── Grid SVG rendering ──────────────────────────────────────────────────
 
 /// Extract the base and exponent from a Power expression (either BinaryOp or FunctionCall form).
+/// Public accessor for `as_power` — used by `expr_to_box_form` for unit handling.
+pub fn as_power_pub(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  as_power(expr)
+}
+
 fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
   match expr {
     Expr::BinaryOp {
@@ -3766,6 +3771,218 @@ fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
       parts + (args.len() - 1) as f64 // · separators
     }
     _ => estimate_display_width(unit),
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Box-form → SVG rendering
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Convert a box-form expression (produced by `expr_to_box_form()`) to SVG
+/// text markup.  This mirrors `expr_to_svg_markup()` but operates on the
+/// intermediate box representation (RowBox, SuperscriptBox, FractionBox, …)
+/// rather than raw Expr trees.
+pub fn boxes_to_svg(expr: &Expr) -> String {
+  match expr {
+    // Atoms: in box form, atoms are always Expr::String
+    Expr::String(s) => svg_escape(s),
+    // Identifiers can appear for fallback cases
+    Expr::Identifier(s) => svg_escape(s),
+    Expr::Integer(n) => group_digits_svg(&n.to_string()),
+    Expr::BigInteger(n) => group_digits_svg(&n.to_string()),
+
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // RowBox[{e1, e2, ...}] → concatenate children
+      "RowBox" if args.len() == 1 => {
+        if let Expr::List(items) = &args[0] {
+          items.iter().map(boxes_to_svg).collect::<Vec<_>>().join("")
+        } else {
+          // Single non-list arg: just render it
+          boxes_to_svg(&args[0])
+        }
+      }
+
+      // SuperscriptBox[base, exp]
+      "SuperscriptBox" if args.len() == 2 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let exp_svg = boxes_to_svg(&args[1]);
+        format!(
+          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          base_svg, exp_svg
+        )
+      }
+
+      // SubscriptBox[base, sub]
+      "SubscriptBox" if args.len() == 2 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let sub_svg = boxes_to_svg(&args[1]);
+        format!(
+          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+          base_svg, sub_svg
+        )
+      }
+
+      // SubsuperscriptBox[base, sub, sup]
+      "SubsuperscriptBox" if args.len() == 3 => {
+        let base_svg = boxes_to_svg(&args[0]);
+        let sub_svg = boxes_to_svg(&args[1]);
+        let sup_svg = boxes_to_svg(&args[2]);
+        format!(
+          "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          base_svg, sub_svg, sup_svg
+        )
+      }
+
+      // FractionBox[num, den] → stacked fraction
+      "FractionBox" if args.len() == 2 => {
+        let num_svg = boxes_to_svg(&args[0]);
+        let den_svg = boxes_to_svg(&args[1]);
+        let num_w = estimate_box_display_width(&args[0]);
+        let den_w = estimate_box_display_width(&args[1]);
+        stacked_fraction_svg(&num_svg, &den_svg, num_w, den_w)
+      }
+
+      // SqrtBox[expr] → √(content)
+      "SqrtBox" if args.len() == 1 => {
+        let content = boxes_to_svg(&args[0]);
+        format!("\u{221A}({})", content) // √
+      }
+
+      // RadicalBox[expr, n] → expr^(1/n) display
+      "RadicalBox" if args.len() == 2 => {
+        let content = boxes_to_svg(&args[0]);
+        let index = boxes_to_svg(&args[1]);
+        format!(
+          "<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>\u{221A}({})",
+          index, content
+        )
+      }
+
+      // StyleBox[content, ...] → render content only
+      "StyleBox" if !args.is_empty() => boxes_to_svg(&args[0]),
+
+      // GridBox[{{...}, ...}] → simple text rendering
+      "GridBox" if !args.is_empty() => {
+        if let Expr::List(rows) = &args[0] {
+          let row_strs: Vec<String> = rows
+            .iter()
+            .map(|row| {
+              if let Expr::List(cells) = row {
+                cells
+                  .iter()
+                  .map(boxes_to_svg)
+                  .collect::<Vec<_>>()
+                  .join("\t")
+              } else {
+                boxes_to_svg(row)
+              }
+            })
+            .collect();
+          row_strs.join("\n")
+        } else {
+          boxes_to_svg(&args[0])
+        }
+      }
+
+      // Unknown box type: render as Name[arg1, arg2, ...]
+      _ => {
+        let parts: Vec<String> = args.iter().map(boxes_to_svg).collect();
+        if args.is_empty() {
+          format!("{}[]", svg_escape(name))
+        } else {
+          format!("{}[{}]", svg_escape(name), parts.join(", "))
+        }
+      }
+    },
+
+    Expr::List(items) => {
+      // Lists in box form (e.g. inside RowBox) – just concatenate
+      items.iter().map(boxes_to_svg).collect::<Vec<_>>().join("")
+    }
+
+    // Fallback: use expr_to_output for anything else
+    _ => svg_escape(&crate::syntax::expr_to_output(expr)),
+  }
+}
+
+/// Estimate the display width of a box-form expression in character units.
+pub fn estimate_box_display_width(expr: &Expr) -> f64 {
+  match expr {
+    Expr::String(s) => s.len() as f64,
+    Expr::Identifier(s) => s.len() as f64,
+    Expr::Integer(n) => {
+      let s = n.to_string();
+      let digit_count = s.trim_start_matches('-').len();
+      s.len() as f64 + digit_group_extra_width(digit_count)
+    }
+    Expr::BigInteger(n) => {
+      let s = n.to_string();
+      let digit_count = s.trim_start_matches('-').len();
+      s.len() as f64 + digit_group_extra_width(digit_count)
+    }
+
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "RowBox" if args.len() == 1 => {
+        if let Expr::List(items) = &args[0] {
+          items.iter().map(estimate_box_display_width).sum()
+        } else {
+          estimate_box_display_width(&args[0])
+        }
+      }
+      "SuperscriptBox" if args.len() == 2 => {
+        estimate_box_display_width(&args[0])
+          + estimate_box_display_width(&args[1]) * 0.7
+      }
+      "SubscriptBox" if args.len() == 2 => {
+        estimate_box_display_width(&args[0])
+          + estimate_box_display_width(&args[1]) * 0.7
+      }
+      "SubsuperscriptBox" if args.len() == 3 => {
+        let base = estimate_box_display_width(&args[0]);
+        let sub = estimate_box_display_width(&args[1]) * 0.7;
+        let sup = estimate_box_display_width(&args[2]) * 0.7;
+        base + sub.max(sup)
+      }
+      "FractionBox" if args.len() == 2 => stacked_fraction_width(
+        estimate_box_display_width(&args[0]),
+        estimate_box_display_width(&args[1]),
+      ),
+      "SqrtBox" if args.len() == 1 => {
+        // √( + content + )
+        3.0 + estimate_box_display_width(&args[0])
+      }
+      "RadicalBox" if args.len() == 2 => {
+        estimate_box_display_width(&args[1]) * 0.7
+          + 2.0
+          + estimate_box_display_width(&args[0])
+      }
+      "StyleBox" if !args.is_empty() => estimate_box_display_width(&args[0]),
+      _ => {
+        let args_width: f64 = args.iter().map(estimate_box_display_width).sum();
+        let seps = if args.len() > 1 {
+          (args.len() - 1) as f64 * 2.0
+        } else {
+          0.0
+        };
+        name.len() as f64 + 2.0 + args_width + seps
+      }
+    },
+
+    Expr::List(items) => items.iter().map(estimate_box_display_width).sum(),
+
+    _ => crate::syntax::expr_to_output(expr).len() as f64,
+  }
+}
+
+/// Check whether a box-form expression contains a FractionBox anywhere,
+/// which requires extra vertical space in the SVG wrapper.
+pub fn box_has_fraction(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "FractionBox" => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(box_has_fraction),
+    Expr::List(items) => items.iter().any(box_has_fraction),
+    _ => false,
   }
 }
 
