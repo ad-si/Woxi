@@ -566,26 +566,6 @@ pub(crate) const PLOT_COLORS: [(u8, u8, u8); 6] = [
   (0x8E, 0xB1, 0xCC), // light blue
 ];
 
-/// Generate SVG for a 2D plot using plotters.
-/// When `full_width` is true, the SVG uses `width="100%"` to fill its container.
-/// Accepts multiple series of points, each drawn in a different color.
-pub(crate) fn generate_svg(
-  all_points: &[Vec<(f64, f64)>],
-  x_range: (f64, f64),
-  y_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
-) -> Result<String, InterpreterError> {
-  let opts = PlotOptions {
-    svg_width,
-    svg_height,
-    full_width,
-    ..Default::default()
-  };
-  generate_svg_with_options(all_points, x_range, y_range, &opts)
-}
-
 /// Generate SVG for a 2D plot with filling (legacy wrapper for list_plot callers).
 pub(crate) fn generate_svg_with_filling(
   all_points: &[Vec<(f64, f64)>],
