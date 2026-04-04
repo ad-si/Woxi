@@ -91,7 +91,7 @@ fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
 }
 
 /// Convert {y,m,d,h,min,sec} to total seconds since 1900-01-01 00:00:00
-fn date_to_absolute_seconds(
+pub(crate) fn date_to_absolute_seconds(
   year: i64,
   month: i64,
   day: i64,
@@ -107,7 +107,7 @@ fn date_to_absolute_seconds(
 }
 
 /// Convert total seconds to {year, month, day, hour, minute, second}
-fn absolute_seconds_to_date(
+pub(crate) fn absolute_seconds_to_date(
   total_seconds: f64,
 ) -> (i64, i64, i64, i64, i64, f64) {
   let total_days = (total_seconds / 86400.0).floor() as i64;
@@ -192,7 +192,7 @@ fn normalize_date(components: &[f64]) -> (i64, i64, i64, i64, i64, f64) {
 }
 
 /// Extract a date component list from an Expr
-fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
+pub(crate) fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
   match expr {
     Expr::List(items) => {
       let mut components = Vec::new();

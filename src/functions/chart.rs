@@ -883,7 +883,61 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// DateListPlot[{{date, y}, ...}] - simplified: treats dates as numeric x values
+/// Convert a date expression to AbsoluteTime (seconds since 1900-01-01).
+/// Handles: date lists ({y}, {y,m}, {y,m,d}, {y,m,d,h,min,sec}),
+/// DateObject[{...}], and raw numeric AbsoluteTime values.
+fn date_expr_to_absolute_time(expr: &Expr) -> Option<f64> {
+  let evaluated = evaluate_expr_to_expr(expr).unwrap_or(expr.clone());
+
+  // Try as a raw numeric value (already AbsoluteTime)
+  if let Some(t) = try_eval_to_f64(&evaluated) {
+    return Some(t);
+  }
+
+  // Try extracting date components from list or DateObject
+  if let Some(components) =
+    crate::functions::datetime_ast::extract_date_components(&evaluated)
+  {
+    if components.is_empty() {
+      return None;
+    }
+    let year = components[0] as i64;
+    let month = if components.len() > 1 {
+      components[1] as i64
+    } else {
+      1
+    };
+    let day = if components.len() > 2 {
+      components[2] as i64
+    } else {
+      1
+    };
+    let hour = if components.len() > 3 {
+      components[3] as i64
+    } else {
+      0
+    };
+    let minute = if components.len() > 4 {
+      components[4] as i64
+    } else {
+      0
+    };
+    let second = if components.len() > 5 {
+      components[5]
+    } else {
+      0.0
+    };
+    return Some(crate::functions::datetime_ast::date_to_absolute_seconds(
+      year, month, day, hour, minute, second,
+    ));
+  }
+
+  None
+}
+
+/// DateListPlot[{{date, y}, ...}] - plots data with date-valued x-axis.
+/// Dates can be date lists ({y,m,d}), DateObject[{...}], or AbsoluteTime values.
+/// Multiple datasets are supported: DateListPlot[{data1, data2, ...}].
 pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let items = match &data {
@@ -895,68 +949,190 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Try to extract {x, y} pairs (treating dates as numbers)
-  let mut points = Vec::new();
-  for (i, item) in items.iter().enumerate() {
-    if let Expr::List(pair) = item
-      && pair.len() >= 2
-    {
-      let x = try_eval_to_f64(
-        &evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone()),
-      );
-      let y = try_eval_to_f64(
-        &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
-      );
-      if let (Some(x), Some(y)) = (x, y) {
-        points.push((x, y));
-        continue;
+  // Detect whether this is multiple datasets or a single dataset.
+  // Multiple datasets: {{pair1, pair2, ...}, {pair3, pair4, ...}}
+  // Single dataset: {{date1, y1}, {date2, y2}, ...}
+  let datasets: Vec<&[Expr]> = if !items.is_empty()
+    && items.iter().all(|item| {
+      if let Expr::List(inner) = item {
+        // A dataset is a list of pairs (each pair is a list of length 2
+        // where first element is a date)
+        !inner.is_empty()
+          && inner
+            .iter()
+            .all(|sub| matches!(sub, Expr::List(p) if p.len() >= 2))
+      } else {
+        false
+      }
+    }) {
+    // Multiple datasets
+    items
+      .iter()
+      .map(|item| {
+        if let Expr::List(inner) = item {
+          inner.as_slice()
+        } else {
+          unreachable!()
+        }
+      })
+      .collect()
+  } else {
+    // Single dataset
+    vec![items.as_slice()]
+  };
+
+  let mut all_series = Vec::new();
+  for dataset in &datasets {
+    let mut points = Vec::new();
+    for item in *dataset {
+      if let Expr::List(pair) = item
+        && pair.len() >= 2
+      {
+        let x = date_expr_to_absolute_time(&pair[0]);
+        let y = try_eval_to_f64(
+          &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
+        );
+        if let (Some(x), Some(y)) = (x, y) {
+          points.push((x, y));
+        }
       }
     }
-    // Fallback: treat as y value with sequential x
-    if let Some(y) =
-      try_eval_to_f64(&evaluate_expr_to_expr(item).unwrap_or(item.clone()))
-    {
-      points.push(((i + 1) as f64, y));
+    if !points.is_empty() {
+      all_series.push(points);
     }
   }
 
-  if points.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+  if all_series.is_empty() {
+    // Return unevaluated (like Wolfram does for invalid data)
+    return Ok(Expr::FunctionCall {
+      name: "DateListPlot".to_string(),
+      args: args.to_vec(),
+    });
   }
 
-  let opts = parse_chart_options(args);
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
+  let chart_opts = parse_chart_options(args);
 
-  // Use plotters-based generate_svg for line plot
-  let all_series = vec![points];
+  // Compute ranges across all series
   let mut x_min = f64::INFINITY;
   let mut x_max = f64::NEG_INFINITY;
   let mut y_min = f64::INFINITY;
   let mut y_max = f64::NEG_INFINITY;
-  for &(x, y) in &all_series[0] {
-    x_min = x_min.min(x);
-    x_max = x_max.max(x);
-    y_min = y_min.min(y);
-    y_max = y_max.max(y);
+  for series in &all_series {
+    for &(x, y) in series {
+      x_min = x_min.min(x);
+      x_max = x_max.max(x);
+      y_min = y_min.min(y);
+      y_max = y_max.max(y);
+    }
   }
-  let xp = (x_max - x_min) * 0.04;
   let yp = (y_max - y_min) * 0.04;
-  let xp = if xp.abs() < f64::EPSILON { 1.0 } else { xp };
   let yp = if yp.abs() < f64::EPSILON { 1.0 } else { yp };
 
-  let svg = crate::functions::plot::generate_svg(
+  // Compute x range with padding
+  let xp = (x_max - x_min) * 0.04;
+  let xp = if xp.abs() < f64::EPSILON { 86400.0 } else { xp };
+  let x_range_min = x_min - xp;
+  let x_range_max = x_max + xp;
+
+  // Compute nice date tick positions
+  let date_ticks =
+    crate::functions::plot::generate_date_ticks(x_range_min, x_range_max);
+
+  // Use date_axis mode which suppresses x labels from plotters;
+  // we inject our own date labels afterwards.
+  let plot_opts = crate::functions::plot::PlotOptions {
+    svg_width: chart_opts.svg_width,
+    svg_height: chart_opts.svg_height,
+    full_width: chart_opts.full_width,
+    date_axis: true,
+    ..Default::default()
+  };
+
+  let svg = crate::functions::plot::generate_svg_with_filling(
     &all_series,
-    (x_min - xp, x_max + xp),
+    (x_range_min, x_range_max),
     (y_min - yp, y_max + yp),
-    svg_width,
-    svg_height,
-    full_width,
+    &plot_opts,
   )?;
 
+  // Inject date tick labels into the SVG
+  let svg =
+    inject_date_labels(&svg, &date_ticks, x_range_min, x_range_max, &plot_opts);
+
   Ok(crate::graphics_result(svg))
+}
+
+/// Inject date tick labels and tick marks into an SVG generated by plotters.
+/// Since plotters can't place ticks at exact date boundaries, we add them manually.
+fn inject_date_labels(
+  svg: &str,
+  date_ticks: &[f64],
+  x_min: f64,
+  x_max: f64,
+  opts: &crate::functions::plot::PlotOptions,
+) -> String {
+  use crate::functions::plot::{RESOLUTION_SCALE, format_date_tick};
+
+  if date_ticks.is_empty() {
+    return svg.to_string();
+  }
+
+  let sf = RESOLUTION_SCALE as f64;
+  let render_width = opts.svg_width as f64 * sf;
+  let render_height = opts.svg_height as f64 * sf;
+
+  // Estimate plot area margins (matching generate_svg_with_options logic)
+  // y_label_area = 65 * RESOLUTION_SCALE, margin_left = 10 * RESOLUTION_SCALE
+  let margin_left = 10.0 * sf;
+  let y_label_area = 65.0 * sf;
+  let margin_right = 10.0 * sf;
+  let margin_bottom = 10.0 * sf;
+  let x_label_area = 40.0 * sf;
+
+  let plot_left = margin_left + y_label_area;
+  let plot_right = render_width - margin_right;
+  let plot_bottom = render_height - margin_bottom - x_label_area;
+  let plot_width = plot_right - plot_left;
+
+  let font_size = sf * 18.0;
+  let tick_len = 4.0 * sf;
+
+  let mut extra = String::new();
+  for &t in date_ticks {
+    let frac = (t - x_min) / (x_max - x_min);
+    let px = plot_left + frac * plot_width;
+    let label = html_escape(&format_date_tick(t));
+
+    // Tick mark
+    extra.push_str(&format!(
+      "<polyline fill=\"none\" opacity=\"1\" stroke=\"#666666\" \
+       stroke-width=\"{}\" points=\"{:.0},{:.0} {:.0},{:.0}\"/>",
+      RESOLUTION_SCALE,
+      px,
+      plot_bottom,
+      px,
+      plot_bottom + tick_len,
+    ));
+
+    // Label
+    extra.push_str(&format!(
+      "<text x=\"{:.0}\" y=\"{:.0}\" dy=\"0.76em\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font_size}\" \
+       opacity=\"1\" fill=\"#666666\">{label}</text>",
+      px,
+      plot_bottom + tick_len + 2.0,
+    ));
+  }
+
+  // Insert before closing </svg> tag
+  if let Some(pos) = svg.rfind("</svg>") {
+    let mut result = svg[..pos].to_string();
+    result.push_str(&extra);
+    result.push_str("</svg>");
+    result
+  } else {
+    svg.to_string()
+  }
 }
 
 /// Escape special HTML characters in text content.
