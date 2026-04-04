@@ -84,6 +84,8 @@ struct CellEditor {
   undo_stack: Vec<String>,
   /// Redo stack: snapshots restored via undo.
   redo_stack: Vec<String>,
+  /// Whether the input has changed since the last evaluation.
+  output_stale: bool,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -268,6 +270,7 @@ impl WoxiStudio {
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            output_stale: false,
           });
         }
         CellEntry::Group(group) => {
@@ -306,6 +309,7 @@ impl WoxiStudio {
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
+                output_stale: false,
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
@@ -322,6 +326,7 @@ impl WoxiStudio {
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
+                output_stale: false,
               });
               i += 1;
             }
@@ -580,6 +585,7 @@ impl WoxiStudio {
           self.cell_editors[idx].content.perform(action);
           if is_edit {
             self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
           }
         }
         Task::none()
@@ -593,6 +599,7 @@ impl WoxiStudio {
             self.cell_editors[idx].content =
               text_editor::Content::with_text(&prev);
             self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
           }
         }
         Task::none()
@@ -606,6 +613,7 @@ impl WoxiStudio {
             self.cell_editors[idx].content =
               text_editor::Content::with_text(&next);
             self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
           }
         }
         Task::none()
@@ -672,6 +680,7 @@ impl WoxiStudio {
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            output_stale: false,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -693,6 +702,7 @@ impl WoxiStudio {
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            output_stale: false,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1213,6 +1223,9 @@ impl WoxiStudio {
     let mut content_col = Column::new().spacing(0).width(Fill);
     content_col = content_col.push(cell_editor);
 
+    let stale = editor.output_stale;
+    let stale_opacity = if stale { 0.35 } else { 1.0 };
+
     if is_grouped {
       // Small gap between input and output
       content_col = content_col.push(container(text("")).height(4).width(Fill));
@@ -1222,11 +1235,12 @@ impl WoxiStudio {
       // Warnings (e.g. unimplemented functions)
       if !editor.warnings.is_empty() {
         let warning_text = editor.warnings.join("\n");
+        let warning_color = Color::from_rgba(0.85, 0.55, 0.10, stale_opacity);
         let warning_display = container(
           text(warning_text)
             .size(12)
             .font(Font::MONOSPACE)
-            .color(Color::from_rgb(0.85, 0.55, 0.10)),
+            .color(warning_color),
         )
         .padding(6)
         .width(Fill);
@@ -1236,10 +1250,11 @@ impl WoxiStudio {
 
       // Stdout (Print output)
       if let Some(ref stdout) = editor.stdout {
-        let stdout_display =
-          container(text(stdout).size(12).font(Font::MONOSPACE))
-            .padding(6)
-            .width(Fill);
+        let mut stdout_text = text(stdout).size(12).font(Font::MONOSPACE);
+        if stale {
+          stdout_text = stdout_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
+        }
+        let stdout_display = container(stdout_text).padding(6).width(Fill);
 
         output_col = output_col.push(stdout_display);
       }
@@ -1247,9 +1262,13 @@ impl WoxiStudio {
       // Graphics SVG rendering
       if let Some(ref svg_data) = editor.graphics_svg {
         let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
-        let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+        let mut svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+        if stale {
+          svg_widget = svg_widget.opacity(0.3);
+        }
 
-        output_col = output_col.push(container(svg_widget).padding(4));
+        let svg_container = container(svg_widget).padding(4);
+        output_col = output_col.push(svg_container);
       }
 
       // Text output (filter out graphics placeholders)
@@ -1260,10 +1279,12 @@ impl WoxiStudio {
           .replace("-Image-", "");
         let display = display.trim().to_string();
         if !display.is_empty() {
-          let output_display =
-            container(text(display).size(12).font(Font::MONOSPACE))
-              .padding(6)
-              .width(Fill);
+          let mut output_text = text(display).size(12).font(Font::MONOSPACE);
+          if stale {
+            output_text =
+              output_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
+          }
+          let output_display = container(output_text).padding(6).width(Fill);
 
           output_col = output_col.push(output_display);
         }
@@ -1277,11 +1298,12 @@ impl WoxiStudio {
       // Warnings
       if !editor.warnings.is_empty() {
         let warning_text = editor.warnings.join("\n");
+        let warning_color = Color::from_rgba(0.85, 0.55, 0.10, stale_opacity);
         let warning_display = container(
           text(warning_text)
             .size(12)
             .font(Font::MONOSPACE)
-            .color(Color::from_rgb(0.85, 0.55, 0.10)),
+            .color(warning_color),
         )
         .padding(6)
         .width(Fill);
@@ -1290,19 +1312,24 @@ impl WoxiStudio {
       }
 
       if let Some(ref stdout) = editor.stdout {
-        let stdout_display =
-          container(text(stdout).size(12).font(Font::MONOSPACE))
-            .padding(6)
-            .width(Fill);
+        let mut stdout_text = text(stdout).size(12).font(Font::MONOSPACE);
+        if stale {
+          stdout_text = stdout_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
+        }
+        let stdout_display = container(stdout_text).padding(6).width(Fill);
 
         content_col = content_col.push(stdout_display);
       }
 
       if let Some(ref svg_data) = editor.graphics_svg {
         let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
-        let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+        let mut svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+        if stale {
+          svg_widget = svg_widget.opacity(0.3);
+        }
 
-        content_col = content_col.push(container(svg_widget).padding(4));
+        let svg_container = container(svg_widget).padding(4);
+        content_col = content_col.push(svg_container);
       }
 
       if let Some(ref output) = editor.output {
@@ -1312,10 +1339,12 @@ impl WoxiStudio {
           .replace("-Image-", "");
         let display = display.trim().to_string();
         if !display.is_empty() {
-          let output_display =
-            container(text(display).size(12).font(Font::MONOSPACE))
-              .padding(6)
-              .width(Fill);
+          let mut output_text = text(display).size(12).font(Font::MONOSPACE);
+          if stale {
+            output_text =
+              output_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
+          }
+          let output_display = container(output_text).padding(6).width(Fill);
 
           content_col = content_col.push(output_display);
         }
@@ -1488,6 +1517,7 @@ fn evaluate_cell_statements(editor: &mut CellEditor, code: &str) {
   };
   editor.graphics_svg = last_graphics;
   editor.warnings = all_warnings;
+  editor.output_stale = false;
   let _ = had_error;
 }
 

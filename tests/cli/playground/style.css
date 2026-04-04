@@ -296,6 +296,11 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  transition: opacity 0.2s;
+}
+
+#outputs.stale {
+  opacity: 0.4;
 }
 
 .output-box {
