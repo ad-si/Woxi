@@ -763,6 +763,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains('.')
       && !trimmed.contains('=')
       && !trimmed.contains('~')
+      && !trimmed.contains('<')
+      && !trimmed.contains('>')
+      && !trimmed.contains('&')
+      && !trimmed.contains('|')
+      && !trimmed.contains('?')
+      && !trimmed.contains(';')
+      && !trimmed.contains('@')
     // Reals may need scientific notation formatting
     {
       // Check if any element needs evaluation (named colors, date symbols, etc.)
