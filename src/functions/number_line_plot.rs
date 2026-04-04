@@ -16,12 +16,20 @@ const ROW_HEIGHT: u32 = 40;
 const PADDING_TOP: u32 = 15;
 const PADDING_BOTTOM: u32 = 30;
 
+/// A single interval span with inclusivity flags for each endpoint.
+struct Span {
+  lo: f64,
+  hi: f64,
+  lo_inclusive: bool,
+  hi_inclusive: bool,
+}
+
 /// Represents the kinds of data a NumberLinePlot can display.
 enum NumberLineData {
   /// A list of discrete point values.
   Points(Vec<f64>),
-  /// A list of closed intervals [lo, hi].
-  Intervals(Vec<(f64, f64)>),
+  /// A list of intervals with endpoint inclusivity.
+  Intervals(Vec<Span>),
   /// A predicate over a variable, sampled in [xmin, xmax].
   Predicate {
     body: Expr,
@@ -115,17 +123,7 @@ fn parse_number_line_args(
 
   // Case: Interval[{a, b}, ...] as direct argument
   if let Some(spans) = is_interval(&first) {
-    let intervals: Vec<(f64, f64)> = spans
-      .into_iter()
-      .filter_map(|(lo, hi)| {
-        let lo_f = try_eval_to_f64_or_inf(lo);
-        let hi_f = try_eval_to_f64_or_inf(hi);
-        match (lo_f, hi_f) {
-          (Some(a), Some(b)) => Some((a, b)),
-          _ => None,
-        }
-      })
-      .collect();
+    let intervals = parse_interval_spans(&spans);
     if !intervals.is_empty() {
       return Ok(vec![NumberLineData::Intervals(intervals)]);
     }
@@ -146,17 +144,7 @@ fn parse_number_line_args(
       for item in items {
         let item_eval = evaluate_expr_to_expr(item)?;
         if let Some(spans) = is_interval(&item_eval) {
-          let intervals: Vec<(f64, f64)> = spans
-            .into_iter()
-            .filter_map(|(lo, hi)| {
-              let lo_f = try_eval_to_f64_or_inf(lo);
-              let hi_f = try_eval_to_f64_or_inf(hi);
-              match (lo_f, hi_f) {
-                (Some(a), Some(b)) => Some((a, b)),
-                _ => None,
-              }
-            })
-            .collect();
+          let intervals = parse_interval_spans(&spans);
           if !intervals.is_empty() {
             series.push(NumberLineData::Intervals(intervals));
           }
@@ -192,6 +180,27 @@ fn parse_number_line_args(
   ))
 }
 
+/// Convert interval spans from `is_interval()` into `Span` structs.
+/// Interval endpoints are always inclusive (closed intervals).
+fn parse_interval_spans(spans: &[(&Expr, &Expr)]) -> Vec<Span> {
+  spans
+    .iter()
+    .filter_map(|(lo, hi)| {
+      let lo_f = try_eval_to_f64_or_inf(lo);
+      let hi_f = try_eval_to_f64_or_inf(hi);
+      match (lo_f, hi_f) {
+        (Some(a), Some(b)) => Some(Span {
+          lo: a,
+          hi: b,
+          lo_inclusive: true,
+          hi_inclusive: true,
+        }),
+        _ => None,
+      }
+    })
+    .collect()
+}
+
 /// Try to convert an Expr to f64, treating Infinity as f64::INFINITY.
 fn try_eval_to_f64_or_inf(expr: &Expr) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
@@ -213,19 +222,19 @@ fn compute_global_x_range(series: &[NumberLineData]) -> (f64, f64) {
         }
       }
       NumberLineData::Intervals(intervals) => {
-        for &(lo, hi) in intervals {
-          if lo.is_finite() {
-            x_min = x_min.min(lo);
+        for span in intervals {
+          if span.lo.is_finite() {
+            x_min = x_min.min(span.lo);
           }
-          if hi.is_finite() {
-            x_max = x_max.max(hi);
+          if span.hi.is_finite() {
+            x_max = x_max.max(span.hi);
           }
           // For semi-infinite intervals, use the finite end +/- some padding
-          if lo.is_infinite() && hi.is_finite() {
-            x_min = x_min.min(hi - 5.0);
+          if span.lo.is_infinite() && span.hi.is_finite() {
+            x_min = x_min.min(span.hi - 5.0);
           }
-          if hi.is_infinite() && lo.is_finite() {
-            x_max = x_max.max(lo + 5.0);
+          if span.hi.is_infinite() && span.lo.is_finite() {
+            x_max = x_max.max(span.lo + 5.0);
           }
         }
       }
@@ -262,13 +271,10 @@ fn eval_predicate(body: &Expr, var: &str, x: f64) -> bool {
   }
 }
 
-/// Sample a predicate and return intervals where it is true.
-fn sample_predicate(
-  body: &Expr,
-  var: &str,
-  xmin: f64,
-  xmax: f64,
-) -> Vec<(f64, f64)> {
+/// Sample a predicate and return spans where it is true.
+/// Endpoints are marked exclusive (open circles) since the boundary
+/// is determined by sampling and typically corresponds to strict inequalities.
+fn sample_predicate(body: &Expr, var: &str, xmin: f64, xmax: f64) -> Vec<Span> {
   let n = 500;
   let step = (xmax - xmin) / n as f64;
   let mut intervals = Vec::new();
@@ -282,12 +288,22 @@ fn sample_predicate(
       region_start = x;
       in_region = true;
     } else if !val && in_region {
-      intervals.push((region_start, x - step));
+      intervals.push(Span {
+        lo: region_start,
+        hi: x - step,
+        lo_inclusive: false,
+        hi_inclusive: false,
+      });
       in_region = false;
     }
   }
   if in_region {
-    intervals.push((region_start, xmax));
+    intervals.push(Span {
+      lo: region_start,
+      hi: xmax,
+      lo_inclusive: false,
+      hi_inclusive: false,
+    });
   }
   intervals
 }
@@ -356,9 +372,8 @@ fn render_number_line_svg(
   // Draw each series row (first series on top, last at the bottom near axis).
   for (row_idx, data) in series.iter().enumerate() {
     let color = series_color(row_idx);
-    // Place rows from bottom to top: last series near axis, first series highest.
-    let inverted_idx = num_rows - 1 - row_idx;
-    let data_y = axis_y - data_offset - inverted_idx as f64 * row_height;
+    // First series closest to the axis, subsequent series stacked upward.
+    let data_y = axis_y - data_offset - row_idx as f64 * row_height;
 
     match data {
       NumberLineData::Points(pts) => {
@@ -374,46 +389,54 @@ fn render_number_line_svg(
         }
       }
       NumberLineData::Intervals(intervals) => {
-        let bar_half = 4.0 * sf;
-        for &(lo, hi) in intervals {
-          let px_lo = if lo.is_infinite() {
+        let bar_half = 2.5 * sf;
+        let circle_r = 3.5 * sf;
+        for span in intervals {
+          let px_lo = if span.lo.is_infinite() {
             axis_x0
           } else {
-            x_to_px(lo)
+            x_to_px(span.lo)
           };
-          let px_hi = if hi.is_infinite() {
+          let px_hi = if span.hi.is_infinite() {
             axis_x1
           } else {
-            x_to_px(hi)
+            x_to_px(span.hi)
           };
-          // Draw thick interval bar
+          // Draw interval bar
           svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-             fill=\"{}\" opacity=\"0.6\" rx=\"{:.0}\"/>\n",
+             fill=\"{}\"/>\n",
             px_lo,
             data_y - bar_half,
             (px_hi - px_lo).max(0.0),
             bar_half * 2.0,
             color,
-            sf
           ));
           // Draw endpoint markers
-          if lo.is_finite() {
-            svg.push_str(&format!(
-              "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px_lo, data_y, bar_half, color
-            ));
+          if span.lo.is_finite() {
+            draw_endpoint(
+              &mut svg,
+              px_lo,
+              data_y,
+              circle_r,
+              &color,
+              bg_color,
+              span.lo_inclusive,
+            );
           } else {
-            // Arrow for -Infinity
             draw_arrow_left(&mut svg, axis_x0, data_y, bar_half, &color);
           }
-          if hi.is_finite() {
-            svg.push_str(&format!(
-              "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px_hi, data_y, bar_half, color
-            ));
+          if span.hi.is_finite() {
+            draw_endpoint(
+              &mut svg,
+              px_hi,
+              data_y,
+              circle_r,
+              &color,
+              bg_color,
+              span.hi_inclusive,
+            );
           } else {
-            // Arrow for +Infinity
             draw_arrow_right(&mut svg, axis_x1, data_y, bar_half, &color);
           }
         }
@@ -425,20 +448,38 @@ fn render_number_line_svg(
         xmax,
       } => {
         let intervals = sample_predicate(body, var, *xmin, *xmax);
-        let bar_half = 4.0 * sf;
-        for (lo, hi) in &intervals {
-          let px_lo = x_to_px(*lo);
-          let px_hi = x_to_px(*hi);
+        let bar_half = 2.5 * sf;
+        let circle_r = 3.5 * sf;
+        for span in &intervals {
+          let px_lo = x_to_px(span.lo);
+          let px_hi = x_to_px(span.hi);
           svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-             fill=\"{}\" opacity=\"0.6\" rx=\"{:.0}\"/>\n",
+             fill=\"{}\"/>\n",
             px_lo,
             data_y - bar_half,
             (px_hi - px_lo).max(0.0),
             bar_half * 2.0,
             color,
-            sf
           ));
+          draw_endpoint(
+            &mut svg,
+            px_lo,
+            data_y,
+            circle_r,
+            &color,
+            bg_color,
+            span.lo_inclusive,
+          );
+          draw_endpoint(
+            &mut svg,
+            px_hi,
+            data_y,
+            circle_r,
+            &color,
+            bg_color,
+            span.hi_inclusive,
+          );
         }
       }
     }
@@ -526,6 +567,31 @@ fn draw_arrow_right(svg: &mut String, x: f64, y: f64, size: f64, color: &str) {
     y + size,
     color
   ));
+}
+
+/// Draw an endpoint circle: filled for inclusive, empty (stroke-only) for exclusive.
+fn draw_endpoint(
+  svg: &mut String,
+  cx: f64,
+  cy: f64,
+  r: f64,
+  color: &str,
+  bg_color: &str,
+  inclusive: bool,
+) {
+  let stroke_w = r * 0.5;
+  if inclusive {
+    svg.push_str(&format!(
+      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
+      cx, cy, r, color
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" \
+       fill=\"{}\" stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
+      cx, cy, r, bg_color, color, stroke_w
+    ));
+  }
 }
 
 /// Get theme-appropriate colors.

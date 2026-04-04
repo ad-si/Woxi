@@ -5,9 +5,9 @@ expression: "export_svg(\"NumberLinePlot[Interval[{-Infinity, 5}]]\")"
 <svg width="360" height="60" viewBox="0 0 3600 600" xmlns="http://www.w3.org/2000/svg">
 <rect width="3600" height="600" fill="#ffffff"/>
 <line x1="600.0" y1="225.0" x2="3400.0" y2="225.0" stroke="#666666" stroke-width="10"/>
-<rect x="600.0" y="85.0" width="2606.9" height="80.0" fill="rgb(94,129,181)" opacity="0.6" rx="10"/>
-<polygon points="520.0,125.0 600.0,85.0 600.0,165.0" fill="rgb(94,129,181)"/>
-<circle cx="3206.9" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
+<rect x="600.0" y="100.0" width="2606.9" height="50.0" fill="rgb(94,129,181)"/>
+<polygon points="550.0,125.0 600.0,100.0 600.0,150.0" fill="rgb(94,129,181)"/>
+<circle cx="3206.9" cy="125.0" r="35.0" fill="rgb(94,129,181)"/>
 <line x1="793.1" y1="225.0" x2="793.1" y2="275.0" stroke="#666666" stroke-width="10"/>
 <text x="793.1" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1275.9" y1="225.0" x2="1275.9" y2="275.0" stroke="#666666" stroke-width="10"/>
