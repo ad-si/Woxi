@@ -54,12 +54,24 @@ pub fn map_with_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Check for Infinity identifier
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) if s == "Infinity" || s == "DirectedInfinity")
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1
+        && matches!(&args[0], Expr::Integer(1)))
+  };
+
   // Parse level spec: {n} = exactly level n, {min, max} = range, n = {1, n}
+  // Infinity means all levels, negative levels count from leaves
   // Also handle Heads -> True option
   let (min_level, max_level, _heads) = match level_spec {
     Expr::Integer(n) => (1i64, *n as i64, false),
+    _ if is_infinity(level_spec) => (1i64, i64::MAX, false),
     Expr::List(items) if items.len() == 1 => {
-      if let Some(n) = expr_to_i128(&items[0]) {
+      if is_infinity(&items[0]) {
+        (1i64, i64::MAX, false)
+      } else if let Some(n) = expr_to_i128(&items[0]) {
         (n as i64, n as i64, false)
       } else {
         return Ok(Expr::FunctionCall {
@@ -70,7 +82,11 @@ pub fn map_with_level_ast(
     }
     Expr::List(items) if items.len() == 2 => {
       let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
-      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
+      let max = if is_infinity(&items[1]) {
+        i64::MAX
+      } else {
+        expr_to_i128(&items[1]).unwrap_or(0) as i64
+      };
       (min, max, false)
     }
     // Heads -> True option (Expr::Rule variant from -> syntax)
@@ -109,7 +125,102 @@ pub fn map_with_level_ast(
     }
   };
 
-  map_at_depth(func, expr, 0, min_level, max_level)
+  // If any level bound is negative, we need depth-aware traversal
+  if min_level < 0 || max_level < 0 {
+    map_at_depth_negative(func, expr, 0, min_level, max_level)
+  } else {
+    map_at_depth(func, expr, 0, min_level, max_level)
+  }
+}
+
+/// Compute the Wolfram-style depth of an expression.
+/// Atoms have depth 1, compound expressions have depth 1 + max child depth.
+fn expr_depth(expr: &Expr) -> i64 {
+  match expr {
+    Expr::List(items) => {
+      if items.is_empty() {
+        1
+      } else {
+        1 + items.iter().map(expr_depth).max().unwrap_or(0)
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      if args.is_empty() {
+        1
+      } else {
+        1 + args.iter().map(expr_depth).max().unwrap_or(0)
+      }
+    }
+    _ => 1,
+  }
+}
+
+/// Map with negative level support. Negative levels count from leaves:
+/// level -1 = atoms, level -2 = expressions whose max child depth is 1, etc.
+/// The negative level of a node is -depth(node).
+fn map_at_depth_negative(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> Result<Expr, InterpreterError> {
+  let children = match expr {
+    Expr::List(items) => Some((items.as_slice(), None::<&str>)),
+    Expr::FunctionCall { name, args } => {
+      Some((args.as_slice(), Some(name.as_str())))
+    }
+    _ => None,
+  };
+
+  let neg_level = -(expr_depth(expr));
+
+  let result = if let Some((items, head_name)) = children {
+    let mapped: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|item| {
+        map_at_depth_negative(
+          func,
+          item,
+          current_depth + 1,
+          min_level,
+          max_level,
+        )
+      })
+      .collect();
+    let mapped = mapped?;
+    match head_name {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: mapped,
+      },
+      None => Expr::List(mapped),
+    }
+  } else {
+    expr.clone()
+  };
+
+  // Check if this node should have f applied.
+  // Each node has both a positive level (current_depth from root) and
+  // a negative level (neg_level = -depth, counting from leaves).
+  // A node matches if its level falls within [min_level, max_level]
+  // using the appropriate sign convention for each bound.
+  let meets_min = if min_level >= 0 {
+    current_depth >= min_level
+  } else {
+    neg_level >= min_level
+  };
+  let meets_max = if max_level >= 0 {
+    current_depth <= max_level
+  } else {
+    neg_level <= max_level
+  };
+
+  if meets_min && meets_max {
+    apply_func_ast(func, &result)
+  } else {
+    Ok(result)
+  }
 }
 
 /// Recursively map at specified levels (bottom-up)
