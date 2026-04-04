@@ -1794,8 +1794,39 @@ mod plot3d {
     }
 
     #[test]
-    fn date_list_plot() {
-      insta::assert_snapshot!(export_svg("DateListPlot[{1, 3, 2, 5, 4}]"));
+    fn date_list_plot_date_list() {
+      insta::assert_snapshot!(export_svg(
+        "DateListPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 3}, {{2010, 12, 31}, 2}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_plot_date_object() {
+      insta::assert_snapshot!(export_svg(
+        "DateListPlot[{{DateObject[{2000}], 1}, {DateObject[{2005}], 3}, {DateObject[{2010}], 2}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_plot_year_only() {
+      insta::assert_snapshot!(export_svg(
+        "DateListPlot[{{{2000}, 1}, {{2005}, 3}, {{2010}, 2}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_plot_multiple_series() {
+      insta::assert_snapshot!(export_svg(
+        "DateListPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 3}}, {{{2000, 1, 1}, 2}, {{2010, 1, 1}, 1}}}]"
+      ));
+    }
+
+    #[test]
+    fn date_list_plot_invalid_returns_unevaluated() {
+      assert_eq!(
+        interpret("DateListPlot[{1, 3, 2, 5, 4}]").unwrap(),
+        "DateListPlot[{1, 3, 2, 5, 4}]"
+      );
     }
 
     #[test]

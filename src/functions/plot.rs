@@ -272,6 +272,167 @@ pub(crate) fn is_major_tick(v: f64, step: f64) -> bool {
   remainder.abs() < step * 1e-9
 }
 
+/// Format an AbsoluteTime value (seconds since 1900-01-01) as a date string.
+pub(crate) fn format_date_tick(seconds: f64) -> String {
+  let (year, month, day, _, _, _) =
+    crate::functions::datetime_ast::absolute_seconds_to_date(seconds);
+  if day == 1 && month == 1 {
+    format!("{year}")
+  } else if day == 1 {
+    let month_abbr = match month {
+      1 => "Jan",
+      2 => "Feb",
+      3 => "Mar",
+      4 => "Apr",
+      5 => "May",
+      6 => "Jun",
+      7 => "Jul",
+      8 => "Aug",
+      9 => "Sep",
+      10 => "Oct",
+      11 => "Nov",
+      12 => "Dec",
+      _ => "???",
+    };
+    format!("{month_abbr} {year}")
+  } else {
+    let month_abbr = match month {
+      1 => "Jan",
+      2 => "Feb",
+      3 => "Mar",
+      4 => "Apr",
+      5 => "May",
+      6 => "Jun",
+      7 => "Jul",
+      8 => "Aug",
+      9 => "Sep",
+      10 => "Oct",
+      11 => "Nov",
+      12 => "Dec",
+      _ => "???",
+    };
+    format!("{day} {month_abbr} {year}")
+  }
+}
+
+/// Date tick step specification for nice date axis ticks.
+#[derive(Clone, Copy)]
+pub(crate) enum DateStep {
+  Years(i64),
+  Months(i64),
+  Days(i64),
+}
+
+/// Compute a nice step for date axis ticks based on the range in seconds.
+pub(crate) fn nice_date_step_spec(range_seconds: f64) -> DateStep {
+  let range_days = range_seconds / 86400.0;
+  let range_years = range_days / 365.25;
+
+  if range_years > 100.0 {
+    let step = nice_step(range_years, 5) as i64;
+    DateStep::Years(step.max(10))
+  } else if range_years > 20.0 {
+    DateStep::Years(5)
+  } else if range_years > 8.0 {
+    DateStep::Years(2)
+  } else if range_years > 2.0 {
+    DateStep::Years(1)
+  } else if range_days > 180.0 {
+    DateStep::Months(3)
+  } else if range_days > 60.0 {
+    DateStep::Months(1)
+  } else if range_days > 14.0 {
+    let step = nice_step(range_days, 5) as i64;
+    DateStep::Days(step.max(1))
+  } else {
+    let step = nice_step(range_days, 5) as i64;
+    DateStep::Days(step.max(1))
+  }
+}
+
+/// Generate nice date tick positions between min and max AbsoluteTime values.
+pub(crate) fn generate_date_ticks(x_min: f64, x_max: f64) -> Vec<f64> {
+  use crate::functions::datetime_ast::{
+    absolute_seconds_to_date, date_to_absolute_seconds,
+  };
+
+  let range = x_max - x_min;
+  let step = nice_date_step_spec(range);
+  let mut ticks = Vec::new();
+
+  let (start_y, start_m, start_d, _, _, _) = absolute_seconds_to_date(x_min);
+
+  match step {
+    DateStep::Years(n) => {
+      // Round start year down to multiple of n
+      let mut y = (start_y / n) * n;
+      if y > start_y {
+        y -= n;
+      }
+      loop {
+        let t = date_to_absolute_seconds(y, 1, 1, 0, 0, 0.0);
+        if t > x_max {
+          break;
+        }
+        if t >= x_min {
+          ticks.push(t);
+        }
+        y += n;
+      }
+    }
+    DateStep::Months(n) => {
+      let mut y = start_y;
+      let mut m = ((start_m - 1) / n) * n + 1;
+      loop {
+        let t = date_to_absolute_seconds(y, m, 1, 0, 0, 0.0);
+        if t > x_max {
+          break;
+        }
+        if t >= x_min {
+          ticks.push(t);
+        }
+        m += n;
+        while m > 12 {
+          m -= 12;
+          y += 1;
+        }
+      }
+    }
+    DateStep::Days(n) => {
+      // Round start day down to multiple of n
+      let mut y = start_y;
+      let mut m = start_m;
+      let mut d = ((start_d - 1) / n) * n + 1;
+      loop {
+        let t = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
+        if t > x_max {
+          break;
+        }
+        if t >= x_min {
+          ticks.push(t);
+        }
+        // Advance by n days and normalize
+        let next_t = t + (n as f64) * 86400.0;
+        let (ny, nm, nd, _, _, _) = absolute_seconds_to_date(next_t);
+        y = ny;
+        m = nm;
+        d = nd;
+      }
+    }
+  }
+
+  ticks
+}
+
+/// Approximate step in seconds for date ticks (used for tick count estimation).
+pub(crate) fn nice_date_step(range_seconds: f64) -> f64 {
+  match nice_date_step_spec(range_seconds) {
+    DateStep::Years(n) => (n as f64) * 365.25 * 86400.0,
+    DateStep::Months(n) => (n as f64) * 30.44 * 86400.0,
+    DateStep::Days(n) => (n as f64) * 86400.0,
+  }
+}
+
 /// Format a tick value, dropping the trailing ".0" for integers.
 pub(crate) fn format_tick(v: f64) -> String {
   if (v - v.round()).abs() < 1e-9 {
@@ -384,6 +545,8 @@ pub(crate) struct PlotOptions {
   pub grid_lines_y: bool,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
+  pub date_axis: bool,
 }
 
 impl Default for PlotOptions {
@@ -403,6 +566,7 @@ impl Default for PlotOptions {
       plot_legends: Vec::new(),
       grid_lines_y: false,
       frame: false,
+      date_axis: false,
     }
   }
 }
@@ -544,18 +708,24 @@ fn generate_svg_with_options(
     let y_tick_size;
     let x_major;
     let y_major;
+    let date_axis = opts.date_axis;
     if show_ticks && (show_x_axis || show_y_axis) {
       // Compute nice major tick step for each visible axis
-      let xmaj = nice_step(x_max - x_min, 5);
+      let xmaj = if date_axis {
+        nice_date_step(x_max - x_min)
+      } else {
+        nice_step(x_max - x_min, 5)
+      };
       let ymaj = nice_step(y_max - y_min, 5);
       x_major = xmaj;
       y_major = ymaj;
-      let x_minor = xmaj / 5.0;
+      let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
       let y_minor = ymaj / 5.0;
-      x_labels_count = if show_x_axis {
-        ((x_max - x_min) / x_minor).round() as usize + 1
-      } else {
+      x_labels_count = if !show_x_axis || date_axis {
+        // For date axes, we suppress plotters x labels and draw our own
         0
+      } else {
+        ((x_max - x_min) / x_minor).round() as usize + 1
       };
       y_labels_count = if show_y_axis {
         ((y_max - y_min) / y_minor).round() as usize + 1
@@ -587,7 +757,13 @@ fn generate_svg_with_options(
       .x_labels(x_labels_count)
       .y_labels(y_labels_count)
       .x_label_formatter(&move |v: &f64| {
-        if x_labels_count > 0 && is_major_tick(*v, x_major) {
+        if x_labels_count == 0 {
+          return String::new();
+        }
+        if date_axis {
+          // For date axis, all generated ticks are major ticks
+          format_date_tick(*v)
+        } else if is_major_tick(*v, x_major) {
           format_tick(*v)
         } else {
           String::new()
