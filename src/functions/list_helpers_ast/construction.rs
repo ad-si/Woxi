@@ -872,7 +872,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// AST-based SparseArray: create a matrix from position rules.
 /// SparseArray[rules, {rows, cols}, default] -> evaluates rules and creates matrix
 pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 3 {
+  if args.len() < 2 {
     return Ok(Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: args.to_vec(),
@@ -881,7 +881,12 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let rules = &args[0];
   let dims = &args[1];
-  let default = &args[2];
+  let default_zero = Expr::Integer(0);
+  let default = if args.len() >= 3 {
+    &args[2]
+  } else {
+    &default_zero
+  };
 
   // Extract dimensions
   let dim_values = match dims {
@@ -901,12 +906,51 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: args.to_vec(),
-      });
+      // Single integer dimension for 1D arrays
+      match expr_to_i128(dims) {
+        Some(n) => vec![n as usize],
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "SparseArray".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
     }
   };
+
+  // 1D SparseArray: dimension is a single integer or {n}
+  if dim_values.len() == 1 {
+    let size = dim_values[0];
+    let mut array: Vec<Expr> = vec![default.clone(); size];
+
+    let rule_list = match rules {
+      Expr::List(items) => items.clone(),
+      _ => vec![rules.clone()],
+    };
+
+    for rule in &rule_list {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+      {
+        // pattern can be {i} or just i (1-indexed)
+        let idx = match pattern.as_ref() {
+          Expr::List(pos) if pos.len() == 1 => expr_to_i128(&pos[0]),
+          _ => expr_to_i128(pattern),
+        };
+        if let Some(i) = idx {
+          let ii = (i - 1) as usize;
+          if ii < size {
+            array[ii] = replacement.as_ref().clone();
+          }
+        }
+      }
+    }
+
+    return Ok(Expr::List(array));
+  }
 
   if dim_values.len() == 2 {
     let rows = dim_values[0];
