@@ -3559,3 +3559,159 @@ mod horner_form {
     );
   }
 }
+
+mod function_expand {
+  use super::*;
+
+  #[test]
+  fn pochhammer() {
+    assert_eq!(
+      interpret("FunctionExpand[Pochhammer[a, n]]").unwrap(),
+      "Gamma[a + n]/Gamma[a]"
+    );
+  }
+
+  #[test]
+  fn beta() {
+    assert_eq!(
+      interpret("FunctionExpand[Beta[a, b]]").unwrap(),
+      "(Gamma[a]*Gamma[b])/Gamma[a + b]"
+    );
+  }
+
+  #[test]
+  fn binomial_n_2() {
+    assert_eq!(
+      interpret("FunctionExpand[Binomial[n, 2]]").unwrap(),
+      "((-1 + n)*n)/2"
+    );
+  }
+
+  #[test]
+  fn haversine() {
+    assert_eq!(
+      interpret("FunctionExpand[Haversine[x]]").unwrap(),
+      "(1 - Cos[x])/2"
+    );
+  }
+
+  #[test]
+  fn inverse_haversine() {
+    assert_eq!(
+      interpret("FunctionExpand[InverseHaversine[x]]").unwrap(),
+      "2*ArcSin[Sqrt[x]]"
+    );
+  }
+
+  #[test]
+  fn sinc() {
+    assert_eq!(interpret("FunctionExpand[Sinc[x]]").unwrap(), "Sin[x]/x");
+  }
+
+  #[test]
+  fn chebyshev_t() {
+    assert_eq!(
+      interpret("FunctionExpand[ChebyshevT[n, x]]").unwrap(),
+      "Cos[n*ArcCos[x]]"
+    );
+  }
+
+  #[test]
+  fn chebyshev_u() {
+    assert_eq!(
+      interpret("FunctionExpand[ChebyshevU[n, x]]").unwrap(),
+      "Sin[(1 + n)*ArcCos[x]]/(Sqrt[1 - x]*Sqrt[1 + x])"
+    );
+  }
+
+  #[test]
+  fn fibonacci() {
+    assert_eq!(
+      interpret("FunctionExpand[Fibonacci[n]]").unwrap(),
+      "(((1 + Sqrt[5])/2)^n - (2/(1 + Sqrt[5]))^n*Cos[n*Pi])/Sqrt[5]"
+    );
+  }
+
+  #[test]
+  fn lucas_l() {
+    assert_eq!(
+      interpret("FunctionExpand[LucasL[n]]").unwrap(),
+      "((1 + Sqrt[5])/2)^n + (2/(1 + Sqrt[5]))^n*Cos[n*Pi]"
+    );
+  }
+
+  #[test]
+  fn gamma_half() {
+    assert_eq!(interpret("FunctionExpand[Gamma[1/2]]").unwrap(), "Sqrt[Pi]");
+  }
+
+  #[test]
+  fn passthrough() {
+    // Functions without expansion rules pass through
+    assert_eq!(interpret("FunctionExpand[Sin[x]]").unwrap(), "Sin[x]");
+  }
+}
+
+mod to_radicals {
+  use super::*;
+
+  #[test]
+  fn quadratic() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^2 - 3 &, 1]]").unwrap(),
+      "-Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("ToRadicals[Root[#^2 - 3 &, 2]]").unwrap(),
+      "Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn quadratic_with_linear() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^2 + 3# + 1 &, 1]]").unwrap(),
+      "(-3 - Sqrt[5])/2"
+    );
+    assert_eq!(
+      interpret("ToRadicals[Root[#^2 + 3# + 1 &, 2]]").unwrap(),
+      "(-3 + Sqrt[5])/2"
+    );
+  }
+
+  #[test]
+  fn cubic_pure() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^3 - 2 &, 1]]").unwrap(),
+      "2^(1/3)"
+    );
+  }
+
+  #[test]
+  fn quartic_pure() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^4 - 2 &, 1]]").unwrap(),
+      "-2^(1/4)"
+    );
+    assert_eq!(
+      interpret("ToRadicals[Root[#^4 - 2 &, 2]]").unwrap(),
+      "2^(1/4)"
+    );
+  }
+
+  #[test]
+  fn quintic_pure() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^5 - 2 &, 1]]").unwrap(),
+      "2^(1/5)"
+    );
+  }
+
+  #[test]
+  fn sixth_root() {
+    assert_eq!(
+      interpret("ToRadicals[Root[#^6 - 2 &, 1]]").unwrap(),
+      "-2^(1/6)"
+    );
+  }
+}

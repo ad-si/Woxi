@@ -103,6 +103,12 @@ pub fn dispatch_polynomial_functions(
     "Root" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
+    "FunctionExpand" if args.len() == 1 => {
+      return Some(crate::functions::polynomial_ast::function_expand_ast(args));
+    }
+    "ToRadicals" if args.len() == 1 => {
+      return Some(crate::functions::polynomial_ast::to_radicals_ast(args));
+    }
     "ToRules" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::to_rules_ast(args));
     }

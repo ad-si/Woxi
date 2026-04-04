@@ -861,7 +861,7 @@ FixedPoint,Applies a function repeatedly until the result no longer changes,✅,
 QPochhammer,q-Pochhammer symbol,✅,pure,7.0,871
 DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6.0,872
 EdgeStyle,Option for styling edges in graphs,✅,none,8.0,873
-FunctionExpand,,🚫,,3.0,874
+FunctionExpand,Expands special functions into simpler forms,✅,pure,3.0,874
 BernoulliB,Returns the nth Bernoulli number,✅,pure,1.0,876
 Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7.0,876
 PlanetData,,🚫,,10.0,877
@@ -1193,7 +1193,7 @@ DateDifference,Difference between two dates,✅,pure,6.0,1208
 FresnelC,Returns the Fresnel cosine integral,✅,pure,3.0,1208
 PathGraph,Creates a path graph from a list of vertices,✅,1,8.0,1209
 DateRange,,🚫,,9.0,1210
-ToRadicals,Attempts to express in terms of radicals,✅,1,3.0,1211
+ToRadicals,Attempts to express in terms of radicals,✅,pure,3.0,1211
 LowerTriangularize,Zero out elements above a diagonal,✅,pure,7.0,1212
 BitAnd,Returns the bitwise AND of integers,✅,pure,4.0,1213
 ImageCompose,Overlays one image on another,✅,pure,7.0,1214
@@ -4499,7 +4499,7 @@ RemoteConnect,,🚫,,11.3,4660
 RightTriangle,,,,3.0,4660
 ScorerHi,,,,10.0,4660
 ShowCursorTracker,,🚫,,4.0,4660
-SubsetCases,,,,12.1,4660
+SubsetCases,Finds non-overlapping subsets matching a pattern,✅,pure,12.1,4660
 TraceDialog,,🚫,,2.0,4660
 TypeSpecifier,,,,12.0,4660
 URLQueryDecode,,,,10.0,4660
@@ -4811,7 +4811,7 @@ ReImLabels,,,,12.0,5013
 RudvalisGroupRu,,,,8.0,5013
 SortedBy,,,,12.0,5013
 SquareRepeatingElement,,,,11.1,5013
-SubsetCount,,,,12.1,5013
+SubsetCount,Counts non-overlapping subsets matching a pattern,✅,pure,12.1,5013
 SuzukiGroupSuz,,,,8.0,5013
 SymmetricKey,,🚫,,10.1,5013
 TitsGroupT,,,,8.0,5013
@@ -5313,7 +5313,7 @@ ReturnReceiptFunction,,,,10.2,5587
 SharingList,,,,11.3,5587
 ShortestPathFunction,,,,8.0,5587
 SpellingOptions,,🚫,,4.0,5587
-SubsetPosition,,,,12.1,5587
+SubsetPosition,Finds positions of all subsets matching a pattern,✅,pure,12.1,5587
 SystemCredentialStoreObject,,🚫,,12.1,5587
 TaskAbort,,🚫,,11.2,5587
 TouchscreenControlPlacement,,🚫,,9.0,5587

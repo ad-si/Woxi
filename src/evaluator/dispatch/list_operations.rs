@@ -516,6 +516,26 @@ pub fn dispatch_list_operations(
     "Subsets" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::subsets_ast(args));
     }
+    "SubsetPosition" if args.len() == 2 => {
+      return Some(list_helpers_ast::subset_position_ast(&args[0], &args[1]));
+    }
+    "SubsetCases" if args.len() == 2 || args.len() == 3 => {
+      let max_count = if args.len() == 3 {
+        match &args[2] {
+          Expr::Integer(n) => Some(*n as usize),
+          Expr::Identifier(s) if s == "Infinity" => None,
+          _ => None,
+        }
+      } else {
+        None
+      };
+      return Some(list_helpers_ast::subset_cases_ast(
+        &args[0], &args[1], max_count,
+      ));
+    }
+    "SubsetCount" if args.len() == 2 => {
+      return Some(list_helpers_ast::subset_count_ast(&args[0], &args[1]));
+    }
     "Subsequences" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::subsequences_ast(args));
     }

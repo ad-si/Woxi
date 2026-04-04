@@ -1500,3 +1500,256 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   Ok(Expr::List(result))
 }
+
+/// Helper: generate index combinations of size k from 0..n, in lexicographic order.
+fn generate_index_combinations(
+  n: usize,
+  k: usize,
+  start: usize,
+  current: &mut Vec<usize>,
+  result: &mut Vec<Vec<usize>>,
+) {
+  if current.len() == k {
+    result.push(current.clone());
+    return;
+  }
+  for i in start..n {
+    current.push(i);
+    generate_index_combinations(n, k, i + 1, current, result);
+    current.pop();
+  }
+}
+
+/// Generate all permutations of a slice of indices.
+fn permutations(indices: &[usize]) -> Vec<Vec<usize>> {
+  if indices.len() <= 1 {
+    return vec![indices.to_vec()];
+  }
+  let mut result = Vec::new();
+  for (i, &idx) in indices.iter().enumerate() {
+    let rest: Vec<usize> = indices
+      .iter()
+      .enumerate()
+      .filter(|&(j, _)| j != i)
+      .map(|(_, &v)| v)
+      .collect();
+    for mut perm in permutations(&rest) {
+      perm.insert(0, idx);
+      result.push(perm);
+    }
+  }
+  result
+}
+
+/// Get the pattern size from a subset pattern (list length, or 1 for non-list patterns).
+fn subset_pattern_size(pattern: &Expr) -> usize {
+  match pattern {
+    Expr::List(items) => items.len(),
+    // Condition[{...}, test] — extract list length from inside Condition
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      subset_pattern_size(&args[0])
+    }
+    _ => 1,
+  }
+}
+
+/// Build a list expr from items at given indices, for matching against subset pattern.
+fn build_subset_expr(
+  items: &[Expr],
+  indices: &[usize],
+  pattern_is_list: bool,
+) -> Expr {
+  if pattern_is_list {
+    Expr::List(indices.iter().map(|&i| items[i].clone()).collect())
+  } else {
+    // Single-element pattern: match against the element directly
+    items[indices[0]].clone()
+  }
+}
+
+/// Check if a subset pattern is a list pattern (or Condition wrapping a list).
+fn subset_pattern_is_list(pattern: &Expr) -> bool {
+  match pattern {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      subset_pattern_is_list(&args[0])
+    }
+    _ => false,
+  }
+}
+
+/// Check if a subset (given by indices into items) matches pattern in some permutation.
+/// Returns Some(matching_perm) if matched, None otherwise.
+fn find_matching_permutation(
+  items: &[Expr],
+  indices: &[usize],
+  pattern: &Expr,
+  is_list: bool,
+) -> Option<Vec<usize>> {
+  if indices.len() <= 1 {
+    // Only one permutation possible
+    let subset_expr = build_subset_expr(items, indices, is_list);
+    if matches_pattern_ast(&subset_expr, pattern)
+      || crate::evaluator::pattern_matching::match_pattern(
+        &subset_expr,
+        pattern,
+      )
+      .is_some()
+    {
+      return Some(indices.to_vec());
+    }
+    return None;
+  }
+
+  // First try sorted order (most common case)
+  let subset_expr = build_subset_expr(items, indices, is_list);
+  if matches_pattern_ast(&subset_expr, pattern)
+    || crate::evaluator::pattern_matching::match_pattern(&subset_expr, pattern)
+      .is_some()
+  {
+    return Some(indices.to_vec());
+  }
+
+  // Try all other permutations
+  for perm in permutations(indices) {
+    if perm == indices {
+      continue; // Already tried sorted order
+    }
+    let subset_expr = build_subset_expr(items, &perm, is_list);
+    if matches_pattern_ast(&subset_expr, pattern)
+      || crate::evaluator::pattern_matching::match_pattern(
+        &subset_expr,
+        pattern,
+      )
+      .is_some()
+    {
+      return Some(perm);
+    }
+  }
+  None
+}
+
+/// SubsetPosition[list, pattern] — find positions of all subsets matching pattern.
+/// Returns all matching subset index-lists (1-indexed), in the order that matched.
+pub fn subset_position_ast(
+  list: &Expr,
+  pattern: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SubsetPosition".to_string(),
+        args: vec![list.clone(), pattern.clone()],
+      });
+    }
+  };
+
+  let k = subset_pattern_size(pattern);
+  let is_list = subset_pattern_is_list(pattern);
+
+  let mut index_combos = Vec::new();
+  generate_index_combinations(
+    items.len(),
+    k,
+    0,
+    &mut vec![],
+    &mut index_combos,
+  );
+
+  let mut results = Vec::new();
+  for indices in &index_combos {
+    if let Some(perm) =
+      find_matching_permutation(items, indices, pattern, is_list)
+    {
+      // Return 1-indexed positions in the matching permutation order
+      results.push(Expr::List(
+        perm
+          .iter()
+          .map(|&i| Expr::Integer((i + 1) as i128))
+          .collect(),
+      ));
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// SubsetCases[list, pattern] — find non-overlapping subsets matching pattern (greedy).
+/// SubsetCases[list, pattern, n] — find at most n non-overlapping matches.
+pub fn subset_cases_ast(
+  list: &Expr,
+  pattern: &Expr,
+  max_count: Option<usize>,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      let mut a = vec![list.clone(), pattern.clone()];
+      if let Some(n) = max_count {
+        a.push(Expr::Integer(n as i128));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "SubsetCases".to_string(),
+        args: a,
+      });
+    }
+  };
+
+  let k = subset_pattern_size(pattern);
+  let is_list = subset_pattern_is_list(pattern);
+  let limit = max_count.unwrap_or(usize::MAX);
+
+  // Generate all subsets of size k in lexicographic order
+  let mut index_combos = Vec::new();
+  generate_index_combinations(
+    items.len(),
+    k,
+    0,
+    &mut vec![],
+    &mut index_combos,
+  );
+
+  // Greedily select non-overlapping matches
+  let mut used = vec![false; items.len()];
+  let mut results = Vec::new();
+
+  for indices in &index_combos {
+    if results.len() >= limit {
+      break;
+    }
+    // Skip if any index is already used
+    if indices.iter().any(|&i| used[i]) {
+      continue;
+    }
+    if let Some(perm) =
+      find_matching_permutation(items, indices, pattern, is_list)
+    {
+      // Mark indices as used
+      for &i in indices {
+        used[i] = true;
+      }
+      // Return the subset elements in the matching permutation order
+      results
+        .push(Expr::List(perm.iter().map(|&i| items[i].clone()).collect()));
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// SubsetCount[list, pattern] — count non-overlapping subsets matching pattern.
+pub fn subset_count_ast(
+  list: &Expr,
+  pattern: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let result = subset_cases_ast(list, pattern, None)?;
+  match &result {
+    Expr::List(items) => Ok(Expr::Integer(items.len() as i128)),
+    _ => Ok(Expr::Integer(0)),
+  }
+}

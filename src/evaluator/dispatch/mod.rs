@@ -1362,7 +1362,6 @@ pub fn evaluate_function_call_ast_inner(
     | "PrincipalValue"
     | "UpTo"
     | "LetterCharacter"
-    | "ToRadicals"
     | "Longest"
     | "GenerateConditions"
     | "OverTilde"

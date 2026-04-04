@@ -1793,7 +1793,7 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Order roots the way Wolfram does:
 /// Real roots first sorted ascending, then complex roots sorted by (Re, Im).
-fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
   let pa = expr_to_complex_parts_pub(a);
   let pb = expr_to_complex_parts_pub(b);
