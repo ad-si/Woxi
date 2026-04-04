@@ -751,6 +751,7 @@ pub fn position_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
+    Expr::FunctionCall { args, .. } => args.as_slice(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Position".to_string(),
@@ -760,15 +761,42 @@ pub fn position_ast(
   };
 
   let mut positions = Vec::new();
-
-  for (i, item) in items.iter().enumerate() {
-    if matches_pattern_ast(item, pattern) {
-      // 1-indexed
-      positions.push(Expr::List(vec![Expr::Integer((i + 1) as i128)]));
-    }
-  }
+  let mut path = Vec::new();
+  position_recursive(items, pattern, &mut path, &mut positions);
 
   Ok(Expr::List(positions))
+}
+
+/// Recursively find positions of elements matching pattern
+fn position_recursive(
+  items: &[Expr],
+  pattern: &Expr,
+  path: &mut Vec<i128>,
+  positions: &mut Vec<Expr>,
+) {
+  for (i, item) in items.iter().enumerate() {
+    let idx = (i + 1) as i128;
+    path.push(idx);
+
+    // Check if this item matches
+    if matches_pattern_ast(item, pattern) {
+      positions
+        .push(Expr::List(path.iter().map(|p| Expr::Integer(*p)).collect()));
+    }
+
+    // Recurse into sublists and function calls
+    match item {
+      Expr::List(sub_items) => {
+        position_recursive(sub_items, pattern, path, positions);
+      }
+      Expr::FunctionCall { args, .. } => {
+        position_recursive(args, pattern, path, positions);
+      }
+      _ => {}
+    }
+
+    path.pop();
+  }
 }
 
 /// FirstPosition[list, pattern] - finds the position of the first element matching pattern

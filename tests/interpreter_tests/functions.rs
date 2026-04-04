@@ -1263,6 +1263,23 @@ mod pattern_matching {
     }
 
     #[test]
+    fn position_nested() {
+      // Position searches all levels by default
+      assert_eq!(
+        interpret("Position[{{1, 2}, {3, 4}}, 3]").unwrap(),
+        "{{2, 1}}"
+      );
+      assert_eq!(
+        interpret("Position[{1, {2, {3, 4}}, 5}, 3]").unwrap(),
+        "{{2, 2, 1}}"
+      );
+      assert_eq!(
+        interpret("Position[{{a, b}, {c, a}}, a]").unwrap(),
+        "{{1, 1}, {2, 2}}"
+      );
+    }
+
+    #[test]
     fn multiple_blank_sequences_in_definition() {
       // f[x__, y__] splits args: first gets minimum, rest goes to second
       assert_eq!(
