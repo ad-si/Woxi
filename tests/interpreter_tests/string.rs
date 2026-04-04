@@ -2282,6 +2282,19 @@ mod template_apply {
   fn non_string_template() {
     assert_eq!(interpret(r#"TemplateApply[42, {1}]"#).unwrap(), "42");
   }
+
+  #[test]
+  fn positional_slots() {
+    // Double backtick `` is a positional slot
+    assert_eq!(
+      interpret(r#"TemplateApply["Hello ``!", {"World"}]"#).unwrap(),
+      "Hello World!"
+    );
+    assert_eq!(
+      interpret(r#"TemplateApply["`` + `` = ``", {1, 2, 3}]"#).unwrap(),
+      "1 + 2 = 3"
+    );
+  }
 }
 
 mod dictionary_word_q {

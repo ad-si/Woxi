@@ -4389,9 +4389,10 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Replace `key` patterns in the template
+  // Replace `key` or `` (positional) patterns in the template
   let mut result = String::new();
   let mut chars = template.chars().peekable();
+  let mut positional_index: usize = 1; // counter for `` positional slots
   while let Some(ch) = chars.next() {
     if ch == '`' {
       // Read until closing backtick
@@ -4408,7 +4409,15 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      if let Some(replacement) = replacements.get(&key) {
+      // Empty key `` means positional slot (1st, 2nd, etc.)
+      let lookup_key = if key.is_empty() {
+        let k = positional_index.to_string();
+        positional_index += 1;
+        k
+      } else {
+        key.clone()
+      };
+      if let Some(replacement) = replacements.get(&lookup_key) {
         result.push_str(replacement);
       } else {
         // No replacement found - keep the slot
