@@ -3138,6 +3138,7 @@ fn operator_precedence(op: &str) -> u8 {
     "." => 12, // Dot (higher than arithmetic)
     "@@@" | "@@" => 13, // Apply/MapApply
     "/@" => 14, // Map (higher than Apply)
+    "@*" | "/*" => 14, // Composition/RightComposition (same level as Map)
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
     "^" => 16, // Power
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
@@ -3322,6 +3323,46 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       func: Box::new(left.clone()),
       list: Box::new(right.clone()),
     },
+    "@*" => {
+      // Flatten nested Composition: (f @* g) @* h -> Composition[f, g, h]
+      let mut funcs = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "Composition" => {
+          funcs.extend(args.clone())
+        }
+        _ => funcs.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "Composition" => {
+          funcs.extend(args.clone())
+        }
+        _ => funcs.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "Composition".to_string(),
+        args: funcs,
+      }
+    }
+    "/*" => {
+      // Flatten nested RightComposition: (f /* g) /* h -> RightComposition[f, g, h]
+      let mut funcs = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "RightComposition" => {
+          funcs.extend(args.clone())
+        }
+        _ => funcs.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "RightComposition" => {
+          funcs.extend(args.clone())
+        }
+        _ => funcs.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "RightComposition".to_string(),
+        args: funcs,
+      }
+    }
     "@" => Expr::PrefixApply {
       func: Box::new(left.clone()),
       arg: Box::new(right.clone()),

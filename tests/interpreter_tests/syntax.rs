@@ -5153,6 +5153,50 @@ mod right_composition {
   }
 }
 
+mod composition_operator_parsing {
+  use super::*;
+
+  #[test]
+  fn at_star_basic() {
+    assert_eq!(interpret("f @* g").unwrap(), "f @* g");
+  }
+
+  #[test]
+  fn at_star_apply() {
+    assert_eq!(interpret("(f @* g)[x]").unwrap(), "f[g[x]]");
+  }
+
+  #[test]
+  fn at_star_three_functions() {
+    assert_eq!(interpret("(f @* g @* h)[x]").unwrap(), "f[g[h[x]]]");
+  }
+
+  #[test]
+  fn at_star_with_builtins() {
+    assert_eq!(interpret("(StringLength @* ToString)[12345]").unwrap(), "5");
+  }
+
+  #[test]
+  fn slash_star_basic() {
+    assert_eq!(interpret("f /* g").unwrap(), "f /* g");
+  }
+
+  #[test]
+  fn slash_star_apply() {
+    assert_eq!(interpret("(f /* g)[x]").unwrap(), "g[f[x]]");
+  }
+
+  #[test]
+  fn slash_star_three_functions() {
+    assert_eq!(interpret("(f /* g /* h)[x]").unwrap(), "h[g[f[x]]]");
+  }
+
+  #[test]
+  fn slash_star_with_pure_functions() {
+    assert_eq!(interpret("((# + 1 &) /* (#^2 &))[3]").unwrap(), "16");
+  }
+}
+
 mod parallel_table {
   use super::*;
 

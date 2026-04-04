@@ -7,12 +7,22 @@ use crate::InterpreterError;
 use crate::functions::math_ast::{is_sqrt, make_sqrt};
 use crate::syntax::Expr;
 
-/// D[expr, var] or D[expr, {var, n}] - Symbolic differentiation
+/// D[expr, var] or D[expr, {var, n}] or D[expr, x, y, ...] - Symbolic differentiation
 pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "D expects exactly 2 arguments".into(),
+      "D expects at least 2 arguments".into(),
     ));
+  }
+
+  // D[expr, x, y, ...] — mixed partial derivatives: differentiate sequentially
+  if args.len() > 2 {
+    // First differentiate with respect to the last variable
+    let inner = d_ast(&[args[0].clone(), args[1].clone()])?;
+    // Then differentiate the result with respect to remaining variables
+    let mut remaining = vec![inner];
+    remaining.extend_from_slice(&args[2..]);
+    return d_ast(&remaining);
   }
 
   // Thread over lists in the first argument: D[{f1, f2, ...}, var] -> {D[f1, var], D[f2, var], ...}

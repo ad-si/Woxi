@@ -55,7 +55,7 @@ pub fn dispatch_calculus_functions(
         args: args.to_vec(),
       }));
     }
-    "D" if args.len() == 2 => {
+    "D" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::d_ast(args));
     }
     "Dt" if args.len() == 2 => {
