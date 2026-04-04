@@ -3010,7 +3010,19 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // For two integers, keep as Rational (fraction)
   if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
     if *denom == 0 {
-      return Err(InterpreterError::EvaluationError("Division by zero".into()));
+      // n/0 → ComplexInfinity (with warning), 0/0 → Indeterminate
+      crate::emit_message(
+        "                                 1\n\
+         Power::infy: Infinite expression - encountered.\n\
+         \x20                                0",
+      );
+      if *numer == 0 {
+        crate::emit_message(
+          "\nInfinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
+        );
+        return Ok(Expr::Identifier("Indeterminate".to_string()));
+      }
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     return Ok(make_rational(*numer, *denom));
   }
@@ -3906,6 +3918,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       width = padding
     ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  // Special case: 0^(negative) = ComplexInfinity (with warning)
+  if base_is_zero
+    && let Some(e) = expr_to_num(exp)
+    && e < 0.0
+  {
+    let base_str = crate::syntax::expr_to_string(base);
+    let padding = 39 + base_str.len() + 1;
+    crate::emit_message(&format!(
+      "{:>width$}\nPower::infy: Infinite expression - encountered.",
+      1,
+      width = padding
+    ));
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
   // Special case: integer base with negative integer exponent -> Rational

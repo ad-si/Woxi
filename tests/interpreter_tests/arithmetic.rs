@@ -936,6 +936,23 @@ mod infinity_arithmetic {
   }
 
   #[test]
+  fn division_by_zero() {
+    // n/0 → ComplexInfinity
+    assert_eq!(interpret("1/0").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("5/0").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("(-1)/0").unwrap(), "ComplexInfinity");
+    // 0/0 → Indeterminate (0 * ComplexInfinity)
+    assert_eq!(interpret("0/0").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn power_zero_negative() {
+    // 0^(-n) → ComplexInfinity
+    assert_eq!(interpret("Power[0, -1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Power[0, -2]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
   fn integral_with_infinity_boundary() {
     assert_eq!(
       interpret("Integrate[x^2 Exp[-x], {x, 0, Infinity}]").unwrap(),

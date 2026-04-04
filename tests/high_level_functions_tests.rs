@@ -2039,10 +2039,9 @@ mod high_level_functions_tests {
     #[test]
     fn test_stack_trace_on_evaluation_error() {
       clear_state();
-      // Division by zero propagates with a stack trace
-      let err = interpret("f[x_] := 1/x; g[x_] := f[x]; g[0]").unwrap_err();
-      let msg = format!("{}", err);
-      assert!(msg.contains("Division by zero"), "got: {}", msg);
+      // Division by zero returns ComplexInfinity (matching Wolfram)
+      let result = interpret("f[x_] := 1/x; g[x_] := f[x]; g[0]").unwrap();
+      assert_eq!(result, "ComplexInfinity");
     }
 
     #[test]
