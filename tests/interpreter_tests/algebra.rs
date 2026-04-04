@@ -2958,6 +2958,140 @@ mod refine {
     // x > 7 implies x > 0, so Abs[x] → x
     assert_eq!(interpret("Refine[Abs[x], x > 7]").unwrap(), "x");
   }
+
+  // --- Single argument ---
+
+  #[test]
+  fn single_arg_symbol() {
+    assert_eq!(interpret("Refine[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn single_arg_numeric() {
+    assert_eq!(interpret("Refine[Abs[2]]").unwrap(), "2");
+  }
+
+  // --- Negative variable assumptions ---
+
+  #[test]
+  fn abs_x_negative() {
+    assert_eq!(interpret("Refine[Abs[x], x < 0]").unwrap(), "-x");
+  }
+
+  #[test]
+  fn sqrt_x_squared_negative() {
+    assert_eq!(interpret("Refine[Sqrt[x^2], x < 0]").unwrap(), "-x");
+  }
+
+  // --- Sign function ---
+
+  #[test]
+  fn sign_x_positive() {
+    assert_eq!(interpret("Refine[Sign[x], x > 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sign_x_negative() {
+    assert_eq!(interpret("Refine[Sign[x], x < 0]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn sign_x_gt_5() {
+    // x > 5 implies positive
+    assert_eq!(interpret("Refine[Sign[x], x > 5]").unwrap(), "1");
+  }
+
+  // --- Arg function ---
+
+  #[test]
+  fn arg_x_positive() {
+    assert_eq!(interpret("Refine[Arg[x], x > 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_x_negative() {
+    assert_eq!(interpret("Refine[Arg[x], x < 0]").unwrap(), "Pi");
+  }
+
+  // --- Re/Im with Element assumptions ---
+
+  #[test]
+  fn re_x_real() {
+    assert_eq!(interpret("Refine[Re[x], Element[x, Reals]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn im_x_real() {
+    assert_eq!(interpret("Refine[Im[x], Element[x, Reals]]").unwrap(), "0");
+  }
+
+  // --- Floor/Ceiling with Element[x, Integers] ---
+
+  #[test]
+  fn floor_x_integer() {
+    assert_eq!(
+      interpret("Refine[Floor[x], Element[x, Integers]]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn ceiling_x_integer() {
+    assert_eq!(
+      interpret("Refine[Ceiling[x], Element[x, Integers]]").unwrap(),
+      "x"
+    );
+  }
+
+  // --- Inequality simplification under assumptions ---
+
+  #[test]
+  fn x_gt_0_given_x_gt_1() {
+    assert_eq!(interpret("Refine[x > 0, x > 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn x_lt_0_given_x_gt_1() {
+    assert_eq!(interpret("Refine[x < 0, x > 1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn x_geq_0_given_x_gt_0() {
+    assert_eq!(interpret("Refine[x >= 0, x > 0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_inequality() {
+    assert_eq!(interpret("Refine[x > 0, x > 0]").unwrap(), "True");
+  }
+
+  // --- Compound assumptions ---
+
+  #[test]
+  fn abs_sum_compound() {
+    assert_eq!(
+      interpret("Refine[Abs[x] + Abs[y], x > 0 && y > 0]").unwrap(),
+      "x + y"
+    );
+  }
+
+  #[test]
+  fn abs_product_positive() {
+    assert_eq!(
+      interpret("Refine[Abs[x*y], x > 0 && y > 0]").unwrap(),
+      "x*y"
+    );
+  }
+
+  // --- Positive var implied by Element and inequality ---
+
+  #[test]
+  fn abs_x_reals_nonneg() {
+    assert_eq!(
+      interpret("Refine[Abs[x], Element[x, Reals] && x >= 0]").unwrap(),
+      "x"
+    );
+  }
 }
 
 mod simplify_solve_verification {

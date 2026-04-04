@@ -792,7 +792,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Reap" => Some((1, 2)),
     "RecurrenceTable" => Some((3, 3)),
     "Reduce" => Some((2, 3)),
-    "Refine" => Some((2, 2)),
+    "Refine" => Some((1, 2)),
     "ReflectionMatrix" => Some((1, 1)),
     "RegionCentroid" => Some((1, 1)),
     "RegionPlot" => Some((3, usize::MAX)),

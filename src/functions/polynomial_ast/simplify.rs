@@ -8,35 +8,64 @@ use crate::functions::calculus_ast::simplify;
 // ─── Refine ─────────────────────────────────────────────────────────
 
 /// Refine[expr, assumption] - Simplify an expression under assumptions.
+/// Refine[expr] - Simplify using default assumptions.
 /// E.g. Refine[Sqrt[x^2], x > 0] → x
 pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Refine expects exactly 2 arguments".into(),
+      "Refine expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Single argument: just evaluate/return the expression
+  if args.len() == 1 {
+    return Ok(args[0].clone());
+  }
+
   let expr = &args[0];
   let assumption = &args[1];
 
-  // Extract variables assumed positive from the assumption
-  let positive_vars = extract_positive_vars(assumption);
+  // Extract assumption info
+  let info = extract_assumption_info(assumption);
 
   // Recursively simplify the expression under the assumption
-  let result = refine_expr(expr, &positive_vars, assumption);
+  let result = refine_expr(expr, &info, assumption);
 
   Ok(result)
 }
 
-/// Extract variable names that are assumed positive from an assumption expression.
-/// Handles: x > 0, x >= 0, x ∈ Reals && x > 0, etc.
-fn extract_positive_vars(assumption: &Expr) -> Vec<String> {
-  let mut vars = Vec::new();
-  extract_positive_vars_inner(assumption, &mut vars);
-  vars
+/// Information extracted from assumptions
+struct AssumptionInfo {
+  positive_vars: Vec<String>,
+  negative_vars: Vec<String>,
+  real_vars: Vec<String>,
+  integer_vars: Vec<String>,
+}
+
+/// Extract all assumption information from the assumption expression.
+fn extract_assumption_info(assumption: &Expr) -> AssumptionInfo {
+  let mut info = AssumptionInfo {
+    positive_vars: Vec::new(),
+    negative_vars: Vec::new(),
+    real_vars: Vec::new(),
+    integer_vars: Vec::new(),
+  };
+  extract_assumptions_inner(assumption, &mut info);
+  // Positive/negative vars are also real
+  for v in &info.positive_vars {
+    if !info.real_vars.contains(v) {
+      info.real_vars.push(v.clone());
+    }
+  }
+  for v in &info.negative_vars {
+    if !info.real_vars.contains(v) {
+      info.real_vars.push(v.clone());
+    }
+  }
+  info
 }
 
 /// Check if an expression is a non-negative numeric constant (integer, real, or rational).
-/// This is used to determine if `x > c` implies `x > 0`.
 fn is_nonnegative_constant(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(n) => *n >= 0,
@@ -45,7 +74,6 @@ fn is_nonnegative_constant(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      // Rational[a, b] is non-negative if a and b have the same sign
       match (&args[0], &args[1]) {
         (Expr::Integer(a), Expr::Integer(b)) => {
           (*a >= 0 && *b > 0) || (*a <= 0 && *b < 0)
@@ -57,60 +85,292 @@ fn is_nonnegative_constant(expr: &Expr) -> bool {
   }
 }
 
-fn extract_positive_vars_inner(assumption: &Expr, vars: &mut Vec<String>) {
+/// Check if an expression is a non-positive numeric constant.
+fn is_nonpositive_constant(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n <= 0,
+    Expr::BigInteger(n) => *n <= num_bigint::BigInt::from(0),
+    Expr::Real(f) => *f <= 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) => {
+          (*a <= 0 && *b > 0) || (*a >= 0 && *b < 0)
+        }
+        _ => false,
+      }
+    }
+    _ => false,
+  }
+}
+
+fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
   match assumption {
-    // x > 0, x >= 0, x > c (c positive), x >= c (c positive)
-    // and reverse forms: 0 < x, c < x, etc.
     Expr::Comparison {
       operands,
       operators,
     } => {
       if operands.len() == 2 && operators.len() == 1 {
-        let is_gt = matches!(
-          operators[0],
+        let op = &operators[0];
+        let left = &operands[0];
+        let right = &operands[1];
+
+        // x > c, x >= c where c >= 0 → positive
+        if matches!(
+          op,
           crate::syntax::ComparisonOp::Greater
             | crate::syntax::ComparisonOp::GreaterEqual
-        );
-        // x > c where c >= 0 (implies x is positive)
-        if is_gt
-          && let Expr::Identifier(name) = &operands[0]
-          && is_nonnegative_constant(&operands[1])
+        ) && let Expr::Identifier(name) = left
+          && is_nonnegative_constant(right)
         {
-          vars.push(name.clone());
+          info.positive_vars.push(name.clone());
         }
-        // c < x or c <= x where c >= 0 (implies x is positive)
-        let is_lt = matches!(
-          operators[0],
+
+        // c < x, c <= x where c >= 0 → positive
+        if matches!(
+          op,
           crate::syntax::ComparisonOp::Less
             | crate::syntax::ComparisonOp::LessEqual
-        );
-        if is_lt
-          && let Expr::Identifier(name) = &operands[1]
-          && is_nonnegative_constant(&operands[0])
+        ) && let Expr::Identifier(name) = right
+          && is_nonnegative_constant(left)
         {
-          vars.push(name.clone());
+          info.positive_vars.push(name.clone());
+        }
+
+        // x < c, x <= c where c <= 0 → negative
+        if matches!(
+          op,
+          crate::syntax::ComparisonOp::Less
+            | crate::syntax::ComparisonOp::LessEqual
+        ) && let Expr::Identifier(name) = left
+          && is_nonpositive_constant(right)
+        {
+          info.negative_vars.push(name.clone());
+        }
+
+        // c > x, c >= x where c <= 0 → negative
+        if matches!(
+          op,
+          crate::syntax::ComparisonOp::Greater
+            | crate::syntax::ComparisonOp::GreaterEqual
+        ) && let Expr::Identifier(name) = right
+          && is_nonpositive_constant(left)
+        {
+          info.negative_vars.push(name.clone());
         }
       }
     }
-    // And[cond1, cond2, ...] or cond1 && cond2
+    // Element[x, domain]
+    Expr::FunctionCall { name, args }
+      if name == "Element" && args.len() == 2 =>
+    {
+      if let Expr::Identifier(var_name) = &args[0]
+        && let Expr::Identifier(domain) = &args[1]
+      {
+        match domain.as_str() {
+          "Reals" => info.real_vars.push(var_name.clone()),
+          "Integers" | "Primes" => {
+            info.integer_vars.push(var_name.clone());
+            info.real_vars.push(var_name.clone());
+          }
+          "Rationals" | "Algebraics" => {
+            info.real_vars.push(var_name.clone());
+          }
+          _ => {}
+        }
+      }
+    }
+    // And[cond1, cond2, ...]
     Expr::FunctionCall { name, args } if name == "And" => {
       for arg in args {
-        extract_positive_vars_inner(arg, vars);
+        extract_assumptions_inner(arg, info);
       }
     }
     _ => {}
   }
 }
 
-/// Recursively apply Refine simplification rules.
-fn refine_expr(
+/// Check if the assumption implies a comparison is True or False.
+/// Returns Some(true) for True, Some(false) for False, None if undetermined.
+fn check_comparison_under_assumption(
   expr: &Expr,
-  positive_vars: &[String],
+  info: &AssumptionInfo,
   assumption: &Expr,
-) -> Expr {
+) -> Option<bool> {
+  // Check if the comparison is identical to the assumption
+  if expr_to_string(expr) == expr_to_string(assumption) {
+    return Some(true);
+  }
+  // Also check individual conjuncts in And assumptions
+  if let Expr::FunctionCall { name, args } = assumption
+    && name == "And"
+  {
+    for arg in args {
+      if expr_to_string(expr) == expr_to_string(arg) {
+        return Some(true);
+      }
+    }
+  }
+
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && operands.len() == 2
+    && operators.len() == 1
+  {
+    let left = &operands[0];
+    let right = &operands[1];
+    let op = &operators[0];
+
+    // Patterns: x > 0, x >= 0, x < 0, etc. where x is a known positive/negative var
+    if let Expr::Identifier(var_name) = left
+      && (is_nonnegative_constant(right) || is_nonpositive_constant(right))
+    {
+      let rhs_is_zero = matches!(right, Expr::Integer(0));
+
+      if info.positive_vars.contains(var_name) {
+        // x is positive
+        match op {
+          crate::syntax::ComparisonOp::Greater if rhs_is_zero => {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::GreaterEqual
+            if is_nonnegative_constant(right) && rhs_is_zero =>
+          {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::Less
+            if is_nonnegative_constant(right) && rhs_is_zero =>
+          {
+            return Some(false);
+          }
+          crate::syntax::ComparisonOp::LessEqual
+            if is_nonpositive_constant(right) && rhs_is_zero =>
+          {
+            return Some(false);
+          }
+          _ => {}
+        }
+      }
+      if info.negative_vars.contains(var_name) {
+        // x is negative
+        match op {
+          crate::syntax::ComparisonOp::Less if rhs_is_zero => {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::LessEqual
+            if is_nonpositive_constant(right) && rhs_is_zero =>
+          {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::Greater
+            if is_nonpositive_constant(right) && rhs_is_zero =>
+          {
+            return Some(false);
+          }
+          crate::syntax::ComparisonOp::GreaterEqual
+            if is_nonnegative_constant(right) && rhs_is_zero =>
+          {
+            return Some(false);
+          }
+          _ => {}
+        }
+      }
+    }
+
+    // Check implication from specific numeric bounds in assumption
+    // e.g., x > 1 implies x > 0 (True) and x < 0 (False)
+    if let Expr::Identifier(var_name) = left
+      && let Some(bound) = get_lower_bound(var_name, assumption)
+    {
+      // We know var_name > bound (or >= bound)
+      if let Expr::Integer(rhs_val) = right
+        && let Expr::Integer(bound_val) = &bound
+      {
+        match op {
+          crate::syntax::ComparisonOp::Greater if *bound_val > *rhs_val => {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::GreaterEqual
+            if *bound_val >= *rhs_val =>
+          {
+            return Some(true);
+          }
+          crate::syntax::ComparisonOp::Less if *bound_val >= *rhs_val => {
+            return Some(false);
+          }
+          crate::syntax::ComparisonOp::LessEqual if *bound_val > *rhs_val => {
+            return Some(false);
+          }
+          _ => {}
+        }
+      }
+    }
+  }
+
+  None
+}
+
+/// Get the lower bound of a variable from the assumption.
+/// Returns the bound value if the assumption is of the form var > bound or var >= bound.
+fn get_lower_bound(var_name: &str, assumption: &Expr) -> Option<Expr> {
+  match assumption {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators.len() == 1 => {
+      // var > c or var >= c
+      if matches!(
+        operators[0],
+        crate::syntax::ComparisonOp::Greater
+          | crate::syntax::ComparisonOp::GreaterEqual
+      ) && let Expr::Identifier(name) = &operands[0]
+        && name == var_name
+      {
+        return Some(operands[1].clone());
+      }
+      // c < var or c <= var
+      if matches!(
+        operators[0],
+        crate::syntax::ComparisonOp::Less
+          | crate::syntax::ComparisonOp::LessEqual
+      ) && let Expr::Identifier(name) = &operands[1]
+        && name == var_name
+      {
+        return Some(operands[0].clone());
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      for arg in args {
+        if let Some(bound) = get_lower_bound(var_name, arg) {
+          return Some(bound);
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Recursively apply Refine simplification rules.
+fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
   match expr {
-    // Sqrt[var^2] → var when var > 0
-    // Sqrt[var^(2n)] → var^n when var > 0
+    // Comparisons: check if they can be resolved under assumptions
+    Expr::Comparison { .. } => {
+      if let Some(result) =
+        check_comparison_under_assumption(expr, info, assumption)
+      {
+        return Expr::Identifier(
+          if result { "True" } else { "False" }.to_string(),
+        );
+      }
+      expr.clone()
+    }
+
+    // Sqrt[var^2] → var when var > 0, -var when var < 0
     expr if crate::functions::is_sqrt(expr).is_some() => {
       let sqrt_arg = crate::functions::is_sqrt(expr).unwrap();
       if let Expr::BinaryOp {
@@ -121,38 +381,142 @@ fn refine_expr(
         && let Expr::Integer(n) = exp.as_ref()
         && *n > 0
         && n % 2 == 0
+        && let Expr::Identifier(var_name) = base.as_ref()
       {
-        // Check if base is a positive variable
-        if let Expr::Identifier(var_name) = base.as_ref()
-          && positive_vars.contains(var_name)
-        {
-          let half = n / 2;
-          if half == 1 {
-            return *base.clone();
+        let half = n / 2;
+        if info.positive_vars.contains(var_name) {
+          return if half == 1 {
+            *base.clone()
           } else {
-            return Expr::BinaryOp {
+            Expr::BinaryOp {
               op: BinaryOperator::Power,
               left: base.clone(),
               right: Box::new(Expr::Integer(half)),
-            };
-          }
+            }
+          };
+        }
+        if info.negative_vars.contains(var_name) {
+          let base_power = if half == 1 {
+            *base.clone()
+          } else {
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: base.clone(),
+              right: Box::new(Expr::Integer(half)),
+            }
+          };
+          return Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand: Box::new(base_power),
+          };
         }
       }
       // Recurse into the Sqrt argument
-      let refined_arg = refine_expr(sqrt_arg, positive_vars, assumption);
+      let refined_arg = refine_expr(sqrt_arg, info, assumption);
       crate::functions::make_sqrt(refined_arg)
     }
 
-    // Abs[var] → var when var > 0
+    // Abs[var] → var when var > 0, -var when var < 0
     Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      // Check if the refined argument is a product of known-sign variables
+      if let Some(result) = simplify_abs_with_signs(&refined_arg, info) {
+        return result;
+      }
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Sign[var] → 1 when var > 0, -1 when var < 0
+    Expr::FunctionCall { name, args } if name == "Sign" && args.len() == 1 => {
+      if let Expr::Identifier(var_name) = &args[0] {
+        if info.positive_vars.contains(var_name) {
+          return Expr::Integer(1);
+        }
+        if info.negative_vars.contains(var_name) {
+          return Expr::Integer(-1);
+        }
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Sign".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Arg[var] → 0 when var > 0, Pi when var < 0
+    Expr::FunctionCall { name, args } if name == "Arg" && args.len() == 1 => {
+      if let Expr::Identifier(var_name) = &args[0] {
+        if info.positive_vars.contains(var_name) {
+          return Expr::Integer(0);
+        }
+        if info.negative_vars.contains(var_name) {
+          return Expr::Constant("Pi".to_string());
+        }
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Arg".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Re[var] → var when var ∈ Reals
+    Expr::FunctionCall { name, args } if name == "Re" && args.len() == 1 => {
       if let Expr::Identifier(var_name) = &args[0]
-        && positive_vars.contains(var_name)
+        && info.real_vars.contains(var_name)
       {
         return args[0].clone();
       }
-      let refined_arg = refine_expr(&args[0], positive_vars, assumption);
+      let refined_arg = refine_expr(&args[0], info, assumption);
       Expr::FunctionCall {
-        name: "Abs".to_string(),
+        name: "Re".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Im[var] → 0 when var ∈ Reals
+    Expr::FunctionCall { name, args } if name == "Im" && args.len() == 1 => {
+      if let Expr::Identifier(var_name) = &args[0]
+        && info.real_vars.contains(var_name)
+      {
+        return Expr::Integer(0);
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Im".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Floor[var] → var when var ∈ Integers
+    Expr::FunctionCall { name, args } if name == "Floor" && args.len() == 1 => {
+      if let Expr::Identifier(var_name) = &args[0]
+        && info.integer_vars.contains(var_name)
+      {
+        return args[0].clone();
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Floor".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Ceiling[var] → var when var ∈ Integers
+    Expr::FunctionCall { name, args }
+      if name == "Ceiling" && args.len() == 1 =>
+    {
+      if let Expr::Identifier(var_name) = &args[0]
+        && info.integer_vars.contains(var_name)
+      {
+        return args[0].clone();
+      }
+      let refined_arg = refine_expr(&args[0], info, assumption);
+      Expr::FunctionCall {
+        name: "Ceiling".to_string(),
         args: vec![refined_arg],
       }
     }
@@ -164,13 +528,13 @@ fn refine_expr(
       let cond_str = expr_to_string(&args[1]);
       let assumption_str = expr_to_string(assumption);
       if cond_str == assumption_str {
-        return refine_expr(&args[0], positive_vars, assumption);
+        return refine_expr(&args[0], info, assumption);
       }
       Expr::FunctionCall {
         name: name.clone(),
         args: args
           .iter()
-          .map(|a| refine_expr(a, positive_vars, assumption))
+          .map(|a| refine_expr(a, info, assumption))
           .collect(),
       }
     }
@@ -180,33 +544,155 @@ fn refine_expr(
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| refine_expr(a, positive_vars, assumption))
+        .map(|a| refine_expr(a, info, assumption))
         .collect(),
     },
 
     // Recurse into binary ops
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
-      left: Box::new(refine_expr(left, positive_vars, assumption)),
-      right: Box::new(refine_expr(right, positive_vars, assumption)),
+      left: Box::new(refine_expr(left, info, assumption)),
+      right: Box::new(refine_expr(right, info, assumption)),
     },
 
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(refine_expr(operand, positive_vars, assumption)),
+      operand: Box::new(refine_expr(operand, info, assumption)),
     },
 
     // Recurse into lists
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|i| refine_expr(i, positive_vars, assumption))
+        .map(|i| refine_expr(i, info, assumption))
         .collect(),
     ),
 
     // Everything else: return as-is
     _ => expr.clone(),
+  }
+}
+
+/// Try to simplify Abs[expr] when we know the signs of variables.
+/// Returns Some(simplified) if possible, None otherwise.
+fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  match expr {
+    Expr::Identifier(name) => {
+      if info.positive_vars.contains(name) {
+        Some(expr.clone())
+      } else if info.negative_vars.contains(name) {
+        Some(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(expr.clone()),
+        })
+      } else {
+        None
+      }
+    }
+    // For products: Abs[a * b] = Abs[a] * Abs[b], then simplify each
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let left_sign = get_sign(left, info);
+      let right_sign = get_sign(right, info);
+      match (left_sign, right_sign) {
+        (Some(_), Some(_)) => {
+          // We know both signs, compute sign of product
+          let left_abs = abs_of_known_sign(left, info)?;
+          let right_abs = abs_of_known_sign(right, info)?;
+          let product_sign = get_sign(expr, info)?;
+          let abs_product = Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(left_abs),
+            right: Box::new(right_abs),
+          };
+          if product_sign > 0 {
+            Some(abs_product)
+          } else {
+            Some(abs_product)
+          }
+        }
+        _ => None,
+      }
+    }
+    // Times as FunctionCall
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Check if all factors have known sign
+      let mut all_known = true;
+      for arg in args {
+        if get_sign(arg, info).is_none() {
+          all_known = false;
+          break;
+        }
+      }
+      if all_known {
+        let abs_factors: Vec<Expr> = args
+          .iter()
+          .filter_map(|a| abs_of_known_sign(a, info))
+          .collect();
+        if abs_factors.len() == args.len() {
+          if abs_factors.len() == 1 {
+            return Some(abs_factors.into_iter().next().unwrap());
+          }
+          return Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: abs_factors,
+          });
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Get the sign of an expression: Some(1) for positive, Some(-1) for negative, None if unknown.
+fn get_sign(expr: &Expr, info: &AssumptionInfo) -> Option<i8> {
+  match expr {
+    Expr::Identifier(name) => {
+      if info.positive_vars.contains(name) {
+        Some(1)
+      } else if info.negative_vars.contains(name) {
+        Some(-1)
+      } else {
+        None
+      }
+    }
+    Expr::Integer(n) => {
+      if *n > 0 {
+        Some(1)
+      } else if *n < 0 {
+        Some(-1)
+      } else {
+        Some(0)
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let ls = get_sign(left, info)?;
+      let rs = get_sign(right, info)?;
+      Some(ls * rs)
+    }
+    _ => None,
+  }
+}
+
+/// Get the absolute value of an expression with known sign.
+fn abs_of_known_sign(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let sign = get_sign(expr, info)?;
+  if sign >= 0 {
+    Some(expr.clone())
+  } else {
+    Some(Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(expr.clone()),
+    })
   }
 }
 
