@@ -764,6 +764,24 @@ mod not_logical {
   }
 
   #[test]
+  fn boolean_ops_in_list() {
+    clear_state();
+    // Boolean operators should evaluate inside list literals
+    assert_eq!(
+      interpret("{True && False, True || False}").unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn comparison_in_list() {
+    clear_state();
+    // Comparison operators should evaluate inside list literals
+    assert_eq!(interpret("{1 < 2}").unwrap(), "{True}");
+    assert_eq!(interpret("{3 > 2}").unwrap(), "{True}");
+  }
+
+  #[test]
   fn prefix_not_false() {
     clear_state();
     assert_eq!(interpret("Not[False]").unwrap(), "True");
