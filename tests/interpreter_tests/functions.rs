@@ -7740,6 +7740,33 @@ mod array_rules {
       "{{2} -> x, {_} -> 1}"
     );
   }
+
+  #[test]
+  fn sparse_array_1d() {
+    assert_eq!(
+      interpret("ArrayRules[SparseArray[{1 -> 5, 3 -> 7}, 5]]").unwrap(),
+      "{{1} -> 5, {3} -> 7, {_} -> 0}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_1d_list_dim() {
+    assert_eq!(
+      interpret("ArrayRules[SparseArray[{1 -> 5, 3 -> 7}, {5}]]").unwrap(),
+      "{{1} -> 5, {3} -> 7, {_} -> 0}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_2d() {
+    assert_eq!(
+      interpret(
+        "ArrayRules[SparseArray[{{1, 2} -> 5, {3, 1} -> 7}, {4, 3}, 0]]"
+      )
+      .unwrap(),
+      "{{1, 2} -> 5, {3, 1} -> 7, {_, _} -> 0}"
+    );
+  }
 }
 
 // Batch tests for unevaluated wrappers

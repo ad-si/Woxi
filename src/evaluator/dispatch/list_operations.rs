@@ -2934,6 +2934,74 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
 
+  // Handle SparseArray[rules, dims] or SparseArray[rules, dims, default]
+  if let Expr::FunctionCall {
+    name,
+    args: sa_args,
+  } = &args[0]
+    && name == "SparseArray"
+    && !sa_args.is_empty()
+  {
+    let sa_default = if args.len() == 2 {
+      default_val.clone()
+    } else if sa_args.len() >= 3 {
+      sa_args[2].clone()
+    } else {
+      Expr::Integer(0)
+    };
+
+    // Determine depth from dimensions
+    let depth = if sa_args.len() >= 2 {
+      match &sa_args[1] {
+        Expr::List(items) => items.len(),
+        _ => 1, // scalar dimension means 1D
+      }
+    } else {
+      1
+    };
+
+    let mut rules: Vec<Expr> = Vec::new();
+
+    // Extract rules from the SparseArray's rule list
+    let rule_list = match &sa_args[0] {
+      Expr::List(items) => items.clone(),
+      _ => vec![sa_args[0].clone()],
+    };
+
+    for rule in &rule_list {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+      {
+        // Normalize position: wrap scalar index in a list for 1D
+        let pos = match pattern.as_ref() {
+          Expr::List(_) => pattern.as_ref().clone(),
+          _ => Expr::List(vec![pattern.as_ref().clone()]),
+        };
+        rules.push(Expr::Rule {
+          pattern: Box::new(pos),
+          replacement: replacement.clone(),
+        });
+      }
+    }
+
+    // Add the default pattern rule: {_, _, ...} -> default
+    let blanks: Vec<Expr> = (0..depth)
+      .map(|_| Expr::Pattern {
+        name: String::new(),
+        head: None,
+        blank_type: 1,
+      })
+      .collect();
+    rules.push(Expr::Rule {
+      pattern: Box::new(Expr::List(blanks)),
+      replacement: Box::new(sa_default),
+    });
+
+    return Ok(Expr::List(rules));
+  }
+
   let mut rules: Vec<Expr> = Vec::new();
 
   fn collect_rules(
