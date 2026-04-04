@@ -953,6 +953,14 @@ mod infinity_arithmetic {
   }
 
   #[test]
+  fn one_to_any_power() {
+    // 1^x → 1 for any x
+    assert_eq!(interpret("1^x").unwrap(), "1");
+    assert_eq!(interpret("1^(2 + 3 I)").unwrap(), "1");
+    assert_eq!(interpret("1^100").unwrap(), "1");
+  }
+
+  #[test]
   fn integral_with_infinity_boundary() {
     assert_eq!(
       interpret("Integrate[x^2 Exp[-x], {x, 0, Infinity}]").unwrap(),
