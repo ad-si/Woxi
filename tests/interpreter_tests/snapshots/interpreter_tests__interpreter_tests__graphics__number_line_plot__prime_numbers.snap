@@ -15,6 +15,18 @@ expression: "export_svg(\"NumberLinePlot[Prime[Range[10]]]\")"
 <circle cx="2312.9" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
 <circle cx="2670.5" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
 <circle cx="3206.9" cy="125.0" r="40.0" fill="rgb(94,129,181)"/>
+<line x1="793.1" y1="225.0" x2="793.1" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="971.9" y1="225.0" x2="971.9" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1150.7" y1="225.0" x2="1150.7" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1329.5" y1="225.0" x2="1329.5" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1687.1" y1="225.0" x2="1687.1" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="1865.9" y1="225.0" x2="1865.9" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="2044.7" y1="225.0" x2="2044.7" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="2223.5" y1="225.0" x2="2223.5" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="2581.1" y1="225.0" x2="2581.1" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="2759.9" y1="225.0" x2="2759.9" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="2938.7" y1="225.0" x2="2938.7" y2="255.0" stroke="#666666" stroke-width="5"/>
+<line x1="3117.5" y1="225.0" x2="3117.5" y2="255.0" stroke="#666666" stroke-width="5"/>
 <line x1="614.3" y1="225.0" x2="614.3" y2="275.0" stroke="#666666" stroke-width="10"/>
 <text x="614.3" y="429.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1508.3" y1="225.0" x2="1508.3" y2="275.0" stroke="#666666" stroke-width="10"/>

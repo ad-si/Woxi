@@ -489,33 +489,54 @@ fn render_number_line_svg(
   let tick_y = axis_y;
   let x_range = x_max - x_min;
   let major_step = nice_step(x_range, 6);
-  let first_tick = (x_min / major_step).ceil() * major_step;
-  let tick_len = 5.0 * sf;
+  let minor_step = major_step / 5.0;
+  let major_tick_len = 5.0 * sf;
+  let minor_tick_len = 3.0 * sf;
   let font_size = 14.0 * sf;
 
-  let mut tick_val = first_tick;
-  while tick_val <= x_max + major_step * 1e-9 {
-    if is_major_tick(tick_val, major_step) {
+  // Minor ticks
+  let first_minor = (x_min / minor_step).ceil() * minor_step;
+  let mut tick_val = first_minor;
+  while tick_val <= x_max + minor_step * 1e-9 {
+    if !is_major_tick(tick_val, major_step) {
       let px = x_to_px(tick_val);
-      // Tick mark
       svg.push_str(&format!(
         "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
          stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
         px,
         tick_y,
         px,
-        tick_y + tick_len,
+        tick_y + minor_tick_len,
+        axis_color,
+        sf * 0.5
+      ));
+    }
+    tick_val += minor_step;
+  }
+
+  // Major ticks with labels
+  let first_major = (x_min / major_step).ceil() * major_step;
+  tick_val = first_major;
+  while tick_val <= x_max + major_step * 1e-9 {
+    if is_major_tick(tick_val, major_step) {
+      let px = x_to_px(tick_val);
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+         stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
+        px,
+        tick_y,
+        px,
+        tick_y + major_tick_len,
         axis_color,
         sf
       ));
-      // Label
       let label = format_tick(tick_val);
       svg.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{:.0}\" \
          fill=\"{}\">{}</text>\n",
         px,
-        tick_y + tick_len + font_size * 1.1,
+        tick_y + major_tick_len + font_size * 1.1,
         font_size,
         label_fill,
         label
