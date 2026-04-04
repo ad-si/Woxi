@@ -276,42 +276,27 @@ pub(crate) fn is_major_tick(v: f64, step: f64) -> bool {
 pub(crate) fn format_date_tick(seconds: f64) -> String {
   let (year, month, day, _, _, _) =
     crate::functions::datetime_ast::absolute_seconds_to_date(seconds);
+  let month_abbr = || match month {
+    1 => "Jan",
+    2 => "Feb",
+    3 => "Mar",
+    4 => "Apr",
+    5 => "May",
+    6 => "Jun",
+    7 => "Jul",
+    8 => "Aug",
+    9 => "Sep",
+    10 => "Oct",
+    11 => "Nov",
+    12 => "Dec",
+    _ => "???",
+  };
   if day == 1 && month == 1 {
     format!("{year}")
   } else if day == 1 {
-    let month_abbr = match month {
-      1 => "Jan",
-      2 => "Feb",
-      3 => "Mar",
-      4 => "Apr",
-      5 => "May",
-      6 => "Jun",
-      7 => "Jul",
-      8 => "Aug",
-      9 => "Sep",
-      10 => "Oct",
-      11 => "Nov",
-      12 => "Dec",
-      _ => "???",
-    };
-    format!("{month_abbr} {year}")
+    format!("{year} {}", month_abbr())
   } else {
-    let month_abbr = match month {
-      1 => "Jan",
-      2 => "Feb",
-      3 => "Mar",
-      4 => "Apr",
-      5 => "May",
-      6 => "Jun",
-      7 => "Jul",
-      8 => "Aug",
-      9 => "Sep",
-      10 => "Oct",
-      11 => "Nov",
-      12 => "Dec",
-      _ => "???",
-    };
-    format!("{day} {month_abbr} {year}")
+    format!("{year} {} {day}", month_abbr())
   }
 }
 
