@@ -1282,13 +1282,13 @@ mod solve {
   #[test]
   fn fractional_power_equation() {
     // Physics: find extrema of E-field on axis of ring charge
-    // Sqrt[2*a^2*k^2*q^2] stays unsimplified since a,k,q are symbolic (unknown sign)
+    // Common constant factors (2*k*q) are factored out before the quadratic formula
     assert_eq!(
       interpret(
         "Solve[(2*k*q*(a^2 + x^2)^(3/2) - 6*k*q*x^2*(a^2 + x^2)^(1/2))/(a^2 + x^2)^3 == 0, x]"
       )
       .unwrap(),
-      "{{x -> (-1*Sqrt[2*a^2*k^2*q^2])/(2*k*q)}, {x -> Sqrt[2*a^2*k^2*q^2]/(2*k*q)}}"
+      "{{x -> -(a/Sqrt[2])}, {x -> a/Sqrt[2]}}"
     );
   }
 
@@ -3315,6 +3315,15 @@ mod refine {
   #[test]
   fn sqrt_x_squared_nonneg() {
     assert_eq!(interpret("Refine[Sqrt[x^2], x >= 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn inequality_false_under_sum_of_squares_constraint() {
+    // (x-1)^2 + (y-2)^2 >= 2 when x^2 + y^2 <= 1, so < 3/2 is False
+    assert_eq!(
+      interpret("Refine[(x - 1)^2 + (y - 2)^2 < 3/2, x^2 + y^2 <= 1]").unwrap(),
+      "False"
+    );
   }
 }
 

@@ -2855,7 +2855,285 @@ fn is_provably_nonnegative_under_constraints(
     }
   }
 
+  // Strategy: Cauchy-Schwarz bound for sum-of-squares constraints.
+  // For a constraint like x^2 + y^2 <= C and expression like
+  // x^2 + y^2 - 2x - 4y + 7/2, decompose into quadratic + linear + constant
+  // and use Cauchy-Schwarz to bound the linear part.
+  if check_nonneg_via_cauchy_schwarz(&expanded, &constraints) {
+    return true;
+  }
+
   false
+}
+
+/// Use Cauchy-Schwarz inequality to prove an expression is non-negative
+/// under sum-of-squares constraints.
+///
+/// For expression `a*x^2 + c*y^2 + d*x + e*y + f` with constraint
+/// `a_c*x^2 + c_c*y^2 <= C`:
+/// - The excess quadratic `(a-a_c)*x^2 + (c-c_c)*y^2 >= 0`
+/// - By Cauchy-Schwarz: `d*x + e*y >= -S * sqrt(Q)` where
+///   `S = sqrt(d^2/a_c + e^2/c_c)` and `Q = a_c*x^2 + c_c*y^2`
+/// - So expr >= `Q - S*sqrt(Q) + f`, minimize over `0 <= sqrt(Q) <= sqrt(C)`
+fn check_nonneg_via_cauchy_schwarz(
+  expanded: &Expr,
+  constraints: &[(Expr, Expr, bool)],
+) -> bool {
+  let expr_terms = collect_additive_terms(expanded);
+  let mut expr_vars = std::collections::HashSet::new();
+  collect_variables(expanded, &mut expr_vars);
+
+  if expr_vars.is_empty() || expr_vars.len() > 2 {
+    return false;
+  }
+
+  let vars_vec: Vec<String> = expr_vars.into_iter().collect();
+
+  for (lhs, rhs, is_leq) in constraints {
+    if !*is_leq {
+      continue;
+    }
+
+    let c_bound = match const_expr_to_f64(rhs) {
+      Some(v) if v > 0.0 => v,
+      _ => continue,
+    };
+
+    let lhs_expanded = expand_and_combine(lhs);
+    let lhs_terms = collect_additive_terms(&lhs_expanded);
+
+    if vars_vec.len() == 2 {
+      let x = &vars_vec[0];
+      let y = &vars_vec[1];
+
+      let (a_c, b_c, c_c, d_c, e_c, f_c) =
+        match extract_bivariate_quadratic_f64(&lhs_terms, x, y) {
+          Some(v) => v,
+          None => continue,
+        };
+
+      // Constraint LHS must be a pure sum of squares
+      if a_c <= 0.0
+        || c_c <= 0.0
+        || b_c.abs() > 1e-10
+        || d_c.abs() > 1e-10
+        || e_c.abs() > 1e-10
+        || f_c.abs() > 1e-10
+      {
+        continue;
+      }
+
+      let (a_e, b_e, c_e, d_e, e_e, f_e) =
+        match extract_bivariate_quadratic_f64(&expr_terms, x, y) {
+          Some(v) => v,
+          None => continue,
+        };
+
+      // Expression quadratic part must dominate the constraint's
+      if a_e < a_c - 1e-10 || c_e < c_c - 1e-10 || b_e.abs() > 1e-10 {
+        continue;
+      }
+
+      // S^2 for the weighted Cauchy-Schwarz bound
+      let s_sq = d_e * d_e / a_c + e_e * e_e / c_c;
+      let s = s_sq.sqrt();
+      let t_crit = s / 2.0;
+      let t_max = c_bound.sqrt();
+
+      let min_val = if t_crit <= t_max {
+        f_e - s_sq / 4.0
+      } else {
+        c_bound - s * t_max + f_e
+      };
+
+      if min_val >= -1e-9 {
+        return true;
+      }
+    } else if vars_vec.len() == 1 {
+      let x = &vars_vec[0];
+      let y_dummy = "";
+
+      let (a_c, _, _, d_c, _, f_c) =
+        match extract_bivariate_quadratic_f64(&lhs_terms, x, y_dummy) {
+          Some(v) => v,
+          None => continue,
+        };
+
+      if a_c <= 0.0 || d_c.abs() > 1e-10 || f_c.abs() > 1e-10 {
+        continue;
+      }
+
+      let (a_e, _, _, d_e, _, f_e) =
+        match extract_bivariate_quadratic_f64(&expr_terms, x, y_dummy) {
+          Some(v) => v,
+          None => continue,
+        };
+
+      if a_e < a_c - 1e-10 {
+        continue;
+      }
+
+      let s_sq = d_e * d_e / a_c;
+      let s = s_sq.sqrt();
+      let t_crit = s / 2.0;
+      let t_max = c_bound.sqrt();
+
+      let min_val = if t_crit <= t_max {
+        f_e - s_sq / 4.0
+      } else {
+        c_bound - s * t_max + f_e
+      };
+
+      if min_val >= -1e-9 {
+        return true;
+      }
+    }
+  }
+
+  false
+}
+
+/// Convert a constant expression to f64.
+fn const_expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(num), Expr::Integer(den)) = (&args[0], &args[1]) {
+        Some(*num as f64 / *den as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Extract bivariate quadratic coefficients as f64.
+/// Returns (a, b, c, d, e, f) for ax^2 + bxy + cy^2 + dx + ey + f.
+/// Handles rational coefficients.
+fn extract_bivariate_quadratic_f64(
+  terms: &[Expr],
+  x: &str,
+  y: &str,
+) -> Option<(f64, f64, f64, f64, f64, f64)> {
+  let mut a = 0.0f64;
+  let mut b = 0.0f64;
+  let mut c = 0.0f64;
+  let mut d = 0.0f64;
+  let mut e = 0.0f64;
+  let mut f = 0.0f64;
+
+  for term in terms {
+    let (x_pow, y_pow, coeff) =
+      term_bivariate_powers_and_coeff_f64(term, x, y)?;
+    if x_pow + y_pow > 2 {
+      return None;
+    }
+    match (x_pow, y_pow) {
+      (0, 0) => f += coeff,
+      (1, 0) => d += coeff,
+      (0, 1) => e += coeff,
+      (2, 0) => a += coeff,
+      (1, 1) => b += coeff,
+      (0, 2) => c += coeff,
+      _ => return None,
+    }
+  }
+
+  Some((a, b, c, d, e, f))
+}
+
+/// Extract (x_power, y_power, f64_coefficient) from a term.
+fn term_bivariate_powers_and_coeff_f64(
+  term: &Expr,
+  x: &str,
+  y: &str,
+) -> Option<(i128, i128, f64)> {
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = term
+  {
+    let (xp, yp, c) = term_bivariate_powers_and_coeff_f64(operand, x, y)?;
+    return Some((xp, yp, -c));
+  }
+
+  let factors = collect_multiplicative_factors(term);
+  let mut x_pow: i128 = 0;
+  let mut y_pow: i128 = 0;
+  let mut coeff: f64 = 1.0;
+
+  for f in &factors {
+    match f {
+      Expr::Integer(n) => coeff *= *n as f64,
+      Expr::Real(r) => coeff *= r,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(num), Expr::Integer(den)) = (&args[0], &args[1]) {
+          coeff *= *num as f64 / *den as f64;
+        } else {
+          return None;
+        }
+      }
+      Expr::Identifier(name) if name == x => x_pow += 1,
+      Expr::Identifier(name) if !y.is_empty() && name == y => y_pow += 1,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let Expr::Identifier(name) = left.as_ref()
+          && let Expr::Integer(p) = right.as_ref()
+        {
+          if name == x {
+            x_pow += p;
+          } else if !y.is_empty() && name == y {
+            y_pow += p;
+          } else {
+            return None;
+          }
+        } else {
+          return None;
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        if let Expr::Identifier(var_name) = &args[0]
+          && let Expr::Integer(p) = &args[1]
+        {
+          if var_name == x {
+            x_pow += p;
+          } else if !y.is_empty() && var_name == y {
+            y_pow += p;
+          } else {
+            return None;
+          }
+        } else {
+          return None;
+        }
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        coeff = -coeff;
+        match operand.as_ref() {
+          Expr::Integer(n) => coeff *= *n as f64,
+          Expr::Identifier(name) if name == x => x_pow += 1,
+          Expr::Identifier(name) if !y.is_empty() && name == y => y_pow += 1,
+          _ => return None,
+        }
+      }
+      _ => return None,
+    }
+  }
+
+  Some((x_pow, y_pow, coeff))
 }
 
 /// Extract inequality constraints from assumptions.

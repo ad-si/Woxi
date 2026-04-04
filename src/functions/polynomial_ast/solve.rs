@@ -738,6 +738,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => expanded_raw,
     }
   };
+  // Factor out constant factors (w.r.t. the solve variable) so the
+  // quadratic formula sees integer leading coefficients when possible.
+  // E.g. 2*a^2*k*q - 4*k*q*x^2  →  a^2 - 2*x^2
+  let expanded = factor_out_constant_factors(&expanded, var);
   let terms = collect_additive_terms(&expanded);
 
   // Find maximum degree
