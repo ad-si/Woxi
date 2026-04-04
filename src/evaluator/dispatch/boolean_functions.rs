@@ -92,6 +92,12 @@ pub fn dispatch_boolean_functions(
     "BooleanConvert" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::boolean_ast::boolean_convert_ast(args));
     }
+    "VectorLess" if args.len() == 1 => {
+      return Some(crate::functions::boolean_ast::vector_less_ast(args));
+    }
+    "VectorLessEqual" if args.len() == 1 => {
+      return Some(crate::functions::boolean_ast::vector_less_equal_ast(args));
+    }
     _ => {}
   }
   None

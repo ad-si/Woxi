@@ -1672,3 +1672,196 @@ mod find_integer_null_vector {
     );
   }
 }
+
+mod vector_less {
+  use super::*;
+
+  #[test]
+  fn all_less() {
+    assert_eq!(interpret("VectorLess[{{1,2},{3,4}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_all_less() {
+    assert_eq!(interpret("VectorLess[{{3,2},{1,4}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn equal_elements_strict() {
+    assert_eq!(interpret("VectorLess[{{1,2},{1,3}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn all_equal_strict() {
+    assert_eq!(interpret("VectorLess[{{1,2},{1,2}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn reverse_order() {
+    assert_eq!(interpret("VectorLess[{{5,6},{3,4}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn negative_values() {
+    assert_eq!(interpret("VectorLess[{{-1,-2},{-3,-4}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn zero_to_positive() {
+    assert_eq!(interpret("VectorLess[{{0,0},{1,1}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn three_vectors() {
+    assert_eq!(
+      interpret("VectorLess[{{1,2},{3,4},{5,6}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn three_vectors_fail() {
+    assert_eq!(
+      interpret("VectorLess[{{1,2},{3,4},{2,6}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn four_vectors() {
+    assert_eq!(
+      interpret("VectorLess[{{1,2},{3,4},{5,6},{7,8}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn scalars() {
+    assert_eq!(interpret("VectorLess[{1,2}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn scalars_chain() {
+    assert_eq!(interpret("VectorLess[{1,2,3}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn scalars_equal_strict() {
+    assert_eq!(interpret("VectorLess[{1,1}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn three_dim_vectors() {
+    assert_eq!(interpret("VectorLess[{{1,2,3},{4,5,6}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn single_element_vectors() {
+    assert_eq!(interpret("VectorLess[{{1},{2}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn empty_vectors() {
+    assert_eq!(interpret("VectorLess[{{},{}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn mismatched_lengths() {
+    assert_eq!(interpret("VectorLess[{{1,2},{3}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn rationals() {
+    assert_eq!(
+      interpret("VectorLess[{{1/2, 3/4}, {5/6, 7/8}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("VectorLess[{{a,b},{c,d}}]").unwrap(),
+      "VectorLess[{{a, b}, {c, d}}]"
+    );
+  }
+}
+
+mod vector_less_equal {
+  use super::*;
+
+  #[test]
+  fn all_less() {
+    assert_eq!(interpret("VectorLessEqual[{{1,2},{3,4}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_all_less() {
+    assert_eq!(
+      interpret("VectorLessEqual[{{3,2},{1,4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn equal_elements() {
+    assert_eq!(interpret("VectorLessEqual[{{1,2},{1,3}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn all_equal() {
+    assert_eq!(interpret("VectorLessEqual[{{1,2},{1,2}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn reverse_order() {
+    assert_eq!(
+      interpret("VectorLessEqual[{{5,6},{3,4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn three_vectors() {
+    assert_eq!(
+      interpret("VectorLessEqual[{{1,2},{3,4},{5,6}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn three_vectors_with_equal() {
+    assert_eq!(
+      interpret("VectorLessEqual[{{1,2},{3,4},{3,6}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn scalars() {
+    assert_eq!(interpret("VectorLessEqual[{1,2}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn scalars_equal() {
+    assert_eq!(interpret("VectorLessEqual[{1,1}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn empty_vectors() {
+    assert_eq!(interpret("VectorLessEqual[{{},{}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn mismatched_lengths() {
+    assert_eq!(interpret("VectorLessEqual[{{1,2},{3}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("VectorLessEqual[{{1,2},{3,a}}]").unwrap(),
+      "VectorLessEqual[{{1, 2}, {3, a}}]"
+    );
+  }
+}
