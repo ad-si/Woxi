@@ -92,7 +92,10 @@ function saveEditorContent() {
 }
 
 const persistenceListener = EditorView.updateListener.of((update) => {
-  if (update.docChanged) saveEditorContent()
+  if (update.docChanged) {
+    saveEditorContent()
+    document.getElementById("outputs").classList.add("stale")
+  }
 })
 
 // Initialize CodeMirror editor
@@ -211,6 +214,7 @@ restoreOutput()
 function renderOutputItems(items) {
   const outputsEl = document.getElementById("outputs")
   outputsEl.innerHTML = ""
+  outputsEl.classList.remove("stale")
 
   for (const item of items) {
     if (item.type === "graphics") {
