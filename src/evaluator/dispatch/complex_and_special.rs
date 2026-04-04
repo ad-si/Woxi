@@ -956,9 +956,30 @@ pub fn dispatch_complex_and_special(
       let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
       return Some(Ok(Expr::Raw(rendered)));
     }
-    // ToBoxes[expr] — convert expression to box form
-    "ToBoxes" if args.len() == 1 => {
+    // ToBoxes[expr] / ToBoxes[expr, form] — convert expression to box form
+    "ToBoxes" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(expr_to_box_form(&args[0])));
+    }
+    // MakeBoxes[expr] / MakeBoxes[expr, form] — convert unevaluated expression to box form
+    // MakeBoxes has HoldAllComplete so its argument is not evaluated first.
+    "MakeBoxes" if args.len() == 1 || args.len() == 2 => {
+      return Some(Ok(expr_to_box_form(&args[0])));
+    }
+    // RawBoxes[boxes] — wrapper that tells the display system to render boxes directly
+    // It simply returns itself; the rendering pipeline in generate_output_svg() handles it.
+    "RawBoxes" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "RawBoxes".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    // DisplayForm[boxes] — wrapper that causes box expressions to be rendered visually.
+    // It stays unevaluated; the rendering pipeline handles it like RawBoxes.
+    "DisplayForm" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "DisplayForm".to_string(),
+        args: args.to_vec(),
+      }));
     }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
@@ -1414,6 +1435,154 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{}\"", s)),
+    Expr::Slot(n) => Expr::String(if *n == 1 {
+      "#".to_string()
+    } else {
+      format!("#{}", n)
+    }),
+    Expr::SlotSequence(n) => Expr::String(if *n == 1 {
+      "##".to_string()
+    } else {
+      format!("##{}", n)
+    }),
+    // UnaryOp: -x → RowBox[{"-", box(x)}], !x → RowBox[{"!", box(x)}]
+    Expr::UnaryOp { op, operand } => {
+      let op_str = match op {
+        crate::syntax::UnaryOperator::Minus => "-",
+        crate::syntax::UnaryOperator::Not => "!",
+      };
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(vec![
+          Expr::String(op_str.to_string()),
+          expr_to_box_form(operand),
+        ])],
+      }
+    }
+    // BinaryOp::Plus/Minus/Times/And/Or/StringJoin/Alternatives
+    Expr::BinaryOp { op, left, right }
+      if !matches!(
+        op,
+        crate::syntax::BinaryOperator::Power
+          | crate::syntax::BinaryOperator::Divide
+      ) =>
+    {
+      let (op_str, spaced) = match op {
+        crate::syntax::BinaryOperator::Plus => ("+", true),
+        crate::syntax::BinaryOperator::Minus => ("-", true),
+        crate::syntax::BinaryOperator::Times => (" ", false),
+        crate::syntax::BinaryOperator::And => ("&&", true),
+        crate::syntax::BinaryOperator::Or => ("||", true),
+        crate::syntax::BinaryOperator::StringJoin => ("<>", false),
+        crate::syntax::BinaryOperator::Alternatives => ("|", true),
+        crate::syntax::BinaryOperator::Power
+        | crate::syntax::BinaryOperator::Divide => unreachable!(),
+      };
+      let sep = if spaced {
+        op_str.to_string()
+      } else {
+        op_str.to_string()
+      };
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(vec![
+          expr_to_box_form(left),
+          Expr::String(sep),
+          expr_to_box_form(right),
+        ])],
+      }
+    }
+    // Comparison: a == b < c → RowBox[{box(a), " == ", box(b), " < ", box(c)}]
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut parts = Vec::new();
+      parts.push(expr_to_box_form(&operands[0]));
+      for (i, op) in operators.iter().enumerate() {
+        let op_str = match op {
+          crate::syntax::ComparisonOp::Equal => "==",
+          crate::syntax::ComparisonOp::NotEqual => "!=",
+          crate::syntax::ComparisonOp::Less => "<",
+          crate::syntax::ComparisonOp::LessEqual => "<=",
+          crate::syntax::ComparisonOp::Greater => ">",
+          crate::syntax::ComparisonOp::GreaterEqual => ">=",
+          crate::syntax::ComparisonOp::SameQ => "===",
+          crate::syntax::ComparisonOp::UnsameQ => "=!=",
+        };
+        parts.push(Expr::String(op_str.to_string()));
+        parts.push(expr_to_box_form(&operands[i + 1]));
+      }
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    // Rule: pattern -> replacement
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(vec![
+          expr_to_box_form(pattern),
+          Expr::String("\u{f522}".to_string()), // Mathematica's Rule arrow
+          expr_to_box_form(replacement),
+        ])],
+      }
+    }
+    // RuleDelayed: pattern :> replacement
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(vec![
+          expr_to_box_form(pattern),
+          Expr::String("\u{f51f}".to_string()), // Mathematica's RuleDelayed arrow
+          expr_to_box_form(replacement),
+        ])],
+      }
+    }
+    // Association: <|k1 -> v1, ...|>
+    Expr::Association(items) => {
+      let mut parts = Vec::new();
+      parts.push(Expr::String("<|".to_string()));
+      for (i, (k, v)) in items.iter().enumerate() {
+        if i > 0 {
+          parts.push(Expr::String(",".to_string()));
+        }
+        parts.push(Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            expr_to_box_form(k),
+            Expr::String("\u{f522}".to_string()),
+            expr_to_box_form(v),
+          ])],
+        });
+      }
+      parts.push(Expr::String("|>".to_string()));
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    // CompoundExpr: e1; e2; e3
+    Expr::CompoundExpr(exprs) => {
+      let mut parts = Vec::new();
+      for (i, e) in exprs.iter().enumerate() {
+        if i > 0 {
+          parts.push(Expr::String(";".to_string()));
+        }
+        parts.push(expr_to_box_form(e));
+      }
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]
       // Handle negative terms: Times[-1, x] → "x", "-", box(x)
@@ -1683,6 +1852,53 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         args: vec![Expr::List(parts)],
       }
     }
+    // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      let unit_boxes = unit_to_box_form(&args[1], &args[0]);
+      let mut parts =
+        vec![expr_to_box_form(&args[0]), Expr::String(" ".to_string())];
+      parts.push(unit_boxes);
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    // FullForm[expr] → render in canonical notation as a single string
+    Expr::FunctionCall { name, args }
+      if name == "FullForm" && args.len() == 1 =>
+    {
+      let full = crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+      Expr::String(full)
+    }
+    // Style[content, ...] → just the content
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      expr_to_box_form(&args[0])
+    }
+    // HoldForm[expr] → just the content
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      expr_to_box_form(&args[0])
+    }
+    // CForm/TeXForm/FortranForm → converted text as a string
+    Expr::FunctionCall { name, args }
+      if (name == "CForm" || name == "TeXForm" || name == "FortranForm")
+        && args.len() == 1 =>
+    {
+      let text = match name.as_str() {
+        "CForm" => crate::functions::string_ast::expr_to_c(&args[0]),
+        "TeXForm" => crate::functions::string_ast::expr_to_tex(&args[0]),
+        "FortranForm" => {
+          crate::functions::string_ast::expr_to_fortran(&args[0])
+        }
+        _ => unreachable!(),
+      };
+      Expr::String(text)
+    }
     // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();
@@ -1713,6 +1929,202 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     // Default: use the string representation
     _ => box_as_output_string(expr),
+  }
+}
+
+/// Convert a Quantity unit expression to box form with proper abbreviations.
+/// Uses `unit_to_abbreviation` for known units and handles compound units
+/// (division, multiplication, powers).
+fn unit_to_box_form(unit: &Expr, magnitude: &Expr) -> Expr {
+  use crate::functions::quantity_ast::unit_to_abbreviation;
+  use crate::syntax::BinaryOperator;
+
+  // Helper: abbreviate a single unit identifier
+  fn abbrev(s: &str, mag: &Expr) -> Expr {
+    let abbr = unit_to_abbreviation(s).unwrap_or(s);
+    let abbr = crate::syntax::singularize_unit_if_one(mag, abbr);
+    Expr::String(abbr)
+  }
+
+  // Handle Power in both BinaryOp and FunctionCall form
+  if let Some((base, exp)) = crate::functions::graphics::as_power_pub(unit) {
+    let base_box = unit_to_box_form_inner(base);
+    let exp_box = expr_to_box_form(exp);
+    return Expr::FunctionCall {
+      name: "SuperscriptBox".to_string(),
+      args: vec![base_box, exp_box],
+    };
+  }
+
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => abbrev(s, magnitude),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(vec![
+        unit_to_box_form_inner(left),
+        Expr::String("/".to_string()),
+        unit_to_box_form_inner(right),
+      ])],
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(vec![
+        unit_to_box_form_inner(left),
+        Expr::String("\u{22c5}".to_string()),
+        unit_to_box_form_inner(right),
+      ])],
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Check for fraction form: Times[..., Power[den, -n]]
+      let mut numer_parts: Vec<Expr> = Vec::new();
+      let mut denom_parts: Vec<Expr> = Vec::new();
+      for a in args {
+        if let Some((base, neg_exp)) = crate::syntax::extract_neg_power_info(a)
+        {
+          let base_box = unit_to_box_form_inner(base);
+          if neg_exp == -1 {
+            denom_parts.push(base_box);
+          } else {
+            denom_parts.push(Expr::FunctionCall {
+              name: "SuperscriptBox".to_string(),
+              args: vec![base_box, Expr::String((-neg_exp).to_string())],
+            });
+          }
+        } else {
+          numer_parts.push(unit_to_box_form_inner(a));
+        }
+      }
+      if denom_parts.is_empty() {
+        join_with_dot(numer_parts)
+      } else {
+        let numer = if numer_parts.is_empty() {
+          Expr::String("1".to_string())
+        } else {
+          join_with_dot(numer_parts)
+        };
+        let denom = join_with_dot(denom_parts);
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            numer,
+            Expr::String("/".to_string()),
+            denom,
+          ])],
+        }
+      }
+    }
+    _ => expr_to_box_form(unit),
+  }
+}
+
+/// Like `unit_to_box_form` but without singularization (for compound sub-units).
+fn unit_to_box_form_inner(unit: &Expr) -> Expr {
+  use crate::functions::quantity_ast::unit_to_abbreviation;
+  use crate::syntax::BinaryOperator;
+
+  if let Some((base, exp)) = crate::functions::graphics::as_power_pub(unit) {
+    let base_box = unit_to_box_form_inner(base);
+    let exp_box = expr_to_box_form(exp);
+    return Expr::FunctionCall {
+      name: "SuperscriptBox".to_string(),
+      args: vec![base_box, exp_box],
+    };
+  }
+
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => {
+      let abbr = unit_to_abbreviation(s).unwrap_or(s);
+      Expr::String(abbr.to_string())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(vec![
+        unit_to_box_form_inner(left),
+        Expr::String("/".to_string()),
+        unit_to_box_form_inner(right),
+      ])],
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::FunctionCall {
+      name: "RowBox".to_string(),
+      args: vec![Expr::List(vec![
+        unit_to_box_form_inner(left),
+        Expr::String("\u{22c5}".to_string()),
+        unit_to_box_form_inner(right),
+      ])],
+    },
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut numer_parts: Vec<Expr> = Vec::new();
+      let mut denom_parts: Vec<Expr> = Vec::new();
+      for a in args {
+        if let Some((base, neg_exp)) = crate::syntax::extract_neg_power_info(a)
+        {
+          let base_box = unit_to_box_form_inner(base);
+          if neg_exp == -1 {
+            denom_parts.push(base_box);
+          } else {
+            denom_parts.push(Expr::FunctionCall {
+              name: "SuperscriptBox".to_string(),
+              args: vec![base_box, Expr::String((-neg_exp).to_string())],
+            });
+          }
+        } else {
+          numer_parts.push(unit_to_box_form_inner(a));
+        }
+      }
+      if denom_parts.is_empty() {
+        join_with_dot(numer_parts)
+      } else {
+        let numer = if numer_parts.is_empty() {
+          Expr::String("1".to_string())
+        } else {
+          join_with_dot(numer_parts)
+        };
+        let denom = join_with_dot(denom_parts);
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            numer,
+            Expr::String("/".to_string()),
+            denom,
+          ])],
+        }
+      }
+    }
+    _ => expr_to_box_form(unit),
+  }
+}
+
+/// Join box expressions with middle-dot separator.
+fn join_with_dot(parts: Vec<Expr>) -> Expr {
+  if parts.len() == 1 {
+    return parts.into_iter().next().unwrap();
+  }
+  let mut result = Vec::new();
+  for (i, p) in parts.into_iter().enumerate() {
+    if i > 0 {
+      result.push(Expr::String("\u{22c5}".to_string()));
+    }
+    result.push(p);
+  }
+  Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(result)],
   }
 }
 

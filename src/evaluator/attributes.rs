@@ -187,7 +187,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // HoldAllComplete + Protected
-    "HoldComplete" | "Unevaluated" => {
+    "HoldComplete" | "Unevaluated" | "MakeBoxes" => {
       vec!["HoldAllComplete", "Protected"]
     }
 

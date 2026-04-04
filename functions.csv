@@ -508,7 +508,7 @@ Denominator,Returns the denominator of a rational expression,✅,pure,1.0,512
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1.0,513
 Remove,Removes a symbol (no-op in Woxi),✅,effectful,1.0,514
 LegendreP,Legendre polynomial of the first kind,✅,pure,1.0,515
-MakeBoxes,Construct box form of an expression,🚫,pure,3.0,516
+MakeBoxes,Construct box form of an expression,✅,pure,3.0,516
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2.0,517
 RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6.0,518
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12.0,519
@@ -942,7 +942,7 @@ MousePosition,Requires external services or GUI infrastructure,🚫,io,6.0,952
 Expectation,Compute expected value of a function of a random variable,✅,pure,8.0,954
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955
-DisplayForm,,🚫,,3.0,956
+DisplayForm,Wrapper that causes box expressions to be rendered visually,✅,pure,3.0,956
 TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8.0,957
 Shortest,,🚫,,6.0,958
 Region,,🚫,,11.1,959

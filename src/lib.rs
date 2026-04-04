@@ -1922,12 +1922,23 @@ fn generate_output_svg(expr: &syntax::Expr) {
   } else {
     expr
   };
-  let markup = functions::graphics::expr_to_svg_markup(expr);
+  // Convert expression to box form, then render boxes to SVG.
+  // RawBoxes[...] and DisplayForm[...] pass their contents directly as boxes.
+  let boxes = if let syntax::Expr::FunctionCall { name, args } = expr {
+    if (name == "RawBoxes" || name == "DisplayForm") && args.len() == 1 {
+      args[0].clone()
+    } else {
+      evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
+    }
+  } else {
+    evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
+  };
+  let markup = functions::graphics::boxes_to_svg(&boxes);
   let char_width = 8.4_f64;
   let font_size = 14_usize;
-  let display_width = functions::graphics::estimate_display_width(expr);
+  let display_width = functions::graphics::estimate_box_display_width(&boxes);
   let width = (display_width * char_width).ceil().max(1.0) as usize;
-  let (height, text_y) = if functions::graphics::has_fraction(expr) {
+  let (height, text_y) = if functions::graphics::box_has_fraction(&boxes) {
     (32_usize, 18_usize) // taller SVG with adjusted baseline for stacked fractions
   } else {
     (font_size + 4, font_size)
