@@ -4692,3 +4692,62 @@ mod box_language {
     );
   }
 }
+
+mod number_line_plot {
+  use super::*;
+
+  #[test]
+  fn simple_points() {
+    insta::assert_snapshot!(export_svg("NumberLinePlot[{1, 2, 3, 4, 5}]"));
+  }
+
+  #[test]
+  fn prime_numbers() {
+    insta::assert_snapshot!(export_svg("NumberLinePlot[Prime[Range[10]]]"));
+  }
+
+  #[test]
+  fn interval_closed() {
+    insta::assert_snapshot!(export_svg("NumberLinePlot[Interval[{0, 1}]]"));
+  }
+
+  #[test]
+  fn interval_infinite() {
+    insta::assert_snapshot!(export_svg(
+      "NumberLinePlot[Interval[{0, Infinity}]]"
+    ));
+  }
+
+  #[test]
+  fn interval_negative_infinite() {
+    insta::assert_snapshot!(export_svg(
+      "NumberLinePlot[Interval[{-Infinity, 5}]]"
+    ));
+  }
+
+  #[test]
+  fn predicate_with_range() {
+    insta::assert_snapshot!(export_svg(
+      "NumberLinePlot[Sin[x] < Cos[x], {x, 0, 2*Pi}]"
+    ));
+  }
+
+  #[test]
+  fn multiple_series() {
+    insta::assert_snapshot!(export_svg(
+      "NumberLinePlot[{Range[20], 2*Range[10], 3*Range[6], 5*Range[4], 7*Range[2]}]"
+    ));
+  }
+
+  #[test]
+  fn single_point() {
+    insta::assert_snapshot!(export_svg("NumberLinePlot[{42}]"));
+  }
+
+  #[test]
+  fn image_size_option() {
+    insta::assert_snapshot!(export_svg(
+      "NumberLinePlot[{1, 2, 3}, ImageSize -> 200]"
+    ));
+  }
+}

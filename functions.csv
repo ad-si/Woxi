@@ -899,7 +899,7 @@ StyleData,,🚫,,3.0,908
 NestWhile,Applies a function repeatedly while a condition holds,✅,pure,4.0,909
 Depth,Returns the depth of an expression,✅,pure,1.0,911
 LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6.0,912
-NumberLinePlot,Requires external services or GUI infrastructure,🚫,io,10.0,913
+NumberLinePlot,Plots values or intervals on a number line,✅,pure,10.0,913
 RuntimeAttributes,,🚫,,8.0,914
 Notebook,Requires external services or GUI infrastructure,🚫,io,3.0,915
 JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1.0,916
