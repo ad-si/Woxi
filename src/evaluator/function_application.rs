@@ -171,11 +171,8 @@ pub fn apply_apply_ast(
     // Apply replaces the head of any expression: f @@ Plus[a, b, c] → f[a, b, c]
     Expr::FunctionCall { args, .. } => args.clone(),
     _ => {
-      // Not a list or function call, return unevaluated
-      return Ok(Expr::Apply {
-        func: Box::new(func.clone()),
-        list: Box::new(list.clone()),
-      });
+      // Atoms have no children; Apply on an atom returns the atom unchanged
+      return Ok(list.clone());
     }
   };
 

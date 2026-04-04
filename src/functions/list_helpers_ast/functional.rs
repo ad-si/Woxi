@@ -375,9 +375,8 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
     match expr_children(list) {
       Some(items) => items,
       None => {
-        return Err(InterpreterError::EvaluationError(
-          "Apply expects a list or expression as second argument".into(),
-        ));
+        // Atoms have no children; Apply on an atom returns the atom unchanged
+        return Ok(list.clone());
       }
     }
   };
