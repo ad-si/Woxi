@@ -25,12 +25,21 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Cache WASM build output
+        id: wasm-cache
+        uses: actions/cache@v4
+        with:
+          path: tests/cli/playground/pkg
+          key: wasm-pkg-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
+
       - name: Setup Rust
+        if: steps.wasm-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
       - name: Cache Cargo registry and build artifacts
+        if: steps.wasm-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -42,9 +51,11 @@ jobs:
             wasm-cargo-
 
       - name: Install wasm-pack
+        if: steps.wasm-cache.outputs.cache-hit != 'true'
         uses: jetli/wasm-pack-action@v0.4.0
 
       - name: Build WASM playground
+        if: steps.wasm-cache.outputs.cache-hit != 'true'
         run: make wasm-build-production
 
       - name: Setup Python
@@ -80,14 +91,6 @@ jobs:
 
       - name: Setup Nix
         uses: cachix/install-nix-action@v31
-
-      - name: Cache Nix store
-        uses: actions/cache@v4
-        with:
-          path: /nix/store
-          key: nix-store-${{ hashFiles('flake.lock') }}
-          restore-keys: |
-            nix-store-
 
       - name: Build documentation
         run: nix develop -c mdbook build ./tests
