@@ -78,10 +78,32 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::List(result))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Flatten".to_string(),
-      args: vec![list.clone()],
-    }),
+    Expr::FunctionCall { name, args } => {
+      // Flatten[f[f[a, b], f[c, d]]] -> f[a, b, c, d]
+      // Recursively flatten subexpressions with the same head
+      let mut result = Vec::new();
+      flatten_same_head(name, args, &mut result);
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: result,
+      })
+    }
+    _ => Ok(list.clone()),
+  }
+}
+
+/// Helper to recursively flatten subexpressions with the same head
+fn flatten_same_head(head: &str, args: &[Expr], result: &mut Vec<Expr>) {
+  for arg in args {
+    match arg {
+      Expr::FunctionCall {
+        name,
+        args: sub_args,
+      } if name == head => {
+        flatten_same_head(head, sub_args, result);
+      }
+      _ => result.push(arg.clone()),
+    }
   }
 }
 
