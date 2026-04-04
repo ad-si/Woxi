@@ -3457,6 +3457,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // 1^x -> 1 for any finite x (1^Infinity is Indeterminate, handled below)
+  if matches!(base, Expr::Integer(1))
+    && !matches!(exp, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+    && !crate::functions::math_ast::special_functions::is_neg_infinity(exp)
+  {
+    return Ok(Expr::Integer(1));
+  }
+
   // x^0 -> 1 (for non-zero x; 0^0 is Indeterminate, handled below)
   if matches!(exp, Expr::Integer(0))
     && !matches!(base, Expr::Integer(0))
