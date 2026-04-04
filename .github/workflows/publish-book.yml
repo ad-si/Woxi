@@ -30,6 +30,17 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: wasm-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            wasm-cargo-
+
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
 
@@ -43,11 +54,15 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: jupyterlite-woxi-kernel/package-lock.json
 
       - name: Build JupyterLite kernel extension
         run: |
@@ -59,7 +74,6 @@ jobs:
         run: |
           uvx \
             --python 3.12 \
-            --no-cache \
             --with jupyterlite-core \
             --with jupyterlab \
             --with ./jupyterlite-woxi-kernel \
@@ -68,6 +82,14 @@ jobs:
 
       - name: Setup Nix
         uses: cachix/install-nix-action@v31
+
+      - name: Cache Nix store
+        uses: actions/cache@v4
+        with:
+          path: /nix/store
+          key: nix-store-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-store-
 
       - name: Build documentation
         run: nix develop -c mdbook build ./tests
