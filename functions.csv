@@ -1690,7 +1690,7 @@ ArgMax,Position of maximum,,unevaluated,7.0,1721
 VertexNormals,Vertex normal vectors,,unevaluated,6.0,1721
 CorrelationFunction,Correlation function,,unevaluated,9.0,1723
 RandomImage,Generates a random image with given dimensions,✅,pure,8.0,1723
-BellY,Bell Y polynomial,,unevaluated,8.0,1725
+BellY,Partial Bell polynomial (Bell Y polynomial),✅,pure,8.0,1725
 ParallelDo,Parallel Do loop,,unevaluated,7.0,1725
 BarnesG,Barnes G-function (double gamma function),✅,pure,7.0,1727
 URL,URL wrapper,,unevaluated,11.0,1727
@@ -4115,7 +4115,7 @@ ConnesWindow,Compute ConnesWindow value,✅,pure,9.0,4262
 ContinuousWaveletData,,🚫,,8.0,4262
 ErlangC,,,,9.0,4262
 FindSettings,,,,4.0,4262
-FiniteAbelianGroupCount,,,,7.0,4262
+FiniteAbelianGroupCount,Number of abelian groups of order n,✅,pure,7.0,4262
 FunctionBijective,,,,12.2,4262
 FunctionMeromorphic,,,,12.2,4262
 GenomeLookup,,🚫,,7.0,4262
@@ -4317,7 +4317,7 @@ ConvexRegionQ,,,,12.2,4479
 CriticalitySuccessImportance,,,,9.0,4479
 DeviceReadList,,🚫,,10.0,4479
 EdgeCycleMatrix,,,,10.0,4479
-FiniteGroupCount,,,,7.0,4479
+FiniteGroupCount,Number of groups of order n,✅,pure,7.0,4479
 FunctionSpace,,,,7.0,4479
 ImageDisplacements,,🚫,,11.0,4479
 InsertLinebreaks,,,,10.1,4479
@@ -4438,7 +4438,7 @@ EntityCopies,,🚫,,10.3,4612
 ErrorBox,,,,3.0,4612
 FieldMasked,,,,8.0,4612
 FrequencySamplingFilterKernel,,,,9.0,4612
-Hyperfactorial,,,,7.0,4612
+Hyperfactorial,Product of k^k for k from 1 to n,✅,pure,7.0,4612
 ImageExposureCombine,,🚫,,10.2,4612
 KVertexConnectedGraphQ,,,,10.0,4612
 LambdaComponents,,,,9.0,4612
@@ -4774,7 +4774,7 @@ CloudFunction,,🚫,,10.0,5013
 CombinatorI,,,,12.2,5013
 CombinedEntityClass,,🚫,,12.0,5013
 CreateCellID,,🚫,,6.0,5013
-DeBruijnSequence,,,,11.3,5013
+DeBruijnSequence,De Bruijn sequence over an alphabet,✅,pure,11.3,5013
 DefaultTicksStyle,,,,7.0,5013
 DeviceStreams,,🚫,,10.0,5013
 DownArrow,,,,3.0,5013

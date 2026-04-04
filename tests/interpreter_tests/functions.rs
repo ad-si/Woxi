@@ -14342,4 +14342,340 @@ mod byte_array_to_string {
       "ByteArrayToString[x]"
     );
   }
+
+  // Hyperfactorial
+  #[test]
+  fn hyperfactorial_0() {
+    assert_eq!(interpret("Hyperfactorial[0]").unwrap(), "1");
+  }
+  #[test]
+  fn hyperfactorial_1() {
+    assert_eq!(interpret("Hyperfactorial[1]").unwrap(), "1");
+  }
+  #[test]
+  fn hyperfactorial_2() {
+    assert_eq!(interpret("Hyperfactorial[2]").unwrap(), "4");
+  }
+  #[test]
+  fn hyperfactorial_3() {
+    assert_eq!(interpret("Hyperfactorial[3]").unwrap(), "108");
+  }
+  #[test]
+  fn hyperfactorial_4() {
+    assert_eq!(interpret("Hyperfactorial[4]").unwrap(), "27648");
+  }
+  #[test]
+  fn hyperfactorial_5() {
+    assert_eq!(interpret("Hyperfactorial[5]").unwrap(), "86400000");
+  }
+  #[test]
+  fn hyperfactorial_10() {
+    assert_eq!(
+      interpret("Hyperfactorial[10]").unwrap(),
+      "215779412229418562091680268288000000000000000"
+    );
+  }
+  #[test]
+  fn hyperfactorial_neg1() {
+    assert_eq!(interpret("Hyperfactorial[-1]").unwrap(), "1");
+  }
+  #[test]
+  fn hyperfactorial_neg2() {
+    assert_eq!(interpret("Hyperfactorial[-2]").unwrap(), "-1");
+  }
+  #[test]
+  fn hyperfactorial_neg3() {
+    assert_eq!(interpret("Hyperfactorial[-3]").unwrap(), "-4");
+  }
+  #[test]
+  fn hyperfactorial_neg4() {
+    assert_eq!(interpret("Hyperfactorial[-4]").unwrap(), "108");
+  }
+  #[test]
+  fn hyperfactorial_neg5() {
+    assert_eq!(interpret("Hyperfactorial[-5]").unwrap(), "27648");
+  }
+  #[test]
+  fn hyperfactorial_neg6() {
+    assert_eq!(interpret("Hyperfactorial[-6]").unwrap(), "-86400000");
+  }
+  #[test]
+  fn hyperfactorial_symbolic() {
+    assert_eq!(interpret("Hyperfactorial[x]").unwrap(), "Hyperfactorial[x]");
+  }
+  #[test]
+  fn hyperfactorial_listable() {
+    assert_eq!(
+      interpret("Hyperfactorial[{1, 2, 3}]").unwrap(),
+      "{1, 4, 108}"
+    );
+  }
+
+  // DeBruijnSequence
+  #[test]
+  fn debruijn_binary_2() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{0, 1}, 2]").unwrap(),
+      "{0, 0, 1, 1}"
+    );
+  }
+  #[test]
+  fn debruijn_binary_3() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{0, 1}, 3]").unwrap(),
+      "{0, 0, 0, 1, 0, 1, 1, 1}"
+    );
+  }
+  #[test]
+  fn debruijn_binary_4() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{0, 1}, 4]").unwrap(),
+      "{0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1}"
+    );
+  }
+  #[test]
+  fn debruijn_symbolic_2() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{a, b}, 2]").unwrap(),
+      "{a, a, b, b}"
+    );
+  }
+  #[test]
+  fn debruijn_ternary_2() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{0, 1, 2}, 2]").unwrap(),
+      "{0, 0, 1, 0, 2, 1, 1, 2, 2}"
+    );
+  }
+  #[test]
+  fn debruijn_binary_1() {
+    assert_eq!(interpret("DeBruijnSequence[{0, 1}, 1]").unwrap(), "{0, 1}");
+  }
+  #[test]
+  fn debruijn_symbolic_3_1() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{a, b, c}, 1]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+  #[test]
+  fn debruijn_single_element() {
+    assert_eq!(interpret("DeBruijnSequence[{1}, 3]").unwrap(), "{1}");
+  }
+  #[test]
+  fn debruijn_ternary_3() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{0, 1, 2}, 3]").unwrap(),
+      "{0, 0, 0, 1, 0, 0, 2, 0, 1, 1, 0, 1, 2, 0, 2, 1, 0, 2, 2, 1, 1, 1, 2, 1, 2, 2, 2}"
+    );
+  }
+  #[test]
+  fn debruijn_symbolic_3_2() {
+    assert_eq!(
+      interpret("DeBruijnSequence[{a, b, c}, 2]").unwrap(),
+      "{a, a, b, a, c, b, b, c, c}"
+    );
+  }
+
+  // BellY
+  #[test]
+  fn bell_y_0_0() {
+    assert_eq!(interpret("BellY[0, 0, {}]").unwrap(), "1");
+  }
+  #[test]
+  fn bell_y_1_1() {
+    assert_eq!(interpret("BellY[1, 1, {x}]").unwrap(), "x");
+  }
+  #[test]
+  fn bell_y_2_1() {
+    assert_eq!(interpret("BellY[2, 1, {x1, x2}]").unwrap(), "x2");
+  }
+  #[test]
+  fn bell_y_2_2() {
+    assert_eq!(interpret("BellY[2, 2, {x1, x2}]").unwrap(), "x1^2");
+  }
+  #[test]
+  fn bell_y_3_1() {
+    assert_eq!(interpret("BellY[3, 1, {x1, x2, x3}]").unwrap(), "x3");
+  }
+  #[test]
+  fn bell_y_3_2() {
+    assert_eq!(interpret("BellY[3, 2, {x1, x2, x3}]").unwrap(), "3*x1*x2");
+  }
+  #[test]
+  fn bell_y_3_3() {
+    assert_eq!(interpret("BellY[3, 3, {x1, x2, x3}]").unwrap(), "x1^3");
+  }
+  #[test]
+  fn bell_y_4_1() {
+    assert_eq!(interpret("BellY[4, 1, {x1, x2, x3, x4}]").unwrap(), "x4");
+  }
+  #[test]
+  fn bell_y_4_2() {
+    assert_eq!(
+      interpret("BellY[4, 2, {x1, x2, x3}]").unwrap(),
+      "3*x2^2 + 4*x1*x3"
+    );
+  }
+  #[test]
+  fn bell_y_4_3() {
+    assert_eq!(interpret("BellY[4, 3, {x1, x2}]").unwrap(), "6*x1^2*x2");
+  }
+  #[test]
+  fn bell_y_4_4() {
+    assert_eq!(interpret("BellY[4, 4, {x1}]").unwrap(), "x1^4");
+  }
+  #[test]
+  fn bell_y_5_2() {
+    assert_eq!(
+      interpret("BellY[5, 2, {x1, x2, x3, x4}]").unwrap(),
+      "10*x2*x3 + 5*x1*x4"
+    );
+  }
+  #[test]
+  fn bell_y_5_3() {
+    assert_eq!(
+      interpret("BellY[5, 3, {x1, x2, x3}]").unwrap(),
+      "15*x1*x2^2 + 10*x1^2*x3"
+    );
+  }
+  #[test]
+  fn bell_y_6_3() {
+    assert_eq!(
+      interpret("BellY[6, 3, {x1, x2, x3, x4}]").unwrap(),
+      "15*x2^3 + 60*x1*x2*x3 + 15*x1^2*x4"
+    );
+  }
+
+  // FiniteGroupCount
+  #[test]
+  fn finite_group_count_1() {
+    assert_eq!(interpret("FiniteGroupCount[1]").unwrap(), "1");
+  }
+  #[test]
+  fn finite_group_count_4() {
+    assert_eq!(interpret("FiniteGroupCount[4]").unwrap(), "2");
+  }
+  #[test]
+  fn finite_group_count_8() {
+    assert_eq!(interpret("FiniteGroupCount[8]").unwrap(), "5");
+  }
+  #[test]
+  fn finite_group_count_16() {
+    assert_eq!(interpret("FiniteGroupCount[16]").unwrap(), "14");
+  }
+  #[test]
+  fn finite_group_count_32() {
+    assert_eq!(interpret("FiniteGroupCount[32]").unwrap(), "51");
+  }
+  #[test]
+  fn finite_group_count_64() {
+    assert_eq!(interpret("FiniteGroupCount[64]").unwrap(), "267");
+  }
+  #[test]
+  fn finite_group_count_128() {
+    assert_eq!(interpret("FiniteGroupCount[128]").unwrap(), "2328");
+  }
+  #[test]
+  fn finite_group_count_100() {
+    assert_eq!(interpret("FiniteGroupCount[100]").unwrap(), "16");
+  }
+  #[test]
+  fn finite_group_count_200() {
+    assert_eq!(interpret("FiniteGroupCount[200]").unwrap(), "52");
+  }
+  #[test]
+  fn finite_group_count_256() {
+    assert_eq!(interpret("FiniteGroupCount[256]").unwrap(), "56092");
+  }
+  #[test]
+  fn finite_group_count_512() {
+    assert_eq!(interpret("FiniteGroupCount[512]").unwrap(), "10494213");
+  }
+  #[test]
+  fn finite_group_count_1024() {
+    assert_eq!(interpret("FiniteGroupCount[1024]").unwrap(), "49487365422");
+  }
+  #[test]
+  fn finite_group_count_zero() {
+    assert_eq!(
+      interpret("FiniteGroupCount[0]").unwrap(),
+      "FiniteGroupCount[0]"
+    );
+  }
+  #[test]
+  fn finite_group_count_negative() {
+    assert_eq!(
+      interpret("FiniteGroupCount[-1]").unwrap(),
+      "FiniteGroupCount[-1]"
+    );
+  }
+  #[test]
+  fn finite_group_count_listable() {
+    assert_eq!(
+      interpret("FiniteGroupCount[{1, 2, 3}]").unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+  #[test]
+  fn finite_group_count_table() {
+    assert_eq!(
+      interpret("Table[FiniteGroupCount[n], {n, 1, 20}]").unwrap(),
+      "{1, 1, 1, 2, 1, 2, 1, 5, 2, 2, 1, 5, 1, 2, 1, 14, 1, 5, 1, 5}"
+    );
+  }
+
+  // FiniteAbelianGroupCount
+  #[test]
+  fn finite_abelian_group_count_1() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[1]").unwrap(), "1");
+  }
+  #[test]
+  fn finite_abelian_group_count_4() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[4]").unwrap(), "2");
+  }
+  #[test]
+  fn finite_abelian_group_count_8() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[8]").unwrap(), "3");
+  }
+  #[test]
+  fn finite_abelian_group_count_16() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[16]").unwrap(), "5");
+  }
+  #[test]
+  fn finite_abelian_group_count_1000() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[1000]").unwrap(), "9");
+  }
+  #[test]
+  fn finite_abelian_group_count_10000() {
+    assert_eq!(interpret("FiniteAbelianGroupCount[10000]").unwrap(), "25");
+  }
+  #[test]
+  fn finite_abelian_group_count_zero() {
+    assert_eq!(
+      interpret("FiniteAbelianGroupCount[0]").unwrap(),
+      "FiniteAbelianGroupCount[0]"
+    );
+  }
+  #[test]
+  fn finite_abelian_group_count_negative() {
+    assert_eq!(
+      interpret("FiniteAbelianGroupCount[-1]").unwrap(),
+      "FiniteAbelianGroupCount[-1]"
+    );
+  }
+  #[test]
+  fn finite_abelian_group_count_listable() {
+    assert_eq!(
+      interpret("FiniteAbelianGroupCount[{1, 2, 3}]").unwrap(),
+      "{1, 1, 1}"
+    );
+  }
+  #[test]
+  fn finite_abelian_group_count_table() {
+    assert_eq!(
+      interpret("Table[FiniteAbelianGroupCount[n], {n, 1, 30}]").unwrap(),
+      "{1, 1, 1, 2, 1, 1, 1, 3, 2, 1, 1, 2, 1, 1, 1, 5, 1, 2, 1, 2, 1, 1, 1, 3, 2, 1, 3, 2, 1, 1}"
+    );
+  }
 }
