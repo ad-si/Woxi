@@ -621,6 +621,23 @@ pub fn dispatch_math_functions(
     "PolygonalNumber" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::polygonal_number_ast(args));
     }
+    "Hyperfactorial" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::hyperfactorial_ast(args));
+    }
+    "DeBruijnSequence" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::debruijn_sequence_ast(args));
+    }
+    "BellY" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::bell_y_ast(args));
+    }
+    "FiniteGroupCount" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::finite_group_count_ast(args));
+    }
+    "FiniteAbelianGroupCount" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::finite_abelian_group_count_ast(
+        args,
+      ));
+    }
     "PerfectNumber" if args.len() == 1 => {
       return Some(crate::functions::math_ast::perfect_number_ast(args));
     }

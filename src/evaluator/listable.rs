@@ -110,6 +110,9 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "GammaRegularized"
       | "Hypergeometric1F1Regularized"
       | "Unitize"
+      | "Hyperfactorial"
+      | "FiniteGroupCount"
+      | "FiniteAbelianGroupCount"
       | "UnitStep"
   )
 }
