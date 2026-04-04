@@ -1402,7 +1402,7 @@ fn quantity_svg_simple_unit() {
   assert_eq!(result.result, "5 m");
   let svg = result.output_svg.expect("Quantity should produce SVG");
   assert!(
-    svg.contains("5 m"),
+    svg.contains(">5</text>") && svg.contains(">m</text>"),
     "SVG should show abbreviated unit: {svg}"
   );
 }
@@ -1415,7 +1415,7 @@ fn quantity_svg_compound_divide() {
   assert_eq!(result.result, "12.345 m/s");
   let svg = result.output_svg.expect("Quantity should produce SVG");
   assert!(
-    svg.contains("12.345 m/s"),
+    svg.contains(">m</text>") && svg.contains(">s</text>"),
     "SVG should show abbreviated compound unit: {svg}"
   );
 }
@@ -1428,12 +1428,12 @@ fn quantity_svg_power_unit() {
   assert_eq!(result.result, "9.8 m/s^2");
   let svg = result.output_svg.expect("Quantity should produce SVG");
   assert!(
-    svg.contains("m/s"),
+    svg.contains(">m</text>") && svg.contains(">s</text>"),
     "SVG should show abbreviated unit: {svg}"
   );
   assert!(
-    svg.contains("super"),
-    "SVG should contain superscript for exponent: {svg}"
+    svg.contains(">2</text>"),
+    "SVG should contain exponent: {svg}"
   );
 }
 
@@ -1443,7 +1443,7 @@ fn quantity_svg_kilogram() {
   let result = interpret_with_stdout("Quantity[70, \"Kilograms\"]").unwrap();
   assert_eq!(result.result, "70 kg");
   let svg = result.output_svg.expect("Quantity should produce SVG");
-  assert!(svg.contains("70 kg"), "SVG should show 'kg': {svg}");
+  assert!(svg.contains(">kg</text>"), "SVG should show 'kg': {svg}");
 }
 
 #[test]
@@ -1452,7 +1452,10 @@ fn quantity_svg_days_plural() {
   let result = interpret_with_stdout("Quantity[21, \"Days\"]").unwrap();
   assert_eq!(result.result, "21 days");
   let svg = result.output_svg.expect("Quantity should produce SVG");
-  assert!(svg.contains("21 days"), "SVG should show 'days': {svg}");
+  assert!(
+    svg.contains(">days</text>"),
+    "SVG should show 'days': {svg}"
+  );
 }
 
 #[test]
@@ -1461,7 +1464,7 @@ fn quantity_svg_days_singular() {
   let result = interpret_with_stdout("Quantity[1, \"Days\"]").unwrap();
   assert_eq!(result.result, "1 day");
   let svg = result.output_svg.expect("Quantity should produce SVG");
-  assert!(svg.contains("1 day"), "SVG should show 'day': {svg}");
+  assert!(svg.contains(">day</text>"), "SVG should show 'day': {svg}");
 }
 
 #[test]

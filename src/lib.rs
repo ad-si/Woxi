@@ -732,7 +732,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
     // Make sure there are no unescaped quotes inside
     let inner = &trimmed[1..trimmed.len() - 1];
-    if !inner.contains('"') {
+    // Skip fast path if string contains named character escapes \[Name]
+    if !inner.contains('"') && !inner.contains("\\[") {
       return Ok(inner.to_string());
     }
   }
@@ -1933,23 +1934,9 @@ fn generate_output_svg(expr: &syntax::Expr) {
   } else {
     evaluator::dispatch::complex_and_special::expr_to_box_form(expr)
   };
-  let markup = functions::graphics::boxes_to_svg(&boxes);
-  let char_width = 8.4_f64;
-  let font_size = 14_usize;
-  let display_width = functions::graphics::estimate_box_display_width(&boxes);
-  let width = (display_width * char_width).ceil().max(1.0) as usize;
-  let (height, text_y) = if functions::graphics::box_has_fraction(&boxes) {
-    (32_usize, 18_usize) // taller SVG with adjusted baseline for stacked fractions
-  } else {
-    (font_size + 4, font_size)
-  };
+  let layout = functions::graphics::layout_box(&boxes, 14.0);
   let text_fill = functions::graphics::theme().text_primary;
-  let svg = format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\">{markup}</text>\
-     </svg>",
-    width, height
-  );
+  let svg = functions::graphics::layout_to_svg(&layout, text_fill);
   capture_output_svg(&svg);
 }
 

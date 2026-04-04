@@ -1531,22 +1531,14 @@ fn glob_match_impl(pattern: &[char], text: &[char]) -> bool {
 
 /// Render a text-mode SVG fallback for non-graphics expressions.
 fn expr_text_svg(expr: &Expr) -> String {
-  let markup = crate::functions::graphics::expr_to_svg_markup(expr);
-  let char_width = 9.8_f64;
-  let font_size = 14_usize;
-  let display_width = crate::functions::graphics::estimate_display_width(expr);
-  let width = (display_width * char_width).ceil() as usize;
-  let (height, text_y) = if crate::functions::graphics::has_fraction(expr) {
-    (32_usize, 18_usize)
-  } else {
-    (font_size + 4, font_size)
-  };
-  format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
-     </svg>",
-    width, height
-  )
+  let boxes = super::complex_and_special::expr_to_box_form(expr);
+  boxes_to_text_svg(&boxes)
+}
+
+/// Render box-form expressions to a text SVG.
+fn boxes_to_text_svg(boxes: &Expr) -> String {
+  let layout = crate::functions::graphics::layout_box(boxes, 14.0);
+  crate::functions::graphics::layout_to_svg(&layout, "currentColor")
 }
 
 /// Convert an expression to its SVG string representation.
@@ -1707,6 +1699,15 @@ fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_text_svg(expr)
       }
+    }
+    // DisplayForm[boxes] / RawBoxes[boxes] — render box expressions to SVG
+    Expr::FunctionCall {
+      name: box_name,
+      args: box_args,
+    } if (box_name == "DisplayForm" || box_name == "RawBoxes")
+      && box_args.len() == 1 =>
+    {
+      boxes_to_text_svg(&box_args[0])
     }
     other => expr_text_svg(other),
   }

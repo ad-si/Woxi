@@ -2318,8 +2318,8 @@ mod graphics_list {
     );
     let svg = result.output_svg.unwrap();
     assert!(
-      svg.contains("super"),
-      "StandardForm SVG should contain superscript"
+      svg.contains("font-size=\"9.8\""),
+      "StandardForm SVG should contain smaller font for superscript"
     );
 
     // InputForm unwraps to InputForm text, no SVG
@@ -4539,5 +4539,125 @@ mod parametric_plot3d {
       interpret("Head[ParametricPlot3D[{u, v, u + v}, {u, 0, 1}, {v, 0, 1}]]")
         .unwrap();
     assert_eq!(result, "Graphics3D");
+  }
+}
+
+mod box_language {
+  use super::*;
+
+  #[test]
+  fn box_types_are_inert() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"DisplayForm[FractionBox["x", "y"]]"#).unwrap(),
+      "DisplayForm[FractionBox[x, y]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[SqrtBox["x"]]"#).unwrap(),
+      "DisplayForm[SqrtBox[x]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[SuperscriptBox["x", "2"]]"#).unwrap(),
+      "DisplayForm[SuperscriptBox[x, 2]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[SubscriptBox["a", "i"]]"#).unwrap(),
+      "DisplayForm[SubscriptBox[a, i]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[RowBox[{"a", "+", "b"}]]"#).unwrap(),
+      "DisplayForm[RowBox[{a, +, b}]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[OverscriptBox["x", "^"]]"#).unwrap(),
+      "DisplayForm[OverscriptBox[x, ^]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[UnderscriptBox["x", "_"]]"#).unwrap(),
+      "DisplayForm[UnderscriptBox[x, _]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[SubsuperscriptBox["x", "i", "2"]]"#).unwrap(),
+      "DisplayForm[SubsuperscriptBox[x, i, 2]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[UnderoverscriptBox["\[Sum]", "i=1", "n"]]"#)
+        .unwrap(),
+      "DisplayForm[UnderoverscriptBox[\u{2211}, i=1, n]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[RadicalBox["x", "3"]]"#).unwrap(),
+      "DisplayForm[RadicalBox[x, 3]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[FrameBox["hello"]]"#).unwrap(),
+      "DisplayForm[FrameBox[hello]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[StyleBox["red text", FontColor -> Red]]"#)
+        .unwrap(),
+      "DisplayForm[StyleBox[red text, FontColor -> RGBColor[1, 0, 0]]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[GridBox[{{"a", "b"}, {"c", "d"}}]]"#).unwrap(),
+      "DisplayForm[GridBox[{{a, b}, {c, d}}]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[StyleBox["big", FontSize -> 24]]"#).unwrap(),
+      "DisplayForm[StyleBox[big, FontSize -> 24]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[TagBox[FrameBox["tagged"], "MyTag"]]"#).unwrap(),
+      "DisplayForm[TagBox[FrameBox[tagged], MyTag]]"
+    );
+    assert_eq!(
+      interpret(
+        r#"DisplayForm[StyleBox[FrameBox["styled box"], Background -> LightBlue]]"#
+      )
+      .unwrap(),
+      "DisplayForm[StyleBox[FrameBox[styled box], Background -> RGBColor[0.87, 0.94, 1]]]"
+    );
+    assert_eq!(
+      interpret(r#"DisplayForm[InterpretationBox["display", 42]]"#).unwrap(),
+      "DisplayForm[InterpretationBox[display, 42]]"
+    );
+  }
+
+  #[test]
+  fn named_chars_in_box_strings() {
+    clear_state();
+    // Named characters like \[Sum] inside strings should be converted to Unicode
+    assert_eq!(interpret(r#""\[Sum]""#).unwrap(), "\u{2211}");
+    assert_eq!(interpret(r#""\[Pi]""#).unwrap(), "\u{03C0}");
+    assert_eq!(interpret(r#""\[Alpha]""#).unwrap(), "\u{03B1}");
+  }
+
+  #[test]
+  fn nested_box_expressions() {
+    clear_state();
+    // Nested: FractionBox + SqrtBox in RowBox
+    assert_eq!(
+      interpret(
+        r#"DisplayForm[RowBox[{FractionBox["1", "2"], "+", SqrtBox["3"]}]]"#
+      )
+      .unwrap(),
+      "DisplayForm[RowBox[{FractionBox[1, 2], +, SqrtBox[3]}]]"
+    );
+    // Nested: SuperscriptBox with RowBox exponent
+    assert_eq!(
+      interpret(
+        r#"DisplayForm[RowBox[{SuperscriptBox["e", RowBox[{"i", " ", "\[Pi]"}]], "+", "1"}]]"#
+      )
+      .unwrap(),
+      "DisplayForm[RowBox[{SuperscriptBox[e, RowBox[{i,  , \u{03C0}}]], +, 1}]]"
+    );
+    // GridBox with nested SuperscriptBox
+    assert_eq!(
+      interpret(
+        r#"DisplayForm[GridBox[{{"x", SuperscriptBox["x", "2"]}, {"y", SuperscriptBox["y", "2"]}}, GridLines -> Automatic]]"#
+      )
+      .unwrap(),
+      "DisplayForm[GridBox[{{x, SuperscriptBox[x, 2]}, {y, SuperscriptBox[y, 2]}}, GridLines -> Automatic]]"
+    );
   }
 }

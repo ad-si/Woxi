@@ -358,6 +358,154 @@ pub enum Expr {
   Graphics { svg: String, is_3d: bool },
 }
 
+/// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
+/// Unicode string. Returns None if the name is not recognized.
+pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
+  match name {
+    // Constants / special identifiers (render as Unicode in strings)
+    "ExponentialE" => Some("\u{212F}"),
+    "Degree" => Some("\u{00B0}"),
+    "Infinity" => Some("\u{221E}"),
+    "ImaginaryI" | "ImaginaryJ" => Some("\u{2148}"),
+    // Lowercase Greek (Pi handled here too)
+    "Alpha" => Some("\u{03B1}"),
+    "Beta" => Some("\u{03B2}"),
+    "Gamma" => Some("\u{03B3}"),
+    "Delta" => Some("\u{03B4}"),
+    "Epsilon" => Some("\u{03F5}"),
+    "Zeta" => Some("\u{03B6}"),
+    "Eta" => Some("\u{03B7}"),
+    "Theta" => Some("\u{03B8}"),
+    "Iota" => Some("\u{03B9}"),
+    "Kappa" => Some("\u{03BA}"),
+    "Lambda" => Some("\u{03BB}"),
+    "Mu" => Some("\u{03BC}"),
+    "Nu" => Some("\u{03BD}"),
+    "Xi" => Some("\u{03BE}"),
+    "Omicron" => Some("\u{03BF}"),
+    "Pi" => Some("\u{03C0}"),
+    "Rho" => Some("\u{03C1}"),
+    "Sigma" => Some("\u{03C3}"),
+    "FinalSigma" => Some("\u{03C2}"),
+    "Tau" => Some("\u{03C4}"),
+    "Upsilon" => Some("\u{03C5}"),
+    "Phi" => Some("\u{03D5}"),
+    "CurlyPhi" => Some("\u{03C6}"),
+    "Chi" => Some("\u{03C7}"),
+    "Psi" => Some("\u{03C8}"),
+    "Omega" => Some("\u{03C9}"),
+    // Uppercase Greek
+    "CapitalAlpha" => Some("\u{0391}"),
+    "CapitalBeta" => Some("\u{0392}"),
+    "CapitalGamma" => Some("\u{0393}"),
+    "CapitalDelta" => Some("\u{0394}"),
+    "CapitalEpsilon" => Some("\u{0395}"),
+    "CapitalZeta" => Some("\u{0396}"),
+    "CapitalEta" => Some("\u{0397}"),
+    "CapitalTheta" => Some("\u{0398}"),
+    "CapitalIota" => Some("\u{0399}"),
+    "CapitalKappa" => Some("\u{039A}"),
+    "CapitalLambda" => Some("\u{039B}"),
+    "CapitalMu" => Some("\u{039C}"),
+    "CapitalNu" => Some("\u{039D}"),
+    "CapitalXi" => Some("\u{039E}"),
+    "CapitalOmicron" => Some("\u{039F}"),
+    "CapitalPi" => Some("\u{03A0}"),
+    "CapitalRho" => Some("\u{03A1}"),
+    "CapitalSigma" => Some("\u{03A3}"),
+    "CapitalTau" => Some("\u{03A4}"),
+    "CapitalUpsilon" => Some("\u{03A5}"),
+    "CapitalPhi" => Some("\u{03A6}"),
+    "CapitalChi" => Some("\u{03A7}"),
+    "CapitalPsi" => Some("\u{03A8}"),
+    "CapitalOmega" => Some("\u{03A9}"),
+    // Common symbols
+    "Euro" => Some("\u{20AC}"),
+    "Micro" => Some("\u{00B5}"),
+    "Angstrom" => Some("\u{212B}"),
+    "HBar" => Some("\u{210F}"),
+    // Math operators and symbols
+    "Sum" => Some("\u{2211}"),
+    "Product" => Some("\u{220F}"),
+    "Integral" => Some("\u{222B}"),
+    "PartialD" => Some("\u{2202}"),
+    "DifferentialD" => Some("\u{2146}"),
+    "CapitalDifferentialD" => Some("\u{2145}"),
+    "Sqrt" => Some("\u{221A}"),
+    "CubeRoot" => Some("\u{221B}"),
+    "Not" => Some("\u{00AC}"),
+    "And" => Some("\u{2227}"),
+    "Or" => Some("\u{2228}"),
+    "ForAll" => Some("\u{2200}"),
+    "Exists" => Some("\u{2203}"),
+    "NotExists" => Some("\u{2204}"),
+    "EmptySet" => Some("\u{2205}"),
+    "Element" => Some("\u{2208}"),
+    "NotElement" => Some("\u{2209}"),
+    "ReverseElement" => Some("\u{220B}"),
+    "Subset" => Some("\u{2282}"),
+    "Superset" => Some("\u{2283}"),
+    "SubsetEqual" => Some("\u{2286}"),
+    "SupersetEqual" => Some("\u{2287}"),
+    "Union" => Some("\u{222A}"),
+    "Intersection" => Some("\u{2229}"),
+    "PlusMinus" => Some("\u{00B1}"),
+    "MinusPlus" => Some("\u{2213}"),
+    "Times" => Some("\u{00D7}"),
+    "Divide" => Some("\u{00F7}"),
+    "Equal" => Some("\u{003D}"),
+    "NotEqual" => Some("\u{2260}"),
+    "LessEqual" => Some("\u{2264}"),
+    "GreaterEqual" => Some("\u{2265}"),
+    "Proportional" => Some("\u{221D}"),
+    "Congruent" => Some("\u{2261}"),
+    "Tilde" => Some("\u{223C}"),
+    "TildeTilde" => Some("\u{2248}"),
+    "LeftArrow" => Some("\u{2190}"),
+    "RightArrow" => Some("\u{2192}"),
+    "UpArrow" => Some("\u{2191}"),
+    "DownArrow" => Some("\u{2193}"),
+    "LeftRightArrow" => Some("\u{2194}"),
+    "DoubleLeftArrow" => Some("\u{21D0}"),
+    "DoubleRightArrow" => Some("\u{21D2}"),
+    "DoubleLeftRightArrow" => Some("\u{21D4}"),
+    "Rule" => Some("\u{F522}"),
+    "RuleDelayed" => Some("\u{F51F}"),
+    "DirectedEdge" => Some("\u{F3D1}"),
+    "UndirectedEdge" => Some("\u{F3D0}"),
+    // Dots
+    "Ellipsis" => Some("\u{2026}"),
+    "CenterEllipsis" => Some("\u{22EF}"),
+    "VerticalEllipsis" => Some("\u{22EE}"),
+    "AscendingEllipsis" => Some("\u{22F0}"),
+    "DescendingEllipsis" => Some("\u{22F1}"),
+    // Braces/brackets
+    "LeftAngleBracket" => Some("\u{27E8}"),
+    "RightAngleBracket" => Some("\u{27E9}"),
+    "LeftCeiling" => Some("\u{2308}"),
+    "RightCeiling" => Some("\u{2309}"),
+    "LeftFloor" => Some("\u{230A}"),
+    "RightFloor" => Some("\u{230B}"),
+    "LeftDoubleBracket" => Some("\u{27E6}"),
+    "RightDoubleBracket" => Some("\u{27E7}"),
+    // Miscellaneous
+    "Null" => Some(""),
+    "InvisibleSpace" => Some("\u{200B}"),
+    "ThinSpace" => Some("\u{2009}"),
+    "MediumSpace" => Some("\u{205F}"),
+    "ThickSpace" => Some("\u{2005}"),
+    "VeryThinSpace" => Some("\u{200A}"),
+    "NegativeVeryThinSpace"
+    | "NegativeThinSpace"
+    | "NegativeMediumSpace"
+    | "NegativeThickSpace" => Some(""),
+    "InvisibleTimes" => Some("\u{2062}"),
+    "InvisibleComma" => Some("\u{2063}"),
+    "InvisibleApplication" => Some("\u{2061}"),
+    _ => None,
+  }
+}
+
 /// Convert a Wolfram named character like `\[Phi]` to its Unicode equivalent.
 fn named_char_to_expr(s: &str) -> Expr {
   // Direct Unicode character input
@@ -1175,17 +1323,68 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // Remove surrounding quotes and process escape sequences
       let raw = &s[1..s.len() - 1];
       let mut result = String::with_capacity(raw.len());
-      let mut chars = raw.chars();
+      let mut chars = raw.chars().peekable();
       while let Some(c) = chars.next() {
         if c == '\\' {
-          match chars.next() {
-            Some('n') => result.push('\n'),
-            Some('t') => result.push('\t'),
-            Some('r') => result.push('\r'),
-            Some('\\') => result.push('\\'),
-            Some('"') => result.push('"'),
-            Some('\n') => {} // line continuation: skip the newline
-            Some(other) => {
+          match chars.peek() {
+            Some('[') => {
+              // Potential named character \[Name]
+              chars.next(); // consume '['
+              let mut name = String::new();
+              let mut found_close = false;
+              while let Some(&ch) = chars.peek() {
+                if ch == ']' {
+                  chars.next();
+                  found_close = true;
+                  break;
+                }
+                if ch.is_ascii_alphabetic() {
+                  name.push(ch);
+                  chars.next();
+                } else {
+                  break;
+                }
+              }
+              if found_close {
+                if let Some(unicode) = named_char_to_unicode(&name) {
+                  result.push_str(unicode);
+                } else {
+                  // Unknown named char: preserve original
+                  result.push_str("\\[");
+                  result.push_str(&name);
+                  result.push(']');
+                }
+              } else {
+                // Incomplete \[... — preserve as-is
+                result.push_str("\\[");
+                result.push_str(&name);
+              }
+            }
+            Some(&'n') => {
+              chars.next();
+              result.push('\n');
+            }
+            Some(&'t') => {
+              chars.next();
+              result.push('\t');
+            }
+            Some(&'r') => {
+              chars.next();
+              result.push('\r');
+            }
+            Some(&'\\') => {
+              chars.next();
+              result.push('\\');
+            }
+            Some(&'"') => {
+              chars.next();
+              result.push('"');
+            }
+            Some(&'\n') => {
+              chars.next();
+            } // line continuation
+            Some(_) => {
+              let other = chars.next().unwrap();
               result.push('\\');
               result.push(other);
             }
