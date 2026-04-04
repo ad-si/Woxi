@@ -754,6 +754,16 @@ mod not_logical {
   }
 
   #[test]
+  fn not_in_list() {
+    clear_state();
+    // Not operator should evaluate inside list literals
+    assert_eq!(
+      interpret("{Not[True], Not[False]}").unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
   fn prefix_not_false() {
     clear_state();
     assert_eq!(interpret("Not[False]").unwrap(), "True");
