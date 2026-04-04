@@ -3185,6 +3185,48 @@ mod join_non_list {
   }
 
   #[test]
+  fn map_negative_level_spec() {
+    // {-1} maps f to atoms (leaves)
+    assert_eq!(
+      interpret("Map[f, {1, {2, {3}}}, {-1}]").unwrap(),
+      "{f[1], {f[2], {f[3]}}}"
+    );
+    // {-1} on a flat list
+    assert_eq!(
+      interpret("Map[f, {1, 2, 3}, {-1}]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+    // {-2, -1} maps to atoms and expressions containing only atoms
+    assert_eq!(
+      interpret("Map[f, {1, {2, {3}}}, {-2, -1}]").unwrap(),
+      "{f[1], {f[2], f[{f[3]}]}}"
+    );
+  }
+
+  #[test]
+  fn map_mixed_level_range() {
+    // {0, -1} means all levels
+    assert_eq!(
+      interpret("Map[f, {1, {2, {3}}}, {0, -1}]").unwrap(),
+      "f[{f[1], f[{f[2], f[{f[3]}]}]}]"
+    );
+  }
+
+  #[test]
+  fn map_infinity_level() {
+    // Infinity means levels 1 through Infinity (all subexpressions)
+    assert_eq!(
+      interpret("Map[f, {1, {2, {3}}}, Infinity]").unwrap(),
+      "{f[1], f[{f[2], f[{f[3]}]}]}"
+    );
+    // {0, Infinity} includes level 0 (the whole expression)
+    assert_eq!(
+      interpret("Map[f, {1, {2, {3}}}, {0, Infinity}]").unwrap(),
+      "f[{f[1], f[{f[2], f[{f[3]}]}]}]"
+    );
+  }
+
+  #[test]
   fn replace_part_deep() {
     assert_eq!(
       interpret("ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]").unwrap(),
