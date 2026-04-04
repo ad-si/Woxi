@@ -67,6 +67,28 @@ mod exponent {
       "1/2"
     );
   }
+
+  #[test]
+  fn exponent_list() {
+    assert_eq!(interpret("Exponent[-4x, x, List]").unwrap(), "{1}");
+    assert_eq!(
+      interpret("Exponent[x^3 + 2x^2 - 5x + 1, x, List]").unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert_eq!(interpret("Exponent[x^2 + 1, x, List]").unwrap(), "{0, 2}");
+    assert_eq!(interpret("Exponent[5, x, List]").unwrap(), "{0}");
+  }
+
+  #[test]
+  fn exponent_list_in_map() {
+    assert_eq!(
+      interpret(
+        "u = -4x; Map[Function[Coefficient[u,x,#]*x^#], Exponent[u,x,List]]"
+      )
+      .unwrap(),
+      "{-4*x}"
+    );
+  }
 }
 
 mod coefficient {
