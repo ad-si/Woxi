@@ -335,20 +335,30 @@ fn render_number_line_svg(
     render_width, render_height, bg_color
   ));
 
-  // Draw each series row
+  // Offset for data above the axis line.
+  let data_offset = 10.0 * sf;
+  let axis_x0 = margin_left;
+  let axis_x1 = margin_left + plot_width;
+
+  // Single axis line at the bottom of the plot area.
+  let axis_y = axis_area_top
+    + if num_rows <= 1 {
+      usable_height / 2.0
+    } else {
+      (num_rows - 1) as f64 * row_height + row_height / 2.0
+    };
+  svg.push_str(&format!(
+    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+     stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
+    axis_x0, axis_y, axis_x1, axis_y, axis_color, sf
+  ));
+
+  // Draw each series row (first series on top, last at the bottom near axis).
   for (row_idx, data) in series.iter().enumerate() {
     let color = series_color(row_idx);
-    let center_y =
-      axis_area_top + row_idx as f64 * row_height + row_height / 2.0;
-
-    // Draw axis line
-    let axis_x0 = margin_left;
-    let axis_x1 = margin_left + plot_width;
-    svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-       stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-      axis_x0, center_y, axis_x1, center_y, axis_color, sf
-    ));
+    // Place rows from bottom to top: last series near axis, first series highest.
+    let inverted_idx = num_rows - 1 - row_idx;
+    let data_y = axis_y - data_offset - inverted_idx as f64 * row_height;
 
     match data {
       NumberLineData::Points(pts) => {
@@ -358,7 +368,7 @@ fn render_number_line_svg(
             let px = x_to_px(v);
             svg.push_str(&format!(
               "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px, center_y, radius, color
+              px, data_y, radius, color
             ));
           }
         }
@@ -381,7 +391,7 @@ fn render_number_line_svg(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
              fill=\"{}\" opacity=\"0.6\" rx=\"{:.0}\"/>\n",
             px_lo,
-            center_y - bar_half,
+            data_y - bar_half,
             (px_hi - px_lo).max(0.0),
             bar_half * 2.0,
             color,
@@ -391,20 +401,20 @@ fn render_number_line_svg(
           if lo.is_finite() {
             svg.push_str(&format!(
               "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px_lo, center_y, bar_half, color
+              px_lo, data_y, bar_half, color
             ));
           } else {
             // Arrow for -Infinity
-            draw_arrow_left(&mut svg, axis_x0, center_y, bar_half, &color);
+            draw_arrow_left(&mut svg, axis_x0, data_y, bar_half, &color);
           }
           if hi.is_finite() {
             svg.push_str(&format!(
               "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\"/>\n",
-              px_hi, center_y, bar_half, color
+              px_hi, data_y, bar_half, color
             ));
           } else {
             // Arrow for +Infinity
-            draw_arrow_right(&mut svg, axis_x1, center_y, bar_half, &color);
+            draw_arrow_right(&mut svg, axis_x1, data_y, bar_half, &color);
           }
         }
       }
@@ -423,7 +433,7 @@ fn render_number_line_svg(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
              fill=\"{}\" opacity=\"0.6\" rx=\"{:.0}\"/>\n",
             px_lo,
-            center_y - bar_half,
+            data_y - bar_half,
             (px_hi - px_lo).max(0.0),
             bar_half * 2.0,
             color,
@@ -435,12 +445,7 @@ fn render_number_line_svg(
   }
 
   // Draw tick marks and labels on the bottom axis
-  let tick_y = axis_area_top
-    + if num_rows <= 1 {
-      usable_height / 2.0
-    } else {
-      (num_rows - 1) as f64 * row_height + row_height / 2.0
-    };
+  let tick_y = axis_y;
   let x_range = x_max - x_min;
   let major_step = nice_step(x_range, 6);
   let first_tick = (x_min / major_step).ceil() * major_step;

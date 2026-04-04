@@ -4,53 +4,49 @@ expression: "export_svg(\"NumberLinePlot[{Range[20], 2*Range[10], 3*Range[6], 5*
 ---
 <svg width="360" height="245" viewBox="0 0 3600 2450" xmlns="http://www.w3.org/2000/svg">
 <rect width="3600" height="2450" fill="#ffffff"/>
-<line x1="600.0" y1="350.0" x2="3400.0" y2="350.0" stroke="#666666" stroke-width="10"/>
-<circle cx="793.1" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="920.1" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1047.2" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1174.2" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1301.3" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1428.3" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1555.4" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1682.4" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1809.4" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="1936.5" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2063.5" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2190.6" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2317.6" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2444.6" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2571.7" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2698.7" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2825.8" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="2952.8" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="3079.9" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<circle cx="3206.9" cy="350.0" r="40.0" fill="rgb(94,129,181)"/>
-<line x1="600.0" y1="750.0" x2="3400.0" y2="750.0" stroke="#666666" stroke-width="10"/>
-<circle cx="920.1" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="1174.2" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="1428.3" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="1682.4" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="1936.5" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="2190.6" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="2444.6" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="2698.7" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="2952.8" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<circle cx="3206.9" cy="750.0" r="40.0" fill="rgb(224,147,44)"/>
-<line x1="600.0" y1="1150.0" x2="3400.0" y2="1150.0" stroke="#666666" stroke-width="10"/>
-<circle cx="1047.2" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<circle cx="1428.3" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<circle cx="1809.4" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<circle cx="2190.6" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<circle cx="2571.7" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<circle cx="2952.8" cy="1150.0" r="40.0" fill="rgb(143,176,50)"/>
-<line x1="600.0" y1="1550.0" x2="3400.0" y2="1550.0" stroke="#666666" stroke-width="10"/>
-<circle cx="1301.3" cy="1550.0" r="40.0" fill="rgb(217,81,25)"/>
-<circle cx="1936.5" cy="1550.0" r="40.0" fill="rgb(217,81,25)"/>
-<circle cx="2571.7" cy="1550.0" r="40.0" fill="rgb(217,81,25)"/>
-<circle cx="3206.9" cy="1550.0" r="40.0" fill="rgb(217,81,25)"/>
 <line x1="600.0" y1="1950.0" x2="3400.0" y2="1950.0" stroke="#666666" stroke-width="10"/>
-<circle cx="1555.4" cy="1950.0" r="40.0" fill="rgb(107,72,157)"/>
-<circle cx="2444.6" cy="1950.0" r="40.0" fill="rgb(107,72,157)"/>
+<circle cx="793.1" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="920.1" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1047.2" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1174.2" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1301.3" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1428.3" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1555.4" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1682.4" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1809.4" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="1936.5" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2063.5" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2190.6" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2317.6" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2444.6" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2571.7" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2698.7" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2825.8" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="2952.8" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="3079.9" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="3206.9" cy="250.0" r="40.0" fill="rgb(94,129,181)"/>
+<circle cx="920.1" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="1174.2" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="1428.3" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="1682.4" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="1936.5" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="2190.6" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="2444.6" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="2698.7" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="2952.8" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="3206.9" cy="650.0" r="40.0" fill="rgb(224,147,44)"/>
+<circle cx="1047.2" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="1428.3" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="1809.4" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="2190.6" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="2571.7" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="2952.8" cy="1050.0" r="40.0" fill="rgb(143,176,50)"/>
+<circle cx="1301.3" cy="1450.0" r="40.0" fill="rgb(217,81,25)"/>
+<circle cx="1936.5" cy="1450.0" r="40.0" fill="rgb(217,81,25)"/>
+<circle cx="2571.7" cy="1450.0" r="40.0" fill="rgb(217,81,25)"/>
+<circle cx="3206.9" cy="1450.0" r="40.0" fill="rgb(217,81,25)"/>
+<circle cx="1555.4" cy="1850.0" r="40.0" fill="rgb(107,72,157)"/>
+<circle cx="2444.6" cy="1850.0" r="40.0" fill="rgb(107,72,157)"/>
 <line x1="666.1" y1="1950.0" x2="666.1" y2="2000.0" stroke="#666666" stroke-width="10"/>
 <text x="666.1" y="2154.0" text-anchor="middle" font-family="sans-serif" font-size="140" fill="#666">0</text>
 <line x1="1301.3" y1="1950.0" x2="1301.3" y2="2000.0" stroke="#666666" stroke-width="10"/>
