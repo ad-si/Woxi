@@ -1764,3 +1764,120 @@ fn implicants_to_expr(
     })
   }
 }
+
+/// VectorLess[{v1, v2, ...}] - componentwise strict less-than comparison
+/// Returns True if for each consecutive pair, every component is strictly less.
+pub fn vector_less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  vector_compare_ast(args, "VectorLess", false)
+}
+
+/// VectorLessEqual[{v1, v2, ...}] - componentwise less-than-or-equal comparison
+/// Returns True if for each consecutive pair, every component is less than or equal.
+pub fn vector_less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  vector_compare_ast(args, "VectorLessEqual", true)
+}
+
+fn vector_compare_ast(
+  args: &[Expr],
+  name: &str,
+  allow_equal: bool,
+) -> Result<Expr, InterpreterError> {
+  // VectorLess/VectorLessEqual takes exactly 1 argument: a list of vectors/scalars
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(list_args) => list_args,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.len() < 2 {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Check if items are vectors (lists) or scalars
+  for i in 0..items.len() - 1 {
+    let a = &items[i];
+    let b = &items[i + 1];
+
+    match (a, b) {
+      // Both are lists (vectors)
+      (Expr::List(args_a), Expr::List(args_b)) => {
+        // Mismatched lengths → False
+        if args_a.len() != args_b.len() {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+        // Empty vectors → True (vacuously), continue to next pair
+        for (ea, eb) in args_a.iter().zip(args_b.iter()) {
+          let na = match expr_to_num(ea) {
+            Some(n) => n,
+            None => {
+              return Ok(Expr::FunctionCall {
+                name: name.to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          let nb = match expr_to_num(eb) {
+            Some(n) => n,
+            None => {
+              return Ok(Expr::FunctionCall {
+                name: name.to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          if allow_equal {
+            if na > nb {
+              return Ok(Expr::Identifier("False".to_string()));
+            }
+          } else if na >= nb {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        }
+      }
+      // Both are scalars
+      _ => {
+        let na = match expr_to_num(a) {
+          Some(n) => n,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let nb = match expr_to_num(b) {
+          Some(n) => n,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        if allow_equal {
+          if na > nb {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        } else if na >= nb {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
+    }
+  }
+
+  Ok(Expr::Identifier("True".to_string()))
+}

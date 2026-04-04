@@ -4461,7 +4461,7 @@ SubresultantPolynomialRemainders,,,,9.0,4612
 Success,,,,11.3,4612
 TextContents,,🚫,,12.0,4612
 TildeEqual,,,,3.0,4612
-VectorLessEqual,,,,12.0,4612
+VectorLessEqual,Componentwise less-than-or-equal comparison of vectors,✅,pure,12.0,4612
 VideoTrim,,🚫,,12.1,4612
 AnimationTimeIndex,,🚫,,10.0,4660
 AudioDelete,,🚫,,11.0,4660
@@ -6137,7 +6137,7 @@ VectorDatabaseObjects,,🚫,,14.1,
 VectorDatabaseSearch,,🚫,,14.1,
 VectorDisplacementPlot,,🚫,,13.0,
 VectorDisplacementPlot3D,,🚫,,13.0,
-VectorLess,,,,12.0,
+VectorLess,Componentwise strict less-than comparison of vectors,✅,pure,12.0,
 VectorSymbol,,,,14.1,
 VerifyDerivedKey,,🚫,,12.0,
 VerifyFileSignature,,🚫,,12.1,
