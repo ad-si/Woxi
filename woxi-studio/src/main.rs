@@ -645,6 +645,9 @@ impl WoxiStudio {
       Message::FocusCell(idx) => {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
+          self.focused_divider = None;
+          self.cell_type_menu_open = None;
+          return focus(iced::widget::Id::from(format!("cell-{idx}")));
         }
         self.focused_divider = None;
         self.cell_type_menu_open = None;
@@ -851,23 +854,6 @@ impl WoxiStudio {
               self.is_dirty = true;
             }
             return Task::none();
-          }
-        }
-
-        // Shift+Enter to evaluate current cell and create a new one below
-        if modifiers.shift() {
-          if let keyboard::Key::Named(keyboard::key::Named::Enter) =
-            key.as_ref()
-          {
-            if let Some(idx) = self.focused_cell {
-              // Undo the newline the text editor just inserted
-              self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(text_editor::Edit::Backspace),
-              );
-              let eval_task = self.update(Message::EvaluateCell(idx));
-              let add_task = self.update(Message::AddCellBelow(idx));
-              return Task::batch([eval_task, add_task]);
-            }
           }
         }
 
@@ -1175,6 +1161,26 @@ impl WoxiStudio {
             _ => {}
           }
         }
+        // Shift+Enter: evaluate the cell and move to the cell below.
+        // If there is no cell below, insert a new one. Handled here
+        // (before the text editor processes the key) so no stray newline
+        // is inserted into the cell's content.
+        if modifiers.shift() {
+          if let keyboard::Key::Named(keyboard::key::Named::Enter) =
+            key.as_ref()
+          {
+            let is_last = idx + 1 >= cell_count;
+            let follow_up = if is_last {
+              text_editor::Binding::Custom(Message::AddCellBelow(idx))
+            } else {
+              text_editor::Binding::Custom(Message::FocusCell(idx + 1))
+            };
+            return Some(text_editor::Binding::Sequence(vec![
+              text_editor::Binding::Custom(Message::EvaluateCell(idx)),
+              follow_up,
+            ]));
+          }
+        }
         // Arrow key navigation between cells
         let no_mods =
           !modifiers.shift() && !modifiers.command() && !modifiers.control();
@@ -1430,13 +1436,6 @@ fn handle_event(
           }
           _ => {}
         }
-      }
-    }
-
-    // Shift+Enter: always handle (even when text editor has focus)
-    if modifiers.shift() {
-      if let keyboard::Key::Named(keyboard::key::Named::Enter) = key.as_ref() {
-        return Some(Message::KeyPressed(key, modifiers));
       }
     }
 
