@@ -100,6 +100,7 @@ enum Message {
   SaveFile,
   SaveFileAs,
   FileSaved(Result<PathBuf, FileError>),
+  FileSavedThenClose(iced::window::Id, Result<PathBuf, FileError>),
 
   // Export
   ExportAs(ExportFormat),
@@ -378,9 +379,12 @@ impl WoxiStudio {
             rfd::AsyncMessageDialog::new()
               .set_title("Unsaved Changes")
               .set_description(
-                "You have unsaved changes. Are you sure you want to quit?",
+                "You have unsaved changes. Do you want to save before closing?",
               )
-              .set_buttons(rfd::MessageButtons::YesNo)
+              .set_buttons(rfd::MessageButtons::OkCancelCustom(
+                "Save".to_string(),
+                "Don't Save".to_string(),
+              ))
               .show()
               .await
           },
@@ -388,11 +392,41 @@ impl WoxiStudio {
         )
       }
 
-      Message::CloseConfirmed(id, result) => {
-        if result == rfd::MessageDialogResult::Yes {
+      Message::CloseConfirmed(id, result) => match result {
+        rfd::MessageDialogResult::Custom(label) if label == "Don't Save" => {
           iced::window::close(id)
-        } else {
-          Task::none()
+        }
+        rfd::MessageDialogResult::Custom(label) if label == "Save" => {
+          self.sync_notebook_from_editors();
+          let content = self.notebook.to_string();
+          let path = self.file_path.clone();
+          self.is_loading = true;
+          self.status = String::from("Saving...");
+          Task::perform(save_file(path, content), move |result| {
+            Message::FileSavedThenClose(id, result)
+          })
+        }
+        _ => Task::none(),
+      },
+
+      Message::FileSavedThenClose(id, result) => {
+        self.is_loading = false;
+        match result {
+          Ok(path) => {
+            self.status = format!("Saved: {}", path.display());
+            save_last_file_path(&path);
+            self.file_path = Some(path);
+            self.is_dirty = false;
+            iced::window::close(id)
+          }
+          Err(FileError::DialogClosed) => {
+            self.status = String::from("Save cancelled");
+            Task::none()
+          }
+          Err(FileError::IoError(e)) => {
+            self.status = format!("Error saving: {e:?}");
+            Task::none()
+          }
         }
       }
 
