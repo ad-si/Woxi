@@ -9,6 +9,8 @@ This repo contains several related sub-projects:
     - A simple playground to try out Woxi in the browser (tests/cli/playground)
 - Woxi JupyterLite
     - JupyterLite instance with an integrated Woxi kernel (tests/cli/jupyterlite)
+- Woxi Studio
+    - A native notebook editor for Wolfram Language `.nb` files, built with `iced` (woxi-studio)
 
 
 ## Development
