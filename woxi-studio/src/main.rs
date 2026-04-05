@@ -112,6 +112,7 @@ enum Message {
   Redo(usize),
   CellStyleChanged(usize, CellStyle),
   FocusCell(usize),
+  ScrollCellsToEnd,
 
   // Cell management
   AddCellBelow(usize),
@@ -688,6 +689,10 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ScrollCellsToEnd => iced::widget::operation::snap_to_end(
+        iced::widget::Id::from("cells-scroll"),
+      ),
+
       Message::FocusDividerBelow(idx) => {
         if idx < self.cell_editors.len() {
           self.focused_divider = Some(idx);
@@ -1039,6 +1044,7 @@ impl WoxiStudio {
       }
 
       scrollable(container(col.max_width(800)).center_x(Fill))
+        .id(iced::widget::Id::from("cells-scroll"))
         .height(Fill)
         .into()
     };
@@ -1204,15 +1210,19 @@ impl WoxiStudio {
             key.as_ref()
           {
             let is_last = idx + 1 >= cell_count;
-            let follow_up = if is_last {
-              text_editor::Binding::Custom(Message::AddCellBelow(idx))
+            let mut bindings =
+              vec![text_editor::Binding::Custom(Message::EvaluateCell(idx))];
+            if is_last {
+              bindings
+                .push(text_editor::Binding::Custom(Message::AddCellBelow(idx)));
+              bindings
+                .push(text_editor::Binding::Custom(Message::ScrollCellsToEnd));
             } else {
-              text_editor::Binding::Custom(Message::FocusCell(idx + 1))
-            };
-            return Some(text_editor::Binding::Sequence(vec![
-              text_editor::Binding::Custom(Message::EvaluateCell(idx)),
-              follow_up,
-            ]));
+              bindings.push(text_editor::Binding::Custom(Message::FocusCell(
+                idx + 1,
+              )));
+            }
+            return Some(text_editor::Binding::Sequence(bindings));
           }
         }
         // Arrow key navigation between cells
