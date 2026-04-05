@@ -3907,7 +3907,7 @@ LibraryDataType,,,,10.0,4027
 LibraryLoad,,,,8.0,4027
 MemoryAvailable,,,,11.2,4027
 MissingBehavior,,,,10.0,4027
-PerfectNumberQ,,,,10.4,4027
+PerfectNumberQ,Test if a number is perfect (sum of proper divisors equals itself),✅,pure,10.4,4027
 RecognitionPrior,,🚫,,10.1,4027
 SatelliteData,,🚫,,10.0,4027
 TextElement,,🚫,,10.3,4027

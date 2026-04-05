@@ -149,6 +149,36 @@ pub fn dispatch_predicate_functions(
     "SquareFreeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::square_free_q_ast(args));
     }
+    "PerfectNumberQ" if args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        if *n <= 0 {
+          return Some(Ok(Expr::Identifier("False".to_string())));
+        }
+        let n_val = *n;
+        // Sum of proper divisors
+        let mut sum: i128 = 1;
+        let mut i: i128 = 2;
+        while i * i <= n_val {
+          if n_val % i == 0 {
+            sum += i;
+            if i != n_val / i {
+              sum += n_val / i;
+            }
+          }
+          i += 1;
+        }
+        if n_val == 1 {
+          sum = 0;
+        }
+        return Some(Ok(Expr::Identifier(
+          if sum == n_val { "True" } else { "False" }.to_string(),
+        )));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "PerfectNumberQ".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "ListQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::list_q_ast(args));
     }

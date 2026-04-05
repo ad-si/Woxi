@@ -429,6 +429,21 @@ mod big_integer {
   }
 
   #[test]
+  fn perfect_number_q() {
+    // Perfect numbers: sum of proper divisors equals the number
+    assert_eq!(interpret("PerfectNumberQ[6]").unwrap(), "True");
+    assert_eq!(interpret("PerfectNumberQ[28]").unwrap(), "True");
+    assert_eq!(interpret("PerfectNumberQ[496]").unwrap(), "True");
+    assert_eq!(interpret("PerfectNumberQ[12]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[1]").unwrap(), "False");
+    assert_eq!(interpret("PerfectNumberQ[0]").unwrap(), "False");
+    assert_eq!(
+      interpret("Select[Range[500], PerfectNumberQ]").unwrap(),
+      "{6, 28, 496}"
+    );
+  }
+
+  #[test]
   fn square_free_q_prime() {
     assert_eq!(interpret("SquareFreeQ[7]").unwrap(), "True");
   }
