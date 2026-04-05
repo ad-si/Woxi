@@ -877,6 +877,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SquaredEuclideanDistance" => Some((2, 2)),
     "SquareFreeQ" => Some((1, 1)),
     "SquareMatrixQ" => Some((1, 1)),
+    "PerfectNumberQ" => Some((1, 1)),
     "SquaresR" => Some((2, 2)),
     "SquareWave" => Some((1, 2)),
     "SSSTriangle" => Some((3, 3)),
