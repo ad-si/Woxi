@@ -118,6 +118,24 @@ mod integrate_with_sum {
     // ∫ sec²(3x) dx = Tan[3x]/3
     assert_eq!(interpret("Integrate[Sec[3*x]^2, x]").unwrap(), "Tan[3*x]/3");
   }
+
+  #[test]
+  fn integrate_inverse_sqrt_one_minus_x2() {
+    // ∫ 1/Sqrt[1 - x^2] dx = ArcSin[x]
+    assert_eq!(
+      interpret("Integrate[1/Sqrt[1 - x^2], x]").unwrap(),
+      "ArcSin[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_inverse_sqrt_one_plus_x2() {
+    // ∫ 1/Sqrt[1 + x^2] dx = ArcSinh[x]
+    assert_eq!(
+      interpret("Integrate[1/Sqrt[1 + x^2], x]").unwrap(),
+      "ArcSinh[x]"
+    );
+  }
 }
 
 mod definite_integrals {
