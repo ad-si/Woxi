@@ -276,9 +276,10 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   };
 
   if items.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Median: list is empty".into(),
-    ));
+    return Ok(Expr::FunctionCall {
+      name: "Median".to_string(),
+      args: vec![Expr::List(vec![])],
+    });
   }
 
   // Check for list-of-lists (matrix) input → columnwise median

@@ -555,6 +555,22 @@ mod mean {
   fn mean_rationals() {
     assert_eq!(interpret("Mean[{1/2, 1/3, 1/6}]").unwrap(), "1/3");
   }
+
+  #[test]
+  fn mean_empty_list() {
+    // Mean of empty list returns unevaluated, matching Wolfram Language
+    assert_eq!(interpret("Mean[{}]").unwrap(), "Mean[{}]");
+  }
+}
+
+mod median_edge_cases {
+  use super::*;
+
+  #[test]
+  fn median_empty_list() {
+    // Median of empty list returns unevaluated
+    assert_eq!(interpret("Median[{}]").unwrap(), "Median[{}]");
+  }
 }
 
 mod variance_extended {
@@ -577,6 +593,13 @@ mod variance_extended {
       "{9/2, 49/2, 9025/2}"
     );
   }
+
+  #[test]
+  fn variance_empty_list() {
+    // Variance of empty or single-element list returns unevaluated
+    assert_eq!(interpret("Variance[{}]").unwrap(), "Variance[{}]");
+    assert_eq!(interpret("Variance[{1}]").unwrap(), "Variance[{1}]");
+  }
 }
 
 mod stddev_extended {
@@ -592,6 +615,18 @@ mod stddev_extended {
     assert_eq!(
       interpret("StandardDeviation[{{1, 10}, {-1, 20}}]").unwrap(),
       "{Sqrt[2], 5*Sqrt[2]}"
+    );
+  }
+
+  #[test]
+  fn stddev_empty_list() {
+    assert_eq!(
+      interpret("StandardDeviation[{}]").unwrap(),
+      "StandardDeviation[{}]"
+    );
+    assert_eq!(
+      interpret("StandardDeviation[{1}]").unwrap(),
+      "StandardDeviation[{1}]"
     );
   }
 }
