@@ -223,6 +223,11 @@ mod sum {
   }
 
   #[test]
+  fn sum_geometric_infinite_from_zero() {
+    assert_eq!(interpret("Sum[1/2^n, {n, 0, Infinity}]").unwrap(), "2");
+  }
+
+  #[test]
   fn sum_k_symbolic_both_bounds() {
     assert_eq!(interpret("Sum[k, {k, n, 2 n}]").unwrap(), "(3*n*(1 + n))/2");
   }

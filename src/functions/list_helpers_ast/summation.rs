@@ -870,13 +870,26 @@ fn try_infinite_sum(
   min: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
-  if min == 0 {
-    if is_leibniz_body(body, var_name) {
-      return Ok(Some(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
-        left: Box::new(Expr::Constant("Pi".to_string())),
-        right: Box::new(Expr::Integer(4)),
-      }));
+  if min == 0 && is_leibniz_body(body, var_name) {
+    return Ok(Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Constant("Pi".to_string())),
+      right: Box::new(Expr::Integer(4)),
+    }));
+  }
+
+  // For min < 1, compute initial terms and delegate to min=1 case:
+  // Sum[f(n), {n, min, Infinity}] = f(min) + f(min+1) + ... + f(0) + Sum[f(n), {n, 1, Infinity}]
+  if min < 1 {
+    if let Some(tail_sum) = try_infinite_sum(body, var_name, 1)? {
+      let mut acc = tail_sum;
+      for k in min..1 {
+        let substituted =
+          crate::syntax::substitute_variable(body, var_name, &Expr::Integer(k));
+        let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+      }
+      return Ok(Some(acc));
     }
     return Ok(None);
   }
