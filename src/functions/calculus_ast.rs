@@ -2789,6 +2789,114 @@ fn try_match_exp_over_linear(
   }
 }
 
+/// Check if an expression is Rational[-1, 2] (i.e., exponent -1/2)
+fn is_rational_neg_half(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1))
+        && matches!(&args[1], Expr::Integer(2))
+  )
+}
+
+/// Try to integrate (base)^(-1/2) for special forms:
+/// ∫ (1 - x^2)^(-1/2) dx = ArcSin[x]
+/// ∫ (1 + x^2)^(-1/2) dx = ArcSinh[x]
+fn try_integrate_inverse_sqrt(base: &Expr, var: &str) -> Option<Expr> {
+  // Try to match the base as a + b*x^2 by extracting polynomial coefficients
+  let base_eval =
+    crate::evaluator::evaluate_expr_to_expr(base).unwrap_or(base.clone());
+  let var_expr = Expr::Identifier(var.to_string());
+
+  // Use CoefficientList to extract coefficients
+  let coeff_result = crate::functions::polynomial_ast::coefficient_list_ast(&[
+    base_eval, var_expr,
+  ])
+  .ok()?;
+  let coeffs = match &coeff_result {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+
+  // We need exactly a polynomial of degree 2 with no linear term: a + 0*x + b*x^2
+  if coeffs.len() != 3 {
+    return None;
+  }
+  // Linear coefficient must be zero
+  let c1_val = crate::functions::math_ast::try_eval_to_f64(&coeffs[1])?;
+  if c1_val.abs() > 1e-15 {
+    return None;
+  }
+
+  let a = &coeffs[0]; // constant term
+  let b = &coeffs[2]; // x^2 coefficient
+
+  let a_val = crate::functions::math_ast::try_eval_to_f64(a)?;
+  let b_val = crate::functions::math_ast::try_eval_to_f64(b)?;
+
+  if a_val <= 0.0 {
+    return None;
+  }
+
+  if b_val < 0.0 {
+    // ∫ (a - |b|*x^2)^(-1/2) dx = (1/sqrt(|b|)) * ArcSin[x * sqrt(|b|/a)]
+    let abs_b = simplify(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(b.clone()),
+    });
+    let ratio = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(abs_b.clone()),
+      right: Box::new(a.clone()),
+    });
+    let sqrt_ratio = simplify(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![ratio],
+    });
+    let sqrt_abs_b = simplify(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![abs_b],
+    });
+    let arg = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Identifier(var.to_string())),
+      right: Box::new(sqrt_ratio),
+    });
+    let arcsin = Expr::FunctionCall {
+      name: "ArcSin".to_string(),
+      args: vec![arg],
+    };
+    Some(make_divided(arcsin, sqrt_abs_b))
+  } else {
+    // ∫ (a + b*x^2)^(-1/2) dx = (1/sqrt(b)) * ArcSinh[x * sqrt(b/a)]
+    let ratio = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(b.clone()),
+      right: Box::new(a.clone()),
+    });
+    let sqrt_ratio = simplify(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![ratio],
+    });
+    let sqrt_b = simplify(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![b.clone()],
+    });
+    let arg = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Identifier(var.to_string())),
+      right: Box::new(sqrt_ratio),
+    });
+    let arcsinh = Expr::FunctionCall {
+      name: "ArcSinh".to_string(),
+      args: vec![arg],
+    };
+    Some(make_divided(arcsinh, sqrt_b))
+  }
+}
+
 /// Try to integrate a rational function (numerator/denominator where both are polynomials).
 /// Uses polynomial long division + partial fraction decomposition.
 fn try_integrate_rational(
@@ -4253,6 +4361,14 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             if !expr_str_eq(&expanded, expr) {
               return integrate(&expanded, var);
             }
+          }
+          // ∫ (1 - x^2)^(-1/2) dx = ArcSin[x]
+          // ∫ (1 + x^2)^(-1/2) dx = ArcSinh[x]
+          if is_rational_neg_half(right)
+            && !is_constant_wrt(left, var)
+            && let Some(result) = try_integrate_inverse_sqrt(left, var)
+          {
+            return Some(result);
           }
           // base^(-n) where base depends on var: treat as 1/base^n (rational)
           if let Expr::Integer(n) = right.as_ref()
