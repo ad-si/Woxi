@@ -59,6 +59,23 @@ mod geometric_mean {
   }
 
   #[test]
+  fn geometric_mean_exact_irrational() {
+    // (1*2*4*8)^(1/4) = 64^(1/4) = 2*Sqrt[2]
+    assert_eq!(
+      interpret("GeometricMean[{1, 2, 4, 8}]").unwrap(),
+      "2*Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn geometric_mean_symbolic() {
+    assert_eq!(
+      interpret("GeometricMean[{a, b, c}]").unwrap(),
+      "(a*b*c)^(1/3)"
+    );
+  }
+
+  #[test]
   fn geometric_mean_reals() {
     let result = interpret("GeometricMean[{1.0, 2.0, 3.0}]").unwrap();
     let val: f64 = result.parse().unwrap();
