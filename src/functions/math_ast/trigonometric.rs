@@ -1696,6 +1696,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Exact values: ArcTan[0] = 0, ArcTan[1] = Pi/4, ArcTan[-1] = -Pi/4
+  // ArcTan[Infinity] = Pi/2, ArcTan[-Infinity] = -Pi/2
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
@@ -1716,8 +1717,27 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(Expr::Constant("Pi".to_string())),
       });
     }
+    Expr::Identifier(s) if s == "Infinity" => {
+      // ArcTan[Infinity] = Pi/2
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      });
+    }
     Expr::Real(f) => return Ok(Expr::Real(f.atan())),
     _ => {}
+  }
+  // ArcTan[-Infinity] = -Pi/2
+  if crate::functions::math_ast::special_functions::is_neg_infinity(&args[0]) {
+    return Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(-1), Expr::Integer(2)],
+      }),
+      right: Box::new(Expr::Constant("Pi".to_string())),
+    });
   }
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
