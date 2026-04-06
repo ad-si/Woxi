@@ -79,6 +79,45 @@ mod integrate_with_sum {
       "Pi/2"
     );
   }
+
+  #[test]
+  fn integrate_tan() {
+    // ∫ tan(x) dx = -Log[Cos[x]]
+    assert_eq!(interpret("Integrate[Tan[x], x]").unwrap(), "-Log[Cos[x]]");
+  }
+
+  #[test]
+  fn integrate_cot() {
+    // ∫ cot(x) dx = Log[Sin[x]]
+    assert_eq!(interpret("Integrate[Cot[x], x]").unwrap(), "Log[Sin[x]]");
+  }
+
+  #[test]
+  fn integrate_sec_squared() {
+    // ∫ sec²(x) dx = Tan[x]
+    assert_eq!(interpret("Integrate[Sec[x]^2, x]").unwrap(), "Tan[x]");
+  }
+
+  #[test]
+  fn integrate_csc_squared() {
+    // ∫ csc²(x) dx = -Cot[x]
+    assert_eq!(interpret("Integrate[Csc[x]^2, x]").unwrap(), "-Cot[x]");
+  }
+
+  #[test]
+  fn integrate_tan_linear_arg() {
+    // ∫ tan(2x) dx = -Log[Cos[2x]]/2
+    assert_eq!(
+      interpret("Integrate[Tan[2*x], x]").unwrap(),
+      "-1/2*Log[Cos[2*x]]"
+    );
+  }
+
+  #[test]
+  fn integrate_sec_squared_linear_arg() {
+    // ∫ sec²(3x) dx = Tan[3x]/3
+    assert_eq!(interpret("Integrate[Sec[3*x]^2, x]").unwrap(), "Tan[3*x]/3");
+  }
 }
 
 mod definite_integrals {

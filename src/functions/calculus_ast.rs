@@ -2291,6 +2291,26 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   {
     let is_sin = name == "Sin";
     let is_cos = name == "Cos";
+    let is_sec = name == "Sec";
+    let is_csc = name == "Csc";
+    // ∫ Sec[a*x]^2 dx = Tan[a*x]/a
+    if is_sec {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let tan_expr = Expr::FunctionCall {
+        name: "Tan".to_string(),
+        args: args.clone(),
+      };
+      return Some(make_divided(tan_expr, coeff));
+    }
+    // ∫ Csc[a*x]^2 dx = -Cot[a*x]/a
+    if is_csc {
+      let coeff = try_match_linear_arg(&args[0], var)?;
+      let cot_expr = Expr::FunctionCall {
+        name: "Cot".to_string(),
+        args: args.clone(),
+      };
+      return Some(make_neg_divided(cot_expr, coeff));
+    }
     if !is_sin && !is_cos {
       return None;
     }
@@ -4345,6 +4365,36 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               args: args.clone(),
             };
             return Some(make_divided(sinh_expr, coeff));
+          }
+          None
+        }
+        "Tan" if args.len() == 1 => {
+          // ∫ tan(a*x) dx = -Log[Cos[a*x]]/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cos_expr = Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: args.clone(),
+            };
+            let log_cos = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![cos_expr],
+            };
+            return Some(make_neg_divided(log_cos, coeff));
+          }
+          None
+        }
+        "Cot" if args.len() == 1 => {
+          // ∫ cot(a*x) dx = Log[Sin[a*x]]/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sin_expr = Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: args.clone(),
+            };
+            let log_sin = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![sin_expr],
+            };
+            return Some(make_divided(log_sin, coeff));
           }
           None
         }
