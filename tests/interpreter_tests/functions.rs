@@ -6283,6 +6283,22 @@ mod session_time {
 }
 
 #[cfg(test)]
+mod unix_time {
+  use super::*;
+
+  #[test]
+  fn returns_integer() {
+    assert_eq!(interpret("Head[UnixTime[]]").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn reasonable_value() {
+    // Unix time should be after 2025-01-01
+    assert_eq!(interpret("UnixTime[] > 1735689600").unwrap(), "True");
+  }
+}
+
+#[cfg(test)]
 mod function_interpolation {
   use super::*;
 

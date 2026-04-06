@@ -3098,7 +3098,7 @@ MellinTransform,,,,11.0,3176
 MeshCellCentroid,,🚫,,10.0,3176
 PermutationLength,Number of non-fixed points in a permutation,✅,1,8.0,3176
 Printout3D,,🚫,,11.0,3176
-UnixTime,,,,10.1,3176
+UnixTime,Returns the current Unix timestamp (seconds since 1970-01-01),✅,effectful,10.1,3176
 WaveletMatrixPlot,,🚫,,8.0,3176
 WishartMatrixDistribution,,,,10.3,3176
 AllowedHeads,,,,12.0,3191
