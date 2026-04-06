@@ -280,6 +280,34 @@ mod outer_extended {
   }
 }
 
+mod map_indexed {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("MapIndexed[f, {a, b, c}]").unwrap(),
+      "{f[a, {1}], f[b, {2}], f[c, {3}]}"
+    );
+  }
+
+  #[test]
+  fn level_spec_2() {
+    assert_eq!(
+      interpret("MapIndexed[f, {{a, b}, {c, d}}, {2}]").unwrap(),
+      "{{f[a, {1, 1}], f[b, {1, 2}]}, {f[c, {2, 1}], f[d, {2, 2}]}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_1() {
+    assert_eq!(
+      interpret("MapIndexed[f, {{a, b}, {c, d}}, {1}]").unwrap(),
+      "{f[{a, b}, {1}], f[{c, d}, {2}]}"
+    );
+  }
+}
+
 mod tensor_product {
   use super::*;
 
