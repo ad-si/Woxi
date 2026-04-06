@@ -1289,59 +1289,22 @@ pub fn apply_replace_all_ast(
 }
 
 /// Apply ReplaceRepeated operation on AST (expr //. rules)
-/// Routes to string-based implementation for correct pattern matching support
+/// Applies ReplaceAll repeatedly until the expression stops changing.
 pub fn apply_replace_repeated_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  match rules {
-    Expr::Rule {
-      pattern,
-      replacement,
+  let max_iterations = 65536;
+  let mut current = expr.clone();
+  for _ in 0..max_iterations {
+    let next = apply_replace_all_ast(&current, rules)?;
+    if expr_equal(&next, &current) {
+      break;
     }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => {
-      let pattern_str = expr_to_string(pattern);
-      let replacement_str = expr_to_string(replacement);
-      let expr_str = expr_to_string(expr);
-      let result = apply_replace_repeated_direct(
-        &expr_str,
-        &pattern_str,
-        &replacement_str,
-      )?;
-      string_to_expr(&result)
-    }
-    Expr::List(items) if !items.is_empty() => {
-      // Multiple rules - repeatedly try each rule in order, using first match
-      let rule_pairs: Vec<(String, String)> = items
-        .iter()
-        .filter_map(|rule| match rule {
-          Expr::Rule {
-            pattern,
-            replacement,
-          }
-          | Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } => Some((expr_to_string(pattern), expr_to_string(replacement))),
-          _ => None,
-        })
-        .collect();
-      let mut current = expr_to_string(expr);
-      let max_iterations = 1000;
-      for _ in 0..max_iterations {
-        let next = apply_replace_all_direct_multi_rules(&current, &rule_pairs)?;
-        if next == current {
-          break;
-        }
-        current = next;
-      }
-      string_to_expr(&current)
-    }
-    _ => Ok(expr.clone()),
+    // Re-evaluate after substitution so e.g. 3^2 becomes 9
+    current = evaluate_expr_to_expr(&next)?;
   }
+  Ok(current)
 }
 
 /// Check if two Expr values are structurally equal
