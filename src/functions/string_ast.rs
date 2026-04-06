@@ -246,9 +246,23 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(joined));
   }
 
-  // Multiple arguments - join them all
+  // Multiple arguments - join them all, flattening any lists
+  fn collect_strings(
+    expr: &Expr,
+    out: &mut String,
+  ) -> Result<(), InterpreterError> {
+    match expr {
+      Expr::List(items) => {
+        for item in items {
+          collect_strings(item, out)?;
+        }
+      }
+      _ => out.push_str(&expr_to_str(expr)?),
+    }
+    Ok(())
+  }
   for arg in args {
-    joined.push_str(&expr_to_str(arg)?);
+    collect_strings(arg, &mut joined)?;
   }
   Ok(Expr::String(joined))
 }

@@ -32,6 +32,23 @@ mod string_join_with_list {
       "xxx"
     );
   }
+
+  #[test]
+  fn string_join_flattens_lists_in_multi_arg() {
+    // StringJoin should flatten list arguments when mixed with strings
+    assert_eq!(
+      interpret(r#"StringJoin["x", {"a", "b"}, "y"]"#).unwrap(),
+      "xaby"
+    );
+  }
+
+  #[test]
+  fn string_join_flattens_nested_lists() {
+    assert_eq!(
+      interpret(r#"StringJoin[{"a", {"b", "c"}}, "d"]"#).unwrap(),
+      "abcd"
+    );
+  }
 }
 
 mod string_split_list_delimiters {
