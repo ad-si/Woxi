@@ -2471,3 +2471,29 @@ mod url_decode_tests {
     );
   }
 }
+
+mod string_trim {
+  use super::*;
+
+  #[test]
+  fn trim_whitespace() {
+    assert_eq!(interpret(r#"StringTrim["  hello  "]"#).unwrap(), "hello");
+  }
+
+  #[test]
+  fn trim_with_pattern_removes_one_occurrence() {
+    // StringTrim removes only one occurrence of the pattern from each end
+    assert_eq!(
+      interpret(r#"StringTrim["xxxhelloxxx", "x"]"#).unwrap(),
+      "xxhelloxx"
+    );
+    assert_eq!(
+      interpret(r#"StringTrim["xxxhelloxxx", "xx"]"#).unwrap(),
+      "xhellox"
+    );
+    assert_eq!(
+      interpret(r#"StringTrim["   hello   ", " "]"#).unwrap(),
+      "  hello  "
+    );
+  }
+}

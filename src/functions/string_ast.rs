@@ -910,7 +910,9 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(Expr::String(s.trim().to_string()))
   } else {
     let patt = expr_to_str(&args[1])?;
-    let trimmed = s.trim_start_matches(&patt).trim_end_matches(&patt);
+    // StringTrim removes one occurrence of the pattern from each end
+    let trimmed = s.strip_prefix(patt.as_str()).unwrap_or(&s);
+    let trimmed = trimmed.strip_suffix(patt.as_str()).unwrap_or(trimmed);
     Ok(Expr::String(trimmed.to_string()))
   }
 }
