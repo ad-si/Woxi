@@ -3457,6 +3457,19 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // E^Log[x] -> x (inverse function identity)
+  if (matches!(base, Expr::Identifier(s) if s == "E")
+    || matches!(base, Expr::Constant(s) if s == "E"))
+    && let Expr::FunctionCall {
+      name,
+      args: log_args,
+    } = exp
+    && name == "Log"
+    && log_args.len() == 1
+  {
+    return Ok(log_args[0].clone());
+  }
+
   // 1^x -> 1 for any finite x (1^Infinity is Indeterminate, handled below)
   if matches!(base, Expr::Integer(1))
     && !matches!(exp, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")

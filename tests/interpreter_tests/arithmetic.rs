@@ -2366,3 +2366,25 @@ mod min_max_identity {
     assert_eq!(interpret("Max[5]").unwrap(), "5");
   }
 }
+
+mod exp_log_identity {
+  use super::*;
+
+  #[test]
+  fn exp_log_simplifies() {
+    // E^Log[x] = x (inverse function identity)
+    assert_eq!(interpret("Exp[Log[x]]").unwrap(), "x");
+    assert_eq!(interpret("E^Log[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn exp_log_numeric() {
+    assert_eq!(interpret("E^Log[5]").unwrap(), "5");
+    assert_eq!(interpret("Exp[Log[42]]").unwrap(), "42");
+  }
+
+  #[test]
+  fn exp_log_compound() {
+    assert_eq!(interpret("E^Log[a + b]").unwrap(), "a + b");
+  }
+}
