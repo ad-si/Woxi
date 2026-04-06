@@ -2265,9 +2265,15 @@ pub fn combine_like_bases(
     let (base, exp) = extract_base_exponent(arg);
     let combinable = match &base {
       Expr::Identifier(_) | Expr::Constant(_) => true,
-      Expr::FunctionCall { name, .. } => {
-        matches!(name.as_str(), "Sqrt" | "Log" | "Sin" | "Cos")
+      Expr::FunctionCall { .. } => true,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        ..
       }
+      | Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        ..
+      } => true,
       _ => false,
     };
     if !combinable {
@@ -2404,6 +2410,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           left: right.clone(),
           right: Box::new(Expr::Integer(-1)),
         });
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        // -x → (-1) * x
+        out.push(Expr::Integer(-1));
+        flatten_times(operand, out);
       }
       _ => out.push(expr.clone()),
     }
