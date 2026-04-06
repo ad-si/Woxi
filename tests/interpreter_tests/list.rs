@@ -727,6 +727,23 @@ mod sort_canonical {
   fn sort_pure_imaginary() {
     assert_eq!(interpret("Sort[{I, -I, 1, -1}]").unwrap(), "{-1, -I, I, 1}");
   }
+
+  #[test]
+  fn sort_non_list_head() {
+    // Sort should work on any expression head, not just List
+    assert_eq!(interpret("Sort[f[c, a, b]]").unwrap(), "f[a, b, c]");
+    assert_eq!(interpret("Sort[f[3, 1, 2]]").unwrap(), "f[1, 2, 3]");
+    assert_eq!(interpret("Sort[g[c, a, b, d]]").unwrap(), "g[a, b, c, d]");
+  }
+
+  #[test]
+  fn sort_non_list_head_with_comparator() {
+    assert_eq!(
+      interpret("Sort[f[1, 3, 2], Greater]").unwrap(),
+      "f[3, 2, 1]"
+    );
+    assert_eq!(interpret("Sort[f[3, 1, 2], Less]").unwrap(), "f[1, 2, 3]");
+  }
 }
 
 mod complement {

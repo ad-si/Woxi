@@ -919,18 +919,33 @@ pub fn dispatch_list_operations(
     "Sort" if args.len() == 2 => {
       // Sort[list, p] - sort using comparator p
       // p[a, b] returns True if a should come before b
-      if let Expr::List(items) = &args[0] {
+      let (items, head_name) = match &args[0] {
+        Expr::List(items) => (Some(items.clone()), None),
+        Expr::FunctionCall { name, args } => {
+          (Some(args.clone()), Some(name.clone()))
+        }
+        _ => (None, None),
+      };
+      if let Some(mut sorted) = items {
         let cmp_name = crate::syntax::expr_to_string(&args[1]);
-        let mut sorted = items.clone();
+        let wrap = |items: Vec<Expr>| -> Expr {
+          match &head_name {
+            None => Expr::List(items),
+            Some(name) => Expr::FunctionCall {
+              name: name.clone(),
+              args: items,
+            },
+          }
+        };
         match cmp_name.as_str() {
           "Greater" => {
             sorted
               .sort_by(|a, b| list_helpers_ast::canonical_cmp(a, b).reverse());
-            return Some(Ok(Expr::List(sorted)));
+            return Some(Ok(wrap(sorted)));
           }
           "Less" => {
             sorted.sort_by(list_helpers_ast::canonical_cmp);
-            return Some(Ok(Expr::List(sorted)));
+            return Some(Ok(wrap(sorted)));
           }
           _ => {
             // Custom comparator: evaluate p[a, b] for each comparison
@@ -946,7 +961,7 @@ pub fn dispatch_list_operations(
                 _ => std::cmp::Ordering::Greater,
               }
             });
-            return Some(Ok(Expr::List(sorted)));
+            return Some(Ok(wrap(sorted)));
           }
         }
       }

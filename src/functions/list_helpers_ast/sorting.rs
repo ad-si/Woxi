@@ -399,6 +399,14 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       sorted.sort_by(|a, b| canonical_cmp(&a.1, &b.1));
       Ok(Expr::Association(sorted))
     }
+    Expr::FunctionCall { name, args } => {
+      let mut sorted = args.clone();
+      sorted.sort_by(canonical_cmp);
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: sorted,
+      })
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Sort".to_string(),
       args: vec![list.clone()],
