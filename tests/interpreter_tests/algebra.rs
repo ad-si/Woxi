@@ -32,6 +32,20 @@ mod polynomial_q {
   fn multivariate() {
     assert_eq!(interpret("PolynomialQ[x^2 + y, x]").unwrap(), "True");
   }
+
+  #[test]
+  fn multivariate_list_of_vars() {
+    // PolynomialQ with a list of variables
+    assert_eq!(interpret("PolynomialQ[x + y^2, {x, y}]").unwrap(), "True");
+    assert_eq!(
+      interpret("PolynomialQ[x^2 + 2*x*y + y^2, {x, y}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PolynomialQ[Sin[x] + y, {x, y}]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod exponent {
