@@ -2193,6 +2193,23 @@ mod unary_minus_after_operator {
     // ((-1)^(2/3))^2 = -(-1)^(1/3)
     assert_eq!(interpret("((-1)^(2/3))^2").unwrap(), "-(-1)^(1/3)");
   }
+
+  #[test]
+  fn neg1_half_power_is_i() {
+    assert_eq!(interpret("(-1)^(1/2)").unwrap(), "I");
+  }
+
+  #[test]
+  fn negative_base_cube_root() {
+    assert_eq!(interpret("(-8)^(1/3)").unwrap(), "2*(-1)^(1/3)");
+    assert_eq!(interpret("(-27)^(1/3)").unwrap(), "3*(-1)^(1/3)");
+  }
+
+  #[test]
+  fn negative_base_sqrt() {
+    assert_eq!(interpret("(-4)^(1/2)").unwrap(), "2*I");
+    assert_eq!(interpret("(-9)^(1/2)").unwrap(), "3*I");
+  }
 }
 
 /// Regression test for @ prefix application in ReplaceAll context (issue 3)

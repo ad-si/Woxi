@@ -4039,6 +4039,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if *b == -1 {
       return simplify_neg1_rational_power(*numer, *denom);
     }
+    // Negative base (other than -1): (-n)^(p/q) = (-1)^(p/q) * n^(p/q)
+    if *b < -1 && *numer > 0 && *denom > 0 {
+      let neg1_part = simplify_neg1_rational_power(*numer, *denom)?;
+      let pos_part = power_two(&Expr::Integer(-*b), exp)?;
+      return times_ast(&[neg1_part, pos_part]);
+    }
     // Handle negative rational exponents for integer bases: b^(-p/q) = 1 / b^(p/q)
     // This allows the positive prime factorization code below to simplify the radical.
     // Only applies when base is a positive integer (not symbolic expressions).
@@ -4257,6 +4263,10 @@ fn simplify_neg1_rational_power(
       args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)],
     };
     return Ok(negate_expr(inner));
+  }
+  // (-1)^(1/2) = I
+  if p == 1 && q == 2 {
+    return Ok(Expr::Identifier("I".to_string()));
   }
   // 0 < p < q: return (-1)^(p/q)
   Ok(Expr::FunctionCall {
