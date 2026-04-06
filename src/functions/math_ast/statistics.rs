@@ -803,6 +803,17 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "GeometricMean: empty list".into(),
         ));
       }
+      let n = items.len() as i128;
+      // Exact path: if all elements are exact (integers or rationals),
+      // compute product symbolically and return Power[product, 1/n]
+      let product = super::times_ast(items);
+      if let Ok(ref prod) = product {
+        let has_real = items.iter().any(|i| matches!(i, Expr::Real(_)));
+        if !has_real {
+          let exponent = super::make_rational(1, n);
+          return super::power_two(prod, &exponent);
+        }
+      }
       // Float path
       let mut vals = Vec::new();
       for item in items {
@@ -815,9 +826,9 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      let n = vals.len() as f64;
+      let n_f = vals.len() as f64;
       let product: f64 = vals.iter().product();
-      let result = product.powf(1.0 / n);
+      let result = product.powf(1.0 / n_f);
       // Check if result is an integer
       Ok(num_to_expr(result))
     }
