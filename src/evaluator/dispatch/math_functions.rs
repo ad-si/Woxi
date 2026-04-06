@@ -3800,7 +3800,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 }),
               });
             }
-            // Exp[a + I*b] = E^a * (Cos[b] + I*Sin[b])
+            // Exp[a + I*b] = E^a*Cos[b] + I*E^a*Sin[b]
             "Exp" => {
               let exp_a = Expr::FunctionCall {
                 name: "Exp".to_string(),
@@ -3815,14 +3815,18 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 args: vec![im],
               };
               return ce_simplify(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(exp_a),
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(exp_a.clone()),
+                  right: Box::new(cos_b),
+                }),
                 right: Box::new(Expr::BinaryOp {
-                  op: BinaryOperator::Plus,
-                  left: Box::new(cos_b),
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
                   right: Box::new(Expr::BinaryOp {
                     op: BinaryOperator::Times,
-                    left: Box::new(Expr::Identifier("I".to_string())),
+                    left: Box::new(exp_a),
                     right: Box::new(sin_b),
                   }),
                 }),
@@ -3874,7 +3878,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         args: args.iter().map(complex_expand_recursive).collect(),
       }
     }
-    // Handle E^(a + I*b) → E^a * (Cos[b] + I*Sin[b])
+    // Handle E^(a + I*b) → E^a*Cos[b] + I*E^a*Sin[b]
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left: base,
@@ -3899,14 +3903,18 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             args: vec![im],
           };
           return ce_simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(exp_a),
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(exp_a.clone()),
+              right: Box::new(cos_b),
+            }),
             right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(cos_b),
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Identifier("I".to_string())),
               right: Box::new(Expr::BinaryOp {
                 op: BinaryOperator::Times,
-                left: Box::new(Expr::Identifier("I".to_string())),
+                left: Box::new(exp_a),
                 right: Box::new(sin_b),
               }),
             }),

@@ -5293,7 +5293,7 @@ mod complex_expand {
   fn exp_complex() {
     assert_eq!(
       interpret("ComplexExpand[Exp[x + I*y]]").unwrap(),
-      "E^x*(Cos[y] + I*Sin[y])"
+      "E^x*Cos[y] + I*E^x*Sin[y]"
     );
   }
 
