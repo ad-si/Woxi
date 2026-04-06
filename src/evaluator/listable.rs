@@ -114,6 +114,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "FiniteGroupCount"
       | "FiniteAbelianGroupCount"
       | "UnitStep"
+      | "RealSign"
+      | "RealAbs"
   )
 }
 

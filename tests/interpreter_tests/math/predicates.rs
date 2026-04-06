@@ -659,6 +659,11 @@ mod real_abs {
   fn symbolic() {
     assert_eq!(interpret("RealAbs[x]").unwrap(), "RealAbs[x]");
   }
+
+  #[test]
+  fn listable() {
+    assert_eq!(interpret("RealAbs[{-3, 0, 5}]").unwrap(), "{3, 0, 5}");
+  }
 }
 
 mod abs_infinity {
