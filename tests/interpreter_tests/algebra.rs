@@ -1402,6 +1402,24 @@ mod full_simplify {
   }
 
   #[test]
+  fn trig_ratio_cot() {
+    assert_eq!(interpret("Simplify[Cos[x]/Sin[x]]").unwrap(), "Cot[x]");
+  }
+
+  #[test]
+  fn trig_ratio_tan() {
+    assert_eq!(interpret("Simplify[Sin[x]/Cos[x]]").unwrap(), "Tan[x]");
+  }
+
+  #[test]
+  fn trig_ratio_with_arg() {
+    assert_eq!(
+      interpret("Simplify[Sin[2*x]/Cos[2*x]]").unwrap(),
+      "Tan[2*x]"
+    );
+  }
+
+  #[test]
   fn trig_with_symbolic_coefficients() {
     assert_eq!(
       interpret(
