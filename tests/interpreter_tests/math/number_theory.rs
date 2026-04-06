@@ -415,6 +415,21 @@ mod binomial {
   fn large_n() {
     assert_eq!(interpret("Binomial[20, 10]").unwrap(), "184756");
   }
+
+  #[test]
+  fn rational_first_arg() {
+    assert_eq!(interpret("Binomial[1/2, 3]").unwrap(), "1/16");
+    assert_eq!(interpret("Binomial[1/2, 4]").unwrap(), "-5/128");
+    assert_eq!(interpret("Binomial[3/2, 2]").unwrap(), "3/8");
+  }
+
+  #[test]
+  fn symbolic_first_arg() {
+    assert_eq!(
+      interpret("Binomial[n, 3]").unwrap(),
+      "((-2 + n)*(-1 + n)*n)/6"
+    );
+  }
 }
 
 mod multinomial {

@@ -2467,9 +2467,9 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let k_usize = k as usize;
   let eulerian = compute_eulerian_numbers(k_usize);
 
-  // Build numerator polynomial: (-1)^(k+1) * Sum[A(k,j) * x^(j+1), j=0..k-1]
-  // The (-1)^(k+1) factor is needed because denominator is (-1+x)^(k+1) = (-1)^(k+1)*(1-x)^(k+1)
-  let sign = if (k + 1) % 2 == 0 { 1i128 } else { -1 };
+  // Build numerator polynomial: Sum[A(k,j) * x^(j+1), j=0..k-1]
+  // Using (1-x)^(k+1) as denominator for consistency with GF[n] = x/(1-x)^2
+  let sign = 1i128;
   let mut num_terms: Vec<Expr> = Vec::new();
   for (j, &coeff) in eulerian.iter().enumerate() {
     let signed_coeff = sign * coeff;
@@ -2516,12 +2516,12 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
       .unwrap()
   };
 
-  // Denominator: (1-x)^(k+1)  — but Wolfram uses (-1+x)^(k+1) form
+  // Denominator: (1-x)^(k+1)
   let denominator = Expr::BinaryOp {
     op: BinaryOperator::Power,
     left: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(-1)),
+      op: BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(1)),
       right: Box::new(x.clone()),
     }),
     right: Box::new(Expr::Integer(k + 1)),
@@ -2711,6 +2711,15 @@ fn gf_times(
     && fargs.len() == 2
   {
     return gf_power(fargs[0], fargs[1], n, x);
+  }
+
+  // Try expanding the product and handling as a sum
+  // e.g. n*(-1+n) → -n + n^2
+  let expanded = crate::functions::polynomial_ast::expand_expr(&recombined);
+  if crate::syntax::expr_to_string(&expanded)
+    != crate::syntax::expr_to_string(&recombined)
+  {
+    return gf_inner(&expanded, n, x);
   }
 
   Ok(None)
