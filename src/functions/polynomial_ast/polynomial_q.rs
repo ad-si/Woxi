@@ -26,15 +26,28 @@ pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(vars.iter().all(|v| is_polynomial(&args[0], v))));
   }
 
-  let var = match &args[1] {
-    Expr::Identifier(name) => name.as_str(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of PolynomialQ must be a symbol".into(),
-      ));
+  match &args[1] {
+    Expr::Identifier(name) => Ok(bool_expr(is_polynomial(&args[0], name))),
+    Expr::List(vars) => {
+      // PolynomialQ[expr, {x, y, ...}] — polynomial in all listed vars
+      for v in vars {
+        if let Expr::Identifier(name) = v {
+          if !is_polynomial(&args[0], name) {
+            return Ok(bool_expr(false));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Second argument of PolynomialQ must be a symbol or list of symbols".into(),
+          ));
+        }
+      }
+      Ok(bool_expr(true))
     }
-  };
-  Ok(bool_expr(is_polynomial(&args[0], var)))
+    _ => Err(InterpreterError::EvaluationError(
+      "Second argument of PolynomialQ must be a symbol or list of symbols"
+        .into(),
+    )),
+  }
 }
 
 /// Collect variables that appear in polynomial context only (not inside functions like Sin)
