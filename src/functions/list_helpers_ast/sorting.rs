@@ -224,6 +224,29 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
         keyed.into_iter().map(|(pair, _)| pair).collect(),
       ))
     }
+    Expr::FunctionCall { name, args } => {
+      let mut keyed: Vec<(Expr, Expr)> = args
+        .iter()
+        .map(|item| {
+          let key = apply_func_ast(func, item)?;
+          Ok((item.clone(), key))
+        })
+        .collect::<Result<_, InterpreterError>>()?;
+
+      keyed.sort_by(|a, b| {
+        let key_ord = canonical_cmp(&a.1, &b.1);
+        if key_ord == std::cmp::Ordering::Equal {
+          canonical_cmp(&a.0, &b.0)
+        } else {
+          key_ord
+        }
+      });
+
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: keyed.into_iter().map(|(item, _)| item).collect(),
+      })
+    }
     _ => Ok(Expr::FunctionCall {
       name: "SortBy".to_string(),
       args: vec![list.clone(), func.clone()],
