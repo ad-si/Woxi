@@ -955,6 +955,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Tanh" => Some((1, 1)),
     "TautologyQ" => Some((1, 1)),
     "TemplateApply" => Some((2, 2)),
+    "TensorProduct" => Some((2, usize::MAX)),
     "TensorRank" => Some((1, 1)),
     "Tetrahedron" => Some((1, 1)),
     "TeXForm" => Some((1, 1)),

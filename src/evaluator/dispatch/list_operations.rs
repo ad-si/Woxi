@@ -1548,6 +1548,11 @@ pub fn dispatch_list_operations(
     "Outer" if args.len() >= 3 => {
       return Some(list_helpers_ast::outer_ast(&args[0], &args[1..]));
     }
+    "TensorProduct" if args.len() >= 2 => {
+      // TensorProduct[v1, v2, ...] = Outer[Times, v1, v2, ...]
+      let times = Expr::Identifier("Times".to_string());
+      return Some(list_helpers_ast::outer_ast(&times, args));
+    }
     "Inner" if args.len() == 3 => {
       let plus = Expr::Identifier("Plus".to_string());
       return Some(list_helpers_ast::inner_ast(
