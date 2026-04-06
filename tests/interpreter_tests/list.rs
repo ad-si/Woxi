@@ -280,6 +280,34 @@ mod outer_extended {
   }
 }
 
+mod tensor_product {
+  use super::*;
+
+  #[test]
+  fn two_vectors() {
+    assert_eq!(
+      interpret("TensorProduct[{a, b}, {c, d}]").unwrap(),
+      "{{a*c, a*d}, {b*c, b*d}}"
+    );
+  }
+
+  #[test]
+  fn three_vectors() {
+    assert_eq!(
+      interpret("TensorProduct[{a, b}, {c, d}, {e, f}]").unwrap(),
+      "{{{a*c*e, a*c*f}, {a*d*e, a*d*f}}, {{b*c*e, b*c*f}, {b*d*e, b*d*f}}}"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("TensorProduct[{1, 2}, {3, 4}]").unwrap(),
+      "{{3, 4}, {6, 8}}"
+    );
+  }
+}
+
 mod ordering {
   use super::*;
 
