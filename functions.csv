@@ -120,7 +120,7 @@ AxesStyle,Option specifying the style of plot axes,✅,none,2.0,124
 AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1.0,125
 BlankSequence,Pattern object matching one or more expressions (__),✅,pure,1.0,126
 StringJoin,Concatenates strings,✅,pure,1.0,127
-Factorial,Returns the factorial of a non-negative integer,✅,pure,1.0,128
+Factorial,Returns the factorial n! = Gamma[n+1] for integers and non-integers,✅,pure,1.0,128
 Re,Returns the real part of a complex number,✅,pure,1.0,129
 Gamma,Returns the gamma function value,✅,pure,1.0,130
 Integer,Head type for integer numbers,✅,pure,1.0,131

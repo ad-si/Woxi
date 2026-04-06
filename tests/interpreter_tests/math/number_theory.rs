@@ -1166,6 +1166,44 @@ mod factorial {
   fn factorial_symbolic() {
     assert_eq!(interpret("Factorial[n]").unwrap(), "n!");
   }
+
+  #[test]
+  fn factorial_negative_integers() {
+    // Factorial of negative integers is ComplexInfinity
+    assert_eq!(interpret("Factorial[-1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Factorial[-2]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("Factorial[-5]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("(-1)!").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("(-3)!").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn factorial_half_integer_rational() {
+    // Factorial[1/2] = Gamma[3/2] = Sqrt[Pi]/2
+    assert_eq!(interpret("Factorial[1/2]").unwrap(), "Sqrt[Pi]/2");
+    // Factorial[3/2] = Gamma[5/2] = (3*Sqrt[Pi])/4
+    assert_eq!(interpret("Factorial[3/2]").unwrap(), "(3*Sqrt[Pi])/4");
+    // Factorial[-1/2] = Gamma[1/2] = Sqrt[Pi]
+    assert_eq!(interpret("Factorial[-1/2]").unwrap(), "Sqrt[Pi]");
+    // Factorial[-3/2] = Gamma[-1/2] = -2*Sqrt[Pi]
+    assert_eq!(interpret("Factorial[-3/2]").unwrap(), "-2*Sqrt[Pi]");
+  }
+
+  #[test]
+  fn factorial_float() {
+    // Factorial[0.5] = Gamma[1.5] ≈ 0.886...
+    let result = interpret("Factorial[0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.886226925452758).abs() < 1e-12);
+    // Factorial[1.5] = Gamma[2.5] ≈ 1.329...
+    let result = interpret("Factorial[1.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.329340388179137).abs() < 1e-12);
+    // Factorial[-0.5] = Gamma[0.5] = Sqrt[Pi] ≈ 1.7724...
+    let result = interpret("Factorial[-0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.772453850905516).abs() < 1e-12);
+  }
 }
 
 mod factorial2 {
