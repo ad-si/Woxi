@@ -2340,3 +2340,29 @@ mod complex_division {
     );
   }
 }
+
+mod min_max_identity {
+  use super::*;
+
+  #[test]
+  fn min_zero_args() {
+    // Min[] is the identity element: Infinity
+    assert_eq!(interpret("Min[]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn max_zero_args() {
+    // Max[] is the identity element: -Infinity
+    assert_eq!(interpret("Max[]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn min_single_arg() {
+    assert_eq!(interpret("Min[3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn max_single_arg() {
+    assert_eq!(interpret("Max[5]").unwrap(), "5");
+  }
+}
