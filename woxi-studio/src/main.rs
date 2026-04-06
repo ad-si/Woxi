@@ -681,6 +681,15 @@ impl WoxiStudio {
       Message::CellStyleChanged(idx, style) => {
         if idx < self.cell_editors.len() {
           self.cell_editors[idx].style = style;
+          if style != CellStyle::Input {
+            self.cell_editors[idx].output = None;
+            self.cell_editors[idx].stdout = None;
+            self.cell_editors[idx].graphics_svg = None;
+            self.cell_editors[idx].graphics_handle = None;
+            self.cell_editors[idx].graphics_image = None;
+            self.cell_editors[idx].warnings.clear();
+            self.cell_editors[idx].output_stale = false;
+          }
           self.is_dirty = true;
         }
         self.cell_type_menu_open = None;
