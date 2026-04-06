@@ -6,10 +6,10 @@ pub fn dispatch_boolean_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
-    "And" if args.len() >= 2 => {
+    "And" => {
       return Some(crate::functions::boolean_ast::and_ast(args));
     }
-    "Or" if args.len() >= 2 => {
+    "Or" => {
       return Some(crate::functions::boolean_ast::or_ast(args));
     }
     "Not" if args.len() == 1 => {
