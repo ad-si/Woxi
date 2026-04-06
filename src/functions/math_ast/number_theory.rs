@@ -2043,17 +2043,40 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     (Some(n), Some(k)) => Ok(Expr::Integer(binomial_coeff(n, k))),
+    (None, Some(k)) if k >= 0 => {
+      // Generalized binomial for non-integer n with non-negative integer k:
+      // Binomial[n, k] = n*(n-1)*...*(n-k+1) / k!
+      // Works for Rational n, symbolic n, etc.
+      let k = k as usize;
+      if k == 0 {
+        return Ok(Expr::Integer(1));
+      }
+      // Compute falling factorial: n * (n-1) * ... * (n-k+1)
+      let mut numer_factors: Vec<Expr> = Vec::with_capacity(k);
+      for i in 0..k {
+        let factor =
+          super::plus_ast(&[args[0].clone(), Expr::Integer(-(i as i128))])?;
+        numer_factors.push(factor);
+      }
+      let numer = super::times_ast(&numer_factors)?;
+      let mut denom_val: i128 = 1;
+      for i in 1..=(k as i128) {
+        denom_val *= i;
+      }
+      let denom = Expr::Integer(denom_val);
+      super::divide_ast(&[numer, denom])
+    }
     _ => {
       // Try Real evaluation using Gamma function
       let n_f64 = match &args[0] {
         Expr::Real(f) => Some(*f),
         Expr::Integer(n) => Some(*n as f64),
-        _ => None,
+        _ => crate::functions::math_ast::try_eval_to_f64(&args[0]),
       };
       let k_f64 = match &args[1] {
         Expr::Real(f) => Some(*f),
         Expr::Integer(n) => Some(*n as f64),
-        _ => None,
+        _ => crate::functions::math_ast::try_eval_to_f64(&args[1]),
       };
       if let (Some(n), Some(k)) = (n_f64, k_f64) {
         // Binomial[n, k] = Gamma[n+1] / (Gamma[k+1] * Gamma[n-k+1])
