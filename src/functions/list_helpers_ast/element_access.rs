@@ -597,6 +597,36 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
     return part_ast(&canonical, index);
   }
 
+  // Handle Association integer indexing: Part[<|a->1, b->2|>, 2] => 2
+  if let Expr::FunctionCall { name, args } = list
+    && name == "Association"
+    && let Expr::Integer(i) = index
+  {
+    if *i == 0 {
+      return Ok(Expr::Identifier("Association".to_string()));
+    }
+    let idx = if *i > 0 {
+      (*i as usize) - 1
+    } else {
+      let len = args.len() as i128;
+      (len + *i) as usize
+    };
+    if idx >= args.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Part: index out of bounds".into(),
+      ));
+    }
+    // Extract value from Rule[key, value]
+    return match &args[idx] {
+      Expr::FunctionCall {
+        name: rname,
+        args: rargs,
+      } if rname == "Rule" && rargs.len() == 2 => Ok(rargs[1].clone()),
+      Expr::Rule { replacement, .. } => Ok(*replacement.clone()),
+      other => Ok(other.clone()),
+    };
+  }
+
   let (items, head) = match list {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),

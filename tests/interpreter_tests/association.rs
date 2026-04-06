@@ -147,6 +147,22 @@ mod association_literal_access {
       "one"
     );
   }
+
+  #[test]
+  fn integer_position_access() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[2]]"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn negative_position_access() {
+    assert_eq!(
+      interpret(r#"<|"a" -> 1, "b" -> 2, "c" -> 3|>[[-1]]"#).unwrap(),
+      "3"
+    );
+  }
 }
 
 mod association_nested_access {

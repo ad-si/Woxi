@@ -187,8 +187,25 @@ pub fn extract_part_ast(
   expr: &Expr,
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // For associations, handle key-based lookup (can be any Expr)
+  // For associations, handle key-based lookup and integer position indexing
   if let Expr::Association(items) = expr {
+    // Integer index: access by position (return value, not rule)
+    if let Expr::Integer(i) = index {
+      if *i == 0 {
+        return Ok(Expr::Identifier("Association".to_string()));
+      }
+      let idx = if *i > 0 {
+        (*i as usize) - 1
+      } else {
+        (items.len() as i128 + *i) as usize
+      };
+      if idx >= items.len() {
+        return Err(InterpreterError::EvaluationError(
+          "Part: index out of bounds".into(),
+        ));
+      }
+      return Ok(items[idx].1.clone());
+    }
     // Try to find a matching key
     let index_str = crate::syntax::expr_to_string(index);
     for (key, val) in items {
