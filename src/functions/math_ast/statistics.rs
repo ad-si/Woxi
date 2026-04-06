@@ -168,9 +168,10 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.is_empty() {
-        return Err(InterpreterError::EvaluationError(
-          "Mean: empty list".into(),
-        ));
+        return Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: vec![Expr::List(vec![])],
+        });
       }
       // Try to compute exact integer sum first
       let mut int_sum: Option<i128> = Some(0);
@@ -381,9 +382,10 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::List(items) => {
       if items.len() < 2 {
-        return Err(InterpreterError::EvaluationError(
-          "Variance: need at least 2 elements".into(),
-        ));
+        return Ok(Expr::FunctionCall {
+          name: "Variance".to_string(),
+          args: vec![args[0].clone()],
+        });
       }
       // Try all-integer exact path
       let mut all_int = true;
@@ -636,6 +638,15 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // For list-of-lists, the variance returns a list of column variances
   let var = variance_ast(args)?;
+  // If variance returned unevaluated (e.g. for too-few elements), return unevaluated too
+  if let Expr::FunctionCall { name, .. } = &var
+    && name == "Variance"
+  {
+    return Ok(Expr::FunctionCall {
+      name: "StandardDeviation".to_string(),
+      args: args.to_vec(),
+    });
+  }
   match &var {
     Expr::List(items) => {
       // Apply Sqrt to each element
