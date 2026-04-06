@@ -6,6 +6,7 @@ use super::*;
 pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
   match name {
     "Abs" => Some((1, 1)),
+    "AbsArg" => Some((1, 1)),
     "Accumulate" => Some((1, 1)),
     "Accuracy" => Some((1, 1)),
     "Activate" => Some((1, 2)),

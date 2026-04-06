@@ -5265,6 +5265,46 @@ mod reim {
   }
 }
 
+mod abs_arg {
+  use super::*;
+
+  #[test]
+  fn abs_arg_complex() {
+    assert_eq!(interpret("AbsArg[1 + I]").unwrap(), "{Sqrt[2], Pi/4}");
+  }
+
+  #[test]
+  fn abs_arg_positive_real() {
+    assert_eq!(interpret("AbsArg[2]").unwrap(), "{2, 0}");
+  }
+
+  #[test]
+  fn abs_arg_negative_real() {
+    assert_eq!(interpret("AbsArg[-3]").unwrap(), "{3, Pi}");
+  }
+
+  #[test]
+  fn abs_arg_pure_imaginary() {
+    assert_eq!(interpret("AbsArg[I]").unwrap(), "{1, Pi/2}");
+  }
+
+  #[test]
+  fn abs_arg_negative_imaginary() {
+    assert_eq!(interpret("AbsArg[-I]").unwrap(), "{1, -1/2*Pi}");
+  }
+
+  #[test]
+  fn abs_arg_zero() {
+    assert_eq!(interpret("AbsArg[0]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn abs_arg_float() {
+    assert_eq!(interpret("AbsArg[3.5]").unwrap(), "{3.5, 0}");
+    assert_eq!(interpret("AbsArg[-2.5]").unwrap(), "{2.5, Pi}");
+  }
+}
+
 mod characteristic_polynomial {
   use super::*;
 

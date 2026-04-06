@@ -1310,6 +1310,17 @@ pub fn dispatch_math_functions(
       };
       return Some(Ok(Expr::List(vec![re, im])));
     }
+    "AbsArg" if args.len() == 1 => {
+      let abs_val = match crate::functions::math_ast::abs_ast(args) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let arg_val = match crate::functions::math_ast::arg_ast(args) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(Expr::List(vec![abs_val, arg_val])));
+    }
     "Conjugate" if args.len() == 1 => {
       return Some(crate::functions::math_ast::conjugate_ast(args));
     }
