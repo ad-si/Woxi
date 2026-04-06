@@ -1398,19 +1398,36 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::InformationQuery => {
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
-      Expr::FunctionCall {
-        name: "Information".to_string(),
-        args: vec![Expr::Identifier(symbol_name)],
+      if symbol_name.contains('*') {
+        Expr::FunctionCall {
+          name: "Information".to_string(),
+          args: vec![Expr::String(symbol_name)],
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Information".to_string(),
+          args: vec![Expr::Identifier(symbol_name)],
+        }
       }
     }
     Rule::FullInformationQuery => {
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
-      Expr::FunctionCall {
-        name: "Information".to_string(),
-        args: vec![
-          Expr::Identifier(symbol_name),
-          Expr::String("Full".to_string()),
-        ],
+      if symbol_name.contains('*') {
+        Expr::FunctionCall {
+          name: "Information".to_string(),
+          args: vec![
+            Expr::String(symbol_name),
+            Expr::String("Full".to_string()),
+          ],
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Information".to_string(),
+          args: vec![
+            Expr::Identifier(symbol_name),
+            Expr::String("Full".to_string()),
+          ],
+        }
       }
     }
     Rule::NamedCharIdentifier => {

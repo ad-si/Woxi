@@ -1864,6 +1864,69 @@ mod information {
     assert!(result.contains("Name -> Table"));
     assert!(result.contains("Usage ->"));
   }
+
+  #[test]
+  fn pattern_query_prefix_wildcard() {
+    // ?Plot* should return InformationDataGrid with matching symbols
+    clear_state();
+    let result = interpret("?Plot*").unwrap();
+    assert!(result.starts_with("InformationDataGrid["));
+    assert!(result.contains("System`"));
+    assert!(result.contains("Plot"));
+    assert!(result.contains("PlotRange"));
+    assert!(result.contains("PlotStyle"));
+    assert!(result.contains("False]"));
+  }
+
+  #[test]
+  fn pattern_query_suffix_wildcard() {
+    // ?*Plot should match symbols ending with Plot
+    clear_state();
+    let result = interpret("?*Plot").unwrap();
+    assert!(result.starts_with("InformationDataGrid["));
+    assert!(result.contains("ListPlot"));
+    assert!(result.contains("ContourPlot"));
+    // Should not contain PlotRange (doesn't end with Plot)
+    assert!(!result.contains("PlotRange"));
+  }
+
+  #[test]
+  fn pattern_query_both_wildcards() {
+    // ?*Plot* should match symbols containing Plot anywhere
+    clear_state();
+    let result = interpret("?*Plot*").unwrap();
+    assert!(result.starts_with("InformationDataGrid["));
+    assert!(result.contains("Plot"));
+    assert!(result.contains("ListPlot"));
+    assert!(result.contains("PlotRange"));
+  }
+
+  #[test]
+  fn pattern_query_full_info() {
+    // ??Plot* should return with True (is_full)
+    clear_state();
+    let result = interpret("??Plot*").unwrap();
+    assert!(result.starts_with("InformationDataGrid["));
+    assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn pattern_query_includes_user_defined() {
+    // Pattern should also match user-defined symbols
+    clear_state();
+    let result = interpret("myPlotHelper[x_] := x^2; ?*Plot*").unwrap();
+    assert!(result.contains("myPlotHelper"));
+    assert!(result.contains("Plot"));
+  }
+
+  #[test]
+  fn pattern_query_no_matches() {
+    // Pattern that matches nothing should return empty list
+    clear_state();
+    let result = interpret("?Zzzzzzz*").unwrap();
+    assert!(result.starts_with("InformationDataGrid["));
+    assert!(result.contains("System` -> {}"));
+  }
 }
 
 mod directory_name {

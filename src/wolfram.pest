@@ -163,10 +163,12 @@ Decrement = { (PartExtract | Identifier) ~ "--" }
 PreIncrement = { "++" ~ (PartExtract | Identifier) }
 PreDecrement = { "--" ~ (PartExtract | Identifier) }
 
-// InformationQuery: ?symbol shorthand for Information[symbol]
-InformationQuery = { "?" ~ !"?" ~ Identifier }
-// FullInformationQuery: ??symbol shorthand for Information[symbol, "Full"]
-FullInformationQuery = { "??" ~ Identifier }
+// InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
+InformationQuery = { "?" ~ !"?" ~ InformationPattern }
+// FullInformationQuery: ??symbol or ??pattern* shorthand for Information[symbol, "Full"]
+FullInformationQuery = { "??" ~ InformationPattern }
+// InformationPattern: identifier possibly containing * wildcards (e.g. Plot*, *Plot*, *Plot)
+InformationPattern = @{ (ASCII_ALPHA | "$" | "*")+ ~ (ASCII_ALPHANUMERIC | "$" | "*")* }
 
 // Unset: x =. (removes definition for simple identifiers)
 // Function call unsets (f[x] =.) are handled by UnsetSuffix in Expression.

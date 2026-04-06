@@ -77,6 +77,13 @@ pub fn get_builtin_function_info(
   BUILTIN_FUNCTION_INFO.get(name)
 }
 
+/// Get all built-in function names from functions.csv.
+pub fn get_builtin_function_names() -> Vec<&'static str> {
+  let mut names: Vec<&str> = BUILTIN_FUNCTION_INFO.keys().copied().collect();
+  names.sort();
+  names
+}
+
 pub(crate) mod assignment;
 mod attributes;
 mod binary_ops;
