@@ -586,7 +586,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MapAll" => Some((2, 2)),
     "MapApply" => Some((2, 2)),
     "MapAt" => Some((3, 3)),
-    "MapIndexed" => Some((2, 2)),
+    "MapIndexed" => Some((2, 3)),
     "MapThread" => Some((2, 3)),
     "MatchQ" => Some((2, 2)),
     "MatrixPower" => Some((2, 2)),

@@ -460,6 +460,106 @@ pub fn map_indexed_ast(
   Ok(Expr::List(results?))
 }
 
+/// MapIndexed with level spec: MapIndexed[f, expr, levelspec]
+/// Applies f to elements at the specified level, passing {position indices} as second arg.
+pub fn map_indexed_with_level_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec: {n} = exactly level n
+  let (min_level, max_level) = match level_spec {
+    Expr::Integer(n) => (1i64, *n as i64),
+    Expr::List(items) if items.len() == 1 => {
+      if let Some(n) = expr_to_i128(&items[0]) {
+        (n as i64, n as i64)
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "MapIndexed".to_string(),
+          args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        });
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
+      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
+      (min, max)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MapIndexed".to_string(),
+        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+      });
+    }
+  };
+
+  map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
+}
+
+/// Recursively apply MapIndexed at specified depth levels, tracking position indices.
+fn map_indexed_at_depth(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+  position: &[i128],
+) -> Result<Expr, InterpreterError> {
+  let children = match expr {
+    Expr::List(items) => Some((items.as_slice(), true)),
+    Expr::FunctionCall { name: _, args } => Some((args.as_slice(), false)),
+    _ => None,
+  };
+
+  if let Some((items, is_list)) = children {
+    // Recurse into children
+    let mapped: Result<Vec<Expr>, _> = items
+      .iter()
+      .enumerate()
+      .map(|(i, item)| {
+        let mut child_pos = position.to_vec();
+        child_pos.push((i + 1) as i128);
+        map_indexed_at_depth(
+          func,
+          item,
+          current_depth + 1,
+          min_level,
+          max_level,
+          &child_pos,
+        )
+      })
+      .collect();
+    let mapped = mapped?;
+    let result = if is_list {
+      Expr::List(mapped)
+    } else if let Expr::FunctionCall { name, .. } = expr {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: mapped,
+      }
+    } else {
+      unreachable!()
+    };
+    // Apply at this level if within range
+    if current_depth >= min_level && current_depth <= max_level {
+      let index =
+        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
+      apply_func_to_two_args(func, &result, &index)
+    } else {
+      Ok(result)
+    }
+  } else {
+    // Atom — apply if at the right level
+    if current_depth >= min_level && current_depth <= max_level {
+      let index =
+        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
+      apply_func_to_two_args(func, expr, &index)
+    } else {
+      Ok(expr.clone())
+    }
+  }
+}
+
 /// AST-based MapThread: apply function to corresponding elements.
 /// MapThread[f, {{a, b}, {c, d}}] -> {f[a, c], f[b, d]}
 pub fn map_thread_ast(
