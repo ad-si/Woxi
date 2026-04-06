@@ -1860,7 +1860,7 @@ Gudermannian,Returns the Gudermannian function value,✅,pure,7.0,1895
 MorphologicalBinarize,Morphological binarize,,unevaluated,8.0,1895
 VertexWeight,Vertex weight option,,unevaluated,8.0,1895
 SingleLetterItalics,Single letter italics option,,unevaluated,3.0,1897
-AbsArg,Absolute value and argument,,unevaluated,10.1,1901
+AbsArg,Returns {Abs[z] and Arg[z]} for a complex number z,✅,pure,10.1,1901
 Haversine,Haversine function,✅,computation,7.0,1901
 PolarGridLines,Polar grid lines option,,unevaluated,7.0,1901
 RootApproximant,Root approximant,,unevaluated,6.0,1901
