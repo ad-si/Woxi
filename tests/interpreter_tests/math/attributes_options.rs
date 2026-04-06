@@ -183,9 +183,35 @@ mod hold_attributes {
   }
 
   #[test]
+  fn and_zero_args() {
+    // And[] is the identity element: True
+    assert_eq!(interpret("And[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn and_single_arg() {
+    assert_eq!(interpret("And[True]").unwrap(), "True");
+    assert_eq!(interpret("And[False]").unwrap(), "False");
+    assert_eq!(interpret("And[x]").unwrap(), "x");
+  }
+
+  #[test]
   fn or_basic() {
     assert_eq!(interpret("Or[False, False]").unwrap(), "False");
     assert_eq!(interpret("Or[False, True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn or_zero_args() {
+    // Or[] is the identity element: False
+    assert_eq!(interpret("Or[]").unwrap(), "False");
+  }
+
+  #[test]
+  fn or_single_arg() {
+    assert_eq!(interpret("Or[True]").unwrap(), "True");
+    assert_eq!(interpret("Or[False]").unwrap(), "False");
+    assert_eq!(interpret("Or[x]").unwrap(), "x");
   }
 }
 

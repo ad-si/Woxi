@@ -19,12 +19,6 @@ fn as_bool(expr: &Expr) -> Option<bool> {
 
 /// And[expr1, expr2, ...] - Logical AND
 pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "And expects at least 2 arguments".into(),
-    ));
-  }
-
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
@@ -46,12 +40,6 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Or[expr1, expr2, ...] - Logical OR
 pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Or expects at least 2 arguments".into(),
-    ));
-  }
-
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
