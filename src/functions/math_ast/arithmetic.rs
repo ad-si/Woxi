@@ -3492,10 +3492,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // x^0 -> 1 (for non-zero x; 0^0 is Indeterminate, handled below)
+  // x^0 -> 1 (for non-zero finite x; 0^0 and Infinity^0 are Indeterminate)
   if matches!(exp, Expr::Integer(0))
     && !matches!(base, Expr::Integer(0))
     && !matches!(base, Expr::Real(f) if *f == 0.0)
+    && !matches!(base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
+    && !crate::functions::math_ast::special_functions::is_neg_infinity(base)
   {
     return Ok(Expr::Integer(1));
   }
@@ -3511,6 +3513,18 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     matches!(base, Expr::Identifier(s) if s == "ComplexInfinity");
   let exp_is_complex_inf =
     matches!(exp, Expr::Identifier(s) if s == "ComplexInfinity");
+
+  // Infinity^0 and ComplexInfinity^0 → Indeterminate
+  if matches!(exp, Expr::Integer(0))
+    && (base_is_pos_inf || base_is_neg_inf || base_is_complex_inf)
+  {
+    crate::emit_message(&format!(
+      "\n{:>40}\nInfinity::indet: Indeterminate expression {}  encountered.",
+      "0",
+      crate::syntax::expr_to_string(base)
+    ));
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
 
   // Infinity^n: Infinity for positive n, 0 for negative n, ComplexInfinity for complex
   if base_is_pos_inf {

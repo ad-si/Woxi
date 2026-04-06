@@ -971,6 +971,20 @@ mod infinity_arithmetic {
   }
 
   #[test]
+  fn infinity_power_zero_is_indeterminate() {
+    assert_eq!(interpret("Infinity^0").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn sqrt_infinity() {
+    assert_eq!(interpret("Sqrt[Infinity]").unwrap(), "Infinity");
+    assert_eq!(
+      interpret("Sqrt[ComplexInfinity]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
   fn infinity_times_zero() {
     assert_eq!(interpret("Infinity * 0").unwrap(), "Indeterminate");
     assert_eq!(interpret("0 * Infinity").unwrap(), "Indeterminate");

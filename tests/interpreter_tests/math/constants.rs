@@ -170,6 +170,12 @@ mod degree_trig_functions {
   }
 
   #[test]
+  fn arctan_infinity() {
+    assert_eq!(interpret("ArcTan[Infinity]").unwrap(), "Pi/2");
+    assert_eq!(interpret("ArcTan[-Infinity]").unwrap(), "-1/2*Pi");
+  }
+
+  #[test]
   fn arctan_degrees_exact() {
     assert_eq!(interpret("ArcTanDegrees[1]").unwrap(), "45");
     assert_eq!(interpret("ArcTanDegrees[0]").unwrap(), "0");
