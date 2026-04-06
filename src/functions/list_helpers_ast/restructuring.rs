@@ -805,10 +805,21 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if all arguments are associations
   if lists.iter().all(|l| matches!(l, Expr::Association(_))) {
-    let mut result = Vec::new();
+    let mut result: Vec<(Expr, Expr)> = Vec::new();
     for list in lists {
       if let Expr::Association(pairs) = list {
-        result.extend(pairs.iter().cloned());
+        for (k, v) in pairs {
+          // Later values override earlier ones for the same key
+          let key_str = crate::syntax::expr_to_string(k);
+          if let Some(pos) = result
+            .iter()
+            .position(|(ek, _)| crate::syntax::expr_to_string(ek) == key_str)
+          {
+            result[pos] = (k.clone(), v.clone());
+          } else {
+            result.push((k.clone(), v.clone()));
+          }
+        }
       }
     }
     return Ok(Expr::Association(result));

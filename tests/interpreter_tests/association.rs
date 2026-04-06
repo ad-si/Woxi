@@ -729,6 +729,19 @@ mod association_list_operations {
   }
 
   #[test]
+  fn join_associations_duplicate_keys() {
+    // Later values should override earlier ones for the same key
+    assert_eq!(
+      interpret("Join[<|a -> 1, b -> 2|>, <|b -> 3, c -> 4|>]").unwrap(),
+      "<|a -> 1, b -> 3, c -> 4|>"
+    );
+    assert_eq!(
+      interpret("Join[<|a -> 1, b -> 2|>, <|a -> 10|>]").unwrap(),
+      "<|a -> 10, b -> 2|>"
+    );
+  }
+
+  #[test]
   fn select_from_association() {
     assert_eq!(
       interpret("Select[<|a -> 1, b -> 2, c -> 3|>, (# > 1) &]").unwrap(),
