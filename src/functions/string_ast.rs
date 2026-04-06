@@ -978,6 +978,17 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       string_pattern_to_regex(&args[0]).map(|r| format!("(?:{})*", r))
     }
 
+    // RegularExpression["pattern"] - use the regex directly
+    Expr::FunctionCall { name, args }
+      if name == "RegularExpression" && args.len() == 1 =>
+    {
+      if let Expr::String(re_str) = &args[0] {
+        Some(re_str.clone())
+      } else {
+        None
+      }
+    }
+
     _ => None,
   }
 }

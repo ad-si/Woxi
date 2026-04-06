@@ -761,6 +761,24 @@ mod string_patterns {
       "{bc, bc}"
     );
   }
+
+  #[test]
+  fn string_cases_regular_expression() {
+    assert_eq!(
+      interpret(r#"StringCases["cat bat mat", RegularExpression["[a-z]at"]]"#)
+        .unwrap(),
+      "{cat, bat, mat}"
+    );
+  }
+
+  #[test]
+  fn string_cases_regular_expression_digits() {
+    assert_eq!(
+      interpret(r#"StringCases["abc123def456", RegularExpression["[0-9]+"]]"#)
+        .unwrap(),
+      "{123, 456}"
+    );
+  }
 }
 
 mod string_part {
