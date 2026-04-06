@@ -198,6 +198,10 @@ fn kg_inner(n: i128, m: i128, shift: &mut u64) -> BigInt {
 }
 
 /// Factorial[n] or n!
+/// Factorial[n] = Gamma[n+1]
+/// For negative integers, returns ComplexInfinity.
+/// For floats, computes Gamma[n+1] numerically.
+/// For half-integer rationals, computes Gamma[n+1] symbolically.
 pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -206,9 +210,8 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(n) = expr_to_i128(&args[0]) {
     if n < 0 {
-      return Err(InterpreterError::EvaluationError(
-        "Factorial: argument must be non-negative".into(),
-      ));
+      // Factorial of negative integers is ComplexInfinity
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
     if n <= 1 {
       return Ok(Expr::Integer(1));
@@ -216,11 +219,44 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut shift: u64 = 0;
     let result = kg_inner(n, 1, &mut shift);
     Ok(bigint_to_expr(result << shift))
+  } else if let Expr::Real(f) = &args[0] {
+    // Factorial[x] = Gamma[x+1] for real numbers
+    let result = super::special_functions::gamma_fn(*f + 1.0);
+    if result.is_infinite() {
+      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+    } else {
+      Ok(Expr::Real(result))
+    }
   } else {
-    Ok(Expr::FunctionCall {
-      name: "Factorial".to_string(),
-      args: args.to_vec(),
-    })
+    // For rationals and other symbolic expressions, delegate to Gamma[n+1]
+    // Build the expression Gamma[n + 1] and evaluate via gamma_ast
+    let n_plus_1 = match &args[0] {
+      // Handle Rational[p, q] — compute (p + q) / q = Rational[p + q, q]
+      Expr::FunctionCall { name, args: ra }
+        if name == "Rational" && ra.len() == 2 =>
+      {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(p + q), Expr::Integer(*q)],
+          }
+        } else {
+          // Can't simplify, return unevaluated
+          return Ok(Expr::FunctionCall {
+            name: "Factorial".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+      _ => {
+        // Return unevaluated for other symbolic arguments
+        return Ok(Expr::FunctionCall {
+          name: "Factorial".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    super::special_functions::gamma_ast(&[n_plus_1])
   }
 }
 
