@@ -234,6 +234,36 @@ mod arithmetic {
       assert_eq!(interpret("D[Sin[x]^2, x]").unwrap(), "2*Cos[x]*Sin[x]");
     }
   }
+
+  mod combine_like_bases {
+    use super::*;
+
+    #[test]
+    fn function_call_squared() {
+      assert_eq!(interpret("f[x]*f[x]").unwrap(), "f[x]^2");
+    }
+
+    #[test]
+    fn function_call_cubed() {
+      assert_eq!(interpret("g[x, y]*g[x, y]*g[x, y]").unwrap(), "g[x, y]^3");
+    }
+
+    #[test]
+    fn tan_squared() {
+      assert_eq!(interpret("Tan[x]*Tan[x]").unwrap(), "Tan[x]^2");
+    }
+
+    #[test]
+    fn plus_expr_squared() {
+      assert_eq!(interpret("(a + b)*(a + b)").unwrap(), "(a + b)^2");
+    }
+
+    #[test]
+    fn unary_minus_in_times() {
+      // -Sin[x]*Sin[x] should simplify to -Sin[x]^2
+      assert_eq!(interpret("Times[-Sin[x], Sin[x]]").unwrap(), "-Sin[x]^2");
+    }
+  }
 }
 
 mod real_number_formatting {

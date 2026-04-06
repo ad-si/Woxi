@@ -353,6 +353,30 @@ mod derivative_prime_notation {
     // Derivative of an undefined function stays symbolic
     assert_eq!(interpret("h'[x]").unwrap(), "Derivative[1][h][x]");
   }
+
+  #[test]
+  fn derivative_product_sin_cos() {
+    assert_eq!(
+      interpret("D[Sin[x]*Cos[x], x]").unwrap(),
+      "Cos[x]^2 - Sin[x]^2"
+    );
+  }
+
+  #[test]
+  fn derivative_product_x_squared_cos() {
+    assert_eq!(
+      interpret("D[x^2*Cos[x], x]").unwrap(),
+      "2*x*Cos[x] - x^2*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn derivative_product_exp_sin() {
+    assert_eq!(
+      interpret("D[Exp[x]*Sin[x], x]").unwrap(),
+      "E^x*Cos[x] + E^x*Sin[x]"
+    );
+  }
 }
 
 mod series {
