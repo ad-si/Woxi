@@ -867,8 +867,14 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::Association(pairs) => {
       // Append a rule to an association
+      // If the key already exists, remove the old entry (new one goes to end)
       if let Some((k, v)) = extract_rule_pair(elem) {
-        let mut result = pairs.clone();
+        let key_str = crate::syntax::expr_to_string(&k);
+        let mut result: Vec<(Expr, Expr)> = pairs
+          .iter()
+          .filter(|(ek, _)| crate::syntax::expr_to_string(ek) != key_str)
+          .cloned()
+          .collect();
         result.push((k, v));
         Ok(Expr::Association(result))
       } else {
@@ -903,9 +909,16 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::Association(pairs) => {
       // Prepend a rule to an association
+      // If the key already exists, remove the old entry (new one goes to front)
       if let Some((k, v)) = extract_rule_pair(elem) {
+        let key_str = crate::syntax::expr_to_string(&k);
         let mut result = vec![(k, v)];
-        result.extend(pairs.iter().cloned());
+        result.extend(
+          pairs
+            .iter()
+            .filter(|(ek, _)| crate::syntax::expr_to_string(ek) != key_str)
+            .cloned(),
+        );
         Ok(Expr::Association(result))
       } else {
         Ok(Expr::FunctionCall {
