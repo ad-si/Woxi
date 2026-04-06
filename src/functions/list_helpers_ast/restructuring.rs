@@ -668,14 +668,14 @@ pub fn rotate_multi_ast(
 
 /// AST-based PadLeft: pad list on the left to length n.
 /// If n < len, truncates from the left.
-/// Get cyclic padding element at a given position.
-/// The padding is cyclically repeated, and the cycle is aligned so that
-/// the position right after the original list corresponds to padding[0].
-fn cyclic_pad_element(pad: &Expr, pos: i128, list_end: i128) -> Expr {
+/// Get cyclic padding element at a given position (0-based).
+/// `anchor` controls the cycle alignment: the cycle aligns so that
+/// position `anchor` corresponds to cycle index 0.
+fn cyclic_pad_element(pad: &Expr, pos: i128, anchor: i128) -> Expr {
   match pad {
     Expr::List(items) if !items.is_empty() => {
       let cycle_len = items.len() as i128;
-      let idx = ((pos - list_end) % cycle_len + cycle_len) % cycle_len;
+      let idx = ((pos - anchor) % cycle_len + cycle_len) % cycle_len;
       items[idx as usize].clone()
     }
     _ => pad.clone(),
@@ -780,12 +780,15 @@ pub fn pad_right_ast(
     let m = offset.unwrap_or(0).max(0);
     let start = m.min(n - len).max(0) as usize;
     let list_end = start + items.len();
+    // When list starts at 0 (no left padding), align cycle globally;
+    // when there's left padding (offset > 0), anchor to list_end.
+    let anchor = if start == 0 { 0 } else { list_end as i128 };
     let mut result = Vec::with_capacity(n_usize);
     for i in 0..n_usize {
       if i >= start && i < list_end {
         result.push(items[i - start].clone());
       } else {
-        result.push(cyclic_pad_element(pad, i as i128, list_end as i128));
+        result.push(cyclic_pad_element(pad, i as i128, anchor));
       }
     }
     result

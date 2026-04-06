@@ -3085,6 +3085,27 @@ mod join_non_list {
   }
 
   #[test]
+  fn pad_right_cyclic_alignment() {
+    // Cyclic padding aligns with position 0, not after the list end
+    assert_eq!(
+      interpret("PadRight[{1, 2, 3}, 7, {a, b}]").unwrap(),
+      "{1, 2, 3, b, a, b, a}"
+    );
+    assert_eq!(
+      interpret("PadRight[{1, 2}, 6, {a, b, c}]").unwrap(),
+      "{1, 2, c, a, b, c}"
+    );
+  }
+
+  #[test]
+  fn pad_left_cyclic_alignment() {
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, 7, {a, b}]").unwrap(),
+      "{b, a, b, a, 1, 2, 3}"
+    );
+  }
+
+  #[test]
   fn flatten_with_head() {
     assert_eq!(
       interpret("Flatten[f[a, f[b, f[c, d]], e], Infinity, f]").unwrap(),
