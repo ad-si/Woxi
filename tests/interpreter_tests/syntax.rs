@@ -5265,6 +5265,47 @@ mod reim {
   }
 }
 
+mod complex_expand {
+  use super::*;
+
+  #[test]
+  fn sin_complex() {
+    // ComplexExpand[Sin[x + I*y]] = Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]
+    let result = interpret("ComplexExpand[Sin[x + I*y]]").unwrap();
+    // Both term orderings are valid
+    assert!(
+      result == "Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]"
+        || result == "I*Cos[x]*Sinh[y] + Cosh[y]*Sin[x]",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn cos_complex() {
+    assert_eq!(
+      interpret("ComplexExpand[Cos[x + I*y]]").unwrap(),
+      "Cos[x]*Cosh[y] - I*Sin[x]*Sinh[y]"
+    );
+  }
+
+  #[test]
+  fn exp_complex() {
+    assert_eq!(
+      interpret("ComplexExpand[Exp[x + I*y]]").unwrap(),
+      "E^x*(Cos[y] + I*Sin[y])"
+    );
+  }
+
+  #[test]
+  fn abs_complex() {
+    assert_eq!(
+      interpret("ComplexExpand[Abs[x + I*y]]").unwrap(),
+      "Sqrt[x^2 + y^2]"
+    );
+  }
+}
+
 mod abs_arg {
   use super::*;
 

@@ -1495,6 +1495,9 @@ pub fn dispatch_math_functions(
     "TrigExpand" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_expand_ast(args));
     }
+    "ComplexExpand" if args.len() == 1 => {
+      return Some(complex_expand_ast(&args[0]));
+    }
     "TrigReduce" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_reduce_ast(args));
     }
@@ -3489,6 +3492,451 @@ fn rational_to_expr_local(n: i128, d: i128) -> Expr {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(n), Expr::Integer(d)],
     }
+  }
+}
+
+/// ComplexExpand[expr] — expand complex-valued functions assuming all
+/// variables are real. E.g. Sin[x + I*y] → Sin[x]*Cosh[y] + I*Cos[x]*Sinh[y].
+fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  Ok(complex_expand_recursive(expr))
+}
+
+fn ce_simplify(e: Expr) -> Expr {
+  crate::evaluator::evaluate_expr_to_expr(&e)
+    .unwrap_or_else(|_| crate::functions::simplify(e))
+}
+
+/// Split an expression into real and imaginary parts assuming all symbols are real.
+/// Returns (real_part, imag_part) such that expr = real + I*imag.
+fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
+    // a + I*b
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let (lr, li) = split_real_imag(left)?;
+      let (rr, ri) = split_real_imag(right)?;
+      Some((
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(lr),
+          right: Box::new(rr),
+        }),
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(li),
+          right: Box::new(ri),
+        }),
+      ))
+    }
+    // a - b
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (lr, li) = split_real_imag(left)?;
+      let (rr, ri) = split_real_imag(right)?;
+      Some((
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(lr),
+          right: Box::new(rr),
+        }),
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(li),
+          right: Box::new(ri),
+        }),
+      ))
+    }
+    // c * expr — check if one factor is I
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      // I * something
+      if matches!(left.as_ref(), Expr::Identifier(s) if s == "I") {
+        let (rr, ri) = split_real_imag(right)?;
+        // I * (rr + I*ri) = -ri + I*rr
+        return Some((
+          ce_simplify(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(ri),
+          }),
+          rr,
+        ));
+      }
+      if matches!(right.as_ref(), Expr::Identifier(s) if s == "I") {
+        let (lr, li) = split_real_imag(left)?;
+        return Some((
+          ce_simplify(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(li),
+          }),
+          lr,
+        ));
+      }
+      // Both real
+      None
+    }
+    // I itself
+    Expr::Identifier(s) if s == "I" => {
+      Some((Expr::Integer(0), Expr::Integer(1)))
+    }
+    // FunctionCall Times[...] containing I
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args
+          .iter()
+          .any(|a| matches!(a, Expr::Identifier(s) if s == "I")) =>
+    {
+      // Extract I and multiply the rest
+      let without_i: Vec<Expr> = args
+        .iter()
+        .filter(|a| !matches!(a, Expr::Identifier(s) if s == "I"))
+        .cloned()
+        .collect();
+      let rest = if without_i.len() == 1 {
+        without_i.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: without_i,
+        }
+      };
+      Some((Expr::Integer(0), rest))
+    }
+    // FunctionCall Plus[...] with I terms
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut real_parts = Vec::new();
+      let mut imag_parts = Vec::new();
+      for arg in args {
+        if let Some((r, i)) = split_real_imag(arg) {
+          real_parts.push(r);
+          imag_parts.push(i);
+        } else {
+          real_parts.push(arg.clone());
+          imag_parts.push(Expr::Integer(0));
+        }
+      }
+      let real = if real_parts.len() == 1 {
+        real_parts.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: real_parts,
+        }
+      };
+      let imag = if imag_parts.len() == 1 {
+        imag_parts.remove(0)
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: imag_parts,
+        }
+      };
+      Some((ce_simplify(real), ce_simplify(imag)))
+    }
+    // Real atoms/identifiers
+    _ => None,
+  }
+}
+
+fn complex_expand_recursive(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let arg = &args[0];
+      // Try to split the argument into real + I*imag parts
+      if let Some((re, im)) = split_real_imag(arg) {
+        // Check if imaginary part is zero
+        let im_is_zero = matches!(&im, Expr::Integer(0));
+        if !im_is_zero {
+          match name.as_str() {
+            // Sin[a + I*b] = Sin[a]*Cosh[b] + I*Cos[a]*Sinh[b]
+            "Sin" => {
+              let sin_a = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![re.clone()],
+              };
+              let cos_a = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![re],
+              };
+              let cosh_b = Expr::FunctionCall {
+                name: "Cosh".to_string(),
+                args: vec![im.clone()],
+              };
+              let sinh_b = Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![im],
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sin_a),
+                  right: Box::new(cosh_b),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(cos_a),
+                    right: Box::new(sinh_b),
+                  }),
+                }),
+              });
+            }
+            // Cos[a + I*b] = Cos[a]*Cosh[b] - I*Sin[a]*Sinh[b]
+            "Cos" => {
+              let cos_a = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![re.clone()],
+              };
+              let sin_a = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![re],
+              };
+              let cosh_b = Expr::FunctionCall {
+                name: "Cosh".to_string(),
+                args: vec![im.clone()],
+              };
+              let sinh_b = Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![im],
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(cos_a),
+                  right: Box::new(cosh_b),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(sin_a),
+                    right: Box::new(sinh_b),
+                  }),
+                }),
+              });
+            }
+            // Sinh[a + I*b] = Sinh[a]*Cos[b] + I*Cosh[a]*Sin[b]
+            "Sinh" => {
+              let sinh_a = Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![re.clone()],
+              };
+              let cosh_a = Expr::FunctionCall {
+                name: "Cosh".to_string(),
+                args: vec![re],
+              };
+              let cos_b = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![im.clone()],
+              };
+              let sin_b = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![im],
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sinh_a),
+                  right: Box::new(cos_b),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(cosh_a),
+                    right: Box::new(sin_b),
+                  }),
+                }),
+              });
+            }
+            // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]
+            "Cosh" => {
+              let cosh_a = Expr::FunctionCall {
+                name: "Cosh".to_string(),
+                args: vec![re.clone()],
+              };
+              let sinh_a = Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![re],
+              };
+              let cos_b = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![im.clone()],
+              };
+              let sin_b = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![im],
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(cosh_a),
+                  right: Box::new(cos_b),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(sinh_a),
+                    right: Box::new(sin_b),
+                  }),
+                }),
+              });
+            }
+            // Exp[a + I*b] = E^a * (Cos[b] + I*Sin[b])
+            "Exp" => {
+              let exp_a = Expr::FunctionCall {
+                name: "Exp".to_string(),
+                args: vec![re],
+              };
+              let cos_b = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![im.clone()],
+              };
+              let sin_b = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![im],
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(exp_a),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  left: Box::new(cos_b),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(Expr::Identifier("I".to_string())),
+                    right: Box::new(sin_b),
+                  }),
+                }),
+              });
+            }
+            // Abs[a + I*b] = Sqrt[a^2 + b^2]
+            "Abs" => {
+              return ce_simplify(Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: vec![Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  left: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left: Box::new(re),
+                    right: Box::new(Expr::Integer(2)),
+                  }),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left: Box::new(im),
+                    right: Box::new(Expr::Integer(2)),
+                  }),
+                }],
+              });
+            }
+            // Re[a + I*b] = a
+            "Re" => return re,
+            // Im[a + I*b] = b
+            "Im" => return im,
+            // Conjugate[a + I*b] = a - I*b
+            "Conjugate" => {
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Minus,
+                left: Box::new(re),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(im),
+                }),
+              });
+            }
+            _ => {}
+          }
+        }
+      }
+
+      // No complex expansion possible, recurse into children
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(complex_expand_recursive).collect(),
+      }
+    }
+    // Handle E^(a + I*b) → E^a * (Cos[b] + I*Sin[b])
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if (matches!(base.as_ref(), Expr::Identifier(s) if s == "E")
+      || matches!(base.as_ref(), Expr::Constant(s) if s == "E")) =>
+    {
+      if let Some((re, im)) = split_real_imag(exp) {
+        let im_is_zero = matches!(&im, Expr::Integer(0));
+        if !im_is_zero {
+          let exp_a = Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: base.clone(),
+            right: Box::new(re),
+          };
+          let cos_b = Expr::FunctionCall {
+            name: "Cos".to_string(),
+            args: vec![im.clone()],
+          };
+          let sin_b = Expr::FunctionCall {
+            name: "Sin".to_string(),
+            args: vec![im],
+          };
+          return ce_simplify(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(exp_a),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(cos_b),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Identifier("I".to_string())),
+                right: Box::new(sin_b),
+              }),
+            }),
+          });
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(complex_expand_recursive(base)),
+        right: Box::new(complex_expand_recursive(exp)),
+      }
+    }
+    // Recurse into binary ops
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(complex_expand_recursive(left)),
+      right: Box::new(complex_expand_recursive(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(complex_expand_recursive(operand)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(complex_expand_recursive).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(complex_expand_recursive).collect())
+    }
+    _ => expr.clone(),
   }
 }
 
