@@ -92,6 +92,14 @@ pub fn dispatch_datetime_functions(
       }
       return Some(result);
     }
+    "UnixTime" if args.is_empty() => {
+      use std::time::{SystemTime, UNIX_EPOCH};
+      let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+      return Some(Ok(Expr::Integer(secs as i128)));
+    }
     _ => {}
   }
   None
