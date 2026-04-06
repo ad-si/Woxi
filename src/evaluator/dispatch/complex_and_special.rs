@@ -346,6 +346,49 @@ pub fn dispatch_complex_and_special(
         )));
       }
 
+      // Pattern query: ?Plot* or ?*Plot* — first arg is a String with wildcards
+      if let Expr::String(pattern) = &args[0]
+        && pattern.contains('*')
+      {
+        let regex_pattern =
+          format!("^{}$", pattern.replace('.', "\\.").replace('*', ".*"));
+        if let Ok(re) = regex::Regex::new(&regex_pattern) {
+          // Collect all known names: built-in + user-defined
+          let builtin_names = crate::evaluator::get_builtin_function_names();
+          let user_names = crate::get_defined_names();
+          let mut all_names: Vec<String> =
+            builtin_names.into_iter().map(|s| s.to_string()).collect();
+          for name in user_names {
+            if !all_names.contains(&name) {
+              all_names.push(name);
+            }
+          }
+          all_names.sort();
+
+          let matching: Vec<Expr> = all_names
+            .into_iter()
+            .filter(|n| re.is_match(n))
+            .map(Expr::Identifier)
+            .collect();
+
+          return Some(Ok(Expr::FunctionCall {
+            name: "InformationDataGrid".to_string(),
+            args: vec![
+              Expr::List(vec![Expr::FunctionCall {
+                name: "Rule".to_string(),
+                args: vec![
+                  Expr::Identifier("System`".to_string()),
+                  Expr::List(matching),
+                ],
+              }]),
+              Expr::Identifier(
+                if is_full { "True" } else { "False" }.to_string(),
+              ),
+            ],
+          }));
+        }
+      }
+
       // Non-identifier argument — return unevaluated
       return Some(Ok(Expr::FunctionCall {
         name: "Information".to_string(),
