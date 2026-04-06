@@ -713,6 +713,24 @@ mod association_list_operations {
   }
 
   #[test]
+  fn append_duplicate_key() {
+    // Appending with existing key removes old entry, adds new at end
+    assert_eq!(
+      interpret("Append[<|a -> 1, b -> 2|>, a -> 10]").unwrap(),
+      "<|b -> 2, a -> 10|>"
+    );
+  }
+
+  #[test]
+  fn prepend_duplicate_key() {
+    // Prepending with existing key removes old entry, adds new at front
+    assert_eq!(
+      interpret("Prepend[<|a -> 1, b -> 2|>, a -> 10]").unwrap(),
+      "<|a -> 10, b -> 2|>"
+    );
+  }
+
+  #[test]
   fn join_two_associations() {
     assert_eq!(
       interpret("Join[<|a -> 1|>, <|b -> 2|>]").unwrap(),
