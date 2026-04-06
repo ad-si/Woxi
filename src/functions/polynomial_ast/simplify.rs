@@ -3789,10 +3789,67 @@ pub fn extract_base_exp(expr: &Expr) -> (Expr, Expr) {
 }
 
 /// Simplify a division by trying polynomial cancellation.
+/// Try to simplify trig ratios:
+/// Sin[x]/Cos[x] → Tan[x], Cos[x]/Sin[x] → Cot[x],
+/// 1/Sin[x] → Csc[x], 1/Cos[x] → Sec[x], 1/Tan[x] → Cot[x]
+fn try_simplify_trig_ratio(num: &Expr, den: &Expr) -> Option<Expr> {
+  // Both numerator and denominator are trig functions with same arg
+  if let Expr::FunctionCall {
+    name: n_name,
+    args: n_args,
+  } = num
+    && let Expr::FunctionCall {
+      name: d_name,
+      args: d_args,
+    } = den
+    && n_args.len() == 1
+    && d_args.len() == 1
+    && expr_to_string(&n_args[0]) == expr_to_string(&d_args[0])
+  {
+    let result_name = match (n_name.as_str(), d_name.as_str()) {
+      ("Sin", "Cos") => Some("Tan"),
+      ("Cos", "Sin") => Some("Cot"),
+      _ => None,
+    };
+    if let Some(name) = result_name {
+      return Some(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![n_args[0].clone()],
+      });
+    }
+  }
+
+  // 1/Sin[x] → Csc[x], 1/Cos[x] → Sec[x], 1/Tan[x] → Cot[x]
+  if matches!(num, Expr::Integer(1))
+    && let Expr::FunctionCall { name, args } = den
+    && args.len() == 1
+  {
+    let result_name = match name.as_str() {
+      "Sin" => Some("Csc"),
+      "Cos" => Some("Sec"),
+      "Tan" => Some("Cot"),
+      _ => None,
+    };
+    if let Some(rname) = result_name {
+      return Some(Expr::FunctionCall {
+        name: rname.to_string(),
+        args: vec![args[0].clone()],
+      });
+    }
+  }
+
+  None
+}
+
 pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
   // If same expression, return 1
   if expr_to_string(num) == expr_to_string(den) {
     return Expr::Integer(1);
+  }
+
+  // Trig ratio simplification: Sin[x]/Cos[x] → Tan[x], Cos[x]/Sin[x] → Cot[x], etc.
+  if let Some(result) = try_simplify_trig_ratio(num, den) {
+    return result;
   }
 
   // Try: if denominator is a single factor, try polynomial division
