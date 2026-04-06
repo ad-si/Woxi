@@ -336,9 +336,18 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
 
-  let mut start_angle = -std::f64::consts::FRAC_PI_2; // Start at top
-  for (i, &val) in values.iter().enumerate() {
-    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+  // Sort slices smallest-to-largest, drawn clockwise.
+  // The smallest slice sits right above the negative x-axis,
+  // with sizes increasing in the clockwise direction.
+  let mut indexed: Vec<(usize, f64)> =
+    values.iter().copied().enumerate().collect();
+  indexed
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Start at π (negative x-axis) so the smallest slice sits right above it.
+  let mut start_angle = std::f64::consts::PI;
+  for (color_idx, &(_orig_idx, val)) in indexed.iter().enumerate() {
+    let (r, g, b) = PLOT_COLORS[color_idx % PLOT_COLORS.len()];
     let sweep = 2.0 * std::f64::consts::PI * val / total;
     let end_angle = start_angle + sweep;
 
