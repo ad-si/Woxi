@@ -559,23 +559,22 @@ impl WoxiStudio {
         }
         self.sync_notebook_from_editors();
         if format == ExportFormat::Pdf {
-          // Collect all Input cell code for PDF export
-          let mut code_parts = Vec::new();
-          for editor in &self.cell_editors {
-            if editor.style == CellStyle::Input
-              || editor.style == CellStyle::Code
-            {
-              let text = editor.content.text();
-              let trimmed = text.trim();
-              if !trimmed.is_empty() {
-                code_parts.push(trimmed.to_string());
-              }
-            }
-          }
-          let notebook_code = code_parts.join("\n");
+          let default_path =
+            self.file_path.as_ref().map(|p| p.with_extension("pdf"));
+          let cells: Vec<PdfCell> = self
+            .cell_editors
+            .iter()
+            .map(|editor| PdfCell {
+              style: editor.style,
+              text: editor.content.text(),
+              output: editor.output.clone(),
+              stdout: editor.stdout.clone(),
+              graphics_svg: editor.graphics_svg.clone(),
+            })
+            .collect();
           self.is_loading = true;
           self.status = String::from("Exporting as PDF...");
-          Task::perform(export_pdf(notebook_code), Message::FileExported)
+          Task::perform(export_pdf(default_path, cells), Message::FileExported)
         } else {
           let (content, filter_name, extension) = match format {
             ExportFormat::MathematicaNotebook => (
@@ -2155,25 +2154,366 @@ async fn export_file(
   Ok(path)
 }
 
-async fn export_pdf(notebook_code: String) -> Result<PathBuf, FileError> {
-  let path = rfd::AsyncFileDialog::new()
+/// Data extracted from cell editors for PDF export.
+struct PdfCell {
+  style: CellStyle,
+  text: String,
+  output: Option<String>,
+  stdout: Option<String>,
+  graphics_svg: Option<String>,
+}
+
+async fn export_pdf(
+  default_path: Option<PathBuf>,
+  cells: Vec<PdfCell>,
+) -> Result<PathBuf, FileError> {
+  use std::fmt::Write;
+  use std::sync::Arc as StdArc;
+
+  let mut dialog = rfd::AsyncFileDialog::new()
     .set_title("Export as PDF")
-    .add_filter("PDF", &["pdf"])
+    .add_filter("PDF", &["pdf"]);
+  if let Some(ref p) = default_path {
+    if let Some(dir) = p.parent() {
+      dialog = dialog.set_directory(dir);
+    }
+    if let Some(name) = p.file_name() {
+      dialog = dialog.set_file_name(name.to_string_lossy().as_ref());
+    }
+  }
+  let path = dialog
     .save_file()
     .await
     .map(|h| h.path().to_owned())
     .ok_or(FileError::DialogClosed)?;
 
-  // Use Woxi's Export to generate the PDF file
-  let path_str = path
-    .display()
-    .to_string()
-    .replace('\\', "\\\\")
-    .replace('"', "\\\"");
-  let escaped_code = notebook_code.replace('\\', "\\\\").replace('"', "\\\"");
-  let export_code = format!("Export[\"{path_str}\", {escaped_code}, \"PDF\"]");
-  woxi::interpret(&export_code)
-    .map_err(|_| FileError::IoError(std::io::ErrorKind::Other))?;
+  let page_width: f64 = 595.0;
+  let margin: f64 = 40.0;
+  let content_width = page_width - 2.0 * margin;
+
+  let mut elements = String::new();
+  let mut y: f64 = margin;
+
+  for cell in &cells {
+    let trimmed = cell.text.trim();
+    if trimmed.is_empty()
+      && cell.graphics_svg.is_none()
+      && cell.output.is_none()
+      && cell.stdout.is_none()
+    {
+      continue;
+    }
+
+    match cell.style {
+      CellStyle::Title => {
+        y += 8.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          24.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          30.0,
+        );
+        y += 12.0;
+      }
+      CellStyle::Subtitle => {
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          16.0,
+          "normal",
+          "sans-serif",
+          "#555",
+          22.0,
+        );
+        y += 8.0;
+      }
+      CellStyle::Section => {
+        y += 6.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          18.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          24.0,
+        );
+        y += 8.0;
+      }
+      CellStyle::Subsection => {
+        y += 4.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          15.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          20.0,
+        );
+        y += 6.0;
+      }
+      CellStyle::Subsubsection => {
+        y += 2.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          13.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          18.0,
+        );
+        y += 4.0;
+      }
+      CellStyle::Text => {
+        let wrapped = word_wrap(trimmed, 80);
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          &wrapped,
+          margin,
+          12.0,
+          "normal",
+          "serif",
+          "#000",
+          16.0,
+        );
+        y += 8.0;
+      }
+      CellStyle::Input | CellStyle::Code => {
+        let lines: Vec<&str> = cell.text.lines().collect();
+        let block_h = lines.len() as f64 * 14.0 + 12.0;
+        let _ = write!(
+          elements,
+          r##"<rect x="{}" y="{}" width="{}" height="{}" fill="#f5f5f5" rx="3"/>"##,
+          margin - 4.0,
+          y - 2.0,
+          content_width + 8.0,
+          block_h,
+        );
+        y += 10.0;
+        for line in &lines {
+          let _ = write!(
+            elements,
+            r##"<text x="{margin}" y="{y}" font-size="11" font-family="Courier Prime, monospace" fill="#333">{}</text>"##,
+            escape_xml(line),
+          );
+          y += 14.0;
+        }
+        y += 6.0;
+      }
+      CellStyle::Output | CellStyle::Print => {
+        let cleaned = trimmed
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        let cleaned = cleaned.trim();
+        if !cleaned.is_empty() {
+          write_text_lines(
+            &mut elements,
+            &mut y,
+            cleaned,
+            margin,
+            11.0,
+            "normal",
+            "Courier Prime, monospace",
+            "#666",
+            14.0,
+          );
+          y += 4.0;
+        }
+      }
+    }
+
+    // Render output/graphics after Input/Code cells
+    if cell.style == CellStyle::Input || cell.style == CellStyle::Code {
+      if let Some(ref stdout) = cell.stdout {
+        let s = stdout.trim();
+        if !s.is_empty() {
+          write_text_lines(
+            &mut elements,
+            &mut y,
+            s,
+            margin,
+            11.0,
+            "normal",
+            "Courier Prime, monospace",
+            "#888",
+            14.0,
+          );
+          y += 4.0;
+        }
+      }
+
+      if let Some(ref svg_data) = cell.graphics_svg {
+        if let Some((svg_w, svg_h)) = parse_svg_dimensions(svg_data) {
+          let scale = (content_width / svg_w).min(1.0);
+          let rendered_w = svg_w * scale;
+          let rendered_h = svg_h * scale;
+          let _ = write!(
+            elements,
+            r#"<svg x="{margin}" y="{y}" width="{rendered_w}" height="{rendered_h}" viewBox="0 0 {svg_w} {svg_h}">"#,
+          );
+          elements.push_str(&strip_svg_wrapper(svg_data));
+          elements.push_str("</svg>");
+          y += rendered_h + 8.0;
+        }
+      }
+
+      if let Some(ref output) = cell.output {
+        let s = output
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        let s = s.trim();
+        if !s.is_empty() {
+          write_text_lines(
+            &mut elements,
+            &mut y,
+            s,
+            margin,
+            11.0,
+            "normal",
+            "Courier Prime, monospace",
+            "#666",
+            14.0,
+          );
+          y += 4.0;
+        }
+      }
+    }
+  }
+
+  y += margin;
+
+  let svg_doc = format!(
+    r#"<svg xmlns="http://www.w3.org/2000/svg" width="{page_width}" height="{y}" viewBox="0 0 {page_width} {y}">{elements}</svg>"#,
+  );
+
+  // Convert SVG to PDF via svg2pdf
+  let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
+  fontdb.load_font_data(
+    include_bytes!("../../resources/CourierPrime-Regular.ttf").to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/CourierPrime-Bold.ttf").to_vec(),
+  );
+  fontdb.set_monospace_family("Courier Prime");
+  fontdb.load_system_fonts();
+
+  let mut opt = svg2pdf::usvg::Options::default();
+  opt.fontdb = StdArc::new(fontdb);
+
+  let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt)
+    .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
+
+  let pdf_bytes = svg2pdf::to_pdf(
+    &tree,
+    svg2pdf::ConversionOptions::default(),
+    svg2pdf::PageOptions::default(),
+  )
+  .map_err(|_| FileError::IoError(std::io::ErrorKind::Other))?;
+
+  tokio::fs::write(&path, &pdf_bytes)
+    .await
+    .map_err(|e| FileError::IoError(e.kind()))?;
 
   Ok(path)
+}
+
+/// Escape XML special characters for SVG text content.
+fn escape_xml(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+    .replace('"', "&quot;")
+    .replace('\'', "&apos;")
+}
+
+/// Write multi-line text as SVG `<text>` elements, one per line.
+fn write_text_lines(
+  out: &mut String,
+  y: &mut f64,
+  text: &str,
+  x: f64,
+  font_size: f64,
+  font_weight: &str,
+  font_family: &str,
+  fill: &str,
+  line_height: f64,
+) {
+  use std::fmt::Write;
+  for line in text.lines() {
+    let _ = write!(
+      out,
+      r#"<text x="{x}" y="{y}" font-size="{font_size}" font-weight="{font_weight}" font-family="{font_family}" fill="{fill}">{}</text>"#,
+      escape_xml(line),
+    );
+    *y += line_height;
+  }
+}
+
+/// Wrap text at word boundaries to approximately `max_chars` per line.
+fn word_wrap(text: &str, max_chars: usize) -> String {
+  let mut result = String::new();
+  for line in text.lines() {
+    if line.len() <= max_chars {
+      result.push_str(line);
+      result.push('\n');
+      continue;
+    }
+    let mut col = 0;
+    for word in line.split_whitespace() {
+      if col > 0 && col + 1 + word.len() > max_chars {
+        result.push('\n');
+        col = 0;
+      }
+      if col > 0 {
+        result.push(' ');
+        col += 1;
+      }
+      result.push_str(word);
+      col += word.len();
+    }
+    result.push('\n');
+  }
+  result
+}
+
+/// Extract width and height from an SVG root element.
+fn parse_svg_dimensions(svg: &str) -> Option<(f64, f64)> {
+  // Try width="..." height="..." attributes first
+  let w = parse_svg_attr(svg, "width")?;
+  let h = parse_svg_attr(svg, "height")?;
+  Some((w, h))
+}
+
+fn parse_svg_attr(svg: &str, attr: &str) -> Option<f64> {
+  let tag_end = svg.find('>')?;
+  let tag = &svg[..tag_end];
+  let pattern = format!("{attr}=\"");
+  let start = tag.find(&pattern)? + pattern.len();
+  let end = start + tag[start..].find('"')?;
+  tag[start..end].trim_end_matches("px").parse().ok()
+}
+
+/// Strip the outer `<svg ...>` and `</svg>` wrapper, returning inner content.
+fn strip_svg_wrapper(svg: &str) -> &str {
+  let inner_start = svg.find('>').map(|i| i + 1).unwrap_or(0);
+  let inner_end = svg.rfind("</svg>").unwrap_or(svg.len());
+  &svg[inner_start..inner_end]
 }
