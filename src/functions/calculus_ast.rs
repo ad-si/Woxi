@@ -5003,8 +5003,9 @@ fn limit_at_infinity(
   }
 
   // For simple expressions, try evaluating at two large values to detect convergence
-  let val1 = eval_at_large_n(expr, var_name, 1_000_000);
-  let val2 = eval_at_large_n(expr, var_name, 10_000_000);
+  let sign = if is_negative_infinity(point) { -1 } else { 1 };
+  let val1 = eval_at_large_n(expr, var_name, sign * 1_000_000);
+  let val2 = eval_at_large_n(expr, var_name, sign * 10_000_000);
   if let (Some(f1), Some(f2)) = (val1, val2) {
     // Both diverging to +infinity
     if f1 > 1e5 && f2 > f1 {
@@ -5037,6 +5038,62 @@ fn limit_at_infinity(
       }
       if (f2 - std::f64::consts::PI).abs() < 1e-3 {
         return Ok(Expr::Constant("Pi".to_string()));
+      }
+      // Check for common multiples/fractions of Pi
+      let pi = std::f64::consts::PI;
+      let pi_fractions: &[(f64, i128, i128)] = &[
+        (pi / 2.0, 1, 2),
+        (-pi / 2.0, -1, 2),
+        (pi / 3.0, 1, 3),
+        (-pi / 3.0, -1, 3),
+        (pi / 4.0, 1, 4),
+        (-pi / 4.0, -1, 4),
+        (pi / 6.0, 1, 6),
+        (-pi / 6.0, -1, 6),
+        (2.0 * pi / 3.0, 2, 3),
+        (-2.0 * pi / 3.0, -2, 3),
+        (3.0 * pi / 4.0, 3, 4),
+        (-3.0 * pi / 4.0, -3, 4),
+        (5.0 * pi / 6.0, 5, 6),
+        (-5.0 * pi / 6.0, -5, 6),
+        (-pi, -1, 1),
+        (2.0 * pi, 2, 1),
+        (-2.0 * pi, -2, 1),
+      ];
+      for &(val, numer, denom) in pi_fractions {
+        if (f2 - val).abs() < 1e-3 {
+          if denom == 1 {
+            if numer == -1 {
+              return Ok(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(Expr::Constant("Pi".to_string())),
+              });
+            }
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Integer(numer)),
+              right: Box::new(Expr::Constant("Pi".to_string())),
+            });
+          }
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: if numer == 1 {
+              Box::new(Expr::Constant("Pi".to_string()))
+            } else if numer == -1 {
+              Box::new(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(Expr::Constant("Pi".to_string())),
+              })
+            } else {
+              Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer(numer)),
+                right: Box::new(Expr::Constant("Pi".to_string())),
+              })
+            },
+            right: Box::new(Expr::Integer(denom)),
+          });
+        }
       }
     }
   }

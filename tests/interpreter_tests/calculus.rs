@@ -661,6 +661,28 @@ mod limit {
       "Infinity"
     );
   }
+
+  #[test]
+  fn limit_arctan_at_infinity() {
+    assert_eq!(
+      interpret("Limit[ArcTan[x], x -> Infinity]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn limit_arctan_at_negative_infinity() {
+    assert_eq!(
+      interpret("Limit[ArcTan[x], x -> -Infinity]").unwrap(),
+      "-(Pi/2)"
+    );
+  }
+
+  #[test]
+  fn limit_negative_infinity_convergence() {
+    // Limit[1/x, x -> -Infinity] = 0
+    assert_eq!(interpret("Limit[1/x, x -> -Infinity]").unwrap(), "0");
+  }
 }
 
 mod nintegrate {
