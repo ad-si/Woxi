@@ -172,17 +172,20 @@ pub fn dispatch_math_functions(
       match &args[0] {
         Expr::Real(f) => return Some(Ok(Expr::Real(f.abs()))),
         Expr::Integer(n) => return Some(Ok(Expr::Integer(n.abs()))),
+        Expr::List(_) => {
+          // Let Listable attribute handle threading
+        }
         _ => {
           if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0])
           {
             return Some(Ok(crate::functions::math_ast::num_to_expr(n.abs())));
           }
+          return Some(Ok(Expr::FunctionCall {
+            name: "RealAbs".to_string(),
+            args: args.to_vec(),
+          }));
         }
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "RealAbs".to_string(),
-        args: args.to_vec(),
-      }));
     }
     "RealSign" if args.len() == 1 => {
       match &args[0] {
@@ -218,6 +221,9 @@ pub fn dispatch_math_functions(
             };
             return Some(Ok(Expr::Integer(sign)));
           }
+        }
+        Expr::List(_) => {
+          // Let Listable attribute handle threading
         }
         _ => {
           // Stay symbolic for complex or symbolic args

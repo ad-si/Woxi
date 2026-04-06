@@ -138,7 +138,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "CoshIntegral"
     | "BetaRegularized"
     | "GammaRegularized"
-    | "Hypergeometric1F1Regularized" => {
+    | "Hypergeometric1F1Regularized"
+    | "RealSign"
+    | "RealAbs" => {
       vec!["Listable", "NumericFunction", "Protected"]
     }
 

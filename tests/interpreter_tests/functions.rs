@@ -3128,6 +3128,11 @@ mod real_sign {
   fn symbolic_stays() {
     assert_eq!(interpret("RealSign[x]").unwrap(), "RealSign[x]");
   }
+
+  #[test]
+  fn listable() {
+    assert_eq!(interpret("RealSign[{-3, 0, 5}]").unwrap(), "{-1, 0, 1}");
+  }
 }
 
 mod between {
