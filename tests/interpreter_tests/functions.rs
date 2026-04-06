@@ -1895,6 +1895,23 @@ mod expression_level_anonymous_function {
   }
 
   #[test]
+  fn replace_repeated_with_pattern() {
+    // ReplaceRepeated should handle pattern rules like f[y_] -> y
+    assert_eq!(interpret("f[f[f[x]]] //. f[y_] -> y").unwrap(), "x");
+    assert_eq!(
+      interpret("ReplaceRepeated[f[f[f[x]]], f[y_] -> y]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn replace_repeated_evaluates_after_substitution() {
+    // After substitution, the result should be re-evaluated
+    assert_eq!(interpret("x^2 //. x -> 3").unwrap(), "9");
+    assert_eq!(interpret("{1 + a, 2 + a} //. a -> 0").unwrap(), "{1, 2}");
+  }
+
+  #[test]
   fn postfix_application_body() {
     // body // func & — body contains postfix application
     assert_eq!(
