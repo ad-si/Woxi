@@ -677,6 +677,14 @@ mod sort_by {
       "{ago, and, our}"
     );
   }
+
+  #[test]
+  fn sort_by_non_list_head() {
+    assert_eq!(
+      interpret("SortBy[f[{3, 1}, {1}, {2, 2, 2}], Length]").unwrap(),
+      "f[{1}, {3, 1}, {2, 2, 2}]"
+    );
+  }
 }
 
 mod sort_canonical {
