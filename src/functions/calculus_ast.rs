@@ -6173,21 +6173,19 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       };
-      // Evaluate bounds to numeric values
+      // Evaluate bounds — support Infinity/-Infinity
       let lo_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
       let hi_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-      let lo = crate::functions::math_ast::try_eval_to_f64(&lo_expr)
-        .ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "NIntegrate: lower bound must be numeric".into(),
-          )
-        })?;
-      let hi = crate::functions::math_ast::try_eval_to_f64(&hi_expr)
-        .ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "NIntegrate: upper bound must be numeric".into(),
-          )
-        })?;
+      let lo = expr_to_bound(&lo_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "NIntegrate: lower bound must be numeric or Infinity".into(),
+        )
+      })?;
+      let hi = expr_to_bound(&hi_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "NIntegrate: upper bound must be numeric or Infinity".into(),
+        )
+      })?;
       (var_name, lo, hi)
     }
     _ => {
@@ -6208,7 +6206,49 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::math_ast::try_eval_to_f64(&evaluated)
   };
 
-  let result = adaptive_simpson(&eval_at, lo, hi, 1e-12, 50);
+  let lo_inf = lo.is_infinite() && lo < 0.0;
+  let hi_inf = hi.is_infinite() && hi > 0.0;
+
+  let result = if lo_inf && hi_inf {
+    // (-∞, ∞): substitute x = tan(t), dx = sec²(t) dt, integrate over (-π/2, π/2)
+    let eval_transformed = |t: f64| -> Option<f64> {
+      let x = t.tan();
+      let jacobian = 1.0 / (t.cos() * t.cos()); // sec²(t)
+      eval_at(x).map(|v| v * jacobian)
+    };
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    // Use slightly inside to avoid tan(±π/2) = ±∞
+    let eps = 1e-10;
+    adaptive_simpson(
+      &eval_transformed,
+      -half_pi + eps,
+      half_pi - eps,
+      1e-10,
+      50,
+    )
+  } else if lo_inf {
+    // (-∞, b): substitute x = b - tan(t), dx = -sec²(t) dt, t in (0, π/2)
+    let eval_transformed = |t: f64| -> Option<f64> {
+      let x = hi - t.tan();
+      let jacobian = 1.0 / (t.cos() * t.cos());
+      eval_at(x).map(|v| v * jacobian)
+    };
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    let eps = 1e-10;
+    adaptive_simpson(&eval_transformed, eps, half_pi - eps, 1e-10, 50)
+  } else if hi_inf {
+    // (a, ∞): substitute x = a + tan(t), dx = sec²(t) dt, t in (0, π/2)
+    let eval_transformed = |t: f64| -> Option<f64> {
+      let x = lo + t.tan();
+      let jacobian = 1.0 / (t.cos() * t.cos());
+      eval_at(x).map(|v| v * jacobian)
+    };
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    let eps = 1e-10;
+    adaptive_simpson(&eval_transformed, eps, half_pi - eps, 1e-10, 50)
+  } else {
+    adaptive_simpson(&eval_at, lo, hi, 1e-12, 50)
+  };
 
   match result {
     Some(val) => Ok(Expr::Real(val)),
@@ -6216,6 +6256,29 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NIntegrate: failed to converge or integrand is not numeric".into(),
     )),
   }
+}
+
+/// Convert an expression to an f64 bound, supporting Infinity/-Infinity
+fn expr_to_bound(expr: &Expr) -> Option<f64> {
+  if matches!(expr, Expr::Identifier(s) if s == "Infinity") {
+    return Some(f64::INFINITY);
+  }
+  if crate::functions::math_ast::is_neg_infinity(expr) {
+    return Some(f64::NEG_INFINITY);
+  }
+  // DirectedInfinity[1] = Infinity, DirectedInfinity[-1] = -Infinity
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "DirectedInfinity"
+    && args.len() == 1
+  {
+    if matches!(&args[0], Expr::Integer(1)) {
+      return Some(f64::INFINITY);
+    }
+    if matches!(&args[0], Expr::Integer(-1)) {
+      return Some(f64::NEG_INFINITY);
+    }
+  }
+  crate::functions::math_ast::try_eval_to_f64(expr)
 }
 
 /// Adaptive Simpson's quadrature

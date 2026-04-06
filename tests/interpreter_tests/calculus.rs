@@ -713,6 +713,36 @@ mod nintegrate {
     let result = interpret("NIntegrate[x^2, x]");
     assert!(result.is_err());
   }
+
+  #[test]
+  fn nintegrate_semi_infinite() {
+    // ∫₀^∞ e^(-x²) dx = √π/2 ≈ 0.8862269254527580
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, 0, Infinity}]",
+      0.886226925452758,
+      1e-6,
+    );
+  }
+
+  #[test]
+  fn nintegrate_fully_infinite() {
+    // ∫_{-∞}^∞ e^(-x²) dx = √π ≈ 1.7724538509055159
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, -Infinity, Infinity}]",
+      1.7724538509055159,
+      1e-6,
+    );
+  }
+
+  #[test]
+  fn nintegrate_infinite_rational() {
+    // ∫_{-∞}^∞ 1/(1+x²) dx = π
+    assert_approx(
+      "NIntegrate[1/(1 + x^2), {x, -Infinity, Infinity}]",
+      std::f64::consts::PI,
+      1e-6,
+    );
+  }
 }
 
 mod trig_sec_csc_cot {
