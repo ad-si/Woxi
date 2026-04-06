@@ -6,8 +6,8 @@ use iced::keyboard;
 use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
-  Column, button, column, container, pick_list, row, rule, scrollable, space,
-  svg, text, text_editor,
+  Column, button, column, container, image, pick_list, row, rule, scrollable,
+  space, svg, text, text_editor,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -66,6 +66,10 @@ struct WoxiStudio {
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
   preview_mode: bool,
+  /// Display scale factor for HiDPI rasterization.
+  scale_factor: f32,
+  /// Font database for SVG text rendering (loaded once at startup).
+  fontdb: Arc<resvg::usvg::fontdb::Database>,
 }
 
 /// Editor state for a single cell.
@@ -78,6 +82,11 @@ struct CellEditor {
   stdout: Option<String>,
   /// SVG data from Graphics/Plot evaluation.
   graphics_svg: Option<String>,
+  /// Cached svg handle, built once per evaluation to avoid per-frame
+  /// allocation and hashing during scroll.
+  graphics_handle: Option<svg::Handle>,
+  /// Pre-rasterized image of the SVG (avoids resvg parse on scroll).
+  graphics_image: Option<(iced::widget::image::Handle, u32, u32)>,
   /// Warning messages from evaluation (e.g. unimplemented functions).
   warnings: Vec<String>,
   /// Undo stack: previous text snapshots.
@@ -145,6 +154,9 @@ enum Message {
 
   // Keyboard
   KeyPressed(keyboard::Key, keyboard::Modifiers),
+
+  // Display
+  ScaleFactorChanged(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,6 +258,12 @@ impl WoxiStudio {
         focused_divider: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
+        scale_factor: 1.0,
+        fontdb: {
+          let mut db = resvg::usvg::fontdb::Database::new();
+          db.load_system_fonts();
+          Arc::new(db)
+        },
       },
       task,
     )
@@ -269,6 +287,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            graphics_handle: None,
+            graphics_image: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -308,6 +328,8 @@ impl WoxiStudio {
                 output,
                 stdout,
                 graphics_svg: None,
+                graphics_handle: None,
+                graphics_image: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
@@ -325,6 +347,8 @@ impl WoxiStudio {
                 output: None,
                 stdout: None,
                 graphics_svg: None,
+                graphics_handle: None,
+                graphics_image: None,
                 warnings: Vec::new(),
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
@@ -677,6 +701,20 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ScaleFactorChanged(scale) => {
+        if (scale - self.scale_factor).abs() > f32::EPSILON {
+          self.scale_factor = scale;
+          // Re-rasterize all existing SVGs at the new scale
+          for editor in &mut self.cell_editors {
+            editor.graphics_image = editor
+              .graphics_svg
+              .as_ref()
+              .and_then(|s| rasterize_svg(s, scale, &self.fontdb));
+          }
+        }
+        Task::none()
+      }
+
       Message::FocusCell(idx) => {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
@@ -719,6 +757,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            graphics_handle: None,
+            graphics_image: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -741,6 +781,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            graphics_handle: None,
+            graphics_image: None,
             warnings: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -809,7 +851,12 @@ impl WoxiStudio {
                 }
               }
             }
-            evaluate_cell_statements(&mut self.cell_editors[idx], &code);
+            evaluate_cell_statements(
+              &mut self.cell_editors[idx],
+              &code,
+              self.scale_factor,
+              &self.fontdb,
+            );
             self.status = format!("Evaluated cell {} successfully", idx + 1);
           }
         }
@@ -825,7 +872,12 @@ impl WoxiStudio {
           ) {
             let code = self.cell_editors[idx].content.text().trim().to_string();
             if !code.is_empty() {
-              evaluate_cell_statements(&mut self.cell_editors[idx], &code);
+              evaluate_cell_statements(
+                &mut self.cell_editors[idx],
+                &code,
+                self.scale_factor,
+                &self.fontdb,
+              );
             }
           }
         }
@@ -1309,16 +1361,22 @@ impl WoxiStudio {
         output_col = output_col.push(stdout_display);
       }
 
-      // Graphics SVG rendering
-      if let Some(ref svg_data) = editor.graphics_svg {
-        let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
-        let mut svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+      // Graphics rendering (pre-rasterized image, falls back to SVG)
+      if let Some((ref img_handle, w, h)) = editor.graphics_image {
+        let mut img_widget = image(img_handle.clone())
+          .width(iced::Length::Fixed(w as f32))
+          .height(iced::Length::Fixed(h as f32));
+        if stale {
+          img_widget = img_widget.opacity(0.3);
+        }
+        output_col = output_col.push(container(img_widget).padding(4));
+      } else if let Some(ref handle) = editor.graphics_handle {
+        let mut svg_widget =
+          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
           svg_widget = svg_widget.opacity(0.3);
         }
-
-        let svg_container = container(svg_widget).padding(4);
-        output_col = output_col.push(svg_container);
+        output_col = output_col.push(container(svg_widget).padding(4));
       }
 
       // Text output (filter out graphics placeholders)
@@ -1371,15 +1429,21 @@ impl WoxiStudio {
         content_col = content_col.push(stdout_display);
       }
 
-      if let Some(ref svg_data) = editor.graphics_svg {
-        let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
-        let mut svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
+      if let Some((ref img_handle, w, h)) = editor.graphics_image {
+        let mut img_widget = image(img_handle.clone())
+          .width(iced::Length::Fixed(w as f32))
+          .height(iced::Length::Fixed(h as f32));
+        if stale {
+          img_widget = img_widget.opacity(0.3);
+        }
+        content_col = content_col.push(container(img_widget).padding(4));
+      } else if let Some(ref handle) = editor.graphics_handle {
+        let mut svg_widget =
+          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
           svg_widget = svg_widget.opacity(0.3);
         }
-
-        let svg_container = container(svg_widget).padding(4);
-        content_col = content_col.push(svg_container);
+        content_col = content_col.push(container(svg_widget).padding(4));
       }
 
       if let Some(ref output) = editor.output {
@@ -1458,6 +1522,10 @@ fn handle_event(
     return Some(Message::CloseRequested(_id));
   }
 
+  if let iced::Event::Window(iced::window::Event::Rescaled(scale)) = &event {
+    return Some(Message::ScaleFactorChanged(*scale));
+  }
+
   if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
     key,
     modifiers,
@@ -1508,12 +1576,50 @@ fn handle_event(
   None
 }
 
+// ── SVG rasterization ──────────────────────────────────────────────
+
+/// Rasterize an SVG string to an RGBA bitmap at the given scale factor.
+/// Returns the image handle together with the *logical* (1×) width and height.
+fn rasterize_svg(
+  svg_str: &str,
+  scale_factor: f32,
+  fontdb: &Arc<resvg::usvg::fontdb::Database>,
+) -> Option<(iced::widget::image::Handle, u32, u32)> {
+  let opts = resvg::usvg::Options {
+    fontdb: fontdb.clone(),
+    ..Default::default()
+  };
+  let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
+  let size = tree.size();
+  let logical_w = size.width().ceil() as u32;
+  let logical_h = size.height().ceil() as u32;
+  if logical_w == 0 || logical_h == 0 {
+    return None;
+  }
+  let physical_w = (logical_w as f32 * scale_factor).ceil() as u32;
+  let physical_h = (logical_h as f32 * scale_factor).ceil() as u32;
+  let mut pixmap = tiny_skia::Pixmap::new(physical_w, physical_h)?;
+  let transform = tiny_skia::Transform::from_scale(scale_factor, scale_factor);
+  resvg::render(&tree, transform, &mut pixmap.as_mut());
+  let handle = iced::widget::image::Handle::from_rgba(
+    physical_w,
+    physical_h,
+    pixmap.take(),
+  );
+  Some((handle, logical_w, logical_h))
+}
+
 // ── Cell evaluation ─────────────────────────────────────────────────
 
 /// Evaluate all statements in a cell and collect their results.
 /// When a cell contains multiple newline-separated expressions,
 /// each expression's output is included (matching Mathematica behavior).
-fn evaluate_cell_statements(editor: &mut CellEditor, code: &str) {
+fn evaluate_cell_statements(
+  editor: &mut CellEditor,
+  code: &str,
+  scale_factor: f32,
+  fontdb: &Arc<resvg::usvg::fontdb::Database>,
+) {
   let statements = woxi::split_into_statements(code);
 
   let mut outputs: Vec<String> = Vec::new();
@@ -1559,6 +1665,14 @@ fn evaluate_cell_statements(editor: &mut CellEditor, code: &str) {
     Some(all_stdout)
   };
   editor.graphics_svg = last_graphics;
+  editor.graphics_handle = editor
+    .graphics_svg
+    .as_ref()
+    .map(|s| svg::Handle::from_memory(s.as_bytes().to_vec()));
+  editor.graphics_image = editor
+    .graphics_svg
+    .as_ref()
+    .and_then(|s| rasterize_svg(s, scale_factor, fontdb));
   editor.warnings = all_warnings;
   editor.output_stale = false;
   let _ = had_error;
