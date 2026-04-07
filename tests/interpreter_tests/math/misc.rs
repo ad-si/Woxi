@@ -498,3 +498,46 @@ mod unit_triangle {
     assert_eq!(interpret("UnitTriangle[x]").unwrap(), "UnitTriangle[x]");
   }
 }
+
+mod angle_vector {
+  use super::*;
+
+  #[test]
+  fn basic_angle() {
+    assert_eq!(
+      interpret("AngleVector[Pi/4]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2]}"
+    );
+  }
+
+  #[test]
+  fn zero_angle() {
+    assert_eq!(interpret("AngleVector[0]").unwrap(), "{1, 0}");
+  }
+
+  #[test]
+  fn pi_half() {
+    assert_eq!(interpret("AngleVector[Pi/2]").unwrap(), "{0, 1}");
+  }
+
+  #[test]
+  fn with_radius() {
+    assert_eq!(interpret("AngleVector[{2, Pi/3}]").unwrap(), "{1, Sqrt[3]}");
+  }
+
+  #[test]
+  fn with_center() {
+    assert_eq!(
+      interpret("AngleVector[{1, 2}, Pi/6]").unwrap(),
+      "{1 + Sqrt[3]/2, 5/2}"
+    );
+  }
+
+  #[test]
+  fn with_center_and_radius() {
+    assert_eq!(
+      interpret("AngleVector[{1, 0}, {2, Pi/2}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+}

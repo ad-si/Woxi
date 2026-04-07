@@ -2029,7 +2029,7 @@ ColorDistance,Distance between colors,🚫,,10.0,2071
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
 ContinuousWaveletTransform,CWT of signal,🚫,,8.0,2071
 PearsonDistribution,Pearson family distribution,🚫,,8.0,2071
-AngleVector,Direction vector from angle,🚫,,10.1,2074
+AngleVector,Direction vector from angle,✅,pure,10.1,2074
 Back,Navigate back in history,🚫,,6.0,2074
 CreateWindow,Create GUI window,🚫,,6.0,2079
 EmbedCode,Embed code for deployment,🚫,,10.0,2079
