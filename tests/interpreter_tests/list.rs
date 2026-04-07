@@ -752,6 +752,34 @@ mod sort_canonical {
     );
     assert_eq!(interpret("Sort[f[3, 1, 2], Less]").unwrap(), "f[1, 2, 3]");
   }
+
+  #[test]
+  fn sort_with_infinity() {
+    assert_eq!(
+      interpret("Sort[{5, Infinity, -Infinity, 0}]").unwrap(),
+      "{-Infinity, 0, 5, Infinity}"
+    );
+  }
+
+  #[test]
+  fn sort_with_negative_infinity() {
+    assert_eq!(
+      interpret("Sort[{3, -Infinity, 1, Infinity, -1, 0}]").unwrap(),
+      "{-Infinity, -1, 0, 1, 3, Infinity}"
+    );
+  }
+
+  #[test]
+  fn ordered_q_with_infinity() {
+    assert_eq!(
+      interpret("OrderedQ[{-Infinity, 0, Infinity}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("OrderedQ[{Infinity, 0, -Infinity}]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod complement {
