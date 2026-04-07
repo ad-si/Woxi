@@ -3041,6 +3041,46 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(make_rational(*numer, *denom));
   }
 
+  // For BigInteger / BigInteger (or mixed Integer/BigInteger), reduce by GCD
+  {
+    use crate::functions::math_ast::number_theory::bigint_gcd;
+    use num_bigint::BigInt;
+    let a_big = expr_to_bigint(a);
+    let b_big = expr_to_bigint(b);
+    if let (Some(numer), Some(denom)) = (a_big, b_big) {
+      use num_traits::Zero;
+      if denom.is_zero() {
+        crate::emit_message(
+          "                                 1\n\
+           Power::infy: Infinite expression - encountered.\n\
+           \x20                                0",
+        );
+        if numer.is_zero() {
+          crate::emit_message(
+            "\nInfinity::indet: Indeterminate expression 0 ComplexInfinity encountered.",
+          );
+          return Ok(Expr::Identifier("Indeterminate".to_string()));
+        }
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      let g = bigint_gcd(numer.clone(), denom.clone());
+      let mut rn = &numer / &g;
+      let mut rd = &denom / &g;
+      // Normalize sign: put sign in numerator
+      if rd < BigInt::from(0) {
+        rn = -rn;
+        rd = -rd;
+      }
+      if rd == BigInt::from(1) {
+        return Ok(bigint_to_expr(rn));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![bigint_to_expr(rn), bigint_to_expr(rd)],
+      });
+    }
+  }
+
   // Simplify (n * expr) / d where n, d are integers → simplify coefficient
   if let Expr::Integer(d) = b
     && *d != 0
