@@ -322,6 +322,16 @@ mod e_constant {
   }
 
   #[test]
+  fn numeric_q_infinity() {
+    assert_eq!(interpret("NumericQ[Infinity]").unwrap(), "False");
+  }
+
+  #[test]
+  fn numeric_q_negative_infinity() {
+    assert_eq!(interpret("NumericQ[-Infinity]").unwrap(), "False");
+  }
+
+  #[test]
   fn e_plus_e() {
     assert_eq!(interpret("E + E").unwrap(), "2*E");
   }
