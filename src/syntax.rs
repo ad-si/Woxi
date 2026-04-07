@@ -4908,6 +4908,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           &args[1..],
         );
       }
+      // OutputForm-only: Column[{exprs...}] displays each element on a new line
+      if is_output
+        && name == "Column"
+        && !args.is_empty()
+        && let Expr::List(items) = &args[0]
+      {
+        let parts: Vec<String> = items.iter().map(&fmt).collect();
+        return parts.join("\n");
+      }
       // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if is_output
         && name == "Row"
