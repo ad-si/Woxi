@@ -21,9 +21,17 @@ mod degree_constant {
   #[test]
   fn sin_exact_values() {
     assert_eq!(interpret("Sin[0]").unwrap(), "0");
+    assert_eq!(
+      interpret("Sin[Pi/12]").unwrap(),
+      "(-1 + Sqrt[3])/(2*Sqrt[2])"
+    );
     assert_eq!(interpret("Sin[Pi/6]").unwrap(), "1/2");
     assert_eq!(interpret("Sin[Pi/4]").unwrap(), "1/Sqrt[2]");
     assert_eq!(interpret("Sin[Pi/3]").unwrap(), "Sqrt[3]/2");
+    assert_eq!(
+      interpret("Sin[5*Pi/12]").unwrap(),
+      "(1 + Sqrt[3])/(2*Sqrt[2])"
+    );
     assert_eq!(interpret("Sin[Pi/2]").unwrap(), "1");
     assert_eq!(interpret("Sin[Pi]").unwrap(), "0");
     assert_eq!(interpret("Sin[2 Pi]").unwrap(), "0");
@@ -38,9 +46,17 @@ mod degree_constant {
   #[test]
   fn cos_exact_values() {
     assert_eq!(interpret("Cos[0]").unwrap(), "1");
+    assert_eq!(
+      interpret("Cos[Pi/12]").unwrap(),
+      "(1 + Sqrt[3])/(2*Sqrt[2])"
+    );
     assert_eq!(interpret("Cos[Pi/6]").unwrap(), "Sqrt[3]/2");
     assert_eq!(interpret("Cos[Pi/4]").unwrap(), "1/Sqrt[2]");
     assert_eq!(interpret("Cos[Pi/3]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("Cos[5*Pi/12]").unwrap(),
+      "(-1 + Sqrt[3])/(2*Sqrt[2])"
+    );
     assert_eq!(interpret("Cos[Pi/2]").unwrap(), "0");
     assert_eq!(interpret("Cos[Pi]").unwrap(), "-1");
     assert_eq!(interpret("Cos[2 Pi]").unwrap(), "1");
@@ -55,9 +71,11 @@ mod degree_constant {
   #[test]
   fn tan_exact_values() {
     assert_eq!(interpret("Tan[0]").unwrap(), "0");
+    assert_eq!(interpret("Tan[Pi/12]").unwrap(), "2 - Sqrt[3]");
     assert_eq!(interpret("Tan[Pi/6]").unwrap(), "1/Sqrt[3]");
     assert_eq!(interpret("Tan[Pi/4]").unwrap(), "1");
     assert_eq!(interpret("Tan[Pi/3]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("Tan[5*Pi/12]").unwrap(), "2 + Sqrt[3]");
     assert_eq!(interpret("Tan[Pi]").unwrap(), "0");
   }
 
