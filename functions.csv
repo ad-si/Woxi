@@ -295,7 +295,7 @@ Repeated,Pattern that matches one or more repetitions,✅,pure,1.0,299
 ChemicalData,,🚫,,6.0,300
 RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8.0,301
 Cylinder,3D cylinder graphics primitive,✅,none,6.0,302
-Graph,Represents a graph with vertices and edges,✅,pure,8.0,303
+Graph,Yields a graph with vertices and edges rendered as SVG,✅,effectful,8.0,303
 Tiny,Tiny size specification,✅,none,6.0,304
 OptionsPattern,Pattern object that matches any sequence of options in function definitions,✅,pure,6.0,305
 Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306

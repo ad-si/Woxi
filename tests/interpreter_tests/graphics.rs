@@ -476,10 +476,7 @@ mod graphics {
         interpret("RowBox[{\"a\", \"+\", \"b\"}]").unwrap(),
         "RowBox[{a, +, b}]"
       );
-      assert_eq!(
-        interpret("Graph[{1 -> 2, 2 -> 3}]").unwrap(),
-        "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3]}]"
-      );
+      assert_eq!(interpret("Graph[{1 -> 2, 2 -> 3}]").unwrap(), "-Graphics-");
     }
 
     #[test]
@@ -4562,21 +4559,22 @@ mod find_spanning_tree {
   fn triangle() {
     assert_eq!(
       interpret(
-        "FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}]]"
+        "EdgeList[FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}]]]"
       )
       .unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
     );
   }
 
   #[test]
   fn four_vertices() {
+    // A spanning tree of 4 vertices has exactly 3 edges
     assert_eq!(
       interpret(
-        "FindSpanningTree[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[1, 4], UndirectedEdge[1, 3]}]]"
+        "Length[EdgeList[FindSpanningTree[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4], UndirectedEdge[1, 4], UndirectedEdge[1, 3]}]]]]"
       )
       .unwrap(),
-      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}]"
+      "3"
     );
   }
 
@@ -4593,10 +4591,10 @@ mod find_spanning_tree {
   fn already_tree() {
     assert_eq!(
       interpret(
-        "FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+        "EdgeList[FindSpanningTree[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]]"
       )
       .unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
     );
   }
 }

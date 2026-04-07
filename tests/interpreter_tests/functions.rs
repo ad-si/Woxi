@@ -4832,23 +4832,39 @@ mod adjacency_graph_from_matrix {
   #[test]
   fn undirected_symmetric() {
     assert_eq!(
-      interpret("AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]").unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3]}]"
+      interpret("EdgeList[AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]]")
+        .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3]}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexList[AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
     );
   }
 
   #[test]
   fn directed_asymmetric() {
     assert_eq!(
-      interpret("AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]").unwrap(),
-      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+      interpret("EdgeList[AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]")
+        .unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexList[AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
     );
   }
 
   #[test]
   fn with_named_vertices() {
     let result = interpret(
-      "AdjacencyGraph[{\"a\", \"b\", \"c\"}, {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}]",
+      "EdgeList[AdjacencyGraph[{\"a\", \"b\", \"c\"}, {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}]]",
     )
     .unwrap();
     assert!(result.contains("UndirectedEdge[a, b]"));
@@ -4981,16 +4997,24 @@ mod path_graph {
   #[test]
   fn basic() {
     assert_eq!(
-      interpret("PathGraph[{1, 2, 3, 4}]").unwrap(),
-      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}]"
+      interpret("VertexList[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}"
     );
   }
 
   #[test]
   fn with_symbols() {
     assert_eq!(
-      interpret("PathGraph[{a, b, c}]").unwrap(),
-      "Graph[{a, b, c}, {UndirectedEdge[a, b], UndirectedEdge[b, c]}]"
+      interpret("VertexList[PathGraph[{a, b, c}]]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("EdgeList[PathGraph[{a, b, c}]]").unwrap(),
+      "{UndirectedEdge[a, b], UndirectedEdge[b, c]}"
     );
   }
 }
@@ -11493,32 +11517,43 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn star_graph_basic() {
     assert_eq!(
-      interpret("StarGraph[4]").unwrap(),
-      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}]"
+      interpret("VertexList[StarGraph[4]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[StarGraph[4]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[1, 4]}"
     );
   }
 
   // CirculantGraph
   #[test]
   fn circulant_graph_basic() {
-    let result = interpret("CirculantGraph[4, {1}]").unwrap();
-    assert!(result.starts_with("Graph[{1, 2, 3, 4}"));
+    assert_eq!(
+      interpret("VertexList[CirculantGraph[4, {1}]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
   }
 
   // KaryTree
   #[test]
   fn kary_tree_binary() {
-    let result = interpret("KaryTree[7]").unwrap();
-    assert!(result.starts_with("Graph[{1, 2, 3, 4, 5, 6, 7}"));
-    assert!(result.contains("UndirectedEdge[1, 2]"));
-    assert!(result.contains("UndirectedEdge[1, 3]"));
+    assert_eq!(
+      interpret("VertexList[KaryTree[7]]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7}"
+    );
+    let edges = interpret("EdgeList[KaryTree[7]]").unwrap();
+    assert!(edges.contains("UndirectedEdge[1, 2]"));
+    assert!(edges.contains("UndirectedEdge[1, 3]"));
   }
 
   // HypercubeGraph
   #[test]
   fn hypercube_graph_2() {
-    let result = interpret("HypercubeGraph[2]").unwrap();
-    assert!(result.starts_with("Graph[{1, 2, 3, 4}"));
+    assert_eq!(
+      interpret("VertexList[HypercubeGraph[2]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
   }
 
   // EdgeQ
@@ -11612,26 +11647,41 @@ mod batch_unevaluated_wrappers_2 {
   fn graph_intersection_basic() {
     // K3 ∩ path{1,2,3} = union vertices, intersect edges
     assert_eq!(
-      interpret("GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}]]")
-        .unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+      interpret(
+        "EdgeList[GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}]]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexList[GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}]]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
     );
   }
   #[test]
   fn graph_intersection_disjoint() {
     // No common edges
     assert_eq!(
-      interpret("GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]").unwrap(),
-      "Graph[{1, 2, 3, 4}, {}]"
+      interpret("EdgeList[GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("VertexList[GraphIntersection[Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]]]").unwrap(),
+      "{1, 2, 3, 4}"
     );
   }
   #[test]
   fn graph_intersection_same() {
     // Intersection with itself
     assert_eq!(
-      interpret("GraphIntersection[CompleteGraph[3], CompleteGraph[3]]")
-        .unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+      interpret(
+        "EdgeList[GraphIntersection[CompleteGraph[3], CompleteGraph[3]]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
     );
   }
 
@@ -11639,30 +11689,46 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn vertex_add_single() {
     assert_eq!(
-      interpret("VertexAdd[CompleteGraph[3], 4]").unwrap(),
-      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+      interpret("VertexList[VertexAdd[CompleteGraph[3], 4]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[VertexAdd[CompleteGraph[3], 4]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
     );
   }
   #[test]
   fn vertex_add_multiple() {
     assert_eq!(
-      interpret("VertexAdd[CompleteGraph[2], {3, 4}]").unwrap(),
-      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2]}]"
+      interpret("VertexList[VertexAdd[CompleteGraph[2], {3, 4}]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+    assert_eq!(
+      interpret("EdgeList[VertexAdd[CompleteGraph[2], {3, 4}]]").unwrap(),
+      "{UndirectedEdge[1, 2]}"
     );
   }
   #[test]
   fn vertex_add_existing_ignored() {
     // Adding an existing vertex does nothing
     assert_eq!(
-      interpret("VertexAdd[CompleteGraph[3], 1]").unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]"
+      interpret("VertexList[VertexAdd[CompleteGraph[3], 1]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[VertexAdd[CompleteGraph[3], 1]]").unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}"
     );
   }
   #[test]
   fn vertex_add_to_directed() {
     assert_eq!(
-      interpret("VertexAdd[Graph[{1 -> 2}], 3]").unwrap(),
-      "Graph[{1, 2, 3}, {DirectedEdge[1, 2]}]"
+      interpret("VertexList[VertexAdd[Graph[{1 -> 2}], 3]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[VertexAdd[Graph[{1 -> 2}], 3]]").unwrap(),
+      "{DirectedEdge[1, 2]}"
     );
   }
 
@@ -11670,29 +11736,45 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn index_graph_basic() {
     assert_eq!(
-      interpret(r#"IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]"#).unwrap(),
-      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]"
+      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}]]]"#).unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
     );
   }
   #[test]
   fn index_graph_with_start() {
     assert_eq!(
-      interpret(r#"IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]"#).unwrap(),
-      "Graph[{5, 6, 7}, {UndirectedEdge[5, 6], UndirectedEdge[6, 7]}]"
+      interpret(r#"VertexList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]]"#).unwrap(),
+      "{5, 6, 7}"
+    );
+    assert_eq!(
+      interpret(r#"EdgeList[IndexGraph[Graph[{"a", "b", "c"}, {UndirectedEdge["a", "b"], UndirectedEdge["b", "c"]}], 5]]"#).unwrap(),
+      "{UndirectedEdge[5, 6], UndirectedEdge[6, 7]}"
     );
   }
   #[test]
   fn index_graph_directed() {
     assert_eq!(
-      interpret("IndexGraph[Graph[{1 -> 2, 3 -> 1}]]").unwrap(),
-      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[3, 1]}]"
+      interpret("VertexList[IndexGraph[Graph[{1 -> 2, 3 -> 1}]]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[IndexGraph[Graph[{1 -> 2, 3 -> 1}]]]").unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[3, 1]}"
     );
   }
   #[test]
   fn index_graph_complete() {
     assert_eq!(
-      interpret("IndexGraph[CompleteGraph[3], 10]").unwrap(),
-      "Graph[{10, 11, 12}, {UndirectedEdge[10, 11], UndirectedEdge[10, 12], UndirectedEdge[11, 12]}]"
+      interpret("VertexList[IndexGraph[CompleteGraph[3], 10]]").unwrap(),
+      "{10, 11, 12}"
+    );
+    assert_eq!(
+      interpret("EdgeList[IndexGraph[CompleteGraph[3], 10]]").unwrap(),
+      "{UndirectedEdge[10, 11], UndirectedEdge[10, 12], UndirectedEdge[11, 12]}"
     );
   }
 
@@ -11743,22 +11825,39 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn connected_graph_components_single() {
     assert_eq!(
-      interpret("ConnectedGraphComponents[CompleteGraph[3]]").unwrap(),
-      "{Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3], UndirectedEdge[2, 3]}]}"
+      interpret("Length[ConnectedGraphComponents[CompleteGraph[3]]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("VertexList[ConnectedGraphComponents[CompleteGraph[3]][[1]]]")
+        .unwrap(),
+      "{1, 2, 3}"
     );
   }
   #[test]
   fn connected_graph_components_disconnected() {
     assert_eq!(
-      interpret("ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]]").unwrap(),
-      "{Graph[{1, 2}, {UndirectedEdge[1, 2]}], Graph[{3, 4}, {UndirectedEdge[3, 4]}]}"
+      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]][[1]]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[3, 4]}]][[2]]]").unwrap(),
+      "{3, 4}"
     );
   }
   #[test]
   fn connected_graph_components_directed() {
     assert_eq!(
-      interpret("ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]]").unwrap(),
-      "{Graph[{1, 2}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}], Graph[{3}, {}]}"
+      interpret("Length[ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("VertexList[ConnectedGraphComponents[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 1]}]][[1]]]").unwrap(),
+      "{1, 2}"
     );
   }
 
@@ -11861,8 +11960,10 @@ mod batch_unevaluated_wrappers_2 {
   fn graph_complement_star3() {
     // StarGraph[3] = Graph[{1,2,3}, {1<->2, 1<->3}]
     // Complement should have only edge 2<->3
-    let result = interpret("GraphComplement[StarGraph[3]]").unwrap();
-    assert!(result.contains("UndirectedEdge[2, 3]"));
+    assert_eq!(
+      interpret("EdgeList[GraphComplement[StarGraph[3]]]").unwrap(),
+      "{UndirectedEdge[2, 3]}"
+    );
   }
 
   // VertexOutComponent
@@ -11884,9 +11985,8 @@ mod batch_unevaluated_wrappers_2 {
   // ButterflyGraph
   #[test]
   fn butterfly_graph_basic() {
-    let result = interpret("ButterflyGraph[2]").unwrap();
     // ButterflyGraph[2] has 5 vertices
-    assert!(result.starts_with("Graph[{1, 2, 3, 4, 5}"));
+    assert_eq!(interpret("VertexCount[ButterflyGraph[2]]").unwrap(), "5");
   }
 
   // HalfNormalDistribution
@@ -14760,5 +14860,167 @@ mod byte_array_to_string {
       interpret("Table[FiniteAbelianGroupCount[n], {n, 1, 30}]").unwrap(),
       "{1, 1, 1, 2, 1, 1, 1, 3, 2, 1, 1, 2, 1, 1, 1, 5, 1, 2, 1, 2, 1, 1, 1, 3, 2, 1, 3, 2, 1, 1}"
     );
+  }
+}
+
+mod graph_rendering {
+  use super::*;
+
+  #[test]
+  fn undirected_graph_renders() {
+    assert_eq!(
+      interpret("Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn directed_graph_renders() {
+    assert_eq!(
+      interpret(
+        "Graph[{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn graph_with_vertex_style() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}, VertexStyle -> Orange], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("rgb(255,128,0)"));
+  }
+
+  #[test]
+  fn graph_with_edge_style() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}, EdgeStyle -> Red], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("rgb(255,0,0)"));
+  }
+
+  #[test]
+  fn graph_with_vertex_labels() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}, VertexLabels -> \"Name\"], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains(">1</text>"));
+    assert!(result.contains(">2</text>"));
+    assert!(result.contains(">3</text>"));
+  }
+
+  #[test]
+  fn graph_with_labeled_edge() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2], Labeled[UndirectedEdge[2, 3], \"hello\"]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains(">hello</text>"));
+  }
+
+  #[test]
+  fn graph_with_diamond_shape() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexShapeFunction -> \"Diamond\"], \"SVG\"]"
+    ).unwrap();
+    // Diamond is rendered as polygon with 4 points
+    assert!(result.contains("<polygon"));
+  }
+
+  #[test]
+  fn graph_with_directive_vertex_style() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexStyle -> Directive[Orange, EdgeForm[Orange]]], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("rgb(255,128,0)"));
+  }
+
+  #[test]
+  fn complete_graph_renders() {
+    assert_eq!(interpret("CompleteGraph[4]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn star_graph_renders() {
+    assert_eq!(interpret("StarGraph[5]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn graph_export_string_svg() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.starts_with("<svg"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn directed_graph_has_arrows() {
+    let result = interpret(
+      "ExportString[Graph[{DirectedEdge[1, 2], DirectedEdge[2, 3]}], \"SVG\"]",
+    )
+    .unwrap();
+    // Arrows produce polygon arrowheads
+    assert!(result.contains("<polygon"));
+  }
+
+  #[test]
+  fn graph_with_vertex_size_medium() {
+    // Should render without error with Medium vertex size
+    assert_eq!(
+      interpret("Graph[{UndirectedEdge[1, 2]}, VertexSize -> Medium]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn graph_preserves_vertex_list() {
+    assert_eq!(
+      interpret(
+        "VertexList[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn graph_preserves_edge_list() {
+    assert_eq!(
+      interpret(
+        "EdgeList[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+    );
+  }
+
+  #[test]
+  fn graph_with_square_shape() {
+    let result = interpret(
+      "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexShapeFunction -> \"Square\"], \"SVG\"]"
+    ).unwrap();
+    assert!(result.starts_with("<svg"));
+  }
+
+  #[test]
+  fn directed_self_loop() {
+    let result = interpret(
+      "ExportString[Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], DirectedEdge[2, 2]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.starts_with("<svg"));
+    // Self-loop produces an arrowhead polygon
+    assert!(result.contains("<polygon"));
+  }
+
+  #[test]
+  fn undirected_self_loop() {
+    let result = interpret(
+      "ExportString[Graph[{1, 2}, {UndirectedEdge[1, 2], UndirectedEdge[1, 1]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.starts_with("<svg"));
+    // Should have 2 polylines: one regular edge + one self-loop
+    assert_eq!(result.matches("<polyline").count(), 2);
   }
 }

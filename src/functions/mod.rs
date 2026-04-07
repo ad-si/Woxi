@@ -12,6 +12,7 @@ pub mod element_data;
 pub mod entity_ast;
 pub mod expr_form;
 pub mod field_plot;
+pub mod graph;
 pub mod graphics;
 pub mod graphicsbox;
 pub mod image_ast;

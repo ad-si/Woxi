@@ -393,7 +393,7 @@ enum Primitive {
 
 // ── Parsing helpers ──────────────────────────────────────────────────────
 
-fn expr_to_f64(expr: &Expr) -> Option<f64> {
+pub(crate) fn expr_to_f64(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
@@ -2306,8 +2306,8 @@ fn render_primitive(
         let dy = sy2 - sy1;
         let len = (dx * dx + dy * dy).sqrt();
         if len > 0.0 {
-          let head_len = (sw * 4.0).max(6.0);
-          let head_half_w = head_len * 0.4;
+          let head_len = (sw * 6.0).max(9.0);
+          let head_half_w = head_len * 0.45;
           let ux = dx / len;
           let uy = dy / len;
           // Perpendicular

@@ -4593,10 +4593,19 @@ mod planar_graph {
 
   #[test]
   fn from_rules_with_layout() {
-    // PlanarGraph includes GraphLayout -> "TutteEmbedding" option
+    // PlanarGraph renders as -Graphics- since Graph now renders visually
     assert_eq!(
       interpret("PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]").unwrap(),
-      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}, {GraphLayout -> TutteEmbedding}]"
+      "-Graphics-"
+    );
+    // Verify the graph structure via VertexList/EdgeList
+    assert_eq!(
+      interpret("VertexList[PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("EdgeList[PlanarGraph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}"
     );
   }
 

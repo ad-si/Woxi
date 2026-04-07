@@ -1666,21 +1666,13 @@ fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall {
       name: g_name,
       args: g_args,
-    } if g_name == "Graph" && g_args.len() == 2 => {
-      if let Expr::List(edge_list) = &g_args[1] {
-        if let Ok(rendered) =
-          crate::functions::tree_form::tree_graph_ast(&[Expr::List(
-            edge_list.clone(),
-          )])
+    } if g_name == "Graph" && g_args.len() >= 2 => {
+      if let Ok(rendered) = crate::functions::graph::graph_ast(g_args) {
+        if let Expr::Graphics {
+          svg: ref svg_data, ..
+        } = rendered
         {
-          if let Expr::Graphics {
-            svg: ref svg_data, ..
-          } = rendered
-          {
-            svg_data.clone()
-          } else {
-            String::new()
-          }
+          svg_data.clone()
         } else {
           String::new()
         }

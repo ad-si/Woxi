@@ -1641,6 +1641,15 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     syntax::Expr::FunctionCall { name, args }
+      if name == "Graph" && args.len() >= 2 =>
+    {
+      if let Ok(rendered) = functions::graph::graph_ast(args) {
+        rendered
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
       if name == "MeshRegion" && args.len() == 2 =>
     {
       // Render MeshRegion as SVG (e.g. from VoronoiMesh)
