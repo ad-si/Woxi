@@ -4750,4 +4750,64 @@ mod number_line_plot {
       "NumberLinePlot[{1, 2, 3}, ImageSize -> 200]"
     ));
   }
+
+  #[test]
+  fn predicate_greater_than_arrow() {
+    // x > 1 should show open circle at 1 and right arrow
+    let svg = export_svg("NumberLinePlot[x > 1, {x, 0, 2}]");
+    // Open circle (stroke-only, not filled) at the boundary
+    assert!(
+      svg.contains("fill=\"#ffffff\" stroke=\"rgb(94,129,181)\""),
+      "Expected open circle at boundary for strict inequality"
+    );
+    // Right-pointing arrow at domain edge
+    assert!(
+      svg.contains("<polygon"),
+      "Expected arrow indicating region continues beyond domain"
+    );
+  }
+
+  #[test]
+  fn predicate_greater_equal_filled() {
+    // x >= 5 should show filled circle at 5 and right arrow
+    let svg = export_svg("NumberLinePlot[x >= 5, {x, 0, 10}]");
+    // Filled circle (no stroke-only pattern) at the boundary
+    assert!(
+      svg.contains(r#"r="35.0" fill="rgb(94,129,181)"/>"#),
+      "Expected filled circle at boundary for inclusive inequality"
+    );
+    // Right-pointing arrow
+    assert!(
+      svg.contains("<polygon"),
+      "Expected arrow indicating region continues beyond domain"
+    );
+  }
+
+  #[test]
+  fn predicate_less_than_left_arrow() {
+    // x < 3 should show left arrow and open circle at 3
+    let svg = export_svg("NumberLinePlot[x < 3, {x, 0, 5}]");
+    assert!(
+      svg.contains("<polygon"),
+      "Expected left arrow for region extending beyond domain"
+    );
+    assert!(
+      svg.contains("fill=\"#ffffff\" stroke=\"rgb(94,129,181)\""),
+      "Expected open circle at boundary for strict inequality"
+    );
+  }
+
+  #[test]
+  fn predicate_less_equal_filled() {
+    // x <= 3 should show left arrow and filled circle at 3
+    let svg = export_svg("NumberLinePlot[x <= 3, {x, 0, 5}]");
+    assert!(
+      svg.contains("<polygon"),
+      "Expected left arrow for region extending beyond domain"
+    );
+    assert!(
+      svg.contains(r#"r="35.0" fill="rgb(94,129,181)"/>"#),
+      "Expected filled circle at boundary for inclusive inequality"
+    );
+  }
 }
