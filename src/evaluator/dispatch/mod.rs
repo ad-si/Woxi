@@ -4888,6 +4888,90 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle
+  // AngleVector[theta] → {Cos[theta], Sin[theta]}
+  // AngleVector[{r, theta}] → {r*Cos[theta], r*Sin[theta]}
+  // AngleVector[{x, y}, theta] → {x + Cos[theta], y + Sin[theta]}
+  // AngleVector[{x, y}, {r, theta}] → {x + r*Cos[theta], y + r*Sin[theta]}
+  if name == "AngleVector" && (args.len() == 1 || args.len() == 2) {
+    let (center, r, theta) = if args.len() == 1 {
+      match &args[0] {
+        Expr::List(items) if items.len() == 2 => {
+          // AngleVector[{r, theta}]
+          (None, Some(items[0].clone()), items[1].clone())
+        }
+        other => {
+          // AngleVector[theta]
+          (None, None, other.clone())
+        }
+      }
+    } else {
+      // args.len() == 2
+      let center = match &args[0] {
+        Expr::List(items) if items.len() == 2 => {
+          Some((items[0].clone(), items[1].clone()))
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let (r, theta) = match &args[1] {
+        Expr::List(items) if items.len() == 2 => {
+          (Some(items[0].clone()), items[1].clone())
+        }
+        other => (None, other.clone()),
+      };
+      (center, r, theta)
+    };
+
+    let cos_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![theta.clone()],
+    })?;
+    let sin_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![theta],
+    })?;
+
+    // Apply radius if present
+    let (x_comp, y_comp) = if let Some(r) = r {
+      let rx = evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(r.clone()),
+        right: Box::new(cos_expr),
+      })?;
+      let ry = evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(r),
+        right: Box::new(sin_expr),
+      })?;
+      (rx, ry)
+    } else {
+      (cos_expr, sin_expr)
+    };
+
+    // Apply center offset if present
+    let (final_x, final_y) = if let Some((cx, cy)) = center {
+      let fx = evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(cx),
+        right: Box::new(x_comp),
+      })?;
+      let fy = evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(cy),
+        right: Box::new(y_comp),
+      })?;
+      (fx, fy)
+    } else {
+      (x_comp, y_comp)
+    };
+
+    return Ok(Expr::List(vec![final_x, final_y]));
+  }
+
   if name == "CirclePoints" && args.len() == 1 {
     if let Some(n) = match &args[0] {
       Expr::Integer(n) if *n >= 1 => Some(*n as usize),
