@@ -702,6 +702,31 @@ mod limit {
     // Limit[1/x, x -> -Infinity] = 0
     assert_eq!(interpret("Limit[1/x, x -> -Infinity]").unwrap(), "0");
   }
+
+  #[test]
+  fn limit_exp_minus_1_over_x() {
+    // L'Hôpital for 0/0 form in canonical Times[Power[x,-1],...] form
+    assert_eq!(interpret("Limit[(E^x - 1)/x, x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn limit_log_1_plus_x_over_x() {
+    assert_eq!(interpret("Limit[Log[1 + x]/x, x -> 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn limit_1_minus_cos_over_x_squared() {
+    // Requires two applications of L'Hôpital's rule
+    assert_eq!(interpret("Limit[(1 - Cos[x])/x^2, x -> 0]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn limit_exp_minus_1_minus_x_over_x_squared() {
+    assert_eq!(
+      interpret("Limit[(E^x - 1 - x)/x^2, x -> 0]").unwrap(),
+      "1/2"
+    );
+  }
 }
 
 mod nintegrate {
