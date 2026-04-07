@@ -1596,6 +1596,13 @@ mod plot3d {
     }
 
     #[test]
+    fn list_line_plot_multiple_xy_datasets() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{{{1, 1}, {2, 4}, {3, 9}, {4, 16}, {5, 25}}, {{1, 3}, {2, 5}, {3, 7}, {4, 9}}, {{1, 2}, {2, 5}, {3, 9}, {4, 14}, {5, 20}}}]"
+      ));
+    }
+
+    #[test]
     fn list_plot_filling_axis() {
       insta::assert_snapshot!(export_svg(
         "ListPlot[{1, 4, 9, 16}, Filling -> Axis]"
