@@ -45,6 +45,13 @@ struct MeshLine {
   projected: [(f64, f64); 2],
 }
 
+/// A bounding-box edge segment with a depth value so it can be
+/// interleaved with surface triangles in the painter's algorithm.
+struct BoxEdge {
+  endpoints: [Point3D; 2],
+  depth: f64,
+}
+
 /// Number of grid cells between default mesh lines.
 /// GRID_N / MESH_STEP ≈ 16 lines per direction.
 const MESH_STEP: usize = 3;
@@ -655,24 +662,113 @@ fn generate_svg(
     ));
   }
 
-  // Render all triangles first (painter's algorithm, already sorted back-to-front)
-  for tri in triangles {
-    let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
-    let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
-    let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
-    let (r, g, b) = tri.color;
-    if mesh_mode == MeshMode::All {
-      // Mesh -> All: show triangle geometry mesh
+  // Build depth-sorted box-edge segments to interleave with surface triangles.
+  // Each of the 12 edges is subdivided into small segments so that per-segment
+  // depth sorting produces correct occlusion against the surface.
+  const EDGE_SUBDIVISIONS: usize = 20;
+  let box_edges = if show_axes {
+    let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+    let axis_color =
+      format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+    let corners = bounding_box_corners();
+    let edge_pairs: [(usize, usize); 12] = [
+      (0, 1),
+      (0, 2),
+      (1, 3),
+      (2, 3),
+      (4, 5),
+      (4, 6),
+      (5, 7),
+      (6, 7),
+      (0, 4),
+      (1, 5),
+      (2, 6),
+      (3, 7),
+    ];
+    let mut segments: Vec<BoxEdge> = Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
+    for &(i, j) in &edge_pairs {
+      let a = corners[i];
+      let b = corners[j];
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        let tm = (t0 + t1) * 0.5;
+        let lerp = |t: f64| Point3D {
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t,
+          z: a.z + (b.z - a.z) * t,
+        };
+        segments.push(BoxEdge {
+          endpoints: [lerp(t0), lerp(t1)],
+          depth: depth(lerp(tm), camera),
+        });
+      }
+    }
+    segments.sort_by(|a, b| {
+      b.depth
+        .partial_cmp(&a.depth)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    (segments, axis_color)
+  } else {
+    (Vec::new(), String::new())
+  };
+  let (sorted_edges, axis_color) = box_edges;
+
+  // Merge-render triangles and box edges back-to-front (painter's algorithm)
+  {
+    let mut ei = 0; // index into sorted_edges
+    for tri in triangles {
+      // Emit any box edges that are further from the camera than this triangle
+      while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
+        let edge = &sorted_edges[ei];
+        let (ex0, ey0) = to_svg(
+          project(edge.endpoints[0], camera).0,
+          project(edge.endpoints[0], camera).1,
+        );
+        let (ex1, ey1) = to_svg(
+          project(edge.endpoints[1], camera).0,
+          project(edge.endpoints[1], camera).1,
+        );
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+          ex0, ey0, ex1, ey1, axis_color
+        ));
+        ei += 1;
+      }
+      // Emit triangle
+      let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
+      let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
+      let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
+      let (r, g, b) = tri.color;
+      if mesh_mode == MeshMode::All {
+        svg.push_str(&format!(
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n",
+          x0, y0, x1, y1, x2, y2, r, g, b
+        ));
+      } else {
+        svg.push_str(&format!(
+          "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\"/>\n",
+          x0, y0, x1, y1, x2, y2, r, g, b, r, g, b
+        ));
+      }
+    }
+    // Emit remaining box edges (closest to viewer)
+    while ei < sorted_edges.len() {
+      let edge = &sorted_edges[ei];
+      let (ex0, ey0) = to_svg(
+        project(edge.endpoints[0], camera).0,
+        project(edge.endpoints[0], camera).1,
+      );
+      let (ex1, ey1) = to_svg(
+        project(edge.endpoints[1], camera).0,
+        project(edge.endpoints[1], camera).1,
+      );
       svg.push_str(&format!(
-        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n",
-        x0, y0, x1, y1, x2, y2, r, g, b
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+        ex0, ey0, ex1, ey1, axis_color
       ));
-    } else {
-      // Use fill color as stroke to eliminate anti-aliasing gaps
-      svg.push_str(&format!(
-        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\"/>\n",
-        x0, y0, x1, y1, x2, y2, r, g, b, r, g, b
-      ));
+      ei += 1;
     }
   }
 
@@ -686,7 +782,7 @@ fn generate_svg(
     ));
   }
 
-  // Draw 3D axes (skip when Boxed -> False)
+  // Draw axes (ticks, labels) on top of everything
   if show_axes {
     draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
   }
@@ -770,36 +866,6 @@ fn draw_axes(
   }
 
   let origin = corners[min_depth_idx];
-
-  // Draw all 12 edges of the bounding box (lighter than axis lines).
-  // Edges connect corners that differ in exactly one coordinate.
-  let box_edges: [(usize, usize); 12] = [
-    // Bottom face (z = -Z_SCALE): corners 0,1,2,3
-    (0, 1),
-    (0, 2),
-    (1, 3),
-    (2, 3),
-    // Top face (z = +Z_SCALE): corners 4,5,6,7
-    (4, 5),
-    (4, 6),
-    (5, 7),
-    (6, 7),
-    // Vertical edges connecting bottom to top
-    (0, 4),
-    (1, 5),
-    (2, 6),
-    (3, 7),
-  ];
-  for &(i, j) in &box_edges {
-    let (ex0, ey0) =
-      to_svg(project(corners[i], camera).0, project(corners[i], camera).1);
-    let (ex1, ey1) =
-      to_svg(project(corners[j], camera).0, project(corners[j], camera).1);
-    svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
-      ex0, ey0, ex1, ey1, axis_color
-    ));
-  }
 
   // The three axis edges from the closest corner.
   // Each entry: (endpoint, value_range, axis_goes_negative).
