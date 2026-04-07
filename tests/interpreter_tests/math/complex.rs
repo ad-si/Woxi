@@ -513,6 +513,54 @@ mod im_tests {
     assert_eq!(interpret("Exp[1]").unwrap(), "E");
   }
 
+  // ── Exp with imaginary multiples of Pi (Euler's formula) ──
+
+  #[test]
+  fn exp_i_pi() {
+    assert_eq!(interpret("Exp[I Pi]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn exp_neg_i_pi() {
+    assert_eq!(interpret("Exp[-I Pi]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn exp_i_pi_half() {
+    assert_eq!(interpret("Exp[I Pi / 2]").unwrap(), "I");
+  }
+
+  #[test]
+  fn exp_neg_i_pi_half() {
+    assert_eq!(interpret("Exp[-I Pi / 2]").unwrap(), "-I");
+  }
+
+  #[test]
+  fn exp_2_i_pi() {
+    assert_eq!(interpret("Exp[2 I Pi]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exp_i_pi_third() {
+    assert_eq!(interpret("Exp[I Pi / 3]").unwrap(), "1/2 + I*Sqrt[3]/2");
+  }
+
+  #[test]
+  fn exp_i_pi_sixth() {
+    assert_eq!(interpret("Exp[I Pi / 6]").unwrap(), "Sqrt[3]/2 + I/2");
+  }
+
+  #[test]
+  fn exp_2_i_pi_third() {
+    assert_eq!(interpret("Exp[2 I Pi / 3]").unwrap(), "-1/2 + I*Sqrt[3]/2");
+  }
+
+  #[test]
+  fn e_to_i_pi() {
+    // E^(I*Pi) should also work via Power syntax
+    assert_eq!(interpret("E^(I Pi)").unwrap(), "-1");
+  }
+
   // ── Log2 ─────────────────────────────────────────────────
 
   #[test]
