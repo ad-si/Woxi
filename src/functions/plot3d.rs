@@ -43,7 +43,6 @@ struct Triangle {
 
 struct MeshLine {
   projected: [(f64, f64); 2],
-  depth: f64,
 }
 
 /// Number of grid cells between default mesh lines.
@@ -249,14 +248,8 @@ fn generate_mesh_lines(
           y: ny(j),
           z: nz(cz1),
         };
-        let mid = Point3D {
-          x: (p0.x + p1.x) / 2.0,
-          y: (p0.y + p1.y) / 2.0,
-          z: (p0.z + p1.z) / 2.0,
-        };
         lines.push(MeshLine {
           projected: [project(p0, camera), project(p1, camera)],
-          depth: depth(mid, camera),
         });
       }
     }
@@ -280,14 +273,8 @@ fn generate_mesh_lines(
           y: ny(j + 1),
           z: nz(cz1),
         };
-        let mid = Point3D {
-          x: (p0.x + p1.x) / 2.0,
-          y: (p0.y + p1.y) / 2.0,
-          z: (p0.z + p1.z) / 2.0,
-        };
         lines.push(MeshLine {
           projected: [project(p0, camera), project(p1, camera)],
-          depth: depth(mid, camera),
         });
       }
     }
@@ -338,7 +325,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -1529,7 +1518,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement,
     } = &opt_eval
       && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
     {
       svg_width = w;
       svg_height = h;
@@ -1803,7 +1793,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -2199,7 +2191,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -2553,7 +2547,9 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -2835,7 +2831,8 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "ImageSize"
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
     {
       svg_width = w;
       svg_height = h;
@@ -3162,7 +3159,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -3386,7 +3385,8 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "ImageSize"
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
     {
       svg_width = w;
       svg_height = h;
@@ -3634,7 +3634,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;

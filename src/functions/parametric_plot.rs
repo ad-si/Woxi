@@ -2,8 +2,9 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  NUM_SAMPLES, PlotOptions, adjust_y_range_for_filling, evaluate_at_point,
-  generate_svg_with_filling, parse_filling, parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, NUM_SAMPLES, PlotOptions,
+  adjust_y_range_for_filling, evaluate_at_point, generate_svg_with_filling,
+  parse_filling, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -29,7 +30,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             plot_opts.svg_width = w;
             plot_opts.svg_height = h;
             plot_opts.full_width = fw;
@@ -137,7 +140,9 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             plot_opts.svg_width = w;
             plot_opts.svg_height = h;
             plot_opts.full_width = fw;

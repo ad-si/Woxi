@@ -3,7 +3,7 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::parse_color;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  Mesh, PlotOptions, adjust_y_range_for_filling,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PlotOptions, adjust_y_range_for_filling,
   generate_scatter_svg_with_options, generate_svg_with_filling, parse_filling,
   parse_image_size, parse_plot_legends,
 };
@@ -117,7 +117,9 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             opts.svg_width = w;
             opts.svg_height = h;
             opts.full_width = fw;

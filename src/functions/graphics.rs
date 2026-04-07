@@ -1,7 +1,7 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
-use crate::functions::plot::parse_image_size;
+use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 use crate::syntax::{Expr, expr_to_string};
 
 /// Dash length for the "Small" named size in Dashing directives.
@@ -2737,7 +2737,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             explicit_height = true;
           }
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             svg_width = w;
             svg_height = h;
             full_width = fw;
@@ -6605,7 +6607,9 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
             other => {
               if let Some(w) = try_eval_to_f64(other) {
                 opts.target_width = Some(w);
-              } else if let Some((w, _, _)) = parse_image_size(other) {
+              } else if let Some((w, _, _)) =
+                parse_image_size(other, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+              {
                 // Named sizes (Small, Medium, Large, etc.)
                 opts.target_width = Some(w as f64);
               }

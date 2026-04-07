@@ -3,8 +3,8 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::interval_ast::is_interval;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  PLOT_COLORS, RESOLUTION_SCALE, format_tick, is_major_tick, nice_step,
-  parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE, format_tick,
+  is_major_tick, nice_step, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -52,7 +52,8 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "ImageSize"
-      && let Some((w, _h, fw)) = parse_image_size(replacement)
+      && let Some((w, _h, fw)) =
+        parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
     {
       svg_width = w;
       full_width = fw;
