@@ -515,7 +515,16 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let tolerance = if args.len() == 2 {
     expr_to_num(&args[1]).unwrap_or(f64::EPSILON)
   } else {
-    f64::EPSILON
+    // Wolfram Language default: tolerance proportional to the value,
+    // roughly 10^(Floor[Log10[Abs[x]]] - 4), which allows finding
+    // "nice" rationals like 1/3 for 0.333333.
+    let abs_x = x.abs();
+    if abs_x == 0.0 {
+      0.0
+    } else {
+      let exp = abs_x.log10().floor() as i32;
+      10.0_f64.powi(exp - 4)
+    }
   };
 
   let max_denom: i64 = if args.len() == 1 { 100000 } else { i64::MAX };

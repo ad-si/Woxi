@@ -2462,3 +2462,45 @@ mod exp_log_identity {
     assert_eq!(interpret("Exp[Log[x] / 2]").unwrap(), "Sqrt[x]");
   }
 }
+
+mod rationalize {
+  use super::*;
+
+  #[test]
+  fn one_third() {
+    assert_eq!(interpret("Rationalize[0.333333]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn one_seventh() {
+    assert_eq!(interpret("Rationalize[0.142857]").unwrap(), "1/7");
+  }
+
+  #[test]
+  fn exact_fraction() {
+    assert_eq!(interpret("Rationalize[0.25]").unwrap(), "1/4");
+    assert_eq!(interpret("Rationalize[0.5]").unwrap(), "1/2");
+    assert_eq!(interpret("Rationalize[1.5]").unwrap(), "3/2");
+  }
+
+  #[test]
+  fn one_tenth() {
+    assert_eq!(interpret("Rationalize[0.1]").unwrap(), "1/10");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("Rationalize[0.0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn with_tolerance() {
+    assert_eq!(interpret("Rationalize[0.333333, 0.001]").unwrap(), "1/3");
+    assert_eq!(interpret("Rationalize[3.14159, 0.001]").unwrap(), "333/106");
+  }
+
+  #[test]
+  fn integer_input() {
+    assert_eq!(interpret("Rationalize[5]").unwrap(), "5");
+  }
+}
