@@ -272,46 +272,110 @@ fn eval_predicate(body: &Expr, var: &str, x: f64) -> bool {
 }
 
 /// Sample a predicate and return spans where it is true.
-/// Endpoints are marked exclusive (open circles) since the boundary
-/// is determined by sampling and typically corresponds to strict inequalities.
+/// Uses binary search to refine boundaries and determine inclusivity.
+/// Spans that extend to the domain boundary are marked with infinite
+/// endpoints so arrows are drawn (indicating the region continues).
 fn sample_predicate(body: &Expr, var: &str, xmin: f64, xmax: f64) -> Vec<Span> {
   let n = 500;
   let step = (xmax - xmin) / n as f64;
   let mut intervals = Vec::new();
   let mut in_region = false;
-  let mut region_start = xmin;
+  let mut region_start_idx: usize = 0;
 
   for i in 0..=n {
     let x = xmin + i as f64 * step;
     let val = eval_predicate(body, var, x);
     if val && !in_region {
-      region_start = x;
+      region_start_idx = i;
       in_region = true;
     } else if !val && in_region {
-      // Region ended: lo is inclusive if it started at domain boundary,
-      // hi is always exclusive (predicate just became false).
-      let at_domain_start = (region_start - xmin).abs() < step * 0.5;
+      let region_start = xmin + region_start_idx as f64 * step;
+      let region_end = x; // first sample where predicate is false
+      let at_domain_start = region_start_idx == 0;
+
+      let (lo, lo_inclusive) = if at_domain_start {
+        (f64::NEG_INFINITY, false)
+      } else {
+        // Refine lo boundary between (region_start - step) and region_start
+        refine_boundary(body, var, region_start - step, region_start)
+      };
+      // Refine hi boundary between (region_end - step) and region_end
+      let (hi_boundary, hi_at_boundary) =
+        refine_boundary(body, var, region_end, region_end - step);
+      let hi_inclusive = hi_at_boundary;
+
       intervals.push(Span {
-        lo: region_start,
-        hi: x - step,
-        lo_inclusive: at_domain_start,
-        hi_inclusive: false,
+        lo,
+        hi: hi_boundary,
+        lo_inclusive,
+        hi_inclusive,
       });
       in_region = false;
     }
   }
   if in_region {
-    // Region extends to the domain end: hi is inclusive (at domain boundary),
-    // lo is inclusive if it also started at domain boundary.
-    let at_domain_start = (region_start - xmin).abs() < step * 0.5;
+    let region_start = xmin + region_start_idx as f64 * step;
+    let at_domain_start = region_start_idx == 0;
+
+    let (lo, lo_inclusive) = if at_domain_start {
+      (f64::NEG_INFINITY, false)
+    } else {
+      refine_boundary(body, var, region_start - step, region_start)
+    };
+
+    // Region extends to domain end — use +Infinity so an arrow is drawn
     intervals.push(Span {
-      lo: region_start,
-      hi: xmax,
-      lo_inclusive: at_domain_start,
-      hi_inclusive: true,
+      lo,
+      hi: f64::INFINITY,
+      lo_inclusive,
+      hi_inclusive: false,
     });
   }
   intervals
+}
+
+/// Binary-search to find the precise transition point between a false sample
+/// and a true sample, then determine inclusivity at the snapped boundary.
+/// Returns `(boundary, inclusive)`.
+fn refine_boundary(
+  body: &Expr,
+  var: &str,
+  x_false: f64,
+  x_true: f64,
+) -> (f64, bool) {
+  let mut lo = x_false;
+  let mut hi = x_true;
+  for _ in 0..50 {
+    let mid = (lo + hi) / 2.0;
+    if eval_predicate(body, var, mid) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  // `hi` is approximately the first value where the predicate is true.
+  // Snap to a nearby "nice" number (integer or simple fraction).
+  let boundary = snap_to_nice_value(hi);
+  let inclusive = eval_predicate(body, var, boundary);
+  (boundary, inclusive)
+}
+
+/// Snap a floating-point value to a nearby integer or simple fraction
+/// if it is extremely close, to avoid floating-point noise at boundaries.
+fn snap_to_nice_value(x: f64) -> f64 {
+  let rounded = x.round();
+  if (x - rounded).abs() < 1e-9 {
+    return rounded;
+  }
+  let doubled = (x * 2.0).round() / 2.0;
+  if (x - doubled).abs() < 1e-9 {
+    return doubled;
+  }
+  let tenths = (x * 10.0).round() / 10.0;
+  if (x - tenths).abs() < 1e-9 {
+    return tenths;
+  }
+  x
 }
 
 /// Render the complete SVG for the NumberLinePlot.
@@ -449,8 +513,16 @@ fn render_number_line_svg(
         let bar_half = 1.5 * sf;
         let circle_r = 3.5 * sf;
         for span in &intervals {
-          let px_lo = x_to_px(span.lo);
-          let px_hi = x_to_px(span.hi);
+          let px_lo = if span.lo.is_infinite() {
+            axis_x0
+          } else {
+            x_to_px(span.lo)
+          };
+          let px_hi = if span.hi.is_infinite() {
+            axis_x1
+          } else {
+            x_to_px(span.hi)
+          };
           svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
              fill=\"{}\"/>\n",
@@ -460,24 +532,34 @@ fn render_number_line_svg(
             bar_half * 2.0,
             color,
           ));
-          draw_endpoint(
-            &mut svg,
-            px_lo,
-            data_y,
-            circle_r,
-            &color,
-            bg_color,
-            span.lo_inclusive,
-          );
-          draw_endpoint(
-            &mut svg,
-            px_hi,
-            data_y,
-            circle_r,
-            &color,
-            bg_color,
-            span.hi_inclusive,
-          );
+          if span.lo.is_finite() {
+            draw_endpoint(
+              &mut svg,
+              px_lo,
+              data_y,
+              circle_r,
+              &color,
+              bg_color,
+              span.lo_inclusive,
+            );
+          } else {
+            let arrow_size = 5.0 * sf;
+            draw_arrow_left(&mut svg, axis_x0, data_y, arrow_size, &color);
+          }
+          if span.hi.is_finite() {
+            draw_endpoint(
+              &mut svg,
+              px_hi,
+              data_y,
+              circle_r,
+              &color,
+              bg_color,
+              span.hi_inclusive,
+            );
+          } else {
+            let arrow_size = 5.0 * sf;
+            draw_arrow_right(&mut svg, axis_x1, data_y, arrow_size, &color);
+          }
         }
       }
     }
