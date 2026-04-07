@@ -1,6 +1,25 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Resolve a function name through the environment to pick up Module-scoped
+/// unique symbols.  When Module[{f}, …] creates a unique symbol like `f$1` and
+/// stores it in the environment as `ENV["f"] = Raw("f$1")`, DownValue
+/// definitions on `f` (i.e. `f[x_] := …`) must be stored under the resolved
+/// name `f$1` so that subsequent calls (which evaluate `f` → `f$1`) can find
+/// them.
+fn resolve_func_name(name: &str) -> String {
+  ENV.with(|e| {
+    if let Some(StoredValue::Raw(val)) = e.borrow().get(name) {
+      // Only resolve if the stored value looks like a Module-generated
+      // unique symbol (contains '$')
+      if val.contains('$') {
+        return val.clone();
+      }
+    }
+    name.to_string()
+  })
+}
+
 /// Compute a specificity score for a pattern rule based on its conditions,
 /// blank types, and head constraints. Lower score = more specific = should be
 /// tried first. Ordering: literal (SameQ) > head-constrained Blank > Blank >
@@ -595,6 +614,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     args: lhs_args,
   } = lhs
   {
+    // Resolve Module-scoped unique symbols (e.g. f → f$1)
+    let func_name = &resolve_func_name(func_name);
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // Check user-defined Protected attribute for DownValues
@@ -770,6 +791,8 @@ pub fn set_delayed_ast(
     args: lhs_args,
   } = lhs
   {
+    // Resolve Module-scoped unique symbols (e.g. f → f$1)
+    let func_name = &resolve_func_name(func_name);
     // Check user-defined Protected attribute for DownValues
     let is_user_protected = crate::FUNC_ATTRS.with(|m| {
       m.borrow()

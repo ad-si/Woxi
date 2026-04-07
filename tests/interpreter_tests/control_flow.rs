@@ -1306,6 +1306,61 @@ mod module_expr_preservation {
   }
 }
 
+mod module_downvalues {
+  use super::*;
+
+  #[test]
+  fn module_scoped_set_delayed() {
+    clear_state();
+    // Module-scoped function definitions (DownValues) should work
+    assert_eq!(interpret("Module[{f}, f[x_] := x + 1; f[5]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn module_scoped_set() {
+    clear_state();
+    // Module-scoped Set (literal matching) should work
+    assert_eq!(
+      interpret("Module[{f}, f[0] = 0; f[1] = 1; {f[0], f[1]}]").unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn module_scoped_memoized_recursion() {
+    clear_state();
+    // Memoized Fibonacci inside Module
+    assert_eq!(
+      interpret(
+        "Module[{f}, f[0] = 0; f[1] = 1; f[n_] := f[n] = f[n - 1] + f[n - 2]; f[10]]"
+      )
+      .unwrap(),
+      "55"
+    );
+  }
+
+  #[test]
+  fn module_scoped_recursion_without_memoization() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{f}, f[0] = 0; f[1] = 1; f[n_] := f[n - 1] + f[n - 2]; f[10]]"
+      )
+      .unwrap(),
+      "55"
+    );
+  }
+
+  #[test]
+  fn module_scoped_multiple_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret("Module[{f}, f[x_Integer] := x^2; f[x_String] := StringLength[x]; {f[3], f[\"hello\"]}]").unwrap(),
+      "{9, 5}"
+    );
+  }
+}
+
 mod trace_scan {
   use super::*;
 
