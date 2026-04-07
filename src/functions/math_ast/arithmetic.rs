@@ -3915,6 +3915,42 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] (exact symbolic Euler's formula)
+  if matches!(base, Expr::Constant(c) if c == "E")
+    && let Some((numer, denom)) = try_extract_i_pi_rational_multiple(exp)
+  {
+    // Build the symbolic argument k*Pi
+    let k_pi =
+      crate::functions::math_ast::complex::make_rational_times_pi(numer, denom);
+    // Evaluate Cos[k*Pi] and Sin[k*Pi] symbolically
+    let cos_val = crate::functions::math_ast::cos_ast(&[k_pi.clone()])?;
+    let sin_val = crate::functions::math_ast::sin_ast(&[k_pi])?;
+    // Build result: cos_val + I*sin_val
+    let sin_is_zero = matches!(&sin_val, Expr::Integer(0));
+    let cos_is_zero = matches!(&cos_val, Expr::Integer(0));
+    if sin_is_zero {
+      return Ok(cos_val);
+    }
+    let i_expr = Expr::Identifier("I".to_string());
+    let imag_term = if matches!(&sin_val, Expr::Integer(1)) {
+      i_expr
+    } else if matches!(&sin_val, Expr::Integer(-1)) {
+      negate_expr(i_expr)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![sin_val, i_expr],
+      }
+    };
+    if cos_is_zero {
+      return Ok(imag_term);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![cos_val, imag_term],
+    });
+  }
+
   // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])
   if matches!(base, Expr::Constant(c) if c == "E") {
     // Try float complex extraction for the exponent
@@ -4211,6 +4247,95 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       left: Box::new(base.clone()),
       right: Box::new(exp.clone()),
     }),
+  }
+}
+
+/// Try to extract rational coefficient k = numer/denom from an expression
+/// of the form `k * I * Pi`.
+///
+/// Recognizes these internal forms:
+/// - `Times[I, Pi]`              → k = 1/1
+/// - `Times[n, I, Pi]`           → k = n/1
+/// - `Times[Rational[p,q], I, Pi]` → k = p/q
+/// - `Times[k, Times[I, Pi]]`    → recursive
+/// - `Times[-1, I, Pi]`          → k = -1/1
+fn try_extract_i_pi_rational_multiple(expr: &Expr) -> Option<(i128, i128)> {
+  let factors: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+
+  let mut has_i = false;
+  let mut has_pi = false;
+  let mut coeff_numer: i128 = 1;
+  let mut coeff_denom: i128 = 1;
+  let mut has_numeric_coeff = false;
+
+  for factor in &factors {
+    match factor {
+      Expr::Identifier(s) if s == "I" => {
+        if has_i {
+          return None;
+        } // Two I factors
+        has_i = true;
+      }
+      Expr::Constant(s) if s == "Pi" => {
+        if has_pi {
+          return None;
+        } // Two Pi factors
+        has_pi = true;
+      }
+      Expr::Integer(n) => {
+        if has_numeric_coeff {
+          return None;
+        }
+        coeff_numer = *n;
+        coeff_denom = 1;
+        has_numeric_coeff = true;
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(_))
+          && matches!(&args[1], Expr::Integer(_)) =>
+      {
+        if has_numeric_coeff {
+          return None;
+        }
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+          coeff_numer = *p;
+          coeff_denom = *q;
+          has_numeric_coeff = true;
+        }
+      }
+      // Nested Times (e.g., Times[Rational[2,3], Times[I, Pi]])
+      nested => {
+        if let Some((n, d)) = try_extract_i_pi_rational_multiple(nested) {
+          if has_i || has_pi {
+            return None;
+          }
+          has_i = true;
+          has_pi = true;
+          coeff_numer *= n;
+          coeff_denom *= d;
+        } else {
+          return None; // Unknown factor
+        }
+      }
+    }
+  }
+
+  if has_i && has_pi {
+    Some((coeff_numer, coeff_denom))
+  } else {
+    None
   }
 }
 
