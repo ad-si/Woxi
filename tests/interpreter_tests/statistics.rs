@@ -693,6 +693,12 @@ mod kurtosis {
       "1.4209750290831373"
     );
   }
+
+  #[test]
+  fn kurtosis_integers_exact() {
+    // Kurtosis should return exact rational for integer input
+    assert_eq!(interpret("Kurtosis[{1, 2, 3, 4, 5}]").unwrap(), "17/10");
+  }
 }
 
 mod skewness {
@@ -703,6 +709,25 @@ mod skewness {
     assert_eq!(
       interpret("Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
       "0.4070412816074878"
+    );
+  }
+
+  #[test]
+  fn skewness_symmetric() {
+    // Symmetric distribution has zero skewness
+    assert_eq!(interpret("Skewness[{1, 2, 3, 4, 5}]").unwrap(), "0");
+  }
+}
+
+mod central_moment_exact {
+  use super::*;
+
+  #[test]
+  fn fourth_moment_integers() {
+    // CentralMoment should return exact rational for integer input
+    assert_eq!(
+      interpret("CentralMoment[{1, 2, 3, 4, 5}, 4]").unwrap(),
+      "34/5"
     );
   }
 }

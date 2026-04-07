@@ -1068,7 +1068,8 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let r = match expr_to_num(&args[1]) {
+  let r_expr = &args[1];
+  let r = match expr_to_num(r_expr) {
     Some(r) => r as i32,
     None => {
       return Ok(Expr::FunctionCall {
@@ -1077,21 +1078,50 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let mut vals = Vec::new();
-  for item in items {
-    if let Some(v) = expr_to_num(item) {
-      vals.push(v);
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "CentralMoment".to_string(),
-        args: args.to_vec(),
-      });
-    }
+
+  // Check if all items are numeric (integer or rational or real)
+  let all_numeric = items.iter().all(|item| expr_to_num(item).is_some());
+  if !all_numeric {
+    return Ok(Expr::FunctionCall {
+      name: "CentralMoment".to_string(),
+      args: args.to_vec(),
+    });
   }
-  let n = vals.len() as f64;
-  let mean = vals.iter().sum::<f64>() / n;
-  let moment: f64 = vals.iter().map(|x| (x - mean).powi(r)).sum::<f64>() / n;
-  Ok(num_to_expr(moment))
+
+  // Compute mean symbolically to preserve exact arithmetic
+  let mean_expr = mean_ast(&[args[0].clone()])?;
+
+  // Compute sum of (x_i - mean)^r symbolically
+  let n = items.len();
+  let mut terms = Vec::with_capacity(n);
+  for item in items {
+    // (item - mean)^r
+    let diff = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(item.clone()),
+      right: Box::new(mean_expr.clone()),
+    };
+    let powered = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(diff),
+      right: Box::new(Expr::Integer(r as i128)),
+    };
+    let val = crate::evaluator::evaluate_expr_to_expr(&powered)?;
+    terms.push(val);
+  }
+
+  // Sum and divide by n
+  let sum_expr = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(sum_val),
+    right: Box::new(Expr::Integer(n as i128)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
@@ -1104,13 +1134,18 @@ pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
-  match (expr_to_num(&m4), expr_to_num(&m2)) {
-    (Some(m4v), Some(m2v)) if m2v != 0.0 => Ok(num_to_expr(m4v / (m2v * m2v))),
-    _ => Ok(Expr::FunctionCall {
-      name: "Kurtosis".to_string(),
-      args: args.to_vec(),
-    }),
-  }
+  // Compute m4 / m2^2 symbolically
+  let m2_squared = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(m2),
+    right: Box::new(Expr::Integer(2)),
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(m4),
+    right: Box::new(m2_squared),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Skewness[list] - CentralMoment[list, 3] / CentralMoment[list, 2]^(3/2)
@@ -1123,15 +1158,22 @@ pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
   let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
-  match (expr_to_num(&m3), expr_to_num(&m2)) {
-    (Some(m3v), Some(m2v)) if m2v != 0.0 => {
-      Ok(num_to_expr(m3v / m2v.powf(1.5)))
-    }
-    _ => Ok(Expr::FunctionCall {
-      name: "Skewness".to_string(),
-      args: args.to_vec(),
+  // Compute m3 / m2^(3/2) symbolically
+  let m2_pow = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(m2),
+    right: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(3)),
+      right: Box::new(Expr::Integer(2)),
     }),
-  }
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(m3),
+    right: Box::new(m2_pow),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// RootMeanSquare[list] - Sqrt[Mean[list^2]]
