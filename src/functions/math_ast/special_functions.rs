@@ -1992,30 +1992,35 @@ pub fn is_expr_one(expr: &Expr) -> bool {
 
 /// Check if an expression represents -Infinity
 pub fn is_neg_infinity(expr: &Expr) -> bool {
+  let is_infinity = |e: &Expr| -> bool {
+    matches!(e, Expr::Identifier(s) if s == "Infinity")
+      || matches!(e, Expr::Constant(s) if s == "Infinity")
+  };
   if let Expr::FunctionCall { name, args } = expr
     && name == "Times"
     && args.len() == 2
-    && let (Expr::Integer(-1), Expr::Identifier(s)) = (&args[0], &args[1])
+    && matches!(&args[0], Expr::Integer(-1))
+    && is_infinity(&args[1])
   {
-    return s == "Infinity";
+    return true;
   }
   if let Expr::BinaryOp {
     op: BinaryOperator::Times,
     left,
     right,
   } = expr
-    && let (Expr::Integer(-1), Expr::Identifier(s)) =
-      (left.as_ref(), right.as_ref())
+    && matches!(left.as_ref(), Expr::Integer(-1))
+    && is_infinity(right.as_ref())
   {
-    return s == "Infinity";
+    return true;
   }
   if let Expr::UnaryOp {
     op: UnaryOperator::Minus,
     operand,
   } = expr
-    && let Expr::Identifier(s) = operand.as_ref()
+    && is_infinity(operand.as_ref())
   {
-    return s == "Infinity";
+    return true;
   }
   false
 }
