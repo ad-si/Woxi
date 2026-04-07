@@ -2448,4 +2448,17 @@ mod exp_log_identity {
   fn exp_log_compound() {
     assert_eq!(interpret("E^Log[a + b]").unwrap(), "a + b");
   }
+
+  #[test]
+  fn exp_n_log_x() {
+    // E^(n*Log[x]) = x^n (generalized inverse)
+    assert_eq!(interpret("Exp[2 Log[x]]").unwrap(), "x^2");
+    assert_eq!(interpret("Exp[3 Log[2]]").unwrap(), "8");
+    assert_eq!(interpret("Exp[a Log[x]]").unwrap(), "x^a");
+  }
+
+  #[test]
+  fn exp_half_log_x() {
+    assert_eq!(interpret("Exp[Log[x] / 2]").unwrap(), "Sqrt[x]");
+  }
 }
