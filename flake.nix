@@ -22,6 +22,7 @@
             cargo
             cargo-insta
             cargo-nextest
+            cargo-outdated
             clippy
             coreutils # cat
             gnumake
