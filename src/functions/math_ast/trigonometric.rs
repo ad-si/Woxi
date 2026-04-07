@@ -1351,6 +1351,57 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(pow_args[1].clone());
       }
+      // Log[I] = I*Pi/2
+      if matches!(&args[0], Expr::Identifier(s) if s == "I") {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[
+            Expr::Identifier("I".to_string()),
+            crate::functions::math_ast::make_rational_pub(1, 2),
+            Expr::Constant("Pi".to_string()),
+          ],
+        );
+      }
+      // Log[-I] = -I*Pi/2
+      {
+        let is_neg_i = match &args[0] {
+          Expr::FunctionCall { name, args: targs }
+            if name == "Times"
+              && targs.len() == 2
+              && matches!(&targs[0], Expr::Integer(-1))
+              && matches!(&targs[1], Expr::Identifier(s) if s == "I") =>
+          {
+            true
+          }
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
+            true
+          }
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left,
+            right,
+          } if matches!(left.as_ref(), Expr::Integer(-1))
+            && matches!(right.as_ref(), Expr::Identifier(s) if s == "I") =>
+          {
+            true
+          }
+          _ => false,
+        };
+        if is_neg_i {
+          return crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[
+              Expr::Integer(-1),
+              Expr::Identifier("I".to_string()),
+              crate::functions::math_ast::make_rational_pub(1, 2),
+              Expr::Constant("Pi".to_string()),
+            ],
+          );
+        }
+      }
       // Log[-n] for negative integers: Log[-1] = I*Pi, Log[-n] = I*Pi + Log[n]
       if let Expr::Integer(n) = &args[0]
         && *n < 0
