@@ -1,6 +1,20 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Wrap a plot function call in Quiet mode so that messages emitted during
+/// function sampling (e.g. Power::indet for 0^0) are suppressed and discarded.
+/// This matches Wolfram Language behavior where Plot internally uses Quiet[Check[…]].
+fn quiet_plot(
+  f: impl FnOnce() -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let result = f();
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  result
+}
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
@@ -27,13 +41,15 @@ pub fn dispatch_plotting(
         )))
       }
     }
-    "Plot" if args.len() >= 2 => Some(crate::functions::plot::plot_ast(args)),
+    "Plot" if args.len() >= 2 => {
+      Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
+    }
     "Plot3D" if args.len() >= 3 => {
-      Some(crate::functions::plot3d::plot3d_ast(args))
+      Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }
-    "ParametricPlot3D" if args.len() >= 3 => {
-      Some(crate::functions::plot3d::parametric_plot3d_ast(args))
-    }
+    "ParametricPlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::plot3d::parametric_plot3d_ast(args)
+    })),
     "Graphics" if !args.is_empty() => {
       // Keep Graphics as a FunctionCall during evaluation so that Show[]
       // can merge primitives from multiple Graphics expressions.
@@ -71,96 +87,96 @@ pub fn dispatch_plotting(
     "LinearGradientFilling" => Some(
       crate::functions::graphics::linear_gradient_filling_ast(args),
     ),
-    "ListPlot3D" if !args.is_empty() => {
-      Some(crate::functions::plot3d::list_plot3d_ast(args))
-    }
-    "ListPointPlot3D" if !args.is_empty() => {
-      Some(crate::functions::plot3d::list_point_plot3d_ast(args))
-    }
-    "RevolutionPlot3D" if args.len() >= 2 => {
-      Some(crate::functions::plot3d::revolution_plot3d_ast(args))
-    }
-    "RegionPlot3D" if args.len() >= 4 => {
-      Some(crate::functions::plot3d::region_plot3d_ast(args))
-    }
-    "SphericalPlot3D" if args.len() >= 3 => {
-      Some(crate::functions::plot3d::spherical_plot3d_ast(args))
-    }
-    "ListPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_plot_ast(args))
-    }
-    "DiscretePlot" if args.len() >= 2 => {
-      Some(crate::functions::list_plot::discrete_plot_ast(args))
-    }
-    "DiscretePlot3D" if args.len() >= 3 => {
-      Some(crate::functions::plot3d::discrete_plot3d_ast(args))
-    }
-    "ListLinePlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_line_plot_ast(args))
-    }
-    "ListLogPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_log_plot_ast(args))
-    }
-    "ListLogLogPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_log_log_plot_ast(args))
-    }
-    "ListLogLinearPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_log_linear_plot_ast(args))
-    }
-    "ListPolarPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_polar_plot_ast(args))
-    }
-    "ListStepPlot" if !args.is_empty() => {
-      Some(crate::functions::list_plot::list_step_plot_ast(args))
-    }
-    "LogLogPlot" if args.len() >= 2 => {
-      Some(crate::functions::plot::log_log_plot_ast(args))
-    }
+    "ListPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::plot3d::list_plot3d_ast(args)
+    })),
+    "ListPointPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::plot3d::list_point_plot3d_ast(args)
+    })),
+    "RevolutionPlot3D" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::plot3d::revolution_plot3d_ast(args)
+    })),
+    "RegionPlot3D" if args.len() >= 4 => Some(quiet_plot(|| {
+      crate::functions::plot3d::region_plot3d_ast(args)
+    })),
+    "SphericalPlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::plot3d::spherical_plot3d_ast(args)
+    })),
+    "ListPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_plot_ast(args)
+    })),
+    "DiscretePlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::list_plot::discrete_plot_ast(args)
+    })),
+    "DiscretePlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::plot3d::discrete_plot3d_ast(args)
+    })),
+    "ListLinePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_line_plot_ast(args)
+    })),
+    "ListLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_log_plot_ast(args)
+    })),
+    "ListLogLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_log_log_plot_ast(args)
+    })),
+    "ListLogLinearPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_log_linear_plot_ast(args)
+    })),
+    "ListPolarPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_polar_plot_ast(args)
+    })),
+    "ListStepPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::list_plot::list_step_plot_ast(args)
+    })),
+    "LogLogPlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::plot::log_log_plot_ast(args)
+    })),
     "LogPlot" if args.len() >= 2 => {
-      Some(crate::functions::plot::log_plot_ast(args))
+      Some(quiet_plot(|| crate::functions::plot::log_plot_ast(args)))
     }
-    "LogLinearPlot" if args.len() >= 2 => {
-      Some(crate::functions::plot::log_linear_plot_ast(args))
-    }
-    "ParametricPlot" if args.len() >= 2 => {
-      Some(crate::functions::parametric_plot::parametric_plot_ast(args))
-    }
-    "PolarPlot" if args.len() >= 2 => {
-      Some(crate::functions::parametric_plot::polar_plot_ast(args))
-    }
-    "ComplexPlot" if args.len() >= 2 => {
-      Some(crate::functions::field_plot::complex_plot_ast(args))
-    }
-    "DensityPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::density_plot_ast(args))
-    }
-    "ContourPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::contour_plot_ast(args))
-    }
-    "RegionPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::region_plot_ast(args))
-    }
-    "VectorPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::vector_plot_ast(args))
-    }
-    "StreamPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::stream_plot_ast(args))
-    }
-    "StreamDensityPlot" if args.len() >= 3 => {
-      Some(crate::functions::field_plot::stream_density_plot_ast(args))
-    }
-    "ListDensityPlot" if !args.is_empty() => {
-      Some(crate::functions::field_plot::list_density_plot_ast(args))
-    }
-    "ListContourPlot" if !args.is_empty() => {
-      Some(crate::functions::field_plot::list_contour_plot_ast(args))
-    }
-    "ArrayPlot" if !args.is_empty() => {
-      Some(crate::functions::field_plot::array_plot_ast(args))
-    }
-    "MatrixPlot" if !args.is_empty() => {
-      Some(crate::functions::field_plot::matrix_plot_ast(args))
-    }
+    "LogLinearPlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::plot::log_linear_plot_ast(args)
+    })),
+    "ParametricPlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::parametric_plot::parametric_plot_ast(args)
+    })),
+    "PolarPlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::parametric_plot::polar_plot_ast(args)
+    })),
+    "ComplexPlot" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::field_plot::complex_plot_ast(args)
+    })),
+    "DensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::density_plot_ast(args)
+    })),
+    "ContourPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::contour_plot_ast(args)
+    })),
+    "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::region_plot_ast(args)
+    })),
+    "VectorPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::vector_plot_ast(args)
+    })),
+    "StreamPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::stream_plot_ast(args)
+    })),
+    "StreamDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      crate::functions::field_plot::stream_density_plot_ast(args)
+    })),
+    "ListDensityPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::list_density_plot_ast(args)
+    })),
+    "ListContourPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::list_contour_plot_ast(args)
+    })),
+    "ArrayPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::array_plot_ast(args)
+    })),
+    "MatrixPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::matrix_plot_ast(args)
+    })),
     "BarChart" if !args.is_empty() => {
       Some(crate::functions::chart::bar_chart_ast(args))
     }
