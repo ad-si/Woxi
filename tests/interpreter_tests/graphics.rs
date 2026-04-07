@@ -2114,6 +2114,23 @@ mod plot3d {
     }
 
     #[test]
+    fn array_plot_integer_scaling() {
+      // Regression: values > 1 must be auto-scaled, not clamped to [0,1]
+      let svg = export_svg("ArrayPlot[{{1, 2, 3, 4}, {5, 6, 7, 8}}]");
+      // Each cell should have a distinct color (not all black)
+      let fill_colors: std::collections::HashSet<&str> = svg
+        .match_indices("fill=\"#")
+        .filter_map(|(i, _)| svg.get(i + 6..i + 13))
+        .collect();
+      assert!(
+        fill_colors.len() >= 8,
+        "Expected at least 8 distinct fill colors, got {}",
+        fill_colors.len()
+      );
+      insta::assert_snapshot!(svg);
+    }
+
+    #[test]
     fn matrix_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"

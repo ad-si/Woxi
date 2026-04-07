@@ -1,3 +1,5 @@
+use plotters::prelude::*;
+
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
@@ -5,8 +7,8 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, generate_axes_only, parse_image_size,
-  substitute_var,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, RESOLUTION_SCALE, generate_axes_only,
+  parse_image_size, plot_theme, rewrite_svg_header, substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -137,6 +139,37 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
        <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   }
+}
+
+/// Map a normalized value t in [0,1] to the Wolfram SunsetColors gradient.
+/// The gradient goes: black → purple → red → orange → yellow → white.
+fn sunset_color(t: f64) -> (u8, u8, u8) {
+  // Key stops sampled from Wolfram's ColorData["SunsetColors"]
+  let stops: [(f64, f64, f64); 9] = [
+    (0.0, 0.0, 0.0),       // t=0.000  black
+    (0.280, 0.102, 0.380), // t=0.125
+    (0.581, 0.198, 0.389), // t=0.250
+    (0.836, 0.308, 0.216), // t=0.375
+    (0.979, 0.451, 0.051), // t=0.500
+    (0.995, 0.625, 0.110), // t=0.625
+    (1.0, 0.782, 0.310),   // t=0.750
+    (1.0, 0.912, 0.618),   // t=0.875
+    (1.0, 1.0, 1.0),       // t=1.000  white
+  ];
+  let t = t.clamp(0.0, 1.0);
+  let idx = (t * 8.0).min(7.0);
+  let i = idx as usize;
+  let frac = idx - i as f64;
+  let (r0, g0, b0) = stops[i];
+  let (r1, g1, b1) = stops[i + 1];
+  let r = r0 + (r1 - r0) * frac;
+  let g = g0 + (g1 - g0) * frac;
+  let b = b0 + (b1 - b0) * frac;
+  (
+    (r * 255.0).round() as u8,
+    (g * 255.0).round() as u8,
+    (b * 255.0).round() as u8,
+  )
 }
 
 /// Map value to a blue-white-red color
@@ -1423,7 +1456,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix, 0=white 1=black (grayscale)
+/// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix using SunsetColors
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -1436,6 +1469,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut matrix: Vec<Vec<f64>> = Vec::new();
+  let mut v_min = f64::INFINITY;
+  let mut v_max = f64::NEG_INFINITY;
+
   for row in rows {
     if let Expr::List(items) = row {
       let vals: Vec<f64> = items
@@ -1445,6 +1481,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           try_eval_to_f64(&v).unwrap_or(0.0)
         })
         .collect();
+      for &v in &vals {
+        if v.is_finite() {
+          v_min = v_min.min(v);
+          v_max = v_max.max(v);
+        }
+      }
       matrix.push(vals);
     }
   }
@@ -1458,27 +1500,92 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
-  let w = svg_width as f64;
-  let h = svg_height as f64;
-  let cell_w = w / n_cols as f64;
-  let cell_h = h / n_rows as f64;
 
-  let mut svg = svg_header(svg_width, svg_height, full_width);
+  // Aspect ratio: match the matrix shape (wider if more cols, taller if more rows)
+  let aspect = n_rows as f64 / n_cols as f64;
+  let (svg_width, svg_height) = if aspect <= 1.0 {
+    (svg_width, (svg_width as f64 * aspect).round() as u32)
+  } else {
+    ((svg_height as f64 / aspect).round() as u32, svg_height)
+  };
 
-  for (i, row) in matrix.iter().enumerate() {
-    for (j, &val) in row.iter().enumerate() {
-      let gray = ((1.0 - val.clamp(0.0, 1.0)) * 255.0) as u8;
-      let sx = j as f64 * cell_w;
-      let sy = i as f64 * cell_h;
-      svg.push_str(&format!(
-        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({gray},{gray},{gray})\" stroke=\"none\"/>\n",
-        cell_w + 0.5, cell_h + 0.5
-      ));
+  let s = RESOLUTION_SCALE;
+  let render_width = svg_width * s;
+  let render_height = svg_height * s;
+
+  let (bg_color, _, _, _, _) = plot_theme();
+  let border_color = RGBColor(0x66, 0x66, 0x66);
+
+  let range = v_max - v_min;
+
+  let mut buf = String::new();
+  {
+    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
+      .into_drawing_area();
+    root.fill(&bg_color).map_err(|e| {
+      InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+    })?;
+
+    let cell_w = render_width as f64 / n_cols as f64;
+    let cell_h = render_height as f64 / n_rows as f64;
+
+    for (i, row) in matrix.iter().enumerate() {
+      for (j, &val) in row.iter().enumerate() {
+        let t = if range.abs() < f64::EPSILON {
+          0.5
+        } else {
+          ((val - v_min) / range).clamp(0.0, 1.0)
+        };
+        let (r, g, b) = sunset_color(t);
+
+        let x0 = (j as f64 * cell_w).round() as i32;
+        let y0 = (i as f64 * cell_h).round() as i32;
+        let x1 = ((j + 1) as f64 * cell_w).round() as i32;
+        let y1 = ((i + 1) as f64 * cell_h).round() as i32;
+
+        root
+          .draw(&Rectangle::new(
+            [(x0, y0), (x1, y1)],
+            RGBColor(r, g, b).filled(),
+          ))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+          })?;
+      }
     }
+
+    // Draw border around the entire plot
+    let bw = s as i32;
+    let rw = render_width as i32;
+    let rh = render_height as i32;
+    for rect in [
+      [(0, 0), (rw, bw)],       // top
+      [(0, rh - bw), (rw, rh)], // bottom
+      [(0, 0), (bw, rh)],       // left
+      [(rw - bw, 0), (rw, rh)], // right
+    ] {
+      root
+        .draw(&Rectangle::new(rect, border_color.filled()))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+        })?;
+    }
+
+    root.present().map_err(|e| {
+      InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+    })?;
   }
 
-  svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  rewrite_svg_header(
+    &mut buf,
+    svg_width,
+    svg_height,
+    render_width,
+    render_height,
+    full_width,
+  );
+
+  Ok(crate::graphics_result(buf))
 }
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling

@@ -2078,7 +2078,7 @@ pub(crate) fn generate_axes_only_opts(
 }
 
 /// Rewrite the SVG header to use viewBox for display scaling.
-fn rewrite_svg_header(
+pub(crate) fn rewrite_svg_header(
   buf: &mut String,
   svg_width: u32,
   svg_height: u32,
