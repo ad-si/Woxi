@@ -571,3 +571,38 @@ mod angle_vector {
     );
   }
 }
+
+mod inverse_trig_identities {
+  use super::*;
+
+  #[test]
+  fn sin_arcsin() {
+    assert_eq!(interpret("Sin[ArcSin[x]]").unwrap(), "x");
+    assert_eq!(interpret("Sin[ArcSin[1/2]]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn cos_arccos() {
+    assert_eq!(interpret("Cos[ArcCos[x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn tan_arctan() {
+    assert_eq!(interpret("Tan[ArcTan[x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sinh_arcsinh() {
+    assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn cosh_arccosh() {
+    assert_eq!(interpret("Cosh[ArcCosh[x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn tanh_arctanh() {
+    assert_eq!(interpret("Tanh[ArcTanh[x]]").unwrap(), "x");
+  }
+}
