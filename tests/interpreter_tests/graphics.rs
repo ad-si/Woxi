@@ -1241,6 +1241,21 @@ mod plot3d {
       );
       assert!(svg.contains("polyline"), "expected plot line in SVG");
     }
+
+    #[test]
+    fn plot_suppresses_messages_during_sampling() {
+      // Plot[x^x, {x, 0, 10}] evaluates 0.^0. at x=0 which would normally
+      // emit a Power::indet warning. Plot should suppress all such messages
+      // during function sampling (matching Wolfram Language behavior).
+      let result =
+        woxi::interpret_with_stdout("Plot[x^x, {x, 0, 10}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(
+        !result.warnings.iter().any(|w| w.contains("Power::indet")),
+        "Plot should suppress Power::indet messages, but got: {:?}",
+        result.warnings
+      );
+    }
   }
 
   mod plot_options {
