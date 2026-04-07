@@ -362,6 +362,16 @@ mod log {
   fn log_two_arg_symbolic() {
     assert_eq!(interpret("Log[2, 5]").unwrap(), "Log[5]/Log[2]");
   }
+
+  #[test]
+  fn log_infinity() {
+    assert_eq!(interpret("Log[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn log_complex_infinity() {
+    assert_eq!(interpret("Log[ComplexInfinity]").unwrap(), "Infinity");
+  }
 }
 
 mod linear_recurrence {
