@@ -2925,6 +2925,33 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             datasets.push(pts);
           }
         }
+        Expr::List(inner)
+          if !inner.is_empty()
+            && inner.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
+          // x = column index (1-based), y = row index (1-based)
+          let num_rows = outer.len();
+          let num_cols = inner.len();
+          let mut pts = Vec::new();
+          for (i, row_expr) in outer.iter().enumerate() {
+            if let Expr::List(row) = row_expr {
+              for (j, val_expr) in row.iter().enumerate() {
+                if let Some(z) = try_eval_to_f64(val_expr)
+                  && z.is_finite()
+                {
+                  let x = (j + 1) as f64;
+                  let y = (i + 1) as f64;
+                  pts.push((x, y, z));
+                }
+              }
+            }
+          }
+          let _ = (num_rows, num_cols);
+          if !pts.is_empty() {
+            datasets.push(pts);
+          }
+        }
         Expr::List(_) => {
           // Multiple datasets: {{{x,y,z},...}, {{x,y,z},...}, ...}
           for item in outer {
@@ -3172,16 +3199,99 @@ fn generate_scatter_svg(
   // Draw axes first (behind points)
   draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
 
-  // Render points as circles
+  // Build bounding-box edge segments for depth-interleaving
+  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+  let corners = bounding_box_corners();
+  let edge_pairs: [(usize, usize); 12] = [
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 3),
+    (4, 5),
+    (4, 6),
+    (5, 7),
+    (6, 7),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+  ];
+  const EDGE_SUBDIVISIONS: usize = 20;
+  let mut sorted_edges: Vec<BoxEdge> =
+    Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
+  for &(i, j) in &edge_pairs {
+    let a = corners[i];
+    let b = corners[j];
+    for s in 0..EDGE_SUBDIVISIONS {
+      let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+      let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+      let tm = (t0 + t1) * 0.5;
+      let lerp = |t: f64| Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      sorted_edges.push(BoxEdge {
+        endpoints: [lerp(t0), lerp(t1)],
+        depth: depth(lerp(tm), camera),
+      });
+    }
+  }
+  sorted_edges.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Merge-render scatter points and box edges back-to-front (painter's algorithm)
   let radius = 3.0;
-  for pt in points {
-    let (sx, sy) = to_svg(pt.sx, pt.sy);
-    let (r, g, b) = pt.color;
-    svg.push_str(&format!(
-      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
-      sx, sy, radius, r, g, b,
-      (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
-    ));
+  {
+    let mut ei = 0;
+    for pt in points {
+      // Emit any box edges further from camera than this point
+      while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
+        let edge = &sorted_edges[ei];
+        let (ex0, ey0) = to_svg(
+          project(edge.endpoints[0], camera).0,
+          project(edge.endpoints[0], camera).1,
+        );
+        let (ex1, ey1) = to_svg(
+          project(edge.endpoints[1], camera).0,
+          project(edge.endpoints[1], camera).1,
+        );
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+          ex0, ey0, ex1, ey1, axis_color
+        ));
+        ei += 1;
+      }
+      // Emit point
+      let (sx, sy) = to_svg(pt.sx, pt.sy);
+      let (r, g, b) = pt.color;
+      svg.push_str(&format!(
+        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+        sx, sy, radius, r, g, b,
+        (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
+      ));
+    }
+    // Emit remaining box edges (closest to viewer)
+    while ei < sorted_edges.len() {
+      let edge = &sorted_edges[ei];
+      let (ex0, ey0) = to_svg(
+        project(edge.endpoints[0], camera).0,
+        project(edge.endpoints[0], camera).1,
+      );
+      let (ex1, ey1) = to_svg(
+        project(edge.endpoints[1], camera).0,
+        project(edge.endpoints[1], camera).1,
+      );
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+        ex0, ey0, ex1, ey1, axis_color
+      ));
+      ei += 1;
+    }
   }
 
   svg.push_str("</svg>");

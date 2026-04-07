@@ -1137,6 +1137,20 @@ mod plot3d {
           "ListPointPlot3D[{{-1,-1,0},{0,0,1},{1,1,0}}]"
         ));
       }
+
+      #[test]
+      fn matrix_data() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]"
+        ));
+      }
+
+      #[test]
+      fn matrix_from_table() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[Table[N[Sin[x] Cos[y]], {x, -3, 3, 1}, {y, -3, 3, 1}]]"
+        ));
+      }
     }
 
     mod options {
@@ -1170,7 +1184,7 @@ mod plot3d {
 
       #[test]
       fn invalid_data() {
-        assert!(interpret("ListPointPlot3D[{{1, 2}}]").is_err());
+        assert!(interpret("ListPointPlot3D[{\"a\", \"b\"}]").is_err());
       }
     }
   }
