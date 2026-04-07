@@ -382,6 +382,16 @@ mod log {
   fn log_neg_i() {
     assert_eq!(interpret("Log[-I]").unwrap(), "(-(I/2))*Pi");
   }
+
+  #[test]
+  fn log_e_to_pi() {
+    assert_eq!(interpret("Log[E^Pi]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn log_e_to_x() {
+    assert_eq!(interpret("Log[E^x]").unwrap(), "x");
+  }
 }
 
 mod linear_recurrence {
