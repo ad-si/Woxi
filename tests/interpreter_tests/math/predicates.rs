@@ -60,6 +60,26 @@ mod sign_predicates {
     assert_eq!(interpret("NonNegative[Pi]").unwrap(), "True");
     assert_eq!(interpret("NonNegative[-Pi]").unwrap(), "False");
   }
+
+  #[test]
+  fn positive_symbolic_returns_unevaluated() {
+    assert_eq!(interpret("Positive[x]").unwrap(), "Positive[x]");
+  }
+
+  #[test]
+  fn non_negative_symbolic_returns_unevaluated() {
+    assert_eq!(interpret("NonNegative[x]").unwrap(), "NonNegative[x]");
+  }
+
+  #[test]
+  fn non_positive_symbolic_returns_unevaluated() {
+    assert_eq!(interpret("NonPositive[x]").unwrap(), "NonPositive[x]");
+  }
+
+  #[test]
+  fn negative_symbolic_returns_unevaluated() {
+    assert_eq!(interpret("Negative[x]").unwrap(), "Negative[x]");
+  }
 }
 
 mod chop {

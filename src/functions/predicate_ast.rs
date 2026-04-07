@@ -432,8 +432,13 @@ pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PositiveQ expects exactly 1 argument".into(),
     ));
   }
-  let is_positive = is_known_positive(&args[0]).unwrap_or(false);
-  Ok(bool_expr(is_positive))
+  match is_known_positive(&args[0]) {
+    Some(val) => Ok(bool_expr(val)),
+    None => Ok(Expr::FunctionCall {
+      name: "Positive".to_string(),
+      args: args.to_vec(),
+    }),
+  }
 }
 
 /// NegativeQ[x] - Tests if x is a negative number
@@ -460,9 +465,16 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // NonPositive: x <= 0, i.e. negative or zero
-  let is_non_positive =
-    is_known_negative(&args[0]).unwrap_or(false) || is_zero(&args[0]);
-  Ok(bool_expr(is_non_positive))
+  if is_zero(&args[0]) {
+    return Ok(bool_expr(true));
+  }
+  match is_known_negative(&args[0]) {
+    Some(val) => Ok(bool_expr(val)),
+    None => Ok(Expr::FunctionCall {
+      name: "NonPositive".to_string(),
+      args: args.to_vec(),
+    }),
+  }
 }
 
 /// NonNegativeQ[x] - Tests if x is >= 0
@@ -473,9 +485,16 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // NonNegative: x >= 0, i.e. positive or zero
-  let is_non_negative =
-    is_known_positive(&args[0]).unwrap_or(false) || is_zero(&args[0]);
-  Ok(bool_expr(is_non_negative))
+  if is_zero(&args[0]) {
+    return Ok(bool_expr(true));
+  }
+  match is_known_positive(&args[0]) {
+    Some(val) => Ok(bool_expr(val)),
+    None => Ok(Expr::FunctionCall {
+      name: "NonNegative".to_string(),
+      args: args.to_vec(),
+    }),
+  }
 }
 
 fn is_zero(expr: &Expr) -> bool {
