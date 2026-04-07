@@ -1329,14 +1329,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Constant(c) if c == "E") {
         return Ok(Expr::Integer(1));
       }
-      // Log[E^n] = n only when n is a concrete integer
+      // Log[E^x] = x (inverse function identity)
       if let Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Power,
         left,
         right,
       } = &args[0]
         && matches!(left.as_ref(), Expr::Constant(c) if c == "E")
-        && matches!(right.as_ref(), Expr::Integer(_) | Expr::BigInteger(_))
       {
         return Ok(*right.clone());
       }
@@ -1347,7 +1346,6 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && name == "Power"
         && pow_args.len() == 2
         && matches!(&pow_args[0], Expr::Constant(c) if c == "E")
-        && matches!(&pow_args[1], Expr::Integer(_) | Expr::BigInteger(_))
       {
         return Ok(pow_args[1].clone());
       }
