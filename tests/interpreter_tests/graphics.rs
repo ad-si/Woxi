@@ -2131,6 +2131,38 @@ mod plot3d {
     }
 
     #[test]
+    fn array_plot_color_directives() {
+      // Cells can be explicit color directives like Pink, Red
+      insta::assert_snapshot!(export_svg(
+        "ArrayPlot[{{1, 0, 0, Pink}, {1, 1, 0, Pink}, {1, 0, 1, Red}}]"
+      ));
+    }
+
+    #[test]
+    fn array_plot_color_rules() {
+      // ColorRules maps specific values to colors
+      insta::assert_snapshot!(export_svg(
+        "ArrayPlot[{{1, 0, 0, 0.3}, {1, 1, 0, 0.3}, {1, 0, 1, 0.7}}, ColorRules -> {1 -> Pink, 0 -> Yellow}]"
+      ));
+    }
+
+    #[test]
+    fn array_plot_mesh() {
+      // Mesh -> True draws grid lines between cells
+      insta::assert_snapshot!(export_svg(
+        "ArrayPlot[{{1, 0, 0, 0.3}, {1, 1, 0, 0.3}, {1, 0, 1, 0.7}}, Mesh -> True]"
+      ));
+    }
+
+    #[test]
+    fn array_plot_color_function_rainbow() {
+      // ColorFunction -> "Rainbow" uses a rainbow gradient
+      insta::assert_snapshot!(export_svg(
+        "ArrayPlot[{{0, 0.25, 0.5, 0.75, 1}, {1, 0.75, 0.5, 0.25, 0}}, ColorFunction -> \"Rainbow\"]"
+      ));
+    }
+
+    #[test]
     fn matrix_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
