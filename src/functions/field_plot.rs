@@ -2,6 +2,7 @@ use plotters::prelude::*;
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::graphics::{Color as GfxColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
@@ -139,37 +140,6 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
        <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   }
-}
-
-/// Map a normalized value t in [0,1] to the Wolfram SunsetColors gradient.
-/// The gradient goes: black → purple → red → orange → yellow → white.
-fn sunset_color(t: f64) -> (u8, u8, u8) {
-  // Key stops sampled from Wolfram's ColorData["SunsetColors"]
-  let stops: [(f64, f64, f64); 9] = [
-    (0.0, 0.0, 0.0),       // t=0.000  black
-    (0.280, 0.102, 0.380), // t=0.125
-    (0.581, 0.198, 0.389), // t=0.250
-    (0.836, 0.308, 0.216), // t=0.375
-    (0.979, 0.451, 0.051), // t=0.500
-    (0.995, 0.625, 0.110), // t=0.625
-    (1.0, 0.782, 0.310),   // t=0.750
-    (1.0, 0.912, 0.618),   // t=0.875
-    (1.0, 1.0, 1.0),       // t=1.000  white
-  ];
-  let t = t.clamp(0.0, 1.0);
-  let idx = (t * 8.0).min(7.0);
-  let i = idx as usize;
-  let frac = idx - i as f64;
-  let (r0, g0, b0) = stops[i];
-  let (r1, g1, b1) = stops[i + 1];
-  let r = r0 + (r1 - r0) * frac;
-  let g = g0 + (g1 - g0) * frac;
-  let b = b0 + (b1 - b0) * frac;
-  (
-    (r * 255.0).round() as u8,
-    (g * 255.0).round() as u8,
-    (b * 255.0).round() as u8,
-  )
 }
 
 /// Map value to a blue-white-red color
@@ -1456,7 +1426,99 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix using SunsetColors
+/// A cell in an ArrayPlot matrix: either a numeric value or an explicit color.
+#[derive(Clone)]
+enum ArrayCell {
+  Value(f64),
+  Color(GfxColor),
+}
+
+/// Apply a named color function (gradient) to a normalized value t in [0,1].
+fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
+  let t = t.clamp(0.0, 1.0);
+  match name {
+    "Rainbow" => {
+      // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
+      let c = GfxColor::from_hue(t * 0.83, 1.0, 1.0);
+      (
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
+      )
+    }
+    "TemperatureMap" => {
+      // Blue -> white -> red
+      value_to_color(t, 0.0, 1.0)
+    }
+    "SunsetColors" => {
+      // Dark blue -> red -> yellow -> white
+      let (r, g, b) = if t < 0.33 {
+        let s = t / 0.33;
+        (0.1 + s * 0.7, 0.05 + s * 0.0, 0.3 + s * (-0.2))
+      } else if t < 0.66 {
+        let s = (t - 0.33) / 0.33;
+        (0.8 + s * 0.2, 0.05 + s * 0.55, 0.1 + s * 0.0)
+      } else {
+        let s = (t - 0.66) / 0.34;
+        (1.0, 0.6 + s * 0.4, 0.1 + s * 0.9)
+      };
+      (
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8,
+      )
+    }
+    "ThermometerColors" => {
+      // Blue -> cyan -> green -> yellow -> red
+      let (r, g, b) = if t < 0.25 {
+        let s = t / 0.25;
+        (0.0, s, 1.0)
+      } else if t < 0.5 {
+        let s = (t - 0.25) / 0.25;
+        (0.0, 1.0, 1.0 - s)
+      } else if t < 0.75 {
+        let s = (t - 0.5) / 0.25;
+        (s, 1.0, 0.0)
+      } else {
+        let s = (t - 0.75) / 0.25;
+        (1.0, 1.0 - s, 0.0)
+      };
+      (
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8,
+      )
+    }
+    "GreenPinkTones" => {
+      // Green -> white -> pink
+      if t < 0.5 {
+        let s = t * 2.0;
+        (
+          (s * 255.0).round() as u8,
+          ((0.5 + 0.5 * s) * 255.0).round() as u8,
+          (s * 255.0).round() as u8,
+        )
+      } else {
+        let s = (t - 0.5) * 2.0;
+        (
+          255,
+          ((1.0 - 0.5 * s) * 255.0).round() as u8,
+          ((1.0 - 0.5 * s) * 255.0).round() as u8,
+        )
+      }
+    }
+    // Default: grayscale (same as "GrayTones")
+    _ => {
+      let gray = ((1.0 - t) * 255.0).round() as u8;
+      (gray, gray, gray)
+    }
+  }
+}
+
+/// ArrayPlot[{{v11, ...}, ...}] - grayscale grid from matrix values
+/// 0 is always white; the maximum value is black.
+/// Supports options: ColorRules, Mesh, ColorFunction, ImageSize.
+/// Cells can also be explicit color directives (e.g. Pink, Red).
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -1468,26 +1530,80 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut matrix: Vec<Vec<f64>> = Vec::new();
-  let mut v_min = f64::INFINITY;
+  // Parse options
+  let mut color_rules: Vec<(f64, GfxColor)> = Vec::new();
+  let mut mesh = false;
+  let mut color_function: Option<String> = None;
+
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+    {
+      match name.as_str() {
+        "ColorRules" => {
+          if let Expr::List(rules) = replacement.as_ref() {
+            for rule in rules {
+              if let Expr::Rule {
+                pattern: rp,
+                replacement: rr,
+              } = rule
+              {
+                let rp_eval =
+                  evaluate_expr_to_expr(rp).unwrap_or_else(|_| *rp.clone());
+                if let Some(val) = try_eval_to_f64(&rp_eval) {
+                  let rr_eval =
+                    evaluate_expr_to_expr(rr).unwrap_or_else(|_| *rr.clone());
+                  if let Some(color) = parse_color(&rr_eval) {
+                    color_rules.push((val, color));
+                  }
+                }
+              }
+            }
+          }
+        }
+        "Mesh" => match replacement.as_ref() {
+          Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
+          _ => {}
+        },
+        "ColorFunction" => {
+          if let Expr::String(s) = replacement.as_ref() {
+            color_function = Some(s.clone());
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Parse matrix: each cell is either a numeric value or a color directive
+  let mut matrix: Vec<Vec<ArrayCell>> = Vec::new();
   let mut v_max = f64::NEG_INFINITY;
 
   for row in rows {
     if let Expr::List(items) = row {
-      let vals: Vec<f64> = items
+      let cells: Vec<ArrayCell> = items
         .iter()
         .map(|item| {
           let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-          try_eval_to_f64(&v).unwrap_or(0.0)
+          // Try as color first
+          if let Some(color) = parse_color(&v) {
+            ArrayCell::Color(color)
+          } else {
+            ArrayCell::Value(try_eval_to_f64(&v).unwrap_or(0.0))
+          }
         })
         .collect();
-      for &v in &vals {
-        if v.is_finite() {
-          v_min = v_min.min(v);
-          v_max = v_max.max(v);
+      for cell in &cells {
+        if let ArrayCell::Value(v) = cell
+          && v.is_finite()
+        {
+          v_max = v_max.max(*v);
         }
       }
-      matrix.push(vals);
+      matrix.push(cells);
     }
   }
 
@@ -1516,8 +1632,6 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (bg_color, _, _, _, _) = plot_theme();
   let border_color = RGBColor(0x66, 0x66, 0x66);
 
-  let range = v_max - v_min;
-
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -1530,13 +1644,41 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cell_h = render_height as f64 / n_rows as f64;
 
     for (i, row) in matrix.iter().enumerate() {
-      for (j, &val) in row.iter().enumerate() {
-        let t = if range.abs() < f64::EPSILON {
-          0.5
-        } else {
-          ((val - v_min) / range).clamp(0.0, 1.0)
+      for (j, cell) in row.iter().enumerate() {
+        let (r, g, b) = match cell {
+          ArrayCell::Color(color) => (
+            (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+          ),
+          ArrayCell::Value(val) => {
+            // Check ColorRules first
+            let mut found = None;
+            for (rule_val, rule_color) in &color_rules {
+              if (*val - *rule_val).abs() < f64::EPSILON {
+                found = Some((
+                  (rule_color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (rule_color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (rule_color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ));
+                break;
+              }
+            }
+            found.unwrap_or_else(|| {
+              let t = if v_max.abs() < f64::EPSILON {
+                0.0
+              } else {
+                (*val / v_max).clamp(0.0, 1.0)
+              };
+              if let Some(ref cf_name) = color_function {
+                apply_named_color_function(cf_name, t)
+              } else {
+                let gray = ((1.0 - t) * 255.0).round() as u8;
+                (gray, gray, gray)
+              }
+            })
+          }
         };
-        let (r, g, b) = sunset_color(t);
 
         let x0 = (j as f64 * cell_w).round() as i32;
         let y0 = (i as f64 * cell_h).round() as i32;
@@ -1547,6 +1689,42 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .draw(&Rectangle::new(
             [(x0, y0), (x1, y1)],
             RGBColor(r, g, b).filled(),
+          ))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+          })?;
+      }
+    }
+
+    // Draw mesh grid lines between cells
+    if mesh {
+      let mesh_color = RGBColor(0x66, 0x66, 0x66);
+      let line_w = (s as i32).max(1);
+      // Vertical lines
+      for j in 1..n_cols {
+        let x = (j as f64 * cell_w).round() as i32;
+        root
+          .draw(&Rectangle::new(
+            [
+              (x - line_w / 2, 0),
+              (x + (line_w + 1) / 2, render_height as i32),
+            ],
+            mesh_color.filled(),
+          ))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+          })?;
+      }
+      // Horizontal lines
+      for i in 1..n_rows {
+        let y = (i as f64 * cell_h).round() as i32;
+        root
+          .draw(&Rectangle::new(
+            [
+              (0, y - line_w / 2),
+              (render_width as i32, y + (line_w + 1) / 2),
+            ],
+            mesh_color.filled(),
           ))
           .map_err(|e| {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))

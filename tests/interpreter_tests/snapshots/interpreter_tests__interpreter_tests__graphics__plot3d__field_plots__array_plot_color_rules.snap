@@ -1,0 +1,23 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"ArrayPlot[{{1, 0, 0, 0.3}, {1, 1, 0, 0.3}, {1, 0, 1, 0.7}}, ColorRules -> {1 -> Pink, 0 -> Yellow}]\")"
+---
+<svg width="360" height="270" viewBox="0 0 3600 2700" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="3600" height="2700" opacity="1" fill="#FFFFFF" stroke="none"/>
+<rect x="0" y="0" width="900" height="900" opacity="1" fill="#FF8080" stroke="none"/>
+<rect x="900" y="0" width="900" height="900" opacity="1" fill="#FFFF00" stroke="none"/>
+<rect x="1800" y="0" width="900" height="900" opacity="1" fill="#FFFF00" stroke="none"/>
+<rect x="2700" y="0" width="900" height="900" opacity="1" fill="#B3B3B3" stroke="none"/>
+<rect x="0" y="900" width="900" height="900" opacity="1" fill="#FF8080" stroke="none"/>
+<rect x="900" y="900" width="900" height="900" opacity="1" fill="#FF8080" stroke="none"/>
+<rect x="1800" y="900" width="900" height="900" opacity="1" fill="#FFFF00" stroke="none"/>
+<rect x="2700" y="900" width="900" height="900" opacity="1" fill="#B3B3B3" stroke="none"/>
+<rect x="0" y="1800" width="900" height="900" opacity="1" fill="#FF8080" stroke="none"/>
+<rect x="900" y="1800" width="900" height="900" opacity="1" fill="#FFFF00" stroke="none"/>
+<rect x="1800" y="1800" width="900" height="900" opacity="1" fill="#FF8080" stroke="none"/>
+<rect x="2700" y="1800" width="900" height="900" opacity="1" fill="#4D4D4D" stroke="none"/>
+<rect x="0" y="0" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
+<rect x="0" y="2690" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
+<rect x="0" y="0" width="10" height="2700" opacity="1" fill="#666666" stroke="none"/>
+<rect x="3590" y="0" width="10" height="2700" opacity="1" fill="#666666" stroke="none"/>
+</svg>
