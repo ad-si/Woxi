@@ -1227,6 +1227,19 @@ mod string_take_extended {
   fn take_range() {
     assert_eq!(interpret(r#"StringTake["abcd", {2,3}]"#).unwrap(), "bc");
   }
+
+  #[test]
+  fn take_up_to_within_length() {
+    assert_eq!(interpret(r#"StringTake["Hello", UpTo[3]]"#).unwrap(), "Hel");
+  }
+
+  #[test]
+  fn take_up_to_exceeds_length() {
+    assert_eq!(
+      interpret(r#"StringTake["Hello", UpTo[10]]"#).unwrap(),
+      "Hello"
+    );
+  }
 }
 
 mod string_match_q_patterns {
