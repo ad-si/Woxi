@@ -1051,8 +1051,34 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extract date components — handle DateObject[{y,m,d,...}, ...] by extracting first arg
+  // Also detect granularity from DateObject (e.g. "Day", "Instant", "Hour", etc.)
+  let mut granularity: Option<&str> = None;
   let date_expr = if let Expr::FunctionCall { name, args: dargs } = &date_arg {
     if name == "DateObject" && !dargs.is_empty() {
+      // Check for granularity in the second argument
+      if dargs.len() >= 2 {
+        if let Expr::String(g) = &dargs[1] {
+          granularity = Some(match g.as_str() {
+            "Day" => "Day",
+            "Month" => "Month",
+            "Year" => "Year",
+            "Hour" => "Hour",
+            "Minute" => "Minute",
+            "Second" | "Instant" => "Second",
+            _ => "Day",
+          });
+        } else if let Expr::Identifier(g) = &dargs[1] {
+          granularity = Some(match g.as_str() {
+            "Day" => "Day",
+            "Month" => "Month",
+            "Year" => "Year",
+            "Hour" => "Hour",
+            "Minute" => "Minute",
+            "Second" | "Instant" => "Second",
+            _ => "Day",
+          });
+        }
+      }
       &dargs[0]
     } else {
       &date_arg
@@ -1083,21 +1109,41 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Determine whether to include time in default format output.
+  // Only omit time when DateObject has explicit Day/Month/Year granularity.
+  // For plain lists or DateObjects with time granularity, always include time.
+  let has_time = match granularity {
+    Some("Day" | "Month" | "Year") => false,
+    Some(_) => true,
+    None => true, // plain list or no DateObject: always include time (Wolfram behavior)
+  };
+
   let (y, m, d, h, min, sec) = normalize_date(&components);
 
   if args.len() == 1 {
-    // Default format: "DayNameShort DD MonthNameShort YYYY HH:MM:SS"
     let dow = day_of_week(y, m, d);
-    return Ok(Expr::String(format!(
-      "{} {} {} {} {:02}:{:02}:{:02}",
-      day_name_short(dow),
-      d,
-      month_name_short(m),
-      y,
-      h,
-      min,
-      sec as i64
-    )));
+    if has_time {
+      // Format with time: "DayNameShort DD MonthNameShort YYYY HH:MM:SS"
+      return Ok(Expr::String(format!(
+        "{} {} {} {} {:02}:{:02}:{:02}",
+        day_name_short(dow),
+        d,
+        month_name_short(m),
+        y,
+        h,
+        min,
+        sec as i64
+      )));
+    } else {
+      // Format without time: "DayNameShort DD MonthNameShort YYYY"
+      return Ok(Expr::String(format!(
+        "{} {} {} {}",
+        day_name_short(dow),
+        d,
+        month_name_short(m),
+        y,
+      )));
+    }
   }
 
   let fmt_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;

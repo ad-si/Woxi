@@ -429,6 +429,42 @@ mod date_string {
   }
 
   #[test]
+  fn date_string_date_object_day_granularity_omits_time() {
+    // DateObject with "Day" granularity should omit time in default format
+    assert_eq!(
+      interpret("DateString[DateObject[{2024, 1, 15}, \"Day\"]]").unwrap(),
+      "Mon 15 Jan 2024"
+    );
+  }
+
+  #[test]
+  fn date_string_date_object_implicit_day_granularity() {
+    // DateObject[{y,m,d}] creates Day granularity
+    assert_eq!(
+      interpret("DateString[DateObject[{2024, 1, 15}]]").unwrap(),
+      "Mon 15 Jan 2024"
+    );
+  }
+
+  #[test]
+  fn date_string_plain_list_includes_time() {
+    // Plain list always includes time (even when zero)
+    assert_eq!(
+      interpret("DateString[{2024, 6, 15}]").unwrap(),
+      "Sat 15 Jun 2024 00:00:00"
+    );
+  }
+
+  #[test]
+  fn date_string_date_object_with_time_includes_time() {
+    // DateObject with time components should include time
+    assert_eq!(
+      interpret("DateString[DateObject[{2024, 1, 15, 10, 30, 0}]]").unwrap(),
+      "Mon 15 Jan 2024 10:30:00"
+    );
+  }
+
+  #[test]
   fn date_string_from_string_date_iso() {
     assert_eq!(
       interpret("DateString[\"2025-09-24\", \"ISODate\"]").unwrap(),
