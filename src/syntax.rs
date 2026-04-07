@@ -4892,6 +4892,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("Entity[{}]", parts.join(", "));
       }
+      // OutputForm-only: StringForm["template", args...] substitutes placeholders
+      if is_output
+        && name == "StringForm"
+        && !args.is_empty()
+        && let Expr::String(template) = &args[0]
+      {
+        return crate::functions::string_ast::format_string_form(
+          template,
+          &args[1..],
+        );
+      }
       // OutputForm-only: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if is_output
         && name == "Row"
