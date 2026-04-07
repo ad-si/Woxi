@@ -247,6 +247,20 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
   // Now compute sin(kr * Pi / nr) for first quadrant reference angle
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(0),
+    // sin(Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
+    (1, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(make_sqrt(Expr::Integer(3))),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(make_sqrt(Expr::Integer(2))),
+      }),
+    },
     // sin(Pi/6) = 1/2
     (1, 6) => make_rational(1, 2),
     // sin(Pi/4) = 1/Sqrt[2]
@@ -260,6 +274,20 @@ pub fn exact_sin(k: i64, n: i64) -> Option<Expr> {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(make_sqrt(Expr::Integer(3))),
       right: Box::new(Expr::Integer(2)),
+    },
+    // sin(5*Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
+    (5, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(make_sqrt(Expr::Integer(3))),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(make_sqrt(Expr::Integer(2))),
+      }),
     },
     // sin(Pi/2) = 1
     (1, 2) => Expr::Integer(1),
@@ -300,6 +328,20 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
   let (kr, nr) = (k_ref / g, n / g);
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(1),
+    // cos(Pi/12) = (1 + Sqrt[3]) / (2*Sqrt[2])
+    (1, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(make_sqrt(Expr::Integer(3))),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(make_sqrt(Expr::Integer(2))),
+      }),
+    },
     // cos(Pi/6) = Sqrt[3]/2
     (1, 6) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -314,6 +356,20 @@ pub fn exact_cos(k: i64, n: i64) -> Option<Expr> {
     },
     // cos(Pi/3) = 1/2
     (1, 3) => make_rational(1, 2),
+    // cos(5*Pi/12) = (-1 + Sqrt[3]) / (2*Sqrt[2])
+    (5, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(make_sqrt(Expr::Integer(3))),
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(make_sqrt(Expr::Integer(2))),
+      }),
+    },
     // cos(Pi/2) = 0
     (1, 2) => Expr::Integer(0),
     _ => return None,
@@ -354,6 +410,12 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
 
   let val = match (kr, nr) {
     (0, _) => Expr::Integer(0),
+    // tan(Pi/12) = 2 - Sqrt[3]
+    (1, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
+    },
     // tan(Pi/6) = 1/Sqrt[3]
     (1, 6) => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -364,6 +426,12 @@ pub fn exact_tan(k: i64, n: i64) -> Option<Expr> {
     (1, 4) => Expr::Integer(1),
     // tan(Pi/3) = Sqrt[3]
     (1, 3) => make_sqrt(Expr::Integer(3)),
+    // tan(5*Pi/12) = 2 + Sqrt[3]
+    (5, 12) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(make_sqrt(Expr::Integer(3))),
+    },
     _ => return None,
   };
 
