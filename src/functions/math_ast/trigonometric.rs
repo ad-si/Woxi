@@ -1408,6 +1408,20 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
         }
       }
+      // Log[Infinity] = Infinity
+      if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      // Log[ComplexInfinity] = Infinity
+      if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      // Log[-Infinity] = Infinity (principal value)
+      if crate::functions::math_ast::special_functions::is_neg_infinity(
+        &args[0],
+      ) {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
       // Log[p/q] where 0 < p < q: return -Log[q/p]
       if let Expr::FunctionCall {
         name,
