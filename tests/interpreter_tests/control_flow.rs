@@ -1370,10 +1370,8 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3]").unwrap();
     assert_eq!(result.result, "6");
-    assert_eq!(
-      result.stdout.trim(),
-      "HoldForm[1 + 2 + 3]\nHoldForm[Plus]\nHoldForm[1]\nHoldForm[2]\nHoldForm[3]\nHoldForm[6]"
-    );
+    // HoldForm wrapper is not shown in Print output (OutputForm)
+    assert_eq!(result.stdout.trim(), "1 + 2 + 3\nPlus\n1\n2\n3\n6");
   }
 
   #[test]
@@ -1384,7 +1382,7 @@ mod trace_scan {
     assert_eq!(result.result, "13");
     assert_eq!(
       result.stdout.trim(),
-      "HoldForm[2^3 + 5]\nHoldForm[Plus]\nHoldForm[2^3]\nHoldForm[Power]\nHoldForm[2]\nHoldForm[3]\nHoldForm[8]\nHoldForm[5]\nHoldForm[8 + 5]\nHoldForm[13]"
+      "2^3 + 5\nPlus\n2^3\nPower\n2\n3\n8\n5\n8 + 5\n13"
     );
   }
 
@@ -1393,7 +1391,7 @@ mod trace_scan {
     clear_state();
     let result = woxi::interpret_with_stdout("TraceScan[Print, 3]").unwrap();
     assert_eq!(result.result, "3");
-    assert_eq!(result.stdout.trim(), "HoldForm[3]");
+    assert_eq!(result.stdout.trim(), "3");
   }
 
   #[test]
@@ -1402,44 +1400,35 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, f[1, 2]]").unwrap();
     assert_eq!(result.result, "f[1, 2]");
-    assert_eq!(
-      result.stdout.trim(),
-      "HoldForm[f[1, 2]]\nHoldForm[f]\nHoldForm[1]\nHoldForm[2]"
-    );
+    assert_eq!(result.stdout.trim(), "f[1, 2]\nf\n1\n2");
   }
 
   #[test]
   fn trace_scan_form_symbol() {
     clear_state();
-    // form = Plus traces head Plus and the result
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3, Plus]").unwrap();
     assert_eq!(result.result, "6");
-    assert_eq!(result.stdout.trim(), "HoldForm[Plus]\nHoldForm[6]");
+    assert_eq!(result.stdout.trim(), "Plus\n6");
   }
 
   #[test]
   fn trace_scan_form_symbol_complex() {
     clear_state();
-    // form = Plus on 2^3 + 5 traces head, rebuilt, and result
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, Plus]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(
-      result.stdout.trim(),
-      "HoldForm[Plus]\nHoldForm[8 + 5]\nHoldForm[13]"
-    );
+    assert_eq!(result.stdout.trim(), "Plus\n8 + 5\n13");
   }
 
   #[test]
   fn trace_scan_form_blank_head() {
     clear_state();
-    // form = _Plus matches expressions with head Plus
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3, _Plus]")
         .unwrap();
     assert_eq!(result.result, "6");
-    assert_eq!(result.stdout.trim(), "HoldForm[1 + 2 + 3]");
+    assert_eq!(result.stdout.trim(), "1 + 2 + 3");
   }
 
   #[test]
@@ -1448,7 +1437,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Plus]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "HoldForm[2^3 + 5]\nHoldForm[8 + 5]");
+    assert_eq!(result.stdout.trim(), "2^3 + 5\n8 + 5");
   }
 
   #[test]
@@ -1457,7 +1446,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, Power]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "HoldForm[Power]\nHoldForm[8]");
+    assert_eq!(result.stdout.trim(), "Power\n8");
   }
 
   #[test]
@@ -1466,7 +1455,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Power]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "HoldForm[2^3]");
+    assert_eq!(result.stdout.trim(), "2^3");
   }
 
   #[test]
@@ -1476,10 +1465,7 @@ mod trace_scan {
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Integer]")
         .unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(
-      result.stdout.trim(),
-      "HoldForm[2]\nHoldForm[3]\nHoldForm[8]\nHoldForm[5]\nHoldForm[13]"
-    );
+    assert_eq!(result.stdout.trim(), "2\n3\n8\n5\n13");
   }
 
   #[test]
@@ -1488,9 +1474,9 @@ mod trace_scan {
     // TraceScan with anonymous function that collects via Sow
     let result =
       woxi::interpret_with_stdout("Reap[TraceScan[Sow, 1 + 2 + 3]]").unwrap();
-    // Should return {6, {{HoldForm[1+2+3], HoldForm[Plus], HoldForm[1], HoldForm[2], HoldForm[3], HoldForm[6]}}}
+    // HoldForm wrappers are present internally but invisible in output
     assert!(result.result.contains("6"));
-    assert!(result.result.contains("HoldForm"));
+    assert!(result.result.contains("Plus"));
   }
 
   #[test]

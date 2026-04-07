@@ -4892,6 +4892,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("Entity[{}]", parts.join(", "));
       }
+      // OutputForm-only: HoldForm[expr] and Defer[expr] display without wrapper
+      if is_output && (name == "HoldForm" || name == "Defer") && args.len() == 1
+      {
+        return fmt(&args[0]);
+      }
       // OutputForm-only: StringForm["template", args...] substitutes placeholders
       if is_output
         && name == "StringForm"

@@ -3423,7 +3423,8 @@ mod hold_form {
 
   #[test]
   fn hold_form_unevaluated() {
-    assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "HoldForm[1 + 1]");
+    // HoldForm prevents evaluation but displays without the wrapper
+    assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "1 + 1");
   }
 }
 
@@ -3655,10 +3656,8 @@ mod hold {
 
   #[test]
   fn hold_form_prevents_evaluation() {
-    assert_eq!(
-      interpret("HoldForm[1 + 2 + 3]").unwrap(),
-      "HoldForm[1 + 2 + 3]"
-    );
+    // HoldForm prevents evaluation but displays without the wrapper
+    assert_eq!(interpret("HoldForm[1 + 2 + 3]").unwrap(), "1 + 2 + 3");
   }
 
   #[test]
