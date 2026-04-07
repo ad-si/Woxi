@@ -2,7 +2,7 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  format_tick, nice_step, parse_image_size, substitute_var,
+  PLOT_COLORS, format_tick, nice_step, parse_image_size, substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -40,6 +40,15 @@ struct Triangle {
   depth: f64,
   color: (u8, u8, u8),
 }
+
+struct MeshLine {
+  projected: [(f64, f64); 2],
+  depth: f64,
+}
+
+/// Number of grid cells between default mesh lines.
+/// GRID_N / MESH_STEP ≈ 16 lines per direction.
+const MESH_STEP: usize = 3;
 
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
@@ -81,6 +90,28 @@ fn triangle_normal(v0: Point3D, v1: Point3D, v2: Point3D) -> [f64; 3] {
   } else {
     [nx / len, ny / len, nz / len]
   }
+}
+
+/// Per-surface color based on height, tinted by the surface's palette color.
+/// When there are multiple surfaces, each gets a distinct base hue from
+/// PLOT_COLORS; the height variation is applied as a lightness shift on top.
+fn surface_height_color(
+  z_norm: f64,
+  surface_idx: usize,
+  num_surfaces: usize,
+) -> (u8, u8, u8) {
+  if num_surfaces <= 1 {
+    return height_color(z_norm);
+  }
+  let base = PLOT_COLORS[surface_idx % PLOT_COLORS.len()];
+  // Apply height-based brightness variation: darker at bottom, brighter at top
+  let t = z_norm.clamp(0.0, 1.0);
+  // Range from 0.6 (dark) to 1.1 (bright, clamped)
+  let factor = 0.6 + t * 0.5;
+  let r = (base.0 as f64 * factor).round().min(255.0) as u8;
+  let g = (base.1 as f64 * factor).round().min(255.0) as u8;
+  let b = (base.2 as f64 * factor).round().min(255.0) as u8;
+  (r, g, b)
 }
 
 /// Height-based color: blue at bottom to green in middle to orange at top
@@ -170,6 +201,112 @@ fn parse_iterator(
   }
 }
 
+/// Generate mesh lines from a sampled grid.
+///
+/// For `Default` mode, draws lines along the x- and y-parameter directions
+/// at every `MESH_STEP` grid interval (~15 lines per direction).
+/// For `All` mode, draws lines along every grid edge (both directions).
+///
+/// `grid_n` is the grid resolution, `z_lo`/`z_range` define the z mapping,
+/// and `nz` converts a clamped z value to normalized coordinates.
+fn generate_mesh_lines(
+  grid: &[Vec<f64>],
+  grid_n: usize,
+  z_lo: f64,
+  z_hi: f64,
+  z_range: f64,
+  mesh_mode: MeshMode,
+  camera: &Camera,
+) -> Vec<MeshLine> {
+  let step = match mesh_mode {
+    MeshMode::Default => MESH_STEP,
+    // All mode uses triangle-edge strokes, not separate line elements
+    MeshMode::All => return Vec::new(),
+    MeshMode::None => return Vec::new(),
+  };
+
+  let nx = |ii: usize| -> f64 { (ii as f64 / grid_n as f64) * 2.0 - 1.0 };
+  let ny = |jj: usize| -> f64 { (jj as f64 / grid_n as f64) * 2.0 - 1.0 };
+  let nz = |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
+
+  let mut lines = Vec::new();
+
+  // Lines along the x-direction (constant j)
+  for j in (0..=grid_n).step_by(step) {
+    for i in 0..grid_n {
+      let z0 = grid[i][j];
+      let z1 = grid[i + 1][j];
+      if z0.is_finite() && z1.is_finite() {
+        let cz0 = z0.clamp(z_lo, z_hi);
+        let cz1 = z1.clamp(z_lo, z_hi);
+        let p0 = Point3D {
+          x: nx(i),
+          y: ny(j),
+          z: nz(cz0),
+        };
+        let p1 = Point3D {
+          x: nx(i + 1),
+          y: ny(j),
+          z: nz(cz1),
+        };
+        let mid = Point3D {
+          x: (p0.x + p1.x) / 2.0,
+          y: (p0.y + p1.y) / 2.0,
+          z: (p0.z + p1.z) / 2.0,
+        };
+        lines.push(MeshLine {
+          projected: [project(p0, camera), project(p1, camera)],
+          depth: depth(mid, camera),
+        });
+      }
+    }
+  }
+
+  // Lines along the y-direction (constant i)
+  for i in (0..=grid_n).step_by(step) {
+    for j in 0..grid_n {
+      let z0 = grid[i][j];
+      let z1 = grid[i][j + 1];
+      if z0.is_finite() && z1.is_finite() {
+        let cz0 = z0.clamp(z_lo, z_hi);
+        let cz1 = z1.clamp(z_lo, z_hi);
+        let p0 = Point3D {
+          x: nx(i),
+          y: ny(j),
+          z: nz(cz0),
+        };
+        let p1 = Point3D {
+          x: nx(i),
+          y: ny(j + 1),
+          z: nz(cz1),
+        };
+        let mid = Point3D {
+          x: (p0.x + p1.x) / 2.0,
+          y: (p0.y + p1.y) / 2.0,
+          z: (p0.z + p1.z) / 2.0,
+        };
+        lines.push(MeshLine {
+          projected: [project(p0, camera), project(p1, camera)],
+          depth: depth(mid, camera),
+        });
+      }
+    }
+  }
+
+  lines
+}
+
+/// Mesh rendering mode for 3D plots.
+#[derive(Clone, Copy, PartialEq)]
+enum MeshMode {
+  /// No mesh lines
+  None,
+  /// Default: semi-transparent mesh lines
+  Default,
+  /// Fully visible black mesh lines
+  All,
+}
+
 /// Implementation of Plot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
@@ -189,7 +326,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
 
@@ -208,9 +345,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
@@ -285,8 +423,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Phase 2: Build triangles using the shared z range
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  let num_surfaces = grids.len();
 
-  for grid in &grids {
+  for (surface_idx, grid) in grids.iter().enumerate() {
     for i in 0..GRID_N {
       for j in 0..GRID_N {
         let z00 = grid[i][j];
@@ -325,7 +464,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             + (cz10 - z_lo) / z_range
             + (cz01 - z_lo) / z_range)
             / 3.0;
-          let base_color = height_color(avg_z_norm);
+          let base_color =
+            surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
           let color = apply_lighting(base_color, normal);
 
@@ -371,7 +511,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             + (cz01 - z_lo) / z_range
             + (cz10 - z_lo) / z_range)
             / 3.0;
-          let base_color = height_color(avg_z_norm);
+          let base_color =
+            surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
           let color = apply_lighting(base_color, normal);
 
@@ -400,6 +541,14 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Generate mesh lines from each surface grid
+  let mut all_mesh_lines: Vec<MeshLine> = Vec::new();
+  for grid in &grids {
+    all_mesh_lines.extend(generate_mesh_lines(
+      grid, GRID_N, z_lo, z_hi, z_range, mesh_mode, &camera,
+    ));
+  }
+
   // Finalize z range for axis labels
   // z_lo/z_hi already account for PlotRange and flat-range handling
   let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
@@ -417,6 +566,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &all_mesh_lines,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -424,7 +574,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    mesh_mode,
     show_axes,
   )?;
 
@@ -434,6 +584,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 #[allow(clippy::too_many_arguments)]
 fn generate_svg(
   triangles: &[Triangle],
+  mesh_lines: &[MeshLine],
   camera: &Camera,
   x_range: (f64, f64),
   y_range: (f64, f64),
@@ -441,7 +592,7 @@ fn generate_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
-  show_mesh: bool,
+  mesh_mode: MeshMode,
   show_axes: bool,
 ) -> Result<String, InterpreterError> {
   // Find bounding box of all projected points
@@ -515,22 +666,35 @@ fn generate_svg(
     ));
   }
 
-  // Render triangles
-  let mesh_attrs = if show_mesh {
-    " stroke=\"#00000018\" stroke-width=\"0.5\""
-  } else {
-    " stroke=\"none\""
-  };
-
+  // Render all triangles first (painter's algorithm, already sorted back-to-front)
   for tri in triangles {
     let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
     let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
     let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
     let (r, g, b) = tri.color;
+    if mesh_mode == MeshMode::All {
+      // Mesh -> All: show triangle geometry mesh
+      svg.push_str(&format!(
+        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000060\" stroke-width=\"0.5\"/>\n",
+        x0, y0, x1, y1, x2, y2, r, g, b
+      ));
+    } else {
+      // Use fill color as stroke to eliminate anti-aliasing gaps
+      svg.push_str(&format!(
+        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\"/>\n",
+        x0, y0, x1, y1, x2, y2, r, g, b, r, g, b
+      ));
+    }
+  }
+
+  // Draw mesh lines on top of all triangles so they're fully visible
+  for line in mesh_lines {
+    let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
+    let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
     svg.push_str(&format!(
-            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" {}/>\n",
-            x0, y0, x1, y1, x2, y2, r, g, b, mesh_attrs
-        ));
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n",
+      x0, y0, x1, y1
+    ));
   }
 
   // Draw 3D axes (skip when Boxed -> False)
@@ -1547,7 +1711,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut _mesh_mode = MeshMode::Default;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -1564,9 +1728,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         _ => {}
@@ -1865,6 +2030,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -1872,7 +2038,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     true, // show_axes: always show axes for list_plot3d
   )?;
 
@@ -1939,7 +2105,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
 
@@ -1958,9 +2124,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
@@ -2190,6 +2357,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (-global_r_max, global_r_max),
     (-global_r_max, global_r_max),
@@ -2197,7 +2365,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     show_axes,
   )?;
 
@@ -2292,7 +2460,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
 
   for opt in &args[4..] {
@@ -2310,9 +2478,10 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
@@ -2546,6 +2715,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -2553,7 +2723,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     show_axes,
   )?;
 
@@ -2899,7 +3069,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
 
   for opt in &args[3..] {
@@ -2917,9 +3087,10 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "Axes" => {
@@ -3091,6 +3262,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -3098,7 +3270,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     show_axes,
   )?;
 
@@ -3122,7 +3294,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let show_mesh = true;
+  let _mesh_mode = MeshMode::Default;
   let show_axes = true;
 
   for opt in &args[3..] {
@@ -3310,6 +3482,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -3317,7 +3490,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     show_axes,
   )?;
 
@@ -3368,7 +3541,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
-  let mut show_mesh = true;
+  let mut _mesh_mode = MeshMode::Default;
   let mut show_axes = true;
 
   for opt in &args[3..] {
@@ -3386,9 +3559,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-          {
-            show_mesh = false;
+          match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => _mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "All" => _mesh_mode = MeshMode::All,
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "Boxed" => {
@@ -3603,6 +3777,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
+    &[],
     &camera,
     (gx_min, gx_max),
     (gy_min, gy_max),
@@ -3610,7 +3785,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
-    show_mesh,
+    _mesh_mode,
     show_axes,
   )?;
 

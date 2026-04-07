@@ -757,6 +757,13 @@ mod plot3d {
     }
 
     #[test]
+    fn multiple_functions_trig() {
+      insta::assert_snapshot!(export_svg(
+        "Plot3D[{Sin[x y], Cos[x y]}, {x, -3, 3}, {y, -3, 3}]"
+      ));
+    }
+
+    #[test]
     fn nan_handling() {
       insta::assert_snapshot!(export_svg(
         "Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]"
@@ -778,6 +785,13 @@ mod plot3d {
     fn mesh_none() {
       insta::assert_snapshot!(export_svg(
         "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Mesh -> None]"
+      ));
+    }
+
+    #[test]
+    fn mesh_all() {
+      insta::assert_snapshot!(export_svg(
+        "Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, Mesh -> All]"
       ));
     }
 
