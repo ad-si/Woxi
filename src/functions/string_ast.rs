@@ -931,8 +931,19 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
   match expr {
-    // String literal patterns
-    Expr::String(s) => Some(regex::escape(s)),
+    // String literal patterns — convert Wolfram metacharacters (* and @)
+    // to regex equivalents before escaping the rest.
+    Expr::String(s) => {
+      let mut result = String::new();
+      for ch in s.chars() {
+        match ch {
+          '*' => result.push_str(".*"),
+          '@' => result.push_str("[^A-Z]"),
+          _ => result.push_str(&regex::escape(&ch.to_string())),
+        }
+      }
+      Some(result)
+    }
 
     // Character class patterns and blank patterns
     Expr::Identifier(name) => match name.as_str() {

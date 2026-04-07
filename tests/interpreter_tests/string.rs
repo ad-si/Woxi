@@ -1281,6 +1281,30 @@ mod string_match_q_patterns {
       "True"
     );
   }
+
+  #[test]
+  fn wildcard_star() {
+    assert_eq!(interpret(r#"StringMatchQ["Hello", "H*"]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringMatchQ["Hello", "*llo"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["Hello", "H*o"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(interpret(r#"StringMatchQ["Hello", "*"]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringMatchQ["Hello", "X*"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn wildcard_at() {
+    assert_eq!(interpret(r#"StringMatchQ["abc", "a@c"]"#).unwrap(), "True");
+    assert_eq!(interpret(r#"StringMatchQ["aXc", "a@c"]"#).unwrap(), "False");
+  }
 }
 
 mod string_expression {
