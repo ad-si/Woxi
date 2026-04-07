@@ -46,6 +46,33 @@ mod fractional_part {
   fn negative_rational() {
     assert_eq!(interpret("FractionalPart[-7/3]").unwrap(), "-1/3");
   }
+
+  #[test]
+  fn symbolic_pi() {
+    assert_eq!(interpret("FractionalPart[Pi]").unwrap(), "-3 + Pi");
+  }
+
+  #[test]
+  fn symbolic_e() {
+    assert_eq!(interpret("FractionalPart[E]").unwrap(), "-2 + E");
+  }
+
+  #[test]
+  fn symbolic_golden_ratio() {
+    assert_eq!(
+      interpret("FractionalPart[GoldenRatio]").unwrap(),
+      "-1 + GoldenRatio"
+    );
+  }
+
+  #[test]
+  fn symbolic_euler_gamma() {
+    // EulerGamma ≈ 0.577, so FractionalPart is just EulerGamma itself
+    assert_eq!(
+      interpret("FractionalPart[EulerGamma]").unwrap(),
+      "EulerGamma"
+    );
+  }
 }
 
 mod mixed_fraction_parts {
