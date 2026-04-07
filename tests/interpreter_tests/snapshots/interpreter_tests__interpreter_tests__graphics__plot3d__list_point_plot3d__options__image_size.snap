@@ -4,18 +4,6 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 ---
 <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
 <rect width="200" height="200" fill="rgb(255,255,255)"/>
-<line x1="50.0" y1="120.5" x2="114.6" y2="141.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="120.5" x2="85.4" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="114.6" y1="141.4" x2="150.0" y2="103.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="85.4" y1="82.4" x2="150.0" y2="103.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="96.7" x2="114.6" y2="117.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="96.7" x2="85.4" y2="58.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="114.6" y1="117.6" x2="150.0" y2="79.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="85.4" y1="58.6" x2="150.0" y2="79.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="120.5" x2="50.0" y2="96.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="114.6" y1="141.4" x2="114.6" y2="117.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="85.4" y1="82.4" x2="85.4" y2="58.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="150.0" y1="103.3" x2="150.0" y2="79.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="114.6" y1="141.4" x2="50.0" y2="120.5" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="50.0" y1="120.5" x2="51.2" y2="116.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="46.3" y="131.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>

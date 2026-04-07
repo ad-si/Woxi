@@ -4,6 +4,51 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="131.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="150.4" y2="137.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="131.3" x2="142.0" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="139.3" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="137.1" x2="158.8" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="128.2" x2="142.0" y2="125.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="125.1" x2="142.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.8" y1="139.8" x2="167.2" y2="142.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="122.0" x2="142.0" y2="118.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="132.8" y1="144.3" x2="137.4" y2="139.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="118.9" x2="142.0" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.2" y1="142.5" x2="175.6" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="115.8" x2="142.0" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="175.6" y1="145.2" x2="184.0" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="112.7" x2="142.0" y2="109.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="128.2" y1="149.2" x2="132.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="109.6" x2="142.0" y2="106.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.0" y1="147.9" x2="192.4" y2="150.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="106.5" x2="142.0" y2="103.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="103.4" x2="142.0" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.6" y1="154.2" x2="128.2" y2="149.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.4" y1="150.6" x2="200.8" y2="153.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="100.3" x2="142.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="200.8" y1="153.3" x2="209.2" y2="156.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="97.2" x2="142.0" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="94.1" x2="142.0" y2="91.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="119.0" y1="159.1" x2="123.6" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="209.2" y1="156.0" x2="217.6" y2="158.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="91.0" x2="142.0" y2="87.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="87.9" x2="142.0" y2="84.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="217.6" y1="158.7" x2="226.0" y2="161.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="84.8" x2="142.0" y2="81.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="114.4" y1="164.1" x2="119.0" y2="159.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="226.0" y1="161.5" x2="234.4" y2="164.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="81.7" x2="142.0" y2="78.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="78.6" x2="142.0" y2="75.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="234.4" y1="164.2" x2="242.8" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="75.6" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="109.8" y1="169.0" x2="114.4" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="242.8" y1="166.9" x2="251.2" y2="169.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="150.4" y2="75.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="77.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="251.2" y1="169.6" x2="259.6" y2="172.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="75.2" x2="158.8" y2="77.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="105.2" y1="174.0" x2="109.8" y2="169.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="172.6,150.6 172.7,154.2 162.1,151.6" fill="rgb(96,149,135)" stroke="rgb(96,149,135)" stroke-width="0.5"/>
 <polygon points="172.5,147.9 172.6,150.6 161.9,148.8" fill="rgb(90,143,120)" stroke="rgb(90,143,120)" stroke-width="0.5"/>
 <polygon points="162.1,151.6 161.9,148.8 172.6,150.6" fill="rgb(90,142,122)" stroke="rgb(90,142,122)" stroke-width="0.5"/>
@@ -13,12 +58,15 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="172.7,154.2 172.6,150.6 182.5,155.9" fill="rgb(88,137,125)" stroke="rgb(88,137,125)" stroke-width="0.5"/>
 <polygon points="172.5,145.9 172.5,147.9 162.0,146.8" fill="rgb(66,106,82)" stroke="rgb(66,106,82)" stroke-width="0.5"/>
 <polygon points="172.7,154.2 172.9,158.3 162.6,155.1" fill="rgb(93,142,136)" stroke="rgb(93,142,136)" stroke-width="0.5"/>
+<line x1="259.6" y1="172.3" x2="268.0" y2="175.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="172.5,147.9 172.5,145.9 182.8,149.6" fill="rgb(61,98,77)" stroke="rgb(61,98,77)" stroke-width="0.5"/>
+<line x1="158.8" y1="77.9" x2="167.2" y2="80.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.8,149.6 182.7,152.5 172.5,147.9" fill="rgb(88,141,116)" stroke="rgb(88,141,116)" stroke-width="0.5"/>
 <polygon points="182.7,152.5 182.5,155.9 172.6,150.6" fill="rgb(89,139,123)" stroke="rgb(89,139,123)" stroke-width="0.5"/>
 <polygon points="163.4,159.2 162.6,155.1 172.9,158.3" fill="rgb(93,141,137)" stroke="rgb(93,141,137)" stroke-width="0.5"/>
 <polygon points="161.9,148.8 162.1,151.6 152.8,152.2" fill="rgb(84,133,111)" stroke="rgb(84,133,111)" stroke-width="0.5"/>
 <polygon points="162.1,151.6 162.6,155.1 153.3,155.1" fill="rgb(90,141,126)" stroke="rgb(90,141,126)" stroke-width="0.5"/>
+<line x1="132.8" y1="82.4" x2="137.4" y2="77.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.9,147.2 182.8,149.6 172.5,145.9" fill="rgb(81,131,100)" stroke="rgb(81,131,100)" stroke-width="0.5"/>
 <polygon points="172.9,158.3 172.7,154.2 182.1,159.7" fill="rgb(88,134,129)" stroke="rgb(88,134,129)" stroke-width="0.5"/>
 <polygon points="162.0,146.8 162.3,145.6 172.5,145.9" fill="rgb(41,67,49)" stroke="rgb(41,67,49)" stroke-width="0.5"/>
@@ -32,10 +80,13 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="153.3,155.1 152.8,152.2 162.1,151.6" fill="rgb(88,139,117)" stroke="rgb(88,139,117)" stroke-width="0.5"/>
 <polygon points="182.9,145.4 182.9,147.2 172.6,144.7" fill="rgb(66,108,76)" stroke="rgb(66,108,76)" stroke-width="0.5"/>
 <polygon points="220.5,128.7 220.1,131.3 207.0,129.6" fill="rgb(90,158,69)" stroke="rgb(90,158,69)" stroke-width="0.5"/>
+<line x1="268.0" y1="175.0" x2="276.4" y2="177.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.7,131.9 207.0,129.6 220.1,131.3" fill="rgb(87,154,69)" stroke="rgb(87,154,69)" stroke-width="0.5"/>
 <polygon points="206.1,134.9 206.7,131.9 218.9,134.8" fill="rgb(97,169,83)" stroke="rgb(97,169,83)" stroke-width="0.5"/>
+<line x1="100.6" y1="178.9" x2="105.2" y2="174.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.8,152.2 152.6,149.9 161.9,148.8" fill="rgb(80,128,100)" stroke="rgb(80,128,100)" stroke-width="0.5"/>
 <polygon points="154.2,158.4 153.3,155.1 162.6,155.1" fill="rgb(90,139,125)" stroke="rgb(90,139,125)" stroke-width="0.5"/>
+<line x1="167.2" y1="80.6" x2="175.6" y2="83.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="218.9,134.8 216.9,138.9 206.1,134.9" fill="rgb(97,166,88)" stroke="rgb(97,166,88)" stroke-width="0.5"/>
 <polygon points="220.1,131.3 220.5,128.7 230.9,134.8" fill="rgb(83,145,66)" stroke="rgb(83,145,66)" stroke-width="0.5"/>
 <polygon points="164.3,163.6 163.4,159.2 173.2,162.8" fill="rgb(88,133,135)" stroke="rgb(88,133,135)" stroke-width="0.5"/>
@@ -76,6 +127,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="173.2,162.8 173.5,167.4 164.3,163.6" fill="rgb(84,127,131)" stroke="rgb(84,127,131)" stroke-width="0.5"/>
 <polygon points="193.4,137.7 193.5,135.7 206.1,134.9" fill="rgb(83,145,71)" stroke="rgb(83,145,71)" stroke-width="0.5"/>
 <polygon points="191.4,153.1 190.9,156.2 182.8,149.6" fill="rgb(83,132,104)" stroke="rgb(83,132,104)" stroke-width="0.5"/>
+<line x1="276.4" y1="177.7" x2="284.8" y2="180.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.1,159.7 182.5,155.9 189.6,162.6" fill="rgb(78,121,110)" stroke="rgb(78,121,110)" stroke-width="0.5"/>
 <polygon points="192.7,144.7 192.3,147.4 182.8,144.1" fill="rgb(95,159,102)" stroke="rgb(95,159,102)" stroke-width="0.5"/>
 <polygon points="193.0,142.2 193.3,139.9 203.8,142.1" fill="rgb(94,159,91)" stroke="rgb(94,159,91)" stroke-width="0.5"/>
@@ -83,10 +135,12 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="152.7,148.1 153.0,146.7 162.3,145.6" fill="rgb(51,84,56)" stroke="rgb(51,84,56)" stroke-width="0.5"/>
 <polygon points="162.8,145.1 162.3,145.6 153.0,146.7" fill="rgb(41,68,44)" stroke="rgb(41,68,44)" stroke-width="0.5"/>
 <polygon points="193.5,135.7 193.6,133.9 206.7,131.9" fill="rgb(77,136,61)" stroke="rgb(77,136,61)" stroke-width="0.5"/>
+<line x1="175.6" y1="83.3" x2="184.0" y2="86.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.8,144.1 182.7,143.1 192.7,144.7" fill="rgb(41,68,41)" stroke="rgb(41,68,41)" stroke-width="0.5"/>
 <polygon points="218.9,126.9 220.1,127.3 206.1,127.4" fill="rgb(49,75,31)" stroke="rgb(49,75,31)" stroke-width="0.5"/>
 <polygon points="230.9,130.8 231.4,132.3 220.1,127.3" fill="rgb(48,81,34)" stroke="rgb(48,81,34)" stroke-width="0.5"/>
 <polygon points="203.8,142.1 202.4,146.1 193.0,142.2" fill="rgb(95,160,96)" stroke="rgb(95,160,96)" stroke-width="0.5"/>
+<line x1="128.2" y1="87.3" x2="132.8" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="190.9,156.2 190.3,159.4 182.7,152.5" fill="rgb(79,126,105)" stroke="rgb(79,126,105)" stroke-width="0.5"/>
 <polygon points="193.0,142.2 192.7,144.7 182.7,143.1" fill="rgb(96,161,96)" stroke="rgb(96,161,96)" stroke-width="0.5"/>
 <polygon points="192.7,144.7 193.0,142.2 202.4,146.1" fill="rgb(94,157,97)" stroke="rgb(94,157,97)" stroke-width="0.5"/>
@@ -118,6 +172,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="172.9,144.2 172.8,144.2 163.3,145.0" fill="rgb(49,82,49)" stroke="rgb(49,82,49)" stroke-width="0.5"/>
 <polygon points="193.4,137.7 193.3,139.9 182.4,141.5" fill="rgb(84,146,75)" stroke="rgb(84,146,75)" stroke-width="0.5"/>
 <polygon points="206.1,127.4 205.1,127.5 218.9,126.9" fill="rgb(60,88,35)" stroke="rgb(60,88,35)" stroke-width="0.5"/>
+<line x1="96.0" y1="183.9" x2="100.6" y2="178.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.9,150.2 192.3,147.4 199.4,153.7" fill="rgb(81,134,93)" stroke="rgb(81,134,93)" stroke-width="0.5"/>
 <polygon points="153.0,146.7 153.4,145.7 162.8,145.1" fill="rgb(42,71,43)" stroke="rgb(42,71,43)" stroke-width="0.5"/>
 <polygon points="193.5,132.3 193.4,130.9 206.7,128.1" fill="rgb(70,112,46)" stroke="rgb(70,112,46)" stroke-width="0.5"/>
@@ -126,12 +181,14 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="154.2,158.4 155.3,162.1 148.5,163.1" fill="rgb(81,125,113)" stroke="rgb(81,125,113)" stroke-width="0.5"/>
 <polygon points="230.9,134.8 231.4,132.3 237.0,141.7" fill="rgb(62,110,49)" stroke="rgb(62,110,49)" stroke-width="0.5"/>
 <polygon points="229.3,130.3 230.9,130.8 218.9,126.9" fill="rgb(60,92,37)" stroke="rgb(60,92,37)" stroke-width="0.5"/>
+<line x1="284.8" y1="180.4" x2="293.2" y2="183.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.3,145.0 162.8,145.1 153.4,145.7" fill="rgb(49,82,49)" stroke="rgb(49,82,49)" stroke-width="0.5"/>
 <polygon points="193.5,135.7 193.4,137.7 182.3,140.5" fill="rgb(79,137,64)" stroke="rgb(79,137,64)" stroke-width="0.5"/>
 <polygon points="182.5,142.3 182.4,141.5 193.3,139.9" fill="rgb(42,73,38)" stroke="rgb(42,73,38)" stroke-width="0.5"/>
 <polygon points="145.2,154.4 144.3,151.7 152.6,149.9" fill="rgb(88,144,102)" stroke="rgb(88,144,102)" stroke-width="0.5"/>
 <polygon points="189.6,162.6 188.9,166.0 182.1,159.7" fill="rgb(78,121,112)" stroke="rgb(78,121,112)" stroke-width="0.5"/>
 <polygon points="146.2,157.2 145.2,154.4 152.8,152.2" fill="rgb(84,136,103)" stroke="rgb(84,136,103)" stroke-width="0.5"/>
+<line x1="184.0" y1="86.0" x2="192.4" y2="88.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.9,150.0 199.4,153.7 192.3,147.4" fill="rgb(88,145,98)" stroke="rgb(88,145,98)" stroke-width="0.5"/>
 <polygon points="191.4,153.1 191.9,150.2 198.1,157.2" fill="rgb(76,123,90)" stroke="rgb(76,123,90)" stroke-width="0.5"/>
 <polygon points="226.9,142.2 229.3,138.1 233.8,147.6" fill="rgb(85,146,79)" stroke="rgb(85,146,79)" stroke-width="0.5"/>
@@ -191,14 +248,17 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="193.4,130.9 193.5,132.3 182.4,135.4" fill="rgb(71,111,46)" stroke="rgb(71,111,46)" stroke-width="0.5"/>
 <polygon points="163.9,145.1 163.3,145.0 153.9,144.9" fill="rgb(52,88,48)" stroke="rgb(52,88,48)" stroke-width="0.5"/>
 <polygon points="149.8,166.2 148.5,163.1 155.3,162.1" fill="rgb(81,126,113)" stroke="rgb(81,126,113)" stroke-width="0.5"/>
+<line x1="293.2" y1="183.1" x2="301.6" y2="185.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="142.5,144.4 142.2,142.3 153.9,144.9" fill="rgb(87,150,79)" stroke="rgb(87,150,79)" stroke-width="0.5"/>
 <polygon points="166.7,172.5 165.5,168.1 173.8,171.9" fill="rgb(81,123,129)" stroke="rgb(81,123,129)" stroke-width="0.5"/>
+<line x1="123.6" y1="92.3" x2="128.2" y2="87.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="116.4,143.9 114.6,140.7 128.8,141.8" fill="rgb(98,171,85)" stroke="rgb(98,171,85)" stroke-width="0.5"/>
 <polygon points="182.4,141.5 182.5,142.3 173.2,144.4" fill="rgb(43,75,38)" stroke="rgb(43,75,38)" stroke-width="0.5"/>
 <polygon points="114.6,140.7 114.0,138.2 127.8,139.0" fill="rgb(90,158,71)" stroke="rgb(90,158,71)" stroke-width="0.5"/>
 <polygon points="143.6,149.1 144.3,151.7 134.7,152.1" fill="rgb(95,158,101)" stroke="rgb(95,158,101)" stroke-width="0.5"/>
 <polygon points="226.9,130.9 229.3,130.3 216.9,127.7" fill="rgb(79,113,45)" stroke="rgb(79,113,45)" stroke-width="0.5"/>
 <polygon points="193.3,129.7 193.0,128.7 205.1,127.5" fill="rgb(60,84,34)" stroke="rgb(60,84,34)" stroke-width="0.5"/>
+<line x1="192.4" y1="88.7" x2="200.8" y2="91.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="173.0,144.3 173.2,144.4 182.5,142.3" fill="rgb(49,85,44)" stroke="rgb(49,85,44)" stroke-width="0.5"/>
 <polygon points="182.3,139.2 182.3,137.5 193.6,133.9" fill="rgb(79,137,57)" stroke="rgb(79,137,57)" stroke-width="0.5"/>
 <polygon points="141.9,138.5 142.0,140.3 127.5,136.7" fill="rgb(76,135,58)" stroke="rgb(76,135,58)" stroke-width="0.5"/>
@@ -237,6 +297,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="145.2,154.4 146.2,157.2 139.5,159.1" fill="rgb(85,138,100)" stroke="rgb(85,138,100)" stroke-width="0.5"/>
 <polygon points="193.0,128.7 193.3,129.7 182.7,130.1" fill="rgb(60,83,33)" stroke="rgb(60,83,33)" stroke-width="0.5"/>
 <polygon points="137.1,155.7 134.7,152.1 144.3,151.7" fill="rgb(89,149,98)" stroke="rgb(89,149,98)" stroke-width="0.5"/>
+<line x1="91.4" y1="188.8" x2="96.0" y2="183.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.9,166.0 189.6,162.6 194.4,168.7" fill="rgb(75,116,104)" stroke="rgb(75,116,104)" stroke-width="0.5"/>
 <polygon points="182.3,140.5 182.4,141.5 173.2,144.0" fill="rgb(52,90,42)" stroke="rgb(52,90,42)" stroke-width="0.5"/>
 <polygon points="142.0,140.3 141.9,138.5 154.6,143.0" fill="rgb(73,128,57)" stroke="rgb(73,128,57)" stroke-width="0.5"/>
@@ -255,6 +316,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="193.0,128.7 192.7,128.0 203.8,128.2" fill="rgb(51,67,26)" stroke="rgb(51,67,26)" stroke-width="0.5"/>
 <polygon points="146.2,157.2 147.3,160.1 141.6,162.2" fill="rgb(80,129,98)" stroke="rgb(80,129,98)" stroke-width="0.5"/>
 <polygon points="182.7,130.1 182.8,127.4 193.0,128.7" fill="rgb(124,164,64)" stroke="rgb(124,164,64)" stroke-width="0.5"/>
+<line x1="301.6" y1="185.8" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.9,163.3 195.1,166.0 190.3,159.4" fill="rgb(71,113,93)" stroke="rgb(71,113,93)" stroke-width="0.5"/>
 <polygon points="173.8,171.9 174.1,176.1 166.7,172.5" fill="rgb(79,119,125)" stroke="rgb(79,119,125)" stroke-width="0.5"/>
 <polygon points="114.0,138.2 114.6,140.7 104.7,143.6" fill="rgb(85,149,65)" stroke="rgb(85,149,65)" stroke-width="0.5"/>
@@ -275,6 +337,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="172.5,120.3 172.6,123.6 162.0,121.2" fill="rgb(144,161,60)" stroke="rgb(144,161,60)" stroke-width="0.5"/>
 <polygon points="182.9,124.8 182.8,127.4 172.6,123.6" fill="rgb(126,153,59)" stroke="rgb(126,153,59)" stroke-width="0.5"/>
 <polygon points="182.8,127.4 182.7,130.1 172.8,127.5" fill="rgb(126,163,64)" stroke="rgb(126,163,64)" stroke-width="0.5"/>
+<line x1="200.8" y1="91.4" x2="209.2" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.3,144.0 154.6,143.0 164.4,145.2" fill="rgb(50,87,42)" stroke="rgb(50,87,42)" stroke-width="0.5"/>
 <polygon points="172.6,123.6 172.8,127.5 162.3,124.5" fill="rgb(139,167,64)" stroke="rgb(139,167,64)" stroke-width="0.5"/>
 <polygon points="154.7,141.7 154.6,143.0 141.9,138.5" fill="rgb(62,110,47)" stroke="rgb(62,110,47)" stroke-width="0.5"/>
@@ -346,11 +409,13 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="192.7,128.0 192.3,127.5 202.4,129.4" fill="rgb(55,68,27)" stroke="rgb(55,68,27)" stroke-width="0.5"/>
 <polygon points="193.8,171.4 193.2,174.2 188.1,169.4" fill="rgb(77,117,112)" stroke="rgb(77,117,112)" stroke-width="0.5"/>
 <polygon points="237.0,141.7 237.5,139.5 238.5,150.2" fill="rgb(41,73,33)" stroke="rgb(41,73,33)" stroke-width="0.5"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="185.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="110.6,152.5 107.4,149.0 119.1,147.7" fill="rgb(93,159,86)" stroke="rgb(93,159,86)" stroke-width="0.5"/>
 <polygon points="162.8,128.4 163.3,132.4 153.0,130.0" fill="rgb(130,168,66)" stroke="rgb(130,168,66)" stroke-width="0.5"/>
 <polygon points="161.9,118.7 162.1,117.3 172.5,117.8" fill="rgb(84,84,30)" stroke="rgb(84,84,30)" stroke-width="0.5"/>
 <polygon points="173.2,141.2 173.2,138.6 182.3,137.5" fill="rgb(104,168,70)" stroke="rgb(104,168,70)" stroke-width="0.5"/>
 <polygon points="172.5,117.8 172.6,116.4 182.8,121.0" fill="rgb(77,77,28)" stroke="rgb(77,77,28)" stroke-width="0.5"/>
+<line x1="119.0" y1="97.2" x2="123.6" y2="92.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.7,131.5 214.4,129.3 202.4,129.4" fill="rgb(98,126,50)" stroke="rgb(98,126,50)" stroke-width="0.5"/>
 <polygon points="104.7,143.6 105.4,141.9 114.0,138.2" fill="rgb(50,86,36)" stroke="rgb(50,86,36)" stroke-width="0.5"/>
 <polygon points="172.6,116.4 172.5,117.8 162.1,117.3" fill="rgb(86,84,30)" stroke="rgb(86,84,30)" stroke-width="0.5"/>
@@ -381,6 +446,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="153.9,135.4 153.4,132.7 163.9,136.1" fill="rgb(116,165,66)" stroke="rgb(116,165,66)" stroke-width="0.5"/>
 <polygon points="203.9,160.6 202.0,163.8 198.1,157.2" fill="rgb(82,134,96)" stroke="rgb(82,134,96)" stroke-width="0.5"/>
 <polygon points="173.3,143.0 173.2,144.0 164.8,143.8" fill="rgb(56,99,42)" stroke="rgb(56,99,42)" stroke-width="0.5"/>
+<line x1="209.2" y1="94.1" x2="217.6" y2="96.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.5,139.5 237.0,137.9 238.6,148.4" fill="rgb(49,86,36)" stroke="rgb(49,86,36)" stroke-width="0.5"/>
 <polygon points="153.4,132.7 153.9,135.4 143.0,133.2" fill="rgb(121,167,67)" stroke="rgb(121,167,67)" stroke-width="0.5"/>
 <polygon points="160.1,173.9 161.9,177.7 154.4,175.8" fill="rgb(81,123,127)" stroke="rgb(81,123,127)" stroke-width="0.5"/>
@@ -413,6 +479,8 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="153.0,130.0 153.4,132.7 143.6,132.4" fill="rgb(125,162,63)" stroke="rgb(125,162,63)" stroke-width="0.5"/>
 <polygon points="213.5,159.3 210.6,162.8 206.2,156.9" fill="rgb(87,144,99)" stroke="rgb(87,144,99)" stroke-width="0.5"/>
 <polygon points="143.0,133.2 142.5,134.2 132.4,134.6" fill="rgb(59,81,32)" stroke="rgb(59,81,32)" stroke-width="0.5"/>
+<line x1="310.0" y1="185.5" x2="310.0" y2="182.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="305.4" y1="193.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.9,160.6 206.2,156.9 210.6,162.8" fill="rgb(87,143,100)" stroke="rgb(87,143,100)" stroke-width="0.5"/>
 <polygon points="164.8,143.8 164.7,142.0 173.3,143.0" fill="rgb(93,161,67)" stroke="rgb(93,161,67)" stroke-width="0.5"/>
 <polygon points="192.4,177.3 191.5,180.7 186.4,176.4" fill="rgb(93,139,148)" stroke="rgb(93,139,148)" stroke-width="0.5"/>
@@ -421,6 +489,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="143.0,133.2 143.6,132.4 153.4,132.7" fill="rgb(52,69,27)" stroke="rgb(52,69,27)" stroke-width="0.5"/>
 <polygon points="195.1,166.0 195.9,163.3 199.8,168.8" fill="rgb(76,120,97)" stroke="rgb(76,120,97)" stroke-width="0.5"/>
 <polygon points="237.5,154.1 236.6,156.3 233.8,147.6" fill="rgb(61,103,58)" stroke="rgb(61,103,58)" stroke-width="0.5"/>
+<line x1="86.8" y1="193.8" x2="91.4" y2="188.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="105.4,141.9 107.4,141.2 114.6,136.7" fill="rgb(56,88,36)" stroke="rgb(56,88,36)" stroke-width="0.5"/>
 <polygon points="202.4,129.4 200.9,130.8 211.7,131.5" fill="rgb(96,119,46)" stroke="rgb(96,119,46)" stroke-width="0.5"/>
 <polygon points="236.6,156.3 235.6,158.5 231.2,151.0" fill="rgb(74,124,74)" stroke="rgb(74,124,74)" stroke-width="0.5"/>
@@ -470,6 +539,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="134.2,163.3 130.5,159.7 139.5,159.1" fill="rgb(85,140,94)" stroke="rgb(85,140,94)" stroke-width="0.5"/>
 <polygon points="174.4,180.0 174.1,176.1 179.8,179.8" fill="rgb(78,117,122)" stroke="rgb(78,117,122)" stroke-width="0.5"/>
 <polygon points="200.7,166.5 199.8,168.8 195.9,163.3" fill="rgb(75,120,94)" stroke="rgb(75,120,94)" stroke-width="0.5"/>
+<line x1="310.0" y1="182.4" x2="310.0" y2="179.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="119.1,136.4 122.6,137.4 130.4,134.2" fill="rgb(83,115,45)" stroke="rgb(83,115,45)" stroke-width="0.5"/>
 <polygon points="231.2,137.0 233.8,136.7 223.8,132.3" fill="rgb(88,119,47)" stroke="rgb(88,119,47)" stroke-width="0.5"/>
 <polygon points="132.4,134.6 130.4,134.2 122.6,137.4" fill="rgb(77,105,41)" stroke="rgb(77,105,41)" stroke-width="0.5"/>
@@ -483,6 +553,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="199.8,168.8 199.2,171.0 195.1,166.0" fill="rgb(68,108,88)" stroke="rgb(68,108,88)" stroke-width="0.5"/>
 <polygon points="219.7,164.2 222.4,161.2 230.9,165.9" fill="rgb(95,155,112)" stroke="rgb(95,155,112)" stroke-width="0.5"/>
 <polygon points="148.4,175.4 147.5,172.9 152.8,172.6" fill="rgb(80,123,114)" stroke="rgb(80,123,114)" stroke-width="0.5"/>
+<line x1="217.6" y1="96.8" x2="226.0" y2="99.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.4,175.8 156.1,179.1 149.5,178.1" fill="rgb(86,130,132)" stroke="rgb(86,130,132)" stroke-width="0.5"/>
 <polygon points="202.0,163.8 203.9,160.6 208.3,165.8" fill="rgb(88,144,104)" stroke="rgb(88,144,104)" stroke-width="0.5"/>
 <polygon points="143.6,132.4 143.0,133.2 134.7,135.4" fill="rgb(49,63,25)" stroke="rgb(49,63,25)" stroke-width="0.5"/>
@@ -534,6 +605,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="191.9,127.1 191.4,127.1 199.4,132.3" fill="rgb(82,93,35)" stroke="rgb(82,93,35)" stroke-width="0.5"/>
 <polygon points="156.1,179.1 157.9,182.5 150.6,181.0" fill="rgb(89,133,140)" stroke="rgb(89,133,140)" stroke-width="0.5"/>
 <polygon points="157.9,182.5 156.1,179.1 163.7,181.2" fill="rgb(90,134,141)" stroke="rgb(90,134,141)" stroke-width="0.5"/>
+<line x1="310.0" y1="179.3" x2="310.0" y2="176.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.8,123.7 152.6,125.3 146.2,131.1" fill="rgb(79,85,31)" stroke="rgb(79,85,31)" stroke-width="0.5"/>
 <polygon points="208.3,165.8 210.6,162.8 217.4,167.0" fill="rgb(93,152,111)" stroke="rgb(93,152,111)" stroke-width="0.5"/>
 <polygon points="200.7,166.5 202.0,163.8 206.6,168.4" fill="rgb(90,146,109)" stroke="rgb(90,146,109)" stroke-width="0.5"/>
@@ -541,6 +613,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="162.6,117.2 163.4,118.4 172.7,116.3" fill="rgb(117,104,36)" stroke="rgb(117,104,36)" stroke-width="0.5"/>
 <polygon points="153.3,122.8 154.2,122.8 162.1,117.3" fill="rgb(89,84,30)" stroke="rgb(89,84,30)" stroke-width="0.5"/>
 <polygon points="194.6,189.4 192.5,193.5 189.1,188.1" fill="rgb(92,131,168)" stroke="rgb(92,131,168)" stroke-width="0.5"/>
+<line x1="114.4" y1="102.2" x2="119.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="190.9,127.2 191.4,127.1 182.7,120.2" fill="rgb(95,98,36)" stroke="rgb(95,98,36)" stroke-width="0.5"/>
 <polygon points="105.4,141.9 104.7,143.6 101.9,150.0" fill="rgb(37,61,25)" stroke="rgb(37,61,25)" stroke-width="0.5"/>
 <polygon points="137.5,166.5 134.2,163.3 141.6,162.2" fill="rgb(83,136,96)" stroke="rgb(83,136,96)" stroke-width="0.5"/>
@@ -594,6 +667,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="157.9,182.5 159.7,185.8 152.0,184.2" fill="rgb(89,132,144)" stroke="rgb(89,132,144)" stroke-width="0.5"/>
 <polygon points="242.4,168.8 242.9,166.6 251.5,173.3" fill="rgb(74,119,93)" stroke="rgb(74,119,93)" stroke-width="0.5"/>
 <polygon points="241.8,163.1 242.7,164.7 235.6,158.5" fill="rgb(36,60,39)" stroke="rgb(36,60,39)" stroke-width="0.5"/>
+<line x1="226.0" y1="99.5" x2="234.4" y2="102.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.5,182.5 206.7,185.5 203.5,180.3" fill="rgb(87,131,139)" stroke="rgb(87,131,139)" stroke-width="0.5"/>
 <polygon points="205.5,170.7 204.9,172.9 199.8,168.8" fill="rgb(87,138,111)" stroke="rgb(87,138,111)" stroke-width="0.5"/>
 <polygon points="105.9,159.0 103.4,156.2 110.6,152.5" fill="rgb(86,148,79)" stroke="rgb(86,148,79)" stroke-width="0.5"/>
@@ -609,7 +683,9 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="122.6,137.4 126.5,139.1 132.4,134.6" fill="rgb(94,124,48)" stroke="rgb(94,124,48)" stroke-width="0.5"/>
 <polygon points="250.4,175.8 247.9,178.4 241.0,171.3" fill="rgb(91,142,127)" stroke="rgb(91,142,127)" stroke-width="0.5"/>
 <polygon points="212.4,174.5 213.8,172.1 221.7,176.6" fill="rgb(95,148,131)" stroke="rgb(95,148,131)" stroke-width="0.5"/>
+<line x1="310.0" y1="176.2" x2="310.0" y2="173.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="174.4,180.0 174.7,183.4 169.1,180.4" fill="rgb(77,117,119)" stroke="rgb(77,117,119)" stroke-width="0.5"/>
+<line x1="300.8" y1="198.4" x2="305.4" y2="193.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.7,181.2 165.3,184.6 157.9,182.5" fill="rgb(81,121,129)" stroke="rgb(81,121,129)" stroke-width="0.5"/>
 <polygon points="206.7,185.5 204.5,188.8 202.6,183.5" fill="rgb(82,120,136)" stroke="rgb(82,120,136)" stroke-width="0.5"/>
 <polygon points="189.1,188.1 187.5,192.1 183.7,187.1" fill="rgb(87,125,152)" stroke="rgb(87,125,152)" stroke-width="0.5"/>
@@ -629,6 +705,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="153.3,122.8 152.8,123.7 147.3,131.1" fill="rgb(58,59,22)" stroke="rgb(58,59,22)" stroke-width="0.5"/>
 <polygon points="147.5,172.9 148.4,175.4 144.0,176.0" fill="rgb(77,121,106)" stroke="rgb(77,121,106)" stroke-width="0.5"/>
 <polygon points="213.8,172.1 212.4,174.5 205.5,170.7" fill="rgb(95,151,126)" stroke="rgb(95,151,126)" stroke-width="0.5"/>
+<line x1="82.2" y1="198.7" x2="86.8" y2="193.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.4,174.5 211.2,177.0 204.9,172.9" fill="rgb(94,147,129)" stroke="rgb(94,147,129)" stroke-width="0.5"/>
 <polygon points="169.1,180.4 170.2,183.8 163.7,181.2" fill="rgb(77,116,119)" stroke="rgb(77,116,119)" stroke-width="0.5"/>
 <polygon points="237.5,154.1 238.1,152.1 239.3,160.6" fill="rgb(48,83,44)" stroke="rgb(48,83,44)" stroke-width="0.5"/>
@@ -687,6 +764,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="216.0,182.2 212.9,185.0 209.9,179.6" fill="rgb(91,138,140)" stroke="rgb(91,138,140)" stroke-width="0.5"/>
 <polygon points="144.5,178.1 144.0,176.0 148.4,175.4" fill="rgb(72,113,100)" stroke="rgb(72,113,100)" stroke-width="0.5"/>
 <polygon points="146.6,186.4 148.3,189.8 142.2,188.9" fill="rgb(90,131,151)" stroke="rgb(90,131,151)" stroke-width="0.5"/>
+<line x1="310.0" y1="173.1" x2="310.0" y2="170.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.7,185.5 208.5,182.5 209.7,187.8" fill="rgb(72,108,116)" stroke="rgb(72,108,116)" stroke-width="0.5"/>
 <polygon points="182.7,190.7 183.7,187.1 187.5,192.1" fill="rgb(82,118,140)" stroke="rgb(82,118,140)" stroke-width="0.5"/>
 <polygon points="143.3,173.9 142.0,171.7 146.4,170.4" fill="rgb(79,126,99)" stroke="rgb(79,126,99)" stroke-width="0.5"/>
@@ -713,6 +791,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="236.6,142.8 237.5,144.0 231.2,137.0" fill="rgb(59,80,32)" stroke="rgb(59,80,32)" stroke-width="0.5"/>
 <polygon points="238.9,184.0 232.9,186.6 231.3,179.7" fill="rgb(88,134,136)" stroke="rgb(88,134,136)" stroke-width="0.5"/>
 <polygon points="144.1,192.2 142.2,188.9 148.3,189.8" fill="rgb(90,130,153)" stroke="rgb(90,130,153)" stroke-width="0.5"/>
+<line x1="234.4" y1="102.3" x2="242.8" y2="105.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.9,185.0 209.7,187.8 208.5,182.5" fill="rgb(85,128,134)" stroke="rgb(85,128,134)" stroke-width="0.5"/>
 <polygon points="179.4,183.3 178.9,186.6 174.7,183.4" fill="rgb(82,124,129)" stroke="rgb(82,124,129)" stroke-width="0.5"/>
 <polygon points="154.2,122.8 153.3,122.8 148.5,131.3" fill="rgb(85,82,29)" stroke="rgb(85,82,29)" stroke-width="0.5"/>
@@ -744,11 +823,13 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="126.5,139.1 130.5,141.0 134.7,135.4" fill="rgb(103,129,50)" stroke="rgb(103,129,50)" stroke-width="0.5"/>
 <polygon points="196.9,134.6 198.1,133.6 190.9,127.2" fill="rgb(113,122,46)" stroke="rgb(113,122,46)" stroke-width="0.5"/>
 <polygon points="161.7,189.1 163.7,192.4 155.9,191.1" fill="rgb(83,120,141)" stroke="rgb(83,120,141)" stroke-width="0.5"/>
+<line x1="310.0" y1="170.0" x2="310.0" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="158.4,194.6 155.9,191.1 163.7,192.4" fill="rgb(82,117,143)" stroke="rgb(82,117,143)" stroke-width="0.5"/>
 <polygon points="190.9,127.2 190.3,127.6 196.9,134.6" fill="rgb(99,103,37)" stroke="rgb(99,103,37)" stroke-width="0.5"/>
 <polygon points="144.5,178.1 144.9,180.6 139.7,180.9" fill="rgb(78,120,111)" stroke="rgb(78,120,111)" stroke-width="0.5"/>
 <polygon points="193.3,198.6 196.4,194.8 195.2,199.0" fill="rgb(58,81,109)" stroke="rgb(58,81,109)" stroke-width="0.5"/>
 <polygon points="212.9,185.0 216.0,182.2 216.8,187.8" fill="rgb(84,126,131)" stroke="rgb(84,126,131)" stroke-width="0.5"/>
+<line x1="109.8" y1="107.1" x2="114.4" y2="102.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.7,187.8 206.3,190.6 206.7,185.5" fill="rgb(76,112,123)" stroke="rgb(76,112,123)" stroke-width="0.5"/>
 <polygon points="126.5,139.1 122.6,137.4 119.1,143.3" fill="rgb(98,126,49)" stroke="rgb(98,126,49)" stroke-width="0.5"/>
 <polygon points="190.0,197.5 187.2,201.3 185.8,196.0" fill="rgb(86,120,163)" stroke="rgb(86,120,163)" stroke-width="0.5"/>
@@ -808,15 +889,19 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="103.4,156.2 105.9,159.0 104.0,164.1" fill="rgb(73,126,66)" stroke="rgb(73,126,66)" stroke-width="0.5"/>
 <polygon points="238.1,145.3 237.5,144.0 238.1,153.3" fill="rgb(64,97,39)" stroke="rgb(64,97,39)" stroke-width="0.5"/>
 <polygon points="178.5,189.7 178.9,186.6 182.7,190.7" fill="rgb(76,112,123)" stroke="rgb(76,112,123)" stroke-width="0.5"/>
+<line x1="310.0" y1="166.9" x2="310.0" y2="163.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="296.2" y1="203.4" x2="300.8" y2="198.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.7,187.8 212.9,185.0 211.9,190.1" fill="rgb(74,110,116)" stroke="rgb(74,110,116)" stroke-width="0.5"/>
 <polygon points="183.9,199.7 185.8,196.0 187.2,201.3" fill="rgb(83,117,156)" stroke="rgb(83,117,156)" stroke-width="0.5"/>
 <polygon points="109.0,161.9 112.5,164.8 105.7,167.9" fill="rgb(85,144,86)" stroke="rgb(85,144,86)" stroke-width="0.5"/>
 <polygon points="101.9,153.7 103.4,156.2 103.6,162.2" fill="rgb(62,108,52)" stroke="rgb(62,108,52)" stroke-width="0.5"/>
 <polygon points="136.9,174.6 134.7,172.4 142.0,171.7" fill="rgb(91,148,110)" stroke="rgb(91,148,110)" stroke-width="0.5"/>
 <polygon points="140.2,183.2 140.9,185.9 135.1,186.3" fill="rgb(83,125,125)" stroke="rgb(83,125,125)" stroke-width="0.5"/>
+<line x1="242.8" y1="105.0" x2="251.2" y2="107.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.1,156.9 237.4,158.2 238.6,148.4" fill="rgb(53,93,40)" stroke="rgb(53,93,40)" stroke-width="0.5"/>
 <polygon points="247.9,186.4 242.5,188.8 244.0,181.2" fill="rgb(82,124,124)" stroke="rgb(82,124,124)" stroke-width="0.5"/>
 <polygon points="155.3,123.7 154.2,122.8 149.8,131.7" fill="rgb(107,99,35)" stroke="rgb(107,99,35)" stroke-width="0.5"/>
+<line x1="77.6" y1="203.7" x2="82.2" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.2,186.8 170.2,183.8 175.0,186.5" fill="rgb(78,118,119)" stroke="rgb(78,118,119)" stroke-width="0.5"/>
 <polygon points="114.6,142.0 110.6,141.3 109.0,147.9" fill="rgb(93,125,49)" stroke="rgb(93,125,49)" stroke-width="0.5"/>
 <polygon points="198.7,195.7 201.8,192.2 199.2,196.1" fill="rgb(45,64,79)" stroke="rgb(45,64,79)" stroke-width="0.5"/>
@@ -876,6 +961,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="157.0,200.5 160.9,203.6 154.2,202.1" fill="rgb(82,113,156)" stroke="rgb(82,113,156)" stroke-width="0.5"/>
 <polygon points="130.5,141.0 134.2,142.9 137.1,136.5" fill="rgb(108,131,50)" stroke="rgb(108,131,50)" stroke-width="0.5"/>
 <polygon points="119.8,170.3 123.1,172.8 110.4,174.2" fill="rgb(94,154,109)" stroke="rgb(94,154,109)" stroke-width="0.5"/>
+<line x1="310.0" y1="163.8" x2="310.0" y2="160.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.3,190.6 209.7,187.8 207.2,192.3" fill="rgb(61,91,98)" stroke="rgb(61,91,98)" stroke-width="0.5"/>
 <polygon points="133.6,183.9 132.1,181.6 139.7,180.9" fill="rgb(94,146,131)" stroke="rgb(94,146,131)" stroke-width="0.5"/>
 <polygon points="138.3,176.7 139.2,178.7 130.4,179.5" fill="rgb(91,146,119)" stroke="rgb(91,146,119)" stroke-width="0.5"/>
@@ -936,6 +1022,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="120.2,183.1 117.3,180.9 130.4,179.5" fill="rgb(96,150,128)" stroke="rgb(96,150,128)" stroke-width="0.5"/>
 <polygon points="236.2,190.9 229.4,192.8 232.9,186.6" fill="rgb(81,121,127)" stroke="rgb(81,121,127)" stroke-width="0.5"/>
 <polygon points="196.9,134.6 195.9,135.2 202.0,140.0" fill="rgb(106,116,43)" stroke="rgb(106,116,43)" stroke-width="0.5"/>
+<line x1="251.2" y1="107.7" x2="259.6" y2="110.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.3,125.8 181.7,123.2 173.5,123.5" fill="rgb(144,122,41)" stroke="rgb(144,122,41)" stroke-width="0.5"/>
 <polygon points="164.2,201.4 161.2,198.1 167.8,198.9" fill="rgb(73,104,132)" stroke="rgb(73,104,132)" stroke-width="0.5"/>
 <polygon points="199.2,196.1 195.6,198.7 198.7,195.7" fill="rgb(48,68,82)" stroke="rgb(48,68,82)" stroke-width="0.5"/>
@@ -955,6 +1042,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="240.6,148.8 239.3,151.2 236.6,142.8" fill="rgb(89,122,49)" stroke="rgb(89,122,49)" stroke-width="0.5"/>
 <polygon points="156.8,125.4 155.3,123.7 151.2,132.3" fill="rgb(124,111,38)" stroke="rgb(124,111,38)" stroke-width="0.5"/>
 <polygon points="232.7,140.3 234.2,141.0 222.4,139.7" fill="rgb(54,63,24)" stroke="rgb(54,63,24)" stroke-width="0.5"/>
+<line x1="310.0" y1="160.7" x2="310.0" y2="157.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.9,190.1 216.8,187.8 213.8,192.7" fill="rgb(76,114,119)" stroke="rgb(76,114,119)" stroke-width="0.5"/>
 <polygon points="202.8,193.3 206.3,190.6 202.8,194.3" fill="rgb(49,73,80)" stroke="rgb(49,73,80)" stroke-width="0.5"/>
 <polygon points="181.6,194.2 180.6,197.7 178.2,192.9" fill="rgb(74,109,125)" stroke="rgb(74,109,125)" stroke-width="0.5"/>
@@ -962,6 +1050,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="129.9,189.9 126.4,187.6 135.1,186.3" fill="rgb(93,140,138)" stroke="rgb(93,140,138)" stroke-width="0.5"/>
 <polygon points="172.0,189.6 171.2,186.8 175.2,189.3" fill="rgb(80,121,121)" stroke="rgb(80,121,121)" stroke-width="0.5"/>
 <polygon points="103.6,162.2 103.4,160.5 101.9,153.7" fill="rgb(40,71,32)" stroke="rgb(40,71,32)" stroke-width="0.5"/>
+<line x1="105.2" y1="112.1" x2="109.8" y2="107.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="153.1,202.7 148.9,200.1 154.2,202.1" fill="rgb(61,86,113)" stroke="rgb(61,86,113)" stroke-width="0.5"/>
 <polygon points="183.9,199.7 181.9,203.1 180.6,197.7" fill="rgb(75,107,137)" stroke="rgb(75,107,137)" stroke-width="0.5"/>
 <polygon points="181.9,203.1 183.9,199.7 184.3,204.6" fill="rgb(80,112,151)" stroke="rgb(80,112,151)" stroke-width="0.5"/>
@@ -1014,11 +1103,13 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="172.0,189.6 172.7,192.4 168.3,190.6" fill="rgb(75,113,116)" stroke="rgb(75,113,116)" stroke-width="0.5"/>
 <polygon points="251.1,173.6 253.8,175.1 247.0,168.2" fill="rgb(62,104,67)" stroke="rgb(62,104,67)" stroke-width="0.5"/>
 <polygon points="126.4,187.6 129.9,189.9 119.6,192.1" fill="rgb(94,142,142)" stroke="rgb(94,142,142)" stroke-width="0.5"/>
+<line x1="310.0" y1="157.6" x2="310.0" y2="154.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.4,158.2 237.1,156.9 237.1,164.6" fill="rgb(50,87,39)" stroke="rgb(50,87,39)" stroke-width="0.5"/>
 <polygon points="242.7,144.0 241.8,146.4 234.2,141.0" fill="rgb(111,136,52)" stroke="rgb(111,136,52)" stroke-width="0.5"/>
 <polygon points="238.7,165.5 241.2,166.3 238.1,159.5" fill="rgb(75,130,65)" stroke="rgb(75,130,65)" stroke-width="0.5"/>
 <polygon points="200.7,140.7 202.0,140.0 195.9,135.2" fill="rgb(114,124,46)" stroke="rgb(114,124,46)" stroke-width="0.5"/>
 <polygon points="199.2,196.1 202.8,193.3 198.8,196.3" fill="rgb(40,59,66)" stroke="rgb(40,59,66)" stroke-width="0.5"/>
+<line x1="291.6" y1="208.3" x2="296.2" y2="203.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="165.0,206.3 160.9,203.6 167.3,204.4" fill="rgb(79,111,150)" stroke="rgb(79,111,150)" stroke-width="0.5"/>
 <polygon points="195.6,198.7 191.8,201.3 195.2,199.0" fill="rgb(42,59,73)" stroke="rgb(42,59,73)" stroke-width="0.5"/>
 <polygon points="188.1,130.0 188.9,128.9 181.3,125.8" fill="rgb(126,112,38)" stroke="rgb(126,112,38)" stroke-width="0.5"/>
@@ -1032,6 +1123,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="208.3,142.0 210.6,140.7 202.0,140.0" fill="rgb(110,125,47)" stroke="rgb(110,125,47)" stroke-width="0.5"/>
 <polygon points="169.6,193.6 170.9,196.7 165.7,195.7" fill="rgb(70,103,115)" stroke="rgb(70,103,115)" stroke-width="0.5"/>
 <polygon points="236.2,190.9 242.5,188.8 236.1,195.1" fill="rgb(74,112,115)" stroke="rgb(74,112,115)" stroke-width="0.5"/>
+<line x1="73.0" y1="208.6" x2="77.6" y2="203.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="101.9,181.3 101.3,179.2 112.4,176.4" fill="rgb(81,131,100)" stroke="rgb(81,131,100)" stroke-width="0.5"/>
 <polygon points="119.6,192.1 114.4,190.2 126.4,187.6" fill="rgb(92,140,139)" stroke="rgb(92,140,139)" stroke-width="0.5"/>
 <polygon points="230.9,139.8 232.7,140.3 219.7,140.6" fill="rgb(53,59,22)" stroke="rgb(53,59,22)" stroke-width="0.5"/>
@@ -1051,6 +1143,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="145.3,198.5 141.2,196.4 145.0,197.3" fill="rgb(58,85,98)" stroke="rgb(58,85,98)" stroke-width="0.5"/>
 <polygon points="163.3,207.3 158.6,205.0 165.0,206.3" fill="rgb(78,108,149)" stroke="rgb(78,108,149)" stroke-width="0.5"/>
 <polygon points="129.9,189.9 133.5,192.1 125.1,193.9" fill="rgb(91,137,141)" stroke="rgb(91,137,141)" stroke-width="0.5"/>
+<line x1="259.6" y1="110.4" x2="268.0" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.1,156.9 237.4,155.2 236.5,163.4" fill="rgb(38,65,27)" stroke="rgb(38,65,27)" stroke-width="0.5"/>
 <polygon points="184.3,204.6 181.5,207.4 181.9,203.1" fill="rgb(79,111,149)" stroke="rgb(79,111,149)" stroke-width="0.5"/>
 <polygon points="148.9,200.1 153.1,202.7 149.5,200.5" fill="rgb(49,71,88)" stroke="rgb(49,71,88)" stroke-width="0.5"/>
@@ -1088,6 +1181,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="145.1,139.8 146.4,139.7 148.5,131.3" fill="rgb(97,99,36)" stroke="rgb(97,99,36)" stroke-width="0.5"/>
 <polygon points="112.5,148.1 116.2,148.4 119.1,143.3" fill="rgb(97,120,47)" stroke="rgb(97,120,47)" stroke-width="0.5"/>
 <polygon points="149.5,200.5 145.3,198.5 148.9,200.1" fill="rgb(51,73,87)" stroke="rgb(51,73,87)" stroke-width="0.5"/>
+<line x1="310.0" y1="154.5" x2="310.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.3,125.8 180.8,128.8 188.1,130.0" fill="rgb(149,128,43)" stroke="rgb(149,128,43)" stroke-width="0.5"/>
 <polygon points="195.6,198.7 199.2,196.1 195.1,198.3" fill="rgb(34,50,57)" stroke="rgb(34,50,57)" stroke-width="0.5"/>
 <polygon points="109.9,188.0 114.4,190.2 102.6,193.8" fill="rgb(92,140,136)" stroke="rgb(92,140,136)" stroke-width="0.5"/>
@@ -1162,6 +1256,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="241.2,166.3 238.7,165.5 245.0,171.3" fill="rgb(68,118,60)" stroke="rgb(68,118,60)" stroke-width="0.5"/>
 <polygon points="200.7,140.7 199.8,140.6 206.6,142.6" fill="rgb(85,90,33)" stroke="rgb(85,90,33)" stroke-width="0.5"/>
 <polygon points="253.8,175.1 251.1,173.6 255.1,181.1" fill="rgb(69,115,76)" stroke="rgb(69,115,76)" stroke-width="0.5"/>
+<line x1="310.0" y1="151.4" x2="310.0" y2="148.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="169.9,202.0 172.0,205.1 167.3,204.4" fill="rgb(69,98,123)" stroke="rgb(69,98,123)" stroke-width="0.5"/>
 <polygon points="169.0,208.5 165.0,206.3 170.4,207.0" fill="rgb(76,106,142)" stroke="rgb(76,106,142)" stroke-width="0.5"/>
 <polygon points="173.4,195.3 172.7,192.4 175.5,195.1" fill="rgb(87,132,135)" stroke="rgb(87,132,135)" stroke-width="0.5"/>
@@ -1173,7 +1268,9 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="191.8,201.3 195.6,198.7 191.5,200.5" fill="rgb(36,53,61)" stroke="rgb(36,53,61)" stroke-width="0.5"/>
 <polygon points="127.9,146.5 131.7,147.8 134.2,142.9" fill="rgb(109,128,49)" stroke="rgb(109,128,49)" stroke-width="0.5"/>
 <polygon points="112.5,148.1 109.0,147.9 107.0,153.3" fill="rgb(93,119,47)" stroke="rgb(93,119,47)" stroke-width="0.5"/>
+<line x1="268.0" y1="113.1" x2="276.4" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.4,141.2 215.4,141.5 228.9,139.5" fill="rgb(76,80,29)" stroke="rgb(76,80,29)" stroke-width="0.5"/>
+<line x1="100.6" y1="117.0" x2="105.2" y2="112.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.1,194.2 213.8,192.7 210.0,196.6" fill="rgb(80,121,123)" stroke="rgb(80,121,123)" stroke-width="0.5"/>
 <polygon points="103.6,162.2 104.0,164.1 107.6,169.8" fill="rgb(38,65,31)" stroke="rgb(38,65,31)" stroke-width="0.5"/>
 <polygon points="145.1,139.8 143.5,139.4 142.0,145.9" fill="rgb(102,109,40)" stroke="rgb(102,109,40)" stroke-width="0.5"/>
@@ -1238,7 +1335,9 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="199.8,140.6 199.2,139.7 205.5,142.4" fill="rgb(56,57,21)" stroke="rgb(56,57,21)" stroke-width="0.5"/>
 <polygon points="160.1,130.7 158.4,127.8 154.4,134.1" fill="rgb(148,125,43)" stroke="rgb(148,125,43)" stroke-width="0.5"/>
 <polygon points="105.4,172.5 106.7,171.2 104.7,166.0" fill="rgb(55,95,50)" stroke="rgb(55,95,50)" stroke-width="0.5"/>
+<line x1="310.0" y1="148.3" x2="310.0" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="166.7,128.4 167.9,132.9 173.8,127.7" fill="rgb(162,133,45)" stroke="rgb(162,133,45)" stroke-width="0.5"/>
+<line x1="287.0" y1="213.3" x2="291.6" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="224.4,197.8 218.5,198.9 222.6,194.3" fill="rgb(81,121,126)" stroke="rgb(81,121,126)" stroke-width="0.5"/>
 <polygon points="188.0,203.9 191.8,201.3 188.0,202.8" fill="rgb(39,56,66)" stroke="rgb(39,56,66)" stroke-width="0.5"/>
 <polygon points="172.0,205.1 169.9,202.0 173.4,203.4" fill="rgb(65,94,112)" stroke="rgb(65,94,112)" stroke-width="0.5"/>
@@ -1252,6 +1351,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="152.8,133.1 151.2,132.3 148.4,138.7" fill="rgb(118,107,37)" stroke="rgb(118,107,37)" stroke-width="0.5"/>
 <polygon points="180.8,128.8 180.3,132.3 187.3,131.2" fill="rgb(155,130,43)" stroke="rgb(155,130,43)" stroke-width="0.5"/>
 <polygon points="103.6,158.8 103.4,160.5 107.6,166.8" fill="rgb(44,74,31)" stroke="rgb(44,74,31)" stroke-width="0.5"/>
+<line x1="68.4" y1="213.6" x2="73.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="149.5,200.5 153.8,202.5 151.0,200.5" fill="rgb(44,64,73)" stroke="rgb(44,64,73)" stroke-width="0.5"/>
 <polygon points="177.5,199.4 177.1,203.1 175.7,198.4" fill="rgb(75,110,123)" stroke="rgb(75,110,123)" stroke-width="0.5"/>
 <polygon points="242.4,170.3 245.0,171.3 238.7,165.5" fill="rgb(68,118,59)" stroke="rgb(68,118,59)" stroke-width="0.5"/>
@@ -1294,6 +1394,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="180.3,132.3 180.8,128.8 174.1,132.3" fill="rgb(154,128,43)" stroke="rgb(154,128,43)" stroke-width="0.5"/>
 <polygon points="104.0,157.3 103.6,158.8 106.7,165.0" fill="rgb(50,78,32)" stroke="rgb(50,78,32)" stroke-width="0.5"/>
 <polygon points="151.0,200.5 146.4,199.3 149.5,200.5" fill="rgb(46,68,75)" stroke="rgb(46,68,75)" stroke-width="0.5"/>
+<line x1="276.4" y1="115.8" x2="284.8" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.7,198.4 175.9,202.2 174.0,198.6" fill="rgb(92,137,148)" stroke="rgb(92,137,148)" stroke-width="0.5"/>
 <polygon points="172.0,205.1 174.1,208.1 170.4,207.0" fill="rgb(66,95,119)" stroke="rgb(66,95,119)" stroke-width="0.5"/>
 <polygon points="178.1,208.8 180.0,206.2 178.8,209.5" fill="rgb(75,106,137)" stroke="rgb(75,106,137)" stroke-width="0.5"/>
@@ -1321,6 +1422,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="119.8,148.9 123.1,149.2 127.9,146.5" fill="rgb(96,111,42)" stroke="rgb(96,111,42)" stroke-width="0.5"/>
 <polygon points="167.9,209.1 172.3,210.3 167.3,208.8" fill="rgb(46,65,86)" stroke="rgb(46,65,86)" stroke-width="0.5"/>
 <polygon points="248.0,172.3 245.0,171.3 252.6,177.7" fill="rgb(68,116,65)" stroke="rgb(68,116,65)" stroke-width="0.5"/>
+<line x1="310.0" y1="145.2" x2="310.0" y2="142.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="226.7,139.3 224.3,139.3 238.6,138.4" fill="rgb(79,76,27)" stroke="rgb(79,76,27)" stroke-width="0.5"/>
 <polygon points="186.4,132.6 187.3,131.2 180.3,132.3" fill="rgb(132,111,37)" stroke="rgb(132,111,37)" stroke-width="0.5"/>
 <polygon points="172.8,210.0 169.0,208.5 173.5,209.2" fill="rgb(72,102,133)" stroke="rgb(72,102,133)" stroke-width="0.5"/>
@@ -1408,6 +1510,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="240.7,195.5 237.2,197.1 246.3,191.4" fill="rgb(52,80,74)" stroke="rgb(52,80,74)" stroke-width="0.5"/>
 <polygon points="194.9,198.5 198.7,196.9 196.0,199.9" fill="rgb(82,124,124)" stroke="rgb(82,124,124)" stroke-width="0.5"/>
 <polygon points="174.8,207.1 173.4,203.4 175.5,206.5" fill="rgb(73,105,124)" stroke="rgb(73,105,124)" stroke-width="0.5"/>
+<line x1="310.0" y1="142.1" x2="310.0" y2="139.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="249.5,148.4 251.1,145.6 253.8,154.0" fill="rgb(103,117,44)" stroke="rgb(103,117,44)" stroke-width="0.5"/>
 <polygon points="113.0,201.9 106.4,200.9 114.7,197.1" fill="rgb(82,123,128)" stroke="rgb(82,123,128)" stroke-width="0.5"/>
 <polygon points="225.4,201.5 221.1,202.8 224.4,197.8" fill="rgb(79,119,124)" stroke="rgb(79,119,124)" stroke-width="0.5"/>
@@ -1425,6 +1528,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="134.7,148.6 131.7,147.8 126.0,149.4" fill="rgb(99,111,42)" stroke="rgb(99,111,42)" stroke-width="0.5"/>
 <polygon points="255.4,183.1 255.1,181.1 251.9,188.8" fill="rgb(58,94,67)" stroke="rgb(58,94,67)" stroke-width="0.5"/>
 <polygon points="184.3,205.4 180.5,208.1 184.1,206.4" fill="rgb(40,58,69)" stroke="rgb(40,58,69)" stroke-width="0.5"/>
+<line x1="96.0" y1="122.0" x2="100.6" y2="117.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="243.9,193.9 240.7,195.5 250.2,189.4" fill="rgb(50,78,68)" stroke="rgb(50,78,68)" stroke-width="0.5"/>
 <polygon points="175.5,206.5 174.7,202.3 176.1,206.4" fill="rgb(92,135,156)" stroke="rgb(92,135,156)" stroke-width="0.5"/>
 <polygon points="207.8,200.9 213.0,199.9 211.9,205.3" fill="rgb(94,140,152)" stroke="rgb(94,140,152)" stroke-width="0.5"/>
@@ -1449,6 +1553,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="148.4,138.7 147.5,139.3 144.5,143.1" fill="rgb(79,75,26)" stroke="rgb(79,75,26)" stroke-width="0.5"/>
 <polygon points="242.4,164.6 240.6,166.5 238.7,159.8" fill="rgb(85,134,55)" stroke="rgb(85,134,55)" stroke-width="0.5"/>
 <polygon points="204.1,138.3 204.5,140.0 198.6,136.5" fill="rgb(94,85,30)" stroke="rgb(94,85,30)" stroke-width="0.5"/>
+<line x1="284.8" y1="118.5" x2="293.2" y2="121.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.2,140.2 212.4,140.9 204.5,140.0" fill="rgb(62,58,20)" stroke="rgb(62,58,20)" stroke-width="0.5"/>
 <polygon points="198.1,134.8 198.6,136.5 192.4,133.5" fill="rgb(94,80,27)" stroke="rgb(94,80,27)" stroke-width="0.5"/>
 <polygon points="179.9,209.4 176.3,211.0 179.4,209.7" fill="rgb(40,57,72)" stroke="rgb(40,57,72)" stroke-width="0.5"/>
@@ -1522,6 +1627,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="192.3,201.4 188.8,203.3 191.5,200.3" fill="rgb(81,122,127)" stroke="rgb(81,122,127)" stroke-width="0.5"/>
 <polygon points="105.4,163.1 103.9,161.0 104.7,155.8" fill="rgb(82,115,46)" stroke="rgb(82,115,46)" stroke-width="0.5"/>
 <polygon points="176.3,211.0 178.8,209.5 176.3,211.0" fill="rgb(80,114,143)" stroke="rgb(80,114,143)" stroke-width="0.5"/>
+<line x1="310.0" y1="139.0" x2="310.0" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.0,209.2 197.1,208.3 193.5,212.9" fill="rgb(92,132,164)" stroke="rgb(92,132,164)" stroke-width="0.5"/>
 <polygon points="249.7,174.8 251.1,176.2 242.4,170.3" fill="rgb(40,69,35)" stroke="rgb(40,69,35)" stroke-width="0.5"/>
 <polygon points="194.4,204.2 198.6,203.0 197.1,208.3" fill="rgb(93,136,153)" stroke="rgb(93,136,153)" stroke-width="0.5"/>
@@ -1529,6 +1635,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="192.4,133.5 191.5,133.3 198.1,134.8" fill="rgb(99,81,27)" stroke="rgb(99,81,27)" stroke-width="0.5"/>
 <polygon points="185.6,134.3 186.4,132.6 179.8,135.8" fill="rgb(128,105,34)" stroke="rgb(128,105,34)" stroke-width="0.5"/>
 <polygon points="176.3,211.0 179.4,209.7 176.3,211.0" fill="rgb(80,114,143)" stroke="rgb(80,114,143)" stroke-width="0.5"/>
+<line x1="282.4" y1="218.2" x2="287.0" y2="213.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.3,201.4 196.0,199.9 194.4,204.2" fill="rgb(95,142,148)" stroke="rgb(95,142,148)" stroke-width="0.5"/>
 <polygon points="176.3,211.0 178.1,208.8 176.3,211.0" fill="rgb(80,114,142)" stroke="rgb(80,114,142)" stroke-width="0.5"/>
 <polygon points="179.8,135.8 180.3,132.3 174.4,136.9" fill="rgb(153,128,43)" stroke="rgb(153,128,43)" stroke-width="0.5"/>
@@ -1554,6 +1661,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="251.9,188.8 249.5,190.5 255.4,183.1" fill="rgb(55,89,65)" stroke="rgb(55,89,65)" stroke-width="0.5"/>
 <polygon points="134.4,202.8 127.4,202.8 135.5,199.7" fill="rgb(79,119,124)" stroke="rgb(79,119,124)" stroke-width="0.5"/>
 <polygon points="171.6,208.9 167.3,206.9 171.7,209.5" fill="rgb(38,54,65)" stroke="rgb(38,54,65)" stroke-width="0.5"/>
+<line x1="63.8" y1="218.5" x2="68.4" y2="213.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="190.2,205.7 194.4,204.2 192.0,209.2" fill="rgb(91,134,153)" stroke="rgb(91,134,153)" stroke-width="0.5"/>
 <polygon points="191.5,133.3 192.4,133.5 185.6,134.3" fill="rgb(83,67,22)" stroke="rgb(83,67,22)" stroke-width="0.5"/>
 <polygon points="194.3,215.8 187.9,214.6 193.5,212.9" fill="rgb(94,131,177)" stroke="rgb(94,131,177)" stroke-width="0.5"/>
@@ -1676,9 +1784,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="171.1,211.5 176.3,211.0 171.0,212.9" fill="rgb(90,130,161)" stroke="rgb(90,130,161)" stroke-width="0.5"/>
 <polygon points="110.4,151.2 108.5,152.2 101.3,154.6" fill="rgb(59,68,26)" stroke="rgb(59,68,26)" stroke-width="0.5"/>
 <polygon points="235.3,138.5 231.3,139.2 244.0,140.5" fill="rgb(121,106,37)" stroke="rgb(121,106,37)" stroke-width="0.5"/>
+<line x1="310.0" y1="135.9" x2="310.0" y2="132.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.2,210.1 176.3,211.0 171.1,211.5" fill="rgb(91,130,158)" stroke="rgb(91,130,158)" stroke-width="0.5"/>
 <polygon points="252.6,177.7 251.1,176.2 257.2,183.5" fill="rgb(55,93,52)" stroke="rgb(55,93,52)" stroke-width="0.5"/>
 <polygon points="171.4,209.1 176.3,211.0 171.2,210.1" fill="rgb(94,135,162)" stroke="rgb(94,135,162)" stroke-width="0.5"/>
+<line x1="293.2" y1="121.2" x2="301.6" y2="123.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="99.3,181.3 96.6,183.1 97.2,187.3" fill="rgb(58,97,63)" stroke="rgb(58,97,63)" stroke-width="0.5"/>
 <polygon points="163.7,137.2 161.9,133.9 157.9,136.8" fill="rgb(155,127,42)" stroke="rgb(155,127,42)" stroke-width="0.5"/>
 <polygon points="102.6,158.8 101.6,156.6 107.0,153.3" fill="rgb(104,128,50)" stroke="rgb(104,128,50)" stroke-width="0.5"/>
@@ -1812,6 +1922,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="106.7,165.0 107.6,166.8 108.3,171.4" fill="rgb(61,96,39)" stroke="rgb(61,96,39)" stroke-width="0.5"/>
 <polygon points="94.4,189.3 97.2,187.3 96.6,183.1" fill="rgb(58,97,64)" stroke="rgb(58,97,64)" stroke-width="0.5"/>
 <polygon points="184.6,136.1 185.6,134.3 179.4,139.1" fill="rgb(118,96,31)" stroke="rgb(118,96,31)" stroke-width="0.5"/>
+<line x1="310.0" y1="132.8" x2="310.0" y2="129.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.2,214.1 176.3,211.0 175.9,215.3" fill="rgb(68,98,122)" stroke="rgb(68,98,122)" stroke-width="0.5"/>
 <polygon points="178.5,213.8 176.3,211.0 179.0,212.6" fill="rgb(64,91,111)" stroke="rgb(64,91,111)" stroke-width="0.5"/>
 <polygon points="179.4,211.7 176.3,211.0 179.9,211.4" fill="rgb(64,93,110)" stroke="rgb(64,93,110)" stroke-width="0.5"/>
@@ -1838,6 +1949,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="120.8,206.3 114.8,205.9 120.2,202.5" fill="rgb(77,116,120)" stroke="rgb(77,116,120)" stroke-width="0.5"/>
 <polygon points="151.2,203.0 155.5,203.5 148.8,206.7" fill="rgb(94,143,146)" stroke="rgb(94,143,146)" stroke-width="0.5"/>
 <polygon points="163.7,137.2 165.3,140.4 169.1,137.4" fill="rgb(156,130,43)" stroke="rgb(156,130,43)" stroke-width="0.5"/>
+<line x1="91.4" y1="126.9" x2="96.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="157.7,207.5 153.4,207.0 159.4,204.4" fill="rgb(94,141,150)" stroke="rgb(94,141,150)" stroke-width="0.5"/>
 <polygon points="211.5,218.7 206.1,218.9 212.5,216.0" fill="rgb(76,106,143)" stroke="rgb(76,106,143)" stroke-width="0.5"/>
 <polygon points="180.9,212.5 185.4,213.8 180.4,211.8" fill="rgb(39,55,67)" stroke="rgb(39,55,67)" stroke-width="0.5"/>
@@ -1889,6 +2001,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="103.9,161.0 105.4,163.1 102.5,167.1" fill="rgb(92,127,51)" stroke="rgb(92,127,51)" stroke-width="0.5"/>
 <polygon points="252.1,146.1 254.8,147.2 247.9,140.6" fill="rgb(118,109,38)" stroke="rgb(118,109,38)" stroke-width="0.5"/>
 <polygon points="167.1,216.8 171.8,214.0 168.5,215.3" fill="rgb(37,53,68)" stroke="rgb(37,53,68)" stroke-width="0.5"/>
+<line x1="301.6" y1="123.9" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="130.4,148.8 128.4,149.3 120.2,148.6" fill="rgb(65,65,23)" stroke="rgb(65,65,23)" stroke-width="0.5"/>
 <polygon points="114.8,149.6 112.4,150.3 103.5,151.3" fill="rgb(66,68,25)" stroke="rgb(66,68,25)" stroke-width="0.5"/>
 <polygon points="150.5,212.0 145.6,211.9 153.4,207.0" fill="rgb(93,136,154)" stroke="rgb(93,136,154)" stroke-width="0.5"/>
@@ -1917,6 +2030,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="216.1,217.9 211.5,218.7 217.2,214.8" fill="rgb(71,101,131)" stroke="rgb(71,101,131)" stroke-width="0.5"/>
 <polygon points="177.9,215.1 179.6,219.1 177.3,215.9" fill="rgb(73,103,133)" stroke="rgb(73,103,133)" stroke-width="0.5"/>
 <polygon points="160.2,220.1 165.9,217.4 162.2,219.4" fill="rgb(47,66,89)" stroke="rgb(47,66,89)" stroke-width="0.5"/>
+<line x1="310.0" y1="129.7" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.6,215.9 176.8,220.9 175.9,215.3" fill="rgb(75,106,138)" stroke="rgb(75,106,138)" stroke-width="0.5"/>
 <polygon points="173.0,212.4 169.9,213.6 172.4,213.2" fill="rgb(41,59,70)" stroke="rgb(41,59,70)" stroke-width="0.5"/>
 <polygon points="254.1,162.6 252.6,164.7 251.1,156.9" fill="rgb(86,111,44)" stroke="rgb(86,111,44)" stroke-width="0.5"/>
@@ -1924,6 +2038,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="225.7,205.2 227.9,203.4 225.2,209.0" fill="rgb(59,90,92)" stroke="rgb(59,90,92)" stroke-width="0.5"/>
 <polygon points="165.3,140.4 163.7,137.2 159.7,138.4" fill="rgb(150,122,40)" stroke="rgb(150,122,40)" stroke-width="0.5"/>
 <polygon points="145.6,211.9 140.7,211.6 148.8,206.7" fill="rgb(94,138,154)" stroke="rgb(94,138,154)" stroke-width="0.5"/>
+<line x1="277.8" y1="223.2" x2="282.4" y2="218.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.1,218.9 211.5,218.7 203.1,218.8" fill="rgb(46,65,87)" stroke="rgb(46,65,87)" stroke-width="0.5"/>
 <polygon points="102.6,158.8 103.9,161.0 99.3,164.6" fill="rgb(102,132,52)" stroke="rgb(102,132,52)" stroke-width="0.5"/>
 <polygon points="201.1,134.3 202.6,135.1 196.2,132.8" fill="rgb(96,73,23)" stroke="rgb(96,73,23)" stroke-width="0.5"/>
@@ -1947,6 +2062,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="145.6,211.9 150.5,212.0 142.8,217.6" fill="rgb(95,136,164)" stroke="rgb(95,136,164)" stroke-width="0.5"/>
 <polygon points="175.9,215.3 175.4,219.5 175.2,214.1" fill="rgb(67,95,121)" stroke="rgb(67,95,121)" stroke-width="0.5"/>
 <polygon points="148.1,217.5 142.8,217.6 150.5,212.0" fill="rgb(92,131,165)" stroke="rgb(92,131,165)" stroke-width="0.5"/>
+<line x1="59.2" y1="223.5" x2="63.8" y2="218.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="100.3,202.7 97.4,201.1 96.2,197.8" fill="rgb(62,96,86)" stroke="rgb(62,96,86)" stroke-width="0.5"/>
 <polygon points="179.0,212.6 181.4,213.9 178.5,213.8" fill="rgb(63,91,109)" stroke="rgb(63,91,109)" stroke-width="0.5"/>
 <polygon points="101.9,152.7 103.5,151.3 112.4,150.3" fill="rgb(72,74,27)" stroke="rgb(72,74,27)" stroke-width="0.5"/>
@@ -2111,6 +2227,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="123.1,209.6 119.1,208.8 120.8,206.3" fill="rgb(71,107,107)" stroke="rgb(71,107,107)" stroke-width="0.5"/>
 <polygon points="138.2,217.2 142.8,217.6 137.7,221.9" fill="rgb(89,126,159)" stroke="rgb(89,126,159)" stroke-width="0.5"/>
 <polygon points="135.1,146.1 136.9,145.1 140.2,144.0" fill="rgb(76,66,22)" stroke="rgb(76,66,22)" stroke-width="0.5"/>
+<line x1="305.4" y1="131.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="242.5,146.0 247.9,145.7 238.9,141.2" fill="rgb(150,127,43)" stroke="rgb(150,127,43)" stroke-width="0.5"/>
 <polygon points="106.5,182.4 108.3,181.1 108.3,177.1" fill="rgb(59,102,49)" stroke="rgb(59,102,49)" stroke-width="0.5"/>
 <polygon points="131.5,210.8 136.1,211.3 130.9,215.3" fill="rgb(87,129,141)" stroke="rgb(87,129,141)" stroke-width="0.5"/>
@@ -2123,6 +2240,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="183.7,138.2 182.7,140.4 189.1,134.5" fill="rgb(124,93,29)" stroke="rgb(124,93,29)" stroke-width="0.5"/>
 <polygon points="164.6,217.2 160.8,219.0 162.2,219.4" fill="rgb(35,51,63)" stroke="rgb(35,51,63)" stroke-width="0.5"/>
 <polygon points="110.1,173.1 110.7,174.6 108.3,178.3" fill="rgb(69,117,49)" stroke="rgb(69,117,49)" stroke-width="0.5"/>
+<line x1="86.8" y1="131.9" x2="91.4" y2="126.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.1,212.7 169.0,213.4 169.9,213.6" fill="rgb(34,50,55)" stroke="rgb(34,50,55)" stroke-width="0.5"/>
 <polygon points="252.6,164.7 254.1,162.6 257.2,170.0" fill="rgb(91,120,47)" stroke="rgb(91,120,47)" stroke-width="0.5"/>
 <polygon points="175.4,219.5 174.9,223.5 174.1,217.1" fill="rgb(67,95,121)" stroke="rgb(67,95,121)" stroke-width="0.5"/>
@@ -2205,6 +2323,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="109.9,149.7 114.4,149.6 120.2,148.6" fill="rgb(97,88,31)" stroke="rgb(97,88,31)" stroke-width="0.5"/>
 <polygon points="136.9,145.1 139.1,144.2 140.9,142.1" fill="rgb(102,83,27)" stroke="rgb(102,83,27)" stroke-width="0.5"/>
 <polygon points="192.5,134.1 194.6,132.9 187.5,136.1" fill="rgb(108,75,23)" stroke="rgb(108,75,23)" stroke-width="0.5"/>
+<line x1="273.2" y1="228.1" x2="277.8" y2="223.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="167.0,214.8 164.2,216.1 164.6,217.2" fill="rgb(39,57,65)" stroke="rgb(39,57,65)" stroke-width="0.5"/>
 <polygon points="188.6,212.4 185.8,211.9 191.1,213.7" fill="rgb(40,60,64)" stroke="rgb(40,60,64)" stroke-width="0.5"/>
 <polygon points="185.8,211.9 188.6,212.4 184.6,212.6" fill="rgb(68,102,107)" stroke="rgb(68,102,107)" stroke-width="0.5"/>
@@ -2219,6 +2338,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="232.9,142.7 226.5,144.7 236.2,147.0" fill="rgb(159,132,44)" stroke="rgb(159,132,44)" stroke-width="0.5"/>
 <polygon points="161.7,140.1 163.7,142.1 166.9,143.3" fill="rgb(119,94,30)" stroke="rgb(119,94,30)" stroke-width="0.5"/>
 <polygon points="267.6,186.5 264.5,188.2 259.2,180.0" fill="rgb(85,146,76)" stroke="rgb(85,146,76)" stroke-width="0.5"/>
+<line x1="54.6" y1="228.4" x2="59.2" y2="223.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="102.5,167.1 105.6,169.4 100.5,172.8" fill="rgb(103,144,58)" stroke="rgb(103,144,58)" stroke-width="0.5"/>
 <polygon points="236.2,147.0 242.5,146.0 232.9,142.7" fill="rgb(156,130,43)" stroke="rgb(156,130,43)" stroke-width="0.5"/>
 <polygon points="160.8,219.0 164.6,217.2 164.2,216.1" fill="rgb(38,55,65)" stroke="rgb(38,55,65)" stroke-width="0.5"/>
@@ -2380,6 +2500,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="211.9,146.1 207.2,148.1 213.8,149.7" fill="rgb(166,138,46)" stroke="rgb(166,138,46)" stroke-width="0.5"/>
 <polygon points="163.7,142.1 165.7,144.2 168.3,145.9" fill="rgb(111,86,28)" stroke="rgb(111,86,28)" stroke-width="0.5"/>
 <polygon points="119.6,150.0 125.1,150.7 126.4,148.2" fill="rgb(129,110,37)" stroke="rgb(129,110,37)" stroke-width="0.5"/>
+<line x1="300.8" y1="136.5" x2="305.4" y2="131.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="98.3,153.9 102.6,153.1 106.2,150.2" fill="rgb(105,95,33)" stroke="rgb(105,95,33)" stroke-width="0.5"/>
 <polygon points="148.1,224.5 152.5,223.4 153.4,222.2" fill="rgb(37,53,66)" stroke="rgb(37,53,66)" stroke-width="0.5"/>
 <polygon points="175.4,150.5 175.2,148.1 172.7,150.7" fill="rgb(150,129,43)" stroke="rgb(150,129,43)" stroke-width="0.5"/>
@@ -2389,6 +2510,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="241.6,152.8 246.3,153.1 242.5,146.0" fill="rgb(164,142,48)" stroke="rgb(164,142,48)" stroke-width="0.5"/>
 <polygon points="131.7,219.4 130.1,217.5 130.9,215.3" fill="rgb(61,90,98)" stroke="rgb(61,90,98)" stroke-width="0.5"/>
 <polygon points="97.2,170.6 94.4,168.2 99.3,164.6" fill="rgb(111,136,52)" stroke="rgb(111,136,52)" stroke-width="0.5"/>
+<line x1="82.2" y1="136.8" x2="86.8" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="190.0,136.3 192.5,134.1 185.8,138.4" fill="rgb(119,81,24)" stroke="rgb(119,81,24)" stroke-width="0.5"/>
 <polygon points="111.9,207.0 115.4,207.9 120.4,208.7" fill="rgb(46,72,63)" stroke="rgb(46,72,63)" stroke-width="0.5"/>
 <polygon points="114.4,149.6 109.9,149.7 108.2,152.9" fill="rgb(123,106,36)" stroke="rgb(123,106,36)" stroke-width="0.5"/>
@@ -2461,6 +2583,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="170.2,218.0 168.8,219.9 168.7,214.9" fill="rgb(75,111,118)" stroke="rgb(75,111,118)" stroke-width="0.5"/>
 <polygon points="178.2,147.4 177.8,149.5 181.6,142.8" fill="rgb(103,82,26)" stroke="rgb(103,82,26)" stroke-width="0.5"/>
 <polygon points="136.5,224.0 134.1,222.6 134.2,220.9" fill="rgb(60,86,102)" stroke="rgb(60,86,102)" stroke-width="0.5"/>
+<line x1="268.6" y1="233.1" x2="273.2" y2="228.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="95.6,155.3 94.4,157.2 93.4,161.6" fill="rgb(69,67,24)" stroke="rgb(69,67,24)" stroke-width="0.5"/>
 <polygon points="236.1,152.9 241.6,152.8 236.2,147.0" fill="rgb(165,140,48)" stroke="rgb(165,140,48)" stroke-width="0.5"/>
 <polygon points="130.1,217.5 129.1,215.4 128.3,213.9" fill="rgb(45,68,70)" stroke="rgb(45,68,70)" stroke-width="0.5"/>
@@ -2479,6 +2602,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="103.8,174.9 106.5,176.7 99.5,180.3" fill="rgb(101,151,61)" stroke="rgb(101,151,61)" stroke-width="0.5"/>
 <polygon points="192.1,216.2 189.4,214.4 194.5,214.8" fill="rgb(79,119,119)" stroke="rgb(79,119,119)" stroke-width="0.5"/>
 <polygon points="102.2,184.9 101.8,183.4 109.0,179.7" fill="rgb(73,127,53)" stroke="rgb(73,127,53)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="54.6" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="180.5,229.5 181.5,232.9 177.4,229.8" fill="rgb(77,107,148)" stroke="rgb(77,107,148)" stroke-width="0.5"/>
 <polygon points="267.6,186.5 269.5,184.7 271.5,193.9" fill="rgb(70,122,60)" stroke="rgb(70,122,60)" stroke-width="0.5"/>
 <polygon points="189.4,214.4 192.1,216.2 188.2,218.2" fill="rgb(80,121,124)" stroke="rgb(80,121,124)" stroke-width="0.5"/>
@@ -2633,6 +2757,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="140.8,225.2 144.2,225.1 146.3,224.8" fill="rgb(46,67,78)" stroke="rgb(46,67,78)" stroke-width="0.5"/>
 <polygon points="198.7,155.7 203.1,154.1 198.8,151.6" fill="rgb(182,153,51)" stroke="rgb(182,153,51)" stroke-width="0.5"/>
 <polygon points="249.5,164.4 246.8,163.2 242.9,171.3" fill="rgb(141,153,56)" stroke="rgb(141,153,56)" stroke-width="0.5"/>
+<line x1="296.2" y1="141.5" x2="300.8" y2="136.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="198.0,216.9 202.1,219.6 195.2,218.5" fill="rgb(84,126,127)" stroke="rgb(84,126,127)" stroke-width="0.5"/>
 <polygon points="229.4,204.4 232.3,203.9 231.7,210.6" fill="rgb(83,134,101)" stroke="rgb(83,134,101)" stroke-width="0.5"/>
 <polygon points="165.1,218.6 167.0,216.4 167.3,222.2" fill="rgb(83,126,129)" stroke="rgb(83,126,129)" stroke-width="0.5"/>
@@ -2645,9 +2770,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="157.0,139.2 160.9,141.7 161.2,140.6" fill="rgb(141,94,28)" stroke="rgb(141,94,28)" stroke-width="0.5"/>
 <polygon points="171.0,225.2 170.0,227.6 168.8,219.9" fill="rgb(69,101,114)" stroke="rgb(69,101,114)" stroke-width="0.5"/>
 <polygon points="132.6,220.8 131.7,218.9 130.1,217.5" fill="rgb(41,62,63)" stroke="rgb(41,62,63)" stroke-width="0.5"/>
+<line x1="77.6" y1="141.8" x2="82.2" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.1,152.9 198.8,151.6 195.6,147.3" fill="rgb(182,145,47)" stroke="rgb(182,145,47)" stroke-width="0.5"/>
 <polygon points="180.6,145.3 179.5,148.0 183.9,141.4" fill="rgb(106,77,23)" stroke="rgb(106,77,23)" stroke-width="0.5"/>
 <polygon points="247.1,172.3 251.6,173.4 251.9,165.7" fill="rgb(132,154,59)" stroke="rgb(132,154,59)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="230.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.3,149.5 149.5,150.2 145.0,143.7" fill="rgb(182,137,43)" stroke="rgb(182,137,43)" stroke-width="0.5"/>
 <polygon points="148.9,144.1 145.0,143.7 149.5,150.2" fill="rgb(171,125,39)" stroke="rgb(171,125,39)" stroke-width="0.5"/>
 <polygon points="97.9,178.5 96.4,176.7 100.5,172.8" fill="rgb(96,128,50)" stroke="rgb(96,128,50)" stroke-width="0.5"/>
@@ -2684,6 +2811,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="246.8,163.2 243.9,162.0 239.3,170.3" fill="rgb(149,154,56)" stroke="rgb(149,154,56)" stroke-width="0.5"/>
 <polygon points="174.0,230.3 173.5,232.7 171.0,225.2" fill="rgb(65,93,116)" stroke="rgb(65,93,116)" stroke-width="0.5"/>
 <polygon points="96.2,160.0 100.6,158.8 98.3,153.9" fill="rgb(133,119,41)" stroke="rgb(133,119,41)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="58.4" y2="236.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="111.5,206.6 107.4,206.2 103.1,203.5" fill="rgb(63,102,74)" stroke="rgb(63,102,74)" stroke-width="0.5"/>
 <polygon points="167.8,146.5 169.9,148.9 170.9,150.1" fill="rgb(102,77,24)" stroke="rgb(102,77,24)" stroke-width="0.5"/>
 <polygon points="174.0,153.6 173.4,152.4 172.2,151.8" fill="rgb(110,89,29)" stroke="rgb(110,89,29)" stroke-width="0.5"/>
@@ -2730,6 +2858,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="159.6,220.4 162.3,217.7 162.9,221.4" fill="rgb(82,124,124)" stroke="rgb(82,124,124)" stroke-width="0.5"/>
 <polygon points="182.5,235.3 181.5,232.9 186.3,231.6" fill="rgb(65,92,122)" stroke="rgb(65,92,122)" stroke-width="0.5"/>
 <polygon points="243.9,162.0 240.7,161.0 236.3,169.2" fill="rgb(156,155,56)" stroke="rgb(156,155,56)" stroke-width="0.5"/>
+<line x1="264.0" y1="238.0" x2="268.6" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.2,218.5 198.7,221.5 193.1,222.4" fill="rgb(87,131,134)" stroke="rgb(87,131,134)" stroke-width="0.5"/>
 <polygon points="141.5,154.0 136.3,152.8 141.7,158.0" fill="rgb(172,144,48)" stroke="rgb(172,144,48)" stroke-width="0.5"/>
 <polygon points="170.0,227.6 171.0,225.2 173.5,232.7" fill="rgb(74,106,128)" stroke="rgb(74,106,128)" stroke-width="0.5"/>
@@ -2745,6 +2874,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="164.2,143.1 167.3,146.2 167.8,146.5" fill="rgb(112,79,24)" stroke="rgb(112,79,24)" stroke-width="0.5"/>
 <polygon points="234.5,210.1 231.7,210.6 232.3,203.9" fill="rgb(80,128,97)" stroke="rgb(80,128,97)" stroke-width="0.5"/>
 <polygon points="100.6,158.8 106.4,158.2 102.6,153.1" fill="rgb(147,126,43)" stroke="rgb(147,126,43)" stroke-width="0.5"/>
+<line x1="50.0" y1="230.3" x2="50.0" y2="227.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="274.3,188.2 275.3,190.3 269.5,180.9" fill="rgb(46,76,32)" stroke="rgb(46,76,32)" stroke-width="0.5"/>
 <polygon points="100.9,181.9 101.8,183.4 93.4,188.0" fill="rgb(88,139,57)" stroke="rgb(88,139,57)" stroke-width="0.5"/>
 <polygon points="107.4,206.2 103.1,205.8 100.7,202.2" fill="rgb(69,114,78)" stroke="rgb(69,114,78)" stroke-width="0.5"/>
@@ -2828,10 +2958,12 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="229.4,211.4 231.7,210.6 232.5,219.3" fill="rgb(77,121,101)" stroke="rgb(77,121,101)" stroke-width="0.5"/>
 <polygon points="193.1,222.4 195.9,225.0 190.9,227.8" fill="rgb(80,119,129)" stroke="rgb(80,119,129)" stroke-width="0.5"/>
 <polygon points="151.0,155.8 155.2,156.4 149.5,150.2" fill="rgb(181,145,47)" stroke="rgb(181,145,47)" stroke-width="0.5"/>
+<line x1="58.4" y1="236.1" x2="66.8" y2="238.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.9,154.5 175.7,153.5 174.7,154.6" fill="rgb(125,100,32)" stroke="rgb(125,100,32)" stroke-width="0.5"/>
 <polygon points="191.8,148.9 188.0,150.7 191.5,153.9" fill="rgb(179,136,43)" stroke="rgb(179,136,43)" stroke-width="0.5"/>
 <polygon points="241.4,203.5 247.2,203.5 241.6,209.6" fill="rgb(82,136,92)" stroke="rgb(82,136,92)" stroke-width="0.5"/>
 <polygon points="179.5,148.0 178.5,150.8 181.9,144.9" fill="rgb(102,73,22)" stroke="rgb(102,73,22)" stroke-width="0.5"/>
+<line x1="50.0" y1="227.2" x2="50.0" y2="224.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="218.5,154.9 213.0,155.8 221.1,157.1" fill="rgb(144,118,39)" stroke="rgb(144,118,39)" stroke-width="0.5"/>
 <polygon points="153.8,151.0 149.5,150.2 155.2,156.4" fill="rgb(174,135,43)" stroke="rgb(174,135,43)" stroke-width="0.5"/>
 <polygon points="251.6,173.4 247.1,172.3 249.1,179.2" fill="rgb(123,147,57)" stroke="rgb(123,147,57)" stroke-width="0.5"/>
@@ -2913,6 +3045,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="100.6,158.8 96.2,160.0 104.3,165.7" fill="rgb(156,138,47)" stroke="rgb(156,138,47)" stroke-width="0.5"/>
 <polygon points="127.4,159.0 134.4,159.8 128.7,155.3" fill="rgb(160,134,45)" stroke="rgb(160,134,45)" stroke-width="0.5"/>
 <polygon points="155.2,156.4 159.2,156.8 153.8,151.0" fill="rgb(179,141,46)" stroke="rgb(179,141,46)" stroke-width="0.5"/>
+<line x1="291.6" y1="146.4" x2="296.2" y2="141.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="147.1,159.1 141.7,158.0 146.3,161.4" fill="rgb(157,135,45)" stroke="rgb(157,135,45)" stroke-width="0.5"/>
 <polygon points="180.0,148.8 181.9,144.9 178.5,150.8" fill="rgb(95,67,20)" stroke="rgb(95,67,20)" stroke-width="0.5"/>
 <polygon points="247.2,203.5 253.3,203.3 245.8,209.4" fill="rgb(80,133,86)" stroke="rgb(80,133,86)" stroke-width="0.5"/>
@@ -2925,9 +3058,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="134.0,222.9 132.4,221.9 131.7,218.9" fill="rgb(62,94,90)" stroke="rgb(62,94,90)" stroke-width="0.5"/>
 <polygon points="226.2,219.8 229.4,219.6 225.4,226.3" fill="rgb(77,117,114)" stroke="rgb(77,117,114)" stroke-width="0.5"/>
 <polygon points="192.9,229.6 190.9,227.8 195.9,225.0" fill="rgb(72,107,117)" stroke="rgb(72,107,117)" stroke-width="0.5"/>
+<line x1="73.0" y1="146.7" x2="77.6" y2="141.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="158.2,151.9 153.8,151.0 159.2,156.8" fill="rgb(174,133,43)" stroke="rgb(174,133,43)" stroke-width="0.5"/>
 <polygon points="93.4,194.8 94.2,196.4 87.5,202.6" fill="rgb(72,125,64)" stroke="rgb(72,125,64)" stroke-width="0.5"/>
 <polygon points="249.1,179.2 255.4,180.6 251.6,173.4" fill="rgb(120,147,56)" stroke="rgb(120,147,56)" stroke-width="0.5"/>
+<line x1="50.0" y1="224.1" x2="50.0" y2="221.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="225.4,226.3 220.6,224.7 226.2,219.8" fill="rgb(84,127,127)" stroke="rgb(84,127,127)" stroke-width="0.5"/>
 <polygon points="129.4,214.1 127.6,213.5 126.6,210.5" fill="rgb(67,106,83)" stroke="rgb(67,106,83)" stroke-width="0.5"/>
 <polygon points="183.3,236.6 182.5,235.3 187.7,233.2" fill="rgb(59,85,108)" stroke="rgb(59,85,108)" stroke-width="0.5"/>
@@ -2985,6 +3120,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="182.8,148.1 186.3,143.9 181.5,147.7" fill="rgb(197,132,39)" stroke="rgb(197,132,39)" stroke-width="0.5"/>
 <polygon points="177.1,153.1 176.7,154.9 178.5,150.8" fill="rgb(90,67,21)" stroke="rgb(90,67,21)" stroke-width="0.5"/>
 <polygon points="134.0,222.9 135.8,223.9 136.6,227.5" fill="rgb(63,96,97)" stroke="rgb(63,96,97)" stroke-width="0.5"/>
+<line x1="66.8" y1="238.8" x2="75.2" y2="241.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="234.5,210.1 237.8,209.8 237.8,218.3" fill="rgb(83,134,102)" stroke="rgb(83,134,102)" stroke-width="0.5"/>
 <polygon points="92.9,193.1 93.4,194.8 85.6,201.1" fill="rgb(70,121,58)" stroke="rgb(70,121,58)" stroke-width="0.5"/>
 <polygon points="159.2,156.8 163.2,156.9 158.2,151.9" fill="rgb(177,137,44)" stroke="rgb(177,137,44)" stroke-width="0.5"/>
@@ -3012,6 +3148,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="139.7,226.8 136.6,227.5 135.8,223.9" fill="rgb(73,110,114)" stroke="rgb(73,110,114)" stroke-width="0.5"/>
 <polygon points="132.4,221.9 130.9,221.0 131.1,217.0" fill="rgb(67,104,94)" stroke="rgb(67,104,94)" stroke-width="0.5"/>
 <polygon points="275.3,190.3 274.3,188.2 272.7,197.7" fill="rgb(69,118,49)" stroke="rgb(69,118,49)" stroke-width="0.5"/>
+<line x1="259.4" y1="243.0" x2="264.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.6,157.3 188.1,157.5 184.3,155.4" fill="rgb(178,140,46)" stroke="rgb(178,140,46)" stroke-width="0.5"/>
 <polygon points="148.0,226.6 144.1,229.3 142.9,225.9" fill="rgb(73,110,116)" stroke="rgb(73,110,116)" stroke-width="0.5"/>
 <polygon points="159.8,160.1 156.0,160.2 159.4,161.4" fill="rgb(149,126,42)" stroke="rgb(149,126,42)" stroke-width="0.5"/>
@@ -3024,6 +3161,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="160.4,224.9 157.6,228.9 156.5,223.6" fill="rgb(83,126,128)" stroke="rgb(83,126,128)" stroke-width="0.5"/>
 <polygon points="120.2,158.3 113.0,158.0 120.8,163.1" fill="rgb(164,137,46)" stroke="rgb(164,137,46)" stroke-width="0.5"/>
 <polygon points="163.3,146.0 167.9,149.4 165.0,145.0" fill="rgb(199,133,39)" stroke="rgb(199,133,39)" stroke-width="0.5"/>
+<line x1="50.0" y1="221.0" x2="50.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.1,155.6 175.9,154.5 175.5,155.6" fill="rgb(127,98,31)" stroke="rgb(127,98,31)" stroke-width="0.5"/>
 <polygon points="225.7,161.4 227.9,163.2 225.4,157.7" fill="rgb(137,115,38)" stroke="rgb(137,115,38)" stroke-width="0.5"/>
 <polygon points="155.5,161.8 159.4,161.4 156.0,160.2" fill="rgb(149,126,43)" stroke="rgb(149,126,43)" stroke-width="0.5"/>
@@ -3120,6 +3258,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="169.0,148.8 172.8,152.8 170.4,149.6" fill="rgb(141,97,29)" stroke="rgb(141,97,29)" stroke-width="0.5"/>
 <polygon points="127.6,213.5 129.4,214.1 127.1,220.0" fill="rgb(79,126,98)" stroke="rgb(79,126,98)" stroke-width="0.5"/>
 <polygon points="197.1,155.9 202.1,155.9 194.4,157.7" fill="rgb(90,69,22)" stroke="rgb(90,69,22)" stroke-width="0.5"/>
+<line x1="50.0" y1="217.9" x2="50.0" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.9,162.7 132.9,162.5 127.4,159.0" fill="rgb(158,132,44)" stroke="rgb(158,132,44)" stroke-width="0.5"/>
 <polygon points="183.9,236.9 183.3,236.6 188.9,234.0" fill="rgb(51,73,89)" stroke="rgb(51,73,89)" stroke-width="0.5"/>
 <polygon points="226.9,169.7 227.6,171.6 229.8,164.9" fill="rgb(123,117,41)" stroke="rgb(123,117,41)" stroke-width="0.5"/>
@@ -3149,6 +3288,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="179.4,152.5 182.8,148.1 178.8,152.3" fill="rgb(197,136,41)" stroke="rgb(197,136,41)" stroke-width="0.5"/>
 <polygon points="202.0,230.7 198.9,227.8 207.1,228.5" fill="rgb(80,120,125)" stroke="rgb(80,120,125)" stroke-width="0.5"/>
 <polygon points="261.6,182.3 255.4,180.6 259.4,188.7" fill="rgb(112,147,57)" stroke="rgb(112,147,57)" stroke-width="0.5"/>
+<line x1="75.2" y1="241.5" x2="83.6" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="93.4,188.0 92.9,189.7 87.5,195.1" fill="rgb(55,85,35)" stroke="rgb(55,85,35)" stroke-width="0.5"/>
 <polygon points="173.5,153.2 170.4,149.6 172.8,152.8" fill="rgb(134,94,28)" stroke="rgb(134,94,28)" stroke-width="0.5"/>
 <polygon points="249.1,179.2 243.1,178.0 247.2,184.7" fill="rgb(120,145,55)" stroke="rgb(120,145,55)" stroke-width="0.5"/>
@@ -3205,6 +3345,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="171.6,156.9 167.3,156.9 171.5,157.9" fill="rgb(181,136,43)" stroke="rgb(181,136,43)" stroke-width="0.5"/>
 <polygon points="174.1,154.1 176.3,156.9 174.8,155.0" fill="rgb(102,74,23)" stroke="rgb(102,74,23)" stroke-width="0.5"/>
 <polygon points="171.7,155.5 167.2,154.2 171.6,156.9" fill="rgb(179,131,41)" stroke="rgb(179,131,41)" stroke-width="0.5"/>
+<line x1="287.0" y1="151.4" x2="291.6" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.3,157.1 185.8,157.4 181.0,157.4" fill="rgb(75,56,18)" stroke="rgb(75,56,18)" stroke-width="0.5"/>
 <polygon points="172.3,153.1 167.9,149.4 171.9,154.1" fill="rgb(200,138,42)" stroke="rgb(200,138,42)" stroke-width="0.5"/>
 <polygon points="130.9,221.0 132.4,221.9 130.9,228.4" fill="rgb(71,110,100)" stroke="rgb(71,110,100)" stroke-width="0.5"/>
@@ -3218,7 +3359,9 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="225.7,161.4 223.0,159.7 225.2,165.2" fill="rgb(152,124,41)" stroke="rgb(152,124,41)" stroke-width="0.5"/>
 <polygon points="186.8,156.2 192.0,156.0 185.8,157.4" fill="rgb(99,74,23)" stroke="rgb(99,74,23)" stroke-width="0.5"/>
 <polygon points="188.9,234.0 189.9,234.3 183.9,236.9" fill="rgb(54,78,90)" stroke="rgb(54,78,90)" stroke-width="0.5"/>
+<line x1="68.4" y1="151.7" x2="73.0" y2="146.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="242.2,216.8 240.2,217.6 241.6,209.6" fill="rgb(67,110,79)" stroke="rgb(67,110,79)" stroke-width="0.5"/>
+<line x1="50.0" y1="214.8" x2="50.0" y2="211.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="173.5,153.2 176.3,156.9 174.1,154.1" fill="rgb(106,77,23)" stroke="rgb(106,77,23)" stroke-width="0.5"/>
 <polygon points="185.8,157.4 181.3,157.1 186.8,156.2" fill="rgb(98,73,23)" stroke="rgb(98,73,23)" stroke-width="0.5"/>
 <polygon points="109.2,164.6 104.3,165.7 115.4,170.9" fill="rgb(167,149,51)" stroke="rgb(167,149,51)" stroke-width="0.5"/>
@@ -3327,6 +3470,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="176.3,156.9 171.4,158.2 176.3,156.9" fill="rgb(175,128,40)" stroke="rgb(175,128,40)" stroke-width="0.5"/>
 <polygon points="171.2,158.0 166.5,159.1 171.1,157.4" fill="rgb(99,74,23)" stroke="rgb(99,74,23)" stroke-width="0.5"/>
 <polygon points="199.5,154.5 205.3,154.8 197.1,155.9" fill="rgb(85,60,18)" stroke="rgb(85,60,18)" stroke-width="0.5"/>
+<line x1="254.8" y1="247.9" x2="259.4" y2="243.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="162.1,231.1 160.2,234.5 157.6,228.9" fill="rgb(82,123,128)" stroke="rgb(82,123,128)" stroke-width="0.5"/>
 <polygon points="100.7,179.2 98.6,180.9 107.4,184.8" fill="rgb(122,142,54)" stroke="rgb(122,142,54)" stroke-width="0.5"/>
 <polygon points="121.2,213.9 124.9,213.4 121.7,220.1" fill="rgb(85,138,99)" stroke="rgb(85,138,99)" stroke-width="0.5"/>
@@ -3334,11 +3478,13 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="244.1,215.8 242.2,216.8 245.8,209.4" fill="rgb(60,98,67)" stroke="rgb(60,98,67)" stroke-width="0.5"/>
 <polygon points="129.2,220.3 130.9,221.0 128.3,228.6" fill="rgb(75,118,102)" stroke="rgb(75,118,102)" stroke-width="0.5"/>
 <polygon points="226.9,169.7 226.2,167.5 225.5,173.5" fill="rgb(108,99,34)" stroke="rgb(108,99,34)" stroke-width="0.5"/>
+<line x1="83.6" y1="244.2" x2="92.0" y2="246.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="115.4,170.9 119.1,169.3 109.2,164.6" fill="rgb(167,148,51)" stroke="rgb(167,148,51)" stroke-width="0.5"/>
 <polygon points="223.5,162.8 225.2,165.2 223.0,159.7" fill="rgb(118,94,31)" stroke="rgb(118,94,31)" stroke-width="0.5"/>
 <polygon points="116.5,214.6 111.2,215.6 113.1,210.0" fill="rgb(80,132,89)" stroke="rgb(80,132,89)" stroke-width="0.5"/>
 <polygon points="176.3,156.9 181.6,156.5 176.3,156.9" fill="rgb(176,128,40)" stroke="rgb(176,128,40)" stroke-width="0.5"/>
 <polygon points="176.3,156.9 171.2,158.0 176.3,156.9" fill="rgb(175,128,40)" stroke="rgb(175,128,40)" stroke-width="0.5"/>
+<line x1="50.0" y1="211.7" x2="50.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.6,156.5 176.3,156.9 181.8,155.9" fill="rgb(97,70,21)" stroke="rgb(97,70,21)" stroke-width="0.5"/>
 <polygon points="171.1,157.4 176.3,156.9 171.2,158.0" fill="rgb(100,73,23)" stroke="rgb(100,73,23)" stroke-width="0.5"/>
 <polygon points="193.5,154.6 199.5,154.5 192.0,156.0" fill="rgb(91,64,19)" stroke="rgb(91,64,19)" stroke-width="0.5"/>
@@ -3447,6 +3593,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="193.5,154.6 187.6,155.1 194.3,154.4" fill="rgb(103,71,21)" stroke="rgb(103,71,21)" stroke-width="0.5"/>
 <polygon points="165.8,158.1 160.7,158.8 165.4,157.1" fill="rgb(93,67,21)" stroke="rgb(93,67,21)" stroke-width="0.5"/>
 <polygon points="172.4,159.2 176.3,156.9 171.8,158.0" fill="rgb(187,135,41)" stroke="rgb(187,135,41)" stroke-width="0.5"/>
+<line x1="50.0" y1="208.6" x2="50.0" y2="205.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="179.0,160.5 176.3,156.9 178.5,159.8" fill="rgb(103,75,23)" stroke="rgb(103,75,23)" stroke-width="0.5"/>
 <polygon points="165.4,157.1 171.0,156.9 165.8,158.1" fill="rgb(94,67,21)" stroke="rgb(94,67,21)" stroke-width="0.5"/>
 <polygon points="180.4,159.7 184.1,162.4 180.9,158.4" fill="rgb(179,133,42)" stroke="rgb(179,133,42)" stroke-width="0.5"/>
@@ -3504,6 +3651,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="123.1,167.9 119.1,169.3 126.1,172.3" fill="rgb(163,141,48)" stroke="rgb(163,141,48)" stroke-width="0.5"/>
 <polygon points="227.4,177.1 226.3,175.4 229.4,180.7" fill="rgb(84,85,31)" stroke="rgb(84,85,31)" stroke-width="0.5"/>
 <polygon points="223.9,168.9 224.9,171.3 225.2,165.2" fill="rgb(122,103,35)" stroke="rgb(122,103,35)" stroke-width="0.5"/>
+<line x1="92.0" y1="246.9" x2="100.4" y2="249.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="271.8,195.6 269.0,193.3 262.4,201.7" fill="rgb(103,163,67)" stroke="rgb(103,163,67)" stroke-width="0.5"/>
 <polygon points="166.2,235.3 167.1,233.7 172.3,235.7" fill="rgb(69,104,109)" stroke="rgb(69,104,109)" stroke-width="0.5"/>
 <polygon points="194.3,154.4 200.7,154.6 193.5,154.6" fill="rgb(103,69,20)" stroke="rgb(103,69,20)" stroke-width="0.5"/>
@@ -3538,6 +3686,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="185.8,166.9 183.0,163.9 184.6,167.6" fill="rgb(181,146,48)" stroke="rgb(181,146,48)" stroke-width="0.5"/>
 <polygon points="172.3,235.7 172.5,235.8 178.5,235.6" fill="rgb(46,69,73)" stroke="rgb(46,69,73)" stroke-width="0.5"/>
 <polygon points="231.1,235.2 226.9,233.9 233.8,228.0" fill="rgb(78,118,117)" stroke="rgb(78,118,117)" stroke-width="0.5"/>
+<line x1="282.4" y1="156.3" x2="287.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.1,156.7 165.3,156.9 171.4,157.1" fill="rgb(174,120,36)" stroke="rgb(174,120,36)" stroke-width="0.5"/>
 <polygon points="150.5,160.5 145.6,161.6 148.1,159.9" fill="rgb(75,55,17)" stroke="rgb(75,55,17)" stroke-width="0.5"/>
 <polygon points="263.0,203.7 262.4,205.5 272.7,197.7" fill="rgb(55,96,42)" stroke="rgb(55,96,42)" stroke-width="0.5"/>
@@ -3548,9 +3697,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="226.3,175.4 225.5,173.5 227.5,178.9" fill="rgb(79,76,27)" stroke="rgb(79,76,27)" stroke-width="0.5"/>
 <polygon points="240.7,226.0 239.3,227.3 240.2,217.6" fill="rgb(55,88,71)" stroke="rgb(55,88,71)" stroke-width="0.5"/>
 <polygon points="259.4,188.7 253.3,186.6 254.1,194.7" fill="rgb(116,152,59)" stroke="rgb(116,152,59)" stroke-width="0.5"/>
+<line x1="63.8" y1="156.6" x2="68.4" y2="151.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="264.8,191.0 259.4,188.7 257.7,197.1" fill="rgb(114,157,62)" stroke="rgb(114,157,62)" stroke-width="0.5"/>
 <polygon points="136.2,234.2 132.6,236.1 133.7,228.0" fill="rgb(84,126,126)" stroke="rgb(84,126,126)" stroke-width="0.5"/>
 <polygon points="145.6,161.6 140.7,162.7 142.8,161.6" fill="rgb(87,65,21)" stroke="rgb(87,65,21)" stroke-width="0.5"/>
+<line x1="50.0" y1="205.5" x2="50.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.8,158.0 167.1,159.4 172.4,159.2" fill="rgb(191,135,42)" stroke="rgb(191,135,42)" stroke-width="0.5"/>
 <polygon points="136.1,163.8 131.5,165.1 134.2,165.7" fill="rgb(119,94,30)" stroke="rgb(119,94,30)" stroke-width="0.5"/>
 <polygon points="194.3,154.4 187.9,154.9 193.8,155.8" fill="rgb(181,121,35)" stroke="rgb(181,121,35)" stroke-width="0.5"/>
@@ -3646,6 +3797,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="103.1,186.6 98.6,188.6 107.5,191.8" fill="rgb(119,146,56)" stroke="rgb(119,146,56)" stroke-width="0.5"/>
 <polygon points="125.9,228.6 123.7,228.5 127.1,220.0" fill="rgb(79,125,102)" stroke="rgb(79,125,102)" stroke-width="0.5"/>
 <polygon points="194.4,163.6 190.0,161.8 191.1,167.1" fill="rgb(181,137,43)" stroke="rgb(181,137,43)" stroke-width="0.5"/>
+<line x1="250.2" y1="252.9" x2="254.8" y2="247.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="260.6,199.5 262.4,201.7 269.0,193.3" fill="rgb(102,158,64)" stroke="rgb(102,158,64)" stroke-width="0.5"/>
 <polygon points="212.5,156.6 206.9,155.3 211.5,159.3" fill="rgb(191,128,38)" stroke="rgb(191,128,38)" stroke-width="0.5"/>
 <polygon points="245.8,190.2 250.1,192.4 247.2,184.7" fill="rgb(116,142,54)" stroke="rgb(116,142,54)" stroke-width="0.5"/>
@@ -3662,6 +3814,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="118.3,220.6 114.6,221.1 116.5,214.6" fill="rgb(81,134,91)" stroke="rgb(81,134,91)" stroke-width="0.5"/>
 <polygon points="87.5,195.1 85.6,197.3 86.2,202.6" fill="rgb(64,99,40)" stroke="rgb(64,99,40)" stroke-width="0.5"/>
 <polygon points="124.2,174.3 122.4,176.2 128.5,178.4" fill="rgb(145,136,48)" stroke="rgb(145,136,48)" stroke-width="0.5"/>
+<line x1="50.0" y1="202.4" x2="50.0" y2="199.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="225.7,176.9 227.5,178.9 225.5,173.5" fill="rgb(115,108,38)" stroke="rgb(115,108,38)" stroke-width="0.5"/>
 <polygon points="126.6,182.3 127.8,180.5 120.4,178.0" fill="rgb(136,138,50)" stroke="rgb(136,138,50)" stroke-width="0.5"/>
 <polygon points="236.9,227.9 239.3,227.3 234.3,235.6" fill="rgb(64,99,89)" stroke="rgb(64,99,89)" stroke-width="0.5"/>
@@ -3689,6 +3842,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="191.4,171.6 188.6,169.4 189.4,172.7" fill="rgb(167,141,48)" stroke="rgb(167,141,48)" stroke-width="0.5"/>
 <polygon points="90.4,192.9 87.5,195.1 90.4,199.9" fill="rgb(84,120,48)" stroke="rgb(84,120,48)" stroke-width="0.5"/>
 <polygon points="94.2,190.7 90.4,192.9 95.6,197.1" fill="rgb(97,133,52)" stroke="rgb(97,133,52)" stroke-width="0.5"/>
+<line x1="100.4" y1="249.6" x2="108.8" y2="252.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.9,159.3 175.4,162.1 176.6,158.7" fill="rgb(122,86,26)" stroke="rgb(122,86,26)" stroke-width="0.5"/>
 <polygon points="180.6,162.8 178.5,159.8 179.6,161.7" fill="rgb(112,81,25)" stroke="rgb(112,81,25)" stroke-width="0.5"/>
 <polygon points="191.4,233.5 191.9,232.9 184.8,233.4" fill="rgb(35,54,51)" stroke="rgb(35,54,51)" stroke-width="0.5"/>
@@ -3751,6 +3905,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="198.2,171.1 194.6,169.2 194.5,173.6" fill="rgb(177,147,49)" stroke="rgb(177,147,49)" stroke-width="0.5"/>
 <polygon points="141.1,239.0 145.0,235.4 148.0,241.2" fill="rgb(80,120,126)" stroke="rgb(80,120,126)" stroke-width="0.5"/>
 <polygon points="249.0,209.1 248.6,210.7 262.4,205.5" fill="rgb(65,112,53)" stroke="rgb(65,112,53)" stroke-width="0.5"/>
+<line x1="50.0" y1="199.3" x2="50.0" y2="196.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.1,161.3 197.7,159.7 198.8,165.5" fill="rgb(201,143,44)" stroke="rgb(201,143,44)" stroke-width="0.5"/>
 <polygon points="123.7,228.5 121.7,228.2 124.7,219.9" fill="rgb(77,123,95)" stroke="rgb(77,123,95)" stroke-width="0.5"/>
 <polygon points="189.4,172.7 192.1,175.0 191.4,171.6" fill="rgb(159,136,46)" stroke="rgb(159,136,46)" stroke-width="0.5"/>
@@ -3832,9 +3987,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="162.2,161.2 157.3,163.3 164.6,164.1" fill="rgb(198,139,42)" stroke="rgb(198,139,42)" stroke-width="0.5"/>
 <polygon points="178.6,230.9 178.6,232.3 185.1,230.3" fill="rgb(57,90,77)" stroke="rgb(57,90,77)" stroke-width="0.5"/>
 <polygon points="168.7,172.0 167.0,174.7 170.2,171.4" fill="rgb(103,86,29)" stroke="rgb(103,86,29)" stroke-width="0.5"/>
+<line x1="277.8" y1="161.3" x2="282.4" y2="156.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.5,232.4 191.9,232.9 201.4,235.7" fill="rgb(35,54,49)" stroke="rgb(35,54,49)" stroke-width="0.5"/>
 <polygon points="127.6,187.7 129.4,185.9 124.8,184.0" fill="rgb(124,132,48)" stroke="rgb(124,132,48)" stroke-width="0.5"/>
 <polygon points="231.1,235.2 234.3,235.6 224.0,239.3" fill="rgb(65,99,97)" stroke="rgb(65,99,97)" stroke-width="0.5"/>
+<line x1="108.8" y1="252.3" x2="117.2" y2="255.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="178.6,232.3 178.6,230.9 172.0,234.7" fill="rgb(57,89,79)" stroke="rgb(57,89,79)" stroke-width="0.5"/>
 <polygon points="201.4,235.7 199.8,234.8 211.2,238.0" fill="rgb(57,87,84)" stroke="rgb(57,87,84)" stroke-width="0.5"/>
 <polygon points="186.0,170.0 183.7,167.1 184.9,169.1" fill="rgb(107,82,26)" stroke="rgb(107,82,26)" stroke-width="0.5"/>
@@ -3845,10 +4002,12 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="124.9,189.7 127.6,187.7 121.9,185.7" fill="rgb(126,139,52)" stroke="rgb(126,139,52)" stroke-width="0.5"/>
 <polygon points="160.2,158.8 154.5,160.5 162.2,161.2" fill="rgb(216,145,43)" stroke="rgb(216,145,43)" stroke-width="0.5"/>
 <polygon points="129.4,185.9 130.4,184.0 126.6,182.3" fill="rgb(111,114,42)" stroke="rgb(111,114,42)" stroke-width="0.5"/>
+<line x1="59.2" y1="161.6" x2="63.8" y2="156.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="202.1,173.0 198.2,171.1 198.0,175.5" fill="rgb(175,146,49)" stroke="rgb(175,146,49)" stroke-width="0.5"/>
 <polygon points="160.8,166.6 164.6,164.1 157.3,163.3" fill="rgb(196,142,43)" stroke="rgb(196,142,43)" stroke-width="0.5"/>
 <polygon points="148.0,241.2 151.2,237.4 156.2,240.7" fill="rgb(76,114,119)" stroke="rgb(76,114,119)" stroke-width="0.5"/>
 <polygon points="212.5,165.4 208.0,163.2 207.3,169.5" fill="rgb(205,151,47)" stroke="rgb(205,151,47)" stroke-width="0.5"/>
+<line x1="50.0" y1="196.2" x2="50.0" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.7,168.2 170.2,171.4 173.1,166.8" fill="rgb(91,71,23)" stroke="rgb(91,71,23)" stroke-width="0.5"/>
 <polygon points="234.5,184.3 231.7,182.6 237.8,189.3" fill="rgb(102,107,40)" stroke="rgb(102,107,40)" stroke-width="0.5"/>
 <polygon points="260.6,199.5 257.7,197.1 248.6,203.9" fill="rgb(114,169,68)" stroke="rgb(114,169,68)" stroke-width="0.5"/>
@@ -3929,9 +4088,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="178.6,230.9 178.7,230.0 171.8,234.2" fill="rgb(43,68,57)" stroke="rgb(43,68,57)" stroke-width="0.5"/>
 <polygon points="201.4,235.7 202.8,236.3 192.5,232.4" fill="rgb(52,80,72)" stroke="rgb(52,80,72)" stroke-width="0.5"/>
 <polygon points="198.0,175.5 202.1,177.4 202.1,173.0" fill="rgb(162,137,46)" stroke="rgb(162,137,46)" stroke-width="0.5"/>
+<line x1="245.6" y1="257.8" x2="250.2" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="130.1,173.7 129.1,176.2 132.6,177.0" fill="rgb(114,96,33)" stroke="rgb(114,96,33)" stroke-width="0.5"/>
 <polygon points="211.2,238.0 213.8,239.4 201.4,235.7" fill="rgb(60,92,87)" stroke="rgb(60,92,87)" stroke-width="0.5"/>
 <polygon points="247.9,202.0 248.6,203.9 257.7,197.1" fill="rgb(102,148,60)" stroke="rgb(102,148,60)" stroke-width="0.5"/>
+<line x1="50.0" y1="193.1" x2="50.0" y2="190.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.4,173.7 219.1,175.9 219.4,170.1" fill="rgb(183,148,49)" stroke="rgb(183,148,49)" stroke-width="0.5"/>
 <polygon points="107.5,191.8 101.5,194.4 111.2,196.8" fill="rgb(116,143,56)" stroke="rgb(116,143,56)" stroke-width="0.5"/>
 <polygon points="157.3,163.3 152.5,165.8 160.8,166.6" fill="rgb(201,142,44)" stroke="rgb(201,142,44)" stroke-width="0.5"/>
@@ -3974,6 +4135,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="244.1,195.9 245.6,198.0 245.8,190.2" fill="rgb(105,128,49)" stroke="rgb(105,128,49)" stroke-width="0.5"/>
 <polygon points="137.3,241.9 134.2,243.9 132.6,236.1" fill="rgb(80,121,121)" stroke="rgb(80,121,121)" stroke-width="0.5"/>
 <polygon points="232.5,184.8 235.3,187.1 229.4,180.7" fill="rgb(99,97,34)" stroke="rgb(99,97,34)" stroke-width="0.5"/>
+<line x1="117.2" y1="255.0" x2="125.6" y2="257.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.7,239.0 164.5,238.0 171.8,234.2" fill="rgb(52,80,74)" stroke="rgb(52,80,74)" stroke-width="0.5"/>
 <polygon points="235.3,187.1 237.8,189.3 231.7,182.6" fill="rgb(93,94,34)" stroke="rgb(93,94,34)" stroke-width="0.5"/>
 <polygon points="242.2,193.7 244.1,195.9 241.6,188.1" fill="rgb(98,114,43)" stroke="rgb(98,114,43)" stroke-width="0.5"/>
@@ -4024,6 +4186,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="121.7,228.2 123.7,228.5 123.8,236.5" fill="rgb(74,118,93)" stroke="rgb(74,118,93)" stroke-width="0.5"/>
 <polygon points="178.7,230.0 178.8,230.0 171.6,234.0" fill="rgb(44,71,56)" stroke="rgb(44,71,56)" stroke-width="0.5"/>
 <polygon points="235.8,211.2 235.5,209.5 225.5,213.1" fill="rgb(82,145,64)" stroke="rgb(82,145,64)" stroke-width="0.5"/>
+<line x1="50.0" y1="190.0" x2="50.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.6,228.0 236.9,230.9 240.9,222.2" fill="rgb(82,134,95)" stroke="rgb(82,134,95)" stroke-width="0.5"/>
 <polygon points="171.8,234.2 171.6,234.0 163.7,239.0" fill="rgb(37,58,51)" stroke="rgb(37,58,51)" stroke-width="0.5"/>
 <polygon points="159.6,178.9 162.3,176.5 155.2,177.2" fill="rgb(167,142,48)" stroke="rgb(167,142,48)" stroke-width="0.5"/>
@@ -4077,6 +4240,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="88.7,215.9 87.8,214.2 83.6,209.2" fill="rgb(44,76,34)" stroke="rgb(44,76,34)" stroke-width="0.5"/>
 <polygon points="186.9,172.3 189.0,175.6 188.2,172.8" fill="rgb(115,89,29)" stroke="rgb(115,89,29)" stroke-width="0.5"/>
 <polygon points="193.8,232.2 194.7,232.8 185.6,229.4" fill="rgb(56,89,68)" stroke="rgb(56,89,68)" stroke-width="0.5"/>
+<line x1="273.2" y1="166.2" x2="277.8" y2="161.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.4,234.2 171.6,234.0 178.8,230.0" fill="rgb(46,73,57)" stroke="rgb(46,73,57)" stroke-width="0.5"/>
 <polygon points="215.8,240.0 213.8,239.4 226.7,239.9" fill="rgb(57,89,83)" stroke="rgb(57,89,83)" stroke-width="0.5"/>
 <polygon points="124.9,237.5 123.8,236.5 123.7,228.5" fill="rgb(61,97,79)" stroke="rgb(61,97,79)" stroke-width="0.5"/>
@@ -4089,7 +4253,9 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="119.9,227.7 121.7,228.2 123.4,234.8" fill="rgb(69,112,82)" stroke="rgb(69,112,82)" stroke-width="0.5"/>
 <polygon points="126.8,237.8 129.4,237.3 131.7,244.8" fill="rgb(75,115,108)" stroke="rgb(75,115,108)" stroke-width="0.5"/>
 <polygon points="168.8,174.5 167.3,177.5 171.0,173.7" fill="rgb(102,81,26)" stroke="rgb(102,81,26)" stroke-width="0.5"/>
+<line x1="54.6" y1="166.5" x2="59.2" y2="161.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.6,205.7 236.5,206.9 247.9,202.0" fill="rgb(49,72,29)" stroke="rgb(49,72,29)" stroke-width="0.5"/>
+<line x1="50.0" y1="186.9" x2="50.0" y2="183.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="225.5,210.3 225.0,211.5 235.8,208.1" fill="rgb(60,102,42)" stroke="rgb(60,102,42)" stroke-width="0.5"/>
 <polygon points="100.0,202.9 105.6,199.8 95.6,197.1" fill="rgb(111,145,57)" stroke="rgb(111,145,57)" stroke-width="0.5"/>
 <polygon points="148.1,168.6 144.2,171.5 153.4,171.9" fill="rgb(203,148,46)" stroke="rgb(203,148,46)" stroke-width="0.5"/>
@@ -4101,6 +4267,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="186.1,230.2 185.6,229.4 194.7,232.8" fill="rgb(62,101,75)" stroke="rgb(62,101,75)" stroke-width="0.5"/>
 <polygon points="204.1,236.7 202.8,236.3 215.8,240.0" fill="rgb(51,79,70)" stroke="rgb(51,79,70)" stroke-width="0.5"/>
 <polygon points="178.9,230.8 178.8,230.0 186.1,230.2" fill="rgb(64,103,76)" stroke="rgb(64,103,76)" stroke-width="0.5"/>
+<line x1="125.6" y1="257.7" x2="134.0" y2="260.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="124.7,194.1 127.1,191.9 124.9,189.7" fill="rgb(100,109,41)" stroke="rgb(100,109,41)" stroke-width="0.5"/>
 <polygon points="91.2,217.0 95.1,217.4 101.5,221.1" fill="rgb(63,109,58)" stroke="rgb(63,109,58)" stroke-width="0.5"/>
 <polygon points="198.7,179.4 195.2,177.1 195.9,180.9" fill="rgb(141,119,40)" stroke="rgb(141,119,40)" stroke-width="0.5"/>
@@ -4162,6 +4329,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="91.2,209.2 95.1,206.1 86.2,202.6" fill="rgb(99,144,58)" stroke="rgb(99,144,58)" stroke-width="0.5"/>
 <polygon points="236.5,206.9 237.6,205.7 226.8,209.6" fill="rgb(50,77,31)" stroke="rgb(50,77,31)" stroke-width="0.5"/>
 <polygon points="118.4,227.0 119.9,227.7 123.6,232.7" fill="rgb(61,101,69)" stroke="rgb(61,101,69)" stroke-width="0.5"/>
+<line x1="241.0" y1="262.8" x2="245.6" y2="257.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="123.8,236.5 123.4,234.8 121.7,228.2" fill="rgb(45,72,55)" stroke="rgb(45,72,55)" stroke-width="0.5"/>
 <polygon points="206.7,179.6 211.7,182.0 210.9,176.9" fill="rgb(158,132,44)" stroke="rgb(158,132,44)" stroke-width="0.5"/>
 <polygon points="215.7,179.1 210.9,176.9 211.7,182.0" fill="rgb(160,133,44)" stroke="rgb(160,133,44)" stroke-width="0.5"/>
@@ -4169,6 +4337,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="225.0,211.5 225.5,210.3 218.7,215.1" fill="rgb(51,88,37)" stroke="rgb(51,88,37)" stroke-width="0.5"/>
 <polygon points="154.4,243.1 152.8,244.8 145.0,244.4" fill="rgb(65,98,97)" stroke="rgb(65,98,97)" stroke-width="0.5"/>
 <polygon points="146.3,177.4 149.8,174.6 140.8,174.4" fill="rgb(194,150,48)" stroke="rgb(194,150,48)" stroke-width="0.5"/>
+<line x1="50.0" y1="183.8" x2="50.0" y2="180.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="229.4,182.6 226.2,180.3 229.8,186.8" fill="rgb(129,114,39)" stroke="rgb(129,114,39)" stroke-width="0.5"/>
 <polygon points="233.5,224.6 231.2,221.3 226.1,228.9" fill="rgb(94,157,96)" stroke="rgb(94,157,96)" stroke-width="0.5"/>
 <polygon points="186.1,230.2 186.9,231.8 178.9,230.8" fill="rgb(71,116,84)" stroke="rgb(71,116,84)" stroke-width="0.5"/>
@@ -4217,6 +4386,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="123.4,234.8 123.6,232.7 119.9,227.7" fill="rgb(45,74,53)" stroke="rgb(45,74,53)" stroke-width="0.5"/>
 <polygon points="228.8,209.1 226.8,209.6 237.6,205.7" fill="rgb(59,89,36)" stroke="rgb(59,89,36)" stroke-width="0.5"/>
 <polygon points="228.5,239.4 229.3,237.9 217.3,239.8" fill="rgb(53,84,72)" stroke="rgb(53,84,72)" stroke-width="0.5"/>
+<line x1="134.0" y1="260.5" x2="142.4" y2="263.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="179.1,232.5 178.9,230.8 186.9,231.8" fill="rgb(71,117,83)" stroke="rgb(71,117,83)" stroke-width="0.5"/>
 <polygon points="224.0,225.3 226.1,228.9 231.2,221.3" fill="rgb(94,158,94)" stroke="rgb(94,158,94)" stroke-width="0.5"/>
 <polygon points="114.6,201.9 118.3,199.1 111.2,196.8" fill="rgb(116,139,53)" stroke="rgb(116,139,53)" stroke-width="0.5"/>
@@ -4233,6 +4403,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="171.4,234.2 171.2,234.9 162.3,240.4" fill="rgb(52,82,65)" stroke="rgb(52,82,65)" stroke-width="0.5"/>
 <polygon points="105.6,199.8 100.0,202.9 110.8,204.8" fill="rgb(114,146,57)" stroke="rgb(114,146,57)" stroke-width="0.5"/>
 <polygon points="226.1,228.9 227.9,232.3 233.5,224.6" fill="rgb(92,154,100)" stroke="rgb(92,154,100)" stroke-width="0.5"/>
+<line x1="50.0" y1="180.7" x2="50.0" y2="177.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="189.0,175.6 186.9,172.3 186.3,175.6" fill="rgb(142,105,33)" stroke="rgb(142,105,33)" stroke-width="0.5"/>
 <polygon points="240.9,201.6 240.1,203.2 244.1,195.9" fill="rgb(49,59,23)" stroke="rgb(49,59,23)" stroke-width="0.5"/>
 <polygon points="131.7,244.8 130.1,244.4 126.8,237.8" fill="rgb(64,99,90)" stroke="rgb(64,99,90)" stroke-width="0.5"/>
@@ -4281,6 +4452,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="142.9,180.2 139.7,183.0 148.0,182.5" fill="rgb(182,149,49)" stroke="rgb(182,149,49)" stroke-width="0.5"/>
 <polygon points="99.9,220.0 99.3,218.3 88.7,215.9" fill="rgb(51,90,41)" stroke="rgb(51,90,41)" stroke-width="0.5"/>
 <polygon points="88.7,211.9 87.8,214.2 99.9,216.2" fill="rgb(84,141,58)" stroke="rgb(84,141,58)" stroke-width="0.5"/>
+<line x1="268.6" y1="171.2" x2="273.2" y2="166.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="124.2,230.2 125.2,227.6 117.1,226.2" fill="rgb(81,136,83)" stroke="rgb(81,136,83)" stroke-width="0.5"/>
 <polygon points="127.1,191.9 124.7,194.1 125.9,196.8" fill="rgb(94,97,35)" stroke="rgb(94,97,35)" stroke-width="0.5"/>
 <polygon points="206.4,236.9 205.3,236.9 218.3,238.8" fill="rgb(46,74,58)" stroke="rgb(46,74,58)" stroke-width="0.5"/>
@@ -4291,6 +4463,8 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="115.1,224.0 116.0,225.1 126.3,225.1" fill="rgb(48,81,45)" stroke="rgb(48,81,45)" stroke-width="0.5"/>
 <polygon points="95.1,206.1 91.2,209.2 104.0,210.8" fill="rgb(109,157,63)" stroke="rgb(109,157,63)" stroke-width="0.5"/>
 <polygon points="186.9,231.8 187.7,234.1 179.1,232.5" fill="rgb(74,121,85)" stroke="rgb(74,121,85)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="54.6" y2="166.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="177.6" x2="50.0" y2="174.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.4,167.9 177.7,172.0 180.5,167.6" fill="rgb(195,128,38)" stroke="rgb(195,128,38)" stroke-width="0.5"/>
 <polygon points="152.8,244.8 151.5,245.7 142.5,246.6" fill="rgb(57,87,83)" stroke="rgb(57,87,83)" stroke-width="0.5"/>
 <polygon points="195.7,233.8 196.9,235.1 186.9,231.8" fill="rgb(65,107,75)" stroke="rgb(65,107,75)" stroke-width="0.5"/>
@@ -4317,6 +4491,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="190.9,178.8 189.0,175.6 187.7,179.5" fill="rgb(152,115,36)" stroke="rgb(152,115,36)" stroke-width="0.5"/>
 <polygon points="218.6,237.2 218.3,238.8 229.0,235.4" fill="rgb(61,97,74)" stroke="rgb(61,97,74)" stroke-width="0.5"/>
 <polygon points="157.6,185.9 160.4,182.8 152.9,184.4" fill="rgb(151,128,43)" stroke="rgb(151,128,43)" stroke-width="0.5"/>
+<line x1="142.4" y1="263.2" x2="150.8" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="160.4,182.8 157.6,185.9 164.0,183.7" fill="rgb(139,117,39)" stroke="rgb(139,117,39)" stroke-width="0.5"/>
 <polygon points="114.5,222.6 114.1,221.2 101.5,221.1" fill="rgb(61,107,53)" stroke="rgb(61,107,53)" stroke-width="0.5"/>
 <polygon points="123.4,234.8 123.8,236.5 129.7,240.5" fill="rgb(38,61,47)" stroke="rgb(38,61,47)" stroke-width="0.5"/>
@@ -4350,6 +4525,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="99.9,216.2 101.5,213.6 88.7,211.9" fill="rgb(99,157,64)" stroke="rgb(99,157,64)" stroke-width="0.5"/>
 <polygon points="128.3,194.1 130.9,191.4 129.2,189.7" fill="rgb(97,92,33)" stroke="rgb(97,92,33)" stroke-width="0.5"/>
 <polygon points="207.1,184.7 202.7,181.8 202.0,186.9" fill="rgb(153,128,43)" stroke="rgb(153,128,43)" stroke-width="0.5"/>
+<line x1="236.4" y1="267.7" x2="241.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="101.5,213.6 104.0,210.8 91.2,209.2" fill="rgb(109,160,64)" stroke="rgb(109,160,64)" stroke-width="0.5"/>
 <polygon points="222.0,213.0 220.3,213.4 228.8,209.1" fill="rgb(63,94,38)" stroke="rgb(63,94,38)" stroke-width="0.5"/>
 <polygon points="192.9,182.2 194.7,185.5 195.9,180.9" fill="rgb(153,124,41)" stroke="rgb(153,124,41)" stroke-width="0.5"/>
@@ -4358,6 +4534,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="123.6,232.7 123.4,234.8 130.7,237.3" fill="rgb(63,103,72)" stroke="rgb(63,103,72)" stroke-width="0.5"/>
 <polygon points="127.2,222.8 127.8,220.8 114.5,222.6" fill="rgb(91,158,76)" stroke="rgb(91,158,76)" stroke-width="0.5"/>
 <polygon points="240.1,203.2 240.9,201.6 233.5,207.9" fill="rgb(60,74,29)" stroke="rgb(60,74,29)" stroke-width="0.5"/>
+<line x1="50.0" y1="174.5" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="228.8,209.1 231.2,208.6 222.0,213.0" fill="rgb(67,96,38)" stroke="rgb(67,96,38)" stroke-width="0.5"/>
 <polygon points="207.4,236.6 206.4,236.9 218.6,237.2" fill="rgb(44,71,53)" stroke="rgb(44,71,53)" stroke-width="0.5"/>
 <polygon points="118.3,199.1 114.6,201.9 119.9,204.6" fill="rgb(110,128,49)" stroke="rgb(110,128,49)" stroke-width="0.5"/>
@@ -4427,6 +4604,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="177.7,172.0 177.9,176.3 181.5,171.6" fill="rgb(203,136,40)" stroke="rgb(203,136,40)" stroke-width="0.5"/>
 <polygon points="208.3,236.2 207.4,236.6 218.4,235.0" fill="rgb(41,68,47)" stroke="rgb(41,68,47)" stroke-width="0.5"/>
 <polygon points="127.8,217.8 128.0,219.1 138.4,218.1" fill="rgb(70,119,49)" stroke="rgb(70,119,49)" stroke-width="0.5"/>
+<line x1="150.8" y1="265.9" x2="159.2" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="101.5,213.6 99.9,216.2 114.5,215.9" fill="rgb(105,164,66)" stroke="rgb(105,164,66)" stroke-width="0.5"/>
 <polygon points="138.8,219.2 138.4,220.9 146.2,221.6" fill="rgb(83,146,63)" stroke="rgb(83,146,63)" stroke-width="0.5"/>
 <polygon points="107.2,207.8 104.0,210.8 116.0,211.7" fill="rgb(117,159,63)" stroke="rgb(117,159,63)" stroke-width="0.5"/>
@@ -4445,6 +4623,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="114.1,217.8 114.5,215.9 99.9,216.2" fill="rgb(90,144,59)" stroke="rgb(90,144,59)" stroke-width="0.5"/>
 <polygon points="161.7,240.8 161.2,240.9 150.6,245.7" fill="rgb(43,68,55)" stroke="rgb(43,68,55)" stroke-width="0.5"/>
 <polygon points="224.0,212.7 222.0,213.0 231.2,208.6" fill="rgb(68,95,38)" stroke="rgb(68,95,38)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="58.4" y2="174.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="139.3,247.4 140.5,247.6 150.6,245.7" fill="rgb(41,64,57)" stroke="rgb(41,64,57)" stroke-width="0.5"/>
 <polygon points="169.0,180.8 168.0,184.4 173.1,180.8" fill="rgb(145,111,35)" stroke="rgb(145,111,35)" stroke-width="0.5"/>
 <polygon points="129.5,243.0 130.1,244.4 138.7,245.9" fill="rgb(41,66,55)" stroke="rgb(41,66,55)" stroke-width="0.5"/>
@@ -4479,6 +4658,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="154.5,189.4 157.6,185.9 149.1,187.6" fill="rgb(154,129,43)" stroke="rgb(154,129,43)" stroke-width="0.5"/>
 <polygon points="133.7,188.6 130.9,191.4 136.2,192.0" fill="rgb(132,116,40)" stroke="rgb(132,116,40)" stroke-width="0.5"/>
 <polygon points="143.9,229.0 145.1,225.8 135.9,226.4" fill="rgb(93,161,82)" stroke="rgb(93,161,82)" stroke-width="0.5"/>
+<line x1="264.0" y1="176.1" x2="268.6" y2="171.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.5,175.9 183.3,180.1 186.3,175.6" fill="rgb(185,128,39)" stroke="rgb(185,128,39)" stroke-width="0.5"/>
 <polygon points="211.6,187.8 207.1,184.7 205.2,190.3" fill="rgb(159,132,44)" stroke="rgb(159,132,44)" stroke-width="0.5"/>
 <polygon points="173.5,176.8 173.1,180.8 177.9,176.3" fill="rgb(173,122,37)" stroke="rgb(173,122,37)" stroke-width="0.5"/>
@@ -4528,6 +4708,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="189.9,186.9 190.7,190.3 194.7,185.5" fill="rgb(179,145,48)" stroke="rgb(179,145,48)" stroke-width="0.5"/>
 <polygon points="226.9,191.2 231.1,194.5 229.8,186.8" fill="rgb(151,130,44)" stroke="rgb(151,130,44)" stroke-width="0.5"/>
 <polygon points="178.1,180.6 177.9,176.3 173.1,180.8" fill="rgb(186,131,40)" stroke="rgb(186,131,40)" stroke-width="0.5"/>
+<line x1="159.2" y1="268.6" x2="167.6" y2="271.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="137.4,217.6 135.9,217.4 127.2,216.7" fill="rgb(57,87,35)" stroke="rgb(57,87,35)" stroke-width="0.5"/>
 <polygon points="160.2,190.7 162.1,187.1 154.5,189.4" fill="rgb(160,134,45)" stroke="rgb(160,134,45)" stroke-width="0.5"/>
 <polygon points="205.2,190.3 202.0,186.9 198.2,192.1" fill="rgb(165,138,46)" stroke="rgb(165,138,46)" stroke-width="0.5"/>
@@ -4536,6 +4717,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="226.1,212.2 224.0,212.7 233.5,207.9" fill="rgb(69,90,35)" stroke="rgb(69,90,35)" stroke-width="0.5"/>
 <polygon points="116.0,211.7 115.1,213.8 125.2,214.7" fill="rgb(110,151,59)" stroke="rgb(110,151,59)" stroke-width="0.5"/>
 <polygon points="215.6,225.0 215.1,223.0 210.4,232.5" fill="rgb(74,129,62)" stroke="rgb(74,129,62)" stroke-width="0.5"/>
+<line x1="231.8" y1="272.7" x2="236.4" y2="267.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.6,237.4 170.2,239.0 160.7,240.8" fill="rgb(65,108,74)" stroke="rgb(65,108,74)" stroke-width="0.5"/>
 <polygon points="126.3,215.7 127.2,216.7 135.9,217.4" fill="rgb(45,68,27)" stroke="rgb(45,68,27)" stroke-width="0.5"/>
 <polygon points="183.3,180.1 183.9,184.2 187.7,179.5" fill="rgb(189,137,43)" stroke="rgb(189,137,43)" stroke-width="0.5"/>
@@ -4544,6 +4726,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="183.3,180.1 182.5,175.9 178.1,180.6" fill="rgb(207,143,43)" stroke="rgb(207,143,43)" stroke-width="0.5"/>
 <polygon points="233.5,207.9 235.6,206.9 226.1,212.2" fill="rgb(63,78,30)" stroke="rgb(63,78,30)" stroke-width="0.5"/>
 <polygon points="138.9,243.5 139.7,240.2 129.7,240.5" fill="rgb(87,142,103)" stroke="rgb(87,142,103)" stroke-width="0.5"/>
+<line x1="58.4" y1="174.2" x2="66.8" y2="176.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.9,223.3 145.1,225.8 152.0,228.6" fill="rgb(81,141,65)" stroke="rgb(81,141,65)" stroke-width="0.5"/>
 <polygon points="139.7,240.2 141.0,236.5 130.7,237.3" fill="rgb(91,151,100)" stroke="rgb(91,151,100)" stroke-width="0.5"/>
 <polygon points="126.3,215.7 125.2,214.7 115.1,213.8" fill="rgb(46,66,26)" stroke="rgb(46,66,26)" stroke-width="0.5"/>
@@ -4658,6 +4841,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="129.4,198.9 132.6,195.5 128.3,194.1" fill="rgb(119,107,37)" stroke="rgb(119,107,37)" stroke-width="0.5"/>
 <polygon points="178.4,188.5 178.3,184.7 172.5,188.5" fill="rgb(193,148,48)" stroke="rgb(193,148,48)" stroke-width="0.5"/>
 <polygon points="227.9,211.3 226.1,212.2 235.6,206.9" fill="rgb(65,78,30)" stroke="rgb(65,78,30)" stroke-width="0.5"/>
+<line x1="167.6" y1="271.3" x2="176.0" y2="274.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="172.5,188.5 172.3,191.9 178.4,188.5" fill="rgb(188,150,49)" stroke="rgb(188,150,49)" stroke-width="0.5"/>
 <polygon points="178.4,188.5 178.5,191.8 184.4,188.0" fill="rgb(188,149,48)" stroke="rgb(188,149,48)" stroke-width="0.5"/>
 <polygon points="178.5,194.7 178.5,191.8 172.1,195.0" fill="rgb(166,143,48)" stroke="rgb(166,143,48)" stroke-width="0.5"/>
@@ -4673,6 +4857,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="172.1,195.0 172.0,197.9 178.5,194.7" fill="rgb(175,156,53)" stroke="rgb(175,156,53)" stroke-width="0.5"/>
 <polygon points="171.8,200.7 171.6,203.4 178.6,199.5" fill="rgb(156,154,55)" stroke="rgb(156,154,55)" stroke-width="0.5"/>
 <polygon points="160.2,190.7 158.2,194.5 166.2,191.5" fill="rgb(162,135,45)" stroke="rgb(162,135,45)" stroke-width="0.5"/>
+<line x1="66.8" y1="176.9" x2="75.2" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="201.4,198.6 199.8,195.4 192.5,198.8" fill="rgb(160,147,51)" stroke="rgb(160,147,51)" stroke-width="0.5"/>
 <polygon points="194.7,207.1 193.8,204.2 186.1,206.4" fill="rgb(142,155,58)" stroke="rgb(142,155,58)" stroke-width="0.5"/>
 <polygon points="178.9,207.1 179.1,210.5 186.1,206.4" fill="rgb(136,154,58)" stroke="rgb(136,154,58)" stroke-width="0.5"/>
@@ -4682,6 +4867,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="160.3,240.5 159.9,240.0 149.9,241.2" fill="rgb(36,60,39)" stroke="rgb(36,60,39)" stroke-width="0.5"/>
 <polygon points="171.6,203.4 171.4,206.2 178.7,201.8" fill="rgb(149,154,56)" stroke="rgb(149,154,56)" stroke-width="0.5"/>
 <polygon points="200.9,239.1 199.6,237.9 209.6,234.8" fill="rgb(66,110,66)" stroke="rgb(66,110,66)" stroke-width="0.5"/>
+<line x1="259.4" y1="181.1" x2="264.0" y2="176.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="141.1,195.1 145.0,191.2 136.2,192.0" fill="rgb(151,126,42)" stroke="rgb(151,126,42)" stroke-width="0.5"/>
 <polygon points="186.1,206.4 186.9,209.8 194.7,207.1" fill="rgb(134,150,56)" stroke="rgb(134,150,56)" stroke-width="0.5"/>
 <polygon points="178.9,207.1 178.8,204.2 171.2,209.1" fill="rgb(142,155,58)" stroke="rgb(142,155,58)" stroke-width="0.5"/>
@@ -4733,10 +4919,12 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="171.8,200.7 172.0,197.9 163.7,202.0" fill="rgb(158,147,52)" stroke="rgb(158,147,52)" stroke-width="0.5"/>
 <polygon points="204.1,204.9 202.8,201.8 193.8,204.2" fill="rgb(148,147,53)" stroke="rgb(148,147,53)" stroke-width="0.5"/>
 <polygon points="179.1,210.5 178.9,207.1 170.9,212.4" fill="rgb(136,153,58)" stroke="rgb(136,153,58)" stroke-width="0.5"/>
+<line x1="227.2" y1="277.6" x2="231.8" y2="272.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.3,217.9 217.1,217.0 210.1,223.6" fill="rgb(47,66,26)" stroke="rgb(47,66,26)" stroke-width="0.5"/>
 <polygon points="234.3,197.7 231.1,194.5 226.7,202.0" fill="rgb(167,149,51)" stroke="rgb(167,149,51)" stroke-width="0.5"/>
 <polygon points="201.4,198.6 202.8,201.8 211.2,197.4" fill="rgb(166,152,52)" stroke="rgb(166,152,52)" stroke-width="0.5"/>
 <polygon points="151.7,230.7 151.2,233.2 159.2,237.0" fill="rgb(75,130,66)" stroke="rgb(75,130,66)" stroke-width="0.5"/>
+<line x1="176.0" y1="274.0" x2="184.4" y2="276.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.2,203.3 236.3,200.7 229.3,207.8" fill="rgb(141,140,51)" stroke="rgb(141,140,51)" stroke-width="0.5"/>
 <polygon points="179.1,210.5 179.3,214.4 186.9,209.8" fill="rgb(130,152,58)" stroke="rgb(130,152,58)" stroke-width="0.5"/>
 <polygon points="186.9,209.8 187.7,213.7 195.7,210.2" fill="rgb(129,149,57)" stroke="rgb(129,149,57)" stroke-width="0.5"/>
@@ -4745,6 +4933,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="210.1,233.7 210.4,232.5 202.0,239.8" fill="rgb(47,81,43)" stroke="rgb(47,81,43)" stroke-width="0.5"/>
 <polygon points="210.4,225.7 210.6,227.7 215.6,218.9" fill="rgb(72,114,47)" stroke="rgb(72,114,47)" stroke-width="0.5"/>
 <polygon points="171.6,203.4 171.8,200.7 163.0,205.3" fill="rgb(151,148,52)" stroke="rgb(151,148,52)" stroke-width="0.5"/>
+<line x1="75.2" y1="179.6" x2="83.6" y2="182.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="236.3,200.7 234.3,197.7 228.5,205.2" fill="rgb(163,152,53)" stroke="rgb(163,152,53)" stroke-width="0.5"/>
 <polygon points="194.7,207.1 195.7,210.2 205.3,207.9" fill="rgb(140,151,56)" stroke="rgb(140,151,56)" stroke-width="0.5"/>
 <polygon points="164.5,198.5 163.7,202.0 172.0,197.9" fill="rgb(168,152,53)" stroke="rgb(168,152,53)" stroke-width="0.5"/>
@@ -4811,6 +5000,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="213.8,201.0 215.8,204.4 224.0,198.6" fill="rgb(172,155,54)" stroke="rgb(172,155,54)" stroke-width="0.5"/>
 <polygon points="187.7,213.7 188.8,218.1 196.9,213.6" fill="rgb(127,151,57)" stroke="rgb(127,151,57)" stroke-width="0.5"/>
 <polygon points="209.0,218.9 209.6,221.3 217.9,215.8" fill="rgb(126,161,63)" stroke="rgb(126,161,63)" stroke-width="0.5"/>
+<line x1="184.4" y1="276.7" x2="192.8" y2="279.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.4,198.9 126.8,202.2 134.2,203.1" fill="rgb(140,126,44)" stroke="rgb(140,126,44)" stroke-width="0.5"/>
 <polygon points="207.4,213.6 206.4,210.8 196.9,213.6" fill="rgb(143,161,61)" stroke="rgb(143,161,61)" stroke-width="0.5"/>
 <polygon points="226.7,202.0 224.0,198.6 215.8,204.4" fill="rgb(173,155,54)" stroke="rgb(173,155,54)" stroke-width="0.5"/>
@@ -4818,8 +5008,10 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="163.7,202.0 164.5,198.5 154.4,202.5" fill="rgb(171,152,52)" stroke="rgb(171,152,52)" stroke-width="0.5"/>
 <polygon points="179.3,214.4 179.6,218.9 187.7,213.7" fill="rgb(127,151,58)" stroke="rgb(127,151,58)" stroke-width="0.5"/>
 <polygon points="202.9,239.8 202.0,239.8 210.4,232.5" fill="rgb(52,89,46)" stroke="rgb(52,89,46)" stroke-width="0.5"/>
+<line x1="254.8" y1="186.0" x2="259.4" y2="181.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.3,207.9 206.4,210.8 217.3,207.5" fill="rgb(152,155,57)" stroke="rgb(152,155,57)" stroke-width="0.5"/>
 <polygon points="156.2,198.5 154.4,202.5 164.5,198.5" fill="rgb(170,147,50)" stroke="rgb(170,147,50)" stroke-width="0.5"/>
+<line x1="83.6" y1="182.3" x2="92.0" y2="185.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="218.4,214.4 218.6,212.6 208.3,216.3" fill="rgb(101,117,44)" stroke="rgb(101,117,44)" stroke-width="0.5"/>
 <polygon points="196.9,213.6 198.3,217.3 207.4,213.6" fill="rgb(134,157,59)" stroke="rgb(134,157,59)" stroke-width="0.5"/>
 <polygon points="159.1,235.7 159.1,234.1 152.0,228.6" fill="rgb(47,83,37)" stroke="rgb(47,83,37)" stroke-width="0.5"/>
@@ -4863,6 +5055,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="191.8,243.9 190.9,242.0 202.0,239.8" fill="rgb(68,114,65)" stroke="rgb(68,114,65)" stroke-width="0.5"/>
 <polygon points="179.6,218.9 179.3,214.4 170.2,219.8" fill="rgb(126,152,58)" stroke="rgb(126,152,58)" stroke-width="0.5"/>
 <polygon points="163.0,205.3 163.7,202.0 152.8,206.4" fill="rgb(166,152,53)" stroke="rgb(166,152,53)" stroke-width="0.5"/>
+<line x1="222.6" y1="282.6" x2="227.2" y2="277.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.1,232.3 159.2,230.3 152.0,225.6" fill="rgb(63,100,41)" stroke="rgb(63,100,41)" stroke-width="0.5"/>
 <polygon points="170.6,216.0 170.9,212.4 160.7,217.8" fill="rgb(138,157,59)" stroke="rgb(138,157,59)" stroke-width="0.5"/>
 <polygon points="190.9,242.0 191.8,243.9 180.1,243.0" fill="rgb(68,115,67)" stroke="rgb(68,115,67)" stroke-width="0.5"/>
@@ -4876,6 +5069,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="131.7,206.9 134.2,203.1 126.8,202.2" fill="rgb(140,126,44)" stroke="rgb(140,126,44)" stroke-width="0.5"/>
 <polygon points="154.4,202.5 152.8,206.4 163.7,202.0" fill="rgb(169,151,52)" stroke="rgb(169,151,52)" stroke-width="0.5"/>
 <polygon points="150.7,222.9 151.2,223.7 159.6,225.7" fill="rgb(48,66,26)" stroke="rgb(48,66,26)" stroke-width="0.5"/>
+<line x1="192.8" y1="279.4" x2="201.2" y2="282.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.8,218.1 189.8,222.8 198.3,217.3" fill="rgb(125,153,59)" stroke="rgb(125,153,59)" stroke-width="0.5"/>
 <polygon points="210.1,223.6 209.6,221.3 202.0,228.9" fill="rgb(104,145,58)" stroke="rgb(104,145,58)" stroke-width="0.5"/>
 <polygon points="210.4,225.7 210.1,223.6 202.9,232.4" fill="rgb(89,133,53)" stroke="rgb(89,133,53)" stroke-width="0.5"/>
@@ -4883,6 +5077,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="137.3,199.1 134.2,203.1 145.0,201.6" fill="rgb(166,141,48)" stroke="rgb(166,141,48)" stroke-width="0.5"/>
 <polygon points="161.2,214.8 160.7,217.8 170.9,212.4" fill="rgb(141,156,58)" stroke="rgb(141,156,58)" stroke-width="0.5"/>
 <polygon points="202.0,239.8 202.9,239.8 191.8,243.9" fill="rgb(52,89,48)" stroke="rgb(52,89,48)" stroke-width="0.5"/>
+<line x1="92.0" y1="185.0" x2="100.4" y2="187.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="199.6,221.2 200.9,225.1 209.0,218.9" fill="rgb(126,161,63)" stroke="rgb(126,161,63)" stroke-width="0.5"/>
 <polygon points="199.6,221.2 198.3,217.3 189.8,222.8" fill="rgb(128,159,62)" stroke="rgb(128,159,62)" stroke-width="0.5"/>
 <polygon points="169.2,242.7 169.5,241.9 180.4,244.9" fill="rgb(62,106,59)" stroke="rgb(62,106,59)" stroke-width="0.5"/>
@@ -4923,8 +5118,10 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="169.8,223.9 170.2,219.8 159.9,223.2" fill="rgb(127,158,62)" stroke="rgb(127,158,62)" stroke-width="0.5"/>
 <polygon points="160.3,220.6 160.7,217.8 149.9,220.5" fill="rgb(142,166,63)" stroke="rgb(142,166,63)" stroke-width="0.5"/>
 <polygon points="160.7,217.8 161.2,214.8 149.8,218.7" fill="rgb(148,163,61)" stroke="rgb(148,163,61)" stroke-width="0.5"/>
+<line x1="250.2" y1="191.0" x2="254.8" y2="186.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.1,234.1 159.1,235.7 168.7,240.7" fill="rgb(53,93,40)" stroke="rgb(53,93,40)" stroke-width="0.5"/>
 <polygon points="192.6,244.7 191.8,243.9 202.9,239.8" fill="rgb(60,103,54)" stroke="rgb(60,103,54)" stroke-width="0.5"/>
+<line x1="201.2" y1="282.1" x2="209.6" y2="284.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="168.9,242.8 168.7,242.2 159.2,237.0" fill="rgb(42,73,36)" stroke="rgb(42,73,36)" stroke-width="0.5"/>
 <polygon points="189.8,222.8 190.9,227.8 199.6,221.2" fill="rgb(122,156,61)" stroke="rgb(122,156,61)" stroke-width="0.5"/>
 <polygon points="151.5,210.2 150.6,213.5 162.3,208.6" fill="rgb(158,153,54)" stroke="rgb(158,153,54)" stroke-width="0.5"/>
@@ -4934,6 +5131,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="149.9,220.5 149.8,218.7 139.7,219.1" fill="rgb(97,111,42)" stroke="rgb(97,111,42)" stroke-width="0.5"/>
 <polygon points="149.8,218.7 149.9,220.5 160.7,217.8" fill="rgb(103,117,44)" stroke="rgb(103,117,44)" stroke-width="0.5"/>
 <polygon points="129.5,212.9 129.7,214.9 138.7,215.9" fill="rgb(93,96,35)" stroke="rgb(93,96,35)" stroke-width="0.5"/>
+<line x1="100.4" y1="187.7" x2="108.8" y2="190.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.1,232.3 159.1,234.1 168.7,238.4" fill="rgb(63,105,43)" stroke="rgb(63,105,43)" stroke-width="0.5"/>
 <polygon points="191.8,243.9 192.6,244.7 180.4,244.9" fill="rgb(61,104,56)" stroke="rgb(61,104,56)" stroke-width="0.5"/>
 <polygon points="138.9,217.8 139.7,219.1 149.8,218.7" fill="rgb(63,70,26)" stroke="rgb(63,70,26)" stroke-width="0.5"/>
@@ -4953,6 +5151,7 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="169.8,223.9 169.5,227.9 179.9,223.7" fill="rgb(126,162,63)" stroke="rgb(126,162,63)" stroke-width="0.5"/>
 <polygon points="179.9,223.7 180.1,228.7 189.8,222.8" fill="rgb(122,156,61)" stroke="rgb(122,156,61)" stroke-width="0.5"/>
 <polygon points="151.5,210.2 152.8,206.4 140.5,209.7" fill="rgb(171,156,54)" stroke="rgb(171,156,54)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="222.6" y2="282.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="168.7,242.2 168.7,240.7 159.1,235.7" fill="rgb(46,81,36)" stroke="rgb(46,81,36)" stroke-width="0.5"/>
 <polygon points="149.8,218.7 150.0,216.4 138.9,217.8" fill="rgb(133,143,52)" stroke="rgb(133,143,52)" stroke-width="0.5"/>
 <polygon points="190.9,227.8 189.8,222.8 180.1,228.7" fill="rgb(120,157,61)" stroke="rgb(120,157,61)" stroke-width="0.5"/>
@@ -4969,10 +5168,12 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="140.5,209.7 139.3,213.1 151.5,210.2" fill="rgb(171,159,56)" stroke="rgb(171,159,56)" stroke-width="0.5"/>
 <polygon points="190.9,227.8 191.8,232.6 200.9,225.1" fill="rgb(120,160,64)" stroke="rgb(120,160,64)" stroke-width="0.5"/>
 <polygon points="168.7,240.7 168.7,238.4 159.1,234.1" fill="rgb(67,116,48)" stroke="rgb(67,116,48)" stroke-width="0.5"/>
+<line x1="209.6" y1="284.8" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="193.1,244.5 192.6,244.7 203.5,239.1" fill="rgb(46,79,38)" stroke="rgb(46,79,38)" stroke-width="0.5"/>
 <polygon points="139.3,213.1 138.7,215.9 150.6,213.5" fill="rgb(151,149,54)" stroke="rgb(151,149,54)" stroke-width="0.5"/>
 <polygon points="168.9,235.4 169.2,231.8 159.2,230.3" fill="rgb(102,151,61)" stroke="rgb(102,151,61)" stroke-width="0.5"/>
 <polygon points="168.7,238.4 168.9,235.4 159.1,232.3" fill="rgb(87,139,57)" stroke="rgb(87,139,57)" stroke-width="0.5"/>
+<line x1="108.8" y1="190.4" x2="117.2" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="202.9,232.4 202.0,228.9 192.6,236.9" fill="rgb(113,166,67)" stroke="rgb(113,166,67)" stroke-width="0.5"/>
 <polygon points="169.5,227.9 169.2,231.8 180.1,228.7" fill="rgb(121,165,65)" stroke="rgb(121,165,65)" stroke-width="0.5"/>
 <polygon points="203.7,237.6 203.5,235.3 193.2,243.1" fill="rgb(83,143,60)" stroke="rgb(83,143,60)" stroke-width="0.5"/>
@@ -4985,17 +5186,21 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="180.4,233.6 180.1,228.7 169.2,231.8" fill="rgb(115,160,63)" stroke="rgb(115,160,63)" stroke-width="0.5"/>
 <polygon points="193.2,243.1 193.1,244.5 203.7,237.6" fill="rgb(52,92,40)" stroke="rgb(52,92,40)" stroke-width="0.5"/>
 <polygon points="191.8,232.6 190.9,227.8 180.4,233.6" fill="rgb(118,162,64)" stroke="rgb(118,162,64)" stroke-width="0.5"/>
+<line x1="245.6" y1="195.9" x2="250.2" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="284.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="169.2,231.8 168.9,235.4 180.4,233.6" fill="rgb(115,166,67)" stroke="rgb(115,166,67)" stroke-width="0.5"/>
 <polygon points="180.7,245.6 180.6,245.8 193.1,244.5" fill="rgb(47,81,39)" stroke="rgb(47,81,39)" stroke-width="0.5"/>
 <polygon points="168.7,240.7 168.7,242.2 180.8,244.2" fill="rgb(54,95,41)" stroke="rgb(54,95,41)" stroke-width="0.5"/>
 <polygon points="192.6,236.9 193.1,240.5 202.9,232.4" fill="rgb(108,167,67)" stroke="rgb(108,167,67)" stroke-width="0.5"/>
 <polygon points="193.1,240.5 193.2,243.1 203.5,235.3" fill="rgb(88,148,61)" stroke="rgb(88,148,61)" stroke-width="0.5"/>
+<line x1="117.2" y1="193.1" x2="125.6" y2="195.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="180.7,245.6 180.8,244.2 168.7,242.2" fill="rgb(50,88,39)" stroke="rgb(50,88,39)" stroke-width="0.5"/>
 <polygon points="168.9,235.4 168.7,238.4 180.6,238.0" fill="rgb(105,162,66)" stroke="rgb(105,162,66)" stroke-width="0.5"/>
 <polygon points="168.7,238.4 168.7,240.7 180.7,241.6" fill="rgb(84,141,58)" stroke="rgb(84,141,58)" stroke-width="0.5"/>
 <polygon points="193.1,244.5 193.2,243.1 180.7,245.6" fill="rgb(55,96,43)" stroke="rgb(55,96,43)" stroke-width="0.5"/>
 <polygon points="180.6,238.0 180.4,233.6 168.9,235.4" fill="rgb(111,163,66)" stroke="rgb(111,163,66)" stroke-width="0.5"/>
 <polygon points="180.4,233.6 180.6,238.0 191.8,232.6" fill="rgb(116,167,67)" stroke="rgb(116,167,67)" stroke-width="0.5"/>
+<line x1="218.0" y1="284.4" x2="218.0" y2="281.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.6,236.9 191.8,232.6 180.6,238.0" fill="rgb(114,167,68)" stroke="rgb(114,167,68)" stroke-width="0.5"/>
 <polygon points="180.8,244.2 180.7,241.6 168.7,240.7" fill="rgb(85,146,61)" stroke="rgb(85,146,61)" stroke-width="0.5"/>
 <polygon points="180.8,244.2 180.7,245.6 193.2,243.1" fill="rgb(55,96,42)" stroke="rgb(55,96,42)" stroke-width="0.5"/>
@@ -5004,18 +5209,41 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="193.1,240.5 192.6,236.9 180.7,241.6" fill="rgb(110,173,71)" stroke="rgb(110,173,71)" stroke-width="0.5"/>
 <polygon points="180.6,238.0 180.7,241.6 192.6,236.9" fill="rgb(112,172,70)" stroke="rgb(112,172,70)" stroke-width="0.5"/>
 <polygon points="180.7,241.6 180.8,244.2 193.1,240.5" fill="rgb(96,161,66)" stroke="rgb(96,161,66)" stroke-width="0.5"/>
-<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="281.4" x2="218.0" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="125.6" y1="195.8" x2="134.0" y2="198.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="241.0" y1="200.9" x2="245.6" y2="195.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="278.3" x2="218.0" y2="275.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="134.0" y1="198.5" x2="142.4" y2="201.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="275.2" x2="218.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="272.1" x2="218.0" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.4" y1="201.3" x2="150.8" y2="204.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="236.4" y1="205.8" x2="241.0" y2="200.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="269.0" x2="218.0" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="265.9" x2="218.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.8" y1="204.0" x2="159.2" y2="206.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="262.8" x2="218.0" y2="259.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="159.2" y1="206.7" x2="167.6" y2="209.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="231.8" y1="210.8" x2="236.4" y2="205.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="259.7" x2="218.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="256.6" x2="218.0" y2="253.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.6" y1="209.4" x2="176.0" y2="212.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="253.5" x2="218.0" y2="250.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="227.2" y1="215.7" x2="231.8" y2="210.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="250.4" x2="218.0" y2="247.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="176.0" y1="212.1" x2="184.4" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="247.3" x2="218.0" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.4" y1="214.8" x2="192.8" y2="217.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="244.2" x2="218.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="222.6" y1="220.7" x2="227.2" y2="215.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="241.1" x2="218.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.8" y1="217.5" x2="201.2" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="238.0" x2="218.0" y2="234.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="234.9" x2="218.0" y2="231.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="201.2" y1="220.2" x2="209.6" y2="222.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="222.6" y2="220.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="231.8" x2="218.0" y2="228.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="209.6" y1="222.9" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="228.7" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="61.1" y1="237.0" x2="62.4" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="57.5" y="248.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>

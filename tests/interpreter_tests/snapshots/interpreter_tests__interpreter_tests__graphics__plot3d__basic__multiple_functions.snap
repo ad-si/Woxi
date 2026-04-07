@@ -4,18 +4,28 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="131.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="150.4" y2="137.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="140.1,136.3 143.5,135.0 142.0,134.4" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="145.3,133.0 142.0,134.4 143.5,135.0" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
+<line x1="142.0" y1="131.3" x2="142.0" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="139.3" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="137.1" x2="158.8" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="138.3,138.3 141.7,137.0 140.1,136.3" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
+<line x1="142.0" y1="128.2" x2="142.0" y2="125.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.5,135.0 140.1,136.3 141.7,137.0" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="143.5,135.0 146.9,133.8 145.3,133.0" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="148.7,131.8 145.3,133.0 146.9,133.8" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="125.1" x2="142.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="136.5,140.3 139.8,139.0 138.3,138.3" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="141.7,137.0 138.3,138.3 139.8,139.0" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="141.7,137.0 145.0,135.7 143.5,135.0" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="146.9,133.8 143.5,135.0 145.0,135.7" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
 <polygon points="146.9,133.8 150.2,132.6 148.7,131.8" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
+<line x1="158.8" y1="139.8" x2="167.2" y2="142.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.1,130.6 148.7,131.8 150.2,132.6" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="122.0" x2="142.0" y2="118.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="132.8" y1="144.3" x2="137.4" y2="139.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.6,142.3 138.0,140.9 136.5,140.3" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="139.8,139.0 136.5,140.3 138.0,140.9" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="139.8,139.0 143.2,137.7 141.7,137.0" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -23,11 +33,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="145.0,135.7 148.4,134.6 146.9,133.8" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="150.2,132.6 146.9,133.8 148.4,134.6" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="150.2,132.6 153.6,131.6 152.1,130.6" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
+<line x1="142.0" y1="118.9" x2="142.0" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="155.4,129.6 152.1,130.6 153.6,131.6" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
+<line x1="167.2" y1="142.5" x2="175.6" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="132.8,144.3 136.1,142.9 134.6,142.3" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="138.0,140.9 134.6,142.3 136.1,142.9" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="138.0,140.9 141.3,139.7 139.8,139.0" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="143.2,137.7 139.8,139.0 141.3,139.7" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="115.8" x2="142.0" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.2,137.7 146.5,136.6 145.0,135.7" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="148.4,134.6 145.0,135.7 146.5,136.6" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="148.4,134.6 151.7,133.5 150.2,132.6" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
@@ -36,6 +49,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="158.8,128.6 155.4,129.6 156.9,130.6" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
 <polygon points="130.9,146.2 134.3,144.9 132.8,144.3" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="136.1,142.9 132.8,144.3 134.3,144.9" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
+<line x1="175.6" y1="145.2" x2="184.0" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="112.7" x2="142.0" y2="109.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="128.2" y1="149.2" x2="132.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="136.1,142.9 139.5,141.7 138.0,140.9" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="141.3,139.7 138.0,140.9 139.5,141.7" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
 <polygon points="141.3,139.7 144.7,138.6 143.2,137.7" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
@@ -46,12 +62,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="156.9,130.6 153.6,131.6 155.1,132.6" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
 <polygon points="156.9,130.6 160.3,129.8 158.8,128.6" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="162.1,127.8 158.8,128.6 160.3,129.8" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
+<line x1="142.0" y1="109.6" x2="142.0" y2="106.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.1,148.2 132.5,146.9 130.9,146.2" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="134.3,144.9 130.9,146.2 132.5,146.9" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="134.3,144.9 137.7,143.7 136.1,142.9" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="139.5,141.7 136.1,142.9 137.7,143.7" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
 <polygon points="139.5,141.7 142.9,140.5 141.3,139.7" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="144.7,138.6 141.3,139.7 142.9,140.5" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
+<line x1="184.0" y1="147.9" x2="192.4" y2="150.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.7,138.6 148.1,137.5 146.5,136.6" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
 <polygon points="149.9,135.5 146.5,136.6 148.1,137.5" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
 <polygon points="149.9,135.5 153.3,134.6 151.7,133.5" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
@@ -60,6 +78,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="160.3,129.8 156.9,130.6 158.5,131.8" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="160.3,129.8 163.7,129.0 162.1,127.8" fill="rgb(102,67,20)" stroke="rgb(102,67,20)" stroke-width="0.5"/>
 <polygon points="165.5,127.0 162.1,127.8 163.7,129.0" fill="rgb(103,68,20)" stroke="rgb(103,68,20)" stroke-width="0.5"/>
+<line x1="142.0" y1="106.5" x2="142.0" y2="103.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="127.3,150.2 130.6,148.9 129.1,148.2" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="132.5,146.9 129.1,148.2 130.6,148.9" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="132.5,146.9 135.8,145.6 134.3,144.9" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -70,12 +89,15 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="148.1,137.5 144.7,138.6 146.2,139.5" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
 <polygon points="148.1,137.5 151.4,136.6 149.9,135.5" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="153.3,134.6 149.9,135.5 151.4,136.6" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
+<line x1="142.0" y1="103.4" x2="142.0" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.6" y1="154.2" x2="128.2" y2="149.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="153.3,134.6 156.6,133.7 155.1,132.6" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="158.5,131.8 155.1,132.6 156.6,133.7" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="158.5,131.8 161.8,131.0 160.3,129.8" fill="rgb(102,67,20)" stroke="rgb(102,67,20)" stroke-width="0.5"/>
 <polygon points="163.7,129.0 160.3,129.8 161.8,131.0" fill="rgb(103,68,20)" stroke="rgb(103,68,20)" stroke-width="0.5"/>
 <polygon points="163.7,129.0 167.0,128.4 165.5,127.0" fill="rgb(106,70,21)" stroke="rgb(106,70,21)" stroke-width="0.5"/>
 <polygon points="168.9,126.4 165.5,127.0 167.0,128.4" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
+<line x1="192.4" y1="150.6" x2="200.8" y2="153.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="125.4,152.2 128.8,150.8 127.3,150.2" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="130.6,148.9 127.3,150.2 128.8,150.8" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="130.6,148.9 134.0,147.6 132.5,146.9" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -83,6 +105,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="135.8,145.6 139.2,144.5 137.7,143.7" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="141.0,142.5 137.7,143.7 139.2,144.5" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="141.0,142.5 144.4,141.5 142.9,140.5" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
+<line x1="142.0" y1="100.3" x2="142.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.2,139.5 142.9,140.5 144.4,141.5" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
 <polygon points="146.2,139.5 149.6,138.5 148.1,137.5" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="151.4,136.6 148.1,137.5 149.6,138.5" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
@@ -97,7 +120,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="123.6,154.2 126.9,152.8 125.4,152.2" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="128.8,150.8 125.4,152.2 126.9,152.8" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="128.8,150.8 132.1,149.6 130.6,148.9" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
+<line x1="200.8" y1="153.3" x2="209.2" y2="156.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.0,147.6 130.6,148.9 132.1,149.6" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="97.2" x2="142.0" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.0,147.6 137.3,146.5 135.8,145.6" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="139.2,144.5 135.8,145.6 137.3,146.5" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="139.2,144.5 142.5,143.4 141.0,142.5" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
@@ -116,12 +141,15 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="165.2,130.4 161.8,131.0 163.3,132.3" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
 <polygon points="121.7,156.1 125.1,154.8 123.6,154.2" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="126.9,152.8 123.6,154.2 125.1,154.8" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
+<line x1="142.0" y1="94.1" x2="142.0" y2="91.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="119.0" y1="159.1" x2="123.6" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.9,152.8 130.3,151.6 128.8,150.8" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="132.1,149.6 128.8,150.8 130.3,151.6" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
 <polygon points="132.1,149.6 135.5,148.5 134.0,147.6" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="137.3,146.5 134.0,147.6 135.5,148.5" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="137.3,146.5 140.7,145.4 139.2,144.5" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
 <polygon points="142.5,143.4 139.2,144.5 140.7,145.4" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
+<line x1="209.2" y1="156.0" x2="217.6" y2="158.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="142.5,143.4 145.9,142.5 144.4,141.5" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="147.7,140.5 144.4,141.5 145.9,142.5" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
 <polygon points="178.9,125.0 175.6,125.4 177.1,127.0" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
@@ -136,6 +164,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="158.1,135.0 161.5,134.3 160.0,133.0" fill="rgb(106,70,21)" stroke="rgb(106,70,21)" stroke-width="0.5"/>
 <polygon points="163.3,132.3 166.7,131.8 165.2,130.4" fill="rgb(110,73,22)" stroke="rgb(110,73,22)" stroke-width="0.5"/>
 <polygon points="163.3,132.3 160.0,133.0 161.5,134.3" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
+<line x1="142.0" y1="91.0" x2="142.0" y2="87.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="119.9,158.1 123.3,156.8 121.7,156.1" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="125.1,154.8 121.7,156.1 123.3,156.8" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="125.1,154.8 128.5,153.6 126.9,152.8" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -160,6 +189,8 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="156.3,136.9 159.7,136.3 158.1,135.0" fill="rgb(106,70,21)" stroke="rgb(106,70,21)" stroke-width="0.5"/>
 <polygon points="161.5,134.3 164.9,133.8 163.3,132.3" fill="rgb(110,73,22)" stroke="rgb(110,73,22)" stroke-width="0.5"/>
 <polygon points="161.5,134.3 158.1,135.0 159.7,136.3" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
+<line x1="142.0" y1="87.9" x2="142.0" y2="84.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="217.6" y1="158.7" x2="226.0" y2="161.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="118.1,160.1 121.4,158.8 119.9,158.1" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="123.3,156.8 119.9,158.1 121.4,158.8" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="123.3,156.8 126.6,155.5 125.1,154.8" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -174,7 +205,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="138.9,147.4 142.2,146.5 140.7,145.4" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="175.3,129.0 178.6,128.7 177.1,127.0" fill="rgb(122,80,24)" stroke="rgb(122,80,24)" stroke-width="0.5"/>
 <polygon points="144.1,144.5 140.7,145.4 142.2,146.5" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
+<line x1="142.0" y1="84.8" x2="142.0" y2="81.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.3,129.0 171.9,129.4 173.4,131.0" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="114.4" y1="164.1" x2="119.0" y2="159.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.1,144.5 147.4,143.6 145.9,142.5" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="170.1,131.3 173.4,131.0 171.9,129.4" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
 <polygon points="149.3,141.7 145.9,142.5 147.4,143.6" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
@@ -190,10 +223,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="121.4,158.8 118.1,160.1 119.6,160.7" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="121.4,158.8 124.8,157.5 123.3,156.8" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="126.6,155.5 123.3,156.8 124.8,157.5" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="226.0" y1="161.5" x2="234.4" y2="164.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="189.0,124.6 185.7,124.6 187.2,126.6" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="126.6,155.5 130.0,154.4 128.5,153.6" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="183.8,126.6 187.2,126.6 185.7,124.6" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
 <polygon points="131.8,152.4 128.5,153.6 130.0,154.4" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="81.7" x2="142.0" y2="78.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.8,126.6 180.5,126.8 182.0,128.6" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="131.8,152.4 135.2,151.4 133.7,150.4" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
 <polygon points="178.6,128.7 182.0,128.6 180.5,126.8" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
@@ -220,6 +255,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="119.6,160.7 122.9,159.5 121.4,158.8" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="187.2,126.6 190.5,126.6 189.0,124.6" fill="rgb(133,87,26)" stroke="rgb(133,87,26)" stroke-width="0.5"/>
 <polygon points="124.8,157.5 121.4,158.8 122.9,159.5" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="142.0" y1="78.6" x2="142.0" y2="75.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="187.2,126.6 183.8,126.6 185.3,128.5" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="124.8,157.5 128.1,156.4 126.6,155.5" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="182.0,128.6 185.3,128.5 183.8,126.6" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
@@ -232,6 +268,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="135.2,151.4 138.5,150.4 137.0,149.4" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="171.6,133.0 174.9,132.7 173.4,131.0" fill="rgb(122,80,24)" stroke="rgb(122,80,24)" stroke-width="0.5"/>
 <polygon points="140.4,148.4 137.0,149.4 138.5,150.4" fill="rgb(95,63,19)" stroke="rgb(95,63,19)" stroke-width="0.5"/>
+<line x1="234.4" y1="164.2" x2="242.8" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.6,133.0 168.2,133.3 169.7,134.9" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
 <polygon points="140.4,148.4 143.7,147.6 142.2,146.5" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="166.4,135.3 169.7,134.9 168.2,133.3" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
@@ -248,7 +285,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="112.5,166.0 115.9,164.7 114.4,164.1" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="190.5,126.6 193.9,126.7 192.4,124.6" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="117.7,162.7 114.4,164.1 115.9,164.7" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
+<line x1="142.0" y1="75.6" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="190.5,126.6 187.2,126.6 188.7,128.6" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="109.8" y1="169.0" x2="114.4" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="117.7,162.7 121.1,161.5 119.6,160.7" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="185.3,128.5 188.7,128.6 187.2,126.6" fill="rgb(133,87,26)" stroke="rgb(133,87,26)" stroke-width="0.5"/>
 <polygon points="122.9,159.5 119.6,160.7 121.1,161.5" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
@@ -295,6 +334,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="110.7,168.0 114.1,166.7 112.5,166.0" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="160.3,94.0 163.7,96.9 162.1,92.0" fill="rgb(85,117,163)" stroke="rgb(85,117,163)" stroke-width="0.5"/>
 <polygon points="146.9,81.4 150.2,84.7 148.7,79.4" fill="rgb(90,123,173)" stroke="rgb(90,123,173)" stroke-width="0.5"/>
+<line x1="242.8" y1="166.9" x2="251.2" y2="169.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.7,128.6 192.1,128.7 190.5,126.6" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="115.9,164.7 112.5,166.0 114.1,166.7" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="163.7,96.9 167.0,99.7 165.5,94.9" fill="rgb(84,115,160)" stroke="rgb(84,115,160)" stroke-width="0.5"/>
@@ -305,6 +345,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="140.1,74.4 143.5,77.9 142.0,72.5" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="115.9,164.7 119.3,163.5 117.7,162.7" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="183.5,130.5 186.9,130.6 185.3,128.5" fill="rgb(133,87,26)" stroke="rgb(133,87,26)" stroke-width="0.5"/>
+<line x1="142.0" y1="72.5" x2="150.4" y2="75.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="121.1,161.5 117.7,162.7 119.3,163.5" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
 <polygon points="170.4,102.5 173.7,105.1 172.2,100.5" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="182.3,108.0 178.9,105.6 180.5,110.0" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
@@ -347,6 +388,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="152.3,144.2 155.7,143.7 154.1,142.2" fill="rgb(110,73,22)" stroke="rgb(110,73,22)" stroke-width="0.5"/>
 <polygon points="152.3,144.2 148.9,144.9 150.5,146.2" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
 <polygon points="180.5,110.0 183.8,112.3 182.3,108.0" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="137.4" y1="77.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.5,77.9 140.1,74.4 141.7,79.9" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="192.1,128.7 195.4,129.0 193.9,126.7" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="170.4,102.5 167.0,99.7 168.5,104.4" fill="rgb(82,112,158)" stroke="rgb(82,112,158)" stroke-width="0.5"/>
@@ -381,6 +423,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="119.3,163.5 122.6,162.3 121.1,161.5" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="176.5,134.5 179.8,134.5 178.3,132.6" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
 <polygon points="124.5,160.3 121.1,161.5 122.6,162.3" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
+<line x1="251.2" y1="169.6" x2="259.6" y2="172.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.9,107.1 175.3,109.6 173.7,105.1" fill="rgb(80,110,154)" stroke="rgb(80,110,154)" stroke-width="0.5"/>
 <polygon points="176.5,134.5 173.1,134.7 174.6,136.5" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="124.5,160.3 127.8,159.3 126.3,158.4" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
@@ -392,6 +435,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="171.3,136.7 167.9,136.9 169.4,138.6" fill="rgb(122,80,24)" stroke="rgb(122,80,24)" stroke-width="0.5"/>
 <polygon points="129.7,157.3 133.0,156.4 131.5,155.3" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="175.3,109.6 178.6,112.0 177.1,107.6" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
+<line x1="150.4" y1="75.2" x2="158.8" y2="77.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.4,129.0 198.8,129.3 197.3,127.0" fill="rgb(143,93,28)" stroke="rgb(143,93,28)" stroke-width="0.5"/>
 <polygon points="199.1,118.7 195.7,116.7 197.3,120.6" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="166.1,138.9 169.4,138.6 167.9,136.9" fill="rgb(122,80,24)" stroke="rgb(122,80,24)" stroke-width="0.5"/>
@@ -401,6 +445,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="158.5,96.0 155.1,93.0 156.6,98.0" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
 <polygon points="148.4,86.6 145.0,83.3 146.5,88.6" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="166.1,138.9 162.7,139.3 164.2,140.9" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="105.2" y1="174.0" x2="109.8" y2="169.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.9,154.4 138.2,153.5 136.7,152.4" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="161.8,98.9 158.5,96.0 160.0,100.9" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
 <polygon points="160.9,141.2 164.2,140.9 162.7,139.3" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
@@ -496,6 +541,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="143.4,150.8 146.8,150.2 145.3,148.8" fill="rgb(106,70,21)" stroke="rgb(106,70,21)" stroke-width="0.5"/>
 <polygon points="163.3,103.7 160.0,100.9 161.5,105.7" fill="rgb(83,114,160)" stroke="rgb(83,114,160)" stroke-width="0.5"/>
 <polygon points="193.6,130.9 190.2,130.7 191.7,132.9" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
+<line x1="259.6" y1="172.3" x2="268.0" y2="175.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="148.6,148.2 152.0,147.6 150.5,146.2" fill="rgb(110,73,22)" stroke="rgb(110,73,22)" stroke-width="0.5"/>
 <polygon points="148.6,148.2 145.3,148.8 146.8,150.2" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
 <polygon points="176.8,114.0 180.1,116.3 178.6,112.0" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
@@ -508,6 +554,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="200.6,122.5 197.3,120.6 198.8,124.4" fill="rgb(73,100,141)" stroke="rgb(73,100,141)" stroke-width="0.5"/>
 <polygon points="148.1,93.8 151.4,96.9 149.9,91.8" fill="rgb(87,120,168)" stroke="rgb(87,120,168)" stroke-width="0.5"/>
 <polygon points="151.4,96.9 154.8,100.0 153.3,95.0" fill="rgb(86,118,166)" stroke="rgb(86,118,166)" stroke-width="0.5"/>
+<line x1="158.8" y1="77.9" x2="167.2" y2="80.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.7,90.6 148.1,93.8 146.5,88.6" fill="rgb(89,122,171)" stroke="rgb(89,122,171)" stroke-width="0.5"/>
 <polygon points="188.4,132.7 185.0,132.5 186.5,134.7" fill="rgb(137,90,27)" stroke="rgb(137,90,27)" stroke-width="0.5"/>
 <polygon points="170.1,109.0 166.7,106.4 168.2,111.0" fill="rgb(81,111,156)" stroke="rgb(81,111,156)" stroke-width="0.5"/>
@@ -534,6 +581,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="183.5,118.5 186.9,120.7 185.3,116.5" fill="rgb(76,105,147)" stroke="rgb(76,105,147)" stroke-width="0.5"/>
 <polygon points="215.9,127.7 212.5,127.0 214.1,129.7" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="164.9,108.4 168.2,111.0 166.7,106.4" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
+<line x1="132.8" y1="82.4" x2="137.4" y2="77.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.1,120.7 188.7,118.7 190.2,122.7" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="176.8,114.0 173.4,111.6 174.9,116.0" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
 <polygon points="204.0,124.2 200.6,122.5 202.1,126.2" fill="rgb(72,100,140)" stroke="rgb(72,100,140)" stroke-width="0.5"/>
@@ -612,10 +660,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="108.5,172.6 105.2,174.0 106.7,174.6" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="156.3,104.8 159.7,107.7 158.1,102.9" fill="rgb(84,115,160)" stroke="rgb(84,115,160)" stroke-width="0.5"/>
 <polygon points="136.1,85.9 139.5,89.3 138.0,83.9" fill="rgb(91,126,175)" stroke="rgb(91,126,175)" stroke-width="0.5"/>
+<line x1="268.0" y1="175.0" x2="276.4" y2="177.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="210.7,127.4 207.3,125.8 208.9,129.3" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
 <polygon points="171.6,113.5 168.2,111.0 169.7,115.5" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
 <polygon points="159.7,107.7 163.0,110.4 161.5,105.7" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="181.3,136.5 178.0,136.5 179.5,138.5" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="100.6" y1="178.9" x2="105.2" y2="174.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="193.6,124.6 196.9,126.4 195.4,122.6" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="132.8,82.4 136.1,85.9 134.6,80.4" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="108.5,172.6 111.9,171.4 110.4,170.6" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -630,6 +680,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="174.9,116.0 171.6,113.5 173.1,117.9" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
 <polygon points="202.1,126.2 198.8,124.4 200.3,128.2" fill="rgb(72,100,140)" stroke="rgb(72,100,140)" stroke-width="0.5"/>
 <polygon points="205.5,127.8 208.9,129.3 207.3,125.8" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
+<line x1="167.2" y1="80.6" x2="175.6" y2="83.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.1,138.4 172.8,138.5 174.3,140.4" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="195.1,133.3 198.5,133.7 196.9,131.3" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
 <polygon points="113.7,169.4 117.1,168.3 115.6,167.4" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
@@ -740,6 +791,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="169.1,142.5 165.7,142.6 167.3,144.4" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="117.1,168.3 120.5,167.2 118.9,166.3" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
 <polygon points="220.8,131.4 217.4,130.5 218.9,133.4" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
+<line x1="276.4" y1="177.7" x2="284.8" y2="180.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.9,144.6 167.3,144.4 165.7,142.6" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="122.3,165.2 118.9,166.3 120.5,167.2" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
 <polygon points="193.3,135.2 189.9,134.9 191.4,137.2" fill="rgb(144,94,28)" stroke="rgb(144,94,28)" stroke-width="0.5"/>
@@ -768,6 +820,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="154.5,106.8 151.1,103.9 152.6,108.8" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
 <polygon points="153.5,149.2 156.9,148.8 155.3,147.2" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
 <polygon points="132.7,159.5 129.3,160.3 130.9,161.5" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
+<line x1="175.6" y1="83.3" x2="184.0" y2="86.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.6,132.1 218.9,133.3 217.4,130.1" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="203.7,129.8 200.3,128.2 201.8,131.8" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
 <polygon points="137.7,91.3 134.3,87.8 135.8,93.2" fill="rgb(90,125,175)" stroke="rgb(90,125,175)" stroke-width="0.5"/>
@@ -787,6 +840,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="143.1,154.1 139.7,154.8 141.3,156.1" fill="rgb(107,70,21)" stroke="rgb(107,70,21)" stroke-width="0.5"/>
 <polygon points="224.1,132.5 227.5,133.5 226.0,130.5" fill="rgb(67,93,130)" stroke="rgb(67,93,130)" stroke-width="0.5"/>
 <polygon points="171.3,119.9 174.6,122.2 173.1,117.9" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="128.2" y1="87.3" x2="132.8" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.3,87.8 130.9,84.3 132.5,89.8" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="182.9,138.6 186.2,138.9 184.7,136.6" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="186.5,126.6 189.9,128.6 188.4,124.7" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
@@ -873,6 +927,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="149.3,105.9 145.9,102.9 147.4,107.9" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
 <polygon points="139.2,96.5 135.8,93.2 137.3,98.5" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="156.9,148.8 153.5,149.2 155.0,150.8" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="96.0" y1="183.9" x2="100.6" y2="178.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="125.7,164.3 129.0,163.4 127.5,162.3" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="152.6,108.8 149.3,105.9 150.8,110.8" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
 <polygon points="151.7,151.1 155.0,150.8 153.5,149.2" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
@@ -902,6 +957,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="181.0,140.6 184.4,140.8 182.9,138.6" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="184.7,128.6 188.1,130.5 186.5,126.6" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="159.3,114.3 156.0,111.6 157.5,116.3" fill="rgb(82,112,158)" stroke="rgb(82,112,158)" stroke-width="0.5"/>
+<line x1="284.8" y1="180.4" x2="293.2" y2="183.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="213.7,134.5 210.4,133.6 211.9,136.5" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="196.6,132.1 200.0,133.7 198.5,130.1" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
 <polygon points="230.9,134.5 234.2,135.3 232.7,132.5" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
@@ -924,6 +980,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="103.0,178.6 99.7,179.9 101.2,180.5" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="222.3,134.5 218.9,133.4 220.5,136.4" fill="rgb(160,105,31)" stroke="rgb(160,105,31)" stroke-width="0.5"/>
 <polygon points="150.8,110.8 154.1,113.6 152.6,108.8" fill="rgb(84,115,160)" stroke="rgb(84,115,160)" stroke-width="0.5"/>
+<line x1="184.0" y1="86.0" x2="192.4" y2="88.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="222.3,134.5 218.9,133.3 220.5,136.4" fill="rgb(68,94,131)" stroke="rgb(68,94,131)" stroke-width="0.5"/>
 <polygon points="239.4,135.6 236.1,134.2 237.6,137.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="130.6,91.8 134.0,95.2 132.5,89.8" fill="rgb(91,126,175)" stroke="rgb(91,126,175)" stroke-width="0.5"/>
@@ -1063,12 +1120,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="215.3,137.3 218.6,138.4 217.1,135.3" fill="rgb(68,94,131)" stroke="rgb(68,94,131)" stroke-width="0.5"/>
 <polygon points="168.8,146.4 172.1,146.4 170.6,144.4" fill="rgb(133,87,26)" stroke="rgb(133,87,26)" stroke-width="0.5"/>
 <polygon points="106.4,177.3 103.0,178.6 104.5,179.3" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
+<line x1="293.2" y1="183.1" x2="301.6" y2="185.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.9,139.6 189.6,139.2 191.1,141.6" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
 <polygon points="232.4,138.2 235.7,139.6 234.2,136.2" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="174.3,128.4 177.7,130.6 176.1,126.4" fill="rgb(76,105,147)" stroke="rgb(76,105,147)" stroke-width="0.5"/>
 <polygon points="206.7,137.6 203.3,136.9 204.9,139.6" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="155.7,118.3 159.0,120.9 157.5,116.3" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="223.8,137.6 227.2,138.8 225.7,135.6" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="123.6" y1="92.3" x2="128.2" y2="87.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.9,130.6 179.5,128.6 181.0,132.6" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="249.5,140.5 246.1,138.8 247.7,142.5" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="167.6,123.9 164.2,121.5 165.7,125.9" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
@@ -1083,6 +1142,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="201.5,138.8 204.9,139.6 203.3,136.9" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="159.0,120.9 162.4,123.4 160.9,118.9" fill="rgb(80,110,154)" stroke="rgb(80,110,154)" stroke-width="0.5"/>
 <polygon points="237.6,136.0 234.2,135.3 235.7,138.0" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
+<line x1="192.4" y1="88.7" x2="200.8" y2="91.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.6,148.4 160.2,148.5 161.7,150.4" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="111.6,174.2 114.9,173.1 113.4,172.2" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
 <polygon points="215.3,137.4 211.9,136.5 213.4,139.4" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
@@ -1182,6 +1242,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="162.4,123.4 159.0,120.9 160.5,125.4" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
 <polygon points="150.5,117.6 153.8,120.3 152.3,115.6" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="172.1,146.4 168.8,146.4 170.3,148.4" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="91.4" y1="188.8" x2="96.0" y2="183.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.4,134.5 187.7,136.3 186.2,132.5" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="123.6,92.3 126.9,95.8 125.4,90.3" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="99.3,182.5 102.7,181.3 101.2,180.5" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -1236,6 +1297,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="114.9,173.1 118.3,172.2 116.8,171.2" fill="rgb(95,62,19)" stroke="rgb(95,62,19)" stroke-width="0.5"/>
 <polygon points="160.5,125.4 163.9,127.8 162.4,123.4" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
 <polygon points="180.7,144.8 184.1,145.1 182.5,142.8" fill="rgb(143,93,28)" stroke="rgb(143,93,28)" stroke-width="0.5"/>
+<line x1="301.6" y1="185.8" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="222.0,139.6 218.6,138.4 220.1,141.5" fill="rgb(162,106,31)" stroke="rgb(162,106,31)" stroke-width="0.5"/>
 <polygon points="230.5,140.1 227.2,138.8 228.7,142.1" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="184.4,134.5 181.0,132.6 182.5,136.5" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
@@ -1277,6 +1339,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="225.3,140.8 228.7,142.1 227.2,138.8" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="163.9,127.8 167.3,130.2 165.7,125.9" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
 <polygon points="230.5,139.2 227.2,138.4 228.7,141.2" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
+<line x1="200.8" y1="91.4" x2="209.2" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.9,95.8 123.6,92.3 125.1,97.7" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="257.8,148.3 261.1,150.4 259.6,146.3" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
 <polygon points="266.3,150.6 263.0,148.4 264.5,152.6" fill="rgb(161,106,32)" stroke="rgb(161,106,32)" stroke-width="0.5"/>
@@ -1404,6 +1467,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="271.2,157.4 274.6,159.9 273.0,155.4" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="123.5,169.4 120.1,170.2 121.7,171.4" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="232.1,143.5 235.4,145.1 233.9,141.6" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="185.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.4,142.0 209.7,143.2 208.2,140.0" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="194.5,139.7 191.1,138.1 192.6,141.7" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
 <polygon points="128.5,101.2 125.1,97.7 126.6,103.1" fill="rgb(90,125,175)" stroke="rgb(90,125,175)" stroke-width="0.5"/>
@@ -1427,6 +1491,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="242.5,139.2 239.1,138.6 240.6,141.2" fill="rgb(64,88,124)" stroke="rgb(64,88,124)" stroke-width="0.5"/>
 <polygon points="223.5,142.8 226.9,144.1 225.3,140.8" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="162.1,129.8 165.4,132.1 163.9,127.8" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="119.0" y1="97.2" x2="123.6" y2="92.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="228.7,141.2 225.3,140.4 226.9,143.2" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="125.1,97.7 121.7,94.2 123.3,99.7" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="255.9,150.3 259.3,152.4 257.8,148.3" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -1487,6 +1552,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="298.1,180.3 301.4,183.6 299.9,178.3" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="168.5,150.4 165.1,150.3 166.6,152.3" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
 <polygon points="180.7,138.5 184.1,140.3 182.5,136.5" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
+<line x1="209.2" y1="94.1" x2="217.6" y2="96.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="119.9,96.2 123.3,99.7 121.7,94.2" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="95.7,186.5 99.0,185.2 97.5,184.5" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="288.0,171.0 291.4,174.0 289.8,169.0" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
@@ -1539,7 +1605,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="165.4,132.1 162.1,129.8 163.6,134.1" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
 <polygon points="184.1,140.3 187.4,142.0 185.9,138.3" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="250.7,150.2 254.1,152.2 252.6,148.2" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="310.0" y1="185.5" x2="310.0" y2="182.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="172.1,136.5 175.5,138.5 174.0,134.5" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="305.4" y1="193.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.7,143.2 206.4,142.0 207.9,145.2" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="277.9,162.5 274.6,159.9 276.1,164.5" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="226.9,143.2 230.2,143.9 228.7,141.2" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -1565,6 +1633,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="247.4,148.3 244.0,146.5 245.5,150.3" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="130.0,106.4 126.6,103.1 128.1,108.4" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="147.7,158.7 144.3,159.1 145.8,160.7" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="86.8" y1="193.8" x2="91.4" y2="188.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="116.5,174.2 119.8,173.3 118.3,172.2" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="281.3,165.2 277.9,162.5 279.4,167.2" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="143.4,118.7 140.1,115.8 141.6,120.7" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
@@ -1690,6 +1759,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="216.5,145.4 219.8,146.3 218.3,143.4" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="180.4,149.1 183.7,149.5 182.2,147.1" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
 <polygon points="99.0,185.2 102.4,184.1 100.9,183.3" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
+<line x1="310.0" y1="182.4" x2="310.0" y2="179.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.2,156.3 159.6,156.3 158.1,154.3" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
 <polygon points="104.2,182.1 100.9,183.3 102.4,184.1" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="194.1,146.8 197.5,147.5 196.0,144.8" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
@@ -1710,6 +1780,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="182.2,142.3 185.6,144.0 184.1,140.3" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="248.9,152.2 252.2,154.2 250.7,150.2" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="170.3,138.5 173.7,140.5 172.1,136.5" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="217.6" y1="96.8" x2="226.0" y2="99.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.9,145.2 204.5,144.0 206.1,147.2" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="276.1,164.5 272.7,161.9 274.2,166.5" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="225.0,145.2 228.4,145.9 226.9,143.2" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -1832,6 +1903,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="116.2,100.2 119.6,103.7 118.1,98.2" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="92.0,190.4 95.3,189.2 93.8,188.5" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
 <polygon points="284.3,174.9 287.7,177.9 286.2,172.9" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
+<line x1="310.0" y1="179.3" x2="310.0" y2="176.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.8,146.3 216.5,145.4 218.0,148.3" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="291.0,181.0 294.4,184.3 292.9,179.1" fill="rgb(136,89,26)" stroke="rgb(136,89,26)" stroke-width="0.5"/>
 <polygon points="228.4,145.9 231.8,146.6 230.2,143.9" fill="rgb(65,89,125)" stroke="rgb(65,89,125)" stroke-width="0.5"/>
@@ -1850,6 +1922,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="197.5,147.5 194.1,146.8 195.7,149.5" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="146.5,128.2 149.8,130.8 148.3,126.2" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="214.6,147.5 218.0,148.7 216.5,145.5" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="114.4" y1="102.2" x2="119.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="252.2,154.2 248.9,152.2 250.4,156.2" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="173.7,140.5 170.3,138.5 171.8,142.5" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="240.3,150.4 237.0,148.7 238.5,152.4" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -1960,6 +2033,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="231.8,146.6 235.1,147.1 233.6,144.6" fill="rgb(64,88,124)" stroke="rgb(64,88,124)" stroke-width="0.5"/>
 <polygon points="200.9,148.3 197.5,147.5 199.0,150.3" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="183.7,146.0 187.1,147.6 185.6,144.0" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
+<line x1="226.0" y1="99.5" x2="234.4" y2="102.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.1,150.7 231.8,149.0 233.3,152.6" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="218.0,148.3 221.4,149.1 219.8,146.3" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="187.1,150.1 183.7,149.5 185.3,152.1" fill="rgb(149,98,29)" stroke="rgb(149,98,29)" stroke-width="0.5"/>
@@ -1979,6 +2053,8 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="168.5,140.5 165.1,138.3 166.6,142.4" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="299.3,193.0 302.6,196.5 301.1,191.0" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="195.7,149.5 199.0,150.3 197.5,147.5" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="310.0" y1="176.2" x2="310.0" y2="173.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="300.8" y1="198.4" x2="305.4" y2="193.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="262.3,160.9 259.0,158.6 260.5,162.9" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="162.9,156.3 166.3,156.4 164.8,154.3" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="200.9,147.9 197.5,146.6 199.0,149.9" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -2002,6 +2078,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="141.3,127.5 144.6,130.2 143.1,125.5" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="292.6,186.2 295.9,189.5 294.4,184.3" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="162.9,156.3 159.6,156.3 161.1,158.3" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="82.2" y1="198.7" x2="86.8" y2="193.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.2,144.4 178.5,146.2 177.0,142.4" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="114.4,102.2 117.7,105.7 116.2,100.2" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="90.1,192.4 93.5,191.2 92.0,190.4" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -2128,6 +2205,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="170.0,144.5 173.3,146.4 171.8,142.5" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="267.2,167.8 270.6,170.4 269.0,165.8" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="248.9,144.2 252.2,144.3 250.7,142.2" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
+<line x1="310.0" y1="173.1" x2="310.0" y2="170.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.6,130.2 141.3,127.5 142.8,132.2" fill="rgb(82,112,158)" stroke="rgb(82,112,158)" stroke-width="0.5"/>
 <polygon points="292.6,186.2 289.2,183.0 290.7,188.2" fill="rgb(134,88,26)" stroke="rgb(134,88,26)" stroke-width="0.5"/>
 <polygon points="285.8,179.9 282.5,176.9 284.0,181.9" fill="rgb(142,93,28)" stroke="rgb(142,93,28)" stroke-width="0.5"/>
@@ -2201,6 +2279,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="161.4,142.3 164.8,144.4 163.3,140.3" fill="rgb(76,105,147)" stroke="rgb(76,105,147)" stroke-width="0.5"/>
 <polygon points="193.8,151.5 190.5,150.7 192.0,153.4" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="142.8,132.2 146.1,134.8 144.6,130.2" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
+<line x1="234.4" y1="102.3" x2="242.8" y2="105.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.0,151.4 214.3,152.7 212.8,149.5" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
 <polygon points="248.6,158.2 245.2,156.1 246.7,160.2" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="170.0,144.5 166.6,142.4 168.1,146.4" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
@@ -2268,6 +2347,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="109.1,182.1 112.5,181.3 110.9,180.1" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="273.9,173.1 270.6,170.4 272.1,175.1" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="136.1,126.6 132.7,123.7 134.2,128.6" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
+<line x1="310.0" y1="170.0" x2="310.0" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="135.1,168.9 138.5,168.6 136.9,167.0" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
 <polygon points="262.0,167.3 265.4,169.8 263.8,165.3" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="114.3,179.3 110.9,180.1 112.5,181.3" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
@@ -2296,6 +2376,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="214.3,152.7 217.7,154.0 216.2,150.7" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="252.2,144.3 248.9,144.2 250.4,146.3" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="152.9,139.7 156.2,142.0 154.7,137.7" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="109.8" y1="107.1" x2="114.4" y2="102.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.5,151.1 216.2,150.3 217.7,153.1" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="115.9,107.6 112.5,104.1 114.1,109.6" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="246.7,160.2 250.1,162.3 248.6,158.2" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -2414,10 +2495,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="256.8,166.8 260.2,169.2 258.6,164.8" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="102.1,187.0 98.7,188.1 100.2,189.0" fill="rgb(92,60,18)" stroke="rgb(92,60,18)" stroke-width="0.5"/>
 <polygon points="173.0,157.0 169.7,156.7 171.2,159.0" fill="rgb(144,94,28)" stroke="rgb(144,94,28)" stroke-width="0.5"/>
+<line x1="310.0" y1="166.9" x2="310.0" y2="163.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.2,142.0 152.9,139.7 154.4,144.0" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
 <polygon points="174.9,150.2 178.2,151.9 176.7,148.2" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="241.5,160.1 244.9,162.1 243.4,158.1" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="162.9,146.4 166.3,148.4 164.8,144.4" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="296.2" y1="203.4" x2="300.8" y2="198.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.6,153.1 197.2,151.9 198.7,155.1" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="268.7,172.4 265.4,169.8 266.9,174.4" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="217.7,153.1 221.0,153.8 219.5,151.1" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -2440,11 +2523,13 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="124.1,119.6 120.8,116.3 122.3,121.5" fill="rgb(88,121,170)" stroke="rgb(88,121,170)" stroke-width="0.5"/>
 <polygon points="195.4,154.3 198.7,155.2 197.2,152.3" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="130.9,125.7 127.5,122.7 129.0,127.7" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
+<line x1="242.8" y1="105.0" x2="251.2" y2="107.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="299.0,200.4 295.6,196.9 297.1,202.4" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="238.2,158.2 234.8,156.4 236.3,160.2" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="250.4,146.3 253.8,146.3 252.2,144.3" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="120.8,116.3 117.4,113.0 118.9,118.3" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="138.5,168.6 135.1,168.9 136.6,170.6" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="77.6" y1="203.7" x2="82.2" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="107.3,184.1 110.6,183.2 109.1,182.1" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="272.1,175.1 268.7,172.4 270.2,177.1" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="134.2,128.6 130.9,125.7 132.4,130.6" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
@@ -2577,6 +2662,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="207.3,155.3 210.6,156.2 209.1,153.3" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="171.2,159.0 174.6,159.4 173.0,157.0" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
 <polygon points="89.8,195.1 93.2,194.0 91.7,193.2" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
+<line x1="310.0" y1="163.8" x2="310.0" y2="160.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="259.0,144.3 262.3,144.1 260.8,142.3" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="147.0,166.2 150.4,166.2 148.9,164.2" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
 <polygon points="95.0,192.0 91.7,193.2 93.2,194.0" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
@@ -2693,6 +2779,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="152.5,146.0 155.9,148.2 154.4,144.0" fill="rgb(77,106,149)" stroke="rgb(77,106,149)" stroke-width="0.5"/>
 <polygon points="113.7,117.0 117.1,120.3 115.6,115.0" fill="rgb(90,123,173)" stroke="rgb(90,123,173)" stroke-width="0.5"/>
 <polygon points="161.1,148.4 157.7,146.2 159.3,150.4" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
+<line x1="251.2" y1="107.7" x2="259.6" y2="110.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="291.9,200.9 295.3,204.4 293.8,198.9" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="188.3,157.4 191.7,158.2 190.2,155.4" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="255.0,168.8 251.6,166.5 253.1,170.8" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
@@ -2727,6 +2814,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="167.8,152.3 171.2,154.1 169.7,150.3" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="107.0,110.1 110.4,113.6 108.9,108.1" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="82.8,200.3 86.2,199.1 84.6,198.4" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
+<line x1="310.0" y1="160.7" x2="310.0" y2="157.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="275.1,184.8 278.5,187.8 277.0,182.8" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
 <polygon points="210.6,156.2 207.3,155.3 208.8,158.2" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="281.8,190.9 285.2,194.2 283.7,189.0" fill="rgb(136,89,26)" stroke="rgb(136,89,26)" stroke-width="0.5"/>
@@ -2748,6 +2836,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="188.3,157.4 185.0,156.7 186.5,159.4" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="137.3,138.1 140.6,140.7 139.1,136.1" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="205.4,157.4 208.8,158.6 207.3,155.4" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="105.2" y1="112.1" x2="109.8" y2="107.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="243.0,164.1 239.7,162.1 241.2,166.1" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="164.5,150.4 161.1,148.4 162.6,152.4" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="231.1,160.3 227.8,158.6 229.3,162.3" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -2876,9 +2965,11 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="125.3,131.6 128.7,134.5 127.2,129.7" fill="rgb(85,117,163)" stroke="rgb(85,117,163)" stroke-width="0.5"/>
 <polygon points="150.7,148.0 154.1,150.2 152.5,146.0" fill="rgb(77,106,149)" stroke="rgb(77,106,149)" stroke-width="0.5"/>
 <polygon points="111.9,119.0 115.3,122.3 113.7,117.0" fill="rgb(90,123,173)" stroke="rgb(90,123,173)" stroke-width="0.5"/>
+<line x1="310.0" y1="157.6" x2="310.0" y2="154.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.3,150.4 155.9,148.2 157.4,152.3" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="290.1,202.9 293.4,206.4 291.9,200.9" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="186.5,159.4 189.8,160.2 188.3,157.4" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="291.6" y1="208.3" x2="296.2" y2="203.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="253.1,170.8 249.8,168.5 251.3,172.8" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="153.8,166.2 157.1,166.3 155.6,164.2" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="191.7,157.8 188.3,156.5 189.8,159.8" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -2910,6 +3001,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="265.7,143.9 269.0,143.5 267.5,141.9" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="283.4,196.1 286.7,199.4 285.2,194.2" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="153.8,166.2 150.4,166.2 151.9,168.2" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="73.0" y1="208.6" x2="77.6" y2="203.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="166.0,154.3 169.4,156.1 167.8,152.3" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="105.2,112.1 108.5,115.6 107.0,110.1" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="81.0,202.3 84.3,201.1 82.8,200.3" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -2949,6 +3041,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="86.2,199.1 89.5,198.0 88.0,197.1" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="255.3,148.3 258.6,148.1 257.1,146.3" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="143.4,170.2 146.7,170.1 145.2,168.2" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
+<line x1="259.6" y1="110.4" x2="268.0" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="91.4,196.0 88.0,197.1 89.5,198.0" fill="rgb(88,58,17)" stroke="rgb(88,58,17)" stroke-width="0.5"/>
 <polygon points="181.3,160.6 184.6,161.4 183.1,158.6" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="259.8,175.7 256.5,173.2 258.0,177.7" fill="rgb(156,102,31)" stroke="rgb(156,102,31)" stroke-width="0.5"/>
@@ -3037,6 +3130,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="157.1,166.3 160.5,166.6 159.0,164.4" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="160.8,154.4 164.2,156.3 162.6,152.4" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="258.0,177.7 261.4,180.3 259.8,175.7" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
+<line x1="310.0" y1="154.5" x2="310.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="239.7,154.1 243.0,154.2 241.5,152.1" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="135.4,140.1 132.1,137.4 133.6,142.1" fill="rgb(82,112,158)" stroke="rgb(82,112,158)" stroke-width="0.5"/>
 <polygon points="283.4,196.1 280.0,192.9 281.5,198.1" fill="rgb(134,88,26)" stroke="rgb(134,88,26)" stroke-width="0.5"/>
@@ -3187,6 +3281,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="131.1,176.5 127.8,176.9 129.3,178.5" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
 <polygon points="99.9,192.0 103.3,191.1 101.8,190.0" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="264.7,183.0 261.4,180.3 262.9,185.0" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
+<line x1="310.0" y1="151.4" x2="310.0" y2="148.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.9,136.5 123.5,133.6 125.0,138.5" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
 <polygon points="125.9,178.8 129.3,178.5 127.8,176.9" fill="rgb(118,77,23)" stroke="rgb(118,77,23)" stroke-width="0.5"/>
 <polygon points="252.8,177.2 256.2,179.7 254.6,175.2" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
@@ -3201,6 +3296,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="120.7,181.3 124.1,180.8 122.6,179.3" fill="rgb(114,75,22)" stroke="rgb(114,75,22)" stroke-width="0.5"/>
 <polygon points="110.3,186.4 107.0,187.2 108.5,188.4" fill="rgb(103,68,20)" stroke="rgb(103,68,20)" stroke-width="0.5"/>
 <polygon points="288.2,204.8 284.9,201.4 286.4,206.8" fill="rgb(127,83,25)" stroke="rgb(127,83,25)" stroke-width="0.5"/>
+<line x1="268.0" y1="113.1" x2="276.4" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.2,152.2 148.9,150.0 150.4,154.2" fill="rgb(77,105,148)" stroke="rgb(77,105,148)" stroke-width="0.5"/>
 <polygon points="179.4,161.0 182.8,162.4 181.3,159.0" fill="rgb(70,96,135)" stroke="rgb(70,96,135)" stroke-width="0.5"/>
 <polygon points="120.7,181.3 117.4,181.8 118.9,183.3" fill="rgb(111,73,22)" stroke="rgb(111,73,22)" stroke-width="0.5"/>
@@ -3216,6 +3312,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="205.1,162.6 208.5,163.9 207.0,160.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="243.0,154.2 239.7,154.1 241.2,156.2" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="143.7,149.6 147.0,151.9 145.5,147.6" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="100.6" y1="117.0" x2="105.2" y2="112.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="210.3,161.0 207.0,160.2 208.5,163.0" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="106.7,117.5 103.3,114.0 104.9,119.5" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="237.5,170.1 240.9,172.2 239.4,168.1" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -3338,6 +3435,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="227.4,159.4 224.1,159.0 225.6,161.4" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="191.4,163.1 188.0,162.2 189.5,165.1" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="246.4,154.2 249.8,154.2 248.2,152.3" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
+<line x1="310.0" y1="148.3" x2="310.0" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.0,164.9 213.7,163.3 215.2,166.9" fill="rgb(165,109,33)" stroke="rgb(165,109,33)" stroke-width="0.5"/>
 <polygon points="220.4,166.5 223.8,168.2 222.2,164.5" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="134.5,176.3 137.8,176.1 136.3,174.3" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
@@ -3348,6 +3446,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="165.7,160.1 169.0,161.8 167.5,158.1" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="232.3,170.0 235.7,172.0 234.2,168.0" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="153.8,156.3 157.1,158.3 155.6,154.3" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="287.0" y1="213.3" x2="291.6" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.4,163.0 188.0,161.8 189.5,165.0" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="259.5,182.3 256.2,179.7 257.7,184.3" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="208.5,163.0 211.8,163.7 210.3,161.0" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -3375,6 +3474,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="241.2,156.2 244.6,156.2 243.0,154.2" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="111.6,126.2 108.2,122.9 109.7,128.2" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="129.3,178.5 125.9,178.8 127.4,180.5" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="68.4" y1="213.6" x2="73.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="98.1,194.0 101.4,193.1 99.9,192.0" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="262.9,185.0 259.5,182.3 261.0,187.0" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="125.0,138.5 121.7,135.6 123.2,140.5" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
@@ -3468,6 +3568,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="281.2,205.4 284.6,208.8 283.0,203.4" fill="rgb(128,84,25)" stroke="rgb(128,84,25)" stroke-width="0.5"/>
 <polygon points="215.2,166.9 218.6,168.5 217.0,164.9" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="203.3,164.5 199.9,163.3 201.4,166.5" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="276.4" y1="115.8" x2="284.8" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.6,163.0 174.2,161.5 175.8,165.0" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
 <polygon points="286.2,137.2 289.5,136.3 288.0,135.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="138.5,149.2 135.1,146.7 136.6,151.2" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
@@ -3516,6 +3617,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="143.0,174.1 139.7,174.1 141.2,176.1" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="198.1,165.2 201.4,166.1 199.9,163.2" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="162.0,168.9 165.4,169.3 163.8,166.9" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
+<line x1="310.0" y1="145.2" x2="310.0" y2="142.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="80.6,205.0 84.0,203.9 82.5,203.1" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
 <polygon points="249.8,154.2 253.1,154.0 251.6,152.2" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="137.8,176.1 141.2,176.1 139.7,174.1" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
@@ -3670,6 +3772,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="258.3,151.8 261.7,151.5 260.2,149.8" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="276.0,204.1 279.4,207.4 277.8,202.1" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="146.4,174.1 143.0,174.1 144.6,176.1" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="310.0" y1="142.1" x2="310.0" y2="139.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="158.6,162.2 162.0,164.0 160.5,160.2" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="97.8,120.0 101.2,123.5 99.7,118.0" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="73.6,210.2 77.0,209.0 75.4,208.3" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -3696,6 +3799,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="179.1,167.3 175.8,166.6 177.3,169.3" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="128.1,148.0 131.4,150.6 129.9,146.0" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="196.2,167.3 199.6,168.5 198.1,165.3" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="96.0" y1="122.0" x2="100.6" y2="117.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="233.8,174.0 230.5,172.0 232.0,176.0" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="155.3,160.3 151.9,158.3 153.4,162.3" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="221.9,170.2 218.6,168.5 220.1,172.2" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -3721,6 +3825,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="247.9,156.2 244.6,156.2 246.1,158.2" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="136.0,178.1 132.6,178.2 134.2,180.1" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="84.0,203.9 87.4,202.8 85.8,201.9" fill="rgb(90,59,18)" stroke="rgb(90,59,18)" stroke-width="0.5"/>
+<line x1="284.8" y1="118.5" x2="293.2" y2="121.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.8,163.4 220.4,162.9 221.9,165.4" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="187.7,167.1 184.3,166.2 185.8,169.1" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="242.7,158.2 246.1,158.2 244.6,156.2" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
@@ -3823,12 +3928,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="66.6,215.5 69.9,214.2 68.4,213.6" fill="rgb(79,52,16)" stroke="rgb(79,52,16)" stroke-width="0.5"/>
 <polygon points="228.6,174.0 225.3,172.0 226.8,175.9" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="232.3,162.0 229.0,161.7 230.5,164.0" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
+<line x1="310.0" y1="139.0" x2="310.0" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="116.1,141.5 119.5,144.4 118.0,139.6" fill="rgb(85,117,163)" stroke="rgb(85,117,163)" stroke-width="0.5"/>
 <polygon points="141.5,157.9 144.9,160.1 143.4,155.9" fill="rgb(77,106,149)" stroke="rgb(77,106,149)" stroke-width="0.5"/>
 <polygon points="102.7,128.9 106.1,132.2 104.5,126.9" fill="rgb(90,123,173)" stroke="rgb(90,123,173)" stroke-width="0.5"/>
 <polygon points="150.1,160.3 146.7,158.1 148.2,162.2" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="280.9,212.8 284.2,216.3 282.7,210.8" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="177.3,169.3 180.6,170.1 179.1,167.3" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="282.4" y1="218.2" x2="287.0" y2="213.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="243.9,180.7 240.6,178.4 242.1,182.7" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="144.6,176.1 147.9,176.2 146.4,174.1" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="182.5,167.7 179.1,166.4 180.6,169.7" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -3864,6 +3971,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="256.5,153.8 259.8,153.4 258.3,151.8" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="274.2,206.0 277.5,209.3 276.0,204.1" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="144.6,176.1 141.2,176.1 142.7,178.1" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="63.8" y1="218.5" x2="68.4" y2="213.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.8,164.2 160.2,166.0 158.6,162.2" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="96.0,122.0 99.3,125.5 97.8,120.0" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="71.8,212.2 75.1,211.0 73.6,210.2" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -3994,10 +4102,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="277.5,209.3 274.2,206.0 275.7,211.3" fill="rgb(131,86,25)" stroke="rgb(131,86,25)" stroke-width="0.5"/>
 <polygon points="238.7,180.3 235.4,178.1 236.9,182.3" fill="rgb(161,106,32)" stroke="rgb(161,106,32)" stroke-width="0.5"/>
 <polygon points="264.1,196.7 260.7,193.8 262.2,198.7" fill="rgb(145,95,28)" stroke="rgb(145,95,28)" stroke-width="0.5"/>
+<line x1="310.0" y1="135.9" x2="310.0" y2="132.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="147.9,176.2 151.3,176.5 149.8,174.3" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="151.6,164.3 155.0,166.2 153.4,162.3" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="248.8,187.6 252.2,190.2 250.6,185.6" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="230.5,164.0 233.8,164.1 232.3,162.0" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
+<line x1="293.2" y1="121.2" x2="301.6" y2="123.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.2,150.0 122.9,147.3 124.4,152.0" fill="rgb(82,112,158)" stroke="rgb(82,112,158)" stroke-width="0.5"/>
 <polygon points="274.2,206.0 270.8,202.8 272.3,208.0" fill="rgb(134,88,26)" stroke="rgb(134,88,26)" stroke-width="0.5"/>
 <polygon points="267.4,199.7 264.1,196.7 265.6,201.7" fill="rgb(142,93,28)" stroke="rgb(142,93,28)" stroke-width="0.5"/>
@@ -4154,6 +4264,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="221.6,176.0 218.2,174.2 219.8,178.0" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="233.8,164.1 237.2,164.1 235.7,162.1" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="104.2,134.2 100.9,130.9 102.4,136.1" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
+<line x1="310.0" y1="132.8" x2="310.0" y2="129.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="121.9,186.4 118.6,186.8 120.1,188.4" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
 <polygon points="90.7,201.9 94.1,201.0 92.6,199.9" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="255.5,192.9 252.2,190.2 253.7,194.9" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
@@ -4186,6 +4297,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="195.9,172.5 199.3,173.8 197.8,170.5" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="233.8,164.1 230.5,164.0 232.0,166.1" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="134.5,159.5 137.8,161.8 136.3,157.5" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="91.4" y1="126.9" x2="96.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="201.1,170.9 197.8,170.1 199.3,172.9" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="97.5,127.4 94.1,123.9 95.7,129.4" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="228.3,180.0 231.7,182.1 230.2,178.0" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -4272,6 +4384,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="219.8,178.0 223.1,179.9 221.6,176.0" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="173.6,172.3 177.0,173.7 175.4,170.4" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
 <polygon points="182.2,172.9 185.5,174.1 184.0,170.9" fill="rgb(68,94,131)" stroke="rgb(68,94,131)" stroke-width="0.5"/>
+<line x1="301.6" y1="123.9" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="135.7,182.0 139.0,182.0 137.5,180.0" fill="rgb(133,87,26)" stroke="rgb(133,87,26)" stroke-width="0.5"/>
 <polygon points="223.4,167.7 220.1,167.3 221.6,169.7" fill="rgb(63,87,122)" stroke="rgb(63,87,122)" stroke-width="0.5"/>
 <polygon points="73.3,213.0 69.9,214.2 71.4,214.9" fill="rgb(84,55,17)" stroke="rgb(84,55,17)" stroke-width="0.5"/>
@@ -4313,6 +4426,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="299.6,133.2 296.2,134.3 297.8,135.2" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="218.2,169.3 214.9,168.9 216.4,171.3" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="182.2,173.0 178.8,172.1 180.3,175.0" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
+<line x1="310.0" y1="129.7" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.2,164.1 240.6,164.1 239.0,162.2" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
 <polygon points="207.8,174.8 204.5,173.2 206.0,176.8" fill="rgb(165,109,33)" stroke="rgb(165,109,33)" stroke-width="0.5"/>
 <polygon points="211.2,176.4 214.6,178.1 213.0,174.4" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -4324,6 +4438,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="156.5,170.0 159.8,171.7 158.3,168.0" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="223.1,179.9 226.5,181.9 225.0,177.9" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="144.6,166.2 147.9,168.2 146.4,164.2" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="277.8" y1="223.2" x2="282.4" y2="218.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.2,172.9 178.8,171.7 180.3,174.9" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="250.3,192.2 247.0,189.6 248.5,194.2" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="199.3,172.9 202.6,173.6 201.1,170.9" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -4353,6 +4468,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="232.0,166.1 235.4,166.1 233.8,164.1" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="102.4,136.1 99.0,132.8 100.5,138.1" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="120.1,188.4 116.7,188.7 118.2,190.4" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="59.2" y1="223.5" x2="63.8" y2="218.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="88.9,203.9 92.2,203.0 90.7,201.9" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="253.7,194.9 250.3,192.2 251.8,196.9" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="115.8,148.4 112.5,145.5 114.0,150.4" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
@@ -4655,6 +4771,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="253.4,201.7 256.7,204.6 255.2,199.7" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="115.5,155.2 118.9,157.9 117.4,153.2" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="280.3,146.2 277.0,147.1 278.5,148.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="305.4" y1="131.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="249.1,161.7 252.5,161.4 251.0,159.7" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="266.8,214.0 270.2,217.3 268.6,212.0" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="137.2,184.0 133.8,184.0 135.4,186.0" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
@@ -4684,6 +4801,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="169.9,177.2 166.6,176.5 168.1,179.2" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="118.9,157.9 122.2,160.5 120.7,155.9" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="187.0,177.2 190.4,178.4 188.9,175.2" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="86.8" y1="131.9" x2="91.4" y2="126.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="224.6,183.9 221.3,181.9 222.8,185.9" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="146.1,170.2 142.7,168.2 144.2,172.2" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="212.7,180.1 209.4,178.4 210.9,182.1" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -4823,6 +4941,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="140.9,170.2 137.5,168.0 139.0,172.1" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="271.7,222.7 275.1,226.2 273.5,220.7" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="168.1,179.2 171.4,180.0 169.9,177.2" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="273.2" y1="228.1" x2="277.8" y2="223.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="234.7,190.6 231.4,188.3 232.9,192.6" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="135.4,186.0 138.7,186.1 137.2,184.0" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="173.3,177.6 169.9,176.3 171.4,179.6" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -4858,6 +4977,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="247.3,163.7 250.6,163.3 249.1,161.7" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="265.0,215.9 268.3,219.2 266.8,214.0" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="135.4,186.0 132.0,186.0 133.5,188.0" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
+<line x1="54.6" y1="228.4" x2="59.2" y2="223.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="147.6,174.1 151.0,175.9 149.4,172.1" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="86.8,131.9 90.1,135.4 88.6,129.9" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
 <polygon points="62.6,222.1 65.9,220.9 64.4,220.1" fill="rgb(83,54,17)" stroke="rgb(83,54,17)" stroke-width="0.5"/>
@@ -5150,6 +5270,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="297.4,137.9 294.1,139.1 295.6,139.9" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="273.2,228.1 269.9,224.6 271.4,230.1" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="212.4,185.9 209.0,184.1 210.6,187.9" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="300.8" y1="136.5" x2="305.4" y2="131.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="224.6,174.0 228.0,174.0 226.5,172.0" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="95.0,144.1 91.7,140.8 93.2,146.0" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="112.7,196.3 109.4,196.7 110.9,198.3" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
@@ -5185,6 +5306,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="186.7,182.4 190.1,183.7 188.6,180.4" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="224.6,174.0 221.3,173.9 222.8,176.0" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="125.3,169.4 128.6,171.7 127.1,167.4" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="82.2" y1="136.8" x2="86.8" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.9,180.8 188.6,180.0 190.1,182.8" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="88.3,137.3 84.9,133.8 86.5,139.3" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="219.1,189.8 222.5,192.0 221.0,187.9" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -5324,6 +5446,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="147.3,179.9 150.6,181.6 149.1,177.9" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="213.9,189.8 217.3,191.8 215.8,187.8" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="135.4,176.1 138.7,178.1 137.2,174.1" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="268.6" y1="233.1" x2="273.2" y2="228.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="173.0,182.8 169.6,181.6 171.1,184.8" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="241.1,202.1 237.8,199.5 239.3,204.1" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="190.1,182.8 193.4,183.5 191.9,180.8" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -5353,6 +5476,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="222.8,176.0 226.2,176.0 224.6,174.0" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="93.2,146.0 89.8,142.7 91.4,148.0" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="110.9,198.3 107.5,198.6 109.0,200.3" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="54.6" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="79.7,213.8 83.0,212.9 81.5,211.8" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="244.5,204.8 241.1,202.1 242.6,206.8" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="106.6,158.3 103.3,155.4 104.8,160.3" fill="rgb(85,116,162)" stroke="rgb(85,116,162)" stroke-width="0.5"/>
@@ -5655,6 +5779,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="244.2,211.6 247.5,214.5 246.0,209.6" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="106.3,165.1 109.7,167.8 108.2,163.1" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="271.1,156.1 267.8,157.0 269.3,158.1" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="296.2" y1="141.5" x2="300.8" y2="136.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="239.9,171.6 243.3,171.3 241.8,169.6" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="257.6,223.9 261.0,227.2 259.5,221.9" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="128.0,193.9 124.6,193.9 126.2,195.9" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
@@ -5684,6 +5809,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="160.7,187.1 157.4,186.4 158.9,189.1" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="109.7,167.8 113.0,170.4 111.5,165.8" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="177.8,187.1 181.2,188.3 179.7,185.1" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="77.6" y1="141.8" x2="82.2" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.4,193.8 212.1,191.8 213.6,195.8" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="136.9,180.1 133.5,178.1 135.0,182.1" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="203.5,190.0 200.2,188.3 201.7,192.0" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -5695,6 +5821,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="148.8,183.6 145.4,181.9 147.0,185.6" fill="rgb(72,100,140)" stroke="rgb(72,100,140)" stroke-width="0.5"/>
 <polygon points="152.2,185.2 155.5,186.8 154.0,183.2" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
 <polygon points="122.8,195.9 119.4,195.9 121.0,197.8" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="230.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.8,187.0 181.2,187.9 179.7,185.0" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="141.8,190.7 145.1,191.1 143.6,188.7" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
 <polygon points="60.4,226.8 63.8,225.7 62.2,224.8" fill="rgb(86,57,17)" stroke="rgb(86,57,17)" stroke-width="0.5"/>
@@ -5736,6 +5863,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="286.7,147.0 290.1,145.8 288.6,145.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="136.6,192.3 139.9,192.7 138.4,190.3" fill="rgb(143,93,28)" stroke="rgb(143,93,28)" stroke-width="0.5"/>
 <polygon points="224.3,178.0 221.0,178.0 222.5,180.0" fill="rgb(62,86,120)" stroke="rgb(62,86,120)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="58.4" y2="236.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.8,187.1 174.5,185.9 176.0,189.1" fill="rgb(162,106,31)" stroke="rgb(162,106,31)" stroke-width="0.5"/>
 <polygon points="186.4,187.7 183.0,186.3 184.6,189.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="140.2,182.0 136.9,180.1 138.4,184.0" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
@@ -5822,6 +5950,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="131.7,180.0 128.3,177.9 129.8,182.0" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="262.5,232.6 265.9,236.1 264.3,230.6" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="158.9,189.1 162.2,189.9 160.7,187.1" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="264.0" y1="238.0" x2="268.6" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="225.5,200.5 222.2,198.2 223.7,202.5" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="126.2,195.9 129.5,196.0 128.0,193.9" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="164.1,187.5 160.7,186.2 162.2,189.5" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -5854,6 +5983,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="104.5,167.1 107.8,169.8 106.3,165.1" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="269.3,158.1 265.9,159.0 267.4,160.1" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="238.1,173.6 241.4,173.2 239.9,171.6" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
+<line x1="50.0" y1="230.3" x2="50.0" y2="227.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="255.8,225.8 259.1,229.1 257.6,223.9" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="126.2,195.9 122.8,195.9 124.3,197.9" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
 <polygon points="138.4,184.0 141.8,185.8 140.2,182.0" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
@@ -6010,10 +6140,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="92.6,160.3 95.9,163.3 94.4,158.3" fill="rgb(86,118,166)" stroke="rgb(86,118,166)" stroke-width="0.5"/>
 <polygon points="85.8,154.0 89.2,157.2 87.7,152.0" fill="rgb(89,122,171)" stroke="rgb(89,122,171)" stroke-width="0.5"/>
 <polygon points="233.8,210.0 237.1,212.7 235.6,208.0" fill="rgb(151,99,30)" stroke="rgb(151,99,30)" stroke-width="0.5"/>
+<line x1="58.4" y1="236.1" x2="66.8" y2="238.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.5,196.0 126.2,195.9 127.7,198.0" fill="rgb(137,90,27)" stroke="rgb(137,90,27)" stroke-width="0.5"/>
 <polygon points="111.2,172.4 107.8,169.8 109.4,174.4" fill="rgb(81,111,156)" stroke="rgb(81,111,156)" stroke-width="0.5"/>
 <polygon points="208.4,195.7 205.0,193.8 206.6,197.7" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="212.1,183.8 208.7,183.5 210.2,185.7" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
+<line x1="50.0" y1="227.2" x2="50.0" y2="224.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="95.9,163.3 99.3,166.2 97.8,161.3" fill="rgb(85,117,163)" stroke="rgb(85,117,163)" stroke-width="0.5"/>
 <polygon points="121.3,179.7 124.6,181.9 123.1,177.7" fill="rgb(77,106,149)" stroke="rgb(77,106,149)" stroke-width="0.5"/>
 <polygon points="82.5,150.7 85.8,154.0 84.3,148.7" fill="rgb(90,123,173)" stroke="rgb(90,123,173)" stroke-width="0.5"/>
@@ -6144,6 +6276,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="288.2,147.8 284.9,149.0 286.4,149.8" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="264.0,238.0 260.7,234.5 262.2,240.0" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="203.2,195.8 199.8,194.0 201.4,197.8" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="291.6" y1="146.4" x2="296.2" y2="141.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.4,183.9 218.8,183.9 217.3,181.9" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="85.8,154.0 82.5,150.7 84.0,155.9" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="103.5,206.2 100.2,206.6 101.7,208.2" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
@@ -6179,12 +6312,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="177.5,192.3 180.9,193.6 179.4,190.3" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="215.4,183.9 212.1,183.8 213.6,185.9" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="116.1,179.3 119.4,181.6 117.9,177.3" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="73.0" y1="146.7" x2="77.6" y2="141.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.7,190.7 179.4,189.9 180.9,192.7" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="79.1,147.2 75.8,143.7 77.3,149.2" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="209.9,199.7 213.3,201.9 211.8,197.8" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
 <polygon points="257.3,231.1 253.9,227.8 255.5,233.1" fill="rgb(131,86,25)" stroke="rgb(131,86,25)" stroke-width="0.5"/>
 <polygon points="218.5,202.1 215.1,199.9 216.6,204.1" fill="rgb(161,106,32)" stroke="rgb(161,106,32)" stroke-width="0.5"/>
 <polygon points="243.9,218.5 240.5,215.6 242.0,220.4" fill="rgb(145,95,28)" stroke="rgb(145,95,28)" stroke-width="0.5"/>
+<line x1="50.0" y1="224.1" x2="50.0" y2="221.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="127.7,198.0 131.0,198.3 129.5,196.0" fill="rgb(140,92,27)" stroke="rgb(140,92,27)" stroke-width="0.5"/>
 <polygon points="131.4,186.0 134.7,188.0 133.2,184.1" fill="rgb(75,102,143)" stroke="rgb(75,102,143)" stroke-width="0.5"/>
 <polygon points="293.4,144.5 290.1,145.8 291.6,146.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -6287,6 +6422,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="117.3,201.8 113.9,201.8 115.4,203.8" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="172.3,192.9 175.7,193.8 174.2,190.9" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="136.2,196.6 139.6,197.1 138.1,194.6" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
+<line x1="66.8" y1="238.8" x2="75.2" y2="241.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="276.0,156.1 272.6,157.2 274.2,158.1" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="224.0,181.9 227.4,181.8 225.8,179.9" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="112.1,203.8 115.4,203.8 113.9,201.8" fill="rgb(129,85,25)" stroke="rgb(129,85,25)" stroke-width="0.5"/>
@@ -6312,6 +6448,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="138.1,189.8 141.4,191.5 139.9,187.8" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="204.7,199.7 208.1,201.7 206.6,197.7" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="126.2,186.0 129.5,188.0 128.0,184.0" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="259.4" y1="243.0" x2="264.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.8,192.7 160.4,191.5 161.9,194.7" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="231.9,212.0 228.6,209.4 230.1,214.0" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="180.9,192.7 184.2,193.4 182.7,190.7" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -6338,6 +6475,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="286.4,149.8 283.0,151.0 284.6,151.7" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="262.2,240.0 258.8,236.5 260.3,242.0" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="201.4,197.8 198.0,196.0 199.5,199.8" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="50.0" y1="221.0" x2="50.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="213.6,185.9 217.0,185.9 215.4,183.9" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="84.0,155.9 80.6,152.6 82.2,157.9" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="101.7,208.2 98.3,208.5 99.8,210.2" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
@@ -6492,6 +6630,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="222.2,183.9 218.8,183.9 220.3,185.9" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="110.2,205.8 106.9,206.0 108.4,207.8" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="279.4,155.0 276.0,156.1 277.5,156.9" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
+<line x1="50.0" y1="217.9" x2="50.0" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="198.0,191.1 194.6,190.7 196.2,193.1" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="161.9,194.8 158.6,193.9 160.1,196.8" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="217.0,185.9 220.3,185.9 218.8,183.9" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
@@ -6540,6 +6679,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="221.5,210.8 224.9,213.3 223.4,208.8" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="73.8,222.8 70.5,223.7 72.0,224.8" fill="rgb(99,65,20)" stroke="rgb(99,65,20)" stroke-width="0.5"/>
 <polygon points="182.4,197.0 185.8,198.5 184.2,195.0" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
+<line x1="75.2" y1="241.5" x2="83.6" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.7,195.5 160.1,196.7 158.6,193.5" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="144.8,193.1 141.4,191.5 143.0,195.1" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
 <polygon points="78.8,154.6 75.4,151.2 77.0,156.6" fill="rgb(90,125,175)" stroke="rgb(90,125,175)" stroke-width="0.5"/>
@@ -6633,6 +6773,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="235.0,221.5 238.3,224.4 236.8,219.5" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="97.1,175.0 100.5,177.7 99.0,173.0" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="261.9,166.0 258.6,166.9 260.1,168.0" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="287.0" y1="151.4" x2="291.6" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="230.7,181.5 234.1,181.2 232.6,179.5" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="248.4,233.8 251.8,237.1 250.3,231.8" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="118.8,203.8 115.4,203.8 117.0,205.8" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
@@ -6660,6 +6801,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="151.5,197.0 148.2,196.3 149.7,199.0" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="100.5,177.7 103.8,180.3 102.3,175.7" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="168.6,197.0 172.0,198.2 170.5,195.0" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="68.4" y1="151.7" x2="73.0" y2="146.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.2,203.7 202.9,201.7 204.4,205.7" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="127.7,190.0 124.3,188.0 125.8,192.0" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="194.3,199.9 191.0,198.2 192.5,201.9" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -6670,6 +6812,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="225.5,183.7 222.2,183.9 223.7,185.7" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="139.6,193.5 136.2,191.8 137.8,195.5" fill="rgb(72,100,140)" stroke="rgb(72,100,140)" stroke-width="0.5"/>
 <polygon points="143.0,195.1 146.3,196.7 144.8,193.1" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
+<line x1="50.0" y1="214.8" x2="50.0" y2="211.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="113.6,205.8 110.2,205.8 111.8,207.7" fill="rgb(130,85,25)" stroke="rgb(130,85,25)" stroke-width="0.5"/>
 <polygon points="168.6,196.9 172.0,197.8 170.5,194.9" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="132.6,200.6 135.9,201.0 134.4,198.6" fill="rgb(146,96,29)" stroke="rgb(146,96,29)" stroke-width="0.5"/>
@@ -6792,6 +6935,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="122.5,189.9 119.1,187.8 120.6,191.9" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="253.3,242.5 256.7,246.0 255.1,240.5" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="149.7,199.0 153.0,199.8 151.5,197.0" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="254.8" y1="247.9" x2="259.4" y2="243.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.3,210.4 213.0,208.1 214.5,212.4" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="117.0,205.8 120.3,205.9 118.8,203.8" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="154.9,197.4 151.5,196.1 153.0,199.4" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -6807,6 +6951,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="239.3,178.7 242.6,178.2 241.1,176.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="180.6,199.0 177.2,197.6 178.7,201.0" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="207.8,207.8 211.1,210.0 209.6,205.8" fill="rgb(162,106,32)" stroke="rgb(162,106,32)" stroke-width="0.5"/>
+<line x1="83.6" y1="244.2" x2="92.0" y2="246.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="71.8,155.2 75.1,158.6 73.6,153.2" fill="rgb(91,126,175)" stroke="rgb(91,126,175)" stroke-width="0.5"/>
 <polygon points="249.7,173.6 253.0,172.8 251.5,171.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="239.3,178.7 235.9,179.2 237.4,180.7" fill="rgb(60,83,117)" stroke="rgb(60,83,117)" stroke-width="0.5"/>
@@ -6821,6 +6966,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="107.2,182.8 103.8,180.3 105.4,184.8" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
 <polygon points="234.1,181.2 230.7,181.5 232.2,183.1" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="233.1,223.5 236.5,226.4 235.0,221.5" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
+<line x1="50.0" y1="211.7" x2="50.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="95.3,177.0 98.6,179.7 97.1,175.0" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="260.1,168.0 256.7,168.9 258.2,170.0" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="228.9,183.5 232.2,183.1 230.7,181.5" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
@@ -6971,6 +7117,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="76.6,163.9 80.0,167.1 78.5,161.9" fill="rgb(89,122,171)" stroke="rgb(89,122,171)" stroke-width="0.5"/>
 <polygon points="224.6,219.9 227.9,222.6 226.4,217.9" fill="rgb(151,99,30)" stroke="rgb(151,99,30)" stroke-width="0.5"/>
 <polygon points="120.3,205.9 117.0,205.8 118.5,207.9" fill="rgb(137,90,27)" stroke="rgb(137,90,27)" stroke-width="0.5"/>
+<line x1="50.0" y1="208.6" x2="50.0" y2="205.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="102.0,182.3 98.6,179.7 100.2,184.3" fill="rgb(81,111,156)" stroke="rgb(81,111,156)" stroke-width="0.5"/>
 <polygon points="199.2,205.6 195.8,203.7 197.4,207.6" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="202.9,193.7 199.5,193.4 201.0,195.6" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
@@ -7059,6 +7206,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="100.2,184.3 103.5,186.8 102.0,182.3" fill="rgb(80,110,154)" stroke="rgb(80,110,154)" stroke-width="0.5"/>
 <polygon points="178.7,199.4 175.4,198.6 176.9,201.4" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
 <polygon points="268.6,164.0 272.0,162.9 270.5,162.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="92.0" y1="246.9" x2="100.4" y2="249.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.6,189.8 213.3,189.9 214.8,191.8" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="104.7,211.7 101.4,211.9 102.9,213.7" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
 <polygon points="273.8,160.9 270.5,162.0 272.0,162.9" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
@@ -7098,6 +7246,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="279.0,157.7 275.7,158.9 277.2,159.7" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="254.8,247.9 251.5,244.4 253.0,249.9" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="194.0,205.7 190.6,203.9 192.2,207.7" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="282.4" y1="156.3" x2="287.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.2,193.8 209.6,193.8 208.1,191.8" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="76.6,163.9 73.3,160.6 74.8,165.8" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="94.3,216.1 91.0,216.5 92.5,218.1" fill="rgb(119,78,23)" stroke="rgb(119,78,23)" stroke-width="0.5"/>
@@ -7129,9 +7278,11 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="168.3,202.2 171.7,203.5 170.2,200.2" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="206.2,193.8 202.9,193.7 204.4,195.8" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="106.9,189.2 110.2,191.5 108.7,187.2" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="63.8" y1="156.6" x2="68.4" y2="151.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="173.5,200.6 170.2,199.8 171.7,202.6" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="69.9,157.1 66.6,153.6 68.1,159.1" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="200.7,209.6 204.1,211.8 202.6,207.7" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
+<line x1="50.0" y1="205.5" x2="50.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="248.1,241.0 244.7,237.7 246.3,243.0" fill="rgb(131,86,25)" stroke="rgb(131,86,25)" stroke-width="0.5"/>
 <polygon points="209.3,212.0 205.9,209.8 207.5,214.0" fill="rgb(161,106,32)" stroke="rgb(161,106,32)" stroke-width="0.5"/>
 <polygon points="234.7,228.4 231.3,225.5 232.8,230.3" fill="rgb(145,95,28)" stroke="rgb(145,95,28)" stroke-width="0.5"/>
@@ -7260,6 +7411,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="128.9,199.7 132.2,201.4 130.7,197.7" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="195.5,209.6 198.9,211.6 197.4,207.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="117.0,195.9 120.3,197.9 118.8,193.9" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="250.2" y1="252.9" x2="254.8" y2="247.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.6,202.6 151.2,201.4 152.7,204.6" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="222.7,221.9 219.4,219.3 220.9,223.9" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="171.7,202.6 175.0,203.3 173.5,200.6" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -7281,6 +7433,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="78.2,169.1 74.8,165.8 76.3,171.0" fill="rgb(88,121,170)" stroke="rgb(88,121,170)" stroke-width="0.5"/>
 <polygon points="149.4,203.8 152.7,204.7 151.2,201.8" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="84.9,175.2 81.5,172.2 83.0,177.2" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
+<line x1="50.0" y1="202.4" x2="50.0" y2="199.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="277.2,159.7 273.8,160.9 275.4,161.6" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="253.0,249.9 249.6,246.4 251.1,251.9" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="192.2,207.7 188.8,205.9 190.3,209.7" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
@@ -7315,6 +7468,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="105.0,191.2 108.4,193.5 106.9,189.2" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
 <polygon points="171.7,202.6 168.3,201.8 169.8,204.6" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="68.1,159.1 64.7,155.6 66.2,161.1" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
+<line x1="100.4" y1="249.6" x2="108.8" y2="252.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="198.9,211.6 202.3,213.8 200.7,209.6" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
 <polygon points="246.3,243.0 242.9,239.7 244.4,245.0" fill="rgb(131,86,25)" stroke="rgb(131,86,25)" stroke-width="0.5"/>
 <polygon points="207.5,214.0 204.1,211.8 205.6,216.0" fill="rgb(161,106,32)" stroke="rgb(161,106,32)" stroke-width="0.5"/>
@@ -7431,6 +7585,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="265.0,168.0 268.3,166.8 266.8,166.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="213.0,193.8 209.6,193.8 211.1,195.8" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="101.0,215.7 97.7,215.9 99.2,217.7" fill="rgb(126,83,25)" stroke="rgb(126,83,25)" stroke-width="0.5"/>
+<line x1="50.0" y1="199.3" x2="50.0" y2="196.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="270.2,164.9 266.8,166.0 268.3,166.8" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="188.8,201.0 185.4,200.6 187.0,203.0" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="152.7,204.7 149.4,203.8 150.9,206.7" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
@@ -7563,11 +7718,13 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="225.8,231.4 229.1,234.3 227.6,229.4" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="87.9,184.9 91.3,187.6 89.8,182.9" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="252.7,175.9 249.4,176.8 250.9,177.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="277.8" y1="161.3" x2="282.4" y2="156.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="221.5,191.4 224.9,191.1 223.4,189.4" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="239.2,243.7 242.6,247.0 241.1,241.7" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="109.6,213.7 106.2,213.7 107.8,215.7" fill="rgb(134,88,27)" stroke="rgb(134,88,27)" stroke-width="0.5"/>
 <polygon points="121.8,201.8 125.2,203.6 123.7,199.8" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
 <polygon points="61.0,159.6 64.4,163.1 62.9,157.6" fill="rgb(93,127,179)" stroke="rgb(93,127,179)" stroke-width="0.5"/>
+<line x1="108.8" y1="252.3" x2="117.2" y2="255.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="229.1,234.3 232.5,237.3 231.0,232.3" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
 <polygon points="164.6,205.7 161.3,204.8 162.8,207.7" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="235.9,240.4 239.2,243.7 237.7,238.5" fill="rgb(136,89,26)" stroke="rgb(136,89,26)" stroke-width="0.5"/>
@@ -7590,10 +7747,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="142.3,206.9 139.0,206.2 140.5,208.9" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="91.3,187.6 94.6,190.2 93.1,185.6" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="159.4,206.9 162.8,208.1 161.3,204.9" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="59.2" y1="161.6" x2="63.8" y2="156.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.1,213.6 193.7,211.6 195.2,215.6" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="118.5,199.9 115.1,197.9 116.6,201.9" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="185.1,209.8 181.8,208.1 183.3,211.8" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="203.8,218.0 207.1,220.3 205.6,216.0" fill="rgb(161,105,32)" stroke="rgb(161,105,32)" stroke-width="0.5"/>
+<line x1="50.0" y1="196.2" x2="50.0" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="187.0,203.0 190.3,203.3 188.8,201.0" fill="rgb(63,86,122)" stroke="rgb(63,86,122)" stroke-width="0.5"/>
 <polygon points="257.9,173.0 261.3,171.9 259.8,171.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="103.2,193.2 99.8,190.8 101.4,195.2" fill="rgb(79,108,152)" stroke="rgb(79,108,152)" stroke-width="0.5"/>
@@ -7712,6 +7871,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="113.3,199.8 109.9,197.7 111.4,201.8" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="244.1,252.4 247.5,255.9 245.9,250.4" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="140.5,208.9 143.8,209.7 142.3,206.9" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="245.6" y1="257.8" x2="250.2" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.1,220.3 203.8,218.0 205.3,222.3" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="107.8,215.7 111.1,215.8 109.6,213.7" fill="rgb(136,89,27)" stroke="rgb(136,89,27)" stroke-width="0.5"/>
 <polygon points="145.7,207.3 142.3,206.0 143.8,209.3" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -7740,6 +7900,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="245.7,180.7 249.1,179.9 247.5,178.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="98.0,192.7 94.6,190.2 96.2,194.7" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
 <polygon points="224.9,191.1 221.5,191.4 223.1,193.0" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
+<line x1="50.0" y1="193.1" x2="50.0" y2="190.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.9,233.4 227.3,236.3 225.8,231.4" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="86.1,186.9 89.4,189.6 87.9,184.9" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="250.9,177.9 247.5,178.7 249.1,179.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -7807,6 +7968,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="190.0,215.5 193.4,217.6 191.9,213.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="111.4,201.8 114.8,203.9 113.3,199.8" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
 <polygon points="149.0,208.6 145.7,207.3 147.2,210.5" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
+<line x1="117.2" y1="255.0" x2="125.6" y2="257.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.2,227.8 213.9,225.2 215.4,229.8" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="166.2,208.5 169.5,209.3 168.0,206.6" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
 <polygon points="198.6,217.7 195.2,215.6 196.7,219.7" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
@@ -7880,6 +8042,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="74.2,180.1 77.5,183.1 76.0,178.1" fill="rgb(86,118,166)" stroke="rgb(86,118,166)" stroke-width="0.5"/>
 <polygon points="67.4,173.8 70.8,177.0 69.3,171.8" fill="rgb(89,122,171)" stroke="rgb(89,122,171)" stroke-width="0.5"/>
 <polygon points="215.4,229.8 218.7,232.5 217.2,227.8" fill="rgb(151,99,30)" stroke="rgb(151,99,30)" stroke-width="0.5"/>
+<line x1="50.0" y1="190.0" x2="50.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="111.1,215.8 107.8,215.7 109.3,217.8" fill="rgb(137,90,27)" stroke="rgb(137,90,27)" stroke-width="0.5"/>
 <polygon points="92.8,192.2 89.4,189.6 91.0,194.2" fill="rgb(81,111,156)" stroke="rgb(81,111,156)" stroke-width="0.5"/>
 <polygon points="190.0,215.5 186.7,213.6 188.2,217.5" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
@@ -8006,6 +8169,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="269.9,167.6 266.5,168.8 268.0,169.6" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="245.6,257.8 242.3,254.3 243.8,259.8" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="184.8,215.6 181.5,213.8 183.0,217.6" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="273.2" y1="166.2" x2="277.8" y2="161.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.1,203.7 200.4,203.7 198.9,201.7" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="67.4,173.8 64.1,170.5 65.6,175.7" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
 <polygon points="218.7,232.5 215.4,229.8 216.9,234.5" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
@@ -8029,6 +8193,8 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="159.1,212.1 162.5,213.4 161.0,210.1" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="197.1,203.7 193.7,203.6 195.2,205.7" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="97.7,199.1 101.0,201.4 99.5,197.1" fill="rgb(78,107,150)" stroke="rgb(78,107,150)" stroke-width="0.5"/>
+<line x1="54.6" y1="166.5" x2="59.2" y2="161.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="186.9" x2="50.0" y2="183.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.3,210.5 161.0,209.7 162.5,212.5" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="60.7,167.0 57.4,163.5 58.9,169.0" fill="rgb(92,126,178)" stroke="rgb(92,126,178)" stroke-width="0.5"/>
 <polygon points="191.5,219.5 194.9,221.7 193.4,217.6" fill="rgb(164,108,33)" stroke="rgb(164,108,33)" stroke-width="0.5"/>
@@ -8048,6 +8214,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="172.9,209.9 176.3,210.5 174.7,207.9" fill="rgb(64,88,124)" stroke="rgb(64,88,124)" stroke-width="0.5"/>
 <polygon points="142.0,211.7 138.6,210.9 140.2,213.7" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="124.9,209.3 128.2,211.0 126.7,207.4" fill="rgb(72,98,138)" stroke="rgb(72,98,138)" stroke-width="0.5"/>
+<line x1="125.6" y1="257.7" x2="134.0" y2="260.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.3,214.0 172.9,212.4 174.4,216.0" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="159.1,211.7 162.5,212.5 161.0,209.7" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
 <polygon points="128.2,213.4 124.9,212.9 126.4,215.4" fill="rgb(149,98,29)" stroke="rgb(149,98,29)" stroke-width="0.5"/>
@@ -8158,6 +8325,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="119.7,209.6 123.0,211.3 121.5,207.6" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="186.3,219.5 189.7,221.5 188.2,217.5" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="107.8,205.8 111.1,207.8 109.6,203.8" fill="rgb(75,103,145)" stroke="rgb(75,103,145)" stroke-width="0.5"/>
+<line x1="241.0" y1="262.8" x2="245.6" y2="257.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.4,212.5 142.0,211.3 143.5,214.5" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="213.5,231.8 210.2,229.2 211.7,233.8" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="162.5,212.5 165.9,213.2 164.3,210.5" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -8176,6 +8344,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="131.6,214.1 128.2,213.4 129.8,216.1" fill="rgb(152,100,30)" stroke="rgb(152,100,30)" stroke-width="0.5"/>
 <polygon points="69.0,179.0 65.6,175.7 67.1,180.9" fill="rgb(88,121,170)" stroke="rgb(88,121,170)" stroke-width="0.5"/>
 <polygon points="140.2,213.7 143.5,214.6 142.0,211.7" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
+<line x1="50.0" y1="183.8" x2="50.0" y2="180.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="75.7,185.1 72.3,182.1 73.8,187.1" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
 <polygon points="268.0,169.6 264.7,170.8 266.2,171.5" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="243.8,259.8 240.4,256.3 241.9,261.8" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
@@ -8298,6 +8467,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="135.0,214.8 131.6,214.1 133.1,216.8" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="83.9,195.5 87.3,198.1 85.8,193.5" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="152.1,214.8 155.5,216.0 153.9,212.8" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="134.0" y1="260.5" x2="142.4" y2="263.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="189.7,221.5 186.3,219.5 187.9,223.5" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
 <polygon points="111.1,207.8 107.8,205.8 109.3,209.8" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="177.8,217.7 174.4,216.0 175.9,219.7" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
@@ -8318,6 +8488,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="165.9,213.2 162.5,212.5 164.0,215.2" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
 <polygon points="255.8,177.9 259.1,176.7 257.6,175.9" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="203.8,203.7 200.4,203.7 201.9,205.7" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
+<line x1="50.0" y1="180.7" x2="50.0" y2="177.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="261.0,174.8 257.6,175.9 259.1,176.7" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="179.6,210.9 176.3,210.5 177.8,212.9" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="143.5,214.6 140.2,213.7 141.7,216.6" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
@@ -8443,6 +8614,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="216.6,241.3 219.9,244.2 218.4,239.3" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="78.7,194.8 82.1,197.5 80.6,192.8" fill="rgb(82,113,159)" stroke="rgb(82,113,159)" stroke-width="0.5"/>
 <polygon points="243.5,185.8 240.2,186.7 241.7,187.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="268.6" y1="171.2" x2="273.2" y2="166.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.3,201.3 215.7,200.9 214.2,199.3" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="230.0,253.6 233.4,256.9 231.9,251.6" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="112.6,211.7 116.0,213.5 114.5,209.7" fill="rgb(73,101,141)" stroke="rgb(73,101,141)" stroke-width="0.5"/>
@@ -8468,7 +8640,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="133.1,216.8 129.8,216.1 131.3,218.8" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="82.1,197.5 85.4,200.1 83.9,195.5" fill="rgb(81,111,157)" stroke="rgb(81,111,157)" stroke-width="0.5"/>
 <polygon points="150.3,216.8 153.6,218.0 152.1,214.8" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="54.6" y2="166.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="187.9,223.5 184.5,221.5 186.0,225.5" fill="rgb(164,107,32)" stroke="rgb(164,107,32)" stroke-width="0.5"/>
+<line x1="50.0" y1="177.6" x2="50.0" y2="174.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="109.3,209.8 105.9,207.8 107.4,211.8" fill="rgb(75,103,144)" stroke="rgb(75,103,144)" stroke-width="0.5"/>
 <polygon points="175.9,219.7 172.6,218.0 174.1,221.7" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="194.6,227.9 197.9,230.2 196.4,225.9" fill="rgb(161,105,32)" stroke="rgb(161,105,32)" stroke-width="0.5"/>
@@ -8521,6 +8695,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="72.0,189.0 68.6,186.0 70.2,191.0" fill="rgb(86,117,165)" stroke="rgb(86,117,165)" stroke-width="0.5"/>
 <polygon points="264.3,173.5 261.0,174.8 262.5,175.5" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="240.1,263.8 236.7,260.3 238.3,265.8" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
+<line x1="142.4" y1="263.2" x2="150.8" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="179.3,221.5 175.9,219.7 177.5,223.5" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
 <polygon points="191.5,209.6 194.9,209.7 193.4,207.7" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="61.9,179.7 58.6,176.4 60.1,181.7" fill="rgb(90,122,172)" stroke="rgb(90,122,172)" stroke-width="0.5"/>
@@ -8581,6 +8756,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="104.1,209.7 100.7,207.6 102.2,211.7" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="234.9,262.3 238.3,265.8 236.7,260.3" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
 <polygon points="131.3,218.8 134.7,219.6 133.1,216.8" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
+<line x1="236.4" y1="267.7" x2="241.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.9,230.2 194.6,227.9 196.1,232.2" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="136.5,217.2 133.1,215.9 134.7,219.2" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
 <polygon points="117.5,220.8 120.9,221.4 119.4,218.8" fill="rgb(149,98,29)" stroke="rgb(149,98,29)" stroke-width="0.5"/>
@@ -8604,6 +8780,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="231.5,258.8 234.9,262.3 233.4,256.9" fill="rgb(128,84,25)" stroke="rgb(128,84,25)" stroke-width="0.5"/>
 <polygon points="165.5,220.3 168.9,221.9 167.4,218.3" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="153.6,218.0 150.3,216.8 151.8,220.0" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="50.0" y1="174.5" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="127.9,216.5 124.6,214.9 126.1,218.4" fill="rgb(71,98,136)" stroke="rgb(71,98,136)" stroke-width="0.5"/>
 <polygon points="236.5,190.6 239.9,189.8 238.3,188.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="88.8,202.6 85.4,200.1 87.0,204.6" fill="rgb(80,109,154)" stroke="rgb(80,109,154)" stroke-width="0.5"/>
@@ -8731,6 +8908,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="93.7,209.4 97.0,211.6 95.5,207.4" fill="rgb(77,106,149)" stroke="rgb(77,106,149)" stroke-width="0.5"/>
 <polygon points="102.2,211.7 98.9,209.6 100.4,213.7" fill="rgb(76,104,147)" stroke="rgb(76,104,147)" stroke-width="0.5"/>
 <polygon points="233.1,264.2 236.4,267.7 234.9,262.3" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
+<line x1="150.8" y1="265.9" x2="159.2" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.5,220.8 132.8,221.6 131.3,218.8" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="196.1,232.2 192.7,229.8 194.3,234.1" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="134.7,219.2 131.3,217.9 132.8,221.2" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
@@ -8772,6 +8950,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="175.6,225.5 179.0,227.4 177.5,223.5" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="129.5,219.9 132.8,221.2 131.3,217.9" fill="rgb(69,95,133)" stroke="rgb(69,95,133)" stroke-width="0.5"/>
 <polygon points="138.0,220.4 141.4,221.6 139.9,218.5" fill="rgb(68,94,131)" stroke="rgb(68,94,131)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="58.4" y2="174.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="179.3,215.2 175.9,214.9 177.5,217.2" fill="rgb(63,87,122)" stroke="rgb(63,87,122)" stroke-width="0.5"/>
 <polygon points="199.5,234.6 196.1,232.2 197.6,236.6" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="245.1,186.9 241.7,187.8 243.2,188.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -8826,6 +9005,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="260.7,177.5 257.3,178.7 258.8,179.5" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="236.4,267.7 233.1,264.2 234.6,269.7" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="175.6,225.5 172.3,223.7 173.8,227.5" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="264.0" y1="176.1" x2="268.6" y2="171.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="187.9,213.6 191.2,213.6 189.7,211.6" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="209.5,242.4 206.2,239.7 207.7,244.4" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="197.6,236.6 201.0,239.1 199.5,234.6" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
@@ -8925,6 +9105,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="144.7,222.6 148.1,223.5 146.6,220.6" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="248.4,185.8 245.1,186.9 246.6,187.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="196.4,211.6 199.8,211.5 198.3,209.6" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
+<line x1="159.2" y1="268.6" x2="167.6" y2="271.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="122.4,224.0 125.8,224.7 124.3,222.0" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="201.0,239.1 197.6,236.6 199.1,241.1" fill="rgb(156,102,31)" stroke="rgb(156,102,31)" stroke-width="0.5"/>
 <polygon points="158.5,221.2 155.1,220.4 156.7,223.1" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
@@ -8939,12 +9120,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="192.4,236.1 195.8,238.5 194.3,234.1" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="110.5,219.5 113.9,221.2 112.3,217.5" fill="rgb(73,100,140)" stroke="rgb(73,100,140)" stroke-width="0.5"/>
 <polygon points="177.1,229.4 180.5,231.4 179.0,227.4" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="231.8" y1="272.7" x2="236.4" y2="267.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="136.2,222.4 132.8,221.2 134.3,224.4" fill="rgb(69,94,132)" stroke="rgb(69,94,132)" stroke-width="0.5"/>
 <polygon points="204.3,241.7 201.0,239.1 202.5,243.7" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="153.3,222.4 156.7,223.1 155.1,220.4" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
 <polygon points="185.7,231.6 182.3,229.4 183.9,233.6" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
 <polygon points="127.6,221.8 124.3,220.4 125.8,223.8" fill="rgb(70,96,135)" stroke="rgb(70,96,135)" stroke-width="0.5"/>
 <polygon points="167.1,220.4 170.4,220.8 168.9,218.4" fill="rgb(63,88,123)" stroke="rgb(63,88,123)" stroke-width="0.5"/>
+<line x1="58.4" y1="174.2" x2="66.8" y2="176.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="253.6,182.7 257.0,181.4 255.5,180.7" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="191.2,213.6 187.9,213.6 189.4,215.6" fill="rgb(62,86,120)" stroke="rgb(62,86,120)" stroke-width="0.5"/>
 <polygon points="144.7,222.7 141.4,221.6 142.9,224.7" fill="rgb(162,106,31)" stroke="rgb(162,106,31)" stroke-width="0.5"/>
@@ -9084,6 +9267,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="229.4,268.2 226.0,264.8 227.5,270.2" fill="rgb(127,83,25)" stroke="rgb(127,83,25)" stroke-width="0.5"/>
 <polygon points="120.6,224.4 123.9,225.8 122.4,222.4" fill="rgb(70,96,135)" stroke="rgb(70,96,135)" stroke-width="0.5"/>
 <polygon points="137.7,225.5 141.1,226.7 139.5,223.6" fill="rgb(162,106,31)" stroke="rgb(162,106,31)" stroke-width="0.5"/>
+<line x1="167.6" y1="271.3" x2="176.0" y2="274.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.2,249.2 205.9,246.4 207.4,251.2" fill="rgb(148,98,29)" stroke="rgb(148,98,29)" stroke-width="0.5"/>
 <polygon points="137.7,225.5 141.1,226.6 139.5,223.6" fill="rgb(67,93,130)" stroke="rgb(67,93,130)" stroke-width="0.5"/>
 <polygon points="257.0,181.4 260.3,180.1 258.8,179.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9106,6 +9290,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="129.1,225.5 125.8,224.7 127.3,227.5" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="163.4,227.9 160.0,226.3 161.5,229.9" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="146.3,225.5 149.6,226.4 148.1,223.5" fill="rgb(66,91,127)" stroke="rgb(66,91,127)" stroke-width="0.5"/>
+<line x1="66.8" y1="176.9" x2="75.2" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.7,245.7 204.0,248.4 202.5,243.7" fill="rgb(151,99,30)" stroke="rgb(151,99,30)" stroke-width="0.5"/>
 <polygon points="175.3,231.4 171.9,229.5 173.5,233.4" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="179.0,219.4 175.6,219.2 177.1,221.4" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
@@ -9135,6 +9320,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="208.3,208.9 205.0,209.2 206.5,210.8" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="207.4,251.2 210.7,254.1 209.2,249.2" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="234.3,195.7 231.0,196.6 232.5,197.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="259.4" y1="181.1" x2="264.0" y2="176.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.1,211.2 206.5,210.8 205.0,209.2" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="220.8,263.5 224.2,266.8 222.7,261.5" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="210.7,254.1 214.1,257.1 212.6,252.1" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
@@ -9221,6 +9407,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="173.5,233.4 170.1,231.4 171.6,235.3" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="177.1,221.4 173.8,221.1 175.3,223.4" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
 <polygon points="225.7,272.2 229.1,275.7 227.5,270.2" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
+<line x1="227.2" y1="277.6" x2="231.8" y2="272.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.7,240.1 185.4,237.8 186.9,242.1" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="135.9,227.5 132.5,226.5 134.0,229.5" fill="rgb(160,105,31)" stroke="rgb(160,105,31)" stroke-width="0.5"/>
 <polygon points="216.9,205.9 220.3,205.2 218.7,203.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9240,6 +9427,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="222.3,268.7 225.7,272.2 224.2,266.8" fill="rgb(128,84,25)" stroke="rgb(128,84,25)" stroke-width="0.5"/>
 <polygon points="156.3,230.2 159.7,231.8 158.2,228.2" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="144.4,227.9 141.1,226.7 142.6,229.9" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
+<line x1="176.0" y1="274.0" x2="184.4" y2="276.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="227.3,200.5 230.7,199.7 229.1,198.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="206.5,210.8 203.1,211.2 204.7,212.8" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="205.5,253.2 208.9,256.1 207.4,251.2" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
@@ -9268,6 +9456,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="166.7,224.8 170.1,225.1 168.6,222.8" fill="rgb(63,86,122)" stroke="rgb(63,86,122)" stroke-width="0.5"/>
 <polygon points="237.7,194.8 241.1,193.7 239.5,192.8" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="196.1,215.4 192.7,215.6 194.3,217.4" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
+<line x1="75.2" y1="179.6" x2="83.6" y2="182.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="139.2,228.6 142.6,229.5 141.1,226.6" fill="rgb(67,92,128)" stroke="rgb(67,92,128)" stroke-width="0.5"/>
 <polygon points="242.9,191.7 239.5,192.8 241.1,193.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="190.9,217.5 194.3,217.4 192.7,215.6" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
@@ -9378,6 +9567,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="246.3,190.6 242.9,191.7 244.4,192.6" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="164.9,226.7 161.5,226.3 163.1,228.7" fill="rgb(64,88,123)" stroke="rgb(64,88,123)" stroke-width="0.5"/>
 <polygon points="183.9,221.6 187.2,221.5 185.7,219.6" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
+<line x1="184.4" y1="276.7" x2="192.8" y2="279.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.5,232.2 151.1,230.7 152.7,234.2" fill="rgb(165,109,33)" stroke="rgb(165,109,33)" stroke-width="0.5"/>
 <polygon points="157.9,233.8 161.2,235.6 159.7,231.8" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="185.1,244.0 188.4,246.5 186.9,242.1" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
@@ -9392,10 +9582,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="251.5,187.4 248.1,188.6 249.6,189.4" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="227.2,277.6 223.9,274.1 225.4,279.6" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
 <polygon points="166.4,235.4 163.1,233.6 164.6,237.4" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="254.8" y1="186.0" x2="259.4" y2="181.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="178.7,223.5 182.0,223.5 180.5,221.5" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="200.3,252.3 197.0,249.6 198.5,254.3" fill="rgb(150,99,30)" stroke="rgb(150,99,30)" stroke-width="0.5"/>
 <polygon points="188.4,246.5 191.8,249.0 190.3,244.5" fill="rgb(157,103,31)" stroke="rgb(157,103,31)" stroke-width="0.5"/>
 <polygon points="149.3,232.6 152.7,234.2 151.1,230.7" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
+<line x1="83.6" y1="182.3" x2="92.0" y2="185.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.9,274.1 220.5,270.7 222.0,276.1" fill="rgb(127,83,25)" stroke="rgb(127,83,25)" stroke-width="0.5"/>
 <polygon points="203.7,255.2 200.3,252.3 201.9,257.1" fill="rgb(148,98,29)" stroke="rgb(148,98,29)" stroke-width="0.5"/>
 <polygon points="251.5,187.4 254.8,186.0 253.3,185.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9474,6 +9666,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="156.0,235.8 159.4,237.5 157.9,233.8" fill="rgb(166,109,33)" stroke="rgb(166,109,33)" stroke-width="0.5"/>
 <polygon points="183.2,246.0 186.6,248.4 185.1,244.0" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="167.9,239.3 171.3,241.3 169.8,237.3" fill="rgb(165,108,32)" stroke="rgb(165,108,32)" stroke-width="0.5"/>
+<line x1="222.6" y1="282.6" x2="227.2" y2="277.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.1,251.6 191.8,249.0 193.3,253.6" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="144.1,232.3 147.5,233.0 145.9,230.3" fill="rgb(65,90,126)" stroke="rgb(65,90,126)" stroke-width="0.5"/>
 <polygon points="176.5,241.5 173.1,239.3 174.7,243.5" fill="rgb(163,107,32)" stroke="rgb(163,107,32)" stroke-width="0.5"/>
@@ -9500,6 +9693,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="189.9,251.0 193.3,253.6 191.8,249.0" fill="rgb(154,101,30)" stroke="rgb(154,101,30)" stroke-width="0.5"/>
 <polygon points="171.6,227.3 175.0,227.5 173.5,225.3" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
 <polygon points="215.3,269.4 211.9,266.2 213.5,271.4" fill="rgb(134,88,26)" stroke="rgb(134,88,26)" stroke-width="0.5"/>
+<line x1="192.8" y1="279.4" x2="201.2" y2="282.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.6,263.1 205.2,260.0 206.7,265.0" fill="rgb(142,93,28)" stroke="rgb(142,93,28)" stroke-width="0.5"/>
 <polygon points="211.9,266.2 208.6,263.1 210.1,268.2" fill="rgb(138,91,27)" stroke="rgb(138,91,27)" stroke-width="0.5"/>
 <polygon points="159.4,237.5 162.7,239.4 161.2,235.6" fill="rgb(166,109,32)" stroke="rgb(166,109,32)" stroke-width="0.5"/>
@@ -9512,6 +9706,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="183.2,246.0 179.9,243.7 181.4,248.0" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="211.4,211.8 214.7,211.2 213.2,209.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="211.4,211.8 208.0,212.4 209.5,213.8" fill="rgb(60,83,116)" stroke="rgb(60,83,116)" stroke-width="0.5"/>
+<line x1="92.0" y1="185.0" x2="100.4" y2="187.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="166.4,229.1 169.8,229.3 168.3,227.1" fill="rgb(63,86,121)" stroke="rgb(63,86,121)" stroke-width="0.5"/>
 <polygon points="196.7,256.3 200.0,259.1 198.5,254.3" fill="rgb(149,98,29)" stroke="rgb(149,98,29)" stroke-width="0.5"/>
 <polygon points="216.6,209.2 213.2,209.8 214.7,211.2" fill="rgb(60,83,115)" stroke="rgb(60,83,115)" stroke-width="0.5"/>
@@ -9607,6 +9802,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="199.1,218.8 195.8,219.1 197.3,220.7" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="198.2,261.1 201.5,264.0 200.0,259.1" fill="rgb(146,96,28)" stroke="rgb(146,96,28)" stroke-width="0.5"/>
 <polygon points="225.1,205.6 221.8,206.5 223.3,207.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="250.2" y1="191.0" x2="254.8" y2="186.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="193.9,221.1 197.3,220.7 195.8,219.1" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="211.6,273.4 215.0,276.7 213.5,271.4" fill="rgb(132,87,26)" stroke="rgb(132,87,26)" stroke-width="0.5"/>
 <polygon points="201.5,264.0 204.9,267.0 203.4,262.0" fill="rgb(143,94,28)" stroke="rgb(143,94,28)" stroke-width="0.5"/>
@@ -9616,6 +9812,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="193.9,221.1 190.6,221.4 192.1,223.1" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="160.9,241.3 164.3,243.3 162.7,239.4" fill="rgb(165,109,32)" stroke="rgb(165,109,32)" stroke-width="0.5"/>
 <polygon points="164.6,231.0 161.2,230.7 162.7,233.0" fill="rgb(63,87,122)" stroke="rgb(63,87,122)" stroke-width="0.5"/>
+<line x1="201.2" y1="282.1" x2="209.6" y2="284.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.7,250.4 181.4,248.0 182.9,252.4" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="230.3,202.7 227.0,203.6 228.5,204.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="188.7,223.3 192.1,223.1 190.6,221.4" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
@@ -9627,6 +9824,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="235.5,199.7 232.2,200.7 233.7,201.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="183.5,225.5 186.9,225.3 185.4,223.5" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="188.1,252.9 184.7,250.4 186.3,254.9" fill="rgb(156,102,31)" stroke="rgb(156,102,31)" stroke-width="0.5"/>
+<line x1="100.4" y1="187.7" x2="108.8" y2="190.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.5,199.7 238.9,198.5 237.4,197.7" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="183.5,225.5 180.2,225.5 181.7,227.4" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="240.7,196.5 237.4,197.7 238.9,198.5" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
@@ -9661,6 +9859,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="189.6,257.5 193.0,260.3 191.5,255.6" fill="rgb(151,99,30)" stroke="rgb(151,99,30)" stroke-width="0.5"/>
 <polygon points="167.9,231.3 164.6,231.0 166.1,233.3" fill="rgb(63,87,121)" stroke="rgb(63,87,121)" stroke-width="0.5"/>
 <polygon points="216.5,282.1 219.9,285.6 218.3,280.1" fill="rgb(124,81,24)" stroke="rgb(124,81,24)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="222.6" y2="282.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="179.5,250.0 176.2,247.7 177.7,252.0" fill="rgb(160,105,32)" stroke="rgb(160,105,32)" stroke-width="0.5"/>
 <polygon points="207.7,215.8 211.1,215.1 209.5,213.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="207.7,215.8 204.3,216.3 205.9,217.8" fill="rgb(60,83,116)" stroke="rgb(60,83,116)" stroke-width="0.5"/>
@@ -9703,6 +9902,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="177.7,252.0 181.1,254.4 179.5,250.0" fill="rgb(158,104,31)" stroke="rgb(158,104,31)" stroke-width="0.5"/>
 <polygon points="189.6,257.5 186.3,254.9 187.8,259.5" fill="rgb(153,101,30)" stroke="rgb(153,101,30)" stroke-width="0.5"/>
 <polygon points="238.9,198.5 242.3,197.3 240.7,196.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="209.6" y1="284.8" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.5,229.5 173.1,229.4 174.7,231.5" fill="rgb(62,86,120)" stroke="rgb(62,86,120)" stroke-width="0.5"/>
 <polygon points="244.1,195.3 240.7,196.5 242.3,197.3" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="219.9,285.6 216.5,282.1 218.0,287.5" fill="rgb(123,80,24)" stroke="rgb(123,80,24)" stroke-width="0.5"/>
@@ -9713,6 +9913,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="196.3,263.1 193.0,260.3 194.5,265.1" fill="rgb(148,98,29)" stroke="rgb(148,98,29)" stroke-width="0.5"/>
 <polygon points="244.1,195.3 247.5,194.0 245.9,193.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="171.3,231.4 167.9,231.3 169.5,233.4" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
+<line x1="108.8" y1="190.4" x2="117.2" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="213.1,278.6 209.8,275.3 211.3,280.6" fill="rgb(131,86,25)" stroke="rgb(131,86,25)" stroke-width="0.5"/>
 <polygon points="199.7,266.0 196.3,263.1 197.9,268.0" fill="rgb(145,95,28)" stroke="rgb(145,95,28)" stroke-width="0.5"/>
 <polygon points="249.3,192.0 245.9,193.3 247.5,194.0" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9759,7 +9960,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="237.1,200.5 240.4,199.3 238.9,198.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="174.7,231.5 171.3,231.4 172.8,233.4" fill="rgb(62,86,120)" stroke="rgb(62,86,120)" stroke-width="0.5"/>
 <polygon points="242.3,197.3 238.9,198.5 240.4,199.3" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
+<line x1="245.6" y1="195.9" x2="250.2" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="169.5,233.4 172.8,233.4 171.3,231.4" fill="rgb(62,85,120)" stroke="rgb(62,85,120)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="284.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="242.3,197.3 245.6,195.9 244.1,195.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="169.5,233.4 166.1,233.3 167.6,235.4" fill="rgb(62,85,121)" stroke="rgb(62,85,121)" stroke-width="0.5"/>
 <polygon points="247.5,194.0 244.1,195.3 245.6,195.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9776,6 +9979,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="193.6,224.7 190.3,225.1 191.8,226.7" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="219.6,211.6 216.3,212.4 217.8,213.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="188.4,227.0 191.8,226.7 190.3,225.1" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
+<line x1="117.2" y1="193.1" x2="125.6" y2="195.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.6,211.6 223.0,210.6 221.5,209.6" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="188.4,227.0 185.1,227.3 186.6,229.0" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="224.8,208.6 221.5,209.6 223.0,210.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9788,6 +9992,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="178.0,231.4 174.7,231.5 176.2,233.4" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="235.2,202.5 231.9,203.6 233.4,204.5" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="172.8,233.4 176.2,233.4 174.7,231.5" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
+<line x1="218.0" y1="284.4" x2="218.0" y2="281.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.2,202.5 238.6,201.2 237.1,200.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="172.8,233.4 169.5,233.4 171.0,235.4" fill="rgb(62,86,120)" stroke="rgb(62,86,120)" stroke-width="0.5"/>
 <polygon points="240.4,199.3 237.1,200.5 238.6,201.2" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
@@ -9814,10 +10019,12 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="181.4,231.3 178.0,231.4 179.5,233.2" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
 <polygon points="228.2,207.6 224.8,208.6 226.3,209.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="176.2,233.4 179.5,233.2 178.0,231.4" fill="rgb(61,84,118)" stroke="rgb(61,84,118)" stroke-width="0.5"/>
+<line x1="218.0" y1="281.4" x2="218.0" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="228.2,207.6 231.5,206.4 230.0,205.6" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="176.2,233.4 172.8,233.4 174.3,235.4" fill="rgb(62,85,119)" stroke="rgb(62,85,119)" stroke-width="0.5"/>
 <polygon points="233.4,204.5 230.0,205.6 231.5,206.4" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="171.0,235.4 174.3,235.4 172.8,233.4" fill="rgb(62,84,118)" stroke="rgb(62,84,118)" stroke-width="0.5"/>
+<line x1="125.6" y1="195.8" x2="134.0" y2="198.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="233.4,204.5 236.7,203.2 235.2,202.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="238.6,201.2 235.2,202.5 236.7,203.2" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="238.6,201.2 241.9,199.9 240.4,199.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9833,7 +10040,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="210.7,218.3 214.1,217.5 212.6,216.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="189.9,228.7 186.6,229.0 188.1,230.6" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="215.9,215.5 212.6,216.4 214.1,217.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="241.0" y1="200.9" x2="245.6" y2="195.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.7,231.0 188.1,230.6 186.6,229.0" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
+<line x1="218.0" y1="278.3" x2="218.0" y2="275.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.9,215.5 219.3,214.6 217.8,213.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="184.7,231.0 181.4,231.3 182.9,233.0" fill="rgb(61,84,117)" stroke="rgb(61,84,117)" stroke-width="0.5"/>
 <polygon points="221.1,212.6 217.8,213.5 219.3,214.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9848,6 +10057,8 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="236.7,203.2 233.4,204.5 234.9,205.2" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="236.7,203.2 240.1,201.9 238.6,201.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="241.9,199.9 238.6,201.2 240.1,201.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="134.0" y1="198.5" x2="142.4" y2="201.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="275.2" x2="218.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="198.5,225.7 201.9,225.0 200.3,223.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="198.5,225.7 195.1,226.2 196.7,227.7" fill="rgb(60,83,116)" stroke="rgb(60,83,116)" stroke-width="0.5"/>
 <polygon points="203.7,223.1 200.3,223.7 201.9,225.0" fill="rgb(60,83,115)" stroke="rgb(60,83,115)" stroke-width="0.5"/>
@@ -9872,6 +10083,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="234.9,205.2 231.5,206.4 233.1,207.2" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="234.9,205.2 238.3,203.9 236.7,203.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="240.1,201.9 236.7,203.2 238.3,203.9" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="272.1" x2="218.0" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="196.7,227.7 200.0,227.0 198.5,225.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="196.7,227.7 193.3,228.2 194.8,229.6" fill="rgb(60,83,116)" stroke="rgb(60,83,116)" stroke-width="0.5"/>
 <polygon points="201.9,225.0 198.5,225.7 200.0,227.0" fill="rgb(60,83,115)" stroke="rgb(60,83,115)" stroke-width="0.5"/>
@@ -9886,12 +10098,15 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="181.1,235.0 184.4,234.6 182.9,233.0" fill="rgb(61,83,117)" stroke="rgb(61,83,117)" stroke-width="0.5"/>
 <polygon points="212.3,219.5 215.6,218.5 214.1,217.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="217.5,216.6 214.1,217.5 215.6,218.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="142.4" y1="201.3" x2="150.8" y2="204.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.5,216.6 220.8,215.5 219.3,214.6" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="222.7,213.5 219.3,214.6 220.8,215.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="222.7,213.5 226.0,212.4 224.5,211.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="227.9,210.4 224.5,211.5 226.0,212.4" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="227.9,210.4 231.2,209.2 229.7,208.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="233.1,207.2 229.7,208.4 231.2,209.2" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
+<line x1="236.4" y1="205.8" x2="241.0" y2="200.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="269.0" x2="218.0" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="233.1,207.2 236.4,205.8 234.9,205.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="238.3,203.9 234.9,205.2 236.4,205.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="194.8,229.6 198.2,229.0 196.7,227.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9910,7 +10125,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="220.8,215.5 217.5,216.6 219.0,217.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="220.8,215.5 224.2,214.4 222.7,213.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="226.0,212.4 222.7,213.5 224.2,214.4" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="265.9" x2="218.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="226.0,212.4 229.4,211.1 227.9,210.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="150.8" y1="204.0" x2="159.2" y2="206.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="231.2,209.2 227.9,210.4 229.4,211.1" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="231.2,209.2 234.6,207.8 233.1,207.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="236.4,205.8 233.1,207.2 234.6,207.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9925,6 +10142,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="208.6,223.4 211.9,222.5 210.4,221.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="213.8,220.5 210.4,221.5 211.9,222.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="213.8,220.5 217.1,219.5 215.6,218.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="218.0" y1="262.8" x2="218.0" y2="259.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.0,217.5 215.6,218.5 217.1,219.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="219.0,217.5 222.3,216.3 220.8,215.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="224.2,214.4 220.8,215.5 222.3,216.3" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
@@ -9932,12 +10150,15 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="229.4,211.1 226.0,212.4 227.5,213.1" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="229.4,211.1 232.7,209.8 231.2,209.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="234.6,207.8 231.2,209.2 232.7,209.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="159.2" y1="206.7" x2="167.6" y2="209.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.1,233.6 194.5,233.0 193.0,231.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="196.3,231.0 193.0,231.6 194.5,233.0" fill="rgb(60,83,115)" stroke="rgb(60,83,115)" stroke-width="0.5"/>
 <polygon points="196.3,231.0 199.7,230.2 198.2,229.0" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="201.5,228.2 198.2,229.0 199.7,230.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="201.5,228.2 204.9,227.4 203.4,226.3" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="206.7,225.4 203.4,226.3 204.9,227.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="231.8" y1="210.8" x2="236.4" y2="205.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="259.7" x2="218.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.7,225.4 210.1,224.5 208.6,223.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="211.9,222.5 208.6,223.4 210.1,224.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="211.9,222.5 215.3,221.4 213.8,220.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9948,6 +10169,7 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="227.5,213.1 224.2,214.4 225.7,215.1" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="227.5,213.1 230.9,211.8 229.4,211.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="232.7,209.8 229.4,211.1 230.9,211.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="256.6" x2="218.0" y2="253.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="194.5,233.0 197.9,232.2 196.3,231.0" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="199.7,230.2 196.3,231.0 197.9,232.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="199.7,230.2 203.1,229.4 201.5,228.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
@@ -9956,12 +10178,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="210.1,224.5 206.7,225.4 208.3,226.5" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="210.1,224.5 213.5,223.4 211.9,222.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="215.3,221.4 211.9,222.5 213.5,223.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="167.6" y1="209.4" x2="176.0" y2="212.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.3,221.4 218.7,220.3 217.1,219.5" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="220.5,218.3 217.1,219.5 218.7,220.3" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="220.5,218.3 223.9,217.1 222.3,216.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="225.7,215.1 222.3,216.3 223.9,217.1" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="225.7,215.1 229.1,213.8 227.5,213.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="230.9,211.8 227.5,213.1 229.1,213.8" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="253.5" x2="218.0" y2="250.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.9,232.2 201.2,231.4 199.7,230.2" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="203.1,229.4 199.7,230.2 201.2,231.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="203.1,229.4 206.4,228.4 204.9,227.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9972,6 +10196,9 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="218.7,220.3 215.3,221.4 216.8,222.3" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="218.7,220.3 222.0,219.1 220.5,218.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="223.9,217.1 220.5,218.3 222.0,219.1" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
+<line x1="227.2" y1="215.7" x2="231.8" y2="210.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="250.4" x2="218.0" y2="247.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="176.0" y1="212.1" x2="184.4" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.9,217.1 227.2,215.7 225.7,215.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="229.1,213.8 225.7,215.1 227.2,215.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="201.2,231.4 204.6,230.4 203.1,229.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
@@ -9980,11 +10207,14 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="211.6,225.4 208.3,226.5 209.8,227.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="211.6,225.4 215.0,224.3 213.5,223.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="216.8,222.3 213.5,223.4 215.0,224.3" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="247.3" x2="218.0" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.8,222.3 220.2,221.0 218.7,220.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="222.0,219.1 218.7,220.3 220.2,221.0" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="222.0,219.1 225.4,217.7 223.9,217.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="227.2,215.7 223.9,217.1 225.4,217.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="184.4" y1="214.8" x2="192.8" y2="217.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="204.6,230.4 207.9,229.4 206.4,228.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="218.0" y1="244.2" x2="218.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.8,227.4 206.4,228.4 207.9,229.4" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
 <polygon points="209.8,227.4 213.1,226.2 211.6,225.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="215.0,224.3 211.6,225.4 213.1,226.2" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
@@ -9992,18 +10222,28 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <polygon points="220.2,221.0 216.8,222.3 218.3,223.0" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="220.2,221.0 223.5,219.7 222.0,219.1" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="225.4,217.7 222.0,219.1 223.5,219.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="222.6" y1="220.7" x2="227.2" y2="215.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="241.1" x2="218.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.9,229.4 211.3,228.2 209.8,227.4" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="192.8" y1="217.5" x2="201.2" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="213.1,226.2 209.8,227.4 211.3,228.2" fill="rgb(59,82,115)" stroke="rgb(59,82,115)" stroke-width="0.5"/>
 <polygon points="213.1,226.2 216.5,225.0 215.0,224.3" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="218.3,223.0 215.0,224.3 216.5,225.0" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="218.3,223.0 221.7,221.7 220.2,221.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="223.5,219.7 220.2,221.0 221.7,221.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="218.0" y1="238.0" x2="218.0" y2="234.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.3,228.2 214.7,227.0 213.1,226.2" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="216.5,225.0 213.1,226.2 214.7,227.0" fill="rgb(60,82,114)" stroke="rgb(60,82,114)" stroke-width="0.5"/>
 <polygon points="216.5,225.0 219.9,223.7 218.3,223.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
+<line x1="218.0" y1="234.9" x2="218.0" y2="231.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="221.7,221.7 218.3,223.0 219.9,223.7" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="201.2" y1="220.2" x2="209.6" y2="222.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="222.6" y2="220.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="231.8" x2="218.0" y2="228.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="214.7,227.0 218.0,225.6 216.5,225.0" fill="rgb(59,81,114)" stroke="rgb(59,81,114)" stroke-width="0.5"/>
 <polygon points="219.9,223.7 216.5,225.0 218.0,225.6" fill="rgb(60,82,115)" stroke="rgb(60,82,115)" stroke-width="0.5"/>
+<line x1="209.6" y1="222.9" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="228.7" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="50.0" y1="171.4" x2="53.4" y2="175.0" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="53.4" y1="175.0" x2="56.7" y2="178.4" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="56.7" y1="178.4" x2="60.1" y2="181.7" stroke="#000000a0" stroke-width="0.5"/>
@@ -13404,18 +13644,6 @@ expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 <line x1="297.8" y1="187.6" x2="299.6" y2="185.6" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="299.6" y1="185.6" x2="301.4" y2="183.6" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="301.4" y1="183.6" x2="303.3" y2="181.6" stroke="#000000a0" stroke-width="0.5"/>
-<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="50.0" y1="233.4" x2="51.2" y2="229.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="46.3" y="244.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>

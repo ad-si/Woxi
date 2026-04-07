@@ -4,49 +4,88 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="131.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="150.4" y2="137.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="131.3" x2="142.0" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="139.3" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="137.1" x2="158.8" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="128.2" x2="142.0" y2="125.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="125.1" x2="142.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.8" y1="139.8" x2="167.2" y2="142.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="122.0" x2="142.0" y2="118.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="132.8" y1="144.3" x2="137.4" y2="139.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="118.9" x2="142.0" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.2" y1="142.5" x2="175.6" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="115.8" x2="142.0" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="175.6" y1="145.2" x2="184.0" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="112.7" x2="142.0" y2="109.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="128.2" y1="149.2" x2="132.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="109.6" x2="142.0" y2="106.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.0" y1="147.9" x2="192.4" y2="150.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="106.5" x2="142.0" y2="103.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="103.4" x2="142.0" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.6" y1="154.2" x2="128.2" y2="149.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.4" y1="150.6" x2="200.8" y2="153.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="140.1,105.4 143.5,102.6 142.0,103.4" fill="rgb(48,80,33)" stroke="rgb(48,80,33)" stroke-width="0.5"/>
+<line x1="142.0" y1="100.3" x2="142.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.3,100.6 142.0,103.4 143.5,102.6" fill="rgb(50,79,32)" stroke="rgb(50,79,32)" stroke-width="0.5"/>
+<line x1="200.8" y1="153.3" x2="209.2" y2="156.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="97.2" x2="142.0" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="138.3,107.4 141.7,104.7 140.1,105.4" fill="rgb(48,81,33)" stroke="rgb(48,81,33)" stroke-width="0.5"/>
 <polygon points="143.5,102.6 140.1,105.4 141.7,104.7" fill="rgb(50,80,33)" stroke="rgb(50,80,33)" stroke-width="0.5"/>
 <polygon points="143.5,102.6 146.9,99.9 145.3,100.6" fill="rgb(56,79,32)" stroke="rgb(56,79,32)" stroke-width="0.5"/>
+<line x1="142.0" y1="94.1" x2="142.0" y2="91.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="119.0" y1="159.1" x2="123.6" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="148.7,97.9 145.3,100.6 146.9,99.9" fill="rgb(58,79,31)" stroke="rgb(58,79,31)" stroke-width="0.5"/>
 <polygon points="136.5,109.4 139.8,106.8 138.3,107.4" fill="rgb(49,83,34)" stroke="rgb(49,83,34)" stroke-width="0.5"/>
+<line x1="209.2" y1="156.0" x2="217.6" y2="158.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="141.7,104.7 138.3,107.4 139.8,106.8" fill="rgb(52,82,34)" stroke="rgb(52,82,34)" stroke-width="0.5"/>
+<line x1="142.0" y1="91.0" x2="142.0" y2="87.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="141.7,104.7 145.0,102.1 143.5,102.6" fill="rgb(56,81,32)" stroke="rgb(56,81,32)" stroke-width="0.5"/>
 <polygon points="146.9,99.9 143.5,102.6 145.0,102.1" fill="rgb(59,80,32)" stroke="rgb(59,80,32)" stroke-width="0.5"/>
 <polygon points="134.6,111.3 138.0,109.0 136.5,109.4" fill="rgb(51,85,35)" stroke="rgb(51,85,35)" stroke-width="0.5"/>
 <polygon points="139.8,106.8 136.5,109.4 138.0,109.0" fill="rgb(53,85,35)" stroke="rgb(53,85,35)" stroke-width="0.5"/>
 <polygon points="146.9,99.9 150.2,97.3 148.7,97.9" fill="rgb(64,79,31)" stroke="rgb(64,79,31)" stroke-width="0.5"/>
 <polygon points="152.1,95.2 148.7,97.9 150.2,97.3" fill="rgb(66,79,30)" stroke="rgb(66,79,30)" stroke-width="0.5"/>
+<line x1="142.0" y1="87.9" x2="142.0" y2="84.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="217.6" y1="158.7" x2="226.0" y2="161.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="139.8,106.8 143.2,104.3 141.7,104.7" fill="rgb(58,84,34)" stroke="rgb(58,84,34)" stroke-width="0.5"/>
 <polygon points="145.0,102.1 141.7,104.7 143.2,104.3" fill="rgb(60,83,33)" stroke="rgb(60,83,33)" stroke-width="0.5"/>
 <polygon points="132.8,113.3 136.1,111.2 134.6,111.3" fill="rgb(53,90,37)" stroke="rgb(53,90,37)" stroke-width="0.5"/>
 <polygon points="138.0,109.0 134.6,111.3 136.1,111.2" fill="rgb(55,88,36)" stroke="rgb(55,88,36)" stroke-width="0.5"/>
 <polygon points="145.0,102.1 148.4,99.6 146.9,99.9" fill="rgb(66,82,32)" stroke="rgb(66,82,32)" stroke-width="0.5"/>
+<line x1="142.0" y1="84.8" x2="142.0" y2="81.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="114.4" y1="164.1" x2="119.0" y2="159.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="150.2,97.3 146.9,99.9 148.4,99.6" fill="rgb(68,81,31)" stroke="rgb(68,81,31)" stroke-width="0.5"/>
 <polygon points="138.0,109.0 141.3,106.7 139.8,106.8" fill="rgb(60,87,35)" stroke="rgb(60,87,35)" stroke-width="0.5"/>
 <polygon points="143.2,104.3 139.8,106.8 141.3,106.7" fill="rgb(62,86,34)" stroke="rgb(62,86,34)" stroke-width="0.5"/>
 <polygon points="150.2,97.3 153.6,94.9 152.1,95.2" fill="rgb(73,80,30)" stroke="rgb(73,80,30)" stroke-width="0.5"/>
 <polygon points="155.4,92.8 152.1,95.2 153.6,94.9" fill="rgb(75,80,29)" stroke="rgb(75,80,29)" stroke-width="0.5"/>
+<line x1="226.0" y1="161.5" x2="234.4" y2="164.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="130.9,115.3 134.3,113.5 132.8,113.3" fill="rgb(56,94,39)" stroke="rgb(56,94,39)" stroke-width="0.5"/>
 <polygon points="143.2,104.3 146.5,102.0 145.0,102.1" fill="rgb(68,85,33)" stroke="rgb(68,85,33)" stroke-width="0.5"/>
 <polygon points="136.1,111.2 132.8,113.3 134.3,113.5" fill="rgb(57,93,38)" stroke="rgb(57,93,38)" stroke-width="0.5"/>
+<line x1="142.0" y1="81.7" x2="142.0" y2="78.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="148.4,99.6 145.0,102.1 146.5,102.0" fill="rgb(70,85,32)" stroke="rgb(70,85,32)" stroke-width="0.5"/>
 <polygon points="136.1,111.2 139.5,109.2 138.0,109.0" fill="rgb(62,92,37)" stroke="rgb(62,92,37)" stroke-width="0.5"/>
 <polygon points="141.3,106.7 138.0,109.0 139.5,109.2" fill="rgb(64,90,36)" stroke="rgb(64,90,36)" stroke-width="0.5"/>
 <polygon points="148.4,99.6 151.7,97.2 150.2,97.3" fill="rgb(76,83,31)" stroke="rgb(76,83,31)" stroke-width="0.5"/>
 <polygon points="153.6,94.9 150.2,97.3 151.7,97.2" fill="rgb(78,83,30)" stroke="rgb(78,83,30)" stroke-width="0.5"/>
+<line x1="142.0" y1="78.6" x2="142.0" y2="75.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.1,117.3 132.5,115.9 130.9,115.3" fill="rgb(59,101,42)" stroke="rgb(59,101,42)" stroke-width="0.5"/>
 <polygon points="141.3,106.7 144.7,104.6 143.2,104.3" fill="rgb(70,90,35)" stroke="rgb(70,90,35)" stroke-width="0.5"/>
 <polygon points="134.3,113.5 130.9,115.3 132.5,115.9" fill="rgb(60,99,41)" stroke="rgb(60,99,41)" stroke-width="0.5"/>
 <polygon points="146.5,102.0 143.2,104.3 144.7,104.6" fill="rgb(72,88,34)" stroke="rgb(72,88,34)" stroke-width="0.5"/>
 <polygon points="153.6,94.9 156.9,92.7 155.4,92.8" fill="rgb(83,82,30)" stroke="rgb(83,82,30)" stroke-width="0.5"/>
+<line x1="234.4" y1="164.2" x2="242.8" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.3,113.5 137.7,111.8 136.1,111.2" fill="rgb(65,98,40)" stroke="rgb(65,98,40)" stroke-width="0.5"/>
 <polygon points="158.8,90.6 155.4,92.8 156.9,92.7" fill="rgb(86,82,29)" stroke="rgb(86,82,29)" stroke-width="0.5"/>
 <polygon points="139.5,109.2 136.1,111.2 137.7,111.8" fill="rgb(67,96,39)" stroke="rgb(67,96,39)" stroke-width="0.5"/>
 <polygon points="146.5,102.0 149.9,99.8 148.4,99.6" fill="rgb(78,88,33)" stroke="rgb(78,88,33)" stroke-width="0.5"/>
 <polygon points="151.7,97.2 148.4,99.6 149.9,99.8" fill="rgb(81,87,32)" stroke="rgb(81,87,32)" stroke-width="0.5"/>
+<line x1="142.0" y1="75.6" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="139.5,109.2 142.9,107.3 141.3,106.7" fill="rgb(73,95,37)" stroke="rgb(73,95,37)" stroke-width="0.5"/>
+<line x1="109.8" y1="169.0" x2="114.4" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="127.3,119.3 130.6,118.3 129.1,117.3" fill="rgb(63,108,45)" stroke="rgb(63,108,45)" stroke-width="0.5"/>
 <polygon points="132.5,115.9 129.1,117.3 130.6,118.3" fill="rgb(64,105,44)" stroke="rgb(64,105,44)" stroke-width="0.5"/>
 <polygon points="144.7,104.6 141.3,106.7 142.9,107.3" fill="rgb(75,94,36)" stroke="rgb(75,94,36)" stroke-width="0.5"/>
@@ -58,8 +97,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="149.9,99.8 146.5,102.0 148.1,102.6" fill="rgb(83,91,34)" stroke="rgb(83,91,34)" stroke-width="0.5"/>
 <polygon points="156.9,92.7 160.3,90.8 158.8,90.6" fill="rgb(95,85,30)" stroke="rgb(95,85,30)" stroke-width="0.5"/>
 <polygon points="137.7,111.8 141.0,110.2 139.5,109.2" fill="rgb(75,101,40)" stroke="rgb(75,101,40)" stroke-width="0.5"/>
+<line x1="242.8" y1="166.9" x2="251.2" y2="169.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="162.1,88.7 158.8,90.6 160.3,90.8" fill="rgb(97,84,29)" stroke="rgb(97,84,29)" stroke-width="0.5"/>
 <polygon points="142.9,107.3 139.5,109.2 141.0,110.2" fill="rgb(77,99,39)" stroke="rgb(77,99,39)" stroke-width="0.5"/>
+<line x1="142.0" y1="72.5" x2="150.4" y2="75.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="125.4,121.2 128.8,120.7 127.3,119.3" fill="rgb(67,116,49)" stroke="rgb(67,116,49)" stroke-width="0.5"/>
 <polygon points="130.6,118.3 127.3,119.3 128.8,120.7" fill="rgb(68,113,47)" stroke="rgb(68,113,47)" stroke-width="0.5"/>
 <polygon points="149.9,99.8 153.3,97.8 151.7,97.2" fill="rgb(90,91,33)" stroke="rgb(90,91,33)" stroke-width="0.5"/>
@@ -69,6 +110,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="142.9,107.3 146.2,105.6 144.7,104.6" fill="rgb(84,99,37)" stroke="rgb(84,99,37)" stroke-width="0.5"/>
 <polygon points="148.1,102.6 144.7,104.6 146.2,105.6" fill="rgb(86,97,36)" stroke="rgb(86,97,36)" stroke-width="0.5"/>
 <polygon points="135.8,114.5 139.2,113.2 137.7,111.8" fill="rgb(79,109,44)" stroke="rgb(79,109,44)" stroke-width="0.5"/>
+<line x1="137.4" y1="77.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="155.1,95.1 158.5,93.3 156.9,92.7" fill="rgb(99,89,31)" stroke="rgb(99,89,31)" stroke-width="0.5"/>
 <polygon points="141.0,110.2 137.7,111.8 139.2,113.2" fill="rgb(80,106,41)" stroke="rgb(80,106,41)" stroke-width="0.5"/>
 <polygon points="160.3,90.8 156.9,92.7 158.5,93.3" fill="rgb(101,88,30)" stroke="rgb(101,88,30)" stroke-width="0.5"/>
@@ -81,9 +123,12 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="153.3,97.8 149.9,99.8 151.4,100.8" fill="rgb(95,95,34)" stroke="rgb(95,95,34)" stroke-width="0.5"/>
 <polygon points="134.0,117.3 130.6,118.3 132.1,120.1" fill="rgb(77,119,48)" stroke="rgb(77,119,48)" stroke-width="0.5"/>
 <polygon points="165.5,87.1 162.1,88.7 163.7,89.3" fill="rgb(110,88,29)" stroke="rgb(110,88,29)" stroke-width="0.5"/>
+<line x1="251.2" y1="169.6" x2="259.6" y2="172.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.2,105.6 142.9,107.3 144.4,108.7" fill="rgb(88,103,39)" stroke="rgb(88,103,39)" stroke-width="0.5"/>
 <polygon points="134.0,117.3 137.3,116.4 135.8,114.5" fill="rgb(82,118,47)" stroke="rgb(82,118,47)" stroke-width="0.5"/>
+<line x1="150.4" y1="75.2" x2="158.8" y2="77.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="139.2,113.2 135.8,114.5 137.3,116.4" fill="rgb(83,114,45)" stroke="rgb(83,114,45)" stroke-width="0.5"/>
+<line x1="105.2" y1="174.0" x2="109.8" y2="169.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="153.3,97.8 156.6,96.1 155.1,95.1" fill="rgb(103,95,33)" stroke="rgb(103,95,33)" stroke-width="0.5"/>
 <polygon points="146.2,105.6 149.6,104.0 148.1,102.6" fill="rgb(96,102,38)" stroke="rgb(96,102,38)" stroke-width="0.5"/>
 <polygon points="158.5,93.3 155.1,95.1 156.6,96.1" fill="rgb(105,94,32)" stroke="rgb(105,94,32)" stroke-width="0.5"/>
@@ -108,12 +153,14 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="256.2,168.3 252.9,165.4 254.4,170.1" fill="rgb(84,120,149)" stroke="rgb(84,120,149)" stroke-width="0.5"/>
 <polygon points="149.6,104.0 146.2,105.6 147.7,107.4" fill="rgb(100,107,39)" stroke="rgb(100,107,39)" stroke-width="0.5"/>
 <polygon points="249.5,162.0 246.1,158.2 247.7,163.8" fill="rgb(84,124,135)" stroke="rgb(84,124,135)" stroke-width="0.5"/>
+<line x1="259.6" y1="172.3" x2="268.0" y2="175.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="259.6,170.8 256.2,168.3 257.8,172.6" fill="rgb(83,118,154)" stroke="rgb(83,118,154)" stroke-width="0.5"/>
 <polygon points="142.5,112.1 139.2,113.2 140.7,115.6" fill="rgb(93,118,46)" stroke="rgb(93,118,46)" stroke-width="0.5"/>
 <polygon points="130.3,123.0 126.9,123.1 128.5,125.9" fill="rgb(84,139,57)" stroke="rgb(84,139,57)" stroke-width="0.5"/>
 <polygon points="125.1,125.5 128.5,125.9 126.9,123.1" fill="rgb(84,142,59)" stroke="rgb(84,142,59)" stroke-width="0.5"/>
 <polygon points="246.1,158.2 242.8,154.2 244.3,160.1" fill="rgb(84,128,125)" stroke="rgb(84,128,125)" stroke-width="0.5"/>
 <polygon points="156.6,96.1 160.0,94.7 158.5,93.3" fill="rgb(116,100,34)" stroke="rgb(116,100,34)" stroke-width="0.5"/>
+<line x1="158.8" y1="77.9" x2="167.2" y2="80.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="251.0,167.1 254.4,170.1 252.9,165.4" fill="rgb(85,121,148)" stroke="rgb(85,121,148)" stroke-width="0.5"/>
 <polygon points="130.3,123.0 133.7,122.9 132.1,120.1" fill="rgb(89,138,56)" stroke="rgb(89,138,56)" stroke-width="0.5"/>
 <polygon points="247.7,163.8 251.0,167.1 249.5,162.0" fill="rgb(84,124,140)" stroke="rgb(84,124,140)" stroke-width="0.5"/>
@@ -129,6 +176,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="242.8,154.2 239.4,149.8 240.9,156.0" fill="rgb(84,131,116)" stroke="rgb(84,131,116)" stroke-width="0.5"/>
 <polygon points="257.8,172.6 261.1,174.6 259.6,170.8" fill="rgb(82,115,154)" stroke="rgb(82,115,154)" stroke-width="0.5"/>
 <polygon points="135.5,119.6 138.9,119.2 137.3,116.4" fill="rgb(95,132,53)" stroke="rgb(95,132,53)" stroke-width="0.5"/>
+<line x1="132.8" y1="82.4" x2="137.4" y2="77.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.8,99.2 151.4,100.8 152.9,102.6" fill="rgb(111,105,37)" stroke="rgb(111,105,37)" stroke-width="0.5"/>
 <polygon points="147.7,107.4 144.4,108.7 145.9,111.1" fill="rgb(102,114,43)" stroke="rgb(102,114,43)" stroke-width="0.5"/>
 <polygon points="240.9,156.0 244.3,160.1 242.8,154.2" fill="rgb(84,129,123)" stroke="rgb(84,129,123)" stroke-width="0.5"/>
@@ -166,8 +214,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="264.5,176.2 267.8,177.3 266.3,174.5" fill="rgb(77,107,148)" stroke="rgb(77,107,148)" stroke-width="0.5"/>
 <polygon points="249.2,168.5 252.6,171.4 251.0,167.1" fill="rgb(81,116,139)" stroke="rgb(81,116,139)" stroke-width="0.5"/>
 <polygon points="261.1,174.6 257.8,172.6 259.3,175.9" fill="rgb(77,107,144)" stroke="rgb(77,107,144)" stroke-width="0.5"/>
+<line x1="268.0" y1="175.0" x2="276.4" y2="177.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="245.8,165.2 249.2,168.5 247.7,163.8" fill="rgb(81,119,134)" stroke="rgb(81,119,134)" stroke-width="0.5"/>
 <polygon points="160.0,94.7 163.3,93.7 161.8,91.8" fill="rgb(132,105,34)" stroke="rgb(132,105,34)" stroke-width="0.5"/>
+<line x1="100.6" y1="178.9" x2="105.2" y2="174.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="252.6,171.4 255.9,173.9 254.4,170.1" fill="rgb(79,112,142)" stroke="rgb(79,112,142)" stroke-width="0.5"/>
 <polygon points="242.5,161.5 245.8,165.2 244.3,160.1" fill="rgb(81,122,127)" stroke="rgb(81,122,127)" stroke-width="0.5"/>
 <polygon points="138.9,119.2 142.2,118.9 140.7,115.6" fill="rgb(104,136,53)" stroke="rgb(104,136,53)" stroke-width="0.5"/>
@@ -175,6 +225,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="240.9,156.0 237.6,151.6 239.1,157.5" fill="rgb(81,127,112)" stroke="rgb(81,127,112)" stroke-width="0.5"/>
 <polygon points="165.2,90.7 161.8,91.8 163.3,93.7" fill="rgb(133,104,33)" stroke="rgb(133,104,33)" stroke-width="0.5"/>
 <polygon points="152.9,102.6 156.3,101.6 154.8,99.2" fill="rgb(122,112,39)" stroke="rgb(122,112,39)" stroke-width="0.5"/>
+<line x1="167.2" y1="80.6" x2="175.6" y2="83.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.1,114.9 140.7,115.6 142.2,118.9" fill="rgb(103,130,50)" stroke="rgb(103,130,50)" stroke-width="0.5"/>
 <polygon points="131.8,126.3 128.5,125.9 130.0,129.7" fill="rgb(92,152,63)" stroke="rgb(92,152,63)" stroke-width="0.5"/>
 <polygon points="126.6,128.9 130.0,129.7 128.5,125.9" fill="rgb(93,158,66)" stroke="rgb(93,158,66)" stroke-width="0.5"/>
@@ -246,6 +297,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="250.7,172.3 254.1,174.7 252.6,171.4" fill="rgb(74,106,131)" stroke="rgb(74,106,131)" stroke-width="0.5"/>
 <polygon points="178.9,84.9 175.6,84.7 177.1,87.1" fill="rgb(169,114,34)" stroke="rgb(169,114,34)" stroke-width="0.5"/>
 <polygon points="168.5,89.9 171.9,89.6 170.4,87.3" fill="rgb(159,113,35)" stroke="rgb(159,113,35)" stroke-width="0.5"/>
+<line x1="276.4" y1="177.7" x2="284.8" y2="180.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="229.0,144.1 232.4,148.8 230.9,142.3" fill="rgb(84,140,89)" stroke="rgb(84,140,89)" stroke-width="0.5"/>
 <polygon points="173.7,87.0 177.1,87.1 175.6,84.7" fill="rgb(169,115,34)" stroke="rgb(169,115,34)" stroke-width="0.5"/>
 <polygon points="154.5,105.5 151.1,106.3 152.6,109.6" fill="rgb(125,122,44)" stroke="rgb(125,122,44)" stroke-width="0.5"/>
@@ -257,6 +309,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="237.3,158.8 240.6,162.7 239.1,157.5" fill="rgb(80,124,113)" stroke="rgb(80,124,113)" stroke-width="0.5"/>
 <polygon points="128.1,133.1 131.5,134.4 130.0,129.7" fill="rgb(94,167,72)" stroke="rgb(94,167,72)" stroke-width="0.5"/>
 <polygon points="254.1,174.7 257.4,176.7 255.9,173.9" fill="rgb(71,102,130)" stroke="rgb(71,102,130)" stroke-width="0.5"/>
+<line x1="175.6" y1="83.3" x2="184.0" y2="86.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="133.3,130.6 136.7,131.4 135.2,126.7" fill="rgb(98,162,67)" stroke="rgb(98,162,67)" stroke-width="0.5"/>
 <polygon points="128.1,133.1 124.8,131.8 126.3,136.5" fill="rgb(95,166,74)" stroke="rgb(95,166,74)" stroke-width="0.5"/>
 <polygon points="235.7,153.3 232.4,148.8 233.9,154.7" fill="rgb(81,130,99)" stroke="rgb(81,130,99)" stroke-width="0.5"/>
@@ -265,6 +318,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="119.6,132.9 116.2,131.1 117.7,135.4" fill="rgb(93,163,71)" stroke="rgb(93,163,71)" stroke-width="0.5"/>
 <polygon points="145.6,118.7 142.2,118.9 143.7,123.2" fill="rgb(108,140,55)" stroke="rgb(108,140,55)" stroke-width="0.5"/>
 <polygon points="138.5,127.2 135.2,126.7 136.7,131.4" fill="rgb(98,155,64)" stroke="rgb(98,155,64)" stroke-width="0.5"/>
+<line x1="128.2" y1="87.3" x2="132.8" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="266.0,178.5 269.4,179.1 267.8,177.3" fill="rgb(67,94,127)" stroke="rgb(67,94,127)" stroke-width="0.5"/>
 <polygon points="122.9,134.7 126.3,136.5 124.8,131.8" fill="rgb(95,167,75)" stroke="rgb(95,167,75)" stroke-width="0.5"/>
 <polygon points="161.5,97.1 164.9,96.5 163.3,93.7" fill="rgb(150,118,38)" stroke="rgb(150,118,38)" stroke-width="0.5"/>
@@ -327,6 +381,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="237.3,158.8 233.9,154.7 235.4,159.8" fill="rgb(77,122,102)" stroke="rgb(77,122,102)" stroke-width="0.5"/>
 <polygon points="134.9,135.7 131.5,134.4 133.0,140.0" fill="rgb(95,166,77)" stroke="rgb(95,166,77)" stroke-width="0.5"/>
 <polygon points="129.7,138.3 133.0,140.0 131.5,134.4" fill="rgb(97,169,80)" stroke="rgb(97,169,80)" stroke-width="0.5"/>
+<line x1="96.0" y1="183.9" x2="100.6" y2="178.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="117.7,135.4 114.4,133.1 115.9,137.8" fill="rgb(94,165,73)" stroke="rgb(94,165,73)" stroke-width="0.5"/>
 <polygon points="150.8,114.0 154.1,113.9 152.6,109.6" fill="rgb(131,137,50)" stroke="rgb(131,137,50)" stroke-width="0.5"/>
 <polygon points="242.2,167.0 245.5,170.0 244.0,166.2" fill="rgb(73,110,116)" stroke="rgb(73,110,116)" stroke-width="0.5"/>
@@ -345,6 +400,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="164.9,96.5 168.2,96.3 166.7,93.0" fill="rgb(165,124,39)" stroke="rgb(165,124,39)" stroke-width="0.5"/>
 <polygon points="121.1,137.7 117.7,135.4 119.3,140.5" fill="rgb(96,168,79)" stroke="rgb(96,168,79)" stroke-width="0.5"/>
 <polygon points="147.1,123.4 143.7,123.2 145.3,128.3" fill="rgb(109,149,59)" stroke="rgb(109,149,59)" stroke-width="0.5"/>
+<line x1="284.8" y1="180.4" x2="293.2" y2="183.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="269.4,179.1 266.0,178.5 267.5,179.9" fill="rgb(62,87,115)" stroke="rgb(62,87,115)" stroke-width="0.5"/>
 <polygon points="156.0,109.2 152.6,109.6 154.1,113.9" fill="rgb(132,132,47)" stroke="rgb(132,132,47)" stroke-width="0.5"/>
 <polygon points="220.8,127.5 217.4,122.7 218.9,129.6" fill="rgb(105,149,59)" stroke="rgb(105,149,59)" stroke-width="0.5"/>
@@ -363,6 +419,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="133.0,140.0 129.7,138.3 131.2,144.2" fill="rgb(96,166,85)" stroke="rgb(96,166,85)" stroke-width="0.5"/>
 <polygon points="124.5,139.9 121.1,137.7 122.6,143.2" fill="rgb(97,168,85)" stroke="rgb(97,168,85)" stroke-width="0.5"/>
 <polygon points="163.0,100.4 159.7,100.8 161.2,104.6" fill="rgb(150,126,42)" stroke="rgb(150,126,42)" stroke-width="0.5"/>
+<line x1="184.0" y1="86.0" x2="192.4" y2="88.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="115.9,137.8 119.3,140.5 117.7,135.4" fill="rgb(94,163,77)" stroke="rgb(94,163,77)" stroke-width="0.5"/>
 <polygon points="252.2,175.1 255.6,177.0 254.1,174.7" fill="rgb(66,95,116)" stroke="rgb(66,95,116)" stroke-width="0.5"/>
 <polygon points="264.2,179.3 267.5,179.9 266.0,178.5" fill="rgb(62,87,114)" stroke="rgb(62,87,114)" stroke-width="0.5"/>
@@ -495,11 +552,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="233.6,160.6 237.0,164.1 235.4,159.8" fill="rgb(75,119,101)" stroke="rgb(75,119,101)" stroke-width="0.5"/>
 <polygon points="267.5,179.9 264.2,179.3 265.7,180.3" fill="rgb(57,81,102)" stroke="rgb(57,81,102)" stroke-width="0.5"/>
 <polygon points="127.5,152.3 130.9,154.9 129.3,148.3" fill="rgb(97,161,107)" stroke="rgb(97,161,107)" stroke-width="0.5"/>
+<line x1="293.2" y1="183.1" x2="301.6" y2="185.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.0,91.5 185.3,93.0 183.8,88.8" fill="rgb(207,139,41)" stroke="rgb(207,139,41)" stroke-width="0.5"/>
 <polygon points="215.6,124.8 212.2,120.2 213.7,127.1" fill="rgb(120,150,58)" stroke="rgb(120,150,58)" stroke-width="0.5"/>
 <polygon points="281.3,176.9 284.6,175.7 283.1,175.1" fill="rgb(55,80,93)" stroke="rgb(55,80,93)" stroke-width="0.5"/>
 <polygon points="153.8,124.3 150.5,123.8 152.0,129.7" fill="rgb(115,150,59)" stroke="rgb(115,150,59)" stroke-width="0.5"/>
 <polygon points="281.3,176.9 277.9,177.7 279.4,178.3" fill="rgb(55,79,96)" stroke="rgb(55,79,96)" stroke-width="0.5"/>
+<line x1="123.6" y1="92.3" x2="128.2" y2="87.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.5,104.6 161.2,104.6 162.7,109.3" fill="rgb(155,135,45)" stroke="rgb(155,135,45)" stroke-width="0.5"/>
 <polygon points="144.9,139.5 148.3,140.7 146.8,134.2" fill="rgb(93,164,70)" stroke="rgb(93,164,70)" stroke-width="0.5"/>
 <polygon points="213.7,127.1 217.1,131.7 215.6,124.8" fill="rgb(111,152,60)" stroke="rgb(111,152,60)" stroke-width="0.5"/>
@@ -518,6 +577,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="130.9,154.9 134.2,157.5 132.7,150.6" fill="rgb(97,159,112)" stroke="rgb(97,159,112)" stroke-width="0.5"/>
 <polygon points="143.1,144.7 146.5,146.1 144.9,139.5" fill="rgb(93,161,82)" stroke="rgb(93,161,82)" stroke-width="0.5"/>
 <polygon points="207.3,109.0 204.0,104.9 205.5,111.4" fill="rgb(161,145,51)" stroke="rgb(161,145,51)" stroke-width="0.5"/>
+<line x1="192.4" y1="88.7" x2="200.8" y2="91.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.0,91.5 178.6,90.4 180.1,94.7" fill="rgb(203,139,41)" stroke="rgb(203,139,41)" stroke-width="0.5"/>
 <polygon points="171.6,96.6 174.9,97.2 173.4,92.9" fill="rgb(189,137,42)" stroke="rgb(189,137,42)" stroke-width="0.5"/>
 <polygon points="124.1,149.4 120.8,146.4 122.3,152.9" fill="rgb(97,163,100)" stroke="rgb(97,163,100)" stroke-width="0.5"/>
@@ -618,6 +678,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="148.0,153.1 144.6,151.5 146.1,158.5" fill="rgb(92,152,102)" stroke="rgb(92,152,102)" stroke-width="0.5"/>
 <polygon points="220.1,144.6 223.5,148.8 222.0,142.9" fill="rgb(85,146,76)" stroke="rgb(85,146,76)" stroke-width="0.5"/>
 <polygon points="213.7,127.1 210.4,122.6 211.9,129.5" fill="rgb(119,152,59)" stroke="rgb(119,152,59)" stroke-width="0.5"/>
+<line x1="91.4" y1="188.8" x2="96.0" y2="183.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="140.9,161.9 144.3,163.7 142.8,156.8" fill="rgb(94,149,119)" stroke="rgb(94,149,119)" stroke-width="0.5"/>
 <polygon points="118.9,149.6 115.6,146.1 117.1,152.6" fill="rgb(95,160,94)" stroke="rgb(95,160,94)" stroke-width="0.5"/>
 <polygon points="265.7,180.3 269.0,180.5 267.5,179.9" fill="rgb(54,77,95)" stroke="rgb(54,77,95)" stroke-width="0.5"/>
@@ -690,6 +751,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="178.3,98.3 174.9,97.2 176.5,102.4" fill="rgb(195,143,44)" stroke="rgb(195,143,44)" stroke-width="0.5"/>
 <polygon points="133.9,168.8 130.5,166.0 132.1,172.9" fill="rgb(96,147,140)" stroke="rgb(96,147,140)" stroke-width="0.5"/>
 <polygon points="238.5,167.4 241.8,170.1 240.3,167.3" fill="rgb(66,102,95)" stroke="rgb(66,102,95)" stroke-width="0.5"/>
+<line x1="301.6" y1="185.8" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.3,110.2 203.7,114.1 202.1,107.4" fill="rgb(167,150,52)" stroke="rgb(167,150,52)" stroke-width="0.5"/>
 <polygon points="231.8,161.1 235.1,164.4 233.6,160.6" fill="rgb(73,116,93)" stroke="rgb(73,116,93)" stroke-width="0.5"/>
 <polygon points="123.8,159.7 120.5,156.3 122.0,163.2" fill="rgb(95,153,116)" stroke="rgb(95,153,116)" stroke-width="0.5"/>
@@ -715,6 +777,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="190.2,100.6 193.6,103.4 192.1,97.5" fill="rgb(199,149,47)" stroke="rgb(199,149,47)" stroke-width="0.5"/>
 <polygon points="147.7,165.3 144.3,163.7 145.8,170.4" fill="rgb(92,144,128)" stroke="rgb(92,144,128)" stroke-width="0.5"/>
 <polygon points="213.4,136.2 216.8,140.4 215.3,133.9" fill="rgb(98,156,64)" stroke="rgb(98,156,64)" stroke-width="0.5"/>
+<line x1="200.8" y1="91.4" x2="209.2" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.0,118.2 203.7,114.1 205.2,121.0" fill="rgb(148,152,55)" stroke="rgb(148,152,55)" stroke-width="0.5"/>
 <polygon points="223.5,148.8 220.1,144.6 221.7,150.2" fill="rgb(82,140,76)" stroke="rgb(82,140,76)" stroke-width="0.5"/>
 <polygon points="132.1,172.9 135.4,175.5 133.9,168.8" fill="rgb(95,144,146)" stroke="rgb(95,144,146)" stroke-width="0.5"/>
@@ -849,6 +912,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="188.4,104.1 185.0,101.7 186.5,107.9" fill="rgb(197,153,49)" stroke="rgb(197,153,49)" stroke-width="0.5"/>
 <polygon points="263.8,180.2 267.2,180.5 265.7,180.3" fill="rgb(50,72,84)" stroke="rgb(50,72,84)" stroke-width="0.5"/>
 <polygon points="147.3,176.6 144.0,175.2 145.5,181.1" fill="rgb(92,136,148)" stroke="rgb(92,136,148)" stroke-width="0.5"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="185.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="165.4,133.5 162.1,132.4 163.6,139.3" fill="rgb(107,157,63)" stroke="rgb(107,157,63)" stroke-width="0.5"/>
 <polygon points="169.1,122.1 165.7,121.1 167.3,127.7" fill="rgb(135,152,57)" stroke="rgb(135,152,57)" stroke-width="0.5"/>
 <polygon points="136.9,181.7 140.3,183.6 138.8,177.7" fill="rgb(94,136,160)" stroke="rgb(94,136,160)" stroke-width="0.5"/>
@@ -862,6 +926,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="154.4,167.7 151.0,166.7 152.5,172.9" fill="rgb(89,139,125)" stroke="rgb(89,139,125)" stroke-width="0.5"/>
 <polygon points="183.2,105.7 186.5,107.9 185.0,101.7" fill="rgb(195,153,50)" stroke="rgb(195,153,50)" stroke-width="0.5"/>
 <polygon points="178.0,108.3 174.6,106.8 176.1,113.0" fill="rgb(177,150,50)" stroke="rgb(177,150,50)" stroke-width="0.5"/>
+<line x1="119.0" y1="97.2" x2="123.6" y2="92.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="105.2,143.0 108.5,147.2 107.0,141.0" fill="rgb(88,154,68)" stroke="rgb(88,154,68)" stroke-width="0.5"/>
 <polygon points="277.6,179.2 274.2,179.9 275.8,179.8" fill="rgb(49,71,81)" stroke="rgb(49,71,81)" stroke-width="0.5"/>
 <polygon points="123.5,170.1 120.1,166.4 121.7,173.2" fill="rgb(93,144,131)" stroke="rgb(93,144,131)" stroke-width="0.5"/>
@@ -921,6 +986,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="223.2,154.9 226.6,158.2 225.0,154.0" fill="rgb(78,130,82)" stroke="rgb(78,130,82)" stroke-width="0.5"/>
 <polygon points="140.3,183.6 136.9,181.7 138.5,187.2" fill="rgb(94,133,165)" stroke="rgb(94,133,165)" stroke-width="0.5"/>
 <polygon points="163.3,152.0 159.9,151.0 161.4,157.7" fill="rgb(90,151,90)" stroke="rgb(90,151,90)" stroke-width="0.5"/>
+<line x1="209.2" y1="94.1" x2="217.6" y2="96.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="236.6,167.2 240.0,169.7 238.5,167.4" fill="rgb(62,98,84)" stroke="rgb(62,98,84)" stroke-width="0.5"/>
 <polygon points="181.3,110.0 184.7,112.2 183.2,105.7" fill="rgb(186,155,52)" stroke="rgb(186,155,52)" stroke-width="0.5"/>
 <polygon points="161.4,157.7 158.1,156.8 159.6,163.2" fill="rgb(89,146,101)" stroke="rgb(89,146,101)" stroke-width="0.5"/>
@@ -967,6 +1033,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="179.5,114.7 182.9,116.7 181.3,110.0" fill="rgb(174,155,53)" stroke="rgb(174,155,53)" stroke-width="0.5"/>
 <polygon points="135.1,185.2 131.7,182.8 133.3,188.4" fill="rgb(93,133,166)" stroke="rgb(93,133,166)" stroke-width="0.5"/>
 <polygon points="198.1,123.7 201.5,127.2 200.0,120.2" fill="rgb(148,161,60)" stroke="rgb(148,161,60)" stroke-width="0.5"/>
+<line x1="310.0" y1="185.5" x2="310.0" y2="182.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="305.4" y1="193.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="121.7,173.2 118.3,169.3 119.8,176.0" fill="rgb(91,139,132)" stroke="rgb(91,139,132)" stroke-width="0.5"/>
 <polygon points="213.1,144.4 216.5,147.9 214.9,142.4" fill="rgb(89,157,69)" stroke="rgb(89,157,69)" stroke-width="0.5"/>
 <polygon points="188.1,114.6 191.4,117.4 189.9,110.5" fill="rgb(177,158,54)" stroke="rgb(177,158,54)" stroke-width="0.5"/>
@@ -992,6 +1060,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="258.6,179.0 262.0,179.8 260.5,179.5" fill="rgb(48,72,78)" stroke="rgb(48,72,78)" stroke-width="0.5"/>
 <polygon points="111.6,160.8 114.9,165.2 113.4,158.2" fill="rgb(89,145,104)" stroke="rgb(89,145,104)" stroke-width="0.5"/>
 <polygon points="208.2,134.6 204.9,130.8 206.4,137.3" fill="rgb(117,160,63)" stroke="rgb(117,160,63)" stroke-width="0.5"/>
+<line x1="86.8" y1="193.8" x2="91.4" y2="188.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.9,185.9 133.3,188.4 131.7,182.8" fill="rgb(92,133,165)" stroke="rgb(92,133,165)" stroke-width="0.5"/>
 <polygon points="119.8,176.0 123.2,179.7 121.7,173.2" fill="rgb(91,137,140)" stroke="rgb(91,137,140)" stroke-width="0.5"/>
 <polygon points="209.7,140.8 213.1,144.4 211.6,138.5" fill="rgb(98,162,67)" stroke="rgb(98,162,67)" stroke-width="0.5"/>
@@ -1091,6 +1160,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="171.8,148.3 168.5,147.3 170.0,153.7" fill="rgb(90,157,77)" stroke="rgb(90,157,77)" stroke-width="0.5"/>
 <polygon points="104.9,151.7 108.2,156.3 106.7,149.5" fill="rgb(87,149,80)" stroke="rgb(87,149,80)" stroke-width="0.5"/>
 <polygon points="119.8,176.0 116.5,172.0 118.0,178.5" fill="rgb(89,135,131)" stroke="rgb(89,135,131)" stroke-width="0.5"/>
+<line x1="310.0" y1="182.4" x2="310.0" y2="179.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.7,140.8 206.4,137.3 207.9,143.2" fill="rgb(104,161,65)" stroke="rgb(104,161,65)" stroke-width="0.5"/>
 <polygon points="124.7,185.6 128.1,188.5 126.5,183.0" fill="rgb(91,130,158)" stroke="rgb(91,130,158)" stroke-width="0.5"/>
 <polygon points="192.9,124.3 189.6,121.5 191.1,128.5" fill="rgb(153,163,60)" stroke="rgb(153,163,60)" stroke-width="0.5"/>
@@ -1118,6 +1188,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="118.0,178.5 121.3,182.2 119.8,176.0" fill="rgb(89,134,139)" stroke="rgb(89,134,139)" stroke-width="0.5"/>
 <polygon points="175.5,137.3 178.9,138.7 177.3,131.9" fill="rgb(117,161,63)" stroke="rgb(117,161,63)" stroke-width="0.5"/>
 <polygon points="214.6,149.5 218.0,152.6 216.5,147.9" fill="rgb(85,149,72)" stroke="rgb(85,149,72)" stroke-width="0.5"/>
+<line x1="217.6" y1="96.8" x2="226.0" y2="99.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="157.4,178.8 154.1,178.4 155.6,183.1" fill="rgb(84,126,134)" stroke="rgb(84,126,134)" stroke-width="0.5"/>
 <polygon points="187.7,126.0 184.4,123.6 185.9,130.6" fill="rgb(148,163,60)" stroke="rgb(148,163,60)" stroke-width="0.5"/>
 <polygon points="182.5,128.5 185.9,130.6 184.4,123.6" fill="rgb(144,162,61)" stroke="rgb(144,162,61)" stroke-width="0.5"/>
@@ -1194,6 +1265,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="164.5,169.4 167.8,169.5 166.3,164.4" fill="rgb(83,133,104)" stroke="rgb(83,133,104)" stroke-width="0.5"/>
 <polygon points="204.5,140.0 201.2,137.0 202.7,142.9" fill="rgb(113,166,67)" stroke="rgb(113,166,67)" stroke-width="0.5"/>
 <polygon points="171.5,159.6 168.1,159.1 169.7,164.7" fill="rgb(87,145,95)" stroke="rgb(87,145,95)" stroke-width="0.5"/>
+<line x1="310.0" y1="179.3" x2="310.0" y2="176.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="155.6,183.1 159.0,183.1 157.4,178.8" fill="rgb(80,120,128)" stroke="rgb(80,120,128)" stroke-width="0.5"/>
 <polygon points="250.1,175.7 246.7,174.0 248.2,174.6" fill="rgb(49,75,69)" stroke="rgb(49,75,69)" stroke-width="0.5"/>
 <polygon points="182.2,140.2 178.9,138.7 180.4,145.2" fill="rgb(109,165,67)" stroke="rgb(109,165,67)" stroke-width="0.5"/>
@@ -1207,6 +1279,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="122.9,187.8 126.2,190.7 124.7,185.6" fill="rgb(88,126,154)" stroke="rgb(88,126,154)" stroke-width="0.5"/>
 <polygon points="214.6,149.5 211.3,146.3 212.8,151.1" fill="rgb(86,151,68)" stroke="rgb(86,151,68)" stroke-width="0.5"/>
 <polygon points="148.6,190.5 145.2,189.8 146.7,193.6" fill="rgb(84,118,154)" stroke="rgb(84,118,154)" stroke-width="0.5"/>
+<line x1="114.4" y1="102.2" x2="119.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.4,193.0 146.7,193.6 145.2,189.8" fill="rgb(84,117,156)" stroke="rgb(84,117,156)" stroke-width="0.5"/>
 <polygon points="196.0,137.6 199.3,140.2 197.8,134.0" fill="rgb(125,170,67)" stroke="rgb(125,170,67)" stroke-width="0.5"/>
 <polygon points="103.0,153.8 106.4,158.6 104.9,151.7" fill="rgb(86,148,80)" stroke="rgb(86,148,80)" stroke-width="0.5"/>
@@ -1279,6 +1352,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="166.0,174.2 162.6,174.3 164.2,178.5" fill="rgb(81,125,114)" stroke="rgb(81,125,114)" stroke-width="0.5"/>
 <polygon points="111.3,170.1 107.9,165.5 109.4,172.2" fill="rgb(86,137,107)" stroke="rgb(86,137,107)" stroke-width="0.5"/>
 <polygon points="133.0,195.3 136.3,196.9 134.8,193.1" fill="rgb(85,118,162)" stroke="rgb(85,118,162)" stroke-width="0.5"/>
+<line x1="226.0" y1="99.5" x2="234.4" y2="102.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="202.7,142.9 199.3,140.2 200.9,145.8" fill="rgb(110,168,68)" stroke="rgb(110,168,68)" stroke-width="0.5"/>
 <polygon points="183.7,146.4 180.4,145.2 181.9,151.1" fill="rgb(96,166,69)" stroke="rgb(96,166,69)" stroke-width="0.5"/>
 <polygon points="174.9,160.0 171.5,159.6 173.0,164.8" fill="rgb(87,144,91)" stroke="rgb(87,144,91)" stroke-width="0.5"/>
@@ -1291,6 +1365,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="146.7,193.6 150.1,193.8 148.6,190.5" fill="rgb(79,111,145)" stroke="rgb(79,111,145)" stroke-width="0.5"/>
 <polygon points="146.7,193.6 143.4,193.0 144.9,196.3" fill="rgb(81,113,153)" stroke="rgb(81,113,153)" stroke-width="0.5"/>
 <polygon points="260.2,179.0 263.5,179.4 262.0,179.8" fill="rgb(44,67,66)" stroke="rgb(44,67,66)" stroke-width="0.5"/>
+<line x1="310.0" y1="176.2" x2="310.0" y2="173.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="300.8" y1="198.4" x2="305.4" y2="193.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.7,155.1 180.1,155.7 178.5,150.2" fill="rgb(88,154,77)" stroke="rgb(88,154,77)" stroke-width="0.5"/>
 <polygon points="238.2,169.0 234.8,166.7 236.3,168.1" fill="rgb(54,88,65)" stroke="rgb(54,88,65)" stroke-width="0.5"/>
 <polygon points="194.1,141.3 190.8,139.2 192.3,145.1" fill="rgb(116,171,69)" stroke="rgb(116,171,69)" stroke-width="0.5"/>
@@ -1307,6 +1383,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="248.2,174.6 251.6,175.9 250.1,175.7" fill="rgb(47,73,65)" stroke="rgb(47,73,65)" stroke-width="0.5"/>
 <polygon points="226.2,161.5 229.6,163.9 228.1,161.5" fill="rgb(64,107,69)" stroke="rgb(64,107,69)" stroke-width="0.5"/>
 <polygon points="256.8,178.2 253.4,177.1 255.0,177.0" fill="rgb(45,69,64)" stroke="rgb(45,69,64)" stroke-width="0.5"/>
+<line x1="82.2" y1="198.7" x2="86.8" y2="193.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.9,151.1 178.5,150.2 180.1,155.7" fill="rgb(92,160,75)" stroke="rgb(92,160,75)" stroke-width="0.5"/>
 <polygon points="173.0,164.8 169.7,164.7 171.2,169.4" fill="rgb(84,137,98)" stroke="rgb(84,137,98)" stroke-width="0.5"/>
 <polygon points="151.9,190.7 155.3,190.4 153.8,187.1" fill="rgb(77,110,133)" stroke="rgb(77,110,133)" stroke-width="0.5"/>
@@ -1382,6 +1459,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="211.0,152.6 214.3,154.9 212.8,151.1" fill="rgb(85,148,68)" stroke="rgb(85,148,68)" stroke-width="0.5"/>
 <polygon points="150.1,193.8 153.4,193.5 151.9,190.7" fill="rgb(74,105,132)" stroke="rgb(74,105,132)" stroke-width="0.5"/>
 <polygon points="171.2,169.4 174.6,169.0 173.0,164.8" fill="rgb(80,130,93)" stroke="rgb(80,130,93)" stroke-width="0.5"/>
+<line x1="310.0" y1="173.1" x2="310.0" y2="170.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.9,196.3 141.5,195.7 143.0,198.5" fill="rgb(77,107,148)" stroke="rgb(77,107,148)" stroke-width="0.5"/>
 <polygon points="109.4,172.2 106.1,167.6 107.6,174.0" fill="rgb(84,134,105)" stroke="rgb(84,134,105)" stroke-width="0.5"/>
 <polygon points="204.2,148.0 200.9,145.8 202.4,150.5" fill="rgb(100,165,68)" stroke="rgb(100,165,68)" stroke-width="0.5"/>
@@ -1420,6 +1498,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="160.5,186.4 157.1,186.9 158.6,189.7" fill="rgb(73,107,119)" stroke="rgb(73,107,119)" stroke-width="0.5"/>
 <polygon points="303.3,163.1 299.9,165.8 301.4,165.1" fill="rgb(45,75,48)" stroke="rgb(45,75,48)" stroke-width="0.5"/>
 <polygon points="229.6,163.9 226.2,161.5 227.8,163.4" fill="rgb(59,99,60)" stroke="rgb(59,99,60)" stroke-width="0.5"/>
+<line x1="234.4" y1="102.3" x2="242.8" y2="105.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="106.1,167.6 102.7,162.8 104.2,169.5" fill="rgb(84,138,94)" stroke="rgb(84,138,94)" stroke-width="0.5"/>
 <polygon points="114.3,182.5 110.9,178.4 112.5,183.9" fill="rgb(81,124,120)" stroke="rgb(81,124,120)" stroke-width="0.5"/>
 <polygon points="199.0,148.7 195.7,146.9 197.2,151.6" fill="rgb(100,168,69)" stroke="rgb(100,168,69)" stroke-width="0.5"/>
@@ -1458,6 +1537,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="280.6,178.2 284.0,176.8 282.5,177.6" fill="rgb(44,68,60)" stroke="rgb(44,68,60)" stroke-width="0.5"/>
 <polygon points="153.4,193.5 150.1,193.8 151.6,196.1" fill="rgb(71,101,128)" stroke="rgb(71,101,128)" stroke-width="0.5"/>
 <polygon points="143.0,198.5 146.4,198.7 144.9,196.3" fill="rgb(72,101,136)" stroke="rgb(72,101,136)" stroke-width="0.5"/>
+<line x1="310.0" y1="170.0" x2="310.0" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.8,152.3 209.1,154.1 207.6,150.3" fill="rgb(88,156,66)" stroke="rgb(88,156,66)" stroke-width="0.5"/>
 <polygon points="214.3,154.9 211.0,152.6 212.5,155.9" fill="rgb(79,138,63)" stroke="rgb(79,138,63)" stroke-width="0.5"/>
 <polygon points="224.4,161.4 227.8,163.4 226.2,161.5" fill="rgb(62,105,61)" stroke="rgb(62,105,61)" stroke-width="0.5"/>
@@ -1470,6 +1550,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="109.1,179.9 112.5,183.9 110.9,178.4" fill="rgb(82,127,118)" stroke="rgb(82,127,118)" stroke-width="0.5"/>
 <polygon points="174.6,169.0 177.9,168.5 176.4,164.7" fill="rgb(77,129,86)" stroke="rgb(77,129,86)" stroke-width="0.5"/>
 <polygon points="100.9,164.7 104.2,169.5 102.7,162.8" fill="rgb(84,140,90)" stroke="rgb(84,140,90)" stroke-width="0.5"/>
+<line x1="109.8" y1="107.1" x2="114.4" y2="102.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="153.4,193.5 156.8,192.7 155.3,190.4" fill="rgb(69,100,119)" stroke="rgb(69,100,119)" stroke-width="0.5"/>
 <polygon points="181.6,160.4 185.0,160.5 183.4,156.2" fill="rgb(84,145,76)" stroke="rgb(84,145,76)" stroke-width="0.5"/>
 <polygon points="236.3,168.1 233.0,166.1 234.5,167.1" fill="rgb(51,85,56)" stroke="rgb(51,85,56)" stroke-width="0.5"/>
@@ -1529,10 +1610,12 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="270.2,179.5 273.6,179.1 272.1,179.9" fill="rgb(42,66,58)" stroke="rgb(42,66,58)" stroke-width="0.5"/>
 <polygon points="151.6,196.1 148.2,196.5 149.8,198.3" fill="rgb(67,95,123)" stroke="rgb(67,95,123)" stroke-width="0.5"/>
 <polygon points="146.4,198.7 149.8,198.3 148.2,196.5" fill="rgb(67,95,124)" stroke="rgb(67,95,124)" stroke-width="0.5"/>
+<line x1="310.0" y1="166.9" x2="310.0" y2="163.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.1,154.1 205.8,152.3 207.3,155.6" fill="rgb(83,147,63)" stroke="rgb(83,147,63)" stroke-width="0.5"/>
 <polygon points="243.0,171.7 239.7,170.0 241.2,170.3" fill="rgb(46,75,53)" stroke="rgb(46,75,53)" stroke-width="0.5"/>
 <polygon points="261.7,178.4 265.0,178.7 263.5,179.4" fill="rgb(41,65,57)" stroke="rgb(41,65,57)" stroke-width="0.5"/>
 <polygon points="132.6,199.9 136.0,200.9 134.5,198.6" fill="rgb(71,99,135)" stroke="rgb(71,99,135)" stroke-width="0.5"/>
+<line x1="296.2" y1="203.4" x2="300.8" y2="198.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.6,152.9 197.2,151.6 198.7,155.4" fill="rgb(91,159,66)" stroke="rgb(91,159,66)" stroke-width="0.5"/>
 <polygon points="224.4,161.4 221.0,159.3 222.6,161.1" fill="rgb(61,105,56)" stroke="rgb(61,105,56)" stroke-width="0.5"/>
 <polygon points="151.6,196.1 155.0,195.3 153.4,193.5" fill="rgb(66,94,116)" stroke="rgb(66,94,116)" stroke-width="0.5"/>
@@ -1542,11 +1625,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="301.4,165.1 304.8,162.3 303.3,163.1" fill="rgb(45,76,44)" stroke="rgb(45,76,44)" stroke-width="0.5"/>
 <polygon points="234.5,167.1 237.8,168.7 236.3,168.1" fill="rgb(49,82,54)" stroke="rgb(49,82,54)" stroke-width="0.5"/>
 <polygon points="195.4,154.6 198.7,155.4 197.2,151.6" fill="rgb(89,158,67)" stroke="rgb(89,158,67)" stroke-width="0.5"/>
+<line x1="242.8" y1="105.0" x2="251.2" y2="107.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.8,157.7 219.2,159.4 217.7,157.1" fill="rgb(70,122,59)" stroke="rgb(70,122,59)" stroke-width="0.5"/>
 <polygon points="156.8,192.7 153.4,193.5 155.0,195.3" fill="rgb(66,96,114)" stroke="rgb(66,96,114)" stroke-width="0.5"/>
 <polygon points="163.8,185.4 167.2,184.2 165.7,181.8" fill="rgb(67,102,98)" stroke="rgb(67,102,98)" stroke-width="0.5"/>
 <polygon points="190.2,157.1 186.8,156.7 188.3,160.5" fill="rgb(86,150,73)" stroke="rgb(86,150,73)" stroke-width="0.5"/>
 <polygon points="129.3,198.3 125.9,196.3 127.4,199.1" fill="rgb(71,101,131)" stroke="rgb(71,101,131)" stroke-width="0.5"/>
+<line x1="77.6" y1="203.7" x2="82.2" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="114.0,188.7 117.4,191.9 115.8,187.6" fill="rgb(77,115,125)" stroke="rgb(77,115,125)" stroke-width="0.5"/>
 <polygon points="117.4,191.9 120.7,194.7 119.2,190.9" fill="rgb(76,110,129)" stroke="rgb(76,110,129)" stroke-width="0.5"/>
 <polygon points="141.2,200.3 144.6,200.4 143.0,198.5" fill="rgb(68,95,128)" stroke="rgb(68,95,128)" stroke-width="0.5"/>
@@ -1605,6 +1690,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="215.8,157.7 212.5,155.9 214.0,158.2" fill="rgb(70,123,55)" stroke="rgb(70,123,55)" stroke-width="0.5"/>
 <polygon points="222.6,161.1 225.9,162.8 224.4,161.4" fill="rgb(59,101,53)" stroke="rgb(59,101,53)" stroke-width="0.5"/>
 <polygon points="127.4,199.1 130.8,200.6 129.3,198.3" fill="rgb(69,97,126)" stroke="rgb(69,97,126)" stroke-width="0.5"/>
+<line x1="310.0" y1="163.8" x2="310.0" y2="160.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="299.6,166.9 296.2,169.4 297.8,168.5" fill="rgb(45,74,47)" stroke="rgb(45,74,47)" stroke-width="0.5"/>
 <polygon points="198.7,155.4 195.4,154.6 196.9,157.9" fill="rgb(86,152,65)" stroke="rgb(86,152,65)" stroke-width="0.5"/>
 <polygon points="188.3,160.5 191.7,160.4 190.2,157.1" fill="rgb(81,141,68)" stroke="rgb(81,141,68)" stroke-width="0.5"/>
@@ -1656,6 +1742,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="265.0,178.7 261.7,178.4 263.2,177.6" fill="rgb(41,65,52)" stroke="rgb(41,65,52)" stroke-width="0.5"/>
 <polygon points="112.2,189.4 115.5,192.4 114.0,188.7" fill="rgb(73,110,116)" stroke="rgb(73,110,116)" stroke-width="0.5"/>
 <polygon points="179.4,171.3 176.1,172.3 177.6,174.7" fill="rgb(69,114,78)" stroke="rgb(69,114,78)" stroke-width="0.5"/>
+<line x1="251.2" y1="107.7" x2="259.6" y2="110.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="237.8,168.7 234.5,167.1 236.0,167.3" fill="rgb(46,78,47)" stroke="rgb(46,78,47)" stroke-width="0.5"/>
 <polygon points="127.4,199.1 124.1,197.1 125.6,199.4" fill="rgb(65,94,117)" stroke="rgb(65,94,117)" stroke-width="0.5"/>
 <polygon points="115.5,192.4 118.9,195.2 117.4,191.9" fill="rgb(71,105,117)" stroke="rgb(71,105,117)" stroke-width="0.5"/>
@@ -1673,6 +1760,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="118.9,195.2 122.2,197.5 120.7,194.7" fill="rgb(69,100,118)" stroke="rgb(69,100,118)" stroke-width="0.5"/>
 <polygon points="268.4,178.8 271.8,178.7 270.2,179.5" fill="rgb(42,66,54)" stroke="rgb(42,66,54)" stroke-width="0.5"/>
 <polygon points="287.4,175.2 290.7,173.5 289.2,174.3" fill="rgb(44,72,52)" stroke="rgb(44,72,52)" stroke-width="0.5"/>
+<line x1="310.0" y1="160.7" x2="310.0" y2="157.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="287.4,175.2 284.0,176.8 285.5,176.0" fill="rgb(44,72,53)" stroke="rgb(44,72,53)" stroke-width="0.5"/>
 <polygon points="139.4,201.6 136.0,200.9 137.5,202.3" fill="rgb(62,87,115)" stroke="rgb(62,87,115)" stroke-width="0.5"/>
 <polygon points="165.4,187.3 162.0,188.7 163.5,190.1" fill="rgb(61,92,93)" stroke="rgb(61,92,93)" stroke-width="0.5"/>
@@ -1684,6 +1772,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="191.7,160.4 195.0,160.3 193.5,157.5" fill="rgb(79,138,63)" stroke="rgb(79,138,63)" stroke-width="0.5"/>
 <polygon points="282.2,177.3 285.5,176.0 284.0,176.8" fill="rgb(44,71,54)" stroke="rgb(44,71,54)" stroke-width="0.5"/>
 <polygon points="95.7,161.7 92.3,156.9 93.8,163.5" fill="rgb(85,147,70)" stroke="rgb(85,147,70)" stroke-width="0.5"/>
+<line x1="105.2" y1="112.1" x2="109.8" y2="107.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="93.8,163.5 97.2,168.2 95.7,161.7" fill="rgb(85,145,78)" stroke="rgb(85,145,78)" stroke-width="0.5"/>
 <polygon points="179.4,171.3 182.8,170.2 181.3,167.8" fill="rgb(69,114,72)" stroke="rgb(69,114,72)" stroke-width="0.5"/>
 <polygon points="205.4,157.1 208.8,157.9 207.3,155.6" fill="rgb(77,135,56)" stroke="rgb(77,135,56)" stroke-width="0.5"/>
@@ -1743,15 +1832,18 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="177.6,174.7 181.0,173.2 179.4,171.3" fill="rgb(64,106,71)" stroke="rgb(64,106,71)" stroke-width="0.5"/>
 <polygon points="229.3,164.3 225.9,162.8 227.4,163.3" fill="rgb(50,87,43)" stroke="rgb(50,87,43)" stroke-width="0.5"/>
 <polygon points="189.8,163.3 193.2,162.8 191.7,160.4" fill="rgb(73,127,61)" stroke="rgb(73,127,61)" stroke-width="0.5"/>
+<line x1="310.0" y1="157.6" x2="310.0" y2="154.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="118.9,195.2 115.5,192.4 117.0,195.3" fill="rgb(65,97,106)" stroke="rgb(65,97,106)" stroke-width="0.5"/>
 <polygon points="95.3,169.8 98.7,174.1 97.2,168.2" fill="rgb(83,139,86)" stroke="rgb(83,139,86)" stroke-width="0.5"/>
 <polygon points="108.8,185.9 105.4,182.2 107.0,186.5" fill="rgb(73,114,101)" stroke="rgb(73,114,101)" stroke-width="0.5"/>
+<line x1="291.6" y1="208.3" x2="296.2" y2="203.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.0,160.3 198.4,160.2 196.9,157.9" fill="rgb(75,132,58)" stroke="rgb(75,132,58)" stroke-width="0.5"/>
 <polygon points="195.0,160.3 191.7,160.4 193.2,162.8" fill="rgb(75,132,60)" stroke="rgb(75,132,60)" stroke-width="0.5"/>
 <polygon points="271.8,178.7 275.1,178.3 273.6,179.1" fill="rgb(43,68,52)" stroke="rgb(43,68,52)" stroke-width="0.5"/>
 <polygon points="170.6,182.6 173.9,180.8 172.4,179.4" fill="rgb(60,95,77)" stroke="rgb(60,95,77)" stroke-width="0.5"/>
 <polygon points="263.2,177.6 266.6,177.9 265.0,178.7" fill="rgb(41,66,49)" stroke="rgb(41,66,49)" stroke-width="0.5"/>
 <polygon points="137.5,202.3 140.9,202.5 139.4,201.6" fill="rgb(58,82,106)" stroke="rgb(58,82,106)" stroke-width="0.5"/>
+<line x1="73.0" y1="208.6" x2="77.6" y2="203.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="259.8,177.1 256.5,176.5 258.0,175.7" fill="rgb(40,66,47)" stroke="rgb(40,66,47)" stroke-width="0.5"/>
 <polygon points="182.8,170.2 179.4,171.3 181.0,173.2" fill="rgb(66,110,69)" stroke="rgb(66,110,69)" stroke-width="0.5"/>
 <polygon points="217.4,159.5 214.0,158.2 215.5,159.6" fill="rgb(61,109,46)" stroke="rgb(61,109,46)" stroke-width="0.5"/>
@@ -1763,6 +1855,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="93.8,163.5 90.5,158.8 92.0,165.3" fill="rgb(85,147,70)" stroke="rgb(85,147,70)" stroke-width="0.5"/>
 <polygon points="175.8,177.9 172.4,179.4 173.9,180.8" fill="rgb(61,98,75)" stroke="rgb(61,98,75)" stroke-width="0.5"/>
 <polygon points="208.8,157.9 205.4,157.1 207.0,158.9" fill="rgb(72,124,52)" stroke="rgb(72,124,52)" stroke-width="0.5"/>
+<line x1="259.6" y1="110.4" x2="268.0" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="92.0,165.3 95.3,169.8 93.8,163.5" fill="rgb(85,146,77)" stroke="rgb(85,146,77)" stroke-width="0.5"/>
 <polygon points="308.2,159.6 304.8,162.3 306.3,161.6" fill="rgb(45,80,36)" stroke="rgb(45,80,36)" stroke-width="0.5"/>
 <polygon points="110.3,189.7 113.7,192.7 112.2,189.4" fill="rgb(70,106,105)" stroke="rgb(70,106,105)" stroke-width="0.5"/>
@@ -1806,6 +1899,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="146.1,201.4 142.7,201.7 144.2,202.3" fill="rgb(55,78,97)" stroke="rgb(55,78,97)" stroke-width="0.5"/>
 <polygon points="188.0,166.1 191.4,165.2 189.8,163.3" fill="rgb(67,117,58)" stroke="rgb(67,117,58)" stroke-width="0.5"/>
 <polygon points="168.7,185.6 172.1,183.6 170.6,182.6" fill="rgb(56,89,75)" stroke="rgb(56,89,75)" stroke-width="0.5"/>
+<line x1="310.0" y1="154.5" x2="310.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="263.2,177.6 259.8,177.1 261.4,176.3" fill="rgb(41,66,47)" stroke="rgb(41,66,47)" stroke-width="0.5"/>
 <polygon points="198.4,160.2 201.8,160.1 200.2,158.2" fill="rgb(73,126,52)" stroke="rgb(73,126,52)" stroke-width="0.5"/>
 <polygon points="161.7,192.6 158.3,194.1 159.8,194.7" fill="rgb(54,82,86)" stroke="rgb(54,82,86)" stroke-width="0.5"/>
@@ -1863,6 +1957,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="166.9,188.3 170.2,186.2 168.7,185.6" fill="rgb(54,84,73)" stroke="rgb(54,84,73)" stroke-width="0.5"/>
 <polygon points="186.2,168.9 189.5,167.5 188.0,166.1" fill="rgb(63,108,56)" stroke="rgb(63,108,56)" stroke-width="0.5"/>
 <polygon points="215.5,159.6 212.2,158.8 213.7,159.8" fill="rgb(62,103,43)" stroke="rgb(62,103,43)" stroke-width="0.5"/>
+<line x1="310.0" y1="151.4" x2="310.0" y2="148.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="100.2,179.2 96.9,175.3 98.4,180.0" fill="rgb(76,125,87)" stroke="rgb(76,125,87)" stroke-width="0.5"/>
 <polygon points="201.8,160.1 205.1,160.0 203.6,158.6" fill="rgb(70,117,48)" stroke="rgb(70,117,48)" stroke-width="0.5"/>
 <polygon points="154.6,198.1 151.3,199.3 152.8,199.5" fill="rgb(52,76,86)" stroke="rgb(52,76,86)" stroke-width="0.5"/>
@@ -1872,11 +1967,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="127.1,200.9 130.5,201.9 129.0,201.0" fill="rgb(55,79,94)" stroke="rgb(55,79,94)" stroke-width="0.5"/>
 <polygon points="191.4,165.2 188.0,166.1 189.5,167.5" fill="rgb(64,112,54)" stroke="rgb(64,112,54)" stroke-width="0.5"/>
 <polygon points="269.9,178.0 273.3,178.0 271.8,178.7" fill="rgb(43,70,48)" stroke="rgb(43,70,48)" stroke-width="0.5"/>
+<line x1="268.0" y1="113.1" x2="276.4" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="120.4,197.5 117.0,195.3 118.6,197.1" fill="rgb(58,87,93)" stroke="rgb(58,87,93)" stroke-width="0.5"/>
 <polygon points="294.1,171.6 290.7,173.5 292.2,172.9" fill="rgb(47,79,47)" stroke="rgb(47,79,47)" stroke-width="0.5"/>
 <polygon points="227.4,163.3 224.1,162.1 225.6,162.3" fill="rgb(48,86,37)" stroke="rgb(48,86,37)" stroke-width="0.5"/>
 <polygon points="283.7,176.6 287.0,175.5 285.5,176.0" fill="rgb(46,77,50)" stroke="rgb(46,77,50)" stroke-width="0.5"/>
 <polygon points="154.6,198.1 158.0,196.5 156.5,196.3" fill="rgb(52,77,83)" stroke="rgb(52,77,83)" stroke-width="0.5"/>
+<line x1="100.6" y1="117.0" x2="105.2" y2="112.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="86.8,162.8 90.1,167.0 88.6,160.8" fill="rgb(88,154,68)" stroke="rgb(88,154,68)" stroke-width="0.5"/>
 <polygon points="149.4,200.7 146.1,201.4 147.6,201.6" fill="rgb(52,75,88)" stroke="rgb(52,75,88)" stroke-width="0.5"/>
 <polygon points="172.1,183.6 168.7,185.6 170.2,186.2" fill="rgb(54,86,71)" stroke="rgb(54,86,71)" stroke-width="0.5"/>
@@ -1932,12 +2029,15 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="127.1,200.9 123.8,199.4 125.3,200.4" fill="rgb(53,78,88)" stroke="rgb(53,78,88)" stroke-width="0.5"/>
 <polygon points="165.0,190.7 168.4,188.5 166.9,188.3" fill="rgb(51,80,70)" stroke="rgb(51,80,70)" stroke-width="0.5"/>
 <polygon points="118.6,197.1 121.9,198.9 120.4,197.5" fill="rgb(56,84,89)" stroke="rgb(56,84,89)" stroke-width="0.5"/>
+<line x1="310.0" y1="148.3" x2="310.0" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.1,160.0 208.5,159.9 207.0,158.9" fill="rgb(68,108,44)" stroke="rgb(68,108,44)" stroke-width="0.5"/>
+<line x1="287.0" y1="213.3" x2="291.6" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="252.8,173.2 256.2,174.1 254.6,174.9" fill="rgb(40,67,40)" stroke="rgb(40,67,40)" stroke-width="0.5"/>
 <polygon points="88.3,168.7 91.7,172.6 90.1,167.0" fill="rgb(85,148,76)" stroke="rgb(85,148,76)" stroke-width="0.5"/>
 <polygon points="213.7,159.8 217.0,160.2 215.5,159.6" fill="rgb(61,97,40)" stroke="rgb(61,97,40)" stroke-width="0.5"/>
 <polygon points="189.5,167.5 186.2,168.9 187.7,169.9" fill="rgb(59,103,52)" stroke="rgb(59,103,52)" stroke-width="0.5"/>
 <polygon points="273.3,178.0 276.6,177.8 275.1,178.3" fill="rgb(44,74,49)" stroke="rgb(44,74,49)" stroke-width="0.5"/>
+<line x1="68.4" y1="213.6" x2="73.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.2,186.2 166.9,188.3 168.4,188.5" fill="rgb(51,81,68)" stroke="rgb(51,81,68)" stroke-width="0.5"/>
 <polygon points="264.7,176.8 268.1,177.2 266.6,177.9" fill="rgb(42,70,45)" stroke="rgb(42,70,45)" stroke-width="0.5"/>
 <polygon points="225.6,162.3 229.0,163.3 227.4,163.3" fill="rgb(48,82,34)" stroke="rgb(48,82,34)" stroke-width="0.5"/>
@@ -1977,6 +2077,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="297.4,169.6 294.1,171.6 295.6,171.2" fill="rgb(48,83,43)" stroke="rgb(48,83,43)" stroke-width="0.5"/>
 <polygon points="213.7,159.8 210.3,159.3 211.8,159.9" fill="rgb(63,97,39)" stroke="rgb(63,97,39)" stroke-width="0.5"/>
 <polygon points="147.6,201.6 144.2,202.3 145.8,202.2" fill="rgb(49,71,81)" stroke="rgb(49,71,81)" stroke-width="0.5"/>
+<line x1="276.4" y1="115.8" x2="284.8" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="95.0,176.4 91.7,172.6 93.2,177.3" fill="rgb(78,132,78)" stroke="rgb(78,132,78)" stroke-width="0.5"/>
 <polygon points="281.8,177.1 285.2,176.3 283.7,176.6" fill="rgb(48,80,49)" stroke="rgb(48,80,49)" stroke-width="0.5"/>
 <polygon points="273.3,178.0 269.9,178.0 271.4,177.5" fill="rgb(45,74,47)" stroke="rgb(45,74,47)" stroke-width="0.5"/>
@@ -1991,6 +2092,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="297.4,169.6 300.8,167.5 299.3,167.8" fill="rgb(49,85,40)" stroke="rgb(49,85,40)" stroke-width="0.5"/>
 <polygon points="182.5,174.2 185.8,172.2 184.3,171.6" fill="rgb(55,94,51)" stroke="rgb(55,94,51)" stroke-width="0.5"/>
 <polygon points="208.5,159.9 211.8,159.9 210.3,159.3" fill="rgb(65,99,40)" stroke="rgb(65,99,40)" stroke-width="0.5"/>
+<line x1="310.0" y1="145.2" x2="310.0" y2="142.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="125.3,200.4 128.6,201.4 127.1,200.9" fill="rgb(51,75,82)" stroke="rgb(51,75,82)" stroke-width="0.5"/>
 <polygon points="99.9,183.8 103.3,186.8 101.8,183.5" fill="rgb(70,113,85)" stroke="rgb(70,113,85)" stroke-width="0.5"/>
 <polygon points="237.5,167.0 234.2,165.8 235.7,165.2" fill="rgb(42,74,32)" stroke="rgb(42,74,32)" stroke-width="0.5"/>
@@ -2046,6 +2148,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="173.6,183.8 170.2,186.2 171.8,186.1" fill="rgb(49,80,59)" stroke="rgb(49,80,59)" stroke-width="0.5"/>
 <polygon points="268.1,177.2 264.7,176.8 266.2,176.3" fill="rgb(43,74,43)" stroke="rgb(43,74,43)" stroke-width="0.5"/>
 <polygon points="229.0,163.3 225.6,162.3 227.1,162.0" fill="rgb(49,77,32)" stroke="rgb(49,77,32)" stroke-width="0.5"/>
+<line x1="310.0" y1="142.1" x2="310.0" y2="139.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.2,198.0 159.5,196.2 158.0,196.5" fill="rgb(47,72,70)" stroke="rgb(47,72,70)" stroke-width="0.5"/>
 <polygon points="125.3,200.4 121.9,198.9 123.4,199.5" fill="rgb(49,75,77)" stroke="rgb(49,75,77)" stroke-width="0.5"/>
 <polygon points="290.4,174.2 293.8,172.8 292.2,172.9" fill="rgb(51,87,46)" stroke="rgb(51,87,46)" stroke-width="0.5"/>
@@ -2058,6 +2161,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="161.4,194.6 158.0,196.5 159.5,196.2" fill="rgb(47,73,69)" stroke="rgb(47,73,69)" stroke-width="0.5"/>
 <polygon points="271.4,177.5 274.8,177.6 273.3,178.0" fill="rgb(46,77,46)" stroke="rgb(46,77,46)" stroke-width="0.5"/>
 <polygon points="145.8,202.2 149.1,201.3 147.6,201.6" fill="rgb(47,70,75)" stroke="rgb(47,70,75)" stroke-width="0.5"/>
+<line x1="96.0" y1="122.0" x2="100.6" y2="117.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="137.2,202.9 133.8,202.6 135.4,202.5" fill="rgb(47,69,76)" stroke="rgb(47,69,76)" stroke-width="0.5"/>
 <polygon points="96.6,180.6 93.2,177.3 94.7,181.1" fill="rgb(73,122,76)" stroke="rgb(73,122,76)" stroke-width="0.5"/>
 <polygon points="99.9,183.8 96.6,180.6 98.1,183.9" fill="rgb(68,113,77)" stroke="rgb(68,113,77)" stroke-width="0.5"/>
@@ -2071,6 +2175,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="161.4,194.6 164.7,192.5 163.2,192.8" fill="rgb(47,74,65)" stroke="rgb(47,74,65)" stroke-width="0.5"/>
 <polygon points="244.2,169.2 240.9,168.1 242.4,167.3" fill="rgb(40,71,31)" stroke="rgb(40,71,31)" stroke-width="0.5"/>
 <polygon points="300.8,167.5 297.4,169.6 299.0,169.5" fill="rgb(51,89,39)" stroke="rgb(51,89,39)" stroke-width="0.5"/>
+<line x1="284.8" y1="118.5" x2="293.2" y2="121.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="106.6,189.6 103.3,186.8 104.8,189.1" fill="rgb(61,97,76)" stroke="rgb(61,97,76)" stroke-width="0.5"/>
 <polygon points="262.9,175.6 266.2,176.3 264.7,176.8" fill="rgb(43,73,41)" stroke="rgb(43,73,41)" stroke-width="0.5"/>
 <polygon points="173.6,183.8 177.0,181.3 175.4,181.4" fill="rgb(49,82,54)" stroke="rgb(49,82,54)" stroke-width="0.5"/>
@@ -2107,8 +2212,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="239.0,166.2 242.4,167.3 240.9,168.1" fill="rgb(41,71,30)" stroke="rgb(41,71,30)" stroke-width="0.5"/>
 <polygon points="206.6,160.6 203.3,161.1 204.8,161.3" fill="rgb(64,93,38)" stroke="rgb(64,93,38)" stroke-width="0.5"/>
 <polygon points="101.4,186.6 104.8,189.1 103.3,186.8" fill="rgb(63,102,76)" stroke="rgb(63,102,76)" stroke-width="0.5"/>
+<line x1="310.0" y1="139.0" x2="310.0" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="247.6,170.3 244.2,169.2 245.8,168.4" fill="rgb(40,70,31)" stroke="rgb(40,70,31)" stroke-width="0.5"/>
 <polygon points="191.0,168.1 194.4,166.4 192.9,166.1" fill="rgb(56,94,39)" stroke="rgb(56,94,39)" stroke-width="0.5"/>
+<line x1="282.4" y1="218.2" x2="287.0" y2="213.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.8,186.1 168.4,188.5 169.9,188.2" fill="rgb(48,77,57)" stroke="rgb(48,77,57)" stroke-width="0.5"/>
 <polygon points="201.4,162.2 204.8,161.3 203.3,161.1" fill="rgb(64,93,38)" stroke="rgb(64,93,38)" stroke-width="0.5"/>
 <polygon points="196.2,164.7 192.9,166.1 194.4,166.4" fill="rgb(58,95,39)" stroke="rgb(58,95,39)" stroke-width="0.5"/>
@@ -2121,6 +2228,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="201.4,162.2 198.1,163.2 199.6,163.4" fill="rgb(62,94,38)" stroke="rgb(62,94,38)" stroke-width="0.5"/>
 <polygon points="116.7,196.4 113.4,194.4 114.9,195.4" fill="rgb(51,80,71)" stroke="rgb(51,80,71)" stroke-width="0.5"/>
 <polygon points="196.2,164.7 199.6,163.4 198.1,163.2" fill="rgb(61,94,38)" stroke="rgb(61,94,38)" stroke-width="0.5"/>
+<line x1="63.8" y1="218.5" x2="68.4" y2="213.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="266.2,176.3 269.6,176.8 268.1,177.2" fill="rgb(45,77,42)" stroke="rgb(45,77,42)" stroke-width="0.5"/>
 <polygon points="227.1,162.0 230.5,162.7 229.0,163.3" fill="rgb(50,75,30)" stroke="rgb(50,75,30)" stroke-width="0.5"/>
 <polygon points="184.0,174.4 180.6,176.7 182.2,176.6" fill="rgb(50,86,45)" stroke="rgb(50,86,45)" stroke-width="0.5"/>
@@ -2164,7 +2272,9 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="189.2,170.1 185.8,172.2 187.4,172.1" fill="rgb(51,89,39)" stroke="rgb(51,89,39)" stroke-width="0.5"/>
 <polygon points="283.4,177.0 280.0,177.4 281.5,177.7" fill="rgb(53,91,49)" stroke="rgb(53,91,49)" stroke-width="0.5"/>
 <polygon points="230.5,162.7 233.8,163.5 232.3,164.2" fill="rgb(49,72,29)" stroke="rgb(49,72,29)" stroke-width="0.5"/>
+<line x1="310.0" y1="135.9" x2="310.0" y2="132.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="98.1,183.9 94.7,181.1 96.2,183.9" fill="rgb(67,111,70)" stroke="rgb(67,111,70)" stroke-width="0.5"/>
+<line x1="293.2" y1="121.2" x2="301.6" y2="123.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.7,192.5 168.1,190.1 166.6,190.6" fill="rgb(46,74,58)" stroke="rgb(46,74,58)" stroke-width="0.5"/>
 <polygon points="269.6,176.8 273.0,177.4 271.4,177.5" fill="rgb(47,82,44)" stroke="rgb(47,82,44)" stroke-width="0.5"/>
 <polygon points="79.4,170.7 82.8,173.5 81.3,168.7" fill="rgb(90,160,68)" stroke="rgb(90,160,68)" stroke-width="0.5"/>
@@ -2223,6 +2333,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="111.5,193.5 108.2,191.4 109.7,192.4" fill="rgb(51,82,64)" stroke="rgb(51,82,64)" stroke-width="0.5"/>
 <polygon points="273.0,177.4 276.3,177.8 274.8,177.6" fill="rgb(51,88,45)" stroke="rgb(51,88,45)" stroke-width="0.5"/>
 <polygon points="257.7,173.4 254.3,172.4 255.8,171.8" fill="rgb(42,75,32)" stroke="rgb(42,75,32)" stroke-width="0.5"/>
+<line x1="310.0" y1="132.8" x2="310.0" y2="129.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="82.8,173.5 79.4,170.7 81.0,175.0" fill="rgb(86,151,67)" stroke="rgb(86,151,67)" stroke-width="0.5"/>
 <polygon points="230.5,162.7 227.1,162.0 228.6,161.3" fill="rgb(52,72,28)" stroke="rgb(52,72,28)" stroke-width="0.5"/>
 <polygon points="157.7,197.5 161.0,195.5 159.5,196.2" fill="rgb(45,70,60)" stroke="rgb(45,70,60)" stroke-width="0.5"/>
@@ -2232,6 +2343,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="187.4,172.1 184.0,174.4 185.5,174.1" fill="rgb(49,85,38)" stroke="rgb(49,85,38)" stroke-width="0.5"/>
 <polygon points="138.7,202.6 135.4,202.5 136.9,202.0" fill="rgb(43,66,64)" stroke="rgb(43,66,64)" stroke-width="0.5"/>
 <polygon points="147.3,201.6 150.6,200.6 149.1,201.3" fill="rgb(44,68,64)" stroke="rgb(44,68,64)" stroke-width="0.5"/>
+<line x1="91.4" y1="126.9" x2="96.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="86.2,176.2 82.8,173.5 84.3,177.3" fill="rgb(80,140,67)" stroke="rgb(80,140,67)" stroke-width="0.5"/>
 <polygon points="281.5,177.7 284.9,177.6 283.4,177.0" fill="rgb(56,98,50)" stroke="rgb(56,98,50)" stroke-width="0.5"/>
 <polygon points="103.0,188.5 106.3,190.5 104.8,189.1" fill="rgb(56,91,65)" stroke="rgb(56,91,65)" stroke-width="0.5"/>
@@ -2262,6 +2374,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="192.6,168.0 189.2,170.1 190.7,169.8" fill="rgb(53,85,35)" stroke="rgb(53,85,35)" stroke-width="0.5"/>
 <polygon points="261.0,174.3 257.7,173.4 259.2,173.0" fill="rgb(44,78,33)" stroke="rgb(44,78,33)" stroke-width="0.5"/>
 <polygon points="142.1,202.3 145.4,201.7 143.9,202.4" fill="rgb(43,66,63)" stroke="rgb(43,66,63)" stroke-width="0.5"/>
+<line x1="301.6" y1="123.9" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="273.0,177.4 269.6,176.8 271.1,177.1" fill="rgb(51,88,43)" stroke="rgb(51,88,43)" stroke-width="0.5"/>
 <polygon points="233.8,163.5 230.5,162.7 232.0,161.9" fill="rgb(52,70,28)" stroke="rgb(52,70,28)" stroke-width="0.5"/>
 <polygon points="96.2,183.9 92.9,181.4 94.4,183.8" fill="rgb(64,108,63)" stroke="rgb(64,108,63)" stroke-width="0.5"/>
@@ -2276,6 +2389,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="109.7,192.4 113.0,194.1 111.5,193.5" fill="rgb(49,79,60)" stroke="rgb(49,79,60)" stroke-width="0.5"/>
 <polygon points="197.8,164.7 194.4,166.4 195.9,166.0" fill="rgb(59,84,34)" stroke="rgb(59,84,34)" stroke-width="0.5"/>
 <polygon points="125.0,199.4 128.3,200.2 126.8,200.6" fill="rgb(43,67,60)" stroke="rgb(43,67,60)" stroke-width="0.5"/>
+<line x1="310.0" y1="129.7" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="277.8" y1="223.2" x2="282.4" y2="218.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.0,162.1 199.6,163.4 201.1,163.0" fill="rgb(63,83,33)" stroke="rgb(63,83,33)" stroke-width="0.5"/>
 <polygon points="240.6,165.4 243.9,166.5 242.4,167.3" fill="rgb(48,69,28)" stroke="rgb(48,69,28)" stroke-width="0.5"/>
 <polygon points="197.8,164.7 201.1,163.0 199.6,163.4" fill="rgb(61,84,33)" stroke="rgb(61,84,33)" stroke-width="0.5"/>
@@ -2290,6 +2405,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="290.1,176.0 286.7,176.5 288.2,177.5" fill="rgb(62,107,50)" stroke="rgb(62,107,50)" stroke-width="0.5"/>
 <polygon points="142.1,202.3 138.7,202.6 140.2,201.9" fill="rgb(43,66,62)" stroke="rgb(43,66,62)" stroke-width="0.5"/>
 <polygon points="255.8,171.8 259.2,173.0 257.7,173.4" fill="rgb(44,77,32)" stroke="rgb(44,77,32)" stroke-width="0.5"/>
+<line x1="59.2" y1="223.5" x2="63.8" y2="218.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="284.9,177.6 288.2,177.5 286.7,176.5" fill="rgb(62,107,50)" stroke="rgb(62,107,50)" stroke-width="0.5"/>
 <polygon points="185.5,174.1 182.2,176.6 183.7,176.0" fill="rgb(47,83,37)" stroke="rgb(47,83,37)" stroke-width="0.5"/>
 <polygon points="228.6,161.3 232.0,161.9 230.5,162.7" fill="rgb(54,70,27)" stroke="rgb(54,70,27)" stroke-width="0.5"/>
@@ -2387,6 +2503,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="250.6,168.9 254.0,170.3 252.5,170.6" fill="rgb(50,75,30)" stroke="rgb(50,75,30)" stroke-width="0.5"/>
 <polygon points="259.2,173.0 255.8,171.8 257.4,171.7" fill="rgb(51,80,33)" stroke="rgb(51,80,33)" stroke-width="0.5"/>
 <polygon points="176.6,182.8 173.3,185.5 174.8,184.8" fill="rgb(45,77,42)" stroke="rgb(45,77,42)" stroke-width="0.5"/>
+<line x1="305.4" y1="131.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.2,196.7 155.8,198.5 157.4,197.7" fill="rgb(44,71,55)" stroke="rgb(44,71,55)" stroke-width="0.5"/>
 <polygon points="154.0,199.2 157.4,197.7 155.8,198.5" fill="rgb(44,70,56)" stroke="rgb(44,70,56)" stroke-width="0.5"/>
 <polygon points="97.8,185.8 94.4,183.8 95.9,185.2" fill="rgb(56,96,53)" stroke="rgb(56,96,53)" stroke-width="0.5"/>
@@ -2398,6 +2515,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="116.4,195.6 113.0,194.1 114.6,194.0" fill="rgb(44,71,52)" stroke="rgb(44,71,52)" stroke-width="0.5"/>
 <polygon points="154.0,199.2 150.6,200.6 152.2,199.8" fill="rgb(43,69,57)" stroke="rgb(43,69,57)" stroke-width="0.5"/>
 <polygon points="283.0,178.7 279.7,178.3 281.2,179.7" fill="rgb(66,115,52)" stroke="rgb(66,115,52)" stroke-width="0.5"/>
+<line x1="86.8" y1="131.9" x2="91.4" y2="126.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="89.2,181.8 92.6,183.5 91.0,181.7" fill="rgb(64,111,56)" stroke="rgb(64,111,56)" stroke-width="0.5"/>
 <polygon points="164.4,193.3 161.0,195.5 162.6,194.7" fill="rgb(44,72,52)" stroke="rgb(44,72,52)" stroke-width="0.5"/>
 <polygon points="140.2,201.9 136.9,202.0 138.4,201.2" fill="rgb(42,65,56)" stroke="rgb(42,65,56)" stroke-width="0.5"/>
@@ -2447,6 +2565,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="126.5,198.9 129.8,199.5 128.3,200.2" fill="rgb(41,66,52)" stroke="rgb(41,66,52)" stroke-width="0.5"/>
 <polygon points="95.9,185.2 99.3,186.8 97.8,185.8" fill="rgb(54,93,50)" stroke="rgb(54,93,50)" stroke-width="0.5"/>
 <polygon points="277.8,178.8 274.5,178.0 276.0,179.4" fill="rgb(64,113,48)" stroke="rgb(64,113,48)" stroke-width="0.5"/>
+<line x1="273.2" y1="228.1" x2="277.8" y2="223.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="89.2,181.8 85.8,180.1 87.4,181.9" fill="rgb(64,113,52)" stroke="rgb(64,113,52)" stroke-width="0.5"/>
 <polygon points="257.4,171.7 260.7,173.2 259.2,173.0" fill="rgb(55,82,34)" stroke="rgb(55,82,34)" stroke-width="0.5"/>
 <polygon points="204.5,161.6 201.1,163.0 202.6,162.3" fill="rgb(65,77,29)" stroke="rgb(65,77,29)" stroke-width="0.5"/>
@@ -2458,6 +2577,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="181.8,178.0 185.2,175.2 183.7,176.0" fill="rgb(48,80,33)" stroke="rgb(48,80,33)" stroke-width="0.5"/>
 <polygon points="174.8,184.8 171.4,187.5 173.0,186.6" fill="rgb(45,76,41)" stroke="rgb(45,76,41)" stroke-width="0.5"/>
 <polygon points="281.2,179.7 284.6,180.5 283.0,178.7" fill="rgb(70,123,54)" stroke="rgb(70,123,54)" stroke-width="0.5"/>
+<line x1="54.6" y1="228.4" x2="59.2" y2="223.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.6,201.5 140.2,201.9 141.8,201.1" fill="rgb(42,67,55)" stroke="rgb(42,67,55)" stroke-width="0.5"/>
 <polygon points="114.6,194.0 117.9,195.3 116.4,195.6" fill="rgb(42,70,48)" stroke="rgb(42,70,48)" stroke-width="0.5"/>
 <polygon points="123.1,198.0 119.8,196.9 121.3,196.4" fill="rgb(41,67,49)" stroke="rgb(41,67,49)" stroke-width="0.5"/>
@@ -2550,6 +2670,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="236.9,162.0 240.2,163.1 238.7,163.6" fill="rgb(62,70,26)" stroke="rgb(62,70,26)" stroke-width="0.5"/>
 <polygon points="245.4,166.0 242.1,164.7 243.6,164.4" fill="rgb(62,73,28)" stroke="rgb(62,73,28)" stroke-width="0.5"/>
 <polygon points="216.4,158.5 219.8,158.1 218.2,158.9" fill="rgb(69,71,26)" stroke="rgb(69,71,26)" stroke-width="0.5"/>
+<line x1="300.8" y1="136.5" x2="305.4" y2="131.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="78.8,180.3 75.4,179.5 77.0,181.3" fill="rgb(72,124,52)" stroke="rgb(72,124,52)" stroke-width="0.5"/>
 <polygon points="185.2,175.2 188.6,172.5 187.0,173.4" fill="rgb(55,78,31)" stroke="rgb(55,78,31)" stroke-width="0.5"/>
 <polygon points="178.2,182.0 174.8,184.8 176.3,184.0" fill="rgb(45,80,36)" stroke="rgb(45,80,36)" stroke-width="0.5"/>
@@ -2561,6 +2682,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="155.5,198.4 158.9,197.0 157.4,197.7" fill="rgb(45,74,51)" stroke="rgb(45,74,51)" stroke-width="0.5"/>
 <polygon points="102.6,188.3 99.3,186.8 100.8,187.0" fill="rgb(47,81,41)" stroke="rgb(47,81,41)" stroke-width="0.5"/>
 <polygon points="270.8,178.2 274.2,179.9 272.6,178.1" fill="rgb(70,113,47)" stroke="rgb(70,113,47)" stroke-width="0.5"/>
+<line x1="82.2" y1="136.8" x2="86.8" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="82.2,181.2 85.5,182.0 84.0,180.6" fill="rgb(65,113,47)" stroke="rgb(65,113,47)" stroke-width="0.5"/>
 <polygon points="264.1,174.8 260.7,173.2 262.2,174.2" fill="rgb(66,95,38)" stroke="rgb(66,95,38)" stroke-width="0.5"/>
 <polygon points="233.5,161.1 230.2,160.5 231.7,159.8" fill="rgb(66,69,25)" stroke="rgb(66,69,25)" stroke-width="0.5"/>
@@ -2610,6 +2732,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="219.8,158.1 223.1,158.0 221.6,158.8" fill="rgb(71,70,25)" stroke="rgb(71,70,25)" stroke-width="0.5"/>
 <polygon points="195.6,166.7 199.0,164.5 197.4,165.3" fill="rgb(66,75,28)" stroke="rgb(66,75,28)" stroke-width="0.5"/>
 <polygon points="270.8,178.2 267.4,176.5 269.0,178.3" fill="rgb(75,112,46)" stroke="rgb(75,112,46)" stroke-width="0.5"/>
+<line x1="268.6" y1="233.1" x2="273.2" y2="228.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="77.0,181.3 80.3,181.7 78.8,180.3" fill="rgb(69,116,48)" stroke="rgb(69,116,48)" stroke-width="0.5"/>
 <polygon points="206.0,160.8 209.4,159.4 207.8,160.2" fill="rgb(72,73,27)" stroke="rgb(72,73,27)" stroke-width="0.5"/>
 <polygon points="243.6,164.4 247.0,165.9 245.4,166.0" fill="rgb(66,75,28)" stroke="rgb(66,75,28)" stroke-width="0.5"/>
@@ -2621,6 +2744,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="262.2,174.2 265.6,176.2 264.1,174.8" fill="rgb(70,99,39)" stroke="rgb(70,99,39)" stroke-width="0.5"/>
 <polygon points="206.0,160.8 202.6,162.3 204.2,161.5" fill="rgb(71,74,27)" stroke="rgb(71,74,27)" stroke-width="0.5"/>
 <polygon points="200.8,163.3 204.2,161.5 202.6,162.3" fill="rgb(70,74,27)" stroke="rgb(70,74,27)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="54.6" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.4,177.2 186.7,174.5 185.2,175.2" fill="rgb(55,78,31)" stroke="rgb(55,78,31)" stroke-width="0.5"/>
 <polygon points="100.8,187.0 104.2,188.2 102.6,188.3" fill="rgb(45,79,38)" stroke="rgb(45,79,38)" stroke-width="0.5"/>
 <polygon points="109.4,191.1 106.0,189.7 107.5,189.4" fill="rgb(43,73,38)" stroke="rgb(43,73,38)" stroke-width="0.5"/>
@@ -2718,6 +2842,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="131.4,198.7 128.0,198.1 129.5,197.3" fill="rgb(41,68,42)" stroke="rgb(41,68,42)" stroke-width="0.5"/>
 <polygon points="174.5,185.9 177.8,183.4 176.3,184.0" fill="rgb(49,83,34)" stroke="rgb(49,83,34)" stroke-width="0.5"/>
 <polygon points="75.1,182.4 71.8,182.5 73.3,183.5" fill="rgb(67,108,44)" stroke="rgb(67,108,44)" stroke-width="0.5"/>
+<line x1="296.2" y1="141.5" x2="300.8" y2="136.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="104.2,188.2 100.8,187.0 102.3,186.6" fill="rgb(43,77,33)" stroke="rgb(43,77,33)" stroke-width="0.5"/>
 <polygon points="217.9,157.7 221.3,157.4 219.8,158.1" fill="rgb(78,70,25)" stroke="rgb(78,70,25)" stroke-width="0.5"/>
 <polygon points="69.9,184.0 73.3,183.5 71.8,182.5" fill="rgb(67,108,44)" stroke="rgb(67,108,44)" stroke-width="0.5"/>
@@ -2732,6 +2857,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="162.2,195.3 158.9,197.0 160.4,196.6" fill="rgb(48,82,47)" stroke="rgb(48,82,47)" stroke-width="0.5"/>
 <polygon points="119.4,194.6 116.1,193.5 117.6,192.7" fill="rgb(40,69,36)" stroke="rgb(40,69,36)" stroke-width="0.5"/>
 <polygon points="157.0,197.9 160.4,196.6 158.9,197.0" fill="rgb(48,81,48)" stroke="rgb(48,81,48)" stroke-width="0.5"/>
+<line x1="77.6" y1="141.8" x2="82.2" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="230.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.0,160.6 231.7,159.8 233.2,159.4" fill="rgb(76,72,25)" stroke="rgb(76,72,25)" stroke-width="0.5"/>
 <polygon points="162.2,195.3 165.6,193.6 164.1,194.0" fill="rgb(48,83,44)" stroke="rgb(48,83,44)" stroke-width="0.5"/>
 <polygon points="250.3,167.6 247.0,165.9 248.5,166.5" fill="rgb(77,83,30)" stroke="rgb(77,83,30)" stroke-width="0.5"/>
@@ -2746,6 +2873,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="263.8,176.1 267.1,178.6 265.6,176.2" fill="rgb(82,110,44)" stroke="rgb(82,110,44)" stroke-width="0.5"/>
 <polygon points="126.2,196.5 129.5,197.3 128.0,198.1" fill="rgb(40,68,40)" stroke="rgb(40,68,40)" stroke-width="0.5"/>
 <polygon points="87.0,182.6 90.4,183.2 88.9,182.9" fill="rgb(57,89,37)" stroke="rgb(57,89,37)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="58.4" y2="236.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.9,157.7 214.6,158.3 216.1,157.6" fill="rgb(80,71,24)" stroke="rgb(80,71,24)" stroke-width="0.5"/>
 <polygon points="99.0,185.7 102.3,186.6 100.8,187.0" fill="rgb(45,78,33)" stroke="rgb(45,78,33)" stroke-width="0.5"/>
 <polygon points="167.4,192.0 170.8,189.9 169.3,190.2" fill="rgb(49,85,40)" stroke="rgb(49,85,40)" stroke-width="0.5"/>
@@ -2776,6 +2904,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="257.0,171.5 253.7,169.5 255.2,170.9" fill="rgb(83,95,36)" stroke="rgb(83,95,36)" stroke-width="0.5"/>
 <polygon points="78.5,182.3 75.1,182.4 76.6,183.0" fill="rgb(65,99,40)" stroke="rgb(65,99,40)" stroke-width="0.5"/>
 <polygon points="273.8,183.8 277.2,186.5 275.7,182.7" fill="rgb(89,141,58)" stroke="rgb(89,141,58)" stroke-width="0.5"/>
+<line x1="264.0" y1="238.0" x2="268.6" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.7,158.4 209.4,159.4 210.9,158.7" fill="rgb(81,73,25)" stroke="rgb(81,73,25)" stroke-width="0.5"/>
 <polygon points="221.3,157.4 224.6,157.5 223.1,158.0" fill="rgb(81,71,24)" stroke="rgb(81,71,24)" stroke-width="0.5"/>
 <polygon points="172.6,187.9 176.0,185.6 174.5,185.9" fill="rgb(51,85,35)" stroke="rgb(51,85,35)" stroke-width="0.5"/>
@@ -2785,6 +2914,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="202.3,162.5 199.0,164.5 200.5,163.8" fill="rgb(76,75,27)" stroke="rgb(76,75,27)" stroke-width="0.5"/>
 <polygon points="129.5,197.3 132.9,198.0 131.4,198.7" fill="rgb(41,70,40)" stroke="rgb(41,70,40)" stroke-width="0.5"/>
 <polygon points="277.2,186.5 280.6,189.3 279.0,185.0" fill="rgb(89,151,63)" stroke="rgb(89,151,63)" stroke-width="0.5"/>
+<line x1="50.0" y1="230.3" x2="50.0" y2="227.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="102.3,186.6 105.7,187.6 104.2,188.2" fill="rgb(43,75,31)" stroke="rgb(43,75,31)" stroke-width="0.5"/>
 <polygon points="87.0,182.6 83.7,182.2 85.2,182.4" fill="rgb(60,89,36)" stroke="rgb(60,89,36)" stroke-width="0.5"/>
 <polygon points="248.5,166.5 251.8,168.6 250.3,167.6" fill="rgb(81,86,32)" stroke="rgb(81,86,32)" stroke-width="0.5"/>
@@ -2843,7 +2973,9 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="280.6,189.3 277.2,186.5 278.7,191.3" fill="rgb(92,160,67)" stroke="rgb(92,160,67)" stroke-width="0.5"/>
 <polygon points="90.4,183.2 87.0,182.6 88.6,182.5" fill="rgb(57,83,33)" stroke="rgb(57,83,33)" stroke-width="0.5"/>
 <polygon points="195.3,167.5 191.9,169.9 193.4,169.4" fill="rgb(73,77,29)" stroke="rgb(73,77,29)" stroke-width="0.5"/>
+<line x1="58.4" y1="236.1" x2="66.8" y2="238.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="261.9,176.1 265.3,178.9 263.8,176.1" fill="rgb(90,114,44)" stroke="rgb(90,114,44)" stroke-width="0.5"/>
+<line x1="50.0" y1="227.2" x2="50.0" y2="224.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="129.5,197.3 126.2,196.5 127.7,195.8" fill="rgb(41,71,37)" stroke="rgb(41,71,37)" stroke-width="0.5"/>
 <polygon points="76.6,183.0 80.0,182.6 78.5,182.3" fill="rgb(65,93,37)" stroke="rgb(65,93,37)" stroke-width="0.5"/>
 <polygon points="170.8,189.9 174.2,187.8 172.6,187.9" fill="rgb(53,90,37)" stroke="rgb(53,90,37)" stroke-width="0.5"/>
@@ -2887,6 +3019,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="176.0,185.6 179.4,183.3 177.8,183.4" fill="rgb(60,87,35)" stroke="rgb(60,87,35)" stroke-width="0.5"/>
 <polygon points="132.9,198.0 129.5,197.3 131.0,196.7" fill="rgb(43,74,38)" stroke="rgb(43,74,38)" stroke-width="0.5"/>
 <polygon points="93.8,183.7 90.4,183.2 91.9,182.8" fill="rgb(55,78,31)" stroke="rgb(55,78,31)" stroke-width="0.5"/>
+<line x1="291.6" y1="146.4" x2="296.2" y2="141.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.8,195.3 160.4,196.6 161.9,196.8" fill="rgb(53,93,46)" stroke="rgb(53,93,46)" stroke-width="0.5"/>
 <polygon points="243.3,163.6 246.6,165.6 245.1,164.6" fill="rgb(90,85,30)" stroke="rgb(90,85,30)" stroke-width="0.5"/>
 <polygon points="158.6,197.8 161.9,196.8 160.4,196.6" fill="rgb(54,93,47)" stroke="rgb(54,93,47)" stroke-width="0.5"/>
@@ -2899,8 +3032,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="163.8,195.3 167.1,193.9 165.6,193.6" fill="rgb(54,94,44)" stroke="rgb(54,94,44)" stroke-width="0.5"/>
 <polygon points="158.6,197.8 155.2,198.7 156.7,198.9" fill="rgb(54,92,49)" stroke="rgb(54,92,49)" stroke-width="0.5"/>
 <polygon points="188.2,173.9 191.6,171.5 190.1,171.8" fill="rgb(73,80,30)" stroke="rgb(73,80,30)" stroke-width="0.5"/>
+<line x1="73.0" y1="146.7" x2="77.6" y2="141.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="169.0,191.9 165.6,193.6 167.1,193.9" fill="rgb(53,94,42)" stroke="rgb(53,94,42)" stroke-width="0.5"/>
 <polygon points="112.4,189.7 115.8,190.8 114.2,191.6" fill="rgb(41,71,29)" stroke="rgb(41,71,29)" stroke-width="0.5"/>
+<line x1="50.0" y1="224.1" x2="50.0" y2="221.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="258.6,173.4 255.2,170.9 256.7,173.2" fill="rgb(97,106,40)" stroke="rgb(97,106,40)" stroke-width="0.5"/>
 <polygon points="153.4,199.4 156.7,198.9 155.2,198.7" fill="rgb(53,91,49)" stroke="rgb(53,91,49)" stroke-width="0.5"/>
 <polygon points="121.0,193.8 117.6,192.7 119.1,191.9" fill="rgb(40,71,31)" stroke="rgb(40,71,31)" stroke-width="0.5"/>
@@ -2937,6 +3072,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="186.4,176.2 183.0,178.7 184.6,178.6" fill="rgb(70,85,32)" stroke="rgb(70,85,32)" stroke-width="0.5"/>
 <polygon points="97.1,184.4 93.8,183.7 95.3,183.2" fill="rgb(53,74,30)" stroke="rgb(53,74,30)" stroke-width="0.5"/>
 <polygon points="253.4,170.4 256.7,173.2 255.2,170.9" fill="rgb(97,102,38)" stroke="rgb(97,102,38)" stroke-width="0.5"/>
+<line x1="66.8" y1="238.8" x2="75.2" y2="241.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="59.2,192.5 62.6,190.4 61.0,190.5" fill="rgb(53,90,37)" stroke="rgb(53,90,37)" stroke-width="0.5"/>
 <polygon points="115.8,190.8 119.1,191.9 117.6,192.7" fill="rgb(41,71,30)" stroke="rgb(41,71,30)" stroke-width="0.5"/>
 <polygon points="198.6,165.4 195.3,167.5 196.8,167.2" fill="rgb(83,79,28)" stroke="rgb(83,79,28)" stroke-width="0.5"/>
@@ -2950,6 +3086,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="260.1,176.2 263.4,179.4 261.9,176.1" fill="rgb(99,117,44)" stroke="rgb(99,117,44)" stroke-width="0.5"/>
 <polygon points="263.4,179.4 266.8,182.7 265.3,178.9" fill="rgb(98,125,48)" stroke="rgb(98,125,48)" stroke-width="0.5"/>
 <polygon points="222.8,157.1 226.2,157.4 224.6,157.5" fill="rgb(95,76,25)" stroke="rgb(95,76,25)" stroke-width="0.5"/>
+<line x1="259.4" y1="243.0" x2="264.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="214.2,157.8 210.9,158.7 212.4,158.4" fill="rgb(94,76,25)" stroke="rgb(94,76,25)" stroke-width="0.5"/>
 <polygon points="88.6,182.5 85.2,182.4 86.7,182.0" fill="rgb(60,79,31)" stroke="rgb(60,79,31)" stroke-width="0.5"/>
 <polygon points="198.6,165.4 202.0,163.5 200.5,163.8" fill="rgb(86,78,27)" stroke="rgb(86,78,27)" stroke-width="0.5"/>
@@ -2962,6 +3099,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="69.6,185.8 66.2,187.2 67.8,187.1" fill="rgb(60,89,36)" stroke="rgb(60,89,36)" stroke-width="0.5"/>
 <polygon points="234.7,159.6 238.1,161.1 236.6,160.5" fill="rgb(96,81,27)" stroke="rgb(96,81,27)" stroke-width="0.5"/>
 <polygon points="203.8,162.0 200.5,163.8 202.0,163.5" fill="rgb(88,78,27)" stroke="rgb(88,78,27)" stroke-width="0.5"/>
+<line x1="50.0" y1="221.0" x2="50.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="131.0,196.7 134.4,197.7 132.9,198.0" fill="rgb(44,76,37)" stroke="rgb(44,76,37)" stroke-width="0.5"/>
 <polygon points="91.9,182.8 95.3,183.2 93.8,183.7" fill="rgb(56,75,30)" stroke="rgb(56,75,30)" stroke-width="0.5"/>
 <polygon points="186.4,176.2 189.8,173.8 188.2,173.9" fill="rgb(76,83,31)" stroke="rgb(76,83,31)" stroke-width="0.5"/>
@@ -3017,6 +3155,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="122.5,193.0 125.8,194.2 124.3,194.8" fill="rgb(43,74,31)" stroke="rgb(43,74,31)" stroke-width="0.5"/>
 <polygon points="260.1,176.2 256.7,173.2 258.2,176.5" fill="rgb(109,119,44)" stroke="rgb(109,119,44)" stroke-width="0.5"/>
 <polygon points="234.7,159.6 231.4,158.6 232.9,159.1" fill="rgb(103,82,27)" stroke="rgb(103,82,27)" stroke-width="0.5"/>
+<line x1="50.0" y1="217.9" x2="50.0" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="151.5,200.1 148.2,200.1 149.7,200.7" fill="rgb(56,98,49)" stroke="rgb(56,98,49)" stroke-width="0.5"/>
 <polygon points="177.5,185.8 174.2,187.8 175.7,188.4" fill="rgb(67,96,39)" stroke="rgb(67,96,39)" stroke-width="0.5"/>
 <polygon points="62.6,190.4 59.2,192.5 60.7,192.2" fill="rgb(53,85,35)" stroke="rgb(53,85,35)" stroke-width="0.5"/>
@@ -3031,6 +3170,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="86.7,182.0 90.1,182.0 88.6,182.5" fill="rgb(61,76,30)" stroke="rgb(61,76,30)" stroke-width="0.5"/>
 <polygon points="78.2,182.9 74.8,183.7 76.3,183.4" fill="rgb(64,82,32)" stroke="rgb(64,82,32)" stroke-width="0.5"/>
 <polygon points="265.0,183.6 268.3,187.4 266.8,182.7" fill="rgb(102,135,53)" stroke="rgb(102,135,53)" stroke-width="0.5"/>
+<line x1="75.2" y1="241.5" x2="83.6" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.4,158.4 215.8,157.7 214.2,157.8" fill="rgb(102,79,25)" stroke="rgb(102,79,25)" stroke-width="0.5"/>
 <polygon points="146.3,200.2 149.7,200.7 148.2,200.1" fill="rgb(55,96,47)" stroke="rgb(55,96,47)" stroke-width="0.5"/>
 <polygon points="62.6,190.4 65.9,188.4 64.4,188.8" fill="rgb(57,85,34)" stroke="rgb(57,85,34)" stroke-width="0.5"/>
@@ -3070,12 +3210,15 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="134.4,197.7 131.0,196.7 132.6,196.7" fill="rgb(47,82,35)" stroke="rgb(47,82,35)" stroke-width="0.5"/>
 <polygon points="95.3,183.2 91.9,182.8 93.4,182.1" fill="rgb(58,72,28)" stroke="rgb(58,72,28)" stroke-width="0.5"/>
 <polygon points="189.8,173.8 193.1,171.7 191.6,171.5" fill="rgb(87,86,31)" stroke="rgb(87,86,31)" stroke-width="0.5"/>
+<line x1="287.0" y1="151.4" x2="291.6" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="86.7,182.0 83.4,182.2 84.9,181.7" fill="rgb(63,76,29)" stroke="rgb(63,76,29)" stroke-width="0.5"/>
 <polygon points="170.5,192.5 173.8,191.1 172.3,190.1" fill="rgb(69,104,42)" stroke="rgb(69,104,42)" stroke-width="0.5"/>
 <polygon points="146.3,200.2 143.0,199.8 144.5,200.4" fill="rgb(55,96,46)" stroke="rgb(55,96,46)" stroke-width="0.5"/>
 <polygon points="271.7,191.3 268.3,187.4 269.9,193.0" fill="rgb(100,149,61)" stroke="rgb(100,149,61)" stroke-width="0.5"/>
 <polygon points="107.2,186.8 103.8,185.9 105.4,185.1" fill="rgb(52,69,27)" stroke="rgb(52,69,27)" stroke-width="0.5"/>
+<line x1="68.4" y1="151.7" x2="73.0" y2="146.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="154.9,200.0 151.5,200.1 153.0,201.1" fill="rgb(62,107,51)" stroke="rgb(62,107,51)" stroke-width="0.5"/>
+<line x1="50.0" y1="214.8" x2="50.0" y2="211.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="241.4,162.9 238.1,161.1 239.6,162.5" fill="rgb(112,92,30)" stroke="rgb(112,92,30)" stroke-width="0.5"/>
 <polygon points="195.0,169.3 191.6,171.5 193.1,171.7" fill="rgb(89,85,30)" stroke="rgb(89,85,30)" stroke-width="0.5"/>
 <polygon points="232.9,159.1 236.2,160.6 234.7,159.6" fill="rgb(110,86,28)" stroke="rgb(110,86,28)" stroke-width="0.5"/>
@@ -3131,11 +3274,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="187.9,176.4 191.3,174.4 189.8,173.8" fill="rgb(90,91,33)" stroke="rgb(90,91,33)" stroke-width="0.5"/>
 <polygon points="210.6,159.3 213.9,158.6 212.4,158.4" fill="rgb(110,83,26)" stroke="rgb(110,83,26)" stroke-width="0.5"/>
 <polygon points="273.2,197.2 269.9,193.0 271.4,199.2" fill="rgb(91,155,64)" stroke="rgb(91,155,64)" stroke-width="0.5"/>
+<line x1="254.8" y1="247.9" x2="259.4" y2="243.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.4,161.9 202.0,163.5 203.5,163.7" fill="rgb(104,84,28)" stroke="rgb(104,84,28)" stroke-width="0.5"/>
 <polygon points="76.3,183.4 73.0,184.5 74.5,184.0" fill="rgb(64,79,30)" stroke="rgb(64,79,30)" stroke-width="0.5"/>
 <polygon points="132.6,196.7 135.9,197.9 134.4,197.7" fill="rgb(49,86,36)" stroke="rgb(49,86,36)" stroke-width="0.5"/>
 <polygon points="65.9,188.4 69.3,186.5 67.8,187.1" fill="rgb(61,81,31)" stroke="rgb(61,81,31)" stroke-width="0.5"/>
 <polygon points="239.6,162.5 243.0,164.7 241.4,162.9" fill="rgb(117,95,31)" stroke="rgb(117,95,31)" stroke-width="0.5"/>
+<line x1="83.6" y1="244.2" x2="92.0" y2="246.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="90.1,182.0 86.7,182.0 88.2,181.3" fill="rgb(63,73,28)" stroke="rgb(63,73,28)" stroke-width="0.5"/>
 <polygon points="168.6,194.8 172.0,193.9 170.5,192.5" fill="rgb(72,113,46)" stroke="rgb(72,113,46)" stroke-width="0.5"/>
 <polygon points="232.9,159.1 229.5,158.1 231.0,159.0" fill="rgb(118,88,28)" stroke="rgb(118,88,28)" stroke-width="0.5"/>
@@ -3145,6 +3290,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="205.4,161.9 208.7,160.7 207.2,160.5" fill="rgb(108,84,27)" stroke="rgb(108,84,27)" stroke-width="0.5"/>
 <polygon points="158.2,199.9 154.9,200.0 156.4,201.4" fill="rgb(66,116,52)" stroke="rgb(66,116,52)" stroke-width="0.5"/>
 <polygon points="259.8,180.8 263.1,184.7 261.6,180.0" fill="rgb(111,130,49)" stroke="rgb(111,130,49)" stroke-width="0.5"/>
+<line x1="50.0" y1="211.7" x2="50.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.5,200.4 147.8,201.2 146.3,200.2" fill="rgb(59,102,47)" stroke="rgb(59,102,47)" stroke-width="0.5"/>
 <polygon points="173.8,191.1 170.5,192.5 172.0,193.9" fill="rgb(73,110,45)" stroke="rgb(73,110,45)" stroke-width="0.5"/>
 <polygon points="193.1,171.7 189.8,173.8 191.3,174.4" fill="rgb(92,90,32)" stroke="rgb(92,90,32)" stroke-width="0.5"/>
@@ -3202,6 +3348,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="198.3,167.4 201.7,165.9 200.2,165.3" fill="rgb(107,89,30)" stroke="rgb(107,89,30)" stroke-width="0.5"/>
 <polygon points="161.6,199.8 158.2,199.9 159.8,201.8" fill="rgb(71,126,54)" stroke="rgb(71,126,54)" stroke-width="0.5"/>
 <polygon points="96.8,182.4 100.2,182.9 98.6,183.7" fill="rgb(60,69,26)" stroke="rgb(60,69,26)" stroke-width="0.5"/>
+<line x1="50.0" y1="208.6" x2="50.0" y2="205.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.3,174.4 187.9,176.4 189.4,177.4" fill="rgb(95,95,34)" stroke="rgb(95,95,34)" stroke-width="0.5"/>
 <polygon points="172.0,193.9 168.6,194.8 170.2,196.7" fill="rgb(77,119,48)" stroke="rgb(77,119,48)" stroke-width="0.5"/>
 <polygon points="213.9,158.6 217.3,158.3 215.8,157.7" fill="rgb(121,88,27)" stroke="rgb(121,88,27)" stroke-width="0.5"/>
@@ -3245,6 +3392,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="249.7,170.3 246.3,167.3 247.8,170.6" fill="rgb(133,114,39)" stroke="rgb(133,114,39)" stroke-width="0.5"/>
 <polygon points="51.8,200.4 55.2,197.7 53.7,198.4" fill="rgb(48,80,33)" stroke="rgb(48,80,33)" stroke-width="0.5"/>
 <polygon points="268.0,194.7 264.7,190.2 266.2,196.5" fill="rgb(101,148,60)" stroke="rgb(101,148,60)" stroke-width="0.5"/>
+<line x1="92.0" y1="246.9" x2="100.4" y2="249.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="151.2,202.1 154.6,202.9 153.0,201.1" fill="rgb(70,123,54)" stroke="rgb(70,123,54)" stroke-width="0.5"/>
 <polygon points="184.2,182.1 187.6,180.6 186.1,179.2" fill="rgb(96,102,38)" stroke="rgb(96,102,38)" stroke-width="0.5"/>
 <polygon points="266.2,196.5 269.5,201.2 268.0,194.7" fill="rgb(93,148,61)" stroke="rgb(93,148,61)" stroke-width="0.5"/>
@@ -3256,15 +3404,18 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="142.6,200.5 146.0,201.8 144.5,200.4" fill="rgb(62,109,45)" stroke="rgb(62,109,45)" stroke-width="0.5"/>
 <polygon points="177.2,189.8 180.6,188.7 179.0,186.8" fill="rgb(90,114,44)" stroke="rgb(90,114,44)" stroke-width="0.5"/>
 <polygon points="100.2,182.9 103.5,183.5 102.0,184.3" fill="rgb(61,69,26)" stroke="rgb(61,69,26)" stroke-width="0.5"/>
+<line x1="282.4" y1="156.3" x2="287.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="222.5,157.7 219.1,157.5 220.6,158.4" fill="rgb(132,93,28)" stroke="rgb(132,93,28)" stroke-width="0.5"/>
 <polygon points="96.8,182.4 93.4,182.1 95.0,181.3" fill="rgb(63,69,26)" stroke="rgb(63,69,26)" stroke-width="0.5"/>
 <polygon points="189.4,177.4 186.1,179.2 187.6,180.6" fill="rgb(98,100,37)" stroke="rgb(98,100,37)" stroke-width="0.5"/>
 <polygon points="88.2,181.3 84.9,181.7 86.4,180.9" fill="rgb(67,72,26)" stroke="rgb(67,72,26)" stroke-width="0.5"/>
 <polygon points="165.0,199.7 168.3,199.6 166.8,197.2" fill="rgb(81,133,55)" stroke="rgb(81,133,55)" stroke-width="0.5"/>
 <polygon points="165.0,199.7 161.6,199.8 163.1,202.1" fill="rgb(78,133,56)" stroke="rgb(78,133,56)" stroke-width="0.5"/>
+<line x1="63.8" y1="156.6" x2="68.4" y2="151.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="251.2,174.1 254.6,177.8 253.0,173.5" fill="rgb(128,121,42)" stroke="rgb(128,121,42)" stroke-width="0.5"/>
 <polygon points="264.7,190.2 261.3,185.9 262.8,191.8" fill="rgb(111,143,56)" stroke="rgb(111,143,56)" stroke-width="0.5"/>
 <polygon points="241.1,164.8 244.5,167.6 243.0,164.7" fill="rgb(133,106,34)" stroke="rgb(133,106,34)" stroke-width="0.5"/>
+<line x1="50.0" y1="205.5" x2="50.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.2,196.7 166.8,197.2 168.3,199.6" fill="rgb(81,128,53)" stroke="rgb(81,128,53)" stroke-width="0.5"/>
 <polygon points="130.7,195.7 134.1,197.2 132.6,196.7" fill="rgb(57,88,36)" stroke="rgb(57,88,36)" stroke-width="0.5"/>
 <polygon points="182.4,185.3 179.0,186.8 180.6,188.7" fill="rgb(91,110,42)" stroke="rgb(91,110,42)" stroke-width="0.5"/>
@@ -3324,6 +3475,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="154.6,202.9 151.2,202.1 152.7,204.4" fill="rgb(76,135,57)" stroke="rgb(76,135,57)" stroke-width="0.5"/>
 <polygon points="180.6,188.7 177.2,189.8 178.7,192.2" fill="rgb(93,118,46)" stroke="rgb(93,118,46)" stroke-width="0.5"/>
 <polygon points="266.2,196.5 262.8,191.8 264.3,198.3" fill="rgb(103,148,60)" stroke="rgb(103,148,60)" stroke-width="0.5"/>
+<line x1="250.2" y1="252.9" x2="254.8" y2="247.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="264.3,198.3 267.7,203.1 266.2,196.5" fill="rgb(93,148,61)" stroke="rgb(93,148,61)" stroke-width="0.5"/>
 <polygon points="77.8,182.7 74.5,184.0 76.0,183.2" fill="rgb(69,74,28)" stroke="rgb(69,74,28)" stroke-width="0.5"/>
 <polygon points="168.3,199.6 165.0,199.7 166.5,202.5" fill="rgb(84,139,57)" stroke="rgb(84,139,57)" stroke-width="0.5"/>
@@ -3335,6 +3487,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="194.6,172.7 198.0,171.3 196.5,169.9" fill="rgb(116,100,34)" stroke="rgb(116,100,34)" stroke-width="0.5"/>
 <polygon points="220.6,158.4 224.0,159.1 222.5,157.7" fill="rgb(143,98,30)" stroke="rgb(143,98,30)" stroke-width="0.5"/>
 <polygon points="72.6,184.8 76.0,183.2 74.5,184.0" fill="rgb(68,75,28)" stroke="rgb(68,75,28)" stroke-width="0.5"/>
+<line x1="50.0" y1="202.4" x2="50.0" y2="199.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="72.6,184.8 69.3,186.5 70.8,185.7" fill="rgb(66,75,28)" stroke="rgb(66,75,28)" stroke-width="0.5"/>
 <polygon points="91.6,181.2 88.2,181.3 89.8,180.5" fill="rgb(68,70,25)" stroke="rgb(68,70,25)" stroke-width="0.5"/>
 <polygon points="241.1,164.8 237.8,162.5 239.3,165.3" fill="rgb(147,110,35)" stroke="rgb(147,110,35)" stroke-width="0.5"/>
@@ -3352,6 +3505,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="244.5,167.6 241.1,164.8 242.6,168.1" fill="rgb(147,116,38)" stroke="rgb(147,116,38)" stroke-width="0.5"/>
 <polygon points="232.6,160.9 235.9,162.9 234.4,160.6" fill="rgb(146,105,32)" stroke="rgb(146,105,32)" stroke-width="0.5"/>
 <polygon points="122.2,191.3 125.5,192.9 124.0,192.7" fill="rgb(61,80,31)" stroke="rgb(61,80,31)" stroke-width="0.5"/>
+<line x1="100.4" y1="249.6" x2="108.8" y2="252.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="180.6,188.7 183.9,187.7 182.4,185.3" fill="rgb(101,118,45)" stroke="rgb(101,118,45)" stroke-width="0.5"/>
 <polygon points="247.8,170.6 244.5,167.6 246.0,171.3" fill="rgb(145,120,40)" stroke="rgb(145,120,40)" stroke-width="0.5"/>
 <polygon points="95.0,181.3 98.3,181.6 96.8,182.4" fill="rgb(67,69,25)" stroke="rgb(67,69,25)" stroke-width="0.5"/>
@@ -3403,6 +3557,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="171.7,199.5 168.3,199.6 169.8,202.9" fill="rgb(91,142,58)" stroke="rgb(91,142,58)" stroke-width="0.5"/>
 <polygon points="161.3,204.6 164.6,205.4 163.1,202.1" fill="rgb(88,152,64)" stroke="rgb(88,152,64)" stroke-width="0.5"/>
 <polygon points="60.4,193.1 63.8,190.6 62.2,191.5" fill="rgb(61,77,30)" stroke="rgb(61,77,30)" stroke-width="0.5"/>
+<line x1="50.0" y1="199.3" x2="50.0" y2="196.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="232.6,160.9 229.2,159.4 230.7,161.7" fill="rgb(157,109,33)" stroke="rgb(157,109,33)" stroke-width="0.5"/>
 <polygon points="137.4,198.9 134.1,197.2 135.6,198.6" fill="rgb(70,103,41)" stroke="rgb(70,103,41)" stroke-width="0.5"/>
 <polygon points="144.2,202.3 147.5,204.1 146.0,201.8" fill="rgb(75,124,51)" stroke="rgb(75,124,51)" stroke-width="0.5"/>
@@ -3461,11 +3616,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="218.8,159.7 215.4,159.6 217.0,161.5" fill="rgb(159,107,32)" stroke="rgb(159,107,32)" stroke-width="0.5"/>
 <polygon points="242.6,168.1 239.3,165.3 240.8,169.1" fill="rgb(161,122,38)" stroke="rgb(161,122,38)" stroke-width="0.5"/>
 <polygon points="246.0,171.3 242.6,168.1 244.2,172.4" fill="rgb(157,125,41)" stroke="rgb(157,125,41)" stroke-width="0.5"/>
+<line x1="277.8" y1="161.3" x2="282.4" y2="156.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="230.7,161.7 234.1,163.7 232.6,160.9" fill="rgb(162,113,34)" stroke="rgb(162,113,34)" stroke-width="0.5"/>
 <polygon points="169.8,202.9 173.2,203.3 171.7,199.5" fill="rgb(96,152,62)" stroke="rgb(96,152,62)" stroke-width="0.5"/>
 <polygon points="196.2,174.6 192.8,175.8 194.3,178.2" fill="rgb(124,110,38)" stroke="rgb(124,110,38)" stroke-width="0.5"/>
 <polygon points="203.2,167.3 206.6,166.5 205.0,164.7" fill="rgb(143,106,33)" stroke="rgb(143,106,33)" stroke-width="0.5"/>
 <polygon points="144.2,202.3 140.8,200.6 142.3,202.9" fill="rgb(79,123,51)" stroke="rgb(79,123,51)" stroke-width="0.5"/>
+<line x1="108.8" y1="252.3" x2="117.2" y2="255.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.6,205.4 161.3,204.6 162.8,208.4" fill="rgb(89,158,66)" stroke="rgb(89,158,66)" stroke-width="0.5"/>
 <polygon points="125.5,192.9 122.2,191.3 123.7,191.9" fill="rgb(69,85,32)" stroke="rgb(69,85,32)" stroke-width="0.5"/>
 <polygon points="58.6,194.9 55.2,197.7 56.7,196.9" fill="rgb(57,78,31)" stroke="rgb(57,78,31)" stroke-width="0.5"/>
@@ -3475,10 +3632,12 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="208.4,163.9 205.0,164.7 206.6,166.5" fill="rgb(145,105,33)" stroke="rgb(145,105,33)" stroke-width="0.5"/>
 <polygon points="135.6,198.6 139.0,200.7 137.4,198.9" fill="rgb(73,107,43)" stroke="rgb(73,107,43)" stroke-width="0.5"/>
 <polygon points="159.4,207.1 162.8,208.4 161.3,204.6" fill="rgb(90,159,67)" stroke="rgb(90,159,67)" stroke-width="0.5"/>
+<line x1="59.2" y1="161.6" x2="63.8" y2="156.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="227.4,160.1 224.0,159.1 225.5,161.4" fill="rgb(168,112,33)" stroke="rgb(168,112,33)" stroke-width="0.5"/>
 <polygon points="98.3,181.6 95.0,181.3 96.5,180.6" fill="rgb(72,69,25)" stroke="rgb(72,69,25)" stroke-width="0.5"/>
 <polygon points="117.0,188.3 120.3,190.0 118.8,189.7" fill="rgb(68,78,29)" stroke="rgb(68,78,29)" stroke-width="0.5"/>
 <polygon points="150.9,205.9 154.2,207.7 152.7,204.4" fill="rgb(84,147,61)" stroke="rgb(84,147,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="196.2" x2="50.0" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="213.6,161.3 210.2,161.7 211.8,163.5" fill="rgb(154,106,32)" stroke="rgb(154,106,32)" stroke-width="0.5"/>
 <polygon points="208.4,163.9 211.8,163.5 210.2,161.7" fill="rgb(153,107,32)" stroke="rgb(153,107,32)" stroke-width="0.5"/>
 <polygon points="89.8,180.5 86.4,180.9 87.9,180.1" fill="rgb(74,70,25)" stroke="rgb(74,70,25)" stroke-width="0.5"/>
@@ -3538,6 +3697,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="123.7,191.9 127.0,193.9 125.5,192.9" fill="rgb(73,88,34)" stroke="rgb(73,88,34)" stroke-width="0.5"/>
 <polygon points="178.4,199.6 175.0,199.5 176.6,203.8" fill="rgb(100,147,59)" stroke="rgb(100,147,59)" stroke-width="0.5"/>
 <polygon points="206.6,166.5 203.2,167.3 204.7,169.6" fill="rgb(149,111,35)" stroke="rgb(149,111,35)" stroke-width="0.5"/>
+<line x1="245.6" y1="257.8" x2="250.2" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="259.1,195.3 255.8,190.5 257.3,197.2" fill="rgb(117,145,56)" stroke="rgb(117,145,56)" stroke-width="0.5"/>
 <polygon points="185.4,191.0 182.1,191.5 183.6,195.3" fill="rgb(112,133,51)" stroke="rgb(112,133,51)" stroke-width="0.5"/>
 <polygon points="250.9,180.1 247.5,176.1 249.1,181.6" fill="rgb(150,135,47)" stroke="rgb(150,135,47)" stroke-width="0.5"/>
@@ -3550,6 +3710,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="135.6,198.6 132.2,196.6 133.8,198.5" fill="rgb(79,107,42)" stroke="rgb(79,107,42)" stroke-width="0.5"/>
 <polygon points="145.7,205.1 149.0,207.4 147.5,204.1" fill="rgb(85,139,57)" stroke="rgb(85,139,57)" stroke-width="0.5"/>
 <polygon points="154.2,207.7 150.9,205.9 152.4,209.7" fill="rgb(89,156,65)" stroke="rgb(89,156,65)" stroke-width="0.5"/>
+<line x1="50.0" y1="193.1" x2="50.0" y2="190.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.0,161.5 213.6,161.3 215.1,163.7" fill="rgb(169,114,34)" stroke="rgb(169,114,34)" stroke-width="0.5"/>
 <polygon points="206.6,166.5 209.9,166.2 208.4,163.9" fill="rgb(159,113,35)" stroke="rgb(159,113,35)" stroke-width="0.5"/>
 <polygon points="79.4,181.8 76.0,183.2 77.5,182.4" fill="rgb(76,73,26)" stroke="rgb(76,73,26)" stroke-width="0.5"/>
@@ -3588,6 +3749,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="161.0,211.3 164.3,213.1 162.8,208.4" fill="rgb(95,167,75)" stroke="rgb(95,167,75)" stroke-width="0.5"/>
 <polygon points="245.7,177.5 249.1,181.6 247.5,176.1" fill="rgb(152,133,46)" stroke="rgb(152,133,46)" stroke-width="0.5"/>
 <polygon points="253.9,192.4 257.3,197.2 255.8,190.5" fill="rgb(121,143,54)" stroke="rgb(121,143,54)" stroke-width="0.5"/>
+<line x1="117.2" y1="255.0" x2="125.6" y2="257.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="130.4,196.1 133.8,198.5 132.2,196.6" fill="rgb(79,102,40)" stroke="rgb(79,102,40)" stroke-width="0.5"/>
 <polygon points="56.7,196.9 60.1,194.2 58.6,194.9" fill="rgb(63,77,30)" stroke="rgb(63,77,30)" stroke-width="0.5"/>
 <polygon points="199.5,173.6 202.9,173.1 201.4,170.3" fill="rgb(150,118,38)" stroke="rgb(150,118,38)" stroke-width="0.5"/>
@@ -3626,6 +3788,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="155.8,212.0 159.1,214.2 157.6,209.5" fill="rgb(94,164,74)" stroke="rgb(94,164,74)" stroke-width="0.5"/>
 <polygon points="250.6,187.8 253.9,192.4 252.4,186.0" fill="rgb(133,141,52)" stroke="rgb(133,141,52)" stroke-width="0.5"/>
 <polygon points="215.1,163.7 218.5,164.3 217.0,161.5" fill="rgb(183,122,35)" stroke="rgb(183,122,35)" stroke-width="0.5"/>
+<line x1="50.0" y1="190.0" x2="50.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.8,190.6 185.4,191.0 187.0,195.2" fill="rgb(119,135,51)" stroke="rgb(119,135,51)" stroke-width="0.5"/>
 <polygon points="209.9,166.2 206.6,166.5 208.1,169.3" fill="rgb(165,117,36)" stroke="rgb(165,117,36)" stroke-width="0.5"/>
 <polygon points="149.0,207.4 145.7,205.1 147.2,208.9" fill="rgb(91,149,62)" stroke="rgb(91,149,62)" stroke-width="0.5"/>
@@ -3701,6 +3864,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="208.1,169.3 204.7,169.6 206.2,172.9" fill="rgb(167,122,38)" stroke="rgb(167,122,38)" stroke-width="0.5"/>
 <polygon points="187.0,195.2 190.3,195.3 188.8,190.6" fill="rgb(125,142,54)" stroke="rgb(125,142,54)" stroke-width="0.5"/>
 <polygon points="178.1,208.9 181.5,209.8 179.9,204.3" fill="rgb(100,161,66)" stroke="rgb(100,161,66)" stroke-width="0.5"/>
+<line x1="273.2" y1="166.2" x2="277.8" y2="161.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="103.2,181.8 106.6,182.9 105.0,183.0" fill="rgb(81,74,26)" stroke="rgb(81,74,26)" stroke-width="0.5"/>
 <polygon points="133.8,198.5 130.4,196.1 131.9,198.5" fill="rgb(89,111,43)" stroke="rgb(89,111,43)" stroke-width="0.5"/>
 <polygon points="111.8,185.4 108.4,184.1 109.9,184.3" fill="rgb(82,78,27)" stroke="rgb(82,78,27)" stroke-width="0.5"/>
@@ -3717,6 +3881,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="165.9,218.7 169.2,220.8 167.7,214.9" fill="rgb(97,168,88)" stroke="rgb(97,168,88)" stroke-width="0.5"/>
 <polygon points="121.8,191.0 125.2,193.3 123.7,191.9" fill="rgb(84,92,34)" stroke="rgb(84,92,34)" stroke-width="0.5"/>
 <polygon points="183.3,204.9 179.9,204.3 181.5,209.8" fill="rgb(101,155,63)" stroke="rgb(101,155,63)" stroke-width="0.5"/>
+<line x1="54.6" y1="166.5" x2="59.2" y2="161.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="186.9" x2="50.0" y2="183.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="99.8,181.0 96.5,180.6 98.0,180.2" fill="rgb(83,72,25)" stroke="rgb(83,72,25)" stroke-width="0.5"/>
 <polygon points="213.3,166.4 216.6,167.0 215.1,163.7" fill="rgb(190,128,38)" stroke="rgb(190,128,38)" stroke-width="0.5"/>
 <polygon points="213.3,166.4 209.9,166.2 211.4,169.5" fill="rgb(180,125,38)" stroke="rgb(180,125,38)" stroke-width="0.5"/>
@@ -3729,6 +3895,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="185.1,200.0 188.5,200.4 187.0,195.2" fill="rgb(118,149,58)" stroke="rgb(118,149,58)" stroke-width="0.5"/>
 <polygon points="176.3,213.6 179.6,214.8 178.1,208.9" fill="rgb(94,166,71)" stroke="rgb(94,166,71)" stroke-width="0.5"/>
 <polygon points="157.3,217.1 160.7,219.8 159.1,214.2" fill="rgb(96,166,84)" stroke="rgb(96,166,84)" stroke-width="0.5"/>
+<line x1="125.6" y1="257.7" x2="134.0" y2="260.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="227.0,164.7 223.7,163.1 225.2,166.9" fill="rgb(201,134,39)" stroke="rgb(201,134,39)" stroke-width="0.5"/>
 <polygon points="248.7,189.9 252.1,194.5 250.6,187.8" fill="rgb(136,144,53)" stroke="rgb(136,144,53)" stroke-width="0.5"/>
 <polygon points="194.0,185.8 197.4,185.7 195.8,181.5" fill="rgb(144,134,47)" stroke="rgb(144,134,47)" stroke-width="0.5"/>
@@ -3801,6 +3968,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="257.0,206.2 253.6,201.4 255.1,208.3" fill="rgb(105,150,61)" stroke="rgb(105,150,61)" stroke-width="0.5"/>
 <polygon points="164.0,222.4 160.7,219.8 162.2,226.0" fill="rgb(98,166,96)" stroke="rgb(98,166,96)" stroke-width="0.5"/>
 <polygon points="216.6,167.0 213.3,166.4 214.8,170.2" fill="rgb(194,132,39)" stroke="rgb(194,132,39)" stroke-width="0.5"/>
+<line x1="241.0" y1="262.8" x2="245.6" y2="257.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.4,169.5 214.8,170.2 213.3,166.4" fill="rgb(191,133,40)" stroke="rgb(191,133,40)" stroke-width="0.5"/>
 <polygon points="145.4,210.5 148.7,213.7 147.2,208.9" fill="rgb(90,151,62)" stroke="rgb(90,151,62)" stroke-width="0.5"/>
 <polygon points="237.1,172.2 233.8,169.3 235.3,174.4" fill="rgb(192,140,44)" stroke="rgb(192,140,44)" stroke-width="0.5"/>
@@ -3814,6 +3982,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="177.8,219.8 181.1,221.3 179.6,214.8" fill="rgb(94,163,82)" stroke="rgb(94,163,82)" stroke-width="0.5"/>
 <polygon points="109.9,184.3 113.3,186.0 111.8,185.4" fill="rgb(87,80,28)" stroke="rgb(87,80,28)" stroke-width="0.5"/>
 <polygon points="204.4,176.9 201.0,176.9 202.6,181.2" fill="rgb(161,131,43)" stroke="rgb(161,131,43)" stroke-width="0.5"/>
+<line x1="50.0" y1="183.8" x2="50.0" y2="180.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.5,200.4 191.9,200.9 190.3,195.3" fill="rgb(122,149,57)" stroke="rgb(122,149,57)" stroke-width="0.5"/>
 <polygon points="155.5,220.0 158.8,223.0 157.3,217.1" fill="rgb(95,164,86)" stroke="rgb(95,164,86)" stroke-width="0.5"/>
 <polygon points="195.5,190.6 192.2,190.5 193.7,195.6" fill="rgb(132,140,52)" stroke="rgb(132,140,52)" stroke-width="0.5"/>
@@ -3890,6 +4059,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="177.5,231.5 174.1,229.4 175.6,236.4" fill="rgb(95,155,112)" stroke="rgb(95,155,112)" stroke-width="0.5"/>
 <polygon points="172.3,234.0 175.6,236.4 174.1,229.4" fill="rgb(96,156,115)" stroke="rgb(96,156,115)" stroke-width="0.5"/>
 <polygon points="202.6,181.2 205.9,181.6 204.4,176.9" fill="rgb(169,138,45)" stroke="rgb(169,138,45)" stroke-width="0.5"/>
+<line x1="134.0" y1="260.5" x2="142.4" y2="263.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.4,210.5 142.0,207.4 143.5,212.1" fill="rgb(97,151,62)" stroke="rgb(97,151,62)" stroke-width="0.5"/>
 <polygon points="184.5,222.7 181.1,221.3 182.7,228.1" fill="rgb(93,157,90)" stroke="rgb(93,157,90)" stroke-width="0.5"/>
 <polygon points="242.0,181.5 238.7,177.8 240.2,184.0" fill="rgb(175,146,49)" stroke="rgb(175,146,49)" stroke-width="0.5"/>
@@ -3917,6 +4087,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="167.1,235.7 170.4,238.5 168.9,231.5" fill="rgb(97,156,120)" stroke="rgb(97,156,120)" stroke-width="0.5"/>
 <polygon points="235.3,174.4 231.9,171.5 233.5,177.0" fill="rgb(196,146,45)" stroke="rgb(196,146,45)" stroke-width="0.5"/>
 <polygon points="150.3,219.2 153.6,222.7 152.1,216.8" fill="rgb(91,159,78)" stroke="rgb(91,159,78)" stroke-width="0.5"/>
+<line x1="50.0" y1="180.7" x2="50.0" y2="177.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="240.2,184.0 243.5,188.0 242.0,181.5" fill="rgb(166,146,50)" stroke="rgb(166,146,50)" stroke-width="0.5"/>
 <polygon points="255.1,208.3 251.8,203.7 253.3,210.5" fill="rgb(105,152,61)" stroke="rgb(105,152,61)" stroke-width="0.5"/>
 <polygon points="188.2,211.7 191.5,212.7 190.0,206.3" fill="rgb(102,159,65)" stroke="rgb(102,159,65)" stroke-width="0.5"/>
@@ -4016,6 +4187,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="150.3,219.2 146.9,215.6 148.4,221.5" fill="rgb(92,161,74)" stroke="rgb(92,161,74)" stroke-width="0.5"/>
 <polygon points="240.2,184.0 236.8,180.3 238.3,186.8" fill="rgb(175,149,51)" stroke="rgb(175,149,51)" stroke-width="0.5"/>
 <polygon points="230.1,174.1 226.7,171.6 228.3,177.2" fill="rgb(206,149,45)" stroke="rgb(206,149,45)" stroke-width="0.5"/>
+<line x1="268.6" y1="171.2" x2="273.2" y2="166.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="151.8,225.4 155.1,229.2 153.6,222.7" fill="rgb(93,157,90)" stroke="rgb(93,157,90)" stroke-width="0.5"/>
 <polygon points="248.4,199.2 245.1,194.8 246.6,201.8" fill="rgb(133,152,57)" stroke="rgb(133,152,57)" stroke-width="0.5"/>
 <polygon points="101.4,181.0 98.0,180.2 99.5,180.5" fill="rgb(98,78,25)" stroke="rgb(98,78,25)" stroke-width="0.5"/>
@@ -4041,6 +4213,8 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="171.9,245.4 168.6,242.6 170.1,249.5" fill="rgb(96,147,140)" stroke="rgb(96,147,140)" stroke-width="0.5"/>
 <polygon points="146.9,215.6 143.5,212.1 145.1,217.6" fill="rgb(92,158,66)" stroke="rgb(92,158,66)" stroke-width="0.5"/>
 <polygon points="238.3,186.8 241.7,190.7 240.2,184.0" fill="rgb(167,150,52)" stroke="rgb(167,150,52)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="54.6" y2="166.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="177.6" x2="50.0" y2="174.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="161.9,236.3 158.5,232.8 160.0,239.8" fill="rgb(95,153,116)" stroke="rgb(95,153,116)" stroke-width="0.5"/>
 <polygon points="224.9,174.8 228.3,177.2 226.7,171.6" fill="rgb(206,149,45)" stroke="rgb(206,149,45)" stroke-width="0.5"/>
 <polygon points="180.5,245.3 177.1,243.3 178.7,250.0" fill="rgb(94,144,139)" stroke="rgb(94,144,139)" stroke-width="0.5"/>
@@ -4087,6 +4261,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="198.6,202.3 201.9,203.2 200.4,196.8" fill="rgb(130,152,58)" stroke="rgb(130,152,58)" stroke-width="0.5"/>
 <polygon points="178.7,250.0 175.3,247.8 176.8,254.3" fill="rgb(94,142,148)" stroke="rgb(94,142,148)" stroke-width="0.5"/>
 <polygon points="123.4,192.8 120.0,190.3 121.5,192.6" fill="rgb(107,104,37)" stroke="rgb(107,104,37)" stroke-width="0.5"/>
+<line x1="142.4" y1="263.2" x2="150.8" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="196.7,208.0 200.1,209.0 198.6,202.3" fill="rgb(116,155,61)" stroke="rgb(116,155,61)" stroke-width="0.5"/>
 <polygon points="219.7,176.4 223.1,178.3 221.5,172.8" fill="rgb(205,149,46)" stroke="rgb(205,149,46)" stroke-width="0.5"/>
 <polygon points="136.8,205.1 133.4,201.8 135.0,206.0" fill="rgb(106,134,52)" stroke="rgb(106,134,52)" stroke-width="0.5"/>
@@ -4146,6 +4321,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="236.5,189.9 239.9,193.6 238.3,186.8" fill="rgb(166,154,54)" stroke="rgb(166,154,54)" stroke-width="0.5"/>
 <polygon points="82.4,180.8 85.8,180.1 84.2,180.2" fill="rgb(102,79,25)" stroke="rgb(102,79,25)" stroke-width="0.5"/>
 <polygon points="254.8,217.0 251.5,212.8 253.0,219.0" fill="rgb(91,155,64)" stroke="rgb(91,155,64)" stroke-width="0.5"/>
+<line x1="236.4" y1="267.7" x2="241.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="182.0,251.7 185.4,253.2 183.9,247.0" fill="rgb(91,138,141)" stroke="rgb(91,138,141)" stroke-width="0.5"/>
 <polygon points="176.8,254.3 173.5,252.1 175.0,258.3" fill="rgb(95,139,156)" stroke="rgb(95,139,156)" stroke-width="0.5"/>
 <polygon points="205.6,192.3 209.0,193.3 207.5,187.1" fill="rgb(158,148,52)" stroke="rgb(158,148,52)" stroke-width="0.5"/>
@@ -4159,6 +4335,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="223.1,178.3 219.7,176.4 221.2,182.3" fill="rgb(200,150,47)" stroke="rgb(200,150,47)" stroke-width="0.5"/>
 <polygon points="190.9,237.9 194.3,238.9 192.7,232.3" fill="rgb(89,146,106)" stroke="rgb(89,146,106)" stroke-width="0.5"/>
 <polygon points="194.6,226.5 197.9,227.6 196.4,220.7" fill="rgb(90,155,82)" stroke="rgb(90,155,82)" stroke-width="0.5"/>
+<line x1="50.0" y1="174.5" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.7,183.4 216.0,184.8 214.5,178.9" fill="rgb(186,148,48)" stroke="rgb(186,148,48)" stroke-width="0.5"/>
 <polygon points="96.2,179.8 92.8,179.5 94.3,179.7" fill="rgb(105,80,26)" stroke="rgb(105,80,26)" stroke-width="0.5"/>
 <polygon points="171.6,255.9 175.0,258.3 173.5,252.1" fill="rgb(95,139,158)" stroke="rgb(95,139,158)" stroke-width="0.5"/>
@@ -4293,6 +4470,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="227.9,187.1 224.6,184.5 226.1,191.2" fill="rgb(184,156,53)" stroke="rgb(184,156,53)" stroke-width="0.5"/>
 <polygon points="136.5,211.2 139.9,215.4 138.3,209.8" fill="rgb(99,143,58)" stroke="rgb(99,143,58)" stroke-width="0.5"/>
 <polygon points="153.0,241.8 156.3,245.9 154.8,239.0" fill="rgb(91,144,116)" stroke="rgb(91,144,116)" stroke-width="0.5"/>
+<line x1="150.8" y1="265.9" x2="159.2" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.6,223.8 143.2,219.6 144.7,226.1" fill="rgb(89,155,73)" stroke="rgb(89,155,73)" stroke-width="0.5"/>
 <polygon points="212.3,194.7 215.7,196.3 214.2,189.6" fill="rgb(161,154,54)" stroke="rgb(161,154,54)" stroke-width="0.5"/>
 <polygon points="169.8,259.4 166.4,256.6 167.9,262.5" fill="rgb(93,135,160)" stroke="rgb(93,135,160)" stroke-width="0.5"/>
@@ -4318,6 +4496,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="236.2,200.3 239.5,203.7 238.0,196.8" fill="rgb(148,161,60)" stroke="rgb(148,161,60)" stroke-width="0.5"/>
 <polygon points="128.2,198.9 124.9,195.6 126.4,199.4" fill="rgb(119,122,44)" stroke="rgb(119,122,44)" stroke-width="0.5"/>
 <polygon points="159.7,249.8 156.3,245.9 157.9,252.6" fill="rgb(91,139,132)" stroke="rgb(91,139,132)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="58.4" y2="174.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="121.5,192.6 118.2,189.9 119.7,192.7" fill="rgb(120,109,38)" stroke="rgb(120,109,38)" stroke-width="0.5"/>
 <polygon points="226.1,191.2 229.5,194.0 227.9,187.1" fill="rgb(177,158,54)" stroke="rgb(177,158,54)" stroke-width="0.5"/>
 <polygon points="181.7,261.7 185.1,262.8 183.5,257.6" fill="rgb(90,129,156)" stroke="rgb(90,129,156)" stroke-width="0.5"/>
@@ -4390,6 +4569,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="94.3,179.7 91.0,179.5 92.5,180.1" fill="rgb(118,86,27)" stroke="rgb(118,86,27)" stroke-width="0.5"/>
 <polygon points="241.1,210.4 244.4,213.9 242.9,207.4" fill="rgb(123,164,65)" stroke="rgb(123,164,65)" stroke-width="0.5"/>
 <polygon points="219.1,198.1 215.7,196.3 217.2,203.2" fill="rgb(152,158,57)" stroke="rgb(152,158,57)" stroke-width="0.5"/>
+<line x1="264.0" y1="176.1" x2="268.6" y2="171.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.3,232.9 149.6,237.4 148.1,230.5" fill="rgb(89,147,92)" stroke="rgb(89,147,92)" stroke-width="0.5"/>
 <polygon points="139.9,215.4 136.5,211.2 138.0,217.1" fill="rgb(100,149,60)" stroke="rgb(100,149,60)" stroke-width="0.5"/>
 <polygon points="212.0,206.9 215.4,208.5 213.9,201.5" fill="rgb(133,157,60)" stroke="rgb(133,157,60)" stroke-width="0.5"/>
@@ -4490,6 +4670,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="235.9,210.6 239.2,213.6 237.7,207.1" fill="rgb(130,167,66)" stroke="rgb(130,167,66)" stroke-width="0.5"/>
 <polygon points="188.4,263.4 185.1,262.8 186.6,267.1" fill="rgb(85,122,152)" stroke="rgb(85,122,152)" stroke-width="0.5"/>
 <polygon points="178.0,268.5 181.4,269.6 179.9,265.3" fill="rgb(88,123,164)" stroke="rgb(88,123,164)" stroke-width="0.5"/>
+<line x1="159.2" y1="268.6" x2="167.6" y2="271.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.7,251.0 156.0,255.1 154.5,248.6" fill="rgb(88,135,128)" stroke="rgb(88,135,128)" stroke-width="0.5"/>
 <polygon points="216.9,215.3 213.5,213.9 215.1,220.5" fill="rgb(109,163,66)" stroke="rgb(109,163,66)" stroke-width="0.5"/>
 <polygon points="229.1,205.1 225.8,202.5 227.3,209.4" fill="rgb(144,165,63)" stroke="rgb(144,165,63)" stroke-width="0.5"/>
@@ -4508,11 +4689,13 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="146.3,232.9 142.9,228.3 144.4,235.2" fill="rgb(88,148,85)" stroke="rgb(88,148,85)" stroke-width="0.5"/>
 <polygon points="215.1,220.5 211.7,219.3 213.2,225.8" fill="rgb(94,164,68)" stroke="rgb(94,164,68)" stroke-width="0.5"/>
 <polygon points="195.5,255.4 198.8,255.4 197.3,250.7" fill="rgb(82,124,123)" stroke="rgb(82,124,123)" stroke-width="0.5"/>
+<line x1="231.8" y1="272.7" x2="236.4" y2="267.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="78.7,183.1 82.1,182.3 80.6,181.7" fill="rgb(119,88,27)" stroke="rgb(119,88,27)" stroke-width="0.5"/>
 <polygon points="206.2,235.7 209.5,236.2 208.0,230.3" fill="rgb(87,147,88)" stroke="rgb(87,147,88)" stroke-width="0.5"/>
 <polygon points="78.7,183.1 75.4,184.3 76.9,184.9" fill="rgb(116,88,28)" stroke="rgb(116,88,28)" stroke-width="0.5"/>
 <polygon points="144.4,235.2 147.8,239.8 146.3,232.9" fill="rgb(87,145,92)" stroke="rgb(87,145,92)" stroke-width="0.5"/>
 <polygon points="178.0,268.5 174.7,267.0 176.2,271.2" fill="rgb(88,123,167)" stroke="rgb(88,123,167)" stroke-width="0.5"/>
+<line x1="58.4" y1="174.2" x2="66.8" y2="176.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="232.5,207.7 229.1,205.1 230.7,211.7" fill="rgb(138,167,64)" stroke="rgb(138,167,64)" stroke-width="0.5"/>
 <polygon points="92.5,180.1 95.8,180.7 94.3,179.7" fill="rgb(128,90,28)" stroke="rgb(128,90,28)" stroke-width="0.5"/>
 <polygon points="126.4,199.4 123.0,195.9 124.6,200.2" fill="rgb(127,126,45)" stroke="rgb(127,126,45)" stroke-width="0.5"/>
@@ -4645,6 +4828,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="95.8,180.7 92.5,180.1 94.0,181.5" fill="rgb(142,98,30)" stroke="rgb(142,98,30)" stroke-width="0.5"/>
 <polygon points="107.8,184.9 104.4,183.0 105.9,185.3" fill="rgb(145,105,33)" stroke="rgb(145,105,33)" stroke-width="0.5"/>
 <polygon points="244.1,222.2 240.7,219.5 242.3,224.6" fill="rgb(102,165,67)" stroke="rgb(102,165,67)" stroke-width="0.5"/>
+<line x1="167.6" y1="271.3" x2="176.0" y2="274.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.0,259.6 200.3,259.2 198.8,255.4" fill="rgb(77,116,119)" stroke="rgb(77,116,119)" stroke-width="0.5"/>
 <polygon points="235.5,220.1 238.9,222.3 237.4,216.8" fill="rgb(112,170,69)" stroke="rgb(112,170,69)" stroke-width="0.5"/>
 <polygon points="227.0,220.0 230.3,221.7 228.8,215.8" fill="rgb(113,168,69)" stroke="rgb(113,168,69)" stroke-width="0.5"/>
@@ -4663,6 +4847,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="139.2,232.5 142.6,237.3 141.1,230.4" fill="rgb(86,147,79)" stroke="rgb(86,147,79)" stroke-width="0.5"/>
 <polygon points="204.0,250.8 207.4,250.4 205.9,246.1" fill="rgb(78,125,103)" stroke="rgb(78,125,103)" stroke-width="0.5"/>
 <polygon points="90.6,180.9 94.0,181.5 92.5,180.1" fill="rgb(143,98,30)" stroke="rgb(143,98,30)" stroke-width="0.5"/>
+<line x1="66.8" y1="176.9" x2="75.2" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="212.9,236.6 216.3,236.8 214.7,231.7" fill="rgb(86,145,83)" stroke="rgb(86,145,83)" stroke-width="0.5"/>
 <polygon points="238.9,222.3 242.3,224.6 240.7,219.5" fill="rgb(105,168,69)" stroke="rgb(105,168,69)" stroke-width="0.5"/>
 <polygon points="195.1,263.5 191.8,263.7 193.3,267.0" fill="rgb(77,112,132)" stroke="rgb(77,112,132)" stroke-width="0.5"/>
@@ -4681,6 +4866,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="117.8,193.0 114.5,190.0 116.0,193.8" fill="rgb(145,120,40)" stroke="rgb(145,120,40)" stroke-width="0.5"/>
 <polygon points="209.2,246.0 205.9,246.1 207.4,250.4" fill="rgb(81,130,102)" stroke="rgb(81,130,102)" stroke-width="0.5"/>
 <polygon points="242.3,224.6 245.6,226.9 244.1,222.2" fill="rgb(98,166,69)" stroke="rgb(98,166,69)" stroke-width="0.5"/>
+<line x1="259.4" y1="181.1" x2="264.0" y2="176.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="230.3,221.7 227.0,220.0 228.5,225.6" fill="rgb(107,170,70)" stroke="rgb(107,170,70)" stroke-width="0.5"/>
 <polygon points="225.1,224.3 228.5,225.6 227.0,220.0" fill="rgb(101,167,69)" stroke="rgb(101,167,69)" stroke-width="0.5"/>
 <polygon points="122.7,201.2 126.1,205.3 124.6,200.2" fill="rgb(130,129,47)" stroke="rgb(130,129,47)" stroke-width="0.5"/>
@@ -4743,6 +4929,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="198.5,262.9 195.1,263.5 196.7,266.3" fill="rgb(73,107,119)" stroke="rgb(73,107,119)" stroke-width="0.5"/>
 <polygon points="237.1,225.3 233.7,223.5 235.2,228.2" fill="rgb(100,168,69)" stroke="rgb(100,168,69)" stroke-width="0.5"/>
 <polygon points="94.0,181.5 90.6,180.9 92.2,182.7" fill="rgb(158,106,32)" stroke="rgb(158,106,32)" stroke-width="0.5"/>
+<line x1="227.2" y1="277.6" x2="231.8" y2="272.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="221.5,232.8 224.8,233.3 223.3,228.6" fill="rgb(89,154,73)" stroke="rgb(89,154,73)" stroke-width="0.5"/>
 <polygon points="214.4,241.3 217.8,241.1 216.3,236.8" fill="rgb(82,137,83)" stroke="rgb(82,137,83)" stroke-width="0.5"/>
 <polygon points="240.4,227.1 243.8,228.9 242.3,224.6" fill="rgb(95,164,68)" stroke="rgb(95,164,68)" stroke-width="0.5"/>
@@ -4751,6 +4938,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="124.3,206.7 127.6,211.2 126.1,205.3" fill="rgb(127,137,50)" stroke="rgb(127,137,50)" stroke-width="0.5"/>
 <polygon points="231.9,226.9 235.2,228.2 233.7,223.5" fill="rgb(98,166,69)" stroke="rgb(98,166,69)" stroke-width="0.5"/>
 <polygon points="226.7,229.4 223.3,228.6 224.8,233.3" fill="rgb(92,161,73)" stroke="rgb(92,161,73)" stroke-width="0.5"/>
+<line x1="176.0" y1="274.0" x2="184.4" y2="276.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="105.9,185.3 102.6,183.3 104.1,186.1" fill="rgb(161,114,35)" stroke="rgb(161,114,35)" stroke-width="0.5"/>
 <polygon points="231.9,226.9 228.5,225.6 230.0,230.3" fill="rgb(95,167,70)" stroke="rgb(95,167,70)" stroke-width="0.5"/>
 <polygon points="122.7,201.2 119.4,197.3 120.9,202.5" fill="rgb(143,132,47)" stroke="rgb(143,132,47)" stroke-width="0.5"/>
@@ -4762,6 +4950,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="205.5,254.5 208.9,253.7 207.4,250.4" fill="rgb(73,115,98)" stroke="rgb(73,115,98)" stroke-width="0.5"/>
 <polygon points="186.3,273.0 182.9,272.9 184.4,275.3" fill="rgb(72,101,135)" stroke="rgb(72,101,135)" stroke-width="0.5"/>
 <polygon points="131.0,215.9 127.6,211.2 129.1,217.7" fill="rgb(115,144,56)" stroke="rgb(115,144,56)" stroke-width="0.5"/>
+<line x1="75.2" y1="179.6" x2="83.6" y2="182.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.5,270.1 188.1,270.4 189.6,272.7" fill="rgb(71,101,128)" stroke="rgb(71,101,128)" stroke-width="0.5"/>
 <polygon points="181.1,275.1 184.4,275.3 182.9,272.9" fill="rgb(72,101,136)" stroke="rgb(72,101,136)" stroke-width="0.5"/>
 <polygon points="109.3,187.7 105.9,185.3 107.4,188.6" fill="rgb(163,118,37)" stroke="rgb(163,118,37)" stroke-width="0.5"/>
@@ -4833,6 +5022,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="233.4,231.1 230.0,230.3 231.5,234.1" fill="rgb(89,157,69)" stroke="rgb(89,157,69)" stroke-width="0.5"/>
 <polygon points="228.2,233.7 231.5,234.1 230.0,230.3" fill="rgb(87,151,68)" stroke="rgb(87,151,68)" stroke-width="0.5"/>
 <polygon points="215.9,245.1 219.3,244.4 217.8,241.1" fill="rgb(76,126,80)" stroke="rgb(76,126,80)" stroke-width="0.5"/>
+<line x1="184.4" y1="276.7" x2="192.8" y2="279.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.1,257.4 203.7,258.4 205.2,260.8" fill="rgb(68,105,97)" stroke="rgb(68,105,97)" stroke-width="0.5"/>
 <polygon points="194.8,269.3 198.2,268.2 196.7,266.3" fill="rgb(64,94,106)" stroke="rgb(64,94,106)" stroke-width="0.5"/>
 <polygon points="119.1,204.0 122.4,208.4 120.9,202.5" fill="rgb(142,136,48)" stroke="rgb(142,136,48)" stroke-width="0.5"/>
@@ -4840,8 +5030,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="221.1,240.8 217.8,241.1 219.3,244.4" fill="rgb(79,133,80)" stroke="rgb(79,133,80)" stroke-width="0.5"/>
 <polygon points="117.5,198.5 114.2,194.8 115.7,199.9" fill="rgb(159,133,44)" stroke="rgb(159,133,44)" stroke-width="0.5"/>
 <polygon points="107.4,188.6 104.1,186.1 105.6,189.9" fill="rgb(177,126,39)" stroke="rgb(177,126,39)" stroke-width="0.5"/>
+<line x1="254.8" y1="186.0" x2="259.4" y2="181.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.0,265.3 196.7,266.3 198.2,268.2" fill="rgb(65,96,105)" stroke="rgb(65,96,105)" stroke-width="0.5"/>
 <polygon points="114.2,194.8 110.8,191.5 112.3,196.2" fill="rgb(167,131,43)" stroke="rgb(167,131,43)" stroke-width="0.5"/>
+<line x1="83.6" y1="182.3" x2="92.0" y2="185.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="98.9,185.4 102.2,187.4 100.7,184.1" fill="rgb(179,122,36)" stroke="rgb(179,122,36)" stroke-width="0.5"/>
 <polygon points="110.8,191.5 107.4,188.6 109.0,192.9" fill="rgb(174,129,41)" stroke="rgb(174,129,41)" stroke-width="0.5"/>
 <polygon points="95.5,183.8 92.2,182.7 93.7,185.5" fill="rgb(183,121,35)" stroke="rgb(183,121,35)" stroke-width="0.5"/>
@@ -4879,6 +5071,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="119.1,204.0 115.7,199.9 117.2,205.8" fill="rgb(155,139,48)" stroke="rgb(155,139,48)" stroke-width="0.5"/>
 <polygon points="212.3,252.6 215.6,251.3 214.1,248.9" fill="rgb(67,109,80)" stroke="rgb(67,109,80)" stroke-width="0.5"/>
 <polygon points="205.2,260.8 208.6,259.2 207.1,257.4" fill="rgb(63,98,87)" stroke="rgb(63,98,87)" stroke-width="0.5"/>
+<line x1="222.6" y1="282.6" x2="227.2" y2="277.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="224.5,240.4 221.1,240.8 222.7,243.6" fill="rgb(76,129,72)" stroke="rgb(76,129,72)" stroke-width="0.5"/>
 <polygon points="102.2,187.4 98.9,185.4 100.4,189.2" fill="rgb(192,131,39)" stroke="rgb(192,131,39)" stroke-width="0.5"/>
 <polygon points="117.2,205.8 120.6,210.2 119.1,204.0" fill="rgb(146,139,50)" stroke="rgb(146,139,50)" stroke-width="0.5"/>
@@ -4894,12 +5087,14 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="112.3,196.2 109.0,192.9 110.5,198.0" fill="rgb(176,136,44)" stroke="rgb(176,136,44)" stroke-width="0.5"/>
 <polygon points="229.7,237.0 226.3,237.1 227.9,239.9" fill="rgb(78,137,67)" stroke="rgb(78,137,67)" stroke-width="0.5"/>
 <polygon points="109.0,192.9 105.6,189.9 107.1,194.6" fill="rgb(184,135,42)" stroke="rgb(184,135,42)" stroke-width="0.5"/>
+<line x1="192.8" y1="279.4" x2="201.2" y2="282.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.4,263.9 200.0,265.3 201.5,266.7" fill="rgb(61,92,93)" stroke="rgb(61,92,93)" stroke-width="0.5"/>
 <polygon points="113.9,201.8 117.2,205.8 115.7,199.9" fill="rgb(158,138,47)" stroke="rgb(158,138,47)" stroke-width="0.5"/>
 <polygon points="234.9,234.5 231.5,234.1 233.1,236.9" fill="rgb(81,142,63)" stroke="rgb(81,142,63)" stroke-width="0.5"/>
 <polygon points="229.7,237.0 233.1,236.9 231.5,234.1" fill="rgb(79,138,63)" stroke="rgb(79,138,63)" stroke-width="0.5"/>
 <polygon points="217.5,247.9 220.8,246.8 219.3,244.4" fill="rgb(69,114,72)" stroke="rgb(69,114,72)" stroke-width="0.5"/>
 <polygon points="100.4,189.2 103.8,191.7 102.2,187.4" fill="rgb(192,132,40)" stroke="rgb(192,132,40)" stroke-width="0.5"/>
+<line x1="92.0" y1="185.0" x2="100.4" y2="187.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="110.5,198.0 113.9,201.8 112.3,196.2" fill="rgb(169,137,45)" stroke="rgb(169,137,45)" stroke-width="0.5"/>
 <polygon points="210.4,256.0 213.8,254.4 212.3,252.6" fill="rgb(63,102,79)" stroke="rgb(63,102,79)" stroke-width="0.5"/>
 <polygon points="103.8,191.7 107.1,194.6 105.6,189.9" fill="rgb(186,134,41)" stroke="rgb(186,134,41)" stroke-width="0.5"/>
@@ -4924,9 +5119,12 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="201.5,266.7 204.9,264.9 203.4,263.9" fill="rgb(57,87,83)" stroke="rgb(57,87,83)" stroke-width="0.5"/>
 <polygon points="213.8,254.4 210.4,256.0 211.9,257.4" fill="rgb(61,98,75)" stroke="rgb(61,98,75)" stroke-width="0.5"/>
 <polygon points="206.7,262.2 203.4,263.9 204.9,264.9" fill="rgb(57,89,81)" stroke="rgb(57,89,81)" stroke-width="0.5"/>
+<line x1="250.2" y1="191.0" x2="254.8" y2="186.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="220.8,246.8 224.2,245.5 222.7,243.6" fill="rgb(66,111,64)" stroke="rgb(66,111,64)" stroke-width="0.5"/>
+<line x1="201.2" y1="282.1" x2="209.6" y2="284.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="226.0,242.7 222.7,243.6 224.2,245.5" fill="rgb(68,116,63)" stroke="rgb(68,116,63)" stroke-width="0.5"/>
 <polygon points="213.8,254.4 217.1,252.7 215.6,251.3" fill="rgb(60,99,69)" stroke="rgb(60,99,69)" stroke-width="0.5"/>
+<line x1="100.4" y1="187.7" x2="108.8" y2="190.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="194.5,272.9 197.9,271.3 196.3,270.7" fill="rgb(54,80,87)" stroke="rgb(54,80,87)" stroke-width="0.5"/>
 <polygon points="226.0,242.7 229.4,241.7 227.9,239.9" fill="rgb(67,117,58)" stroke="rgb(67,117,58)" stroke-width="0.5"/>
 <polygon points="206.7,262.2 210.1,260.2 208.6,259.2" fill="rgb(56,89,75)" stroke="rgb(56,89,75)" stroke-width="0.5"/>
@@ -4939,6 +5137,7 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="199.7,269.2 203.1,267.3 201.5,266.7" fill="rgb(54,82,80)" stroke="rgb(54,82,80)" stroke-width="0.5"/>
 <polygon points="219.0,249.8 222.3,248.2 220.8,246.8" fill="rgb(61,103,61)" stroke="rgb(61,103,61)" stroke-width="0.5"/>
 <polygon points="204.9,264.9 201.5,266.7 203.1,267.3" fill="rgb(54,84,78)" stroke="rgb(54,84,78)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="222.6" y2="282.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="224.2,245.5 220.8,246.8 222.3,248.2" fill="rgb(63,107,60)" stroke="rgb(63,107,60)" stroke-width="0.5"/>
 <polygon points="211.9,257.4 215.3,255.4 213.8,254.4" fill="rgb(57,93,67)" stroke="rgb(57,93,67)" stroke-width="0.5"/>
 <polygon points="217.1,252.7 213.8,254.4 215.3,255.4" fill="rgb(58,95,65)" stroke="rgb(58,95,65)" stroke-width="0.5"/>
@@ -4948,8 +5147,10 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="210.1,260.2 206.7,262.2 208.3,262.8" fill="rgb(54,86,71)" stroke="rgb(54,86,71)" stroke-width="0.5"/>
 <polygon points="229.4,241.7 232.7,240.7 231.2,239.3" fill="rgb(65,113,51)" stroke="rgb(65,113,51)" stroke-width="0.5"/>
 <polygon points="234.6,238.8 231.2,239.3 232.7,240.7" fill="rgb(66,116,50)" stroke="rgb(66,116,50)" stroke-width="0.5"/>
+<line x1="209.6" y1="284.8" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.1,252.7 220.5,250.8 219.0,249.8" fill="rgb(58,97,60)" stroke="rgb(58,97,60)" stroke-width="0.5"/>
 <polygon points="197.9,271.3 201.2,269.4 199.7,269.2" fill="rgb(52,78,77)" stroke="rgb(52,78,77)" stroke-width="0.5"/>
+<line x1="108.8" y1="190.4" x2="117.2" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="222.3,248.2 219.0,249.8 220.5,250.8" fill="rgb(59,99,58)" stroke="rgb(59,99,58)" stroke-width="0.5"/>
 <polygon points="203.1,267.3 199.7,269.2 201.2,269.4" fill="rgb(52,79,75)" stroke="rgb(52,79,75)" stroke-width="0.5"/>
 <polygon points="210.1,260.2 213.5,258.0 211.9,257.4" fill="rgb(54,87,65)" stroke="rgb(54,87,65)" stroke-width="0.5"/>
@@ -4961,49 +5162,88 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="215.3,255.4 218.7,253.3 217.1,252.7" fill="rgb(55,91,57)" stroke="rgb(55,91,57)" stroke-width="0.5"/>
 <polygon points="227.5,244.1 230.9,242.7 229.4,241.7" fill="rgb(60,105,48)" stroke="rgb(60,105,48)" stroke-width="0.5"/>
 <polygon points="232.7,240.7 229.4,241.7 230.9,242.7" fill="rgb(61,107,47)" stroke="rgb(61,107,47)" stroke-width="0.5"/>
+<line x1="245.6" y1="195.9" x2="250.2" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="220.5,250.8 217.1,252.7 218.7,253.3" fill="rgb(55,92,56)" stroke="rgb(55,92,56)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="284.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.3,262.8 211.6,260.4 210.1,260.2" fill="rgb(51,83,63)" stroke="rgb(51,83,63)" stroke-width="0.5"/>
 <polygon points="213.5,258.0 210.1,260.2 211.6,260.4" fill="rgb(52,84,61)" stroke="rgb(52,84,61)" stroke-width="0.5"/>
 <polygon points="220.5,250.8 223.9,248.8 222.3,248.2" fill="rgb(55,94,51)" stroke="rgb(55,94,51)" stroke-width="0.5"/>
 <polygon points="201.2,269.4 204.6,267.2 203.1,267.3" fill="rgb(49,77,68)" stroke="rgb(49,77,68)" stroke-width="0.5"/>
 <polygon points="225.7,246.5 222.3,248.2 223.9,248.8" fill="rgb(56,97,49)" stroke="rgb(56,97,49)" stroke-width="0.5"/>
+<line x1="117.2" y1="193.1" x2="125.6" y2="195.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.4,265.1 203.1,267.3 204.6,267.2" fill="rgb(49,78,66)" stroke="rgb(49,78,66)" stroke-width="0.5"/>
 <polygon points="213.5,258.0 216.8,255.7 215.3,255.4" fill="rgb(51,86,56)" stroke="rgb(51,86,56)" stroke-width="0.5"/>
 <polygon points="225.7,246.5 229.1,244.7 227.5,244.1" fill="rgb(56,98,45)" stroke="rgb(56,98,45)" stroke-width="0.5"/>
 <polygon points="218.7,253.3 215.3,255.4 216.8,255.7" fill="rgb(52,87,54)" stroke="rgb(52,87,54)" stroke-width="0.5"/>
 <polygon points="230.9,242.7 227.5,244.1 229.1,244.7" fill="rgb(57,100,44)" stroke="rgb(57,100,44)" stroke-width="0.5"/>
+<line x1="218.0" y1="284.4" x2="218.0" y2="281.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.4,265.1 209.8,262.7 208.3,262.8" fill="rgb(49,79,61)" stroke="rgb(49,79,61)" stroke-width="0.5"/>
 <polygon points="211.6,260.4 208.3,262.8 209.8,262.7" fill="rgb(49,80,59)" stroke="rgb(49,80,59)" stroke-width="0.5"/>
 <polygon points="218.7,253.3 222.0,251.0 220.5,250.8" fill="rgb(52,89,49)" stroke="rgb(52,89,49)" stroke-width="0.5"/>
 <polygon points="223.9,248.8 220.5,250.8 222.0,251.0" fill="rgb(53,91,47)" stroke="rgb(53,91,47)" stroke-width="0.5"/>
 <polygon points="211.6,260.4 215.0,257.9 213.5,258.0" fill="rgb(49,82,54)" stroke="rgb(49,82,54)" stroke-width="0.5"/>
+<line x1="218.0" y1="281.4" x2="218.0" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.9,248.8 227.2,246.7 225.7,246.5" fill="rgb(53,92,43)" stroke="rgb(53,92,43)" stroke-width="0.5"/>
 <polygon points="216.8,255.7 213.5,258.0 215.0,257.9" fill="rgb(50,83,52)" stroke="rgb(50,83,52)" stroke-width="0.5"/>
 <polygon points="229.1,244.7 225.7,246.5 227.2,246.7" fill="rgb(53,94,42)" stroke="rgb(53,94,42)" stroke-width="0.5"/>
+<line x1="125.6" y1="195.8" x2="134.0" y2="198.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="204.6,267.2 207.9,264.8 206.4,265.1" fill="rgb(47,76,59)" stroke="rgb(47,76,59)" stroke-width="0.5"/>
 <polygon points="209.8,262.7 206.4,265.1 207.9,264.8" fill="rgb(48,77,57)" stroke="rgb(48,77,57)" stroke-width="0.5"/>
 <polygon points="216.8,255.7 220.2,253.2 218.7,253.3" fill="rgb(50,85,48)" stroke="rgb(50,85,48)" stroke-width="0.5"/>
 <polygon points="222.0,251.0 218.7,253.3 220.2,253.2" fill="rgb(50,86,45)" stroke="rgb(50,86,45)" stroke-width="0.5"/>
 <polygon points="209.8,262.7 213.1,260.1 211.6,260.4" fill="rgb(47,79,53)" stroke="rgb(47,79,53)" stroke-width="0.5"/>
+<line x1="241.0" y1="200.9" x2="245.6" y2="195.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="278.3" x2="218.0" y2="275.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.0,257.9 211.6,260.4 213.1,260.1" fill="rgb(48,80,51)" stroke="rgb(48,80,51)" stroke-width="0.5"/>
 <polygon points="222.0,251.0 225.4,248.7 223.9,248.8" fill="rgb(50,88,41)" stroke="rgb(50,88,41)" stroke-width="0.5"/>
 <polygon points="227.2,246.7 223.9,248.8 225.4,248.7" fill="rgb(51,89,39)" stroke="rgb(51,89,39)" stroke-width="0.5"/>
 <polygon points="215.0,257.9 218.3,255.3 216.8,255.7" fill="rgb(48,81,46)" stroke="rgb(48,81,46)" stroke-width="0.5"/>
 <polygon points="220.2,253.2 216.8,255.7 218.3,255.3" fill="rgb(48,82,44)" stroke="rgb(48,82,44)" stroke-width="0.5"/>
+<line x1="134.0" y1="198.5" x2="142.4" y2="201.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="275.2" x2="218.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.9,264.8 211.3,262.1 209.8,262.7" fill="rgb(46,76,52)" stroke="rgb(46,76,52)" stroke-width="0.5"/>
 <polygon points="213.1,260.1 209.8,262.7 211.3,262.1" fill="rgb(46,77,49)" stroke="rgb(46,77,49)" stroke-width="0.5"/>
 <polygon points="220.2,253.2 223.5,250.6 222.0,251.0" fill="rgb(48,84,40)" stroke="rgb(48,84,40)" stroke-width="0.5"/>
 <polygon points="225.4,248.7 222.0,251.0 223.5,250.6" fill="rgb(49,85,38)" stroke="rgb(49,85,38)" stroke-width="0.5"/>
 <polygon points="213.1,260.1 216.5,257.4 215.0,257.9" fill="rgb(46,79,45)" stroke="rgb(46,79,45)" stroke-width="0.5"/>
 <polygon points="218.3,255.3 215.0,257.9 216.5,257.4" fill="rgb(46,80,43)" stroke="rgb(46,80,43)" stroke-width="0.5"/>
+<line x1="218.0" y1="272.1" x2="218.0" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="218.3,255.3 221.7,252.6 220.2,253.2" fill="rgb(47,81,39)" stroke="rgb(47,81,39)" stroke-width="0.5"/>
+<line x1="142.4" y1="201.3" x2="150.8" y2="204.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.5,250.6 220.2,253.2 221.7,252.6" fill="rgb(47,83,37)" stroke="rgb(47,83,37)" stroke-width="0.5"/>
 <polygon points="211.3,262.1 214.7,259.4 213.1,260.1" fill="rgb(45,77,44)" stroke="rgb(45,77,44)" stroke-width="0.5"/>
+<line x1="236.4" y1="205.8" x2="241.0" y2="200.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="269.0" x2="218.0" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.5,257.4 213.1,260.1 214.7,259.4" fill="rgb(45,78,42)" stroke="rgb(45,78,42)" stroke-width="0.5"/>
 <polygon points="216.5,257.4 219.9,254.6 218.3,255.3" fill="rgb(46,80,38)" stroke="rgb(46,80,38)" stroke-width="0.5"/>
 <polygon points="221.7,252.6 218.3,255.3 219.9,254.6" fill="rgb(46,81,36)" stroke="rgb(46,81,36)" stroke-width="0.5"/>
+<line x1="218.0" y1="265.9" x2="218.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.8" y1="204.0" x2="159.2" y2="206.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="214.7,259.4 218.0,256.6 216.5,257.4" fill="rgb(45,79,37)" stroke="rgb(45,79,37)" stroke-width="0.5"/>
+<line x1="218.0" y1="262.8" x2="218.0" y2="259.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.9,254.6 216.5,257.4 218.0,256.6" fill="rgb(45,80,36)" stroke="rgb(45,80,36)" stroke-width="0.5"/>
+<line x1="159.2" y1="206.7" x2="167.6" y2="209.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="231.8" y1="210.8" x2="236.4" y2="205.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="259.7" x2="218.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="256.6" x2="218.0" y2="253.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.6" y1="209.4" x2="176.0" y2="212.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="253.5" x2="218.0" y2="250.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="227.2" y1="215.7" x2="231.8" y2="210.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="250.4" x2="218.0" y2="247.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="176.0" y1="212.1" x2="184.4" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="247.3" x2="218.0" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.4" y1="214.8" x2="192.8" y2="217.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="244.2" x2="218.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="222.6" y1="220.7" x2="227.2" y2="215.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="241.1" x2="218.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.8" y1="217.5" x2="201.2" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="238.0" x2="218.0" y2="234.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="234.9" x2="218.0" y2="231.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="201.2" y1="220.2" x2="209.6" y2="222.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="222.6" y2="220.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="231.8" x2="218.0" y2="228.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="209.6" y1="222.9" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="228.7" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="50.0" y1="202.4" x2="53.4" y2="199.6" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="53.4" y1="199.6" x2="56.7" y2="196.9" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="56.7" y1="196.9" x2="60.1" y2="194.2" stroke="#000000a0" stroke-width="0.5"/>
@@ -6704,18 +6944,6 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <line x1="297.8" y1="168.5" x2="299.6" y2="166.9" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="299.6" y1="166.9" x2="301.4" y2="165.1" stroke="#000000a0" stroke-width="0.5"/>
 <line x1="301.4" y1="165.1" x2="303.3" y2="163.1" stroke="#000000a0" stroke-width="0.5"/>
-<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="80.5" y1="243.2" x2="81.8" y2="239.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="76.8" y="254.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>

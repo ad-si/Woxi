@@ -4,6 +4,67 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="131.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="150.4" y2="137.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="131.3" x2="142.0" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="139.3" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="137.1" x2="158.8" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="128.2" x2="142.0" y2="125.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="125.1" x2="142.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.8" y1="139.8" x2="167.2" y2="142.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="122.0" x2="142.0" y2="118.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="132.8" y1="144.3" x2="137.4" y2="139.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="118.9" x2="142.0" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.2" y1="142.5" x2="175.6" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="115.8" x2="142.0" y2="112.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="175.6" y1="145.2" x2="184.0" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="112.7" x2="142.0" y2="109.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="128.2" y1="149.2" x2="132.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="109.6" x2="142.0" y2="106.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.0" y1="147.9" x2="192.4" y2="150.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="106.5" x2="142.0" y2="103.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="103.4" x2="142.0" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.6" y1="154.2" x2="128.2" y2="149.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.4" y1="150.6" x2="200.8" y2="153.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="100.3" x2="142.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="200.8" y1="153.3" x2="209.2" y2="156.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="97.2" x2="142.0" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="94.1" x2="142.0" y2="91.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="119.0" y1="159.1" x2="123.6" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="209.2" y1="156.0" x2="217.6" y2="158.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="91.0" x2="142.0" y2="87.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="87.9" x2="142.0" y2="84.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="217.6" y1="158.7" x2="226.0" y2="161.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="84.8" x2="142.0" y2="81.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="114.4" y1="164.1" x2="119.0" y2="159.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="226.0" y1="161.5" x2="234.4" y2="164.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="81.7" x2="142.0" y2="78.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="78.6" x2="142.0" y2="75.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="234.4" y1="164.2" x2="242.8" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="75.6" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="109.8" y1="169.0" x2="114.4" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="242.8" y1="166.9" x2="251.2" y2="169.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="150.4" y2="75.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="137.4" y1="77.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="251.2" y1="169.6" x2="259.6" y2="172.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.4" y1="75.2" x2="158.8" y2="77.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="105.2" y1="174.0" x2="109.8" y2="169.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="259.6" y1="172.3" x2="268.0" y2="175.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.8" y1="77.9" x2="167.2" y2="80.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="132.8" y1="82.4" x2="137.4" y2="77.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="268.0" y1="175.0" x2="276.4" y2="177.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="100.6" y1="178.9" x2="105.2" y2="174.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.2" y1="80.6" x2="175.6" y2="83.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="276.4" y1="177.7" x2="284.8" y2="180.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="175.6" y1="83.3" x2="184.0" y2="86.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="128.2" y1="87.3" x2="132.8" y2="82.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="96.0" y1="183.9" x2="100.6" y2="178.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="284.8" y1="180.4" x2="293.2" y2="183.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.0" y1="86.0" x2="192.4" y2="88.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="293.2" y1="183.1" x2="301.6" y2="185.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.6" y1="92.3" x2="128.2" y2="87.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.4" y1="88.7" x2="200.8" y2="91.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="91.4" y1="188.8" x2="96.0" y2="183.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="174.6,113.7 174.7,116.9 185.1,113.7" fill="rgb(160,157,57)" stroke="rgb(160,157,57)" stroke-width="0.5"/>
 <polygon points="185.0,116.9 185.1,113.7 174.7,116.9" fill="rgb(157,158,57)" stroke="rgb(157,158,57)" stroke-width="0.5"/>
 <polygon points="185.1,113.7 185.3,110.3 174.6,113.7" fill="rgb(166,156,55)" stroke="rgb(166,156,55)" stroke-width="0.5"/>
@@ -29,6 +90,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="174.1,99.9 174.2,103.5 185.6,99.9" fill="rgb(194,148,47)" stroke="rgb(194,148,47)" stroke-width="0.5"/>
 <polygon points="184.9,120.0 184.8,122.9 194.9,120.7" fill="rgb(145,160,60)" stroke="rgb(145,160,60)" stroke-width="0.5"/>
 <polygon points="184.7,125.7 184.8,122.9 175.0,125.8" fill="rgb(137,165,63)" stroke="rgb(137,165,63)" stroke-width="0.5"/>
+<line x1="301.6" y1="185.8" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="174.3,106.9 174.2,103.5 163.3,107.8" fill="rgb(183,151,51)" stroke="rgb(183,151,51)" stroke-width="0.5"/>
 <polygon points="174.9,122.9 174.8,120.0 165.1,123.7" fill="rgb(144,163,61)" stroke="rgb(144,163,61)" stroke-width="0.5"/>
 <polygon points="185.6,99.9 185.7,96.3 174.1,99.9" fill="rgb(200,146,45)" stroke="rgb(200,146,45)" stroke-width="0.5"/>
@@ -58,6 +120,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="184.7,125.7 184.6,128.4 194.2,126.4" fill="rgb(132,165,64)" stroke="rgb(132,165,64)" stroke-width="0.5"/>
 <polygon points="185.7,96.3 185.6,99.9 197.4,97.2" fill="rgb(201,143,44)" stroke="rgb(201,143,44)" stroke-width="0.5"/>
 <polygon points="165.1,123.7 165.5,126.5 174.9,122.9" fill="rgb(140,165,63)" stroke="rgb(140,165,63)" stroke-width="0.5"/>
+<line x1="200.8" y1="91.4" x2="209.2" y2="94.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="196.7,104.3 197.1,100.7 185.5,103.4" fill="rgb(189,146,47)" stroke="rgb(189,146,47)" stroke-width="0.5"/>
 <polygon points="194.2,126.4 194.6,123.6 184.7,125.7" fill="rgb(135,164,63)" stroke="rgb(135,164,63)" stroke-width="0.5"/>
 <polygon points="175.2,128.4 175.3,130.9 184.6,128.4" fill="rgb(127,168,66)" stroke="rgb(127,168,66)" stroke-width="0.5"/>
@@ -136,10 +199,12 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="156.8,130.5 157.4,133.0 165.9,129.1" fill="rgb(128,169,66)" stroke="rgb(128,169,66)" stroke-width="0.5"/>
 <polygon points="150.8,99.0 151.4,102.5 162.2,97.2" fill="rgb(204,145,45)" stroke="rgb(204,145,45)" stroke-width="0.5"/>
 <polygon points="166.6,134.0 166.2,131.6 158.0,135.3" fill="rgb(121,171,68)" stroke="rgb(121,171,68)" stroke-width="0.5"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="185.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.2,135.5 184.1,137.6 192.8,136.1" fill="rgb(112,169,69)" stroke="rgb(112,169,69)" stroke-width="0.5"/>
 <polygon points="202.4,132.9 203.0,130.5 193.5,131.6" fill="rgb(123,165,65)" stroke="rgb(123,165,65)" stroke-width="0.5"/>
 <polygon points="184.1,137.6 184.2,135.5 175.7,137.6" fill="rgb(111,170,69)" stroke="rgb(111,170,69)" stroke-width="0.5"/>
 <polygon points="208.8,98.9 209.4,95.3 197.4,97.2" fill="rgb(203,140,41)" stroke="rgb(203,140,41)" stroke-width="0.5"/>
+<line x1="119.0" y1="97.2" x2="123.6" y2="92.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="150.2,95.4 150.8,99.0 161.9,93.6" fill="rgb(214,143,43)" stroke="rgb(214,143,43)" stroke-width="0.5"/>
 <polygon points="175.7,137.6 175.5,135.5 167.3,138.2" fill="rgb(111,171,69)" stroke="rgb(111,171,69)" stroke-width="0.5"/>
 <polygon points="167.0,136.2 167.3,138.2 175.5,135.5" fill="rgb(113,171,69)" stroke="rgb(113,171,69)" stroke-width="0.5"/>
@@ -172,6 +237,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="167.3,138.2 167.7,140.1 175.7,137.6" fill="rgb(108,170,70)" stroke="rgb(108,170,70)" stroke-width="0.5"/>
 <polygon points="201.2,137.4 201.8,135.2 192.8,136.1" fill="rgb(113,168,67)" stroke="rgb(113,168,67)" stroke-width="0.5"/>
 <polygon points="175.8,139.5 175.7,137.6 167.7,140.1" fill="rgb(107,170,70)" stroke="rgb(107,170,70)" stroke-width="0.5"/>
+<line x1="209.2" y1="94.1" x2="217.6" y2="96.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.0,130.5 202.4,132.9 211.7,132.5" fill="rgb(123,162,63)" stroke="rgb(123,162,63)" stroke-width="0.5"/>
 <polygon points="167.3,138.2 167.0,136.2 159.2,139.4" fill="rgb(111,170,69)" stroke="rgb(111,170,69)" stroke-width="0.5"/>
 <polygon points="152.0,106.0 151.4,102.5 141.5,108.4" fill="rgb(191,147,47)" stroke="rgb(191,147,47)" stroke-width="0.5"/>
@@ -206,6 +272,8 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="209.4,95.3 208.8,98.9 220.6,97.9" fill="rgb(203,136,40)" stroke="rgb(203,136,40)" stroke-width="0.5"/>
 <polygon points="167.7,140.1 168.0,141.8 175.8,139.5" fill="rgb(104,169,69)" stroke="rgb(104,169,69)" stroke-width="0.5"/>
 <polygon points="217.4,111.7 218.2,108.4 207.1,109.3" fill="rgb(173,143,48)" stroke="rgb(173,143,48)" stroke-width="0.5"/>
+<line x1="310.0" y1="185.5" x2="310.0" y2="182.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="305.4" y1="193.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.9,141.3 175.8,139.5 168.0,141.8" fill="rgb(103,169,70)" stroke="rgb(103,169,70)" stroke-width="0.5"/>
 <polygon points="167.7,140.1 167.3,138.2 159.8,141.3" fill="rgb(107,170,70)" stroke="rgb(107,170,70)" stroke-width="0.5"/>
 <polygon points="148.1,132.6 148.9,135.0 156.8,130.5" fill="rgb(127,168,66)" stroke="rgb(127,168,66)" stroke-width="0.5"/>
@@ -215,6 +283,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="218.2,108.4 219.0,104.9 207.7,105.9" fill="rgb(182,141,45)" stroke="rgb(182,141,45)" stroke-width="0.5"/>
 <polygon points="191.7,141.8 192.1,140.1 183.9,141.2" fill="rgb(102,168,69)" stroke="rgb(102,168,69)" stroke-width="0.5"/>
 <polygon points="159.2,139.4 159.8,141.3 167.3,138.2" fill="rgb(108,170,70)" stroke="rgb(108,170,70)" stroke-width="0.5"/>
+<line x1="86.8" y1="193.8" x2="91.4" y2="188.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="140.7,105.0 141.5,108.4 151.4,102.5" fill="rgb(194,147,47)" stroke="rgb(194,147,47)" stroke-width="0.5"/>
 <polygon points="158.6,137.4 158.0,135.3 150.5,139.3" fill="rgb(115,171,68)" stroke="rgb(115,171,68)" stroke-width="0.5"/>
 <polygon points="175.9,141.3 176.0,142.9 183.9,141.2" fill="rgb(100,166,69)" stroke="rgb(100,166,69)" stroke-width="0.5"/>
@@ -261,6 +330,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="211.7,132.5 210.9,134.9 219.9,135.1" fill="rgb(120,159,62)" stroke="rgb(120,159,62)" stroke-width="0.5"/>
 <polygon points="168.4,143.5 168.0,141.8 160.9,144.6" fill="rgb(99,166,69)" stroke="rgb(99,166,69)" stroke-width="0.5"/>
 <polygon points="168.4,143.5 168.8,145.0 176.0,142.9" fill="rgb(96,164,68)" stroke="rgb(96,164,68)" stroke-width="0.5"/>
+<line x1="310.0" y1="182.4" x2="310.0" y2="179.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="217.4,111.7 216.6,115.0 227.1,114.9" fill="rgb(164,141,48)" stroke="rgb(164,141,48)" stroke-width="0.5"/>
 <polygon points="143.2,115.1 142.3,111.8 133.7,118.2" fill="rgb(171,151,52)" stroke="rgb(171,151,52)" stroke-width="0.5"/>
 <polygon points="160.4,143.0 160.9,144.6 168.0,141.8" fill="rgb(100,166,69)" stroke="rgb(100,166,69)" stroke-width="0.5"/>
@@ -273,6 +343,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="191.0,144.9 191.4,143.4 183.6,144.4" fill="rgb(95,163,68)" stroke="rgb(95,163,68)" stroke-width="0.5"/>
 <polygon points="218.2,108.4 217.4,111.7 228.1,111.5" fill="rgb(171,139,46)" stroke="rgb(171,139,46)" stroke-width="0.5"/>
 <polygon points="198.8,144.6 199.4,143.0 191.4,143.4" fill="rgb(98,164,68)" stroke="rgb(98,164,68)" stroke-width="0.5"/>
+<line x1="217.6" y1="96.8" x2="226.0" y2="99.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="207.6,143.0 208.4,141.2 200.0,141.3" fill="rgb(104,165,68)" stroke="rgb(104,165,68)" stroke-width="0.5"/>
 <polygon points="149.7,137.2 148.9,135.0 141.9,139.8" fill="rgb(119,169,67)" stroke="rgb(119,169,67)" stroke-width="0.5"/>
 <polygon points="222.0,130.0 223.0,127.2 213.3,127.2" fill="rgb(133,152,57)" stroke="rgb(133,152,57)" stroke-width="0.5"/>
@@ -327,6 +398,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="216.8,141.7 217.9,139.7 209.2,139.3" fill="rgb(110,162,65)" stroke="rgb(110,162,65)" stroke-width="0.5"/>
 <polygon points="208.4,141.2 207.6,143.0 215.8,143.6" fill="rgb(104,163,67)" stroke="rgb(104,163,67)" stroke-width="0.5"/>
 <polygon points="153.0,144.7 153.8,146.3 160.4,143.0" fill="rgb(100,165,68)" stroke="rgb(100,165,68)" stroke-width="0.5"/>
+<line x1="310.0" y1="179.3" x2="310.0" y2="176.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.5,145.8 183.4,147.1 190.7,146.3" fill="rgb(89,156,65)" stroke="rgb(89,156,65)" stroke-width="0.5"/>
 <polygon points="130.6,108.3 131.6,111.7 140.7,105.0" fill="rgb(191,146,47)" stroke="rgb(191,146,47)" stroke-width="0.5"/>
 <polygon points="169.1,146.4 168.8,145.0 162.1,147.4" fill="rgb(92,160,67)" stroke="rgb(92,160,67)" stroke-width="0.5"/>
@@ -335,6 +407,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="206.0,146.2 206.8,144.7 198.8,144.6" fill="rgb(97,163,67)" stroke="rgb(97,163,67)" stroke-width="0.5"/>
 <polygon points="152.2,143.1 151.3,141.3 145.0,145.4" fill="rgb(106,168,69)" stroke="rgb(106,168,69)" stroke-width="0.5"/>
 <polygon points="229.1,108.2 230.1,104.8 219.0,104.9" fill="rgb(185,135,42)" stroke="rgb(185,135,42)" stroke-width="0.5"/>
+<line x1="114.4" y1="102.2" x2="119.0" y2="97.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.4,147.1 183.5,145.8 176.4,147.1" fill="rgb(89,157,65)" stroke="rgb(89,157,65)" stroke-width="0.5"/>
 <polygon points="169.1,146.4 169.5,147.7 176.3,145.8" fill="rgb(90,157,65)" stroke="rgb(90,157,65)" stroke-width="0.5"/>
 <polygon points="142.9,141.8 144.0,143.7 150.5,139.3" fill="rgb(112,169,69)" stroke="rgb(112,169,69)" stroke-width="0.5"/>
@@ -377,6 +450,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="162.1,147.4 161.5,146.1 155.4,149.0" fill="rgb(92,160,67)" stroke="rgb(92,160,67)" stroke-width="0.5"/>
 <polygon points="145.0,145.4 146.0,147.0 152.2,143.1" fill="rgb(103,167,68)" stroke="rgb(103,167,68)" stroke-width="0.5"/>
 <polygon points="197.1,148.6 197.7,147.4 190.3,147.6" fill="rgb(89,156,65)" stroke="rgb(89,156,65)" stroke-width="0.5"/>
+<line x1="226.0" y1="99.5" x2="234.4" y2="102.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="176.5,148.4 176.4,147.1 169.9,148.9" fill="rgb(87,154,64)" stroke="rgb(87,154,64)" stroke-width="0.5"/>
 <polygon points="226.1,118.1 225.0,121.2 234.8,121.8" fill="rgb(151,139,48)" stroke="rgb(151,139,48)" stroke-width="0.5"/>
 <polygon points="134.7,121.3 133.7,118.2 126.2,125.0" fill="rgb(160,151,53)" stroke="rgb(160,151,53)" stroke-width="0.5"/>
@@ -386,11 +460,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="190.0,148.9 190.3,147.6 183.3,148.4" fill="rgb(87,153,64)" stroke="rgb(87,153,64)" stroke-width="0.5"/>
 <polygon points="154.6,147.7 155.4,149.0 161.5,146.1" fill="rgb(92,160,67)" stroke="rgb(92,160,67)" stroke-width="0.5"/>
 <polygon points="217.9,139.7 216.8,141.7 225.1,142.8" fill="rgb(109,158,64)" stroke="rgb(109,158,64)" stroke-width="0.5"/>
+<line x1="310.0" y1="176.2" x2="310.0" y2="173.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="300.8" y1="198.4" x2="305.4" y2="193.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="133.7,118.2 132.6,115.0 124.9,122.0" fill="rgb(168,149,51)" stroke="rgb(168,149,51)" stroke-width="0.5"/>
 <polygon points="227.1,114.9 226.1,118.1 236.0,118.7" fill="rgb(158,137,46)" stroke="rgb(158,137,46)" stroke-width="0.5"/>
 <polygon points="190.3,147.6 190.0,148.9 197.1,148.6" fill="rgb(87,153,64)" stroke="rgb(87,153,64)" stroke-width="0.5"/>
 <polygon points="142.9,141.8 141.9,139.8 135.9,144.8" fill="rgb(113,167,67)" stroke="rgb(113,167,67)" stroke-width="0.5"/>
 <polygon points="204.4,148.9 205.2,147.6 197.7,147.4" fill="rgb(91,158,66)" stroke="rgb(91,158,66)" stroke-width="0.5"/>
+<line x1="82.2" y1="198.7" x2="86.8" y2="193.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.7,147.4 197.1,148.6 204.4,148.9" fill="rgb(89,155,65)" stroke="rgb(89,155,65)" stroke-width="0.5"/>
 <polygon points="206.0,146.2 205.2,147.6 212.7,148.4" fill="rgb(94,160,67)" stroke="rgb(94,160,67)" stroke-width="0.5"/>
 <polygon points="176.5,148.4 176.7,149.6 183.3,148.4" fill="rgb(85,151,63)" stroke="rgb(85,151,63)" stroke-width="0.5"/>
@@ -456,6 +533,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="183.2,149.6 183.0,150.7 189.6,150.0" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="146.0,147.0 145.0,145.4 139.6,149.8" fill="rgb(101,166,69)" stroke="rgb(101,166,69)" stroke-width="0.5"/>
 <polygon points="163.3,149.9 162.7,148.7 157.1,151.3" fill="rgb(87,153,64)" stroke="rgb(87,153,64)" stroke-width="0.5"/>
+<line x1="310.0" y1="173.1" x2="310.0" y2="170.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.2,150.1 170.6,151.2 176.7,149.6" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="122.5,115.6 123.7,118.8 131.6,111.7" fill="rgb(179,145,48)" stroke="rgb(179,145,48)" stroke-width="0.5"/>
 <polygon points="156.3,150.2 157.1,151.3 162.7,148.7" fill="rgb(88,153,64)" stroke="rgb(88,153,64)" stroke-width="0.5"/>
@@ -479,6 +557,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="156.3,150.2 155.4,149.0 150.1,152.2" fill="rgb(89,156,65)" stroke="rgb(89,156,65)" stroke-width="0.5"/>
 <polygon points="138.4,148.3 139.6,149.8 145.0,145.4" fill="rgb(102,166,68)" stroke="rgb(102,166,68)" stroke-width="0.5"/>
 <polygon points="220.2,149.7 221.4,148.2 213.8,146.9" fill="rgb(98,160,66)" stroke="rgb(98,160,66)" stroke-width="0.5"/>
+<line x1="234.4" y1="102.3" x2="242.8" y2="105.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.9,151.0 164.5,152.1 170.2,150.1" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="120.0,109.0 121.3,112.3 129.6,104.9" fill="rgb(197,140,43)" stroke="rgb(197,140,43)" stroke-width="0.5"/>
 <polygon points="176.8,150.7 176.9,151.8 183.0,150.7" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -515,6 +594,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="225.1,142.8 223.9,144.7 231.6,146.3" fill="rgb(106,154,62)" stroke="rgb(106,154,62)" stroke-width="0.5"/>
 <polygon points="188.9,152.3 189.2,151.2 182.9,151.8" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="157.1,151.3 156.3,150.2 151.2,153.3" fill="rgb(87,153,64)" stroke="rgb(87,153,64)" stroke-width="0.5"/>
+<line x1="310.0" y1="170.0" x2="310.0" y2="166.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.9,151.0 195.3,152.1 201.9,152.4" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="189.2,151.2 188.9,152.3 195.3,152.1" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="135.9,144.8 134.7,142.9 129.6,148.3" fill="rgb(111,165,66)" stroke="rgb(111,165,66)" stroke-width="0.5"/>
@@ -522,6 +602,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="233.6,124.9 232.4,127.9 241.3,129.2" fill="rgb(139,137,49)" stroke="rgb(139,137,49)" stroke-width="0.5"/>
 <polygon points="127.4,128.0 126.2,125.0 119.9,132.2" fill="rgb(149,150,54)" stroke="rgb(149,150,54)" stroke-width="0.5"/>
 <polygon points="223.9,144.7 222.6,146.5 230.2,148.2" fill="rgb(103,156,63)" stroke="rgb(103,156,63)" stroke-width="0.5"/>
+<line x1="109.8" y1="107.1" x2="114.4" y2="102.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="140.8,151.1 142.1,152.4 147.1,148.5" fill="rgb(95,162,67)" stroke="rgb(95,162,67)" stroke-width="0.5"/>
 <polygon points="150.1,152.2 151.2,153.3 156.3,150.2" fill="rgb(88,153,64)" stroke="rgb(88,153,64)" stroke-width="0.5"/>
 <polygon points="164.5,152.1 165.1,153.2 170.6,151.2" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -588,6 +669,8 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="238.5,112.2 237.3,115.5 246.9,116.8" fill="rgb(167,127,41)" stroke="rgb(167,127,41)" stroke-width="0.5"/>
 <polygon points="118.5,129.3 119.9,132.2 126.2,125.0" fill="rgb(152,149,54)" stroke="rgb(152,149,54)" stroke-width="0.5"/>
 <polygon points="182.8,153.0 182.7,154.1 188.5,153.4" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
+<line x1="310.0" y1="166.9" x2="310.0" y2="163.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="296.2" y1="203.4" x2="300.8" y2="198.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.7,152.1 208.7,153.2 215.3,154.5" fill="rgb(87,152,63)" stroke="rgb(87,152,63)" stroke-width="0.5"/>
 <polygon points="241.3,129.2 242.7,126.2 233.6,124.9" fill="rgb(143,135,47)" stroke="rgb(143,135,47)" stroke-width="0.5"/>
 <polygon points="143.3,153.6 144.5,154.6 149.1,151.0" fill="rgb(89,156,65)" stroke="rgb(89,156,65)" stroke-width="0.5"/>
@@ -598,7 +681,9 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="227.4,151.5 228.8,149.9 221.4,148.2" fill="rgb(99,157,64)" stroke="rgb(99,157,64)" stroke-width="0.5"/>
 <polygon points="200.3,154.4 201.1,153.4 194.7,153.2" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="182.7,154.1 182.8,153.0 177.2,154.1" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
+<line x1="242.8" y1="105.0" x2="251.2" y2="107.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="158.7,153.5 157.9,152.4 153.2,155.3" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
+<line x1="77.6" y1="203.7" x2="82.2" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="215.3,154.5 216.5,153.5 209.7,152.1" fill="rgb(88,154,64)" stroke="rgb(88,154,64)" stroke-width="0.5"/>
 <polygon points="117.1,126.3 118.5,129.3 124.9,122.0" fill="rgb(160,147,51)" stroke="rgb(160,147,51)" stroke-width="0.5"/>
 <polygon points="177.2,154.1 177.0,153.0 171.7,154.5" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
@@ -648,6 +733,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="187.8,155.7 188.2,154.5 182.6,155.3" fill="rgb(85,151,64)" stroke="rgb(85,151,64)" stroke-width="0.5"/>
 <polygon points="112.9,117.0 114.3,120.1 121.3,112.3" fill="rgb(183,140,45)" stroke="rgb(183,140,45)" stroke-width="0.5"/>
 <polygon points="188.2,154.5 187.8,155.7 193.5,155.3" fill="rgb(85,151,64)" stroke="rgb(85,151,64)" stroke-width="0.5"/>
+<line x1="310.0" y1="163.8" x2="310.0" y2="160.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.2,155.3 224.6,154.2 217.8,152.3" fill="rgb(91,156,65)" stroke="rgb(91,156,65)" stroke-width="0.5"/>
 <polygon points="145.7,155.6 147.0,156.5 151.2,153.3" fill="rgb(85,151,63)" stroke="rgb(85,151,63)" stroke-width="0.5"/>
 <polygon points="205.6,156.2 206.6,155.2 200.3,154.4" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -710,6 +796,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="145.7,155.6 144.5,154.6 140.8,158.3" fill="rgb(86,153,64)" stroke="rgb(86,153,64)" stroke-width="0.5"/>
 <polygon points="166.9,156.5 166.3,155.4 162.0,157.6" fill="rgb(85,151,64)" stroke="rgb(85,151,64)" stroke-width="0.5"/>
 <polygon points="166.9,156.5 167.5,157.7 172.0,155.7" fill="rgb(87,154,65)" stroke="rgb(87,154,65)" stroke-width="0.5"/>
+<line x1="251.2" y1="107.7" x2="259.6" y2="110.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="161.2,156.6 162.0,157.6 166.3,155.4" fill="rgb(85,151,64)" stroke="rgb(85,151,64)" stroke-width="0.5"/>
 <polygon points="133.8,153.0 132.4,151.6 128.8,156.6" fill="rgb(99,162,67)" stroke="rgb(99,162,67)" stroke-width="0.5"/>
 <polygon points="220.4,157.3 221.8,156.4 215.3,154.5" fill="rgb(87,153,64)" stroke="rgb(87,153,64)" stroke-width="0.5"/>
@@ -726,6 +813,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="197.9,157.6 198.7,156.5 192.9,156.5" fill="rgb(85,151,64)" stroke="rgb(85,151,64)" stroke-width="0.5"/>
 <polygon points="242.7,126.2 241.3,129.2 249.6,131.1" fill="rgb(139,128,44)" stroke="rgb(139,128,44)" stroke-width="0.5"/>
 <polygon points="240.4,146.4 241.9,144.2 234.4,142.2" fill="rgb(112,143,55)" stroke="rgb(112,143,55)" stroke-width="0.5"/>
+<line x1="310.0" y1="160.7" x2="310.0" y2="157.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="121.0,148.6 122.6,150.5 126.8,144.4" fill="rgb(115,159,64)" stroke="rgb(115,159,64)" stroke-width="0.5"/>
 <polygon points="235.7,152.1 237.3,150.4 230.2,148.2" fill="rgb(102,151,60)" stroke="rgb(102,151,60)" stroke-width="0.5"/>
 <polygon points="119.5,146.5 121.0,148.6 125.4,142.3" fill="rgb(119,158,62)" stroke="rgb(119,158,62)" stroke-width="0.5"/>
@@ -737,6 +825,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="241.9,144.2 243.5,141.8 235.8,139.8" fill="rgb(116,140,54)" stroke="rgb(116,140,54)" stroke-width="0.5"/>
 <polygon points="182.3,157.9 182.5,156.6 177.5,157.9" fill="rgb(89,157,67)" stroke="rgb(89,157,67)" stroke-width="0.5"/>
 <polygon points="155.3,157.2 156.3,158.1 160.3,155.5" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
+<line x1="105.2" y1="112.1" x2="109.8" y2="107.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="148.2,157.4 149.4,158.3 153.2,155.3" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="234.2,153.7 235.7,152.1 228.8,149.9" fill="rgb(99,152,62)" stroke="rgb(99,152,62)" stroke-width="0.5"/>
 <polygon points="124.1,152.2 125.7,153.8 129.6,148.3" fill="rgb(107,162,66)" stroke="rgb(107,162,66)" stroke-width="0.5"/>
@@ -806,7 +895,9 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="130.3,157.8 131.9,158.8 135.2,154.3" fill="rgb(94,159,66)" stroke="rgb(94,159,66)" stroke-width="0.5"/>
 <polygon points="162.8,158.8 163.6,160.0 167.5,157.7" fill="rgb(89,156,66)" stroke="rgb(89,156,66)" stroke-width="0.5"/>
 <polygon points="168.1,158.9 168.7,160.3 172.8,158.2" fill="rgb(91,160,69)" stroke="rgb(91,160,69)" stroke-width="0.5"/>
+<line x1="310.0" y1="157.6" x2="310.0" y2="154.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="156.3,158.1 155.3,157.2 151.9,160.1" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
+<line x1="291.6" y1="208.3" x2="296.2" y2="203.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="228.0,158.7 229.5,157.6 223.2,155.3" fill="rgb(90,155,64)" stroke="rgb(90,155,64)" stroke-width="0.5"/>
 <polygon points="173.1,159.6 172.8,158.2 168.7,160.3" fill="rgb(91,160,69)" stroke="rgb(91,160,69)" stroke-width="0.5"/>
 <polygon points="211.7,157.4 210.5,158.2 216.2,159.9" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -819,6 +910,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="196.2,160.0 197.1,158.7 191.8,158.9" fill="rgb(88,155,67)" stroke="rgb(88,155,67)" stroke-width="0.5"/>
 <polygon points="191.2,160.3 191.8,158.9 186.8,159.6" fill="rgb(90,159,68)" stroke="rgb(90,159,68)" stroke-width="0.5"/>
 <polygon points="249.6,131.1 251.2,128.2 242.7,126.2" fill="rgb(143,127,43)" stroke="rgb(143,127,43)" stroke-width="0.5"/>
+<line x1="73.0" y1="208.6" x2="77.6" y2="203.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="112.9,117.0 111.5,113.7 105.5,122.2" fill="rgb(183,134,42)" stroke="rgb(183,134,42)" stroke-width="0.5"/>
 <polygon points="173.1,159.6 173.5,161.1 177.6,159.3" fill="rgb(93,163,71)" stroke="rgb(93,163,71)" stroke-width="0.5"/>
 <polygon points="150.6,159.2 151.9,160.1 155.3,157.2" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
@@ -838,6 +930,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="186.4,161.1 186.8,159.6 182.1,160.8" fill="rgb(92,162,72)" stroke="rgb(92,162,72)" stroke-width="0.5"/>
 <polygon points="201.5,160.2 202.5,159.1 197.1,158.7" fill="rgb(86,152,64)" stroke="rgb(86,152,64)" stroke-width="0.5"/>
 <polygon points="186.8,159.6 186.4,161.1 191.2,160.3" fill="rgb(92,161,70)" stroke="rgb(92,161,70)" stroke-width="0.5"/>
+<line x1="259.6" y1="110.4" x2="268.0" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.1,158.7 196.2,160.0 201.5,160.2" fill="rgb(88,155,65)" stroke="rgb(88,155,65)" stroke-width="0.5"/>
 <polygon points="251.2,128.2 252.7,125.1 244.1,123.1" fill="rgb(150,123,41)" stroke="rgb(150,123,41)" stroke-width="0.5"/>
 <polygon points="140.8,158.3 139.4,157.4 136.5,161.4" fill="rgb(86,152,64)" stroke="rgb(86,152,64)" stroke-width="0.5"/>
@@ -887,6 +980,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="127.2,155.3 125.7,153.8 122.9,159.3" fill="rgb(100,159,65)" stroke="rgb(100,159,65)" stroke-width="0.5"/>
 <polygon points="200.5,161.3 201.5,160.2 196.2,160.0" fill="rgb(88,155,66)" stroke="rgb(88,155,66)" stroke-width="0.5"/>
 <polygon points="232.6,155.2 231.1,156.5 237.0,159.2" fill="rgb(93,151,62)" stroke="rgb(93,151,62)" stroke-width="0.5"/>
+<line x1="310.0" y1="154.5" x2="310.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="135.0,160.6 136.5,161.4 139.4,157.4" fill="rgb(87,152,64)" stroke="rgb(87,152,64)" stroke-width="0.5"/>
 <polygon points="243.5,141.8 241.9,144.2 248.8,146.7" fill="rgb(113,133,51)" stroke="rgb(113,133,51)" stroke-width="0.5"/>
 <polygon points="196.2,160.0 195.4,161.3 200.5,161.3" fill="rgb(89,157,67)" stroke="rgb(89,157,67)" stroke-width="0.5"/>
@@ -988,6 +1082,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="170.5,165.1 171.1,166.9 174.2,164.5" fill="rgb(97,169,81)" stroke="rgb(97,169,81)" stroke-width="0.5"/>
 <polygon points="170.5,165.1 169.9,163.4 166.9,165.9" fill="rgb(96,166,77)" stroke="rgb(96,166,77)" stroke-width="0.5"/>
 <polygon points="194.6,162.7 193.8,164.2 198.4,163.9" fill="rgb(92,161,72)" stroke="rgb(92,161,72)" stroke-width="0.5"/>
+<line x1="310.0" y1="151.4" x2="310.0" y2="148.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="178.1,166.1 178.3,168.2 181.8,166.1" fill="rgb(97,169,84)" stroke="rgb(97,169,84)" stroke-width="0.5"/>
 <polygon points="174.6,166.4 174.2,164.5 171.1,166.9" fill="rgb(96,168,82)" stroke="rgb(96,168,82)" stroke-width="0.5"/>
 <polygon points="111.7,134.1 110.2,131.3 106.1,139.4" fill="rgb(147,139,49)" stroke="rgb(147,139,49)" stroke-width="0.5"/>
@@ -1001,11 +1096,13 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="214.8,160.6 213.5,161.4 218.7,163.4" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="160.4,162.6 159.4,161.4 156.7,164.2" fill="rgb(90,159,68)" stroke="rgb(90,159,68)" stroke-width="0.5"/>
 <polygon points="111.1,146.9 112.8,149.1 116.4,142.0" fill="rgb(126,148,56)" stroke="rgb(126,148,56)" stroke-width="0.5"/>
+<line x1="268.0" y1="113.1" x2="276.4" y2="115.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="174.6,166.4 174.9,168.4 178.1,166.1" fill="rgb(97,170,84)" stroke="rgb(97,170,84)" stroke-width="0.5"/>
 <polygon points="135.0,160.6 133.4,159.8 131.3,164.1" fill="rgb(88,154,64)" stroke="rgb(88,154,64)" stroke-width="0.5"/>
 <polygon points="188.8,166.9 189.4,165.0 185.3,166.4" fill="rgb(95,165,80)" stroke="rgb(95,165,80)" stroke-width="0.5"/>
 <polygon points="181.6,168.2 181.8,166.1 178.3,168.2" fill="rgb(97,168,85)" stroke="rgb(97,168,85)" stroke-width="0.5"/>
 <polygon points="248.8,146.7 250.4,144.4 243.5,141.8" fill="rgb(115,131,49)" stroke="rgb(115,131,49)" stroke-width="0.5"/>
+<line x1="100.6" y1="117.0" x2="105.2" y2="112.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="166.1,164.2 165.3,162.7 162.5,165.4" fill="rgb(94,164,74)" stroke="rgb(94,164,74)" stroke-width="0.5"/>
 <polygon points="193.0,165.9 193.8,164.2 189.4,165.0" fill="rgb(94,163,76)" stroke="rgb(94,163,76)" stroke-width="0.5"/>
 <polygon points="210.7,163.1 212.1,162.2 206.8,160.9" fill="rgb(85,150,63)" stroke="rgb(85,150,63)" stroke-width="0.5"/>
@@ -1094,12 +1191,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="178.5,172.7 178.6,175.3 181.4,172.7" fill="rgb(98,164,97)" stroke="rgb(98,164,97)" stroke-width="0.5"/>
 <polygon points="221.8,162.0 220.2,162.7 225.3,165.2" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="181.4,172.7 181.3,175.3 184.3,173.0" fill="rgb(97,163,96)" stroke="rgb(97,163,96)" stroke-width="0.5"/>
+<line x1="310.0" y1="148.3" x2="310.0" y2="145.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.7,173.0 175.3,170.6 172.9,173.4" fill="rgb(98,167,94)" stroke="rgb(98,167,94)" stroke-width="0.5"/>
 <polygon points="172.3,171.1 172.9,173.4 175.3,170.6" fill="rgb(98,167,92)" stroke="rgb(98,167,92)" stroke-width="0.5"/>
 <polygon points="253.8,139.2 255.5,136.5 248.1,134.0" fill="rgb(130,123,43)" stroke="rgb(130,123,43)" stroke-width="0.5"/>
 <polygon points="131.3,164.1 133.0,164.7 135.0,160.6" fill="rgb(87,152,63)" stroke="rgb(87,152,63)" stroke-width="0.5"/>
 <polygon points="163.5,167.0 164.6,168.7 166.9,165.9" fill="rgb(96,167,80)" stroke="rgb(96,167,80)" stroke-width="0.5"/>
 <polygon points="181.3,175.3 181.4,172.7 178.6,175.3" fill="rgb(98,164,98)" stroke="rgb(98,164,98)" stroke-width="0.5"/>
+<line x1="287.0" y1="213.3" x2="291.6" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.7,173.0 176.0,175.5 178.5,172.7" fill="rgb(98,165,97)" stroke="rgb(98,165,97)" stroke-width="0.5"/>
 <polygon points="207.9,164.9 209.3,164.0 204.4,163.0" fill="rgb(87,153,66)" stroke="rgb(87,153,66)" stroke-width="0.5"/>
 <polygon points="172.3,171.1 171.7,168.9 169.4,171.8" fill="rgb(97,168,89)" stroke="rgb(97,168,89)" stroke-width="0.5"/>
@@ -1135,6 +1234,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="179.9,207.4 180.0,211.0 180.1,207.4" fill="rgb(91,127,169)" stroke="rgb(91,127,169)" stroke-width="0.5"/>
 <polygon points="180.1,207.4 180.0,211.0 180.4,207.4" fill="rgb(90,126,167)" stroke="rgb(90,126,167)" stroke-width="0.5"/>
 <polygon points="179.6,207.4 180.0,211.0 179.9,207.4" fill="rgb(91,128,169)" stroke="rgb(91,128,169)" stroke-width="0.5"/>
+<line x1="68.4" y1="213.6" x2="73.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="200.7,166.8 201.9,165.4 197.4,165.4" fill="rgb(90,158,71)" stroke="rgb(90,158,71)" stroke-width="0.5"/>
 <polygon points="180.0,211.0 181.2,207.6 180.0,211.0" fill="rgb(80,111,151)" stroke="rgb(80,111,151)" stroke-width="0.5"/>
 <polygon points="180.0,211.0 178.8,207.6 180.0,211.0" fill="rgb(80,111,151)" stroke="rgb(80,111,151)" stroke-width="0.5"/>
@@ -1397,6 +1497,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="181.9,208.6 180.0,211.0 181.9,208.8" fill="rgb(46,64,85)" stroke="rgb(46,64,85)" stroke-width="0.5"/>
 <polygon points="178.1,208.8 180.0,211.0 178.1,208.6" fill="rgb(57,80,106)" stroke="rgb(57,80,106)" stroke-width="0.5"/>
 <polygon points="175.2,184.1 175.8,187.2 177.1,183.9" fill="rgb(96,154,118)" stroke="rgb(96,154,118)" stroke-width="0.5"/>
+<line x1="276.4" y1="115.8" x2="284.8" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.5,190.3 184.1,187.2 182.1,190.1" fill="rgb(91,145,123)" stroke="rgb(91,145,123)" stroke-width="0.5"/>
 <polygon points="184.1,187.2 184.7,184.1 182.5,186.9" fill="rgb(93,148,117)" stroke="rgb(93,148,117)" stroke-width="0.5"/>
 <polygon points="170.2,174.0 169.4,171.8 167.6,174.8" fill="rgb(97,165,93)" stroke="rgb(97,165,93)" stroke-width="0.5"/>
@@ -1490,6 +1591,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="175.9,193.9 175.1,190.7 174.9,194.2" fill="rgb(92,142,132)" stroke="rgb(92,142,132)" stroke-width="0.5"/>
 <polygon points="257.4,115.8 255.8,118.9 263.8,121.8" fill="rgb(166,111,33)" stroke="rgb(166,111,33)" stroke-width="0.5"/>
 <polygon points="175.1,197.8 176.3,201.0 175.9,197.4" fill="rgb(89,134,141)" stroke="rgb(89,134,141)" stroke-width="0.5"/>
+<line x1="310.0" y1="145.2" x2="310.0" y2="142.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="188.9,176.4 188.1,179.0 191.3,177.2" fill="rgb(91,152,95)" stroke="rgb(91,152,95)" stroke-width="0.5"/>
 <polygon points="181.2,209.4 180.0,211.0 181.0,209.4" fill="rgb(38,54,71)" stroke="rgb(38,54,71)" stroke-width="0.5"/>
 <polygon points="179.0,209.4 180.0,211.0 178.8,209.4" fill="rgb(34,48,64)" stroke="rgb(34,48,64)" stroke-width="0.5"/>
@@ -1749,6 +1851,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="180.8,209.5 181.6,208.1 181.0,209.4" fill="rgb(40,56,71)" stroke="rgb(40,56,71)" stroke-width="0.5"/>
 <polygon points="189.8,189.3 191.2,186.5 188.5,188.6" fill="rgb(83,133,104)" stroke="rgb(83,133,104)" stroke-width="0.5"/>
 <polygon points="147.4,166.3 145.9,165.5 144.7,168.8" fill="rgb(86,152,64)" stroke="rgb(86,152,64)" stroke-width="0.5"/>
+<line x1="310.0" y1="142.1" x2="310.0" y2="139.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="251.2,154.1 253.0,152.0 247.1,149.0" fill="rgb(106,128,49)" stroke="rgb(106,128,49)" stroke-width="0.5"/>
 <polygon points="194.6,175.8 193.4,178.1 196.7,177.0" fill="rgb(87,146,86)" stroke="rgb(87,146,86)" stroke-width="0.5"/>
 <polygon points="207.9,169.1 209.4,168.0 205.1,167.1" fill="rgb(87,154,68)" stroke="rgb(87,154,68)" stroke-width="0.5"/>
@@ -1783,6 +1886,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="191.2,186.5 192.5,183.9 189.7,185.8" fill="rgb(84,135,99)" stroke="rgb(84,135,99)" stroke-width="0.5"/>
 <polygon points="136.3,165.9 134.6,165.3 133.7,169.2" fill="rgb(84,149,62)" stroke="rgb(84,149,62)" stroke-width="0.5"/>
 <polygon points="174.3,203.6 176.2,206.0 174.3,203.2" fill="rgb(66,97,111)" stroke="rgb(66,97,111)" stroke-width="0.5"/>
+<line x1="96.0" y1="122.0" x2="100.6" y2="117.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.1,207.4 181.6,209.1 182.8,207.6" fill="rgb(34,48,59)" stroke="rgb(34,48,59)" stroke-width="0.5"/>
 <polygon points="216.9,168.1 218.6,167.5 214.0,165.5" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
 <polygon points="167.4,184.0 168.8,186.6 169.0,183.1" fill="rgb(91,148,106)" stroke="rgb(91,148,106)" stroke-width="0.5"/>
@@ -1833,6 +1937,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="174.3,204.0 176.2,206.3 174.3,203.6" fill="rgb(62,91,104)" stroke="rgb(62,91,104)" stroke-width="0.5"/>
 <polygon points="178.0,207.9 179.0,209.4 177.6,207.8" fill="rgb(35,50,61)" stroke="rgb(35,50,61)" stroke-width="0.5"/>
 <polygon points="159.0,171.4 157.6,169.9 156.7,173.1" fill="rgb(92,160,78)" stroke="rgb(92,160,78)" stroke-width="0.5"/>
+<line x1="284.8" y1="118.5" x2="293.2" y2="121.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="143.0,168.2 144.7,168.8 145.9,165.5" fill="rgb(86,152,64)" stroke="rgb(86,152,64)" stroke-width="0.5"/>
 <polygon points="176.3,206.6 174.4,204.5 176.4,206.9" fill="rgb(54,78,91)" stroke="rgb(54,78,91)" stroke-width="0.5"/>
 <polygon points="138.0,166.5 136.3,165.9 135.4,169.7" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -1939,6 +2044,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="169.9,193.5 168.2,190.9 169.3,194.3" fill="rgb(81,128,108)" stroke="rgb(81,128,108)" stroke-width="0.5"/>
 <polygon points="133.7,169.2 135.4,169.7 136.3,165.9" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="146.4,169.6 148.1,170.4 149.0,167.2" fill="rgb(88,156,67)" stroke="rgb(88,156,67)" stroke-width="0.5"/>
+<line x1="310.0" y1="139.0" x2="310.0" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="187.6,200.7 189.5,198.3 187.4,200.1" fill="rgb(61,92,91)" stroke="rgb(61,92,91)" stroke-width="0.5"/>
 <polygon points="207.9,169.1 206.3,170.3 210.2,171.3" fill="rgb(86,152,68)" stroke="rgb(86,152,68)" stroke-width="0.5"/>
 <polygon points="182.8,207.6 184.2,205.9 183.1,207.4" fill="rgb(33,48,56)" stroke="rgb(33,48,56)" stroke-width="0.5"/>
@@ -1946,6 +2052,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="141.4,167.6 139.7,167.0 139.0,170.5" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
 <polygon points="175.0,205.3 176.6,207.1 174.7,204.9" fill="rgb(50,73,83)" stroke="rgb(50,73,83)" stroke-width="0.5"/>
 <polygon points="224.5,169.6 226.3,169.1 221.9,166.4" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
+<line x1="282.4" y1="218.2" x2="287.0" y2="213.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="167.6,187.4 166.0,184.9 166.6,188.4" fill="rgb(86,139,102)" stroke="rgb(86,139,102)" stroke-width="0.5"/>
 <polygon points="211.9,170.3 213.5,169.5 209.4,168.0" fill="rgb(86,152,65)" stroke="rgb(86,152,65)" stroke-width="0.5"/>
 <polygon points="166.6,188.4 168.2,190.9 167.6,187.4" fill="rgb(85,137,105)" stroke="rgb(85,137,105)" stroke-width="0.5"/>
@@ -1968,6 +2075,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="238.7,164.6 237.0,165.6 241.2,169.1" fill="rgb(88,146,61)" stroke="rgb(88,146,61)" stroke-width="0.5"/>
 <polygon points="101.6,145.0 103.4,147.5 106.1,139.4" fill="rgb(138,135,49)" stroke="rgb(138,135,49)" stroke-width="0.5"/>
 <polygon points="172.4,201.8 174.3,204.0 172.3,201.3" fill="rgb(63,94,99)" stroke="rgb(63,94,99)" stroke-width="0.5"/>
+<line x1="63.8" y1="218.5" x2="68.4" y2="213.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.5,198.3 172.4,200.7 170.7,197.6" fill="rgb(72,110,107)" stroke="rgb(72,110,107)" stroke-width="0.5"/>
 <polygon points="206.3,170.3 204.8,171.6 208.5,172.3" fill="rgb(86,151,70)" stroke="rgb(86,151,70)" stroke-width="0.5"/>
 <polygon points="185.6,204.4 187.4,202.4 185.7,204.0" fill="rgb(47,71,76)" stroke="rgb(47,71,76)" stroke-width="0.5"/>
@@ -2110,12 +2218,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="164.0,187.2 165.7,189.4 164.9,186.0" fill="rgb(83,135,97)" stroke="rgb(83,135,97)" stroke-width="0.5"/>
 <polygon points="181.8,206.8 181.2,208.2 181.1,206.9" fill="rgb(41,60,69)" stroke="rgb(41,60,69)" stroke-width="0.5"/>
 <polygon points="131.9,168.8 130.1,168.3 129.9,172.5" fill="rgb(85,150,62)" stroke="rgb(85,150,62)" stroke-width="0.5"/>
+<line x1="310.0" y1="135.9" x2="310.0" y2="132.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="178.9,206.9 179.3,208.2 178.2,206.8" fill="rgb(38,56,64)" stroke="rgb(38,56,64)" stroke-width="0.5"/>
 <polygon points="170.5,199.7 172.4,201.8 170.4,199.0" fill="rgb(64,97,95)" stroke="rgb(64,97,95)" stroke-width="0.5"/>
 <polygon points="184.7,205.6 186.2,203.9 185.0,205.2" fill="rgb(37,55,59)" stroke="rgb(37,55,59)" stroke-width="0.5"/>
 <polygon points="196.8,183.7 195.1,186.0 197.8,185.0" fill="rgb(74,123,82)" stroke="rgb(74,123,82)" stroke-width="0.5"/>
 <polygon points="168.9,195.1 167.0,192.7 168.6,195.9" fill="rgb(73,116,99)" stroke="rgb(73,116,99)" stroke-width="0.5"/>
 <polygon points="187.1,202.9 185.3,204.9 186.7,203.4" fill="rgb(40,60,63)" stroke="rgb(40,60,63)" stroke-width="0.5"/>
+<line x1="293.2" y1="121.2" x2="301.6" y2="123.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.1,206.9 180.7,208.2 180.4,207.0" fill="rgb(41,60,69)" stroke="rgb(41,60,69)" stroke-width="0.5"/>
 <polygon points="179.6,207.0 179.8,208.3 178.9,206.9" fill="rgb(40,58,66)" stroke="rgb(40,58,66)" stroke-width="0.5"/>
 <polygon points="180.4,207.0 180.2,208.3 179.6,207.0" fill="rgb(41,60,68)" stroke="rgb(41,60,68)" stroke-width="0.5"/>
@@ -2274,6 +2384,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="162.2,185.1 160.4,183.1 161.4,186.4" fill="rgb(82,137,87)" stroke="rgb(82,137,87)" stroke-width="0.5"/>
 <polygon points="184.9,204.7 183.7,206.2 184.1,205.1" fill="rgb(37,56,59)" stroke="rgb(37,56,59)" stroke-width="0.5"/>
 <polygon points="178.9,206.9 178.6,205.7 179.6,207.0" fill="rgb(39,59,63)" stroke="rgb(39,59,63)" stroke-width="0.5"/>
+<line x1="310.0" y1="132.8" x2="310.0" y2="129.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="256.5,147.4 254.7,149.7 259.7,153.1" fill="rgb(110,115,42)" stroke="rgb(110,115,42)" stroke-width="0.5"/>
 <polygon points="180.4,207.0 180.5,205.8 181.1,206.9" fill="rgb(41,61,65)" stroke="rgb(41,61,65)" stroke-width="0.5"/>
 <polygon points="165.2,190.5 163.3,188.4 164.8,191.6" fill="rgb(76,123,90)" stroke="rgb(76,123,90)" stroke-width="0.5"/>
@@ -2291,6 +2402,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="191.4,197.6 189.5,199.7 191.1,198.5" fill="rgb(49,77,69)" stroke="rgb(49,77,69)" stroke-width="0.5"/>
 <polygon points="105.8,159.7 107.6,161.5 108.7,154.3" fill="rgb(113,141,55)" stroke="rgb(113,141,55)" stroke-width="0.5"/>
 <polygon points="186.2,203.9 187.8,202.3 186.7,203.4" fill="rgb(38,57,57)" stroke="rgb(38,57,57)" stroke-width="0.5"/>
+<line x1="91.4" y1="126.9" x2="96.0" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.6,201.7 173.3,203.4 171.1,201.1" fill="rgb(52,78,76)" stroke="rgb(52,78,76)" stroke-width="0.5"/>
 <polygon points="166.7,193.7 164.8,191.6 166.6,194.7" fill="rgb(71,114,90)" stroke="rgb(71,114,90)" stroke-width="0.5"/>
 <polygon points="196.7,188.4 194.8,190.5 197.1,189.6" fill="rgb(66,107,76)" stroke="rgb(66,107,76)" stroke-width="0.5"/>
@@ -2353,6 +2465,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="168.6,197.6 166.7,195.7 168.9,198.5" fill="rgb(61,97,83)" stroke="rgb(61,97,83)" stroke-width="0.5"/>
 <polygon points="204.9,178.1 203.1,179.6 206.0,180.0" fill="rgb(78,134,70)" stroke="rgb(78,134,70)" stroke-width="0.5"/>
 <polygon points="220.8,173.9 222.7,173.5 219.2,170.9" fill="rgb(84,149,63)" stroke="rgb(84,149,63)" stroke-width="0.5"/>
+<line x1="301.6" y1="123.9" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="147.9,173.6 146.1,172.8 146.6,176.1" fill="rgb(87,153,68)" stroke="rgb(87,153,68)" stroke-width="0.5"/>
 <polygon points="184.9,204.7 186.1,203.3 185.6,204.3" fill="rgb(35,52,52)" stroke="rgb(35,52,52)" stroke-width="0.5"/>
 <polygon points="171.1,201.1 169.3,199.3 171.6,201.7" fill="rgb(52,81,75)" stroke="rgb(52,81,75)" stroke-width="0.5"/>
@@ -2401,12 +2514,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="118.7,169.2 116.9,168.3 117.3,173.8" fill="rgb(92,151,62)" stroke="rgb(92,151,62)" stroke-width="0.5"/>
 <polygon points="124.3,171.2 122.5,170.7 123.0,175.4" fill="rgb(87,151,63)" stroke="rgb(87,151,63)" stroke-width="0.5"/>
 <polygon points="193.3,195.7 195.2,193.8 193.4,194.7" fill="rgb(56,90,71)" stroke="rgb(56,90,71)" stroke-width="0.5"/>
+<line x1="310.0" y1="129.7" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.3,192.7 193.4,194.7 195.2,193.8" fill="rgb(56,91,70)" stroke="rgb(56,91,70)" stroke-width="0.5"/>
 <polygon points="257.9,155.4 259.7,153.1 254.7,149.7" fill="rgb(108,115,42)" stroke="rgb(108,115,42)" stroke-width="0.5"/>
 <polygon points="187.0,202.8 185.6,204.3 186.1,203.3" fill="rgb(35,53,51)" stroke="rgb(35,53,51)" stroke-width="0.5"/>
 <polygon points="154.0,180.0 155.9,181.4 155.0,178.2" fill="rgb(85,147,77)" stroke="rgb(85,147,77)" stroke-width="0.5"/>
 <polygon points="244.9,167.1 243.1,168.2 246.5,172.0" fill="rgb(88,138,57)" stroke="rgb(88,138,57)" stroke-width="0.5"/>
 <polygon points="190.7,199.3 188.9,201.0 190.1,200.0" fill="rgb(42,66,59)" stroke="rgb(42,66,59)" stroke-width="0.5"/>
+<line x1="277.8" y1="223.2" x2="282.4" y2="218.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="126.2,171.7 124.3,171.2 124.9,175.8" fill="rgb(86,151,63)" stroke="rgb(86,151,63)" stroke-width="0.5"/>
 <polygon points="175.9,205.1 174.9,203.7 176.8,205.3" fill="rgb(34,52,52)" stroke="rgb(34,52,52)" stroke-width="0.5"/>
 <polygon points="233.8,171.6 231.9,172.0 235.1,175.6" fill="rgb(85,148,62)" stroke="rgb(85,148,62)" stroke-width="0.5"/>
@@ -2432,6 +2547,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="159.6,184.6 157.7,182.9 159.1,186.1" fill="rgb(80,135,80)" stroke="rgb(80,135,80)" stroke-width="0.5"/>
 <polygon points="207.8,178.8 209.7,177.7 206.7,176.8" fill="rgb(80,140,68)" stroke="rgb(80,140,68)" stroke-width="0.5"/>
 <polygon points="115.0,167.2 113.2,166.0 113.5,172.1" fill="rgb(95,147,60)" stroke="rgb(95,147,60)" stroke-width="0.5"/>
+<line x1="59.2" y1="223.5" x2="63.8" y2="218.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="211.5,176.8 213.4,176.0 210.3,174.5" fill="rgb(83,145,66)" stroke="rgb(83,145,66)" stroke-width="0.5"/>
 <polygon points="150.3,177.8 152.2,178.8 151.5,175.6" fill="rgb(87,152,72)" stroke="rgb(87,152,72)" stroke-width="0.5"/>
 <polygon points="209.7,177.7 211.5,176.8 208.5,175.6" fill="rgb(82,143,67)" stroke="rgb(82,143,67)" stroke-width="0.5"/>
@@ -2655,6 +2771,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="190.9,199.3 189.3,200.8 189.8,200.1" fill="rgb(37,60,50)" stroke="rgb(37,60,50)" stroke-width="0.5"/>
 <polygon points="103.9,157.7 102.0,155.6 102.1,163.4" fill="rgb(114,129,49)" stroke="rgb(114,129,49)" stroke-width="0.5"/>
 <polygon points="155.1,185.1 157.0,186.3 155.3,183.2" fill="rgb(78,133,73)" stroke="rgb(78,133,73)" stroke-width="0.5"/>
+<line x1="305.4" y1="131.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="171.6,201.4 170.2,200.1 172.7,202.0" fill="rgb(43,67,57)" stroke="rgb(43,67,57)" stroke-width="0.5"/>
 <polygon points="265.3,145.7 267.2,143.1 261.9,139.5" fill="rgb(126,104,35)" stroke="rgb(126,104,35)" stroke-width="0.5"/>
 <polygon points="184.9,202.9 184.1,204.1 183.6,203.2" fill="rgb(38,59,53)" stroke="rgb(38,59,53)" stroke-width="0.5"/>
@@ -2672,6 +2789,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="166.6,197.1 168.3,198.5 165.8,196.1" fill="rgb(55,89,68)" stroke="rgb(55,89,68)" stroke-width="0.5"/>
 <polygon points="153.4,182.0 151.5,180.9 153.2,184.0" fill="rgb(81,140,71)" stroke="rgb(81,140,71)" stroke-width="0.5"/>
 <polygon points="187.3,202.0 188.6,200.8 188.4,201.4" fill="rgb(35,55,47)" stroke="rgb(35,55,47)" stroke-width="0.5"/>
+<line x1="86.8" y1="131.9" x2="91.4" y2="126.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="168.3,198.5 166.6,197.1 169.2,199.4" fill="rgb(52,82,65)" stroke="rgb(52,82,65)" stroke-width="0.5"/>
 <polygon points="208.5,180.9 206.6,181.9 208.7,183.0" fill="rgb(74,129,64)" stroke="rgb(74,129,64)" stroke-width="0.5"/>
 <polygon points="183.6,203.2 183.0,204.3 182.2,203.4" fill="rgb(39,60,54)" stroke="rgb(39,60,54)" stroke-width="0.5"/>
@@ -2775,6 +2893,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="164.9,195.8 166.6,197.1 164.0,194.7" fill="rgb(57,93,66)" stroke="rgb(57,93,66)" stroke-width="0.5"/>
 <polygon points="192.4,198.0 190.9,199.3 191.2,198.9" fill="rgb(39,63,49)" stroke="rgb(39,63,49)" stroke-width="0.5"/>
 <polygon points="261.6,150.8 259.7,153.1 263.6,156.9" fill="rgb(107,105,38)" stroke="rgb(107,105,38)" stroke-width="0.5"/>
+<line x1="273.2" y1="228.1" x2="277.8" y2="223.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="147.4,181.6 149.4,182.3 147.7,179.2" fill="rgb(84,146,68)" stroke="rgb(84,146,68)" stroke-width="0.5"/>
 <polygon points="257.9,163.2 259.8,161.2 256.0,157.5" fill="rgb(98,111,42)" stroke="rgb(98,111,42)" stroke-width="0.5"/>
 <polygon points="159.1,189.2 157.2,188.0 159.6,190.8" fill="rgb(70,118,70)" stroke="rgb(70,118,70)" stroke-width="0.5"/>
@@ -2792,6 +2911,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="113.5,172.1 111.6,171.0 113.0,177.1" fill="rgb(93,142,58)" stroke="rgb(93,142,58)" stroke-width="0.5"/>
 <polygon points="177.9,203.4 177.5,202.5 179.3,203.5" fill="rgb(36,57,48)" stroke="rgb(36,57,48)" stroke-width="0.5"/>
 <polygon points="248.4,170.9 246.5,172.0 249.0,176.0" fill="rgb(86,129,53)" stroke="rgb(86,129,53)" stroke-width="0.5"/>
+<line x1="54.6" y1="228.4" x2="59.2" y2="223.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.5,181.1 147.4,181.6 145.8,178.6" fill="rgb(84,148,66)" stroke="rgb(84,148,66)" stroke-width="0.5"/>
 <polygon points="168.8,198.9 170.2,200.1 167.6,198.1" fill="rgb(48,77,59)" stroke="rgb(48,77,59)" stroke-width="0.5"/>
 <polygon points="180.7,203.5 180.9,202.6 182.2,203.4" fill="rgb(37,59,50)" stroke="rgb(37,59,50)" stroke-width="0.5"/>
@@ -2989,6 +3109,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="201.4,191.2 203.2,190.4 202.3,189.6" fill="rgb(60,103,58)" stroke="rgb(60,103,58)" stroke-width="0.5"/>
 <polygon points="104.0,165.2 102.1,163.4 103.4,170.9" fill="rgb(104,126,48)" stroke="rgb(104,126,48)" stroke-width="0.5"/>
 <polygon points="179.1,201.7 179.2,202.6 177.2,201.6" fill="rgb(35,56,43)" stroke="rgb(35,56,43)" stroke-width="0.5"/>
+<line x1="300.8" y1="136.5" x2="305.4" y2="131.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.1,183.3 218.0,183.2 216.4,180.6" fill="rgb(81,144,62)" stroke="rgb(81,144,62)" stroke-width="0.5"/>
 <polygon points="181.0,201.7 180.9,202.6 179.1,201.7" fill="rgb(36,57,44)" stroke="rgb(36,57,44)" stroke-width="0.5"/>
 <polygon points="237.5,179.5 235.6,179.7 237.0,183.8" fill="rgb(83,145,61)" stroke="rgb(83,145,61)" stroke-width="0.5"/>
@@ -3003,6 +3124,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="252.8,173.7 254.7,172.3 252.2,168.3" fill="rgb(87,116,46)" stroke="rgb(87,116,46)" stroke-width="0.5"/>
 <polygon points="239.4,179.3 237.5,179.5 238.9,183.6" fill="rgb(83,144,60)" stroke="rgb(83,144,60)" stroke-width="0.5"/>
 <polygon points="218.0,183.2 219.9,183.1 218.3,180.4" fill="rgb(82,145,62)" stroke="rgb(82,145,62)" stroke-width="0.5"/>
+<line x1="82.2" y1="136.8" x2="86.8" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="122.5,179.7 120.6,179.4 123.0,183.9" fill="rgb(86,148,62)" stroke="rgb(86,148,62)" stroke-width="0.5"/>
 <polygon points="201.4,191.2 199.6,192.2 200.2,192.8" fill="rgb(55,92,54)" stroke="rgb(55,92,54)" stroke-width="0.5"/>
 <polygon points="156.9,190.5 158.6,191.3 155.9,188.7" fill="rgb(69,117,64)" stroke="rgb(69,117,64)" stroke-width="0.5"/>
@@ -3094,6 +3216,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="197.1,194.9 195.5,195.8 195.4,196.1" fill="rgb(47,78,49)" stroke="rgb(47,78,49)" stroke-width="0.5"/>
 <polygon points="189.3,199.5 190.3,198.7 191.0,198.7" fill="rgb(39,65,44)" stroke="rgb(39,65,44)" stroke-width="0.5"/>
 <polygon points="100.2,161.4 98.3,159.3 99.5,167.4" fill="rgb(112,120,44)" stroke="rgb(112,120,44)" stroke-width="0.5"/>
+<line x1="268.6" y1="233.1" x2="273.2" y2="228.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="256.6,170.7 258.5,169.0 256.0,165.1" fill="rgb(90,109,42)" stroke="rgb(90,109,42)" stroke-width="0.5"/>
 <polygon points="270.9,137.7 269.0,140.4 273.1,144.5" fill="rgb(131,93,29)" stroke="rgb(131,93,29)" stroke-width="0.5"/>
 <polygon points="200.2,192.8 198.5,193.6 198.6,194.2" fill="rgb(52,88,51)" stroke="rgb(52,88,51)" stroke-width="0.5"/>
@@ -3109,6 +3232,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="218.0,183.2 216.1,183.3 217.1,186.0" fill="rgb(80,142,61)" stroke="rgb(80,142,61)" stroke-width="0.5"/>
 <polygon points="90.7,149.8 92.6,152.3 92.8,143.3" fill="rgb(142,116,38)" stroke="rgb(142,116,38)" stroke-width="0.5"/>
 <polygon points="158.2,192.1 159.9,192.8 156.9,190.5" fill="rgb(66,112,62)" stroke="rgb(66,112,62)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="54.6" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="192.2,197.9 191.0,198.7 190.3,198.7" fill="rgb(39,66,44)" stroke="rgb(39,66,44)" stroke-width="0.5"/>
 <polygon points="113.0,177.1 111.0,176.1 113.5,182.0" fill="rgb(90,137,56)" stroke="rgb(90,137,56)" stroke-width="0.5"/>
 <polygon points="146.6,186.2 148.5,186.4 145.8,183.7" fill="rgb(81,143,64)" stroke="rgb(81,143,64)" stroke-width="0.5"/>
@@ -3281,6 +3405,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="230.1,187.5 232.0,187.7 231.3,183.7" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="240.8,183.4 238.9,183.6 239.4,187.8" fill="rgb(82,139,58)" stroke="rgb(82,139,58)" stroke-width="0.5"/>
 <polygon points="256.6,170.7 254.7,172.3 256.0,176.4" fill="rgb(85,106,41)" stroke="rgb(85,106,41)" stroke-width="0.5"/>
+<line x1="296.2" y1="141.5" x2="300.8" y2="136.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="151.5,188.9 149.7,188.7 153.2,191.0" fill="rgb(76,132,61)" stroke="rgb(76,132,61)" stroke-width="0.5"/>
 <polygon points="161.9,195.1 163.3,195.6 159.9,193.7" fill="rgb(60,102,56)" stroke="rgb(60,102,56)" stroke-width="0.5"/>
 <polygon points="156.5,191.6 154.8,191.2 158.3,193.3" fill="rgb(68,118,60)" stroke="rgb(68,118,60)" stroke-width="0.5"/>
@@ -3295,9 +3420,11 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="191.3,198.1 192.4,197.7 193.5,197.2" fill="rgb(46,77,46)" stroke="rgb(46,77,46)" stroke-width="0.5"/>
 <polygon points="210.3,188.6 208.5,188.8 208.6,190.8" fill="rgb(71,124,57)" stroke="rgb(71,124,57)" stroke-width="0.5"/>
 <polygon points="232.0,187.7 233.8,187.9 233.2,183.8" fill="rgb(83,146,61)" stroke="rgb(83,146,61)" stroke-width="0.5"/>
+<line x1="77.6" y1="141.8" x2="82.2" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="183.6,200.3 184.0,199.8 186.0,199.9" fill="rgb(40,66,42)" stroke="rgb(40,66,42)" stroke-width="0.5"/>
 <polygon points="107.8,179.2 109.7,180.3 107.2,173.8" fill="rgb(94,130,52)" stroke="rgb(94,130,52)" stroke-width="0.5"/>
 <polygon points="189.0,198.9 188.2,199.4 186.5,199.5" fill="rgb(40,67,42)" stroke="rgb(40,67,42)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="230.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="85.0,142.1 86.9,144.7 87.2,135.1" fill="rgb(163,109,33)" stroke="rgb(163,109,33)" stroke-width="0.5"/>
 <polygon points="205.2,191.1 203.5,191.5 203.3,192.9" fill="rgb(62,108,54)" stroke="rgb(62,108,54)" stroke-width="0.5"/>
 <polygon points="119.2,183.5 117.3,183.1 120.7,188.0" fill="rgb(85,143,59)" stroke="rgb(85,143,59)" stroke-width="0.5"/>
@@ -3330,6 +3457,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="139.2,186.3 137.3,186.5 140.8,189.3" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="117.3,183.1 115.4,182.7 118.8,187.7" fill="rgb(85,140,58)" stroke="rgb(85,140,58)" stroke-width="0.5"/>
 <polygon points="198.2,195.0 196.8,195.5 195.9,196.3" fill="rgb(51,87,48)" stroke="rgb(51,87,48)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="58.4" y2="236.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.7,188.0 237.5,188.0 237.0,183.8" fill="rgb(82,142,59)" stroke="rgb(82,142,59)" stroke-width="0.5"/>
 <polygon points="222.7,186.4 220.8,186.2 221.0,189.5" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
 <polygon points="198.2,195.0 199.6,194.7 200.2,193.6" fill="rgb(56,97,52)" stroke="rgb(56,97,52)" stroke-width="0.5"/>
@@ -3376,6 +3504,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="158.3,193.3 156.8,193.0 160.5,194.8" fill="rgb(66,114,58)" stroke="rgb(66,114,58)" stroke-width="0.5"/>
 <polygon points="101.5,169.2 99.5,167.4 102.1,175.0" fill="rgb(102,116,44)" stroke="rgb(102,116,44)" stroke-width="0.5"/>
 <polygon points="186.5,199.5 187.1,199.1 189.0,198.9" fill="rgb(44,73,44)" stroke="rgb(44,73,44)" stroke-width="0.5"/>
+<line x1="264.0" y1="238.0" x2="268.6" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="239.4,187.8 241.3,187.6 240.8,183.4" fill="rgb(81,135,56)" stroke="rgb(81,135,56)" stroke-width="0.5"/>
 <polygon points="149.8,190.9 151.5,190.9 148.0,188.6" fill="rgb(78,137,61)" stroke="rgb(78,137,61)" stroke-width="0.5"/>
 <polygon points="219.2,189.2 221.0,189.5 220.8,186.2" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
@@ -3386,6 +3515,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="228.3,187.2 226.4,187.0 226.3,190.7" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="260.5,167.2 258.5,169.0 259.8,173.1" fill="rgb(88,98,36)" stroke="rgb(88,98,36)" stroke-width="0.5"/>
 <polygon points="139.1,189.6 140.8,189.3 137.3,186.5" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
+<line x1="50.0" y1="230.3" x2="50.0" y2="227.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="104.0,176.5 105.9,177.9 103.4,170.9" fill="rgb(98,123,48)" stroke="rgb(98,123,48)" stroke-width="0.5"/>
 <polygon points="118.8,187.7 120.7,188.0 117.3,183.1" fill="rgb(86,143,59)" stroke="rgb(86,143,59)" stroke-width="0.5"/>
 <polygon points="155.2,192.9 156.8,193.0 153.2,191.0" fill="rgb(71,124,59)" stroke="rgb(71,124,59)" stroke-width="0.5"/>
@@ -3475,11 +3605,13 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="197.1,196.1 195.9,196.3 194.4,197.3" fill="rgb(53,91,48)" stroke="rgb(53,91,48)" stroke-width="0.5"/>
 <polygon points="213.6,191.2 215.3,191.6 215.6,188.7" fill="rgb(81,142,61)" stroke="rgb(81,142,61)" stroke-width="0.5"/>
 <polygon points="245.0,186.7 246.8,186.1 246.5,181.9" fill="rgb(78,120,49)" stroke="rgb(78,120,49)" stroke-width="0.5"/>
+<line x1="58.4" y1="236.1" x2="66.8" y2="238.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="90.0,156.5 91.9,158.8 90.7,149.8" fill="rgb(134,109,36)" stroke="rgb(134,109,36)" stroke-width="0.5"/>
 <polygon points="201.0,194.6 199.6,194.7 198.4,196.0" fill="rgb(58,102,51)" stroke="rgb(58,102,51)" stroke-width="0.5"/>
 <polygon points="273.1,144.5 271.2,147.1 273.9,151.4" fill="rgb(122,86,27)" stroke="rgb(122,86,27)" stroke-width="0.5"/>
 <polygon points="206.4,192.8 207.9,193.0 208.6,190.8" fill="rgb(73,127,57)" stroke="rgb(73,127,57)" stroke-width="0.5"/>
 <polygon points="197.1,196.1 198.4,196.0 199.6,194.7" fill="rgb(58,101,51)" stroke="rgb(58,101,51)" stroke-width="0.5"/>
+<line x1="50.0" y1="227.2" x2="50.0" y2="224.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="228.1,191.1 229.9,191.5 230.1,187.5" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="252.2,179.0 250.3,180.1 250.5,184.3" fill="rgb(79,110,44)" stroke="rgb(79,110,44)" stroke-width="0.5"/>
 <polygon points="124.4,188.1 122.5,188.1 126.6,192.1" fill="rgb(84,145,60)" stroke="rgb(84,145,60)" stroke-width="0.5"/>
@@ -3552,6 +3684,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="168.6,198.2 169.4,198.3 165.7,197.3" fill="rgb(56,96,50)" stroke="rgb(56,96,50)" stroke-width="0.5"/>
 <polygon points="198.4,196.0 199.6,196.1 201.0,194.6" fill="rgb(62,109,53)" stroke="rgb(62,109,53)" stroke-width="0.5"/>
 <polygon points="169.4,198.3 168.6,198.2 172.3,199.0" fill="rgb(54,93,50)" stroke="rgb(54,93,50)" stroke-width="0.5"/>
+<line x1="291.6" y1="146.4" x2="296.2" y2="141.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="181.6,199.7 181.5,199.8 178.5,199.7" fill="rgb(47,80,44)" stroke="rgb(47,80,44)" stroke-width="0.5"/>
 <polygon points="198.4,196.0 197.1,196.1 195.4,197.3" fill="rgb(57,99,49)" stroke="rgb(57,99,49)" stroke-width="0.5"/>
 <polygon points="153.7,192.9 152.1,193.0 156.3,194.7" fill="rgb(75,131,59)" stroke="rgb(75,131,59)" stroke-width="0.5"/>
@@ -3560,9 +3693,11 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="98.3,171.5 100.2,173.3 97.6,165.4" fill="rgb(108,113,42)" stroke="rgb(108,113,42)" stroke-width="0.5"/>
 <polygon points="248.7,185.3 250.5,184.3 250.3,180.1" fill="rgb(78,110,44)" stroke="rgb(78,110,44)" stroke-width="0.5"/>
 <polygon points="187.7,199.0 188.3,199.0 190.6,198.3" fill="rgb(51,88,47)" stroke="rgb(51,88,47)" stroke-width="0.5"/>
+<line x1="73.0" y1="146.7" x2="77.6" y2="141.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="135.5,190.4 133.7,190.8 138.1,193.6" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="218.6,192.5 220.3,193.0 221.0,189.5" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="207.9,193.0 206.4,192.8 205.2,195.0" fill="rgb(71,126,56)" stroke="rgb(71,126,56)" stroke-width="0.5"/>
+<line x1="50.0" y1="224.1" x2="50.0" y2="221.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.5,191.3 144.8,191.7 149.0,193.7" fill="rgb(82,144,62)" stroke="rgb(82,144,62)" stroke-width="0.5"/>
 <polygon points="209.5,193.3 211.0,193.6 211.9,191.0" fill="rgb(78,138,59)" stroke="rgb(78,138,59)" stroke-width="0.5"/>
 <polygon points="124.8,192.3 126.6,192.1 122.5,188.1" fill="rgb(84,145,60)" stroke="rgb(84,145,60)" stroke-width="0.5"/>
@@ -3619,6 +3754,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="175.0,199.5 175.4,199.4 171.8,199.0" fill="rgb(53,91,47)" stroke="rgb(53,91,47)" stroke-width="0.5"/>
 <polygon points="93.8,161.1 91.9,158.8 94.5,167.5" fill="rgb(119,105,36)" stroke="rgb(119,105,36)" stroke-width="0.5"/>
 <polygon points="195.4,197.3 196.5,197.5 198.4,196.0" fill="rgb(61,107,52)" stroke="rgb(61,107,52)" stroke-width="0.5"/>
+<line x1="66.8" y1="238.8" x2="75.2" y2="241.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="199.6,196.1 198.4,196.0 196.5,197.5" fill="rgb(62,107,51)" stroke="rgb(62,107,51)" stroke-width="0.5"/>
 <polygon points="96.4,169.5 98.3,171.5 95.7,163.3" fill="rgb(112,110,40)" stroke="rgb(112,110,40)" stroke-width="0.5"/>
 <polygon points="147.5,194.2 149.0,193.7 144.8,191.7" fill="rgb(82,144,61)" stroke="rgb(82,144,61)" stroke-width="0.5"/>
@@ -3637,6 +3773,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="257.9,174.8 256.0,176.4 256.1,180.5" fill="rgb(81,96,36)" stroke="rgb(81,96,36)" stroke-width="0.5"/>
 <polygon points="130.2,191.6 128.4,191.9 133.0,195.2" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="181.7,199.7 181.6,199.7 178.4,199.7" fill="rgb(51,88,46)" stroke="rgb(51,88,46)" stroke-width="0.5"/>
+<line x1="259.4" y1="243.0" x2="264.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="223.7,194.1 225.4,194.6 226.3,190.7" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="273.9,151.4 275.8,148.9 273.1,144.5" fill="rgb(125,86,25)" stroke="rgb(125,86,25)" stroke-width="0.5"/>
 <polygon points="218.6,192.5 217.0,192.0 215.7,195.2" fill="rgb(83,146,62)" stroke="rgb(83,146,62)" stroke-width="0.5"/>
@@ -3649,6 +3786,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="238.8,192.1 240.6,191.8 241.3,187.6" fill="rgb(78,128,53)" stroke="rgb(78,128,53)" stroke-width="0.5"/>
 <polygon points="115.1,186.9 113.2,186.2 117.7,191.6" fill="rgb(83,128,52)" stroke="rgb(83,128,52)" stroke-width="0.5"/>
 <polygon points="153.5,195.4 154.9,195.0 150.6,193.3" fill="rgb(77,136,59)" stroke="rgb(77,136,59)" stroke-width="0.5"/>
+<line x1="50.0" y1="221.0" x2="50.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.7,194.7 136.4,194.2 131.9,191.2" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="263.6,169.4 265.5,167.3 264.3,163.1" fill="rgb(95,89,31)" stroke="rgb(95,89,31)" stroke-width="0.5"/>
 <polygon points="192.3,198.3 191.5,198.2 188.9,199.1" fill="rgb(55,96,48)" stroke="rgb(55,96,48)" stroke-width="0.5"/>
@@ -3728,6 +3866,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="193.1,198.6 192.3,198.3 189.5,199.4" fill="rgb(60,105,50)" stroke="rgb(60,105,50)" stroke-width="0.5"/>
 <polygon points="223.7,194.1 222.0,193.5 220.3,197.2" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="237.0,192.2 235.3,192.1 233.8,196.3" fill="rgb(80,135,56)" stroke="rgb(80,135,56)" stroke-width="0.5"/>
+<line x1="50.0" y1="217.9" x2="50.0" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="214.1,194.6 212.6,194.1 210.8,197.0" fill="rgb(81,144,61)" stroke="rgb(81,144,61)" stroke-width="0.5"/>
 <polygon points="129.7,196.0 131.4,195.6 126.6,192.1" fill="rgb(83,145,61)" stroke="rgb(83,145,61)" stroke-width="0.5"/>
 <polygon points="104.0,180.7 105.8,182.1 102.1,175.0" fill="rgb(96,113,43)" stroke="rgb(96,113,43)" stroke-width="0.5"/>
@@ -3752,6 +3891,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="136.4,194.2 134.7,194.7 139.8,197.3" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="141.3,196.6 142.9,196.0 138.1,193.6" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="230.4,195.9 232.1,196.1 233.5,192.0" fill="rgb(80,139,58)" stroke="rgb(80,139,58)" stroke-width="0.5"/>
+<line x1="75.2" y1="241.5" x2="83.6" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="123.0,192.3 121.3,192.2 126.3,196.4" fill="rgb(82,137,57)" stroke="rgb(82,137,57)" stroke-width="0.5"/>
 <polygon points="225.4,194.6 223.7,194.1 221.9,197.8" fill="rgb(83,148,62)" stroke="rgb(83,148,62)" stroke-width="0.5"/>
 <polygon points="208.0,195.8 206.6,195.3 204.5,197.8" fill="rgb(77,136,58)" stroke="rgb(77,136,58)" stroke-width="0.5"/>
@@ -3792,6 +3932,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="121.3,192.2 119.5,192.0 124.7,196.4" fill="rgb(81,133,55)" stroke="rgb(81,133,55)" stroke-width="0.5"/>
 <polygon points="203.3,197.2 202.0,196.7 199.6,198.8" fill="rgb(73,129,56)" stroke="rgb(73,129,56)" stroke-width="0.5"/>
 <polygon points="182.0,200.2 181.9,199.9 178.1,200.3" fill="rgb(60,104,50)" stroke="rgb(60,104,50)" stroke-width="0.5"/>
+<line x1="287.0" y1="151.4" x2="291.6" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.4,195.3 142.9,196.0 147.9,197.8" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="193.9,198.9 193.1,198.6 190.1,199.8" fill="rgb(65,113,52)" stroke="rgb(65,113,52)" stroke-width="0.5"/>
 <polygon points="252.4,183.2 250.5,184.3 249.5,188.5" fill="rgb(75,99,39)" stroke="rgb(75,99,39)" stroke-width="0.5"/>
@@ -3805,9 +3946,11 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="217.2,195.9 215.7,195.2 213.6,198.5" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="193.9,198.9 194.7,199.4 197.5,197.8" fill="rgb(69,121,54)" stroke="rgb(69,121,54)" stroke-width="0.5"/>
 <polygon points="198.5,198.2 197.5,197.8 194.7,199.4" fill="rgb(69,121,54)" stroke="rgb(69,121,54)" stroke-width="0.5"/>
+<line x1="68.4" y1="151.7" x2="73.0" y2="146.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="90.7,163.1 92.6,165.3 90.0,156.5" fill="rgb(126,102,34)" stroke="rgb(126,102,34)" stroke-width="0.5"/>
 <polygon points="88.1,154.1 86.1,151.6 88.8,160.9" fill="rgb(135,99,31)" stroke="rgb(135,99,31)" stroke-width="0.5"/>
 <polygon points="133.0,195.2 131.4,195.6 136.7,198.5" fill="rgb(83,146,61)" stroke="rgb(83,146,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="214.8" x2="50.0" y2="211.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.0,199.8 170.6,199.4 166.2,199.0" fill="rgb(67,116,54)" stroke="rgb(67,116,54)" stroke-width="0.5"/>
 <polygon points="170.6,199.4 170.0,199.8 174.3,200.0" fill="rgb(66,114,53)" stroke="rgb(66,114,53)" stroke-width="0.5"/>
 <polygon points="245.9,190.3 247.7,189.4 248.7,185.3" fill="rgb(74,105,42)" stroke="rgb(74,105,42)" stroke-width="0.5"/>
@@ -3876,9 +4019,11 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="129.7,196.0 128.0,196.2 133.6,199.6" fill="rgb(82,142,59)" stroke="rgb(82,142,59)" stroke-width="0.5"/>
 <polygon points="117.7,191.6 115.9,191.1 121.3,196.1" fill="rgb(80,124,50)" stroke="rgb(80,124,50)" stroke-width="0.5"/>
 <polygon points="265.5,167.3 263.6,169.4 263.5,173.6" fill="rgb(89,82,28)" stroke="rgb(89,82,28)" stroke-width="0.5"/>
+<line x1="254.8" y1="247.9" x2="259.4" y2="243.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="170.0,199.8 169.4,200.4 174.0,200.4" fill="rgb(70,121,55)" stroke="rgb(70,121,55)" stroke-width="0.5"/>
 <polygon points="155.6,197.8 154.4,198.5 159.5,199.5" fill="rgb(80,141,61)" stroke="rgb(80,141,61)" stroke-width="0.5"/>
 <polygon points="153.2,199.2 154.4,198.5 149.3,197.1" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
+<line x1="83.6" y1="244.2" x2="92.0" y2="246.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="232.1,196.1 230.4,195.9 228.1,199.8" fill="rgb(80,138,58)" stroke="rgb(80,138,58)" stroke-width="0.5"/>
 <polygon points="145.2,199.4 146.5,198.6 141.3,196.6" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="212.2,197.8 210.8,197.0 208.1,200.0" fill="rgb(82,146,62)" stroke="rgb(82,146,62)" stroke-width="0.5"/>
@@ -3888,6 +4033,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="186.2,200.4 186.5,201.0 190.1,199.8" fill="rgb(68,120,54)" stroke="rgb(68,120,54)" stroke-width="0.5"/>
 <polygon points="259.8,177.3 261.7,175.5 261.7,171.3" fill="rgb(85,85,31)" stroke="rgb(85,85,31)" stroke-width="0.5"/>
 <polygon points="275.8,148.9 273.9,151.4 275.0,156.0" fill="rgb(117,79,23)" stroke="rgb(117,79,23)" stroke-width="0.5"/>
+<line x1="50.0" y1="211.7" x2="50.0" y2="208.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.7,198.4 204.5,197.8 201.6,200.2" fill="rgb(79,139,59)" stroke="rgb(79,139,59)" stroke-width="0.5"/>
 <polygon points="105.8,182.1 104.0,180.7 108.8,187.5" fill="rgb(88,107,41)" stroke="rgb(88,107,41)" stroke-width="0.5"/>
 <polygon points="225.0,199.0 226.6,199.4 228.7,195.5" fill="rgb(81,141,59)" stroke="rgb(81,141,59)" stroke-width="0.5"/>
@@ -3959,6 +4105,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="228.1,199.8 229.7,200.1 232.1,196.1" fill="rgb(78,133,56)" stroke="rgb(78,133,56)" stroke-width="0.5"/>
 <polygon points="136.7,198.5 135.1,199.1 141.0,201.6" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
 <polygon points="173.6,201.0 173.2,201.8 177.9,201.4" fill="rgb(73,128,56)" stroke="rgb(73,128,56)" stroke-width="0.5"/>
+<line x1="50.0" y1="208.6" x2="50.0" y2="205.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="258.0,179.0 256.1,180.5 254.9,184.6" fill="rgb(77,85,32)" stroke="rgb(77,85,32)" stroke-width="0.5"/>
 <polygon points="157.5,201.1 158.5,200.2 153.2,199.2" fill="rgb(82,144,61)" stroke="rgb(82,144,61)" stroke-width="0.5"/>
 <polygon points="201.6,200.2 200.6,199.4 197.2,201.6" fill="rgb(79,139,59)" stroke="rgb(79,139,59)" stroke-width="0.5"/>
@@ -4000,6 +4147,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="229.7,200.1 231.2,200.2 233.8,196.3" fill="rgb(76,128,53)" stroke="rgb(76,128,53)" stroke-width="0.5"/>
 <polygon points="85.0,156.2 86.9,158.5 84.2,149.1" fill="rgb(144,97,29)" stroke="rgb(144,97,29)" stroke-width="0.5"/>
 <polygon points="269.3,162.9 267.4,165.2 267.2,169.5" fill="rgb(95,77,25)" stroke="rgb(95,77,25)" stroke-width="0.5"/>
+<line x1="92.0" y1="246.9" x2="100.4" y2="249.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="186.9,201.7 187.2,202.6 191.3,201.1" fill="rgb(76,134,57)" stroke="rgb(76,134,57)" stroke-width="0.5"/>
 <polygon points="219.2,201.5 220.6,202.2 223.5,198.4" fill="rgb(81,144,60)" stroke="rgb(81,144,60)" stroke-width="0.5"/>
 <polygon points="226.6,199.4 225.0,199.0 222.0,202.7" fill="rgb(80,141,59)" stroke="rgb(80,141,59)" stroke-width="0.5"/>
@@ -4019,6 +4167,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="139.6,202.2 141.0,201.6 135.1,199.1" fill="rgb(83,145,61)" stroke="rgb(83,145,61)" stroke-width="0.5"/>
 <polygon points="143.8,200.1 142.4,200.9 148.3,202.6" fill="rgb(83,148,62)" stroke="rgb(83,148,62)" stroke-width="0.5"/>
 <polygon points="173.2,201.8 172.9,202.6 177.8,202.1" fill="rgb(76,134,57)" stroke="rgb(76,134,57)" stroke-width="0.5"/>
+<line x1="282.4" y1="156.3" x2="287.0" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="191.9,201.9 192.5,202.7 196.4,200.8" fill="rgb(78,139,59)" stroke="rgb(78,139,59)" stroke-width="0.5"/>
 <polygon points="259.8,177.3 258.0,179.0 256.6,183.1" fill="rgb(79,82,30)" stroke="rgb(79,82,30)" stroke-width="0.5"/>
 <polygon points="197.2,201.6 196.4,200.8 192.5,202.7" fill="rgb(78,139,59)" stroke="rgb(78,139,59)" stroke-width="0.5"/>
@@ -4032,8 +4181,10 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="148.3,202.6 149.5,201.8 143.8,200.1" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="133.6,199.6 132.0,199.9 138.2,202.8" fill="rgb(81,140,58)" stroke="rgb(81,140,58)" stroke-width="0.5"/>
 <polygon points="242.2,195.0 243.9,194.3 245.9,190.3" fill="rgb(71,100,40)" stroke="rgb(71,100,40)" stroke-width="0.5"/>
+<line x1="63.8" y1="156.6" x2="68.4" y2="151.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="203.7,201.9 204.7,202.8 208.1,200.0" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
 <polygon points="162.1,202.6 162.9,201.7 157.5,201.1" fill="rgb(81,144,61)" stroke="rgb(81,144,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="205.5" x2="50.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="238.8,196.0 237.1,196.2 234.3,200.1" fill="rgb(73,115,47)" stroke="rgb(73,115,47)" stroke-width="0.5"/>
 <polygon points="187.2,202.6 186.9,201.7 182.5,202.9" fill="rgb(76,134,57)" stroke="rgb(76,134,57)" stroke-width="0.5"/>
 <polygon points="94.7,171.7 96.5,173.7 92.6,165.3" fill="rgb(113,98,33)" stroke="rgb(113,98,33)" stroke-width="0.5"/>
@@ -4093,6 +4244,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="141.0,201.6 139.6,202.2 145.9,204.3" fill="rgb(82,145,60)" stroke="rgb(82,145,60)" stroke-width="0.5"/>
 <polygon points="136.8,203.3 138.2,202.8 132.0,199.9" fill="rgb(81,140,58)" stroke="rgb(81,140,58)" stroke-width="0.5"/>
 <polygon points="211.8,202.6 210.6,201.7 206.8,204.7" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
+<line x1="250.2" y1="252.9" x2="254.8" y2="247.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.5,203.9 177.7,202.9 172.5,203.5" fill="rgb(79,139,59)" stroke="rgb(79,139,59)" stroke-width="0.5"/>
 <polygon points="204.7,202.8 203.7,201.9 199.7,204.5" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="167.6,202.8 167.1,203.7 172.5,203.5" fill="rgb(81,143,60)" stroke="rgb(81,143,60)" stroke-width="0.5"/>
@@ -4102,6 +4254,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="92.8,169.7 94.7,171.7 90.7,163.1" fill="rgb(118,96,31)" stroke="rgb(118,96,31)" stroke-width="0.5"/>
 <polygon points="162.1,202.6 161.3,203.5 167.1,203.7" fill="rgb(82,146,62)" stroke="rgb(82,146,62)" stroke-width="0.5"/>
 <polygon points="145.9,204.3 147.1,203.5 141.0,201.6" fill="rgb(83,146,61)" stroke="rgb(83,146,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="202.4" x2="50.0" y2="199.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="114.6,193.6 116.3,194.5 110.6,188.6" fill="rgb(83,109,43)" stroke="rgb(83,109,43)" stroke-width="0.5"/>
 <polygon points="198.8,203.5 199.7,204.5 203.7,201.9" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
 <polygon points="187.6,203.5 188.0,204.5 192.5,202.7" fill="rgb(81,142,60)" stroke="rgb(81,142,60)" stroke-width="0.5"/>
@@ -4114,6 +4267,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="198.8,203.5 198.0,202.5 193.7,204.7" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
 <polygon points="193.1,203.7 193.7,204.7 198.0,202.5" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
 <polygon points="119.6,195.7 118.0,195.2 124.3,200.0" fill="rgb(77,114,46)" stroke="rgb(77,114,46)" stroke-width="0.5"/>
+<line x1="100.4" y1="249.6" x2="108.8" y2="252.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="231.2,200.2 229.7,200.1 226.2,203.9" fill="rgb(76,126,52)" stroke="rgb(76,126,52)" stroke-width="0.5"/>
 <polygon points="160.5,204.5 161.3,203.5 155.4,202.9" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="148.3,202.6 147.1,203.5 153.4,204.8" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
@@ -4170,6 +4324,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="134.0,204.0 135.4,203.7 128.9,200.4" fill="rgb(79,132,54)" stroke="rgb(79,132,54)" stroke-width="0.5"/>
 <polygon points="171.8,205.5 172.2,204.5 166.5,204.7" fill="rgb(82,146,62)" stroke="rgb(82,146,62)" stroke-width="0.5"/>
 <polygon points="172.2,204.5 171.8,205.5 177.4,204.9" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="199.3" x2="50.0" y2="196.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.9,199.9 237.4,199.5 240.5,195.6" fill="rgb(69,102,41)" stroke="rgb(69,102,41)" stroke-width="0.5"/>
 <polygon points="86.9,158.5 85.0,156.2 89.1,165.4" fill="rgb(132,91,27)" stroke="rgb(132,91,27)" stroke-width="0.5"/>
 <polygon points="223.4,203.2 222.0,202.7 217.9,206.2" fill="rgb(78,136,57)" stroke="rgb(78,136,57)" stroke-width="0.5"/>
@@ -4221,7 +4376,9 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="237.4,199.5 239.0,198.9 242.2,195.0" fill="rgb(68,96,38)" stroke="rgb(68,96,38)" stroke-width="0.5"/>
 <polygon points="182.8,205.9 183.0,207.0 188.3,205.5" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
 <polygon points="89.1,165.4 91.0,167.5 86.9,158.5" fill="rgb(129,91,28)" stroke="rgb(129,91,28)" stroke-width="0.5"/>
+<line x1="277.8" y1="161.3" x2="282.4" y2="156.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.8,206.6 209.9,207.4 214.3,204.2" fill="rgb(81,143,60)" stroke="rgb(81,143,60)" stroke-width="0.5"/>
+<line x1="108.8" y1="252.3" x2="117.2" y2="255.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="177.3,205.9 177.2,207.0 182.8,205.9" fill="rgb(83,147,62)" stroke="rgb(83,147,62)" stroke-width="0.5"/>
 <polygon points="201.3,206.5 202.1,207.5 206.8,204.7" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="99.9,179.8 101.7,181.6 96.5,173.7" fill="rgb(102,93,32)" stroke="rgb(102,93,32)" stroke-width="0.5"/>
@@ -4229,8 +4386,10 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="245.5,193.5 243.9,194.3 240.5,198.1" fill="rgb(68,90,35)" stroke="rgb(68,90,35)" stroke-width="0.5"/>
 <polygon points="188.7,206.6 188.3,205.5 183.0,207.0" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="165.9,205.8 165.3,206.8 171.5,206.6" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
+<line x1="59.2" y1="161.6" x2="63.8" y2="156.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="144.7,205.0 143.5,205.7 150.3,207.5" fill="rgb(81,141,59)" stroke="rgb(81,141,59)" stroke-width="0.5"/>
 <polygon points="177.2,207.0 177.3,205.9 171.5,206.6" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="196.2" x2="50.0" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="125.8,200.3 124.3,200.0 131.2,204.1" fill="rgb(75,115,47)" stroke="rgb(75,115,47)" stroke-width="0.5"/>
 <polygon points="227.6,204.0 229.0,204.0 232.8,200.3" fill="rgb(71,112,46)" stroke="rgb(71,112,46)" stroke-width="0.5"/>
 <polygon points="105.3,184.8 103.5,183.3 109.6,190.2" fill="rgb(87,93,34)" stroke="rgb(87,93,34)" stroke-width="0.5"/>
@@ -4288,6 +4447,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="134.0,204.0 132.6,204.1 139.8,207.2" fill="rgb(76,124,51)" stroke="rgb(76,124,51)" stroke-width="0.5"/>
 <polygon points="195.5,207.9 194.9,206.8 189.4,208.8" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="98.1,177.9 99.9,179.8 94.7,171.7" fill="rgb(105,91,31)" stroke="rgb(105,91,31)" stroke-width="0.5"/>
+<line x1="245.6" y1="257.8" x2="250.2" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="119.6,198.3 121.2,199.0 114.6,193.6" fill="rgb(78,103,40)" stroke="rgb(78,103,40)" stroke-width="0.5"/>
 <polygon points="209.9,207.4 208.8,206.6 203.7,209.4" fill="rgb(82,143,60)" stroke="rgb(82,143,60)" stroke-width="0.5"/>
 <polygon points="237.4,199.5 235.9,199.9 231.8,203.5" fill="rgb(68,98,40)" stroke="rgb(68,98,40)" stroke-width="0.5"/>
@@ -4295,6 +4455,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="227.6,204.0 226.2,203.9 221.6,207.3" fill="rgb(72,117,48)" stroke="rgb(72,117,48)" stroke-width="0.5"/>
 <polygon points="139.8,207.2 141.0,206.8 134.0,204.0" fill="rgb(78,129,53)" stroke="rgb(78,129,53)" stroke-width="0.5"/>
 <polygon points="170.8,208.8 171.1,207.7 164.7,207.9" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
+<line x1="50.0" y1="193.1" x2="50.0" y2="190.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.1,209.0 164.7,207.9 158.1,207.6" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
 <polygon points="129.8,203.9 131.2,204.1 124.3,200.0" fill="rgb(76,115,47)" stroke="rgb(76,115,47)" stroke-width="0.5"/>
 <polygon points="171.1,207.7 170.8,208.8 177.1,208.2" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
@@ -4325,6 +4486,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="107.9,188.8 109.6,190.2 103.5,183.3" fill="rgb(89,93,34)" stroke="rgb(89,93,34)" stroke-width="0.5"/>
 <polygon points="183.2,209.3 183.1,208.2 177.0,209.3" fill="rgb(84,148,62)" stroke="rgb(84,148,62)" stroke-width="0.5"/>
 <polygon points="196.1,208.9 195.5,207.9 189.8,209.9" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
+<line x1="117.2" y1="255.0" x2="125.6" y2="257.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="230.4,203.8 231.8,203.5 235.9,199.9" fill="rgb(67,99,40)" stroke="rgb(67,99,40)" stroke-width="0.5"/>
 <polygon points="132.6,204.1 131.2,204.1 138.6,207.4" fill="rgb(74,118,48)" stroke="rgb(74,118,48)" stroke-width="0.5"/>
 <polygon points="122.7,199.6 121.2,199.0 128.4,203.6" fill="rgb(74,104,41)" stroke="rgb(74,104,41)" stroke-width="0.5"/>
@@ -4348,6 +4510,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="164.1,209.0 163.5,210.0 170.4,209.9" fill="rgb(82,146,61)" stroke="rgb(82,146,61)" stroke-width="0.5"/>
 <polygon points="141.0,206.8 139.8,207.2 147.3,209.5" fill="rgb(76,127,53)" stroke="rgb(76,127,53)" stroke-width="0.5"/>
 <polygon points="189.8,209.9 189.4,208.8 183.3,210.4" fill="rgb(83,147,61)" stroke="rgb(83,147,61)" stroke-width="0.5"/>
+<line x1="50.0" y1="190.0" x2="50.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="155.6,210.3 156.4,209.4 149.3,208.2" fill="rgb(80,140,59)" stroke="rgb(80,140,59)" stroke-width="0.5"/>
 <polygon points="252.3,188.6 253.9,187.1 256.6,183.1" fill="rgb(73,73,26)" stroke="rgb(73,73,26)" stroke-width="0.5"/>
 <polygon points="147.3,209.5 148.3,208.9 141.0,206.8" fill="rgb(78,133,56)" stroke="rgb(78,133,56)" stroke-width="0.5"/>
@@ -4396,17 +4559,21 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="197.3,210.9 197.9,211.8 203.7,209.4" fill="rgb(79,139,58)" stroke="rgb(79,139,58)" stroke-width="0.5"/>
 <polygon points="190.1,210.9 190.5,211.9 196.7,209.9" fill="rgb(81,142,59)" stroke="rgb(81,142,59)" stroke-width="0.5"/>
 <polygon points="94.6,174.0 96.4,176.0 91.0,167.5" fill="rgb(114,87,28)" stroke="rgb(114,87,28)" stroke-width="0.5"/>
+<line x1="273.2" y1="166.2" x2="277.8" y2="161.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="197.3,210.9 196.7,209.9 190.5,211.9" fill="rgb(81,142,59)" stroke="rgb(81,142,59)" stroke-width="0.5"/>
 <polygon points="183.5,211.4 183.3,210.4 176.7,211.5" fill="rgb(82,145,61)" stroke="rgb(82,145,61)" stroke-width="0.5"/>
 <polygon points="221.6,207.3 220.4,207.1 215.0,210.1" fill="rgb(71,116,47)" stroke="rgb(71,116,47)" stroke-width="0.5"/>
 <polygon points="222.8,207.4 224.1,207.3 229.0,204.0" fill="rgb(67,102,42)" stroke="rgb(67,102,42)" stroke-width="0.5"/>
 <polygon points="99.9,179.8 98.1,177.9 104.5,185.6" fill="rgb(96,85,29)" stroke="rgb(96,85,29)" stroke-width="0.5"/>
 <polygon points="212.9,209.4 211.9,208.8 206.2,211.6" fill="rgb(76,129,54)" stroke="rgb(76,129,54)" stroke-width="0.5"/>
+<line x1="54.6" y1="166.5" x2="59.2" y2="161.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="253.9,187.1 255.6,185.4 258.4,181.4" fill="rgb(75,70,25)" stroke="rgb(75,70,25)" stroke-width="0.5"/>
+<line x1="50.0" y1="186.9" x2="50.0" y2="183.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="162.3,211.8 162.9,210.9 155.6,210.3" fill="rgb(80,140,58)" stroke="rgb(80,140,58)" stroke-width="0.5"/>
 <polygon points="169.7,212.0 170.0,211.0 162.9,210.9" fill="rgb(82,143,60)" stroke="rgb(82,143,60)" stroke-width="0.5"/>
 <polygon points="129.8,203.9 128.4,203.6 136.1,207.4" fill="rgb(71,105,42)" stroke="rgb(71,105,42)" stroke-width="0.5"/>
 <polygon points="170.0,211.0 169.7,212.0 176.7,211.5" fill="rgb(81,143,59)" stroke="rgb(81,143,59)" stroke-width="0.5"/>
+<line x1="125.6" y1="257.7" x2="134.0" y2="260.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="205.4,210.9 206.2,211.6 211.9,208.8" fill="rgb(75,129,54)" stroke="rgb(75,129,54)" stroke-width="0.5"/>
 <polygon points="89.1,165.4 87.3,163.2 92.8,172.0" fill="rgb(122,84,25)" stroke="rgb(122,84,25)" stroke-width="0.5"/>
 <polygon points="262.0,177.8 260.2,179.6 257.3,183.7" fill="rgb(78,67,23)" stroke="rgb(78,67,23)" stroke-width="0.5"/>
@@ -4446,12 +4613,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="169.3,212.9 169.7,212.0 162.3,211.8" fill="rgb(80,139,58)" stroke="rgb(80,139,58)" stroke-width="0.5"/>
 <polygon points="92.8,172.0 94.6,174.0 89.1,165.4" fill="rgb(119,85,26)" stroke="rgb(119,85,26)" stroke-width="0.5"/>
 <polygon points="169.7,212.0 169.3,212.9 176.6,212.5" fill="rgb(79,139,58)" stroke="rgb(79,139,58)" stroke-width="0.5"/>
+<line x1="241.0" y1="262.8" x2="245.6" y2="257.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.2,211.6 207.0,212.1 212.9,209.4" fill="rgb(73,121,50)" stroke="rgb(73,121,50)" stroke-width="0.5"/>
 <polygon points="128.4,203.6 127.0,203.2 134.9,207.2" fill="rgb(70,99,39)" stroke="rgb(70,99,39)" stroke-width="0.5"/>
 <polygon points="154.8,211.0 154.0,211.6 161.8,212.6" fill="rgb(76,130,54)" stroke="rgb(76,130,54)" stroke-width="0.5"/>
 <polygon points="183.6,212.5 183.7,213.4 190.5,211.9" fill="rgb(79,138,58)" stroke="rgb(79,138,58)" stroke-width="0.5"/>
 <polygon points="98.1,177.9 96.4,176.0 102.9,183.8" fill="rgb(100,82,28)" stroke="rgb(100,82,28)" stroke-width="0.5"/>
 <polygon points="215.0,210.1 216.0,210.3 221.6,207.3" fill="rgb(68,108,44)" stroke="rgb(68,108,44)" stroke-width="0.5"/>
+<line x1="50.0" y1="183.8" x2="50.0" y2="180.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="255.6,185.4 257.3,183.7 260.2,179.6" fill="rgb(77,68,23)" stroke="rgb(77,68,23)" stroke-width="0.5"/>
 <polygon points="176.6,212.5 176.5,213.4 183.6,212.5" fill="rgb(79,139,58)" stroke="rgb(79,139,58)" stroke-width="0.5"/>
 <polygon points="162.3,211.8 161.8,212.6 169.3,212.9" fill="rgb(78,135,56)" stroke="rgb(78,135,56)" stroke-width="0.5"/>
@@ -4488,6 +4657,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="207.0,212.1 207.8,212.5 214.0,209.8" fill="rgb(70,114,47)" stroke="rgb(70,114,47)" stroke-width="0.5"/>
 <polygon points="183.7,213.4 183.8,214.2 190.9,212.8" fill="rgb(77,134,56)" stroke="rgb(77,134,56)" stroke-width="0.5"/>
 <polygon points="154.0,211.6 153.2,212.1 161.2,213.3" fill="rgb(74,124,51)" stroke="rgb(74,124,51)" stroke-width="0.5"/>
+<line x1="134.0" y1="260.5" x2="142.4" y2="263.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="216.0,210.3 217.1,210.3 222.8,207.4" fill="rgb(65,100,41)" stroke="rgb(65,100,41)" stroke-width="0.5"/>
 <polygon points="176.5,213.4 176.4,214.2 183.7,213.4" fill="rgb(77,134,56)" stroke="rgb(77,134,56)" stroke-width="0.5"/>
 <polygon points="161.8,212.6 161.2,213.3 169.0,213.7" fill="rgb(75,129,54)" stroke="rgb(75,129,54)" stroke-width="0.5"/>
@@ -4499,6 +4669,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="133.7,206.8 134.9,207.2 127.0,203.2" fill="rgb(71,99,39)" stroke="rgb(71,99,39)" stroke-width="0.5"/>
 <polygon points="152.4,212.5 153.2,212.1 145.2,210.2" fill="rgb(73,119,49)" stroke="rgb(73,119,49)" stroke-width="0.5"/>
 <polygon points="96.4,176.0 94.6,174.0 101.2,182.0" fill="rgb(104,80,26)" stroke="rgb(104,80,26)" stroke-width="0.5"/>
+<line x1="50.0" y1="180.7" x2="50.0" y2="177.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="199.1,213.2 199.6,213.8 206.2,211.6" fill="rgb(72,121,50)" stroke="rgb(72,121,50)" stroke-width="0.5"/>
 <polygon points="191.2,213.7 191.6,214.4 198.5,212.6" fill="rgb(74,128,53)" stroke="rgb(74,128,53)" stroke-width="0.5"/>
 <polygon points="236.0,201.6 237.4,200.7 242.1,197.3" fill="rgb(62,75,29)" stroke="rgb(62,75,29)" stroke-width="0.5"/>
@@ -4536,11 +4707,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="125.6,202.5 124.2,201.8 132.5,206.3" fill="rgb(69,88,34)" stroke="rgb(69,88,34)" stroke-width="0.5"/>
 <polygon points="151.6,212.8 152.4,212.5 144.2,210.4" fill="rgb(71,112,46)" stroke="rgb(71,112,46)" stroke-width="0.5"/>
 <polygon points="191.6,214.4 192.0,215.0 199.1,213.2" fill="rgb(72,120,50)" stroke="rgb(72,120,50)" stroke-width="0.5"/>
+<line x1="268.6" y1="171.2" x2="273.2" y2="166.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="199.6,213.8 200.2,214.2 207.0,212.1" fill="rgb(69,113,47)" stroke="rgb(69,113,47)" stroke-width="0.5"/>
 <polygon points="184.0,215.0 183.8,214.2 176.3,215.0" fill="rgb(75,128,53)" stroke="rgb(75,128,53)" stroke-width="0.5"/>
 <polygon points="199.6,213.8 199.1,213.2 192.0,215.0" fill="rgb(73,120,50)" stroke="rgb(73,120,50)" stroke-width="0.5"/>
 <polygon points="132.5,206.3 133.7,206.8 125.6,202.5" fill="rgb(70,93,36)" stroke="rgb(70,93,36)" stroke-width="0.5"/>
 <polygon points="144.2,210.4 143.2,210.4 151.6,212.8" fill="rgb(68,104,42)" stroke="rgb(68,104,42)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="54.6" y2="166.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="177.6" x2="50.0" y2="174.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="134.9,207.2 133.7,206.8 142.1,210.3" fill="rgb(67,95,38)" stroke="rgb(67,95,38)" stroke-width="0.5"/>
 <polygon points="142.1,210.3 143.2,210.4 134.9,207.2" fill="rgb(70,101,41)" stroke="rgb(70,101,41)" stroke-width="0.5"/>
 <polygon points="237.4,200.7 238.7,199.7 243.6,196.2" fill="rgb(62,70,26)" stroke="rgb(62,70,26)" stroke-width="0.5"/>
@@ -4560,6 +4734,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="104.5,185.6 102.9,183.8 110.4,191.0" fill="rgb(89,78,27)" stroke="rgb(89,78,27)" stroke-width="0.5"/>
 <polygon points="208.7,212.7 209.5,212.8 216.0,210.3" fill="rgb(64,98,40)" stroke="rgb(64,98,40)" stroke-width="0.5"/>
 <polygon points="176.3,215.0 176.1,215.6 184.0,215.0" fill="rgb(72,120,50)" stroke="rgb(72,120,50)" stroke-width="0.5"/>
+<line x1="142.4" y1="263.2" x2="150.8" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="160.6,213.9 160.0,214.3 168.3,215.0" fill="rgb(70,115,48)" stroke="rgb(70,115,48)" stroke-width="0.5"/>
 <polygon points="192.0,215.0 191.6,214.4 184.1,215.6" fill="rgb(73,120,50)" stroke="rgb(73,120,50)" stroke-width="0.5"/>
 <polygon points="121.5,199.8 122.8,200.8 115.0,195.2" fill="rgb(76,84,31)" stroke="rgb(76,84,31)" stroke-width="0.5"/>
@@ -4578,10 +4753,12 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="110.4,191.0 111.9,192.5 104.5,185.6" fill="rgb(87,80,28)" stroke="rgb(87,80,28)" stroke-width="0.5"/>
 <polygon points="124.2,201.8 122.8,200.8 131.3,205.6" fill="rgb(69,83,32)" stroke="rgb(69,83,32)" stroke-width="0.5"/>
 <polygon points="143.2,210.4 142.1,210.3 150.8,212.9" fill="rgb(66,98,39)" stroke="rgb(66,98,39)" stroke-width="0.5"/>
+<line x1="236.4" y1="267.7" x2="241.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="131.3,205.6 132.5,206.3 124.2,201.8" fill="rgb(70,88,34)" stroke="rgb(70,88,34)" stroke-width="0.5"/>
 <polygon points="141.1,210.0 142.1,210.3 133.7,206.8" fill="rgb(68,94,38)" stroke="rgb(68,94,38)" stroke-width="0.5"/>
 <polygon points="167.9,215.5 168.3,215.0 160.0,214.3" fill="rgb(71,115,47)" stroke="rgb(71,115,47)" stroke-width="0.5"/>
 <polygon points="133.7,206.8 132.5,206.3 141.1,210.0" fill="rgb(66,89,35)" stroke="rgb(66,89,35)" stroke-width="0.5"/>
+<line x1="50.0" y1="174.5" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="159.4,214.6 160.0,214.3 151.6,212.8" fill="rgb(70,109,45)" stroke="rgb(70,109,45)" stroke-width="0.5"/>
 <polygon points="168.3,215.0 167.9,215.5 176.1,215.6" fill="rgb(69,114,47)" stroke="rgb(69,114,47)" stroke-width="0.5"/>
 <polygon points="237.4,200.7 236.0,201.6 230.2,204.7" fill="rgb(60,71,27)" stroke="rgb(60,71,27)" stroke-width="0.5"/>
@@ -4623,6 +4800,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="140.1,209.5 141.1,210.0 132.5,206.3" fill="rgb(67,89,35)" stroke="rgb(67,89,35)" stroke-width="0.5"/>
 <polygon points="132.5,206.3 131.3,205.6 140.1,209.5" fill="rgb(65,83,32)" stroke="rgb(65,83,32)" stroke-width="0.5"/>
 <polygon points="184.2,216.1 184.3,216.4 192.3,215.4" fill="rgb(66,105,43)" stroke="rgb(66,105,43)" stroke-width="0.5"/>
+<line x1="150.8" y1="265.9" x2="159.2" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="219.1,209.9 218.1,210.2 211.1,212.5" fill="rgb(60,83,33)" stroke="rgb(60,83,33)" stroke-width="0.5"/>
 <polygon points="238.7,199.7 237.4,200.7 231.4,203.7" fill="rgb(60,66,25)" stroke="rgb(60,66,25)" stroke-width="0.5"/>
 <polygon points="176.0,216.1 175.9,216.4 184.2,216.1" fill="rgb(66,105,43)" stroke="rgb(66,105,43)" stroke-width="0.5"/>
@@ -4633,6 +4811,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="210.3,212.7 211.1,212.5 218.1,210.2" fill="rgb(59,84,33)" stroke="rgb(59,84,33)" stroke-width="0.5"/>
 <polygon points="228.9,205.5 227.7,206.2 221.2,208.9" fill="rgb(58,73,28)" stroke="rgb(58,73,28)" stroke-width="0.5"/>
 <polygon points="262.3,178.1 264.0,176.1 267.3,171.8" fill="rgb(89,61,18)" stroke="rgb(89,61,18)" stroke-width="0.5"/>
+<line x1="50.0" y1="171.4" x2="58.4" y2="174.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.9,216.4 176.0,216.1 167.6,215.8" fill="rgb(67,106,43)" stroke="rgb(67,106,43)" stroke-width="0.5"/>
 <polygon points="111.9,192.5 110.4,191.0 118.7,197.3" fill="rgb(79,75,26)" stroke="rgb(79,75,26)" stroke-width="0.5"/>
 <polygon points="184.3,216.4 184.2,216.1 175.9,216.4" fill="rgb(67,105,43)" stroke="rgb(67,105,43)" stroke-width="0.5"/>
@@ -4650,6 +4829,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="96.2,176.3 97.8,178.2 91.0,169.9" fill="rgb(115,77,23)" stroke="rgb(115,77,23)" stroke-width="0.5"/>
 <polygon points="141.1,210.0 140.1,209.5 149.1,212.6" fill="rgb(63,85,34)" stroke="rgb(63,85,34)" stroke-width="0.5"/>
 <polygon points="167.2,216.0 167.6,215.8 158.8,214.7" fill="rgb(66,100,41)" stroke="rgb(66,100,41)" stroke-width="0.5"/>
+<line x1="264.0" y1="176.1" x2="268.6" y2="171.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="167.6,215.8 167.2,216.0 175.9,216.4" fill="rgb(64,98,40)" stroke="rgb(64,98,40)" stroke-width="0.5"/>
 <polygon points="260.7,180.0 259.0,181.9 254.5,185.7" fill="rgb(76,58,19)" stroke="rgb(76,58,19)" stroke-width="0.5"/>
 <polygon points="158.2,214.7 158.8,214.7 149.9,212.8" fill="rgb(65,94,38)" stroke="rgb(65,94,38)" stroke-width="0.5"/>
@@ -4679,13 +4859,16 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="148.3,212.2 149.1,212.6 140.1,209.5" fill="rgb(64,85,33)" stroke="rgb(64,85,33)" stroke-width="0.5"/>
 <polygon points="221.2,208.9 222.2,208.1 228.9,205.5" fill="rgb(56,68,26)" stroke="rgb(56,68,26)" stroke-width="0.5"/>
 <polygon points="231.4,203.7 232.6,202.6 238.7,199.7" fill="rgb(58,62,23)" stroke="rgb(58,62,23)" stroke-width="0.5"/>
+<line x1="159.2" y1="268.6" x2="167.6" y2="271.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="99.5,180.2 97.8,178.2 105.7,185.9" fill="rgb(99,72,23)" stroke="rgb(99,72,23)" stroke-width="0.5"/>
 <polygon points="117.3,195.9 118.7,197.3 110.4,191.0" fill="rgb(81,74,26)" stroke="rgb(81,74,26)" stroke-width="0.5"/>
 <polygon points="166.8,216.0 167.2,216.0 158.2,214.7" fill="rgb(63,92,37)" stroke="rgb(63,92,37)" stroke-width="0.5"/>
 <polygon points="140.1,209.5 139.1,209.0 148.3,212.2" fill="rgb(62,79,31)" stroke="rgb(62,79,31)" stroke-width="0.5"/>
 <polygon points="251.4,189.2 249.8,190.8 244.3,194.2" fill="rgb(66,57,19)" stroke="rgb(66,57,19)" stroke-width="0.5"/>
 <polygon points="167.2,216.0 166.8,216.0 175.8,216.6" fill="rgb(61,91,36)" stroke="rgb(61,91,36)" stroke-width="0.5"/>
+<line x1="231.8" y1="272.7" x2="236.4" y2="267.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="157.6,214.5 158.2,214.7 149.1,212.6" fill="rgb(63,87,35)" stroke="rgb(63,87,35)" stroke-width="0.5"/>
+<line x1="58.4" y1="174.2" x2="66.8" y2="176.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="184.5,216.6 184.6,216.6 193.0,216.0" fill="rgb(60,89,36)" stroke="rgb(60,89,36)" stroke-width="0.5"/>
 <polygon points="262.3,178.1 260.7,180.0 256.0,183.9" fill="rgb(79,56,17)" stroke="rgb(79,56,17)" stroke-width="0.5"/>
 <polygon points="120.1,198.6 118.7,197.3 127.6,202.8" fill="rgb(71,72,26)" stroke="rgb(71,72,26)" stroke-width="0.5"/>
@@ -4732,16 +4915,19 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="126.4,201.5 127.6,202.8 118.7,197.3" fill="rgb(73,71,26)" stroke="rgb(73,71,26)" stroke-width="0.5"/>
 <polygon points="157.6,214.5 157.0,214.2 166.5,215.9" fill="rgb(58,78,31)" stroke="rgb(58,78,31)" stroke-width="0.5"/>
 <polygon points="148.3,212.2 147.5,211.7 157.0,214.2" fill="rgb(59,75,29)" stroke="rgb(59,75,29)" stroke-width="0.5"/>
+<line x1="167.6" y1="271.3" x2="176.0" y2="274.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.6,216.5 175.7,216.7 166.5,215.9" fill="rgb(60,83,33)" stroke="rgb(60,83,33)" stroke-width="0.5"/>
 <polygon points="212.8,211.6 213.6,210.9 221.2,208.9" fill="rgb(54,66,25)" stroke="rgb(54,66,25)" stroke-width="0.5"/>
 <polygon points="184.7,216.5 184.6,216.6 175.6,216.5" fill="rgb(59,82,33)" stroke="rgb(59,82,33)" stroke-width="0.5"/>
 <polygon points="242.9,195.7 241.5,197.1 235.1,200.1" fill="rgb(61,56,19)" stroke="rgb(61,56,19)" stroke-width="0.5"/>
 <polygon points="193.8,215.8 194.1,215.6 202.6,214.5" fill="rgb(55,74,29)" stroke="rgb(55,74,29)" stroke-width="0.5"/>
+<line x1="66.8" y1="176.9" x2="75.2" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="232.6,202.6 231.4,203.7 224.3,206.2" fill="rgb(56,59,22)" stroke="rgb(56,59,22)" stroke-width="0.5"/>
 <polygon points="203.2,214.2 202.6,214.5 194.1,215.6" fill="rgb(56,74,29)" stroke="rgb(56,74,29)" stroke-width="0.5"/>
 <polygon points="244.3,194.2 245.7,192.6 251.4,189.2" fill="rgb(67,55,19)" stroke="rgb(67,55,19)" stroke-width="0.5"/>
 <polygon points="212.8,211.6 211.9,212.1 203.8,213.7" fill="rgb(55,69,27)" stroke="rgb(55,69,27)" stroke-width="0.5"/>
 <polygon points="203.2,214.2 203.8,213.7 211.9,212.1" fill="rgb(54,69,27)" stroke="rgb(54,69,27)" stroke-width="0.5"/>
+<line x1="259.4" y1="181.1" x2="264.0" y2="176.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="146.7,211.0 147.5,211.7 138.0,208.2" fill="rgb(63,74,28)" stroke="rgb(63,74,28)" stroke-width="0.5"/>
 <polygon points="107.3,187.6 105.7,185.9 114.5,192.8" fill="rgb(88,68,22)" stroke="rgb(88,68,22)" stroke-width="0.5"/>
 <polygon points="223.2,207.2 224.3,206.2 231.4,203.7" fill="rgb(55,59,22)" stroke="rgb(55,59,22)" stroke-width="0.5"/>
@@ -4773,12 +4959,15 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="233.8,201.4 232.6,202.6 225.3,205.1" fill="rgb(58,57,21)" stroke="rgb(58,57,21)" stroke-width="0.5"/>
 <polygon points="213.6,210.9 212.8,211.6 204.4,213.1" fill="rgb(54,63,24)" stroke="rgb(54,63,24)" stroke-width="0.5"/>
 <polygon points="203.8,213.7 204.4,213.1 212.8,211.6" fill="rgb(53,64,24)" stroke="rgb(53,64,24)" stroke-width="0.5"/>
+<line x1="227.2" y1="277.6" x2="231.8" y2="272.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="245.7,192.6 247.1,191.0 252.9,187.5" fill="rgb(69,54,17)" stroke="rgb(69,54,17)" stroke-width="0.5"/>
+<line x1="176.0" y1="274.0" x2="184.4" y2="276.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="145.9,210.2 146.7,211.0 137.0,207.3" fill="rgb(62,69,26)" stroke="rgb(62,69,26)" stroke-width="0.5"/>
 <polygon points="165.8,215.2 166.1,215.6 156.5,213.8" fill="rgb(58,72,28)" stroke="rgb(58,72,28)" stroke-width="0.5"/>
 <polygon points="105.7,185.9 104.2,184.1 113.1,191.1" fill="rgb(91,66,21)" stroke="rgb(91,66,21)" stroke-width="0.5"/>
 <polygon points="166.1,215.6 165.8,215.2 175.4,216.3" fill="rgb(55,70,27)" stroke="rgb(55,70,27)" stroke-width="0.5"/>
 <polygon points="224.3,206.2 225.3,205.1 232.6,202.6" fill="rgb(57,58,21)" stroke="rgb(57,58,21)" stroke-width="0.5"/>
+<line x1="75.2" y1="179.6" x2="83.6" y2="182.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="235.1,200.1 236.3,198.7 242.9,195.7" fill="rgb(65,57,20)" stroke="rgb(65,57,20)" stroke-width="0.5"/>
 <polygon points="184.8,216.3 185.0,215.8 194.1,215.6" fill="rgb(54,68,26)" stroke="rgb(54,68,26)" stroke-width="0.5"/>
 <polygon points="137.0,207.3 136.0,206.3 145.9,210.2" fill="rgb(61,65,24)" stroke="rgb(61,65,24)" stroke-width="0.5"/>
@@ -4815,9 +5004,12 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="136.0,206.3 135.0,205.2 145.1,209.3" fill="rgb(62,62,22)" stroke="rgb(62,62,22)" stroke-width="0.5"/>
 <polygon points="111.7,189.4 113.1,191.1 104.2,184.1" fill="rgb(93,66,20)" stroke="rgb(93,66,20)" stroke-width="0.5"/>
 <polygon points="175.3,215.9 175.2,215.3 185.0,215.8" fill="rgb(52,63,24)" stroke="rgb(52,63,24)" stroke-width="0.5"/>
+<line x1="184.4" y1="276.7" x2="192.8" y2="279.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="257.6,182.1 256.0,183.9 249.9,187.6" fill="rgb(79,53,16)" stroke="rgb(79,53,16)" stroke-width="0.5"/>
 <polygon points="194.9,214.5 194.5,215.1 185.1,215.3" fill="rgb(53,62,24)" stroke="rgb(53,62,24)" stroke-width="0.5"/>
+<line x1="254.8" y1="186.0" x2="259.4" y2="181.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="155.9,213.1 155.3,212.4 165.4,214.6" fill="rgb(55,62,23)" stroke="rgb(55,62,23)" stroke-width="0.5"/>
+<line x1="83.6" y1="182.3" x2="92.0" y2="185.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="175.2,215.3 175.3,215.9 165.4,214.6" fill="rgb(55,65,25)" stroke="rgb(55,65,25)" stroke-width="0.5"/>
 <polygon points="133.9,204.0 135.0,205.2 125.2,200.2" fill="rgb(69,63,22)" stroke="rgb(69,63,22)" stroke-width="0.5"/>
 <polygon points="145.9,210.2 145.1,209.3 155.3,212.4" fill="rgb(58,61,23)" stroke="rgb(58,61,23)" stroke-width="0.5"/>
@@ -4844,6 +5036,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="135.0,205.2 133.9,204.0 144.3,208.2" fill="rgb(63,59,21)" stroke="rgb(63,59,21)" stroke-width="0.5"/>
 <polygon points="110.3,187.7 111.7,189.4 102.6,182.3" fill="rgb(97,65,19)" stroke="rgb(97,65,19)" stroke-width="0.5"/>
 <polygon points="175.2,215.3 175.1,214.6 185.1,215.3" fill="rgb(51,59,22)" stroke="rgb(51,59,22)" stroke-width="0.5"/>
+<line x1="222.6" y1="282.6" x2="227.2" y2="277.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="195.2,213.8 194.9,214.5 185.2,214.6" fill="rgb(52,57,21)" stroke="rgb(52,57,21)" stroke-width="0.5"/>
 <polygon points="155.3,212.4 154.7,211.5 165.1,213.8" fill="rgb(55,58,21)" stroke="rgb(55,58,21)" stroke-width="0.5"/>
 <polygon points="175.1,214.6 175.2,215.3 165.1,213.8" fill="rgb(54,60,22)" stroke="rgb(54,60,22)" stroke-width="0.5"/>
@@ -4852,11 +5045,13 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="113.1,191.1 111.7,189.4 121.5,195.8" fill="rgb(83,61,19)" stroke="rgb(83,61,19)" stroke-width="0.5"/>
 <polygon points="226.3,203.9 225.3,205.1 216.8,206.9" fill="rgb(67,62,21)" stroke="rgb(67,62,21)" stroke-width="0.5"/>
 <polygon points="124.0,198.8 122.7,197.3 132.9,202.6" fill="rgb(71,59,20)" stroke="rgb(71,59,20)" stroke-width="0.5"/>
+<line x1="192.8" y1="279.4" x2="201.2" y2="282.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="185.2,214.6 185.1,215.3 175.1,214.6" fill="rgb(52,58,22)" stroke="rgb(52,58,22)" stroke-width="0.5"/>
 <polygon points="121.5,195.8 122.7,197.3 113.1,191.1" fill="rgb(82,62,20)" stroke="rgb(82,62,20)" stroke-width="0.5"/>
 <polygon points="195.2,213.8 195.6,213.0 205.0,212.3" fill="rgb(57,60,22)" stroke="rgb(57,60,22)" stroke-width="0.5"/>
 <polygon points="216.0,208.1 216.8,206.9 225.3,205.1" fill="rgb(66,62,22)" stroke="rgb(66,62,22)" stroke-width="0.5"/>
 <polygon points="205.6,211.4 205.0,212.3 195.6,213.0" fill="rgb(58,60,22)" stroke="rgb(58,60,22)" stroke-width="0.5"/>
+<line x1="92.0" y1="185.0" x2="100.4" y2="187.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="248.5,189.3 247.1,191.0 240.0,194.1" fill="rgb(80,57,18)" stroke="rgb(80,57,18)" stroke-width="0.5"/>
 <polygon points="216.0,208.1 215.2,209.2 206.2,210.4" fill="rgb(63,62,22)" stroke="rgb(63,62,22)" stroke-width="0.5"/>
 <polygon points="205.6,211.4 206.2,210.4 215.2,209.2" fill="rgb(62,62,22)" stroke="rgb(62,62,22)" stroke-width="0.5"/>
@@ -4883,11 +5078,14 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="195.6,213.0 195.9,212.0 205.6,211.4" fill="rgb(63,63,23)" stroke="rgb(63,63,23)" stroke-width="0.5"/>
 <polygon points="216.8,206.9 217.7,205.7 226.3,203.9" fill="rgb(72,63,22)" stroke="rgb(72,63,22)" stroke-width="0.5"/>
 <polygon points="206.2,210.4 205.6,211.4 195.9,212.0" fill="rgb(64,63,23)" stroke="rgb(64,63,23)" stroke-width="0.5"/>
+<line x1="250.2" y1="191.0" x2="254.8" y2="186.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="249.9,187.6 248.5,189.3 241.2,192.5" fill="rgb(85,57,17)" stroke="rgb(85,57,17)" stroke-width="0.5"/>
 <polygon points="216.8,206.9 216.0,208.1 206.8,209.3" fill="rgb(69,63,22)" stroke="rgb(69,63,22)" stroke-width="0.5"/>
+<line x1="201.2" y1="282.1" x2="209.6" y2="284.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="206.2,210.4 206.8,209.3 216.0,208.1" fill="rgb(68,64,22)" stroke="rgb(68,64,22)" stroke-width="0.5"/>
 <polygon points="238.7,195.6 237.5,197.2 229.4,199.7" fill="rgb(80,61,20)" stroke="rgb(80,61,20)" stroke-width="0.5"/>
 <polygon points="164.4,212.0 164.7,213.0 154.1,210.5" fill="rgb(59,58,21)" stroke="rgb(59,58,21)" stroke-width="0.5"/>
+<line x1="100.4" y1="187.7" x2="108.8" y2="190.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="164.7,213.0 164.4,212.0 175.0,213.7" fill="rgb(61,61,22)" stroke="rgb(61,61,22)" stroke-width="0.5"/>
 <polygon points="142.6,205.8 143.4,207.0 132.9,202.6" fill="rgb(65,56,19)" stroke="rgb(65,56,19)" stroke-width="0.5"/>
 <polygon points="228.4,201.1 229.4,199.7 237.5,197.2" fill="rgb(79,61,20)" stroke="rgb(79,61,20)" stroke-width="0.5"/>
@@ -4902,6 +5100,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="130.9,199.8 131.9,201.2 121.5,195.8" fill="rgb(75,57,18)" stroke="rgb(75,57,18)" stroke-width="0.5"/>
 <polygon points="143.4,207.0 142.6,205.8 153.5,209.4" fill="rgb(66,58,20)" stroke="rgb(66,58,20)" stroke-width="0.5"/>
 <polygon points="228.4,201.1 227.4,202.5 218.5,204.3" fill="rgb(78,63,21)" stroke="rgb(78,63,21)" stroke-width="0.5"/>
+<line x1="218.0" y1="287.5" x2="222.6" y2="282.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="119.1,192.6 120.3,194.2 110.3,187.7" fill="rgb(88,59,18)" stroke="rgb(88,59,18)" stroke-width="0.5"/>
 <polygon points="121.5,195.8 120.3,194.2 130.9,199.8" fill="rgb(76,56,17)" stroke="rgb(76,56,17)" stroke-width="0.5"/>
 <polygon points="185.4,212.8 185.3,213.7 174.9,212.8" fill="rgb(63,62,22)" stroke="rgb(63,62,22)" stroke-width="0.5"/>
@@ -4914,9 +5113,11 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="164.0,210.9 164.4,212.0 153.5,209.4" fill="rgb(65,60,21)" stroke="rgb(65,60,21)" stroke-width="0.5"/>
 <polygon points="164.4,212.0 164.0,210.9 174.9,212.8" fill="rgb(66,63,22)" stroke="rgb(66,63,22)" stroke-width="0.5"/>
 <polygon points="141.8,204.4 142.6,205.8 131.9,201.2" fill="rgb(67,54,18)" stroke="rgb(67,54,18)" stroke-width="0.5"/>
+<line x1="209.6" y1="284.8" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="229.4,199.7 230.4,198.2 238.7,195.6" fill="rgb(83,61,19)" stroke="rgb(83,61,19)" stroke-width="0.5"/>
 <polygon points="185.4,212.8 185.6,211.7 195.9,212.0" fill="rgb(69,65,23)" stroke="rgb(69,65,23)" stroke-width="0.5"/>
 <polygon points="152.9,208.1 153.5,209.4 142.6,205.8" fill="rgb(67,58,19)" stroke="rgb(67,58,19)" stroke-width="0.5"/>
+<line x1="108.8" y1="190.4" x2="117.2" y2="193.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="131.9,201.2 130.9,199.8 141.8,204.4" fill="rgb(71,55,18)" stroke="rgb(71,55,18)" stroke-width="0.5"/>
 <polygon points="174.9,212.8 174.7,211.7 185.4,212.8" fill="rgb(68,64,22)" stroke="rgb(68,64,22)" stroke-width="0.5"/>
 <polygon points="196.3,210.9 195.9,212.0 185.6,211.7" fill="rgb(70,64,22)" stroke="rgb(70,64,22)" stroke-width="0.5"/>
@@ -4933,6 +5134,8 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="241.2,192.5 240.0,194.1 231.5,196.6" fill="rgb(90,60,18)" stroke="rgb(90,60,18)" stroke-width="0.5"/>
 <polygon points="218.5,204.3 217.7,205.7 208.0,206.8" fill="rgb(80,65,21)" stroke="rgb(80,65,21)" stroke-width="0.5"/>
 <polygon points="207.4,208.1 208.0,206.8 217.7,205.7" fill="rgb(79,65,22)" stroke="rgb(79,65,22)" stroke-width="0.5"/>
+<line x1="245.6" y1="195.9" x2="250.2" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="284.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="163.6,209.8 164.0,210.9 152.9,208.1" fill="rgb(71,61,21)" stroke="rgb(71,61,21)" stroke-width="0.5"/>
 <polygon points="164.0,210.9 163.6,209.8 174.7,211.7" fill="rgb(72,64,22)" stroke="rgb(72,64,22)" stroke-width="0.5"/>
 <polygon points="141.0,203.0 141.8,204.4 130.9,199.8" fill="rgb(72,55,18)" stroke="rgb(72,55,18)" stroke-width="0.5"/>
@@ -4942,6 +5145,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="130.9,199.8 129.9,198.3 141.0,203.0" fill="rgb(75,55,17)" stroke="rgb(75,55,17)" stroke-width="0.5"/>
 <polygon points="174.7,211.7 174.6,210.6 185.6,211.7" fill="rgb(74,65,22)" stroke="rgb(74,65,22)" stroke-width="0.5"/>
 <polygon points="196.7,209.7 196.3,210.9 185.7,210.5" fill="rgb(76,66,22)" stroke="rgb(76,66,22)" stroke-width="0.5"/>
+<line x1="117.2" y1="193.1" x2="125.6" y2="195.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.9,208.1 152.3,206.9 163.6,209.8" fill="rgb(75,62,21)" stroke="rgb(75,62,21)" stroke-width="0.5"/>
 <polygon points="128.8,196.7 129.9,198.3 119.1,192.6" fill="rgb(81,54,16)" stroke="rgb(81,54,16)" stroke-width="0.5"/>
 <polygon points="174.6,210.6 174.7,211.7 163.6,209.8" fill="rgb(73,63,21)" stroke="rgb(73,63,21)" stroke-width="0.5"/>
@@ -4950,6 +5154,7 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="185.7,210.5 185.6,211.7 174.6,210.6" fill="rgb(75,65,22)" stroke="rgb(75,65,22)" stroke-width="0.5"/>
 <polygon points="219.3,202.9 220.1,201.5 229.4,199.7" fill="rgb(87,63,20)" stroke="rgb(87,63,20)" stroke-width="0.5"/>
 <polygon points="196.7,209.7 197.0,208.5 207.4,208.1" fill="rgb(80,66,22)" stroke="rgb(80,66,22)" stroke-width="0.5"/>
+<line x1="218.0" y1="284.4" x2="218.0" y2="281.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="208.0,206.8 207.4,208.1 197.0,208.5" fill="rgb(82,66,22)" stroke="rgb(82,66,22)" stroke-width="0.5"/>
 <polygon points="219.3,202.9 218.5,204.3 208.6,205.5" fill="rgb(86,65,21)" stroke="rgb(86,65,21)" stroke-width="0.5"/>
 <polygon points="208.0,206.8 208.6,205.5 218.5,204.3" fill="rgb(85,65,21)" stroke="rgb(85,65,21)" stroke-width="0.5"/>
@@ -4961,10 +5166,12 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="151.7,205.5 152.3,206.9 141.0,203.0" fill="rgb(77,59,19)" stroke="rgb(77,59,19)" stroke-width="0.5"/>
 <polygon points="174.6,210.6 174.5,209.3 185.7,210.5" fill="rgb(79,66,22)" stroke="rgb(79,66,22)" stroke-width="0.5"/>
 <polygon points="197.0,208.5 196.7,209.7 185.8,209.3" fill="rgb(82,66,22)" stroke="rgb(82,66,22)" stroke-width="0.5"/>
+<line x1="218.0" y1="281.4" x2="218.0" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="152.3,206.9 151.7,205.5 163.3,208.5" fill="rgb(80,62,20)" stroke="rgb(80,62,20)" stroke-width="0.5"/>
 <polygon points="174.5,209.3 174.6,210.6 163.3,208.5" fill="rgb(79,64,21)" stroke="rgb(79,64,21)" stroke-width="0.5"/>
 <polygon points="231.5,196.6 230.4,198.2 220.9,200.1" fill="rgb(93,63,19)" stroke="rgb(93,63,19)" stroke-width="0.5"/>
 <polygon points="141.0,203.0 140.2,201.6 151.7,205.5" fill="rgb(80,59,18)" stroke="rgb(80,59,18)" stroke-width="0.5"/>
+<line x1="125.6" y1="195.8" x2="134.0" y2="198.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="185.8,209.3 185.7,210.5 174.5,209.3" fill="rgb(81,66,22)" stroke="rgb(81,66,22)" stroke-width="0.5"/>
 <polygon points="220.1,201.5 220.9,200.1 230.4,198.2" fill="rgb(92,63,19)" stroke="rgb(92,63,19)" stroke-width="0.5"/>
 <polygon points="197.0,208.5 197.4,207.2 208.0,206.8" fill="rgb(86,66,21)" stroke="rgb(86,66,21)" stroke-width="0.5"/>
@@ -4974,6 +5181,8 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="139.4,200.1 140.2,201.6 128.8,196.7" fill="rgb(80,54,16)" stroke="rgb(80,54,16)" stroke-width="0.5"/>
 <polygon points="162.9,207.2 163.3,208.5 151.7,205.5" fill="rgb(81,62,20)" stroke="rgb(81,62,20)" stroke-width="0.5"/>
 <polygon points="163.3,208.5 162.9,207.2 174.5,209.3" fill="rgb(83,64,21)" stroke="rgb(83,64,21)" stroke-width="0.5"/>
+<line x1="241.0" y1="200.9" x2="245.6" y2="195.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="278.3" x2="218.0" y2="275.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="185.8,209.3 185.9,208.0 197.0,208.5" fill="rgb(86,66,21)" stroke="rgb(86,66,21)" stroke-width="0.5"/>
 <polygon points="151.2,204.1 151.7,205.5 140.2,201.6" fill="rgb(82,58,18)" stroke="rgb(82,58,18)" stroke-width="0.5"/>
 <polygon points="174.5,209.3 174.4,208.0 185.8,209.3" fill="rgb(85,66,21)" stroke="rgb(85,66,21)" stroke-width="0.5"/>
@@ -4983,7 +5192,9 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="140.2,201.6 139.4,200.1 151.2,204.1" fill="rgb(85,58,17)" stroke="rgb(85,58,17)" stroke-width="0.5"/>
 <polygon points="185.9,208.0 185.8,209.3 174.4,208.0" fill="rgb(86,66,21)" stroke="rgb(86,66,21)" stroke-width="0.5"/>
 <polygon points="197.4,207.2 197.8,205.8 208.6,205.5" fill="rgb(91,66,21)" stroke="rgb(91,66,21)" stroke-width="0.5"/>
+<line x1="134.0" y1="198.5" x2="142.4" y2="201.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="209.2,204.1 208.6,205.5 197.8,205.8" fill="rgb(93,66,20)" stroke="rgb(93,66,20)" stroke-width="0.5"/>
+<line x1="218.0" y1="275.2" x2="218.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="220.9,200.1 220.1,201.5 209.8,202.7" fill="rgb(96,64,19)" stroke="rgb(96,64,19)" stroke-width="0.5"/>
 <polygon points="209.2,204.1 209.8,202.7 220.1,201.5" fill="rgb(94,65,19)" stroke="rgb(94,65,19)" stroke-width="0.5"/>
 <polygon points="162.6,205.9 162.9,207.2 151.2,204.1" fill="rgb(86,61,19)" stroke="rgb(86,61,19)" stroke-width="0.5"/>
@@ -4993,29 +5204,46 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="174.4,208.0 174.3,206.7 185.9,208.0" fill="rgb(90,66,20)" stroke="rgb(90,66,20)" stroke-width="0.5"/>
 <polygon points="197.8,205.8 197.4,207.2 186.1,206.7" fill="rgb(93,66,20)" stroke="rgb(93,66,20)" stroke-width="0.5"/>
 <polygon points="151.2,204.1 150.6,202.7 162.6,205.9" fill="rgb(89,61,18)" stroke="rgb(89,61,18)" stroke-width="0.5"/>
+<line x1="218.0" y1="272.1" x2="218.0" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="174.3,206.7 174.4,208.0 162.6,205.9" fill="rgb(89,64,20)" stroke="rgb(89,64,20)" stroke-width="0.5"/>
 <polygon points="186.1,206.7 185.9,208.0 174.3,206.7" fill="rgb(92,65,20)" stroke="rgb(92,65,20)" stroke-width="0.5"/>
 <polygon points="197.8,205.8 198.1,204.5 209.2,204.1" fill="rgb(96,66,19)" stroke="rgb(96,66,19)" stroke-width="0.5"/>
 <polygon points="209.8,202.7 209.2,204.1 198.1,204.5" fill="rgb(97,65,19)" stroke="rgb(97,65,19)" stroke-width="0.5"/>
+<line x1="142.4" y1="201.3" x2="150.8" y2="204.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="162.2,204.5 162.6,205.9 150.6,202.7" fill="rgb(91,61,18)" stroke="rgb(91,61,18)" stroke-width="0.5"/>
 <polygon points="162.6,205.9 162.2,204.5 174.3,206.7" fill="rgb(92,64,19)" stroke="rgb(92,64,19)" stroke-width="0.5"/>
+<line x1="236.4" y1="205.8" x2="241.0" y2="200.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="269.0" x2="218.0" y2="265.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <polygon points="186.1,206.7 186.2,205.4 197.8,205.8" fill="rgb(96,66,19)" stroke="rgb(96,66,19)" stroke-width="0.5"/>
 <polygon points="174.3,206.7 174.2,205.4 186.1,206.7" fill="rgb(95,65,19)" stroke="rgb(95,65,19)" stroke-width="0.5"/>
 <polygon points="198.1,204.5 197.8,205.8 186.2,205.4" fill="rgb(98,65,19)" stroke="rgb(98,65,19)" stroke-width="0.5"/>
 <polygon points="174.2,205.4 174.3,206.7 162.2,204.5" fill="rgb(94,63,19)" stroke="rgb(94,63,19)" stroke-width="0.5"/>
 <polygon points="186.2,205.4 186.1,206.7 174.2,205.4" fill="rgb(96,65,19)" stroke="rgb(96,65,19)" stroke-width="0.5"/>
-<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="265.9" x2="218.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="150.8" y1="204.0" x2="159.2" y2="206.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="262.8" x2="218.0" y2="259.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="159.2" y1="206.7" x2="167.6" y2="209.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="231.8" y1="210.8" x2="236.4" y2="205.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="259.7" x2="218.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="256.6" x2="218.0" y2="253.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.6" y1="209.4" x2="176.0" y2="212.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="253.5" x2="218.0" y2="250.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="227.2" y1="215.7" x2="231.8" y2="210.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="250.4" x2="218.0" y2="247.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="176.0" y1="212.1" x2="184.4" y2="214.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="247.3" x2="218.0" y2="244.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="184.4" y1="214.8" x2="192.8" y2="217.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="244.2" x2="218.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="222.6" y1="220.7" x2="227.2" y2="215.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="241.1" x2="218.0" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="192.8" y1="217.5" x2="201.2" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="238.0" x2="218.0" y2="234.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="234.9" x2="218.0" y2="231.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="201.2" y1="220.2" x2="209.6" y2="222.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="222.6" y2="220.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="231.8" x2="218.0" y2="228.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="209.6" y1="222.9" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="228.7" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="67.2" y1="238.9" x2="68.4" y2="235.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="63.5" y="250.3" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-5</text>
