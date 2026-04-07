@@ -29,7 +29,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "Tr" if args.len() == 1 => {
+    "Tr" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::tr_ast(args));
     }
     "IdentityMatrix" if args.len() == 1 => {

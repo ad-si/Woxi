@@ -214,6 +214,24 @@ mod tr {
   fn trace_vector() {
     assert_eq!(interpret("Tr[{1, 2, 3}]").unwrap(), "6");
   }
+
+  #[test]
+  fn trace_with_times() {
+    assert_eq!(
+      interpret("Tr[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, Times]").unwrap(),
+      "45"
+    );
+  }
+
+  #[test]
+  fn trace_symbolic_with_times() {
+    assert_eq!(interpret("Tr[{{a, b}, {c, d}}, Times]").unwrap(), "a*d");
+  }
+
+  #[test]
+  fn trace_vector_with_times() {
+    assert_eq!(interpret("Tr[{2, 3, 4}, Times]").unwrap(), "24");
+  }
 }
 
 mod identity_matrix {
