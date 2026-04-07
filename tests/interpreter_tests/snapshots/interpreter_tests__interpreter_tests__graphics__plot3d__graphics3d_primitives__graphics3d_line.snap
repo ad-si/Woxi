@@ -4,5 +4,5 @@ expression: "export_svg(\"Graphics3D[Line[{{0,0,0}, {1,1,1}}]]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
-<polyline points="30.0,295.1 330.0,64.9" fill="none" stroke="#333" stroke-width="1.5"/>
+<polyline points="10.0,310.5 350.0,49.5" fill="none" stroke="#333" stroke-width="1.5"/>
 </svg>
