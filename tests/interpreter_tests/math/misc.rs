@@ -372,6 +372,16 @@ mod log {
   fn log_complex_infinity() {
     assert_eq!(interpret("Log[ComplexInfinity]").unwrap(), "Infinity");
   }
+
+  #[test]
+  fn log_i() {
+    assert_eq!(interpret("Log[I]").unwrap(), "(I/2)*Pi");
+  }
+
+  #[test]
+  fn log_neg_i() {
+    assert_eq!(interpret("Log[-I]").unwrap(), "(-(I/2))*Pi");
+  }
 }
 
 mod linear_recurrence {
