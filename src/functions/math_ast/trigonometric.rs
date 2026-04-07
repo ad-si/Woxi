@@ -1318,7 +1318,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Integer(0)) {
         return Ok(Expr::UnaryOp {
           op: crate::syntax::UnaryOperator::Minus,
-          operand: Box::new(Expr::Constant("Infinity".to_string())),
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
         });
       }
       // Log[1] = 0
