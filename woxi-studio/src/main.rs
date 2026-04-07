@@ -122,6 +122,8 @@ enum Message {
   WrapSelection(usize, char, char),
   Undo(usize),
   Redo(usize),
+  IndentLines(usize),
+  UnindentLines(usize),
   CellStyleChanged(usize, CellStyle),
   FocusCell(usize),
   ScrollCellsToEnd,
@@ -710,6 +712,138 @@ impl WoxiStudio {
             self.cell_editors[idx].undo_stack.push(current);
             self.cell_editors[idx].content =
               text_editor::Content::with_text(&next);
+            self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::IndentLines(idx) => {
+        if idx < self.cell_editors.len() {
+          let snap = self.cell_editors[idx].content.text();
+          let cursor = self.cell_editors[idx].content.cursor().position;
+          let selection = self.cell_editors[idx].content.selection();
+
+          if let Some(sel_text) = selection {
+            let lines: Vec<&str> = snap.lines().collect();
+            let (start_line, end_line) =
+              selection_line_range(cursor.line, &sel_text, lines.len());
+            let (anchor, cursor_end) = selection_endpoints(
+              cursor.line,
+              cursor.column,
+              &sel_text,
+              &lines,
+            );
+
+            let new_text: String = lines
+              .iter()
+              .enumerate()
+              .map(|(i, line)| {
+                if i >= start_line && i <= end_line {
+                  format!("  {line}")
+                } else {
+                  line.to_string()
+                }
+              })
+              .collect::<Vec<_>>()
+              .join("\n");
+            let new_text = preserve_trailing_newline(&snap, new_text);
+            self.cell_editors[idx].undo_stack.push(snap);
+            self.cell_editors[idx].redo_stack.clear();
+            self.cell_editors[idx].content =
+              text_editor::Content::with_text(&new_text);
+            // Restore selection with columns shifted by 2
+            restore_selection(
+              &mut self.cell_editors[idx].content,
+              (anchor.0, anchor.1 + 2),
+              (cursor_end.0, cursor_end.1 + 2),
+            );
+            self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
+          } else {
+            // No selection: insert 2 spaces at cursor position
+            self.cell_editors[idx].undo_stack.push(snap);
+            self.cell_editors[idx].redo_stack.clear();
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+                ' ',
+              )));
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+                ' ',
+              )));
+            self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::UnindentLines(idx) => {
+        if idx < self.cell_editors.len() {
+          let snap = self.cell_editors[idx].content.text();
+          let cursor = self.cell_editors[idx].content.cursor().position;
+          let selection = self.cell_editors[idx].content.selection();
+          let has_selection = selection.is_some();
+
+          let lines: Vec<&str> = snap.lines().collect();
+          let (start_line, end_line) = if let Some(sel_text) = &selection {
+            selection_line_range(cursor.line, sel_text, lines.len())
+          } else {
+            (cursor.line, cursor.line)
+          };
+
+          // Compute how many spaces each line will lose
+          let removed: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+              if i >= start_line && i <= end_line {
+                if line.starts_with("  ") {
+                  2
+                } else if line.starts_with(' ') {
+                  1
+                } else {
+                  0
+                }
+              } else {
+                0
+              }
+            })
+            .collect();
+
+          let (anchor, cursor_end) = if let Some(sel_text) = &selection {
+            selection_endpoints(cursor.line, cursor.column, sel_text, &lines)
+          } else {
+            ((cursor.line, cursor.column), (cursor.line, cursor.column))
+          };
+
+          let new_text: String = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| line[removed[i]..].to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+          let new_text = preserve_trailing_newline(&snap, new_text);
+
+          if new_text != snap {
+            self.cell_editors[idx].undo_stack.push(snap);
+            self.cell_editors[idx].redo_stack.clear();
+            self.cell_editors[idx].content =
+              text_editor::Content::with_text(&new_text);
+            if has_selection {
+              restore_selection(
+                &mut self.cell_editors[idx].content,
+                (anchor.0, anchor.1.saturating_sub(removed[anchor.0])),
+                (
+                  cursor_end.0,
+                  cursor_end.1.saturating_sub(removed[cursor_end.0]),
+                ),
+              );
+            }
             self.is_dirty = true;
             self.cell_editors[idx].output_stale = true;
           }
@@ -1337,12 +1471,22 @@ impl WoxiStudio {
         !d.trim().is_empty()
       });
     let is_grouped = is_input && has_output && !in_preview;
-    let cursor_line = editor.content.cursor().position.line;
+    let cursor_pos = editor.content.cursor().position;
+    let cursor_line = cursor_pos.line;
+    let cursor_column = cursor_pos.column;
     let line_count = editor.content.line_count();
     let at_last_line = cursor_line >= line_count.saturating_sub(1);
     let at_first_line = cursor_line == 0;
     let cell_count = self.cell_editors.len();
     let has_selection = editor.content.selection().is_some();
+    let cursor_at_line_start = {
+      let text = editor.content.text();
+      text.lines().nth(cursor_line).map_or(true, |line| {
+        line[..cursor_column.min(line.len())]
+          .chars()
+          .all(|c| c.is_whitespace())
+      })
+    };
     let cell_editor = text_editor(&editor.content)
       .id(iced::widget::Id::from(format!("cell-{idx}")))
       .on_action(move |action| Message::CellAction(idx, action))
@@ -1391,6 +1535,21 @@ impl WoxiStudio {
               )));
             }
             return Some(text_editor::Binding::Sequence(bindings));
+          }
+        }
+        // Tab / Shift+Tab indentation
+        if let keyboard::Key::Named(keyboard::key::Named::Tab) = key.as_ref() {
+          if modifiers.shift() {
+            return Some(text_editor::Binding::Custom(Message::UnindentLines(
+              idx,
+            )));
+          } else if has_selection || cursor_at_line_start {
+            return Some(text_editor::Binding::Custom(Message::IndentLines(
+              idx,
+            )));
+          } else {
+            // Tab not at beginning of line with no selection: do nothing
+            return Some(text_editor::Binding::Sequence(vec![]));
           }
         }
         // Arrow key navigation between cells
@@ -1651,6 +1810,137 @@ impl WoxiStudio {
       .padding([1, 2]);
 
     container(cell_row).width(Fill).into()
+  }
+}
+
+// ── Indent/unindent helpers ─────────────────────────────────────────
+
+/// Given the cursor line, selected text, and total line count,
+/// determine which lines are covered by the selection.
+fn selection_line_range(
+  cursor_line: usize,
+  sel_text: &str,
+  line_count: usize,
+) -> (usize, usize) {
+  let sel_lines = sel_text.chars().filter(|c| *c == '\n').count() + 1;
+  // Cursor could be at either end of the selection
+  let a = cursor_line.saturating_sub(sel_lines - 1);
+  let b = cursor_line;
+  let alt_end = cursor_line + sel_lines - 1;
+  if alt_end < line_count && a == cursor_line {
+    (cursor_line, alt_end)
+  } else {
+    (a, b)
+  }
+}
+
+/// Derive both endpoints of a selection: (anchor, cursor) as (line, col).
+/// The cursor position is known; the anchor is derived from the selected text.
+fn selection_endpoints(
+  cursor_line: usize,
+  cursor_col: usize,
+  sel_text: &str,
+  lines: &[&str],
+) -> ((usize, usize), (usize, usize)) {
+  let sel_newlines = sel_text.chars().filter(|c| *c == '\n').count();
+
+  if sel_newlines == 0 {
+    // Single-line selection
+    // Try forward: anchor before cursor
+    let anchor_col = cursor_col.saturating_sub(sel_text.len());
+    let candidate = &lines[cursor_line][anchor_col
+      ..anchor_col + sel_text.len().min(lines[cursor_line].len() - anchor_col)];
+    if candidate == sel_text {
+      return ((cursor_line, anchor_col), (cursor_line, cursor_col));
+    }
+    // Backward: anchor after cursor
+    let anchor_col = cursor_col + sel_text.len();
+    return ((cursor_line, anchor_col), (cursor_line, cursor_col));
+  }
+
+  let sel_lines_vec: Vec<&str> = sel_text.split('\n').collect();
+
+  // Try forward selection: cursor is at end, anchor is above
+  let anchor_line = cursor_line.saturating_sub(sel_newlines);
+  if anchor_line + sel_newlines == cursor_line {
+    let first_sel_line = sel_lines_vec[0];
+    if let Some(line) = lines.get(anchor_line) {
+      if line.ends_with(first_sel_line) {
+        let anchor_col = line.len() - first_sel_line.len();
+        return ((anchor_line, anchor_col), (cursor_line, cursor_col));
+      }
+    }
+  }
+
+  // Backward selection: cursor is at start, anchor is below
+  let anchor_line = cursor_line + sel_newlines;
+  if anchor_line < lines.len() {
+    let last_sel_line = sel_lines_vec[sel_lines_vec.len() - 1];
+    let anchor_col = last_sel_line.len();
+    return ((anchor_line, anchor_col), (cursor_line, cursor_col));
+  }
+
+  // Fallback
+  ((cursor_line, cursor_col), (cursor_line, cursor_col))
+}
+
+/// After replacing editor content, restore a selection from
+/// `anchor` (line, col) to `cursor_pos` (line, col).
+/// Cursor starts at (0,0) after Content::with_text.
+fn restore_selection(
+  content: &mut text_editor::Content,
+  anchor: (usize, usize),
+  cursor_pos: (usize, usize),
+) {
+  // Move to anchor position first
+  for _ in 0..anchor.0 {
+    content.perform(text_editor::Action::Move(text_editor::Motion::Down));
+  }
+  content.perform(text_editor::Action::Move(text_editor::Motion::Home));
+  for _ in 0..anchor.1 {
+    content.perform(text_editor::Action::Move(text_editor::Motion::Right));
+  }
+
+  // Now select from anchor to cursor_pos
+  if cursor_pos.0 > anchor.0 {
+    for _ in anchor.0..cursor_pos.0 {
+      content.perform(text_editor::Action::Select(text_editor::Motion::Down));
+    }
+    // After moving down, we need to go to the right column on the target line
+    // Select::Down keeps the column, so go to Home first then right
+    content.perform(text_editor::Action::Select(text_editor::Motion::Home));
+    for _ in 0..cursor_pos.1 {
+      content.perform(text_editor::Action::Select(text_editor::Motion::Right));
+    }
+  } else if cursor_pos.0 < anchor.0 {
+    for _ in cursor_pos.0..anchor.0 {
+      content.perform(text_editor::Action::Select(text_editor::Motion::Up));
+    }
+    content.perform(text_editor::Action::Select(text_editor::Motion::Home));
+    for _ in 0..cursor_pos.1 {
+      content.perform(text_editor::Action::Select(text_editor::Motion::Right));
+    }
+  } else {
+    // Same line
+    if cursor_pos.1 > anchor.1 {
+      for _ in anchor.1..cursor_pos.1 {
+        content
+          .perform(text_editor::Action::Select(text_editor::Motion::Right));
+      }
+    } else if cursor_pos.1 < anchor.1 {
+      for _ in cursor_pos.1..anchor.1 {
+        content.perform(text_editor::Action::Select(text_editor::Motion::Left));
+      }
+    }
+  }
+}
+
+/// Preserve trailing newline if the original text had one.
+fn preserve_trailing_newline(original: &str, new_text: String) -> String {
+  if original.ends_with('\n') && !new_text.ends_with('\n') {
+    new_text + "\n"
+  } else {
+    new_text
   }
 }
 
