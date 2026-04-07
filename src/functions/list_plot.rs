@@ -68,6 +68,7 @@ fn parse_list_data(
     }
 
     // Check if it's multiple series: {{y1, y2, ...}, {y3, y4, ...}}
+    // or multiple series of explicit coords: {{{x1,y1}, ...}, {{x2,y2}, ...}}
     if first_inner.len() != 2
       || items
         .iter()
@@ -76,13 +77,7 @@ fn parse_list_data(
       let mut all_series = Vec::new();
       for item in items {
         if let Expr::List(series_items) = item {
-          let mut points = Vec::with_capacity(series_items.len());
-          for (i, val) in series_items.iter().enumerate() {
-            let v_expr = evaluate_expr_to_expr(val).unwrap_or(val.clone());
-            if let Some(y) = try_eval_to_f64(&v_expr) {
-              points.push(((i + 1) as f64, y));
-            }
-          }
+          let points = parse_single_series(series_items)?;
           all_series.push(points);
         }
       }
@@ -101,6 +96,42 @@ fn parse_list_data(
     }
   }
   Ok(vec![points])
+}
+
+/// Parse a single series: either plain y-values or {x, y} pairs.
+fn parse_single_series(
+  series_items: &[Expr],
+) -> Result<Vec<(f64, f64)>, InterpreterError> {
+  // Check if items are {x, y} pairs
+  let is_xy_pairs = !series_items.is_empty()
+    && series_items
+      .iter()
+      .all(|item| matches!(item, Expr::List(pair) if pair.len() == 2));
+
+  let mut points = Vec::with_capacity(series_items.len());
+  if is_xy_pairs {
+    for item in series_items {
+      if let Expr::List(pair) = item
+        && pair.len() == 2
+      {
+        let x_expr = evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone());
+        let y_expr = evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone());
+        if let (Some(x), Some(y)) =
+          (try_eval_to_f64(&x_expr), try_eval_to_f64(&y_expr))
+        {
+          points.push((x, y));
+        }
+      }
+    }
+  } else {
+    for (i, val) in series_items.iter().enumerate() {
+      let v_expr = evaluate_expr_to_expr(val).unwrap_or(val.clone());
+      if let Some(y) = try_eval_to_f64(&v_expr) {
+        points.push(((i + 1) as f64, y));
+      }
+    }
+  }
+  Ok(points)
 }
 
 /// Parse common plot options from args[1..].
