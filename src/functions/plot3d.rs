@@ -625,7 +625,7 @@ fn generate_svg(
   }
 
   // Compute scale and offset to map projected coords to SVG coords
-  let margin = 50.0;
+  let margin = 25.0;
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
   let scale = (draw_w / p_width).min(draw_h / p_height);
@@ -1714,7 +1714,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let p_width = if p_width < 1e-15 { 1.0 } else { p_width };
   let p_height = if p_height < 1e-15 { 1.0 } else { p_height };
 
-  let margin = 30.0;
+  let margin = 10.0;
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
   let scale = (draw_w / p_width).min(draw_h / p_height);
@@ -3159,7 +3159,7 @@ fn generate_scatter_svg(
     ));
   }
 
-  let margin = 50.0;
+  let margin = 25.0;
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
   let scale = (draw_w / p_width).min(draw_h / p_height);
