@@ -139,6 +139,16 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::String(taken))
     }
+    // StringTake[s, UpTo[n]] - take up to n characters
+    Expr::FunctionCall {
+      name: up_name,
+      args: up_args,
+    } if up_name == "UpTo" && up_args.len() == 1 => {
+      let max_n = expr_to_int(&up_args[0])?;
+      let take_n = max_n.min(len) as usize;
+      let taken: String = chars[..take_n].iter().collect();
+      Ok(Expr::String(taken))
+    }
     _ => {
       // StringTake[s, n] or StringTake[s, -n]
       let n = expr_to_int(&args[1])?;

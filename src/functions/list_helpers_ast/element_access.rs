@@ -438,6 +438,22 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Handle UpTo[n]: take up to n elements (clamp to list length)
+  if let Expr::FunctionCall {
+    name: up_name,
+    args: up_args,
+  } = n
+    && up_name == "UpTo"
+    && up_args.len() == 1
+    && let Some(max_count) = expr_to_i128(&up_args[0])
+  {
+    let len = items.len() as i128;
+    let actual = max_count.min(len);
+    if actual >= 0 {
+      return Ok(Expr::List(items[..actual as usize].to_vec()));
+    }
+  }
+
   let count = match expr_to_i128(n) {
     Some(i) => i,
     None => {

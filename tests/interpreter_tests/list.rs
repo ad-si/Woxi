@@ -1231,6 +1231,24 @@ mod take_multi_dim {
       "{{1, 2}, {4, 5}}"
     );
   }
+
+  #[test]
+  fn take_up_to_within_length() {
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, UpTo[3]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn take_up_to_exceeds_length() {
+    assert_eq!(interpret("Take[{1, 2, 3}, UpTo[10]]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn take_up_to_exact_length() {
+    assert_eq!(interpret("Take[{1, 2, 3}, UpTo[3]]").unwrap(), "{1, 2, 3}");
+  }
 }
 
 mod constant_array {
