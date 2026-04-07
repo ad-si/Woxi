@@ -9,4 +9,5 @@
 /tests/cli/jupyterlite
 /tests/cli/playground/pkg
 /tests/scripts/_*
+/node_modules
 /todos.md
