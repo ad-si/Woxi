@@ -5004,13 +5004,25 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <polygon points="193.1,240.5 192.6,236.9 180.7,241.6" fill="rgb(110,173,71)" stroke="rgb(110,173,71)" stroke-width="0.5"/>
 <polygon points="180.6,238.0 180.7,241.6 192.6,236.9" fill="rgb(112,172,70)" stroke="rgb(112,172,70)" stroke-width="0.5"/>
 <polygon points="180.7,241.6 180.8,244.2 193.1,240.5" fill="rgb(96,161,66)" stroke="rgb(96,161,66)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="61.1" y1="237.0" x2="62.4" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="64.8" y="225.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<text x="57.5" y="248.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
 <line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="137.7" y="249.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="130.3" y="271.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="206.9" y1="284.0" x2="208.1" y2="280.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="210.6" y="272.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="203.2" y="295.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 <line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="218.5" y1="287.0" x2="221.4" y2="289.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="227.3" y="295.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
@@ -5018,11 +5030,11 @@ expression: "export_svg(\"SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta,
 <text x="269.1" y="250.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="302.1" y1="197.0" x2="305.1" y2="199.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="310.9" y="205.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="218.0" y1="283.7" x2="222.0" y2="283.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="283.7" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
-<line x1="218.0" y1="256.6" x2="222.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="256.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="218.0" y1="229.5" x2="222.0" y2="229.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="229.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="50.0" y1="229.5" x2="54.0" y2="229.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="229.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<line x1="50.0" y1="202.4" x2="54.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="202.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="50.0" y1="175.3" x2="54.0" y2="175.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="175.3" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 </svg>

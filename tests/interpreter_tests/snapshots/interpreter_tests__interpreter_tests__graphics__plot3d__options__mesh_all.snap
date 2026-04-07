@@ -5004,13 +5004,25 @@ expression: "export_svg(\"Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, Mesh -> 
 <polygon points="221.7,256.7 218.3,259.0 219.9,258.8" fill="rgb(49,85,46)" stroke="#00000060" stroke-width="0.5"/>
 <polygon points="214.7,263.4 218.0,260.9 216.5,261.3" fill="rgb(48,81,47)" stroke="#00000060" stroke-width="0.5"/>
 <polygon points="219.9,258.8 216.5,261.3 218.0,260.9" fill="rgb(48,82,45)" stroke="#00000060" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="78.0" y1="242.4" x2="79.2" y2="238.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="81.7" y="231.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
+<text x="74.3" y="253.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
 <line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="137.7" y="249.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="130.3" y="271.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="190.0" y1="278.5" x2="191.3" y2="274.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="193.7" y="267.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
+<text x="186.3" y="289.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
 <line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="233.4" y1="271.0" x2="236.3" y2="273.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="242.2" y="279.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
@@ -5018,13 +5030,13 @@ expression: "export_svg(\"Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, Mesh -> 
 <text x="272.8" y="246.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="294.7" y1="205.0" x2="297.6" y2="207.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="303.5" y="213.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="218.0" y1="272.1" x2="222.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="272.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
-<line x1="218.0" y1="256.6" x2="222.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="256.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="218.0" y1="241.1" x2="222.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="241.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
-<line x1="218.0" y1="225.6" x2="222.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="225.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="50.0" y1="217.9" x2="54.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="217.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<line x1="50.0" y1="202.4" x2="54.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="202.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="50.0" y1="186.9" x2="54.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="186.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<line x1="50.0" y1="171.4" x2="54.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="171.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 </svg>
