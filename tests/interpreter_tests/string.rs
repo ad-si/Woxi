@@ -1496,11 +1496,11 @@ mod string_form {
   use super::*;
 
   #[test]
-  fn unevaluated_display() {
-    // StringForm stays unevaluated (displayed as function call)
+  fn display_with_placeholder() {
+    // StringForm displays the formatted string in OutputForm
     assert_eq!(
       interpret("StringForm[\"The value is ``.\", 5]").unwrap(),
-      "StringForm[The value is ``., 5]"
+      "The value is 5."
     );
   }
 
@@ -1558,6 +1558,14 @@ mod string_form {
     assert_eq!(
       interpret("ToString[StringForm[\"`` + `` = ``\", 1, 2, 3]]").unwrap(),
       "1 + 2 = 3"
+    );
+  }
+
+  #[test]
+  fn display_indexed_placeholders() {
+    assert_eq!(
+      interpret("StringForm[\"`1` plus `2` is `3`\", 1, 2, 3]").unwrap(),
+      "1 plus 2 is 3"
     );
   }
 }
