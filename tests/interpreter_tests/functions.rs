@@ -5886,7 +5886,7 @@ mod generating_function {
   fn identity_sequence() {
     assert_eq!(
       interpret("GeneratingFunction[n, n, x]").unwrap(),
-      "x/(1 - x)^2"
+      "x/(-1 + x)^2"
     );
   }
 
@@ -5894,7 +5894,7 @@ mod generating_function {
   fn n_squared() {
     assert_eq!(
       interpret("GeneratingFunction[n^2, n, x]").unwrap(),
-      "(x + x^2)/(1 - x)^3"
+      "(-x - x^2)/(-1 + x)^3"
     );
   }
 
@@ -5902,7 +5902,7 @@ mod generating_function {
   fn n_cubed() {
     assert_eq!(
       interpret("GeneratingFunction[n^3, n, x]").unwrap(),
-      "(x + 4*x^2 + x^3)/(1 - x)^4"
+      "(x + 4*x^2 + x^3)/(-1 + x)^4"
     );
   }
 
@@ -5910,7 +5910,7 @@ mod generating_function {
   fn n_to_4() {
     assert_eq!(
       interpret("GeneratingFunction[n^4, n, x]").unwrap(),
-      "(x + 11*x^2 + 11*x^3 + x^4)/(1 - x)^5"
+      "(-x - 11*x^2 - 11*x^3 - x^4)/(-1 + x)^5"
     );
   }
 
@@ -5959,7 +5959,7 @@ mod generating_function {
     // Binomial[n,2] evaluates to ((-1+n)*n)/2 which expands into GF terms
     assert_eq!(
       interpret("Simplify[GeneratingFunction[Binomial[n, 2], n, x]]").unwrap(),
-      "x^2/(1 - 3*x + 3*x^2 - x^3)"
+      "-(x^2/(-1 + x)^3)"
     );
   }
 
