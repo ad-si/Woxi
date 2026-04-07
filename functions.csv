@@ -794,7 +794,7 @@ FourierParameters,Option for Fourier transform conventions,✅,none,4.0,803
 Check,Evaluates an expression and returns a fallback if messages are generated,✅,pure,1.0,804
 BarLegend,Color bar legend for plots,✅,none,9.0,805
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6.0,806
-MatrixExp,Computes the matrix exponential,✅,pure,2.0,807
+MatrixExp,Computes the matrix exponential,🚫,pure,2.0,807
 ImageResolution,Option for image resolution in DPI,✅,none,3.0,808
 ImportString,Imports data from a string (CSV),✅,pure,4.0,809
 RandomGraph,Generate a random graph,✅,none,8.0,810
