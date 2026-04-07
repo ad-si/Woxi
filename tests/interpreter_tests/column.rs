@@ -6,13 +6,14 @@ mod column_text_mode {
   #[test]
   fn column_basic_list() {
     clear_state();
-    assert_eq!(interpret("Column[{1, 2, 3}]").unwrap(), "Column[{1, 2, 3}]");
+    // Column displays each element on a new line in OutputForm
+    assert_eq!(interpret("Column[{1, 2, 3}]").unwrap(), "1\n2\n3");
   }
 
   #[test]
   fn column_symbolic() {
     clear_state();
-    assert_eq!(interpret("Column[{a, b, c}]").unwrap(), "Column[{a, b, c}]");
+    assert_eq!(interpret("Column[{a, b, c}]").unwrap(), "a\nb\nc");
   }
 
   #[test]
@@ -30,28 +31,20 @@ mod column_text_mode {
   #[test]
   fn column_with_center_alignment() {
     clear_state();
-    assert_eq!(
-      interpret("Column[{1, 2, 3}, Center]").unwrap(),
-      "Column[{1, 2, 3}, Center]"
-    );
+    // Alignment is a display hint; text mode still shows newlines
+    assert_eq!(interpret("Column[{1, 2, 3}, Center]").unwrap(), "1\n2\n3");
   }
 
   #[test]
   fn column_with_left_alignment() {
     clear_state();
-    assert_eq!(
-      interpret("Column[{1, 2, 3}, Left]").unwrap(),
-      "Column[{1, 2, 3}, Left]"
-    );
+    assert_eq!(interpret("Column[{1, 2, 3}, Left]").unwrap(), "1\n2\n3");
   }
 
   #[test]
   fn column_with_right_alignment() {
     clear_state();
-    assert_eq!(
-      interpret("Column[{1, 2, 3}, Right]").unwrap(),
-      "Column[{1, 2, 3}, Right]"
-    );
+    assert_eq!(interpret("Column[{1, 2, 3}, Right]").unwrap(), "1\n2\n3");
   }
 
   #[test]
@@ -63,18 +56,16 @@ mod column_text_mode {
   #[test]
   fn column_evaluates_args() {
     clear_state();
-    assert_eq!(
-      interpret("Column[{1 + 1, 2 + 2}]").unwrap(),
-      "Column[{2, 4}]"
-    );
+    assert_eq!(interpret("Column[{1 + 1, 2 + 2}]").unwrap(), "2\n4");
   }
 
   #[test]
   fn column_nested_in_list() {
     clear_state();
+    // Inside a list, Column renders with newlines
     assert_eq!(
       interpret("{Column[{1, 2}], Column[{3, 4}]}").unwrap(),
-      "{Column[{1, 2}], Column[{3, 4}]}"
+      "{1\n2, 3\n4}"
     );
   }
 
@@ -83,7 +74,7 @@ mod column_text_mode {
     clear_state();
     assert_eq!(
       interpret("Column[{1, 2, 3}, Center, 4]").unwrap(),
-      "Column[{1, 2, 3}, Center, 4]"
+      "1\n2\n3"
     );
   }
 }
@@ -149,8 +140,8 @@ mod column_visual_mode {
   fn column_empty_list_passthrough() {
     clear_state();
     let result = interpret_with_stdout("Column[{}]").unwrap();
-    // Empty list can't render SVG, should pass through
-    assert_eq!(result.result, "Column[{}]");
+    // Empty list renders as empty string
+    assert_eq!(result.result, "");
   }
 
   #[test]
