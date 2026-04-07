@@ -119,6 +119,7 @@ enum Message {
 
   // Cell editing
   CellAction(usize, text_editor::Action),
+  WrapSelection(usize, char, char),
   Undo(usize),
   Redo(usize),
   CellStyleChanged(usize, CellStyle),
@@ -649,6 +650,38 @@ impl WoxiStudio {
           }
           self.cell_editors[idx].content.perform(action);
           if is_edit {
+            self.is_dirty = true;
+            self.cell_editors[idx].output_stale = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::WrapSelection(idx, open, close) => {
+        if idx < self.cell_editors.len() {
+          if let Some(sel) = self.cell_editors[idx].content.selection() {
+            // Snapshot for undo
+            let snap = self.cell_editors[idx].content.text();
+            self.cell_editors[idx].undo_stack.push(snap);
+            self.cell_editors[idx].redo_stack.clear();
+            // Insert open char (replaces the selection)
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+                open,
+              )));
+            // Insert the original selected text back
+            for c in sel.chars() {
+              self.cell_editors[idx].content.perform(
+                text_editor::Action::Edit(text_editor::Edit::Insert(c)),
+              );
+            }
+            // Insert close char
+            self.cell_editors[idx]
+              .content
+              .perform(text_editor::Action::Edit(text_editor::Edit::Insert(
+                close,
+              )));
             self.is_dirty = true;
             self.cell_editors[idx].output_stale = true;
           }
@@ -1309,6 +1342,7 @@ impl WoxiStudio {
     let at_last_line = cursor_line >= line_count.saturating_sub(1);
     let at_first_line = cursor_line == 0;
     let cell_count = self.cell_editors.len();
+    let has_selection = editor.content.selection().is_some();
     let cell_editor = text_editor(&editor.content)
       .id(iced::widget::Id::from(format!("cell-{idx}")))
       .on_action(move |action| Message::CellAction(idx, action))
@@ -1381,6 +1415,24 @@ impl WoxiStudio {
                 text_editor::Binding::Unfocus,
                 text_editor::Binding::Custom(Message::FocusDividerAbove(idx)),
               ]));
+            }
+          }
+        }
+        // Wrap selection with matching brackets/quotes
+        if has_selection {
+          if let Some(ref text) = key_press.text {
+            let pair = match text.as_ref() {
+              "{" => Some(('{', '}')),
+              "[" => Some(('[', ']')),
+              "\"" => Some(('"', '"')),
+              "'" => Some(('\'', '\'')),
+              "(" => Some(('(', ')')),
+              _ => None,
+            };
+            if let Some((open, close)) = pair {
+              return Some(text_editor::Binding::Custom(
+                Message::WrapSelection(idx, open, close),
+              ));
             }
           }
         }
