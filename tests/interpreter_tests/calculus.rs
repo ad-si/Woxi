@@ -615,6 +615,25 @@ mod limit {
   }
 
   #[test]
+  fn limit_sin_x_over_x_no_warnings() {
+    clear_state();
+    // Limit[Sin[x]/x, x -> 0] should not emit Power::infy warnings
+    // during its internal trial substitution
+    let result = interpret_with_stdout("Limit[Sin[x]/x, x -> 0]").unwrap();
+    assert_eq!(result.result, "1");
+    assert!(
+      result.warnings.is_empty(),
+      "Expected no warnings but got: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn limit_lhopital_x2_minus_1_over_x_minus_1() {
+    assert_eq!(interpret("Limit[(x^2 - 1)/(x - 1), x -> 1]").unwrap(), "2");
+  }
+
+  #[test]
   fn limit_one_over_x_squared_at_zero() {
     // 1/x^2 -> Infinity from both sides, so no direction needed
     assert_eq!(interpret("Limit[1/x^2, x -> 0]").unwrap(), "Infinity");

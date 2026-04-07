@@ -5404,10 +5404,15 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return limit_at_infinity(&args[0], &var_name, &point);
   }
 
-  // Strategy: try direct substitution first
+  // Strategy: try direct substitution first.
+  // Suppress messages during trial substitution (e.g. Power::infy for Sin[x]/x at x=0)
   let substituted =
     crate::syntax::substitute_variable(&args[0], &var_name, &point);
+  let saved_warnings = crate::snapshot_warnings();
+  crate::push_quiet();
   let result = crate::evaluator::evaluate_expr_to_expr(&substituted);
+  crate::pop_quiet();
+  crate::restore_warnings(saved_warnings);
 
   match result {
     Ok(ref val) => {
@@ -5456,8 +5461,12 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::substitute_variable(num, &var_name, &point);
     let den_at_point =
       crate::syntax::substitute_variable(den, &var_name, &point);
+    let saved2 = crate::snapshot_warnings();
+    crate::push_quiet();
     let num_val = crate::evaluator::evaluate_expr_to_expr(&num_at_point);
     let den_val = crate::evaluator::evaluate_expr_to_expr(&den_at_point);
+    crate::pop_quiet();
+    crate::restore_warnings(saved2);
 
     if let (Ok(Expr::Integer(0)), Ok(Expr::Integer(0))) = (&num_val, &den_val) {
       // Apply L'Hôpital: Limit[f'/g', x -> x0]
