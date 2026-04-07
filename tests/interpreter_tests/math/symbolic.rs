@@ -210,6 +210,19 @@ mod sum {
   }
 
   #[test]
+  fn sum_k_cubed_symbolic() {
+    assert_eq!(
+      interpret("Sum[k^3, {k, 1, n}]").unwrap(),
+      "(n^2*(1 + n)^2)/4"
+    );
+  }
+
+  #[test]
+  fn sum_k_cubed_numeric() {
+    assert_eq!(interpret("Sum[k^3, {k, 1, 10}]").unwrap(), "3025");
+  }
+
+  #[test]
   fn sum_geometric_symbolic() {
     assert_eq!(
       interpret("Sum[1 / 2 ^ i, {i, 1, k}]").unwrap(),

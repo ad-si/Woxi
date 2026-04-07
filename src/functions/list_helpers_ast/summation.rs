@@ -751,6 +751,36 @@ fn try_symbolic_sum(
       }));
     }
 
+    // Sum[k^3, {k, 1, n}] = (n*(1 + n)/2)^2
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = body
+      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
+      && matches!(exp.as_ref(), Expr::Integer(3))
+    {
+      let n = max_expr.clone();
+      // (n*(1+n)/2)^2
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(n.clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(n),
+            }),
+          }),
+          right: Box::new(Expr::Integer(2)),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      }));
+    }
+
     // Sum[1/k^s, {k, 1, n}] = HarmonicNumber[n, s]
     if let Some(s) = match_reciprocal_power(body, var_name)
       && s >= 1
