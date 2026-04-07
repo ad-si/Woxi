@@ -651,6 +651,13 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sin expects 1 argument".into(),
     ));
   }
+  // Sin[ArcSin[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcSin"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -794,6 +801,13 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cos expects 1 argument".into(),
     ));
   }
+  // Cos[ArcCos[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCos"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -918,6 +932,13 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Tan expects 1 argument".into(),
     ));
+  }
+  // Tan[ArcTan[x]] = x (inverse function identity)
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcTan"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -2149,6 +2170,13 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sinh expects 1 argument".into(),
     ));
   }
+  // Sinh[ArcSinh[x]] = x
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcSinh"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2175,6 +2203,13 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cosh expects 1 argument".into(),
     ));
   }
+  // Cosh[ArcCosh[x]] = x
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcCosh"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -2199,6 +2234,13 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Tanh expects 1 argument".into(),
     ));
+  }
+  // Tanh[ArcTanh[x]] = x
+  if let Expr::FunctionCall { name, args: ia } = &args[0]
+    && name == "ArcTanh"
+    && ia.len() == 1
+  {
+    return Ok(ia[0].clone());
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
