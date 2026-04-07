@@ -5004,13 +5004,25 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <polygon points="198.1,204.5 197.8,205.8 186.2,205.4" fill="rgb(98,65,19)" stroke="rgb(98,65,19)" stroke-width="0.5"/>
 <polygon points="174.2,205.4 174.3,206.7 162.2,204.5" fill="rgb(94,63,19)" stroke="rgb(94,63,19)" stroke-width="0.5"/>
 <polygon points="186.2,205.4 186.1,206.7 174.2,205.4" fill="rgb(96,65,19)" stroke="rgb(96,65,19)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="67.2" y1="238.9" x2="68.4" y2="235.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="70.8" y="227.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-5</text>
+<text x="63.5" y="250.3" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-5</text>
 <line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="137.7" y="249.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="130.3" y="271.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="200.9" y1="282.0" x2="202.1" y2="278.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="204.6" y="270.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">5</text>
+<text x="197.2" y="293.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">5</text>
 <line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="227.4" y1="277.4" x2="230.4" y2="280.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="236.2" y="285.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-5</text>
@@ -5018,13 +5030,13 @@ expression: "export_svg(\"RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]\")"
 <text x="272.8" y="246.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="300.6" y1="198.7" x2="303.5" y2="201.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="309.4" y="206.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">5</text>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="218.0" y1="287.5" x2="222.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="287.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="218.0" y1="267.8" x2="222.0" y2="267.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="267.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
-<line x1="218.0" y1="248.1" x2="222.0" y2="248.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="248.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">4</text>
-<line x1="218.0" y1="228.4" x2="222.0" y2="228.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="228.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">6</text>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="50.0" y1="233.4" x2="54.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="233.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="50.0" y1="213.7" x2="54.0" y2="213.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="213.7" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
+<line x1="50.0" y1="193.9" x2="54.0" y2="193.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="193.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">4</text>
+<line x1="50.0" y1="174.2" x2="54.0" y2="174.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="174.2" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">6</text>
 </svg>

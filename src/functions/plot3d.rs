@@ -782,6 +782,36 @@ fn draw_axes(
 
   let origin = corners[min_depth_idx];
 
+  // Draw all 12 edges of the bounding box (lighter than axis lines).
+  // Edges connect corners that differ in exactly one coordinate.
+  let box_edges: [(usize, usize); 12] = [
+    // Bottom face (z = -Z_SCALE): corners 0,1,2,3
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 3),
+    // Top face (z = +Z_SCALE): corners 4,5,6,7
+    (4, 5),
+    (4, 6),
+    (5, 7),
+    (6, 7),
+    // Vertical edges connecting bottom to top
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
+  ];
+  for &(i, j) in &box_edges {
+    let (ex0, ey0) =
+      to_svg(project(corners[i], camera).0, project(corners[i], camera).1);
+    let (ex1, ey1) =
+      to_svg(project(corners[j], camera).0, project(corners[j], camera).1);
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+      ex0, ey0, ex1, ey1, axis_color
+    ));
+  }
+
   // The three axis edges from the closest corner.
   // Each entry: (endpoint, value_range, axis_goes_negative).
   // When the axis direction goes from +1 to -1 in normalized space, the
@@ -796,21 +826,62 @@ fn draw_axes(
     y: -origin.y,
     z: origin.z,
   };
+  // Place the z-axis on the vertical edge that is most to the left or right
+  // in the viewport, so labels sit outside the bounding box and don't
+  // overlap the plot surface.  Among the 4 bottom corners, pick the one
+  // whose projection has the most extreme (leftmost or rightmost) x.
+  let bottom_indices: [usize; 4] = [0, 1, 2, 3];
+  let mut min_x = f64::INFINITY;
+  let mut max_x = f64::NEG_INFINITY;
+  let mut min_x_idx = 0usize;
+  let mut max_x_idx = 0usize;
+  let mut cx_bottom = 0.0;
+  for &idx in &bottom_indices {
+    let px = project(corners[idx], camera).0;
+    cx_bottom += px;
+    if px < min_x {
+      min_x = px;
+      min_x_idx = idx;
+    }
+    if px > max_x {
+      max_x = px;
+      max_x_idx = idx;
+    }
+  }
+  cx_bottom /= 4.0;
+  // Pick whichever extreme is farther from center
+  let z_origin_idx = if (min_x - cx_bottom).abs() >= (max_x - cx_bottom).abs() {
+    min_x_idx
+  } else {
+    max_x_idx
+  };
+  let z_origin = corners[z_origin_idx];
   let z_end = Point3D {
-    x: origin.x,
-    y: origin.y,
+    x: z_origin.x,
+    y: z_origin.y,
     z: Z_SCALE,
   };
 
-  let axes: [(Point3D, (f64, f64), bool); 3] = [
-    (x_end, x_range, origin.x > x_end.x),
-    (y_end, y_range, origin.y > y_end.y),
-    (z_end, z_range, false), // z always goes from -Z_SCALE to +Z_SCALE
+  let axes: [(Point3D, Point3D, (f64, f64), bool); 3] = [
+    (origin, x_end, x_range, origin.x > x_end.x),
+    (origin, y_end, y_range, origin.y > y_end.y),
+    (z_origin, z_end, z_range, false), // z always goes from -Z_SCALE to +Z_SCALE
   ];
 
-  for &(end, (val_min, val_max), flipped) in &axes {
-    let (sx0, sy0) =
-      to_svg(project(origin, camera).0, project(origin, camera).1);
+  // Project the box center so we can orient tick labels outward
+  let box_center = Point3D {
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+  };
+  let (cx, cy) =
+    to_svg(project(box_center, camera).0, project(box_center, camera).1);
+
+  for &(axis_origin, end, (val_min, val_max), flipped) in &axes {
+    let (sx0, sy0) = to_svg(
+      project(axis_origin, camera).0,
+      project(axis_origin, camera).1,
+    );
     let (sx1, sy1) = to_svg(project(end, camera).0, project(end, camera).1);
 
     // Axis line
@@ -837,9 +908,9 @@ fn draw_axes(
       let t = if flipped { 1.0 - t_raw } else { t_raw };
 
       let pt = Point3D {
-        x: origin.x + (end.x - origin.x) * t,
-        y: origin.y + (end.y - origin.y) * t,
-        z: origin.z + (end.z - origin.z) * t,
+        x: axis_origin.x + (end.x - axis_origin.x) * t,
+        y: axis_origin.y + (end.y - axis_origin.y) * t,
+        z: axis_origin.z + (end.z - axis_origin.z) * t,
       };
       let (tx, ty) = to_svg(project(pt, camera).0, project(pt, camera).1);
 
@@ -856,10 +927,21 @@ fn draw_axes(
                     tx, ty, tx + perpx, ty + perpy, axis_color
                 ));
 
+        // Place label on the outward side (away from box center)
+        let mid_x = (sx0 + sx1) * 0.5;
+        let mid_y = (sy0 + sy1) * 0.5;
+        let to_center_x = cx - mid_x;
+        let to_center_y = cy - mid_y;
+        let sign = if perpx * to_center_x + perpy * to_center_y > 0.0 {
+          -1.0
+        } else {
+          1.0
+        };
+
         let label = format_tick(tick_val);
         svg.push_str(&format!(
                     "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + perpx * 3.0, ty + perpy * 3.0, font_size, axis_color, label
+                    tx + perpx * 3.0 * sign, ty + perpy * 3.0 * sign, font_size, axis_color, label
                 ));
       }
 

@@ -9984,17 +9984,29 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, {z
 <polygon points="175.0,206.4 180.6,206.1 175.0,204.3" fill="rgb(64,87,123)" stroke="rgb(64,87,123)" stroke-width="0.5"/>
 <polygon points="180.6,208.2 183.7,202.8 180.6,206.1" fill="rgb(57,79,111)" stroke="rgb(57,79,111)" stroke-width="0.5"/>
 <polygon points="175.0,206.4 180.6,208.2 180.6,206.1" fill="rgb(64,87,123)" stroke="rgb(64,87,123)" stroke-width="0.5"/>
+<line x1="50.0" y1="233.4" x2="218.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="142.0" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="171.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="225.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="72.5" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="142.0" y1="134.4" x2="142.0" y2="72.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="310.0" y1="188.6" x2="310.0" y2="126.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="50.0" y1="233.4" x2="51.2" y2="229.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="53.7" y="221.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<text x="46.3" y="244.8" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
 <line x1="92.0" y1="246.9" x2="93.2" y2="243.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="95.7" y="235.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<text x="88.3" y="258.3" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
 <line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="137.7" y="249.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="130.3" y="271.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
 <line x1="176.0" y1="274.0" x2="177.3" y2="270.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="179.7" y="262.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<text x="172.3" y="285.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
 <line x1="218.0" y1="287.5" x2="219.3" y2="283.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="221.7" y="276.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="214.3" y="299.0" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 <line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="218.0" y1="287.5" x2="221.0" y2="290.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="226.8" y="295.7" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
@@ -10006,15 +10018,15 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, {z
 <text x="295.8" y="221.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
 <line x1="310.0" y1="188.6" x2="312.9" y2="191.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="318.8" y="196.7" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="1"/>
-<line x1="218.0" y1="287.5" x2="222.0" y2="287.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="287.5" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
-<line x1="218.0" y1="272.1" x2="222.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="272.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
-<line x1="218.0" y1="256.6" x2="222.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="256.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="218.0" y1="241.1" x2="222.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="241.1" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
-<line x1="218.0" y1="225.6" x2="222.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="230.0" y="225.6" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<line x1="50.0" y1="233.4" x2="50.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="50.0" y1="233.4" x2="54.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="233.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<line x1="50.0" y1="217.9" x2="54.0" y2="217.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="217.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<line x1="50.0" y1="202.4" x2="54.0" y2="202.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="202.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="50.0" y1="186.9" x2="54.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="186.9" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<line x1="50.0" y1="171.4" x2="54.0" y2="171.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="38.0" y="171.4" font-size="13" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 </svg>
