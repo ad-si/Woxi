@@ -969,32 +969,55 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let mut x_vals = Vec::new();
-  let mut y_vals = Vec::new();
-  for (x, y) in xs.iter().zip(ys.iter()) {
-    match (expr_to_num(x), expr_to_num(y)) {
-      (Some(xv), Some(yv)) => {
-        x_vals.push(xv);
-        y_vals.push(yv);
-      }
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Covariance".to_string(),
-          args: args.to_vec(),
-        });
-      }
-    }
+  // Check all elements are numeric
+  let all_numeric = xs.iter().all(|x| expr_to_num(x).is_some())
+    && ys.iter().all(|y| expr_to_num(y).is_some());
+  if !all_numeric {
+    return Ok(Expr::FunctionCall {
+      name: "Covariance".to_string(),
+      args: args.to_vec(),
+    });
   }
-  let n = x_vals.len() as f64;
-  let mean_x = x_vals.iter().sum::<f64>() / n;
-  let mean_y = y_vals.iter().sum::<f64>() / n;
-  let cov: f64 = x_vals
-    .iter()
-    .zip(y_vals.iter())
-    .map(|(x, y)| (x - mean_x) * (y - mean_y))
-    .sum::<f64>()
-    / (n - 1.0);
-  Ok(num_to_expr(cov))
+
+  // Compute means symbolically
+  let mean_x = mean_ast(&[args[0].clone()])?;
+  let mean_y = mean_ast(&[args[1].clone()])?;
+
+  let n = xs.len();
+  // Compute sum of (x_i - mean_x) * (y_i - mean_y) symbolically
+  let mut terms = Vec::with_capacity(n);
+  for (x, y) in xs.iter().zip(ys.iter()) {
+    let dx = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(x.clone()),
+      right: Box::new(mean_x.clone()),
+    };
+    let dy = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(y.clone()),
+      right: Box::new(mean_y.clone()),
+    };
+    let product = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(dx),
+      right: Box::new(dy),
+    };
+    let val = crate::evaluator::evaluate_expr_to_expr(&product)?;
+    terms.push(val);
+  }
+
+  // Sum and divide by (n-1)
+  let sum_expr = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(sum_val),
+    right: Box::new(Expr::Integer((n - 1) as i128)),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Correlation[list1, list2] - Pearson correlation coefficient

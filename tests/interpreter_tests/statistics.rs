@@ -646,6 +646,15 @@ mod covariance {
   fn covariance_integers() {
     assert_eq!(interpret("Covariance[{1, 2, 3}, {4, 5, 6}]").unwrap(), "1");
   }
+
+  #[test]
+  fn covariance_exact_rational() {
+    // Should return exact rational, not float
+    assert_eq!(
+      interpret("Covariance[{1, 2, 3, 4}, {2, 4, 6, 8}]").unwrap(),
+      "10/3"
+    );
+  }
 }
 
 mod correlation {
