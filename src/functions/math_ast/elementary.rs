@@ -1371,6 +1371,24 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     _ => {
+      // For symbolic constants (Pi, E, GoldenRatio, etc.), return x - Floor[x]
+      // symbolically to avoid losing precision by converting to float.
+      let is_known_constant = matches!(&args[0], Expr::Constant(_))
+        || matches!(&args[0], Expr::Identifier(s) if matches!(s.as_str(),
+          "GoldenRatio" | "EulerGamma" | "Catalan" | "Khinchin" | "Glaisher"));
+      if is_known_constant {
+        let floor_val =
+          crate::functions::math_ast::floor_ast(&[args[0].clone()])?;
+        if let Expr::Integer(n) = &floor_val {
+          if *n == 0 {
+            return Ok(args[0].clone());
+          }
+          return crate::evaluator::evaluate_function_call_ast(
+            "Plus",
+            &[args[0].clone(), Expr::Integer(-*n)],
+          );
+        }
+      }
       if let Some(f) = try_eval_to_f64(&args[0]) {
         let frac = f - f.trunc();
         if frac == 0.0 {
