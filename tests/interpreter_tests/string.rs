@@ -1262,6 +1262,42 @@ mod string_match_q_patterns {
   }
 
   #[test]
+  fn repeated_with_count() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["aaa", Repeated["a", 3]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["aa", Repeated["a", 3]]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["aaaa", Repeated["a", 3]]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn repeated_with_range() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["aaa", Repeated["a", {2, 4}]]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a", Repeated["a", {2, 4}]]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn repeated_with_list_count() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["aaa", Repeated["a", {3}]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn word_character_repeated() {
     assert_eq!(
       interpret(r#"StringMatchQ["abc123DEF", Repeated[WordCharacter]]"#)
