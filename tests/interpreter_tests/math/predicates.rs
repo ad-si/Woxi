@@ -705,6 +705,30 @@ mod abs_infinity {
   }
 }
 
+mod abs_exact {
+  use super::*;
+
+  #[test]
+  fn rational_negative() {
+    assert_eq!(interpret("Abs[-3/4]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn rational_positive() {
+    assert_eq!(interpret("Abs[3/4]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn rational_negative_improper() {
+    assert_eq!(interpret("Abs[-7/3]").unwrap(), "7/3");
+  }
+
+  #[test]
+  fn integer_negative() {
+    assert_eq!(interpret("Abs[-5]").unwrap(), "5");
+  }
+}
+
 mod possible_zero_q {
   use super::*;
 
