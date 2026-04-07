@@ -5,7 +5,8 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_WIDTH, generate_axes_only, parse_image_size, substitute_var,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, generate_axes_only, parse_image_size,
+  substitute_var,
 };
 use crate::syntax::Expr;
 
@@ -110,7 +111,8 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
       replacement,
     } = opt
       && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Some((w, h, fw)) =
+        parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
     {
       svg_width = w;
       svg_height = h;

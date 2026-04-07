@@ -6,8 +6,8 @@ use iced::keyboard;
 use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
-  Column, button, column, container, image, pick_list, row, rule, scrollable,
-  space, svg, text, text_editor,
+  Column, button, column, container, image, mouse_area, opaque, pick_list, row,
+  rule, scrollable, space, stack, svg, text, text_editor,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -70,6 +70,8 @@ struct WoxiStudio {
   scale_factor: f32,
   /// Font database for SVG text rendering (loaded once at startup).
   fontdb: Arc<resvg::usvg::fontdb::Database>,
+  /// Index of the cell whose graphic is shown in the fullscreen modal.
+  graphics_modal_cell: Option<usize>,
 }
 
 /// Editor state for a single cell.
@@ -157,6 +159,10 @@ enum Message {
 
   // Display
   ScaleFactorChanged(f32),
+
+  // Graphics modal
+  OpenGraphicsModal(usize),
+  CloseGraphicsModal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,6 +270,7 @@ impl WoxiStudio {
           db.load_system_fonts();
           Arc::new(db)
         },
+        graphics_modal_cell: None,
       },
       task,
     )
@@ -709,6 +716,20 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::OpenGraphicsModal(idx) => {
+        if idx < self.cell_editors.len()
+          && self.cell_editors[idx].graphics_svg.is_some()
+        {
+          self.graphics_modal_cell = Some(idx);
+        }
+        Task::none()
+      }
+
+      Message::CloseGraphicsModal => {
+        self.graphics_modal_cell = None;
+        Task::none()
+      }
+
       Message::ScaleFactorChanged(scale) => {
         if (scale - self.scale_factor).abs() > f32::EPSILON {
           self.scale_factor = scale;
@@ -909,6 +930,16 @@ impl WoxiStudio {
       }
 
       Message::KeyPressed(key, modifiers) => {
+        // Escape closes the graphics modal
+        if matches!(
+          key.as_ref(),
+          keyboard::Key::Named(keyboard::key::Named::Escape)
+        ) && self.graphics_modal_cell.is_some()
+        {
+          self.graphics_modal_cell = None;
+          return Task::none();
+        }
+
         if modifiers.command() {
           match key.as_ref() {
             keyboard::Key::Character("s") => {
@@ -1135,14 +1166,57 @@ impl WoxiStudio {
     .padding([3, 8]);
 
     // ── Layout ──
-    column![
+    let main_view: Element<'_, Message> = column![
       toolbar,
       rule::horizontal(1).style(separator_style),
       cells,
       status_bar,
     ]
     .spacing(0)
-    .into()
+    .into();
+
+    // ── Graphics modal overlay ──
+    if let Some(modal_idx) = self.graphics_modal_cell {
+      let editor = &self.cell_editors[modal_idx];
+
+      let graphic: Element<'_, Message> =
+        if let Some((ref img_handle, _w, _h)) = editor.graphics_image {
+          image(img_handle.clone())
+            .width(iced::Length::Shrink)
+            .height(iced::Length::Shrink)
+            .content_fit(iced::ContentFit::Contain)
+            .into()
+        } else if let Some(ref handle) = editor.graphics_handle {
+          svg::Svg::new(handle.clone())
+            .width(iced::Length::Shrink)
+            .height(iced::Length::Shrink)
+            .into()
+        } else {
+          text("No graphic").into()
+        };
+
+      let close_btn = button(text("Close").size(13))
+        .on_press(Message::CloseGraphicsModal)
+        .padding([6, 16])
+        .style(muted_button_style);
+
+      let modal_content =
+        container(column![graphic, close_btn].spacing(12).align_x(Center))
+          .center(Fill)
+          .padding(40);
+
+      let backdrop = mouse_area(
+        container(opaque(modal_content))
+          .width(Fill)
+          .height(Fill)
+          .style(graphics_modal_backdrop_style),
+      )
+      .on_press(Message::CloseGraphicsModal);
+
+      stack![main_view, backdrop].into()
+    } else {
+      main_view
+    }
   }
 
   /// Small "+" divider above a cell (inserts before it).
@@ -1370,6 +1444,7 @@ impl WoxiStudio {
       }
 
       // Graphics rendering (pre-rasterized image, falls back to SVG)
+      // Double-click opens a fullscreen modal for detailed inspection.
       if let Some((ref img_handle, w, h)) = editor.graphics_image {
         let mut img_widget = image(img_handle.clone())
           .width(iced::Length::Fixed(w as f32))
@@ -1377,14 +1452,18 @@ impl WoxiStudio {
         if stale {
           img_widget = img_widget.opacity(0.3);
         }
-        output_col = output_col.push(container(img_widget).padding(4));
+        let clickable = mouse_area(container(img_widget).padding(4))
+          .on_double_click(Message::OpenGraphicsModal(idx));
+        output_col = output_col.push(clickable);
       } else if let Some(ref handle) = editor.graphics_handle {
         let mut svg_widget =
           svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
           svg_widget = svg_widget.opacity(0.3);
         }
-        output_col = output_col.push(container(svg_widget).padding(4));
+        let clickable = mouse_area(container(svg_widget).padding(4))
+          .on_double_click(Message::OpenGraphicsModal(idx));
+        output_col = output_col.push(clickable);
       }
 
       // Text output (filter out graphics placeholders)
@@ -1444,14 +1523,18 @@ impl WoxiStudio {
         if stale {
           img_widget = img_widget.opacity(0.3);
         }
-        content_col = content_col.push(container(img_widget).padding(4));
+        let clickable = mouse_area(container(img_widget).padding(4))
+          .on_double_click(Message::OpenGraphicsModal(idx));
+        content_col = content_col.push(clickable);
       } else if let Some(ref handle) = editor.graphics_handle {
         let mut svg_widget =
           svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
         if stale {
           svg_widget = svg_widget.opacity(0.3);
         }
-        content_col = content_col.push(container(svg_widget).padding(4));
+        let clickable = mouse_area(container(svg_widget).padding(4))
+          .on_double_click(Message::OpenGraphicsModal(idx));
+        content_col = content_col.push(clickable);
       }
 
       if let Some(ref output) = editor.output {
@@ -1540,6 +1623,14 @@ fn handle_event(
     ..
   }) = event
   {
+    // Escape key (always forwarded for modal close)
+    if matches!(
+      key.as_ref(),
+      keyboard::Key::Named(keyboard::key::Named::Escape)
+    ) {
+      return Some(Message::KeyPressed(key, modifiers));
+    }
+
     // When no widget captured the event (e.g. divider is focused),
     // handle arrow keys and Enter for navigation.
     if matches!(status, iced::event::Status::Ignored) {
@@ -1772,6 +1863,13 @@ fn cell_editor_style(
     _ => {}
   }
   style
+}
+
+fn graphics_modal_backdrop_style(_theme: &Theme) -> container::Style {
+  container::Style {
+    background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.75))),
+    ..container::Style::default()
+  }
 }
 
 fn output_area_style(_theme: &Theme) -> container::Style {

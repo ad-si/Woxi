@@ -782,6 +782,32 @@ mod plot3d {
     }
 
     #[test]
+    fn image_size_large() {
+      let svg = export_svg(
+        "Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, ImageSize -> Large]",
+      );
+      assert!(svg.contains("width=\"480\""));
+      assert!(svg.contains("height=\"480\""));
+    }
+
+    #[test]
+    fn image_size_small() {
+      let svg =
+        export_svg("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, ImageSize -> Small]");
+      assert!(svg.contains("width=\"200\""));
+      assert!(svg.contains("height=\"200\""));
+    }
+
+    #[test]
+    fn image_size_explicit_pair() {
+      let svg = export_svg(
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, ImageSize -> {400, 300}]",
+      );
+      assert!(svg.contains("width=\"400\""));
+      assert!(svg.contains("height=\"300\""));
+    }
+
+    #[test]
     fn mesh_none() {
       insta::assert_snapshot!(export_svg(
         "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Mesh -> None]"

@@ -179,7 +179,9 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             opts.svg_width = w;
             opts.svg_height = h;
             opts.full_width = fw;

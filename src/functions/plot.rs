@@ -1894,12 +1894,20 @@ fn rewrite_svg_header(
 /// Parse ImageSize option value into (width, height, full_width).
 /// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
 /// Full uses a 720px render resolution but emits `width="100%"` in SVG.
-pub(crate) fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
+///
+/// For single-number and named sizes, the height is derived from the width
+/// using the caller-provided default aspect ratio (`def_w`, `def_h`).
+/// For explicit `{w, h}` lists, the user-specified dimensions are used directly.
+pub(crate) fn parse_image_size(
+  value: &Expr,
+  def_w: u32,
+  def_h: u32,
+) -> Option<(u32, u32, bool)> {
+  let aspect = def_h as f64 / def_w as f64;
   match value {
     Expr::Integer(n) if *n > 0 => {
       let w = *n as u32;
-      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
-        as u32;
+      let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
     Expr::BigInteger(n) => {
@@ -1908,14 +1916,12 @@ pub(crate) fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
       if w == 0 {
         return None;
       }
-      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
-        as u32;
+      let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
     Expr::Real(f) if *f > 0.0 => {
       let w = f.round() as u32;
-      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
-        as u32;
+      let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
     Expr::List(items) if items.len() == 2 => {
@@ -1947,14 +1953,19 @@ pub(crate) fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
       };
       Some((w, h, false))
     }
-    Expr::Identifier(name) => match name.as_str() {
-      "Tiny" => Some((100, 63, false)),
-      "Small" => Some((200, 125, false)),
-      "Medium" => Some((DEFAULT_WIDTH, DEFAULT_HEIGHT, false)),
-      "Large" => Some((480, 300, false)),
-      "Full" => Some((720, 450, true)),
-      _ => None,
-    },
+    Expr::Identifier(name) => {
+      let base_w = match name.as_str() {
+        "Tiny" => 100,
+        "Small" => 200,
+        "Medium" => def_w,
+        "Large" => 480,
+        "Full" => 720,
+        _ => return None,
+      };
+      let h = (base_w as f64 * aspect).round() as u32;
+      let fw = name == "Full";
+      Some((base_w, h, fw))
+    }
     _ => None,
   }
 }
@@ -2008,7 +2019,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             plot_opts.svg_width = w;
             plot_opts.svg_height = h;
             plot_opts.full_width = fw;
@@ -2352,7 +2365,9 @@ fn log_scale_plot_ast(
     {
       match name.as_str() {
         "ImageSize" => {
-          if let Some((w, h, fw)) = parse_image_size(replacement) {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+          {
             plot_opts.svg_width = w;
             plot_opts.svg_height = h;
             plot_opts.full_width = fw;
