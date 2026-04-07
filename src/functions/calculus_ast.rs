@@ -5212,6 +5212,104 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
   None
 }
 
+/// Extract (numerator, denominator) from a canonicalized Times expression.
+/// Recognizes patterns like Times[Power[den, -1], num] or
+/// Times[num, Power[den, -1]] including multi-factor products.
+fn extract_quotient_from_times(expr: &Expr) -> Option<(Expr, Expr)> {
+  let factors: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+
+  // Find Power[something, -1] factor(s) — those form the denominator
+  let mut den_factors: Vec<Expr> = Vec::new();
+  let mut num_factors: Vec<Expr> = Vec::new();
+
+  for factor in &factors {
+    // Check for Power[base, negative_integer] — these represent 1/base^|n|
+    let inverse_base = match factor {
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(n) if *n < 0) =>
+      {
+        if let Expr::Integer(n) = &args[1] {
+          if *n == -1 {
+            Some(args[0].clone())
+          } else {
+            // Power[base, -k] → denominator is Power[base, k]
+            Some(Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![args[0].clone(), Expr::Integer(-*n)],
+            })
+          }
+        } else {
+          None
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+        if let Expr::Integer(n) = right.as_ref() {
+          if *n == -1 {
+            Some(left.as_ref().clone())
+          } else {
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: left.clone(),
+              right: Box::new(Expr::Integer(-*n)),
+            })
+          }
+        } else {
+          None
+        }
+      }
+      _ => None,
+    };
+
+    if let Some(den) = inverse_base {
+      den_factors.push(den);
+    } else {
+      num_factors.push((*factor).clone());
+    }
+  }
+
+  if den_factors.is_empty() {
+    return None; // No denominator found
+  }
+
+  let numerator = if num_factors.len() == 1 {
+    num_factors.pop().unwrap()
+  } else if num_factors.is_empty() {
+    Expr::Integer(1)
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: num_factors,
+    }
+  };
+
+  let denominator = if den_factors.len() == 1 {
+    den_factors.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: den_factors,
+    }
+  };
+
+  Some((numerator, denominator))
+}
+
 /// Evaluate an expression numerically at var = point + delta
 fn eval_near_point(
   expr: &Expr,
@@ -5451,16 +5549,24 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Try L'Hôpital's rule for 0/0 forms
-  if let Expr::BinaryOp {
+  // Extract numerator and denominator from either BinaryOp::Divide or
+  // the canonical Times[Power[den, -1], num] form.
+  let num_den: Option<(Expr, Expr)> = if let Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: num,
     right: den,
   } = &args[0]
   {
+    Some((*num.clone(), *den.clone()))
+  } else {
+    extract_quotient_from_times(&args[0])
+  };
+
+  if let Some((numerator, denominator)) = num_den {
     let num_at_point =
-      crate::syntax::substitute_variable(num, &var_name, &point);
+      crate::syntax::substitute_variable(&numerator, &var_name, &point);
     let den_at_point =
-      crate::syntax::substitute_variable(den, &var_name, &point);
+      crate::syntax::substitute_variable(&denominator, &var_name, &point);
     let saved2 = crate::snapshot_warnings();
     crate::push_quiet();
     let num_val = crate::evaluator::evaluate_expr_to_expr(&num_at_point);
@@ -5468,11 +5574,17 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::pop_quiet();
     crate::restore_warnings(saved2);
 
-    if let (Ok(Expr::Integer(0)), Ok(Expr::Integer(0))) = (&num_val, &den_val) {
+    let num_is_zero = matches!(&num_val, Ok(Expr::Integer(0)))
+      || matches!(&num_val, Ok(Expr::Real(f)) if *f == 0.0);
+    let den_is_zero = matches!(&den_val, Ok(Expr::Integer(0)))
+      || matches!(&den_val, Ok(Expr::Real(f)) if *f == 0.0);
+
+    if num_is_zero && den_is_zero {
       // Apply L'Hôpital: Limit[f'/g', x -> x0]
-      if let (Ok(df), Ok(dg)) =
-        (differentiate(num, &var_name), differentiate(den, &var_name))
-      {
+      if let (Ok(df), Ok(dg)) = (
+        differentiate(&numerator, &var_name),
+        differentiate(&denominator, &var_name),
+      ) {
         let new_expr = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(simplify(df)),
