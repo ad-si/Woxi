@@ -2504,3 +2504,33 @@ mod rationalize {
     assert_eq!(interpret("Rationalize[5]").unwrap(), "5");
   }
 }
+
+mod biginteger_division {
+  use super::*;
+
+  #[test]
+  fn factorial_ratio_34_33() {
+    assert_eq!(interpret("34!/33!").unwrap(), "34");
+  }
+
+  #[test]
+  fn factorial_ratio_100_99() {
+    assert_eq!(interpret("100!/99!").unwrap(), "100");
+  }
+
+  #[test]
+  fn factorial_ratio_100_98() {
+    assert_eq!(interpret("100!/98!").unwrap(), "9900");
+  }
+
+  #[test]
+  fn factorial_ratio_50_48() {
+    assert_eq!(interpret("50!/48!").unwrap(), "2450");
+  }
+
+  #[test]
+  fn big_integer_fraction_reduces() {
+    // 200! / 199! should reduce to 200
+    assert_eq!(interpret("200!/199!").unwrap(), "200");
+  }
+}
