@@ -11,8 +11,9 @@ use super::*;
 /// Returns None for non-numeric expressions.
 fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   use crate::functions::math_ast::try_eval_to_f64;
-  // Pure real number
-  if let Some(v) = try_eval_to_f64(e) {
+  use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  // Pure real number (including Infinity/-Infinity)
+  if let Some(v) = try_eval_to_f64_with_infinity(e) {
     return Some((v, 0.0));
   }
   // Check if expression contains I (complex unit)
@@ -466,9 +467,10 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compare two Expr values for canonical ordering.
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
-  // Try numeric comparison first
-  let a_num = expr_to_f64(a);
-  let b_num = expr_to_f64(b);
+  use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  // Try numeric comparison first (including Infinity/-Infinity)
+  let a_num = try_eval_to_f64_with_infinity(a);
+  let b_num = try_eval_to_f64_with_infinity(b);
   if let (Some(an), Some(bn)) = (a_num, b_num) {
     return if an < bn {
       1
