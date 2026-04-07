@@ -1003,9 +1003,32 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
 
     // Repeated[pat] = pat.. (one or more)
     Expr::FunctionCall { name, args }
-      if name == "Repeated" && args.len() == 1 =>
+      if name == "Repeated" && (args.len() == 1 || args.len() == 2) =>
     {
-      string_pattern_to_regex(&args[0]).map(|r| format!("(?:{})+", r))
+      let base = string_pattern_to_regex(&args[0])?;
+      if args.len() == 1 {
+        Some(format!("(?:{})+", base))
+      } else {
+        // Repeated[pat, n] or Repeated[pat, {min, max}]
+        let quantifier = match &args[1] {
+          Expr::Integer(n) => format!("{{{}}}", n),
+          Expr::List(items) if items.len() == 1 => {
+            if let Some(n) = crate::functions::math_ast::expr_to_i128(&items[0])
+            {
+              format!("{{{}}}", n)
+            } else {
+              return None;
+            }
+          }
+          Expr::List(items) if items.len() == 2 => {
+            let min = crate::functions::math_ast::expr_to_i128(&items[0])?;
+            let max = crate::functions::math_ast::expr_to_i128(&items[1])?;
+            format!("{{{},{}}}", min, max)
+          }
+          _ => return None,
+        };
+        Some(format!("(?:{}){}", base, quantifier))
+      }
     }
 
     // RepeatedNull[pat] = pat... (zero or more)
