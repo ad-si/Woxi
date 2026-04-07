@@ -1266,6 +1266,13 @@ mod pochhammer {
     assert_eq!(interpret("Pochhammer[1, 5]").unwrap(), "120");
     assert_eq!(interpret("Pochhammer[3, 0]").unwrap(), "1");
   }
+
+  #[test]
+  fn pochhammer_symbolic_zero() {
+    // Pochhammer[a, 0] = 1 for any a, even symbolic
+    assert_eq!(interpret("Pochhammer[a, 0]").unwrap(), "1");
+    assert_eq!(interpret("Pochhammer[x + y, 0]").unwrap(), "1");
+  }
 }
 
 mod bell_b {

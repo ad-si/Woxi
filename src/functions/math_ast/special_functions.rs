@@ -11,10 +11,11 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Pochhammer expects exactly 2 arguments".into(),
     ));
   }
+  // Pochhammer[a, 0] = 1 for any a
+  if matches!(&args[1], Expr::Integer(0)) {
+    return Ok(Expr::Integer(1));
+  }
   if let (Some(a), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
-    if n == 0 {
-      return Ok(Expr::Integer(1));
-    }
     if n < 0 {
       // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
       return Ok(Expr::FunctionCall {
