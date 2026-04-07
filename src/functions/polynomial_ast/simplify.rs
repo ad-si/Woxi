@@ -3867,12 +3867,25 @@ pub fn simplify_division(num: &Expr, den: &Expr) -> Expr {
   }
 
   // Use divide_two for proper evaluation (distributes powers, creates Rationals, etc.)
-  if let Ok(result) =
+  let basic = if let Ok(result) =
     crate::functions::math_ast::divide_two(&num_expanded, &den_expanded)
   {
-    return result;
+    result
+  } else {
+    crate::functions::math_ast::make_divide(num_expanded, den_expanded)
+  };
+
+  // Try factoring the result: Factor[p/q] = Factor[p]/Factor[q] often produces
+  // a simpler form (e.g. x^2/(1-3x+3x^2-x^3) → x^2/(-1+x)^3).
+  if let Ok(factored) = super::factor::factor_ast(&[basic.clone()]) {
+    let fc = leaf_count(&factored);
+    let bc = leaf_count(&basic);
+    if fc <= bc {
+      return factored;
+    }
   }
-  crate::functions::math_ast::make_divide(num_expanded, den_expanded)
+
+  basic
 }
 
 /// Find a single variable in an expression (for univariate polynomial division).

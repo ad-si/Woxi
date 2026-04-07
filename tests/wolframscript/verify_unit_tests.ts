@@ -570,8 +570,6 @@ function main() {
     // Exponent form: (a-1) vs (-1+a) (canonical Plus ordering)
     "PDF[WeibullDistribution[a, b], x]",
     // Canonical Plus ordering: (1 - x) vs (-1 + x)
-    "GeneratingFunction[n, n, x]",
-    "GeneratingFunction[Binomial[n, 2], n, x]",
     // Fraction expansion form difference
     "GeneratingFunction[f[n + 1], n, x]",
     // 1/Pi vs Pi^(-1) (canonical Power form)

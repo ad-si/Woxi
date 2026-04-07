@@ -24,6 +24,21 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
 
+  // Handle rational expressions: factor numerator and denominator separately.
+  // This matches Wolfram's behavior where Factor[p/q] = Factor[p]/Factor[q].
+  {
+    let (num, den) = super::together::extract_num_den(&args[0]);
+    if !matches!(&den, Expr::Integer(1)) {
+      let factored_num = factor_ast(&[num])?;
+      let factored_den = factor_ast(&[den])?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(factored_num),
+        right: Box::new(factored_den),
+      });
+    }
+  }
+
   // First expand to canonical form
   let expanded = expand_and_combine(&args[0]);
 

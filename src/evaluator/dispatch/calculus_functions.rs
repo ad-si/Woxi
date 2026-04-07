@@ -2202,15 +2202,15 @@ fn gf_inner(
 
   // Case 1: expr = n (just the variable)
   if matches!(expr, Expr::Identifier(name) if name == n) {
-    // x/(1-x)^2
+    // x/(-1+x)^2  (canonical Wolfram form; (1-x)^2 = (-1+x)^2 since power is even)
     return Ok(Some(Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left: Box::new(x.clone()),
       right: Box::new(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-1)),
           right: Box::new(x.clone()),
         }),
         right: Box::new(Expr::Integer(2)),
@@ -2516,20 +2516,33 @@ fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
       .unwrap()
   };
 
-  // Denominator: (1-x)^(k+1)
+  // Denominator: (-1+x)^(k+1) — canonical Wolfram form.
+  // Since (1-x) = -(-1+x), we have (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1).
+  // When (k+1) is odd, the numerator must be negated to compensate.
   let denominator = Expr::BinaryOp {
     op: BinaryOperator::Power,
     left: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(Expr::Integer(1)),
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-1)),
       right: Box::new(x.clone()),
     }),
     right: Box::new(Expr::Integer(k + 1)),
   };
 
+  let final_numerator = if (k + 1) % 2 != 0 {
+    // Odd power: negate numerator
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(numerator),
+    }
+  } else {
+    numerator
+  };
+
   Ok(Some(Expr::BinaryOp {
     op: BinaryOperator::Divide,
-    left: Box::new(numerator),
+    left: Box::new(final_numerator),
     right: Box::new(denominator),
   }))
 }
@@ -2754,27 +2767,39 @@ fn gf_binomial(
 ) -> Result<Option<Expr>, InterpreterError> {
   use crate::syntax::BinaryOperator;
 
-  // Binomial[n, k] where k is constant: x^k/(1-x)^(k+1)
+  // Binomial[n, k] where k is constant: x^k/(-1+x)^(k+1) (with sign adjustment)
+  // Canonical Wolfram form uses (-1+x) as base.
+  // (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1), so negate numerator when (k+1) is odd.
   if matches!(top, Expr::Identifier(name) if name == n)
     && !depends_on(bottom, n)
     && let Expr::Integer(k) = bottom
   {
-    // x^k / (1-x)^(k+1)
+    let power = k + 1;
+    let x_pow = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(x.clone()),
+      right: Box::new(Expr::Integer(*k)),
+    };
+    let num = if power % 2 != 0 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(x_pow),
+      }
+    } else {
+      x_pow
+    };
     return Ok(Some(Expr::BinaryOp {
       op: BinaryOperator::Divide,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(x.clone()),
-        right: Box::new(Expr::Integer(*k)),
-      }),
+      left: Box::new(num),
       right: Box::new(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-1)),
           right: Box::new(x.clone()),
         }),
-        right: Box::new(Expr::Integer(k + 1)),
+        right: Box::new(Expr::Integer(power)),
       }),
     }));
   }
