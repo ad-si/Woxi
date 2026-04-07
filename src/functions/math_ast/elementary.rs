@@ -42,10 +42,13 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if contains_infinity(&args[0]) {
     return Ok(Expr::Identifier("Infinity".to_string()));
   }
-  if let Some(n) = try_eval_to_f64(&args[0]) {
-    return Ok(num_to_expr(n.abs()));
+  // Handle integers and reals directly
+  match &args[0] {
+    Expr::Integer(n) => return Ok(Expr::Integer(n.abs())),
+    Expr::Real(f) => return Ok(Expr::Real(f.abs())),
+    _ => {}
   }
-  // Handle exact complex numbers: Abs[a + b*I] = Sqrt[a^2 + b^2]
+  // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     let g_r = gcd(rn, rd);
     let (rn, rd) = if rd < 0 {
@@ -92,6 +95,10 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && im != 0.0
   {
     return Ok(num_to_expr((re * re + im * im).sqrt()));
+  }
+  // Fallback: try to evaluate to f64 for numeric expressions (e.g. Abs[Sqrt[2] + 1])
+  if let Some(n) = try_eval_to_f64(&args[0]) {
+    return Ok(num_to_expr(n.abs()));
   }
   Ok(Expr::FunctionCall {
     name: "Abs".to_string(),
