@@ -477,18 +477,55 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
 
 /// Tr[matrix] - trace of a square matrix
 pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Tr expects exactly 1 argument".into(),
+      "Tr expects 1 or 2 arguments".into(),
     ));
   }
-  // Also support Tr on a plain list (sum of elements)
-  if let Some(vec) = expr_to_vector(&args[0]) {
-    let mut sum = Expr::Integer(0);
-    for v in &vec {
-      sum = eval_add(&sum, v);
+
+  // Determine the combining function (default: Plus)
+  let combine_fn = if args.len() == 2 {
+    Some(&args[1])
+  } else {
+    None
+  };
+
+  // Helper to combine two expressions using the specified function
+  let combine = |acc: Expr, val: &Expr| -> Expr {
+    if let Some(func) = combine_fn {
+      // Apply custom function: func[acc, val]
+      let result =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: match func {
+            Expr::Identifier(name) => name.clone(),
+            _ => {
+              return Expr::FunctionCall {
+                name: "Tr".to_string(),
+                args: args.to_vec(),
+              };
+            }
+          },
+          args: vec![acc, val.clone()],
+        });
+      result.unwrap_or_else(|_| Expr::FunctionCall {
+        name: "Tr".to_string(),
+        args: args.to_vec(),
+      })
+    } else {
+      eval_add(&acc, val)
     }
-    return Ok(sum);
+  };
+
+  // Also support Tr on a plain list (sum/combine of elements)
+  if let Some(vec) = expr_to_vector(&args[0]) {
+    if vec.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+    let mut result = vec[0].clone();
+    for v in &vec[1..] {
+      result = combine(result, v);
+    }
+    return Ok(result);
   }
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) => m,
@@ -502,9 +539,12 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = matrix.len();
   let ncols = matrix.first().map(|r| r.len()).unwrap_or(0);
   let min_dim = n.min(ncols);
-  let mut trace = Expr::Integer(0);
-  for i in 0..min_dim {
-    trace = eval_add(&trace, &matrix[i][i]);
+  if min_dim == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  let mut trace = matrix[0][0].clone();
+  for i in 1..min_dim {
+    trace = combine(trace, &matrix[i][i]);
   }
   Ok(trace)
 }
