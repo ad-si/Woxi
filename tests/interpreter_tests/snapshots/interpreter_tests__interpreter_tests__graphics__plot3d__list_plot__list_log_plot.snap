@@ -5,66 +5,6 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
-<text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-0
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1688 749,1688 "/>
-<text x="670" y="1587" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1587 749,1587 "/>
-<text x="670" y="1485" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1485 749,1485 "/>
-<text x="670" y="1383" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1383 749,1383 "/>
-<text x="670" y="1281" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1281 749,1281 "/>
-<text x="670" y="1179" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1179 749,1179 "/>
-<text x="670" y="1078" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1078 749,1078 "/>
-<text x="670" y="976" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,976 749,976 "/>
-<text x="670" y="874" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,874 749,874 "/>
-<text x="670" y="772" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,772 749,772 "/>
-<text x="670" y="671" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,671 749,671 "/>
-<text x="670" y="569" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,569 749,569 "/>
-<text x="670" y="467" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,467 749,467 "/>
-<text x="670" y="365" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,365 749,365 "/>
-<text x="670" y="263" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,263 749,263 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
 1
@@ -126,6 +66,8 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3227,1750 3227,1790 "/>
-<polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1688 3499,1688 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 1700,1179 2548,671 3397,162 "/>
+<polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1749 3499,1749 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1749 1700,1749 2548,1749 3397,1749 "/>
+<text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">1</text>
+<text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">3</tspan></text>
 </svg>

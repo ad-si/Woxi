@@ -288,48 +288,43 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let (mut opts, _) = parse_plot_options(args);
+  opts.log_y = true;
 
-  let log_series: Vec<Vec<(f64, f64)>> = all_series
+  // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
+  let filtered: Vec<Vec<(f64, f64)>> = all_series
     .iter()
-    .map(|series| {
-      series
-        .iter()
-        .filter_map(|&(x, y)| if y > 0.0 { Some((x, y.log10())) } else { None })
-        .collect()
-    })
+    .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&log_series);
+  let (x_range, y_range) = compute_ranges(&filtered);
   let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
+  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
 
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let (mut opts, _) = parse_plot_options(args);
+  opts.log_x = true;
+  opts.log_y = true;
 
-  let log_series: Vec<Vec<(f64, f64)>> = all_series
+  // Filter non-positive values; data stays in original space (LogCoord handles scaling)
+  let filtered: Vec<Vec<(f64, f64)>> = all_series
     .iter()
     .map(|series| {
       series
         .iter()
-        .filter_map(|&(x, y)| {
-          if x > 0.0 && y > 0.0 {
-            Some((x.log10(), y.log10()))
-          } else {
-            None
-          }
-        })
+        .filter(|&&(x, y)| x > 0.0 && y > 0.0)
+        .copied()
         .collect()
     })
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&log_series);
+  let (x_range, y_range) = compute_ranges(&filtered);
   let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
+  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
 
@@ -338,21 +333,18 @@ pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let (mut opts, _) = parse_plot_options(args);
+  opts.log_x = true;
 
-  let log_series: Vec<Vec<(f64, f64)>> = all_series
+  // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
+  let filtered: Vec<Vec<(f64, f64)>> = all_series
     .iter()
-    .map(|series| {
-      series
-        .iter()
-        .filter_map(|&(x, y)| if x > 0.0 { Some((x.log10(), y)) } else { None })
-        .collect()
-    })
+    .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
     .collect();
 
-  let (x_range, y_range) = compute_ranges(&log_series);
+  let (x_range, y_range) = compute_ranges(&filtered);
   let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
+  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
 

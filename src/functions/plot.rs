@@ -418,6 +418,101 @@ pub(crate) fn nice_date_step(range_seconds: f64) -> f64 {
   }
 }
 
+/// Orientation info for placing log-axis labels.
+enum LogAxisOrientation {
+  /// Y-axis: labels placed at fixed x, varying y
+  Y { x: f64, plot_top: f64, plot_h: f64 },
+  /// X-axis: labels placed at fixed y, varying x
+  X { y: f64, plot_left: f64, plot_w: f64 },
+}
+
+/// Inject SVG `<text>` elements for log-scale axis labels with proper
+/// superscript rendering (e.g. 10 with superscript 6 instead of "1000000").
+/// Intelligently selects which powers of 10 to label based on the range.
+fn inject_log_axis_labels(
+  out: &mut String,
+  data_min: f64,
+  data_max: f64,
+  font_size: f64,
+  fill: &str,
+  orientation: LogAxisOrientation,
+) {
+  let log_min = data_min.log10();
+  let log_max = data_max.log10();
+  let decades = (log_max - log_min).abs();
+
+  // Choose labeling step: label every 1, 2, or 3 powers of 10
+  let step = if decades <= 8.0 {
+    1
+  } else if decades <= 16.0 {
+    2
+  } else {
+    3
+  };
+
+  let exp_start = log_min.ceil() as i64;
+  let exp_end = log_max.floor() as i64;
+
+  // Align to step grid
+  let first = if exp_start % step as i64 == 0 {
+    exp_start
+  } else {
+    exp_start + (step as i64 - exp_start.rem_euclid(step as i64))
+  };
+
+  let (anchor, is_y) = match &orientation {
+    LogAxisOrientation::Y { .. } => ("end", true),
+    LogAxisOrientation::X { .. } => ("middle", false),
+  };
+
+  let mut exp = first;
+  while exp <= exp_end {
+    // Compute pixel position
+    let frac = (exp as f64 - log_min) / (log_max - log_min);
+    let pos = match &orientation {
+      LogAxisOrientation::Y {
+        plot_top, plot_h, ..
+      } => plot_top + plot_h * (1.0 - frac),
+      LogAxisOrientation::X {
+        plot_left, plot_w, ..
+      } => plot_left + plot_w * frac,
+    };
+    let (x, y) = match &orientation {
+      LogAxisOrientation::Y { x, .. } => (*x, pos),
+      LogAxisOrientation::X { y, .. } => (pos, *y),
+    };
+
+    let dy = if is_y { " dy=\"0.5ex\"" } else { "" };
+
+    if exp == 0 {
+      // 10^0 = 1
+      out.push_str(&format!(
+        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\">1</text>\n"
+      ));
+    } else if exp == 1 {
+      // 10^1 = 10
+      out.push_str(&format!(
+        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\">10</text>\n"
+      ));
+    } else {
+      // 10^n with superscript
+      let sup_size = font_size * 0.7;
+      out.push_str(&format!(
+        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\">10<tspan baseline-shift=\"super\" \
+         font-size=\"{sup_size:.0}\">{exp}</tspan></text>\n"
+      ));
+    }
+
+    exp += step as i64;
+  }
+}
+
 /// Format a tick value, dropping the trailing ".0" for integers.
 pub(crate) fn format_tick(v: f64) -> String {
   if (v - v.round()).abs() < 1e-9 {
@@ -532,6 +627,10 @@ pub(crate) struct PlotOptions {
   pub frame: bool,
   /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
   pub date_axis: bool,
+  /// Whether x-axis is logarithmic (data is in log10 space)
+  pub log_x: bool,
+  /// Whether y-axis is logarithmic (data is in log10 space)
+  pub log_y: bool,
 }
 
 impl Default for PlotOptions {
@@ -552,6 +651,8 @@ impl Default for PlotOptions {
       grid_lines_y: false,
       frame: false,
       date_axis: false,
+      log_x: false,
+      log_y: false,
     }
   }
 }
@@ -655,223 +756,271 @@ fn generate_svg_with_options(
 
     let tick = 4 * s;
 
-    let mut chart = ChartBuilder::on(&root)
-      .margin_top(top_margin as u32)
-      .margin_right(margin_right)
-      .margin_bottom(margin_bottom)
-      .margin_left(margin_left)
-      .x_label_area_size(x_label_area)
-      .y_label_area_size(y_label_area)
-      .build_cartesian_2d(x_min..x_max, y_min..y_max)
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    // Macro to configure mesh and draw series on any chart coordinate type.
+    // This avoids duplicating the drawing code for each LogCoord combination.
+    macro_rules! draw_chart {
+      ($chart:expr) => {{
+        let mut chart = $chart;
 
-    // Configure mesh: per-axis tick counts and sizes, unified axis style.
-    // When a label area is 0, plotters suppresses that axis border line.
-    let x_labels_count;
-    let y_labels_count;
-    let x_tick_size;
-    let y_tick_size;
-    let x_major;
-    let y_major;
-    let date_axis = opts.date_axis;
-    if show_ticks && (show_x_axis || show_y_axis) {
-      // Compute nice major tick step for each visible axis
-      let xmaj = if date_axis {
-        nice_date_step(x_max - x_min)
-      } else {
-        nice_step(x_max - x_min, 5)
-      };
-      let ymaj = nice_step(y_max - y_min, 5);
-      x_major = xmaj;
-      y_major = ymaj;
-      let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
-      let y_minor = ymaj / 5.0;
-      x_labels_count = if !show_x_axis || date_axis {
-        // For date axes, we suppress plotters x labels and draw our own
-        0
-      } else {
-        ((x_max - x_min) / x_minor).round() as usize + 1
-      };
-      y_labels_count = if show_y_axis {
-        ((y_max - y_min) / y_minor).round() as usize + 1
-      } else {
-        0
-      };
-      x_tick_size = if show_x_axis { tick } else { 0 };
-      y_tick_size = if show_y_axis { tick } else { 0 };
-    } else {
-      x_major = 1.0;
-      y_major = 1.0;
-      x_labels_count = 0;
-      y_labels_count = 0;
-      x_tick_size = 0;
-      y_tick_size = 0;
-    }
-    let any_axis = show_x_axis || show_y_axis;
-    let axis_style = if opts.frame {
-      // Frame mode: hide plotters axis lines; we draw frame lines ourselves
-      ShapeStyle::from(&bg_color).stroke_width(0)
-    } else if any_axis {
-      dark_gray.stroke_width(RESOLUTION_SCALE)
-    } else {
-      ShapeStyle::from(&bg_color).stroke_width(0)
-    };
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(x_labels_count)
-      .y_labels(y_labels_count)
-      .x_label_formatter(&move |v: &f64| {
-        if x_labels_count == 0 {
-          return String::new();
-        }
-        if date_axis {
-          // For date axis, all generated ticks are major ticks
-          format_date_tick(*v)
-        } else if is_major_tick(*v, x_major) {
-          format_tick(*v)
+        // Configure mesh: tick counts, sizes, label formatting, axis style.
+        let x_labels_count;
+        let y_labels_count;
+        let x_tick_size;
+        let y_tick_size;
+        let x_major;
+        let y_major;
+        let date_axis = opts.date_axis;
+        let log_x = opts.log_x;
+        let log_y = opts.log_y;
+        if show_ticks && (show_x_axis || show_y_axis) {
+          let xmaj = if date_axis {
+            nice_date_step(x_max - x_min)
+          } else {
+            nice_step(x_max - x_min, 5)
+          };
+          let ymaj = nice_step(y_max - y_min, 5);
+          x_major = xmaj;
+          y_major = ymaj;
+          let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
+          let y_minor = ymaj / 5.0;
+          x_labels_count = if !show_x_axis || date_axis {
+            0
+          } else if log_x {
+            // Let LogCoord decide tick placement; ~10 labels for log axes
+            10
+          } else {
+            ((x_max - x_min) / x_minor).round() as usize + 1
+          };
+          y_labels_count = if !show_y_axis {
+            0
+          } else if log_y {
+            10
+          } else {
+            ((y_max - y_min) / y_minor).round() as usize + 1
+          };
+          x_tick_size = if show_x_axis { tick } else { 0 };
+          y_tick_size = if show_y_axis { tick } else { 0 };
         } else {
-          String::new()
+          x_major = 1.0;
+          y_major = 1.0;
+          x_labels_count = 0;
+          y_labels_count = 0;
+          x_tick_size = 0;
+          y_tick_size = 0;
         }
-      })
-      .y_label_formatter(&move |v: &f64| {
-        if y_labels_count > 0 && is_major_tick(*v, y_major) {
-          format_tick(*v)
+        let any_axis = show_x_axis || show_y_axis;
+        let axis_style = if opts.frame {
+          ShapeStyle::from(&bg_color).stroke_width(0)
+        } else if any_axis {
+          dark_gray.stroke_width(RESOLUTION_SCALE)
         } else {
-          String::new()
-        }
-      })
-      .axis_style(axis_style)
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
-          .into_font()
-          .color(&dark_gray),
-      )
-      .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
-      .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
-      .draw()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+          ShapeStyle::from(&bg_color).stroke_width(0)
+        };
+        chart
+          .configure_mesh()
+          .disable_mesh()
+          .x_labels(x_labels_count)
+          .y_labels(y_labels_count)
+          .x_label_formatter(&move |v: &f64| {
+            if x_labels_count == 0 {
+              return String::new();
+            }
+            if date_axis {
+              format_date_tick(*v)
+            } else if log_x {
+              // Suppress plotters labels; we inject custom SVG with superscripts
+              String::new()
+            } else if is_major_tick(*v, x_major) {
+              format_tick(*v)
+            } else {
+              String::new()
+            }
+          })
+          .y_label_formatter(&move |v: &f64| {
+            if y_labels_count == 0 {
+              return String::new();
+            }
+            if log_y {
+              String::new()
+            } else if is_major_tick(*v, y_major) {
+              format_tick(*v)
+            } else {
+              String::new()
+            }
+          })
+          .axis_style(axis_style)
+          .label_style(
+            ("sans-serif", sf * 18.0)
+              .into_font()
+              .color(&dark_gray),
+          )
+          .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
+          .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
+          .draw()
+          .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    // Draw horizontal grid lines (dashed) when grid_lines_y is enabled
-    if opts.grid_lines_y {
-      let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
-      let grid_step = nice_step(y_max - y_min, 5);
-      let mut gy = (y_min / grid_step).ceil() * grid_step;
-      while gy <= y_max {
-        let dash_len = (x_max - x_min) * 0.005;
-        let gap_len = dash_len * 2.0;
-        let mut dx = x_min;
-        while dx < x_max {
-          let end = (dx + dash_len).min(x_max);
+        // Draw horizontal grid lines (dashed) when grid_lines_y is enabled
+        // (only for linear y-axis; log axis grid not yet supported)
+        if opts.grid_lines_y && !log_y {
+          let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+          let grid_step = nice_step(y_max - y_min, 5);
+          let mut gy = (y_min / grid_step).ceil() * grid_step;
+          while gy <= y_max {
+            let dash_len = (x_max - x_min) * 0.005;
+            let gap_len = dash_len * 2.0;
+            let mut dx = x_min;
+            while dx < x_max {
+              let end = (dx + dash_len).min(x_max);
+              chart
+                .draw_series(std::iter::once(PathElement::new(
+                  vec![(dx, gy), (end, gy)],
+                  grid_color.stroke_width(RESOLUTION_SCALE),
+                )))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+              dx += dash_len + gap_len;
+            }
+            gy += grid_step;
+          }
+        }
+
+        // Draw frame (bottom border only) when frame mode is enabled
+        if opts.frame {
+          let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE * 2);
           chart
             .draw_series(std::iter::once(PathElement::new(
-              vec![(dx, gy), (end, gy)],
-              grid_color.stroke_width(RESOLUTION_SCALE),
+              vec![(x_min, y_min), (x_max, y_min)],
+              frame_style,
             )))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-          dx += dash_len + gap_len;
+            .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
         }
-        gy += grid_step;
-      }
-    }
 
-    // Draw frame (bottom border only) when frame mode is enabled
-    // Business theme: bottom frame line visible, left frame line invisible
-    if opts.frame {
-      let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE * 2);
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(x_min, y_min), (x_max, y_min)],
-          frame_style,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-
-    // Draw lighter origin lines through x=0 and y=0 if visible
-    if !opts.frame {
-      let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-      if y_min < 0.0 && y_max > 0.0 {
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(x_min, 0.0), (x_max, 0.0)],
-            origin_line,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
-      if x_min < 0.0 && x_max > 0.0 {
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(0.0, y_min), (0.0, y_max)],
-            origin_line,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
-    }
-
-    for (series_idx, points) in all_points.iter().enumerate() {
-      let (r, g, b) = series_color(&opts.plot_style, series_idx);
-      let color = RGBColor(r, g, b);
-      let segments = split_into_segments(points);
-
-      // Draw filled area before the line so the line renders on top
-      if let Some(ref_y) = filling.reference_y(y_min, y_max) {
-        let fill_style = RGBColor(r, g, b).mix(0.2).filled();
-        for segment in &segments {
-          if segment.len() < 2 {
-            continue;
+        // Draw lighter origin lines through x=0 and y=0 if visible
+        if !opts.frame {
+          let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
+          if y_min < 0.0 && y_max > 0.0 {
+            chart
+              .draw_series(std::iter::once(PathElement::new(
+                vec![(x_min, 0.0), (x_max, 0.0)],
+                origin_line,
+              )))
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
           }
-          let mut poly_points: Vec<(f64, f64)> = segment.clone();
-          // Close the polygon along the reference y level
-          poly_points.push((segment.last().unwrap().0, ref_y));
-          poly_points.push((segment.first().unwrap().0, ref_y));
-          chart
-            .draw_series(std::iter::once(Polygon::new(poly_points, fill_style)))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
+          if x_min < 0.0 && x_max > 0.0 {
+            chart
+              .draw_series(std::iter::once(PathElement::new(
+                vec![(0.0, y_min), (0.0, y_max)],
+                origin_line,
+              )))
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
         }
-      }
 
-      for segment in &segments {
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            segment.clone(),
-            color.stroke_width(15), // 1.5px at display size
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
+        for (series_idx, points) in all_points.iter().enumerate() {
+          let (r, g, b) = series_color(&opts.plot_style, series_idx);
+          let color = RGBColor(r, g, b);
+          let segments = split_into_segments(points);
 
-      // Draw mesh dots at each data point when Mesh -> All
-      if opts.mesh == Mesh::All {
-        let marker_size = 3 * RESOLUTION_SCALE;
-        let finite_pts: Vec<(f64, f64)> = points
-          .iter()
-          .copied()
-          .filter(|(x, y)| x.is_finite() && y.is_finite())
-          .collect();
-        chart
-          .draw_series(
-            finite_pts
+          // Draw filled area before the line so the line renders on top
+          if let Some(ref_y) = filling.reference_y(y_min, y_max) {
+            for segment in &segments {
+              if segment.len() < 2 {
+                continue;
+              }
+              chart
+                .draw_series(AreaSeries::new(
+                  segment.iter().copied(),
+                  ref_y,
+                  RGBColor(r, g, b).mix(0.2),
+                ))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+            }
+          }
+
+          for segment in &segments {
+            chart
+              .draw_series(LineSeries::new(
+                segment.iter().copied(),
+                color.stroke_width(15), // 1.5px at display size
+              ))
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
+
+          // Draw mesh dots at each data point when Mesh -> All
+          if opts.mesh == Mesh::All {
+            let marker_size = 3 * RESOLUTION_SCALE;
+            let finite_pts: Vec<(f64, f64)> = points
               .iter()
-              .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
-          )
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
+              .copied()
+              .filter(|(x, y)| x.is_finite() && y.is_finite())
+              .collect();
+            chart
+              .draw_series(
+                finite_pts
+                  .iter()
+                  .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+              )
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
+        }
+
+        root
+          .present()
+          .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+      }};
     }
 
-    root
-      .present()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    // Build chart with appropriate coordinate types for log/linear axes.
+    // LogCoord handles logarithmic tick placement, scaling, and labeling.
+    // Each arm creates its own ChartBuilder because it borrows `root`.
+    macro_rules! chart_builder {
+      () => {
+        ChartBuilder::on(&root)
+          .margin_top(top_margin as u32)
+          .margin_right(margin_right)
+          .margin_bottom(margin_bottom)
+          .margin_left(margin_left)
+          .x_label_area_size(x_label_area)
+          .y_label_area_size(y_label_area)
+      };
+    }
+    let err = |e| InterpreterError::EvaluationError(format!("Plot: {e}"));
+    match (opts.log_x, opts.log_y) {
+      (false, false) => draw_chart!(
+        chart_builder!()
+          .build_cartesian_2d(x_min..x_max, y_min..y_max)
+          .map_err(err)?
+      ),
+      (false, true) => draw_chart!(
+        chart_builder!()
+          .build_cartesian_2d(x_min..x_max, (y_min..y_max).log_scale())
+          .map_err(err)?
+      ),
+      (true, false) => draw_chart!(
+        chart_builder!()
+          .build_cartesian_2d((x_min..x_max).log_scale(), y_min..y_max)
+          .map_err(err)?
+      ),
+      (true, true) => draw_chart!(
+        chart_builder!()
+          .build_cartesian_2d(
+            (x_min..x_max).log_scale(),
+            (y_min..y_max).log_scale()
+          )
+          .map_err(err)?
+      ),
+    }
   }
 
   rewrite_svg_header(
@@ -955,6 +1104,68 @@ fn generate_svg_with_options(
       }
 
       buf.insert_str(insert_pos, &labels_svg);
+    }
+  }
+
+  // Inject logarithmic axis labels with superscript formatting
+  if (opts.log_y && show_y_axis && show_ticks)
+    || (opts.log_x && show_x_axis && show_ticks)
+  {
+    let margin_left_f = margin_left as f64;
+    let margin_right_f = margin_right as f64;
+    let margin_bottom_f = margin_bottom as f64;
+    let margin_top_f = top_margin as f64;
+    let plot_x0 = margin_left_f + y_label_area as f64;
+    let plot_w = render_width as f64
+      - margin_left_f
+      - margin_right_f
+      - y_label_area as f64;
+    let plot_h = render_height as f64
+      - margin_top_f
+      - margin_bottom_f
+      - x_label_area as f64;
+    // Plotters SVG backend divides font size by 1.24
+    let font_size = sf * 18.0 / 1.24;
+    let label_color = if crate::is_dark_mode() {
+      "#999"
+    } else {
+      "#666"
+    };
+
+    if let Some(insert_pos) = buf.rfind("</svg>") {
+      let mut log_labels = String::new();
+
+      if opts.log_y && show_y_axis {
+        inject_log_axis_labels(
+          &mut log_labels,
+          y_min,
+          y_max,
+          font_size,
+          label_color,
+          LogAxisOrientation::Y {
+            x: plot_x0 - font_size * 0.55,
+            plot_top: margin_top_f,
+            plot_h,
+          },
+        );
+      }
+
+      if opts.log_x && show_x_axis {
+        inject_log_axis_labels(
+          &mut log_labels,
+          x_min,
+          x_max,
+          font_size,
+          label_color,
+          LogAxisOrientation::X {
+            y: margin_top_f + plot_h + font_size * 1.3,
+            plot_left: plot_x0,
+            plot_w,
+          },
+        );
+      }
+
+      buf.insert_str(insert_pos, &log_labels);
     }
   }
 
@@ -2529,25 +2740,12 @@ fn log_scale_plot_ast(
         x_min + t * (x_max - x_min)
       };
       if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
-        let px = if log_x {
-          if x > 0.0 {
-            x.log10()
-          } else {
-            continue;
-          }
-        } else {
-          x
-        };
-        let py = if log_y {
-          if y > 0.0 {
-            y.log10()
-          } else {
-            continue;
-          }
-        } else {
-          y
-        };
-        points.push((px, py));
+        // Skip non-positive values on log axes (can't be plotted)
+        if (log_x && x <= 0.0) || (log_y && y <= 0.0) {
+          continue;
+        }
+        // Data stays in original space; LogCoord handles scaling
+        points.push((x, y));
       }
     }
     all_points.push(points);
@@ -2580,18 +2778,27 @@ fn log_scale_plot_ast(
   let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
   let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-  let y_range = y_data_max - y_data_min;
-  let padding = if y_range.abs() < f64::EPSILON {
-    1.0
+  let (y_auto_min, y_auto_max) = if log_y {
+    // Multiplicative padding in log space (equivalent to additive 4% in log10)
+    let log_range = (y_data_max / y_data_min).ln();
+    let factor = (log_range * 0.04).exp();
+    (y_data_min / factor, y_data_max * factor)
   } else {
-    y_range * 0.04
+    let y_range = y_data_max - y_data_min;
+    let padding = if y_range.abs() < f64::EPSILON {
+      1.0
+    } else {
+      y_range * 0.04
+    };
+    (y_data_min - padding, y_data_max + padding)
   };
-  let y_auto_min = y_data_min - padding;
-  let y_auto_max = y_data_max + padding;
   let y_auto =
     adjust_y_range_for_filling(plot_opts.filling, (y_auto_min, y_auto_max));
 
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or(y_auto);
+
+  plot_opts.log_x = log_x;
+  plot_opts.log_y = log_y;
 
   let svg = generate_svg_with_filling(
     &all_points,

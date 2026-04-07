@@ -44,7 +44,7 @@ base64 = "0.22"
 flate2 = "1.0"
 num-bigint = "0.4.6"
 num-prime = "0.4"
-plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
 num-traits = "0.2.19"
 pest = "2.5"
 pest_derive = "2.5"
