@@ -3484,6 +3484,51 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(log_args[0].clone());
   }
 
+  // E^(n*Log[x]) -> x^n (generalized inverse)
+  if (matches!(base, Expr::Identifier(s) if s == "E")
+    || matches!(base, Expr::Constant(s) if s == "E"))
+  {
+    // Extract coefficient and Log argument from Times[..., Log[x]]
+    let factors: Option<Vec<&Expr>> = match exp {
+      Expr::FunctionCall { name, args: targs } if name == "Times" => {
+        Some(targs.iter().collect())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![left.as_ref(), right.as_ref()]),
+      _ => None,
+    };
+    if let Some(factors) = factors {
+      // Find the Log[x] factor
+      let mut log_arg = None;
+      let mut coeff_factors: Vec<&Expr> = Vec::new();
+      for f in &factors {
+        if log_arg.is_none()
+          && let Expr::FunctionCall { name, args: la } = f
+          && name == "Log"
+          && la.len() == 1
+        {
+          log_arg = Some(&la[0]);
+          continue;
+        }
+        coeff_factors.push(f);
+      }
+      if let Some(x) = log_arg {
+        let coeff = if coeff_factors.len() == 1 {
+          coeff_factors[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: coeff_factors.iter().map(|e| (*e).clone()).collect(),
+          }
+        };
+        return power_two(x, &coeff);
+      }
+    }
+  }
+
   // 1^x -> 1 for any finite x (1^Infinity is Indeterminate, handled below)
   if matches!(base, Expr::Integer(1))
     && !matches!(exp, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
