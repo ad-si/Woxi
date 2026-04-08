@@ -3695,6 +3695,67 @@ mod show_function {
     assert!(svg.starts_with("<svg"));
     assert!(svg.contains("</svg>"));
   }
+
+  #[test]
+  fn show_combines_plot_and_list_plot() {
+    // Show[Plot[...], ListPlot[...]] should merge both into one graphic
+    let result =
+      interpret("Show[Plot[x^2, {x, 0, 5}], ListPlot[{1, 4, 9, 16, 25}]]")
+        .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn show_plot_and_list_plot_svg_has_both() {
+    // The merged SVG must contain a polyline (from Plot) and circles (from ListPlot)
+    let svg =
+      export_svg("Show[Plot[x^2, {x, 0, 5}], ListPlot[{1, 4, 9, 16, 25}]]");
+    assert!(svg.starts_with("<svg"), "should be valid SVG");
+    assert!(svg.contains("<polyline"), "should contain line from Plot");
+    assert!(
+      svg.contains("<circle"),
+      "should contain points from ListPlot"
+    );
+  }
+
+  #[test]
+  fn show_two_plots() {
+    // Combining two Plot expressions
+    let svg = export_svg("Show[Plot[x, {x, 0, 5}], Plot[x^2, {x, 0, 5}]]");
+    assert!(svg.starts_with("<svg"));
+    // Should have at least two polylines (one per Plot)
+    let polyline_count = svg.matches("<polyline").count();
+    assert!(
+      polyline_count >= 2,
+      "expected at least 2 polylines, got {polyline_count}"
+    );
+  }
+
+  #[test]
+  fn show_two_list_plots() {
+    // Combining two ListPlot expressions
+    let svg = export_svg("Show[ListPlot[{1, 2, 3}], ListPlot[{3, 2, 1}]]");
+    assert!(svg.starts_with("<svg"));
+    // Should have 6 circles total (3 + 3)
+    let circle_count = svg.matches("<circle").count();
+    assert!(
+      circle_count >= 6,
+      "expected at least 6 circles, got {circle_count}"
+    );
+  }
+
+  #[test]
+  fn show_plot_with_graphics() {
+    // Combining Plot with a manual Graphics expression
+    let svg =
+      export_svg("Show[Plot[x, {x, 0, 5}], Graphics[{Red, Point[{3, 3}]}]]");
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("<polyline"), "should contain line from Plot");
+    assert!(
+      svg.contains("<circle"),
+      "should contain point from Graphics"
+    );
+  }
 }
 
 mod plot3d_boxed {

@@ -2719,6 +2719,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
   let mut axes = (false, false);
+  // When true, skip uniform scaling so x and y axes scale independently
+  // (needed for plots where data aspect ≠ image aspect).
+  let mut aspect_ratio_full = false;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -2757,6 +2760,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Axes" => {
           if let Some(parsed_axes) = parse_axes(replacement) {
             axes = parsed_axes;
+          }
+        }
+        "AspectRatio" => {
+          // AspectRatio -> Full: skip uniform scaling (used by plots)
+          if let Expr::Identifier(s) = replacement.as_ref() {
+            if s == "Full" {
+              aspect_ratio_full = true;
+            }
+          } else if let Some(r) = expr_to_f64(replacement)
+            && r > 0.0
+          {
+            svg_height = (svg_width as f64 * r).round() as u32;
+            explicit_height = true;
+            aspect_ratio_full = true;
           }
         }
         _ => {}
@@ -2815,9 +2832,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // bb.width()/bb.height() == svg_w/svg_h.  This guarantees that
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
+  // Skipped when AspectRatio -> Full (plots need independent axis scaling).
   let svg_aspect = svg_w / svg_h;
   let data_aspect_wh = bb.width() / bb.height();
-  if svg_aspect.is_finite()
+  if !aspect_ratio_full
+    && svg_aspect.is_finite()
     && data_aspect_wh.is_finite()
     && (svg_aspect - data_aspect_wh).abs() > 1e-9
   {
@@ -2836,27 +2855,36 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Compute margins for axis tick labels when axes are enabled.
+  let margin_left: f64 = if axes.1 { 50.0 } else { 0.0 };
+  let margin_bottom: f64 = if axes.0 { 25.0 } else { 0.0 };
+  let total_width = svg_w + margin_left;
+  let total_height = svg_h + margin_bottom;
+
   let mut svg = String::with_capacity(4096);
 
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height
+      "<svg width=\"100%\" viewBox=\"0 0 {total_width:.0} {total_height:.0}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-      svg_width, svg_height, svg_width, svg_height
+      "<svg width=\"{total_width:.0}\" height=\"{total_height:.0}\" viewBox=\"0 0 {total_width:.0} {total_height:.0}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
     ));
   }
 
-  // Background
+  // Background (covers the full SVG including margins)
   if let Some(bg) = background {
     svg.push_str(&format!(
-      "<rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-      svg_width,
-      svg_height,
+      "<rect width=\"{total_width:.0}\" height=\"{total_height:.0}\" fill=\"{}\"/>\n",
       bg.to_svg_rgb(),
+    ));
+  }
+
+  // Offset the drawing area so axes labels fit in the margins
+  if margin_left > 0.0 || margin_bottom > 0.0 {
+    svg.push_str(&format!(
+      "<g transform=\"translate({margin_left:.0},0)\">\n"
     ));
   }
 
@@ -2887,6 +2915,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Render primitives
   for prim in &primitives {
     render_primitive(prim, &bb, svg_w, svg_h, &mut svg);
+  }
+
+  if margin_left > 0.0 || margin_bottom > 0.0 {
+    svg.push_str("</g>\n");
   }
 
   svg.push_str("</svg>");
@@ -4608,9 +4640,35 @@ fn option_name(expr: &Expr) -> Option<&str> {
 
 /// Merge an option into a list, replacing any existing option with the same name.
 fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
-  if let Expr::Rule { pattern, .. } = opt
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
     && let Some(opt_name) = option_name(pattern)
   {
+    // For PlotRange, compute the union (min of mins, max of maxes)
+    // so that all merged graphics remain visible.
+    if opt_name == "PlotRange"
+      && let Some(pos) = opts.iter().position(|existing| {
+        if let Expr::Rule { pattern: ep, .. } = existing {
+          option_name(ep) == Some("PlotRange")
+        } else {
+          false
+        }
+      })
+      && let Expr::Rule {
+        replacement: ref existing_repl,
+        ..
+      } = opts[pos]
+      && let Some(merged) = merge_plot_ranges(existing_repl, replacement)
+    {
+      opts[pos] = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+        replacement: Box::new(merged),
+      };
+      return;
+    }
+
     opts.retain(|existing| {
       if let Expr::Rule { pattern: ep, .. } = existing {
         option_name(ep) != Some(opt_name)
@@ -4620,6 +4678,35 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
     });
   }
   opts.push(opt.clone());
+}
+
+/// Merge two PlotRange values by taking the union (min of mins, max of maxes).
+fn merge_plot_ranges(a: &Expr, b: &Expr) -> Option<Expr> {
+  let (ax, ay) = parse_plot_range(a)?;
+  let (bx, by) = parse_plot_range(b)?;
+
+  let merge_range =
+    |r1: Option<(f64, f64)>, r2: Option<(f64, f64)>| -> Option<(f64, f64)> {
+      match (r1, r2) {
+        (Some((lo1, hi1)), Some((lo2, hi2))) => {
+          Some((lo1.min(lo2), hi1.max(hi2)))
+        }
+        (Some(r), None) | (None, Some(r)) => Some(r),
+        (None, None) => None,
+      }
+    };
+
+  let mx = merge_range(ax, bx);
+  let my = merge_range(ay, by);
+
+  let range_to_expr = |r: Option<(f64, f64)>| -> Expr {
+    match r {
+      Some((lo, hi)) => Expr::List(vec![Expr::Real(lo), Expr::Real(hi)]),
+      None => Expr::Identifier("All".to_string()),
+    }
+  };
+
+  Some(Expr::List(vec![range_to_expr(mx), range_to_expr(my)]))
 }
 
 /// Implementation of Show[g1, g2, ..., opts...].
@@ -4708,6 +4795,8 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut is_3d = false;
   // Pre-rendered Graphics objects (e.g. from Plot[], Plot3D[])
   let mut rendered_graphics: Vec<Expr> = Vec::new();
+  // Plot source data for re-rendering via plotters
+  let mut plot_sources: Vec<crate::syntax::PlotSource> = Vec::new();
 
   for arg in args {
     // If the arg is not already a Graphics/Graphics3D expression,
@@ -4754,10 +4843,18 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           merge_option(&mut merged_options, opt);
         }
       }
-      Expr::Graphics { is_3d: g_is_3d, .. } => {
-        // Pre-rendered Graphics from Plot[], Plot3D[], etc.
+      Expr::Graphics {
+        is_3d: g_is_3d,
+        source,
+        ..
+      } => {
         is_3d = *g_is_3d;
-        rendered_graphics.push(expr_ref.clone());
+        if let Some(src) = source {
+          plot_sources.push(src.as_ref().clone());
+        } else {
+          // No source data — collect as opaque pre-rendered graphic
+          rendered_graphics.push(expr_ref.clone());
+        }
       }
       Expr::Rule { .. } => {
         merge_option(&mut merged_options, expr_ref);
@@ -4766,10 +4863,128 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // If we have plot sources (from Plot/ListPlot) and no other Graphics
+  // primitives, merge them and re-render via plotters so the output
+  // looks identical to standalone plots.
+  if !plot_sources.is_empty() && merged_primitives.is_empty() {
+    // Merge all series and compute the union of ranges
+    let mut all_series = Vec::new();
+    let mut x_min = f64::INFINITY;
+    let mut x_max = f64::NEG_INFINITY;
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    let mut image_size = plot_sources[0].image_size;
+
+    for ps in &plot_sources {
+      all_series.extend(ps.series.iter().cloned());
+      x_min = x_min.min(ps.x_range.0);
+      x_max = x_max.max(ps.x_range.1);
+      y_min = y_min.min(ps.y_range.0);
+      y_max = y_max.max(ps.y_range.1);
+      // Use the largest image size
+      if ps.image_size.0 > image_size.0 {
+        image_size = ps.image_size;
+      }
+    }
+
+    // If there are also Graphics[...] primitives, render them as an
+    // overlay by converting to plot source entries is not feasible,
+    // so we render the plot sources alone for now.
+    let merged = crate::syntax::PlotSource {
+      series: all_series,
+      x_range: (x_min, x_max),
+      y_range: (y_min, y_max),
+      image_size,
+    };
+
+    let svg = crate::functions::plot::render_merged_plot_source(&merged)?;
+    return Ok(crate::graphics_result_with_source(svg, merged));
+  }
+
+  // Mixed case: plot sources + Graphics primitives.
+  // Convert plot source series to Line/Point primitives so they can be
+  // merged with the other Graphics primitives via graphics_ast.
+  if !plot_sources.is_empty() {
+    for ps in &plot_sources {
+      let mut series_prims: Vec<Expr> = Vec::new();
+      for sd in &ps.series {
+        // Color directive
+        series_prims.push(Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            Expr::Real(sd.color.0 as f64 / 255.0),
+            Expr::Real(sd.color.1 as f64 / 255.0),
+            Expr::Real(sd.color.2 as f64 / 255.0),
+          ],
+        });
+        if sd.is_scatter {
+          series_prims.push(Expr::FunctionCall {
+            name: "PointSize".to_string(),
+            args: vec![Expr::Real(0.012)],
+          });
+          let coords: Vec<Expr> = sd
+            .points
+            .iter()
+            .filter(|(_, y)| y.is_finite())
+            .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+            .collect();
+          if !coords.is_empty() {
+            series_prims.push(Expr::FunctionCall {
+              name: "Point".to_string(),
+              args: vec![Expr::List(coords)],
+            });
+          }
+        } else {
+          series_prims.push(Expr::FunctionCall {
+            name: "AbsoluteThickness".to_string(),
+            args: vec![Expr::Real(1.5)],
+          });
+          let segments =
+            crate::functions::plot::split_into_segments(&sd.points);
+          for seg in &segments {
+            let coords: Vec<Expr> = seg
+              .iter()
+              .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)]))
+              .collect();
+            if coords.len() >= 2 {
+              series_prims.push(Expr::FunctionCall {
+                name: "Line".to_string(),
+                args: vec![Expr::List(coords)],
+              });
+            }
+          }
+        }
+      }
+      merged_primitives.push(Expr::List(series_prims));
+
+      // Merge range as PlotRange option
+      let range_rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+        replacement: Box::new(Expr::List(vec![
+          Expr::List(vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)]),
+          Expr::List(vec![Expr::Real(ps.y_range.0), Expr::Real(ps.y_range.1)]),
+        ])),
+      };
+      merge_option(&mut merged_options, &range_rule);
+
+      // Enable axes
+      let axes_rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      };
+      merge_option(&mut merged_options, &axes_rule);
+
+      // AspectRatio -> Full for plot-style rendering
+      let ar_rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+        replacement: Box::new(Expr::Identifier("Full".to_string())),
+      };
+      merge_option(&mut merged_options, &ar_rule);
+    }
+  }
+
   // If we have pre-rendered Graphics but no primitives from Graphics[...],
   // return the rendered result directly. Single-arg Show just passes through.
-  // Multi-arg (combining rendered plots) returns the first one since we
-  // cannot merge SVGs without re-rendering from source data.
   if merged_primitives.is_empty() && !rendered_graphics.is_empty() {
     return Ok(rendered_graphics[0].clone());
   }

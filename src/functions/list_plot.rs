@@ -4,8 +4,9 @@ use crate::functions::graphics::parse_color;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PlotOptions, adjust_y_range_for_filling,
-  generate_scatter_svg_with_options, generate_svg_with_filling, parse_filling,
-  parse_image_size, parse_plot_legends,
+  build_plot_source, generate_scatter_svg_with_options,
+  generate_svg_with_filling, parse_filling, parse_image_size,
+  parse_plot_legends,
 };
 use crate::syntax::Expr;
 
@@ -275,7 +276,15 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&all_series, x_range, y_range, &opts)?
   };
 
-  Ok(crate::graphics_result(svg))
+  let source = build_plot_source(
+    &all_series,
+    &opts.plot_style,
+    x_range,
+    y_range,
+    (opts.svg_width, opts.svg_height),
+    !joined,
+  );
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// ListLinePlot[{y1, y2, ...}]

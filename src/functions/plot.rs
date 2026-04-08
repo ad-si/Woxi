@@ -1174,6 +1174,37 @@ fn generate_svg_with_options(
   Ok(buf)
 }
 
+/// Build a `PlotSource` from sampled plot data so that `Show` can later
+/// merge multiple pre-rendered plots and re-render via plotters.
+pub(crate) fn build_plot_source(
+  all_points: &[Vec<(f64, f64)>],
+  plot_style: &[WoxiColor],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  image_size: (u32, u32),
+  is_scatter: bool,
+) -> crate::syntax::PlotSource {
+  let series = all_points
+    .iter()
+    .enumerate()
+    .map(|(i, points)| {
+      let color = series_color(plot_style, i);
+      crate::syntax::PlotSeriesData {
+        points: points.clone(),
+        color,
+        is_scatter,
+      }
+    })
+    .collect();
+
+  crate::syntax::PlotSource {
+    series,
+    x_range,
+    y_range,
+    image_size,
+  }
+}
+
 /// Get the (r, g, b) color for a series, using custom plot_style if available.
 fn series_color(plot_style: &[WoxiColor], idx: usize) -> (u8, u8, u8) {
   if plot_style.is_empty() {
@@ -1330,6 +1361,149 @@ pub(crate) fn generate_scatter_svg_with_options(
     full_width,
   );
   inject_legend(&mut buf, opts);
+  Ok(buf)
+}
+
+/// Render a merged `PlotSource` (from `Show`) via plotters.
+/// Handles both line and scatter series in one chart.
+pub(crate) fn render_merged_plot_source(
+  source: &crate::syntax::PlotSource,
+) -> Result<String, InterpreterError> {
+  let (x_min, x_max) = source.x_range;
+  let (y_min, y_max) = source.y_range;
+  let (svg_width, svg_height) = source.image_size;
+
+  let render_width = svg_width * RESOLUTION_SCALE;
+  let render_height = svg_height * RESOLUTION_SCALE;
+
+  let (bg_color, dark_gray, light_gray, _label_fill, _title_fill) =
+    plot_theme();
+
+  let mut buf = String::new();
+  {
+    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
+      .into_drawing_area();
+    root
+      .fill(&bg_color)
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+
+    let s = RESOLUTION_SCALE as i32;
+    let tick = 4 * s;
+
+    let mut chart = ChartBuilder::on(&root)
+      .margin(10 * s)
+      .x_label_area_size(40 * RESOLUTION_SCALE)
+      .y_label_area_size(65 * RESOLUTION_SCALE)
+      .build_cartesian_2d(x_min..x_max, y_min..y_max)
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+
+    let x_major = nice_step(x_max - x_min, 5);
+    let y_major = nice_step(y_max - y_min, 5);
+    let x_minor_step = x_major / 5.0;
+    let y_minor_step = y_major / 5.0;
+    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
+    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+
+    chart
+      .configure_mesh()
+      .disable_mesh()
+      .x_labels(x_tick_count)
+      .y_labels(y_tick_count)
+      .x_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, x_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .y_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, y_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+      .label_style(
+        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
+          .into_font()
+          .color(&dark_gray),
+      )
+      .set_tick_mark_size(LabelAreaPosition::Left, tick)
+      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+      .draw()
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+
+    // Origin lines
+    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
+    if y_min < 0.0 && y_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(x_min, 0.0), (x_max, 0.0)],
+          origin_line,
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+    if x_min < 0.0 && x_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(0.0, y_min), (0.0, y_max)],
+          origin_line,
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+
+    // Draw each series
+    let marker_size = 3 * RESOLUTION_SCALE;
+    for sd in &source.series {
+      let color = RGBColor(sd.color.0, sd.color.1, sd.color.2);
+
+      if sd.is_scatter {
+        // Scatter points
+        let finite_pts: Vec<(f64, f64)> = sd
+          .points
+          .iter()
+          .copied()
+          .filter(|(x, y)| x.is_finite() && y.is_finite())
+          .collect();
+        chart
+          .draw_series(
+            finite_pts
+              .iter()
+              .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+          )
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      } else {
+        // Line series (split into finite segments)
+        let segments = split_into_segments(&sd.points);
+        for segment in &segments {
+          chart
+            .draw_series(LineSeries::new(
+              segment.iter().copied(),
+              color.stroke_width(15),
+            ))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+        }
+      }
+    }
+
+    root
+      .present()
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  }
+
+  rewrite_svg_header(
+    &mut buf,
+    svg_width,
+    svg_height,
+    render_width,
+    render_height,
+    false,
+  );
   Ok(buf)
 }
 
@@ -2527,8 +2701,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let graphicsbox = crate::functions::graphicsbox::graphics_box(&box_elements);
   crate::capture_graphicsbox(&graphicsbox);
 
+  // Build source data for Show merging
+  let source = build_plot_source(
+    &all_points,
+    &plot_opts.plot_style,
+    (x_display_min, x_display_max),
+    (y_display_min, y_display_max),
+    (plot_opts.svg_width, plot_opts.svg_height),
+    false,
+  );
+
   // Return -Graphics- as the text representation
-  Ok(crate::graphics_result(svg))
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// LogLogPlot[f, {x, xmin, xmax}] — plot f with log-scaled x and y axes.

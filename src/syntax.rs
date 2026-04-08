@@ -354,8 +354,32 @@ pub enum Expr {
     data: std::sync::Arc<Vec<f64>>,
     image_type: ImageType,
   },
-  /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d)
-  Graphics { svg: String, is_3d: bool },
+  /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d).
+  /// `source` optionally carries the raw plot series data so that
+  /// `Show` can merge multiple pre-rendered plots by re-rendering via plotters.
+  Graphics {
+    svg: String,
+    is_3d: bool,
+    source: Option<Box<PlotSource>>,
+  },
+}
+
+/// Raw plot data stored alongside pre-rendered SVG so that `Show` can
+/// merge multiple plots and re-render them together via plotters.
+#[derive(Debug, Clone)]
+pub struct PlotSource {
+  pub series: Vec<PlotSeriesData>,
+  pub x_range: (f64, f64),
+  pub y_range: (f64, f64),
+  pub image_size: (u32, u32),
+}
+
+/// A single data series within a plot.
+#[derive(Debug, Clone)]
+pub struct PlotSeriesData {
+  pub points: Vec<(f64, f64)>,
+  pub color: (u8, u8, u8),
+  pub is_scatter: bool,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
@@ -769,10 +793,11 @@ impl Clone for Expr {
           image_type: *image_type,
         };
       }
-      Self::Graphics { svg, is_3d } => {
+      Self::Graphics { svg, is_3d, source } => {
         return Self::Graphics {
           svg: svg.clone(),
           is_3d: *is_3d,
+          source: source.clone(),
         };
       }
       _ => {} // fall through to iterative clone
@@ -848,10 +873,13 @@ impl Clone for Expr {
             data: data.clone(),
             image_type: *image_type,
           }),
-          Self::Graphics { svg, is_3d } => results.push(Self::Graphics {
-            svg: svg.clone(),
-            is_3d: *is_3d,
-          }),
+          Self::Graphics { svg, is_3d, source } => {
+            results.push(Self::Graphics {
+              svg: svg.clone(),
+              is_3d: *is_3d,
+              source: source.clone(),
+            })
+          }
 
           // Vec<Expr> children
           Self::List(children) => {
