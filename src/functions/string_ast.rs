@@ -2551,7 +2551,7 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// StringCount[s, sub] - count occurrences of substring
+/// StringCount[s, sub] - count occurrences of substring or pattern
 pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2559,12 +2559,20 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let sub = expr_to_str(&args[1])?;
 
+  // Try regex-based pattern first (handles RegularExpression, string patterns, etc.)
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::Integer(re.find_iter(&s).count() as i128));
+  }
+
+  // Fallback to plain string matching
+  let sub = expr_to_str(&args[1])?;
   if sub.is_empty() {
     return Ok(Expr::Integer(0));
   }
-
   Ok(Expr::Integer(s.matches(&sub).count() as i128))
 }
 
