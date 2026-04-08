@@ -285,6 +285,10 @@ pub fn extract_part_ast(
 
   match expr {
     Expr::List(items) => {
+      if idx == 0 {
+        // Part[{...}, 0] returns the head, which is List
+        return Ok(Expr::Identifier("List".to_string()));
+      }
       let len = items.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
       if actual_idx >= 0 && actual_idx < len {

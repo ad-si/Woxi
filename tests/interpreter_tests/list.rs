@@ -2846,6 +2846,13 @@ mod part_multi_index {
   }
 
   #[test]
+  fn part_list_head() {
+    // Part 0 of a List gives the head "List"
+    assert_eq!(interpret("Part[{a, b, c}, 0]").unwrap(), "List");
+    assert_eq!(interpret("{a, b, c}[[0]]").unwrap(), "List");
+  }
+
+  #[test]
   fn part_rule_head() {
     // Part 0 of a Rule gives the head "Rule"
     assert_eq!(interpret("Part[a -> b, 0]").unwrap(), "Rule");
