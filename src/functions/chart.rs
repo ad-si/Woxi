@@ -28,6 +28,59 @@ fn extract_values(arg: &Expr) -> Result<Vec<f64>, InterpreterError> {
   }
 }
 
+/// Extract grouped values from the first argument.
+/// Returns a list of groups, where each group is a list of f64 values.
+/// - `{1, 2, 3}` → `[[1], [2], [3]]` (flat: each value is its own group)
+/// - `{{1,2}, {3,4}}` → `[[1,2], [3,4]]` (grouped: sublists are groups)
+fn extract_grouped_values(
+  arg: &Expr,
+) -> Result<Vec<Vec<f64>>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Chart: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(vec![]);
+  }
+
+  // Check if the first element is a list (grouped mode)
+  let first_eval = evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone());
+  if matches!(&first_eval, Expr::List(_)) {
+    // Grouped: each item is a sublist
+    let mut groups = Vec::with_capacity(items.len());
+    for item in items {
+      let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+      if let Expr::List(inner) = &ev {
+        let mut vals = Vec::new();
+        for v in inner {
+          let vv = evaluate_expr_to_expr(v).unwrap_or(v.clone());
+          if let Some(f) = try_eval_to_f64(&vv) {
+            vals.push(f);
+          }
+        }
+        groups.push(vals);
+      }
+    }
+    Ok(groups)
+  } else {
+    // Flat: each value is its own group with one bar
+    let mut groups = Vec::with_capacity(items.len());
+    for item in items {
+      let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+      if let Some(f) = try_eval_to_f64(&v) {
+        groups.push(vec![f]);
+      }
+    }
+    Ok(groups)
+  }
+}
+
 /// A label with optional styling (bold, italic, color, font-size).
 pub(crate) struct StyledLabel {
   pub text: String,
@@ -285,10 +338,10 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
   }
 }
 
-/// BarChart[{v1, v2, ...}]
+/// BarChart[{v1, v2, ...}] or BarChart[{{v1, v2}, {v3, v4}, ...}]
 pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let values = extract_values(&args[0])?;
-  if values.is_empty() {
+  let groups = extract_grouped_values(&args[0])?;
+  if groups.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -296,7 +349,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = parse_chart_options(args);
 
   let svg = generate_bar_svg(
-    &values,
+    &groups,
     opts.svg_width,
     opts.svg_height,
     opts.full_width,

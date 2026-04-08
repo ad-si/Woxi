@@ -2035,6 +2035,35 @@ mod plot3d {
     }
 
     #[test]
+    fn bar_chart_grouped_basic() {
+      // 4 groups, 2 bars each → 8 bars with 2 colors
+      let svg = export_svg("BarChart[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]");
+      // 8 bars + 1 background rect
+      let rect_count = svg.matches("<rect").count();
+      assert_eq!(rect_count, 9, "expected 8 bars + 1 bg rect");
+      insta::assert_snapshot!(svg);
+    }
+
+    #[test]
+    fn bar_chart_grouped_three_per_group() {
+      insta::assert_snapshot!(export_svg("BarChart[{{1, 2, 3}, {4, 5, 6}}]"));
+    }
+
+    #[test]
+    fn bar_chart_grouped_with_labels() {
+      insta::assert_snapshot!(export_svg(
+        r#"BarChart[{{1, 2}, {3, 4}, {5, 6}}, ChartLabels -> {"A", "B", "C"}]"#
+      ));
+    }
+
+    #[test]
+    fn bar_chart_grouped_with_chart_style() {
+      insta::assert_snapshot!(export_svg(
+        r##"BarChart[{{1, 2}, {3, 4}}, ChartStyle -> {RGBColor["#e76f51"], RGBColor["#2a9d8f"]}]"##
+      ));
+    }
+
+    #[test]
     fn word_cloud_basic() {
       insta::assert_snapshot!(export_svg(
         r#"WordCloud[{"hello", "world", "hello", "foo", "hello", "world"}]"#

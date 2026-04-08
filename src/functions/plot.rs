@@ -1509,7 +1509,7 @@ pub(crate) fn render_merged_plot_source(
 
 /// Generate SVG for a bar chart using plotters.
 pub(crate) fn generate_bar_svg(
-  values: &[f64],
+  groups: &[Vec<f64>],
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -1522,9 +1522,11 @@ pub(crate) fn generate_bar_svg(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  let n = values.len();
-  let y_max = values
+  let n = groups.len(); // number of groups
+  let k = groups.iter().map(|g| g.len()).max().unwrap_or(1); // max bars per group
+  let y_max = groups
     .iter()
+    .flat_map(|g| g.iter())
     .cloned()
     .fold(f64::NEG_INFINITY, f64::max)
     .max(0.0)
@@ -1605,29 +1607,42 @@ pub(crate) fn generate_bar_svg(
       })?;
 
     // Draw bars as plotters Rectangle elements
-    let gap = 0.1; // gap fraction per bar
-    for (i, &val) in values.iter().enumerate() {
-      let (br, bg, bb) = if !chart_style.is_empty() {
-        let c = &chart_style[i % chart_style.len()];
-        (
-          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
-      } else {
-        PLOT_COLORS[0]
-      };
-      let color = RGBColor(br, bg, bb);
-      let x0 = i as f64 + gap;
-      let x1 = (i + 1) as f64 - gap;
-      chart
-        .draw_series(std::iter::once(Rectangle::new(
-          [(x0, 0.0), (x1, val)],
-          color.filled(),
-        )))
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!("BarChart: {e}"))
-        })?;
+    let gap = 0.1; // gap between groups
+    for (gi, group) in groups.iter().enumerate() {
+      let group_x0 = gi as f64 + gap;
+      let group_x1 = (gi + 1) as f64 - gap;
+      let group_w = group_x1 - group_x0;
+      let bar_w = group_w / k as f64;
+
+      for (bi, &val) in group.iter().enumerate() {
+        let (br, bg, bb) = if !chart_style.is_empty() {
+          // For grouped charts, color by bar index within group
+          let color_idx = if k > 1 { bi } else { gi };
+          let c = &chart_style[color_idx % chart_style.len()];
+          (
+            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+          )
+        } else if k > 1 {
+          // Grouped: color by position within group
+          PLOT_COLORS[bi % PLOT_COLORS.len()]
+        } else {
+          // Flat: single default color
+          PLOT_COLORS[0]
+        };
+        let color = RGBColor(br, bg, bb);
+        let x0 = group_x0 + bi as f64 * bar_w;
+        let x1 = x0 + bar_w;
+        chart
+          .draw_series(std::iter::once(Rectangle::new(
+            [(x0, 0.0), (x1, val)],
+            color.filled(),
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("BarChart: {e}"))
+          })?;
+      }
     }
 
     root.present().map_err(|e| {
@@ -1670,13 +1685,16 @@ pub(crate) fn generate_bar_svg(
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_max * plot_h };
       for (i, label) in chart_labels.iter().enumerate().take(n) {
         let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
+        // For Above/Center positioning, use the max value in the group
+        let group_max =
+          groups[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let (ly, fill) = match chart_label_position {
           LabelPosition::Above => {
-            let bar_top = map_y_val(values[i]);
+            let bar_top = map_y_val(group_max);
             (bar_top - font_size * 0.5, title_default_fill)
           }
           LabelPosition::Center => {
-            let bar_top = map_y_val(values[i]);
+            let bar_top = map_y_val(group_max);
             let bar_center = (bar_top + axis_y) / 2.0 + font_size * 0.4;
             (bar_center, "white")
           }
