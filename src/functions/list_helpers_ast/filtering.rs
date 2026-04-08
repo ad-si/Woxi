@@ -552,6 +552,13 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       let head = &s[1..];
       get_expr_head_str(expr) == head
     }
+    // Verbatim[expr] - matches literally, not treating contents as patterns
+    Expr::FunctionCall { name, args }
+      if name == "Verbatim" && args.len() == 1 =>
+    {
+      crate::syntax::expr_to_string(expr)
+        == crate::syntax::expr_to_string(&args[0])
+    }
     // Except[c] - matches anything that doesn't match c
     // Except[c, pattern] - matches pattern but not c
     Expr::FunctionCall { name, args }

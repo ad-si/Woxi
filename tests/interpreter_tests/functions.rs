@@ -1187,6 +1187,48 @@ mod pattern_matching {
     }
   }
 
+  mod verbatim_pattern {
+    use super::*;
+
+    #[test]
+    fn verbatim_matches_literal_integer() {
+      assert_eq!(interpret("MatchQ[42, Verbatim[42]]").unwrap(), "True");
+    }
+
+    #[test]
+    fn verbatim_matches_literal_pattern() {
+      // Verbatim[_Integer] should match the literal _Integer pattern object
+      assert_eq!(
+        interpret("MatchQ[_Integer, Verbatim[_Integer]]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn verbatim_does_not_match_different_head() {
+      assert_eq!(
+        interpret("MatchQ[_Real, Verbatim[_Integer]]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn verbatim_in_cases() {
+      assert_eq!(
+        interpret("Cases[{1, _Integer, 2, _String}, Verbatim[_Integer]]")
+          .unwrap(),
+        "{_Integer}"
+      );
+    }
+
+    #[test]
+    fn verbatim_does_not_treat_blank_as_pattern() {
+      // Verbatim[_] should only match a literal Blank, not any expression
+      assert_eq!(interpret("MatchQ[42, Verbatim[_]]").unwrap(), "False");
+      assert_eq!(interpret("MatchQ[_, Verbatim[_]]").unwrap(), "True");
+    }
+  }
+
   mod blank_sequence_pattern {
     use super::*;
 
