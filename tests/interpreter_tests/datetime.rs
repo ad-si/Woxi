@@ -756,10 +756,11 @@ mod leap_year_q {
   use woxi::interpret;
 
   #[test]
-  fn leap_year_bare_integer_returns_false() {
-    // Bare integers are not accepted by LeapYearQ — returns False
-    assert_eq!(interpret("LeapYearQ[2024]").unwrap(), "False");
+  fn leap_year_bare_integer() {
+    assert_eq!(interpret("LeapYearQ[2024]").unwrap(), "True");
     assert_eq!(interpret("LeapYearQ[2023]").unwrap(), "False");
+    assert_eq!(interpret("LeapYearQ[2000]").unwrap(), "True");
+    assert_eq!(interpret("LeapYearQ[1900]").unwrap(), "False");
   }
 
   #[test]
