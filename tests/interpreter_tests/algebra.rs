@@ -1960,6 +1960,27 @@ mod reduce {
       "x == 1 || x == 2 || x == 3"
     );
   }
+
+  #[test]
+  fn quadratic_ineq_with_sign_constraint_negative() {
+    // x^2 > 4 && x < 0  →  x < -2
+    assert_eq!(interpret("Reduce[x^2 > 4 && x < 0, x]").unwrap(), "x < -2");
+  }
+
+  #[test]
+  fn quadratic_ineq_with_sign_constraint_positive() {
+    // x^2 > 4 && x > 0  →  x > 2
+    assert_eq!(interpret("Reduce[x^2 > 4 && x > 0, x]").unwrap(), "x > 2");
+  }
+
+  #[test]
+  fn quadratic_ineq_with_range_constraint() {
+    // x^2 > 4 && x > 0 && x < 10  →  2 < x < 10
+    assert_eq!(
+      interpret("Reduce[x^2 > 4 && x > 0 && x < 10, x]").unwrap(),
+      "Inequality[2, Less, x, Less, 10]"
+    );
+  }
 }
 
 mod nsolve {
