@@ -561,13 +561,36 @@ pub fn capture_graphics(svg: &str) {
 /// Capture SVG and return an Expr::Graphics carrying the SVG data.
 pub fn graphics_result(svg: String) -> syntax::Expr {
   capture_graphics(&svg);
-  syntax::Expr::Graphics { svg, is_3d: false }
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: false,
+    source: None,
+  }
+}
+
+/// Like `graphics_result` but also stores the source plot data
+/// so that `Show` can later merge pre-rendered plots by re-rendering
+/// via plotters.
+pub fn graphics_result_with_source(
+  svg: String,
+  source: syntax::PlotSource,
+) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: false,
+    source: Some(Box::new(source)),
+  }
 }
 
 /// Capture SVG and return an Expr::Graphics for 3D graphics.
 pub fn graphics3d_result(svg: String) -> syntax::Expr {
   capture_graphics(&svg);
-  syntax::Expr::Graphics { svg, is_3d: true }
+  syntax::Expr::Graphics {
+    svg,
+    is_3d: true,
+    source: None,
+  }
 }
 
 /// Gets the last captured graphics content (backward compatible)
@@ -1657,7 +1680,11 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
       {
         capture_graphics(&svg);
-        syntax::Expr::Graphics { svg, is_3d: false }
+        syntax::Expr::Graphics {
+          svg,
+          is_3d: false,
+          source: None,
+        }
       } else {
         expr
       }
