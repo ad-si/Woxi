@@ -10247,6 +10247,16 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn counts_by_lambda() {
+    assert_eq!(
+      interpret(
+        r#"CountsBy[{"apple", "ant", "banana", "berry"}, StringTake[#, 1] &]"#
+      )
+      .unwrap(),
+      "<|a -> 2, b -> 2|>"
+    );
+  }
+  #[test]
   fn find_linear_recurrence_fibonacci() {
     assert_eq!(
       interpret("FindLinearRecurrence[{1, 1, 2, 3, 5, 8, 13}]").unwrap(),

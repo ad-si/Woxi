@@ -1624,12 +1624,8 @@ pub fn dispatch_list_operations(
         let mut keys: Vec<Expr> = Vec::new();
         let mut counts: Vec<i128> = Vec::new();
         for elem in elems {
-          let applied = Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(f),
-            args: vec![elem.clone()],
-          };
-          let key = crate::evaluator::evaluate_expr_to_expr(&applied)
-            .unwrap_or(applied);
+          let key = crate::evaluator::apply_function_to_arg(f, elem)
+            .unwrap_or_else(|_| elem.clone());
           let key_str = crate::syntax::expr_to_string(&key);
           if let Some(pos) = keys
             .iter()
@@ -1641,19 +1637,12 @@ pub fn dispatch_list_operations(
             counts.push(1);
           }
         }
-        let pairs: Vec<Expr> = keys
+        let pairs: Vec<(Expr, Expr)> = keys
           .into_iter()
           .zip(counts)
-          .map(|(k, c)| Expr::FunctionCall {
-            name: "Rule".to_string(),
-            args: vec![k, Expr::Integer(c)],
-          })
+          .map(|(k, c)| (k, Expr::Integer(c)))
           .collect();
-        let assoc = Expr::FunctionCall {
-          name: "Association".to_string(),
-          args: pairs,
-        };
-        return Some(crate::evaluator::evaluate_expr_to_expr(&assoc));
+        return Some(Ok(Expr::Association(pairs)));
       }
     }
     // FoldPairList[f, x, list] — fold with pair output {emit, newState}
