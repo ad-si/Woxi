@@ -2622,3 +2622,40 @@ mod string_trim {
     );
   }
 }
+
+mod longest_common_subsequence_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["ABCDE", "ACDBE"]"#).unwrap(),
+      "ACDE"
+    );
+  }
+
+  #[test]
+  fn identical_strings() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["abc", "abc"]"#).unwrap(),
+      "abc"
+    );
+  }
+
+  #[test]
+  fn no_common() {
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["abc", "xyz"]"#).unwrap(),
+      ""
+    );
+  }
+
+  #[test]
+  fn subsequence_not_substring() {
+    // "abcf" is the LCS (non-contiguous), not "abc" (longest common substring)
+    assert_eq!(
+      interpret(r#"LongestCommonSubsequence["abcdef", "acbcf"]"#).unwrap(),
+      "abcf"
+    );
+  }
+}

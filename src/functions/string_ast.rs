@@ -3268,7 +3268,7 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(dp[n][m] as i128))
 }
 
-/// LongestCommonSubsequence[s1, s2] - longest common contiguous substring
+/// LongestCommonSubsequence[s1, s2] - longest common (non-contiguous) subsequence
 pub fn longest_common_subsequence_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -3284,25 +3284,34 @@ pub fn longest_common_subsequence_ast(
   let n = chars1.len();
   let m = chars2.len();
 
-  let mut max_len = 0usize;
-  let mut end_idx = 0usize;
-
-  // DP table for longest common substring
+  // DP table for longest common subsequence (non-contiguous)
   let mut dp = vec![vec![0usize; m + 1]; n + 1];
   for i in 1..=n {
     for j in 1..=m {
       if chars1[i - 1] == chars2[j - 1] {
         dp[i][j] = dp[i - 1][j - 1] + 1;
-        if dp[i][j] > max_len {
-          max_len = dp[i][j];
-          end_idx = i;
-        }
+      } else {
+        dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
       }
     }
   }
 
-  let result: String = chars1[end_idx - max_len..end_idx].iter().collect();
-  Ok(Expr::String(result))
+  // Backtrack to find the actual subsequence
+  let mut result = Vec::new();
+  let (mut i, mut j) = (n, m);
+  while i > 0 && j > 0 {
+    if chars1[i - 1] == chars2[j - 1] {
+      result.push(chars1[i - 1]);
+      i -= 1;
+      j -= 1;
+    } else if dp[i - 1][j] > dp[i][j - 1] {
+      i -= 1;
+    } else {
+      j -= 1;
+    }
+  }
+  result.reverse();
+  Ok(Expr::String(result.into_iter().collect()))
 }
 
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch
