@@ -879,6 +879,9 @@ pub fn dispatch_math_functions(
     "RandomInteger" => {
       return Some(crate::functions::math_ast::random_integer_ast(args));
     }
+    "RandomPrime" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::math_ast::random_prime_ast(args));
+    }
     "RandomReal" => {
       return Some(crate::functions::math_ast::random_real_ast(args));
     }
