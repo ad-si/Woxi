@@ -205,6 +205,17 @@ mod sum {
   }
 
   #[test]
+  fn sum_constant_symbolic() {
+    // Sum of constant body (not dependent on iteration variable)
+    assert_eq!(interpret("Sum[1, {i, 1, n}]").unwrap(), "n");
+  }
+
+  #[test]
+  fn sum_constant_c_symbolic() {
+    assert_eq!(interpret("Sum[c, {i, 1, n}]").unwrap(), "c*n");
+  }
+
+  #[test]
   fn sum_k_symbolic() {
     assert_eq!(interpret("Sum[k, {k, 1, n}]").unwrap(), "(n*(1 + n))/2");
   }
