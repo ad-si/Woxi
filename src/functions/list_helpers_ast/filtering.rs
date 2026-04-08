@@ -689,37 +689,43 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
   }
 }
 
-/// Cases with level specification: Cases[list, pattern, {level}]
+/// Cases with level specification: Cases[list, pattern, levelspec]
 pub fn cases_with_level_ast(
   list: &Expr,
   pattern: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Parse level spec: {n} means exactly level n
-  let level = match level_spec {
-    Expr::List(items) if items.len() == 1 => {
-      expr_to_i128(&items[0]).unwrap_or(1) as usize
-    }
-    _ => 1,
-  };
+  let (min_level, max_level) = parse_level_spec(level_spec)?;
 
   let mut results = Vec::new();
-  collect_at_level(list, pattern, level, 0, &mut results);
+  collect_at_level_range(
+    list,
+    pattern,
+    0,
+    min_level as usize,
+    max_level as usize,
+    &mut results,
+  );
   Ok(Expr::List(results))
 }
 
-/// Recursively collect elements matching pattern at a specific level
-fn collect_at_level(
+/// Recursively collect elements matching pattern within a level range
+fn collect_at_level_range(
   expr: &Expr,
   pattern: &Expr,
-  target_level: usize,
   current_level: usize,
+  min_level: usize,
+  max_level: usize,
   results: &mut Vec<Expr>,
 ) {
-  if current_level == target_level {
-    if matches_pattern_ast(expr, pattern) {
-      results.push(expr.clone());
-    }
+  if current_level >= min_level
+    && current_level <= max_level
+    && matches_pattern_ast(expr, pattern)
+  {
+    results.push(expr.clone());
+  }
+
+  if current_level >= max_level {
     return;
   }
 
@@ -727,22 +733,24 @@ fn collect_at_level(
   match expr {
     Expr::List(items) => {
       for item in items {
-        collect_at_level(
+        collect_at_level_range(
           item,
           pattern,
-          target_level,
           current_level + 1,
+          min_level,
+          max_level,
           results,
         );
       }
     }
     Expr::FunctionCall { args, .. } => {
       for arg in args {
-        collect_at_level(
+        collect_at_level_range(
           arg,
           pattern,
-          target_level,
           current_level + 1,
+          min_level,
+          max_level,
           results,
         );
       }
@@ -890,24 +898,18 @@ pub fn count_ast_level(
 
   // Parse level spec
   let (min_level, max_level) = match level_spec {
-    None => (1, 1), // Default: level 1 only
-    Some(Expr::Integer(n)) => (1, *n as usize), // n means levels 1 through n
-    Some(Expr::List(levels)) => {
-      if levels.len() == 1 {
-        if let Some(n) = expr_to_i128(&levels[0]) {
-          (n as usize, n as usize) // {n} means exactly level n
+    None => (1usize, 1usize),
+    Some(ls) => {
+      let (min, max) = parse_level_spec(ls)?;
+      (
+        min.max(0) as usize,
+        if max == i64::MAX {
+          usize::MAX
         } else {
-          (1, 1)
-        }
-      } else if levels.len() == 2 {
-        let min = expr_to_i128(&levels[0]).unwrap_or(1) as usize;
-        let max = expr_to_i128(&levels[1]).unwrap_or(1) as usize;
-        (min, max)
-      } else {
-        (1, 1)
-      }
+          max as usize
+        },
+      )
     }
-    _ => (1, 1),
   };
 
   let count = count_at_level(items, pattern, 1, min_level, max_level);

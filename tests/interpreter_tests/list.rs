@@ -4419,3 +4419,31 @@ mod replace_level_spec {
     );
   }
 }
+
+mod cases_count_level_spec {
+  use woxi::interpret;
+
+  #[test]
+  fn cases_infinity_level() {
+    assert_eq!(
+      interpret("Cases[{1, {2, 3}, {4, {5}}}, _Integer, Infinity]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn cases_exact_level() {
+    assert_eq!(
+      interpret("Cases[{1, {2, 3}, {4, {5}}}, _Integer, {2}]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn count_infinity_level() {
+    assert_eq!(
+      interpret("Count[{1, {2, 3}, {4, {5}}}, _Integer, Infinity]").unwrap(),
+      "5"
+    );
+  }
+}
