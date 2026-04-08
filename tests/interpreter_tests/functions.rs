@@ -8455,6 +8455,15 @@ mod batch_unevaluated_wrappers_2 {
       interpret("BooleanConvert[a && b, \"CNF\"]").unwrap(),
       "a && b"
     );
+    // CNF with Or subterms must display with parens
+    assert_eq!(
+      interpret(r#"BooleanConvert[a || (b && c), "CNF"]"#).unwrap(),
+      "(a || b) && (a || c)"
+    );
+    assert_eq!(
+      interpret(r#"BooleanConvert[(a && b) || (c && d), "CNF"]"#).unwrap(),
+      "(a || c) && (a || d) && (b || c) && (b || d)"
+    );
   }
   #[test]
   fn select_components() {

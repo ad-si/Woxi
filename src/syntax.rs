@@ -4903,8 +4903,22 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         return parts.join(" || ");
       }
       // Special case: And[a, b, ...] displays as a && b && ...
+      // Wolfram wraps Or subterms in parens: (a || b) && (a || c)
       if name == "And" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|arg| {
+            let s = fmt(arg);
+            let is_or = matches!(
+              arg,
+              Expr::BinaryOp {
+                op: BinaryOperator::Or,
+                ..
+              }
+            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
+            if is_or { format!("({})", s) } else { s }
+          })
+          .collect();
         return parts.join(" && ");
       }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
@@ -5836,6 +5850,30 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           right_str
         };
         return format!("{} || {}", lf, rf);
+      }
+
+      // Special case: And wraps Or children in parens (Wolfram convention)
+      if matches!(op, BinaryOperator::And) {
+        let is_or_expr = |e: &Expr| -> bool {
+          matches!(
+            e,
+            Expr::BinaryOp {
+              op: BinaryOperator::Or,
+              ..
+            }
+          ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
+        };
+        let lf = if is_or_expr(left) {
+          format!("({})", left_str)
+        } else {
+          left_str
+        };
+        let rf = if is_or_expr(right) {
+          format!("({})", right_str)
+        } else {
+          right_str
+        };
+        return format!("{} && {}", lf, rf);
       }
 
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
