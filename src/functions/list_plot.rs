@@ -1,12 +1,11 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::graphics::parse_color;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, Mesh, PlotOptions, adjust_y_range_for_filling,
-  build_plot_source, generate_scatter_svg_with_options,
+  apply_plot_theme, build_plot_source, generate_scatter_svg_with_options,
   generate_svg_with_filling, parse_filling, parse_image_size,
-  parse_plot_legends,
+  parse_plot_legends, parse_plot_style,
 };
 use crate::syntax::Expr;
 
@@ -167,32 +166,10 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
           opts.filling = parse_filling(replacement);
         }
         "PlotStyle" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          match &val {
-            Expr::List(items) => {
-              for item in items {
-                if let Expr::List(inner) = item {
-                  for sub in inner {
-                    if let Some(c) = parse_color(sub) {
-                      opts.plot_style.push(c);
-                      break;
-                    }
-                  }
-                } else if let Some(c) = parse_color(item) {
-                  opts.plot_style.push(c);
-                }
-              }
-            }
-            _ => {
-              if let Some(c) = parse_color(&val) {
-                opts.plot_style.push(c);
-              }
-            }
-          }
+          opts.plot_style = parse_plot_style(replacement);
         }
         "PlotLegends" => {
-          let (labels, _auto) = parse_plot_legends(replacement);
+          let (labels, _auto, _expressions) = parse_plot_legends(replacement);
           opts.plot_legends = labels;
         }
         "Mesh" => {
@@ -201,12 +178,16 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
           }
         }
         "PlotTheme" => {
-          if let Expr::String(theme) = replacement.as_ref()
-            && theme == "Business"
-          {
-            opts.frame = true;
-            opts.grid_lines_y = true;
+          if let Expr::String(theme) = replacement.as_ref() {
+            apply_plot_theme(&mut opts, theme);
           }
+        }
+        "GridLines" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          let (gx, gy) = crate::functions::plot::parse_grid_lines(&val);
+          opts.grid_lines_x = gx;
+          opts.grid_lines_y = gy;
         }
         _ => {}
       }
