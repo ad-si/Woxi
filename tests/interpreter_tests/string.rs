@@ -2596,4 +2596,29 @@ mod string_trim {
       "  hello  "
     );
   }
+
+  #[test]
+  fn trim_with_repeated_pattern() {
+    // StringTrim with Repeated pattern strips all matching from each end
+    assert_eq!(
+      interpret(r#"StringTrim["xxxhelloxxx", "x"..]"#).unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn trim_with_whitespace_pattern() {
+    assert_eq!(
+      interpret(r#"StringTrim["  hello  ", Whitespace]"#).unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn trim_with_digit_pattern() {
+    assert_eq!(
+      interpret(r#"StringTrim["123hello456", DigitCharacter..]"#).unwrap(),
+      "hello"
+    );
+  }
 }
