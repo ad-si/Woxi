@@ -4289,10 +4289,12 @@ mod perimeter {
 
   #[test]
   fn circle() {
-    assert_eq!(
-      interpret("Perimeter[Circle[{0, 0}, 3]]").unwrap(),
-      "Undefined"
-    );
+    assert_eq!(interpret("Perimeter[Circle[{0, 0}, 3]]").unwrap(), "6*Pi");
+  }
+
+  #[test]
+  fn unit_circle() {
+    assert_eq!(interpret("Perimeter[Circle[]]").unwrap(), "2*Pi");
   }
 }
 
