@@ -776,9 +776,10 @@ mod sort_canonical {
 
   #[test]
   fn sort_with_infinity() {
+    // Wolfram canonical ordering: finite numbers first, then -Infinity, then Infinity
     assert_eq!(
       interpret("Sort[{5, Infinity, -Infinity, 0}]").unwrap(),
-      "{-Infinity, 0, 5, Infinity}"
+      "{0, 5, -Infinity, Infinity}"
     );
   }
 
@@ -786,19 +787,24 @@ mod sort_canonical {
   fn sort_with_negative_infinity() {
     assert_eq!(
       interpret("Sort[{3, -Infinity, 1, Infinity, -1, 0}]").unwrap(),
-      "{-Infinity, -1, 0, 1, 3, Infinity}"
+      "{-1, 0, 1, 3, -Infinity, Infinity}"
     );
   }
 
   #[test]
   fn ordered_q_with_infinity() {
+    // In Wolfram canonical ordering, -Infinity sorts after finite numbers
     assert_eq!(
       interpret("OrderedQ[{-Infinity, 0, Infinity}]").unwrap(),
-      "True"
+      "False"
     );
     assert_eq!(
       interpret("OrderedQ[{Infinity, 0, -Infinity}]").unwrap(),
       "False"
+    );
+    assert_eq!(
+      interpret("OrderedQ[{0, 5, -Infinity, Infinity}]").unwrap(),
+      "True"
     );
   }
 }

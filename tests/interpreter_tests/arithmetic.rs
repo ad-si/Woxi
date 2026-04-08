@@ -2520,13 +2520,10 @@ mod rationalize {
   use super::*;
 
   #[test]
-  fn one_third() {
-    assert_eq!(interpret("Rationalize[0.333333]").unwrap(), "1/3");
-  }
-
-  #[test]
-  fn one_seventh() {
-    assert_eq!(interpret("Rationalize[0.142857]").unwrap(), "1/7");
+  fn no_rationalize_imprecise() {
+    // Wolfram does not rationalize values that aren't exact float matches
+    assert_eq!(interpret("Rationalize[0.333333]").unwrap(), "0.333333");
+    assert_eq!(interpret("Rationalize[0.142857]").unwrap(), "0.142857");
   }
 
   #[test]
@@ -2549,7 +2546,8 @@ mod rationalize {
   #[test]
   fn with_tolerance() {
     assert_eq!(interpret("Rationalize[0.333333, 0.001]").unwrap(), "1/3");
-    assert_eq!(interpret("Rationalize[3.14159, 0.001]").unwrap(), "333/106");
+    // Rationalize finds smallest-denominator rational within tolerance
+    assert_eq!(interpret("Rationalize[3.14159, 0.001]").unwrap(), "201/64");
   }
 
   #[test]

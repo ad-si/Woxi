@@ -4000,9 +4000,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] (exact symbolic Euler's formula)
+  // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] only for multiples of Pi/2
+  // Wolfram does not auto-simplify Exp[I*Pi/3] etc.
   if matches!(base, Expr::Constant(c) if c == "E")
     && let Some((numer, denom)) = try_extract_i_pi_rational_multiple(exp)
+    && (denom == 1 || denom == 2)
   {
     // Build the symbolic argument k*Pi
     let k_pi =
@@ -4037,7 +4039,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])
-  if matches!(base, Expr::Constant(c) if c == "E") {
+  // Only apply for purely numeric exponents, not symbolic ones like I*Pi/3
+  if matches!(base, Expr::Constant(c) if c == "E")
+    && try_extract_i_pi_rational_multiple(exp).is_none()
+  {
     // Try float complex extraction for the exponent
     if let Some((re, im)) = try_extract_complex_float(exp)
       && im != 0.0

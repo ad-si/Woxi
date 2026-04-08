@@ -1082,9 +1082,9 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       if args.len() == 1 {
         Some(format!("(?:{})+", base))
       } else {
-        // Repeated[pat, n] or Repeated[pat, {min, max}]
+        // Repeated[pat, n] means 1..n, Repeated[pat, {n}] means exactly n
         let quantifier = match &args[1] {
-          Expr::Integer(n) => format!("{{{}}}", n),
+          Expr::Integer(n) => format!("{{1,{}}}", n),
           Expr::List(items) if items.len() == 1 => {
             if let Some(n) = crate::functions::math_ast::expr_to_i128(&items[0])
             {
@@ -3358,34 +3358,25 @@ pub fn longest_common_subsequence_ast(
   let n = chars1.len();
   let m = chars2.len();
 
-  // DP table for longest common subsequence (non-contiguous)
+  // DP table for longest common substring (contiguous)
+  // Wolfram's LongestCommonSubsequence finds the longest contiguous match
   let mut dp = vec![vec![0usize; m + 1]; n + 1];
+  let mut max_len = 0usize;
+  let mut end_i = 0usize; // end position in chars1
   for i in 1..=n {
     for j in 1..=m {
       if chars1[i - 1] == chars2[j - 1] {
         dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
+        if dp[i][j] > max_len {
+          max_len = dp[i][j];
+          end_i = i;
+        }
       }
     }
   }
 
-  // Backtrack to find the actual subsequence
-  let mut result = Vec::new();
-  let (mut i, mut j) = (n, m);
-  while i > 0 && j > 0 {
-    if chars1[i - 1] == chars2[j - 1] {
-      result.push(chars1[i - 1]);
-      i -= 1;
-      j -= 1;
-    } else if dp[i - 1][j] > dp[i][j - 1] {
-      i -= 1;
-    } else {
-      j -= 1;
-    }
-  }
-  result.reverse();
-  Ok(Expr::String(result.into_iter().collect()))
+  let result: String = chars1[end_i - max_len..end_i].iter().collect();
+  Ok(Expr::String(result))
 }
 
 /// SequenceAlignment[s1, s2] — aligns two strings using Needleman-Wunsch

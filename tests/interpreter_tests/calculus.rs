@@ -693,7 +693,7 @@ mod limit {
   fn limit_arctan_at_negative_infinity() {
     assert_eq!(
       interpret("Limit[ArcTan[x], x -> -Infinity]").unwrap(),
-      "-(Pi/2)"
+      "-1/2*Pi"
     );
   }
 

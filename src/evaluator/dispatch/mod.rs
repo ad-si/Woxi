@@ -2971,54 +2971,46 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(poly);
   }
 
-  // ButterflyGraph[n] — butterfly graph with 2n+1 vertices
+  // ButterflyGraph[n] — butterfly network graph with (n+1)*2^n vertices
+  // Vertices are labeled 1..(n+1)*2^n, mapping from (level, index) where
+  // level ∈ {0,...,n} and index ∈ {0,...,2^n-1}.
+  // Vertex number = level * 2^n + index + 1
+  // Edges: (level, index) -- (level+1, index) and (level, index) -- (level+1, index XOR 2^level)
   if name == "ButterflyGraph"
     && args.len() == 1
     && let Expr::Integer(n) = &args[0]
   {
     let n = *n as usize;
-    // Butterfly graph: two cycles of size n sharing one vertex
-    // Vertices: 1..=2n+1, center is vertex 1
-    let total = 2 * n + 1;
+    let width = 1usize << n; // 2^n
+    let total = (n + 1) * width;
     let vertices: Vec<Expr> =
       (1..=total).map(|i| Expr::Integer(i as i128)).collect();
     let mut edges = Vec::new();
-    // First wing: vertices 1, 2, ..., n+1 form a cycle
-    for i in 0..n {
-      let a = i + 2; // 2, 3, ..., n+1
-      let b = if i + 1 < n { i + 3 } else { 2 };
-      edges.push(Expr::FunctionCall {
-        name: "UndirectedEdge".to_string(),
-        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
-      });
+    let mut seen = std::collections::HashSet::new();
+    for level in 0..n {
+      for idx in 0..width {
+        let v1 = level * width + idx + 1; // current vertex
+        // Straight edge: (level, idx) -- (level+1, idx)
+        let v2 = (level + 1) * width + idx + 1;
+        let (a, b) = if v1 < v2 { (v1, v2) } else { (v2, v1) };
+        if seen.insert((a, b)) {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+          });
+        }
+        // Cross edge: (level, idx) -- (level+1, idx XOR 2^level)
+        let cross_idx = idx ^ (1 << level);
+        let v3 = (level + 1) * width + cross_idx + 1;
+        let (a, b) = if v1 < v3 { (v1, v3) } else { (v3, v1) };
+        if seen.insert((a, b)) {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
+          });
+        }
+      }
     }
-    // Connect first wing to center
-    edges.push(Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer(2)],
-    });
-    edges.push(Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer((n + 1) as i128)],
-    });
-    // Second wing: vertices 1, n+2, ..., 2n+1 form a cycle
-    for i in 0..n {
-      let a = n + 1 + i + 1; // n+2, n+3, ..., 2n+1
-      let b = if i + 1 < n { n + 1 + i + 2 } else { n + 2 };
-      edges.push(Expr::FunctionCall {
-        name: "UndirectedEdge".to_string(),
-        args: vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
-      });
-    }
-    // Connect second wing to center
-    edges.push(Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer((n + 2) as i128)],
-    });
-    edges.push(Expr::FunctionCall {
-      name: "UndirectedEdge".to_string(),
-      args: vec![Expr::Integer(1), Expr::Integer((2 * n + 1) as i128)],
-    });
     return Ok(Expr::FunctionCall {
       name: "Graph".to_string(),
       args: vec![Expr::List(vertices), Expr::List(edges)],

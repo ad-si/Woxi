@@ -12075,8 +12075,8 @@ mod batch_unevaluated_wrappers_2 {
   // ButterflyGraph
   #[test]
   fn butterfly_graph_basic() {
-    // ButterflyGraph[2] has 5 vertices
-    assert_eq!(interpret("VertexCount[ButterflyGraph[2]]").unwrap(), "5");
+    // ButterflyGraph[n] has (n+1)*2^n vertices; ButterflyGraph[2] has 3*4 = 12
+    assert_eq!(interpret("VertexCount[ButterflyGraph[2]]").unwrap(), "12");
   }
 
   // HalfNormalDistribution

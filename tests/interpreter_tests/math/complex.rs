@@ -542,17 +542,18 @@ mod im_tests {
 
   #[test]
   fn exp_i_pi_third() {
-    assert_eq!(interpret("Exp[I Pi / 3]").unwrap(), "1/2 + I*Sqrt[3]/2");
+    // Wolfram does not auto-simplify Exp[I Pi/3]
+    assert_eq!(interpret("Exp[I Pi / 3]").unwrap(), "E^((I/3)*Pi)");
   }
 
   #[test]
   fn exp_i_pi_sixth() {
-    assert_eq!(interpret("Exp[I Pi / 6]").unwrap(), "Sqrt[3]/2 + I/2");
+    assert_eq!(interpret("Exp[I Pi / 6]").unwrap(), "E^((I/6)*Pi)");
   }
 
   #[test]
   fn exp_2_i_pi_third() {
-    assert_eq!(interpret("Exp[2 I Pi / 3]").unwrap(), "-1/2 + I*Sqrt[3]/2");
+    assert_eq!(interpret("Exp[2 I Pi / 3]").unwrap(), "E^((2*I*Pi)/3)");
   }
 
   #[test]

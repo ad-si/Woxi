@@ -512,18 +512,17 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Expr::BigInteger(n) = &args[0] {
     use num_traits::Signed;
-    if !n.is_positive() {
-      return Ok(bool_expr(false));
-    }
-    return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(n)));
+    let abs_n = if n.is_negative() {
+      -n.clone()
+    } else {
+      n.clone()
+    };
+    return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(
+      &abs_n,
+    )));
   }
   let n = match &args[0] {
-    Expr::Integer(n) => {
-      if *n < 0 {
-        return Ok(bool_expr(false));
-      }
-      *n
-    }
+    Expr::Integer(n) => n.abs(),
     Expr::Real(f) => {
       if f.fract() == 0.0 && *f > 0.0 {
         *f as i128
@@ -1396,7 +1395,8 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// LeapYearQ[year] or LeapYearQ[{year}] - Tests if a year is a leap year
+/// LeapYearQ[{year}] or LeapYearQ[DateObject[...]] - Tests if a year is a leap year
+/// Bare integers are not accepted (Wolfram requires a date specification).
 pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let extract_year = |e: &Expr| -> Option<i128> {
     match e {
@@ -1409,14 +1409,28 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let year = match &args[0] {
+    // Accept list format: LeapYearQ[{year}] or LeapYearQ[{year, month, day}]
     Expr::List(items) if !items.is_empty() => match extract_year(&items[0]) {
       Some(y) => y,
       None => return Ok(bool_expr(false)),
     },
-    _ => match extract_year(&args[0]) {
-      Some(y) => y,
-      None => return Ok(bool_expr(false)),
-    },
+    // Accept DateObject: LeapYearQ[DateObject[{year, ...}]]
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DateObject" && !dargs.is_empty() =>
+    {
+      match &dargs[0] {
+        Expr::List(items) if !items.is_empty() => match extract_year(&items[0])
+        {
+          Some(y) => y,
+          None => return Ok(bool_expr(false)),
+        },
+        _ => return Ok(bool_expr(false)),
+      }
+    }
+    // Bare integers and other forms return False
+    _ => {
+      return Ok(bool_expr(false));
+    }
   };
   let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
   Ok(bool_expr(is_leap))
