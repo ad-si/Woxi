@@ -783,6 +783,33 @@ mod re_im_constants {
   }
 }
 
+mod re_im_listable {
+  use woxi::interpret;
+
+  #[test]
+  fn re_threads_over_list() {
+    assert_eq!(interpret("Re[{1 + 2 I, 3 - 4 I}]").unwrap(), "{1, 3}");
+  }
+
+  #[test]
+  fn im_threads_over_list() {
+    assert_eq!(interpret("Im[{1 + 2 I, 3 - 4 I}]").unwrap(), "{2, -4}");
+  }
+
+  #[test]
+  fn conjugate_threads_over_list() {
+    assert_eq!(
+      interpret("Conjugate[{1 + I, 2 - 3 I}]").unwrap(),
+      "{1 - I, 2 + 3*I}"
+    );
+  }
+
+  #[test]
+  fn arg_threads_over_list() {
+    assert_eq!(interpret("Arg[{1, -1, I}]").unwrap(), "{0, Pi, Pi/2}");
+  }
+}
+
 mod arctan_two_arg {
   use woxi::interpret;
 

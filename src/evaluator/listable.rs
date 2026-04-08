@@ -116,6 +116,10 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "UnitStep"
       | "RealSign"
       | "RealAbs"
+      | "Re"
+      | "Im"
+      | "Arg"
+      | "Conjugate"
   )
 }
 
