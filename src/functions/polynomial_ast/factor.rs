@@ -2141,8 +2141,17 @@ fn multivar_to_univar_coeffs(
     let mut index: usize = 0;
     let mut multiplier: usize = 1;
     for &exp in &exponents {
-      index += exp as usize * multiplier;
-      multiplier *= d;
+      let Some(term) = (exp as usize).checked_mul(multiplier) else {
+        return None;
+      };
+      let Some(new_index) = index.checked_add(term) else {
+        return None;
+      };
+      index = new_index;
+      let Some(new_mult) = multiplier.checked_mul(d) else {
+        return None;
+      };
+      multiplier = new_mult;
     }
 
     max_index = max_index.max(index);
