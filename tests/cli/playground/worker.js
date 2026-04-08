@@ -29,7 +29,9 @@ globalThis.__woxi_fetch_url = function (url) {
 async function initWasm() {
   try {
     const module = await import("./pkg/woxi.js")
-    await module.default()
+    const wasmUrl = new URL("./pkg/woxi_bg.wasm", self.location.href)
+    wasmUrl.searchParams.set("v", Date.now())
+    await module.default(wasmUrl)
     wasm = module
     postMessage({ type: "init", success: true })
   }

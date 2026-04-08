@@ -142,6 +142,15 @@ docs/mdbook: wasm-build
 docs/build: jupyterlite-build docs/mdbook
 
 
+.PHONY: clean
+clean:
+	cargo clean
+	rm -rf tests/cli/playground/pkg
+	rm -rf tests/book/playground/pkg
+	rm -rf tests/cli/jupyterlite
+	rm -f .jupyterlite.doit.db
+
+
 .PHONY: release
 release:
 	@echo '1. `cai changelog <first-commit-hash>`'

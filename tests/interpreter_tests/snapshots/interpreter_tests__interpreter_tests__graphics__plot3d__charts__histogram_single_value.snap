@@ -138,5 +138,5 @@ expression: "export_svg(\"Histogram[{5}]\")"
 6
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3499,1750 3499,1790 "/>
-<rect x="750" y="250" width="2749" height="1499" opacity="1" fill="#5E81B5" stroke="none"/>
+<rect x="750" y="250" width="2749" height="1499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
 </svg>
