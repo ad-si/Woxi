@@ -49,6 +49,25 @@ mod string_join_with_list {
       "abcd"
     );
   }
+
+  #[test]
+  fn string_join_in_rule_rhs() {
+    // StringJoin (<>) must parse correctly in the RHS of Rule inside a list
+    assert_eq!(
+      interpret(r#"StringReplace["hello", "ello" -> "i" <> " there"]"#)
+        .unwrap(),
+      "hi there"
+    );
+  }
+
+  #[test]
+  fn string_join_in_rule_delayed_rhs() {
+    // StringJoin (<>) must parse correctly in the RHS of RuleDelayed inside a list
+    assert_eq!(
+      interpret(r#"{"abc"} /. x_String :> "(" <> x <> ")""#).unwrap(),
+      "{(abc)}"
+    );
+  }
 }
 
 mod string_split_list_delimiters {
