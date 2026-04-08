@@ -1154,7 +1154,7 @@ fn html_escape(s: &str) -> String {
     .replace('"', "&quot;")
 }
 
-/// WordCloud[{"word1", "word2", ...}]
+/// WordCloud[{"word1", "word2", ...}] or WordCloud[{1, 2, 3, ...}]
 pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
 
@@ -1164,7 +1164,7 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items,
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "WordCloud: first argument must be a list of strings".into(),
+        "WordCloud: first argument must be a list".into(),
       ));
     }
   };
@@ -1172,8 +1172,9 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut words: Vec<String> = Vec::new();
   for item in items {
     let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-    if let Expr::String(s) = &ev {
-      words.push(s.clone());
+    match &ev {
+      Expr::String(s) => words.push(s.clone()),
+      _ => words.push(crate::syntax::expr_to_string(&ev)),
     }
   }
 
