@@ -708,3 +708,134 @@ mod complex_power_tests {
     assert_eq!(interpret("(1/2 + I/3)^4").unwrap(), "-119/1296 + (5*I)/54");
   }
 }
+
+mod re_im_constants {
+  use woxi::interpret;
+
+  #[test]
+  fn re_pi() {
+    assert_eq!(interpret("Re[Pi]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn im_pi() {
+    assert_eq!(interpret("Im[Pi]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_e() {
+    assert_eq!(interpret("Re[E]").unwrap(), "E");
+  }
+
+  #[test]
+  fn im_e() {
+    assert_eq!(interpret("Im[E]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_euler_gamma() {
+    assert_eq!(interpret("Re[EulerGamma]").unwrap(), "EulerGamma");
+  }
+
+  #[test]
+  fn im_euler_gamma() {
+    assert_eq!(interpret("Im[EulerGamma]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_golden_ratio() {
+    assert_eq!(interpret("Re[GoldenRatio]").unwrap(), "GoldenRatio");
+  }
+
+  #[test]
+  fn im_golden_ratio() {
+    assert_eq!(interpret("Im[GoldenRatio]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_infinity() {
+    assert_eq!(interpret("Re[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn im_infinity() {
+    assert_eq!(interpret("Im[Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_integer() {
+    assert_eq!(interpret("Re[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn im_integer() {
+    assert_eq!(interpret("Im[5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_complex() {
+    assert_eq!(interpret("Re[3 + 4 I]").unwrap(), "3");
+  }
+
+  #[test]
+  fn im_complex() {
+    assert_eq!(interpret("Im[3 + 4 I]").unwrap(), "4");
+  }
+}
+
+mod arctan_two_arg {
+  use woxi::interpret;
+
+  #[test]
+  fn arctan2_positive_positive() {
+    assert_eq!(interpret("ArcTan[1, 1]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn arctan2_positive_negative() {
+    assert_eq!(interpret("ArcTan[1, -1]").unwrap(), "-1/4*Pi");
+  }
+
+  #[test]
+  fn arctan2_negative_positive() {
+    assert_eq!(interpret("ArcTan[-1, 1]").unwrap(), "(3*Pi)/4");
+  }
+
+  #[test]
+  fn arctan2_negative_negative() {
+    assert_eq!(interpret("ArcTan[-1, -1]").unwrap(), "(-3*Pi)/4");
+  }
+
+  #[test]
+  fn arctan2_positive_x_axis() {
+    assert_eq!(interpret("ArcTan[1, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arctan2_negative_x_axis() {
+    assert_eq!(interpret("ArcTan[-1, 0]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn arctan2_positive_y_axis() {
+    assert_eq!(interpret("ArcTan[0, 1]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn arctan2_negative_y_axis() {
+    assert_eq!(interpret("ArcTan[0, -1]").unwrap(), "-1/2*Pi");
+  }
+
+  #[test]
+  fn arctan2_origin_indeterminate() {
+    assert_eq!(interpret("ArcTan[0, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn arctan2_numeric_negative_negative() {
+    assert_eq!(
+      interpret("N[ArcTan[-1, -1]]").unwrap(),
+      "-2.356194490192345"
+    );
+  }
+}

@@ -12,13 +12,22 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => return Ok(args[0].clone()),
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => return Ok(args[0].clone()),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
       return Ok(inner[0].clone());
     }
     _ => {}
+  }
+
+  // Known real constants (Pi, E, etc.) are their own real part
+  // Check before complex extraction which would convert them to floats
+  if is_known_real(&args[0]) {
+    return Ok(args[0].clone());
   }
 
   // Try exact integer/rational complex extraction: handles a + b*I patterns
@@ -47,13 +56,22 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => return Ok(Expr::Integer(0)),
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => return Ok(Expr::Integer(0)),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
       return Ok(inner[1].clone());
     }
     _ => {}
+  }
+
+  // Known real constants (Pi, E, etc.) have imaginary part 0
+  // Check before complex extraction which would convert them to floats
+  if is_known_real(&args[0]) {
+    return Ok(Expr::Integer(0));
   }
 
   // Try exact integer/rational complex extraction: handles a + b*I patterns
