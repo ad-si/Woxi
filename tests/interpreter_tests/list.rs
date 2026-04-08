@@ -4382,3 +4382,40 @@ mod through {
     assert_eq!(interpret("Through[{f}[x, y]]").unwrap(), "{f[x, y]}");
   }
 }
+
+mod replace_level_spec {
+  use woxi::interpret;
+
+  #[test]
+  fn replace_with_infinity_level() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, Infinity]").unwrap(),
+      "{1, {4, {9}}}"
+    );
+  }
+
+  #[test]
+  fn replace_with_zero_to_infinity() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {0, Infinity}]")
+        .unwrap(),
+      "{1, {4, {9}}}"
+    );
+  }
+
+  #[test]
+  fn replace_with_exact_level() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {2}]").unwrap(),
+      "{1, {4, {3}}}"
+    );
+  }
+
+  #[test]
+  fn replace_with_level_range() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3}}}, x_Integer :> x^2, {1, 3}]").unwrap(),
+      "{1, {4, {9}}}"
+    );
+  }
+}

@@ -1222,6 +1222,7 @@ fn parse_level_spec(spec: &Expr) -> Result<(i64, i64), InterpreterError> {
       Ok((n1, n2))
     }
     Expr::Identifier(s) if s == "Infinity" => Ok((1, i64::MAX)),
+    Expr::Constant(s) if s == "Infinity" => Ok((1, i64::MAX)),
     _ => {
       let n = level_value(spec)?;
       Ok((1, n))
@@ -1233,6 +1234,7 @@ fn level_value(expr: &Expr) -> Result<i64, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n as i64),
     Expr::Identifier(s) if s == "Infinity" => Ok(i64::MAX),
+    Expr::Constant(s) if s == "Infinity" => Ok(i64::MAX),
     Expr::FunctionCall { name, args } if name == "Minus" && args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         Ok(-(*n as i64))

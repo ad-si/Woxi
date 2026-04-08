@@ -586,11 +586,23 @@ pub fn apply_replace_with_level_ast(
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Parse level spec: {n} = exactly level n, n = levels 0..n, {min, max} = range
+  let level_val = |e: &Expr| -> Option<i64> {
+    match e {
+      Expr::Integer(n) => Some(*n as i64),
+      Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+        Some(i64::MAX)
+      }
+      _ => crate::evaluator::type_helpers::expr_to_i128(e).map(|n| n as i64),
+    }
+  };
   let (min_level, max_level) = match level_spec {
     Expr::Integer(n) => (0i64, *n as i64),
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+      (1i64, i64::MAX)
+    }
     Expr::List(items) if items.len() == 1 => {
-      if let Some(n) = crate::evaluator::type_helpers::expr_to_i128(&items[0]) {
-        (n as i64, n as i64)
+      if let Some(n) = level_val(&items[0]) {
+        (n, n)
       } else {
         return Ok(Expr::FunctionCall {
           name: "Replace".to_string(),
@@ -599,10 +611,8 @@ pub fn apply_replace_with_level_ast(
       }
     }
     Expr::List(items) if items.len() == 2 => {
-      let min = crate::evaluator::type_helpers::expr_to_i128(&items[0])
-        .unwrap_or(0) as i64;
-      let max = crate::evaluator::type_helpers::expr_to_i128(&items[1])
-        .unwrap_or(0) as i64;
+      let min = level_val(&items[0]).unwrap_or(0);
+      let max = level_val(&items[1]).unwrap_or(0);
       (min, max)
     }
     _ => {
