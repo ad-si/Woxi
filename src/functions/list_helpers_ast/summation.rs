@@ -695,6 +695,25 @@ fn try_symbolic_sum(
 ) -> Result<Option<Expr>, InterpreterError> {
   use crate::syntax::BinaryOperator;
 
+  // If body doesn't contain the iteration variable, it's a constant sum:
+  // Sum[c, {var, min, max}] = c * (max - min + 1)
+  if !crate::functions::polynomial_ast::contains_var(body, var_name) {
+    let count = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(max_expr.clone()),
+        right: Box::new(min_expr.clone()),
+      }),
+    };
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(body.clone()),
+      right: Box::new(count),
+    }));
+  }
+
   // Sum[k, {k, 1, n}] = n*(1 + n)/2
   if let Some(1) = min_concrete {
     if matches!(body, Expr::Identifier(name) if name == var_name) {
