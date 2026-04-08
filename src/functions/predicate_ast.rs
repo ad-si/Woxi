@@ -512,16 +512,21 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Expr::BigInteger(n) = &args[0] {
     use num_traits::Signed;
-    let abs_n = n.abs();
-    return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(
-      &abs_n,
-    )));
+    if !n.is_positive() {
+      return Ok(bool_expr(false));
+    }
+    return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(n)));
   }
   let n = match &args[0] {
-    Expr::Integer(n) => n.abs(),
+    Expr::Integer(n) => {
+      if *n < 0 {
+        return Ok(bool_expr(false));
+      }
+      *n
+    }
     Expr::Real(f) => {
-      if f.fract() == 0.0 {
-        f.abs() as i128
+      if f.fract() == 0.0 && *f > 0.0 {
+        *f as i128
       } else {
         return Ok(bool_expr(false));
       }
