@@ -961,8 +961,20 @@ mod erf {
   }
 
   #[test]
+  fn erf_infinity() {
+    assert_eq!(interpret("Erf[Infinity]").unwrap(), "1");
+    assert_eq!(interpret("Erf[-Infinity]").unwrap(), "-1");
+  }
+
+  #[test]
   fn erfc_zero() {
     assert_eq!(interpret("Erfc[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn erfc_infinity() {
+    assert_eq!(interpret("Erfc[Infinity]").unwrap(), "0");
+    assert_eq!(interpret("Erfc[-Infinity]").unwrap(), "2");
   }
 
   #[test]
