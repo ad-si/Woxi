@@ -246,6 +246,82 @@ pub(crate) fn split_into_segments(
   segments
 }
 
+/// Clip line segments to a y-range, interpolating at boundaries.
+/// Points outside the range are removed and the line is split,
+/// with interpolated points added at the boundary crossings.
+pub(crate) fn clip_segments_to_y_range(
+  segments: Vec<Vec<(f64, f64)>>,
+  y_min: f64,
+  y_max: f64,
+) -> Vec<Vec<(f64, f64)>> {
+  let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
+
+  for segment in segments {
+    let mut current: Vec<(f64, f64)> = Vec::new();
+
+    for i in 0..segment.len() {
+      let (x, y) = segment[i];
+      let inside = y >= y_min && y <= y_max;
+
+      if i > 0 {
+        let (px, py) = segment[i - 1];
+        let prev_inside = py >= y_min && py <= y_max;
+
+        if prev_inside != inside {
+          // Line crosses the boundary — interpolate
+          let boundary = if !inside {
+            if y > y_max { y_max } else { y_min }
+          } else if py > y_max {
+            y_max
+          } else {
+            y_min
+          };
+          let t = (boundary - py) / (y - py);
+          let bx = px + t * (x - px);
+          current.push((bx, boundary));
+
+          if !inside {
+            // Leaving the range — flush segment
+            if current.len() > 1 {
+              result.push(std::mem::take(&mut current));
+            } else {
+              current.clear();
+            }
+          }
+        } else if !prev_inside && !inside {
+          // Both outside — check if the line passes through the range
+          // (e.g. one above y_max and the other below y_min)
+          if (py > y_max && y < y_min) || (py < y_min && y > y_max) {
+            // Crosses both boundaries
+            let t_min = (y_min - py) / (y - py);
+            let t_max = (y_max - py) / (y - py);
+            let (t1, t2) = if t_min < t_max {
+              (t_min, t_max)
+            } else {
+              (t_max, t_min)
+            };
+            let x1 = px + t1 * (x - px);
+            let y1 = py + t1 * (y - py);
+            let x2 = px + t2 * (x - px);
+            let y2 = py + t2 * (y - py);
+            result.push(vec![(x1, y1), (x2, y2)]);
+          }
+        }
+      }
+
+      if inside {
+        current.push((x, y));
+      }
+    }
+
+    if current.len() > 1 {
+      result.push(current);
+    }
+  }
+
+  result
+}
+
 /// Compute a "nice" major tick step given the axis range and desired label count.
 pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
   let raw = range / target_labels as f64;
@@ -924,7 +1000,11 @@ fn generate_svg_with_options(
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
-          let segments = split_into_segments(points);
+          let segments = clip_segments_to_y_range(
+            split_into_segments(points),
+            y_min,
+            y_max,
+          );
 
           // Draw filled area before the line so the line renders on top
           if let Some(ref_y) = filling.reference_y(y_min, y_max) {
