@@ -230,6 +230,30 @@ mod expand {
       "1 + 2*x + x^2 > x"
     );
   }
+
+  #[test]
+  fn inequality_numeric_evaluation() {
+    assert_eq!(
+      interpret("Inequality[1, Less, 3, Less, 5]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inequality[1, Less, 0, Less, 5]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Inequality[1, Less, x, Less, 5] /. x -> 3").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inequality[1, Less, x, Less, 5] /. x -> 0").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Inequality[1, LessEqual, 1, LessEqual, 5]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod simplify {
