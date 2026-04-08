@@ -1916,9 +1916,17 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 }
 
 /// Generate SVG for a histogram using plotters.
+/// Specifies how histogram bins are determined.
+pub enum BinSpec {
+  /// A fixed number of equal-width bins.
+  Count(usize),
+  /// Explicit bin edges (must be sorted, at least 2 elements).
+  Edges(Vec<f64>),
+}
+
 pub(crate) fn generate_histogram_svg(
   values: &[f64],
-  bin_count: Option<usize>,
+  bin_spec: Option<BinSpec>,
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -1926,29 +1934,62 @@ pub(crate) fn generate_histogram_svg(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  // Use provided bin count or fall back to Sturges' rule
-  let n = values.len();
-  let num_bins = bin_count
-    .unwrap_or_else(|| ((1.0 + (n as f64).log2()).ceil() as usize).max(1));
-  let d_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-  let d_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-  let range = d_max - d_min;
-  let bin_width = if range.abs() < f64::EPSILON {
-    1.0
-  } else {
-    range / num_bins as f64
+  // Build bin edges and counts based on the bin specification
+  let (bin_edges, counts) = match bin_spec {
+    Some(BinSpec::Edges(mut edges)) => {
+      edges.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let num_bins = edges.len() - 1;
+      let mut cnts = vec![0usize; num_bins];
+      for &v in values {
+        // Find the bin for this value
+        for i in 0..num_bins {
+          let in_bin = if i == num_bins - 1 {
+            v >= edges[i] && v <= edges[i + 1]
+          } else {
+            v >= edges[i] && v < edges[i + 1]
+          };
+          if in_bin {
+            cnts[i] += 1;
+            break;
+          }
+        }
+      }
+      (edges, cnts)
+    }
+    _ => {
+      // Use provided bin count or fall back to Sturges' rule
+      let n = values.len();
+      let num_bins = match &bin_spec {
+        Some(BinSpec::Count(c)) => *c,
+        _ => ((1.0 + (n as f64).log2()).ceil() as usize).max(1),
+      };
+      let d_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+      let d_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let range = d_max - d_min;
+      let bin_width = if range.abs() < f64::EPSILON {
+        1.0
+      } else {
+        range / num_bins as f64
+      };
+
+      let mut cnts = vec![0usize; num_bins];
+      for &v in values {
+        let idx = ((v - d_min) / bin_width).floor() as usize;
+        cnts[idx.min(num_bins - 1)] += 1;
+      }
+
+      let edges: Vec<f64> = (0..=num_bins)
+        .map(|i| d_min + i as f64 * bin_width)
+        .collect();
+      (edges, cnts)
+    }
   };
 
-  let mut counts = vec![0usize; num_bins];
-  for &v in values {
-    let idx = ((v - d_min) / bin_width).floor() as usize;
-    counts[idx.min(num_bins - 1)] += 1;
-  }
-
+  let num_bins = counts.len();
   let max_count = *counts.iter().max().unwrap_or(&1);
   let y_max = max_count as f64 * 1.1;
-  let x_lo = d_min;
-  let x_hi = d_min + num_bins as f64 * bin_width;
+  let x_lo = bin_edges[0];
+  let x_hi = bin_edges[num_bins];
 
   let mut buf = String::new();
   {
@@ -2015,8 +2056,8 @@ pub(crate) fn generate_histogram_svg(
     let (r, g, b) = PLOT_COLORS[0];
     let color = RGBColor(r, g, b);
     for (i, &count) in counts.iter().enumerate() {
-      let bx0 = x_lo + i as f64 * bin_width;
-      let bx1 = bx0 + bin_width;
+      let bx0 = bin_edges[i];
+      let bx1 = bin_edges[i + 1];
       chart
         .draw_series(std::iter::once(Rectangle::new(
           [(bx0, 0.0), (bx1, count as f64)],
