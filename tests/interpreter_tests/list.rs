@@ -30,6 +30,27 @@ mod list_threading {
   fn list_power_scalar() {
     assert_eq!(interpret("{1, 2, 3}^2").unwrap(), "{1, 4, 9}");
   }
+
+  #[test]
+  fn rational_list_plus_scalar() {
+    // Rational numbers in lists must be fully evaluated when threaded
+    assert_eq!(interpret("{1/2, 1/3} + 1").unwrap(), "{3/2, 4/3}");
+  }
+
+  #[test]
+  fn rational_list_plus_rational_list() {
+    assert_eq!(interpret("{1/2} + {1/3}").unwrap(), "{5/6}");
+  }
+
+  #[test]
+  fn rational_list_times_scalar() {
+    assert_eq!(interpret("{1/2, 1/3} * 2").unwrap(), "{1, 2/3}");
+  }
+
+  #[test]
+  fn rational_list_minus_scalar() {
+    assert_eq!(interpret("{1/2, 1/3} - 1").unwrap(), "{-1/2, -2/3}");
+  }
 }
 
 mod table_with_list_iterator {

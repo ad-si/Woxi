@@ -62,11 +62,8 @@ pub fn thread_binary_op(
             Ok(num_to_expr(a + b))
           }
         } else {
-          Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          })
+          // Evaluate through the function-level Plus which handles Rationals
+          crate::functions::math_ast::plus_ast(&[l.clone(), r.clone()])
         }
       }
       BinaryOperator::Minus => {
@@ -77,11 +74,14 @@ pub fn thread_binary_op(
             Ok(num_to_expr(a - b))
           }
         } else {
-          Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          })
+          // Subtract: a - b = a + (-1)*b
+          crate::functions::math_ast::plus_ast(&[
+            l.clone(),
+            crate::functions::math_ast::times_ast(&[
+              Expr::Integer(-1),
+              r.clone(),
+            ])?,
+          ])
         }
       }
       BinaryOperator::Times => {
@@ -99,22 +99,8 @@ pub fn thread_binary_op(
         } else if matches!(r, Expr::Integer(1)) {
           Ok(l.clone())
         } else {
-          // Apply Orderless canonical ordering for Times
-          let ord = crate::functions::list_helpers_ast::compare_exprs(l, r);
-          if ord < 0 {
-            // Swap to put smaller expression first
-            Ok(Expr::BinaryOp {
-              op,
-              left: Box::new(r.clone()),
-              right: Box::new(l.clone()),
-            })
-          } else {
-            Ok(Expr::BinaryOp {
-              op,
-              left: Box::new(l.clone()),
-              right: Box::new(r.clone()),
-            })
-          }
+          // Evaluate through the function-level Times which handles Rationals
+          crate::functions::math_ast::times_ast(&[l.clone(), r.clone()])
         }
       }
       BinaryOperator::Divide => {
@@ -127,11 +113,11 @@ pub fn thread_binary_op(
             Ok(num_to_expr(a / b))
           }
         } else {
-          Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          })
+          // Evaluate through the function-level division which handles Rationals
+          crate::functions::math_ast::times_ast(&[
+            l.clone(),
+            crate::functions::math_ast::power_two(r, &Expr::Integer(-1))?,
+          ])
         }
       }
       BinaryOperator::Power => {
