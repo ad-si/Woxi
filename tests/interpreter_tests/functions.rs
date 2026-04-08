@@ -102,6 +102,54 @@ mod conditional_definitions {
     assert_eq!(interpret("g[5]").unwrap(), "small");
     assert_eq!(interpret("g[0]").unwrap(), "zero or negative");
   }
+
+  #[test]
+  fn condition_on_whole_lhs_single_arg() {
+    // f[x_] /; cond := body (condition outside brackets) must work
+    // the same as f[x_ /; cond] := body
+    clear_state();
+    assert_eq!(interpret("f[x_] /; x > 0 := x^2; f[3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn condition_on_whole_lhs_fallback() {
+    clear_state();
+    assert_eq!(interpret("f[x_] /; x > 0 := x^2; f[-3]").unwrap(), "f[-3]");
+  }
+
+  #[test]
+  fn condition_on_whole_lhs_multi_arg() {
+    clear_state();
+    assert_eq!(
+      interpret("f[x_, y_] /; x > y := x - y; f[5, 3]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn condition_on_whole_lhs_multiple_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] /; x >= 0 := x; f[x_] /; x < 0 := -x; {f[3], f[-3], f[0]}"
+      )
+      .unwrap(),
+      "{3, 3, 0}"
+    );
+  }
+
+  #[test]
+  fn condition_on_whole_lhs_with_default_fallback() {
+    // Condition on whole LHS combined with a general fallback
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[x_] /; x > 0 := "positive"; f[x_] := "non-positive"; {f[5], f[0], f[-1]}"#
+      )
+      .unwrap(),
+      "{positive, non-positive, non-positive}"
+    );
+  }
 }
 
 mod set_attributes {
