@@ -1021,6 +1021,90 @@ pub fn delete_cases_with_count_ast(
   Ok(Expr::List(result))
 }
 
+/// DeleteCases[list, pattern, levelspec] - delete matching elements at specified levels
+pub fn delete_cases_with_level_ast(
+  list: &Expr,
+  pattern: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let (min_level, max_level) = parse_level_spec(level_spec)?;
+  let min = min_level.max(0) as usize;
+  let max = if max_level == i64::MAX {
+    usize::MAX
+  } else {
+    max_level as usize
+  };
+  Ok(delete_at_level_range(list, pattern, 0, min, max))
+}
+
+/// Recursively delete elements matching pattern within a level range
+fn delete_at_level_range(
+  expr: &Expr,
+  pattern: &Expr,
+  current_level: usize,
+  min_level: usize,
+  max_level: usize,
+) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      let filtered: Vec<Expr> = items
+        .iter()
+        .filter(|item| {
+          // Check if this item should be deleted (matches at current_level+1)
+          let child_level = current_level + 1;
+          !(child_level >= min_level
+            && child_level <= max_level
+            && matches_pattern_ast(item, pattern))
+        })
+        .map(|item| {
+          // Recurse into sublists if we haven't reached max level
+          if current_level + 1 < max_level {
+            delete_at_level_range(
+              item,
+              pattern,
+              current_level + 1,
+              min_level,
+              max_level,
+            )
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      Expr::List(filtered)
+    }
+    Expr::FunctionCall { name, args } => {
+      let filtered: Vec<Expr> = args
+        .iter()
+        .filter(|item| {
+          let child_level = current_level + 1;
+          !(child_level >= min_level
+            && child_level <= max_level
+            && matches_pattern_ast(item, pattern))
+        })
+        .map(|item| {
+          if current_level + 1 < max_level {
+            delete_at_level_range(
+              item,
+              pattern,
+              current_level + 1,
+              min_level,
+              max_level,
+            )
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: filtered,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// ContainsOnly[list, elems] - True if every element of list is in elems
 pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

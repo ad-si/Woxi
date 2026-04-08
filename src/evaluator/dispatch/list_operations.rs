@@ -1435,14 +1435,17 @@ pub fn dispatch_list_operations(
     "DeleteCases" if args.len() == 2 => {
       return Some(list_helpers_ast::delete_cases_ast(&args[0], &args[1]));
     }
-    "DeleteCases" if args.len() == 3 || args.len() == 4 => {
-      // DeleteCases[list, pattern, levelspec] or DeleteCases[list, pattern, levelspec, n]
-      // For now, levelspec is ignored (treated as level 1)
-      let max_count = if args.len() == 4 {
-        expr_to_i128(&args[3])
-      } else {
-        None
-      };
+    "DeleteCases" if args.len() == 3 => {
+      // DeleteCases[list, pattern, levelspec]
+      return Some(list_helpers_ast::delete_cases_with_level_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
+    "DeleteCases" if args.len() == 4 => {
+      // DeleteCases[list, pattern, levelspec, n]
+      // For now, level spec is applied but count is ignored in level-aware version
+      // Fall back to count-only version for simple cases
+      let max_count = expr_to_i128(&args[3]);
       return Some(list_helpers_ast::delete_cases_with_count_ast(
         &args[0], &args[1], max_count,
       ));
