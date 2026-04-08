@@ -1186,6 +1186,40 @@ pub fn reduce_combined_inequalities(
     reduced.push(r);
   }
 
+  // If any reduced result is a disjunction (Or), distribute And over Or:
+  // (A || B) && C  →  (A && C) || (B && C), then reduce each conjunction.
+  if let Some(or_idx) = reduced.iter().position(|r| {
+    matches!(
+      r,
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        ..
+      }
+    ) || matches!(r, Expr::FunctionCall { name, .. } if name == "Or")
+  }) {
+    let or_expr = reduced.remove(or_idx);
+    let branches = collect_or_terms(&or_expr);
+    let other_constraints = reduced;
+
+    let mut valid_branches = Vec::new();
+    for branch in &branches {
+      // Combine this branch with all other constraints
+      let mut all_ineqs: Vec<Expr> = vec![branch.clone()];
+      all_ineqs.extend(other_constraints.iter().cloned());
+
+      let result = reduce_combined_inequalities(&all_ineqs, var, domain)?;
+      if !matches!(&result, Expr::Identifier(s) if s == "False") {
+        valid_branches.push(result);
+      }
+    }
+
+    return if valid_branches.is_empty() {
+      Ok(Expr::Identifier("False".to_string()))
+    } else {
+      Ok(build_or(valid_branches))
+    };
+  }
+
   // Try to find bounds: lower < x < upper
   let mut lower_bound: Option<(Expr, bool)> = None; // (value, inclusive)
   let mut upper_bound: Option<(Expr, bool)> = None;
@@ -1295,6 +1329,14 @@ pub fn reduce_combined_inequalities(
 
   match (&lower_bound, &upper_bound) {
     (Some((low, low_inc)), Some((high, high_inc))) => {
+      // Check if the interval is empty (lower >= upper)
+      if let (Some(low_val), Some(high_val)) =
+        (expr_to_number(low), expr_to_number(high))
+        && (low_val > high_val
+          || (low_val == high_val && (!low_inc || !high_inc)))
+      {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
       let low_op = if *low_inc {
         CompOp::LessEqual
       } else {
