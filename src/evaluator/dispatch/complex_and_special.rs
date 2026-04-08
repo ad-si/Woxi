@@ -3509,8 +3509,28 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           unevaluated()
         }
       }
-      // Circle is a 1D curve, Perimeter is Undefined
-      "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      // Circle[{x, y}, r] -> 2*Pi*r, Circle[] -> 2*Pi
+      "Circle" => {
+        if args.is_empty() || args.len() == 1 {
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else if args.len() == 2 {
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(2),
+              Expr::Constant("Pi".to_string()),
+              args[1].clone(),
+            ],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else {
+          unevaluated()
+        }
+      }
       // Rectangle[{x1,y1},{x2,y2}] -> 2*(|x2-x1| + |y2-y1|)
       "Rectangle" => {
         if args.is_empty() {
