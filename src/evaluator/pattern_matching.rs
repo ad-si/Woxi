@@ -1935,6 +1935,17 @@ fn match_pattern_impl(
       }
       None
     }
+    // Verbatim[expr] - matches literally, not treating contents as patterns
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Verbatim" && pat_args.len() == 1 => {
+      if expr_to_string(expr) == expr_to_string(&pat_args[0]) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
     // Condition[pattern, test] - matches if pattern matches AND test evaluates to True
     Expr::FunctionCall {
       name: pat_name,
