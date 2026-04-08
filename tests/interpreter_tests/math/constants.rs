@@ -264,8 +264,8 @@ mod e_constant {
 
   #[test]
   fn log_e_power_symbolic() {
-    // Log[E^n] = n (inverse function identity)
-    assert_eq!(interpret("Log[E^n]").unwrap(), "n");
+    // Log[E^n] stays unevaluated for symbolic n
+    assert_eq!(interpret("Log[E^n]").unwrap(), "Log[E^n]");
   }
 
   #[test]

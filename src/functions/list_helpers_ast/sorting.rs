@@ -125,7 +125,35 @@ pub fn expr_to_complex_parts_pub(e: &Expr) -> Option<(f64, f64)> {
   expr_to_complex_parts(e)
 }
 
+/// Check if an expression is Infinity or -Infinity (DirectedInfinity).
+/// In Wolfram's canonical ordering, these sort after all finite numbers.
+fn is_infinity_expr(e: &Expr) -> Option<i8> {
+  let s = crate::syntax::expr_to_string(e);
+  if s == "Infinity" {
+    Some(1)
+  } else if s == "-Infinity" {
+    Some(-1)
+  } else if s == "ComplexInfinity" {
+    Some(0)
+  } else {
+    None
+  }
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Handle Infinity/-Infinity separately: they sort after all finite numbers
+  let a_inf = is_infinity_expr(a);
+  let b_inf = is_infinity_expr(b);
+  match (a_inf, b_inf) {
+    (Some(ai), Some(bi)) => {
+      // Both infinity: -Infinity < ComplexInfinity < Infinity
+      return ai.cmp(&bi);
+    }
+    (Some(_), None) => return std::cmp::Ordering::Greater, // Infinity after everything
+    (None, Some(_)) => return std::cmp::Ordering::Less,
+    (None, None) => {}
+  }
+
   // Try numeric comparison (including complex numbers)
   let a_num = expr_to_complex_parts(a);
   let b_num = expr_to_complex_parts(b);
@@ -669,5 +697,6 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
 
 /// Helper: compare two Expr values for ordering (less-or-equal)
 fn expr_le(a: &Expr, b: &Expr) -> bool {
-  compare_exprs(a, b) >= 0
+  // Use canonical_cmp for consistency with Sort
+  !matches!(canonical_cmp(a, b), std::cmp::Ordering::Greater)
 }

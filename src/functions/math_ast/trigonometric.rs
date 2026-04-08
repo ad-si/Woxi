@@ -1350,25 +1350,43 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Constant(c) if c == "E") {
         return Ok(Expr::Integer(1));
       }
-      // Log[E^x] = x (inverse function identity)
-      if let Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
-        left,
-        right,
-      } = &args[0]
-        && matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+      // Log[E^x] = x only when x is a known numeric constant (not symbolic)
+      // Wolfram does not simplify Log[E^x] or Log[E^n] for symbolic arguments
       {
-        return Ok(*right.clone());
-      }
-      if let Expr::FunctionCall {
-        name,
-        args: pow_args,
-      } = &args[0]
-        && name == "Power"
-        && pow_args.len() == 2
-        && matches!(&pow_args[0], Expr::Constant(c) if c == "E")
-      {
-        return Ok(pow_args[1].clone());
+        let is_numeric_exponent = |e: &Expr| -> bool {
+          matches!(
+            e,
+            Expr::Integer(_)
+              | Expr::Real(_)
+              | Expr::BigInteger(_)
+              | Expr::Constant(_)
+          ) || matches!(
+            e,
+            Expr::FunctionCall { name, .. }
+            if name == "Rational"
+          )
+        };
+        if let Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left,
+          right,
+        } = &args[0]
+          && matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+          && is_numeric_exponent(right)
+        {
+          return Ok(*right.clone());
+        }
+        if let Expr::FunctionCall {
+          name,
+          args: pow_args,
+        } = &args[0]
+          && name == "Power"
+          && pow_args.len() == 2
+          && matches!(&pow_args[0], Expr::Constant(c) if c == "E")
+          && is_numeric_exponent(&pow_args[1])
+        {
+          return Ok(pow_args[1].clone());
+        }
       }
       // Log[I] = I*Pi/2
       if matches!(&args[0], Expr::Identifier(s) if s == "I") {
@@ -1882,13 +1900,15 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // ArcTan[-Infinity] = -Pi/2
   if crate::functions::math_ast::special_functions::is_neg_infinity(&args[0]) {
-    return Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left: Box::new(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(-1), Expr::Integer(2)],
-      }),
-      right: Box::new(Expr::Constant("Pi".to_string())),
+    return Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+        },
+        Expr::Constant("Pi".to_string()),
+      ],
     });
   }
   Ok(Expr::FunctionCall {

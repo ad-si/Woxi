@@ -5225,7 +5225,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                     if *num == 1 {
                       Some(format!("(I/{})", den))
                     } else if *num == -1 {
-                      Some(format!("(-(I/{}))", den))
+                      Some(format!("(-1/{}*I)", den))
                     } else {
                       Some(format!("(({num}*I)/{den})"))
                     }

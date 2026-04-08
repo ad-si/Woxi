@@ -1282,13 +1282,18 @@ mod string_match_q_patterns {
 
   #[test]
   fn repeated_with_count() {
+    // Repeated["a", 3] means 1 to 3 repetitions
     assert_eq!(
       interpret(r#"StringMatchQ["aaa", Repeated["a", 3]]"#).unwrap(),
       "True"
     );
     assert_eq!(
       interpret(r#"StringMatchQ["aa", Repeated["a", 3]]"#).unwrap(),
-      "False"
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a", Repeated["a", 3]]"#).unwrap(),
+      "True"
     );
     assert_eq!(
       interpret(r#"StringMatchQ["aaaa", Repeated["a", 3]]"#).unwrap(),
@@ -2628,9 +2633,10 @@ mod longest_common_subsequence_tests {
 
   #[test]
   fn basic() {
+    // Wolfram's LongestCommonSubsequence finds the longest common substring (contiguous)
     assert_eq!(
       interpret(r#"LongestCommonSubsequence["ABCDE", "ACDBE"]"#).unwrap(),
-      "ACDE"
+      "CD"
     );
   }
 
@@ -2651,11 +2657,11 @@ mod longest_common_subsequence_tests {
   }
 
   #[test]
-  fn subsequence_not_substring() {
-    // "abcf" is the LCS (non-contiguous), not "abc" (longest common substring)
+  fn longest_common_substring() {
+    // Wolfram's LongestCommonSubsequence finds contiguous common substring
     assert_eq!(
       interpret(r#"LongestCommonSubsequence["abcdef", "acbcf"]"#).unwrap(),
-      "abcf"
+      "bc"
     );
   }
 }

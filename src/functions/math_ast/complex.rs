@@ -507,7 +507,7 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
   }
 }
 
-/// Rationalize[x
+/// Rationalize[x] or Rationalize[x, tol]
 pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -530,42 +530,45 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(x as i128));
   }
 
-  let tolerance = if args.len() == 2 {
-    expr_to_num(&args[1]).unwrap_or(f64::EPSILON)
-  } else {
-    // Wolfram Language default: tolerance proportional to the value,
-    // roughly 10^(Floor[Log10[Abs[x]]] - 4), which allows finding
-    // "nice" rationals like 1/3 for 0.333333.
-    let abs_x = x.abs();
-    if abs_x == 0.0 {
-      0.0
+  if args.len() == 2 {
+    // Rationalize[x, tol]: find rational with smallest denominator within tolerance
+    let tolerance = expr_to_num(&args[1]).unwrap_or(f64::EPSILON);
+    let (num, denom) = if tolerance == 0.0 {
+      // Tolerance 0: find best rational approximation (exact float match)
+      find_rational(x, 0.0, i64::MAX)
     } else {
-      let exp = abs_x.log10().floor() as i32;
-      10.0_f64.powi(exp - 4)
-    }
-  };
-
-  let max_denom: i64 = if args.len() == 1 { 100000 } else { i64::MAX };
-
-  let (num, denom) = find_rational(x, tolerance, max_denom);
-
-  // Verify the approximation is within tolerance
-  // When tolerance is 0, we want the best possible rational approximation
-  if tolerance > 0.0 {
+      find_rational_smallest_denom(x, tolerance)
+    };
     let approx = num as f64 / denom as f64;
-    if (approx - x).abs() >= tolerance {
+    if tolerance > 0.0 && (approx - x).abs() >= tolerance {
       return Ok(num_to_expr(x));
     }
-  }
-
-  if denom == 1 {
-    Ok(Expr::Integer(num as i128))
+    if denom == 1 {
+      Ok(Expr::Integer(num as i128))
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
+      })
+    }
   } else {
-    // Return as a fraction using Rational or as BinaryOp Divide
-    Ok(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
-    })
+    // Rationalize[x] with no tolerance: find exact rational representation
+    // Only rationalize if an exact match is found with a small denominator
+    let (num, denom) = find_rational(x, 0.0, 100_000);
+    let approx = num as f64 / denom as f64;
+    if approx == x {
+      if denom == 1 {
+        Ok(Expr::Integer(num as i128))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
+        })
+      }
+    } else {
+      // No exact small-denominator match found; return as Real
+      Ok(num_to_expr(x))
+    }
   }
 }
 
@@ -615,6 +618,76 @@ pub fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
     let frac = xi - ai as f64;
     if frac.abs() < 1e-15 {
       break;
+    }
+    xi = 1.0 / frac;
+
+    p0 = p1;
+    q0 = q1;
+    p1 = p2;
+    q1 = q2;
+  }
+
+  (sign * p1, q1)
+}
+
+/// Find rational with smallest denominator within tolerance.
+/// Uses continued fractions with semi-convergent checking.
+pub fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
+  if x == 0.0 {
+    return (0, 1);
+  }
+
+  let sign: i64 = if x < 0.0 { -1 } else { 1 };
+  let x = x.abs();
+
+  // p0, q0 = p_{n-2}, q_{n-2}; p1, q1 = p_{n-1}, q_{n-1}
+  let mut p0: i64 = 0;
+  let mut q0: i64 = 1;
+  let mut p1: i64 = 1;
+  let mut q1: i64 = 0;
+
+  let mut xi = x;
+
+  for _ in 0..50 {
+    let ai = xi.floor() as i64;
+
+    let p2 = match ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) {
+      Some(v) => v,
+      None => break,
+    };
+    let q2 = match ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) {
+      Some(v) => v,
+      None => break,
+    };
+
+    if q2 == 0 {
+      break;
+    }
+
+    // Before accepting this full convergent, check semi-convergents
+    // Semi-convergents: (p0 + j * p1) / (q0 + j * q1) for j = 1, ..., ai - 1
+    if ai > 1 {
+      for j in 1..ai {
+        let sp = p0 + j * p1;
+        let sq = q0 + j * q1;
+        if sq > 0 {
+          let approx = sp as f64 / sq as f64;
+          if (approx - x).abs() < tolerance {
+            return (sign * sp, sq);
+          }
+        }
+      }
+    }
+
+    // Check the full convergent
+    let approx = p2 as f64 / q2 as f64;
+    if (approx - x).abs() < tolerance {
+      return (sign * p2, q2);
+    }
+
+    let frac = xi - ai as f64;
+    if frac.abs() < 1e-15 {
+      return (sign * p2, q2);
     }
     xi = 1.0 / frac;
 

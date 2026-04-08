@@ -5075,23 +5075,15 @@ fn limit_at_infinity(
               right: Box::new(Expr::Constant("Pi".to_string())),
             });
           }
-          return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: if numer == 1 {
-              Box::new(Expr::Constant("Pi".to_string()))
-            } else if numer == -1 {
-              Box::new(Expr::UnaryOp {
-                op: crate::syntax::UnaryOperator::Minus,
-                operand: Box::new(Expr::Constant("Pi".to_string())),
-              })
-            } else {
-              Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
-                left: Box::new(Expr::Integer(numer)),
-                right: Box::new(Expr::Constant("Pi".to_string())),
-              })
-            },
-            right: Box::new(Expr::Integer(denom)),
+          return Ok(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(numer), Expr::Integer(denom)],
+              },
+              Expr::Constant("Pi".to_string()),
+            ],
           });
         }
       }

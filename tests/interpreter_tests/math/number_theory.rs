@@ -613,9 +613,9 @@ mod next_prime {
 
   #[test]
   fn prime_q_negative_integers() {
-    // In Wolfram Language, PrimeQ returns False for all negative numbers
-    assert_eq!(interpret("PrimeQ[-7]").unwrap(), "False");
-    assert_eq!(interpret("PrimeQ[-2]").unwrap(), "False");
+    // In Wolfram Language, PrimeQ tests the absolute value
+    assert_eq!(interpret("PrimeQ[-7]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[-2]").unwrap(), "True");
     assert_eq!(interpret("PrimeQ[-1]").unwrap(), "False");
     assert_eq!(interpret("PrimeQ[-4]").unwrap(), "False");
     assert_eq!(interpret("PrimeQ[-100]").unwrap(), "False");

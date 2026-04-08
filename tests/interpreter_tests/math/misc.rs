@@ -380,7 +380,7 @@ mod log {
 
   #[test]
   fn log_neg_i() {
-    assert_eq!(interpret("Log[-I]").unwrap(), "(-(I/2))*Pi");
+    assert_eq!(interpret("Log[-I]").unwrap(), "(-1/2*I)*Pi");
   }
 
   #[test]
@@ -390,7 +390,8 @@ mod log {
 
   #[test]
   fn log_e_to_x() {
-    assert_eq!(interpret("Log[E^x]").unwrap(), "x");
+    // Log[E^x] stays unevaluated for symbolic x
+    assert_eq!(interpret("Log[E^x]").unwrap(), "Log[E^x]");
   }
 }
 
