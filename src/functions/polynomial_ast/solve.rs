@@ -4868,7 +4868,9 @@ pub fn nminimize_ast(
 
   let n = vars.len();
 
-  // Phase 1: Grid sampling to find best starting point
+  // Phase 1: Multi-scale grid sampling to find best starting point.
+  // Use multiple scales to avoid missing optima near the origin when bounds
+  // are very wide (e.g. the default -1e6 to 1e6).
   let samples_per_dim = 50;
   let mut best_x = vec![0.0; n];
   let mut best_f = if maximize {
@@ -4877,30 +4879,66 @@ pub fn nminimize_ast(
     f64::INFINITY
   };
 
-  // Generate sample points
-  let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
-  for i in 0..n {
-    let (lo, hi) = bounds[i];
-    let mut new_points = Vec::new();
-    for pt in &sample_points {
-      for j in 0..=samples_per_dim {
-        let t = j as f64 / samples_per_dim as f64;
-        let val = lo + t * (hi - lo);
-        let mut new_pt = pt.clone();
-        new_pt.push(val);
-        new_points.push(new_pt);
+  let update_best =
+    |pt: &[f64],
+     best_x: &mut Vec<f64>,
+     best_f: &mut f64,
+     eval_at: &dyn Fn(&Expr, &[f64]) -> Result<f64, InterpreterError>| {
+      if let Ok(fval) = eval_at(&objective, pt)
+        && fval.is_finite()
+        && ((maximize && fval > *best_f) || (!maximize && fval < *best_f))
+      {
+        *best_f = fval;
+        *best_x = pt.to_vec();
       }
+    };
+
+  // Determine which scale ranges to sample. Always include the full bounds,
+  // plus tighter ranges when the bounds are wide.
+  let mut scale_bounds: Vec<Vec<(f64, f64)>> = Vec::new();
+
+  // Full bounds
+  let full: Vec<(f64, f64)> = bounds.clone();
+  scale_bounds.push(full);
+
+  // Add tighter ranges when default bounds are wide
+  for &scale in &[10.0, 100.0, 1000.0] {
+    let tight: Vec<(f64, f64)> = bounds
+      .iter()
+      .map(|&(lo, hi)| {
+        let range = hi - lo;
+        if range > scale * 4.0 {
+          let mid = (lo + hi) / 2.0;
+          ((mid - scale).max(lo), (mid + scale).min(hi))
+        } else {
+          (lo, hi)
+        }
+      })
+      .collect();
+    if tight != *scale_bounds.last().unwrap() {
+      scale_bounds.push(tight);
     }
-    sample_points = new_points;
   }
 
-  for pt in &sample_points {
-    if let Ok(fval) = eval_at(&objective, pt)
-      && fval.is_finite()
-      && ((maximize && fval > best_f) || (!maximize && fval < best_f))
-    {
-      best_f = fval;
-      best_x = pt.clone();
+  for sb in &scale_bounds {
+    let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
+    for i in 0..n {
+      let (lo, hi) = sb[i];
+      let mut new_points = Vec::new();
+      for pt in &sample_points {
+        for j in 0..=samples_per_dim {
+          let t = j as f64 / samples_per_dim as f64;
+          let val = lo + t * (hi - lo);
+          let mut new_pt = pt.clone();
+          new_pt.push(val);
+          new_points.push(new_pt);
+        }
+      }
+      sample_points = new_points;
+    }
+
+    for pt in &sample_points {
+      update_best(pt, &mut best_x, &mut best_f, &eval_at);
     }
   }
 
@@ -4937,52 +4975,87 @@ pub fn nminimize_ast(
 
   let mut x = best_x;
 
-  if let Some(ref grads) = grad_exprs {
-    // Gradient-based refinement (projected gradient descent)
-    for _ in 0..max_iter {
-      let mut grad = vec![0.0; n];
-      let mut grad_ok = true;
-      for i in 0..n {
-        match eval_at(&grads[i], &x) {
-          Ok(g) if g.is_finite() => grad[i] = g,
-          _ => {
-            grad_ok = false;
+  // Run gradient descent from a starting point, returning the optimized point and value.
+  let run_gradient_descent =
+    |start: Vec<f64>, grads: &[Expr]| -> (Vec<f64>, f64) {
+      let mut x = start;
+      for _ in 0..max_iter {
+        let mut grad = vec![0.0; n];
+        let mut grad_ok = true;
+        for i in 0..n {
+          match eval_at(&grads[i], &x) {
+            Ok(g) if g.is_finite() => grad[i] = g,
+            _ => {
+              grad_ok = false;
+              break;
+            }
+          }
+        }
+        if !grad_ok {
+          break;
+        }
+
+        let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
+        if grad_norm < tol {
+          break;
+        }
+
+        let mut alpha = 0.1 / grad_norm.max(1.0);
+        let current_f = eval_at(&objective, &x).unwrap_or(f64::INFINITY) * sign;
+
+        for _ in 0..30 {
+          let x_new: Vec<f64> = x
+            .iter()
+            .enumerate()
+            .map(|(i, xi)| {
+              let raw = xi - sign * alpha * grad[i];
+              raw.clamp(bounds[i].0, bounds[i].1)
+            })
+            .collect();
+          if let Ok(new_f) = eval_at(&objective, &x_new)
+            && new_f.is_finite()
+            && new_f * sign < current_f
+          {
+            x = x_new;
+            break;
+          }
+          alpha *= 0.5;
+          if alpha < 1e-20 {
             break;
           }
         }
       }
-      if !grad_ok {
-        break;
-      }
+      let fval = eval_at(&objective, &x).unwrap_or(f64::INFINITY);
+      (x, fval)
+    };
 
-      let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
-      if grad_norm < tol {
-        break;
-      }
+  if let Some(ref grads) = grad_exprs {
+    // Run gradient descent from the best sampled point
+    let (x_opt, f_opt) = run_gradient_descent(x.clone(), grads);
+    x = x_opt;
 
-      // Backtracking line search with projection onto bounds
-      let mut alpha = 0.1 / grad_norm.max(1.0);
-      let current_f = eval_at(&objective, &x).unwrap_or(f64::INFINITY) * sign;
-
-      for _ in 0..30 {
-        let x_new: Vec<f64> = x
-          .iter()
-          .enumerate()
-          .map(|(i, xi)| {
-            let raw = xi - sign * alpha * grad[i];
-            raw.clamp(bounds[i].0, bounds[i].1)
-          })
-          .collect();
-        if let Ok(new_f) = eval_at(&objective, &x_new)
-          && new_f.is_finite()
-          && new_f * sign < current_f
-        {
-          x = x_new;
-          break;
-        }
-        alpha *= 0.5;
-        if alpha < 1e-20 {
-          break;
+    // Check for saddle points by perturbing and re-running from nearby points.
+    // This avoids getting stuck at local maxima or saddle points where
+    // gradient is zero.
+    let perturbations = [0.1, 1.0, 10.0];
+    for eps in &perturbations {
+      for i in 0..n {
+        for &dir in &[-1.0, 1.0] {
+          let mut x_perturbed = x.clone();
+          x_perturbed[i] =
+            (x_perturbed[i] + dir * eps).clamp(bounds[i].0, bounds[i].1);
+          let (x_new, f_new) = run_gradient_descent(x_perturbed, grads);
+          if f_new.is_finite()
+            && ((maximize && f_new > f_opt) || (!maximize && f_new < f_opt))
+          {
+            let better = (maximize
+              && f_new > eval_at(&objective, &x).unwrap_or(f64::NEG_INFINITY))
+              || (!maximize
+                && f_new < eval_at(&objective, &x).unwrap_or(f64::INFINITY));
+            if better {
+              x = x_new;
+            }
+          }
         }
       }
     }
