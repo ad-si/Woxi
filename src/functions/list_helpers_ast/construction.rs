@@ -694,6 +694,25 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         }
       };
 
+      // Handle list iterator: Do[body, {i, {a, b, c}}]
+      if items.len() == 2 {
+        let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        if let Expr::List(list_items) = &val_expr {
+          for item in list_items {
+            let substituted =
+              crate::syntax::substitute_variable(body, &var_name, item);
+            match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+              Ok(_) => {}
+              Err(InterpreterError::BreakSignal) => break,
+              Err(InterpreterError::ContinueSignal) => {}
+              Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+              Err(e) => return Err(e),
+            }
+          }
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
+      }
+
       let (min, max, step) = if items.len() == 2 {
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
