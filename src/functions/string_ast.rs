@@ -431,8 +431,24 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let prefix = expr_to_str(&args[1])?;
   let ignore_case = has_ignore_case_option(args);
+
+  // Try regex-based pattern first
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let full_pat = if ignore_case {
+      format!("(?i)^(?:{})", regex_pat)
+    } else {
+      format!("^(?:{})", regex_pat)
+    };
+    let re = regex::Regex::new(&full_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+    ));
+  }
+
+  let prefix = expr_to_str(&args[1])?;
   let result = if ignore_case {
     s.to_lowercase().starts_with(&prefix.to_lowercase())
   } else {
@@ -451,8 +467,24 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let suffix = expr_to_str(&args[1])?;
   let ignore_case = has_ignore_case_option(args);
+
+  // Try regex-based pattern first
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let full_pat = if ignore_case {
+      format!("(?i)(?:{})$", regex_pat)
+    } else {
+      format!("(?:{})$", regex_pat)
+    };
+    let re = regex::Regex::new(&full_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+    ));
+  }
+
+  let suffix = expr_to_str(&args[1])?;
   let result = if ignore_case {
     s.to_lowercase().ends_with(&suffix.to_lowercase())
   } else {

@@ -2686,6 +2686,34 @@ mod string_count_patterns {
   }
 }
 
+mod string_starts_ends_patterns {
+  use woxi::interpret;
+
+  #[test]
+  fn starts_q_letter_character() {
+    assert_eq!(
+      interpret(r#"StringStartsQ["hello", LetterCharacter]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringStartsQ["123hello", LetterCharacter]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn ends_q_digit_character() {
+    assert_eq!(
+      interpret(r#"StringEndsQ["hello123", DigitCharacter]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringEndsQ["hello", DigitCharacter]"#).unwrap(),
+      "False"
+    );
+  }
+}
+
 mod string_contains_free_patterns {
   use woxi::interpret;
 
