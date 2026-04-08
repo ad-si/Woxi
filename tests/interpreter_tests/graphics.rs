@@ -2052,6 +2052,13 @@ mod plot3d {
         r#"WordCloud[{"Lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "dolor", "Pellentesque", "dolor", "augue", "sit"}]"#
       ));
     }
+
+    #[test]
+    fn word_cloud_integer_list() {
+      insta::assert_snapshot!(export_svg(
+        r#"WordCloud[{1, 2, 3, 2, 1, 1, 3, 5, 5, 1}]"#
+      ));
+    }
   }
 
   mod field_plots {

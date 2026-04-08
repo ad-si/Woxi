@@ -1,0 +1,11 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(r#\"WordCloud[{1, 2, 3, 2, 1, 1, 3, 5, 5, 1}]\"#)"
+---
+<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="225" fill="rgb(255,255,255)"/>
+<text transform="translate(180.0,112.5)" font-size="45.0" fill="rgb(94,129,181)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">1</text>
+<text transform="translate(160.1,119.2) rotate(-90)" font-size="12.0" fill="rgb(224,147,44)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">2</text>
+<text transform="translate(197.4,109.0)" font-size="12.0" fill="rgb(143,176,50)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">3</text>
+<text transform="translate(156.7,109.5)" font-size="12.0" fill="rgb(217,81,25)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">5</text>
+</svg>
