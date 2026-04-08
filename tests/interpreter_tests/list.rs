@@ -4446,4 +4446,21 @@ mod cases_count_level_spec {
       "5"
     );
   }
+
+  #[test]
+  fn delete_cases_infinity_level() {
+    assert_eq!(
+      interpret("DeleteCases[{1, {2, 3}, {4, {5}}}, _Integer, Infinity]")
+        .unwrap(),
+      "{{}, {{}}}"
+    );
+  }
+
+  #[test]
+  fn delete_cases_exact_level() {
+    assert_eq!(
+      interpret("DeleteCases[{1, {2, 3}, {4, {5}}}, _Integer, {2}]").unwrap(),
+      "{1, {}, {{5}}}"
+    );
+  }
 }
