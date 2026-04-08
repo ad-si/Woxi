@@ -2250,6 +2250,29 @@ mod nmaximize {
     );
     assert!(result.contains("1."), "Min should be ~1, got: {}", result);
   }
+
+  #[test]
+  fn nminimize_quartic_saddle_point() {
+    // x^4 - 3x^2 + 2 has a local max at x=0 (value 2) and
+    // global minima at x=±sqrt(3/2) (value -0.25).
+    // Must not get stuck at the saddle point x=0.
+    let result = interpret("NMinimize[x^4 - 3 x^2 + 2, x]").unwrap();
+    assert!(
+      result.starts_with("{-0.25"),
+      "Min should be ~-0.25, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn nminimize_unconstrained_quadratic() {
+    let result = interpret("NMinimize[x^2, x]").unwrap();
+    assert!(
+      result.starts_with("{0."),
+      "Min should be ~0, got: {}",
+      result
+    );
+  }
 }
 
 mod findroot_symbolic_start {
