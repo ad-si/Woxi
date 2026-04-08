@@ -2998,7 +2998,17 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     let all_comparisons = operators.iter().all(|op| {
       matches!(
         op.as_str(),
-        "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!="
+        "=="
+          | "!="
+          | "\u{2260}"
+          | "<"
+          | "<="
+          | "\u{2264}"
+          | ">"
+          | ">="
+          | "\u{2265}"
+          | "==="
+          | "=!="
       )
     });
 
@@ -3008,11 +3018,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         .iter()
         .map(|op| match op.as_str() {
           "==" => ComparisonOp::Equal,
-          "!=" => ComparisonOp::NotEqual,
+          "!=" | "\u{2260}" => ComparisonOp::NotEqual,
           "<" => ComparisonOp::Less,
-          "<=" => ComparisonOp::LessEqual,
+          "<=" | "\u{2264}" => ComparisonOp::LessEqual,
           ">" => ComparisonOp::Greater,
-          ">=" => ComparisonOp::GreaterEqual,
+          ">=" | "\u{2265}" => ComparisonOp::GreaterEqual,
           "===" => ComparisonOp::SameQ,
           "=!=" => ComparisonOp::UnsameQ,
           _ => ComparisonOp::Equal,
@@ -3166,15 +3176,16 @@ fn operator_precedence(op: &str) -> u8 {
     "=" | ":=" | "=." => 2, // Assignment / Unset
     "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
     "/;" => 3, // Condition (higher than assignment, lower than Rule)
-    "->" | ":>" => 4, // Rule/RuleDelayed (lower than boolean operators)
-    "||" => 5, // Or
-    "&&" => 6, // And
+    "->" | "\u{2192}" | ":>" => 4, // Rule/RuleDelayed (lower than boolean operators)
+    "||" => 5,                     // Or
+    "&&" => 6,                     // And
     "\\[NotElement]" | "\u{2209}" => 7, // NotElement (same level as comparisons)
     "\\[ReverseElement]" | "\u{220B}" => 7, // ReverseElement (same level as comparisons)
     "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
     "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
     "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
-    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 7, // Comparisons
+    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
+    | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
     "~~" => 8,          // StringExpression (lower than Alternatives)
     "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 10, // Plus/Minus
@@ -3416,7 +3427,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "Dot".to_string(),
       args: vec![left.clone(), right.clone()],
     },
-    "->" => Expr::Rule {
+    "->" | "\u{2192}" => Expr::Rule {
       pattern: Box::new(left.clone()),
       replacement: Box::new(right.clone()),
     },
@@ -3490,14 +3501,15 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
       }
     }
-    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => {
+    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
+    | "\u{2265}" | "===" | "=!=" => {
       let comp_op = match op_str {
         "==" => ComparisonOp::Equal,
-        "!=" => ComparisonOp::NotEqual,
+        "!=" | "\u{2260}" => ComparisonOp::NotEqual,
         "<" => ComparisonOp::Less,
-        "<=" => ComparisonOp::LessEqual,
+        "<=" | "\u{2264}" => ComparisonOp::LessEqual,
         ">" => ComparisonOp::Greater,
-        ">=" => ComparisonOp::GreaterEqual,
+        ">=" | "\u{2265}" => ComparisonOp::GreaterEqual,
         "===" => ComparisonOp::SameQ,
         "=!=" => ComparisonOp::UnsameQ,
         _ => ComparisonOp::Equal,

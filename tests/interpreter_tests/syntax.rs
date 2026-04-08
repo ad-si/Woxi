@@ -5515,3 +5515,54 @@ mod recursion_limit {
     assert_eq!(result.unwrap(), "Pi/3");
   }
 }
+
+mod unicode_operators {
+  use super::*;
+
+  #[test]
+  fn less_equal() {
+    assert_eq!(interpret("3 ≤ 5").unwrap(), "True");
+    assert_eq!(interpret("5 ≤ 3").unwrap(), "False");
+    assert_eq!(interpret("3 ≤ 3").unwrap(), "True");
+    assert_eq!(interpret("x ≤ 5").unwrap(), "x <= 5");
+  }
+
+  #[test]
+  fn greater_equal() {
+    assert_eq!(interpret("5 ≥ 3").unwrap(), "True");
+    assert_eq!(interpret("3 ≥ 5").unwrap(), "False");
+    assert_eq!(interpret("3 ≥ 3").unwrap(), "True");
+    assert_eq!(interpret("x ≥ 5").unwrap(), "x >= 5");
+  }
+
+  #[test]
+  fn not_equal() {
+    assert_eq!(interpret("3 ≠ 5").unwrap(), "True");
+    assert_eq!(interpret("3 ≠ 3").unwrap(), "False");
+    assert_eq!(interpret("x ≠ 5").unwrap(), "x != 5");
+  }
+
+  #[test]
+  fn rule_arrow() {
+    assert_eq!(interpret("{1, 2, 3} /. x_ → x^2").unwrap(), "{1, 4, 9}");
+    assert_eq!(interpret("a → b").unwrap(), "a -> b");
+  }
+
+  #[test]
+  fn infinity_symbol() {
+    assert_eq!(interpret("∞").unwrap(), "Infinity");
+    assert_eq!(interpret("∞ + 1").unwrap(), "Infinity");
+    assert_eq!(interpret("-∞").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn rule_in_association() {
+    assert_eq!(interpret("<|\"a\" → 1, \"b\" → 2|>[\"a\"]").unwrap(), "1");
+  }
+
+  #[test]
+  fn comparison_chain() {
+    assert_eq!(interpret("1 ≤ 2 ≤ 3").unwrap(), "True");
+    assert_eq!(interpret("1 ≤ 3 ≥ 2").unwrap(), "True");
+  }
+}
