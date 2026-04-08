@@ -70,9 +70,9 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3}, AxesLabel -> {\"X Axis\", \"Y Ax
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,229 749,229 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1510 3499,1510 "/>
-<rect x="841" y="1083" width="733" height="426" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="1757" y="656" width="734" height="853" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="2674" y="229" width="733" height="1280" opacity="1" fill="#5E81B5" stroke="none"/>
+<rect x="841" y="1083" width="733" height="426" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
+<rect x="1757" y="656" width="734" height="853" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
+<rect x="2674" y="229" width="733" height="1280" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
 <text x="2125.0" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">X Axis</text>
 <text x="244.0" y="805.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666" transform="rotate(-90,244.0,805.0)">Y Axis</text>
 </svg>

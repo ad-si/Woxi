@@ -70,7 +70,7 @@ expression: "export_svg(\"BarChart[{1, 2, 3}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,250 749,250 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<rect x="841" y="1250" width="733" height="499" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="1757" y="750" width="734" height="999" opacity="1" fill="#5E81B5" stroke="none"/>
-<rect x="2674" y="250" width="733" height="1499" opacity="1" fill="#5E81B5" stroke="none"/>
+<rect x="841" y="1250" width="733" height="499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
+<rect x="1757" y="750" width="734" height="999" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
+<rect x="2674" y="250" width="733" height="1499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
 </svg>

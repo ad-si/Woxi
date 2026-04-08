@@ -1650,6 +1650,8 @@ pub(crate) fn generate_bar_svg(
     })?;
   }
 
+  add_bar_borders(&mut buf, RESOLUTION_SCALE);
+
   rewrite_svg_header(
     &mut buf,
     svg_width,
@@ -2073,6 +2075,8 @@ pub(crate) fn generate_histogram_svg(
     })?;
   }
 
+  add_bar_borders(&mut buf, RESOLUTION_SCALE);
+
   rewrite_svg_header(
     &mut buf,
     svg_width,
@@ -2308,6 +2312,29 @@ pub(crate) fn generate_axes_only_opts(
     y_min,
     y_max,
   })
+}
+
+/// Add a border to filled chart bars in the SVG.
+/// Plotters' SVG backend doesn't support stroke-width on rects,
+/// so we post-process the SVG to add it.
+pub(crate) fn add_bar_borders(buf: &mut String, stroke_width: u32) {
+  // The first <rect> is the background, skip it.
+  // All subsequent filled rects (with stroke="none") are bars.
+  let marker = "stroke=\"none\"/>";
+  let color = if crate::is_dark_mode() {
+    "#555555"
+  } else {
+    "#000000"
+  };
+  let replacement =
+    format!("stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>");
+  // Skip the first occurrence (background rect)
+  if let Some(first) = buf.find(marker) {
+    let after_first = first + marker.len();
+    let rest = buf[after_first..].replace(marker, &replacement);
+    buf.truncate(after_first);
+    buf.push_str(&rest);
+  }
 }
 
 /// Rewrite the SVG header to use viewBox for display scaling.
