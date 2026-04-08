@@ -2545,15 +2545,11 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let target_len = n as usize;
-  let pad_char = if args.len() == 3 {
-    let pad_str = expr_to_str(&args[2])?;
-    if pad_str.is_empty() {
-      ' '
-    } else {
-      pad_str.chars().next().unwrap()
-    }
+  let pad_str = if args.len() == 3 {
+    let p = expr_to_str(&args[2])?;
+    if p.is_empty() { " ".to_string() } else { p }
   } else {
-    ' '
+    " ".to_string()
   };
 
   let char_count = s.chars().count();
@@ -2562,8 +2558,8 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       s.chars().skip(char_count - target_len).collect(),
     ))
   } else {
-    let padding: String =
-      std::iter::repeat_n(pad_char, target_len - char_count).collect();
+    let pad_needed = target_len - char_count;
+    let padding: String = pad_str.chars().cycle().take(pad_needed).collect();
     Ok(Expr::String(format!("{}{}", padding, s)))
   }
 }
@@ -2585,23 +2581,19 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let target_len = n as usize;
-  let pad_char = if args.len() == 3 {
-    let pad_str = expr_to_str(&args[2])?;
-    if pad_str.is_empty() {
-      ' '
-    } else {
-      pad_str.chars().next().unwrap()
-    }
+  let pad_str = if args.len() == 3 {
+    let p = expr_to_str(&args[2])?;
+    if p.is_empty() { " ".to_string() } else { p }
   } else {
-    ' '
+    " ".to_string()
   };
 
   let char_count = s.chars().count();
   if char_count >= target_len {
     Ok(Expr::String(s.chars().take(target_len).collect()))
   } else {
-    let padding: String =
-      std::iter::repeat_n(pad_char, target_len - char_count).collect();
+    let pad_needed = target_len - char_count;
+    let padding: String = pad_str.chars().cycle().take(pad_needed).collect();
     Ok(Expr::String(format!("{}{}", s, padding)))
   }
 }

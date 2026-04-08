@@ -2755,4 +2755,72 @@ mod string_contains_free_patterns {
       "{abc, def}"
     );
   }
+
+  #[test]
+  fn string_pad_right_single_char() {
+    assert_eq!(
+      interpret(r#"StringPadRight["hi", 5, "0"]"#).unwrap(),
+      "hi000"
+    );
+  }
+
+  #[test]
+  fn string_pad_right_multi_char() {
+    assert_eq!(
+      interpret(r#"StringPadRight["hi", 10, "xy"]"#).unwrap(),
+      "hixyxyxyxy"
+    );
+    assert_eq!(
+      interpret(r#"StringPadRight["x", 6, "abc"]"#).unwrap(),
+      "xabcab"
+    );
+    assert_eq!(
+      interpret(r#"StringPadRight["hi", 10, "abc"]"#).unwrap(),
+      "hiabcabcab"
+    );
+  }
+
+  #[test]
+  fn string_pad_right_default() {
+    assert_eq!(interpret(r#"StringPadRight["hi", 5]"#).unwrap(), "hi   ");
+  }
+
+  #[test]
+  fn string_pad_right_truncate() {
+    assert_eq!(interpret(r#"StringPadRight["hello", 3]"#).unwrap(), "hel");
+  }
+
+  #[test]
+  fn string_pad_left_single_char() {
+    assert_eq!(
+      interpret(r#"StringPadLeft["hi", 5, "0"]"#).unwrap(),
+      "000hi"
+    );
+  }
+
+  #[test]
+  fn string_pad_left_multi_char() {
+    assert_eq!(
+      interpret(r#"StringPadLeft["hi", 10, "xy"]"#).unwrap(),
+      "xyxyxyxyhi"
+    );
+    assert_eq!(
+      interpret(r#"StringPadLeft["x", 6, "abc"]"#).unwrap(),
+      "abcabx"
+    );
+    assert_eq!(
+      interpret(r#"StringPadLeft["hi", 10, "abc"]"#).unwrap(),
+      "abcabcabhi"
+    );
+  }
+
+  #[test]
+  fn string_pad_left_default() {
+    assert_eq!(interpret(r#"StringPadLeft["hi", 5]"#).unwrap(), "   hi");
+  }
+
+  #[test]
+  fn string_pad_left_truncate() {
+    assert_eq!(interpret(r#"StringPadLeft["hello", 3]"#).unwrap(), "llo");
+  }
 }

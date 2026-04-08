@@ -1395,8 +1395,7 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// LeapYearQ[{year}] or LeapYearQ[DateObject[...]] - Tests if a year is a leap year
-/// Bare integers are not accepted (Wolfram requires a date specification).
+/// LeapYearQ[year] or LeapYearQ[{year}] or LeapYearQ[DateObject[...]] - Tests if a year is a leap year
 pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let extract_year = |e: &Expr| -> Option<i128> {
     match e {
@@ -1409,6 +1408,15 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let year = match &args[0] {
+    // Accept bare integer: LeapYearQ[year]
+    Expr::Integer(n) => *n,
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      match n.to_i128() {
+        Some(y) => y,
+        None => return Ok(bool_expr(false)),
+      }
+    }
     // Accept list format: LeapYearQ[{year}] or LeapYearQ[{year, month, day}]
     Expr::List(items) if !items.is_empty() => match extract_year(&items[0]) {
       Some(y) => y,
@@ -1427,7 +1435,7 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return Ok(bool_expr(false)),
       }
     }
-    // Bare integers and other forms return False
+    // Other forms return False
     _ => {
       return Ok(bool_expr(false));
     }
