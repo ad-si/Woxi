@@ -409,6 +409,17 @@ pub fn set_options_from_value(
 
 /// AST-based Set implementation to handle Part assignment on associations and lists
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
+  // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
+  let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
+    && name == "Condition"
+    && args.len() == 2
+  {
+    (&args[0], Some(&args[1]))
+  } else {
+    (lhs, None)
+  };
+
   // Handle Entity property mutation: Entity["type", "name"]["property"] = value
   if let Expr::CurriedCall { func, args } = lhs
     && let Expr::FunctionCall {
@@ -761,9 +772,20 @@ pub fn set_delayed_ast(
   lhs: &Expr,
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Unwrap Condition: f[x_] := body /; test is parsed as
+  // Unwrap Condition on LHS: f[x_] /; test := body is parsed as
+  // SetDelayed[Condition[f[x_], test], body]. Extract the pattern and condition.
+  let (lhs, lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
+    && name == "Condition"
+    && args.len() == 2
+  {
+    (&args[0], Some(&args[1]))
+  } else {
+    (lhs, None)
+  };
+
+  // Unwrap Condition on RHS: f[x_] := body /; test is parsed as
   // SetDelayed[f[x_], Condition[body, test]]. Extract the body and condition.
-  let (body, body_condition) = if let Expr::FunctionCall { name, args } = body
+  let (body, rhs_condition) = if let Expr::FunctionCall { name, args } = body
     && name == "Condition"
     && args.len() == 2
   {
@@ -771,6 +793,17 @@ pub fn set_delayed_ast(
   } else {
     (body, None)
   };
+
+  // Combine LHS and RHS conditions
+  let body_condition = match (lhs_condition, rhs_condition) {
+    (Some(l), Some(r)) => Some(Expr::FunctionCall {
+      name: "And".to_string(),
+      args: vec![l.clone(), r.clone()],
+    }),
+    (Some(c), None) | (None, Some(c)) => Some(c.clone()),
+    (None, None) => None,
+  };
+  let body_condition = body_condition.as_ref();
 
   // Handle Attributes[f] := value — set attributes on symbol f
   if let Expr::FunctionCall {
