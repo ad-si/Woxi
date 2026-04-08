@@ -751,3 +751,29 @@ mod dated {
     );
   }
 }
+
+mod leap_year_q {
+  use woxi::interpret;
+
+  #[test]
+  fn leap_year_bare_integer() {
+    assert_eq!(interpret("LeapYearQ[2024]").unwrap(), "True");
+    assert_eq!(interpret("LeapYearQ[2023]").unwrap(), "False");
+  }
+
+  #[test]
+  fn leap_year_list_format() {
+    assert_eq!(interpret("LeapYearQ[{2024}]").unwrap(), "True");
+    assert_eq!(interpret("LeapYearQ[{2023}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn leap_year_century_rules() {
+    // Divisible by 400 -> leap
+    assert_eq!(interpret("LeapYearQ[2000]").unwrap(), "True");
+    // Divisible by 100 but not 400 -> not leap
+    assert_eq!(interpret("LeapYearQ[1900]").unwrap(), "False");
+    // Divisible by 4 but not 100 -> leap
+    assert_eq!(interpret("LeapYearQ[2004]").unwrap(), "True");
+  }
+}

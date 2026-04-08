@@ -1396,22 +1396,27 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// LeapYearQ[{year}] - Tests if a year is a leap year
+/// LeapYearQ[year] or LeapYearQ[{year}] - Tests if a year is a leap year
 pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let year = match &args[0] {
-    Expr::List(items) if !items.is_empty() => match &items[0] {
-      Expr::Integer(n) => *n,
+  let extract_year = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
       Expr::BigInteger(n) => {
         use num_traits::ToPrimitive;
-        match n.to_i128() {
-          Some(v) => v,
-          None => return Ok(bool_expr(false)),
-        }
+        n.to_i128()
       }
-      _ => return Ok(bool_expr(false)),
+      _ => None,
+    }
+  };
+  let year = match &args[0] {
+    Expr::List(items) if !items.is_empty() => match extract_year(&items[0]) {
+      Some(y) => y,
+      None => return Ok(bool_expr(false)),
     },
-    Expr::Integer(_) | Expr::BigInteger(_) => return Ok(bool_expr(false)),
-    _ => return Ok(bool_expr(false)),
+    _ => match extract_year(&args[0]) {
+      Some(y) => y,
+      None => return Ok(bool_expr(false)),
+    },
   };
   let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
   Ok(bool_expr(is_leap))
