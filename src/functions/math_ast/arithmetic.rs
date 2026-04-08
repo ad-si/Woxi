@@ -43,6 +43,16 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Propagate Indeterminate and ComplexInfinity through addition
+  for arg in &flat_args {
+    if matches!(arg, Expr::Identifier(n) if n == "Indeterminate") {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    if matches!(arg, Expr::Identifier(n) if n == "ComplexInfinity") {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+  }
+
   // Check for Infinity + (-Infinity) → Indeterminate
   {
     let mut has_pos_inf = false;
@@ -2425,6 +2435,25 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args {
     flatten_times(arg, &mut flat_args);
   }
+
+  // Propagate Indeterminate and ComplexInfinity through multiplication
+  for arg in &flat_args {
+    if matches!(arg, Expr::Identifier(n) if n == "Indeterminate") {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+  }
+  // ComplexInfinity * 0 = Indeterminate, ComplexInfinity * x = ComplexInfinity
+  let has_complex_inf = flat_args
+    .iter()
+    .any(|a| matches!(a, Expr::Identifier(n) if n == "ComplexInfinity"));
+  if has_complex_inf {
+    let has_zero = flat_args.iter().any(|a| matches!(a, Expr::Integer(0)));
+    if has_zero {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
   let args = &flat_args;
 
   // Try complex multiplication: if all args can be extracted as exact complex

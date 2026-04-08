@@ -1995,6 +1995,12 @@ mod expand_threading {
     assert_eq!(interpret("Sqrt[Indeterminate]").unwrap(), "Indeterminate");
     assert_eq!(interpret("Sinh[Indeterminate]").unwrap(), "Indeterminate");
     assert_eq!(interpret("Cosh[Indeterminate]").unwrap(), "Indeterminate");
+    // Arithmetic propagation
+    assert_eq!(interpret("Indeterminate + 1").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Indeterminate * 5").unwrap(), "Indeterminate");
+    assert_eq!(interpret("ComplexInfinity + 1").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ComplexInfinity * 3").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("ComplexInfinity * 0").unwrap(), "Indeterminate");
   }
 
   #[test]
