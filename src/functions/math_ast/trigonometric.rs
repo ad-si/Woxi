@@ -1112,6 +1112,27 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     // Erf[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // Erf[Infinity] = 1, Erf[-Infinity] = -1
+    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(1)),
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DirectedInfinity" && dargs.len() == 1 =>
+    {
+      match &dargs[0] {
+        Expr::Integer(1) => Ok(Expr::Integer(1)),
+        Expr::Integer(-1) => Ok(Expr::Integer(-1)),
+        _ => Ok(Expr::FunctionCall {
+          name: "Erf".to_string(),
+          args: args.to_vec(),
+        }),
+      }
+    }
+    // Erf[-Infinity] = -1 (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      Ok(Expr::Integer(-1))
+    }
     // Erf[-x] = -Erf[x] (UnaryOp form)
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
@@ -1190,6 +1211,26 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     // Erfc[0] = 1
     Expr::Integer(0) => Ok(Expr::Integer(1)),
+    // Erfc[Infinity] = 0, Erfc[-Infinity] = 2
+    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
+      Ok(Expr::Integer(2))
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DirectedInfinity" && dargs.len() == 1 =>
+    {
+      match &dargs[0] {
+        Expr::Integer(1) => Ok(Expr::Integer(0)),
+        Expr::Integer(-1) => Ok(Expr::Integer(2)),
+        _ => Ok(Expr::FunctionCall {
+          name: "Erfc".to_string(),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
     // Otherwise symbolic
