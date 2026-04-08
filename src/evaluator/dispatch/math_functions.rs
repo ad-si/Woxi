@@ -1137,7 +1137,8 @@ pub fn dispatch_math_functions(
     "FromDigits" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::from_digits_ast(args));
     }
-    "IntegerName" if args.len() == 1 => {
+    "IntegerName" if args.len() == 1 || args.len() == 2 => {
+      // Second argument (e.g., "Words") is the format hint; ignored for now.
       return Some(crate::functions::math_ast::integer_name_ast(args));
     }
     "RomanNumeral" if args.len() == 1 => {

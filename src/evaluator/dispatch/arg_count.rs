@@ -460,7 +460,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "IntegerDigits" => Some((1, 3)),
     "IntegerExponent" => Some((1, 2)),
     "IntegerLength" => Some((1, 2)),
-    "IntegerName" => Some((1, 1)),
+    "IntegerName" => Some((1, 2)),
     "IntegerPart" => Some((1, 1)),
     "IntegerPartitions" => Some((1, 3)),
     "IntegerQ" => Some((1, 1)),

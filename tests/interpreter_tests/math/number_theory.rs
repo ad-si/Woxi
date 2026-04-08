@@ -248,6 +248,15 @@ mod integer_name {
   fn non_integer_returns_symbolic() {
     assert_eq!(interpret("IntegerName[x]").unwrap(), "IntegerName[x]");
   }
+
+  #[test]
+  fn two_arg_form() {
+    // IntegerName[n, "Words"] is accepted (second arg is a format hint)
+    assert_eq!(
+      interpret(r#"IntegerName[42, "Words"]"#).unwrap(),
+      "forty\u{2010}two"
+    );
+  }
 }
 
 mod roman_numeral {
