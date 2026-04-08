@@ -1442,3 +1442,84 @@ mod arithmetic_geometric_mean {
     );
   }
 }
+
+mod random_prime {
+  use super::*;
+
+  #[test]
+  fn with_max() {
+    // Seed for determinism
+    interpret("SeedRandom[42]").unwrap();
+    let result: i128 = interpret("RandomPrime[100]").unwrap().parse().unwrap();
+    assert!(result >= 2 && result <= 100);
+    assert!(woxi::is_prime(result as usize));
+  }
+
+  #[test]
+  fn with_range() {
+    interpret("SeedRandom[42]").unwrap();
+    let result: i128 =
+      interpret("RandomPrime[{10, 30}]").unwrap().parse().unwrap();
+    assert!(result >= 10 && result <= 30);
+    assert!(woxi::is_prime(result as usize));
+  }
+
+  #[test]
+  fn list_of_primes() {
+    interpret("SeedRandom[42]").unwrap();
+    assert_eq!(interpret("Length[RandomPrime[100, 10]]").unwrap(), "10");
+  }
+
+  #[test]
+  fn all_results_are_prime() {
+    interpret("SeedRandom[42]").unwrap();
+    assert_eq!(
+      interpret("AllTrue[RandomPrime[100, 20], PrimeQ]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn all_results_in_range() {
+    interpret("SeedRandom[42]").unwrap();
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomPrime[{10, 50}, 20], Function[x, 10 <= x <= 50]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn range_with_single_prime() {
+    interpret("SeedRandom[42]").unwrap();
+    // Only prime in {14, 17} is 17
+    assert_eq!(interpret("RandomPrime[{14, 17}]").unwrap(), "17");
+  }
+
+  #[test]
+  fn no_primes_in_range() {
+    assert!(interpret("RandomPrime[{14, 16}]").is_err());
+  }
+
+  #[test]
+  fn max_less_than_2() {
+    assert!(interpret("RandomPrime[1]").is_err());
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(interpret("RandomPrime[x]").unwrap(), "RandomPrime[x]");
+  }
+
+  #[test]
+  fn ten_digit_prime() {
+    interpret("SeedRandom[42]").unwrap();
+    let result: i128 = interpret("RandomPrime[{10^9, 10^10}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(result >= 1_000_000_000 && result <= 10_000_000_000);
+  }
+}

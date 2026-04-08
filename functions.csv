@@ -1674,7 +1674,7 @@ UpValues,Returns the up values of a symbol,✅,pure,2.0,1704
 CommunityGraphPlot,Community graph plot,,unevaluated,9.0,1707
 Multinomial,Returns the multinomial coefficient,✅,pure,1.0,1707
 Primes,Domain of primes,,unevaluated,4.0,1707
-RandomPrime,Random prime number,,unevaluated,6.0,1709
+RandomPrime,Random prime number,✅,contextual,6.0,1709
 SuperDagger,Dagger superscript,,unevaluated,6.0,1709
 ReImPlot,Real and imaginary plot,,unevaluated,12.0,1710
 ExponentFunction,Exponent display function,,unevaluated,2.0,1712

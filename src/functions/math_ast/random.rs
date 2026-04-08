@@ -430,6 +430,131 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RandomPrime[imax] or RandomPrime[{imin, imax}] or RandomPrime[range, n]
+pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RandomPrime expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // Parse the range from first argument
+  let (min, max) = match &args[0] {
+    Expr::Integer(imax) => {
+      if *imax < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "There are no primes in the specified interval.".into(),
+        ));
+      }
+      (2i128, *imax)
+    }
+    Expr::List(items) if items.len() == 2 => {
+      if let (Expr::Integer(imin), Expr::Integer(imax)) = (&items[0], &items[1])
+      {
+        (*imin, *imax)
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "RandomPrime: range bounds must be integers".into(),
+        ));
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RandomPrime".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let count = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n > 0 => *n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "RandomPrime: second argument must be a positive integer".into(),
+        ));
+      }
+    }
+  } else {
+    1
+  };
+
+  let range_size = max - min + 1;
+
+  // For small ranges, enumerate primes; for large ranges, use rejection sampling
+  if range_size <= 100_000 {
+    let primes = collect_primes_in_range(min, max);
+    if primes.is_empty() {
+      return Err(InterpreterError::EvaluationError(
+        "There are no primes in the specified interval.".into(),
+      ));
+    }
+    if count == 1 {
+      let idx = crate::with_rng(|rng| rng.gen_range(0..primes.len()));
+      Ok(Expr::Integer(primes[idx]))
+    } else {
+      let result: Vec<Expr> = crate::with_rng(|rng| {
+        (0..count)
+          .map(|_| Expr::Integer(primes[rng.gen_range(0..primes.len())]))
+          .collect()
+      });
+      Ok(Expr::List(result))
+    }
+  } else {
+    // Rejection sampling for large ranges
+    let start = if min < 2 { 2i128 } else { min };
+    if start > max {
+      return Err(InterpreterError::EvaluationError(
+        "There are no primes in the specified interval.".into(),
+      ));
+    }
+    let mut results = Vec::with_capacity(count);
+    for _ in 0..count {
+      let prime = crate::with_rng(|rng| {
+        loop {
+          let candidate = rng.gen_range(start..=max);
+          if is_prime_i128(candidate) {
+            return candidate;
+          }
+        }
+      });
+      results.push(Expr::Integer(prime));
+    }
+    if count == 1 {
+      Ok(results.into_iter().next().unwrap())
+    } else {
+      Ok(Expr::List(results))
+    }
+  }
+}
+
+/// Collect all primes in [min, max] (for small ranges)
+fn collect_primes_in_range(min: i128, max: i128) -> Vec<i128> {
+  let start = if min < 2 { 2 } else { min };
+  let mut primes = Vec::new();
+  for n in start..=max {
+    if crate::is_prime(n as usize) {
+      primes.push(n);
+    }
+  }
+  primes
+}
+
+/// Primality test for i128 values, using Miller-Rabin for large numbers
+fn is_prime_i128(n: i128) -> bool {
+  if n < 2 {
+    return false;
+  }
+  if n <= usize::MAX as i128 {
+    return crate::is_prime(n as usize);
+  }
+  // For values beyond usize, use BigInt Miller-Rabin
+  let big = num_bigint::BigInt::from(n);
+  super::number_theory::is_prime_bigint(&big)
+}
+
 /// SeedRandom[n] - Seed the random number generator
 /// SeedRandom[] - Reset to non-deterministic RNG
 pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
