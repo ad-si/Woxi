@@ -383,44 +383,92 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results));
   }
 
-  // Fallback to f64 for Real arguments
-  let (min, max, step) = if args.len() == 1 {
-    let max_val = expr_to_f64(&args[0]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    (1.0, max_val, 1.0)
-  } else if args.len() == 2 {
-    let min_val = expr_to_f64(&args[0]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    let max_val = expr_to_f64(&args[1]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    (min_val, max_val, 1.0)
-  } else {
-    let min_val = expr_to_f64(&args[0]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    let max_val = expr_to_f64(&args[1]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    let step_val = expr_to_f64(&args[2]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Range: argument must be numeric".into(),
-      )
-    })?;
-    (min_val, max_val, step_val)
+  // Try symbolic range when arguments contain symbolic constants (e.g. Pi)
+  let try_numeric = |e: &Expr| -> Option<f64> {
+    if let Some(f) = expr_to_f64(e) {
+      return Some(f);
+    }
+    // Try evaluating N[expr] to get a float
+    let n_expr = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![e.clone()],
+    };
+    if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&n_expr) {
+      return expr_to_f64(&evaled);
+    }
+    None
   };
+
+  let (min_expr, max_expr, step_expr) = if args.len() == 1 {
+    (Expr::Integer(1), args[0].clone(), Expr::Integer(1))
+  } else if args.len() == 2 {
+    (args[0].clone(), args[1].clone(), Expr::Integer(1))
+  } else {
+    (args[0].clone(), args[1].clone(), args[2].clone())
+  };
+
+  // Check if any arg is non-numeric (symbolic)
+  let has_symbolic = expr_to_f64(&min_expr).is_none()
+    || expr_to_f64(&max_expr).is_none()
+    || expr_to_f64(&step_expr).is_none();
+
+  if has_symbolic {
+    // Try to evaluate numerically to determine count
+    let min_f = try_numeric(&min_expr);
+    let max_f = try_numeric(&max_expr);
+    let step_f = try_numeric(&step_expr);
+
+    if let (Some(min_val), Some(max_val), Some(step_val)) =
+      (min_f, max_f, step_f)
+    {
+      if step_val == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range: step cannot be zero".into(),
+        ));
+      }
+      let count = ((max_val - min_val) / step_val).floor() as i128 + 1;
+      if count <= 0 {
+        return Ok(Expr::List(vec![]));
+      }
+      if count > 1_000_000 {
+        return Err(InterpreterError::EvaluationError(
+          "Range: result too large".into(),
+        ));
+      }
+      let mut results = Vec::with_capacity(count as usize);
+      for k in 0..count {
+        // Generate min_expr + k * step_expr symbolically
+        let elem = if k == 0 {
+          min_expr.clone()
+        } else {
+          let k_times_step = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(k)),
+            right: Box::new(step_expr.clone()),
+          };
+          let sum = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(min_expr.clone()),
+            right: Box::new(k_times_step),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&sum)?
+        };
+        results.push(elem);
+      }
+      return Ok(Expr::List(results));
+    }
+
+    return Err(InterpreterError::EvaluationError(
+      "Range: argument must be numeric".into(),
+    ));
+  }
+
+  // Fallback to f64 for Real arguments
+  let (min, max, step) = (
+    expr_to_f64(&min_expr).unwrap(),
+    expr_to_f64(&max_expr).unwrap(),
+    expr_to_f64(&step_expr).unwrap(),
+  );
 
   if step == 0.0 {
     return Err(InterpreterError::EvaluationError(

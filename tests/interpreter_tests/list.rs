@@ -2699,6 +2699,30 @@ mod range_real {
   fn range_real_step() {
     assert_eq!(interpret("Range[1.0, 2.3, .5]").unwrap(), "{1., 1.5, 2.}");
   }
+
+  #[test]
+  fn range_symbolic_pi() {
+    assert_eq!(
+      interpret("Range[0, 2 Pi, Pi/4]").unwrap(),
+      "{0, Pi/4, Pi/2, (3*Pi)/4, Pi, (5*Pi)/4, (3*Pi)/2, (7*Pi)/4, 2*Pi}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_pi_sixth() {
+    assert_eq!(
+      interpret("Range[0, Pi, Pi/6]").unwrap(),
+      "{0, Pi/6, Pi/3, Pi/2, (2*Pi)/3, (5*Pi)/6, Pi}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_sqrt() {
+    assert_eq!(
+      interpret("Range[Sqrt[2], 5 Sqrt[2], Sqrt[2]]").unwrap(),
+      "{Sqrt[2], 2*Sqrt[2], 3*Sqrt[2], 4*Sqrt[2], 5*Sqrt[2]}"
+    );
+  }
 }
 
 mod delete_deep {
