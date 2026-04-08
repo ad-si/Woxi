@@ -1792,6 +1792,28 @@ mod plot3d {
     }
 
     #[test]
+    fn histogram_custom_bin_edges() {
+      // Custom bin edges {{1, 3, 4, 6}} should produce 3 bins:
+      // [1,3): values 1,2,2 → count 3
+      // [3,4): values 3,3,3 → count 3
+      // [4,6]: values 4,4,4,4,5,5,5,5,5 → count 9
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5}, {{1, 3, 4, 6}}]",
+      );
+      let bars = svg.matches("<rect").count() - 1; // minus background rect
+      assert_eq!(bars, 3, "expected 3 bins from custom edges {{1, 3, 4, 6}}");
+      insta::assert_snapshot!(svg);
+    }
+
+    #[test]
+    fn histogram_custom_bin_edges_unequal_widths() {
+      // Unequal bin widths: {{0, 2, 5, 10}}
+      let svg = export_svg("Histogram[{1, 3, 4, 7, 8, 9}, {{0, 2, 5, 10}}]");
+      let bars = svg.matches("<rect").count() - 1;
+      assert_eq!(bars, 3, "expected 3 bins from custom edges {{0, 2, 5, 10}}");
+    }
+
+    #[test]
     fn box_whisker_chart() {
       insta::assert_snapshot!(export_svg(
         "BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]"

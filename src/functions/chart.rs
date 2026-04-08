@@ -3,7 +3,7 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, MarginOverrides, PLOT_COLORS,
+  BinSpec, DEFAULT_HEIGHT, DEFAULT_WIDTH, MarginOverrides, PLOT_COLORS,
   RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg, parse_image_size,
 };
 use crate::syntax::Expr;
@@ -425,6 +425,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
+/// or Histogram[{d1, d2, ...}, {{e1, e2, ...}}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values = extract_values(&args[0])?;
   if values.is_empty() {
@@ -433,11 +434,29 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Check if args[1] is a bin count (integer) rather than a Rule (option)
-  let bin_count = if args.len() > 1 {
-    if let Some(f) = try_eval_to_f64(&args[1]) {
+  // Check if args[1] is a bin count, custom bin edges, or an option
+  let bin_spec = if args.len() > 1 {
+    let evaluated = evaluate_expr_to_expr(&args[1])?;
+    // Check for {{e1, e2, ...}} — a list containing a single list of bin edges
+    if let Expr::List(outer) = &evaluated {
+      if outer.len() == 1 {
+        if let Expr::List(inner) = &outer[0] {
+          let edges: Vec<f64> =
+            inner.iter().filter_map(try_eval_to_f64).collect();
+          if edges.len() >= 2 {
+            Some(BinSpec::Edges(edges))
+          } else {
+            None
+          }
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    } else if let Some(f) = try_eval_to_f64(&evaluated) {
       let n = f as usize;
-      if n > 0 { Some(n) } else { None }
+      if n > 0 { Some(BinSpec::Count(n)) } else { None }
     } else {
       None
     }
@@ -450,7 +469,7 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (opts.svg_width, opts.svg_height, opts.full_width);
 
   let svg = generate_histogram_svg(
-    &values, bin_count, svg_width, svg_height, full_width,
+    &values, bin_spec, svg_width, svg_height, full_width,
   )?;
   Ok(crate::graphics_result(svg))
 }
