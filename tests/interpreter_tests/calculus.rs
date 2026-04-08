@@ -1964,6 +1964,13 @@ mod inverse_trig_derivatives {
   }
 
   #[test]
+  fn d_arctan_quotient_no_panic() {
+    // Regression test: D[ArcTan[x/y], x] used to panic with integer overflow
+    let result = interpret("D[ArcTan[x/y], x]").unwrap();
+    assert!(!result.is_empty(), "Should return a result, not panic");
+  }
+
+  #[test]
   fn d_arcsin_chain_rule() {
     assert_eq!(interpret("D[ArcSin[3*x], x]").unwrap(), "3/Sqrt[1 - 9*x^2]");
   }
