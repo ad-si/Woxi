@@ -679,6 +679,17 @@ pub(crate) fn adjust_y_range_for_filling(
   (y_lo, y_hi)
 }
 
+/// Per-series style: color, line thickness, and dashing pattern.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SeriesStyle {
+  pub color: Option<WoxiColor>,
+  /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
+  /// None means use the default (1.5px).
+  pub thickness: Option<f64>,
+  /// Dash pattern in display pixels. None = solid line.
+  pub dashing: Option<Vec<f64>>,
+}
+
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
 pub(crate) struct PlotOptions {
   pub svg_width: u32,
@@ -688,7 +699,7 @@ pub(crate) struct PlotOptions {
   pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
-  pub plot_style: Vec<WoxiColor>,
+  pub plot_style: Vec<SeriesStyle>,
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
   /// Ticks option: true = show tick marks and labels (default), false = hide
@@ -699,6 +710,8 @@ pub(crate) struct PlotOptions {
   pub plot_legends: Vec<String>,
   /// Show horizontal grid lines (dashed)
   pub grid_lines_y: bool,
+  /// Show vertical grid lines (dashed)
+  pub grid_lines_x: bool,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// Format x-axis labels as dates (AbsoluteTime seconds since 1900-01-01)
@@ -725,12 +738,80 @@ impl Default for PlotOptions {
       plot_points: NUM_SAMPLES,
       plot_legends: Vec::new(),
       grid_lines_y: false,
+      grid_lines_x: false,
       frame: false,
       date_axis: false,
       log_x: false,
       log_y: false,
     }
   }
+}
+
+/// Draw a dashed/dotted line on a chart.
+/// `dash_pattern` contains alternating dash/gap lengths as fractions of the
+/// data range (matching Wolfram's Dashing convention where 0.01 ≈ 1% of width).
+fn draw_dashed_line<
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  segment: &[(f64, f64)],
+  color: RGBColor,
+  stroke_w: u32,
+  dash_pattern: &[f64],
+  x_span: f64,
+) -> Result<(), InterpreterError> {
+  if segment.len() < 2 || dash_pattern.is_empty() {
+    return Ok(());
+  }
+  // Convert fractional dash lengths to data-space lengths
+  let dashes: Vec<f64> = dash_pattern.iter().map(|d| d * x_span).collect();
+  let style = color.stroke_width(stroke_w);
+
+  let mut dash_idx = 0; // index into dashes array
+  let mut remaining = dashes[0]; // remaining length in current dash/gap
+  let mut drawing = true; // true = dash, false = gap
+  let mut current_start = segment[0];
+
+  for i in 1..segment.len() {
+    let (x0, y0) = current_start;
+    let (x1, y1) = segment[i];
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let seg_len = (dx * dx + dy * dy).sqrt();
+    if seg_len < 1e-12 {
+      current_start = segment[i];
+      continue;
+    }
+
+    let mut consumed = 0.0;
+    while consumed < seg_len {
+      let available = seg_len - consumed;
+      let take = remaining.min(available);
+      let t0 = consumed / seg_len;
+      let t1 = (consumed + take) / seg_len;
+      let p0 = (x0 + dx * t0, y0 + dy * t0);
+      let p1 = (x0 + dx * t1, y0 + dy * t1);
+
+      if drawing && take > 1e-12 {
+        chart
+          .draw_series(std::iter::once(PathElement::new(vec![p0, p1], style)))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
+
+      consumed += take;
+      remaining -= take;
+      if remaining < 1e-12 {
+        drawing = !drawing;
+        dash_idx = (dash_idx + 1) % dashes.len();
+        remaining = dashes[dash_idx];
+      }
+    }
+    current_start = segment[i];
+  }
+  Ok(())
 }
 
 /// Default Wolfram plot color palette (ColorData[97]).
@@ -961,6 +1042,35 @@ fn generate_svg_with_options(
           }
         }
 
+        // Draw vertical grid lines (dashed) when grid_lines_x is enabled
+        if opts.grid_lines_x && !log_x {
+          let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+          let grid_step = if date_axis {
+            nice_date_step(x_max - x_min)
+          } else {
+            nice_step(x_max - x_min, 5)
+          };
+          let mut gx = (x_min / grid_step).ceil() * grid_step;
+          while gx <= x_max {
+            let dash_len = (y_max - y_min) * 0.005;
+            let gap_len = dash_len * 2.0;
+            let mut dy = y_min;
+            while dy < y_max {
+              let end = (dy + dash_len).min(y_max);
+              chart
+                .draw_series(std::iter::once(PathElement::new(
+                  vec![(gx, dy), (gx, end)],
+                  grid_color.stroke_width(RESOLUTION_SCALE),
+                )))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+              dy += dash_len + gap_len;
+            }
+            gx += grid_step;
+          }
+        }
+
         // Draw frame (bottom border only) when frame mode is enabled
         if opts.frame {
           let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE * 2);
@@ -1000,6 +1110,8 @@ fn generate_svg_with_options(
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
+          let stroke_w = series_thickness(&opts.plot_style, series_idx);
+          let dashing = series_dashing(&opts.plot_style, series_idx);
           let segments = clip_segments_to_y_range(
             split_into_segments(points),
             y_min,
@@ -1024,15 +1136,29 @@ fn generate_svg_with_options(
             }
           }
 
-          for segment in &segments {
-            chart
-              .draw_series(LineSeries::new(
-                segment.iter().copied(),
-                color.stroke_width(15), // 1.5px at display size
-              ))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+          if let Some(ref dash_pattern) = dashing {
+            // Draw dashed/dotted lines
+            for segment in &segments {
+              draw_dashed_line(
+                &mut chart,
+                segment,
+                color,
+                stroke_w,
+                dash_pattern,
+                x_max - x_min,
+              )?;
+            }
+          } else {
+            for segment in &segments {
+              chart
+                .draw_series(LineSeries::new(
+                  segment.iter().copied(),
+                  color.stroke_width(stroke_w),
+                ))
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!("Plot: {e}"))
+                })?;
+            }
           }
 
           // Draw mesh dots at each data point when Mesh -> All
@@ -1258,7 +1384,7 @@ fn generate_svg_with_options(
 /// merge multiple pre-rendered plots and re-render via plotters.
 pub(crate) fn build_plot_source(
   all_points: &[Vec<(f64, f64)>],
-  plot_style: &[WoxiColor],
+  plot_style: &[SeriesStyle],
   x_range: (f64, f64),
   y_range: (f64, f64),
   image_size: (u32, u32),
@@ -1286,17 +1412,45 @@ pub(crate) fn build_plot_source(
 }
 
 /// Get the (r, g, b) color for a series, using custom plot_style if available.
-fn series_color(plot_style: &[WoxiColor], idx: usize) -> (u8, u8, u8) {
+fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {
   if plot_style.is_empty() {
     PLOT_COLORS[idx % PLOT_COLORS.len()]
   } else {
-    let c = &plot_style[idx % plot_style.len()];
-    (
-      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-    )
+    let style = &plot_style[idx % plot_style.len()];
+    if let Some(c) = &style.color {
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    } else {
+      PLOT_COLORS[idx % PLOT_COLORS.len()]
+    }
   }
+}
+
+/// Get the line thickness (in render-space units) for a series.
+/// Default is 15 (1.5px at display size with RESOLUTION_SCALE=10).
+fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
+  let default_thickness = 15; // 1.5px * RESOLUTION_SCALE
+  if plot_style.is_empty() {
+    return default_thickness;
+  }
+  let style = &plot_style[idx % plot_style.len()];
+  if let Some(t) = style.thickness {
+    (t * RESOLUTION_SCALE as f64).round() as u32
+  } else {
+    default_thickness
+  }
+}
+
+/// Get the dash pattern (in data-space fractions) for a series, if any.
+fn series_dashing(plot_style: &[SeriesStyle], idx: usize) -> Option<Vec<f64>> {
+  if plot_style.is_empty() {
+    return None;
+  }
+  let style = &plot_style[idx % plot_style.len()];
+  style.dashing.clone()
 }
 
 /// Generate SVG for a scatter plot with full option support (including PlotStyle).
@@ -1966,12 +2120,24 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
     for (i, label) in opts.plot_legends.iter().enumerate() {
       let (r, g, b) = series_color(&opts.plot_style, i);
+      let thickness = series_thickness(&opts.plot_style, i);
+      let dashing = series_dashing(&opts.plot_style, i);
       let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
+      let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
 
-      // Colored line swatch
+      // Colored line swatch (with optional dashing)
+      let mut dash_attr = String::new();
+      if let Some(ref pattern) = dashing {
+        // Convert fractional dash pattern to pixel values for swatch
+        let dash_vals: Vec<String> = pattern
+          .iter()
+          .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
+          .collect();
+        dash_attr = format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+      }
       legend_svg.push_str(&format!(
         "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-         stroke=\"rgb({},{},{})\" stroke-width=\"{}\"/>\n",
+         stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
         legend_x,
         y,
         legend_x + swatch_len,
@@ -1979,7 +2145,8 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         r,
         g,
         b,
-        (sf * 1.5) as u32,
+        sw as u32,
+        dash_attr,
       ));
 
       // Text label
@@ -2521,13 +2688,212 @@ pub(crate) fn parse_image_size(
   }
 }
 
+/// Parse a single PlotStyle element into a SeriesStyle.
+/// Handles: a color, `Thick`, `Dashed`, `Dotted`, `DotDashed`,
+/// `Directive[...]`, `{Red, Thick, Dashed}`, etc.
+fn parse_one_series_style(expr: &Expr) -> SeriesStyle {
+  let mut style = SeriesStyle::default();
+  apply_style_directive(expr, &mut style);
+  style
+}
+
+/// Apply a style directive expression to a SeriesStyle.
+fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
+  // Try as a color first
+  if let Some(c) = parse_color(expr) {
+    style.color = Some(c);
+    return;
+  }
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Thick" => style.thickness = Some(2.0),
+      "Thin" => style.thickness = Some(0.5),
+      "Dashed" => style.dashing = Some(vec![0.01, 0.01]),
+      "Dotted" => style.dashing = Some(vec![0.0, 0.01]),
+      "DotDashed" => style.dashing = Some(vec![0.0, 0.01, 0.01, 0.01]),
+      _ => {}
+    },
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Directive" => {
+        for a in args {
+          apply_style_directive(a, style);
+        }
+      }
+      "Thickness" if args.len() == 1 => {
+        if let Expr::Identifier(s) = &args[0] {
+          match s.as_str() {
+            "Large" => style.thickness = Some(2.0),
+            "Tiny" => style.thickness = Some(0.5),
+            _ => {
+              if let Some(t) = try_eval_to_f64(&args[0]) {
+                // Relative thickness: fraction of plot width → display px
+                // 360px default width * fraction
+                style.thickness = Some(t * 360.0);
+              }
+            }
+          }
+        } else if let Some(t) = try_eval_to_f64(&args[0]) {
+          style.thickness = Some(t * 360.0);
+        }
+      }
+      "AbsoluteThickness" if args.len() == 1 => {
+        if let Some(t) = try_eval_to_f64(&args[0]) {
+          style.thickness = Some(t);
+        }
+      }
+      "Dashing" if !args.is_empty() => match &args[0] {
+        Expr::List(items) => {
+          let dashes: Vec<f64> = items
+            .iter()
+            .filter_map(|e| match e {
+              Expr::Identifier(s) => match s.as_str() {
+                "Tiny" => Some(0.005),
+                "Small" => Some(0.01),
+                "Medium" => Some(0.02),
+                "Large" => Some(0.04),
+                _ => None,
+              },
+              _ => try_eval_to_f64(e),
+            })
+            .collect();
+          if !dashes.is_empty() {
+            style.dashing = Some(dashes);
+          }
+        }
+        _ => {
+          let d = match &args[0] {
+            Expr::Identifier(s) => match s.as_str() {
+              "Tiny" => Some(0.005),
+              "Small" => Some(0.01),
+              "Medium" => Some(0.02),
+              "Large" => Some(0.04),
+              _ => None,
+            },
+            _ => try_eval_to_f64(&args[0]),
+          };
+          if let Some(d) = d {
+            style.dashing = Some(vec![d, d]);
+          }
+        }
+      },
+      _ => {}
+    },
+    Expr::List(items) => {
+      // {Red, Thick, Dashed} — apply all sub-directives
+      for item in items {
+        apply_style_directive(item, style);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Parse a PlotStyle option value into a list of SeriesStyles.
+pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
+  let val = evaluate_expr_to_expr(replacement).unwrap_or(replacement.clone());
+  match &val {
+    // PlotStyle -> {style1, style2, ...} where each may be a color,
+    // directive, or sub-list
+    Expr::List(items) => {
+      // Check if this is a list of per-series styles or a single compound style.
+      // If any item is itself a Directive or a List, treat as per-series.
+      // If all items are simple directives (colors, Thick, etc.), treat as
+      // a single compound style applied to all series.
+      let has_per_series = items.iter().any(|item| {
+        matches!(
+          item,
+          Expr::FunctionCall { name, .. } if name == "Directive"
+        ) || matches!(item, Expr::List(_))
+          || matches!(
+            item,
+            Expr::FunctionCall { name, .. }
+              if name == "RGBColor"
+                || name == "Hue"
+                || name == "GrayLevel"
+                || name == "Darker"
+                || name == "Lighter"
+                || name == "Blend"
+          )
+          || matches!(item, Expr::Identifier(s) if crate::functions::graphics::named_color(s).is_some())
+      });
+      if has_per_series {
+        items.iter().map(parse_one_series_style).collect()
+      } else {
+        // Single compound style: {Purple, Thick, Dashed}
+        let mut style = SeriesStyle::default();
+        for item in items {
+          apply_style_directive(item, &mut style);
+        }
+        vec![style]
+      }
+    }
+    _ => {
+      let style = parse_one_series_style(&val);
+      if style.color.is_some()
+        || style.thickness.is_some()
+        || style.dashing.is_some()
+      {
+        vec![style]
+      } else {
+        Vec::new()
+      }
+    }
+  }
+}
+
+/// Apply a named PlotTheme to PlotOptions.
+pub(crate) fn apply_plot_theme(opts: &mut PlotOptions, theme: &str) {
+  match theme {
+    "Scientific" => {
+      opts.frame = true;
+      opts.grid_lines_x = true;
+      opts.grid_lines_y = true;
+    }
+    "Business" => {
+      opts.frame = true;
+      opts.grid_lines_y = true;
+    }
+    "Detailed" => {
+      opts.frame = true;
+      opts.grid_lines_x = true;
+      opts.grid_lines_y = true;
+    }
+    "Web" => {
+      opts.grid_lines_y = true;
+    }
+    "Minimal" => {
+      opts.axes = (false, false);
+      opts.ticks = false;
+    }
+    "Classic" => {
+      // Default Wolfram look: axes, no frame, no grid
+    }
+    _ => {}
+  }
+}
+
+/// Parse GridLines option value into (show_x, show_y).
+pub(crate) fn parse_grid_lines(expr: &Expr) -> (bool, bool) {
+  match expr {
+    Expr::Identifier(s) if s == "Automatic" || s == "All" => (true, true),
+    Expr::Identifier(s) if s == "None" || s == "False" => (false, false),
+    Expr::List(items) if items.len() == 2 => {
+      let x = !matches!(&items[0], Expr::Identifier(s) if s == "None");
+      let y = !matches!(&items[1], Expr::Identifier(s) if s == "None");
+      (x, y)
+    }
+    _ => (false, false),
+  }
+}
+
 /// Parse PlotLegends option value into a list of legend strings.
-/// Returns (legends, is_automatic).
-pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool) {
+/// Returns (legends, is_automatic, is_expressions).
+pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool, bool) {
   let val = evaluate_expr_to_expr(value).unwrap_or(value.clone());
   match &val {
-    Expr::Identifier(s) if s == "Automatic" => (Vec::new(), true),
-    Expr::Identifier(s) if s == "None" => (Vec::new(), false),
+    Expr::Identifier(s) if s == "Automatic" => (Vec::new(), true, false),
+    Expr::Identifier(s) if s == "None" => (Vec::new(), false, false),
+    Expr::String(s) if s == "Expressions" => (Vec::new(), false, true),
     Expr::List(items) => {
       let labels = items
         .iter()
@@ -2536,10 +2902,10 @@ pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool) {
             .unwrap_or_else(|| crate::syntax::expr_to_string(item))
         })
         .collect();
-      (labels, false)
+      (labels, false, false)
     }
-    Expr::String(s) => (vec![s.clone()], false),
-    _ => (Vec::new(), false),
+    Expr::String(s) => (vec![s.clone()], false, false),
+    _ => (Vec::new(), false, false),
   }
 }
 
@@ -2561,6 +2927,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut aspect_ratio: Option<f64> = None;
   let mut legends_automatic = false;
+  let mut legends_expressions = false;
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
@@ -2599,30 +2966,19 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "PlotStyle" => {
+          plot_opts.plot_style = parse_plot_style(replacement);
+        }
+        "PlotTheme" => {
+          if let Expr::String(theme) = replacement.as_ref() {
+            apply_plot_theme(&mut plot_opts, theme);
+          }
+        }
+        "GridLines" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          match &val {
-            Expr::List(items) => {
-              for item in items {
-                // Support {Thick, RGBColor[...]} inner lists
-                if let Expr::List(inner) = item {
-                  for sub in inner {
-                    if let Some(c) = parse_color(sub) {
-                      plot_opts.plot_style.push(c);
-                      break;
-                    }
-                  }
-                } else if let Some(c) = parse_color(item) {
-                  plot_opts.plot_style.push(c);
-                }
-              }
-            }
-            _ => {
-              if let Some(c) = parse_color(&val) {
-                plot_opts.plot_style.push(c);
-              }
-            }
-          }
+          let (gx, gy) = parse_grid_lines(&val);
+          plot_opts.grid_lines_x = gx;
+          plot_opts.grid_lines_y = gy;
         }
         "PlotRange" => {
           let val =
@@ -2720,9 +3076,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "PlotLegends" => {
-          let (labels, auto) = parse_plot_legends(replacement);
+          let (labels, auto, expressions) = parse_plot_legends(replacement);
           if auto {
             legends_automatic = true;
+          } else if expressions {
+            legends_expressions = true;
           } else {
             plot_opts.plot_legends = labels;
           }
@@ -2778,11 +3136,13 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Fill automatic legends from expression strings
-  if legends_automatic && plot_opts.plot_legends.is_empty() {
+  if (legends_automatic || legends_expressions)
+    && plot_opts.plot_legends.is_empty()
+  {
     for b in &bodies {
       plot_opts
         .plot_legends
-        .push(crate::syntax::expr_to_string(b));
+        .push(crate::syntax::expr_to_output(b));
     }
   }
 
@@ -2917,6 +3277,7 @@ fn log_scale_plot_ast(
   let mut plot_opts = PlotOptions::default();
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut legends_automatic = false;
+  let mut legends_expressions = false;
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
@@ -2955,29 +3316,19 @@ fn log_scale_plot_ast(
           }
         }
         "PlotStyle" => {
+          plot_opts.plot_style = parse_plot_style(replacement);
+        }
+        "PlotTheme" => {
+          if let Expr::String(theme) = replacement.as_ref() {
+            apply_plot_theme(&mut plot_opts, theme);
+          }
+        }
+        "GridLines" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          match &val {
-            Expr::List(items) => {
-              for item in items {
-                if let Expr::List(inner) = item {
-                  for sub in inner {
-                    if let Some(c) = parse_color(sub) {
-                      plot_opts.plot_style.push(c);
-                      break;
-                    }
-                  }
-                } else if let Some(c) = parse_color(item) {
-                  plot_opts.plot_style.push(c);
-                }
-              }
-            }
-            _ => {
-              if let Some(c) = parse_color(&val) {
-                plot_opts.plot_style.push(c);
-              }
-            }
-          }
+          let (gx, gy) = parse_grid_lines(&val);
+          plot_opts.grid_lines_x = gx;
+          plot_opts.grid_lines_y = gy;
         }
         "PlotRange" => {
           let val =
@@ -3009,9 +3360,11 @@ fn log_scale_plot_ast(
           plot_opts.filling = parse_filling(replacement);
         }
         "PlotLegends" => {
-          let (labels, auto) = parse_plot_legends(replacement);
+          let (labels, auto, expressions) = parse_plot_legends(replacement);
           if auto {
             legends_automatic = true;
+          } else if expressions {
+            legends_expressions = true;
           } else {
             plot_opts.plot_legends = labels;
           }
@@ -3066,11 +3419,13 @@ fn log_scale_plot_ast(
     _ => vec![body],
   };
 
-  if legends_automatic && plot_opts.plot_legends.is_empty() {
+  if (legends_automatic || legends_expressions)
+    && plot_opts.plot_legends.is_empty()
+  {
     for b in &bodies {
       plot_opts
         .plot_legends
-        .push(crate::syntax::expr_to_string(b));
+        .push(crate::syntax::expr_to_output(b));
     }
   }
 

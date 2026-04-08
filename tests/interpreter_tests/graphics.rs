@@ -1520,6 +1520,92 @@ mod plot3d {
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Red, Blue}, PlotLegends -> {"Sin", "Cos"}]"#
       ));
     }
+
+    #[test]
+    fn plot_legends_expressions() {
+      let svg = export_svg(
+        r#"Plot[{Sin[x], Sin[2 x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
+      );
+      // "Expressions" legends should use output form of the expressions
+      assert!(
+        svg.contains("Sin[x]"),
+        "Expressions legend should contain Sin[x]"
+      );
+      assert!(
+        svg.contains("Sin[2*x]") || svg.contains("Sin[2 x]"),
+        "Expressions legend should contain Sin[2*x] or Sin[2 x]"
+      );
+    }
+
+    #[test]
+    fn plot_theme_scientific() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotTheme -> "Scientific"]"#
+      ));
+    }
+
+    #[test]
+    fn plot_theme_business() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotTheme -> "Business"]"#
+      ));
+    }
+
+    #[test]
+    fn plot_theme_minimal() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotTheme -> "Minimal"]"#
+      ));
+    }
+
+    #[test]
+    fn plot_style_thick_dashed() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> {Purple, Thick, Dashed}]"
+      ));
+    }
+
+    #[test]
+    fn plot_style_directive_per_series() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Directive[Red, Thick], Directive[Blue, Dashed]}]"
+      ));
+    }
+
+    #[test]
+    fn plot_style_dotted() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> Dotted]"
+      ));
+    }
+
+    #[test]
+    fn plot_style_dot_dashed() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> DotDashed]"
+      ));
+    }
+
+    #[test]
+    fn plot_grid_lines_automatic() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, GridLines -> Automatic]"
+      ));
+    }
+
+    #[test]
+    fn plot_grid_lines_y_only() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, GridLines -> {None, Automatic}]"
+      ));
+    }
+
+    #[test]
+    fn plot_directive_legend() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Directive[Red, Thick], Directive[Blue, Dashed]}, PlotLegends -> "Expressions"]"#
+      ));
+    }
   }
 
   mod list_plot {
