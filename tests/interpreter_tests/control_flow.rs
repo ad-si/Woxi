@@ -207,6 +207,16 @@ mod do_single_iter {
       "hello\nhello\nhello\n"
     );
   }
+
+  #[test]
+  fn do_list_iterator() {
+    assert_eq!(
+      interpret_with_stdout("Do[Print[i], {i, {a, b, c}}]")
+        .unwrap()
+        .stdout,
+      "a\nb\nc\n"
+    );
+  }
 }
 
 mod while_single_arg {
