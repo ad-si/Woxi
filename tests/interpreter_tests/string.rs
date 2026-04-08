@@ -2659,3 +2659,29 @@ mod longest_common_subsequence_tests {
     );
   }
 }
+
+mod string_count_patterns {
+  use woxi::interpret;
+
+  #[test]
+  fn count_with_regex() {
+    assert_eq!(
+      interpret(r#"StringCount["hello world", RegularExpression["[aeiou]"]]"#)
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn count_with_digit_character() {
+    assert_eq!(
+      interpret(r#"StringCount["abc123def456", DigitCharacter]"#).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn count_plain_string() {
+    assert_eq!(interpret(r#"StringCount["abcabc", "a"]"#).unwrap(), "2");
+  }
+}
