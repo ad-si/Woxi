@@ -4320,7 +4320,44 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   match (expr_to_num(base), expr_to_num(exp)) {
     (Some(a), Some(b)) => {
       let result = a.powf(b);
-      if has_real {
+      if result.is_nan() && a < 0.0 {
+        // Negative base with fractional exponent: use complex arithmetic
+        // (-x)^r = x^r * e^(i*pi*r) = x^r * (cos(pi*r) + i*sin(pi*r))
+        let pos_base = a.abs();
+        let magnitude = pos_base.powf(b);
+        let angle = std::f64::consts::PI * b;
+        let re = magnitude * angle.cos();
+        let im = magnitude * angle.sin();
+        // Round near-zero components to avoid floating-point noise
+        let re = if re.abs() < 1e-15 { 0.0 } else { re };
+        let im = if im.abs() < 1e-15 { 0.0 } else { im };
+        if im == 0.0 {
+          Ok(Expr::Real(re))
+        } else {
+          // Return re + im*I as a complex expression
+          let im_part = if im == 1.0 {
+            Expr::Identifier("I".to_string())
+          } else if im == -1.0 {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+            }
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Real(im), Expr::Identifier("I".to_string())],
+            }
+          };
+          if re == 0.0 {
+            Ok(im_part)
+          } else {
+            Ok(Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![Expr::Real(re), im_part],
+            })
+          }
+        }
+      } else if has_real {
         Ok(Expr::Real(result))
       } else {
         // Both were integers - use num_to_expr to get Integer when result is whole

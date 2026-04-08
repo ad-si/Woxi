@@ -216,7 +216,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
             None
           }
         }
-        BinaryOperator::Power => Some(l.powf(r)),
+        BinaryOperator::Power => {
+          let result = l.powf(r);
+          if result.is_nan() { None } else { Some(result) }
+        }
         _ => None,
       }
     }
@@ -308,7 +311,8 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Power" if args.len() == 2 => {
         let b = try_eval_to_f64(&args[0])?;
         let e = try_eval_to_f64(&args[1])?;
-        Some(b.powf(e))
+        let result = b.powf(e);
+        if result.is_nan() { None } else { Some(result) }
       }
       "Floor" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.floor())

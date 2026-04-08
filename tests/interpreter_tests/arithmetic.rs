@@ -618,6 +618,59 @@ mod power_of_i {
   }
 }
 
+mod negative_base_fractional_exponent {
+  use super::*;
+
+  #[test]
+  fn n_neg1_one_third() {
+    // N[(-1)^(1/3)] should give a complex number, not Indeterminate
+    let result = interpret("N[(-1)^(1/3)]").unwrap();
+    assert!(
+      result.contains("I"),
+      "Expected complex result, got: {}",
+      result
+    );
+    assert!(
+      result.contains("0.5"),
+      "Expected real part ~0.5, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_neg1_two_thirds() {
+    let result = interpret("N[(-1)^(2/3)]").unwrap();
+    assert!(
+      result.contains("I"),
+      "Expected complex result, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn float_negative_base_fractional_exp() {
+    // (-1.0)^0.5 should give I, not Indeterminate
+    let result = interpret("(-1.0)^0.5").unwrap();
+    assert!(
+      result.contains("I"),
+      "Expected complex result, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn negative_base_power_not_indeterminate() {
+    // Negative base with fractional exponent must not return Indeterminate
+    let result = interpret("(-2.0)^0.5").unwrap();
+    assert_ne!(result, "Indeterminate");
+    assert!(
+      result.contains("I"),
+      "Expected complex result, got: {}",
+      result
+    );
+  }
+}
+
 mod subtract_function {
   use super::*;
 
