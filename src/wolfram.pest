@@ -387,6 +387,7 @@ ConditionOp = @{
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
   | "===" | "=!=" | "==" | "!="  // Comparison
+  | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "<" | ">"       // Order comparison
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
   | "&&" | "||"                   // Logical
@@ -395,7 +396,6 @@ ConditionOp = @{
   | "@@"                          // Apply (must be before @)
   | "@"                           // Prefix application
   | "|"                           // Alternatives
-  | "<>"                          // StringJoin
   | "~~"                          // StringExpression
   | "." ~ !ASCII_DIGIT ~ !"."    // Dot operator
 }
