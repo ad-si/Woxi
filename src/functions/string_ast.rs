@@ -918,12 +918,30 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     Ok(Expr::String(s.trim().to_string()))
-  } else {
-    let patt = expr_to_str(&args[1])?;
-    // StringTrim removes one occurrence of the pattern from each end
+  } else if let Expr::String(patt) = &args[1] {
+    // Plain string literal: strip one occurrence from each end
     let trimmed = s.strip_prefix(patt.as_str()).unwrap_or(&s);
     let trimmed = trimmed.strip_suffix(patt.as_str()).unwrap_or(trimmed);
     Ok(Expr::String(trimmed.to_string()))
+  } else if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    // String pattern (Repeated, Whitespace, etc.): use regex
+    let start_re =
+      regex::Regex::new(&format!("^(?:{})", regex_pat)).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      })?;
+    let end_re =
+      regex::Regex::new(&format!("(?:{})$", regex_pat)).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+      })?;
+    let trimmed = start_re.replace(&s, "");
+    let trimmed = end_re.replace(&trimmed, "");
+    Ok(Expr::String(trimmed.into_owned()))
+  } else {
+    // Unrecognized pattern: return unevaluated
+    Ok(Expr::FunctionCall {
+      name: "StringTrim".to_string(),
+      args: args.to_vec(),
+    })
   }
 }
 
