@@ -1323,6 +1323,49 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_range_no_horizontal_lines() {
+      // PlotRange should clip the curve at the boundary, not clamp
+      // out-of-range points to produce horizontal lines.
+      let svg = export_svg("Plot[x^3 - x, {x, -3, 3}, PlotRange -> {-3, 3}]");
+      for line in svg.lines() {
+        if !line.contains("stroke=\"#5E81B5\"") {
+          continue;
+        }
+        let pts_str = line
+          .split("points=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap();
+        let points: Vec<&str> = pts_str.split_whitespace().collect();
+        // The curve should NOT start at x=750 (left edge) or end at
+        // x=3499 (right edge) because those x-values correspond to
+        // regions where the function is far outside PlotRange.
+        let first_x: i32 =
+          points[0].split(',').next().unwrap().parse().unwrap();
+        let last_x: i32 = points
+          .last()
+          .unwrap()
+          .split(',')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap();
+        assert!(
+          first_x > 800,
+          "curve starts too close to left edge (x={first_x}), \
+           likely clamped instead of clipped"
+        );
+        assert!(
+          last_x < 3400,
+          "curve ends too close to right edge (x={last_x}), \
+           likely clamped instead of clipped"
+        );
+      }
+    }
+
+    #[test]
     fn plot_range_all() {
       // PlotRange -> All uses the auto-computed range (same as default)
       let svg_all = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> All]");
