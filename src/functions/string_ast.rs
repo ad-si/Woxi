@@ -332,8 +332,15 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract options from args[2..]
   let ignore_case = extract_ignore_case(&args[2..]);
 
-  // Check if delimiter is a RegularExpression
-  if let Some(pat) = extract_regex_pattern(&args[1]) {
+  // Check if delimiter is a RegularExpression or string pattern
+  let regex_from_pattern = if extract_regex_pattern(&args[1]).is_some() {
+    extract_regex_pattern(&args[1])
+  } else if !matches!(&args[1], Expr::String(_) | Expr::List(_)) {
+    string_pattern_to_regex(&args[1])
+  } else {
+    None
+  };
+  if let Some(pat) = regex_from_pattern {
     let regex_pat = if ignore_case {
       format!("(?i){}", pat)
     } else {
@@ -465,8 +472,24 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let sub = expr_to_str(&args[1])?;
   let ignore_case = has_ignore_case_option(args);
+
+  // Try regex-based pattern first
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let full_pat = if ignore_case {
+      format!("(?i){}", regex_pat)
+    } else {
+      regex_pat
+    };
+    let re = regex::Regex::new(&full_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+    ));
+  }
+
+  let sub = expr_to_str(&args[1])?;
   let result = if ignore_case {
     s.to_lowercase().contains(&sub.to_lowercase())
   } else {
@@ -2576,7 +2599,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(s.matches(&sub).count() as i128))
 }
 
-/// StringFreeQ[s, sub] - check if string does NOT contain substring
+/// StringFreeQ[s, sub] - check if string does NOT contain substring or pattern
 pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2584,6 +2607,17 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
+
+  // Try regex-based pattern first
+  if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
+    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "False" } else { "True" }.to_string(),
+    ));
+  }
+
   let sub = expr_to_str(&args[1])?;
   Ok(Expr::Identifier(
     if s.contains(&sub) { "False" } else { "True" }.to_string(),

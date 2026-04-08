@@ -2685,3 +2685,40 @@ mod string_count_patterns {
     assert_eq!(interpret(r#"StringCount["abcabc", "a"]"#).unwrap(), "2");
   }
 }
+
+mod string_contains_free_patterns {
+  use woxi::interpret;
+
+  #[test]
+  fn contains_q_digit_character() {
+    assert_eq!(
+      interpret(r#"StringContainsQ["hello123", DigitCharacter]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringContainsQ["hello", DigitCharacter]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn free_q_regex() {
+    assert_eq!(
+      interpret(r#"StringFreeQ["hello123", RegularExpression["[0-9]"]]"#)
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringFreeQ["hello", RegularExpression["[0-9]"]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn split_digit_pattern() {
+    assert_eq!(
+      interpret(r#"StringSplit["abc123def456", DigitCharacter..]"#).unwrap(),
+      "{abc, def}"
+    );
+  }
+}
