@@ -4029,11 +4029,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] only for multiples of Pi/2
-  // Wolfram does not auto-simplify Exp[I*Pi/3] etc.
+  // E^(k*I*Pi) → Cos[k*Pi] + I*Sin[k*Pi] for any rational multiple k of Pi.
+  // Wolfram evaluates Exp[I*Pi/3], Exp[I*Pi/4], Exp[I*Pi/6], etc. using
+  // Euler's formula: e^(i*theta) = cos(theta) + i*sin(theta).
   if matches!(base, Expr::Constant(c) if c == "E")
     && let Some((numer, denom)) = try_extract_i_pi_rational_multiple(exp)
-    && (denom == 1 || denom == 2)
   {
     // Build the symbolic argument k*Pi
     let k_pi =
