@@ -2089,6 +2089,274 @@ fn make_neg_divided(expr: Expr, divisor: Expr) -> Expr {
   }
 }
 
+/// Extract a trig function with its power from an expression.
+/// Returns (function_name, argument, power) for Sin[f]^n or Cos[f]^n patterns.
+/// Power defaults to 1 if not explicitly raised.
+fn extract_trig_factor(expr: &Expr) -> Option<(&str, &Expr, i64)> {
+  // Sin[f] or Cos[f] (power = 1)
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && (name == "Sin" || name == "Cos")
+  {
+    return Some((name.as_str(), &args[0], 1));
+  }
+  // Sin[f]^n or Cos[f]^n as BinaryOp
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = expr
+    && let Expr::Integer(n) = right.as_ref()
+    && *n >= 1
+    && let Expr::FunctionCall { name, args } = left.as_ref()
+    && args.len() == 1
+    && (name == "Sin" || name == "Cos")
+  {
+    return Some((name.as_str(), &args[0], *n as i64));
+  }
+  // Power[Sin[f], n] or Power[Cos[f], n] as FunctionCall
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Power"
+    && args.len() == 2
+    && let Expr::Integer(n) = &args[1]
+    && *n >= 1
+    && let Expr::FunctionCall {
+      name: trig_name,
+      args: trig_args,
+    } = &args[0]
+    && trig_args.len() == 1
+    && (trig_name == "Sin" || trig_name == "Cos")
+  {
+    return Some((trig_name.as_str(), &trig_args[0], *n as i64));
+  }
+  None
+}
+
+/// Try to integrate a product of Sin[f]^m * Cos[f]^n where f is linear in var.
+/// Handles:
+///   - Sin[f] * Cos[f]^n → -Cos[f]^(n+1) / ((n+1)*a)
+///   - Sin[f]^m * Cos[f] → Sin[f]^(m+1) / ((m+1)*a)
+///   - General odd power cases via reduction
+fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
+  let mut sin_arg: Option<&Expr> = None;
+  let mut sin_power: i64 = 0;
+  let mut cos_arg: Option<&Expr> = None;
+  let mut cos_power: i64 = 0;
+
+  for factor in factors {
+    if let Some((name, arg, power)) = extract_trig_factor(factor) {
+      match name {
+        "Sin" => {
+          if sin_power > 0 && !expr_str_eq(sin_arg.unwrap(), arg) {
+            return None;
+          }
+          sin_arg = Some(arg);
+          sin_power += power;
+        }
+        "Cos" => {
+          if cos_power > 0 && !expr_str_eq(cos_arg.unwrap(), arg) {
+            return None;
+          }
+          cos_arg = Some(arg);
+          cos_power += power;
+        }
+        _ => return None,
+      }
+    } else {
+      // Non-trig factor that depends on var: can't handle
+      if !is_constant_wrt(factor, var) {
+        return None;
+      }
+    }
+  }
+
+  // Need both Sin and Cos present
+  if sin_power == 0 || cos_power == 0 {
+    return None;
+  }
+
+  let sin_a = sin_arg?;
+  let cos_a = cos_arg?;
+  // Arguments must be the same
+  if !expr_str_eq(sin_a, cos_a) {
+    return None;
+  }
+
+  let arg = sin_a;
+  let coeff = try_match_linear_arg(arg, var)?;
+
+  // When sin_power is odd (priority) or == 1: use u = Cos[f] substitution
+  // ∫ Sin[f]^m * Cos[f]^n dx where m is odd:
+  //   Factor out Sin[f], convert Sin[f]^(m-1) = (1-Cos[f]^2)^((m-1)/2)
+  //   u = Cos[f], du = -a*Sin[f]dx
+  //   = -1/a * ∫ (1-u^2)^((m-1)/2) * u^n du
+  //
+  // When sin_power == 1: ∫ Sin[f] * Cos[f]^n dx = -Cos[f]^(n+1) / ((n+1)*a)
+  if sin_power == 1 {
+    let new_power = cos_power + 1;
+    let cos_expr = Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![arg.clone()],
+    };
+    let power_expr = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(cos_expr),
+      right: Box::new(Expr::Integer(new_power as i128)),
+    };
+    // divisor = (n+1) * a
+    let total_divisor = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(new_power as i128)),
+      right: Box::new(coeff),
+    });
+    return Some(make_neg_divided(power_expr, total_divisor));
+  }
+
+  // When cos_power == 1: ∫ Sin[f]^m * Cos[f] dx = Sin[f]^(m+1) / ((m+1)*a)
+  if cos_power == 1 {
+    let new_power = sin_power + 1;
+    let sin_expr = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg.clone()],
+    };
+    let power_expr = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(sin_expr),
+      right: Box::new(Expr::Integer(new_power as i128)),
+    };
+    // divisor = (m+1) * a
+    let total_divisor = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(new_power as i128)),
+      right: Box::new(coeff),
+    });
+    return Some(make_divided(power_expr, total_divisor));
+  }
+
+  // General case: both powers > 1
+  // If sin_power is odd: reduce using Sin^2 = 1 - Cos^2
+  if sin_power % 2 == 1 {
+    // Sin[f]^m * Cos[f]^n = Sin[f] * (1-Cos[f]^2)^((m-1)/2) * Cos[f]^n
+    // Expand (1-Cos[f]^2)^k and integrate each term with the sin_power=1 rule
+    let k = (sin_power - 1) / 2;
+    let cos_f = Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![arg.clone()],
+    };
+    // Expand (1-u^2)^k using binomial theorem
+    // = sum_{j=0}^{k} C(k,j) * (-1)^j * u^(2j)
+    // So integral = sum_{j=0}^{k} C(k,j) * (-1)^j * ∫ Sin[f] * Cos[f]^(n+2j) dx
+    //            = sum_{j=0}^{k} C(k,j) * (-1)^j * (-Cos[f]^(n+2j+1) / ((n+2j+1)*a))
+    let mut terms: Vec<Expr> = Vec::new();
+    for j in 0..=k {
+      let binom = binomial_coeff(k, j);
+      let sign = if j % 2 == 0 { 1i128 } else { -1 };
+      let new_cos_power = cos_power + 2 * j;
+      let new_power = new_cos_power + 1;
+      let cos_power_expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(cos_f.clone()),
+        right: Box::new(Expr::Integer(new_power as i128)),
+      };
+      // coefficient = binom * sign * (-1) / ((new_power) * a)
+      // = -binom * sign / (new_power * a)
+      let numer = -sign * binom;
+      let total_divisor = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(new_power as i128)),
+        right: Box::new(coeff.clone()),
+      });
+      let term = if numer == 1 {
+        make_divided(cos_power_expr, total_divisor)
+      } else if numer == -1 {
+        make_neg_divided(cos_power_expr, total_divisor)
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(make_divided(Expr::Integer(numer), total_divisor)),
+          right: Box::new(cos_power_expr),
+        }
+      };
+      terms.push(term);
+    }
+    return Some(if terms.len() == 1 {
+      terms.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      }
+    });
+  }
+
+  // If cos_power is odd: reduce using Cos^2 = 1 - Sin^2
+  if cos_power % 2 == 1 {
+    let k = (cos_power - 1) / 2;
+    let sin_f = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg.clone()],
+    };
+    let mut terms: Vec<Expr> = Vec::new();
+    for j in 0..=k {
+      let binom = binomial_coeff(k, j);
+      let sign = if j % 2 == 0 { 1i128 } else { -1 };
+      let new_sin_power = sin_power + 2 * j;
+      let new_power = new_sin_power + 1;
+      let sin_power_expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(sin_f.clone()),
+        right: Box::new(Expr::Integer(new_power as i128)),
+      };
+      let numer = sign * binom;
+      let total_divisor = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(new_power as i128)),
+        right: Box::new(coeff.clone()),
+      });
+      let term = if numer == 1 {
+        make_divided(sin_power_expr, total_divisor)
+      } else if numer == -1 {
+        make_neg_divided(sin_power_expr, total_divisor)
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(make_divided(Expr::Integer(numer), total_divisor)),
+          right: Box::new(sin_power_expr),
+        }
+      };
+      terms.push(term);
+    }
+    return Some(if terms.len() == 1 {
+      terms.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      }
+    });
+  }
+
+  // Both even: use double-angle reduction (not yet implemented)
+  None
+}
+
+/// Compute binomial coefficient C(n, k)
+fn binomial_coeff(n: i64, k: i64) -> i128 {
+  if k < 0 || k > n {
+    return 0;
+  }
+  if k == 0 || k == n {
+    return 1;
+  }
+  let k = k.min(n - k) as i128;
+  let n = n as i128;
+  let mut result: i128 = 1;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
+
 /// Build the antiderivative of Exp[-a*x^2]:
 ///   Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]  (general a)
 ///   (Sqrt[Pi]*Erf[x])/2            (when a=1)
@@ -4163,7 +4431,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(int_a),
             })
           } else {
-            // Both factors depend on var: try integration by parts
+            // Both factors depend on var: try trig product first
+            if let Some(result) =
+              try_integrate_sin_cos_product(&[left, right], var)
+            {
+              return Some(result);
+            }
+            // Fall back to integration by parts
             try_integration_by_parts(&[left, right], var)
           }
         }
@@ -4686,8 +4960,30 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 return Some(apply_const(result));
               }
             }
-            // Fall through to integration by parts
+            // Try trig product: Sin[f]^m * Cos[f]^n
             let var_refs: Vec<&Expr> = var_factors.to_vec();
+            if let Some(trig_result) =
+              try_integrate_sin_cos_product(&var_refs, var)
+            {
+              if const_factors.is_empty() {
+                return Some(trig_result);
+              } else {
+                let const_expr = if const_factors.len() == 1 {
+                  const_factors[0].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: const_factors.into_iter().cloned().collect(),
+                  }
+                };
+                return Some(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(const_expr),
+                  right: Box::new(trig_result),
+                });
+              }
+            }
+            // Fall through to integration by parts
             if let Some(ibp_result) = try_integration_by_parts(&var_refs, var) {
               // Multiply back the constant factors
               if const_factors.is_empty() {
