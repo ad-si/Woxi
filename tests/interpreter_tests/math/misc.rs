@@ -593,6 +593,26 @@ mod inverse_trig_identities {
   }
 
   #[test]
+  fn arctan_sqrt3() {
+    assert_eq!(interpret("ArcTan[Sqrt[3]]").unwrap(), "Pi/3");
+  }
+
+  #[test]
+  fn arctan_inv_sqrt3() {
+    assert_eq!(interpret("ArcTan[1/Sqrt[3]]").unwrap(), "Pi/6");
+  }
+
+  #[test]
+  fn arctan_neg_sqrt3() {
+    assert_eq!(interpret("ArcTan[-Sqrt[3]]").unwrap(), "-1/3*Pi");
+  }
+
+  #[test]
+  fn arctan_neg_inv_sqrt3() {
+    assert_eq!(interpret("ArcTan[-1/Sqrt[3]]").unwrap(), "-1/6*Pi");
+  }
+
+  #[test]
   fn sinh_arcsinh() {
     assert_eq!(interpret("Sinh[ArcSinh[x]]").unwrap(), "x");
   }
