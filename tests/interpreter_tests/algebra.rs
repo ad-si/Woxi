@@ -629,6 +629,16 @@ mod collect_tests {
       "e + (c + d)*x + (a + b)*x^2"
     );
   }
+
+  #[test]
+  fn collect_product_coefficient_canonical_ordering() {
+    // When the coefficient is a product (not a sum), factors should be
+    // flattened and sorted in canonical order (alphabetical).
+    assert_eq!(
+      interpret("Collect[a x^2 + b x^2 y + c x y, x]").unwrap(),
+      "c*x*y + x^2*(a + b*y)"
+    );
+  }
 }
 
 mod together {
