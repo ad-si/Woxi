@@ -162,13 +162,13 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> DotDashed]\")"
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1219,254 1233,243 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1233,243 1240,238 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1291,204 1302,197 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1302,197 1316,191 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1316,191 1317,190 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1302,197 1316,190 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1316,190 1317,190 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1371,170 1371,170 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1371,170 1378,168 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1378,168 1385,167 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1385,167 1392,166 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1392,166 1398,165 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1392,166 1398,164 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1453,162 1454,162 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1454,162 1457,162 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1457,162 1461,163 "/>
@@ -193,7 +193,7 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> DotDashed]\")"
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1889,535 1896,545 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1896,545 1910,566 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1910,566 1910,566 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1951,631 1951,631 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1951,630 1951,631 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1951,631 1965,654 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="1965,654 1971,663 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2011,729 2020,746 "/>
@@ -271,8 +271,8 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> DotDashed]\")"
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2888,1677 2891,1676 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2891,1676 2904,1671 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2904,1671 2915,1667 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2968,1640 2974,1636 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2974,1636 2987,1627 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2968,1640 2974,1637 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2974,1637 2987,1627 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="2987,1627 2993,1623 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="3043,1584 3056,1572 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="3056,1572 3068,1561 "/>
