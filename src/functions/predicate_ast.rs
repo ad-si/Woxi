@@ -241,6 +241,10 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an expression is numeric (can be numerically evaluated)
+pub fn is_numeric_q_pub(expr: &Expr) -> bool {
+  is_numeric_q(expr)
+}
+
 fn is_numeric_q(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)

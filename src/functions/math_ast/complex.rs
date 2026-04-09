@@ -40,6 +40,12 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(re));
   }
 
+  // Handle I * real_expr: Re[I * real] = 0
+  if let Some(real_part) = extract_i_times_real(&args[0]) {
+    let _ = real_part; // only need to know it's purely imaginary
+    return Ok(Expr::Integer(0));
+  }
+
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Re".to_string(),
@@ -84,11 +90,68 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(im));
   }
 
+  // Handle I * real_expr: Im[I * real] = real
+  if let Some(real_part) = extract_i_times_real(&args[0]) {
+    return Ok(real_part);
+  }
+
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Im".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Extract the real factor from an expression of the form `I * real_expr`.
+/// Returns Some(real_expr) if the expression is I times a NumericQ real expression,
+/// or None otherwise.
+fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
+  // Check for Times[I, ...] or Times[-1, I, ...] etc.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+  {
+    // Find if I is among the factors
+    let mut i_count = 0;
+    let mut other_factors: Vec<Expr> = Vec::new();
+    for arg in args {
+      if matches!(arg, Expr::Identifier(s) if s == "I") {
+        i_count += 1;
+      } else {
+        other_factors.push(arg.clone());
+      }
+    }
+    // Exactly one I, and all other factors are real-valued
+    if i_count == 1
+      && !other_factors.is_empty()
+      && other_factors.iter().all(is_real_valued)
+    {
+      return if other_factors.len() == 1 {
+        Some(other_factors.into_iter().next().unwrap())
+      } else {
+        Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: other_factors,
+        })
+      };
+    }
+  }
+  None
+}
+
+/// Check if an expression is known to be real-valued (not just known real constants,
+/// but also NumericQ expressions that evaluate to real numbers).
+fn is_real_valued(expr: &Expr) -> bool {
+  if is_known_real(expr) {
+    return true;
+  }
+  // NumericQ expressions: check if they evaluate to a real number
+  if crate::functions::predicate_ast::is_numeric_q_pub(expr) {
+    // Try to evaluate numerically - if it gives a real, it's real-valued
+    if let Some(val) = crate::functions::math_ast::try_eval_to_f64(expr) {
+      return val.is_finite() || val.is_nan();
+    }
+  }
+  false
 }
 
 /// Helper: check if an expression is a known real value (Integer, Real, or Rational)
