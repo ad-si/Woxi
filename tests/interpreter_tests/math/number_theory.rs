@@ -1285,6 +1285,39 @@ mod pochhammer {
     assert_eq!(interpret("Pochhammer[a, 0]").unwrap(), "1");
     assert_eq!(interpret("Pochhammer[x + y, 0]").unwrap(), "1");
   }
+
+  #[test]
+  fn pochhammer_symbolic_positive_n() {
+    // Pochhammer[a, n] expands for positive integer n
+    assert_eq!(interpret("Pochhammer[a, 1]").unwrap(), "a");
+    assert_eq!(interpret("Pochhammer[a, 3]").unwrap(), "a*(1 + a)*(2 + a)");
+    assert_eq!(
+      interpret("Pochhammer[a, 4]").unwrap(),
+      "a*(1 + a)*(2 + a)*(3 + a)"
+    );
+  }
+
+  #[test]
+  fn pochhammer_symbolic_negative_n() {
+    // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
+    assert_eq!(interpret("Pochhammer[a, -1]").unwrap(), "(-1 + a)^(-1)");
+    assert_eq!(
+      interpret("Pochhammer[a, -2]").unwrap(),
+      "1/((-2 + a)*(-1 + a))"
+    );
+  }
+
+  #[test]
+  fn pochhammer_numeric_negative_n() {
+    // Pochhammer[5, -2] = 1/(4*3) = 1/12
+    assert_eq!(interpret("Pochhammer[5, -2]").unwrap(), "1/12");
+  }
+
+  #[test]
+  fn pochhammer_symbolic_n_unevaluated() {
+    // When n is also symbolic, stay unevaluated
+    assert_eq!(interpret("Pochhammer[a, n]").unwrap(), "Pochhammer[a, n]");
+  }
 }
 
 mod bell_b {

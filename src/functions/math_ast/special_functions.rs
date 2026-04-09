@@ -15,19 +15,85 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[1], Expr::Integer(0)) {
     return Ok(Expr::Integer(1));
   }
+  // Both arguments are numeric integers → compute directly
   if let (Some(a), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     if n < 0 {
       // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
-      return Ok(Expr::FunctionCall {
-        name: "Pochhammer".to_string(),
-        args: args.to_vec(),
-      });
+      let abs_n = (-n) as usize;
+      let mut denom = BigInt::from(1);
+      for i in 1..=abs_n as i128 {
+        denom *= BigInt::from(a - i);
+      }
+      let denom_expr = bigint_to_expr(denom);
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(denom_expr),
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     let mut result = BigInt::from(1);
     for i in 0..n {
       result *= BigInt::from(a + i);
     }
     Ok(bigint_to_expr(result))
+  } else if let Some(n) = expr_to_i128(&args[1]) {
+    // n is a concrete integer, a is symbolic → expand symbolically
+    let a_expr = &args[0];
+    if n > 0 && n <= 20 {
+      // Pochhammer[a, n] = a * (a+1) * ... * (a+n-1)
+      let factors: Vec<Expr> = (0..n)
+        .map(|i| {
+          if i == 0 {
+            a_expr.clone()
+          } else {
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::Integer(i)),
+              right: Box::new(a_expr.clone()),
+            }
+          }
+        })
+        .collect();
+      let product = factors
+        .into_iter()
+        .reduce(|acc, f| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(acc),
+          right: Box::new(f),
+        })
+        .unwrap();
+      crate::evaluator::evaluate_expr_to_expr(&product)
+    } else if (-20..0).contains(&n) {
+      // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
+      let abs_n = (-n) as usize;
+      let factors: Vec<Expr> = (1..=abs_n)
+        .map(|i| Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-(i as i128))),
+          right: Box::new(a_expr.clone()),
+        })
+        .collect();
+      let denom = factors
+        .into_iter()
+        .reduce(|acc, f| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(acc),
+          right: Box::new(f),
+        })
+        .unwrap();
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(denom),
+      };
+      crate::evaluator::evaluate_expr_to_expr(&result)
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Pochhammer".to_string(),
+        args: args.to_vec(),
+      })
+    }
   } else {
     Ok(Expr::FunctionCall {
       name: "Pochhammer".to_string(),
