@@ -2999,6 +2999,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       matches!(
         op.as_str(),
         "=="
+          | "\u{2A75}"
           | "!="
           | "\u{2260}"
           | "<"
@@ -3017,7 +3018,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       let comp_ops: Vec<ComparisonOp> = operators
         .iter()
         .map(|op| match op.as_str() {
-          "==" => ComparisonOp::Equal,
+          "==" | "\u{2A75}" => ComparisonOp::Equal,
           "!=" | "\u{2260}" => ComparisonOp::NotEqual,
           "<" => ComparisonOp::Less,
           "<=" | "\u{2264}" => ComparisonOp::LessEqual,
@@ -3501,10 +3502,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
       }
     }
-    "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
-    | "\u{2265}" | "===" | "=!=" => {
+    "==" | "\u{2A75}" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">"
+    | ">=" | "\u{2265}" | "===" | "=!=" => {
       let comp_op = match op_str {
-        "==" => ComparisonOp::Equal,
+        "==" | "\u{2A75}" => ComparisonOp::Equal,
         "!=" | "\u{2260}" => ComparisonOp::NotEqual,
         "<" => ComparisonOp::Less,
         "<=" | "\u{2264}" => ComparisonOp::LessEqual,
