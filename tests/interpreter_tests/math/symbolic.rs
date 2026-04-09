@@ -234,6 +234,32 @@ mod sum {
   }
 
   #[test]
+  fn sum_k_fourth_symbolic() {
+    assert_eq!(
+      interpret("Sum[k^4, {k, 1, n}]").unwrap(),
+      "(n*(-1 + 3*n + 3*n^2)*(1 + n)*(1 + 2*n))/30"
+    );
+  }
+
+  #[test]
+  fn sum_k_fourth_numeric() {
+    assert_eq!(interpret("Sum[k^4, {k, 1, 5}]").unwrap(), "979");
+  }
+
+  #[test]
+  fn sum_k_fifth_symbolic() {
+    assert_eq!(
+      interpret("Sum[k^5, {k, 1, n}]").unwrap(),
+      "(n^2*(1 + n)^2*(-1 + 2*n + 2*n^2))/12"
+    );
+  }
+
+  #[test]
+  fn sum_k_fifth_numeric() {
+    assert_eq!(interpret("Sum[k^5, {k, 1, 5}]").unwrap(), "4425");
+  }
+
+  #[test]
   fn sum_geometric_symbolic() {
     assert_eq!(
       interpret("Sum[1 / 2 ^ i, {i, 1, k}]").unwrap(),
