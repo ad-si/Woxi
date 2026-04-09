@@ -2258,6 +2258,30 @@ mod high_level_functions_tests {
         "{a, , b, , , c}"
       );
     }
+
+    #[test]
+    fn test_split_max_parts_2() {
+      assert_eq!(
+        interpret(r#"StringSplit["a:b:c:d", ":", 2]"#).unwrap(),
+        "{a, b:c:d}"
+      );
+    }
+
+    #[test]
+    fn test_split_max_parts_3() {
+      assert_eq!(
+        interpret(r#"StringSplit["a:b:c:d", ":", 3]"#).unwrap(),
+        "{a, b, c:d}"
+      );
+    }
+
+    #[test]
+    fn test_split_max_parts_1() {
+      assert_eq!(
+        interpret(r#"StringSplit["a:b:c", ":", 1]"#).unwrap(),
+        "{a:b:c}"
+      );
+    }
   }
 
   mod associate_to_tests {

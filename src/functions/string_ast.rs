@@ -348,8 +348,17 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(parts));
   }
 
-  // Extract options from args[2..]
-  let ignore_case = extract_ignore_case(&args[2..]);
+  // Extract max parts (3rd arg if integer) and options from remaining args
+  let (max_parts, option_start) = if args.len() >= 3 {
+    if let Expr::Integer(n) = &args[2] {
+      (Some(*n as usize), 3)
+    } else {
+      (None, 2)
+    }
+  } else {
+    (None, 2)
+  };
+  let ignore_case = extract_ignore_case(&args[option_start..]);
 
   // Check if delimiter is a RegularExpression or string pattern
   let regex_from_pattern = if extract_regex_pattern(&args[1]).is_some() {
@@ -371,8 +380,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let parts: Vec<Expr> =
-      re.split(&s).map(|p| Expr::String(p.to_string())).collect();
+    let parts: Vec<Expr> = if let Some(n) = max_parts {
+      re.splitn(&s, n)
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
+    } else {
+      re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+    };
     return Ok(Expr::List(trim_empty_strings(parts)));
   }
 
@@ -388,7 +402,7 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![expr_to_str(&args[1])?],
   };
 
-  let parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
+  let mut parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
     s.chars().map(|c| Expr::String(c.to_string())).collect()
   } else if delims.len() == 1 {
     if ignore_case {
@@ -398,15 +412,25 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map_err(|e| {
           InterpreterError::EvaluationError(format!("Regex error: {}", e))
         })?;
-      let parts: Vec<Expr> =
-        re.split(&s).map(|p| Expr::String(p.to_string())).collect();
-      trim_empty_strings(parts)
+      let raw: Vec<Expr> = if let Some(n) = max_parts {
+        re.splitn(&s, n)
+          .map(|p| Expr::String(p.to_string()))
+          .collect()
+      } else {
+        re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+      };
+      trim_empty_strings(raw)
     } else {
-      let parts: Vec<Expr> = s
-        .split(&delims[0])
-        .map(|p| Expr::String(p.to_string()))
-        .collect();
-      trim_empty_strings(parts)
+      let raw: Vec<Expr> = if let Some(n) = max_parts {
+        s.splitn(n, &delims[0])
+          .map(|p| Expr::String(p.to_string()))
+          .collect()
+      } else {
+        s.split(&delims[0])
+          .map(|p| Expr::String(p.to_string()))
+          .collect()
+      };
+      trim_empty_strings(raw)
     }
   } else {
     // Split by multiple delimiters: scan left to right, try longest delimiter match first
@@ -436,6 +460,26 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result.push(Expr::String(current));
     result
   };
+  // For multi-delimiter splits, apply max_parts by joining excess parts
+  if let Some(n) = max_parts
+    && parts.len() > n
+  {
+    let keep: Vec<Expr> = parts[..n - 1].to_vec();
+    let rest: Vec<String> = parts[n - 1..]
+      .iter()
+      .map(|e| {
+        if let Expr::String(s) = e {
+          s.clone()
+        } else {
+          crate::syntax::expr_to_string(e)
+        }
+      })
+      .collect();
+    let joined = rest.join(&delims[0]);
+    let mut result = keep;
+    result.push(Expr::String(joined));
+    parts = result;
+  }
   Ok(Expr::List(parts))
 }
 
