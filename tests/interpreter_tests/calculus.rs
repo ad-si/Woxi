@@ -93,6 +93,60 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_sin_cos_product() {
+    // ∫ Sin[x]*Cos[x] dx = -1/2*Cos[x]^2
+    assert_eq!(
+      interpret("Integrate[Sin[x] * Cos[x], x]").unwrap(),
+      "-1/2*Cos[x]^2"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cos_squared() {
+    // ∫ Sin[x]*Cos[x]^2 dx = -1/3*Cos[x]^3
+    assert_eq!(
+      interpret("Integrate[Sin[x] * Cos[x]^2, x]").unwrap(),
+      "-1/3*Cos[x]^3"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_squared_cos() {
+    // ∫ Sin[x]^2*Cos[x] dx = Sin[x]^3/3
+    assert_eq!(
+      interpret("Integrate[Sin[x]^2 * Cos[x], x]").unwrap(),
+      "Sin[x]^3/3"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cos_product_linear_arg() {
+    // ∫ Sin[2x]*Cos[2x] dx = -1/4*Cos[2*x]^2
+    assert_eq!(
+      interpret("Integrate[Sin[2*x] * Cos[2*x], x]").unwrap(),
+      "-1/4*Cos[2*x]^2"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cubed_cos() {
+    // ∫ Sin[x]^3*Cos[x] dx = Sin[x]^4/4
+    assert_eq!(
+      interpret("Integrate[Sin[x]^3 * Cos[x], x]").unwrap(),
+      "Sin[x]^4/4"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_cos_cubed() {
+    // ∫ Sin[x]*Cos[x]^3 dx = -1/4*Cos[x]^4
+    assert_eq!(
+      interpret("Integrate[Sin[x] * Cos[x]^3, x]").unwrap(),
+      "-1/4*Cos[x]^4"
+    );
+  }
+
+  #[test]
   fn integrate_sec_squared() {
     // ∫ sec²(x) dx = Tan[x]
     assert_eq!(interpret("Integrate[Sec[x]^2, x]").unwrap(), "Tan[x]");
