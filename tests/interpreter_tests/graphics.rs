@@ -1267,6 +1267,37 @@ mod plot3d {
         result.warnings
       );
     }
+
+    #[test]
+    fn plot_singularity_reasonable_y_range() {
+      // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
+      // The y-axis should show a reasonable range (not ±10^15).
+      let svg = export_svg("Plot[1/x, {x, -3, 3}]");
+      // Extract all y-axis tick labels (numeric text on left side)
+      let mut y_ticks: Vec<f64> = Vec::new();
+      let lines: Vec<&str> = svg.lines().collect();
+      for (i, line) in lines.iter().enumerate() {
+        if line.contains("text-anchor=\"end\"") {
+          // The tick label text is on the next line
+          if let Some(text) = lines.get(i + 1) {
+            if let Ok(v) = text.trim().parse::<f64>() {
+              y_ticks.push(v);
+            }
+          }
+        }
+      }
+      assert!(!y_ticks.is_empty(), "should have y-axis tick labels");
+      let y_max = y_ticks.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      let y_min = y_ticks.iter().cloned().fold(f64::INFINITY, f64::min);
+      assert!(
+        y_max <= 20.0,
+        "y-axis max tick {y_max} is too large; singularity should be clipped"
+      );
+      assert!(
+        y_min >= -20.0,
+        "y-axis min tick {y_min} is too extreme; singularity should be clipped"
+      );
+    }
   }
 
   mod plot_options {

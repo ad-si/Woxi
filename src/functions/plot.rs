@@ -224,6 +224,62 @@ fn adaptive_sample(
   points
 }
 
+/// Compute a robust y-range by excluding extreme outliers.
+/// Uses IQR-based outlier removal on uniformly-spaced x samples
+/// to avoid bias from adaptive refinement near singularities.
+fn robust_y_range(
+  bodies: &[&Expr],
+  var_name: &str,
+  x_min: f64,
+  x_max: f64,
+) -> (f64, f64) {
+  // Evaluate at uniformly-spaced x values to get an unbiased y distribution
+  let n_uniform = 200;
+  let step = (x_max - x_min) / (n_uniform - 1) as f64;
+  let mut ys: Vec<f64> = Vec::new();
+  for body in bodies {
+    for i in 0..n_uniform {
+      let x = x_min + i as f64 * step;
+      if let Some(y) = evaluate_at_point(body, var_name, x)
+        && y.is_finite()
+      {
+        ys.push(y);
+      }
+    }
+  }
+
+  if ys.is_empty() {
+    return (-1.0, 1.0);
+  }
+  ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let n = ys.len();
+  if n == 1 {
+    return (ys[0], ys[0]);
+  }
+
+  let q1 = ys[n / 4];
+  let q3 = ys[3 * n / 4];
+  let iqr = q3 - q1;
+
+  // If IQR is negligible, no outliers — use full min/max
+  if iqr < 1e-10 {
+    return (ys[0], ys[n - 1]);
+  }
+
+  let fence_lo = q1 - 3.0 * iqr;
+  let fence_hi = q3 + 3.0 * iqr;
+
+  let y_min = ys.iter().copied().find(|&y| y >= fence_lo).unwrap_or(ys[0]);
+  let y_max = ys
+    .iter()
+    .rev()
+    .copied()
+    .find(|&y| y <= fence_hi)
+    .unwrap_or(ys[n - 1]);
+
+  (y_min, y_max)
+}
+
 /// Split points into contiguous finite segments, breaking at NaN/Infinity
 pub(crate) fn split_into_segments(
   points: &[(f64, f64)],
@@ -3163,23 +3219,19 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_points.push(points);
   }
 
-  // Compute Y range from finite values across all series
-  let finite_ys: Vec<f64> = all_points
-    .iter()
-    .flat_map(|pts| pts.iter())
-    .filter(|(_, y)| y.is_finite())
-    .map(|(_, y)| *y)
-    .collect();
+  // Compute Y range using robust outlier exclusion on uniform samples
+  let (y_data_min, y_data_max) =
+    robust_y_range(&bodies, &var_name, x_min, x_max);
 
-  if finite_ys.is_empty() {
-    // Wolfram returns -Graphics- even when no finite values are produced
+  // Check if we have any plottable data
+  let has_finite = all_points
+    .iter()
+    .any(|pts| pts.iter().any(|(_, y)| y.is_finite()));
+  if !has_finite {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-
-  let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
-  let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
   // Add 4% padding to the auto-computed y range
   let y_range = y_data_max - y_data_min;
