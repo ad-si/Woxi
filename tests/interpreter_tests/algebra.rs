@@ -1408,6 +1408,40 @@ mod solve {
       "{{x -> 0, y -> 0}, {x -> 1, y -> 1}, {x -> -(-1)^(1/3), y -> (-1)^(2/3)}, {x -> (-1)^(2/3), y -> -(-1)^(1/3)}}"
     );
   }
+
+  #[test]
+  fn underdetermined_quadratic_cubic() {
+    // Single equation with two variables: solve for lowest-degree variable
+    assert_eq!(
+      interpret("Solve[x^2 - y^3 == 1, {x, y}]").unwrap(),
+      "{{x -> -Sqrt[1 + y^3]}, {x -> Sqrt[1 + y^3]}}"
+    );
+  }
+
+  #[test]
+  fn underdetermined_quintic_quadratic() {
+    // Prefers y (degree 2) over x (degree 5)
+    assert_eq!(
+      interpret("Solve[x^5 - y^2 == 1, {x, y}]").unwrap(),
+      "{{y -> -Sqrt[-1 + x^5]}, {y -> Sqrt[-1 + x^5]}}"
+    );
+  }
+
+  #[test]
+  fn solve_pure_cubic_symbolic() {
+    assert_eq!(
+      interpret("Solve[y^3 == a, y]").unwrap(),
+      "{{y -> a^(1/3)}, {y -> -((-1)^(1/3)*a^(1/3))}, {y -> (-1)^(2/3)*a^(1/3)}}"
+    );
+  }
+
+  #[test]
+  fn solve_pure_quintic_symbolic() {
+    assert_eq!(
+      interpret("Solve[y^5 == a, y]").unwrap(),
+      "{{y -> a^(1/5)}, {y -> -((-1)^(1/5)*a^(1/5))}, {y -> (-1)^(2/5)*a^(1/5)}, {y -> -((-1)^(3/5)*a^(1/5))}, {y -> (-1)^(4/5)*a^(1/5)}}"
+    );
+  }
 }
 
 mod rsolve {
@@ -1972,6 +2006,24 @@ mod reduce {
     assert_eq!(
       interpret("Reduce[{x + y == 5, x - y == 1}, {x, y}]").unwrap(),
       "x == 3 && y == 2"
+    );
+  }
+
+  // ── Multi-variable nonlinear ──
+
+  #[test]
+  fn reduce_two_var_nonlinear() {
+    assert_eq!(
+      interpret("Reduce[x^2 - y^3 == 1, {x, y}]").unwrap(),
+      "y == (-1 + x^2)^(1/3) || y == -((-1)^(1/3)*(-1 + x^2)^(1/3)) || y == (-1)^(2/3)*(-1 + x^2)^(1/3)"
+    );
+  }
+
+  #[test]
+  fn reduce_two_var_solve_for_lower_degree() {
+    assert_eq!(
+      interpret("Reduce[x^5 - y^2 == 1, {x, y}]").unwrap(),
+      "y == -Sqrt[-1 + x^5] || y == Sqrt[-1 + x^5]"
     );
   }
 

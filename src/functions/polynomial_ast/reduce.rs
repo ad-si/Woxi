@@ -1436,11 +1436,13 @@ pub fn reduce_multi_var_and(
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  // Find the best (equation, variable) pair: prefer lowest degree
+  // Find the best (equation, variable) pair: prefer last variable in the list
+  // (matching Wolfram's convention where later variables are expressed in terms
+  // of earlier ones), falling back to lowest degree for tie-breaking.
   let mut best: Option<(usize, String, Expr, Expr, i128)> = None; // (eq_idx, var, lhs, rhs, degree)
   for (i, constraint) in constraints.iter().enumerate() {
     if let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) {
-      for var in vars {
+      for (vi, var) in vars.iter().enumerate() {
         let poly = Expr::BinaryOp {
           op: BinaryOperator::Minus,
           left: Box::new(lhs.clone()),
@@ -1450,10 +1452,18 @@ pub fn reduce_multi_var_and(
         if is_constant_wrt(&expanded, var) {
           continue;
         }
-        if let Some(deg) = max_power_int(&expanded, var)
-          && (best.is_none() || deg < best.as_ref().unwrap().4)
-        {
-          best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));
+        if let Some(deg) = max_power_int(&expanded, var) {
+          let dominated = if let Some(ref b) = best {
+            // Prefer later variables; for the same variable position, prefer
+            // lower degree.
+            let best_vi = vars.iter().position(|v| v == &b.1).unwrap_or(0);
+            vi > best_vi || (vi == best_vi && deg < b.4)
+          } else {
+            true
+          };
+          if dominated {
+            best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));
+          }
         }
       }
     }
@@ -1495,8 +1505,9 @@ pub fn reduce_multi_var_and(
                 .cloned()
                 .collect();
 
-              if remaining.is_empty() && remaining_vars.is_empty() {
-                // No remaining constraints
+              if remaining.is_empty() {
+                // No remaining constraints — var is expressed in terms of
+                // remaining variables (if any) or is a constant solution.
                 let var_eq =
                   make_equality(&Expr::Identifier(var.to_string()), value);
                 all_results.push(var_eq);
@@ -1557,10 +1568,12 @@ pub fn reduce_multi_var_and(
                         &Expr::Identifier(var.to_string()),
                         &final_value,
                       );
+                      // Put earlier variables first to match Wolfram's
+                      // output ordering (variable list order)
                       all_results.push(Expr::BinaryOp {
                         op: BinaryOperator::And,
-                        left: Box::new(var_eq),
-                        right: Box::new(branch.clone()),
+                        left: Box::new(branch.clone()),
+                        right: Box::new(var_eq),
                       });
                     }
                   }

@@ -566,11 +566,67 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Handle single equation with list of one variable: Solve[eq, {var}]
-  if let Expr::List(vars_exprs) = &args[1]
-    && vars_exprs.len() == 1
-  {
-    return solve_ast(&[args[0].clone(), vars_exprs[0].clone()]);
+  // Handle single equation with list of variables: Solve[eq, {var1, var2, ...}]
+  if let Expr::List(vars_exprs) = &args[1] {
+    if vars_exprs.len() == 1 {
+      return solve_ast(&[args[0].clone(), vars_exprs[0].clone()]);
+    }
+    // Multiple variables with a single equation: solve for the variable
+    // with the lowest degree (matching Wolfram's behavior).
+    if !matches!(&args[0], Expr::List(_)) && vars_exprs.len() > 1 {
+      // Determine degree of each variable in the equation
+      let eq_expr = &args[0];
+      let (lhs, rhs) = if let Some((l, r, _)) =
+        crate::functions::polynomial_ast::reduce::extract_comparison(eq_expr)
+      {
+        (l, r)
+      } else {
+        (eq_expr.clone(), Expr::Integer(0))
+      };
+      let poly = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(lhs),
+        right: Box::new(rhs),
+      };
+      let expanded =
+        crate::functions::polynomial_ast::expand_and_combine(&poly);
+
+      // Sort variables by degree (ascending), keeping original order for ties
+      let mut var_degrees: Vec<(usize, i128)> = vars_exprs
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, v)| {
+          if let Expr::Identifier(name) = v {
+            crate::functions::polynomial_ast::max_power_int(&expanded, name)
+              .map(|deg| (idx, deg))
+          } else {
+            None
+          }
+        })
+        .collect();
+      var_degrees.sort_by_key(|&(idx, deg)| (deg, idx));
+
+      // Try solving for each variable in degree order
+      for (idx, _deg) in &var_degrees {
+        let var_expr = &vars_exprs[*idx];
+        let result = solve_ast(&[args[0].clone(), var_expr.clone()])?;
+        if let Expr::List(ref solutions) = result
+          && !solutions.is_empty()
+        {
+          return Ok(result);
+        }
+        // If solve returned unevaluated, try next variable
+        if !matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
+        {
+          return Ok(result);
+        }
+      }
+      // None succeeded — return unevaluated
+      return Ok(Expr::FunctionCall {
+        name: "Solve".to_string(),
+        args: args.to_vec(),
+      });
+    }
   }
 
   // Handle equation + inequality: Solve[eq && ineq, var]
@@ -1143,6 +1199,122 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
+      // Pure power equation: a*x^n + c = 0 (all middle coefficients zero)
+      // Solve as x = (-c/a)^(1/n) * root_of_unity for each nth root of unity
+      let is_pure_power =
+        (1..degree as usize).all(|i| matches!(&coeffs[i], Expr::Integer(0)));
+
+      if is_pure_power {
+        let c_coeff = &coeffs[0];
+        let a_coeff = &coeffs[degree as usize];
+        let neg_c = negate_expr(c_coeff);
+        let val = simplify(solve_divide(&neg_c, a_coeff));
+        let val = crate::evaluator::evaluate_expr_to_expr(&val).unwrap_or(val);
+
+        // Only use nth-root approach for symbolic values;
+        // integer values are handled better by the factoring path below
+        if !matches!(&val, Expr::Integer(_))
+          && !matches!(&val, Expr::FunctionCall { name, .. } if name == "Rational")
+        {
+          let n = degree;
+          let mut roots = Vec::new();
+
+          // Build val^(1/n)
+          let val_root = {
+            let raw = Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                val.clone(),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(n)],
+                },
+              ],
+            };
+            crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
+          };
+
+          // Generate n roots ordered by fractional exponent j/n
+          // For odd n: j=0 → positive, j=1 → negative, j=2 → positive, ...
+          // For even n: pairs of (negative, positive) per distinct frac
+          if n % 2 == 1 {
+            // Odd n
+            for j in 0..n {
+              let root = if j == 0 {
+                val_root.clone()
+              } else {
+                let g = super::factor::gcd_i128(j, n);
+                let p = j / g;
+                let q = n / g;
+                let multiplier = Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![
+                    Expr::Integer(-1),
+                    Expr::FunctionCall {
+                      name: "Rational".to_string(),
+                      args: vec![Expr::Integer(p), Expr::Integer(q)],
+                    },
+                  ],
+                };
+                let product = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(multiplier),
+                  right: Box::new(val_root.clone()),
+                };
+                if j % 2 == 1 {
+                  // Negative: -((-1)^(j/n) * val^(1/n))
+                  negate_expr(&product)
+                } else {
+                  // Positive: (-1)^(j/n) * val^(1/n)
+                  product
+                }
+              };
+              roots.push(make_rule(root));
+            }
+          } else {
+            // Even n: pairs (negative, positive) for each fractional exponent
+            let half_n = n / 2;
+            for j in 0..half_n {
+              let frac_num = 2 * j;
+              let frac_den = n;
+              let g = super::factor::gcd_i128(frac_num, frac_den);
+
+              if frac_num == 0 {
+                // frac = 0: roots are -val^(1/n) and val^(1/n)
+                roots.push(make_rule(negate_expr(&val_root)));
+                roots.push(make_rule(val_root.clone()));
+              } else {
+                let p = frac_num / g;
+                let q = frac_den / g;
+                let multiplier = if p == 1 && q == 2 {
+                  Expr::Identifier("I".to_string())
+                } else {
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![
+                      Expr::Integer(-1),
+                      Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(p), Expr::Integer(q)],
+                      },
+                    ],
+                  }
+                };
+                let product = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(multiplier),
+                  right: Box::new(val_root.clone()),
+                };
+                roots.push(make_rule(negate_expr(&product)));
+                roots.push(make_rule(product));
+              }
+            }
+          }
+
+          return Ok(Expr::List(roots));
+        }
+      }
+
       // Higher degree: try Factor-based solving
       if let Ok(factored) =
         crate::functions::polynomial_ast::factor_ast(&[expanded.clone()])
@@ -5300,7 +5472,48 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let solve_result = solve_ast(&[cond.clone(), vars.clone()]);
     crate::pop_quiet();
     match &solve_result {
-      Ok(Expr::List(sols)) if !sols.is_empty() => sols.clone(),
+      Ok(Expr::List(sols)) if !sols.is_empty() => {
+        // Filter out parametric solutions (solutions with free variables)
+        // FindInstance needs concrete values, not expressions in terms of
+        // other variables.
+        sols
+          .iter()
+          .filter(|sol| {
+            if let Expr::List(rules) = sol {
+              // Check that all rules map to concrete values (no free vars)
+              let solved: Vec<&str> = rules
+                .iter()
+                .filter_map(|r| {
+                  if let Expr::Rule { pattern, .. } = r
+                    && let Expr::Identifier(name) = pattern.as_ref()
+                  {
+                    return Some(name.as_str());
+                  }
+                  None
+                })
+                .collect();
+              // A solution is concrete if all requested vars are solved
+              // and the replacements don't contain unsolved vars
+              let all_vars_solved =
+                var_names.iter().all(|v| solved.contains(&v.as_str()));
+              if !all_vars_solved {
+                return false;
+              }
+              // Check replacements don't contain other requested vars
+              rules.iter().all(|r| {
+                if let Expr::Rule { replacement, .. } = r {
+                  !var_names.iter().any(|v| !is_constant_wrt(replacement, v))
+                } else {
+                  true
+                }
+              })
+            } else {
+              true
+            }
+          })
+          .cloned()
+          .collect()
+      }
       _ => Vec::new(),
     }
   };
