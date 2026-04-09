@@ -3466,6 +3466,72 @@ mod join_non_list {
   }
 
   #[test]
+  fn map_operator_form() {
+    assert_eq!(
+      interpret("Map[f][{1, 2, 3}]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+  }
+
+  #[test]
+  fn sort_by_operator_form() {
+    assert_eq!(
+      interpret("SortBy[Last][{{3, 1}, {1, 2}}]").unwrap(),
+      "{{3, 1}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn maximal_by_operator_form() {
+    assert_eq!(
+      interpret("MaximalBy[Last][{{3, 1}, {1, 2}, {2, 5}}]").unwrap(),
+      "{{2, 5}}"
+    );
+  }
+
+  #[test]
+  fn minimal_by_operator_form() {
+    assert_eq!(
+      interpret("MinimalBy[Last][{{3, 1}, {1, 2}, {2, 5}}]").unwrap(),
+      "{{3, 1}}"
+    );
+  }
+
+  #[test]
+  fn group_by_operator_form() {
+    assert_eq!(
+      interpret("GroupBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),
+      "<|1 -> {1, 2, 3}, -1 -> {-1, -2}|>"
+    );
+  }
+
+  #[test]
+  fn counts_by_operator_form() {
+    assert_eq!(
+      interpret("CountsBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),
+      "<|1 -> 3, -1 -> 2|>"
+    );
+  }
+
+  #[test]
+  fn cases_operator_form() {
+    assert_eq!(
+      interpret("Cases[_Integer][{1, \"a\", 2, \"b\"}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn member_q_operator_form() {
+    assert_eq!(interpret("MemberQ[2][{1, 2, 3}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn free_q_operator_form() {
+    assert_eq!(interpret("FreeQ[_Integer][{1, 2, x}]").unwrap(), "False");
+  }
+
+  #[test]
   fn replace_part_deep() {
     assert_eq!(
       interpret("ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]").unwrap(),
