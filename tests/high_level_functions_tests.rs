@@ -2435,7 +2435,7 @@ mod high_level_functions_tests {
     fn test_collect_two_variables() {
       assert_eq!(
         interpret("Collect[a*x + b*x + c*y + d*y, {x, y}]").unwrap(),
-        "(c + d)*y + (a + b)*x"
+        "(a + b)*x + (c + d)*y"
       );
     }
 
@@ -2443,7 +2443,7 @@ mod high_level_functions_tests {
     fn test_collect_three_variables() {
       assert_eq!(
         interpret("Collect[a*x + b*y + c*z + d*x + e*y, {x, y, z}]").unwrap(),
-        "c*z + (b + e)*y + (a + d)*x"
+        "(a + d)*x + (b + e)*y + c*z"
       );
     }
 
