@@ -1896,10 +1896,43 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         if additive_contains_negated(b, a) || additive_is_neg_const_plus_ident(b, a) {
           return std::cmp::Ordering::Greater; // b (additive) before a (identifier)
         }
+        // Power with constant base (e.g. E^a) vs additive polynomial:
+        // compare by sort key so polynomial sorts before E^a when its
+        // variable comes before 'E' alphabetically (case-insensitive).
+        // Only applies when the Power base is a constant (E, Pi, etc.)
+        // and the additive has free variables (is a polynomial, not numeric).
+        if let Some(base) = power_const_base(a)
+          && has_free_variables(b)
+        {
+          let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+          let ord = crate::functions::list_helpers_ast::wolfram_string_order(&base, &bk);
+          if ord != 0 {
+            return if ord > 0 {
+              std::cmp::Ordering::Less
+            } else {
+              std::cmp::Ordering::Greater
+            };
+          }
+        }
       } else if sa == 1 && sb == 0 {
         // a is additive, b is Identifier
         if additive_contains_negated(a, b) || additive_is_neg_const_plus_ident(a, b) {
           return std::cmp::Ordering::Less; // a (additive) before b (identifier)
+        }
+        // Additive polynomial vs Power with constant base (e.g. E^a):
+        // compare by sort key.
+        if let Some(base) = power_const_base(b)
+          && has_free_variables(a)
+        {
+          let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+          let ord = crate::functions::list_helpers_ast::wolfram_string_order(&ak, &base);
+          if ord != 0 {
+            return if ord > 0 {
+              std::cmp::Ordering::Less
+            } else {
+              std::cmp::Ordering::Greater
+            };
+          }
         }
       }
       return sa.cmp(&sb);
@@ -2048,6 +2081,29 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       }
     }
   });
+}
+
+/// If the expression is a Power with a constant base (e.g. E^a, Pi^x, 2^n),
+/// return the sort key of the base. Returns None if the base is a variable.
+fn power_const_base(e: &Expr) -> Option<String> {
+  let base = match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } => left.as_ref(),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      &args[0]
+    }
+    _ => return None,
+  };
+  match base {
+    Expr::Constant(c) => Some(c.clone()),
+    Expr::Integer(_) | Expr::Real(_) => {
+      Some(crate::syntax::expr_to_string(base))
+    }
+    _ => None,
+  }
 }
 
 /// Check if an additive expression contains a given identifier with a negative coefficient.

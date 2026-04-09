@@ -304,6 +304,10 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sub = crate::syntax::substitute_variable(&antideriv, &var_name, lo);
         crate::evaluator::evaluate_expr_to_expr(&sub)?
       };
+      // Apply Horner form to polynomial factors in products,
+      // matching Wolfram's canonical output for definite integrals.
+      let at_hi = hornerize_product_polys(at_hi);
+      let at_lo = hornerize_product_polys(at_lo);
       let result = simplify(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Minus,
         left: Box::new(at_hi),
@@ -344,6 +348,63 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Integrate".to_string(),
       args: args.to_vec(),
     }),
+  }
+}
+
+/// Apply Horner form to polynomial factors within product expressions.
+/// E.g., Times[E^a, 2 - 2a + a^2] → Times[E^a, 2 + (-2+a)*a]
+/// This matches Wolfram's canonical output for definite integral results.
+fn hornerize_product_polys(expr: Expr) -> Expr {
+  match &expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> = args.iter().map(try_horner_if_poly).collect();
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(try_horner_if_poly(left)),
+      right: Box::new(try_horner_if_poly(right)),
+    },
+    _ => expr,
+  }
+}
+
+/// If the expression is a polynomial of degree >= 2 in a single variable,
+/// convert it to Horner form.
+fn try_horner_if_poly(expr: &Expr) -> Expr {
+  // Check if the expression is an additive (Plus) expression — only
+  // those can be polynomials of degree >= 2 that benefit from Horner form.
+  let is_plus = matches!(expr,
+    Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        ..
+      }
+    );
+  if !is_plus {
+    return expr.clone();
+  }
+  // Try to apply HornerForm; it will auto-detect variables and
+  // return the expression unchanged if it's not a polynomial of degree >= 2.
+  match crate::functions::polynomial_ast::horner::horner_form_ast(&[
+    expr.clone()
+  ]) {
+    Ok(ref h)
+      if crate::syntax::expr_to_string(h)
+        != crate::syntax::expr_to_string(expr) =>
+    {
+      h.clone()
+    }
+    _ => expr.clone(),
   }
 }
 

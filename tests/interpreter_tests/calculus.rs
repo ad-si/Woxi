@@ -302,6 +302,47 @@ mod definite_integrals {
       "15"
     );
   }
+
+  #[test]
+  fn definite_integral_poly_times_exp_horner_form() {
+    // Definite integral of x^2*E^x should produce Horner form for the
+    // polynomial factor and correct factor ordering (polynomial before E^var).
+    assert_eq!(
+      interpret("Integrate[x^2 E^x, {x, a, b}]").unwrap(),
+      "-((2 + (-2 + a)*a)*E^a) + (2 + (-2 + b)*b)*E^b"
+    );
+  }
+
+  #[test]
+  fn definite_integral_poly_times_exp_x4() {
+    assert_eq!(
+      interpret("Integrate[x^4 E^x, {x, a, b}]").unwrap(),
+      "-((24 + a*(-24 + a*(12 + (-4 + a)*a)))*E^a) + (24 + b*(-24 + b*(12 + (-4 + b)*b)))*E^b"
+    );
+  }
+
+  #[test]
+  fn definite_integral_poly_times_exp_linear() {
+    // Linear case: no Horner form needed (degree 1)
+    assert_eq!(
+      interpret("Integrate[x E^x, {x, a, b}]").unwrap(),
+      "-((-1 + a)*E^a) + (-1 + b)*E^b"
+    );
+  }
+
+  #[test]
+  fn factor_ordering_poly_times_const_power() {
+    // Polynomial before E^a when variable 'a' < 'E' alphabetically
+    assert_eq!(
+      interpret("E^a*(2 - 2*a + a^2)").unwrap(),
+      "(2 - 2*a + a^2)*E^a"
+    );
+    // E^x before polynomial when variable 'x' > 'E'
+    assert_eq!(
+      interpret("E^x*(2 - 2*x + x^2)").unwrap(),
+      "E^x*(2 - 2*x + x^2)"
+    );
+  }
 }
 
 mod integrate_reciprocal_powers {
