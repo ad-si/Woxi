@@ -1181,6 +1181,53 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Handle {digit_list, exponent} form (output of RealDigits)
+  // FromDigits[{{d1,d2,...,dn}, e}] = (d1*base^(e-1) + d2*base^(e-2) + ... + dn*base^(e-n))
+  if items.len() == 2
+    && let (Expr::List(digits), Some(exp)) =
+      (&items[0], expr_to_i128(&items[1]))
+    && digits.iter().all(|d| expr_to_i128(d).is_some())
+  {
+    let n = digits.len() as i128;
+    // Compute the integer from digits
+    let mut int_val = BigInt::from(0);
+    for d in digits {
+      let dv = expr_to_i128(d).unwrap();
+      int_val = int_val * &big_base + BigInt::from(dv);
+    }
+    // The value is int_val * base^(exp - n)
+    let shift = exp - n;
+    if shift >= 0 {
+      let factor = big_base.pow(shift as u32);
+      return Ok(bigint_to_expr(int_val * factor));
+    } else {
+      // Need a rational: int_val / base^(-shift)
+      let denom = big_base.pow((-shift) as u32);
+      // Simplify the fraction using Euclidean gcd
+      fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+        let mut a = if a < &BigInt::from(0) { -a } else { a.clone() };
+        let mut b = if b < &BigInt::from(0) { -b } else { b.clone() };
+        while b > BigInt::from(0) {
+          let t = &a % &b;
+          a = b;
+          b = t;
+        }
+        a
+      }
+      let g = bigint_gcd(&int_val, &denom);
+      let num = &int_val / &g;
+      let den = &denom / &g;
+      if den == BigInt::from(1) {
+        return Ok(bigint_to_expr(num));
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![bigint_to_expr(num), bigint_to_expr(den)],
+        });
+      }
+    }
+  }
+
   // Check if all items are numeric
   let all_numeric = items.iter().all(|item| expr_to_i128(item).is_some());
 
