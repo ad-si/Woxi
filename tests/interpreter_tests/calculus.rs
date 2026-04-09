@@ -776,6 +776,74 @@ mod limit {
   }
 
   #[test]
+  fn limit_direction_numeric_from_below() {
+    // Direction -> 1 means from below (from the left)
+    assert_eq!(
+      interpret("Limit[1/x, x -> 0, Direction -> 1]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_direction_numeric_from_above() {
+    // Direction -> -1 means from above (from the right)
+    assert_eq!(
+      interpret("Limit[1/x, x -> 0, Direction -> -1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn limit_piecewise_from_below() {
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{x, x < -1}, {x^2, x >= -1}}]; \
+         Limit[f[x], x -> -1, Direction -> 1]"
+      )
+      .unwrap(),
+      "-1"
+    );
+  }
+
+  #[test]
+  fn limit_piecewise_from_above() {
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{x, x < -1}, {x^2, x >= -1}}]; \
+         Limit[f[x], x -> -1, Direction -> -1]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn limit_piecewise_two_sided_indeterminate() {
+    // Two-sided limit at a discontinuity should be Indeterminate
+    assert_eq!(
+      interpret(
+        "f[x_] := Piecewise[{{x, x < -1}, {x^2, x >= -1}}]; \
+         Limit[f[x], x -> -1]"
+      )
+      .unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn limit_piecewise_continuous_point() {
+    // At a point where both branches agree, the limit should exist
+    assert_eq!(
+      interpret(
+        "g[x_] := Piecewise[{{x^2, x < 0}, {x, x >= 0}}]; \
+         Limit[g[x], x -> 0]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
   fn limit_arctan_at_infinity() {
     assert_eq!(
       interpret("Limit[ArcTan[x], x -> Infinity]").unwrap(),
