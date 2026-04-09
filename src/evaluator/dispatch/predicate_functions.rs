@@ -437,7 +437,7 @@ pub fn dispatch_predicate_functions(
         }));
       }
     }
-    "MemberQ" if args.len() == 2 => {
+    "MemberQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::predicate_ast::member_q_ast(args));
     }
     "FreeQ" if args.len() == 2 => {
