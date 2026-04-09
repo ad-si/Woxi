@@ -152,7 +152,7 @@ pub fn dispatch_calculus_functions(
     "Wronskian" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::wronskian_ast(args));
     }
-    "Integrate" if args.len() == 2 => {
+    "Integrate" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::integrate_ast(args));
     }
     "NIntegrate" if args.len() == 2 => {

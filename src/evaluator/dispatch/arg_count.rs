@@ -466,7 +466,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "IntegerQ" => Some((1, 1)),
     "IntegerReverse" => Some((1, 2)),
     "IntegerString" => Some((1, 3)),
-    "Integrate" => Some((2, 2)),
+    "Integrate" => Some((2, 100)),
     "InterpolatingPolynomial" => Some((2, 2)),
     "InterquartileRange" => Some((1, 1)),
     "IntersectingQ" => Some((2, 2)),
