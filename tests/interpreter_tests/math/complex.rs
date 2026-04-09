@@ -295,6 +295,17 @@ mod re_tests {
   fn re_symbolic() {
     assert_eq!(interpret("Re[x]").unwrap(), "Re[x]");
   }
+
+  #[test]
+  fn re_i_times_numeric() {
+    // Re[I * Sinh[1]] = 0 since Sinh[1] is a real numeric value
+    assert_eq!(interpret("Re[I*Sinh[1]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_i_times_log() {
+    assert_eq!(interpret("Re[I*Log[2]]").unwrap(), "0");
+  }
 }
 
 mod im_tests {
@@ -353,6 +364,17 @@ mod im_tests {
   #[test]
   fn im_symbolic() {
     assert_eq!(interpret("Im[x]").unwrap(), "Im[x]");
+  }
+
+  #[test]
+  fn im_i_times_numeric() {
+    // Im[I * Sinh[1]] = Sinh[1] since I*Sinh[1] is purely imaginary
+    assert_eq!(interpret("Im[I*Sinh[1]]").unwrap(), "Sinh[1]");
+  }
+
+  #[test]
+  fn im_i_times_log() {
+    assert_eq!(interpret("Im[I*Log[2]]").unwrap(), "Log[2]");
   }
 
   // ── Arg ──────────────────────────────────────────────────
