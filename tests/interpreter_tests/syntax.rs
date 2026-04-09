@@ -436,6 +436,24 @@ mod full_form {
   }
 
   #[test]
+  fn full_form_complex_number() {
+    assert_eq!(interpret("FullForm[2 + 3*I]").unwrap(), "Complex[2, 3]");
+  }
+
+  #[test]
+  fn full_form_imaginary_unit() {
+    assert_eq!(interpret("FullForm[I]").unwrap(), "Complex[0, 1]");
+  }
+
+  #[test]
+  fn full_form_complex_rational() {
+    assert_eq!(
+      interpret("FullForm[1/2 + 3/4*I]").unwrap(),
+      "Complex[Rational[1, 2], Rational[3, 4]]"
+    );
+  }
+
+  #[test]
   fn full_form_division() {
     assert_eq!(
       interpret("FullForm[a/b]").unwrap(),
