@@ -4635,6 +4635,11 @@ pub fn string_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parts.push(Expr::String(part));
     i += d;
   }
+  // Include trailing partial substring (Wolfram behavior)
+  if i < chars.len() && d == n {
+    let part: String = chars[i..].iter().collect();
+    parts.push(Expr::String(part));
+  }
 
   Ok(Expr::List(parts))
 }

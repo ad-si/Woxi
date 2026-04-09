@@ -2594,15 +2594,16 @@ mod string_partition {
   fn basic_partition() {
     assert_eq!(
       interpret("StringPartition[\"abcdefghij\", 3]").unwrap(),
-      "{abc, def, ghi}"
+      "{abc, def, ghi, j}"
     );
   }
 
   #[test]
-  fn non_divisible_drops_remainder() {
+  fn non_divisible_includes_remainder() {
+    // Wolfram includes the trailing partial substring
     assert_eq!(
       interpret("StringPartition[\"abcde\", 2]").unwrap(),
-      "{ab, cd}"
+      "{ab, cd, e}"
     );
   }
 
