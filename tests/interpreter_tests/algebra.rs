@@ -329,6 +329,31 @@ mod simplify {
       "(k*q*(1 + (1 + s)^(15/4)))/(2*a^4*(1 + s)^(3/2))"
     );
   }
+
+  #[test]
+  fn trig_polynomial_power_reduction() {
+    // Simplify[D[Sin[x]^10, {x, 4}]] should use double-angle forms
+    assert_eq!(
+      interpret("Simplify[D[Sin[x]^10, {x, 4}]]").unwrap(),
+      "10*(141 + 238*Cos[2*x] + 125*Cos[4*x])*Sin[x]^6"
+    );
+  }
+
+  #[test]
+  fn trig_polynomial_simple() {
+    assert_eq!(
+      interpret("Simplify[3*Cos[x]^2*Sin[x]^2 + Sin[x]^4]").unwrap(),
+      "(2 + Cos[2*x])*Sin[x]^2"
+    );
+  }
+
+  #[test]
+  fn trig_polynomial_cos_dominant() {
+    assert_eq!(
+      interpret("Simplify[2*Cos[x]^4 - Cos[x]^2*Sin[x]^2]").unwrap(),
+      "((1 + 3*Cos[2*x])*Cos[x]^2)/2"
+    );
+  }
 }
 
 mod factor {
