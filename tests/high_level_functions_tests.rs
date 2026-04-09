@@ -2359,6 +2359,47 @@ mod high_level_functions_tests {
     }
   }
 
+  mod operator_form_tests {
+    use super::*;
+
+    #[test]
+    fn test_count_operator_form() {
+      assert_eq!(
+        interpret(r#"Count[_Integer][{1, "a", 2, "b"}]"#).unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn test_position_operator_form() {
+      assert_eq!(
+        interpret(r#"Position[_Integer][{1, "a", 2}]"#).unwrap(),
+        "{{1}, {3}}"
+      );
+    }
+
+    #[test]
+    fn test_delete_cases_operator_form() {
+      assert_eq!(
+        interpret(r#"DeleteCases[_Integer][{1, "a", 2}]"#).unwrap(),
+        "{a}"
+      );
+    }
+
+    #[test]
+    fn test_match_q_operator_form() {
+      assert_eq!(interpret("MatchQ[{__Integer}][{1, 2, 3}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn test_string_cases_operator_form() {
+      assert_eq!(
+        interpret(r#"StringCases[DigitCharacter..]["abc123"]"#).unwrap(),
+        "{123}"
+      );
+    }
+  }
+
   mod association_dedup_tests {
     use super::*;
 
