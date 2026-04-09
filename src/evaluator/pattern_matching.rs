@@ -1435,6 +1435,8 @@ struct SeqInfo {
   test: Option<Box<Expr>>,
   /// For Repeated/RepeatedNull: the element pattern to match against each arg.
   element_pattern: Option<Box<Expr>>,
+  /// Condition test to evaluate after the sequence is matched (for x__ /; cond patterns).
+  condition: Option<Box<Expr>>,
 }
 
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
@@ -1453,7 +1455,18 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         max_count: None,
         test: None,
         element_pattern: None,
+        condition: None,
       })
+    }
+    // Condition wrapping a sequence pattern: x__Integer /; test
+    Expr::FunctionCall {
+      name: cond_name,
+      args: cond_args,
+    } if cond_name == "Condition" && cond_args.len() == 2 => {
+      // Recurse on the inner pattern and attach the condition
+      let mut seq = get_sequence_info(&cond_args[0])?;
+      seq.condition = Some(Box::new(cond_args[1].clone()));
+      Some(seq)
     }
     // PatternTest with BlankSequence: x__?IntegerQ or __?IntegerQ
     Expr::PatternTest {
@@ -1469,6 +1482,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         max_count: None,
         test: Some(test.clone()),
         element_pattern: None,
+        condition: None,
       })
     }
     // BlankSequence[] or BlankSequence[h] as FunctionCall
@@ -1492,6 +1506,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         max_count: None,
         test: None,
         element_pattern: None,
+        condition: None,
       })
     }
     // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
@@ -1548,6 +1563,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
         max_count: max,
         test: None,
         element_pattern: Some(Box::new(args[0].clone())),
+        condition: None,
       })
     }
     _ => None,
@@ -1693,6 +1709,15 @@ fn match_args_with_sequences(
             };
             elem_bindings.insert(0, (seq.name.clone(), bound_value));
           }
+          // Check Condition if present
+          if let Some(ref cond) = seq.condition {
+            let test_expr =
+              apply_bindings(cond, &elem_bindings).unwrap_or(*cond.clone());
+            match evaluate_expr_to_expr(&test_expr) {
+              Ok(Expr::Identifier(ref s)) if s == "True" => {}
+              _ => continue,
+            }
+          }
           return Some(elem_bindings);
         }
         continue;
@@ -1718,6 +1743,15 @@ fn match_args_with_sequences(
             }
           };
           rest_bindings.insert(0, (seq.name.clone(), bound_value));
+        }
+        // Check Condition if present
+        if let Some(ref cond) = seq.condition {
+          let test_expr =
+            apply_bindings(cond, &rest_bindings).unwrap_or(*cond.clone());
+          match evaluate_expr_to_expr(&test_expr) {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {}
+            _ => continue,
+          }
         }
         return Some(rest_bindings);
       }
