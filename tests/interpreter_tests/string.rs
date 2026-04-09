@@ -2772,11 +2772,11 @@ mod string_contains_free_patterns {
     );
     assert_eq!(
       interpret(r#"StringPadRight["x", 6, "abc"]"#).unwrap(),
-      "xabcab"
+      "xbcabc"
     );
     assert_eq!(
       interpret(r#"StringPadRight["hi", 10, "abc"]"#).unwrap(),
-      "hiabcabcab"
+      "hicabcabca"
     );
   }
 
@@ -2810,7 +2810,7 @@ mod string_contains_free_patterns {
     );
     assert_eq!(
       interpret(r#"StringPadLeft["hi", 10, "abc"]"#).unwrap(),
-      "abcabcabhi"
+      "cabcabcahi"
     );
   }
 

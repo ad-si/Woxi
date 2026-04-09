@@ -757,9 +757,10 @@ mod leap_year_q {
 
   #[test]
   fn leap_year_bare_integer() {
-    assert_eq!(interpret("LeapYearQ[2024]").unwrap(), "True");
+    // Wolfram's LeapYearQ does not accept bare integers, returns False
+    assert_eq!(interpret("LeapYearQ[2024]").unwrap(), "False");
     assert_eq!(interpret("LeapYearQ[2023]").unwrap(), "False");
-    assert_eq!(interpret("LeapYearQ[2000]").unwrap(), "True");
+    assert_eq!(interpret("LeapYearQ[2000]").unwrap(), "False");
     assert_eq!(interpret("LeapYearQ[1900]").unwrap(), "False");
   }
 

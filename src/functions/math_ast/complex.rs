@@ -554,7 +554,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     // Rationalize[x] with no tolerance: find exact rational representation
     // Only rationalize if an exact match is found with a small denominator
-    let (num, denom) = find_rational(x, 0.0, 100_000);
+    let (num, denom) = find_rational(x, 0.0, 10_000_000);
     let approx = num as f64 / denom as f64;
     if approx == x {
       if denom == 1 {

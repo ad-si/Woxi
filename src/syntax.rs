@@ -4993,6 +4993,23 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
+        // Flatten nested Times (Times is Flat)
+        let flat_args: Vec<Expr> = args
+          .iter()
+          .flat_map(|a| match a {
+            Expr::FunctionCall {
+              name: inner_name,
+              args: inner_args,
+            } if inner_name == "Times" => inner_args.clone(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left,
+              right,
+            } => vec![*left.clone(), *right.clone()],
+            other => vec![other.clone()],
+          })
+          .collect();
+        let args = &flat_args;
         // Handle Times[Rational[n, d], denom_factor] — form-specific formatting
         if args.len() == 2
           && let Expr::FunctionCall {
@@ -5699,6 +5716,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       }
 
       // Special case: BinaryOp Times with Rational[n, d] * expr → "(n*expr)/d"
+      // When expr contains I (imaginary unit), use complex grouping: "((n*I)/d)*rest"
       if matches!(op, BinaryOperator::Times)
         && let Expr::FunctionCall {
           name: rname,
@@ -5712,6 +5730,57 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         && *num != -1
         && *den > 0
       {
+        // Check if the right side is a Times containing I
+        let right_has_i = |e: &Expr| -> bool {
+          match e {
+            Expr::Identifier(n) if n == "I" => true,
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: l,
+              right: r,
+            } => {
+              matches!(l.as_ref(), Expr::Identifier(n) if n == "I")
+                || matches!(r.as_ref(), Expr::Identifier(n) if n == "I")
+            }
+            Expr::FunctionCall { name: tn, args: ta } if tn == "Times" => ta
+              .iter()
+              .any(|a| matches!(a, Expr::Identifier(n) if n == "I")),
+            _ => false,
+          }
+        };
+        if right_has_i(right) {
+          // Collect symbolic factors (non-I) from right
+          let mut symbolic: Vec<&Expr> = Vec::new();
+          match right.as_ref() {
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: l,
+              right: r,
+            } => {
+              if !matches!(l.as_ref(), Expr::Identifier(n) if n == "I") {
+                symbolic.push(l);
+              }
+              if !matches!(r.as_ref(), Expr::Identifier(n) if n == "I") {
+                symbolic.push(r);
+              }
+            }
+            Expr::FunctionCall { name: tn, args: ta } if tn == "Times" => {
+              for a in ta {
+                if !matches!(a, Expr::Identifier(n) if n == "I") {
+                  symbolic.push(a);
+                }
+              }
+            }
+            _ => {}
+          }
+          if symbolic.is_empty() {
+            return format!("({num}*I)/{den}");
+          }
+          let i_part = format!("(({num}*I)/{den})");
+          let rest: Vec<String> =
+            symbolic.iter().map(|a| expr_to_string(a)).collect();
+          return format!("{}*{}", i_part, rest.join("*"));
+        }
         let inner = expr_to_string(right);
         let inner_str = if matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(

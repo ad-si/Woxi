@@ -2526,10 +2526,16 @@ mod rationalize {
   use super::*;
 
   #[test]
-  fn no_rationalize_imprecise() {
-    // Wolfram does not rationalize values that aren't exact float matches
-    assert_eq!(interpret("Rationalize[0.333333]").unwrap(), "0.333333");
-    assert_eq!(interpret("Rationalize[0.142857]").unwrap(), "0.142857");
+  fn rationalize_decimal_fractions() {
+    // Wolfram rationalizes decimals to their exact fractional form
+    assert_eq!(
+      interpret("Rationalize[0.333333]").unwrap(),
+      "333333/1000000"
+    );
+    assert_eq!(
+      interpret("Rationalize[0.142857]").unwrap(),
+      "142857/1000000"
+    );
   }
 
   #[test]

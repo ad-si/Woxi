@@ -521,6 +521,7 @@ function main() {
     /\bStreams\[/, // Woxi returns hardcoded stdout/stderr, Wolfram includes temp file streams
     /\bConnectedComponents\[/, // Vertex ordering within components is implementation-specific
     /\bStarGraph\[/,         // Internal Graph representation differs (edge list vs SparseArray)
+    /\bCompleteGraph\[/,     // Internal Graph representation differs (edge list vs SparseArray)
     /\bCrossMatrix\[/,       // Woxi returns dense list, Wolfram returns SparseArray
     /\bSymmetrize\[/,        // Woxi returns dense list, Wolfram returns SymmetrizedArray
     /\bTensorWedge\[/,      // Woxi returns dense list, Wolfram returns SymmetrizedArray
@@ -639,6 +640,8 @@ function main() {
     // from prior test cases persist (ClearAll doesn't reset the global registry),
     // so this "unregistered" lookup finds entities from earlier tests.
     "Entity[\"Pet\", \"cat1\"][\"Name\"]",
+    // Graph option wrapping differs: Woxi uses bare options, Wolfram wraps in {VertexSize -> {Medium}}
+    "Graph[{UndirectedEdge[1, 2]}, VertexSize -> Medium]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
