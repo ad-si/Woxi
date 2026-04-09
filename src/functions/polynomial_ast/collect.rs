@@ -143,7 +143,7 @@ fn collect_in_coefficients(
     }
   }
 
-  power_groups.sort_by_key(|(p, _)| *p);
+  power_groups.sort_by_key(|(p, _)| std::cmp::Reverse(*p));
 
   let mut result_terms = Vec::new();
   for (power, coeffs) in power_groups {
