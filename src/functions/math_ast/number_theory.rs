@@ -1359,6 +1359,10 @@ pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   }
 
   if num == 1 {
+    if factors.is_empty() {
+      // FactorInteger[1] → {{1, 1}}
+      factors.push(Expr::List(vec![Expr::Integer(1), Expr::Integer(1)]));
+    }
     return Ok(Expr::List(factors));
   }
 
@@ -3123,9 +3127,9 @@ pub fn prime_omega_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && pv.len() == 2
         && let Expr::Integer(exp) = &pv[1]
       {
-        // Skip the {-1, 1} factor for negative numbers
+        // Skip the {-1, 1} and {1, 1} factors
         if let Expr::Integer(base) = &pv[0]
-          && *base == -1
+          && (*base == -1 || *base == 1)
         {
           continue;
         }
@@ -3150,9 +3154,9 @@ pub fn prime_nu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::List(pv) = pair
         && pv.len() == 2
       {
-        // Skip the {-1, 1} factor for negative numbers
+        // Skip the {-1, 1} and {1, 1} factors
         if let Expr::Integer(base) = &pv[0]
-          && *base == -1
+          && (*base == -1 || *base == 1)
         {
           continue;
         }

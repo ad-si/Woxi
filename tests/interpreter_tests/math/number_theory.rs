@@ -1,5 +1,45 @@
 use super::*;
 
+mod factor_integer {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("FactorInteger[12]").unwrap(), "{{2, 2}, {3, 1}}");
+    assert_eq!(
+      interpret("FactorInteger[360]").unwrap(),
+      "{{2, 3}, {3, 2}, {5, 1}}"
+    );
+  }
+
+  #[test]
+  fn one() {
+    // Regression: FactorInteger[1] was returning {} instead of {{1, 1}}
+    assert_eq!(interpret("FactorInteger[1]").unwrap(), "{{1, 1}}");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(
+      interpret("FactorInteger[-12]").unwrap(),
+      "{{-1, 1}, {2, 2}, {3, 1}}"
+    );
+    assert_eq!(interpret("FactorInteger[-1]").unwrap(), "{{-1, 1}}");
+  }
+
+  #[test]
+  fn prime() {
+    assert_eq!(interpret("FactorInteger[7]").unwrap(), "{{7, 1}}");
+    assert_eq!(interpret("FactorInteger[97]").unwrap(), "{{97, 1}}");
+  }
+
+  #[test]
+  fn prime_power() {
+    assert_eq!(interpret("FactorInteger[8]").unwrap(), "{{2, 3}}");
+    assert_eq!(interpret("FactorInteger[27]").unwrap(), "{{3, 3}}");
+  }
+}
+
 mod divisible {
   use super::*;
 
