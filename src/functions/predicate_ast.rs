@@ -378,6 +378,21 @@ fn is_known_positive(expr: &Expr) -> Option<bool> {
     Expr::Integer(n) => Some(*n > 0),
     Expr::BigInteger(n) => Some(*n > num_bigint::BigInt::from(0)),
     Expr::Real(f) => Some(*f > 0.0),
+    // Rational[n, d]: positive when n and d have the same sign
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(
+          (&args[0], &args[1]),
+          (Expr::Integer(_), Expr::Integer(_))
+        ) =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n > 0 && *d > 0) || (*n < 0 && *d < 0))
+      } else {
+        None
+      }
+    }
     Expr::Constant(c) => match c.as_str() {
       "Pi" | "E" | "Degree" => Some(true),
       _ => None,
@@ -415,6 +430,21 @@ fn is_known_negative(expr: &Expr) -> Option<bool> {
     Expr::Integer(n) => Some(*n < 0),
     Expr::BigInteger(n) => Some(*n < num_bigint::BigInt::from(0)),
     Expr::Real(f) => Some(*f < 0.0),
+    // Rational[n, d]: negative when n and d have opposite signs
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(
+          (&args[0], &args[1]),
+          (Expr::Integer(_), Expr::Integer(_))
+        ) =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n > 0 && *d < 0) || (*n < 0 && *d > 0))
+      } else {
+        None
+      }
+    }
     Expr::Constant(_) => Some(false), // Pi, E, Degree are all positive
     Expr::Identifier(name) => match name.as_str() {
       "Infinity" => Some(false),
