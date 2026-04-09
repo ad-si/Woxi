@@ -223,10 +223,24 @@ fn differentiate_wrt_expr(
 
 /// Integrate[expr, var] or Integrate[expr, {var, lo, hi}] - Symbolic integration
 pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "Integrate expects exactly 2 arguments".into(),
+      "Integrate expects at least 2 arguments".into(),
     ));
+  }
+
+  // Multi-variable integration: Integrate[f, spec1, spec2, ..., specN]
+  // = Integrate[Integrate[f, spec2, ..., specN], spec1]
+  // i.e., innermost integration variable is listed last
+  if args.len() > 2 {
+    let mut inner_args = vec![args[0].clone()];
+    inner_args.extend_from_slice(&args[2..]);
+    let inner = Expr::FunctionCall {
+      name: "Integrate".to_string(),
+      args: inner_args,
+    };
+    let inner_result = crate::evaluator::evaluate_expr_to_expr(&inner)?;
+    return integrate_ast(&[inner_result, args[1].clone()]);
   }
 
   // Check if the second argument is {var, lo, hi} (definite integral)

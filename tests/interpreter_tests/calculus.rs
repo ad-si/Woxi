@@ -260,6 +260,48 @@ mod definite_integrals {
     // ∫_1^2 1/x^3 dx = 3/8
     assert_eq!(interpret("Integrate[1/x^3, {x, 1, 2}]").unwrap(), "3/8");
   }
+
+  #[test]
+  fn multi_variable_definite_integral_polynomial() {
+    // ∫_0^1 ∫_0^1 x*y dy dx = 1/4
+    assert_eq!(
+      interpret("Integrate[x*y, {x, 0, 1}, {y, 0, 1}]").unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
+  fn multi_variable_matches_nested_integrate() {
+    // Integrate[f, {x, a, b}, {y, c, d}] == Integrate[Integrate[f, {y, c, d}], {x, a, b}]
+    let multi =
+      interpret("Integrate[x^2 + y^2, {x, 0, 1}, {y, 0, 1}]").unwrap();
+    let nested =
+      interpret("Integrate[Integrate[x^2 + y^2, {y, 0, 1}], {x, 0, 1}]")
+        .unwrap();
+    assert_eq!(multi, nested);
+  }
+
+  #[test]
+  fn multi_variable_dependent_bounds() {
+    // ∫_{-1}^{1} ∫_{-2}^{x} (x^3 Sin[y] + y^2 Cos[x^2]) dy dx
+    let multi =
+      interpret("Integrate[x^3 Sin[y] + y^2 Cos[x^2], {x, -1, 1}, {y, -2, x}]")
+        .unwrap();
+    let nested = interpret(
+      "Integrate[Integrate[x^3 Sin[y] + y^2 Cos[x^2], {y, -2, x}], {x, -1, 1}]",
+    )
+    .unwrap();
+    assert_eq!(multi, nested);
+  }
+
+  #[test]
+  fn multi_variable_simple_polynomial() {
+    // ∫_0^2 ∫_0^3 x + y dy dx = 15
+    assert_eq!(
+      interpret("Integrate[x + y, {x, 0, 2}, {y, 0, 3}]").unwrap(),
+      "15"
+    );
+  }
 }
 
 mod integrate_reciprocal_powers {
