@@ -693,29 +693,98 @@ pub fn association_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// MemberQ[list, elem] - Tests if elem is a member of list
 pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "MemberQ expects exactly 2 arguments".into(),
+      "MemberQ expects 2 or 3 arguments".into(),
     ));
   }
-  let items: &[Expr];
-  let assoc_values: Vec<Expr>;
-  match &args[0] {
-    Expr::List(list_items) => items = list_items,
-    Expr::Association(pairs) => {
-      assoc_values = pairs.iter().map(|(_, v)| v.clone()).collect();
-      items = &assoc_values;
-    }
-    _ => return Ok(bool_expr(false)),
-  };
 
   let pattern = &args[1];
-  for item in items {
-    if crate::functions::list_helpers_ast::matches_pattern_ast(item, pattern) {
-      return Ok(bool_expr(true));
+
+  // Parse optional level spec (3rd argument)
+  let level_spec = if args.len() == 3 {
+    parse_level_spec(&args[2])
+  } else {
+    (1, 1) // default: level {1}
+  };
+
+  fn search_at_levels(
+    expr: &Expr,
+    pattern: &Expr,
+    level_spec: (i64, i64),
+    current_level: i64,
+  ) -> bool {
+    if current_level >= level_spec.0
+      && current_level <= level_spec.1
+      && crate::functions::list_helpers_ast::matches_pattern_ast(expr, pattern)
+    {
+      return true;
     }
+    if current_level < level_spec.1 {
+      match expr {
+        Expr::List(items) => {
+          for item in items {
+            if search_at_levels(item, pattern, level_spec, current_level + 1) {
+              return true;
+            }
+          }
+        }
+        Expr::Association(pairs) => {
+          for (_, v) in pairs {
+            if search_at_levels(v, pattern, level_spec, current_level + 1) {
+              return true;
+            }
+          }
+        }
+        Expr::FunctionCall { args: fn_args, .. } => {
+          for arg in fn_args {
+            if search_at_levels(arg, pattern, level_spec, current_level + 1) {
+              return true;
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    false
   }
-  Ok(bool_expr(false))
+
+  Ok(bool_expr(search_at_levels(
+    &args[0], pattern, level_spec, 0,
+  )))
+}
+
+/// Parse a level spec like {2}, {1, 3}, Infinity, or a plain integer.
+fn parse_level_spec(spec: &Expr) -> (i64, i64) {
+  use num_traits::ToPrimitive;
+  match spec {
+    Expr::Integer(n) => (1, n.to_i64().unwrap_or(1)),
+    Expr::Identifier(s) if s == "Infinity" => (1, i64::MAX),
+    Expr::List(items) if items.len() == 1 => {
+      if let Expr::Integer(n) = &items[0] {
+        let lvl = n.to_i64().unwrap_or(1);
+        (lvl, lvl)
+      } else {
+        (1, 1)
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let lo = if let Expr::Integer(n) = &items[0] {
+        n.to_i64().unwrap_or(1)
+      } else {
+        1
+      };
+      let hi = if let Expr::Integer(n) = &items[1] {
+        n.to_i64().unwrap_or(1)
+      } else if let Expr::Identifier(s) = &items[1] {
+        if s == "Infinity" { i64::MAX } else { 1 }
+      } else {
+        1
+      };
+      (lo, hi)
+    }
+    _ => (1, 1),
+  }
 }
 
 /// FreeQ[expr, form] - Tests if expr is free of form

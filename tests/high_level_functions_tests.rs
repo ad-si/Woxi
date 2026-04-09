@@ -2317,6 +2317,48 @@ mod high_level_functions_tests {
     }
   }
 
+  mod member_q_level_spec_tests {
+    use super::*;
+
+    #[test]
+    fn test_member_q_level_2() {
+      assert_eq!(
+        interpret("MemberQ[{{1, 2}, {3, 4}}, 3, {2}]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn test_member_q_level_1_not_found() {
+      assert_eq!(
+        interpret("MemberQ[{{1, 2}, {3, 4}}, 3, {1}]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn test_member_q_infinity() {
+      assert_eq!(
+        interpret("MemberQ[{1, {2, {3}}}, 3, Infinity]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn test_member_q_basic() {
+      assert_eq!(interpret("MemberQ[{1, 2, 3}, 2]").unwrap(), "True");
+      assert_eq!(interpret("MemberQ[{1, 2, 3}, 5]").unwrap(), "False");
+    }
+
+    #[test]
+    fn test_member_q_pattern_at_level() {
+      assert_eq!(
+        interpret("MemberQ[{{1, 2}, {3, 4}}, _Integer, {2}]").unwrap(),
+        "True"
+      );
+    }
+  }
+
   mod association_dedup_tests {
     use super::*;
 
