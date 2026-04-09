@@ -2432,6 +2432,40 @@ mod high_level_functions_tests {
     }
   }
 
+  mod re_im_symbolic_tests {
+    use super::*;
+
+    #[test]
+    fn test_re_i_times_x() {
+      assert_eq!(interpret("Re[I*x]").unwrap(), "-Im[x]");
+    }
+
+    #[test]
+    fn test_im_i_times_x() {
+      assert_eq!(interpret("Im[I*x]").unwrap(), "Re[x]");
+    }
+
+    #[test]
+    fn test_re_i_times_product() {
+      assert_eq!(interpret("Re[I*y*z]").unwrap(), "-Im[y*z]");
+    }
+
+    #[test]
+    fn test_im_i_times_product() {
+      assert_eq!(interpret("Im[I*y*z]").unwrap(), "Re[y*z]");
+    }
+
+    #[test]
+    fn test_re_numeric_complex() {
+      assert_eq!(interpret("Re[3 + 4 I]").unwrap(), "3");
+    }
+
+    #[test]
+    fn test_im_numeric_complex() {
+      assert_eq!(interpret("Im[3 + 4 I]").unwrap(), "4");
+    }
+  }
+
   mod association_dedup_tests_actual {
     use super::*;
 

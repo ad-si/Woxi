@@ -46,6 +46,20 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Handle I * expr (symbolic): Re[I * expr] = -Im[expr]
+  if let Some(factor) = extract_i_times_any(&args[0]) {
+    return Ok(crate::syntax::Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::Integer(-1),
+        Expr::FunctionCall {
+          name: "Im".to_string(),
+          args: vec![factor],
+        },
+      ],
+    });
+  }
+
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Re".to_string(),
@@ -95,6 +109,14 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(real_part);
   }
 
+  // Handle I * expr (symbolic): Im[I * expr] = Re[expr]
+  if let Some(factor) = extract_i_times_any(&args[0]) {
+    return Ok(Expr::FunctionCall {
+      name: "Re".to_string(),
+      args: vec![factor],
+    });
+  }
+
   // Symbolic: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Im".to_string(),
@@ -125,6 +147,35 @@ fn extract_i_times_real(expr: &Expr) -> Option<Expr> {
       && !other_factors.is_empty()
       && other_factors.iter().all(is_real_valued)
     {
+      return if other_factors.len() == 1 {
+        Some(other_factors.into_iter().next().unwrap())
+      } else {
+        Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: other_factors,
+        })
+      };
+    }
+  }
+  None
+}
+
+/// Extract the factor from I * expr (any symbolic expression, not just real).
+/// Returns Some(expr) if the expression is I times something, None otherwise.
+fn extract_i_times_any(expr: &Expr) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+  {
+    let mut i_count = 0;
+    let mut other_factors: Vec<Expr> = Vec::new();
+    for arg in args {
+      if matches!(arg, Expr::Identifier(s) if s == "I") {
+        i_count += 1;
+      } else {
+        other_factors.push(arg.clone());
+      }
+    }
+    if i_count == 1 && !other_factors.is_empty() {
       return if other_factors.len() == 1 {
         Some(other_factors.into_iter().next().unwrap())
       } else {
