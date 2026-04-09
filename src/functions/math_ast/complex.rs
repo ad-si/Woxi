@@ -615,27 +615,69 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
-    // Rationalize[x] with no tolerance: for machine-precision numbers, use a default
-    // tolerance to find a simple nearby rational, matching Wolfram Language behavior.
-    // Wolfram uses approximately 10^(-Ceiling[MachinePrecision/2]) ≈ 10^-8,
-    // but in practice a tolerance around 10^-6 gives the best match to Wolfram output.
-    let default_tol = 5e-6;
-    let (num, denom) = find_rational_smallest_denom(x, default_tol);
-    let approx = num as f64 / denom as f64;
-    if (approx - x).abs() <= default_tol {
-      if denom == 1 {
-        Ok(Expr::Integer(num as i128))
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
-        })
-      }
-    } else {
-      // No close-enough small-denominator match found; return as Real
-      Ok(num_to_expr(x))
+    // Rationalize[x] with no tolerance: convert the decimal representation to an exact
+    // rational fraction p/10^n and simplify by GCD, matching Wolfram Language behavior.
+    // If the resulting fraction has a large denominator and the number is very close to
+    // a simple fraction (denominator ≤ 3), return the Real unchanged (ambiguous input).
+    let (numer, denom) = decimal_to_fraction(x);
+    if denom == 1 {
+      return Ok(Expr::Integer(numer as i128));
     }
+
+    // Check for ambiguity: if the simplified fraction still has a large denominator
+    // and x is very close to a fraction with denominator ≤ 3 (like 1/2, 1/3, 2/3),
+    // Wolfram considers the input ambiguous and returns the Real unchanged.
+    if denom > 500_000 {
+      for d in [2i64, 3] {
+        let n = (x * d as f64).round() as i64;
+        if n != 0 {
+          let approx = n as f64 / d as f64;
+          if (approx - x).abs() < 1e-5 {
+            return Ok(num_to_expr(x));
+          }
+        }
+      }
+    }
+
+    Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(numer as i128), Expr::Integer(denom as i128)],
+    })
   }
+}
+
+/// Convert a floating-point number to an exact decimal fraction p/10^n, simplified by GCD.
+/// Uses the shortest decimal representation of the double (Rust's Display format).
+fn decimal_to_fraction(x: f64) -> (i64, i64) {
+  if x == 0.0 {
+    return (0, 1);
+  }
+  let sign: i64 = if x < 0.0 { -1 } else { 1 };
+  let s = format!("{}", x.abs());
+
+  if let Some(dot_pos) = s.find('.') {
+    let int_part = &s[..dot_pos];
+    let frac_part = &s[dot_pos + 1..];
+    let n_decimals = frac_part.len() as u32;
+    let denom = 10i64.pow(n_decimals);
+    let numer: i64 = format!("{}{}", int_part, frac_part).parse().unwrap_or(0);
+    let g = gcd_i64(numer, denom);
+    (sign * numer / g, denom / g)
+  } else {
+    let numer: i64 = s.parse().unwrap_or(0);
+    (sign * numer, 1)
+  }
+}
+
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
 }
 
 /// Find best rational approximation using continued fractions
