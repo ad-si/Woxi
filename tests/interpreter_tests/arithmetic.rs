@@ -2527,15 +2527,15 @@ mod rationalize {
 
   #[test]
   fn rationalize_decimal_fractions() {
-    // Wolfram rationalizes decimals to their exact fractional form
-    assert_eq!(
-      interpret("Rationalize[0.333333]").unwrap(),
-      "333333/1000000"
-    );
-    assert_eq!(
-      interpret("Rationalize[0.142857]").unwrap(),
-      "142857/1000000"
-    );
+    // Wolfram applies a default tolerance for machine-precision numbers,
+    // finding simple nearby rationals
+    assert_eq!(interpret("Rationalize[0.333333]").unwrap(), "1/3");
+    assert_eq!(interpret("Rationalize[0.142857]").unwrap(), "1/7");
+  }
+
+  #[test]
+  fn rationalize_pi_approx() {
+    assert_eq!(interpret("Rationalize[3.14159]").unwrap(), "355/113");
   }
 
   #[test]

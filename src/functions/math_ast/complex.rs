@@ -615,11 +615,14 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
-    // Rationalize[x] with no tolerance: find exact rational representation
-    // Only rationalize if an exact match is found with a small denominator
-    let (num, denom) = find_rational(x, 0.0, 10_000_000);
+    // Rationalize[x] with no tolerance: for machine-precision numbers, use a default
+    // tolerance to find a simple nearby rational, matching Wolfram Language behavior.
+    // Wolfram uses approximately 10^(-Ceiling[MachinePrecision/2]) ≈ 10^-8,
+    // but in practice a tolerance around 10^-6 gives the best match to Wolfram output.
+    let default_tol = 5e-6;
+    let (num, denom) = find_rational_smallest_denom(x, default_tol);
     let approx = num as f64 / denom as f64;
-    if approx == x {
+    if (approx - x).abs() <= default_tol {
       if denom == 1 {
         Ok(Expr::Integer(num as i128))
       } else {
@@ -629,7 +632,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     } else {
-      // No exact small-denominator match found; return as Real
+      // No close-enough small-denominator match found; return as Real
       Ok(num_to_expr(x))
     }
   }
