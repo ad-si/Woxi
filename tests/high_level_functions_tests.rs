@@ -2402,6 +2402,38 @@ mod high_level_functions_tests {
 
   mod association_dedup_tests {
     use super::*;
+  }
+
+  mod collect_multi_variable_tests {
+    use super::*;
+
+    #[test]
+    fn test_collect_two_variables() {
+      assert_eq!(
+        interpret("Collect[a*x + b*x + c*y + d*y, {x, y}]").unwrap(),
+        "(c + d)*y + (a + b)*x"
+      );
+    }
+
+    #[test]
+    fn test_collect_three_variables() {
+      assert_eq!(
+        interpret("Collect[a*x + b*y + c*z + d*x + e*y, {x, y, z}]").unwrap(),
+        "c*z + (b + e)*y + (a + d)*x"
+      );
+    }
+
+    #[test]
+    fn test_collect_single_var_in_list() {
+      assert_eq!(
+        interpret("Collect[a*x + b*x + c, {x}]").unwrap(),
+        "c + (a + b)*x"
+      );
+    }
+  }
+
+  mod association_dedup_tests_actual {
+    use super::*;
 
     #[test]
     fn test_association_duplicate_keys_last_wins() {
