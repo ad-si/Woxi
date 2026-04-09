@@ -3538,6 +3538,14 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
       let c = leaf_count(&together);
       if c < best_c {
         best = together;
+        best_c = c;
+      }
+      // Try trig polynomial simplification (Pythagorean sub + power reduction)
+      if let Some(trig_reduced) = try_trig_polynomial_simplify(&best) {
+        let c = leaf_count(&trig_reduced);
+        if c < best_c {
+          best = trig_reduced;
+        }
       }
       best
     }
@@ -3567,6 +3575,14 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
         let c = leaf_count(&together);
         if c < best_c {
           best = together;
+          best_c = c;
+        }
+        // Try trig polynomial simplification
+        if let Some(trig_reduced) = try_trig_polynomial_simplify(&best) {
+          let c = leaf_count(&trig_reduced);
+          if c < best_c {
+            best = trig_reduced;
+          }
         }
         best
       }
@@ -4745,4 +4761,459 @@ fn factor_common_power_base(terms: &[Expr]) -> Option<Expr> {
   }
 
   None
+}
+
+// ─── Trig Polynomial Simplification ──────────────────────────────
+
+/// Parse a term as coeff * Sin[arg]^a * Cos[arg]^b.
+/// Returns (coeff, sin_power, cos_power, arg) or None.
+fn parse_trig_monomial(term: &Expr) -> Option<(i128, i128, i128, Expr)> {
+  let mut coeff: i128 = 1;
+  let mut sin_pow: i128 = 0;
+  let mut cos_pow: i128 = 0;
+  let mut trig_arg: Option<Expr> = None;
+
+  let (is_neg, inner) = match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (true, operand.as_ref()),
+    _ => (false, term),
+  };
+  if is_neg {
+    coeff = -1;
+  }
+
+  let factors = super::expand::collect_multiplicative_factors(inner);
+
+  for factor in &factors {
+    match factor {
+      Expr::Integer(n) => {
+        coeff *= n;
+      }
+      _ => {
+        let (base, exp) = super::expand::extract_base_and_exp(factor);
+        let exp_val = match &exp {
+          Expr::Integer(n) => *n,
+          _ => return None,
+        };
+        match &base {
+          Expr::FunctionCall { name, args }
+            if args.len() == 1 && (name == "Sin" || name == "Cos") =>
+          {
+            if let Some(ref existing) = trig_arg {
+              if expr_to_string(&args[0]) != expr_to_string(existing) {
+                return None;
+              }
+            } else {
+              trig_arg = Some(args[0].clone());
+            }
+            if name == "Sin" {
+              sin_pow += exp_val;
+            } else {
+              cos_pow += exp_val;
+            }
+          }
+          _ => return None,
+        }
+      }
+    }
+  }
+
+  let arg = trig_arg?;
+  Some((coeff, sin_pow, cos_pow, arg))
+}
+
+/// Try to simplify a sum of trig monomials by:
+/// 1. Factoring out common Sin/Cos powers
+/// 2. Substituting Sin²=1-Cos² to get a polynomial in Cos
+/// 3. Applying TrigReduce for power reduction to multiple-angle form
+/// 4. Factoring the result
+pub fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return None;
+  }
+
+  let mut trig_arg: Option<Expr> = None;
+  let mut parsed: Vec<(i128, i128, i128)> = Vec::new();
+
+  for term in &terms {
+    let (c, sp, cp, a) = parse_trig_monomial(term)?;
+    if let Some(ref existing) = trig_arg {
+      if expr_to_string(&a) != expr_to_string(existing) {
+        return None;
+      }
+    } else {
+      trig_arg = Some(a);
+    }
+    parsed.push((c, sp, cp));
+  }
+
+  let trig_arg = trig_arg?;
+  if parsed.len() < 2 {
+    return None;
+  }
+
+  let min_sin = parsed.iter().map(|t| t.1).min()?;
+  let min_cos = parsed.iter().map(|t| t.2).min()?;
+
+  // Reduce powers by factoring out common base
+  let inner: Vec<(i128, i128, i128)> = parsed
+    .iter()
+    .map(|&(c, s, cp)| (c, s - min_sin, cp - min_cos))
+    .collect();
+
+  // Need some remaining sin powers to substitute (otherwise nothing to do)
+  let has_sin = inner.iter().any(|t| t.1 > 0);
+  let has_cos = inner.iter().any(|t| t.2 > 0);
+  if !has_sin && !has_cos {
+    return None;
+  }
+
+  let cos_expr = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![trig_arg.clone()],
+  };
+  let sin_expr = Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: vec![trig_arg.clone()],
+  };
+
+  let mut best: Option<Expr> = None;
+  let mut best_lc = leaf_count(expr);
+
+  // Try substituting Sin²=1-Cos² if all remaining sin powers are even
+  let all_sin_even = inner.iter().all(|t| t.1 % 2 == 0);
+  if all_sin_even
+    && has_sin
+    && let Some(result) = try_trig_sub_and_reduce(
+      &inner, &cos_expr, &sin_expr, true, min_sin, min_cos,
+    )
+  {
+    let lc = leaf_count(&result);
+    if lc < best_lc {
+      best = Some(result);
+      best_lc = lc;
+    }
+  }
+
+  // Try substituting Cos²=1-Sin² if all remaining cos powers are even
+  let all_cos_even = inner.iter().all(|t| t.2 % 2 == 0);
+  if all_cos_even
+    && has_cos
+    && let Some(result) = try_trig_sub_and_reduce(
+      &inner, &cos_expr, &sin_expr, false, min_sin, min_cos,
+    )
+  {
+    let lc = leaf_count(&result);
+    if lc < best_lc {
+      best = Some(result);
+      #[allow(unused_assignments)]
+      {
+        best_lc = lc;
+      }
+    }
+  }
+
+  best
+}
+
+/// Compute binomial coefficient C(n, k).
+fn binom(n: i128, k: i128) -> i128 {
+  if k < 0 || k > n {
+    return 0;
+  }
+  let k = k.min(n - k);
+  let mut result = 1i128;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
+
+fn integer_gcd(mut a: i128, mut b: i128) -> i128 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Perform Pythagorean substitution and power reduction using integer arithmetic.
+/// If `sub_sin`: substitute Sin²=1-Cos², producing polynomial in Cos.
+/// If `!sub_sin`: substitute Cos²=1-Sin², producing polynomial in Sin.
+fn try_trig_sub_and_reduce(
+  inner: &[(i128, i128, i128)],
+  cos_expr: &Expr,
+  sin_expr: &Expr,
+  sub_sin: bool,
+  min_sin: i128,
+  min_cos: i128,
+) -> Option<Expr> {
+  use std::collections::HashMap;
+
+  // Step 1: Substitute sin²=1-cos² (or cos²=1-sin²) and build polynomial in kept trig function.
+  // For each term: coeff * (1-kept²)^(sub_pow/2) * kept^keep_pow
+  // = coeff * sum_{j=0}^{sub_pow/2} C(sub_pow/2, j) * (-1)^j * kept^(2j + keep_pow)
+  let mut cos_poly: HashMap<i128, i128> = HashMap::new();
+
+  for &(coeff, sin_pow, cos_pow) in inner {
+    let (sub_half, keep_pow) = if sub_sin {
+      (sin_pow / 2, cos_pow)
+    } else {
+      (cos_pow / 2, sin_pow)
+    };
+
+    for j in 0..=sub_half {
+      let sign = if j % 2 == 0 { 1i128 } else { -1 };
+      let binom_val = binom(sub_half, j);
+      let power = 2 * j + keep_pow;
+      let contrib = coeff * sign * binom_val;
+      *cos_poly.entry(power).or_insert(0) += contrib;
+    }
+  }
+
+  // Remove zero coefficients
+  cos_poly.retain(|_, v| *v != 0);
+
+  if cos_poly.is_empty() {
+    return None;
+  }
+
+  // Check all remaining powers are even (required for clean power reduction)
+  let all_even = cos_poly.keys().all(|&p| p % 2 == 0);
+  if !all_even {
+    return None;
+  }
+
+  // Step 2: Apply power reduction formulas with integer arithmetic.
+  // For even power n: trig^n = (1/2^n) * [C(n,n/2) + 2*sum_{k=0}^{n/2-1} C(n,k)*cos((n-2k)*arg)]
+  // We use a common denominator: 2^max_power
+
+  let max_power = *cos_poly.keys().max()?;
+  if max_power == 0 {
+    // Just a constant — no trig reduction needed
+    let c = *cos_poly.get(&0)?;
+    // Build result with outer factors
+    return build_outer_result(
+      c,
+      1,
+      &HashMap::new(),
+      cos_expr,
+      sin_expr,
+      min_sin,
+      min_cos,
+      sub_sin,
+    );
+  }
+
+  let common_denom = 1i128.checked_shl(max_power as u32)?;
+
+  // Accumulate: multi_angle → integer_numerator (with common_denom)
+  let mut angle_coeffs: HashMap<i128, i128> = HashMap::new(); // angle_multiplier → numerator
+
+  for (&power, &coeff) in &cos_poly {
+    if power == 0 {
+      // Constant term: coeff * common_denom
+      *angle_coeffs.entry(0).or_insert(0) += coeff * common_denom;
+    } else {
+      // power is even, apply reduction formula
+      let n = power;
+      let half_n = n / 2;
+      let this_denom = 1i128.checked_shl(n as u32)?;
+      let scale = common_denom / this_denom;
+
+      // Constant contribution: C(n, n/2) * scale
+      let const_binom = binom(n, half_n);
+      *angle_coeffs.entry(0).or_insert(0) += coeff * const_binom * scale;
+
+      // Cos[(n-2k)*arg] contributions
+      for k in 0..half_n {
+        let angle_mult = n - 2 * k;
+        let binom_val = binom(n, k);
+        *angle_coeffs.entry(angle_mult).or_insert(0) +=
+          coeff * 2 * binom_val * scale;
+      }
+    }
+  }
+
+  // Remove zero coefficients
+  angle_coeffs.retain(|_, v| *v != 0);
+  if angle_coeffs.is_empty() {
+    return None;
+  }
+
+  // Step 3: Simplify - find GCD of all numerators and denominator
+  let mut g = common_denom;
+  for &v in angle_coeffs.values() {
+    g = integer_gcd(g, v);
+  }
+  let final_denom = common_denom / g;
+
+  // Divide all numerators by g
+  let simplified_coeffs: HashMap<i128, i128> =
+    angle_coeffs.iter().map(|(&k, &v)| (k, v / g)).collect();
+
+  // Factor out GCD of all simplified numerators
+  let mut num_gcd = 0i128;
+  for &v in simplified_coeffs.values() {
+    num_gcd = integer_gcd(num_gcd, v);
+  }
+  if num_gcd == 0 {
+    return None;
+  }
+
+  let factored_coeffs: HashMap<i128, i128> = simplified_coeffs
+    .iter()
+    .map(|(&k, &v)| (k, v / num_gcd))
+    .collect();
+
+  build_outer_result(
+    num_gcd,
+    final_denom,
+    &factored_coeffs,
+    cos_expr,
+    sin_expr,
+    min_sin,
+    min_cos,
+    sub_sin,
+  )
+}
+
+/// Build the final result expression from the factored trig polynomial.
+fn build_outer_result(
+  num_factor: i128,
+  denom: i128,
+  angle_coeffs: &std::collections::HashMap<i128, i128>,
+  cos_expr: &Expr,
+  sin_expr: &Expr,
+  min_sin: i128,
+  min_cos: i128,
+  sub_sin: bool,
+) -> Option<Expr> {
+  // Extract the trig argument from cos_expr
+  let trig_arg = match cos_expr {
+    Expr::FunctionCall { args, .. } if !args.is_empty() => &args[0],
+    _ => return None,
+  };
+
+  // The trig function used for multiple-angle terms
+  let multi_angle_fn = if sub_sin { "Cos" } else { "Sin" };
+
+  // Build the inner sum: sum of angle_coeff * Cos/Sin[mult*arg]
+  let mut sum_terms: Vec<Expr> = Vec::new();
+
+  // Sort angles for deterministic output (constant first, then ascending)
+  let mut angles: Vec<i128> = angle_coeffs.keys().cloned().collect();
+  angles.sort();
+
+  for &angle_mult in &angles {
+    let coeff = angle_coeffs[&angle_mult];
+    if coeff == 0 {
+      continue;
+    }
+
+    if angle_mult == 0 {
+      // Constant term
+      sum_terms.push(Expr::Integer(coeff));
+    } else {
+      // Build Cos[mult*arg] or Sin[mult*arg]
+      let angle_arg = if angle_mult == 1 {
+        trig_arg.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(angle_mult)),
+          right: Box::new(trig_arg.clone()),
+        }
+      };
+      let trig_call = Expr::FunctionCall {
+        name: multi_angle_fn.to_string(),
+        args: vec![angle_arg],
+      };
+      let term = if coeff == 1 {
+        trig_call
+      } else if coeff == -1 {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(trig_call),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(coeff)),
+          right: Box::new(trig_call),
+        }
+      };
+      sum_terms.push(term);
+    }
+  }
+
+  // Build the inner sum
+  let inner = if sum_terms.is_empty() {
+    Expr::Integer(1)
+  } else if sum_terms.len() == 1 && angle_coeffs.len() == 1 {
+    sum_terms.into_iter().next().unwrap()
+  } else {
+    super::expand::build_sum(sum_terms)
+  };
+
+  // Build the numeric factor: num_factor / denom
+  let numeric = if denom == 1 {
+    if num_factor == 1 {
+      None
+    } else {
+      Some(Expr::Integer(num_factor))
+    }
+  } else {
+    Some(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num_factor), Expr::Integer(denom)],
+    })
+  };
+
+  // Assemble: numeric * inner * Sin[x]^min_sin * Cos[x]^min_cos
+  let mut factors: Vec<Expr> = Vec::new();
+
+  if let Some(n) = numeric {
+    factors.push(n);
+  }
+
+  // Wrap inner in parens by keeping it as a sum
+  factors.push(inner);
+
+  if min_sin > 0 {
+    let outer_sin = if min_sin == 1 {
+      sin_expr.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(sin_expr.clone()),
+        right: Box::new(Expr::Integer(min_sin)),
+      }
+    };
+    factors.push(outer_sin);
+  }
+
+  if min_cos > 0 {
+    let outer_cos = if min_cos == 1 {
+      cos_expr.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(cos_expr.clone()),
+        right: Box::new(Expr::Integer(min_cos)),
+      }
+    };
+    factors.push(outer_cos);
+  }
+
+  let result = super::expand::build_product(factors);
+
+  // Evaluate to canonical form
+  crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
