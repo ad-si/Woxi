@@ -780,6 +780,12 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Try to solve equations with invertible functions:
+  // Log[expr] == a → expr == E^a, Sqrt[expr] == a → expr == a^2, etc.
+  if let Some(result) = try_solve_inverse_function(&args[0], var) {
+    return result;
+  }
+
   // Expand and collect polynomial coefficients
   // Clear denominators: f(x)/g(x) == 0 ↔ f(x) == 0
   let expanded_raw = expand_and_combine(&poly);
@@ -1536,6 +1542,214 @@ fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
   }
 
   expand_and_combine(&build_sum(new_terms))
+}
+
+/// Try to solve equations by applying inverse functions.
+///
+/// Handles: Log[expr] == a → expr == E^a,
+///          Sqrt[expr] == a → expr == a^2,
+///          Exp[expr] == a → expr == Log[a],
+///          Sin/Cos/Tan/ArcSin/ArcCos/ArcTan[expr] == a → inverse function
+fn try_solve_inverse_function(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  // Extract lhs and rhs from the equation
+  let (lhs, rhs) = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      (operands[0].clone(), operands[1].clone())
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    _ => return None,
+  };
+
+  // Check if an expression is a function call or power (invertible form)
+  let is_invertible_form = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::FunctionCall { .. }
+        | Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          ..
+        }
+    )
+  };
+
+  // Try both orientations: f[expr] == val and val == f[expr]
+  let (func_call, val) = if is_invertible_form(&lhs)
+    && is_constant_wrt(&rhs, var)
+    && !is_constant_wrt(&lhs, var)
+  {
+    (&lhs, &rhs)
+  } else if is_invertible_form(&rhs)
+    && is_constant_wrt(&lhs, var)
+    && !is_constant_wrt(&rhs, var)
+  {
+    (&rhs, &lhs)
+  } else {
+    return None;
+  };
+
+  // Handle Power expressions: Power[base, exp] == val
+  // Sqrt[x] is Power[x, 1/2], Exp[x] is Power[E, x]
+  let power_parts = match func_call {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref().clone(), right.as_ref().clone())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    _ => None,
+  };
+  if let Some((base, exp)) = power_parts {
+    if is_constant_wrt(&exp, var) && !is_constant_wrt(&base, var) {
+      // Skip if exponent is a positive integer — the polynomial solver
+      // handles those and gives all roots (not just the principal root).
+      if let Expr::Integer(n) = &exp
+        && *n > 0
+      {
+        // Let polynomial solver handle x^n == a
+        return None;
+      }
+      // base^exp == val where exp is constant (non-integer), base contains var
+      // → base == val^(1/exp)
+      let inverse_exp = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(exp),
+      };
+      let inverse_rhs = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(val.clone()),
+        right: Box::new(inverse_exp),
+      };
+      let simplified_rhs =
+        crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
+      let new_eq = Expr::Comparison {
+        operands: vec![base, simplified_rhs],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      };
+      return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
+    }
+    if !is_constant_wrt(&exp, var) && is_constant_wrt(&base, var) {
+      // base^exp == val where base is constant, exp contains var
+      // → exp == Log[val] / Log[base]
+      let inverse_rhs = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![val.clone()],
+        }),
+        right: Box::new(Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![base],
+        }),
+      };
+      let simplified_rhs =
+        crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
+      let new_eq = Expr::Comparison {
+        operands: vec![exp, simplified_rhs],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      };
+      return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
+    }
+  }
+
+  if let Expr::FunctionCall { name, args } = func_call {
+    if args.len() != 1 {
+      return None;
+    }
+    let inner = &args[0];
+    // Build the inverse equation: inner == inverse(val)
+    let inverse_rhs = match name.as_str() {
+      "Log" => {
+        // Log[inner] == val → inner == E^val
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Constant("E".to_string())),
+          right: Box::new(val.clone()),
+        }
+      }
+      "Sqrt" => {
+        // Sqrt[inner] == val → inner == val^2
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(val.clone()),
+          right: Box::new(Expr::Integer(2)),
+        }
+      }
+      "Exp" => {
+        // Exp[inner] == val → inner == Log[val]
+        Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![val.clone()],
+        }
+      }
+      "ArcSin" => {
+        // ArcSin[inner] == val → inner == Sin[val]
+        Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![val.clone()],
+        }
+      }
+      "ArcCos" => {
+        // ArcCos[inner] == val → inner == Cos[val]
+        Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![val.clone()],
+        }
+      }
+      "ArcTan" => {
+        // ArcTan[inner] == val → inner == Tan[val]
+        Expr::FunctionCall {
+          name: "Tan".to_string(),
+          args: vec![val.clone()],
+        }
+      }
+      "Log10" => {
+        // Log10[inner] == val → inner == 10^val
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Integer(10)),
+          right: Box::new(val.clone()),
+        }
+      }
+      "Log2" => {
+        // Log2[inner] == val → inner == 2^val
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(val.clone()),
+        }
+      }
+      _ => return None,
+    };
+
+    // Simplify the inverse value
+    let simplified_rhs =
+      crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
+
+    // Build the new equation: inner == simplified_rhs
+    let new_eq = Expr::Comparison {
+      operands: vec![inner.clone(), simplified_rhs],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+
+    // Recursively solve the resulting equation
+    Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]))
+  } else {
+    None
+  }
 }
 
 /// Try to solve a non-polynomial equation by factoring out common

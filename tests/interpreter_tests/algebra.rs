@@ -1477,6 +1477,37 @@ mod solve {
       "{{y -> a^(1/5)}, {y -> -((-1)^(1/5)*a^(1/5))}, {y -> (-1)^(2/5)*a^(1/5)}, {y -> -((-1)^(3/5)*a^(1/5))}, {y -> (-1)^(4/5)*a^(1/5)}}"
     );
   }
+
+  #[test]
+  fn solve_sqrt_equation() {
+    assert_eq!(interpret("Solve[Sqrt[x] == 3, x]").unwrap(), "{{x -> 9}}");
+  }
+
+  #[test]
+  fn solve_sqrt_nested() {
+    assert_eq!(
+      interpret("Solve[Sqrt[x + 1] == 4, x]").unwrap(),
+      "{{x -> 15}}"
+    );
+  }
+
+  #[test]
+  fn solve_log_equation() {
+    assert_eq!(interpret("Solve[Log[x] == 2, x]").unwrap(), "{{x -> E^2}}");
+  }
+
+  #[test]
+  fn solve_exp_equation() {
+    assert_eq!(interpret("Solve[Exp[x] == 1, x]").unwrap(), "{{x -> 0}}");
+  }
+
+  #[test]
+  fn solve_log_with_linear_inner() {
+    assert_eq!(
+      interpret("Solve[Log[2*x + 1] == 3, x]").unwrap(),
+      "{{x -> -((1 - E^3)/2)}}"
+    );
+  }
 }
 
 mod rsolve {
