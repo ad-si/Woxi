@@ -1368,15 +1368,19 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(result)
     }
     Expr::Association(items) => {
-      let evaluated: Result<Vec<(Expr, Expr)>, InterpreterError> = items
-        .iter()
-        .map(|(k, v)| {
-          let key = evaluate_expr_to_expr(k)?;
-          let val = evaluate_expr_to_expr(v)?;
-          Ok((key, val))
-        })
-        .collect();
-      Ok(Expr::Association(evaluated?))
+      let mut deduped: Vec<(Expr, Expr)> = Vec::new();
+      for (k, v) in items {
+        let key = evaluate_expr_to_expr(k)?;
+        let val = evaluate_expr_to_expr(v)?;
+        if let Some(pos) = deduped.iter().position(|(ek, _)| {
+          crate::evaluator::pattern_matching::expr_equal(ek, &key)
+        }) {
+          deduped[pos].1 = val;
+        } else {
+          deduped.push((key, val));
+        }
+      }
+      Ok(Expr::Association(deduped))
     }
     Expr::Rule {
       pattern,

@@ -76,6 +76,18 @@ pub fn dispatch_association_functions(
   None
 }
 
+/// Insert a key-value pair into an association, deduplicating by key (last value wins).
+fn assoc_insert_dedup(pairs: &mut Vec<(Expr, Expr)>, key: Expr, val: Expr) {
+  if let Some(pos) = pairs
+    .iter()
+    .position(|(k, _)| crate::evaluator::pattern_matching::expr_equal(k, &key))
+  {
+    pairs[pos].1 = val;
+  } else {
+    pairs.push((key, val));
+  }
+}
+
 /// Convert Association[...] function call to Expr::Association
 fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Association[{a -> 1, b -> 2}] - single list argument containing rules
@@ -93,7 +105,11 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pattern,
           replacement,
         } => {
-          pairs.push((*pattern.clone(), *replacement.clone()));
+          assoc_insert_dedup(
+            &mut pairs,
+            *pattern.clone(),
+            *replacement.clone(),
+          );
         }
         _ => {
           return Ok(Expr::FunctionCall {
@@ -118,7 +134,7 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        pairs.push((*pattern.clone(), *replacement.clone()));
+        assoc_insert_dedup(&mut pairs, *pattern.clone(), *replacement.clone());
       }
       _ => {
         return Ok(Expr::FunctionCall {

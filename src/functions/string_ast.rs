@@ -309,6 +309,25 @@ fn extract_regex_pattern(expr: &Expr) -> Option<String> {
   }
 }
 
+/// Trim leading and trailing empty strings from a split result,
+/// matching Wolfram's StringSplit behavior (interior empty strings are preserved).
+fn trim_empty_strings(parts: Vec<Expr>) -> Vec<Expr> {
+  let is_empty = |e: &Expr| matches!(e, Expr::String(s) if s.is_empty());
+  let start = parts
+    .iter()
+    .position(|e| !is_empty(e))
+    .unwrap_or(parts.len());
+  let end = parts
+    .iter()
+    .rposition(|e| !is_empty(e))
+    .map(|i| i + 1)
+    .unwrap_or(0);
+  if start >= end {
+    return Vec::new();
+  }
+  parts[start..end].to_vec()
+}
+
 /// StringSplit[s] - splits by whitespace; StringSplit[s, delim] - splits by delimiter
 /// StringSplit[s, RegularExpression[pat]] - splits by regex pattern
 /// Options: IgnoreCase -> True/False
@@ -352,12 +371,9 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         e
       ))
     })?;
-    let parts: Vec<Expr> = re
-      .split(&s)
-      .filter(|p| !p.is_empty())
-      .map(|p| Expr::String(p.to_string()))
-      .collect();
-    return Ok(Expr::List(parts));
+    let parts: Vec<Expr> =
+      re.split(&s).map(|p| Expr::String(p.to_string())).collect();
+    return Ok(Expr::List(trim_empty_strings(parts)));
   }
 
   // Collect delimiters: either a single string or a list of strings
@@ -382,15 +398,15 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map_err(|e| {
           InterpreterError::EvaluationError(format!("Regex error: {}", e))
         })?;
-      re.split(&s)
-        .filter(|p| !p.is_empty())
-        .map(|p| Expr::String(p.to_string()))
-        .collect()
+      let parts: Vec<Expr> =
+        re.split(&s).map(|p| Expr::String(p.to_string())).collect();
+      trim_empty_strings(parts)
     } else {
-      s.split(&delims[0])
-        .filter(|p| !p.is_empty())
+      let parts: Vec<Expr> = s
+        .split(&delims[0])
         .map(|p| Expr::String(p.to_string()))
-        .collect()
+        .collect();
+      trim_empty_strings(parts)
     }
   } else {
     // Split by multiple delimiters: scan left to right, try longest delimiter match first
