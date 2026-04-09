@@ -1952,6 +1952,57 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     });
   }
+
+  // Additional exact values: ArcTan[Sqrt[3]] = Pi/3, ArcTan[1/Sqrt[3]] = Pi/6
+  // Use numerical comparison to detect these values robustly regardless of internal form.
+  if let Some(val) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+    let sqrt3 = 3.0_f64.sqrt();
+    let eps = 1e-12;
+    if (val - sqrt3).abs() < eps {
+      // ArcTan[Sqrt[3]] = Pi/3
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(3)),
+      });
+    }
+    if (val + sqrt3).abs() < eps {
+      // ArcTan[-Sqrt[3]] = -Pi/3
+      return Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(3)],
+          },
+          Expr::Constant("Pi".to_string()),
+        ],
+      });
+    }
+    let inv_sqrt3 = 1.0 / sqrt3;
+    if (val - inv_sqrt3).abs() < eps {
+      // ArcTan[1/Sqrt[3]] = Pi/6
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(6)),
+      });
+    }
+    if (val + inv_sqrt3).abs() < eps {
+      // ArcTan[-1/Sqrt[3]] = -Pi/6
+      return Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(6)],
+          },
+          Expr::Constant("Pi".to_string()),
+        ],
+      });
+    }
+  }
+
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
     args: args.to_vec(),
