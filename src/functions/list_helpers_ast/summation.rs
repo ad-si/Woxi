@@ -800,6 +800,120 @@ fn try_symbolic_sum(
       }));
     }
 
+    // Sum[k^4, {k, 1, n}] = n*(1+n)*(1+2*n)*(-1+3*n+3*n^2)/30
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = body
+      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
+      && matches!(exp.as_ref(), Expr::Integer(4))
+    {
+      let n = max_expr.clone();
+      // n*(1+n)*(1+2*n)*(-1+3*n+3*n^2)/30
+      let n_plus_1 = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(n.clone()),
+      };
+      let one_plus_2n = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(n.clone()),
+        }),
+      };
+      let neg1_plus_3n_plus_3n2 = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(3)),
+            right: Box::new(n.clone()),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(3)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(n.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          }),
+        }),
+      };
+      let numerator = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n, n_plus_1, one_plus_2n, neg1_plus_3n_plus_3n2],
+      };
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numerator),
+        right: Box::new(Expr::Integer(30)),
+      }));
+    }
+
+    // Sum[k^5, {k, 1, n}] = n^2*(1+n)^2*(-1+2*n+2*n^2)/12
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = body
+      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
+      && matches!(exp.as_ref(), Expr::Integer(5))
+    {
+      let n = max_expr.clone();
+      // n^2*(1+n)^2*(-1+2*n+2*n^2)/12
+      let n_sq = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(n.clone()),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let n_plus_1_sq = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(n.clone()),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      let neg1_plus_2n_plus_2n2 = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(n.clone()),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(n),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          }),
+        }),
+      };
+      let numerator = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![n_sq, n_plus_1_sq, neg1_plus_2n_plus_2n2],
+      };
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numerator),
+        right: Box::new(Expr::Integer(12)),
+      }));
+    }
+
     // Sum[1/k^s, {k, 1, n}] = HarmonicNumber[n, s]
     if let Some(s) = match_reciprocal_power(body, var_name)
       && s >= 1
