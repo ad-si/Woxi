@@ -249,9 +249,18 @@ fn is_numeric_q(expr: &Expr) -> bool {
     | Expr::BigFloat(_, _) => true,
     Expr::Constant(_) => true,
     Expr::Identifier(name) => {
-      // I is numeric, but Infinity is NOT numeric in Wolfram Language
+      // I and named mathematical constants are numeric
+      // Infinity is NOT numeric in Wolfram Language
       // (NumericQ[Infinity] returns False)
-      if name == "I" {
+      if matches!(
+        name.as_str(),
+        "I"
+          | "GoldenRatio"
+          | "EulerGamma"
+          | "Catalan"
+          | "Khinchin"
+          | "Glaisher"
+      ) {
         return true;
       }
       // Check for user-defined NumericQ downvalue (e.g., NumericQ[a] = True)

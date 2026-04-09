@@ -322,6 +322,31 @@ mod e_constant {
   }
 
   #[test]
+  fn numeric_q_golden_ratio() {
+    assert_eq!(interpret("NumericQ[GoldenRatio]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_euler_gamma() {
+    assert_eq!(interpret("NumericQ[EulerGamma]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_catalan() {
+    assert_eq!(interpret("NumericQ[Catalan]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_khinchin() {
+    assert_eq!(interpret("NumericQ[Khinchin]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_glaisher() {
+    assert_eq!(interpret("NumericQ[Glaisher]").unwrap(), "True");
+  }
+
+  #[test]
   fn numeric_q_infinity() {
     assert_eq!(interpret("NumericQ[Infinity]").unwrap(), "False");
   }
