@@ -399,8 +399,45 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
   }
 }
 
+/// Helper: render a rational (num, denom) pair in FullForm notation.
+fn render_rational_full_form(num: i128, denom: i128) -> String {
+  // Reduce to lowest terms
+  fn gcd(a: i128, b: i128) -> i128 {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+  let g = gcd(num, denom);
+  let (n, d) = if g > 0 {
+    (num / g, denom / g)
+  } else {
+    (num, denom)
+  };
+  if d == 1 {
+    n.to_string()
+  } else {
+    format!("Rational[{}, {}]", n, d)
+  }
+}
+
 /// Recursively render an expression in FullForm notation.
 pub fn render_full_form(expr: &Expr) -> String {
+  // Check for complex number patterns: a + b*I → Complex[a, b]
+  // This must come before the general decomposition since complex numbers
+  // are stored as Plus/Times trees internally but should display as Complex[re, im].
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(expr)
+    && in_ != 0
+  {
+    let re = render_rational_full_form(rn, rd);
+    let im = render_rational_full_form(in_, id);
+    return format!("Complex[{}, {}]", re, im);
+  }
+
   match decompose_expr(expr) {
     ExprForm::Atom(label) => label,
     ExprForm::Composite { head, children } => {
