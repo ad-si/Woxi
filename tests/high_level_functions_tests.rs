@@ -2219,6 +2219,91 @@ mod high_level_functions_tests {
     }
   }
 
+  mod string_split_delimiter_tests {
+    use super::*;
+
+    #[test]
+    fn test_split_preserves_interior_empty_strings() {
+      assert_eq!(
+        interpret(r#"StringSplit["one:two::three", ":"]"#).unwrap(),
+        "{one, two, , three}"
+      );
+    }
+
+    #[test]
+    fn test_split_trims_leading_trailing_empty_strings() {
+      assert_eq!(
+        interpret(r#"StringSplit["::a::b::", ":"]"#).unwrap(),
+        "{a, , b}"
+      );
+    }
+
+    #[test]
+    fn test_split_no_empty_strings() {
+      assert_eq!(
+        interpret(r#"StringSplit["a:b:c", ":"]"#).unwrap(),
+        "{a, b, c}"
+      );
+    }
+
+    #[test]
+    fn test_split_all_delimiters() {
+      assert_eq!(interpret(r#"StringSplit["::", ":"]"#).unwrap(), "{}");
+    }
+
+    #[test]
+    fn test_split_multiple_consecutive() {
+      assert_eq!(
+        interpret(r#"StringSplit["a::b:::c", ":"]"#).unwrap(),
+        "{a, , b, , , c}"
+      );
+    }
+  }
+
+  mod association_dedup_tests {
+    use super::*;
+
+    #[test]
+    fn test_association_duplicate_keys_last_wins() {
+      assert_eq!(
+        interpret(r#"<|"a" -> 1, "b" -> 2, "a" -> 3|>"#).unwrap(),
+        "<|a -> 3, b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_association_constructor_dedup() {
+      assert_eq!(
+        interpret(r#"Association["a" -> 1, "b" -> 2, "a" -> 3]"#).unwrap(),
+        "<|a -> 3, b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_association_list_constructor_dedup() {
+      assert_eq!(
+        interpret(r#"Association[{"a" -> 1, "b" -> 2, "a" -> 3}]"#).unwrap(),
+        "<|a -> 3, b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_association_no_duplicates() {
+      assert_eq!(
+        interpret(r#"<|"a" -> 1, "b" -> 2|>"#).unwrap(),
+        "<|a -> 1, b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_association_triple_duplicate() {
+      assert_eq!(
+        interpret(r#"<|"x" -> 1, "x" -> 2, "x" -> 3|>"#).unwrap(),
+        "<|x -> 3|>"
+      );
+    }
+  }
+
   mod pdf_export_tests {
     use super::*;
 
