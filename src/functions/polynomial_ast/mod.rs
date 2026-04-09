@@ -15,7 +15,7 @@ mod exponent;
 mod factor;
 mod function_expand;
 mod helpers;
-mod horner;
+pub mod horner;
 mod interpolating_polynomial;
 mod minimal_polynomial;
 mod polynomial_division;
