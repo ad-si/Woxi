@@ -2490,6 +2490,41 @@ mod high_level_functions_tests {
     }
   }
 
+  mod from_digits_realdigits_tests {
+    use super::*;
+
+    #[test]
+    fn test_from_digits_realdigits_format() {
+      assert_eq!(
+        interpret("FromDigits[{{1, 2, 3, 4, 5, 6}, 3}]").unwrap(),
+        "15432/125"
+      );
+    }
+
+    #[test]
+    fn test_from_digits_integer_exponent() {
+      assert_eq!(interpret("FromDigits[{{1, 2, 3}, 3}]").unwrap(), "123");
+    }
+
+    #[test]
+    fn test_from_digits_small_exponent() {
+      assert_eq!(interpret("FromDigits[{{5}, 0}]").unwrap(), "1/2");
+    }
+
+    #[test]
+    fn test_from_digits_roundtrip() {
+      assert_eq!(
+        interpret("FromDigits[RealDigits[123.456]]").unwrap(),
+        "15432/125"
+      );
+    }
+
+    #[test]
+    fn test_from_digits_normal_list() {
+      assert_eq!(interpret("FromDigits[{1, 2, 3}]").unwrap(), "123");
+    }
+  }
+
   mod association_dedup_tests_actual {
     use super::*;
 
