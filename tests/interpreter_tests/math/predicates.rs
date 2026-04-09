@@ -41,6 +41,18 @@ mod sign_predicates {
   }
 
   #[test]
+  fn positive_rational() {
+    assert_eq!(interpret("Positive[3/4]").unwrap(), "True");
+    assert_eq!(interpret("Positive[-3/4]").unwrap(), "False");
+  }
+
+  #[test]
+  fn negative_rational() {
+    assert_eq!(interpret("Negative[-3/4]").unwrap(), "True");
+    assert_eq!(interpret("Negative[3/4]").unwrap(), "False");
+  }
+
+  #[test]
   fn negative_constants() {
     assert_eq!(interpret("Negative[-Pi]").unwrap(), "True");
     assert_eq!(interpret("Negative[-E]").unwrap(), "True");
