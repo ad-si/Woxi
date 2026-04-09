@@ -5601,6 +5601,13 @@ mod unicode_operators {
   }
 
   #[test]
+  fn equal_unicode() {
+    assert_eq!(interpret("1 ⩵ 1").unwrap(), "True");
+    assert_eq!(interpret("1 ⩵ 2").unwrap(), "False");
+    assert_eq!(interpret("x ⩵ 5").unwrap(), "x == 5");
+  }
+
+  #[test]
   fn not_equal() {
     assert_eq!(interpret("3 ≠ 5").unwrap(), "True");
     assert_eq!(interpret("3 ≠ 3").unwrap(), "False");

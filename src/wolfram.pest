@@ -130,7 +130,7 @@ Operator = @{
   | "&&"     // And operator (must be before single &)
   | "||"     // Or operator (must be before single |)
   | "|"      // Alternatives operator
-  | "===" | "=!=" | "==" | "!=" | "\u{2260}"  // SameQ, UnsameQ (must be before == and !=), Equal, Unequal, ≠
+  | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // SameQ, UnsameQ (must be before == and !=), Equal, ⩵, Unequal, ≠
   | "<=" | ">=" | "\u{2264}" | "\u{2265}"  // LessEqual, GreaterEqual, ≤, ≥
   | ">>>" ~ !(">" | "=")   // PutAppend operator (must be before >> and >)
   | ">>" ~ !(">" | "=")    // Put operator (must be before > and >=)
@@ -386,7 +386,7 @@ ConditionOp = @{
     "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
-  | "===" | "=!=" | "==" | "!=" | "\u{2260}"  // Comparison, ≠
+  | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // Comparison, ⩵, ≠
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
