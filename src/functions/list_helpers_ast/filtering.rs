@@ -630,6 +630,25 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         if pat_name != expr_name {
           return false;
         }
+        // If any pattern arg is a Condition wrapping a sequence pattern,
+        // delegate to the full match_pattern which handles condition evaluation
+        // with proper sequence bindings.
+        let has_condition_on_seq = pat_args.iter().any(|p| {
+          if let Expr::FunctionCall { name: cn, args: ca } = p
+            && cn == "Condition"
+            && ca.len() == 2
+          {
+            get_sequence_info_bool(&ca[0]).is_some()
+          } else {
+            false
+          }
+        });
+        if has_condition_on_seq {
+          return crate::evaluator::pattern_matching::match_pattern(
+            expr, pattern,
+          )
+          .is_some();
+        }
         let has_seq =
           pat_args.iter().any(|p| get_sequence_info_bool(p).is_some());
         if has_seq {

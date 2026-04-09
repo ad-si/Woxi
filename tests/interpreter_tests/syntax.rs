@@ -1263,6 +1263,53 @@ mod condition_pattern_matching {
   }
 
   #[test]
+  fn matchq_blank_sequence_with_condition() {
+    // BlankSequence with Condition: x__ /; test should work with multiple matched elements
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3], f[x__Integer /; Total[{x}] > 5]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3], f[x__Integer /; Total[{x}] > 10]]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3], f[x__ /; Length[{x}] > 2]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[f[1, 2, 3], f[x__ /; Length[{x}] > 5]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn cases_blank_sequence_with_condition() {
+    assert_eq!(
+      interpret(
+        "Cases[{f[1, 2, 3], f[4, 5, 6]}, f[x__Integer /; Total[{x}] > 10]]"
+      )
+      .unwrap(),
+      "{f[4, 5, 6]}"
+    );
+  }
+
+  #[test]
+  fn replace_all_blank_sequence_with_condition() {
+    assert_eq!(
+      interpret("f[1, 2, 3] /. f[x__Integer /; Total[{x}] > 5] :> Total[{x}]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("f[1, 2, 3] /. f[x__Integer /; Total[{x}] > 10] :> Total[{x}]")
+        .unwrap(),
+      "f[1, 2, 3]"
+    );
+  }
+
+  #[test]
   fn replace_all_with_condition() {
     assert_eq!(
       interpret("{1, 2, 3, 4, 5} /. x_ /; x > 3 :> x^2").unwrap(),
