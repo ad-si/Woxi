@@ -2558,8 +2558,17 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       s.chars().skip(char_count - target_len).collect(),
     ))
   } else {
+    // Wolfram fills entire target with right-aligned repeating pad,
+    // then overlays the original string at the right end
+    let pad_len = pad_str.chars().count();
+    let offset = (pad_len - (target_len % pad_len)) % pad_len;
     let pad_needed = target_len - char_count;
-    let padding: String = pad_str.chars().cycle().take(pad_needed).collect();
+    let padding: String = pad_str
+      .chars()
+      .cycle()
+      .skip(offset)
+      .take(pad_needed)
+      .collect();
     Ok(Expr::String(format!("{}{}", padding, s)))
   }
 }
@@ -2592,8 +2601,17 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if char_count >= target_len {
     Ok(Expr::String(s.chars().take(target_len).collect()))
   } else {
+    // Wolfram fills entire target with left-aligned repeating pad,
+    // then overlays the original string at the left end
+    let pad_len = pad_str.chars().count();
+    let offset = char_count % pad_len;
     let pad_needed = target_len - char_count;
-    let padding: String = pad_str.chars().cycle().take(pad_needed).collect();
+    let padding: String = pad_str
+      .chars()
+      .cycle()
+      .skip(offset)
+      .take(pad_needed)
+      .collect();
     Ok(Expr::String(format!("{}{}", s, padding)))
   }
 }

@@ -4289,12 +4289,16 @@ mod perimeter {
 
   #[test]
   fn circle() {
-    assert_eq!(interpret("Perimeter[Circle[{0, 0}, 3]]").unwrap(), "6*Pi");
+    // Circle is a 1D curve, Perimeter is Undefined (use ArcLength instead)
+    assert_eq!(
+      interpret("Perimeter[Circle[{0, 0}, 3]]").unwrap(),
+      "Undefined"
+    );
   }
 
   #[test]
   fn unit_circle() {
-    assert_eq!(interpret("Perimeter[Circle[]]").unwrap(), "2*Pi");
+    assert_eq!(interpret("Perimeter[Circle[]]").unwrap(), "Undefined");
   }
 }
 

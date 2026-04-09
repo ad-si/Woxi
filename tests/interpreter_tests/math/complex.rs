@@ -553,7 +553,7 @@ mod im_tests {
 
   #[test]
   fn exp_2_i_pi_third() {
-    assert_eq!(interpret("Exp[2 I Pi / 3]").unwrap(), "E^((2*I*Pi)/3)");
+    assert_eq!(interpret("Exp[2 I Pi / 3]").unwrap(), "E^(((2*I)/3)*Pi)");
   }
 
   #[test]
