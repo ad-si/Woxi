@@ -2260,6 +2260,63 @@ mod high_level_functions_tests {
     }
   }
 
+  mod associate_to_tests {
+    use super::*;
+
+    #[test]
+    fn test_associate_to_adds_key() {
+      assert_eq!(
+        interpret(r#"x = <|"a" -> 1|>; AssociateTo[x, "b" -> 2]; x"#).unwrap(),
+        "<|a -> 1, b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_associate_to_updates_existing_key() {
+      assert_eq!(
+        interpret(r#"x = <|"a" -> 1|>; AssociateTo[x, "a" -> 5]; x"#).unwrap(),
+        "<|a -> 5|>"
+      );
+    }
+
+    #[test]
+    fn test_associate_to_attributes() {
+      assert_eq!(
+        interpret("Attributes[AssociateTo]").unwrap(),
+        "{HoldFirst, Protected}"
+      );
+    }
+  }
+
+  mod key_drop_from_tests {
+    use super::*;
+
+    #[test]
+    fn test_key_drop_from_removes_key() {
+      assert_eq!(
+        interpret(r#"x = <|"a" -> 1, "b" -> 2|>; KeyDropFrom[x, "a"]; x"#)
+          .unwrap(),
+        "<|b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn test_key_drop_from_nonexistent_key() {
+      assert_eq!(
+        interpret(r#"x = <|"a" -> 1|>; KeyDropFrom[x, "z"]; x"#).unwrap(),
+        "<|a -> 1|>"
+      );
+    }
+
+    #[test]
+    fn test_key_drop_from_attributes() {
+      assert_eq!(
+        interpret("Attributes[KeyDropFrom]").unwrap(),
+        "{HoldFirst, Protected}"
+      );
+    }
+  }
+
   mod association_dedup_tests {
     use super::*;
 

@@ -1736,7 +1736,7 @@ DistanceTransform,Distance transform,,unevaluated,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Timeline plot,,unevaluated,10.1,1770
 PassEventsDown,Pass events down option,,unevaluated,6.0,1771
-AssociateTo,Append to association,,unevaluated,10.0,1776
+AssociateTo,Append a key-value pair to an association variable in-place,✅,stateful,10.0,1776
 CircleDot,Circle dot operator,,unevaluated,3.0,1776
 FindGeneratingFunction,Find generating function,,unevaluated,7.0,1776
 HistogramDistribution,Histogram distribution,,unevaluated,8.0,1776

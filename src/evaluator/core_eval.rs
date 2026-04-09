@@ -787,6 +787,160 @@ pub fn evaluate_expr_to_expr_inner(
           });
           return Ok(new_val);
         }
+        // Special handling for AssociateTo - x = Append[x, key -> val]
+        if name == "AssociateTo"
+          && args.len() == 2
+          && let Expr::Identifier(var_name) = &args[0]
+        {
+          let rule = evaluate_expr_to_expr(&args[1])?;
+          let (key, val) = match &rule {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => (pattern.as_ref().clone(), replacement.as_ref().clone()),
+            _ => {
+              // Not a rule — return unevaluated
+              let mut eval_args = vec![args[0].clone()];
+              eval_args.push(rule);
+              return Ok(Expr::FunctionCall {
+                name: "AssociateTo".to_string(),
+                args: eval_args,
+              });
+            }
+          };
+          let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+          let mut items = match &current {
+            Some(StoredValue::Association(pairs)) => pairs
+              .iter()
+              .map(|(k, v)| {
+                let ke = crate::syntax::string_to_expr(k)
+                  .unwrap_or(Expr::String(k.clone()));
+                let ve = crate::syntax::string_to_expr(v)
+                  .unwrap_or(Expr::String(v.clone()));
+                (ke, ve)
+              })
+              .collect::<Vec<_>>(),
+            Some(StoredValue::ExprVal(Expr::Association(items))) => {
+              items.clone()
+            }
+            Some(StoredValue::Raw(s)) => {
+              match crate::syntax::string_to_expr(s) {
+                Ok(Expr::Association(ref items)) => items.clone(),
+                _ => {
+                  let mut eval_args = vec![args[0].clone()];
+                  eval_args.push(Expr::Rule {
+                    pattern: Box::new(key),
+                    replacement: Box::new(val),
+                  });
+                  return Ok(Expr::FunctionCall {
+                    name: "AssociateTo".to_string(),
+                    args: eval_args,
+                  });
+                }
+              }
+            }
+            _ => {
+              let mut eval_args = vec![args[0].clone()];
+              eval_args.push(Expr::Rule {
+                pattern: Box::new(key),
+                replacement: Box::new(val),
+              });
+              return Ok(Expr::FunctionCall {
+                name: "AssociateTo".to_string(),
+                args: eval_args,
+              });
+            }
+          };
+          if let Some(pos) = items.iter().position(|(k, _)| {
+            crate::evaluator::pattern_matching::expr_equal(k, &key)
+          }) {
+            items[pos].1 = val;
+          } else {
+            items.push((key, val));
+          }
+          let new_val = Expr::Association(items);
+          let pairs: Vec<(String, String)> = match &new_val {
+            Expr::Association(items) => items
+              .iter()
+              .map(|(k, v)| {
+                (
+                  crate::syntax::expr_to_string(k),
+                  crate::syntax::expr_to_string(v),
+                )
+              })
+              .collect(),
+            _ => unreachable!(),
+          };
+          ENV.with(|e| {
+            e.borrow_mut()
+              .insert(var_name.clone(), StoredValue::Association(pairs));
+          });
+          return Ok(new_val);
+        }
+        // Special handling for KeyDropFrom - removes key from association variable
+        if name == "KeyDropFrom"
+          && args.len() == 2
+          && let Expr::Identifier(var_name) = &args[0]
+        {
+          let key = evaluate_expr_to_expr(&args[1])?;
+          let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+          let items = match &current {
+            Some(StoredValue::Association(pairs)) => pairs
+              .iter()
+              .map(|(k, v)| {
+                let ke = crate::syntax::string_to_expr(k)
+                  .unwrap_or(Expr::String(k.clone()));
+                let ve = crate::syntax::string_to_expr(v)
+                  .unwrap_or(Expr::String(v.clone()));
+                (ke, ve)
+              })
+              .collect::<Vec<_>>(),
+            Some(StoredValue::ExprVal(Expr::Association(items))) => {
+              items.clone()
+            }
+            Some(StoredValue::Raw(s)) => {
+              match crate::syntax::string_to_expr(s) {
+                Ok(Expr::Association(ref items)) => items.clone(),
+                _ => {
+                  return Ok(Expr::FunctionCall {
+                    name: "KeyDropFrom".to_string(),
+                    args: vec![args[0].clone(), key],
+                  });
+                }
+              }
+            }
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "KeyDropFrom".to_string(),
+                args: vec![args[0].clone(), key],
+              });
+            }
+          };
+          let filtered: Vec<(Expr, Expr)> = items
+            .into_iter()
+            .filter(|(k, _)| {
+              !crate::evaluator::pattern_matching::expr_equal(k, &key)
+            })
+            .collect();
+          let new_val = Expr::Association(filtered);
+          let pairs: Vec<(String, String)> = match &new_val {
+            Expr::Association(items) => items
+              .iter()
+              .map(|(k, v)| {
+                (
+                  crate::syntax::expr_to_string(k),
+                  crate::syntax::expr_to_string(v),
+                )
+              })
+              .collect(),
+            _ => unreachable!(),
+          };
+          ENV.with(|e| {
+            e.borrow_mut()
+              .insert(var_name.clone(), StoredValue::Association(pairs));
+          });
+          return Ok(new_val);
+        }
         // Special handling for Return - raises ReturnValue to short-circuit evaluation
         if name == "Return" {
           let val = if args.is_empty() {
