@@ -2,6 +2,41 @@
 use super::*;
 use crate::functions::math_ast::is_sqrt;
 
+/// Check if the result of differentiation contains a
+/// `Derivative[...][func_name][...]` pattern (as CurriedCall),
+/// indicating the derivative couldn't be fully resolved.
+fn contains_unresolved_derivative(expr: &Expr, func_name: &str) -> bool {
+  match expr {
+    // Match CurriedCall { func: CurriedCall { func: FunctionCall("Derivative", _), args: [Identifier(func_name)] }, args: _ }
+    Expr::CurriedCall { func, args } => {
+      let is_derivative_of_func = matches!(
+        func.as_ref(),
+        Expr::CurriedCall {
+          func: inner_func,
+          args: inner_args,
+        } if matches!(inner_func.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+          && inner_args.iter().any(|a| matches!(a, Expr::Identifier(id) if id == func_name))
+      );
+      is_derivative_of_func
+        || contains_unresolved_derivative(func, func_name)
+        || args
+          .iter()
+          .any(|a| contains_unresolved_derivative(a, func_name))
+    }
+    Expr::FunctionCall { args, .. } | Expr::List(args) => args
+      .iter()
+      .any(|a| contains_unresolved_derivative(a, func_name)),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_unresolved_derivative(left, func_name)
+        || contains_unresolved_derivative(right, func_name)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      contains_unresolved_derivative(operand, func_name)
+    }
+    _ => false,
+  }
+}
+
 pub fn dispatch_calculus_functions(
   name: &str,
   args: &[Expr],
@@ -42,6 +77,42 @@ pub fn dispatch_calculus_functions(
               return Some(evaluate_expr_to_expr(&substituted));
             }
           }
+        }
+      }
+      // For built-in functions (not in FUNC_DEFS), try symbolic differentiation
+      if let (Expr::Integer(n), Expr::Identifier(func_name)) =
+        (&args[0], &args[1])
+      {
+        let n = *n as usize;
+        let dummy_var = "__derivative_var__".to_string();
+        let dummy_ident = Expr::Identifier(dummy_var.clone());
+        let mut deriv = Expr::FunctionCall {
+          name: func_name.clone(),
+          args: vec![dummy_ident.clone()],
+        };
+        let mut resolved = true;
+        for _ in 0..n {
+          deriv = match crate::functions::calculus_ast::differentiate_expr(
+            &deriv, &dummy_var,
+          ) {
+            Ok(v) => v,
+            Err(_) => {
+              resolved = false;
+              break;
+            }
+          };
+          // If differentiation returned a Derivative[...][func][var] form,
+          // no actual symbolic derivative was computed (e.g. unknown function).
+          // In that case, return unevaluated to avoid corrupting DSolve inputs.
+          if contains_unresolved_derivative(&deriv, func_name) {
+            resolved = false;
+            break;
+          }
+        }
+        if resolved {
+          let substituted =
+            crate::syntax::substitute_variable(&deriv, &dummy_var, &args[2]);
+          return Some(evaluate_expr_to_expr(&substituted));
         }
       }
       return Some(Ok(Expr::FunctionCall {

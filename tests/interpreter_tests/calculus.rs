@@ -355,6 +355,46 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn derivative_builtin_sin_prime() {
+    assert_eq!(interpret("Sin'[x]").unwrap(), "Cos[x]");
+  }
+
+  #[test]
+  fn derivative_builtin_cos_prime() {
+    assert_eq!(interpret("Cos'[x]").unwrap(), "-Sin[x]");
+  }
+
+  #[test]
+  fn derivative_builtin_tan_prime() {
+    assert_eq!(interpret("Tan'[x]").unwrap(), "Sec[x]^2");
+  }
+
+  #[test]
+  fn derivative_builtin_exp_prime() {
+    assert_eq!(interpret("Exp'[x]").unwrap(), "E^x");
+  }
+
+  #[test]
+  fn derivative_builtin_log_prime() {
+    assert_eq!(interpret("Log'[x]").unwrap(), "x^(-1)");
+  }
+
+  #[test]
+  fn derivative_builtin_sin_double_prime() {
+    assert_eq!(interpret("Sin''[x]").unwrap(), "-Sin[x]");
+  }
+
+  #[test]
+  fn derivative_builtin_sin_prime_at_zero() {
+    assert_eq!(interpret("Sin'[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn derivative_builtin_cos_prime_at_pi() {
+    assert_eq!(interpret("Cos'[Pi]").unwrap(), "0");
+  }
+
+  #[test]
   fn derivative_product_sin_cos() {
     assert_eq!(
       interpret("D[Sin[x]*Cos[x], x]").unwrap(),
