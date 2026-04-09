@@ -3515,6 +3515,31 @@ mod numerator {
   fn whole_number_rational() {
     assert_eq!(interpret("Numerator[6/3]").unwrap(), "2");
   }
+
+  #[test]
+  fn symbolic_fraction() {
+    assert_eq!(interpret("Numerator[x/y]").unwrap(), "x");
+  }
+
+  #[test]
+  fn multi_factor_fraction() {
+    assert_eq!(interpret("Numerator[(a*b)/(c*d)]").unwrap(), "a*b");
+  }
+
+  #[test]
+  fn mixed_rational_symbolic_fraction() {
+    assert_eq!(interpret("Numerator[(3*x^2)/(7*y)]").unwrap(), "3*x^2");
+  }
+
+  #[test]
+  fn fraction_with_power_in_denom() {
+    assert_eq!(interpret("Numerator[a/b^2]").unwrap(), "a");
+  }
+
+  #[test]
+  fn product_without_denominator() {
+    assert_eq!(interpret("Numerator[a*b*c]").unwrap(), "a*b*c");
+  }
 }
 
 mod denominator {
@@ -3538,6 +3563,31 @@ mod denominator {
   #[test]
   fn reduced_form() {
     assert_eq!(interpret("Denominator[6/4]").unwrap(), "2");
+  }
+
+  #[test]
+  fn symbolic_fraction() {
+    assert_eq!(interpret("Denominator[x/y]").unwrap(), "y");
+  }
+
+  #[test]
+  fn multi_factor_fraction() {
+    assert_eq!(interpret("Denominator[(a*b)/(c*d)]").unwrap(), "c*d");
+  }
+
+  #[test]
+  fn mixed_rational_symbolic_fraction() {
+    assert_eq!(interpret("Denominator[(3*x^2)/(7*y)]").unwrap(), "7*y");
+  }
+
+  #[test]
+  fn fraction_with_power_in_denom() {
+    assert_eq!(interpret("Denominator[a/b^2]").unwrap(), "b^2");
+  }
+
+  #[test]
+  fn product_without_denominator() {
+    assert_eq!(interpret("Denominator[a*b*c]").unwrap(), "1");
   }
 }
 

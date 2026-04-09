@@ -885,20 +885,39 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       left,
       ..
     } => Ok(left.as_ref().clone()),
-    // Numerator[Times[-1, x]] where x is Power[y, -1] → -1 (i.e. -1/y)
-    // Numerator[Times[a, Power[b, -1]]] → a
-    Expr::FunctionCall { name, args: targs }
-      if name == "Times" && targs.len() == 2 =>
-    {
-      // Check if second factor is Power[_, -1] (denominator form)
-      if is_reciprocal(&targs[1]) {
-        return Ok(targs[0].clone());
+    // Numerator[Times[...]] — collect non-denominator factors
+    Expr::FunctionCall { name, args: targs } if name == "Times" => {
+      let mut num_factors: Vec<Expr> = Vec::new();
+      for factor in targs {
+        if let Some(neg_exp) = get_negative_power_exponent(factor) {
+          // Power[base, negative] → skip (denominator factor)
+          let _ = neg_exp;
+        } else if let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = factor
+        {
+          if rname == "Rational" && rargs.len() == 2 {
+            // Rational[a, b] → numerator contributes a
+            num_factors.push(rargs[0].clone());
+          } else {
+            num_factors.push(factor.clone());
+          }
+        } else {
+          num_factors.push(factor.clone());
+        }
       }
-      if is_reciprocal(&targs[0]) {
-        return Ok(targs[1].clone());
+      match num_factors.len() {
+        0 => Ok(Expr::Integer(1)),
+        1 => Ok(num_factors.into_iter().next().unwrap()),
+        _ => {
+          let product = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: num_factors,
+          };
+          crate::evaluator::evaluate_expr_to_expr(&product)
+        }
       }
-      // Not a fraction form
-      Ok(args[0].clone())
     }
     _ => Ok(args[0].clone()),
   }
@@ -928,19 +947,81 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       right,
       ..
     } => Ok(right.as_ref().clone()),
-    // Denominator[Times[a, Power[b, -1]]] → b
-    Expr::FunctionCall { name, args: targs }
-      if name == "Times" && targs.len() == 2 =>
-    {
-      if let Some(base) = get_reciprocal_base(&targs[1]) {
-        return Ok(base);
+    // Denominator[Times[...]] — collect denominator factors
+    Expr::FunctionCall { name, args: targs } if name == "Times" => {
+      let mut denom_factors: Vec<Expr> = Vec::new();
+      for factor in targs {
+        if let Some((base, neg_exp)) = get_negative_power_exponent(factor) {
+          // Power[base, -n] → denominator contributes Power[base, n]
+          if matches!(neg_exp, Expr::Integer(1)) {
+            denom_factors.push(base);
+          } else {
+            denom_factors.push(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(neg_exp),
+            });
+          }
+        } else if let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = factor
+          && rname == "Rational"
+          && rargs.len() == 2
+        {
+          // Rational[a, b] → denominator contributes b
+          denom_factors.push(rargs[1].clone());
+        }
       }
-      if let Some(base) = get_reciprocal_base(&targs[0]) {
-        return Ok(base);
+      match denom_factors.len() {
+        0 => Ok(Expr::Integer(1)),
+        1 => Ok(denom_factors.into_iter().next().unwrap()),
+        _ => {
+          let product = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: denom_factors,
+          };
+          crate::evaluator::evaluate_expr_to_expr(&product)
+        }
       }
-      Ok(Expr::Integer(1))
     }
     _ => Ok(Expr::Integer(1)),
+  }
+}
+
+/// If expr is Power[base, neg_exp] where neg_exp is negative,
+/// return Some((base, -neg_exp)) i.e. the base and the positive exponent.
+/// E.g. Power[x, -2] → Some((x, 2)), Power[x, -1] → Some((x, 1))
+fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = right.as_ref()
+        && *n < 0
+      {
+        return Some((left.as_ref().clone(), Expr::Integer(-n)));
+      }
+      if let Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } = right.as_ref()
+      {
+        return Some((left.as_ref().clone(), operand.as_ref().clone()));
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1]
+        && *n < 0
+      {
+        return Some((args[0].clone(), Expr::Integer(-n)));
+      }
+      None
+    }
+    _ => None,
   }
 }
 
