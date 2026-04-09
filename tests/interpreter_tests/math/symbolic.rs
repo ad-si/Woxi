@@ -310,6 +310,15 @@ mod sum {
   }
 
   #[test]
+  fn sum_harmonic_number_order_1() {
+    // Sum[1/k, {k, 1, n}] should give HarmonicNumber[n], not HarmonicNumber[n, 1]
+    assert_eq!(
+      interpret("Sum[1/k, {k, 1, n}]").unwrap(),
+      "HarmonicNumber[n]"
+    );
+  }
+
+  #[test]
   fn sum_leibniz_formula() {
     assert_eq!(
       interpret("Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]").unwrap(),

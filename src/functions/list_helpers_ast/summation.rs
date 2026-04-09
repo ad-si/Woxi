@@ -920,7 +920,11 @@ fn try_symbolic_sum(
     {
       return Ok(Some(Expr::FunctionCall {
         name: "HarmonicNumber".to_string(),
-        args: vec![max_expr.clone(), Expr::Integer(s as i128)],
+        args: if s == 1 {
+          vec![max_expr.clone()]
+        } else {
+          vec![max_expr.clone(), Expr::Integer(s as i128)]
+        },
       }));
     }
 
