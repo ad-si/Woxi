@@ -4,6 +4,8 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
 use crate::functions::calculus_ast::simplify;
+use crate::functions::math_ast::times_ast;
+use crate::functions::polynomial_ast::expand::is_sum;
 
 // ─── Collect ────────────────────────────────────────────────────────
 
@@ -93,16 +95,24 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (Expr::Integer(1), Some(v)) => v,
       (c, Some(v)) if matches!(&c, Expr::Integer(-1)) => negate_term(&v),
       (c, Some(v)) => {
-        // Wolfram canonical Times ordering: coefficient goes first unless
-        // the coefficient contains a variable that sorts after the collect
-        // variable alphabetically, in which case the variable goes first.
-        let mut coeff_vars = std::collections::HashSet::new();
-        collect_variables(&c, &mut coeff_vars);
-        let var_after = coeff_vars.iter().any(|cv| cv.as_str() > var);
-        if var_after {
-          multiply_exprs(&v, &c)
+        // If the coefficient is a sum, keep it grouped.
+        // Wolfram ordering: if the coefficient contains a variable
+        // that sorts after the collect variable, put var first.
+        if is_sum(&c) {
+          let mut coeff_vars = std::collections::HashSet::new();
+          collect_variables(&c, &mut coeff_vars);
+          if coeff_vars.iter().any(|cv| cv.as_str() > var) {
+            multiply_exprs(&v, &c)
+          } else {
+            multiply_exprs(&c, &v)
+          }
         } else {
-          multiply_exprs(&c, &v)
+          // Flatten coefficient and variable into a single product,
+          // then use times_ast for Wolfram canonical ordering.
+          let mut factors = Vec::new();
+          flatten_product_factors_collect(&c, &mut factors);
+          flatten_product_factors_collect(&v, &mut factors);
+          times_ast(&factors).unwrap_or_else(|_| multiply_exprs(&c, &v))
         }
       }
     };
@@ -180,7 +190,22 @@ fn collect_in_coefficients(
       (c, None) => c,
       (Expr::Integer(1), Some(v)) => v,
       (c, Some(v)) if matches!(&c, Expr::Integer(-1)) => negate_term(&v),
-      (c, Some(v)) => multiply_exprs(&c, &v),
+      (c, Some(v)) => {
+        if is_sum(&c) {
+          let mut coeff_vars = std::collections::HashSet::new();
+          collect_variables(&c, &mut coeff_vars);
+          if coeff_vars.iter().any(|cv| cv.as_str() > var_str) {
+            multiply_exprs(&v, &c)
+          } else {
+            multiply_exprs(&c, &v)
+          }
+        } else {
+          let mut factors = Vec::new();
+          flatten_product_factors_collect(&c, &mut factors);
+          flatten_product_factors_collect(&v, &mut factors);
+          times_ast(&factors).unwrap_or_else(|_| multiply_exprs(&c, &v))
+        }
+      }
     };
     result_terms.push(rebuilt);
   }
@@ -189,5 +214,25 @@ fn collect_in_coefficients(
     Ok(Expr::Integer(0))
   } else {
     Ok(build_sum(result_terms))
+  }
+}
+
+/// Flatten a Times expression into its factors.
+fn flatten_product_factors_collect(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_product_factors_collect(left, out);
+      flatten_product_factors_collect(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        flatten_product_factors_collect(a, out);
+      }
+    }
+    _ => out.push(expr.clone()),
   }
 }
