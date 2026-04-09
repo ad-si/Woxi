@@ -5494,10 +5494,35 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
       Expr::String(s) if s == "FromBelow" => {
         return Some(LimitDirection::FromBelow);
       }
+      // Direction -> -1 means from above (from the right, x -> x0+)
+      Expr::Integer(n) if *n == -1 => {
+        return Some(LimitDirection::FromAbove);
+      }
+      // Direction -> 1 means from below (from the left, x -> x0-)
+      Expr::Integer(n) if *n == 1 => {
+        return Some(LimitDirection::FromBelow);
+      }
       _ => {}
     }
   }
   None
+}
+
+/// Check if an expression contains a Piecewise function call anywhere.
+fn contains_piecewise(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "Piecewise" {
+        return true;
+      }
+      args.iter().any(contains_piecewise)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_piecewise(left) || contains_piecewise(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_piecewise(operand),
+    _ => false,
+  }
 }
 
 /// Extract (numerator, denominator) from a canonicalized Times expression.
@@ -5790,49 +5815,58 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return limit_at_infinity(&args[0], &var_name, &point);
   }
 
+  // For one-sided limits, skip direct substitution when the expression
+  // contains Piecewise, because substituting the exact boundary point may
+  // select the wrong branch (e.g. the >= branch instead of the < branch).
+  // In that case we fall through to numerical evaluation which correctly
+  // approaches from the specified direction.
+  let skip_direct_sub = contains_piecewise(&args[0]);
+
   // Strategy: try direct substitution first.
   // Suppress messages during trial substitution (e.g. Power::infy for Sin[x]/x at x=0)
-  let substituted =
-    crate::syntax::substitute_variable(&args[0], &var_name, &point);
-  let saved_warnings = crate::snapshot_warnings();
-  crate::push_quiet();
-  let result = crate::evaluator::evaluate_expr_to_expr(&substituted);
-  crate::pop_quiet();
-  crate::restore_warnings(saved_warnings);
+  if !skip_direct_sub {
+    let substituted =
+      crate::syntax::substitute_variable(&args[0], &var_name, &point);
+    let saved_warnings = crate::snapshot_warnings();
+    crate::push_quiet();
+    let result = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    crate::pop_quiet();
+    crate::restore_warnings(saved_warnings);
 
-  match result {
-    Ok(ref val) => {
-      // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
-      match val {
-        Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
-          return result;
-        }
-        Expr::FunctionCall { name, args: fargs }
-          if name == "Rational" && fargs.len() == 2 =>
-        {
-          // Check for 0/0 indeterminate form
-          if matches!(&fargs[1], Expr::Integer(0)) {
-            // Fall through to L'Hôpital
-          } else {
+    match result {
+      Ok(ref val) => {
+        // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
+        match val {
+          Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
             return result;
           }
-        }
-        Expr::FunctionCall { name, .. }
-          if name == "DirectedInfinity" || name == "Indeterminate" =>
-        {
-          // Fall through to try other methods
-        }
-        _ => {
-          // Check if it evaluates to a number via N[]
-          if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
-            return result;
+          Expr::FunctionCall { name, args: fargs }
+            if name == "Rational" && fargs.len() == 2 =>
+          {
+            // Check for 0/0 indeterminate form
+            if matches!(&fargs[1], Expr::Integer(0)) {
+              // Fall through to L'Hôpital
+            } else {
+              return result;
+            }
           }
-          // Return unevaluated if substitution doesn't yield a clean result
+          Expr::FunctionCall { name, .. }
+            if name == "DirectedInfinity" || name == "Indeterminate" =>
+          {
+            // Fall through to try other methods
+          }
+          _ => {
+            // Check if it evaluates to a number via N[]
+            if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
+              return result;
+            }
+            // Return unevaluated if substitution doesn't yield a clean result
+          }
         }
       }
-    }
-    Err(_) => {
-      // Substitution failed (e.g., division by zero)
+      Err(_) => {
+        // Substitution failed (e.g., division by zero)
+      }
     }
   }
 
