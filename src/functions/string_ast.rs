@@ -1183,7 +1183,15 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     {
       let parts: Option<Vec<String>> =
         args.iter().map(string_pattern_to_regex).collect();
-      parts.map(|ps| ps.join("|"))
+      parts.map(|ps| format!("(?:{})", ps.join("|")))
+    }
+
+    // A list {pat1, pat2, ...} in a string-pattern context is treated as
+    // Alternatives[pat1, pat2, ...].
+    Expr::List(items) if !items.is_empty() => {
+      let parts: Option<Vec<String>> =
+        items.iter().map(string_pattern_to_regex).collect();
+      parts.map(|ps| format!("(?:{})", ps.join("|")))
     }
 
     // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...
@@ -2744,9 +2752,20 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringCount expects exactly 2 arguments".into(),
     ));
   }
+
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| string_count_ast(&[s.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let s = expr_to_str(&args[0])?;
 
-  // Try regex-based pattern first (handles RegularExpression, string patterns, etc.)
+  // Try regex-based pattern first (handles RegularExpression, string patterns,
+  // lists-of-patterns as alternatives, etc.)
   if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
     let re = regex::Regex::new(&regex_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))

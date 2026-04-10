@@ -2786,6 +2786,47 @@ mod string_count_patterns {
   fn count_plain_string() {
     assert_eq!(interpret(r#"StringCount["abcabc", "a"]"#).unwrap(), "2");
   }
+
+  #[test]
+  fn count_list_of_patterns_single_chars() {
+    // A list of patterns is treated as Alternatives.
+    assert_eq!(
+      interpret(r#"StringCount["abcabc", {"a", "b"}]"#).unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn count_list_of_patterns_multi_char() {
+    assert_eq!(
+      interpret(r#"StringCount["abcabcabc", {"ab", "bc"}]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn count_list_of_patterns_non_overlapping_chars() {
+    assert_eq!(
+      interpret(r#"StringCount["abcabcabc", {"a", "c"}]"#).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn count_threads_over_list_of_strings() {
+    assert_eq!(
+      interpret(r#"StringCount[{"abc", "abcabc", "xyz"}, "a"]"#).unwrap(),
+      "{1, 2, 0}"
+    );
+  }
+
+  #[test]
+  fn count_threads_over_list_of_strings_with_list_pattern() {
+    assert_eq!(
+      interpret(r#"StringCount[{"abc", "abcabc"}, {"a", "b"}]"#).unwrap(),
+      "{2, 4}"
+    );
+  }
 }
 
 mod string_starts_ends_patterns {
