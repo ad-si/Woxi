@@ -172,6 +172,40 @@ mod string_split_single_arg {
   fn characters_empty_string() {
     assert_eq!(interpret(r#"Characters[""]"#).unwrap(), "{}");
   }
+
+  #[test]
+  fn to_upper_case_single_string() {
+    assert_eq!(interpret(r#"ToUpperCase["abc"]"#).unwrap(), "ABC");
+  }
+
+  #[test]
+  fn to_upper_case_threads_list() {
+    assert_eq!(
+      interpret(r#"ToUpperCase[{"abc", "def"}]"#).unwrap(),
+      "{ABC, DEF}"
+    );
+  }
+
+  #[test]
+  fn to_lower_case_single_string() {
+    assert_eq!(interpret(r#"ToLowerCase["ABC"]"#).unwrap(), "abc");
+  }
+
+  #[test]
+  fn to_lower_case_threads_list() {
+    assert_eq!(
+      interpret(r#"ToLowerCase[{"ABC", "Def"}]"#).unwrap(),
+      "{abc, def}"
+    );
+  }
+
+  #[test]
+  fn to_upper_case_threads_nested_list() {
+    assert_eq!(
+      interpret(r#"ToUpperCase[{{"ab", "cd"}, "ef"}]"#).unwrap(),
+      "{{AB, CD}, EF}"
+    );
+  }
 }
 
 mod string_split_regex {
