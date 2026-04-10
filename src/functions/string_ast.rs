@@ -2665,6 +2665,19 @@ pub fn string_pad_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| {
+        let mut call = vec![s.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_pad_left_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let s = expr_to_str(&args[0])?;
   let n = expr_to_int(&args[1])?;
   if n < 0 {
@@ -2708,6 +2721,19 @@ pub fn string_pad_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StringPadRight expects 2 or 3 arguments".into(),
     ));
+  }
+
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| {
+        let mut call = vec![s.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_pad_right_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
   }
 
   let s = expr_to_str(&args[0])?;

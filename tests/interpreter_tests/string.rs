@@ -2960,4 +2960,52 @@ mod string_contains_free_patterns {
   fn string_pad_left_truncate() {
     assert_eq!(interpret(r#"StringPadLeft["hello", 3]"#).unwrap(), "llo");
   }
+
+  #[test]
+  fn string_pad_left_list_default() {
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"a", "bc", "def"}, 5]"#).unwrap(),
+      "{    a,    bc,   def}"
+    );
+  }
+
+  #[test]
+  fn string_pad_left_list_with_pad() {
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"a", "bc", "def"}, 5, "*"]"#).unwrap(),
+      "{****a, ***bc, **def}"
+    );
+  }
+
+  #[test]
+  fn string_pad_left_list_multi_char_pad() {
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"a", "bc"}, 6, "xy"]"#).unwrap(),
+      "{xyxyxa, xyxybc}"
+    );
+  }
+
+  #[test]
+  fn string_pad_right_list_default() {
+    assert_eq!(
+      interpret(r#"StringPadRight[{"a", "bc", "def"}, 5]"#).unwrap(),
+      "{a    , bc   , def  }"
+    );
+  }
+
+  #[test]
+  fn string_pad_right_list_with_pad() {
+    assert_eq!(
+      interpret(r#"StringPadRight[{"a", "bc", "def"}, 5, "-"]"#).unwrap(),
+      "{a----, bc---, def--}"
+    );
+  }
+
+  #[test]
+  fn string_pad_left_list_truncate() {
+    assert_eq!(
+      interpret(r#"StringPadLeft[{"hello", "hi"}, 3]"#).unwrap(),
+      "{llo,  hi}"
+    );
+  }
 }
