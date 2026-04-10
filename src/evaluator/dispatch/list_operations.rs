@@ -1097,6 +1097,11 @@ pub fn dispatch_list_operations(
     "Riffle" if args.len() == 2 => {
       return Some(list_helpers_ast::riffle_ast(&args[0], &args[1]));
     }
+    "Riffle" if args.len() == 3 => {
+      return Some(list_helpers_ast::riffle_extended_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "RotateLeft" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         return Some(list_helpers_ast::rotate_left_ast(&args[0], n));

@@ -3114,6 +3114,72 @@ mod join_non_list {
   }
 
   #[test]
+  fn riffle_every_n_simple() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f, g}, x, 3]").unwrap(),
+      "{a, b, x, c, d, x, e, f, x, g}"
+    );
+  }
+
+  #[test]
+  fn riffle_every_n_no_trailing_after_exhaustion() {
+    // Length 6 with n=3: insert only where list still has elements
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f}, x, 3]").unwrap(),
+      "{a, b, x, c, d, x, e, f}"
+    );
+  }
+
+  #[test]
+  fn riffle_every_n_short_list() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, 3]").unwrap(),
+      "{a, b, x, c, d}"
+    );
+  }
+
+  #[test]
+  fn riffle_every_n_with_list_separator_cycles() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f, g, h}, {x, y}, 3]").unwrap(),
+      "{a, b, x, c, d, y, e, f, x, g, h}"
+    );
+  }
+
+  #[test]
+  fn riffle_triple_spec_negative_end() {
+    // {a, -1, s} - b=-1 allows one trailing insert at end of output
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f, g, h}, x, {3, -1, 3}]").unwrap(),
+      "{a, b, x, c, d, x, e, f, x, g, h, x}"
+    );
+  }
+
+  #[test]
+  fn riffle_triple_spec_negative_end_short() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d}, x, {3, -1, 3}]").unwrap(),
+      "{a, b, x, c, d, x}"
+    );
+  }
+
+  #[test]
+  fn riffle_triple_spec_positive_end() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f, g}, x, {3, 8, 3}]").unwrap(),
+      "{a, b, x, c, d, x, e, f, g}"
+    );
+  }
+
+  #[test]
+  fn riffle_triple_spec_every_other() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f}, x, {2, -1, 2}]").unwrap(),
+      "{a, x, b, x, c, x, d, x, e, x, f, x}"
+    );
+  }
+
+  #[test]
   fn thread_with_head() {
     assert_eq!(
       interpret("Thread[f[a + b + c], Plus]").unwrap(),

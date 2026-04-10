@@ -570,6 +570,141 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result))
 }
 
+/// AST-based Riffle with step spec.
+/// Riffle[list, x, n] - insert x at every n-th output position while the
+///   list still has elements.
+/// Riffle[list, x, {a, b, s}] - insert x at positions a, a+s, a+2s, ... .
+///   If b is positive, insertions stop once they would exceed b.
+///   If b is negative (e.g. -1), insertions continue as long as the next
+///   position equals the current output index; a negative b allows a
+///   trailing insert past the last list element when the arithmetic
+///   progression lands on the output-length position.
+pub fn riffle_extended_ast(
+  list: &Expr,
+  sep: &Expr,
+  spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Riffle".to_string(),
+        args: vec![list.clone(), sep.clone(), spec.clone()],
+      });
+    }
+  };
+
+  // Parse the spec into (start, end_opt, step, is_simple).
+  // is_simple = true for `Riffle[list, x, n]` (no explicit end).
+  let (start, end_opt, step, is_simple) = match spec {
+    Expr::Integer(n) => (*n, None, *n, true),
+    Expr::List(spec_items) if spec_items.len() == 3 => {
+      let a = match &spec_items[0] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Riffle".to_string(),
+            args: vec![list.clone(), sep.clone(), spec.clone()],
+          });
+        }
+      };
+      let b = match &spec_items[1] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Riffle".to_string(),
+            args: vec![list.clone(), sep.clone(), spec.clone()],
+          });
+        }
+      };
+      let s = match &spec_items[2] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Riffle".to_string(),
+            args: vec![list.clone(), sep.clone(), spec.clone()],
+          });
+        }
+      };
+      (a, Some(b), s, false)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Riffle".to_string(),
+        args: vec![list.clone(), sep.clone(), spec.clone()],
+      });
+    }
+  };
+
+  if step <= 0 || start <= 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Riffle: start and step must be positive integers".into(),
+    ));
+  }
+
+  // Collect separators: either a list (to cycle through) or a single value.
+  let sep_values: Vec<Expr> = match sep {
+    Expr::List(xs) if !xs.is_empty() => xs.clone(),
+    Expr::List(_) => return Ok(Expr::List(items)),
+    other => vec![other.clone()],
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let mut result: Vec<Expr> = Vec::new();
+  let mut list_idx: usize = 0;
+  let mut out_idx: i128 = 1;
+  let mut next_insert: i128 = start;
+  let mut insert_count: usize = 0;
+
+  loop {
+    let list_done = list_idx >= items.len();
+    let want_insert = next_insert == out_idx;
+
+    // For a positive `b`, insertions are only allowed while `next_insert <= b`.
+    let insert_allowed = match end_opt {
+      Some(b) if b > 0 => next_insert <= b,
+      _ => true,
+    };
+
+    if is_simple {
+      // Simple `Riffle[list, x, n]`: stop as soon as the list is exhausted,
+      // regardless of any pending insert at the current output position.
+      if list_done {
+        break;
+      }
+      if want_insert {
+        result.push(sep_values[insert_count % sep_values.len()].clone());
+        insert_count += 1;
+        next_insert += step;
+      } else {
+        result.push(items[list_idx].clone());
+        list_idx += 1;
+      }
+      out_idx += 1;
+      continue;
+    }
+
+    // `{a, b, s}` form.
+    if want_insert && insert_allowed {
+      result.push(sep_values[insert_count % sep_values.len()].clone());
+      insert_count += 1;
+      next_insert += step;
+      out_idx += 1;
+    } else if !list_done {
+      result.push(items[list_idx].clone());
+      list_idx += 1;
+      out_idx += 1;
+    } else {
+      break;
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
 /// AST-based RotateLeft: rotate list left by n positions.
 pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   let (items, head_name): (&[Expr], Option<&str>) = match list {
