@@ -2485,3 +2485,89 @@ mod streams_function {
     assert_eq!(interpret("Head[Streams[]]").unwrap(), "List");
   }
 }
+
+mod import_export_formats {
+  use super::*;
+
+  #[test]
+  fn import_formats_is_list() {
+    assert_eq!(interpret("Head[$ImportFormats]").unwrap(), "List");
+  }
+
+  #[test]
+  fn import_formats_contains_csv() {
+    assert_eq!(
+      interpret("MemberQ[$ImportFormats, \"CSV\"]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn import_formats_contains_png() {
+    assert_eq!(
+      interpret("MemberQ[$ImportFormats, \"PNG\"]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn import_formats_all_strings() {
+    assert_eq!(
+      interpret("AllTrue[$ImportFormats, StringQ]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn import_formats_sorted() {
+    assert_eq!(
+      interpret("Sort[$ImportFormats] === $ImportFormats").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn export_formats_is_list() {
+    assert_eq!(interpret("Head[$ExportFormats]").unwrap(), "List");
+  }
+
+  #[test]
+  fn export_formats_contains_pdf() {
+    assert_eq!(
+      interpret("MemberQ[$ExportFormats, \"PDF\"]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn export_formats_contains_svg() {
+    assert_eq!(
+      interpret("MemberQ[$ExportFormats, \"SVG\"]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn export_formats_contains_png() {
+    assert_eq!(
+      interpret("MemberQ[$ExportFormats, \"PNG\"]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn export_formats_all_strings() {
+    assert_eq!(
+      interpret("AllTrue[$ExportFormats, StringQ]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn export_formats_sorted() {
+    assert_eq!(
+      interpret("Sort[$ExportFormats] === $ExportFormats").unwrap(),
+      "True"
+    );
+  }
+}

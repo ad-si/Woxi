@@ -199,6 +199,18 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       Expr::String("System`".to_string()),
       Expr::String("Global`".to_string()),
     ])),
+    "$ImportFormats" => Some(Expr::List(
+      ["BMP", "CSV", "GIF", "JPEG", "PNG", "TIFF"]
+        .iter()
+        .map(|s| Expr::String((*s).to_string()))
+        .collect(),
+    )),
+    "$ExportFormats" => Some(Expr::List(
+      ["BMP", "GIF", "JPEG", "PDF", "PNG", "SVG", "TIFF"]
+        .iter()
+        .map(|s| Expr::String((*s).to_string()))
+        .collect(),
+    )),
     _ => None,
   }
 }
