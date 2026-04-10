@@ -3083,11 +3083,39 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     };
   }
 
-  // Apply AnonymousFunctionSuffix (lowest precedence): expr &
+  // Apply AnonymousFunctionSuffix: expr &
+  //
+  // In Wolfram, `&` has precedence 90, which is higher (binds tighter) than
+  // Set/SetDelayed/UpSet/UpSetDelayed (all 40) but lower than nearly every
+  // other operator. For `f = body &` we must wrap only the RHS, producing
+  // Set[f, Function[body]] — not Function[Set[f, body]]. For operators
+  // tighter than `&` (e.g. `==`, `+`, `/.`, `->`) the whole infix chain is
+  // already built in `result`, so wrapping it is correct.
   if let Some(bracket_args) = anon_func_suffix {
-    result = Expr::Function {
-      body: Box::new(result),
+    // If `result` is a top-level assignment (Set/SetDelayed/UpSet/
+    // UpSetDelayed), `&` (precedence 90) binds tighter than the assignment
+    // (precedence 40), so we push the Function wrapper into the RHS.
+    let pushed_into_assignment = if let Expr::FunctionCall { name, args } =
+      &mut result
+      && matches!(
+        name.as_str(),
+        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+      )
+      && args.len() == 2
+    {
+      let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
+      args[1] = Expr::Function {
+        body: Box::new(rhs),
+      };
+      true
+    } else {
+      false
     };
+    if !pushed_into_assignment {
+      result = Expr::Function {
+        body: Box::new(result),
+      };
+    }
     for args in bracket_args {
       result = Expr::CurriedCall {
         func: Box::new(result),
