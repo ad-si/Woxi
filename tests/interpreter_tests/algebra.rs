@@ -925,6 +925,27 @@ mod match_q {
     assert_eq!(interpret("MatchQ[_Integer][123]").unwrap(), "True");
     assert_eq!(interpret("MatchQ[_String][123]").unwrap(), "False");
   }
+
+  #[test]
+  fn repeated_pattern_variable_must_match() {
+    // Regression: matches_pattern_ast ignored Pattern names, so both `a_`
+    // positions in {a_, b_, a_} would match independently.
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 3}, {a_, b_, a_}]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[{1, 2, 1}, {a_, b_, a_}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn repeated_pattern_variable_in_function_args() {
+    // Pattern variable `x_` used twice must match the same value
+    assert_eq!(interpret("MatchQ[f[1, 1], f[x_, x_]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[f[1, 2], f[x_, x_]]").unwrap(), "False");
+  }
 }
 
 mod replace_all_after_operators {

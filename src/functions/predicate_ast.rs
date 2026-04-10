@@ -1558,8 +1558,12 @@ pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "MatchQ expects exactly 2 arguments".into(),
     ));
   }
+  // Use the bindings-tracking matcher so that repeated pattern variables
+  // like {a_, b_, a_} correctly require both `a_` positions to bind to
+  // the same value.
   let matches =
-    crate::functions::list_helpers_ast::matches_pattern_ast(&args[0], &args[1]);
+    crate::evaluator::pattern_matching::match_pattern(&args[0], &args[1])
+      .is_some();
   Ok(bool_expr(matches))
 }
 
