@@ -118,6 +118,35 @@ mod fibonacci_builtin {
   }
 }
 
+mod integer_exponent {
+  use super::*;
+
+  #[test]
+  fn default_base_is_10() {
+    // Regression: IntegerExponent[n] used to use base 2 instead of 10.
+    assert_eq!(interpret("IntegerExponent[100]").unwrap(), "2");
+    assert_eq!(interpret("IntegerExponent[1000]").unwrap(), "3");
+  }
+
+  #[test]
+  fn with_base() {
+    assert_eq!(interpret("IntegerExponent[40, 2]").unwrap(), "3");
+    assert_eq!(interpret("IntegerExponent[125, 5]").unwrap(), "3");
+  }
+
+  #[test]
+  fn big_integer() {
+    // Regression: IntegerExponent[100!, 10] used to return unevaluated
+    // because the factorial overflows i128.
+    assert_eq!(interpret("IntegerExponent[100!, 10]").unwrap(), "24");
+  }
+
+  #[test]
+  fn zero_gives_infinity() {
+    assert_eq!(interpret("IntegerExponent[0, 2]").unwrap(), "Infinity");
+  }
+}
+
 mod integer_length {
   use super::*;
 

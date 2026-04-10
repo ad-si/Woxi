@@ -1249,24 +1249,31 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// IntegerExponent[n, b] - largest power of b that divides n
 /// IntegerExponent[n] - largest power of 2 that divides n
 pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use num_bigint::BigInt;
+  use num_traits::Zero;
+
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "IntegerExponent expects 1 or 2 arguments".into(),
     ));
   }
-  let n = match expr_to_i128(&args[0]) {
-    Some(n) => n,
-    None => {
+  // Accept both Integer and BigInteger for the first argument so that
+  // IntegerExponent[100!, 10] works even when the factorial overflows i128.
+  let n: BigInt = match &args[0] {
+    Expr::Integer(k) => BigInt::from(*k),
+    Expr::BigInteger(k) => k.clone(),
+    _ => {
       return Ok(Expr::FunctionCall {
         name: "IntegerExponent".to_string(),
         args: args.to_vec(),
       });
     }
   };
-  let base = if args.len() == 2 {
-    match expr_to_i128(&args[1]) {
-      Some(b) => b,
-      None => {
+  let base: BigInt = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) => BigInt::from(*b),
+      Expr::BigInteger(b) => b.clone(),
+      _ => {
         return Ok(Expr::FunctionCall {
           name: "IntegerExponent".to_string(),
           args: args.to_vec(),
@@ -1274,24 +1281,27 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    2 // default base
+    BigInt::from(10) // default base is 10 in Wolfram
   };
 
-  if n == 0 {
+  if n.is_zero() {
     return Ok(Expr::Identifier("Infinity".to_string()));
   }
-  if base <= 1 {
+  if base <= BigInt::from(1) {
     return Ok(Expr::FunctionCall {
       name: "IntegerExponent".to_string(),
       args: args.to_vec(),
     });
   }
 
-  let mut count = 0i128;
-  let mut val = n.abs();
-  while val > 0 && val % base == 0 {
+  let mut count: i128 = 0;
+  let mut val = n.clone();
+  if val.sign() == num_bigint::Sign::Minus {
+    val = -val;
+  }
+  while !val.is_zero() && (&val % &base).is_zero() {
     count += 1;
-    val /= base;
+    val /= &base;
   }
   Ok(Expr::Integer(count))
 }
