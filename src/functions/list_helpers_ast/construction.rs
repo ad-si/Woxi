@@ -1002,134 +1002,403 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// AST-based SparseArray: create a matrix from position rules.
-/// SparseArray[rules, {rows, cols}, default] -> evaluates rules and creates matrix
-pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
+/// Parse a dimension specification into a list of sizes. Accepts a List of
+/// non-negative integers, or a single non-negative integer for 1D.
+fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
+  match expr {
+    Expr::List(items) => {
+      let mut result = Vec::with_capacity(items.len());
+      for item in items {
+        let n = expr_to_i128(item)?;
+        if n < 0 {
+          return None;
+        }
+        result.push(n as usize);
+      }
+      Some(result)
+    }
+    _ => {
+      let n = expr_to_i128(expr)?;
+      if n < 0 {
+        return None;
+      }
+      Some(vec![n as usize])
+    }
+  }
+}
+
+/// Parse a list of position-value rules. Positions may be scalar integers
+/// (1D) or lists of integers (k-D); all rules must share the same rank.
+/// Returns the rules as (position, value) pairs and the max-per-axis dims.
+fn parse_sparse_rules(
+  items: &[Expr],
+) -> Option<(Vec<(Vec<i128>, Expr)>, Vec<usize>)> {
+  let mut rules: Vec<(Vec<i128>, Expr)> = Vec::with_capacity(items.len());
+  let mut max_pos: Vec<usize> = Vec::new();
+  let mut rank: Option<usize> = None;
+
+  for item in items {
+    let (pattern, replacement) = match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => return None,
+    };
+    let pos_vec: Vec<i128> = match pattern {
+      Expr::List(pos) => {
+        let mut v = Vec::with_capacity(pos.len());
+        for p in pos {
+          v.push(expr_to_i128(p)?);
+        }
+        v
+      }
+      _ => vec![expr_to_i128(pattern)?],
+    };
+    // Reject empty position, non-positive indices and rank mismatches.
+    if pos_vec.is_empty() || pos_vec.iter().any(|&p| p < 1) {
+      return None;
+    }
+    match rank {
+      None => {
+        rank = Some(pos_vec.len());
+        max_pos = vec![0; pos_vec.len()];
+      }
+      Some(r) if r != pos_vec.len() => return None,
+      _ => {}
+    }
+    for (i, &p) in pos_vec.iter().enumerate() {
+      max_pos[i] = max_pos[i].max(p as usize);
+    }
+    rules.push((pos_vec, replacement.clone()));
+  }
+
+  Some((rules, max_pos))
+}
+
+/// Return the shape of a dense, rectangular nested list. For a scalar leaf,
+/// returns an empty vector.
+fn dense_shape(expr: &Expr) -> Option<Vec<usize>> {
+  match expr {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Some(vec![0]);
+      }
+      let first_shape = dense_shape(&items[0])?;
+      for item in &items[1..] {
+        if dense_shape(item)? != first_shape {
+          return None;
+        }
+      }
+      let mut dims = vec![items.len()];
+      dims.extend(first_shape);
+      Some(dims)
+    }
+    _ => Some(Vec::new()),
+  }
+}
+
+/// Walk a dense nested list and record every leaf that is not equal to the
+/// default value as a (position, value) rule.
+fn collect_dense_rules(
+  expr: &Expr,
+  indices: &mut Vec<i128>,
+  rules: &mut Vec<(Vec<i128>, Expr)>,
+  default_str: &str,
+) {
+  match expr {
+    Expr::List(items) => {
+      for (i, item) in items.iter().enumerate() {
+        indices.push((i + 1) as i128);
+        collect_dense_rules(item, indices, rules, default_str);
+        indices.pop();
+      }
+    }
+    _ => {
+      if crate::syntax::expr_to_string(expr) != default_str {
+        rules.push((indices.clone(), expr.clone()));
+      }
+    }
+  }
+}
+
+/// Parse the first argument of a SparseArray call, producing (rules, inferred
+/// dimensions). The first argument may be a list of rules, a dense nested
+/// list, or a single Rule expression.
+fn parse_sparse_data(
+  data: &Expr,
+  default: &Expr,
+) -> Option<(Vec<(Vec<i128>, Expr)>, Vec<usize>)> {
+  // A bare single rule is treated as a one-element rule list.
+  if matches!(data, Expr::Rule { .. }) {
+    return parse_sparse_rules(std::slice::from_ref(data));
+  }
+
+  let items = match data {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+
+  if items.is_empty() {
+    return Some((Vec::new(), vec![0]));
+  }
+
+  let any_rule = items.iter().any(|it| matches!(it, Expr::Rule { .. }));
+  let all_rules = items.iter().all(|it| matches!(it, Expr::Rule { .. }));
+
+  if all_rules {
+    return parse_sparse_rules(items);
+  }
+  if any_rule {
+    // Mixed rule / non-rule entries are ambiguous.
+    return None;
+  }
+
+  // Dense nested list: must be rectangular.
+  let shape = dense_shape(data)?;
+  let default_str = crate::syntax::expr_to_string(default);
+  let mut rules = Vec::new();
+  let mut indices = Vec::new();
+  collect_dense_rules(data, &mut indices, &mut rules, &default_str);
+  Some((rules, shape))
+}
+
+/// Normalize SparseArray arguments to the canonical form
+/// `SparseArray[Automatic, dims, default, rules]`. Accepts:
+///   SparseArray[rules]                — infer dims from positions
+///   SparseArray[list]                 — dense list, default 0
+///   SparseArray[data, dims]           — explicit dims, default 0
+///   SparseArray[data, dims, default]  — explicit default
+/// Already-canonical calls are returned unchanged. If normalization is not
+/// possible the original FunctionCall is returned unevaluated.
+pub fn sparse_array_normalize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Already in canonical form: SparseArray[Automatic, dims, default, rules].
+  if args.len() == 4
+    && matches!(&args[0], Expr::Identifier(s) if s == "Automatic")
+    && matches!(&args[1], Expr::List(_))
+    && matches!(&args[3], Expr::List(_))
+  {
     return Ok(Expr::FunctionCall {
       name: "SparseArray".to_string(),
       args: args.to_vec(),
     });
   }
 
-  let rules = &args[0];
-  let dims = &args[1];
-  let default_zero = Expr::Integer(0);
+  if args.is_empty() || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "SparseArray".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let data = &args[0];
   let default = if args.len() >= 3 {
-    &args[2]
+    args[2].clone()
   } else {
-    &default_zero
+    Expr::Integer(0)
   };
 
-  // Extract dimensions
-  let dim_values = match dims {
-    Expr::List(items) => {
-      let mut result = Vec::new();
-      for item in items {
-        match expr_to_i128(item) {
-          Some(n) => result.push(n as usize),
-          None => {
-            return Ok(Expr::FunctionCall {
-              name: "SparseArray".to_string(),
-              args: args.to_vec(),
-            });
-          }
-        }
-      }
-      result
+  let (parsed_rules, inferred_dims) = match parse_sparse_data(data, &default) {
+    Some(x) => x,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: args.to_vec(),
+      });
     }
-    _ => {
-      // Single integer dimension for 1D arrays
-      match expr_to_i128(dims) {
-        Some(n) => vec![n as usize],
-        None => {
+  };
+
+  // Determine final dimensions. When explicit dims are given they must have
+  // the same rank as the parsed positions (unless there are no rules).
+  let dims: Vec<usize> = if args.len() >= 2 {
+    match parse_sparse_dims(&args[1]) {
+      Some(d) => {
+        if !parsed_rules.is_empty() && d.len() != parsed_rules[0].0.len() {
           return Ok(Expr::FunctionCall {
             name: "SparseArray".to_string(),
             args: args.to_vec(),
           });
         }
+        d
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "SparseArray".to_string(),
+          args: args.to_vec(),
+        });
       }
     }
+  } else {
+    if inferred_dims.is_empty() {
+      return Ok(Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    inferred_dims
   };
 
-  // 1D SparseArray: dimension is a single integer or {n}
-  if dim_values.len() == 1 {
-    let size = dim_values[0];
-    let mut array: Vec<Expr> = vec![default.clone(); size];
+  // Drop rules that are out of bounds or equal to the default value. Later
+  // rules for the same position override earlier ones (Wolfram semantics),
+  // and BTreeMap gives us deterministic lexicographic ordering.
+  let default_str = crate::syntax::expr_to_string(&default);
+  let mut dedup: std::collections::BTreeMap<Vec<i128>, Expr> =
+    std::collections::BTreeMap::new();
+  for (pos, val) in parsed_rules {
+    if pos.len() != dims.len() {
+      continue;
+    }
+    if !pos
+      .iter()
+      .enumerate()
+      .all(|(i, &p)| p >= 1 && (p as usize) <= dims[i])
+    {
+      continue;
+    }
+    if crate::syntax::expr_to_string(&val) == default_str {
+      dedup.remove(&pos);
+      continue;
+    }
+    dedup.insert(pos, val);
+  }
 
-    let rule_list = match rules {
-      Expr::List(items) => items.clone(),
-      _ => vec![rules.clone()],
-    };
+  let rules_expr: Vec<Expr> = dedup
+    .into_iter()
+    .map(|(pos, val)| Expr::Rule {
+      pattern: Box::new(Expr::List(
+        pos.into_iter().map(Expr::Integer).collect(),
+      )),
+      replacement: Box::new(val),
+    })
+    .collect();
 
-    for rule in &rule_list {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = rule
-      {
-        // pattern can be {i} or just i (1-indexed)
-        let idx = match pattern.as_ref() {
-          Expr::List(pos) if pos.len() == 1 => expr_to_i128(&pos[0]),
-          _ => expr_to_i128(pattern),
-        };
-        if let Some(i) = idx {
-          let ii = (i - 1) as usize;
-          if ii < size {
-            array[ii] = replacement.as_ref().clone();
+  let dims_expr =
+    Expr::List(dims.iter().map(|&n| Expr::Integer(n as i128)).collect());
+
+  Ok(Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      Expr::Identifier("Automatic".to_string()),
+      dims_expr,
+      default,
+      Expr::List(rules_expr),
+    ],
+  })
+}
+
+/// Build a dense k-D nested list from a canonical rule list.
+fn build_dense_from_rules(
+  dims: &[usize],
+  default: &Expr,
+  rules: &[(Vec<i128>, Expr)],
+) -> Expr {
+  if dims.is_empty() {
+    return default.clone();
+  }
+  if dims.len() == 1 {
+    let n = dims[0];
+    let mut arr = vec![default.clone(); n];
+    for (pos, val) in rules {
+      if pos.len() == 1 && pos[0] >= 1 && (pos[0] as usize) <= n {
+        arr[(pos[0] - 1) as usize] = val.clone();
+      }
+    }
+    return Expr::List(arr);
+  }
+  let d0 = dims[0];
+  let rest_dims = &dims[1..];
+  let mut result = Vec::with_capacity(d0);
+  for i in 1..=d0 {
+    let sub_rules: Vec<(Vec<i128>, Expr)> = rules
+      .iter()
+      .filter_map(|(pos, val)| {
+        if !pos.is_empty() && pos[0] == i as i128 {
+          Some((pos[1..].to_vec(), val.clone()))
+        } else {
+          None
+        }
+      })
+      .collect();
+    result.push(build_dense_from_rules(rest_dims, default, &sub_rules));
+  }
+  Expr::List(result)
+}
+
+/// Expand a SparseArray (any recognized form) into a dense nested list.
+/// Called by `Normal[SparseArray[...]]`.
+pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let normalized = sparse_array_normalize_ast(args)?;
+  let sa_args = match &normalized {
+    Expr::FunctionCall { name, args } if name == "SparseArray" => args,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Normal".to_string(),
+        args: vec![normalized],
+      });
+    }
+  };
+  // After normalize, either canonical (4 args starting with Automatic) or
+  // still the original form (normalization failed).
+  if sa_args.len() != 4
+    || !matches!(&sa_args[0], Expr::Identifier(s) if s == "Automatic")
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Normal".to_string(),
+      args: vec![normalized],
+    });
+  }
+  let dims: Vec<usize> = match &sa_args[1] {
+    Expr::List(items) => {
+      let mut d = Vec::with_capacity(items.len());
+      for it in items {
+        match expr_to_i128(it) {
+          Some(n) if n >= 0 => d.push(n as usize),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Normal".to_string(),
+              args: vec![normalized],
+            });
           }
         }
       }
+      d
     }
-
-    return Ok(Expr::List(array));
-  }
-
-  if dim_values.len() == 2 {
-    let rows = dim_values[0];
-    let cols = dim_values[1];
-
-    // Initialize matrix with default value
-    let mut matrix: Vec<Vec<Expr>> = vec![vec![default.clone(); cols]; rows];
-
-    // Process rules: {pos -> val, pos -> val, ...}
-    let rule_list = match rules {
-      Expr::List(items) => items.clone(),
-      _ => vec![rules.clone()],
-    };
-
-    for rule in &rule_list {
-      match rule {
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Normal".to_string(),
+        args: vec![normalized],
+      });
+    }
+  };
+  let default = &sa_args[2];
+  let rules_list: Vec<(Vec<i128>, Expr)> = match &sa_args[3] {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|r| match r {
         Expr::Rule {
           pattern,
           replacement,
         } => {
-          // pattern should be {row, col} (1-indexed)
-          if let Expr::List(pos) = pattern.as_ref()
-            && pos.len() == 2
-            && let (Expr::Integer(r), Expr::Integer(c)) = (&pos[0], &pos[1])
-          {
-            let ri = (*r - 1) as usize;
-            let ci = (*c - 1) as usize;
-            if ri < rows && ci < cols {
-              matrix[ri][ci] = replacement.as_ref().clone();
+          let pos = match pattern.as_ref() {
+            Expr::List(ps) => {
+              let mut v = Vec::with_capacity(ps.len());
+              for p in ps {
+                v.push(expr_to_i128(p)?);
+              }
+              v
             }
-          }
+            other => vec![expr_to_i128(other)?],
+          };
+          Some((pos, replacement.as_ref().clone()))
         }
-        _ => {} // skip non-rules
-      }
-    }
-
-    // Convert to nested list
-    let result: Vec<Expr> = matrix.into_iter().map(Expr::List).collect();
-    return Ok(Expr::List(result));
-  }
-
-  // For non-2D arrays, return symbolic
-  Ok(Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: args.to_vec(),
-  })
+        _ => None,
+      })
+      .collect(),
+    _ => Vec::new(),
+  };
+  Ok(build_dense_from_rules(&dims, default, &rules_list))
 }
 
 /// Tuples[list, n] - Generate all n-tuples from elements of list (Cartesian product).
