@@ -360,6 +360,20 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringSplit expects at least 1 argument".into(),
     ));
   }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0]
+    && items.iter().all(|it| matches!(it, Expr::String(_)))
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_split_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
 
   // 1-argument form: split by whitespace, removing empty strings
