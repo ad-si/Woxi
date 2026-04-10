@@ -755,6 +755,41 @@ mod ignore_case {
   }
 
   #[test]
+  fn string_starts_q_threads_list() {
+    assert_eq!(
+      interpret(r#"StringStartsQ[{"hello", "world"}, "he"]"#).unwrap(),
+      "{True, False}"
+    );
+  }
+
+  #[test]
+  fn string_ends_q_threads_list() {
+    assert_eq!(
+      interpret(r#"StringEndsQ[{"hello", "world"}, "d"]"#).unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn string_contains_q_threads_list() {
+    assert_eq!(
+      interpret(r#"StringContainsQ[{"hello", "world", "xy"}, "o"]"#).unwrap(),
+      "{True, True, False}"
+    );
+  }
+
+  #[test]
+  fn string_starts_q_threads_list_ignore_case() {
+    assert_eq!(
+      interpret(
+        r#"StringStartsQ[{"Hello", "world"}, "HE", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "{True, False}"
+    );
+  }
+
+  #[test]
   fn string_match_q_ignore_case() {
     assert_eq!(
       interpret("StringMatchQ[\"Hello\", \"hello\", IgnoreCase -> True]")
