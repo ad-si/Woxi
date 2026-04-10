@@ -3454,6 +3454,22 @@ mod join_non_list {
   }
 
   #[test]
+  fn array_with_range() {
+    // Regression: Array[f, n, {a, b}] should spread n indices evenly
+    // from a to b. Previously this was misinterpreted as per-dim origins.
+    assert_eq!(
+      interpret("Array[f, 5, {2, 10}]").unwrap(),
+      "{f[2], f[4], f[6], f[8], f[10]}"
+    );
+  }
+
+  #[test]
+  fn array_with_range_single_value() {
+    // Edge case: Array[f, 1, {a, b}] picks just the starting value
+    assert_eq!(interpret("Array[f, 1, {5, 10}]").unwrap(), "{f[5]}");
+  }
+
+  #[test]
   fn to_character_code_list() {
     assert_eq!(
       interpret("ToCharacterCode[{\"ab\", \"c\"}]").unwrap(),
