@@ -383,7 +383,7 @@ pub fn dispatch_list_operations(
     "Complement" => {
       return Some(list_helpers_ast::complement_ast(args));
     }
-    "Dimensions" | "TensorDimensions" if args.len() == 1 => {
+    "Dimensions" | "TensorDimensions" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::dimensions_ast(args));
     }
     "Delete" if args.len() == 2 => {

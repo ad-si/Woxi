@@ -188,24 +188,46 @@ pub fn list_depth(expr: &Expr) -> usize {
   }
 }
 
-/// Dimensions[list] - Returns the dimensions of a nested list
+/// Dimensions[list] - Returns the dimensions of a nested list.
+/// Dimensions[list, n] - Limits the analysis to at most n levels.
 pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Dimensions expects exactly 1 argument".into(),
+      "Dimensions expects 1 or 2 arguments".into(),
     ));
   }
 
-  fn get_dimensions(expr: &Expr) -> Vec<i128> {
+  // Parse the optional max-level argument. `None` means unlimited.
+  let max_level: Option<usize> = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Dimensions: second argument must be a non-negative integer".into(),
+        ));
+      }
+    }
+  } else {
+    None
+  };
+
+  fn get_dimensions(expr: &Expr, max_level: Option<usize>) -> Vec<i128> {
+    if let Some(0) = max_level {
+      return vec![];
+    }
+    let child_max = max_level.map(|m| m - 1);
     match expr {
       Expr::List(items) => {
         let mut dims = vec![items.len() as i128];
-        if !items.is_empty() {
-          // Check if all sub-elements have the same dimensions
-          let sub_dims: Vec<Vec<i128>> =
-            items.iter().map(get_dimensions).collect();
-          if !sub_dims.is_empty() && sub_dims.iter().all(|d| d == &sub_dims[0])
-          {
+        if !items.is_empty()
+          && child_max.map(|m| m > 0).unwrap_or(true)
+          && items.iter().all(|a| matches!(a, Expr::List(_)))
+        {
+          let sub_dims: Vec<Vec<i128>> = items
+            .iter()
+            .map(|it| get_dimensions(it, child_max))
+            .collect();
+          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
             dims.extend(sub_dims[0].iter());
           }
         }
@@ -213,17 +235,17 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Expr::FunctionCall { name, args } => {
         let mut dims = vec![args.len() as i128];
-        if !args.is_empty() {
-          // Check if all sub-elements are function calls with the same head and dimensions
-          let sub_dims: Vec<Vec<i128>> =
-            args.iter().map(get_dimensions).collect();
-          if !sub_dims.is_empty()
-            && sub_dims.iter().all(|d| d == &sub_dims[0])
-            && args.iter().all(|a| {
-              matches!(a, Expr::FunctionCall { name: n, .. } if n == name)
-                || matches!(a, Expr::List(_))
-            })
-          {
+        if !args.is_empty()
+          && child_max.map(|m| m > 0).unwrap_or(true)
+          && args.iter().all(
+            |a| matches!(a, Expr::FunctionCall { name: n, .. } if n == name),
+          )
+        {
+          let sub_dims: Vec<Vec<i128>> = args
+            .iter()
+            .map(|it| get_dimensions(it, child_max))
+            .collect();
+          if sub_dims.iter().all(|d| d == &sub_dims[0]) {
             dims.extend(sub_dims[0].iter());
           }
         }
@@ -233,6 +255,6 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let dims = get_dimensions(&args[0]);
+  let dims = get_dimensions(&args[0], max_level);
   Ok(Expr::List(dims.into_iter().map(Expr::Integer).collect()))
 }
