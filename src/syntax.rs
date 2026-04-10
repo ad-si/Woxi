@@ -497,6 +497,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "RuleDelayed" => Some("\u{F51F}"),
     "DirectedEdge" => Some("\u{F3D1}"),
     "UndirectedEdge" => Some("\u{F3D0}"),
+    "Distributed" => Some("\u{F3D2}"),
     // Dots
     "Ellipsis" => Some("\u{2026}"),
     "CenterEllipsis" => Some("\u{22EF}"),
@@ -631,6 +632,7 @@ fn named_char_to_expr(s: &str) -> Expr {
     // Edge operators (when used as identifiers)
     "DirectedEdge" => "\u{F3D1}",
     "UndirectedEdge" => "\u{F3D0}",
+    "Distributed" => "\u{F3D2}",
     // Unknown: keep original name as identifier
     _ => return Expr::Identifier(name.to_string()),
   };
@@ -3213,6 +3215,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
     "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
     "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
+    "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
     "~~" => 8,          // StringExpression (lower than Alternatives)
@@ -3374,6 +3377,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[UndirectedEdge]" | "\u{F3D0}" => Expr::FunctionCall {
       name: "UndirectedEdge".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "\\[Distributed]" | "\u{F3D2}" => Expr::FunctionCall {
+      name: "Distributed".to_string(),
       args: vec![left.clone(), right.clone()],
     },
     "~~" => {

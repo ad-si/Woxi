@@ -60,7 +60,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" }
+NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" }
 Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -122,6 +122,7 @@ Operator = @{
   | "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
   | "\\[DirectedEdge]" | "\u{F3D1}" // Named character operator: DirectedEdge
   | "\\[UndirectedEdge]" | "\u{F3D0}" // Named character operator: UndirectedEdge
+  | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
   | "/@"     // keep first
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
@@ -391,6 +392,7 @@ ConditionOp = @{
     "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
+  | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
   | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // Comparison, ⩵, ≠
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥

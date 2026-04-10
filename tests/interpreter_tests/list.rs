@@ -4576,6 +4576,44 @@ mod probability {
       "Probability[x > 0]"
     );
   }
+
+  #[test]
+  fn distributed_infix_operator_named_char() {
+    // x \[Distributed] dist should parse as Distributed[x, dist]
+    assert_eq!(
+      interpret(
+        "Probability[x == 3, x \\[Distributed] DiscreteUniformDistribution[{1, 6}]]"
+      )
+      .unwrap(),
+      "1/6"
+    );
+  }
+
+  #[test]
+  fn distributed_infix_operator_unicode() {
+    // The Unicode private-use char \uF3D2 should also work
+    assert_eq!(
+      interpret(
+        "Probability[x == 3, x \u{F3D2} DiscreteUniformDistribution[{1, 6}]]"
+      )
+      .unwrap(),
+      "1/6"
+    );
+  }
+
+  #[test]
+  fn distributed_infix_matches_function_form() {
+    // Both forms must give identical results
+    let named = interpret(
+      "Probability[x == 3, x \\[Distributed] DiscreteUniformDistribution[{1, 6}]]",
+    )
+    .unwrap();
+    let function_form = interpret(
+      "Probability[x == 3, Distributed[x, DiscreteUniformDistribution[{1, 6}]]]",
+    )
+    .unwrap();
+    assert_eq!(named, function_form);
+  }
 }
 
 mod expectation {
