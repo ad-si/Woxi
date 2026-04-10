@@ -255,7 +255,7 @@ pub fn dispatch_math_functions(
     "Mod" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::mod_ast(args));
     }
-    "Quotient" if args.len() == 2 => {
+    "Quotient" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::quotient_ast(args));
     }
     "QuotientRemainder" if args.len() == 2 => {

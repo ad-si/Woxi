@@ -983,6 +983,41 @@ mod exact_value_returns {
   fn quotient_remainder_negative_divisor() {
     assert_eq!(interpret("QuotientRemainder[23, -7]").unwrap(), "{-4, -5}");
   }
+
+  #[test]
+  fn quotient_with_offset_positive() {
+    // Quotient[n, m, d] = Floor[(n - d) / m]
+    // (17 - 3)/5 = 2.8, Floor = 2
+    assert_eq!(interpret("Quotient[17, 5, 3]").unwrap(), "2");
+  }
+
+  #[test]
+  fn quotient_with_offset_one() {
+    assert_eq!(interpret("Quotient[17, 5, 1]").unwrap(), "3");
+  }
+
+  #[test]
+  fn quotient_with_offset_negative_dividend() {
+    // (-17 - 3)/5 = -4, Floor = -4
+    assert_eq!(interpret("Quotient[-17, 5, 3]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn quotient_with_offset_invariant() {
+    // n == Quotient[n, m, d] * m + Mod[n, m, d]
+    assert_eq!(
+      interpret("17 - (Quotient[17, 5, 3] * 5 + Mod[17, 5, 3])").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn quotient_with_offset_rationals() {
+    // Quotient[17/2, 3/2, 1/2] = Floor[((17/2) - (1/2)) / (3/2)]
+    //                         = Floor[8 / (3/2)]
+    //                         = Floor[16/3] = 5
+    assert_eq!(interpret("Quotient[17/2, 3/2, 1/2]").unwrap(), "5");
+  }
 }
 
 mod infinity_arithmetic {
