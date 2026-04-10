@@ -8143,6 +8143,12 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Empty list — echo as-is.
         out_args.push(spec.clone());
       }
+      // Manipulate options like `Initialization :> …`, `TrackedSymbols :> {a}`,
+      // `SaveDefinitions -> True` are passed through unchanged. They are not
+      // variable specifications and must not trigger `Manipulate::vsform`.
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+        out_args.push(spec.clone());
+      }
       _ => {
         // Non-list variable specification: emit Manipulate::vsform
         // message but still return the expression unchanged, matching
@@ -8201,6 +8207,11 @@ pub struct ManipulateSpec {
   /// substituted into a `Block[{…}, body]` for re-evaluation.
   pub body_code: String,
   pub controls: Vec<ManipulateControl>,
+  /// Initialization code from `Initialization :> …`. Runs once before the
+  /// first evaluation of the body so that helper definitions (e.g.
+  /// `d[t_] := …`) are in scope. `None` when the Manipulate has no
+  /// `Initialization` option.
+  pub initialization: Option<String>,
 }
 
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
@@ -8219,13 +8230,33 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
 
   let body_code = crate::syntax::expr_to_input_form(&args[0]);
   let mut controls = Vec::with_capacity(args.len() - 1);
+  let mut initialization: Option<String> = None;
   for spec in &args[1..] {
+    // Options such as `Initialization :> …` or `TrackedSymbols :> …`
+    // are not variable specs; extract what we understand and ignore
+    // the rest rather than failing the whole extraction.
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+    {
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+      {
+        initialization = Some(crate::syntax::expr_to_input_form(replacement));
+      }
+      continue;
+    }
     controls.push(parse_manipulate_control(spec)?);
   }
 
   Some(ManipulateSpec {
     body_code,
     controls,
+    initialization,
   })
 }
 

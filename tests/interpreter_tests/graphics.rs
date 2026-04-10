@@ -5327,6 +5327,30 @@ mod manipulate {
     assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
   }
 
+  #[test]
+  fn initialization_option_is_not_vsform() {
+    // Regression: `Initialization :> …` is a Manipulate option, not a
+    // variable spec, and must not trigger Manipulate::vsform. It echoes
+    // back unchanged, matching wolframscript.
+    assert_eq!(
+      interpret(
+        "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> (d[t_] := 1/(2*-9.8*t^2) + 50)]"
+      )
+      .unwrap(),
+      "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> SetDelayed[d[t_], 1/(2*-9.8*t^2) + 50]]"
+    );
+  }
+
+  #[test]
+  fn tracked_symbols_option_is_not_vsform() {
+    // Rule (`->`) options like TrackedSymbols also pass through cleanly.
+    assert_eq!(
+      interpret("Manipulate[x^2, {x, 0, 10}, SaveDefinitions -> True]")
+        .unwrap(),
+      "Manipulate[x^2, {x, 0, 10}, SaveDefinitions -> True]"
+    );
+  }
+
   // ── Spec extraction / Block substitution (used by Playground / Studio) ──
 
   use woxi::functions::graphics::{
@@ -5360,6 +5384,27 @@ mod manipulate {
       }
       _ => panic!("expected continuous control"),
     }
+  }
+
+  #[test]
+  fn spec_with_initialization_option() {
+    // Regression: `Initialization :> …` previously caused
+    // `parse_manipulate_control` to return None, which made the whole
+    // spec extraction fail. Options must now be separated from controls
+    // and `Initialization` stored alongside the body.
+    let expr = interpret_to_expr(
+      "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> (d[t_] := 1/(2*-9.8*t^2) + 50)]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    let init = spec
+      .initialization
+      .expect("Initialization option should be captured");
+    assert!(
+      init.contains("d[t_]") && init.contains("50"),
+      "unexpected initialization code: {init}"
+    );
   }
 
   #[test]
