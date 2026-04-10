@@ -844,20 +844,79 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Parse origins
-  let origins: Vec<i128> = if args.len() >= 3 {
-    match &args[2] {
+  // Parse per-dimension index ranges. Each entry is (start, step).
+  // Wolfram supports several forms for the origin/range argument:
+  //   Array[f, n]                  → indices 1..n        (start=1, step=1)
+  //   Array[f, n, r]               → indices r..r+n-1    (start=r, step=1)
+  //   Array[f, n, {a, b}]          → n values from a..b  (start=a, step=(b-a)/(n-1))
+  //   Array[f, {n1,...}, {r1,...}] → per-dim origin
+  //   Array[f, {n1,...}, {{a1,b1},...}] → per-dim range
+  let ranges: Vec<(f64, f64)> = if args.len() >= 3 {
+    // Determine if the origin arg is a per-dimension list or a single spec.
+    // For a 1-D array (dims.len()==1), a list of length 2 with integer
+    // elements is ambiguous: treat it as {a, b} (range) rather than two
+    // per-dim origins, matching Wolfram's behaviour.
+    let origin = &args[2];
+    match origin {
+      Expr::List(items)
+        if dims.len() == 1
+          && items.len() == 2
+          && items.iter().all(|i| expr_to_i128(i).is_some()) =>
+      {
+        // Single-dim {a, b} range form
+        let a = expr_to_i128(&items[0]).unwrap() as f64;
+        let b = expr_to_i128(&items[1]).unwrap() as f64;
+        let n = dims[0];
+        let step = if n > 1 {
+          (b - a) / ((n - 1) as f64)
+        } else {
+          0.0
+        };
+        vec![(a, step)]
+      }
       Expr::List(items) => items
         .iter()
-        .map(|item| expr_to_i128(item).unwrap_or(1))
+        .map(|item| {
+          // Each item can be an integer (start) or a 2-list {a, b}
+          if let Some(r) = expr_to_i128(item) {
+            (r as f64, 1.0)
+          } else if let Expr::List(pair) = item {
+            if pair.len() == 2 {
+              let a = expr_to_i128(&pair[0]).unwrap_or(1) as f64;
+              let b = expr_to_i128(&pair[1]).unwrap_or(1) as f64;
+              (a, b - a) // step calculated later using dims
+            } else {
+              (1.0, 1.0)
+            }
+          } else {
+            (1.0, 1.0)
+          }
+        })
+        .enumerate()
+        .map(|(i, (start, raw_step))| {
+          // If the item was a pair, raw_step is (b - a); convert to per-index step
+          if let Some(Expr::List(pair)) = items.get(i)
+            && pair.len() == 2
+            && expr_to_i128(&pair[0]).is_some()
+          {
+            let n = dims[i];
+            let step = if n > 1 {
+              raw_step / ((n - 1) as f64)
+            } else {
+              0.0
+            };
+            return (start, step);
+          }
+          (start, 1.0)
+        })
         .collect(),
       _ => {
-        let o = expr_to_i128(&args[2]).unwrap_or(1);
-        vec![o; dims.len()]
+        let o = expr_to_i128(origin).unwrap_or(1) as f64;
+        vec![(o, 1.0); dims.len()]
       }
     }
   } else {
-    vec![1i128; dims.len()]
+    vec![(1.0, 1.0); dims.len()]
   };
 
   // Parse optional head (4th arg)
@@ -870,18 +929,17 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  // Build the array recursively
+  // Build the array recursively.
+  // `ranges[depth]` is (start, step) — index values are start, start+step, ...
   fn build_array(
     func: &Expr,
     dims: &[i128],
-    origins: &[i128],
+    ranges: &[(f64, f64)],
     depth: usize,
-    indices: &mut Vec<i128>,
+    indices: &mut Vec<Expr>,
   ) -> Result<Expr, InterpreterError> {
     if depth >= dims.len() {
-      // Apply function to indices
-      let index_args: Vec<Expr> =
-        indices.iter().map(|&i| Expr::Integer(i)).collect();
+      let index_args: Vec<Expr> = indices.clone();
       if index_args.len() == 1 {
         apply_func_ast(func, &index_args[0])
       } else {
@@ -903,18 +961,26 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     } else {
       let n = dims[depth];
-      let origin = origins[depth];
+      let (start, step) = ranges[depth];
       let mut items = Vec::new();
       for i in 0..n {
-        indices.push(origin + i);
-        items.push(build_array(func, dims, origins, depth + 1, indices)?);
+        let v = start + step * (i as f64);
+        // Use Integer if the value is a whole number and step is integer-typed;
+        // otherwise use Real.
+        let index_expr = if step.fract() == 0.0 && start.fract() == 0.0 {
+          Expr::Integer(v as i128)
+        } else {
+          Expr::Real(v)
+        };
+        indices.push(index_expr);
+        items.push(build_array(func, dims, ranges, depth + 1, indices)?);
         indices.pop();
       }
       Ok(Expr::List(items))
     }
   }
 
-  let result = build_array(func, &dims, &origins, 0, &mut Vec::new())?;
+  let result = build_array(func, &dims, &ranges, 0, &mut Vec::new())?;
 
   // If head is specified, flatten and wrap with head
   if let Some(h) = head {
