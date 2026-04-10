@@ -4892,3 +4892,66 @@ mod cases_count_level_spec {
     );
   }
 }
+
+mod tally_with_test {
+  use super::*;
+
+  #[test]
+  fn tally_with_integer_tolerance() {
+    // Groups elements equivalent (within 2) to the first representative
+    // they encounter. 10 absorbs 11; 20 absorbs 21 and 22.
+    assert_eq!(
+      interpret(
+        "Tally[{10, 11, 20, 21, 22}, Function[{a, b}, Abs[a - b] < 3]]"
+      )
+      .unwrap(),
+      "{{10, 2}, {20, 3}}"
+    );
+  }
+
+  #[test]
+  fn tally_with_mod_equivalence() {
+    assert_eq!(
+      interpret(
+        "Tally[{1, 2, 3, 4, 5, 6}, Function[{a, b}, Mod[a, 3] == Mod[b, 3]]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 2}, {3, 2}}"
+    );
+  }
+
+  #[test]
+  fn tally_with_sort_equivalence() {
+    assert_eq!(
+      interpret(
+        "Tally[{{1, 2}, {2, 1}, {3, 4}, {4, 3}}, \
+         Function[{a, b}, Sort[a] == Sort[b]]]"
+      )
+      .unwrap(),
+      "{{{1, 2}, 2}, {{3, 4}, 2}}"
+    );
+  }
+
+  #[test]
+  fn tally_with_test_empty_list() {
+    assert_eq!(interpret("Tally[{}, Equal]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn tally_with_named_test() {
+    assert_eq!(
+      interpret("Tally[{1, 2, 3, 4, 5, 6}, EvenQ[#1 - #2] &]").unwrap(),
+      "{{1, 3}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn tally_with_bare_symbol_test() {
+    // Everything passes Equal check only if literally equal, so this
+    // reduces to the plain Tally behavior.
+    assert_eq!(
+      interpret("Tally[{a, b, a, c, b, a}, Equal]").unwrap(),
+      "{{a, 3}, {b, 2}, {c, 1}}"
+    );
+  }
+}

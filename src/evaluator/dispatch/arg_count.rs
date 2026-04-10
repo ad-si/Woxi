@@ -950,7 +950,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "TakeSmallest" => Some((2, 2)),
     "TakeSmallestBy" => Some((3, 3)),
     "TakeWhile" => Some((2, 2)),
-    "Tally" => Some((1, 1)),
+    "Tally" => Some((1, 2)),
     "Tan" => Some((1, 1)),
     "TanDegrees" => Some((1, 1)),
     "Tanh" => Some((1, 1)),

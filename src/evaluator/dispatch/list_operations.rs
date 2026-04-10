@@ -359,6 +359,9 @@ pub fn dispatch_list_operations(
     "Tally" if args.len() == 1 => {
       return Some(list_helpers_ast::tally_ast(&args[0]));
     }
+    "Tally" if args.len() == 2 => {
+      return Some(list_helpers_ast::tally_with_test_ast(&args[0], &args[1]));
+    }
     "Counts" if args.len() == 1 => {
       return Some(list_helpers_ast::counts_ast(&args[0]));
     }

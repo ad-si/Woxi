@@ -41,6 +41,49 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(pairs))
 }
 
+/// AST-based Tally with a custom equivalence test.
+/// Tally[list, test] groups elements using `test[a, b]` to decide
+/// whether `b` joins the group represented by `a` (the first element
+/// seen for that group). Groups are reported in first-seen order.
+pub fn tally_with_test_ast(
+  list: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Tally".to_string(),
+        args: vec![list.clone(), test.clone()],
+      });
+    }
+  };
+
+  // Representatives keep insertion order; parallel counts vector.
+  let mut reps: Vec<Expr> = Vec::new();
+  let mut counts: Vec<i128> = Vec::new();
+
+  'outer: for item in items {
+    for (i, rep) in reps.iter().enumerate() {
+      let result = apply_func_to_two_args(test, rep, item)?;
+      if matches!(result, Expr::Identifier(ref s) if s == "True") {
+        counts[i] += 1;
+        continue 'outer;
+      }
+    }
+    reps.push(item.clone());
+    counts.push(1);
+  }
+
+  let pairs: Vec<Expr> = reps
+    .into_iter()
+    .zip(counts)
+    .map(|(rep, count)| Expr::List(vec![rep, Expr::Integer(count)]))
+    .collect();
+
+  Ok(Expr::List(pairs))
+}
+
 ///// Counts[list] - Returns association of distinct elements with their counts
 /// Counts[{a, b, a, c, b, a}] -> <|a -> 3, b -> 2, c -> 1|>
 pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
