@@ -3150,6 +3150,76 @@ mod dimensions_extended {
   fn function_call_head() {
     assert_eq!(interpret("Dimensions[f[f[a, b, c]]]").unwrap(), "{1, 3}");
   }
+
+  #[test]
+  fn mixed_function_and_list_children() {
+    // Descent requires all children share the parent head, so a function
+    // call with List children should only report the outer dimension.
+    assert_eq!(interpret("Dimensions[f[{1, 2}, {3, 4}]]").unwrap(), "{2}");
+  }
+
+  #[test]
+  fn different_function_head_children() {
+    assert_eq!(interpret("Dimensions[f[g[1, 2], g[3, 4]]]").unwrap(), "{2}");
+  }
+
+  #[test]
+  fn max_level_one_on_flat_list() {
+    assert_eq!(interpret("Dimensions[{1, 2, 3}, 1]").unwrap(), "{3}");
+  }
+
+  #[test]
+  fn max_level_one_on_matrix() {
+    assert_eq!(
+      interpret("Dimensions[{{1, 2, 3}, {4, 5, 6}}, 1]").unwrap(),
+      "{2}"
+    );
+  }
+
+  #[test]
+  fn max_level_two_on_three_deep() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2, 3}, {4, 5, 6}}}, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn max_level_three_on_three_deep() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2, 3}, {4, 5, 6}}}, 3]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn max_level_exceeds_actual_depth() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2, 3}, {4, 5, 6}}}, 10]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn max_level_zero_returns_empty() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2, 3}, {4, 5, 6}}}, 0]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn max_level_on_atom_returns_empty() {
+    assert_eq!(interpret("Dimensions[5, 1]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn ragged_matrix_only_top_dim() {
+    assert_eq!(
+      interpret("Dimensions[{{1, 2}, {3, 4, 5}}, 2]").unwrap(),
+      "{2}"
+    );
+  }
 }
 
 mod transpose_extended {
