@@ -154,6 +154,24 @@ mod string_split_single_arg {
       "{{ba, dc}, {fe}}"
     );
   }
+
+  #[test]
+  fn characters_single_string() {
+    assert_eq!(interpret(r#"Characters["abc"]"#).unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn characters_threads_list() {
+    assert_eq!(
+      interpret(r#"Characters[{"abc", "de"}]"#).unwrap(),
+      "{{a, b, c}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn characters_empty_string() {
+    assert_eq!(interpret(r#"Characters[""]"#).unwrap(), "{}");
+  }
 }
 
 mod string_split_regex {
