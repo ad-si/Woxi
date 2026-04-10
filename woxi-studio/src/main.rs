@@ -309,7 +309,7 @@ impl WoxiStudio {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             output_stale: false,
-            is_collapsed: false,
+            is_collapsed: cell.collapsed,
           });
         }
         CellEntry::Group(group) => {
@@ -390,7 +390,8 @@ impl WoxiStudio {
     while i < self.cell_editors.len() {
       let editor = &self.cell_editors[i];
       let content = editor.content.text().trim_end().to_string();
-      let cell = Cell::new(editor.style, content);
+      let mut cell = Cell::new(editor.style, content);
+      cell.collapsed = editor.is_collapsed;
 
       // Group input cells with their output
       if editor.style == CellStyle::Input {
