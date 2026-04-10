@@ -8367,6 +8367,132 @@ pub fn manipulate_block_code(
   format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
 }
 
+/// Parse a very small JSON object `{"name": "value", …}` where every
+/// value is a string (an InputForm fragment), into an ordered list of
+/// `(name, value)` pairs. Non-string values are coerced to their textual
+/// form. Kept minimal to avoid pulling in a JSON dependency — the caller
+/// (the Playground worker or JupyterLite kernel) always provides string
+/// values on purpose.
+///
+/// Correctly decodes multi-byte UTF-8 in keys and values, so Manipulate
+/// variable names like `ω` or `ϕ` round-trip without being mangled.
+pub fn parse_manipulate_bindings(s: &str) -> Vec<(String, String)> {
+  let bytes = s.as_bytes();
+  let mut i = 0;
+  let mut out: Vec<(String, String)> = Vec::new();
+
+  // Skip leading whitespace and the opening brace.
+  while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+    i += 1;
+  }
+  if i >= bytes.len() || bytes[i] != b'{' {
+    return out;
+  }
+  i += 1;
+
+  loop {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() || bytes[i] == b'}' {
+      break;
+    }
+
+    // Key must be a JSON string.
+    if bytes[i] != b'"' {
+      break;
+    }
+    let (key, next) = match parse_json_string(bytes, i) {
+      Some(v) => v,
+      None => break,
+    };
+    i = next;
+
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() || bytes[i] != b':' {
+      break;
+    }
+    i += 1;
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() {
+      break;
+    }
+
+    // Value: string, number, true/false, or null. We stringify each.
+    let (value, next) = if bytes[i] == b'"' {
+      match parse_json_string(bytes, i) {
+        Some(v) => v,
+        None => break,
+      }
+    } else {
+      let start = i;
+      while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' {
+        i += 1;
+      }
+      let slice = s[start..i].trim().to_string();
+      (slice, i)
+    };
+    i = next;
+    out.push((key, value));
+
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b',' {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+
+  out
+}
+
+/// Parse a JSON string literal starting at `start` (which must point at
+/// an opening `"`). Returns the decoded string and the index after the
+/// closing quote.
+///
+/// Non-escaped, non-quote bytes are accumulated verbatim and decoded as
+/// UTF-8 at the end, so multi-byte characters (e.g. Greek letters used
+/// as Manipulate variable names like `ω` or `ϕ`) round-trip correctly.
+fn parse_json_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+  if start >= bytes.len() || bytes[start] != b'"' {
+    return None;
+  }
+  let mut i = start + 1;
+  let mut out: Vec<u8> = Vec::new();
+  while i < bytes.len() {
+    let c = bytes[i];
+    if c == b'"' {
+      return String::from_utf8(out).ok().map(|s| (s, i + 1));
+    }
+    if c == b'\\' && i + 1 < bytes.len() {
+      let esc = bytes[i + 1];
+      match esc {
+        b'"' => out.push(b'"'),
+        b'\\' => out.push(b'\\'),
+        b'/' => out.push(b'/'),
+        b'n' => out.push(b'\n'),
+        b'r' => out.push(b'\r'),
+        b't' => out.push(b'\t'),
+        b'b' => out.push(0x08),
+        b'f' => out.push(0x0C),
+        // Unicode escapes and others: pass through raw (best-effort).
+        _ => out.push(esc),
+      }
+      i += 2;
+      continue;
+    }
+    out.push(c);
+    i += 1;
+  }
+  None
+}
+
 /// JSON-escape a string. Shared with the wasm output builder but kept
 /// private here so `ManipulateSpec` can be serialized without pulling in
 /// an extra dependency.
