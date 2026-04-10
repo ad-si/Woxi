@@ -825,44 +825,92 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StringRiffle[list] or StringRiffle[list, sep] or StringRiffle[list, {left, sep, right}]
+/// or StringRiffle[list, sep_outer, sep_inner, ...] for nested lists.
 pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "StringRiffle expects 1 or 2 arguments".into(),
+      "StringRiffle expects at least 1 argument".into(),
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "StringRiffle: first argument must be a list".into(),
-      ));
-    }
+  if !matches!(&args[0], Expr::List(_)) {
+    return Err(InterpreterError::EvaluationError(
+      "StringRiffle: first argument must be a list".into(),
+    ));
+  }
+
+  // Build the effective separator list. If none provided, use defaults
+  // matching the nesting depth of the input: innermost " ", then "\n",
+  // then "\n\n", "\n\n\n", ...
+  let owned_default_seps: Vec<Expr>;
+  let sep_slice: &[Expr] = if args.len() == 1 {
+    let depth = list_depth(&args[0]);
+    owned_default_seps = (0..depth)
+      .rev()
+      .map(|i| match i {
+        0 => Expr::String(" ".to_string()),
+        n => Expr::String("\n".repeat(n)),
+      })
+      .collect();
+    &owned_default_seps
+  } else {
+    &args[1..]
   };
 
-  let strings: Result<Vec<String>, _> = items.iter().map(expr_to_str).collect();
-  let strings = strings?;
+  let result = string_riffle_recursive(&args[0], sep_slice)?;
+  Ok(Expr::String(result))
+}
 
-  if args.len() == 2 {
-    // Check for {left, sep, right} form
-    if let Expr::List(sep_parts) = &args[1]
-      && sep_parts.len() == 3
-    {
-      let left = expr_to_str(&sep_parts[0])?;
-      let sep = expr_to_str(&sep_parts[1])?;
-      let right = expr_to_str(&sep_parts[2])?;
-      return Ok(Expr::String(format!(
-        "{}{}{}",
-        left,
-        strings.join(&sep),
-        right
-      )));
+/// Returns the maximum nesting depth of Lists in `expr`.
+/// A non-list has depth 0; `{a, b}` (atoms) has depth 1; `{{a}}` has depth 2.
+fn list_depth(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => 1 + items.iter().map(list_depth).max().unwrap_or(0),
+    _ => 0,
+  }
+}
+
+/// Renders `expr` as a plain string, stripping quotes from string children.
+/// Lists are rendered as `{a, b, c}` with elements separated by `", "`.
+fn expr_to_plain_string(expr: &Expr) -> String {
+  match expr {
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_plain_string).collect();
+      format!("{{{}}}", parts.join(", "))
     }
-    let sep = expr_to_str(&args[1])?;
-    Ok(Expr::String(strings.join(&sep)))
-  } else {
-    Ok(Expr::String(strings.join(" ")))
+    _ => {
+      expr_to_str(expr).unwrap_or_else(|_| crate::syntax::expr_to_string(expr))
+    }
+  }
+}
+
+/// Recursively riffle `expr` using `seps` as the separator stack from outer
+/// to inner. When `seps` runs out, non-list elements are stringified and
+/// list elements are rendered with plain list notation.
+fn string_riffle_recursive(
+  expr: &Expr,
+  seps: &[Expr],
+) -> Result<String, InterpreterError> {
+  match expr {
+    Expr::List(items) if !seps.is_empty() => {
+      // Parse the current separator: either a string or a {left, sep, right}
+      // triple.
+      let (left, sep, right) = match &seps[0] {
+        Expr::List(triple) if triple.len() == 3 => (
+          expr_to_str(&triple[0])?,
+          expr_to_str(&triple[1])?,
+          expr_to_str(&triple[2])?,
+        ),
+        other => (String::new(), expr_to_str(other)?, String::new()),
+      };
+      let rest = &seps[1..];
+      let parts: Result<Vec<String>, _> = items
+        .iter()
+        .map(|it| string_riffle_recursive(it, rest))
+        .collect();
+      Ok(format!("{}{}{}", left, parts?.join(&sep), right))
+    }
+    _ => Ok(expr_to_plain_string(expr)),
   }
 }
 

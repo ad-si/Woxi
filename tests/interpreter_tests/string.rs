@@ -1123,6 +1123,62 @@ mod string_riffle_extended {
       "a, b, c"
     );
   }
+
+  #[test]
+  fn nested_default_separators() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{{"a", "b"}, {"c", "d"}}]"#).unwrap(),
+      "a b\nc d"
+    );
+  }
+
+  #[test]
+  fn nested_explicit_separators() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{{"a", "b"}, {"c", "d"}}, "\n", " "]"#)
+        .unwrap(),
+      "a b\nc d"
+    );
+  }
+
+  #[test]
+  fn nested_three_by_two() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{{"a","b","c"},{"d","e","f"}}, "; ", ", "]"#)
+        .unwrap(),
+      "a, b, c; d, e, f"
+    );
+  }
+
+  #[test]
+  fn nested_with_brackets_on_outer() {
+    assert_eq!(
+      interpret(
+        r#"StringRiffle[{{"a", "b"}, {"c", "d"}}, {"[", "|", "]"}, "-"]"#
+      )
+      .unwrap(),
+      "[a-b|c-d]"
+    );
+  }
+
+  #[test]
+  fn nested_with_integers() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{{1, 2, 3}, {4, 5, 6}}, "\n", " "]"#).unwrap(),
+      "1 2 3\n4 5 6"
+    );
+  }
+
+  #[test]
+  fn triple_nested_default_separators() {
+    assert_eq!(
+      interpret(
+        r#"StringRiffle[{{{"a","b"},{"c","d"}},{{"e","f"},{"g","h"}}}]"#
+      )
+      .unwrap(),
+      "a b\nc d\n\ne f\ng h"
+    );
+  }
 }
 
 mod palindrome_q {

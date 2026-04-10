@@ -51,7 +51,7 @@ pub fn dispatch_string_functions(
     "Characters" if args.len() == 1 => {
       return Some(crate::functions::string_ast::characters_ast(args));
     }
-    "StringRiffle" if !args.is_empty() && args.len() <= 2 => {
+    "StringRiffle" if !args.is_empty() => {
       return Some(crate::functions::string_ast::string_riffle_ast(args));
     }
     "StringPosition" if args.len() == 2 || args.len() == 3 => {
