@@ -818,6 +818,14 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Characters expects exactly 1 argument".into(),
     ));
   }
+  // Thread over lists like Wolfram does.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| characters_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   let chars: Vec<Expr> =
     s.chars().map(|c| Expr::String(c.to_string())).collect();
