@@ -1653,12 +1653,16 @@ pub fn evaluate_expr_to_expr_inner(
         }
       }
 
-      // Check if any index is All — use apply_part_indices path only when needed
-      let has_all = indices
-        .iter()
-        .any(|idx| matches!(idx, Expr::Identifier(s) if s == "All"));
+      // Check if any index needs the recursive apply_part_indices path:
+      // - `All` always needs it (even alone, to return the expression itself)
+      // - `List` indices in non-last position need it (to map remaining
+      //   indices over each extracted element rather than extract sequentially)
+      let needs_mapping = indices.iter().enumerate().any(|(i, idx)| {
+        matches!(idx, Expr::Identifier(s) if s == "All")
+          || (i + 1 < indices.len() && matches!(idx, Expr::List(_)))
+      });
 
-      let result = if has_all {
+      let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         let base_val = eval_part_base(base_expr)?;
         apply_part_indices(&base_val, &indices)?

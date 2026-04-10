@@ -1100,6 +1100,38 @@ mod part_extraction {
   fn all_evaluates_to_itself() {
     assert_eq!(interpret("All").unwrap(), "All");
   }
+
+  #[test]
+  fn part_list_of_rows_then_column() {
+    // Regression: Part[matrix, {i1, i2}, j] should extract column j
+    // from rows i1 and i2, not apply `j` to the result of selecting rows.
+    assert_eq!(
+      interpret("{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}[[{1, 3}, 2]]").unwrap(),
+      "{2, 8}"
+    );
+    assert_eq!(
+      interpret("{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}[[{1, 3}, 1]]").unwrap(),
+      "{1, 7}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_rows_then_list_of_columns() {
+    // Regression: Part[matrix, {i1, i2}, {j1, j2}] should give a sub-matrix
+    assert_eq!(
+      interpret("{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}[[{1, 3}, {1, 2}]]").unwrap(),
+      "{{1, 2}, {7, 8}}"
+    );
+  }
+
+  #[test]
+  fn part_list_of_rows_only() {
+    // Single List index still works
+    assert_eq!(
+      interpret("{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}[[{1, 3}]]").unwrap(),
+      "{{1, 2, 3}, {7, 8, 9}}"
+    );
+  }
 }
 
 mod length_function {

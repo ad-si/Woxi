@@ -157,6 +157,19 @@ pub fn apply_part_indices(
       }
       _ => apply_part_indices(expr, rest),
     }
+  } else if let Expr::List(sub_indices) = idx {
+    // Part[expr, {i1, i2, ...}, rest...] → {Part[expr, i1, rest...], ...}
+    // (map remaining indices over each extracted element, like All does)
+    if rest.is_empty() {
+      let extracted = extract_part_ast(expr, idx)?;
+      return Ok(extracted);
+    }
+    let mut results = Vec::with_capacity(sub_indices.len());
+    for sub_idx in sub_indices {
+      let extracted = extract_part_ast(expr, sub_idx)?;
+      results.push(apply_part_indices(&extracted, rest)?);
+    }
+    Ok(Expr::List(results))
   } else {
     // Normal index: extract, then continue with remaining indices
     let extracted = extract_part_ast(expr, idx)?;
