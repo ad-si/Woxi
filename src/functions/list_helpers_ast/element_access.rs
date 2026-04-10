@@ -730,8 +730,55 @@ pub fn insert_ast(
     }
   };
 
-  let n = match expr_to_i128(pos) {
-    Some(n) => n,
+  let len = items.len() as i128;
+
+  // Collect all insertion positions. Supports:
+  //   - Integer:              Insert[list, x, 2]
+  //   - {n}:                  Insert[list, x, {2}]     (single-level position)
+  //   - {{p1}, {p2}, ...}:    Insert[list, x, {{2}, {4}}]  (multiple positions)
+  let positions: Vec<i128> = match pos {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      vec![expr_to_i128(pos).unwrap()]
+    }
+    Expr::List(inner) => {
+      // Two shapes:
+      // {n}          — single position at top level
+      // {{p1}, ...}  — list of (top-level) positions
+      if inner.iter().all(|i| matches!(i, Expr::List(_))) && !inner.is_empty() {
+        let mut ps = Vec::with_capacity(inner.len());
+        for sub in inner {
+          if let Expr::List(sub_items) = sub {
+            if sub_items.len() != 1 {
+              return Err(InterpreterError::EvaluationError(
+                "Insert: nested position specs are not supported".into(),
+              ));
+            }
+            match expr_to_i128(&sub_items[0]) {
+              Some(n) => ps.push(n),
+              None => {
+                return Err(InterpreterError::EvaluationError(
+                  "Insert: position must be an integer".into(),
+                ));
+              }
+            }
+          }
+        }
+        ps
+      } else if inner.len() == 1 {
+        match expr_to_i128(&inner[0]) {
+          Some(n) => vec![n],
+          None => {
+            return Err(InterpreterError::EvaluationError(
+              "Insert: position must be an integer".into(),
+            ));
+          }
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Insert: position must be an integer".into(),
+        ));
+      }
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Insert: position must be an integer".into(),
@@ -739,33 +786,40 @@ pub fn insert_ast(
     }
   };
 
-  let len = items.len() as i128;
-
-  // Handle positive and negative indices
-  let insert_pos = if n > 0 {
-    let pos = (n - 1) as usize;
-    if pos > items.len() {
+  // Normalize each position to a 0-based insert index into the ORIGINAL list.
+  // Wolfram semantics: when multiple positions are given they all refer to
+  // positions in the original list, not the list as it grows.
+  let mut insert_indices: Vec<usize> = Vec::with_capacity(positions.len());
+  for n in &positions {
+    let idx = if *n > 0 {
+      let p = (*n - 1) as usize;
+      if p > items.len() {
+        return Err(InterpreterError::EvaluationError(
+          "Insert: position out of bounds".into(),
+        ));
+      }
+      p
+    } else if *n < 0 {
+      if *n < -(len + 1) {
+        return Err(InterpreterError::EvaluationError(
+          "Insert: position out of bounds".into(),
+        ));
+      }
+      (len + 1 + *n) as usize
+    } else {
       return Err(InterpreterError::EvaluationError(
-        "Insert: position out of bounds".into(),
+        "Insert: position cannot be 0".into(),
       ));
-    }
-    pos
-  } else if n < 0 {
-    let pos = (len + 1 + n) as usize;
-    if n < -(len + 1) {
-      return Err(InterpreterError::EvaluationError(
-        "Insert: position out of bounds".into(),
-      ));
-    }
-    pos
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "Insert: position cannot be 0".into(),
-    ));
-  };
+    };
+    insert_indices.push(idx);
+  }
 
+  // Insert from rightmost to leftmost so earlier indices stay valid.
+  insert_indices.sort_unstable();
   let mut result = items;
-  result.insert(insert_pos, elem.clone());
+  for idx in insert_indices.into_iter().rev() {
+    result.insert(idx, elem.clone());
+  }
   Ok(Expr::List(result))
 }
 
