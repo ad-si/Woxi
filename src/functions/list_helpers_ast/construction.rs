@@ -982,21 +982,28 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let result = build_array(func, &dims, &ranges, 0, &mut Vec::new())?;
 
-  // If head is specified, flatten and wrap with head
+  // If a custom head is specified, replace List at every level of the
+  // generated result with that head and evaluate the substituted
+  // expression. When head == "List" this is a no-op.
   if let Some(h) = head {
-    fn collect_leaves(expr: &Expr, leaves: &mut Vec<Expr>) {
-      match expr {
-        Expr::List(items) => {
-          for item in items {
-            collect_leaves(item, leaves);
+    if h == "List" {
+      Ok(result)
+    } else {
+      fn replace_list_head(
+        expr: &Expr,
+        head: &str,
+      ) -> Result<Expr, InterpreterError> {
+        match expr {
+          Expr::List(items) => {
+            let new_items: Result<Vec<Expr>, InterpreterError> =
+              items.iter().map(|it| replace_list_head(it, head)).collect();
+            crate::evaluator::evaluate_function_call_ast(head, &new_items?)
           }
+          _ => Ok(expr.clone()),
         }
-        _ => leaves.push(expr.clone()),
       }
+      replace_list_head(&result, h)
     }
-    let mut leaves = Vec::new();
-    collect_leaves(&result, &mut leaves);
-    crate::evaluator::evaluate_function_call_ast(h, &leaves)
   } else {
     Ok(result)
   }
