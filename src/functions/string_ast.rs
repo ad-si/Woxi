@@ -186,6 +186,16 @@ pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringDrop expects exactly 2 arguments".into(),
     ));
   }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0]
+    && items.iter().all(|it| matches!(it, Expr::String(_)))
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| string_drop_ast(&[item.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
