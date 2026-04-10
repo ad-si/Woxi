@@ -48,6 +48,10 @@ pub struct CellGroup {
 pub struct Cell {
   pub style: CellStyle,
   pub content: String,
+  /// For Chapter/Subchapter cells: whether the section is collapsed
+  /// (hiding all cells below it until the next same-or-higher heading).
+  /// Persisted as a `CellOpen -> False` option in the `.nb` file.
+  pub collapsed: bool,
 }
 
 /// The style/type of a cell.
@@ -243,19 +247,51 @@ fn parse_single_cell(s: &str) -> Result<Cell, String> {
     return Ok(Cell {
       style: CellStyle::Text,
       content,
+      collapsed: false,
     });
   }
 
-  let style_str = parts.last().unwrap().trim();
+  // The style string is the first part that parses as a valid style
+  // after the content. Any remaining parts after that are options
+  // (e.g. `CellOpen -> False`).
+  let mut style_idx = None;
+  for (i, part) in parts.iter().enumerate().skip(1) {
+    let trimmed = part.trim().trim_matches('"').trim();
+    if CellStyle::from_str(trimmed).is_some() {
+      style_idx = Some(i);
+      break;
+    }
+  }
+  let style_idx = style_idx.unwrap_or(parts.len() - 1);
+
+  let style_str = parts[style_idx].trim();
   let style_str = style_str.trim_matches('"').trim();
   let style = CellStyle::from_str(style_str).unwrap_or(CellStyle::Text);
 
-  // Join all parts except the last as the content
-  let content_parts = &parts[..parts.len() - 1];
+  // Parts before the style are the content.
+  let content_parts = &parts[..style_idx];
   let raw_content = content_parts.join(",");
   let content = extract_cell_content(&raw_content);
 
-  Ok(Cell { style, content })
+  // Parts after the style are options.
+  let mut collapsed = false;
+  for opt in &parts[style_idx + 1..] {
+    if is_cell_open_false(opt) {
+      collapsed = true;
+    }
+  }
+
+  Ok(Cell {
+    style,
+    content,
+    collapsed,
+  })
+}
+
+/// Does this option-expression set `CellOpen -> False`?
+fn is_cell_open_false(s: &str) -> bool {
+  let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+  s == "CellOpen->False"
 }
 
 /// Extract cell content from BoxData[...] or a quoted string.
@@ -479,6 +515,15 @@ impl fmt::Display for CellGroup {
 
 impl fmt::Display for Cell {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    // Options that apply to any cell style.
+    let options = if self.collapsed
+      && matches!(self.style, CellStyle::Chapter | CellStyle::Subchapter)
+    {
+      ", CellOpen -> False"
+    } else {
+      ""
+    };
+
     match self.style {
       CellStyle::Input | CellStyle::Code => {
         // For input cells, wrap content in BoxData
@@ -486,9 +531,10 @@ impl fmt::Display for Cell {
         if lines.len() <= 1 {
           write!(
             f,
-            "Cell[BoxData[\"{}\"], \"{}\"]",
+            "Cell[BoxData[\"{}\"], \"{}\"{}]",
             escape_string(&self.content),
-            self.style
+            self.style,
+            options
           )
         } else {
           // Multi-line: use RowBox with \n separators
@@ -499,24 +545,26 @@ impl fmt::Display for Cell {
             }
             write!(f, "\"{}\"", escape_string(line))?;
           }
-          write!(f, "}}]], \"{}\"]", self.style)
+          write!(f, "}}]], \"{}\"{}]", self.style, options)
         }
       }
       CellStyle::Output | CellStyle::Print => {
         write!(
           f,
-          "Cell[BoxData[\"{}\"], \"{}\"]",
+          "Cell[BoxData[\"{}\"], \"{}\"{}]",
           escape_string(&self.content),
-          self.style
+          self.style,
+          options
         )
       }
       _ => {
         // Text-style cells: Cell["content", "Style"]
         write!(
           f,
-          "Cell[\"{}\", \"{}\"]",
+          "Cell[\"{}\", \"{}\"{}]",
           escape_string(&self.content),
-          self.style
+          self.style,
+          options
         )
       }
     }
@@ -569,6 +617,7 @@ impl Cell {
     Cell {
       style,
       content: content.into(),
+      collapsed: false,
     }
   }
 }
@@ -1287,6 +1336,88 @@ Cell["A subitem", "Subitem"]
     assert_eq!(escape_json("a\\b"), "a\\\\b");
     assert_eq!(escape_json("a\nb"), "a\\nb");
     assert_eq!(escape_json("a\tb"), "a\\tb");
+  }
+
+  #[test]
+  fn test_collapsed_chapter_serializes_cell_open_false() {
+    let mut nb = Notebook::new();
+    let mut chapter = Cell::new(CellStyle::Chapter, "Intro");
+    chapter.collapsed = true;
+    nb.push_cell(chapter);
+    nb.push_cell(Cell::new(CellStyle::Subchapter, "Details"));
+
+    let serialized = nb.to_string();
+    assert!(
+      serialized.contains("\"Chapter\", CellOpen -> False"),
+      "expected CellOpen -> False on collapsed chapter, got: {serialized}"
+    );
+    // Non-collapsed subchapter must NOT have the option.
+    assert!(!serialized.contains("\"Subchapter\", CellOpen -> False"));
+  }
+
+  #[test]
+  fn test_collapsed_flag_roundtrips() {
+    let mut nb = Notebook::new();
+    let mut chapter = Cell::new(CellStyle::Chapter, "Chapter 1");
+    chapter.collapsed = true;
+    nb.push_cell(chapter);
+    let mut subchapter = Cell::new(CellStyle::Subchapter, "Sub 1.1");
+    subchapter.collapsed = true;
+    nb.push_cell(subchapter);
+    nb.push_cell(Cell::new(CellStyle::Chapter, "Chapter 2"));
+
+    let serialized = nb.to_string();
+    let reparsed = parse_notebook(&serialized).unwrap();
+    assert_eq!(reparsed.cells.len(), 3);
+
+    let collapsed_states: Vec<bool> = reparsed
+      .cells
+      .iter()
+      .filter_map(|e| match e {
+        CellEntry::Single(c) => Some(c.collapsed),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(collapsed_states, vec![true, true, false]);
+  }
+
+  #[test]
+  fn test_non_heading_cells_do_not_emit_cell_open() {
+    // Even if the flag is true on a non-heading cell, we don't emit
+    // the option — collapse only applies to Chapter/Subchapter.
+    let mut nb = Notebook::new();
+    let mut text = Cell::new(CellStyle::Text, "hi");
+    text.collapsed = true;
+    nb.push_cell(text);
+
+    let serialized = nb.to_string();
+    assert!(!serialized.contains("CellOpen"));
+  }
+
+  #[test]
+  fn test_parse_cell_with_cell_open_option() {
+    let nb = r#"Notebook[{
+Cell["Chapter 1", "Chapter", CellOpen -> False],
+Cell["Chapter 2", "Chapter"]
+}]"#;
+
+    let parsed = parse_notebook(nb).unwrap();
+    assert_eq!(parsed.cells.len(), 2);
+
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Chapter);
+        assert_eq!(cell.content, "Chapter 1");
+        assert!(cell.collapsed);
+      }
+      _ => panic!("Expected single cell"),
+    }
+    match &parsed.cells[1] {
+      CellEntry::Single(cell) => {
+        assert!(!cell.collapsed);
+      }
+      _ => panic!("Expected single cell"),
+    }
   }
 
   #[test]
