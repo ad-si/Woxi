@@ -1423,13 +1423,44 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Unitize[x] - returns 0 for 0, 1 for anything else
+/// Unitize[x, dx] - returns 0 when |x| < dx, 1 otherwise
 /// Unitize[list] - maps over lists
 pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Unitize expects exactly 1 argument".into(),
+      "Unitize expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Two-argument form: Unitize[x, dx]
+  if args.len() == 2 {
+    // Thread over lists in the first argument.
+    if let Expr::List(items) = &args[0] {
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|x| unitize_ast(&[x.clone(), args[1].clone()]))
+        .collect();
+      return Ok(Expr::List(results?));
+    }
+
+    let x_val =
+      crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0]);
+    let tol_val =
+      crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[1]);
+    if let (Some(x), Some(tol)) = (x_val, tol_val) {
+      if x.abs() < tol {
+        return Ok(Expr::Integer(0));
+      }
+      return Ok(Expr::Integer(1));
+    }
+
+    // Non-numeric arguments remain unevaluated.
+    return Ok(Expr::FunctionCall {
+      name: "Unitize".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     Expr::Integer(_) => Ok(Expr::Integer(1)),

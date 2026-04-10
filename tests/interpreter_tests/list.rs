@@ -1432,6 +1432,35 @@ mod unitize {
   fn unitize_nonzero() {
     assert_eq!(interpret("Unitize[42]").unwrap(), "1");
   }
+
+  #[test]
+  fn unitize_within_tolerance_is_zero() {
+    assert_eq!(interpret("Unitize[0.0001, 0.001]").unwrap(), "0");
+  }
+
+  #[test]
+  fn unitize_outside_tolerance_is_one() {
+    assert_eq!(interpret("Unitize[0.01, 0.001]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unitize_negative_within_tolerance() {
+    assert_eq!(interpret("Unitize[-0.005, 0.01]").unwrap(), "0");
+  }
+
+  #[test]
+  fn unitize_list_with_tolerance() {
+    assert_eq!(
+      interpret("Unitize[{-0.001, 0.005, 0.02}, 0.01]").unwrap(),
+      "{0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn unitize_rational_tolerance() {
+    // 1/100 < 1/10, so should be 0
+    assert_eq!(interpret("Unitize[1/100, 1/10]").unwrap(), "0");
+  }
 }
 
 mod ramp {

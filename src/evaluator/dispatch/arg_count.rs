@@ -996,7 +996,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Unique" => Some((0, 1)),
     "UnitaryMatrixQ" => Some((1, 1)),
     "UnitBox" => Some((1, 1)),
-    "Unitize" => Some((1, 1)),
+    "Unitize" => Some((1, 2)),
     "UnitStep" => Some((1, usize::MAX)),
     "UnitTriangle" => Some((1, 1)),
     "UnitVector" => Some((1, 2)),
