@@ -1990,6 +1990,27 @@ fn match_pattern_impl(
         None
       }
     }
+    // Except[c] - matches anything that doesn't match c
+    // Except[c, pattern] - matches pattern but not c
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Except"
+      && (pat_args.len() == 1 || pat_args.len() == 2) =>
+    {
+      if pat_args.len() == 2 {
+        // Except[c, pattern]: pattern must match, c must NOT match
+        if match_pattern(expr, &pat_args[0]).is_some() {
+          None
+        } else {
+          match_pattern(expr, &pat_args[1])
+        }
+      } else if match_pattern(expr, &pat_args[0]).is_some() {
+        None
+      } else {
+        Some(vec![])
+      }
+    }
     // Condition[pattern, test] - matches if pattern matches AND test evaluates to True
     Expr::FunctionCall {
       name: pat_name,
