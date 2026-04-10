@@ -1133,11 +1133,52 @@ pub fn floor_div(a: i128, b: i128) -> i128 {
 
 /// Quotient[a, b] - Integer quotient
 pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Quotient expects exactly 2 arguments".into(),
-    ));
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Quotient expects 2 or 3 arguments; {} given",
+      args.len()
+    )));
   }
+
+  // 3-argument form: Quotient[n, m, d] = Floor[(n - d) / m]
+  if args.len() == 3 {
+    if let (Some((nn, nd)), Some((mn, md)), Some((dn, dd))) = (
+      try_as_rational(&args[0]),
+      try_as_rational(&args[1]),
+      try_as_rational(&args[2]),
+    ) {
+      if mn == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Quotient: division by zero".into(),
+        ));
+      }
+      // (n - d) = (nn*dd - dn*nd) / (nd*dd)
+      let diff_n = nn * dd - dn * nd;
+      let diff_d = nd * dd;
+      // (n - d) / m = (diff_n * md) / (diff_d * mn)
+      let q_n = diff_n * md;
+      let q_d = diff_d * mn;
+      return Ok(Expr::Integer(floor_div(q_n, q_d)));
+    }
+    if let (Some(a), Some(b), Some(c)) = (
+      try_eval_to_f64(&args[0]),
+      try_eval_to_f64(&args[1]),
+      try_eval_to_f64(&args[2]),
+    ) {
+      if b == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Quotient: division by zero".into(),
+        ));
+      }
+      return Ok(Expr::Integer(((a - c) / b).floor() as i128));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Quotient".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // 2-argument form: Quotient[n, m] = Floor[n / m]
   match (&args[0], &args[1]) {
     (Expr::Integer(a), Expr::Integer(b)) => {
       if *b == 0 {

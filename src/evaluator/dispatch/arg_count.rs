@@ -768,7 +768,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "QuantityUnit" => Some((1, 1)),
     "Quartiles" => Some((1, 1)),
     "Quiet" => Some((1, 3)),
-    "Quotient" => Some((2, 2)),
+    "Quotient" => Some((2, 3)),
     "QuotientRemainder" => Some((2, 2)),
     "Ramp" => Some((1, 1)),
     "RandomChoice" => Some((1, 2)),
