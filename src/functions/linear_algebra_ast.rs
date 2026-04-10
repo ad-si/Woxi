@@ -266,6 +266,28 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(result));
   }
 
+  // Vector . Matrix → vector (treat vector as a row)
+  if let (Some(va), Some(mb)) =
+    (expr_to_vector(&args[0]), expr_to_matrix(&args[1]))
+  {
+    let b_rows = mb.len();
+    if va.len() != b_rows {
+      return Err(InterpreterError::EvaluationError(
+        "Dot: incompatible dimensions".into(),
+      ));
+    }
+    let b_cols = mb.first().map(|r| r.len()).unwrap_or(0);
+    let mut result = Vec::with_capacity(b_cols);
+    for j in 0..b_cols {
+      let mut sum = Expr::Integer(0);
+      for i in 0..b_rows {
+        sum = eval_add(&sum, &eval_mul(&va[i], &mb[i][j]));
+      }
+      result.push(sum);
+    }
+    return Ok(Expr::List(result));
+  }
+
   // Matrix . Matrix → matrix
   if let (Some(ma), Some(mb)) =
     (expr_to_matrix(&args[0]), expr_to_matrix(&args[1]))
