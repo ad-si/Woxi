@@ -166,27 +166,16 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // If all numeric and no Reals/BigFloats, use exact rational arithmetic
+  // If all numeric and no Reals/BigFloats, use exact rational arithmetic.
+  // Uses Coeff::add which transparently promotes to BigInt on i128 overflow.
   if all_numeric && !has_real && !has_bigfloat {
-    // Sum as exact rational: (numer, denom)
-    let mut sum_n: i128 = 0;
-    let mut sum_d: i128 = 1;
+    let mut sum = Coeff::Exact(0, 1);
     for arg in &flat_args {
       if let Some((n, d)) = expr_to_rational(arg) {
-        // sum_n/sum_d + n/d = (sum_n*d + n*sum_d) / (sum_d*d)
-        sum_n = sum_n * d + n * sum_d;
-        sum_d *= d;
-        let g = gcd(sum_n, sum_d);
-        sum_n /= g;
-        sum_d /= g;
-        // Keep denom positive
-        if sum_d < 0 {
-          sum_n = -sum_n;
-          sum_d = -sum_d;
-        }
+        sum = sum.add(&Coeff::Exact(n, d));
       }
     }
-    return Ok(make_rational(sum_n, sum_d));
+    return Ok(sum.to_expr());
   }
 
   // If all numeric with BigFloat (no machine Real), use precision-tracked arithmetic
@@ -209,22 +198,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Separate numeric and symbolic terms
     let mut symbolic_args: Vec<Expr> = Vec::new();
     let mut has_exact = false;
-    let mut sum_n: i128 = 0;
-    let mut sum_d: i128 = 1;
+    let mut exact_sum = Coeff::Exact(0, 1);
     let mut real_sum: f64 = 0.0;
     let mut has_real_term = false;
 
     for arg in &flat_args {
       if let Some((n, d)) = expr_to_rational(arg) {
-        sum_n = sum_n * d + n * sum_d;
-        sum_d *= d;
-        let g = gcd(sum_n, sum_d);
-        sum_n /= g;
-        sum_d /= g;
-        if sum_d < 0 {
-          sum_n = -sum_n;
-          sum_d = -sum_d;
-        }
+        // Coeff::add promotes to BigInt on i128 overflow.
+        exact_sum = exact_sum.add(&Coeff::Exact(n, d));
         has_exact = true;
       } else if let Expr::Real(f) = arg {
         real_sum += f;
@@ -239,14 +220,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // If we have both exact and real, convert exact to f64 and combine
     if has_exact && has_real_term {
-      let total = (sum_n as f64) / (sum_d as f64) + real_sum;
+      let total = exact_sum.to_f64() + real_sum;
       if total != 0.0 {
         final_args.push(Expr::Real(total));
       }
     } else if has_real_term && real_sum != 0.0 {
       final_args.push(Expr::Real(real_sum));
-    } else if has_exact && sum_n != 0 {
-      final_args.push(make_rational(sum_n, sum_d));
+    } else if has_exact && !exact_sum.is_zero() {
+      final_args.push(exact_sum.to_expr());
     }
 
     // Collect like terms: group symbolic terms by their base expression
@@ -2826,8 +2807,48 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Exact arithmetic: combine integer * rational
-  // Result is (int_product * rat_numer) / rat_denom
-  let combined_numer = int_product * rat_numer;
+  // Result is (int_product * rat_numer) / rat_denom.
+  // Fall back to BigInt arithmetic if the final multiply overflows.
+  let combined_numer = match int_product.checked_mul(rat_numer) {
+    Some(v) => v,
+    None => {
+      use num_bigint::BigInt;
+      let big_numer = BigInt::from(int_product) * BigInt::from(rat_numer);
+      let big_denom = BigInt::from(rat_denom);
+      let g = bigint_gcd(&big_numer, &big_denom);
+      let mut sn = big_numer / &g;
+      let mut sd = big_denom / g;
+      if sd < BigInt::from(0) {
+        sn = -sn;
+        sd = -sd;
+      }
+      let coeff_expr = {
+        use num_traits::One;
+        if sd.is_one() {
+          bigint_to_expr(sn)
+        } else {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![bigint_to_expr(sn), bigint_to_expr(sd)],
+          }
+        }
+      };
+      if symbolic_args.is_empty() {
+        return Ok(coeff_expr);
+      }
+      let mut final_args = vec![coeff_expr];
+      symbolic_args = combine_like_bases(symbolic_args)?;
+      sort_symbolic_factors(&mut symbolic_args);
+      final_args.extend(symbolic_args);
+      if final_args.len() == 1 {
+        return Ok(final_args.remove(0));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: final_args,
+      });
+    }
+  };
   let combined_denom = rat_denom;
   let mut coeff = if has_rational || (has_int && combined_denom != 1) {
     make_rational(combined_numer, combined_denom)

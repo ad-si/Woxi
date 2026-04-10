@@ -71,6 +71,10 @@ impl ControlState {
 #[derive(Debug, Clone)]
 pub struct ManipulateState {
   pub body: String,
+  /// Initialization code from `Initialization :> …`. Prepended to every
+  /// re-evaluation so that helper definitions introduced here remain in
+  /// scope regardless of the slider state.
+  pub initialization: Option<String>,
   pub controls: Vec<ControlState>,
   pub graphics_svg: Option<String>,
   pub graphics_handle: Option<svg::Handle>,
@@ -92,6 +96,7 @@ impl ManipulateState {
     let controls = controls_from_spec(&spec);
     let mut state = ManipulateState {
       body: spec.body_code,
+      initialization: spec.initialization,
       controls,
       graphics_svg: None,
       graphics_handle: None,
@@ -115,7 +120,14 @@ impl ManipulateState {
       .iter()
       .map(|c| (c.name().to_string(), c.current_code()))
       .collect();
-    let code = manipulate_block_code(&self.body, &bindings);
+    let block = manipulate_block_code(&self.body, &bindings);
+    // Prepend `Initialization :> …` code so helper definitions made there
+    // (e.g. `d[t_] := …`) are in scope while the body evaluates. The init
+    // is a CompoundExpression — join with `;` so both run in one call.
+    let code = match self.initialization.as_deref() {
+      Some(init) => format!("{init}; {block}"),
+      None => block,
+    };
 
     // Clear output state before re-evaluating so a partial result
     // doesn't linger when the new evaluation produces less output.

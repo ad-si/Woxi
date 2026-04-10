@@ -2673,3 +2673,34 @@ mod biginteger_division {
     assert_eq!(interpret("200!/199!").unwrap(), "200");
   }
 }
+
+mod rational_overflow {
+  use super::*;
+
+  #[test]
+  fn plus_three_large_rationals_no_panic() {
+    // Regression: previously panicked with "attempt to multiply with
+    // overflow" in plus_ast's i128 rational sum. The sum path must now
+    // promote to BigInt on overflow.
+    assert_eq!(
+      interpret(
+        "Rational[1,99999999999999999] + Rational[1,99999999999999998] + Rational[1,99999999999999997]"
+      )
+      .unwrap(),
+      "29999999999999998800000000000000011/\
+       999999999999999940000000000000001099999999999999994"
+        .replace(|c: char| c.is_whitespace(), "")
+    );
+  }
+
+  #[test]
+  fn plus_symbolic_with_large_rationals_no_panic() {
+    // Same overflow path, but with a symbolic term forcing the second
+    // rational-sum branch (~ line 218 before the fix).
+    let out = interpret(
+      "Rational[1,99999999999999999] + Rational[1,99999999999999998] + x",
+    )
+    .unwrap();
+    assert!(out.contains(" + x"), "unexpected output: {out}");
+  }
+}
