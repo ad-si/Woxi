@@ -1054,6 +1054,14 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringReverse expects exactly 1 argument".into(),
     ));
   }
+  // Thread over lists (including nested lists) like Wolfram does.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| string_reverse_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.chars().rev().collect()))
 }
