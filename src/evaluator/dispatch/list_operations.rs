@@ -1464,8 +1464,8 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], max_count,
       ));
     }
-    "MinMax" if args.len() == 1 => {
-      return Some(list_helpers_ast::min_max_ast(&args[0]));
+    "MinMax" if args.len() == 1 || args.len() == 2 => {
+      return Some(list_helpers_ast::min_max_ast(args));
     }
     "Part" if args.len() >= 2 => {
       let mut part_expr = Expr::Part {

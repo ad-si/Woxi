@@ -460,13 +460,26 @@ pub fn take_smallest_ast(
 }
 
 /// AST-based MinMax: return {min, max} of a list.
-pub fn min_max_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+///
+/// Supports the optional second argument that expands the returned
+/// interval:
+///   MinMax[list, d]             → {min - d,    max + d}
+///   MinMax[list, {dMin, dMax}]  → {min - dMin, max + dMax}
+///   MinMax[list, Scaled[d]]     → {min - d*r,  max + d*r}  with r = max - min
+pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: "MinMax".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let list = &args[0];
   let items = match list {
     Expr::List(items) => items,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "MinMax".to_string(),
-        args: vec![list.clone()],
+        args: args.to_vec(),
       });
     }
   };
@@ -481,26 +494,67 @@ pub fn min_max_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     ]));
   }
 
-  let mut min_val = f64::INFINITY;
-  let mut max_val = f64::NEG_INFINITY;
+  // Evaluate Min and Max through the normal evaluator so the result keeps
+  // exact integer / rational arithmetic.
+  let min_expr =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Min".to_string(),
+      args: items.clone(),
+    })?;
+  let max_expr =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Max".to_string(),
+      args: items.clone(),
+    })?;
 
-  for item in items {
-    if let Some(n) = expr_to_f64(item) {
-      if n < min_val {
-        min_val = n;
-      }
-      if n > max_val {
-        max_val = n;
-      }
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "MinMax".to_string(),
-        args: vec![list.clone()],
-      });
+  // If no expansion argument was provided, return {min, max} directly.
+  let Some(expansion) = args.get(1) else {
+    return Ok(Expr::List(vec![min_expr, max_expr]));
+  };
+
+  // Extract (dMin, dMax) from the expansion argument.
+  let (d_min, d_max): (Expr, Expr) = match expansion {
+    Expr::List(pair) if pair.len() == 2 => (pair[0].clone(), pair[1].clone()),
+    Expr::FunctionCall { name, args: a }
+      if name == "Scaled" && a.len() == 1 =>
+    {
+      // Scale the expansion by the data range r = max - min.
+      let range = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          max_expr.clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), min_expr.clone()],
+          },
+        ],
+      };
+      let scaled = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![a[0].clone(), range],
+      };
+      let scaled = crate::evaluator::evaluate_expr_to_expr(&scaled)?;
+      (scaled.clone(), scaled)
     }
-  }
+    d => (d.clone(), d.clone()),
+  };
 
-  Ok(Expr::List(vec![f64_to_expr(min_val), f64_to_expr(max_val)]))
+  let new_min = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      min_expr,
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), d_min],
+      },
+    ],
+  })?;
+  let new_max = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![max_expr, d_max],
+  })?;
+
+  Ok(Expr::List(vec![new_min, new_max]))
 }
 
 /// Gather[list] - gathers elements into sublists of identical elements
