@@ -138,6 +138,22 @@ mod string_split_single_arg {
       "{marfloW, egaugnaL, si, elbidercni}"
     );
   }
+
+  #[test]
+  fn string_reverse_threads_list() {
+    assert_eq!(
+      interpret(r#"StringReverse[{"abc", "def"}]"#).unwrap(),
+      "{cba, fed}"
+    );
+  }
+
+  #[test]
+  fn string_reverse_threads_nested_list() {
+    assert_eq!(
+      interpret(r#"StringReverse[{{"ab", "cd"}, {"ef"}}]"#).unwrap(),
+      "{{ba, dc}, {fe}}"
+    );
+  }
 }
 
 mod string_split_regex {
