@@ -273,7 +273,8 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
 /// the evaluate_all manipulate item: `{"svg": "...", "text": "..."}`.
 #[wasm_bindgen]
 pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
-  let bindings = parse_manipulate_bindings(bindings_json);
+  let bindings =
+    crate::functions::graphics::parse_manipulate_bindings(bindings_json);
   let code = crate::functions::graphics::manipulate_block_code(body, &bindings);
 
   let result = match crate::interpret_with_stdout(&code) {
@@ -300,126 +301,6 @@ pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
     }
   }
   format!("{{{}}}", parts.join(","))
-}
-
-/// Parse a very small JSON object `{"name": "value", …}` where every
-/// value is a string (an InputForm fragment). Non-string values are
-/// coerced to their textual form. Kept minimal to avoid pulling in a
-/// JSON dependency — the caller (the worker) always provides string
-/// values on purpose.
-fn parse_manipulate_bindings(s: &str) -> Vec<(String, String)> {
-  let bytes = s.as_bytes();
-  let mut i = 0;
-  let mut out: Vec<(String, String)> = Vec::new();
-
-  // Skip leading whitespace and the opening brace.
-  while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-    i += 1;
-  }
-  if i >= bytes.len() || bytes[i] != b'{' {
-    return out;
-  }
-  i += 1;
-
-  loop {
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-      i += 1;
-    }
-    if i >= bytes.len() || bytes[i] == b'}' {
-      break;
-    }
-
-    // Key must be a JSON string.
-    if bytes[i] != b'"' {
-      break;
-    }
-    let (key, next) = match parse_json_string(bytes, i) {
-      Some(v) => v,
-      None => break,
-    };
-    i = next;
-
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-      i += 1;
-    }
-    if i >= bytes.len() || bytes[i] != b':' {
-      break;
-    }
-    i += 1;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-      i += 1;
-    }
-    if i >= bytes.len() {
-      break;
-    }
-
-    // Value: string, number, true/false, or null. We stringify each.
-    let (value, next) = if bytes[i] == b'"' {
-      match parse_json_string(bytes, i) {
-        Some(v) => v,
-        None => break,
-      }
-    } else {
-      let start = i;
-      while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' {
-        i += 1;
-      }
-      let slice = s[start..i].trim().to_string();
-      (slice, i)
-    };
-    i = next;
-    out.push((key, value));
-
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-      i += 1;
-    }
-    if i < bytes.len() && bytes[i] == b',' {
-      i += 1;
-      continue;
-    }
-    break;
-  }
-
-  out
-}
-
-/// Parse a JSON string literal starting at `start` (which must point at
-/// an opening `"`). Returns the decoded string and the index after the
-/// closing quote.
-fn parse_json_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
-  if start >= bytes.len() || bytes[start] != b'"' {
-    return None;
-  }
-  let mut i = start + 1;
-  let mut out = String::new();
-  while i < bytes.len() {
-    let c = bytes[i];
-    if c == b'"' {
-      return Some((out, i + 1));
-    }
-    if c == b'\\' && i + 1 < bytes.len() {
-      let esc = bytes[i + 1];
-      match esc {
-        b'"' => out.push('"'),
-        b'\\' => out.push('\\'),
-        b'/' => out.push('/'),
-        b'n' => out.push('\n'),
-        b'r' => out.push('\r'),
-        b't' => out.push('\t'),
-        b'b' => out.push('\u{0008}'),
-        b'f' => out.push('\u{000C}'),
-        // Unicode escapes and others: pass through raw (best-effort).
-        _ => {
-          out.push(esc as char);
-        }
-      }
-      i += 2;
-      continue;
-    }
-    out.push(c as char);
-    i += 1;
-  }
-  None
 }
 
 /// Build a single JSON object string for an output item.

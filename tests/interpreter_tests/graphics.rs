@@ -5332,6 +5332,7 @@ mod manipulate {
   use woxi::functions::graphics::{
     ManipulateControl, extract_manipulate_spec, manipulate_block_code,
     manipulate_initial_bindings, manipulate_spec_to_json,
+    parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
 
@@ -5494,5 +5495,49 @@ mod manipulate {
     assert!(json.contains(r#""kind":"discrete""#));
     assert!(json.contains(r#""values":["1","2","3"]"#));
     assert!(json.contains(r#""initialIndex":0"#));
+  }
+
+  #[test]
+  fn parse_bindings_ascii() {
+    // Basic ASCII binding — baseline for the parser.
+    let b = parse_manipulate_bindings(r#"{"a": "1", "b": "2.5"}"#);
+    assert_eq!(
+      b,
+      vec![
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "2.5".to_string()),
+      ]
+    );
+  }
+
+  #[test]
+  fn parse_bindings_unicode_variable_names() {
+    // Regression: dragging a slider in a Manipulate whose variables use
+    // multi-byte UTF-8 names (e.g. ω, ϕ) used to corrupt each byte into
+    // a stray Latin-1 char, producing `Block[{Ï = 1, Ï = 0}, …]` and a
+    // parse error. The JSON parser must decode keys and values as UTF-8.
+    let b = parse_manipulate_bindings(r#"{"ω": "1", "ϕ": "0"}"#);
+    assert_eq!(
+      b,
+      vec![
+        ("ω".to_string(), "1".to_string()),
+        ("ϕ".to_string(), "0".to_string()),
+      ]
+    );
+
+    // The Block code reconstructed from these bindings must be valid
+    // Wolfram Language that round-trips through the interpreter.
+    let body = "Sin[ω*t + ϕ] /. t -> 0";
+    let code = manipulate_block_code(body, &b);
+    assert_eq!(code, "Block[{ω = 1, ϕ = 0}, Sin[ω*t + ϕ] /. t -> 0]");
+    // Sin[1*0 + 0] = Sin[0] = 0.
+    assert_eq!(interpret(&code).unwrap(), "0");
+  }
+
+  #[test]
+  fn parse_bindings_unicode_string_values() {
+    // Multi-byte UTF-8 inside a string value must also round-trip.
+    let b = parse_manipulate_bindings(r#"{"label": "\"αβγ\""}"#);
+    assert_eq!(b, vec![("label".to_string(), "\"αβγ\"".to_string())]);
   }
 }
