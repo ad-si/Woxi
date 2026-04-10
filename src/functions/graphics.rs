@@ -8096,3 +8096,351 @@ pub fn linear_gradient_filling_ast(
     args: vec![rule, angle, space],
   })
 }
+
+/// Manipulate[expr, {u, umin, umax}, …] — interactive control construct.
+///
+/// In a text front-end (wolframscript CLI), Manipulate echoes itself back
+/// with its body and variable specs preserved. Inside Woxi we treat
+/// Manipulate as held (see `core_eval.rs`) so the body is not prematurely
+/// evaluated with free control variables.
+///
+/// Supported variable-spec forms:
+///   {u, umin, umax}                    — continuous
+///   {u, umin, umax, du}                — stepped
+///   {{u, uinit}, umin, umax, …}        — with initial value
+///   {{u, uinit, ulbl}, umin, umax, …}  — with initial value and label
+///   {u, {u1, u2, …}}                   — discrete values
+///
+/// Bounds inside a well-formed spec list are evaluated (so e.g.
+/// `{x, 0, 2 Pi}` works), but the body expression and variable symbols
+/// stay unevaluated. A non-list spec triggers a `Manipulate::vsform`
+/// message (matching wolframscript) and the expression is still echoed
+/// back as-is.
+pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Process variable specs (args[1..]); args[0] is the held body.
+  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
+  if let Some(body) = args.first() {
+    out_args.push(body.clone());
+  }
+
+  for spec in args.iter().skip(1) {
+    match spec {
+      Expr::List(items) if !items.is_empty() => {
+        // Preserve the head (variable symbol or {u, uinit, ulbl}) as-is;
+        // evaluate any trailing bounds/step/discrete-values.
+        let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
+        new_items.push(items[0].clone());
+        for item in &items[1..] {
+          // Try to evaluate bounds; if evaluation fails, keep the
+          // original so the echoed form still round-trips.
+          let evaluated =
+            evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
+          new_items.push(evaluated);
+        }
+        out_args.push(Expr::List(new_items));
+      }
+      Expr::List(_) => {
+        // Empty list — echo as-is.
+        out_args.push(spec.clone());
+      }
+      _ => {
+        // Non-list variable specification: emit Manipulate::vsform
+        // message but still return the expression unchanged, matching
+        // wolframscript's behavior.
+        crate::emit_message(&format!(
+          "Manipulate::vsform: Manipulate argument {} does not have the correct form for a variable specification.",
+          crate::syntax::expr_to_string(spec)
+        ));
+        out_args.push(spec.clone());
+      }
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Manipulate".to_string(),
+    args: out_args,
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Interactive Manipulate support (for Woxi Playground / Woxi Studio)
+// ─────────────────────────────────────────────────────────────────
+
+/// A single control inside a Manipulate expression.
+///
+/// Continuous controls correspond to `{u, umin, umax}` or
+/// `{u, umin, umax, du}` (optionally wrapped in `{{u, uinit}, …}` /
+/// `{{u, uinit, ulbl}, …}`). Discrete controls correspond to
+/// `{u, {u1, u2, …}}` and are rendered as a dropdown / pick list.
+#[derive(Debug, Clone)]
+pub enum ManipulateControl {
+  Continuous {
+    name: String,
+    min: f64,
+    max: f64,
+    /// Optional explicit step size (`du`). When `None`, the UI picks a
+    /// reasonable default (e.g. (max - min) / 100).
+    step: Option<f64>,
+    initial: f64,
+    label: String,
+  },
+  Discrete {
+    name: String,
+    /// Each discrete value rendered as InputForm (so the UI can show it
+    /// and echo it back into a Block binding).
+    values: Vec<String>,
+    initial_index: usize,
+    label: String,
+  },
+}
+
+/// A parsed Manipulate expression ready for interactive rendering.
+#[derive(Debug, Clone)]
+pub struct ManipulateSpec {
+  /// The body expression as an InputForm-compatible string, ready to be
+  /// substituted into a `Block[{…}, body]` for re-evaluation.
+  pub body_code: String,
+  pub controls: Vec<ManipulateControl>,
+}
+
+/// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]`
+/// expression. Returns `None` if the expression is not a well-formed
+/// Manipulate (e.g. `Manipulate[]`, `Manipulate[expr]`, or a spec that
+/// isn't a list). In those cases the caller should fall back to the
+/// standard text/graphics output path.
+pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let (name, args) = match expr {
+    Expr::FunctionCall { name, args } => (name, args),
+    _ => return None,
+  };
+  if name != "Manipulate" || args.len() < 2 {
+    return None;
+  }
+
+  let body_code = crate::syntax::expr_to_input_form(&args[0]);
+  let mut controls = Vec::with_capacity(args.len() - 1);
+  for spec in &args[1..] {
+    controls.push(parse_manipulate_control(spec)?);
+  }
+
+  Some(ManipulateSpec {
+    body_code,
+    controls,
+  })
+}
+
+/// Parse a single variable-spec list into a `ManipulateControl`.
+fn parse_manipulate_control(spec: &Expr) -> Option<ManipulateControl> {
+  let items = match spec {
+    Expr::List(items) => items,
+    _ => return None,
+  };
+  if items.is_empty() {
+    return None;
+  }
+
+  // Head can be either a plain symbol `u` or `{u, uinit}` / `{u, uinit, ulbl}`.
+  let (name, explicit_initial, label) = match &items[0] {
+    Expr::Identifier(n) => (n.clone(), None, n.clone()),
+    Expr::List(head_items) if !head_items.is_empty() => {
+      let n = match &head_items[0] {
+        Expr::Identifier(n) => n.clone(),
+        _ => return None,
+      };
+      let init = head_items.get(1).cloned();
+      let lbl = match head_items.get(2) {
+        Some(Expr::String(s)) => s.clone(),
+        Some(other) => crate::syntax::expr_to_string(other),
+        None => n.clone(),
+      };
+      (n, init, lbl)
+    }
+    _ => return None,
+  };
+
+  // Discrete form: {u, {u1, u2, …}} or {{u, uinit, …}, {u1, u2, …}}
+  if items.len() == 2
+    && let Expr::List(value_items) = &items[1]
+  {
+    let values: Vec<String> = value_items
+      .iter()
+      .map(crate::syntax::expr_to_input_form)
+      .collect();
+    if values.is_empty() {
+      return None;
+    }
+    let initial_index = match explicit_initial {
+      Some(init) => {
+        let init_code = crate::syntax::expr_to_input_form(&init);
+        values.iter().position(|v| *v == init_code).unwrap_or(0)
+      }
+      None => 0,
+    };
+    return Some(ManipulateControl::Discrete {
+      name,
+      values,
+      initial_index,
+      label,
+    });
+  }
+
+  // Continuous form: {u, umin, umax} or {u, umin, umax, du}
+  // (or with labelled head: {{u, uinit, ulbl}, umin, umax, …})
+  if items.len() < 3 {
+    return None;
+  }
+  let min = crate::functions::math_ast::try_eval_to_f64(&items[1])?;
+  let max = crate::functions::math_ast::try_eval_to_f64(&items[2])?;
+  let step = items
+    .get(3)
+    .and_then(crate::functions::math_ast::try_eval_to_f64);
+  let initial = match explicit_initial.as_ref() {
+    Some(init) => {
+      crate::functions::math_ast::try_eval_to_f64(init).unwrap_or(min)
+    }
+    None => min,
+  };
+
+  Some(ManipulateControl::Continuous {
+    name,
+    min,
+    max,
+    step,
+    initial,
+    label,
+  })
+}
+
+/// Pick a reasonable current value for each control. For continuous
+/// controls this is the `initial`; for discrete controls it is the value
+/// at `initial_index`. Returns `(variable_name, input_form_value)` pairs.
+pub fn manipulate_initial_bindings(
+  spec: &ManipulateSpec,
+) -> Vec<(String, String)> {
+  spec
+    .controls
+    .iter()
+    .map(|c| match c {
+      ManipulateControl::Continuous { name, initial, .. } => {
+        (name.clone(), format_f64_input(*initial))
+      }
+      ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        ..
+      } => (
+        name.clone(),
+        values
+          .get(*initial_index)
+          .cloned()
+          .unwrap_or_else(|| "Null".to_string()),
+      ),
+    })
+    .collect()
+}
+
+/// Format a f64 in a round-trip-safe way as Wolfram input code.
+/// Integers are rendered without a decimal point so that e.g. Factor[x^n + 1]
+/// with n = 10 substitutes as 10 (Integer) rather than 10. (Real).
+fn format_f64_input(v: f64) -> String {
+  if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{}", v as i64)
+  } else {
+    format!("{}", v)
+  }
+}
+
+/// Build a `Block[{a = val, b = val}, body]` expression as a source-code
+/// string, ready to hand to `interpret_with_stdout`.
+pub fn manipulate_block_code(
+  body_code: &str,
+  bindings: &[(String, String)],
+) -> String {
+  if bindings.is_empty() {
+    return body_code.to_string();
+  }
+  let binding_parts: Vec<String> = bindings
+    .iter()
+    .map(|(name, value)| format!("{} = {}", name, value))
+    .collect();
+  format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
+}
+
+/// JSON-escape a string. Shared with the wasm output builder but kept
+/// private here so `ManipulateSpec` can be serialized without pulling in
+/// an extra dependency.
+fn json_escape_manipulate(s: &str) -> String {
+  let mut out = String::with_capacity(s.len() + 16);
+  for ch in s.chars() {
+    match ch {
+      '"' => out.push_str("\\\""),
+      '\\' => out.push_str("\\\\"),
+      '\n' => out.push_str("\\n"),
+      '\r' => out.push_str("\\r"),
+      '\t' => out.push_str("\\t"),
+      c if (c as u32) < 0x20 => {
+        out.push_str(&format!("\\u{:04x}", c as u32));
+      }
+      c => out.push(c),
+    }
+  }
+  out
+}
+
+/// Serialize a `ManipulateSpec` to a JSON object string (no surrounding
+/// braces for an output-item wrapper — the caller adds `"type":"manipulate"`
+/// etc. around it).
+pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
+  let mut ctrl_parts: Vec<String> = Vec::with_capacity(spec.controls.len());
+  for c in &spec.controls {
+    match c {
+      ManipulateControl::Continuous {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        label,
+      } => {
+        let step_json = match step {
+          Some(s) => format!(r#","step":{}"#, s),
+          None => String::new(),
+        };
+        ctrl_parts.push(format!(
+          r#"{{"kind":"continuous","name":"{}","label":"{}","min":{},"max":{},"initial":{}{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          min,
+          max,
+          initial,
+          step_json,
+        ));
+      }
+      ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        label,
+      } => {
+        let value_parts: Vec<String> = values
+          .iter()
+          .map(|v| format!(r#""{}""#, json_escape_manipulate(v)))
+          .collect();
+        ctrl_parts.push(format!(
+          r#"{{"kind":"discrete","name":"{}","label":"{}","values":[{}],"initialIndex":{}}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          value_parts.join(","),
+          initial_index,
+        ));
+      }
+    }
+  }
+
+  format!(
+    r#""body":"{}","controls":[{}]"#,
+    json_escape_manipulate(&spec.body_code),
+    ctrl_parts.join(","),
+  )
+}

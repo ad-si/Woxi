@@ -1131,6 +1131,10 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "GraphicsColumn"
         || name == "GraphicsGrid"
         || name == "BooleanTable"
+        // Manipulate holds its body and variable specs so that controls
+        // like Plot[Sin[a*x], {x, 0, 6}] aren't evaluated with `a` free
+        // (matching Wolfram Language notebook behavior).
+        || name == "Manipulate"
         {
           // Flatten Sequence even in held args (unless SequenceHold)
           let args = flatten_sequences(name, args);

@@ -1,5 +1,6 @@
 mod cell_type_dropdown;
 mod highlighter;
+mod manipulate;
 mod notebook;
 
 use iced::keyboard;
@@ -7,7 +8,7 @@ use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
   Column, button, column, container, image, mouse_area, opaque, pick_list, row,
-  rule, scrollable, space, stack, svg, text, text_editor,
+  rule, scrollable, slider, space, stack, svg, text, text_editor,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -100,6 +101,10 @@ struct CellEditor {
   /// For Chapter/Subchapter cells: whether the section is collapsed,
   /// hiding all cells below it until the next same-or-higher heading.
   is_collapsed: bool,
+  /// Interactive Manipulate widget state, if the last evaluation
+  /// produced a well-formed `Manipulate[…]` expression. When present,
+  /// the cell renders sliders / pick lists instead of the plain echo.
+  manipulate_state: Option<manipulate::ManipulateState>,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -172,6 +177,10 @@ enum Message {
   // Graphics modal
   OpenGraphicsModal(usize),
   CloseGraphicsModal,
+
+  // Manipulate interactive widgets
+  ManipulateContinuousChanged(usize, usize, f64),
+  ManipulateDiscreteChanged(usize, usize, String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +319,7 @@ impl WoxiStudio {
             redo_stack: Vec::new(),
             output_stale: false,
             is_collapsed: cell.collapsed,
+            manipulate_state: None,
           });
         }
         CellEntry::Group(group) => {
@@ -352,6 +362,7 @@ impl WoxiStudio {
                 redo_stack: Vec::new(),
                 output_stale: false,
                 is_collapsed: false,
+                manipulate_state: None,
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
@@ -372,6 +383,7 @@ impl WoxiStudio {
                 redo_stack: Vec::new(),
                 output_stale: false,
                 is_collapsed: false,
+                manipulate_state: None,
               });
               i += 1;
             }
@@ -924,7 +936,39 @@ impl WoxiStudio {
               .graphics_svg
               .as_ref()
               .and_then(|s| rasterize_svg(s, scale, &self.fontdb));
+            if let Some(ref mut state) = editor.manipulate_state {
+              state.rerasterize(scale, &self.fontdb);
+            }
           }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, value) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Continuous { current, .. } = control
+        {
+          *current = value;
+          state.reevaluate(self.scale_factor, &self.fontdb);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::Discrete {
+            values,
+            current_index,
+            ..
+          } = control
+          && let Some(idx) = values.iter().position(|v| *v == choice)
+        {
+          *current_index = idx;
+          state.reevaluate(self.scale_factor, &self.fontdb);
         }
         Task::none()
       }
@@ -978,6 +1022,7 @@ impl WoxiStudio {
             redo_stack: Vec::new(),
             output_stale: false,
             is_collapsed: false,
+            manipulate_state: None,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1003,6 +1048,7 @@ impl WoxiStudio {
             redo_stack: Vec::new(),
             output_stale: false,
             is_collapsed: false,
+            manipulate_state: None,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1722,6 +1768,12 @@ impl WoxiStudio {
         output_col = output_col.push(clickable);
       }
 
+      // Interactive Manipulate widget
+      if let Some(ref state) = editor.manipulate_state {
+        output_col =
+          output_col.push(render_manipulate_widget(idx, state, stale));
+      }
+
       // Text output (filter out graphics placeholders)
       if let Some(ref output) = editor.output {
         let display = output
@@ -1791,6 +1843,12 @@ impl WoxiStudio {
         let clickable = mouse_area(container(svg_widget).padding(4))
           .on_double_click(Message::OpenGraphicsModal(idx));
         content_col = content_col.push(clickable);
+      }
+
+      // Interactive Manipulate widget
+      if let Some(ref state) = editor.manipulate_state {
+        content_col =
+          content_col.push(render_manipulate_widget(idx, state, stale));
       }
 
       if let Some(ref output) = editor.output {
@@ -2107,6 +2165,126 @@ fn handle_event(
 
 /// Rasterize an SVG string to an RGBA bitmap at the given scale factor.
 /// Returns the image handle together with the *logical* (1×) width and height.
+/// Build the interactive widget for a Manipulate cell: one row of
+/// controls (sliders or pick lists) followed by the current rendering.
+fn render_manipulate_widget<'a>(
+  cell_idx: usize,
+  state: &'a manipulate::ManipulateState,
+  stale: bool,
+) -> Element<'a, Message> {
+  let mut controls_col = Column::new().spacing(6).width(Fill);
+  for (ctrl_idx, ctrl) in state.controls.iter().enumerate() {
+    match ctrl {
+      manipulate::ControlState::Continuous {
+        name,
+        label,
+        min,
+        max,
+        step,
+        current,
+      } => {
+        let label_display = if label.is_empty() { name } else { label };
+        let label_widget = text(format!("{label_display}"))
+          .size(12)
+          .width(iced::Length::Fixed(140.0));
+        let s = slider(*min..=*max, *current, move |v| {
+          Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+        })
+        .step(*step)
+        .width(Fill);
+        let value_widget = text(format_manipulate_number(*current))
+          .size(11)
+          .font(Font::MONOSPACE)
+          .width(iced::Length::Fixed(64.0));
+        let control_row = row![label_widget, s, value_widget]
+          .align_y(Center)
+          .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::Discrete {
+        name,
+        label,
+        values,
+        current_index,
+      } => {
+        let label_display = if label.is_empty() { name } else { label };
+        let label_widget = text(format!("{label_display}"))
+          .size(12)
+          .width(iced::Length::Fixed(140.0));
+        let selected = values.get(*current_index).cloned();
+        let picker = pick_list(values.clone(), selected, move |choice| {
+          Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
+        })
+        .width(iced::Length::Shrink);
+        let control_row = row![label_widget, picker].align_y(Center).spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+    }
+  }
+
+  let mut output_col = Column::new().spacing(0).width(Fill);
+  if let Some(ref err) = state.error {
+    let color =
+      Color::from_rgba(0.85, 0.25, 0.25, if stale { 0.4 } else { 1.0 });
+    output_col = output_col.push(
+      container(
+        text(err.clone())
+          .size(12)
+          .font(Font::MONOSPACE)
+          .color(color),
+      )
+      .padding(4)
+      .width(Fill),
+    );
+  } else if let Some((ref img_handle, w, h)) = state.graphics_image {
+    let mut img_widget = image(img_handle.clone())
+      .width(iced::Length::Fixed(w as f32))
+      .height(iced::Length::Fixed(h as f32));
+    if stale {
+      img_widget = img_widget.opacity(0.3);
+    }
+    output_col = output_col.push(container(img_widget).padding(4));
+  } else if let Some(ref handle) = state.graphics_handle {
+    let mut svg_widget =
+      svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+    if stale {
+      svg_widget = svg_widget.opacity(0.3);
+    }
+    output_col = output_col.push(container(svg_widget).padding(4));
+  } else if let Some(ref txt) = state.text_output {
+    let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
+    if stale {
+      output_text = output_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
+    }
+    output_col = output_col.push(container(output_text).padding(6).width(Fill));
+  }
+
+  container(column![controls_col, output_col].spacing(6))
+    .padding(6)
+    .width(Fill)
+    .into()
+}
+
+/// Format a slider value for the inline readout. Integers render
+/// without a trailing zero, fractional values get 3 decimal digits of
+/// precision (with trailing zeros trimmed).
+fn format_manipulate_number(v: f64) -> String {
+  if !v.is_finite() {
+    return format!("{v}");
+  }
+  if v.fract() == 0.0 && v.abs() < 1e15 {
+    return format!("{}", v as i64);
+  }
+  let s = format!("{:.3}", v);
+  // Trim trailing zeros and a lone decimal point.
+  let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+  if trimmed.is_empty() {
+    "0".to_string()
+  } else {
+    trimmed.to_string()
+  }
+}
+
 fn rasterize_svg(
   svg_str: &str,
   scale_factor: f32,
@@ -2154,6 +2332,9 @@ fn evaluate_cell_statements(
   let mut last_graphics: Option<String> = None;
   let mut all_warnings: Vec<String> = Vec::new();
   let mut had_error = false;
+  // Track a Manipulate that appears as the final statement's result, so
+  // we can render it as an interactive widget instead of a plain echo.
+  let mut last_manipulate: Option<(String, manipulate::ManipulateState)> = None;
 
   for stmt in &statements {
     match woxi::interpret_with_stdout(stmt) {
@@ -2162,6 +2343,22 @@ fn evaluate_cell_statements(
           all_stdout.push_str(&result.stdout);
         }
         all_warnings.extend(result.warnings);
+
+        // Detect a top-level Manipulate[…] result by re-parsing the
+        // statement to inspect the held Expr. Each new Manipulate in
+        // the cell replaces any previous one so only the final
+        // statement's interactive widget is shown.
+        if result.result != "\0"
+          && let Ok(expr) = woxi::interpret_to_expr(stmt)
+          && let Some(state) =
+            manipulate::ManipulateState::from_expr(&expr, scale_factor, fontdb)
+        {
+          last_manipulate = Some((result.result.clone(), state));
+          // Skip adding to outputs / graphics — the interactive widget
+          // subsumes both the text echo and any placeholder graphics.
+          last_graphics = None;
+          continue;
+        }
 
         if let Some(svg) = result.graphics {
           if result.result != "\0" {
@@ -2200,6 +2397,7 @@ fn evaluate_cell_statements(
     .graphics_svg
     .as_ref()
     .and_then(|s| rasterize_svg(s, scale_factor, fontdb));
+  editor.manipulate_state = last_manipulate.map(|(_, state)| state);
   editor.warnings = all_warnings;
   editor.output_stale = false;
   let _ = had_error;

@@ -88,7 +88,7 @@ PatternTest,Tests whether a pattern matches using a predicate function (pattern?
 WordData,,🚫,,6.0,92
 ListPlot,Plots data as a scatter plot,✅,pure,1.0,93
 Point,Represents a point graphics primitive,✅,pure,1.0,94
-Manipulate,,🚫,,6.0,95
+Manipulate,Generates a version of an expression with controls added to interactively manipulate variable values,✅,pure,6.0,95
 FontSize,Option specifying the default font size in printer's points,✅,none,3.0,96
 Frame,Option specifying whether a frame is drawn around a plot,✅,none,2.0,97
 With,Substitutes local constants into an expression,✅,pure,2.0,99

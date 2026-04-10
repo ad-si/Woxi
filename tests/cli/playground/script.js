@@ -215,6 +215,10 @@ function renderOutputItems(items) {
   const outputsEl = document.getElementById("outputs")
   outputsEl.innerHTML = ""
   outputsEl.classList.remove("stale")
+  // Any previously pending Manipulate evaluations now target DOM
+  // nodes that have been removed.  Drop their entries so stale
+  // results arriving from the worker are ignored.
+  manipulateRequests.clear()
 
   for (const item of items) {
     if (item.type === "graphics") {
@@ -234,6 +238,8 @@ function renderOutputItems(items) {
         pre.textContent = item.text
         outputsEl.appendChild(pre)
       }
+    } else if (item.type === "manipulate") {
+      outputsEl.appendChild(renderManipulate(item))
     } else if (item.type === "print") {
       const pre = document.createElement("pre")
       pre.className = "output-box print-box"
@@ -250,6 +256,179 @@ function renderOutputItems(items) {
       pre.textContent = item.text
       outputsEl.appendChild(pre)
     }
+  }
+}
+
+// ── Manipulate interactive widget ────────────────────────────────
+
+// Map of requestId → per-widget state object.  Used to route
+// `manipulate_result` messages back to the right widget when multiple
+// Manipulates coexist on one page.
+const manipulateRequests = new Map()
+let manipulateRequestCounter = 0
+
+function renderManipulate(item) {
+  const box = document.createElement("div")
+  box.className = "output-box manipulate-box"
+
+  // Current values for each control, keyed by variable name.
+  const current = {}
+  for (const ctrl of item.controls) {
+    if (ctrl.kind === "continuous") {
+      current[ctrl.name] = ctrl.initial
+    } else if (ctrl.kind === "discrete") {
+      current[ctrl.name] = ctrl.values[ctrl.initialIndex] ?? ctrl.values[0]
+    }
+  }
+
+  // Controls panel
+  const controlsEl = document.createElement("div")
+  controlsEl.className = "manipulate-controls"
+
+  // Output panel (filled with the initial rendering)
+  const outputEl = document.createElement("div")
+  outputEl.className = "manipulate-output"
+  fillManipulateOutput(outputEl, item.initial)
+
+  // Per-widget coalescing state.  At most one evaluation is in flight
+  // at a time: slider events that fire while an eval is pending only
+  // update `pendingBindings`, and the next eval is dispatched when the
+  // previous one completes.  This prevents a queue of stale frames
+  // from building up while the user drags a slider.
+  const widget = {
+    item,
+    outputEl,
+    current,
+    inflight: false,
+    pendingBindings: null,
+  }
+
+  // Format a continuous value for display (strip trailing zeros).
+  function fmt(v) {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return String(v)
+    return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")
+  }
+
+  function buildBindings() {
+    const bindings = {}
+    for (const ctrl of item.controls) {
+      bindings[ctrl.name] = String(current[ctrl.name])
+    }
+    return bindings
+  }
+
+  function requestUpdate() {
+    if (!worker) return
+    const bindings = buildBindings()
+    if (widget.inflight) {
+      // An evaluation is already running; just remember the latest
+      // desired bindings.  Whatever was previously pending is dropped.
+      widget.pendingBindings = bindings
+      return
+    }
+    dispatchUpdate(bindings)
+  }
+
+  function dispatchUpdate(bindings) {
+    widget.inflight = true
+    widget.pendingBindings = null
+    const requestId = ++manipulateRequestCounter
+    manipulateRequests.set(requestId, widget)
+    outputEl.classList.add("stale")
+    worker.postMessage({
+      type: "evaluate_manipulate",
+      requestId,
+      body: item.body,
+      bindings,
+    })
+  }
+
+  widget.dispatchUpdate = dispatchUpdate
+
+  for (const ctrl of item.controls) {
+    const row = document.createElement("label")
+    row.className = "manipulate-control-row"
+
+    const lbl = document.createElement("span")
+    lbl.className = "manipulate-label"
+    lbl.textContent = ctrl.label || ctrl.name
+    row.appendChild(lbl)
+
+    if (ctrl.kind === "continuous") {
+      const input = document.createElement("input")
+      input.type = "range"
+      input.min = ctrl.min
+      input.max = ctrl.max
+      const step = ctrl.step ?? (ctrl.max - ctrl.min) / 100
+      input.step = step > 0 ? step : "any"
+      input.value = ctrl.initial
+      row.appendChild(input)
+
+      const display = document.createElement("span")
+      display.className = "manipulate-value"
+      display.textContent = fmt(ctrl.initial)
+      row.appendChild(display)
+
+      input.addEventListener("input", () => {
+        current[ctrl.name] = input.value
+        display.textContent = fmt(input.value)
+        requestUpdate()
+      })
+    } else if (ctrl.kind === "discrete") {
+      const select = document.createElement("select")
+      for (let idx = 0; idx < ctrl.values.length; idx++) {
+        const opt = document.createElement("option")
+        opt.value = ctrl.values[idx]
+        opt.textContent = ctrl.values[idx]
+        if (idx === ctrl.initialIndex) opt.selected = true
+        select.appendChild(opt)
+      }
+      row.appendChild(select)
+      select.addEventListener("change", () => {
+        current[ctrl.name] = select.value
+        requestUpdate()
+      })
+    }
+
+    controlsEl.appendChild(row)
+  }
+
+  box.appendChild(controlsEl)
+  box.appendChild(outputEl)
+  return box
+}
+
+function fillManipulateOutput(el, payload) {
+  el.classList.remove("stale")
+  el.innerHTML = ""
+  if (!payload) return
+  if (payload.error) {
+    const pre = document.createElement("pre")
+    pre.className = "error-box"
+    pre.textContent = payload.error
+    el.appendChild(pre)
+    return
+  }
+  if (payload.svg) {
+    const div = document.createElement("div")
+    div.className = "graphics-box"
+    div.innerHTML = payload.svg
+    el.appendChild(div)
+    return
+  }
+  if (payload.textSvg) {
+    const div = document.createElement("div")
+    div.className = "text-box"
+    div.innerHTML = payload.textSvg
+    el.appendChild(div)
+    return
+  }
+  if (payload.text) {
+    const pre = document.createElement("pre")
+    pre.className = "text-box"
+    pre.textContent = payload.text
+    el.appendChild(pre)
   }
 }
 
@@ -291,6 +470,34 @@ function initWorker() {
         renderOutputItems([{ type: "error", text: message }])
       }
       saveOutput()
+    }
+    else if (type === "manipulate_result") {
+      const widget = manipulateRequests.get(e.data.requestId)
+      manipulateRequests.delete(e.data.requestId)
+      if (!widget) return
+      widget.inflight = false
+      if (success) {
+        try {
+          const payload = JSON.parse(result)
+          fillManipulateOutput(widget.outputEl, payload)
+        } catch (_) {
+          fillManipulateOutput(widget.outputEl, { error: result })
+        }
+      } else {
+        fillManipulateOutput(widget.outputEl, { error: message })
+      }
+      // Dispatch any pending update that arrived while we were busy.
+      // This keeps the pipeline at depth 1: at most one eval running
+      // plus one most-recent binding queued.
+      if (widget.pendingBindings) {
+        const next = widget.pendingBindings
+        widget.pendingBindings = null
+        widget.dispatchUpdate(next)
+      }
+      // Note: we intentionally skip `saveOutput()` on manipulate_result
+      // so rapid slider movement doesn't trigger repeated localStorage
+      // writes of full SVGs.  The initial rendering is already
+      // persisted when the "result" message first arrived.
     }
   }
 

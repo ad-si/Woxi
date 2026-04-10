@@ -203,6 +203,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Definition" | "FullDefinition" | "Attributes" | "Quiet" | "Assert" => {
       vec!["HoldAll", "Protected"]
     }
+    // Manipulate: Protected + ReadProtected (matches wolframscript)
+    // Also treated as held in the evaluator so body and variable specs
+    // remain unevaluated, matching Wolfram Language notebook behavior.
+    "Manipulate" => vec!["Protected", "ReadProtected"],
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
     "True" | "False" => vec!["Locked", "Protected"],
 

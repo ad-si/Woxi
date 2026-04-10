@@ -137,8 +137,8 @@ pub fn set_dark_mode(enabled: bool) {
 }
 
 /// Evaluate all top-level statements and return a JSON array of output items.
-/// Each item has a "type" field ("text", "graphics", "print", "warning", "error")
-/// and corresponding content fields.
+/// Each item has a "type" field ("text", "graphics", "print", "warning", "error",
+/// "manipulate") and corresponding content fields.
 #[wasm_bindgen]
 pub fn evaluate_all(input: &str) -> String {
   let statements = crate::split_into_statements(input);
@@ -156,6 +156,17 @@ pub fn evaluate_all(input: &str) -> String {
         // Warnings
         for w in &result.warnings {
           items.push(json_output_item("warning", w, None));
+        }
+
+        // If the statement is a top-level Manipulate[…] call, emit a
+        // dedicated "manipulate" item so the frontend can render
+        // interactive controls instead of the plain text echo. We re-parse
+        // the source so we can inspect the held expression shape.
+        if result.result != "\0"
+          && let Some(item) = try_build_manipulate_item(stmt)
+        {
+          items.push(item);
+          continue;
         }
 
         // Main result
@@ -192,6 +203,223 @@ pub fn evaluate_all(input: &str) -> String {
   }
 
   format!("[{}]", items.join(","))
+}
+
+/// Try to detect whether `stmt` is a top-level `Manipulate[…]` call and
+/// build a JSON "manipulate" output item (spec + initial rendering).
+/// Returns `None` if the statement isn't a well-formed Manipulate.
+fn try_build_manipulate_item(stmt: &str) -> Option<String> {
+  // Re-interpret the statement so we get the evaluated (but held)
+  // Manipulate FunctionCall back as an Expr we can inspect. Manipulate
+  // is HoldAll-ish (see functions::graphics::manipulate_ast), so its body
+  // and variable symbols remain intact.
+  let expr = crate::interpret_to_expr(stmt).ok()?;
+  let spec = crate::functions::graphics::extract_manipulate_spec(&expr)?;
+
+  // Produce an initial rendering by substituting initial values via Block.
+  let bindings = crate::functions::graphics::manipulate_initial_bindings(&spec);
+  let block_code = crate::functions::graphics::manipulate_block_code(
+    &spec.body_code,
+    &bindings,
+  );
+
+  let initial = match crate::interpret_with_stdout(&block_code) {
+    Ok(r) => r,
+    Err(_) => crate::InterpretResult {
+      stdout: String::new(),
+      result: String::new(),
+      graphics: None,
+      output_svg: None,
+      warnings: vec![],
+    },
+  };
+
+  let spec_json = crate::functions::graphics::manipulate_spec_to_json(&spec);
+
+  // Build initial-rendering JSON.
+  let mut initial_parts: Vec<String> = Vec::new();
+  if let Some(ref svg) = initial.graphics {
+    initial_parts.push(format!(r#""svg":"{}""#, json_escape(svg)));
+  }
+  let cleaned_text = initial
+    .result
+    .replace("-Graphics-", "")
+    .replace("-Graphics3D-", "")
+    .replace("-Image-", "");
+  let cleaned_text = cleaned_text.trim();
+  if !cleaned_text.is_empty() && initial.graphics.is_none() {
+    initial_parts.push(format!(r#""text":"{}""#, json_escape(cleaned_text)));
+    if let Some(ref output_svg) = initial.output_svg {
+      initial_parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
+    }
+  }
+  let initial_json = format!("{{{}}}", initial_parts.join(","));
+
+  Some(format!(
+    r#"{{"type":"manipulate",{},"initial":{}}}"#,
+    spec_json, initial_json
+  ))
+}
+
+/// Evaluate a Manipulate body with a specific set of variable bindings
+/// and return a single JSON output item representing the result.
+///
+/// `body` must be the body expression in InputForm (as produced by
+/// `evaluate_all`'s manipulate item). `bindings_json` must be a JSON
+/// object mapping variable names to InputForm-serialized values, e.g.
+/// `{"a": "1.5", "b": "\"foo\""}`.
+///
+/// The result is a JSON object of the same shape as `initial` from
+/// the evaluate_all manipulate item: `{"svg": "...", "text": "..."}`.
+#[wasm_bindgen]
+pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
+  let bindings = parse_manipulate_bindings(bindings_json);
+  let code = crate::functions::graphics::manipulate_block_code(body, &bindings);
+
+  let result = match crate::interpret_with_stdout(&code) {
+    Ok(r) => r,
+    Err(e) => {
+      return format!(r#"{{"error":"{}"}}"#, json_escape(&format!("{e}")));
+    }
+  };
+
+  let mut parts: Vec<String> = Vec::new();
+  if let Some(ref svg) = result.graphics {
+    parts.push(format!(r#""svg":"{}""#, json_escape(svg)));
+  }
+  let cleaned_text = result
+    .result
+    .replace("-Graphics-", "")
+    .replace("-Graphics3D-", "")
+    .replace("-Image-", "");
+  let cleaned_text = cleaned_text.trim();
+  if !cleaned_text.is_empty() && result.graphics.is_none() {
+    parts.push(format!(r#""text":"{}""#, json_escape(cleaned_text)));
+    if let Some(ref output_svg) = result.output_svg {
+      parts.push(format!(r#""textSvg":"{}""#, json_escape(output_svg)));
+    }
+  }
+  format!("{{{}}}", parts.join(","))
+}
+
+/// Parse a very small JSON object `{"name": "value", …}` where every
+/// value is a string (an InputForm fragment). Non-string values are
+/// coerced to their textual form. Kept minimal to avoid pulling in a
+/// JSON dependency — the caller (the worker) always provides string
+/// values on purpose.
+fn parse_manipulate_bindings(s: &str) -> Vec<(String, String)> {
+  let bytes = s.as_bytes();
+  let mut i = 0;
+  let mut out: Vec<(String, String)> = Vec::new();
+
+  // Skip leading whitespace and the opening brace.
+  while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+    i += 1;
+  }
+  if i >= bytes.len() || bytes[i] != b'{' {
+    return out;
+  }
+  i += 1;
+
+  loop {
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() || bytes[i] == b'}' {
+      break;
+    }
+
+    // Key must be a JSON string.
+    if bytes[i] != b'"' {
+      break;
+    }
+    let (key, next) = match parse_json_string(bytes, i) {
+      Some(v) => v,
+      None => break,
+    };
+    i = next;
+
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() || bytes[i] != b':' {
+      break;
+    }
+    i += 1;
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i >= bytes.len() {
+      break;
+    }
+
+    // Value: string, number, true/false, or null. We stringify each.
+    let (value, next) = if bytes[i] == b'"' {
+      match parse_json_string(bytes, i) {
+        Some(v) => v,
+        None => break,
+      }
+    } else {
+      let start = i;
+      while i < bytes.len() && bytes[i] != b',' && bytes[i] != b'}' {
+        i += 1;
+      }
+      let slice = s[start..i].trim().to_string();
+      (slice, i)
+    };
+    i = next;
+    out.push((key, value));
+
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+      i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b',' {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+
+  out
+}
+
+/// Parse a JSON string literal starting at `start` (which must point at
+/// an opening `"`). Returns the decoded string and the index after the
+/// closing quote.
+fn parse_json_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+  if start >= bytes.len() || bytes[start] != b'"' {
+    return None;
+  }
+  let mut i = start + 1;
+  let mut out = String::new();
+  while i < bytes.len() {
+    let c = bytes[i];
+    if c == b'"' {
+      return Some((out, i + 1));
+    }
+    if c == b'\\' && i + 1 < bytes.len() {
+      let esc = bytes[i + 1];
+      match esc {
+        b'"' => out.push('"'),
+        b'\\' => out.push('\\'),
+        b'/' => out.push('/'),
+        b'n' => out.push('\n'),
+        b'r' => out.push('\r'),
+        b't' => out.push('\t'),
+        b'b' => out.push('\u{0008}'),
+        b'f' => out.push('\u{000C}'),
+        // Unicode escapes and others: pass through raw (best-effort).
+        _ => {
+          out.push(esc as char);
+        }
+      }
+      i += 2;
+      continue;
+    }
+    out.push(c as char);
+    i += 1;
+  }
+  None
 }
 
 /// Build a single JSON object string for an output item.
