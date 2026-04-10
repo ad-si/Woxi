@@ -3477,6 +3477,14 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringDelete expects exactly 2 arguments".into(),
     ));
   }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| string_delete_ast(&[item.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   let sub = expr_to_str(&args[1])?;
   Ok(Expr::String(s.replace(&sub, "")))
