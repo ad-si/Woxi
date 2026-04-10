@@ -1122,6 +1122,18 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringTrim expects 1 or 2 arguments".into(),
     ));
   }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_trim_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
 
   if args.len() == 1 {

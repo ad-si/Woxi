@@ -2790,6 +2790,22 @@ mod string_trim {
       "hello"
     );
   }
+
+  #[test]
+  fn trim_threads_list() {
+    assert_eq!(
+      interpret(r#"StringTrim[{"  abc  ", " def "}]"#).unwrap(),
+      "{abc, def}"
+    );
+  }
+
+  #[test]
+  fn trim_threads_list_with_pattern() {
+    assert_eq!(
+      interpret(r#"StringTrim[{"xxhixx", "xyx"}, "x"]"#).unwrap(),
+      "{xhix, y}"
+    );
+  }
 }
 
 mod longest_common_subsequence_tests {
