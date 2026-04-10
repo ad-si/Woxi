@@ -354,6 +354,69 @@ pre.output-box {
   font-size: 14px;
 }
 
+.output-box.manipulate-box {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.manipulate-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.manipulate-control-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.manipulate-label {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.manipulate-control-row input[type="range"] {
+  width: 100%;
+}
+
+.manipulate-value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 3rem;
+  text-align: right;
+}
+
+.manipulate-output {
+  min-height: 2rem;
+  transition: opacity 0.1s ease-out;
+}
+
+.manipulate-output.stale {
+  opacity: 0.6;
+}
+
+.manipulate-output svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.manipulate-output pre {
+  margin: 0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 .status {
   position: fixed;
   top: 1rem;

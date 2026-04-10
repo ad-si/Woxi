@@ -2533,6 +2533,43 @@ fn split_args(s: &str) -> Vec<String> {
   args
 }
 
+/// Parse and evaluate a single expression, returning the raw `Expr` so
+/// callers can inspect the evaluated AST (e.g. to detect a held
+/// `Manipulate[…]` call). Only the first top-level expression in
+/// `input` is evaluated.
+///
+/// Unlike `interpret` this does not format the result as a string, so
+/// held function calls like `Manipulate[…]` are preserved as
+/// `Expr::FunctionCall` values.
+pub fn interpret_to_expr(
+  input: &str,
+) -> Result<syntax::Expr, InterpreterError> {
+  let normalized = if input.contains('\r') {
+    input.replace("\r\n", "\n").replace('\r', "\n")
+  } else {
+    input.to_string()
+  };
+
+  let mut pairs = parse(&normalized).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Parse error: {}", e))
+  })?;
+  let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
+  if program.as_rule() != Rule::Program {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Expected Program, got {:?}",
+      program.as_rule()
+    )));
+  }
+
+  for node in program.into_inner() {
+    if node.as_rule() == Rule::Expression {
+      let expr = syntax::pair_to_expr(node);
+      return evaluator::evaluate_expr_to_expr(&expr);
+    }
+  }
+  Err(InterpreterError::EmptyInput)
+}
+
 /// New interpret function that returns both stdout and the result
 pub fn interpret_with_stdout(
   input: &str,

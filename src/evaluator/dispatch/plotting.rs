@@ -44,6 +44,11 @@ pub fn dispatch_plotting(
     "Plot" if args.len() >= 2 => {
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
+    // Manipulate holds its arguments (see core_eval.rs) and, in a text
+    // front-end, simply echoes itself back with the body and variable
+    // specs preserved. A non-list variable spec emits a Manipulate::vsform
+    // message but the expression is still returned unchanged.
+    "Manipulate" => Some(crate::functions::graphics::manipulate_ast(args)),
     "Plot3D" if args.len() >= 3 => {
       Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }

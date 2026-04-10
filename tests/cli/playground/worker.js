@@ -84,4 +84,38 @@ self.onmessage = async function (e) {
       })
     }
   }
+
+  // Re-evaluate a Manipulate body with a specific set of variable
+  // bindings.  Triggered by the main thread when the user drags a
+  // slider or changes a dropdown inside an interactive Manipulate cell.
+  if (type === "evaluate_manipulate") {
+    if (!wasm) {
+      postMessage({
+        type: "manipulate_result",
+        requestId: e.data.requestId,
+        success: false,
+        message: "WASM module not loaded",
+      })
+      return
+    }
+    try {
+      const body = e.data.body
+      const bindings = JSON.stringify(e.data.bindings || {})
+      const result = wasm.evaluate_manipulate(body, bindings)
+      postMessage({
+        type: "manipulate_result",
+        requestId: e.data.requestId,
+        success: true,
+        result,
+      })
+    }
+    catch (error) {
+      postMessage({
+        type: "manipulate_result",
+        requestId: e.data.requestId,
+        success: false,
+        message: "Error: " + error.message,
+      })
+    }
+  }
 }

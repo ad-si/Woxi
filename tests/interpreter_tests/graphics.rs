@@ -5213,3 +5213,286 @@ mod number_line_plot {
     );
   }
 }
+
+mod manipulate {
+  use super::*;
+
+  #[test]
+  fn continuous_parameter() {
+    // Manipulate echoes itself back with body and spec preserved.
+    assert_eq!(
+      interpret("Manipulate[x^2, {x, 0, 10}]").unwrap(),
+      "Manipulate[x^2, {x, 0, 10}]"
+    );
+  }
+
+  #[test]
+  fn discrete_step() {
+    // Manipulate[Factor[x^n + 1], {n, 10, 100, 1}] — stepped form.
+    assert_eq!(
+      interpret("Manipulate[Factor[x^n + 1], {n, 10, 100, 1}]").unwrap(),
+      "Manipulate[Factor[x^n + 1], {n, 10, 100, 1}]"
+    );
+  }
+
+  #[test]
+  fn two_parameters() {
+    assert_eq!(
+      interpret(
+        "Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {a, 1, 4}, {b, 0, 10}]"
+      )
+      .unwrap(),
+      "Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {a, 1, 4}, {b, 0, 10}]"
+    );
+  }
+
+  #[test]
+  fn labelled_defaults() {
+    // {{u, uinit, ulbl}, umin, umax}: label prints unquoted in OutputForm.
+    assert_eq!(
+      interpret("Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {{a, 2, \"Multiplier\"}, 1, 4}, {{b, 0, \"Phase Parameter\"}, 0, 10}]").unwrap(),
+      "Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {{a, 2, Multiplier}, 1, 4}, {{b, 0, Phase Parameter}, 0, 10}]"
+    );
+  }
+
+  #[test]
+  fn discrete_values() {
+    // {u, {u1, u2, …}} — discrete-value form.
+    assert_eq!(
+      interpret("Manipulate[x+1, {x, {1, 2, 3}}]").unwrap(),
+      "Manipulate[x + 1, {x, {1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn body_is_held() {
+    // Body is held: Length[{a,b,c}] should NOT evaluate to 3 inside Manipulate,
+    // even though it does when evaluated standalone.
+    assert_eq!(
+      interpret(
+        "{Length[{a, b, c}], Manipulate[Length[{a, b, c}], {x, 0, 2}]}"
+      )
+      .unwrap(),
+      "{3, Manipulate[Length[{a, b, c}], {x, 0, 2}]}"
+    );
+  }
+
+  #[test]
+  fn plot_inside_is_held() {
+    // Regression: Plot with free control variable `a` must not be evaluated
+    // before Manipulate gets to see it (previously produced -Graphics-).
+    assert_eq!(
+      interpret("Manipulate[Plot[Sin[x*(1 + a*x)], {x, 0, 6}], {a, 0, 2}]")
+        .unwrap(),
+      "Manipulate[Plot[Sin[x*(1 + a*x)], {x, 0, 6}], {a, 0, 2}]"
+    );
+  }
+
+  #[test]
+  fn bounds_are_evaluated() {
+    // Numeric bounds inside a well-formed spec are evaluated, so
+    // Sqrt[4] collapses to 2 while the variable symbol stays unevaluated.
+    assert_eq!(
+      interpret("Manipulate[Sin[x], {x, 0, Sqrt[4]}]").unwrap(),
+      "Manipulate[Sin[x], {x, 0, 2}]"
+    );
+  }
+
+  #[test]
+  fn head_is_manipulate() {
+    assert_eq!(
+      interpret("Head[Manipulate[x^2, {x, 0, 10}]]").unwrap(),
+      "Manipulate"
+    );
+  }
+
+  #[test]
+  fn attributes_match_wolframscript() {
+    // Matches Attributes[Manipulate] in Wolfram: no HoldAll exposed.
+    assert_eq!(
+      interpret("Attributes[Manipulate]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn zero_args_echoes() {
+    // Lenient: Manipulate[] echoes itself without erroring.
+    assert_eq!(interpret("Manipulate[]").unwrap(), "Manipulate[]");
+  }
+
+  #[test]
+  fn single_arg_echoes() {
+    // Lenient: Manipulate[x^2] echoes itself without erroring.
+    assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
+  }
+
+  // ── Spec extraction / Block substitution (used by Playground / Studio) ──
+
+  use woxi::functions::graphics::{
+    ManipulateControl, extract_manipulate_spec, manipulate_block_code,
+    manipulate_initial_bindings, manipulate_spec_to_json,
+  };
+  use woxi::interpret_to_expr;
+
+  #[test]
+  fn spec_continuous_basic() {
+    let expr = interpret_to_expr("Manipulate[x^2, {x, 0, 10}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.body_code, "x^2");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        name,
+        min,
+        max,
+        step,
+        initial,
+        label,
+      } => {
+        assert_eq!(name, "x");
+        assert_eq!(*min, 0.0);
+        assert_eq!(*max, 10.0);
+        assert!(step.is_none());
+        assert_eq!(*initial, 0.0); // umin when no uinit
+        assert_eq!(label, "x");
+      }
+      _ => panic!("expected continuous control"),
+    }
+  }
+
+  #[test]
+  fn spec_stepped() {
+    let expr =
+      interpret_to_expr("Manipulate[Factor[x^n + 1], {n, 10, 100, 1}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { min, max, step, .. } => {
+        assert_eq!(*min, 10.0);
+        assert_eq!(*max, 100.0);
+        assert_eq!(*step, Some(1.0));
+      }
+      _ => panic!("expected continuous control"),
+    }
+  }
+
+  #[test]
+  fn spec_labelled_with_initial() {
+    let expr = interpret_to_expr(
+      "Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {{a, 2, \"Multiplier\"}, 1, 4}, {{b, 0, \"Phase Parameter\"}, 0, 10}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.len(), 2);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous {
+        name,
+        initial,
+        label,
+        min,
+        max,
+        ..
+      } => {
+        assert_eq!(name, "a");
+        assert_eq!(*initial, 2.0);
+        assert_eq!(label, "Multiplier");
+        assert_eq!(*min, 1.0);
+        assert_eq!(*max, 4.0);
+      }
+      _ => panic!("expected continuous control for a"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::Continuous { label, initial, .. } => {
+        assert_eq!(label, "Phase Parameter");
+        assert_eq!(*initial, 0.0);
+      }
+      _ => panic!("expected continuous control for b"),
+    }
+  }
+
+  #[test]
+  fn spec_discrete_values() {
+    let expr =
+      interpret_to_expr("Manipulate[x + 1, {x, {10, 20, 30}}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        name,
+        values,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(name, "x");
+        assert_eq!(
+          values,
+          &vec!["10".to_string(), "20".to_string(), "30".to_string()]
+        );
+        assert_eq!(*initial_index, 0);
+      }
+      _ => panic!("expected discrete control"),
+    }
+  }
+
+  #[test]
+  fn spec_extraction_rejects_bad_shapes() {
+    // Manipulate with 1 arg is not well-formed for interactive rendering.
+    let e = interpret_to_expr("Manipulate[x^2]").unwrap();
+    assert!(extract_manipulate_spec(&e).is_none());
+
+    // Non-list spec: not renderable interactively.
+    let e = interpret_to_expr("Manipulate[x^2, badspec]").unwrap();
+    assert!(extract_manipulate_spec(&e).is_none());
+  }
+
+  #[test]
+  fn block_code_round_trip() {
+    // A Block wrapper built from the initial bindings should evaluate
+    // to the same Graphics head as a manual Block[{a = 0}, Plot[…]].
+    let expr =
+      interpret_to_expr("Manipulate[Plot[Sin[a*x], {x, 0, 6}], {a, 0, 2}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("a".to_string(), "0".to_string())]);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    assert_eq!(code, "Block[{a = 0}, Plot[Sin[a*x], {x, 0, 6}]]");
+    // Evaluating it should yield a Graphics expression.
+    assert_eq!(interpret(&format!("Head[{}]", code)).unwrap(), "Graphics");
+  }
+
+  #[test]
+  fn block_code_handles_discrete_values() {
+    let expr =
+      interpret_to_expr("Manipulate[n + 1, {{n, 20}, {10, 20, 30}}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let bindings = manipulate_initial_bindings(&spec);
+    // Initial index is 1 because explicit initial 20 matches values[1].
+    assert_eq!(bindings, vec![("n".to_string(), "20".to_string())]);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    assert_eq!(interpret(&code).unwrap(), "21");
+  }
+
+  #[test]
+  fn spec_to_json_continuous() {
+    let expr = interpret_to_expr("Manipulate[x^2, {x, 0, 10, 0.5}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""body":"x^2""#));
+    assert!(json.contains(r#""kind":"continuous""#));
+    assert!(json.contains(r#""name":"x""#));
+    assert!(json.contains(r#""min":0"#));
+    assert!(json.contains(r#""max":10"#));
+    assert!(json.contains(r#""step":0.5"#));
+  }
+
+  #[test]
+  fn spec_to_json_discrete() {
+    let expr = interpret_to_expr("Manipulate[x + 1, {x, {1, 2, 3}}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""kind":"discrete""#));
+    assert!(json.contains(r#""values":["1","2","3"]"#));
+    assert!(json.contains(r#""initialIndex":0"#));
+  }
+}
