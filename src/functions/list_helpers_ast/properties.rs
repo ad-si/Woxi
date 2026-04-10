@@ -255,6 +255,21 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Dimensions[SparseArray[Automatic, dims, default, rules]] returns the
+  // array's dims directly instead of treating it as an opaque FunctionCall.
+  if let Expr::FunctionCall { name, args: sa } = &args[0]
+    && name == "SparseArray"
+    && sa.len() == 4
+    && matches!(&sa[0], Expr::Identifier(s) if s == "Automatic")
+    && let Expr::List(dim_items) = &sa[1]
+  {
+    let dims: Vec<Expr> = match max_level {
+      Some(n) => dim_items.iter().take(n).cloned().collect(),
+      None => dim_items.clone(),
+    };
+    return Ok(Expr::List(dims));
+  }
+
   let dims = get_dimensions(&args[0], max_level);
   Ok(Expr::List(dims.into_iter().map(Expr::Integer).collect()))
 }

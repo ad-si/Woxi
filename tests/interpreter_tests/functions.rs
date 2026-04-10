@@ -8014,6 +8014,124 @@ mod array_rules {
       "{{1, 2} -> 5, {3, 1} -> 7, {_, _} -> 0}"
     );
   }
+
+  // Inferred dimensions: 2D rules with no explicit dims
+  #[test]
+  fn sparse_array_inferred_dims_2d() {
+    assert_eq!(
+      interpret(
+        "SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {1, 3} -> 4}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {3, 3}, 0, {{1, 1} -> 1, {1, 3} -> 4, {2, 2} -> 2, {3, 3} -> 3}]"
+    );
+  }
+
+  #[test]
+  fn sparse_array_inferred_normal() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {1, 3} -> 4}]]"
+      )
+      .unwrap(),
+      "{{1, 0, 4}, {0, 2, 0}, {0, 0, 3}}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_inferred_dimensions() {
+    assert_eq!(
+      interpret(
+        "Dimensions[SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {1, 3} -> 4}]]"
+      )
+      .unwrap(),
+      "{3, 3}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_inferred_array_rules() {
+    assert_eq!(
+      interpret(
+        "ArrayRules[SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {1, 3} -> 4}]]"
+      )
+      .unwrap(),
+      "{{1, 1} -> 1, {1, 3} -> 4, {2, 2} -> 2, {3, 3} -> 3, {_, _} -> 0}"
+    );
+  }
+
+  // Inferred dimensions for 1D (bare-integer positions).
+  #[test]
+  fn sparse_array_inferred_1d_scalar_positions() {
+    assert_eq!(
+      interpret("SparseArray[{1 -> 5, 3 -> 7, 5 -> 2}]").unwrap(),
+      "SparseArray[Automatic, {5}, 0, {{1} -> 5, {3} -> 7, {5} -> 2}]"
+    );
+  }
+
+  // Dense list input → sparse form (default 0, non-zero entries become rules).
+  #[test]
+  fn sparse_array_from_dense_2d() {
+    assert_eq!(
+      interpret("SparseArray[{{0, a}, {b, 0}}]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+    );
+  }
+
+  #[test]
+  fn sparse_array_from_dense_1d_normal() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{1, 0, 3, 0, 5}]]").unwrap(),
+      "{1, 0, 3, 0, 5}"
+    );
+  }
+
+  // Explicit default fill value.
+  #[test]
+  fn sparse_array_custom_default() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 2} -> a}, {3, 3}, x]").unwrap(),
+      "SparseArray[Automatic, {3, 3}, x, {{1, 2} -> a}]"
+    );
+  }
+
+  #[test]
+  fn sparse_array_custom_default_normal() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{{1, 2} -> a}, {3, 3}, x]]").unwrap(),
+      "{{x, a, x}, {x, x, x}, {x, x, x}}"
+    );
+  }
+
+  // Rules matching the default are dropped from the canonical form.
+  #[test]
+  fn sparse_array_drops_default_rules() {
+    assert_eq!(
+      interpret("SparseArray[{{1, 1} -> 0, {2, 2} -> 3}, {2, 2}]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {{2, 2} -> 3}]"
+    );
+  }
+
+  // Later rules override earlier rules at the same position.
+  #[test]
+  fn sparse_array_later_rule_wins() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{1 -> 5, 1 -> 9}, 3]]").unwrap(),
+      "{9, 0, 0}"
+    );
+  }
+
+  // Canonical form is idempotent under re-normalization.
+  #[test]
+  fn sparse_array_canonical_idempotent() {
+    assert_eq!(
+      interpret(
+        "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+    );
+  }
 }
 
 // Batch tests for unevaluated wrappers

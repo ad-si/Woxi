@@ -554,11 +554,9 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::peak_detect_ast(args));
     }
     "SparseArray" if !args.is_empty() => {
-      // Return SparseArray unevaluated (like Wolfram); use Normal[] to expand
-      return Some(Ok(Expr::FunctionCall {
-        name: "SparseArray".to_string(),
-        args: args.to_vec(),
-      }));
+      // Normalize to canonical form: SparseArray[Automatic, dims, default, rules].
+      // Use Normal[] to expand to a dense nested list.
+      return Some(list_helpers_ast::sparse_array_normalize_ast(args));
     }
     "Normal" if args.len() == 1 => {
       // Normal[FittedModel[...]] extracts the fitted expression
@@ -2967,7 +2965,8 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
 
-  // Handle SparseArray[rules, dims] or SparseArray[rules, dims, default]
+  // Handle SparseArray[...] — normalize to canonical form and emit
+  // sorted rules plus a trailing `{_, _, ...} -> default` pattern rule.
   if let Expr::FunctionCall {
     name,
     args: sa_args,
@@ -2975,64 +2974,40 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "SparseArray"
     && !sa_args.is_empty()
   {
-    let sa_default = if args.len() == 2 {
-      default_val.clone()
-    } else if sa_args.len() >= 3 {
-      sa_args[2].clone()
-    } else {
-      Expr::Integer(0)
-    };
-
-    // Determine depth from dimensions
-    let depth = if sa_args.len() >= 2 {
-      match &sa_args[1] {
+    let normalized =
+      crate::functions::list_helpers_ast::sparse_array_normalize_ast(sa_args)?;
+    if let Expr::FunctionCall { name: n2, args: na } = &normalized
+      && n2 == "SparseArray"
+      && na.len() == 4
+      && matches!(&na[0], Expr::Identifier(s) if s == "Automatic")
+    {
+      let depth = match &na[1] {
         Expr::List(items) => items.len(),
-        _ => 1, // scalar dimension means 1D
-      }
-    } else {
-      1
-    };
-
-    let mut rules: Vec<Expr> = Vec::new();
-
-    // Extract rules from the SparseArray's rule list
-    let rule_list = match &sa_args[0] {
-      Expr::List(items) => items.clone(),
-      _ => vec![sa_args[0].clone()],
-    };
-
-    for rule in &rule_list {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = rule
-      {
-        // Normalize position: wrap scalar index in a list for 1D
-        let pos = match pattern.as_ref() {
-          Expr::List(_) => pattern.as_ref().clone(),
-          _ => Expr::List(vec![pattern.as_ref().clone()]),
-        };
-        rules.push(Expr::Rule {
-          pattern: Box::new(pos),
-          replacement: replacement.clone(),
-        });
-      }
+        _ => 1,
+      };
+      let sa_default = if args.len() == 2 {
+        default_val.clone()
+      } else {
+        na[2].clone()
+      };
+      let mut rules: Vec<Expr> = match &na[3] {
+        Expr::List(items) => items.clone(),
+        _ => Vec::new(),
+      };
+      let blanks: Vec<Expr> = (0..depth)
+        .map(|_| Expr::Pattern {
+          name: String::new(),
+          head: None,
+          blank_type: 1,
+        })
+        .collect();
+      rules.push(Expr::Rule {
+        pattern: Box::new(Expr::List(blanks)),
+        replacement: Box::new(sa_default),
+      });
+      return Ok(Expr::List(rules));
     }
-
-    // Add the default pattern rule: {_, _, ...} -> default
-    let blanks: Vec<Expr> = (0..depth)
-      .map(|_| Expr::Pattern {
-        name: String::new(),
-        head: None,
-        blank_type: 1,
-      })
-      .collect();
-    rules.push(Expr::Rule {
-      pattern: Box::new(Expr::List(blanks)),
-      replacement: Box::new(sa_default),
-    });
-
-    return Ok(Expr::List(rules));
+    // Normalization failed — fall through to the default-value handling.
   }
 
   let mut rules: Vec<Expr> = Vec::new();
