@@ -192,15 +192,12 @@ pub fn cases_ast(
           crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
         kept.push(result);
       }
-    } else if matches_pattern_ast(item, pattern) {
+    } else if crate::evaluator::pattern_matching::match_pattern(item, pattern)
+      .is_some()
+    {
+      // Use bindings-tracking matcher so repeated pattern variables
+      // (e.g. {a_, a_}) require consistent bindings.
       kept.push(item.clone());
-    } else {
-      // Fall back to string matching for compatibility
-      let item_str = crate::syntax::expr_to_string(item);
-      let pattern_str = crate::syntax::expr_to_string(pattern);
-      if matches_pattern_simple(&item_str, &pattern_str) {
-        kept.push(item.clone());
-      }
     }
   }
 

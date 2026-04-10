@@ -3580,6 +3580,15 @@ mod join_non_list {
   }
 
   #[test]
+  fn cases_repeated_pattern_variable() {
+    // Regression: Cases used to ignore bindings so all pairs matched.
+    assert_eq!(
+      interpret("Cases[{{1, 2}, {2, 1}, {1, 1}, {3, 3}}, {a_, a_}]").unwrap(),
+      "{{1, 1}, {3, 3}}"
+    );
+  }
+
+  #[test]
   fn member_q_operator_form() {
     assert_eq!(interpret("MemberQ[2][{1, 2, 3}]").unwrap(), "True");
   }
