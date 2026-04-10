@@ -7,7 +7,7 @@ pub fn dispatch_complex_and_special(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
-    "Unitize" if args.len() == 1 => {
+    "Unitize" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::unitize_ast(args));
     }
     "Ramp" if args.len() == 1 => {
