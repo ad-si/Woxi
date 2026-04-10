@@ -1259,6 +1259,46 @@ mod string_take_extended {
       "Hello"
     );
   }
+
+  #[test]
+  fn take_list_of_ranges() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdef", {{1, 3}, {4, 6}}]"#).unwrap(),
+      "{abc, def}"
+    );
+  }
+
+  #[test]
+  fn take_list_of_mixed_subspecs() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdefghij", {{1, 3}, {5}, {7, 9}}]"#).unwrap(),
+      "{abc, e, ghi}"
+    );
+  }
+
+  #[test]
+  fn take_list_of_one_range() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdefghij", {{2, 4}}]"#).unwrap(),
+      "{bcd}"
+    );
+  }
+
+  #[test]
+  fn take_list_of_negative_range() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdefghij", {{-4, -1}}]"#).unwrap(),
+      "{ghij}"
+    );
+  }
+
+  #[test]
+  fn take_list_of_stepped_range() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdefghij", {{1, 8, 2}}]"#).unwrap(),
+      "{aceg}"
+    );
+  }
 }
 
 mod string_match_q_patterns {
