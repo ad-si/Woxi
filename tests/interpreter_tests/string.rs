@@ -1330,6 +1330,30 @@ mod string_drop_list_spec {
   fn drop_zero() {
     assert_eq!(interpret(r#"StringDrop["abcd",0]"#).unwrap(), "abcd");
   }
+
+  #[test]
+  fn drop_threads_list() {
+    assert_eq!(
+      interpret(r#"StringDrop[{"abcde", "fghij"}, 2]"#).unwrap(),
+      "{cde, hij}"
+    );
+  }
+
+  #[test]
+  fn drop_threads_list_negative() {
+    assert_eq!(
+      interpret(r#"StringDrop[{"abcde", "fghij"}, -2]"#).unwrap(),
+      "{abc, fgh}"
+    );
+  }
+
+  #[test]
+  fn drop_threads_list_single_index() {
+    assert_eq!(
+      interpret(r#"StringDrop[{"abcde", "fghij"}, {2}]"#).unwrap(),
+      "{acde, fhij}"
+    );
+  }
 }
 
 mod string_take_extended {
