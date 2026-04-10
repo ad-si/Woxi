@@ -1223,7 +1223,29 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         UnaryOperator::Not => "Not",
       }
     }
-    Expr::Comparison { .. } => "Comparison",
+    Expr::Comparison { operators, .. } => {
+      use crate::syntax::ComparisonOp;
+      // A uniform chain (all operators the same) has head equal to that operator.
+      // A mixed chain has head "Inequality". A single-op comparison also uses
+      // the operator name directly.
+      let first = operators.first().copied();
+      let all_same = operators.iter().all(|op| Some(*op) == first);
+      if all_same {
+        match first {
+          Some(ComparisonOp::Equal) => "Equal",
+          Some(ComparisonOp::NotEqual) => "Unequal",
+          Some(ComparisonOp::Less) => "Less",
+          Some(ComparisonOp::LessEqual) => "LessEqual",
+          Some(ComparisonOp::Greater) => "Greater",
+          Some(ComparisonOp::GreaterEqual) => "GreaterEqual",
+          Some(ComparisonOp::SameQ) => "SameQ",
+          Some(ComparisonOp::UnsameQ) => "UnsameQ",
+          None => "Equal",
+        }
+      } else {
+        "Inequality"
+      }
+    }
     Expr::Map { .. } => "Map",
     Expr::Apply { .. } => "Apply",
     Expr::Part { .. } => "Part",

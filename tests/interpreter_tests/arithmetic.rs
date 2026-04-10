@@ -154,6 +154,44 @@ mod arithmetic {
     }
   }
 
+  mod head_of_comparisons {
+    use super::*;
+
+    // Regression: Head of comparison expressions used to return "Comparison"
+    // instead of the actual operator name (Equal, Less, etc.).
+    #[test]
+    fn head_equal() {
+      assert_eq!(interpret("Head[x == y]").unwrap(), "Equal");
+    }
+
+    #[test]
+    fn head_less() {
+      assert_eq!(interpret("Head[x < y]").unwrap(), "Less");
+    }
+
+    #[test]
+    fn head_greater_equal() {
+      assert_eq!(interpret("Head[x >= y]").unwrap(), "GreaterEqual");
+    }
+
+    #[test]
+    fn head_unequal() {
+      assert_eq!(interpret("Head[x != y]").unwrap(), "Unequal");
+    }
+
+    #[test]
+    fn head_uniform_chain() {
+      // Uniform chain: all operators the same → head is that operator
+      assert_eq!(interpret("Head[1 < x < 10]").unwrap(), "Less");
+    }
+
+    #[test]
+    fn head_mixed_chain() {
+      // Mixed chain: different operators → head is Inequality
+      assert_eq!(interpret("Head[1 < x <= 10]").unwrap(), "Inequality");
+    }
+  }
+
   mod times_simplification {
     use super::*;
 
