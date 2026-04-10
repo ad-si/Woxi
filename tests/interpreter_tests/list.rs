@@ -3628,6 +3628,33 @@ mod join_non_list {
   }
 
   #[test]
+  fn array_with_range_rational_step() {
+    // Array[f, n, {a, b}] with non-integer step must produce exact
+    // rationals, not Reals. Previously gave {f[1.], f[1.5], f[2.]}.
+    assert_eq!(
+      interpret("Array[f, 3, {1, 2}]").unwrap(),
+      "{f[1], f[3/2], f[2]}"
+    );
+  }
+
+  #[test]
+  fn array_with_range_fifths() {
+    assert_eq!(
+      interpret("Array[f, 5, {0, 1}]").unwrap(),
+      "{f[0], f[1/4], f[1/2], f[3/4], f[1]}"
+    );
+  }
+
+  #[test]
+  fn array_with_range_real_endpoints_stays_real() {
+    // When endpoints are Real, the indices should also be Real.
+    assert_eq!(
+      interpret("Array[f, 3, {1.5, 2.5}]").unwrap(),
+      "{f[1.5], f[2.], f[2.5]}"
+    );
+  }
+
+  #[test]
   fn to_character_code_list() {
     assert_eq!(
       interpret("ToCharacterCode[{\"ab\", \"c\"}]").unwrap(),
