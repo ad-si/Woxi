@@ -95,6 +95,54 @@ mod high_level_functions_tests {
     }
   }
 
+  mod trig_negation_identities {
+    // Regression: Sin[-x], Cos[-x], Tan[-x], etc. used to return unchanged
+    // instead of applying the odd/even symmetries.
+    use super::*;
+
+    #[test]
+    fn sin_is_odd() {
+      assert_eq!(interpret("Sin[-x]").unwrap(), "-Sin[x]");
+      assert_eq!(interpret("Sin[-Pi/6]").unwrap(), "-1/2");
+    }
+
+    #[test]
+    fn cos_is_even() {
+      assert_eq!(interpret("Cos[-x]").unwrap(), "Cos[x]");
+      assert_eq!(interpret("Cos[-Pi/3]").unwrap(), "1/2");
+    }
+
+    #[test]
+    fn tan_is_odd() {
+      assert_eq!(interpret("Tan[-x]").unwrap(), "-Tan[x]");
+    }
+
+    #[test]
+    fn sec_is_even() {
+      assert_eq!(interpret("Sec[-x]").unwrap(), "Sec[x]");
+    }
+
+    #[test]
+    fn csc_is_odd() {
+      assert_eq!(interpret("Csc[-x]").unwrap(), "-Csc[x]");
+    }
+
+    #[test]
+    fn cot_is_odd() {
+      assert_eq!(interpret("Cot[-x]").unwrap(), "-Cot[x]");
+    }
+
+    #[test]
+    fn arcsin_is_odd() {
+      assert_eq!(interpret("ArcSin[-x]").unwrap(), "-ArcSin[x]");
+    }
+
+    #[test]
+    fn arctan_is_odd() {
+      assert_eq!(interpret("ArcTan[-x]").unwrap(), "-ArcTan[x]");
+    }
+  }
+
   mod cosh_tests {
     use super::*;
     #[test]

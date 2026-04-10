@@ -651,6 +651,11 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sin expects 1 argument".into(),
     ));
   }
+  // Sin[-x] → -Sin[x] (odd function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Sin", &[neg])?;
+    return Ok(negate_expr(inner));
+  }
   // Sin[ArcSin[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcSin"
@@ -801,6 +806,10 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cos expects 1 argument".into(),
     ));
   }
+  // Cos[-x] → Cos[x] (even function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    return crate::evaluator::evaluate_function_call_ast("Cos", &[neg]);
+  }
   // Cos[ArcCos[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcCos"
@@ -933,6 +942,11 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Tan expects 1 argument".into(),
     ));
   }
+  // Tan[-x] → -Tan[x] (odd function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Tan", &[neg])?;
+    return Ok(negate_expr(inner));
+  }
   // Tan[ArcTan[x]] = x (inverse function identity)
   if let Expr::FunctionCall { name, args: ia } = &args[0]
     && name == "ArcTan"
@@ -1001,6 +1015,10 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sec expects 1 argument".into(),
     ));
   }
+  // Sec[-x] → Sec[x] (even function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    return crate::evaluator::evaluate_function_call_ast("Sec", &[neg]);
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1028,6 +1046,11 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Csc expects 1 argument".into(),
     ));
   }
+  // Csc[-x] → -Csc[x] (odd function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Csc", &[neg])?;
+    return Ok(negate_expr(inner));
+  }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
@@ -1054,6 +1077,11 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Cot expects 1 argument".into(),
     ));
+  }
+  // Cot[-x] → -Cot[x] (odd function)
+  if let Some(neg) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Cot", &[neg])?;
+    return Ok(negate_expr(inner));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
@@ -1730,6 +1758,27 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcSin expects exactly 1 argument".into(),
     ));
   }
+  // ArcSin[-x] → -ArcSin[x] (odd function)
+  // Only apply for symbolic (non-numeric) arguments; for numeric arguments
+  // the existing Exact/Real paths below produce the canonical form.
+  if !matches!(
+    &args[0],
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) && !matches!(
+    &args[0],
+    Expr::FunctionCall { name, .. } if name == "Rational"
+  ) && let Some(neg) = try_extract_negated(&args[0])
+  {
+    let inner = crate::evaluator::evaluate_function_call_ast("ArcSin", &[neg])?;
+    // Build -inner and let the evaluator simplify
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
   // Exact values: ArcSin[0] = 0, ArcSin[1] = Pi/2, ArcSin[-1] = -Pi/2
   // ArcSin[1/2] = Pi/6, ArcSin[-1/2] = -Pi/6
   match &args[0] {
@@ -1905,6 +1954,25 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTan expects exactly 1 argument".into(),
     ));
+  }
+  // ArcTan[-x] → -ArcTan[x] (odd function)
+  // Only apply for symbolic (non-numeric) arguments.
+  if !matches!(
+    &args[0],
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
+  ) && !matches!(
+    &args[0],
+    Expr::FunctionCall { name, .. } if name == "Rational"
+  ) && let Some(neg) = try_extract_negated(&args[0])
+  {
+    let inner = crate::evaluator::evaluate_function_call_ast("ArcTan", &[neg])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
   // Exact values: ArcTan[0] = 0, ArcTan[1] = Pi/4, ArcTan[-1] = -Pi/4
   // ArcTan[Infinity] = Pi/2, ArcTan[-Infinity] = -Pi/2
