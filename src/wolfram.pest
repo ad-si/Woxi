@@ -259,10 +259,14 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 // This eliminates exponential backtracking caused by parsing the same
 // FunctionCall 4 times through separate Term alternatives.
 // Named suffix rules so pair_to_expr can detect them reliably.
-// Only match & as FunctionCallAnonSuffix when it has BracketArgs (f[x]&[5]) or
-// is NOT followed by @ (which would indicate expression-level & followed by prefix apply).
-// This prevents f[0]& in "a + f[0] &@ n" from consuming & at the Term level.
-FunctionCallAnonSuffix = { "&" ~ !"&" ~ (BracketArgs+ | !("@" | "+" | "-" | "*" | "/" | "^" | "<" | ">" | "=" | "|" | "." | "~")) }
+// Only match & as FunctionCallAnonSuffix when it is followed by BracketArgs
+// (the direct-call form f[x]&[5]). A bare trailing `&` on a function call is
+// left for the Expression-level AnonymousFunctionSuffix, so `&` can have the
+// correct Wolfram precedence (90): tighter than `=`/`:=` (40) but looser than
+// infix operators like `==`, `+`, etc. — otherwise `Mod[#1,3] == Mod[#2,3] &`
+// would parse as `Equal[Mod[#1,3], Function[Mod[#2,3]]]` instead of
+// `Function[Equal[Mod[#1,3], Mod[#2,3]]]`.
+FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs+ }
 FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {

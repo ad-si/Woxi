@@ -3409,6 +3409,53 @@ mod slot_function {
   fn slot_hash_syntax() {
     assert_eq!(interpret("#^2 &[3]").unwrap(), "9");
   }
+
+  // Regression tests for `&` precedence: `&` is 90 in Wolfram, which is
+  // tighter than Set (40) but looser than Equal (290) and all arithmetic
+  // infix operators, so both of these bindings must be preserved.
+
+  #[test]
+  fn amp_binds_whole_equality_with_function_call_operands() {
+    // Function call on both sides of == followed by `&`: the whole
+    // equality must become the Function body.
+    assert_eq!(
+      interpret("Head[Mod[#1, 3] == Mod[#2, 3] &]").unwrap(),
+      "Function"
+    );
+    assert_eq!(
+      interpret("(Mod[#1, 3] == Mod[#2, 3] &)[1, 4]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("(Mod[#1, 3] == Mod[#2, 3] &)[1, 5]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn amp_binds_whole_inequality_with_function_call_operands() {
+    assert_eq!(
+      interpret("(Sort[#1] == Sort[#2] &)[{1, 2}, {2, 1}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn amp_binds_tighter_than_set_on_plain_body() {
+    // `f = body &` must parse as Set[f, Function[body]], not
+    // Function[Set[f, body]].
+    assert_eq!(interpret("f = Sqrt[#] &; f[16]").unwrap(), "4");
+  }
+
+  #[test]
+  fn amp_binds_tighter_than_set_delayed_on_plain_body() {
+    assert_eq!(interpret("g := #^2 &; g[7]").unwrap(), "49");
+  }
+
+  #[test]
+  fn amp_binds_tighter_than_set_with_function_call_body() {
+    assert_eq!(interpret("h = Plus[##] &; h[1, 2, 3, 4]").unwrap(), "10");
+  }
 }
 
 mod set_delayed {
