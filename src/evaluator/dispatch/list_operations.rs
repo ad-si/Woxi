@@ -927,7 +927,6 @@ pub fn dispatch_list_operations(
         _ => (None, None),
       };
       if let Some(mut sorted) = items {
-        let cmp_name = crate::syntax::expr_to_string(&args[1]);
         let wrap = |items: Vec<Expr>| -> Expr {
           match &head_name {
             None => Expr::List(items),
@@ -937,33 +936,42 @@ pub fn dispatch_list_operations(
             },
           }
         };
-        match cmp_name.as_str() {
-          "Greater" => {
-            sorted
-              .sort_by(|a, b| list_helpers_ast::canonical_cmp(a, b).reverse());
-            return Some(Ok(wrap(sorted)));
-          }
-          "Less" => {
-            sorted.sort_by(list_helpers_ast::canonical_cmp);
-            return Some(Ok(wrap(sorted)));
-          }
-          _ => {
-            // Custom comparator: evaluate p[a, b] for each comparison
-            sorted.sort_by(|a, b| {
-              let result = evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: cmp_name.clone(),
-                args: vec![a.clone(), b.clone()],
+        // Fast path: the two bare symbol comparators that Sort is most
+        // commonly called with.
+        if let Expr::Identifier(name) = &args[1] {
+          match name.as_str() {
+            "Greater" => {
+              sorted.sort_by(|a, b| {
+                list_helpers_ast::canonical_cmp(a, b).reverse()
               });
-              match result {
-                Ok(Expr::Identifier(ref s)) if s == "True" => {
-                  std::cmp::Ordering::Less
-                }
-                _ => std::cmp::Ordering::Greater,
-              }
-            });
-            return Some(Ok(wrap(sorted)));
+              return Some(Ok(wrap(sorted)));
+            }
+            "Less" => {
+              sorted.sort_by(list_helpers_ast::canonical_cmp);
+              return Some(Ok(wrap(sorted)));
+            }
+            _ => {}
           }
         }
+        // General path: evaluate p[a, b] for each comparison via the
+        // normal function-application machinery, so pure Functions
+        // (`#1 > #2 &`), NamedFunctions, and curried calls all work.
+        let comparator = args[1].clone();
+        sorted.sort_by(|a, b| {
+          let result =
+            crate::functions::list_helpers_ast::apply_func_to_two_args(
+              &comparator,
+              a,
+              b,
+            );
+          match result {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {
+              std::cmp::Ordering::Less
+            }
+            _ => std::cmp::Ordering::Greater,
+          }
+        });
+        return Some(Ok(wrap(sorted)));
       }
     }
     "ReverseSort" if args.len() == 1 || args.len() == 2 => {

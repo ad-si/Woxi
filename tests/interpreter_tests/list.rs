@@ -822,6 +822,48 @@ mod sort_canonical {
   }
 
   #[test]
+  fn sort_with_pure_function_greater() {
+    assert_eq!(
+      interpret("Sort[{5, 2, 8, 1, 9}, #1 > #2 &]").unwrap(),
+      "{9, 8, 5, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn sort_with_pure_function_less() {
+    assert_eq!(
+      interpret("Sort[{5, 2, 8, 1, 9}, #1 < #2 &]").unwrap(),
+      "{1, 2, 5, 8, 9}"
+    );
+  }
+
+  #[test]
+  fn sort_with_pure_function_on_nested_list() {
+    // Sort pairs by their second element ascending.
+    assert_eq!(
+      interpret("Sort[{{1, 2}, {3, 1}, {2, 5}}, #1[[2]] < #2[[2]] &]").unwrap(),
+      "{{3, 1}, {1, 2}, {2, 5}}"
+    );
+  }
+
+  #[test]
+  fn sort_with_named_function() {
+    assert_eq!(
+      interpret("Sort[{5, 2, 8, 1, 9}, Function[{a, b}, a > b]]").unwrap(),
+      "{9, 8, 5, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn sort_with_pure_function_preserves_head() {
+    // Custom comparator on a non-List head should also work.
+    assert_eq!(
+      interpret("Sort[f[3, 1, 2], #1 > #2 &]").unwrap(),
+      "f[3, 2, 1]"
+    );
+  }
+
+  #[test]
   fn sort_with_infinity() {
     // Wolfram canonical ordering: finite numbers first, then -Infinity, then Infinity
     assert_eq!(
