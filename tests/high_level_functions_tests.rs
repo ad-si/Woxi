@@ -239,6 +239,13 @@ mod high_level_functions_tests {
     fn test_capitalize_already() {
       assert_eq!(interpret(r#"Capitalize["Hello"]"#).unwrap(), "Hello");
     }
+    #[test]
+    fn test_capitalize_threads_list() {
+      assert_eq!(
+        interpret(r#"Capitalize[{"abc", "def"}]"#).unwrap(),
+        "{Abc, Def}"
+      );
+    }
   }
 
   mod decapitalize_tests {
@@ -253,6 +260,13 @@ mod high_level_functions_tests {
     #[test]
     fn test_decapitalize_empty() {
       assert_eq!(interpret(r#"Decapitalize[""]"#).unwrap(), "");
+    }
+    #[test]
+    fn test_decapitalize_threads_list() {
+      assert_eq!(
+        interpret(r#"Decapitalize[{"ABC", "DEF"}]"#).unwrap(),
+        "{aBC, dEF}"
+      );
     }
   }
 

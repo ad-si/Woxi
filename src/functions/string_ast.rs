@@ -3513,6 +3513,13 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Capitalize expects exactly 1 argument".into(),
     ));
   }
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| capitalize_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   if s.is_empty() {
     return Ok(Expr::String(s));
@@ -3531,6 +3538,13 @@ pub fn decapitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Decapitalize expects exactly 1 argument".into(),
     ));
+  }
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| decapitalize_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
   }
   let s = expr_to_str(&args[0])?;
   if s.is_empty() {
