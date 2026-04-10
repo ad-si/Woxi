@@ -413,6 +413,53 @@ mod delete {
   }
 }
 
+mod insert {
+  use super::*;
+
+  #[test]
+  fn insert_positive() {
+    assert_eq!(
+      interpret("Insert[{a, b, c, d}, x, 2]").unwrap(),
+      "{a, x, b, c, d}"
+    );
+  }
+
+  #[test]
+  fn insert_negative() {
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, -2]").unwrap(),
+      "{a, b, x, c}"
+    );
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, -1]").unwrap(),
+      "{a, b, c, x}"
+    );
+  }
+
+  #[test]
+  fn insert_single_position_in_list() {
+    // Insert[list, x, {n}] — position as a length-1 list
+    assert_eq!(
+      interpret("Insert[{a, b, c}, x, {2}]").unwrap(),
+      "{a, x, b, c}"
+    );
+  }
+
+  #[test]
+  fn insert_multiple_positions() {
+    // Regression: Insert[list, x, {{p1}, {p2}, ...}] used to error with
+    // "position must be an integer". Positions refer to the original list.
+    assert_eq!(
+      interpret("Insert[{a, b, c, d, e}, x, {{2}, {4}}]").unwrap(),
+      "{a, x, b, c, x, d, e}"
+    );
+    assert_eq!(
+      interpret("Insert[{a, b, c, d, e}, x, {{1}, {3}, {5}}]").unwrap(),
+      "{x, a, b, x, c, d, x, e}"
+    );
+  }
+}
+
 mod dimensions {
   use super::*;
 
