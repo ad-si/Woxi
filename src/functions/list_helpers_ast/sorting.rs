@@ -283,11 +283,11 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-///// Ordering[list
+///// Ordering[list] / Ordering[list, n] / Ordering[list, n, p]
 pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Ordering expects 1 or 2 arguments".into(),
+      "Ordering expects 1, 2, or 3 arguments".into(),
     ));
   }
 
@@ -303,32 +303,66 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut indexed: Vec<(usize, &Expr)> = items.iter().enumerate().collect();
 
-  indexed.sort_by(|a, b| {
-    let va = crate::syntax::expr_to_string(a.1);
-    let vb = crate::syntax::expr_to_string(b.1);
-    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
-      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-    } else {
-      va.cmp(&vb)
+  // Decide which comparator to use. With 3 args, the third is either a
+  // bare symbol (Less/Greater) or a predicate p such that p[a, b] is True
+  // when a should come before b.
+  let comparator: Option<&Expr> = args.get(2);
+  let use_greater = matches!(
+    comparator,
+    Some(Expr::Identifier(n)) if n == "Greater"
+  );
+  let use_less = matches!(
+    comparator,
+    Some(Expr::Identifier(n)) if n == "Less"
+  );
+  let use_predicate = comparator.is_some() && !use_greater && !use_less;
+
+  if use_predicate {
+    let p = comparator.unwrap().clone();
+    let mut err: Option<InterpreterError> = None;
+    indexed.sort_by(|a, b| {
+      if err.is_some() {
+        return std::cmp::Ordering::Equal;
+      }
+      match crate::functions::list_helpers_ast::apply_func_to_two_args(
+        &p, a.1, b.1,
+      ) {
+        Ok(Expr::Identifier(ref s)) if s == "True" => std::cmp::Ordering::Less,
+        Ok(_) => std::cmp::Ordering::Greater,
+        Err(e) => {
+          err = Some(e);
+          std::cmp::Ordering::Equal
+        }
+      }
+    });
+    if let Some(e) = err {
+      return Err(e);
     }
-  });
+  } else {
+    indexed.sort_by(|a, b| {
+      let ord = crate::functions::list_helpers_ast::canonical_cmp(a.1, b.1);
+      if use_greater { ord.reverse() } else { ord }
+    });
+  }
 
   let mut result: Vec<Expr> = indexed
     .iter()
     .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
     .collect();
 
-  if args.len() == 2
-    && let Some(n) = expr_to_i128(&args[1])
-  {
-    let n = n;
-    if n >= 0 {
-      result.truncate(n as usize);
-    } else {
-      // Negative n: take last |n| elements (largest positions)
-      let abs_n = n.unsigned_abs() as usize;
-      if abs_n <= result.len() {
-        result = result.split_off(result.len() - abs_n);
+  // The second argument, if present and not the symbol `All`, limits the
+  // number of positions returned.
+  if args.len() >= 2 {
+    let is_all = matches!(&args[1], Expr::Identifier(n) if n == "All");
+    if !is_all && let Some(n) = expr_to_i128(&args[1]) {
+      if n >= 0 {
+        result.truncate(n as usize);
+      } else {
+        // Negative n: take last |n| elements (largest positions)
+        let abs_n = n.unsigned_abs() as usize;
+        if abs_n <= result.len() {
+          result = result.split_off(result.len() - abs_n);
+        }
       }
     }
   }

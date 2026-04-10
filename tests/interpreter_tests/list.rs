@@ -389,6 +389,38 @@ mod ordering {
   fn strings() {
     assert_eq!(interpret("Ordering[{c, a, b}]").unwrap(), "{2, 3, 1}");
   }
+
+  #[test]
+  fn all_with_greater() {
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2, 4, 5}, All, Greater]").unwrap(),
+      "{5, 4, 1, 3, 2}"
+    );
+  }
+
+  #[test]
+  fn limit_with_greater() {
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2, 4, 5}, 2, Greater]").unwrap(),
+      "{5, 4}"
+    );
+  }
+
+  #[test]
+  fn all_default_ordering() {
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2, 4, 5}, All]").unwrap(),
+      "{2, 3, 1, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn limit_with_pure_function() {
+    assert_eq!(
+      interpret("Ordering[{3, 1, 2, 4, 5}, 2, (#1 > #2)&]").unwrap(),
+      "{5, 4}"
+    );
+  }
 }
 
 mod delete {
