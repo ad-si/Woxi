@@ -288,6 +288,13 @@ mod high_level_functions_tests {
     fn test_string_delete_none() {
       assert_eq!(interpret(r#"StringDelete["abc", "x"]"#).unwrap(), "abc");
     }
+    #[test]
+    fn test_string_delete_threads_list() {
+      assert_eq!(
+        interpret(r#"StringDelete[{"abcabc", "xbyb"}, "b"]"#).unwrap(),
+        "{acac, xy}"
+      );
+    }
   }
 
   // ─── List Functions ────────────────────────────────────────────────
