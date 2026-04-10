@@ -55,10 +55,14 @@ pub struct Cell {
 pub enum CellStyle {
   Title,
   Subtitle,
+  Chapter,
+  Subchapter,
   Section,
   Subsection,
   Subsubsection,
   Text,
+  Item,
+  Subitem,
   Input,
   Output,
   Code,
@@ -70,10 +74,14 @@ impl CellStyle {
     match s {
       "Title" => Some(Self::Title),
       "Subtitle" => Some(Self::Subtitle),
+      "Chapter" => Some(Self::Chapter),
+      "Subchapter" => Some(Self::Subchapter),
       "Section" => Some(Self::Section),
       "Subsection" => Some(Self::Subsection),
       "Subsubsection" => Some(Self::Subsubsection),
       "Text" => Some(Self::Text),
+      "Item" => Some(Self::Item),
+      "Subitem" => Some(Self::Subitem),
       "Input" => Some(Self::Input),
       "Output" => Some(Self::Output),
       "Code" => Some(Self::Code),
@@ -86,10 +94,14 @@ impl CellStyle {
     match self {
       Self::Title => "Title",
       Self::Subtitle => "Subtitle",
+      Self::Chapter => "Chapter",
+      Self::Subchapter => "Subchapter",
       Self::Section => "Section",
       Self::Subsection => "Subsection",
       Self::Subsubsection => "Subsubsection",
       Self::Text => "Text",
+      Self::Item => "Item",
+      Self::Subitem => "Subitem",
       Self::Input => "Input",
       Self::Output => "Output",
       Self::Code => "Code",
@@ -604,11 +616,15 @@ fn heading_markdown(cell: &Cell) -> String {
   match cell.style {
     CellStyle::Title => format!("# {}", cell.content),
     CellStyle::Subtitle => format!("*{}*", cell.content),
-    CellStyle::Section => format!("## {}", cell.content),
-    CellStyle::Subsection => format!("### {}", cell.content),
+    CellStyle::Chapter => format!("## {}", cell.content),
+    CellStyle::Subchapter => format!("### {}", cell.content),
+    CellStyle::Section => format!("#### {}", cell.content),
+    CellStyle::Subsection => format!("##### {}", cell.content),
     CellStyle::Subsubsection => {
-      format!("#### {}", cell.content)
+      format!("###### {}", cell.content)
     }
+    CellStyle::Item => format!("- {}", cell.content),
+    CellStyle::Subitem => format!("  - {}", cell.content),
     _ => cell.content.clone(),
   }
 }
@@ -714,17 +730,29 @@ impl Notebook {
         CellStyle::Subtitle => {
           out.push_str(&format!("*{}*\n\n", cell.content));
         }
-        CellStyle::Section => {
+        CellStyle::Chapter => {
           out.push_str(&format!("## {}\n\n", cell.content));
         }
-        CellStyle::Subsection => {
+        CellStyle::Subchapter => {
           out.push_str(&format!("### {}\n\n", cell.content));
         }
-        CellStyle::Subsubsection => {
+        CellStyle::Section => {
           out.push_str(&format!("#### {}\n\n", cell.content));
+        }
+        CellStyle::Subsection => {
+          out.push_str(&format!("##### {}\n\n", cell.content));
+        }
+        CellStyle::Subsubsection => {
+          out.push_str(&format!("###### {}\n\n", cell.content));
         }
         CellStyle::Text => {
           out.push_str(&format!("{}\n\n", cell.content));
+        }
+        CellStyle::Item => {
+          out.push_str(&format!("- {}\n\n", cell.content));
+        }
+        CellStyle::Subitem => {
+          out.push_str(&format!("  - {}\n\n", cell.content));
         }
         CellStyle::Input | CellStyle::Code => {
           out.push_str(&format!("```wolfram\n{}\n```\n\n", cell.content));
@@ -779,6 +807,18 @@ impl Notebook {
             escape_latex(&cell.content)
           ));
         }
+        CellStyle::Chapter => {
+          out.push_str(&format!(
+            "\\chapter*{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Subchapter => {
+          out.push_str(&format!(
+            "\\section*{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
         CellStyle::Section => {
           out.push_str(&format!(
             "\\section{{{}}}\n\n",
@@ -800,6 +840,18 @@ impl Notebook {
         CellStyle::Text => {
           out.push_str(&escape_latex(&cell.content));
           out.push_str("\n\n");
+        }
+        CellStyle::Item => {
+          out.push_str(&format!(
+            "\\begin{{itemize}}\n\\item {}\n\\end{{itemize}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Subitem => {
+          out.push_str(&format!(
+            "\\begin{{itemize}}\n\\item \\begin{{itemize}}\n\\item {}\n\\end{{itemize}}\n\\end{{itemize}}\n\n",
+            escape_latex(&cell.content)
+          ));
         }
         CellStyle::Input | CellStyle::Code => {
           out.push_str("\\begin{verbatim}\n");
@@ -829,17 +881,29 @@ impl Notebook {
         CellStyle::Subtitle => {
           out.push_str(&format!("_{}_\n\n", cell.content));
         }
-        CellStyle::Section => {
+        CellStyle::Chapter => {
           out.push_str(&format!("== {}\n\n", cell.content));
         }
-        CellStyle::Subsection => {
+        CellStyle::Subchapter => {
           out.push_str(&format!("=== {}\n\n", cell.content));
         }
-        CellStyle::Subsubsection => {
+        CellStyle::Section => {
           out.push_str(&format!("==== {}\n\n", cell.content));
+        }
+        CellStyle::Subsection => {
+          out.push_str(&format!("===== {}\n\n", cell.content));
+        }
+        CellStyle::Subsubsection => {
+          out.push_str(&format!("====== {}\n\n", cell.content));
         }
         CellStyle::Text => {
           out.push_str(&format!("{}\n\n", cell.content));
+        }
+        CellStyle::Item => {
+          out.push_str(&format!("- {}\n\n", cell.content));
+        }
+        CellStyle::Subitem => {
+          out.push_str(&format!("  - {}\n\n", cell.content));
         }
         CellStyle::Input | CellStyle::Code => {
           out.push_str(&format!("```wl\n{}\n```\n\n", cell.content));
@@ -1048,7 +1112,7 @@ Cell[BoxData["5"], "Output"]
     let md = nb.to_markdown();
     assert!(md.contains("# My Notebook"));
     assert!(md.contains("Some text"));
-    assert!(md.contains("## Introduction"));
+    assert!(md.contains("#### Introduction"));
     assert!(md.contains("```wolfram\n1 + 1\n```"));
     assert!(md.contains("```\n2\n```"));
   }
@@ -1098,7 +1162,7 @@ Cell[BoxData["5"], "Output"]
 
     let typ = nb.to_typst();
     assert!(typ.contains("= My Notebook"));
-    assert!(typ.contains("== Introduction"));
+    assert!(typ.contains("==== Introduction"));
     assert!(typ.contains("Some text"));
     assert!(typ.contains("```wl\n1 + 1\n```"));
     assert!(typ.contains("```\n2\n```"));
@@ -1140,6 +1204,8 @@ Cell[BoxData["5"], "Output"]
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Title, "T"));
     nb.push_cell(Cell::new(CellStyle::Subtitle, "ST"));
+    nb.push_cell(Cell::new(CellStyle::Chapter, "C"));
+    nb.push_cell(Cell::new(CellStyle::Subchapter, "SC"));
     nb.push_cell(Cell::new(CellStyle::Section, "S"));
     nb.push_cell(Cell::new(CellStyle::Subsection, "SS"));
     nb.push_cell(Cell::new(CellStyle::Subsubsection, "SSS"));
@@ -1147,9 +1213,71 @@ Cell[BoxData["5"], "Output"]
     let md = nb.to_markdown();
     assert!(md.contains("# T"));
     assert!(md.contains("*ST*"));
-    assert!(md.contains("## S"));
-    assert!(md.contains("### SS"));
-    assert!(md.contains("#### SSS"));
+    assert!(md.contains("## C"));
+    assert!(md.contains("### SC"));
+    assert!(md.contains("#### S"));
+    assert!(md.contains("##### SS"));
+    assert!(md.contains("###### SSS"));
+  }
+
+  #[test]
+  fn test_parse_new_cell_types() {
+    let nb = r#"Notebook[{
+Cell["A chapter", "Chapter"],
+Cell["A subchapter", "Subchapter"],
+Cell["An item", "Item"],
+Cell["A subitem", "Subitem"]
+}]"#;
+
+    let parsed = parse_notebook(nb).unwrap();
+    assert_eq!(parsed.cells.len(), 4);
+
+    let styles: Vec<CellStyle> = parsed
+      .cells
+      .iter()
+      .filter_map(|e| match e {
+        CellEntry::Single(c) => Some(c.style),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      styles,
+      vec![
+        CellStyle::Chapter,
+        CellStyle::Subchapter,
+        CellStyle::Item,
+        CellStyle::Subitem,
+      ]
+    );
+  }
+
+  #[test]
+  fn test_roundtrip_new_cell_types() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Chapter, "Chapter 1"));
+    nb.push_cell(Cell::new(CellStyle::Subchapter, "Subchapter 1.1"));
+    nb.push_cell(Cell::new(CellStyle::Item, "First item"));
+    nb.push_cell(Cell::new(CellStyle::Subitem, "Nested item"));
+
+    let serialized = nb.to_string();
+    assert!(serialized.contains("\"Chapter\""));
+    assert!(serialized.contains("\"Subchapter\""));
+    assert!(serialized.contains("\"Item\""));
+    assert!(serialized.contains("\"Subitem\""));
+
+    let reparsed = parse_notebook(&serialized).unwrap();
+    assert_eq!(reparsed.cells.len(), 4);
+  }
+
+  #[test]
+  fn test_export_markdown_items() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Item, "First"));
+    nb.push_cell(Cell::new(CellStyle::Subitem, "Nested"));
+
+    let md = nb.to_markdown();
+    assert!(md.contains("- First"));
+    assert!(md.contains("  - Nested"));
   }
 
   #[test]
