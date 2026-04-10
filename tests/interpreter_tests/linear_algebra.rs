@@ -17,6 +17,19 @@ mod dot {
   }
 
   #[test]
+  fn vector_matrix() {
+    // Regression: Dot[vector, matrix] used to return unevaluated
+    assert_eq!(
+      interpret("Dot[{1, 2, 3}, IdentityMatrix[3]]").unwrap(),
+      "{1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("{1, 2} . {{1, 2, 3}, {4, 5, 6}}").unwrap(),
+      "{9, 12, 15}"
+    );
+  }
+
+  #[test]
   fn matrix_matrix() {
     assert_eq!(
       interpret("Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}]").unwrap(),
