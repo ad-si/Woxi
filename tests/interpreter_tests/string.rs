@@ -1676,6 +1676,22 @@ mod string_split_edge {
   fn split_filters_empty() {
     assert_eq!(interpret(r#"StringSplit["xxax", "x"]"#).unwrap(), "{a}");
   }
+
+  #[test]
+  fn split_threads_list_default() {
+    assert_eq!(
+      interpret(r#"StringSplit[{"ab cd", "ef gh"}]"#).unwrap(),
+      "{{ab, cd}, {ef, gh}}"
+    );
+  }
+
+  #[test]
+  fn split_threads_list_with_delim() {
+    assert_eq!(
+      interpret(r#"StringSplit[{"a-b-c", "x-y"}, "-"]"#).unwrap(),
+      "{{a, b, c}, {x, y}}"
+    );
+  }
 }
 
 mod integer_string_tests {
