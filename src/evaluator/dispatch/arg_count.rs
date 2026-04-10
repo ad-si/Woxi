@@ -681,7 +681,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Or" => Some((0, usize::MAX)),
     "Order" => Some((2, 2)),
     "OrderedQ" => Some((1, 1)),
-    "Ordering" => Some((1, 2)),
+    "Ordering" => Some((1, 3)),
     "Outer" => Some((3, usize::MAX)),
     "OutputForm" => Some((1, 1)),
     "PadLeft" => Some((1, usize::MAX)),

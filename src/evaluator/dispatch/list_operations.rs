@@ -306,7 +306,7 @@ pub fn dispatch_list_operations(
     "SortBy" if args.len() == 2 => {
       return Some(list_helpers_ast::sort_by_ast(&args[0], &args[1]));
     }
-    "Ordering" if !args.is_empty() && args.len() <= 2 => {
+    "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
     "Nest" if args.len() == 3 => {
