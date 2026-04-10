@@ -612,7 +612,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MinimalPolynomial" => Some((2, 2)),
     "Minimize" => Some((2, 3)),
     "MinLimit" => Some((2, 2)),
-    "MinMax" => Some((1, 1)),
+    "MinMax" => Some((1, 2)),
     "Minors" => Some((1, 3)),
     "Minus" => Some((1, 1)),
     "MissingQ" => Some((1, 1)),

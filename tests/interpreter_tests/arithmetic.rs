@@ -2558,6 +2558,46 @@ mod min_max_identity {
   fn max_single_arg() {
     assert_eq!(interpret("Max[5]").unwrap(), "5");
   }
+
+  #[test]
+  fn min_max_basic() {
+    assert_eq!(
+      interpret("MinMax[{3, 1, 4, 1, 5, 9, 2, 6}]").unwrap(),
+      "{1, 9}"
+    );
+  }
+
+  #[test]
+  fn min_max_with_integer_expansion() {
+    assert_eq!(
+      interpret("MinMax[{3, 1, 4, 1, 5, 9, 2, 6}, 1]").unwrap(),
+      "{0, 10}"
+    );
+  }
+
+  #[test]
+  fn min_max_with_rational_expansion() {
+    assert_eq!(
+      interpret("MinMax[{3, 1, 4, 1, 5, 9, 2, 6}, 1/2]").unwrap(),
+      "{1/2, 19/2}"
+    );
+  }
+
+  #[test]
+  fn min_max_with_asymmetric_expansion() {
+    assert_eq!(
+      interpret("MinMax[{3, 1, 4, 1, 5, 9, 2, 6}, {1, 2}]").unwrap(),
+      "{0, 11}"
+    );
+  }
+
+  #[test]
+  fn min_max_with_scaled_expansion() {
+    assert_eq!(
+      interpret("MinMax[{1.0, 2.0, 3.0}, Scaled[0.1]]").unwrap(),
+      "{0.8, 3.2}"
+    );
+  }
 }
 
 mod exp_log_identity {
