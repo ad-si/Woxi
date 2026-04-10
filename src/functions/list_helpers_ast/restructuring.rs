@@ -847,22 +847,24 @@ pub fn pad_left_ast(
   let len = items.len() as i128;
   let n_usize = n as usize;
 
-  let result_items = if n < len {
+  let result_items = if n < len && offset.is_none() {
     let skip = (len - n) as usize;
     items[skip..].to_vec()
   } else if n == len && offset.is_none() {
     items.to_vec()
   } else {
-    // PadLeft: original list goes at position (n - len - m) where m = offset (default 0)
-    let m = offset.unwrap_or(0).max(0);
-    let start = ((n - len - m).max(0)) as usize;
-    let list_end = start + items.len();
+    // PadLeft positions the original list so that its last element is at
+    // output index `n - 1 - m` (0-indexed), i.e. `list_start = n - len - m`.
+    // Elements whose target index falls outside `[0, n)` are dropped.
+    let m = offset.unwrap_or(0);
+    let list_start: i128 = n - len - m;
+    let list_end: i128 = list_start + len;
     let mut result = Vec::with_capacity(n_usize);
-    for i in 0..n_usize {
-      if i >= start && i < list_end {
-        result.push(items[i - start].clone());
+    for i in 0..n {
+      if i >= list_start && i < list_end {
+        result.push(items[(i - list_start) as usize].clone());
       } else {
-        result.push(cyclic_pad_element(pad, i as i128, list_end as i128));
+        result.push(cyclic_pad_element(pad, i, list_end));
       }
     }
     result
@@ -906,24 +908,23 @@ pub fn pad_right_ast(
   let len = items.len() as i128;
   let n_usize = n as usize;
 
-  let result_items = if n < len {
+  let result_items = if n < len && offset.is_none() {
     items[..n_usize].to_vec()
   } else if n == len && offset.is_none() {
     items.to_vec()
   } else {
-    // PadRight: original list goes at position m where m = offset (default 0)
-    let m = offset.unwrap_or(0).max(0);
-    let start = m.min(n - len).max(0) as usize;
-    let list_end = start + items.len();
-    // When list starts at 0 (no left padding), align cycle globally;
-    // when there's left padding (offset > 0), anchor to list_end.
-    let anchor = if start == 0 { 0 } else { list_end as i128 };
+    // PadRight positions the original list so its first element is at
+    // output index `m` (0-indexed), i.e. `list_start = m`. Elements whose
+    // target index falls outside `[0, n)` are dropped.
+    let m = offset.unwrap_or(0);
+    let list_start: i128 = m;
+    let list_end: i128 = list_start + len;
     let mut result = Vec::with_capacity(n_usize);
-    for i in 0..n_usize {
-      if i >= start && i < list_end {
-        result.push(items[i - start].clone());
+    for i in 0..n {
+      if i >= list_start && i < list_end {
+        result.push(items[(i - list_start) as usize].clone());
       } else {
-        result.push(cyclic_pad_element(pad, i as i128, anchor));
+        result.push(cyclic_pad_element(pad, i, list_start));
       }
     }
     result

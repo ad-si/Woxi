@@ -3924,6 +3924,64 @@ mod join_non_list {
       "{1, 2, 3, a, b, c, a, b, c}"
     );
   }
+
+  #[test]
+  fn pad_left_negative_offset_drops_tail() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, 7, 0, -1]").unwrap(),
+      "{0, 0, 0, 0, 0, a, b}"
+    );
+  }
+
+  #[test]
+  fn pad_left_negative_offset_drops_more_tail() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, 7, x, -2]").unwrap(),
+      "{x, x, x, x, x, x, a}"
+    );
+  }
+
+  #[test]
+  fn pad_left_positive_offset_drops_head() {
+    assert_eq!(
+      interpret("PadLeft[{a, b, c}, 7, x, 5]").unwrap(),
+      "{b, c, x, x, x, x, x}"
+    );
+  }
+
+  #[test]
+  fn pad_right_negative_offset_drops_head() {
+    assert_eq!(
+      interpret("PadRight[{a, b, c}, 7, x, -1]").unwrap(),
+      "{b, c, x, x, x, x, x}"
+    );
+  }
+
+  #[test]
+  fn pad_right_positive_offset_drops_tail() {
+    assert_eq!(
+      interpret("PadRight[{a, b, c}, 7, x, 5]").unwrap(),
+      "{x, x, x, x, x, a, b}"
+    );
+  }
+
+  #[test]
+  fn pad_right_cyclic_offset_non_divisible_cycle_len() {
+    // cycle_len=2 does not divide len=3, so wrong-anchor cycling would
+    // produce the wrong result here.
+    assert_eq!(
+      interpret("PadRight[{a, b, c}, 6, {x, y}, 1]").unwrap(),
+      "{y, a, b, c, y, x}"
+    );
+  }
+
+  #[test]
+  fn pad_right_cyclic_offset_len3_cycle2() {
+    assert_eq!(
+      interpret("PadRight[{a, b, c}, 7, {x, y}, 2]").unwrap(),
+      "{x, y, a, b, c, y, x}"
+    );
+  }
 }
 
 mod angle_path {
