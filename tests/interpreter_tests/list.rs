@@ -3583,6 +3583,27 @@ mod join_non_list {
   }
 
   #[test]
+  fn array_multi_dim_with_list_head() {
+    assert_eq!(
+      interpret("Array[Plus, {2, 3}, 1, List]").unwrap(),
+      "{{2, 3, 4}, {3, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn array_multi_dim_with_custom_head() {
+    assert_eq!(
+      interpret("Array[f, {2, 3}, 1, g]").unwrap(),
+      "g[g[f[1, 1], f[1, 2], f[1, 3]], g[f[2, 1], f[2, 2], f[2, 3]]]"
+    );
+  }
+
+  #[test]
+  fn array_multi_dim_plus_head_sums_to_total() {
+    assert_eq!(interpret("Array[Plus, {2, 3}, 1, Plus]").unwrap(), "21");
+  }
+
+  #[test]
   fn array_plus_multi_dim() {
     assert_eq!(
       interpret("Array[Plus, {3, 2}]").unwrap(),
