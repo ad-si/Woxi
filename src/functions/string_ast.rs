@@ -796,6 +796,14 @@ pub fn to_upper_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ToUpperCase expects exactly 1 argument".into(),
     ));
   }
+  // Thread over lists (including nested lists) like Wolfram does.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| to_upper_case_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.to_uppercase()))
 }
@@ -806,6 +814,14 @@ pub fn to_lower_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ToLowerCase expects exactly 1 argument".into(),
     ));
+  }
+  // Thread over lists (including nested lists) like Wolfram does.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| to_lower_case_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::String(s.to_lowercase()))
