@@ -4,7 +4,8 @@ COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 // Span expression: a;;b or a;;b;;c (with optional operands: ;;b, a;;, ;;;;c)
 // Produces Span[a, b] or Span[a, b, c] with defaults (1 for start, All for end)
 // SpanSep is a visible token so the parser can count separators and determine positions.
-SpanSep = { ";;" ~ !(";" | "=") }
+// Atomic (`@`) so whitespace is not skipped between `;;` and any trailing check.
+SpanSep = @{ ";;" }
 SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
 // PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
 PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
@@ -451,6 +452,9 @@ HasRuleOperator = _{ (
 )* ~ ("->" | "\u{2192}" | ":>") }
 // Scan forward looking for ;; (span separator) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive SpanExpr backtracking.
+// Ends with an atomic check so that `;; ;;` (second ;; separated by whitespace)
+// is correctly detected — otherwise the non-atomic trailing `~` would skip the
+// whitespace and the `!(";"|"=")` lookahead would falsely reject the next `;`.
 HasSpanSep = _{ (
     "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"
@@ -459,7 +463,7 @@ HasSpanSep = _{ (
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | ";" ~ !";"                  // skip lone semicolons (not ;;)
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
-)* ~ ";;" ~ !(";" | "=") }
+)* ~ SpanSep }
 // Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
 HasSemicolon = _{ (

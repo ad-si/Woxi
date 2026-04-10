@@ -2974,6 +2974,32 @@ mod part_span {
       "{a, b, c, d, e}[[5 ;; 2 ;; 1]]"
     );
   }
+
+  #[test]
+  fn part_span_implicit_start_end_with_step() {
+    // Regression: ";; ;; 2" (implicit start and end with step) used to fail
+    // because whitespace skipping caused `!(";"|"=")` lookahead to falsely
+    // reject the first `;;`.
+    assert_eq!(
+      interpret("Range[10][[;; ;; 2]]").unwrap(),
+      "{1, 3, 5, 7, 9}"
+    );
+  }
+
+  #[test]
+  fn part_span_implicit_start_end_with_step_no_spaces() {
+    // Regression: ";;;;2" used to fail for the same reason.
+    assert_eq!(interpret("Range[10][[;;;;2]]").unwrap(), "{1, 3, 5, 7, 9}");
+  }
+
+  #[test]
+  fn part_span_start_implicit_end_with_step() {
+    // Regression: "1 ;; ;; 2" (explicit start, implicit end, step) used to fail.
+    assert_eq!(
+      interpret("Range[10][[1 ;; ;; 2]]").unwrap(),
+      "{1, 3, 5, 7, 9}"
+    );
+  }
 }
 
 mod join_non_list {
