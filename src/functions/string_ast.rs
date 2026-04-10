@@ -527,6 +527,18 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringStartsQ expects 2 or 3 arguments".into(),
     ));
   }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_starts_q_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
 
@@ -562,6 +574,18 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StringEndsQ expects 2 or 3 arguments".into(),
     ));
+  }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_ends_q_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
   }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
@@ -599,6 +623,18 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "StringContainsQ expects 2 or 3 arguments".into(),
     ));
+  }
+  // Thread over list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut call = vec![item.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_contains_q_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
   }
   let s = expr_to_str(&args[0])?;
   let ignore_case = has_ignore_case_option(args);
