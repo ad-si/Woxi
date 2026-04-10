@@ -78,6 +78,19 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let chars: Vec<char> = s.chars().collect();
   let len = chars.len() as i128;
 
+  // StringTake[s, {spec1, spec2, ...}] where at least one spec is itself
+  // a list - return a list, applying each sub-spec to the string.
+  // (Scalar spec elements are dispatched individually as well.)
+  if let Expr::List(elems) = &args[1]
+    && elems.iter().any(|e| matches!(e, Expr::List(_)))
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = elems
+      .iter()
+      .map(|e| string_take_ast(&[args[0].clone(), e.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   // StringTake[s, All] - return entire string
   if matches!(&args[1], Expr::Identifier(name) if name == "All") {
     return Ok(Expr::String(s));
