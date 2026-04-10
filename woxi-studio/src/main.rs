@@ -97,6 +97,9 @@ struct CellEditor {
   redo_stack: Vec<String>,
   /// Whether the input has changed since the last evaluation.
   output_stale: bool,
+  /// For Chapter/Subchapter cells: whether the section is collapsed,
+  /// hiding all cells below it until the next same-or-higher heading.
+  is_collapsed: bool,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -145,6 +148,9 @@ enum Message {
 
   // Cell type menu
   ToggleCellTypeMenu(usize),
+
+  // Collapse/expand Chapter or Subchapter
+  ToggleCollapse(usize),
 
   // Preview mode
   TogglePreview,
@@ -303,6 +309,7 @@ impl WoxiStudio {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             output_stale: false,
+            is_collapsed: false,
           });
         }
         CellEntry::Group(group) => {
@@ -344,6 +351,7 @@ impl WoxiStudio {
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
                 output_stale: false,
+                is_collapsed: false,
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
@@ -363,6 +371,7 @@ impl WoxiStudio {
                 undo_stack: Vec::new(),
                 redo_stack: Vec::new(),
                 output_stale: false,
+                is_collapsed: false,
               });
               i += 1;
             }
@@ -869,6 +878,14 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ToggleCollapse(idx) => {
+        if idx < self.cell_editors.len() {
+          self.cell_editors[idx].is_collapsed =
+            !self.cell_editors[idx].is_collapsed;
+        }
+        Task::none()
+      }
+
       Message::ToggleCellTypeMenu(idx) => {
         if self.cell_type_menu_open == Some(idx) {
           self.cell_type_menu_open = None;
@@ -959,6 +976,7 @@ impl WoxiStudio {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             output_stale: false,
+            is_collapsed: false,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -983,6 +1001,7 @@ impl WoxiStudio {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             output_stale: false,
+            is_collapsed: false,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1277,19 +1296,26 @@ impl WoxiStudio {
     } else {
       let mut col = Column::new().spacing(0).width(Fill);
 
+      let hidden = self.compute_hidden_cells();
+
       if !self.preview_mode {
         // Add cell divider above the first cell
         col = col.push(self.view_add_cell_divider_above(0));
       }
 
+      let mut visible_count = 0usize;
       for (idx, editor) in self.cell_editors.iter().enumerate() {
+        if hidden[idx] {
+          continue;
+        }
         // Add cell divider between cells
-        if !self.preview_mode && idx > 0 {
+        if !self.preview_mode && visible_count > 0 {
           col = col.push(self.view_add_cell_divider(idx.saturating_sub(1)));
         }
 
         let is_focused = self.focused_cell == Some(idx);
         col = col.push(self.view_cell(idx, editor, is_focused));
+        visible_count += 1;
       }
 
       if !self.preview_mode {
@@ -1386,6 +1412,18 @@ impl WoxiStudio {
     }
   }
 
+  /// Compute which cells are hidden due to a collapsed Chapter or
+  /// Subchapter above them. A collapsed heading hides all following
+  /// cells until the next heading at the same level or higher.
+  fn compute_hidden_cells(&self) -> Vec<bool> {
+    let states: Vec<(CellStyle, bool)> = self
+      .cell_editors
+      .iter()
+      .map(|e| (e.style, e.is_collapsed))
+      .collect();
+    compute_hidden_cells_from_states(&states)
+  }
+
   /// Small "+" divider above a cell (inserts before it).
   fn view_add_cell_divider_above(&self, idx: usize) -> Element<'_, Message> {
     container(
@@ -1445,14 +1483,20 @@ impl WoxiStudio {
     let font_size = match editor.style {
       CellStyle::Title => 20.0,
       CellStyle::Subtitle => 16.0,
+      CellStyle::Chapter => 18.0,
+      CellStyle::Subchapter => 16.0,
       CellStyle::Section => 15.0,
       CellStyle::Subsection => 14.0,
       CellStyle::Subsubsection => 13.0,
+      CellStyle::Item | CellStyle::Subitem => 13.0,
       _ => 13.0,
     };
 
     let cell_font = match editor.style {
-      CellStyle::Title | CellStyle::Subtitle => Font {
+      CellStyle::Title
+      | CellStyle::Subtitle
+      | CellStyle::Chapter
+      | CellStyle::Subchapter => Font {
         weight: iced::font::Weight::Bold,
         ..Font::MONOSPACE
       },
@@ -1805,7 +1849,48 @@ impl WoxiStudio {
       text("").into()
     };
 
-    let cell_row = row![gutter, content_el, right_side]
+    // ── Collapse chevron (Chapter / Subchapter only) ──
+    // Reserve a fixed-width slot at the very left of every cell so
+    // the cell type dropdown and all downstream columns stay aligned
+    // across cells. For Chapter/Subchapter the slot holds a clickable
+    // chevron; for other cells it's empty.
+    const CHEVRON_SLOT_WIDTH: f32 = 20.0;
+    let is_collapsible =
+      matches!(editor.style, CellStyle::Chapter | CellStyle::Subchapter);
+    let chevron_el: Element<'a, Message> =
+      if is_collapsible && !self.preview_mode {
+        let chevron_svg = svg::Handle::from_memory(
+          if editor.is_collapsed {
+            ICON_CHEVRON_RIGHT
+          } else {
+            ICON_CHEVRON_DOWN
+          }
+          .as_bytes()
+          .to_vec(),
+        );
+        container(
+          button(
+            svg::Svg::new(chevron_svg)
+              .width(14)
+              .height(14)
+              .style(trash_icon_style),
+          )
+          .on_press(Message::ToggleCollapse(idx))
+          .padding([2, 2])
+          .style(trash_button_style),
+        )
+        .width(iced::Length::Fixed(CHEVRON_SLOT_WIDTH))
+        .align_x(Center)
+        .into()
+      } else {
+        // Empty spacer so cells without a chevron still align visually
+        // with ones that have one.
+        container(text(""))
+          .width(iced::Length::Fixed(CHEVRON_SLOT_WIDTH))
+          .into()
+      };
+
+    let cell_row = row![chevron_el, gutter, content_el, right_side]
       .spacing(0)
       .padding([1, 2]);
 
@@ -2169,10 +2254,14 @@ fn cell_editor_style(
     cell_style,
     CellStyle::Title
       | CellStyle::Subtitle
+      | CellStyle::Chapter
+      | CellStyle::Subchapter
       | CellStyle::Section
       | CellStyle::Subsection
       | CellStyle::Subsubsection
       | CellStyle::Text
+      | CellStyle::Item
+      | CellStyle::Subitem
   );
   if is_heading {
     let bg = if is_dark {
@@ -2480,15 +2569,74 @@ const ICON_EYE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" hei
 
 const ICON_EYE_OFF: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>"#;
 
+const ICON_CHEVRON_DOWN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
+const ICON_CHEVRON_RIGHT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
+
 // ── CellStyle display/picklist support ──────────────────────────────
+
+/// Compute a boolean vector marking cells that should be hidden due
+/// to a collapsed Chapter/Subchapter above them. A collapsed heading
+/// hides all following cells until the next heading at the same
+/// level or higher. The collapsed heading itself remains visible.
+fn compute_hidden_cells_from_states(states: &[(CellStyle, bool)]) -> Vec<bool> {
+  let mut hidden = vec![false; states.len()];
+  // Stack of (heading index, heading level) for currently-active
+  // collapsed regions.
+  let mut stack: Vec<(usize, u8)> = Vec::new();
+  for (i, &(style, is_collapsed)) in states.iter().enumerate() {
+    // A new heading breaks out of any collapses at equal-or-lower
+    // level (i.e. same-level or higher-priority heading).
+    if let Some(level) = heading_level(style) {
+      while let Some(&(_, top_level)) = stack.last() {
+        if level <= top_level {
+          stack.pop();
+        } else {
+          break;
+        }
+      }
+    }
+    if !stack.is_empty() {
+      hidden[i] = true;
+    }
+    // If this cell is a collapsed Chapter/Subchapter, activate a
+    // collapse region for subsequent cells.
+    if is_collapsed
+      && matches!(style, CellStyle::Chapter | CellStyle::Subchapter)
+    {
+      if let Some(level) = heading_level(style) {
+        stack.push((i, level));
+      }
+    }
+  }
+  hidden
+}
+
+/// Heading level used for collapse/expand scoping. Lower numbers are
+/// higher-level (Title is 0). Returns `None` for non-heading cells.
+fn heading_level(style: CellStyle) -> Option<u8> {
+  match style {
+    CellStyle::Title => Some(0),
+    CellStyle::Subtitle => Some(1),
+    CellStyle::Chapter => Some(2),
+    CellStyle::Subchapter => Some(3),
+    CellStyle::Section => Some(4),
+    CellStyle::Subsection => Some(5),
+    CellStyle::Subsubsection => Some(6),
+    _ => None,
+  }
+}
 
 const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Title,
   CellStyle::Subtitle,
+  CellStyle::Chapter,
+  CellStyle::Subchapter,
   CellStyle::Section,
   CellStyle::Subsection,
   CellStyle::Subsubsection,
   CellStyle::Text,
+  CellStyle::Item,
+  CellStyle::Subitem,
   CellStyle::Input,
   CellStyle::Output,
   CellStyle::Code,
@@ -2674,6 +2822,36 @@ async fn export_pdf(
         );
         y += 8.0;
       }
+      CellStyle::Chapter => {
+        y += 8.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          20.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          26.0,
+        );
+        y += 10.0;
+      }
+      CellStyle::Subchapter => {
+        y += 6.0;
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          trimmed,
+          margin,
+          17.0,
+          "bold",
+          "sans-serif",
+          "#000",
+          22.0,
+        );
+        y += 8.0;
+      }
       CellStyle::Section => {
         y += 6.0;
         write_text_lines(
@@ -2733,6 +2911,36 @@ async fn export_pdf(
           16.0,
         );
         y += 8.0;
+      }
+      CellStyle::Item => {
+        let wrapped = word_wrap(trimmed, 78);
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          &format!("• {wrapped}"),
+          margin + 8.0,
+          12.0,
+          "normal",
+          "serif",
+          "#000",
+          16.0,
+        );
+        y += 4.0;
+      }
+      CellStyle::Subitem => {
+        let wrapped = word_wrap(trimmed, 76);
+        write_text_lines(
+          &mut elements,
+          &mut y,
+          &format!("◦ {wrapped}"),
+          margin + 20.0,
+          12.0,
+          "normal",
+          "serif",
+          "#000",
+          16.0,
+        );
+        y += 4.0;
       }
       CellStyle::Input | CellStyle::Code => {
         let lines: Vec<&str> = cell.text.lines().collect();
@@ -2956,4 +3164,87 @@ fn strip_svg_wrapper(svg: &str) -> &str {
   let inner_start = svg.find('>').map(|i| i + 1).unwrap_or(0);
   let inner_end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[inner_start..inner_end]
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn collapsed_chapter_hides_following_until_next_chapter() {
+    let states = &[
+      (CellStyle::Chapter, true), // collapsed
+      (CellStyle::Text, false),
+      (CellStyle::Section, false),
+      (CellStyle::Input, false),
+      (CellStyle::Chapter, false), // new chapter: stops the collapse
+      (CellStyle::Text, false),
+    ];
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false, true, true, true, false, false]);
+  }
+
+  #[test]
+  fn collapsed_chapter_hides_until_title_or_subtitle() {
+    // A Subtitle has a *higher* level than Chapter (smaller number),
+    // so it also breaks the collapse region.
+    let states = &[
+      (CellStyle::Chapter, true),
+      (CellStyle::Text, false),
+      (CellStyle::Subtitle, false), // breaks collapse
+      (CellStyle::Text, false),
+    ];
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false, true, false, false]);
+  }
+
+  #[test]
+  fn collapsed_subchapter_only_hides_within_subchapter() {
+    let states = &[
+      (CellStyle::Chapter, false),
+      (CellStyle::Subchapter, true), // collapsed
+      (CellStyle::Section, false),
+      (CellStyle::Text, false),
+      (CellStyle::Subchapter, false), // new subchapter: stops
+      (CellStyle::Text, false),
+    ];
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false, false, true, true, false, false]);
+  }
+
+  #[test]
+  fn nested_collapse_both_collapsed() {
+    let states = &[
+      (CellStyle::Chapter, true),
+      (CellStyle::Subchapter, true),
+      (CellStyle::Text, false),
+    ];
+    // Both are collapsed. The outer Chapter hides every following
+    // cell until another Chapter (or higher), so the Subchapter
+    // itself is hidden (and therefore its collapse region is moot).
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false, true, true]);
+  }
+
+  #[test]
+  fn no_collapse_when_nothing_collapsed() {
+    let states = &[
+      (CellStyle::Chapter, false),
+      (CellStyle::Text, false),
+      (CellStyle::Subchapter, false),
+      (CellStyle::Item, false),
+      (CellStyle::Subitem, false),
+    ];
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false; 5]);
+  }
+
+  #[test]
+  fn item_cells_are_not_collapsible() {
+    // An Item cell is not a heading, so even if marked collapsed
+    // (which the UI prevents), it does not hide cells.
+    let states = &[(CellStyle::Item, true), (CellStyle::Text, false)];
+    let hidden = compute_hidden_cells_from_states(states);
+    assert_eq!(hidden, vec![false, false]);
+  }
 }
