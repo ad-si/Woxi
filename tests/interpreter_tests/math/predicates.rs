@@ -130,6 +130,26 @@ mod chop {
     assert_eq!(interpret("Chop[0.05, 0.1]").unwrap(), "0");
     assert_eq!(interpret("Chop[0.5, 0.1]").unwrap(), "0.5");
   }
+
+  #[test]
+  fn complex_small_imaginary_dropped() {
+    // The imaginary part is below tolerance so it should be chopped,
+    // leaving just the real part.
+    assert_eq!(interpret("Chop[1.0 + 1.*^-15 I]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn complex_normal_preserved() {
+    assert_eq!(interpret("Chop[1. + 2. I]").unwrap(), "1. + 2.*I");
+  }
+
+  #[test]
+  fn list_of_complex_numbers() {
+    assert_eq!(
+      interpret("Chop[{1.0 + 1.*^-15 I, 2.0 + 1.*^-5 I}]").unwrap(),
+      "{1., 2. + 0.00001*I}"
+    );
+  }
 }
 
 mod element {

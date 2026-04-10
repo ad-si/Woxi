@@ -1515,6 +1515,35 @@ pub fn chop_expr(
         items.iter().map(|e| chop_expr(e, tolerance)).collect();
       Ok(Expr::List(chopped?))
     }
+    // Recursively chop into function calls (Plus, Times, Complex, …) and
+    // re-evaluate so that chopped subterms like `Complex[0, 0]` collapse
+    // to 0 and additive identities are simplified.
+    Expr::FunctionCall { name, args } => {
+      let chopped_args: Vec<Expr> = args
+        .iter()
+        .map(|a| chop_expr(a, tolerance))
+        .collect::<Result<_, _>>()?;
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: chopped_args,
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let new_left = chop_expr(left, tolerance)?;
+      let new_right = chop_expr(right, tolerance)?;
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: *op,
+        left: Box::new(new_left),
+        right: Box::new(new_right),
+      })
+    }
+    Expr::UnaryOp { op, operand } => {
+      let new_operand = chop_expr(operand, tolerance)?;
+      crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(new_operand),
+      })
+    }
     _ => Ok(expr.clone()),
   }
 }
