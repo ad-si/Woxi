@@ -38,6 +38,43 @@ pub fn import_image_from_url_wasm(
   crate::functions::image_ast::import_image_from_bytes(&bytes)
 }
 
+/// Download a CSV file from a URL and parse it (WASM).
+pub fn csv_import_from_url_wasm(
+  url: &str,
+  element: Option<&str>,
+) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+  let b64 = woxi_fetch_url(url).map_err(|e| {
+    crate::InterpreterError::EvaluationError(format!(
+      "Import: failed to fetch \"{}\": {:?}",
+      url, e
+    ))
+  })?;
+  if b64.is_empty() {
+    return Err(crate::InterpreterError::EvaluationError(format!(
+      "Import: empty response from \"{}\"",
+      url
+    )));
+  }
+  let bytes =
+    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &b64)
+      .map_err(|e| {
+        crate::InterpreterError::EvaluationError(format!(
+          "Import: failed to decode fetched data: {}",
+          e
+        ))
+      })?;
+  let content = String::from_utf8(bytes).map_err(|e| {
+    crate::InterpreterError::EvaluationError(format!(
+      "Import: downloaded CSV is not valid UTF-8: {}",
+      e
+    ))
+  })?;
+  let rows = crate::functions::csv_ast::parse_csv(&content);
+  Ok(crate::functions::csv_ast::csv_import_element(
+    &rows, element,
+  ))
+}
+
 #[wasm_bindgen(start)]
 pub fn init() {
   console_error_panic_hook::set_once();

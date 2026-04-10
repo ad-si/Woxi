@@ -1,6 +1,20 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Extract a lowercase file extension from a path or URL.
+/// Strips any `?query` or `#fragment` first, so
+/// `"http://host/file.csv?x=1"` yields `"csv"`.
+fn import_extension(path: &str) -> String {
+  let mut cleaned = path;
+  if let Some((p, _)) = cleaned.split_once('?') {
+    cleaned = p;
+  }
+  if let Some((p, _)) = cleaned.split_once('#') {
+    cleaned = p;
+  }
+  cleaned.rsplit('.').next().unwrap_or("").to_lowercase()
+}
+
 pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
@@ -113,8 +127,21 @@ pub fn dispatch_image_functions(
         }
       };
       let is_url = path.starts_with("http://") || path.starts_with("https://");
+      let ext = import_extension(&path);
 
       if is_url {
+        if ext == "csv" {
+          #[cfg(not(target_arch = "wasm32"))]
+          {
+            return Some(crate::functions::csv_ast::csv_import_from_url(
+              &path, None,
+            ));
+          }
+          #[cfg(target_arch = "wasm32")]
+          {
+            return Some(crate::wasm::csv_import_from_url_wasm(&path, None));
+          }
+        }
         #[cfg(not(target_arch = "wasm32"))]
         {
           return Some(crate::functions::image_ast::import_image_from_url(
@@ -129,7 +156,6 @@ pub fn dispatch_image_functions(
 
       #[cfg(not(target_arch = "wasm32"))]
       {
-        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         match ext.as_str() {
           "csv" => {
             return Some(crate::functions::csv_ast::csv_import_file(
@@ -164,11 +190,28 @@ pub fn dispatch_image_functions(
           }));
         }
       };
+      let is_url = path.starts_with("http://") || path.starts_with("https://");
+      let ext = import_extension(&path);
 
-      #[cfg(not(target_arch = "wasm32"))]
-      {
-        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
-        if ext == "csv" {
+      if ext == "csv" {
+        if is_url {
+          #[cfg(not(target_arch = "wasm32"))]
+          {
+            return Some(crate::functions::csv_ast::csv_import_from_url(
+              &path,
+              Some(&element),
+            ));
+          }
+          #[cfg(target_arch = "wasm32")]
+          {
+            return Some(crate::wasm::csv_import_from_url_wasm(
+              &path,
+              Some(&element),
+            ));
+          }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
           return Some(crate::functions::csv_ast::csv_import_file(
             &path,
             Some(&element),
@@ -225,4 +268,23 @@ pub fn dispatch_image_functions(
     _ => {}
   }
   None
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn plain_path_extension() {
+    assert_eq!(import_extension("/tmp/file.csv"), "csv");
+    assert_eq!(import_extension("file.PNG"), "png");
+    assert_eq!(import_extension("no_extension"), "no_extension");
+  }
+
+  #[test]
+  fn url_with_query_and_fragment() {
+    assert_eq!(import_extension("http://host/file.csv?x=1&y=2"), "csv");
+    assert_eq!(import_extension("https://host/path/data.CSV#row=3"), "csv");
+    assert_eq!(import_extension("http://host/a.png?v=1#frag"), "png");
+  }
 }

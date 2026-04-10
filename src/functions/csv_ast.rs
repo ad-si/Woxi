@@ -274,3 +274,36 @@ pub fn csv_import_file(
   let rows = parse_csv(&content);
   Ok(csv_import_element(&rows, element))
 }
+
+/// Fetch a CSV file from a URL and optionally extract a specific element.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn csv_import_from_url(
+  url: &str,
+  element: Option<&str>,
+) -> Result<Expr, crate::InterpreterError> {
+  let output = std::process::Command::new("curl")
+    .args(["-fsSL", "--max-time", "15", url])
+    .output()
+    .map_err(|e| {
+      crate::InterpreterError::EvaluationError(format!(
+        "Import: failed to run curl: {}",
+        e
+      ))
+    })?;
+  if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    return Err(crate::InterpreterError::EvaluationError(format!(
+      "Import: failed to download \"{}\": {}",
+      url,
+      stderr.trim()
+    )));
+  }
+  let content = String::from_utf8(output.stdout).map_err(|e| {
+    crate::InterpreterError::EvaluationError(format!(
+      "Import: downloaded CSV is not valid UTF-8: {}",
+      e
+    ))
+  })?;
+  let rows = parse_csv(&content);
+  Ok(csv_import_element(&rows, element))
+}

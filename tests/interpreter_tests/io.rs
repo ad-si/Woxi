@@ -2283,6 +2283,49 @@ mod csv_import {
       result
     );
   }
+
+  /// Minimal in-process HTTP server that serves a fixed CSV body on a single
+  /// request, then shuts down. Returns the URL to hit.
+  #[cfg(not(target_arch = "wasm32"))]
+  fn serve_csv_once(body: &'static str) -> String {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+      if let Ok((mut stream, _)) = listener.accept() {
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let response = format!(
+          "HTTP/1.1 200 OK\r\nContent-Type: text/csv\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+          body.len(),
+          body
+        );
+        let _ = stream.write_all(response.as_bytes());
+      }
+    });
+    format!("http://{}/matrix.csv", addr)
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_csv_from_url_default() {
+    // Regression test: Import[url] with a .csv URL must fetch and parse the
+    // CSV (previously it was routed to the image importer and always failed
+    // with "cannot decode image").
+    let url = serve_csv_once("1,2,3\n4,5,6\n7,8,9\n");
+    let result = interpret(&format!(r#"Import["{url}"]"#)).unwrap();
+    assert_eq!(result, "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_csv_from_url_with_element() {
+    let url = serve_csv_once("a,b,c\n1,2,3\n4,5,6\n");
+    let result =
+      interpret(&format!(r#"Import["{url}", "ColumnLabels"]"#)).unwrap();
+    assert_eq!(result, "{a, b, c}");
+  }
 }
 
 mod import_string {
