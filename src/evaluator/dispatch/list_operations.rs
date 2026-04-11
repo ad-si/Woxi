@@ -3046,19 +3046,36 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && na.len() == 4
       && matches!(&na[0], Expr::Identifier(s) if s == "Automatic")
     {
-      let depth = match &na[1] {
-        Expr::List(items) => items.len(),
-        _ => 1,
+      let dims: Vec<usize> = match &na[1] {
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|it| match it {
+            Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+            _ => None,
+          })
+          .collect(),
+        _ => Vec::new(),
       };
+      let depth = dims.len().max(1);
       let sa_default = if args.len() == 2 {
         default_val.clone()
       } else {
         na[2].clone()
       };
-      let mut rules: Vec<Expr> = match &na[3] {
-        Expr::List(items) => items.clone(),
-        _ => Vec::new(),
-      };
+      // Extract (position, value) pairs from the CSR-form fourth argument.
+      let extracted =
+        crate::functions::list_helpers_ast::sparse_array_extract_rules(
+          &dims, &na[3],
+        );
+      let mut rules: Vec<Expr> = extracted
+        .into_iter()
+        .map(|(pos, val)| Expr::Rule {
+          pattern: Box::new(Expr::List(
+            pos.into_iter().map(Expr::Integer).collect(),
+          )),
+          replacement: Box::new(val),
+        })
+        .collect();
       let blanks: Vec<Expr> = (0..depth)
         .map(|_| Expr::Pattern {
           name: String::new(),

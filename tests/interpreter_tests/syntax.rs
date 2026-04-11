@@ -1603,9 +1603,10 @@ mod plot3d_function {
 
   #[test]
   fn plot3d_attributes() {
+    // Wolfram: Plot3D does NOT have HoldAll.
     assert_eq!(
       interpret("Attributes[Plot3D]").unwrap(),
-      "{HoldAll, Protected, ReadProtected}"
+      "{Protected, ReadProtected}"
     );
   }
 }

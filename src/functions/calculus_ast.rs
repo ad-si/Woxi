@@ -2260,6 +2260,37 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
   let arg = sin_a;
   let coeff = try_match_linear_arg(arg, var)?;
 
+  // Special case: Sin[a*x] * Cos[a*x] with |a| > 1 — use the double-angle
+  // identity so the result matches wolframscript's preferred form:
+  //   Sin[f] * Cos[f] = Sin[2f] / 2
+  //   ∫ Sin[f] * Cos[f] dx = -Cos[2f] / (4*a)
+  // (wolframscript keeps -Cos[x]^2/2 for the plain a=1 case, but switches
+  // to -Cos[2a*x]/(4a) for larger coefficients such as a=2, 3, …)
+  if sin_power == 1 && cos_power == 1 {
+    let coeff_is_nontrivial = match &coeff {
+      Expr::Integer(n) => n.abs() != 1,
+      Expr::Real(r) => (r.abs() - 1.0).abs() > f64::EPSILON,
+      _ => false,
+    };
+    if coeff_is_nontrivial {
+      let double_arg = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(arg.clone()),
+      });
+      let cos_double = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![double_arg],
+      };
+      let divisor = simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(4)),
+        right: Box::new(coeff.clone()),
+      });
+      return Some(make_neg_divided(cos_double, divisor));
+    }
+  }
+
   // When sin_power is odd (priority) or == 1: use u = Cos[f] substitution
   // ∫ Sin[f]^m * Cos[f]^n dx where m is odd:
   //   Factor out Sin[f], convert Sin[f]^(m-1) = (1-Cos[f]^2)^((m-1)/2)

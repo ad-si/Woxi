@@ -1519,14 +1519,21 @@ mod solve {
 
   #[test]
   fn solve_exp_equation() {
-    assert_eq!(interpret("Solve[Exp[x] == 1, x]").unwrap(), "{{x -> 0}}");
+    // Matches wolframscript: returns the full complex solution with
+    // ConditionalExpression, covering all integer branches.
+    assert_eq!(
+      interpret("Solve[Exp[x] == 1, x]").unwrap(),
+      "{{x -> ConditionalExpression[(2*I)*Pi*C[1], Element[C[1], Integers]]}}"
+    );
   }
 
   #[test]
   fn solve_log_with_linear_inner() {
+    // Matches wolframscript's preferred form: (-1 + E^3)/2 over
+    // -((1 - E^3)/2).
     assert_eq!(
       interpret("Solve[Log[2*x + 1] == 3, x]").unwrap(),
-      "{{x -> -((1 - E^3)/2)}}"
+      "{{x -> (-1 + E^3)/2}}"
     );
   }
 }

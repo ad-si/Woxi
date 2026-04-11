@@ -287,10 +287,6 @@ pub fn apply_function_to_arg(
       evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall { name, args } => {
-      // ConstantFunction[c] applied to anything returns c.
-      if name == "ConstantFunction" && args.len() == 1 {
-        return Ok(args[0].clone());
-      }
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
       // (the applied argument becomes the first parameter)
@@ -313,6 +309,14 @@ pub fn apply_function_to_arg(
         // Operator form: prepend the argument instead of appending
         let new_args = vec![arg.clone(), args[0].clone()];
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "ConstantFunction" {
+        // ConstantFunction is not a built-in in wolframscript's Global
+        // context, so f[c][x] should remain as the curried unevaluated form
+        // ConstantFunction[c][x], not flatten into ConstantFunction[c, x].
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: vec![arg.clone()],
+        })
       } else {
         let mut new_args = args.clone();
         new_args.push(arg.clone());
@@ -360,14 +364,6 @@ pub fn apply_curried_call(
         .collect();
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       evaluate_expr_to_expr(&substituted)
-    }
-    Expr::FunctionCall {
-      name,
-      args: func_args,
-    } if name == "ConstantFunction" && func_args.len() == 1 => {
-      // ConstantFunction[c][args...] returns c regardless of the args.
-      let _ = args;
-      Ok(func_args[0].clone())
     }
     Expr::FunctionCall {
       name,

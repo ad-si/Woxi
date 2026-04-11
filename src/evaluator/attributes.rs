@@ -203,10 +203,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Definition" | "FullDefinition" | "Attributes" | "Quiet" | "Assert" => {
       vec!["HoldAll", "Protected"]
     }
-    // Manipulate: Protected + ReadProtected (matches wolframscript)
-    // Also treated as held in the evaluator so body and variable specs
-    // remain unevaluated, matching Wolfram Language notebook behavior.
-    "Manipulate" => vec!["Protected", "ReadProtected"],
+    // Manipulate: HoldAll + Protected + ReadProtected (matches wolframscript).
+    // HoldAll ensures the body, variable specs, and options like
+    // Initialization :> (...) remain unevaluated.
+    "Manipulate" => vec!["HoldAll", "Protected", "ReadProtected"],
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
     "True" | "False" => vec!["Locked", "Protected"],
 
@@ -274,7 +274,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Protected", "ReadProtected"]
     }
     "Plot3D" => {
-      vec!["HoldAll", "Protected", "ReadProtected"]
+      // Matches wolframscript: Plot3D does NOT have HoldAll.
+      vec!["Protected", "ReadProtected"]
     }
     "FunctionInterpolation" => {
       vec!["HoldAll", "Protected", "ReadProtected"]

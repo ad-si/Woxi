@@ -3678,8 +3678,9 @@ mod join_non_list {
 
   #[test]
   fn array_with_range_single_value() {
-    // Edge case: Array[f, 1, {a, b}] picks just the starting value
-    assert_eq!(interpret("Array[f, 1, {5, 10}]").unwrap(), "{f[5]}");
+    // Edge case: Array[f, 1, {a, b}] uses the midpoint (a + b)/2,
+    // matching wolframscript: Array[f, 1, {5, 10}] → {f[15/2]}.
+    assert_eq!(interpret("Array[f, 1, {5, 10}]").unwrap(), "{f[15/2]}");
   }
 
   #[test]

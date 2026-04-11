@@ -274,38 +274,51 @@ mod constant_function {
 
   #[test]
   fn single_arg() {
-    assert_eq!(interpret("ConstantFunction[5][x]").unwrap(), "5");
+    assert_eq!(
+      interpret("ConstantFunction[5][x]").unwrap(),
+      "ConstantFunction[5][x]"
+    );
   }
 
   #[test]
   fn multiple_args() {
-    assert_eq!(interpret("ConstantFunction[5][1, 2, 3]").unwrap(), "5");
+    assert_eq!(
+      interpret("ConstantFunction[5][1, 2, 3]").unwrap(),
+      "ConstantFunction[5][1, 2, 3]"
+    );
   }
 
   #[test]
   fn list_value() {
-    assert_eq!(interpret("ConstantFunction[{1, 2}][x]").unwrap(), "{1, 2}");
+    assert_eq!(
+      interpret("ConstantFunction[{1, 2}][x]").unwrap(),
+      "ConstantFunction[{1, 2}][x]"
+    );
   }
 
   #[test]
   fn compound_value() {
-    assert_eq!(interpret("ConstantFunction[a + b][x, y]").unwrap(), "a + b");
+    assert_eq!(
+      interpret("ConstantFunction[a + b][x, y]").unwrap(),
+      "ConstantFunction[a + b][x, y]"
+    );
   }
 
   #[test]
   fn mapped_over_list() {
     assert_eq!(
       interpret("Map[ConstantFunction[0], {1, 2, 3}]").unwrap(),
-      "{0, 0, 0}"
+      "{ConstantFunction[0][1], ConstantFunction[0][2], ConstantFunction[0][3]}"
     );
   }
 
   #[test]
   fn as_select_predicate() {
-    // ConstantFunction[True] keeps every element.
+    // ConstantFunction is not a built-in in wolframscript's Global context,
+    // so ConstantFunction[True][x] stays unevaluated and Select returns {}.
     assert_eq!(
       interpret("Select[{1, 2, 3}, ConstantFunction[True]]").unwrap(),
-      "{1, 2, 3}"
+      "{}"
     );
   }
 }

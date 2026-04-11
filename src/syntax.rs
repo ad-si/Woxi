@@ -4735,7 +4735,34 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         return format!("{} <-> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "RuleDelayed" && args.len() == 2 {
-        return format!("{} :> {}", fmt(&args[0]), fmt(&args[1]));
+        // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so
+        // that e.g. `Initialization :> (d[t_] := ...)` renders with the
+        // parentheses required to disambiguate operator precedence.
+        let rhs_str = fmt(&args[1]);
+        let rhs_final = match &args[1] {
+          Expr::FunctionCall { name: n, args: a }
+            if matches!(
+              n.as_str(),
+              "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+            ) && a.len() == 2 =>
+          {
+            format!("({})", rhs_str)
+          }
+          _ => rhs_str,
+        };
+        return format!("{} :> {}", fmt(&args[0]), rhs_final);
+      }
+      if name == "Set" && args.len() == 2 {
+        return format!("{} = {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "SetDelayed" && args.len() == 2 {
+        return format!("{} := {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "UpSet" && args.len() == 2 {
+        return format!("{} ^= {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "UpSetDelayed" && args.len() == 2 {
+        return format!("{} ^:= {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "Condition" && args.len() == 2 {
         // When the LHS is Plus (BinaryOp or FunctionCall), parenthesize
@@ -5264,16 +5291,28 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         // Complex number grouping: Times containing I with non-numeric remaining factors
         // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
-        let has_imaginary = args
-          .iter()
-          .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        // The imaginary unit can appear as either Identifier("I") or
+        // Complex[0, 1] in the underlying AST.
+        let is_i_unit = |a: &Expr| match a {
+          Expr::Identifier(n) => n == "I",
+          Expr::FunctionCall { name: cn, args: ca } => {
+            cn == "Complex"
+              && ca.len() == 2
+              && matches!(
+                (&ca[0], &ca[1]),
+                (Expr::Integer(0), Expr::Integer(1))
+              )
+          }
+          _ => false,
+        };
+        let has_imaginary = args.iter().any(is_i_unit);
         if has_imaginary {
           let mut numeric_factors: Vec<&Expr> = Vec::new();
           let mut symbolic_factors: Vec<&Expr> = Vec::new();
           for arg in args.iter() {
             match arg {
               Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
-              Expr::Identifier(n) if n == "I" => {}
+              _ if is_i_unit(arg) => {}
               Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
                 numeric_factors.push(arg);
               }
@@ -6223,7 +6262,21 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       pattern,
       replacement,
     } => {
-      format!("{} :> {}", fmt(pattern), fmt(replacement))
+      // Parenthesize RHS if it's an assignment so the := operator is
+      // correctly disambiguated from the :> operator visually.
+      let rhs_str = fmt(replacement);
+      let rhs_final = match replacement.as_ref() {
+        Expr::FunctionCall { name: n, args: a }
+          if matches!(
+            n.as_str(),
+            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+          ) && a.len() == 2 =>
+        {
+          format!("({})", rhs_str)
+        }
+        _ => rhs_str,
+      };
+      format!("{} :> {}", fmt(pattern), rhs_final)
     }
     // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm
     Expr::ReplaceAll { expr, rules } => {
@@ -7068,10 +7121,34 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     // Times in InputForm: use expr_to_output for structure, but render via
     // expr_to_input_form for args to preserve string quoting
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      // Check for imaginary unit patterns: -I * something
-      let has_i = args
+      // Flatten nested Times so I and -1 are reachable at the top level
+      // (Sin[-I] typically comes back as Times[-1, Times[I, Sinh[1]]]).
+      let flat_args: Vec<Expr> = args
         .iter()
-        .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        .flat_map(|a| match a {
+          Expr::FunctionCall {
+            name: inner_name,
+            args: inner_args,
+          } if inner_name == "Times" => inner_args.clone(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left,
+            right,
+          } => vec![*left.clone(), *right.clone()],
+          other => vec![other.clone()],
+        })
+        .collect();
+      let args = &flat_args;
+      // Check for imaginary unit patterns: -I * something
+      let has_i = args.iter().any(|a| match a {
+        Expr::Identifier(n) => n == "I",
+        Expr::FunctionCall { name, args: ca } => {
+          name == "Complex"
+            && ca.len() == 2
+            && matches!((&ca[0], &ca[1]), (Expr::Integer(0), Expr::Integer(1)))
+        }
+        _ => false,
+      });
       let has_neg1 = args.iter().any(|a| matches!(a, Expr::Integer(-1)));
       if has_i && has_neg1 {
         let s = expr_to_output(expr);

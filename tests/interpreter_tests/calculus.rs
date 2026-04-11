@@ -121,10 +121,11 @@ mod integrate_with_sum {
 
   #[test]
   fn integrate_sin_cos_product_linear_arg() {
-    // ∫ Sin[2x]*Cos[2x] dx = -1/4*Cos[2*x]^2
+    // ∫ Sin[2x]*Cos[2x] dx = -Cos[4x]/8 via the double-angle identity,
+    // matching wolframscript (which uses this form when |a| > 1).
     assert_eq!(
       interpret("Integrate[Sin[2*x] * Cos[2*x], x]").unwrap(),
-      "-1/4*Cos[2*x]^2"
+      "-1/8*Cos[4*x]"
     );
   }
 
