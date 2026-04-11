@@ -424,6 +424,424 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// BarChart3D[{v1, v2, ...}] or BarChart3D[{{v1, v2}, {v3, v4}, ...}]
+/// Renders a 3D bar chart with each bar drawn as a colored cuboid.
+pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot3d::{
+    Point3D, Triangle, apply_lighting, depth, project, tessellate_cuboid,
+    triangle_normal,
+  };
+
+  let groups = match extract_grouped_values(&args[0]) {
+    Ok(g) => g,
+    Err(_) => {
+      // Return unevaluated for invalid (non-list) input, matching wolframscript.
+      return Ok(Expr::FunctionCall {
+        name: "BarChart3D".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if groups.is_empty() {
+    return Ok(crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
+
+  // Determine value range across all bars
+  let mut v_max = f64::NEG_INFINITY;
+  let mut v_min = f64::INFINITY;
+  for group in &groups {
+    for &v in group {
+      v_max = v_max.max(v);
+      v_min = v_min.min(v);
+    }
+  }
+  if !v_max.is_finite() {
+    return Ok(crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  let z_lo = v_min.min(0.0);
+  let z_hi = v_max.max(0.0);
+  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
+    1.0
+  } else {
+    z_hi - z_lo
+  };
+
+  // Map a value to normalized z in [-Z_SCALE, Z_SCALE].
+  // Z_SCALE matches the default BoxRatios used by plot3d.
+  const Z_SCALE: f64 = 0.4;
+  let nz = |v: f64| -> f64 { ((v - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
+  let z_base = nz(0.0);
+
+  // Layout: each group occupies a "slot" along x; bars within a group are
+  // positioned side by side along y.
+  let n_groups = groups.len();
+  let max_bars_per_group = groups.iter().map(|g| g.len()).max().unwrap_or(1);
+
+  // Normalized box spans x in [-1, 1]. Bars are centered in y with a
+  // total depth proportional to the per-group x width so they look thin
+  // rather than stretched far into the back.
+  let group_step = 2.0 / n_groups as f64;
+  let group_pad = group_step * 0.15;
+  // Total y-extent used by bars (shared across all groups). Tying this
+  // to group_step keeps each bar's footprint close to square, and the
+  // 0.75 factor keeps bars noticeably thinner than their visible width.
+  let total_y_span = group_step * 0.75;
+  let y_origin = -total_y_span / 2.0;
+  let bar_y_step = total_y_span / max_bars_per_group as f64;
+  let bar_y_pad = bar_y_step * 0.15;
+
+  let camera = chart_3d_camera();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  for (gi, group) in groups.iter().enumerate() {
+    let x_lo = -1.0 + gi as f64 * group_step + group_pad;
+    let x_hi = -1.0 + (gi as f64 + 1.0) * group_step - group_pad;
+    for (bi, &v) in group.iter().enumerate() {
+      let y_lo = y_origin + bi as f64 * bar_y_step + bar_y_pad;
+      let y_hi = y_origin + (bi as f64 + 1.0) * bar_y_step - bar_y_pad;
+      let z_top = nz(v);
+      // Build cuboid from base (z_base) to top (z_top).
+      let (zmin, zmax) = if z_top >= z_base {
+        (z_base, z_top)
+      } else {
+        (z_top, z_base)
+      };
+      let p_min = Point3D {
+        x: x_lo,
+        y: y_lo,
+        z: zmin,
+      };
+      let p_max = Point3D {
+        x: x_hi,
+        y: y_hi,
+        z: zmax,
+      };
+
+      // Choose color: ChartStyle overrides; otherwise cycle PLOT_COLORS by
+      // group index (single-bar) or by bar index within group.
+      let color_index = if max_bars_per_group > 1 { bi } else { gi };
+      let base_color = if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[color_index % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[color_index % PLOT_COLORS.len()]
+      };
+
+      for (v0, v1, v2) in tessellate_cuboid(&p_min, &p_max) {
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all_triangles.push(Triangle {
+          projected: [
+            project(v0, &camera),
+            project(v1, &camera),
+            project(v2, &camera),
+          ],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+    }
+  }
+
+  // Painter's algorithm: draw farthest first.
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg =
+    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+  Ok(crate::graphics3d_result(svg))
+}
+
+/// PieChart3D[{v1, v2, ...}]
+/// Renders a 3D pie chart: a short cylinder split into colored wedges.
+pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot3d::{
+    Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
+  };
+
+  let values = match extract_values(&args[0]) {
+    Ok(v) => v,
+    Err(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "PieChart3D".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if values.is_empty() {
+    return Ok(crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  let total: f64 = values.iter().sum();
+  if total <= 0.0 {
+    return Ok(crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
+
+  // Geometry constants in normalized world space.
+  let radius = 0.95_f64;
+  let half_thickness = 0.12_f64;
+  let z_top = half_thickness;
+  let z_bot = -half_thickness;
+
+  // Sort slices smallest-to-largest, drawn clockwise — same convention as
+  // the 2D PieChart.
+  let mut indexed: Vec<(usize, f64)> =
+    values.iter().copied().enumerate().collect();
+  indexed
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  let camera = chart_3d_camera();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+  // Number of segments per full circle for tessellating arcs
+  const SEG_PER_TURN: usize = 64;
+
+  let mut start_angle = std::f64::consts::PI;
+  for (color_idx, &(_orig_idx, val)) in indexed.iter().enumerate() {
+    let sweep = 2.0 * std::f64::consts::PI * val / total;
+    if sweep <= 0.0 {
+      continue;
+    }
+    let end_angle = start_angle + sweep;
+
+    let base_color = if !opts.chart_style.is_empty() {
+      let c = &opts.chart_style[color_idx % opts.chart_style.len()];
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    } else {
+      PLOT_COLORS[color_idx % PLOT_COLORS.len()]
+    };
+
+    // Number of subdivisions for this slice (at least 1).
+    let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * SEG_PER_TURN as f64)
+      .ceil() as usize)
+      .max(1);
+    let center_top = Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: z_top,
+    };
+    let center_bot = Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: z_bot,
+    };
+
+    let push_tri =
+      |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all.push(Triangle {
+          projected: [
+            project(v0, &camera),
+            project(v1, &camera),
+            project(v2, &camera),
+          ],
+          depth: depth(center, &camera),
+          color,
+        });
+      };
+
+    // Top fan, bottom fan, and outer cylindrical surface.
+    for s in 0..n_seg {
+      let t0 = s as f64 / n_seg as f64;
+      let t1 = (s + 1) as f64 / n_seg as f64;
+      let a0 = start_angle + t0 * sweep;
+      let a1 = start_angle + t1 * sweep;
+      let (c0, s0) = (a0.cos(), a0.sin());
+      let (c1, s1) = (a1.cos(), a1.sin());
+
+      let p_top_0 = Point3D {
+        x: radius * c0,
+        y: radius * s0,
+        z: z_top,
+      };
+      let p_top_1 = Point3D {
+        x: radius * c1,
+        y: radius * s1,
+        z: z_top,
+      };
+      let p_bot_0 = Point3D {
+        x: radius * c0,
+        y: radius * s0,
+        z: z_bot,
+      };
+      let p_bot_1 = Point3D {
+        x: radius * c1,
+        y: radius * s1,
+        z: z_bot,
+      };
+
+      // Top face (fan from center)
+      push_tri(center_top, p_top_0, p_top_1, &mut all_triangles);
+      // Bottom face (reverse winding so the normal points down)
+      push_tri(center_bot, p_bot_1, p_bot_0, &mut all_triangles);
+      // Outer cylindrical wall: two triangles per quad
+      push_tri(p_top_0, p_bot_0, p_bot_1, &mut all_triangles);
+      push_tri(p_top_0, p_bot_1, p_top_1, &mut all_triangles);
+    }
+
+    // Two flat side walls (one for each radial edge of the slice).
+    let (cs_lo, ss_lo) = (start_angle.cos(), start_angle.sin());
+    let (cs_hi, ss_hi) = (end_angle.cos(), end_angle.sin());
+    let edge0_top = Point3D {
+      x: radius * cs_lo,
+      y: radius * ss_lo,
+      z: z_top,
+    };
+    let edge0_bot = Point3D {
+      x: radius * cs_lo,
+      y: radius * ss_lo,
+      z: z_bot,
+    };
+    let edge1_top = Point3D {
+      x: radius * cs_hi,
+      y: radius * ss_hi,
+      z: z_top,
+    };
+    let edge1_bot = Point3D {
+      x: radius * cs_hi,
+      y: radius * ss_hi,
+      z: z_bot,
+    };
+    // Side at start_angle
+    push_tri(center_top, center_bot, edge0_bot, &mut all_triangles);
+    push_tri(center_top, edge0_bot, edge0_top, &mut all_triangles);
+    // Side at end_angle (reverse winding for the opposing face)
+    push_tri(center_top, edge1_top, edge1_bot, &mut all_triangles);
+    push_tri(center_top, edge1_bot, center_bot, &mut all_triangles);
+
+    start_angle = end_angle;
+  }
+
+  // Painter's algorithm
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg =
+    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+  Ok(crate::graphics3d_result(svg))
+}
+
+/// Camera angle used by the 3D chart functions. Pulled back from the
+/// default Plot3D viewpoint so bars/slices are viewed more from the front
+/// and less from above, giving a flatter, more front-facing look.
+/// `azimuth` closer to -π/2 ≈ -1.5708 places the viewer directly in front
+/// (along -y); values closer to 0 move it toward the right (+x).
+fn chart_3d_camera() -> crate::functions::plot3d::Camera {
+  crate::functions::plot3d::Camera {
+    azimuth: -1.35, // ~-77° — only ~13° offset from a direct front view
+    elevation: 0.32, // ~18°
+  }
+}
+
+/// Render a list of depth-sorted projected triangles into an SVG string.
+fn render_3d_triangles(
+  triangles: &[crate::functions::plot3d::Triangle],
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+) -> String {
+  // Find bounding box of all projected points
+  let mut px_min = f64::INFINITY;
+  let mut px_max = f64::NEG_INFINITY;
+  let mut py_min = f64::INFINITY;
+  let mut py_max = f64::NEG_INFINITY;
+  for tri in triangles {
+    for &(px, py) in &tri.projected {
+      px_min = px_min.min(px);
+      px_max = px_max.max(px);
+      py_min = py_min.min(py);
+      py_max = py_max.max(py);
+    }
+  }
+  if !px_min.is_finite() {
+    px_min = -1.0;
+    px_max = 1.0;
+    py_min = -1.0;
+    py_max = 1.0;
+  }
+  let p_width = (px_max - px_min).max(1e-15);
+  let p_height = (py_max - py_min).max(1e-15);
+
+  let margin = 25.0;
+  let draw_w = svg_width as f64 - 2.0 * margin;
+  let draw_h = svg_height as f64 - 2.0 * margin;
+  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let cx = margin + draw_w / 2.0;
+  let cy = margin + draw_h / 2.0;
+  let p_cx = (px_min + px_max) / 2.0;
+  let p_cy = (py_min + py_max) / 2.0;
+
+  let to_svg = |px: f64, py: f64| -> (f64, f64) {
+    (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
+  };
+
+  let mut svg = String::with_capacity(triangles.len() * 120 + 1000);
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {svg_width} {svg_height}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" viewBox=\"0 0 {svg_width} {svg_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+  }
+  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  svg.push_str(&format!(
+    "<rect width=\"{svg_width}\" height=\"{svg_height}\" fill=\"rgb({},{},{})\"/>\n",
+    bg.0, bg.1, bg.2
+  ));
+
+  for tri in triangles {
+    let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
+    let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
+    let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
+    let (r, g, b) = tri.color;
+    svg.push_str(&format!(
+      "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"/>\n"
+    ));
+  }
+
+  svg.push_str("</svg>");
+  svg
+}
+
 /// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
 /// or Histogram[{d1, d2, ...}, {{e1, e2, ...}}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

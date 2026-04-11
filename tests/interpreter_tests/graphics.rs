@@ -2270,6 +2270,67 @@ mod plot3d {
         r#"WordCloud[{1, 2, 3, 2, 1, 1, 3, 5, 5, 1}]"#
       ));
     }
+
+    #[test]
+    fn bar_chart_3d_basic() {
+      // Should evaluate to a Graphics3D object and produce an SVG.
+      let svg = export_svg("BarChart3D[{1, 2, 3, 4}]");
+      // Each cuboid contributes 12 triangles → 4 bars * 12 = 48 polygons.
+      let polys = svg.matches("<polygon").count();
+      assert_eq!(polys, 48, "expected 48 triangle polygons for 4 bars");
+    }
+
+    #[test]
+    fn bar_chart_3d_returns_graphics3d_head() {
+      // Match wolframscript: Head[BarChart3D[...]] is Graphics3D
+      assert_eq!(
+        interpret("Head[BarChart3D[{1, 2, 3}]]").unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn bar_chart_3d_grouped() {
+      // Grouped data: 2 groups of 3 bars = 6 bars * 12 triangles = 72 polygons.
+      let svg = export_svg("BarChart3D[{{1, 2, 3}, {4, 5, 6}}]");
+      let polys = svg.matches("<polygon").count();
+      assert_eq!(polys, 72);
+    }
+
+    #[test]
+    fn bar_chart_3d_image_size() {
+      let svg = export_svg("BarChart3D[{1, 2, 3}, ImageSize -> 200]");
+      assert!(svg.contains("width=\"200\""));
+    }
+
+    #[test]
+    fn pie_chart_3d_basic() {
+      let svg = export_svg("PieChart3D[{30, 20, 10}]");
+      // Should produce a Graphics3D with many triangle polygons.
+      let polys = svg.matches("<polygon").count();
+      assert!(polys > 0, "expected triangles in PieChart3D output");
+    }
+
+    #[test]
+    fn pie_chart_3d_returns_graphics3d_head() {
+      assert_eq!(
+        interpret("Head[PieChart3D[{1, 2, 3}]]").unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn pie_chart_3d_single_slice() {
+      // A single slice should still render without errors.
+      let svg = export_svg("PieChart3D[{100}]");
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn pie_chart_3d_image_size() {
+      let svg = export_svg("PieChart3D[{1, 2, 3}, ImageSize -> 200]");
+      assert!(svg.contains("width=\"200\""));
+    }
   }
 
   mod field_plots {

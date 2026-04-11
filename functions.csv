@@ -2004,7 +2004,7 @@ VertexInDegree,In-degree of a vertex in a directed graph,🚫,,8.0,2042
 NotebookEventActions,Actions for notebook events,🚫,,6.0,2045
 RescalingTransform,Rescaling transformation for coordinates,🚫,,6.0,2045
 Wednesday,Day of the week symbol,🚫,,9.0,2045
-PieChart3D,3D pie chart,🚫,,7.0,2048
+PieChart3D,3D pie chart,✅,pure,7.0,2048
 Tuesday,Day of the week symbol,🚫,,9.0,2048
 WindowElements,Window UI elements option,🚫,,3.0,2048
 InputString,Symbol specifying input string type for Input,✅,pure,1.0,2051
