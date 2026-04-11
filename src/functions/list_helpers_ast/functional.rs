@@ -409,9 +409,12 @@ pub fn apply_at_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Parse level spec
+  // Parse level spec. For the integer form, `Apply[f, expr, n]` is
+  // equivalent to `Apply[f, expr, {1, n}]` — levels 1 through n — not
+  // {0, n} as Woxi previously assumed.
   let (min_level, max_level) = match level_spec {
-    Expr::Integer(n) => (0, *n as usize),
+    Expr::Identifier(s) if s == "Infinity" => (1usize, usize::MAX),
+    Expr::Integer(n) => (1usize, (*n).max(0) as usize),
     Expr::List(levels) => {
       if levels.len() == 1 {
         if let Some(n) = expr_to_i128(&levels[0]) {
@@ -421,7 +424,10 @@ pub fn apply_at_level_ast(
         }
       } else if levels.len() == 2 {
         let min = expr_to_i128(&levels[0]).unwrap_or(0) as usize;
-        let max = expr_to_i128(&levels[1]).unwrap_or(1) as usize;
+        let max = match &levels[1] {
+          Expr::Identifier(s) if s == "Infinity" => usize::MAX,
+          other => expr_to_i128(other).unwrap_or(1) as usize,
+        };
         (min, max)
       } else {
         (1, 1)

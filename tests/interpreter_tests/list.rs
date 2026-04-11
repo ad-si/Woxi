@@ -3446,6 +3446,32 @@ mod join_non_list {
   }
 
   #[test]
+  fn apply_integer_level_is_one_to_n() {
+    // Apply[f, expr, n] is equivalent to Apply[f, expr, {1, n}].
+    assert_eq!(
+      interpret("Apply[Plus, {{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{3, 7}"
+    );
+    // n == 0 → empty level range → no replacement.
+    assert_eq!(
+      interpret("Apply[f, {{a, b}, {c, d}}, 0]").unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+    assert_eq!(
+      interpret("Apply[f, {{a, b}, {c, d}}, 2]").unwrap(),
+      "{f[a, b], f[c, d]}"
+    );
+  }
+
+  #[test]
+  fn apply_infinity_level() {
+    assert_eq!(
+      interpret("Apply[Plus, {{1, 2, 3}, {4, 5, 6}}, Infinity]").unwrap(),
+      "{6, 15}"
+    );
+  }
+
+  #[test]
   fn reverse_level_1() {
     assert_eq!(
       interpret("Reverse[{{1, 2}, {3, 4}}, 1]").unwrap(),
