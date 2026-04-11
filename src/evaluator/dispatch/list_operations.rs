@@ -1082,6 +1082,11 @@ pub fn dispatch_list_operations(
     "Transpose" if args.len() == 1 => {
       return Some(list_helpers_ast::transpose_ast(&args[0]));
     }
+    "Transpose" if args.len() == 2 => {
+      if let Expr::List(perm) = &args[1] {
+        return Some(list_helpers_ast::transpose_perm_ast(&args[0], perm));
+      }
+    }
     "Diagonal" if args.len() == 1 || args.len() == 2 => {
       let offset = if args.len() == 2 {
         match &args[1] {
