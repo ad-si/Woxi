@@ -3189,3 +3189,57 @@ mod string_contains_free_patterns {
     );
   }
 }
+
+mod string_position_alternatives {
+  use super::*;
+
+  #[test]
+  fn string_position_list_of_alternatives() {
+    // Matches of "a" and "b" should interleave and be sorted by position.
+    assert_eq!(
+      interpret(r#"StringPosition["abcabc", {"a", "b"}]"#).unwrap(),
+      "{{1, 1}, {2, 2}, {4, 4}, {5, 5}}"
+    );
+  }
+
+  #[test]
+  fn string_position_alternatives_mixed_lengths() {
+    // "a" has length 1, "bc" has length 2.
+    assert_eq!(
+      interpret(r#"StringPosition["abcabc", {"a", "bc"}]"#).unwrap(),
+      "{{1, 1}, {2, 3}, {4, 4}, {5, 6}}"
+    );
+  }
+
+  #[test]
+  fn string_position_alternatives_with_limit() {
+    assert_eq!(
+      interpret(r#"StringPosition["abcabcabc", {"bc", "ab"}, 1]"#).unwrap(),
+      "{{1, 2}}"
+    );
+  }
+
+  #[test]
+  fn string_position_alternatives_sorted_by_position() {
+    assert_eq!(
+      interpret(r#"StringPosition["abcdefabc", {"d", "a"}]"#).unwrap(),
+      "{{1, 1}, {4, 4}, {7, 7}}"
+    );
+  }
+
+  #[test]
+  fn string_position_threads_over_list_of_strings() {
+    assert_eq!(
+      interpret(r#"StringPosition[{"abcabc", "xyabc"}, "b"]"#).unwrap(),
+      "{{{2, 2}, {5, 5}}, {{4, 4}}}"
+    );
+  }
+
+  #[test]
+  fn string_position_threads_list_of_strings_with_alternatives() {
+    assert_eq!(
+      interpret(r#"StringPosition[{"abcabc", "xyabc"}, {"a", "b"}]"#).unwrap(),
+      "{{{1, 1}, {2, 2}, {4, 4}, {5, 5}}, {{3, 3}, {4, 4}}}"
+    );
+  }
+}
