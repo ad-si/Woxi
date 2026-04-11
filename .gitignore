@@ -1,13 +1,14 @@
+/*-checkpoint.ipynb
 /.direnv
+/.DS_Store
 /.env
 /.jupyterlite.doit.db
-/*-checkpoint.ipynb
 /examples
+/node_modules
 /target
 /tests/_*
 /tests/book
 /tests/cli/jupyterlite
 /tests/cli/playground/pkg
 /tests/scripts/_*
-/node_modules
 /todos.md
