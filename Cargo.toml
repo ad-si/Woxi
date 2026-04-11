@@ -87,6 +87,7 @@ calamine = "0.34"
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [profile.release]
 codegen-units = 1

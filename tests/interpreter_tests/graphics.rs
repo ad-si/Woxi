@@ -859,6 +859,68 @@ mod plot3d {
       assert!(content.contains("<polygon"));
       std::fs::remove_file("/tmp/test_plot3d.svg").ok();
     }
+
+    /// Regression test: Export["foo.png", Plot[...]] used to write the raw
+    /// SVG bytes to a file with a .png extension. It must now emit a real
+    /// PNG whose rasterized content includes the tick labels (previously
+    /// dropped because "sans-serif" had no matching font in the db).
+    #[test]
+    fn export_png_from_plot() {
+      let path = "/tmp/test_plot_export.png";
+      let result = interpret(&format!(
+        "Export[\"{path}\", Plot[Sin[x], {{x, -2 Pi, 2 Pi}}]]"
+      ));
+      assert!(result.is_ok(), "Export returned error: {result:?}");
+      let bytes = std::fs::read(path).unwrap();
+      // PNG magic: 89 50 4E 47 0D 0A 1A 0A
+      assert_eq!(
+        &bytes[..8],
+        &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        "file at {path} is not a PNG"
+      );
+      // Decode and confirm the rasterized image is not uniformly white — if
+      // text were dropped and the axis were the only dark element, there
+      // would still be *some* non-white pixels, but we specifically want to
+      // catch the regression where the sans-serif tick labels vanished.
+      // As a proxy, count dark pixels in the left margin strip where the
+      // y-axis tick labels live.
+      let img = ::image::load_from_memory(&bytes).unwrap().to_luma8();
+      let (w, h) = (img.width(), img.height());
+      // Left 15% of the image — the y-axis label gutter. No axis lines or
+      // plot curve touch this strip, so any non-white pixel must come from
+      // a rendered tick label glyph.
+      let gutter_w = (w as f32 * 0.15) as u32;
+      let mut inked_pixels = 0u32;
+      for y in 0..h {
+        for x in 0..gutter_w {
+          if img.get_pixel(x, y).0[0] < 240 {
+            inked_pixels += 1;
+          }
+        }
+      }
+      assert!(
+        inked_pixels > 50,
+        "y-axis tick labels appear to be missing: only {inked_pixels} \
+         non-white pixels in the left gutter"
+      );
+      std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn export_jpeg_from_plot() {
+      let path = "/tmp/test_plot_export.jpg";
+      let result =
+        interpret(&format!("Export[\"{path}\", Plot[Cos[x], {{x, 0, 2 Pi}}]]"));
+      assert!(result.is_ok(), "Export returned error: {result:?}");
+      let bytes = std::fs::read(path).unwrap();
+      // JPEG SOI marker: FF D8 FF
+      assert_eq!(
+        &bytes[..3],
+        &[0xFF, 0xD8, 0xFF],
+        "file at {path} is not a JPEG"
+      );
+      std::fs::remove_file(path).ok();
+    }
   }
 
   mod region_plot3d {

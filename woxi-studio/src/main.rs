@@ -285,6 +285,22 @@ impl WoxiStudio {
         scale_factor: 1.0,
         fontdb: {
           let mut db = resvg::usvg::fontdb::Database::new();
+          // Load the same embedded fallbacks used by the command-line
+          // rasterizer/PDF exporter so that in-UI graphics render with a
+          // consistent typeface even on systems with no system fonts.
+          db.load_font_data(
+            include_bytes!("../../resources/RobotoMono-VariableFont_wght.ttf")
+              .to_vec(),
+          );
+          db.load_font_data(
+            include_bytes!("../../resources/AtkinsonHyperlegible-Regular.ttf")
+              .to_vec(),
+          );
+          db.set_monospace_family("Roboto Mono");
+          db.set_sans_serif_family("Atkinson Hyperlegible");
+          db.set_serif_family("Atkinson Hyperlegible");
+          db.set_cursive_family("Atkinson Hyperlegible");
+          db.set_fantasy_family("Atkinson Hyperlegible");
           db.load_system_fonts();
           Arc::new(db)
         },
@@ -3156,7 +3172,7 @@ async fn export_pdf(
         for line in &lines {
           let _ = write!(
             elements,
-            r##"<text x="{margin}" y="{y}" font-size="11" font-family="Courier Prime, monospace" fill="#333">{}</text>"##,
+            r##"<text x="{margin}" y="{y}" font-size="11" font-family="Roboto Mono, monospace" fill="#333">{}</text>"##,
             escape_xml(line),
           );
           y += 14.0;
@@ -3177,7 +3193,7 @@ async fn export_pdf(
             margin,
             11.0,
             "normal",
-            "Courier Prime, monospace",
+            "Roboto Mono, monospace",
             "#666",
             14.0,
           );
@@ -3198,7 +3214,7 @@ async fn export_pdf(
             margin,
             11.0,
             "normal",
-            "Courier Prime, monospace",
+            "Roboto Mono, monospace",
             "#888",
             14.0,
           );
@@ -3235,7 +3251,7 @@ async fn export_pdf(
             margin,
             11.0,
             "normal",
-            "Courier Prime, monospace",
+            "Roboto Mono, monospace",
             "#666",
             14.0,
           );
@@ -3254,12 +3270,16 @@ async fn export_pdf(
   // Convert SVG to PDF via svg2pdf
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
-    include_bytes!("../../resources/CourierPrime-Regular.ttf").to_vec(),
+    include_bytes!("../../resources/RobotoMono-VariableFont_wght.ttf").to_vec(),
   );
   fontdb.load_font_data(
-    include_bytes!("../../resources/CourierPrime-Bold.ttf").to_vec(),
+    include_bytes!("../../resources/AtkinsonHyperlegible-Regular.ttf").to_vec(),
   );
-  fontdb.set_monospace_family("Courier Prime");
+  fontdb.set_monospace_family("Roboto Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible");
+  fontdb.set_serif_family("Atkinson Hyperlegible");
+  fontdb.set_cursive_family("Atkinson Hyperlegible");
+  fontdb.set_fantasy_family("Atkinson Hyperlegible");
   fontdb.load_system_fonts();
 
   let mut opt = svg2pdf::usvg::Options::default();
