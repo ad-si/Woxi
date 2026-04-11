@@ -1060,11 +1060,12 @@ mod grid_graphics {
   }
 
   #[test]
-  fn grid_svg_has_monospace_font() {
+  fn grid_svg_has_sans_serif_font() {
     clear_state();
     let result = interpret_with_stdout("Grid[{{a, b}}]").unwrap();
     let svg = result.graphics.unwrap();
-    assert!(svg.contains("monospace"));
+    assert!(svg.contains("font-family=\"sans-serif\""));
+    assert!(!svg.contains("font-family=\"monospace\""));
   }
 
   #[test]
