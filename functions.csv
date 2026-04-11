@@ -235,6 +235,7 @@ Piecewise,Represents a piecewise function,✅,pure,5.1,239
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Left,Symbol for left alignment,✅,pure,1.0,241
 ConstantArray,Creates an array of repeated elements,✅,pure,6.0,242
+ConstantFunction,Represents a pure function that always returns a fixed value,✅,pure,11.2,0
 Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2.0,243
 MemberQ,Checks if a list contains a value,✅,pure,1.0,244
 NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,pure,6.0,245
