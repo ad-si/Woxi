@@ -2141,11 +2141,62 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // For x > 0 we can use the identity ArcTan[x, y] = ArcTan[y/x] and
+  // rely on the single-argument ArcTan to simplify common exact angles
+  // (e.g. ArcTan[1, Sqrt[3]] → ArcTan[Sqrt[3]] → Pi/3).
+  if is_positive_real(x) {
+    let y_over_x = crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[y.clone(), x.clone()],
+    )?;
+    let simplified =
+      crate::evaluator::evaluate_function_call_ast("ArcTan", &[y_over_x])?;
+    // Only keep the simplification if the single-argument form actually
+    // reduced to a closed form (otherwise keep the 2-arg form).
+    if !matches!(
+      &simplified,
+      Expr::FunctionCall { name, .. } if name == "ArcTan"
+    ) {
+      return Ok(simplified);
+    }
+  }
+
   // Return unevaluated for symbolic args
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Heuristic: is `e` a positive real value? Covers the common exact
+/// cases that appear in ArcTan[x, y] calls — positive integers,
+/// positive rationals, and `Sqrt[n]` / `Sqrt[n/m]` / `Power[n, p/q]`
+/// where the base is a positive integer or rational.
+fn is_positive_real(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n > 0,
+    Expr::Real(f) => *f > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(
+        (&args[0], &args[1]),
+        (Expr::Integer(n), Expr::Integer(d)) if (*n > 0 && *d > 0) || (*n < 0 && *d < 0)
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      is_positive_real(&args[0])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right: _,
+    } => is_positive_real(left),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_positive_real(&args[0])
+    }
+    _ => false,
+  }
 }
 
 /// Try to split an expression into real part and exact imaginary coefficient.

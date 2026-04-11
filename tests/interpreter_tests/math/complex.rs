@@ -893,4 +893,13 @@ mod arctan_two_arg {
       "-2.356194490192345"
     );
   }
+
+  #[test]
+  fn arctan2_positive_x_with_symbolic_y() {
+    // When x > 0, ArcTan[x, y] = ArcTan[y/x]; exact angles should
+    // reduce via the single-argument ArcTan.
+    assert_eq!(interpret("ArcTan[1, Sqrt[3]]").unwrap(), "Pi/3");
+    assert_eq!(interpret("ArcTan[Sqrt[3], 1]").unwrap(), "Pi/6");
+    assert_eq!(interpret("ArcTan[Sqrt[3], 3]").unwrap(), "Pi/3");
+  }
 }
