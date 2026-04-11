@@ -374,12 +374,25 @@ pub struct PlotSource {
   pub image_size: (u32, u32),
 }
 
+/// Filling specification for a plot series (used by `Show` when merging
+/// pre-rendered plots). Mirrors `functions::plot::Filling` without pulling
+/// in the whole plot module as a dependency of `syntax`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SeriesFilling {
+  None,
+  Axis,
+  Bottom,
+  Top,
+  Value(f64),
+}
+
 /// A single data series within a plot.
 #[derive(Debug, Clone)]
 pub struct PlotSeriesData {
   pub points: Vec<(f64, f64)>,
   pub color: (u8, u8, u8),
   pub is_scatter: bool,
+  pub filling: SeriesFilling,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
@@ -4674,6 +4687,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "RightTee" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22A2} ");
+      }
+      // Special case: Style[expr, directives...] — OutputForm unwraps to
+      // just the content expression (matching wolframscript's default
+      // display). InputForm keeps Style[...] verbatim.
+      if is_output && name == "Style" && !args.is_empty() {
+        return fmt(&args[0]);
       }
       // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
       if name == "LongRightArrow" && args.len() >= 2 {
