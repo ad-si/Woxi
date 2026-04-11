@@ -94,6 +94,32 @@ mod list_tests {
   }
 
   #[test]
+  fn split_by_list_of_funcs_single() {
+    // Singleton list of funcs behaves like SplitBy[list, f] wrapped one extra level.
+    assert_eq!(
+      interpret("SplitBy[{1, 1, 2, 2, 3, 3, 3, 4}, {OddQ}]").unwrap(),
+      "{{1, 1}, {2, 2}, {3, 3, 3}, {4}}"
+    );
+  }
+
+  #[test]
+  fn split_by_list_of_funcs_nested() {
+    assert_eq!(
+      interpret("SplitBy[{1, 1, 2, 2, 3, 3, 3, 4}, {OddQ, EvenQ}]").unwrap(),
+      "{{{1, 1}}, {{2, 2}}, {{3, 3, 3}}, {{4}}}"
+    );
+  }
+
+  #[test]
+  fn split_by_list_of_funcs_with_structured_items() {
+    assert_eq!(
+      interpret("SplitBy[{{1, a}, {1, b}, {2, a}, {2, b}}, {First, Last}]")
+        .unwrap(),
+      "{{{{1, a}}, {{1, b}}}, {{{2, a}}, {{2, b}}}}"
+    );
+  }
+
+  #[test]
   fn extract() {
     assert_eq!(interpret("Extract[{a, b, c, d}, 2]").unwrap(), "b");
     assert_eq!(

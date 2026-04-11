@@ -719,10 +719,40 @@ pub fn split_with_test_ast(
 }
 
 /// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
+/// SplitBy[list, {f1, f2, ...}] - nested split: first by f1, then by f2 within
+/// each resulting group, and so on. Equivalent to
+/// `Map[SplitBy[#, f2] &, SplitBy[list, f1]]` with a final `Fold`.
 pub fn split_by_ast(
   func: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // If `func` is a list of functions, apply them hierarchically.
+  if let Expr::List(funcs) = func {
+    // The base case `SplitBy[list, {}]` is a no-op wrap — Mathematica
+    // returns the list unchanged at that level.
+    if funcs.is_empty() {
+      return Ok(list.clone());
+    }
+    // Apply the first function to get a top-level partition, then recurse
+    // on each group with the rest of the functions.
+    let first = &funcs[0];
+    let rest_funcs = Expr::List(funcs[1..].to_vec());
+    let grouped = split_by_ast(first, list)?;
+    let groups: Vec<Expr> = match &grouped {
+      Expr::List(items) => items.clone(),
+      _ => return Ok(grouped),
+    };
+    let mut result = Vec::with_capacity(groups.len());
+    for g in groups {
+      if funcs.len() == 1 {
+        result.push(g);
+      } else {
+        result.push(split_by_ast(&rest_funcs, &g)?);
+      }
+    }
+    return Ok(Expr::List(result));
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {
