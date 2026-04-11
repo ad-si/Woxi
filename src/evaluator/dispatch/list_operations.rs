@@ -2668,9 +2668,38 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let target = &args[1];
-  let n = if args.len() >= 3 {
+
+  // Parse the optional third argument. Accepts:
+  //   n            — up to n closest elements
+  //   All          — all elements, sorted by distance
+  //   {n, r}       — up to n elements within radius r
+  //   {All, r}     — all elements within radius r
+  let (n, radius) = if args.len() >= 3 {
     match &args[2] {
-      Expr::Integer(n) => *n as usize,
+      Expr::Integer(k) => (Some(*k as usize), None),
+      Expr::Identifier(s) if s == "All" => (None, None),
+      Expr::List(pair) if pair.len() == 2 => {
+        let count = match &pair[0] {
+          Expr::Integer(k) if *k >= 1 => Some(*k as usize),
+          Expr::Identifier(s) if s == "All" => None,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Nearest".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let r = match expr_to_f64(&pair[1]) {
+          Some(r) if r >= 0.0 => r,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Nearest".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        (count, Some(r))
+      }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Nearest".to_string(),
@@ -2679,7 +2708,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    items.len() // return all, sorted by distance (we'll take the closest group)
+    (Some(1), None) // default is just the single closest (and ties)
   };
 
   // Compute distance for each element
@@ -2707,23 +2736,42 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   distances
     .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-  if args.len() >= 3 {
-    // Return exactly n nearest
-    let result: Vec<Expr> = distances
+  // Apply the radius filter first, then the count limit.
+  let filtered: Vec<&(usize, f64)> = match radius {
+    Some(r) => distances
       .iter()
-      .take(n)
-      .map(|(i, _)| items[*i].clone())
-      .collect();
-    Ok(Expr::List(result))
-  } else {
-    // Return all elements tied for the minimum distance
-    let min_dist = distances[0].1;
-    let result: Vec<Expr> = distances
-      .iter()
-      .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
-      .map(|(i, _)| items[*i].clone())
-      .collect();
-    Ok(Expr::List(result))
+      .take_while(|(_, d)| *d <= r + 1e-15)
+      .collect(),
+    None => distances.iter().collect(),
+  };
+
+  match (args.len() >= 3, n) {
+    // Bare 2-arg Nearest: return the tied-for-closest group.
+    (false, _) => {
+      let min_dist = filtered[0].1;
+      let result: Vec<Expr> = filtered
+        .iter()
+        .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
+        .map(|(i, _)| items[*i].clone())
+        .collect();
+      Ok(Expr::List(result))
+    }
+    // Count limit provided (possibly together with a radius).
+    (true, Some(k)) => {
+      let result: Vec<Expr> = filtered
+        .iter()
+        .take(k)
+        .map(|(i, _)| items[*i].clone())
+        .collect();
+      Ok(Expr::List(result))
+    }
+    // `All` (possibly together with a radius): keep everything that passed
+    // the radius filter.
+    (true, None) => {
+      let result: Vec<Expr> =
+        filtered.iter().map(|(i, _)| items[*i].clone()).collect();
+      Ok(Expr::List(result))
+    }
   }
 }
 
