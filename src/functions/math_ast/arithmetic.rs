@@ -1552,6 +1552,30 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       if cmp != Ordering::Equal {
         return cmp;
       }
+      // For Plus, Wolfram's canonical ordering compares the highest-degree
+      // term first (the last argument, since Plus args are sorted by
+      // ascending degree). When lengths differ and all compared terms
+      // match, the Plus with MORE terms sorts FIRST.
+      //
+      // Example: Order[1+n, -1+3*n+3*n^2] = 1 (1+n first), because the
+      // leading term `n` of `1+n` has lower degree than `3*n^2`.
+      if na == "Plus" {
+        let mut ia = aa.iter().rev();
+        let mut ib = ab.iter().rev();
+        loop {
+          match (ia.next(), ib.next()) {
+            (Some(x), Some(y)) => {
+              let cmp = compare_expr_canonical(x, y);
+              if cmp != Ordering::Equal {
+                return cmp;
+              }
+            }
+            (Some(_), None) => return Ordering::Less, // more terms = first
+            (None, Some(_)) => return Ordering::Greater,
+            (None, None) => return Ordering::Equal,
+          }
+        }
+      }
       // Compare arguments element by element
       for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
         let cmp = compare_expr_canonical(arg_a, arg_b);
@@ -1960,7 +1984,31 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
         }
         return std::cmp::Ordering::Equal;
       }
-      // Same head: compare arguments using Wolfram canonical ordering
+      // Same head: compare arguments using Wolfram canonical ordering.
+      // For Plus (Orderless), Wolfram compares the highest-degree term first.
+      // Since Plus args are stored in ascending-degree order, we iterate in
+      // reverse. When one Plus runs out of terms, it sorts AFTER (the Plus
+      // with more terms comes first).
+      if na == "Plus" {
+        let mut ia = aa.iter().rev();
+        let mut ib = ab.iter().rev();
+        loop {
+          match (ia.next(), ib.next()) {
+            (Some(x), Some(y)) => {
+              let ord = crate::functions::list_helpers_ast::compare_exprs(x, y);
+              if ord > 0 {
+                return std::cmp::Ordering::Less;
+              }
+              if ord < 0 {
+                return std::cmp::Ordering::Greater;
+              }
+            }
+            (Some(_), None) => return std::cmp::Ordering::Less,
+            (None, Some(_)) => return std::cmp::Ordering::Greater,
+            (None, None) => return std::cmp::Ordering::Equal,
+          }
+        }
+      }
       for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
         let ord =
           crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);

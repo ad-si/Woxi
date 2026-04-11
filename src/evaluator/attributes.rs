@@ -273,11 +273,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" => {
-      // Matches wolframscript: Plot3D does NOT have HoldAll.
-      vec!["Protected", "ReadProtected"]
-    }
-    "FunctionInterpolation" => {
+    "Plot3D" | "FunctionInterpolation" => {
       vec!["HoldAll", "Protected", "ReadProtected"]
     }
 

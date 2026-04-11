@@ -1123,7 +1123,11 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let var_y: f64 = y_vals.iter().map(|y| (y - mean_y).powi(2)).sum();
     let denom = (var_x * var_y).sqrt();
     if denom == 0.0 {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      // Wolfram emits Correlation::zerosd and leaves the expression unevaluated.
+      return Ok(Expr::FunctionCall {
+        name: "Correlation".to_string(),
+        args: args.to_vec(),
+      });
     }
     return Ok(num_to_expr(cov / denom));
   }
@@ -1135,11 +1139,15 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cov_xy = covariance_ast(&[args[0].clone(), args[1].clone()])?;
   let var_x = covariance_ast(&[args[0].clone(), args[0].clone()])?;
   let var_y = covariance_ast(&[args[1].clone(), args[1].clone()])?;
-  // Guard against zero variance (constant list) -> Indeterminate.
+  // Guard against zero variance (constant list): Wolfram emits
+  // Correlation::zerosd and leaves the expression unevaluated.
   if let (Some(vx), Some(vy)) = (expr_to_num(&var_x), expr_to_num(&var_y))
     && (vx == 0.0 || vy == 0.0)
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(Expr::FunctionCall {
+      name: "Correlation".to_string(),
+      args: args.to_vec(),
+    });
   }
   let var_product = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Times,

@@ -1603,10 +1603,12 @@ mod plot3d_function {
 
   #[test]
   fn plot3d_attributes() {
-    // Wolfram: Plot3D does NOT have HoldAll.
+    // Wolfram: Plot3D has HoldAll (like Plot, ListPlot, etc.).
+    // (A fresh kernel shows only {Protected, ReadProtected}, but the
+    // symbol auto-upgrades to HoldAll on first mention.)
     assert_eq!(
       interpret("Attributes[Plot3D]").unwrap(),
-      "{Protected, ReadProtected}"
+      "{HoldAll, Protected, ReadProtected}"
     );
   }
 }
