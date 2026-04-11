@@ -2409,6 +2409,100 @@ mod xlsx_import {
   }
 }
 
+mod xlsx_export {
+  use super::*;
+
+  fn tmp_path(name: &str) -> String {
+    let dir = std::env::temp_dir();
+    dir.join(name).to_string_lossy().into_owned()
+  }
+
+  #[test]
+  fn export_xlsx_round_trip_matches_wolframscript() {
+    // Mirrors the user-facing example and the wolframscript reference output.
+    let path = tmp_path("woxi_export_basic.xlsx");
+    let _ = std::fs::remove_file(&path);
+    let script = format!(
+      r#"exportData = {{{{3Pi, 1/7, 5}}, {{4.5, 4.75, 4.875}}, {{E, 5!, N[Pi, 10]}}}}; Export["{path}", exportData]; Import["{path}"]"#
+    );
+    let result = interpret(&script).unwrap();
+    assert_eq!(
+      result,
+      "{{{9.42477796076938, 0.14285714285714285, 5.}, {4.5, 4.75, 4.875}, {2.718281828459045, 120., 3.141592653589793}}}"
+    );
+  }
+
+  #[test]
+  fn export_xlsx_returns_filename() {
+    let path = tmp_path("woxi_export_return.xlsx");
+    let _ = std::fs::remove_file(&path);
+    let result =
+      interpret(&format!(r#"Export["{path}", {{{{1, 2}}, {{3, 4}}}}]"#))
+        .unwrap();
+    assert_eq!(result, path);
+    assert!(std::path::Path::new(&path).exists());
+  }
+
+  #[test]
+  fn export_xlsx_numbers_are_reals_after_round_trip() {
+    // Excel stores everything as f64, so integers must come back as Reals.
+    let path = tmp_path("woxi_export_integers.xlsx");
+    let _ = std::fs::remove_file(&path);
+    let result = interpret(&format!(
+      r#"Export["{path}", {{{{1, 2, 3}}}}]; Head[Import["{path}", {{"Data", 1}}][[1, 1]]]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "Real");
+  }
+
+  #[test]
+  fn export_xlsx_preserves_strings_and_booleans() {
+    let path = tmp_path("woxi_export_mixed.xlsx");
+    let _ = std::fs::remove_file(&path);
+    let result = interpret(&format!(
+      r#"Export["{path}", {{{{"hello", True, False}}, {{"world", 1, 2.5}}}}]; Import["{path}", {{"Data", 1}}]"#
+    ))
+    .unwrap();
+    assert_eq!(result, "{{hello, True, False}, {world, 1., 2.5}}");
+  }
+
+  #[test]
+  fn export_xlsx_explicit_format_argument() {
+    // Wolfram allows `Export[file, data, "XLSX"]` to force the format
+    // independent of the filename extension.
+    let path = tmp_path("woxi_export_explicit_fmt.dat");
+    let _ = std::fs::remove_file(&path);
+    let returned =
+      interpret(&format!(r#"Export["{path}", {{{{1, 2}}}}, "XLSX"]"#)).unwrap();
+    assert_eq!(returned, path);
+    // The bytes on disk are an actual xlsx workbook (PK… zip header).
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(&bytes[..2], b"PK", "expected xlsx zip header");
+  }
+
+  #[test]
+  fn export_xlsx_evaluates_symbolic_constants() {
+    // Pi, E, rationals, and unevaluated arithmetic must be exported as the
+    // numeric value the cell will end up containing.
+    let path = tmp_path("woxi_export_symbolic.xlsx");
+    let _ = std::fs::remove_file(&path);
+    let result = interpret(&format!(
+      r#"Export["{path}", {{{{Pi, E, 2/3}}}}]; Import["{path}", {{"Data", 1}}]"#
+    ))
+    .unwrap();
+    assert_eq!(
+      result,
+      "{{3.141592653589793, 2.718281828459045, 0.6666666666666666}}"
+    );
+  }
+
+  #[test]
+  fn export_xlsx_exportformats_lists_xlsx() {
+    let result = interpret("MemberQ[$ExportFormats, \"XLSX\"]").unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
 mod txt_import {
   use super::*;
 
