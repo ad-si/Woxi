@@ -36,6 +36,7 @@ pub mod string_ast;
 pub mod tabular_ast;
 pub mod tree_form;
 pub mod turing_machine_ast;
+pub mod txt_ast;
 pub mod voronoi;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
