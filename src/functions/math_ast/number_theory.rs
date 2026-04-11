@@ -1734,10 +1734,12 @@ pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let n = match expr_to_i128(&args[0]) {
+    // Divisors[0] is undefined; Wolfram leaves the call unevaluated.
     Some(0) => {
-      return Err(InterpreterError::EvaluationError(
-        "Divisors: argument cannot be zero".into(),
-      ));
+      return Ok(Expr::FunctionCall {
+        name: "Divisors".to_string(),
+        args: args.to_vec(),
+      });
     }
     Some(n) => n.unsigned_abs(),
     None => {
