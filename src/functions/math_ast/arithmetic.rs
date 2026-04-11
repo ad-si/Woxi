@@ -97,14 +97,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
     return thread_binary_over_lists(&flat_args, |a, b| {
-      match (expr_to_num(a), expr_to_num(b)) {
-        (Some(x), Some(y)) => Ok(num_to_expr(x + y)),
-        _ => Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        }),
-      }
+      // Delegate to plus_ast so rationals, bigints, symbolic terms,
+      // etc. are handled consistently with the non-list path.
+      plus_ast(&[a.clone(), b.clone()])
     });
   }
 
@@ -2601,14 +2596,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
     return thread_binary_over_lists(args, |a, b| {
-      match (expr_to_num(a), expr_to_num(b)) {
-        (Some(x), Some(y)) => Ok(num_to_expr(x * y)),
-        _ => Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        }),
-      }
+      // Delegate to times_ast so rationals, bigints, symbolic factors,
+      // etc. are handled consistently with the non-list path.
+      times_ast(&[a.clone(), b.clone()])
     });
   }
 

@@ -2281,6 +2281,33 @@ mod seed_random {
   }
 
   #[test]
+  fn string_seed_returns_null() {
+    woxi::clear_state();
+    assert_eq!(interpret("SeedRandom[\"CKM\"]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn string_seed_is_reproducible() {
+    // The same string seed must produce the same sequence on every call.
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[\"CKM\"]");
+    let a = interpret("RandomInteger[1000000]").unwrap();
+    let _ = interpret("SeedRandom[\"CKM\"]");
+    let b = interpret("RandomInteger[1000000]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn distinct_string_seeds_differ() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[\"CKM\"]");
+    let a = interpret("RandomInteger[1000000]").unwrap();
+    let _ = interpret("SeedRandom[\"Other\"]");
+    let b = interpret("RandomInteger[1000000]").unwrap();
+    assert_ne!(a, b);
+  }
+
+  #[test]
   fn unseed_resets() {
     woxi::clear_state();
     // After SeedRandom[], results should no longer be deterministic
@@ -4996,6 +5023,49 @@ mod probability {
     )
     .unwrap();
     assert_eq!(named, function_form);
+  }
+
+  #[test]
+  fn joint_two_dice_sum_twelve() {
+    // Classic two-dice probability. Only (6, 6) sums to 12 → 1/36.
+    assert_eq!(
+      interpret(
+        "Probability[x + y == 12, \
+         x \\[Distributed] DiscreteUniformDistribution[{1, 6}] \
+         && y \\[Distributed] DiscreteUniformDistribution[{1, 6}]]"
+      )
+      .unwrap(),
+      "1/36"
+    );
+  }
+
+  #[test]
+  fn joint_two_dice_sum_seven() {
+    // Six outcomes sum to 7: (1,6), (2,5), (3,4), (4,3), (5,2), (6,1)
+    // → 6/36 = 1/6.
+    assert_eq!(
+      interpret(
+        "Probability[x + y == 7, \
+         x \\[Distributed] DiscreteUniformDistribution[{1, 6}] \
+         && y \\[Distributed] DiscreteUniformDistribution[{1, 6}]]"
+      )
+      .unwrap(),
+      "1/6"
+    );
+  }
+
+  #[test]
+  fn joint_two_dice_inequality() {
+    // P(x + y <= 4): (1,1),(1,2),(1,3),(2,1),(2,2),(3,1) → 6/36 = 1/6.
+    assert_eq!(
+      interpret(
+        "Probability[x + y <= 4, \
+         x \\[Distributed] DiscreteUniformDistribution[{1, 6}] \
+         && y \\[Distributed] DiscreteUniformDistribution[{1, 6}]]"
+      )
+      .unwrap(),
+      "1/6"
+    );
   }
 }
 

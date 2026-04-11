@@ -568,12 +568,32 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::seed_rng(*seed as u64);
         Ok(Expr::Identifier("Null".to_string()))
       }
+      Expr::String(s) => {
+        // Wolfram accepts string seeds; hash the string deterministically
+        // so the same string always produces the same sequence.
+        crate::seed_rng(hash_string_to_u64(s));
+        Ok(Expr::Identifier("Null".to_string()))
+      }
       _ => Err(InterpreterError::EvaluationError(
-        "SeedRandom: seed must be an integer".into(),
+        "SeedRandom: seed must be an integer or string".into(),
       )),
     },
     _ => Err(InterpreterError::EvaluationError(
       "SeedRandom expects 0 or 1 arguments".into(),
     )),
   }
+}
+
+/// Deterministically derive a 64-bit seed from a string. The same string
+/// always maps to the same seed, so `SeedRandom["foo"]` is reproducible
+/// across runs and across platforms.
+fn hash_string_to_u64(s: &str) -> u64 {
+  // FNV-1a 64-bit — stable, simple, not dependent on Rust's std hasher
+  // (whose output may differ between versions/platforms).
+  let mut hash: u64 = 0xcbf29ce484222325;
+  for byte in s.as_bytes() {
+    hash ^= *byte as u64;
+    hash = hash.wrapping_mul(0x100000001b3);
+  }
+  hash
 }

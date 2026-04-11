@@ -104,21 +104,9 @@ pub fn thread_binary_op(
         }
       }
       BinaryOperator::Divide => {
-        if let (Some(a), Some(b)) = (ln, rn) {
-          if b == 0.0 {
-            Err(InterpreterError::EvaluationError("Division by zero".into()))
-          } else if any_real {
-            Ok(Expr::Real(a / b))
-          } else {
-            Ok(num_to_expr(a / b))
-          }
-        } else {
-          // Evaluate through the function-level division which handles Rationals
-          crate::functions::math_ast::times_ast(&[
-            l.clone(),
-            crate::functions::math_ast::power_two(r, &Expr::Integer(-1))?,
-          ])
-        }
+        // Delegate to divide_two which properly handles Rationals,
+        // BigIntegers, Reals, Complex, etc.
+        crate::functions::math_ast::divide_two(l, r)
       }
       BinaryOperator::Power => {
         if let (Some(a), Some(b)) = (ln, rn) {
