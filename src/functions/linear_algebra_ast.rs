@@ -505,70 +505,49 @@ pub fn tr_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Determine the combining function (default: Plus)
-  let combine_fn = if args.len() == 2 {
-    Some(&args[1])
-  } else {
-    None
-  };
-
-  // Helper to combine two expressions using the specified function
-  let combine = |acc: Expr, val: &Expr| -> Expr {
-    if let Some(func) = combine_fn {
-      // Apply custom function: func[acc, val]
-      let result =
-        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: match func {
-            Expr::Identifier(name) => name.clone(),
-            _ => {
-              return Expr::FunctionCall {
-                name: "Tr".to_string(),
-                args: args.to_vec(),
-              };
-            }
-          },
-          args: vec![acc, val.clone()],
+  // The combining function f (default: Plus) is applied to the whole
+  // sequence of diagonal elements at once as f[d1, d2, ..., dn], not
+  // pairwise — so Tr[m, List] returns a list of the diagonal.
+  let combine_name: String = if args.len() == 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Tr".to_string(),
+          args: args.to_vec(),
         });
-      result.unwrap_or_else(|_| Expr::FunctionCall {
-        name: "Tr".to_string(),
-        args: args.to_vec(),
-      })
-    } else {
-      eval_add(&acc, val)
+      }
+    }
+  } else {
+    "Plus".to_string()
+  };
+
+  // Collect the diagonal entries (or, for a plain vector, all entries).
+  let diag: Vec<Expr> = if let Some(vec) = expr_to_vector(&args[0]) {
+    vec
+  } else {
+    match expr_to_matrix(&args[0]) {
+      Some(matrix) => {
+        let nrows = matrix.len();
+        let ncols = matrix.first().map(|r| r.len()).unwrap_or(0);
+        let min_dim = nrows.min(ncols);
+        (0..min_dim).map(|i| matrix[i][i].clone()).collect()
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Tr".to_string(),
+          args: args.to_vec(),
+        });
+      }
     }
   };
 
-  // Also support Tr on a plain list (sum/combine of elements)
-  if let Some(vec) = expr_to_vector(&args[0]) {
-    if vec.is_empty() {
-      return Ok(Expr::Integer(0));
-    }
-    let mut result = vec[0].clone();
-    for v in &vec[1..] {
-      result = combine(result, v);
-    }
-    return Ok(result);
+  if diag.is_empty() {
+    // Plus[] → 0, Times[] → 1, List[] → {} — let the evaluator decide.
+    return crate::evaluator::evaluate_function_call_ast(&combine_name, &[]);
   }
-  let matrix = match expr_to_matrix(&args[0]) {
-    Some(m) => m,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Tr".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
-  let n = matrix.len();
-  let ncols = matrix.first().map(|r| r.len()).unwrap_or(0);
-  let min_dim = n.min(ncols);
-  if min_dim == 0 {
-    return Ok(Expr::Integer(0));
-  }
-  let mut trace = matrix[0][0].clone();
-  for i in 1..min_dim {
-    trace = combine(trace, &matrix[i][i]);
-  }
-  Ok(trace)
+
+  crate::evaluator::evaluate_function_call_ast(&combine_name, &diag)
 }
 
 /// IdentityMatrix[n] - n×n identity matrix
