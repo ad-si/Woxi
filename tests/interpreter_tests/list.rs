@@ -4715,6 +4715,47 @@ mod array_reshape {
       "{1, 2, 3, 4}"
     );
   }
+
+  #[test]
+  fn pad_with_scalar() {
+    assert_eq!(
+      interpret("ArrayReshape[Range[5], {2, 3}, x]").unwrap(),
+      "{{1, 2, 3}, {4, 5, x}}"
+    );
+  }
+
+  #[test]
+  fn pad_with_explicit_zero() {
+    assert_eq!(
+      interpret("ArrayReshape[Range[5], {2, 3}, 0]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 0}}"
+    );
+  }
+
+  #[test]
+  fn pad_cycles_through_list() {
+    // Padding `{a, b}` cycles — only one trailing slot here, so `a`.
+    assert_eq!(
+      interpret("ArrayReshape[Range[5], {2, 3}, {a, b}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, a}}"
+    );
+  }
+
+  #[test]
+  fn pad_cycles_through_multi_element_list() {
+    assert_eq!(
+      interpret("ArrayReshape[Range[2], {2, 3}, {a, b, c, d}]").unwrap(),
+      "{{1, 2, a}, {b, c, d}}"
+    );
+  }
+
+  #[test]
+  fn pad_fills_entire_array_when_input_empty() {
+    assert_eq!(
+      interpret("ArrayReshape[{}, {2, 2}, {a, b, c, d}]").unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
 }
 
 mod position_index {
