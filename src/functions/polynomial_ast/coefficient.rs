@@ -7,14 +7,32 @@ use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
 // ─── Coefficient ────────────────────────────────────────────────────
 
-/// Coefficient[expr, var] or Coefficient[expr, var, n]
-/// Returns the coefficient of var^n (default n=1).
+/// Coefficient[expr, form] / Coefficient[expr, var] / Coefficient[expr, var, n]
+///
+/// Three forms:
+/// - Coefficient[expr, var]      → coefficient of var^1
+/// - Coefficient[expr, var, n]   → coefficient of var^n
+/// - Coefficient[expr, x^n]      → coefficient of x^n (monomial form)
 pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Coefficient expects 2 or 3 arguments".into(),
     ));
   }
+
+  // Monomial form: Coefficient[expr, x^n] → Coefficient[expr, x, n].
+  // Only rewrite when no explicit exponent was passed as the 3rd arg.
+  if args.len() == 2
+    && let Some((inner_var, inner_pow)) = as_var_power(&args[1])
+  {
+    let rewritten = vec![
+      args[0].clone(),
+      Expr::Identifier(inner_var),
+      Expr::Integer(inner_pow),
+    ];
+    return coefficient_ast(&rewritten);
+  }
+
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -63,6 +81,35 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
     }
     Ok(simplify(result))
+  }
+}
+
+/// If `expr` is `x^n` for a plain symbol `x` and positive integer `n`,
+/// return `Some((x, n))`. Used by Coefficient to accept monomial forms.
+fn as_var_power(expr: &Expr) -> Option<(String, i128)> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let (Expr::Identifier(name), Expr::Integer(n)) =
+        (left.as_ref(), right.as_ref())
+        && *n >= 1
+      {
+        return Some((name.clone(), *n));
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let (Expr::Identifier(v), Expr::Integer(n)) = (&args[0], &args[1])
+        && *n >= 1
+      {
+        return Some((v.clone(), *n));
+      }
+      None
+    }
+    _ => None,
   }
 }
 

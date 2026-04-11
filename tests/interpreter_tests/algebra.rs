@@ -140,6 +140,15 @@ mod coefficient {
   fn zero_coefficient() {
     assert_eq!(interpret("Coefficient[x^2 + 1, x, 1]").unwrap(), "0");
   }
+
+  #[test]
+  fn monomial_second_argument() {
+    // Coefficient[expr, x^n] should mean "coefficient of x^n" — the
+    // same result as Coefficient[expr, x, n].
+    assert_eq!(interpret("Coefficient[(x + 1)^5, x^3]").unwrap(), "10");
+    assert_eq!(interpret("Coefficient[3 x^2 + 5 x, x^2]").unwrap(), "3");
+    assert_eq!(interpret("Coefficient[(x + y)^4, x^2]").unwrap(), "6*y^2");
+  }
 }
 
 mod expand {
