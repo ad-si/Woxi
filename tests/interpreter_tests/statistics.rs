@@ -693,6 +693,29 @@ mod correlation {
   fn correlation_perfect() {
     assert_eq!(interpret("Correlation[{1, 2, 3}, {2, 4, 6}]").unwrap(), "1");
   }
+
+  // Regression: all-integer inputs must return an exact symbolic result,
+  // not a floating-point approximation.
+  #[test]
+  fn correlation_integers_symbolic() {
+    assert_eq!(
+      interpret(
+        "Correlation[{1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5}, \
+         {1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3}]"
+      )
+      .unwrap(),
+      "(23*Sqrt[3/7])/28"
+    );
+  }
+
+  // Constant list -> zero variance -> Indeterminate.
+  #[test]
+  fn correlation_constant_list() {
+    assert_eq!(
+      interpret("Correlation[{1, 1, 1}, {2, 4, 6}]").unwrap(),
+      "Indeterminate"
+    );
+  }
 }
 
 mod central_moment {
