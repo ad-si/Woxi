@@ -1,0 +1,3 @@
+This is a sample article for Import tests.
+Line two.
+Line three.

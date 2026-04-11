@@ -144,6 +144,28 @@ pub fn dispatch_image_functions(
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
+          if ext == "txt" {
+            return Some(crate::functions::xlsx_ast::download_url(&path).map(
+              |bytes| {
+                let mut s = String::from_utf8_lossy(&bytes).into_owned();
+                if s.ends_with('\n') {
+                  s.pop();
+                  if s.ends_with('\r') {
+                    s.pop();
+                  }
+                }
+                Expr::String(s)
+              },
+            ));
+          }
+          if matches!(ext.as_str(), "xlsx" | "xls" | "xlsb" | "ods") {
+            return Some(crate::functions::xlsx_ast::xlsx_import_from_url(
+              &path, None,
+            ));
+          }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
           return Some(crate::functions::image_ast::import_image_from_url(
             &path,
           ));
@@ -161,6 +183,33 @@ pub fn dispatch_image_functions(
             return Some(crate::functions::csv_ast::csv_import_file(
               &path, None,
             ));
+          }
+          "xlsx" | "xls" | "xlsb" | "ods" => {
+            return Some(crate::functions::xlsx_ast::xlsx_import_file(
+              &path, None,
+            ));
+          }
+          "txt" => {
+            return Some(
+              std::fs::read_to_string(&path)
+                .map(|mut s| {
+                  // Match wolframscript, which strips a single trailing
+                  // newline (either "\n" or "\r\n") from Import["file.txt"].
+                  if s.ends_with('\n') {
+                    s.pop();
+                    if s.ends_with('\r') {
+                      s.pop();
+                    }
+                  }
+                  Expr::String(s)
+                })
+                .map_err(|e| {
+                  InterpreterError::EvaluationError(format!(
+                    "Import: cannot open \"{}\": {}",
+                    path, e
+                  ))
+                }),
+            );
           }
           "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" => {
             return Some(crate::functions::image_ast::import_image(&path));
@@ -181,8 +230,8 @@ pub fn dispatch_image_functions(
       }
     }
     "Import" if args.len() == 2 => {
-      let (path, element) = match (&args[0], &args[1]) {
-        (Expr::String(p), Expr::String(e)) => (p.clone(), e.clone()),
+      let path = match &args[0] {
+        Expr::String(p) => p.clone(),
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Import".to_string(),
@@ -194,6 +243,15 @@ pub fn dispatch_image_functions(
       let ext = import_extension(&path);
 
       if ext == "csv" {
+        let element = match &args[1] {
+          Expr::String(e) => e.clone(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "Import".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        };
         if is_url {
           #[cfg(not(target_arch = "wasm32"))]
           {
@@ -219,8 +277,29 @@ pub fn dispatch_image_functions(
         }
       }
 
-      // Fall through for non-CSV formats
-      let _ = (path, element);
+      if matches!(ext.as_str(), "xlsx" | "xls" | "xlsb" | "ods") {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          if is_url {
+            return Some(crate::functions::xlsx_ast::xlsx_import_from_url(
+              &path,
+              Some(&args[1]),
+            ));
+          }
+          return Some(crate::functions::xlsx_ast::xlsx_import_file(
+            &path,
+            Some(&args[1]),
+          ));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: xlsx import is not available in the browser".into(),
+          )));
+        }
+      }
+
+      // Fall through for unsupported formats
       return Some(Ok(Expr::FunctionCall {
         name: "Import".to_string(),
         args: args.to_vec(),
