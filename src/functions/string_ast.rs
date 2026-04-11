@@ -1006,41 +1006,80 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Thread over a list of strings in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| {
+        let mut call = vec![s.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_position_ast(&call)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let s = expr_to_str(&args[0])?;
-  let sub = expr_to_str(&args[1])?;
   let max_results = if args.len() == 3 {
     expr_to_int(&args[2]).ok().map(|n| n as usize)
   } else {
     None
   };
 
-  if sub.is_empty() {
-    return Ok(Expr::List(vec![]));
+  // Collect the list of sub-patterns (alternatives). A List in args[1]
+  // represents "match any of these substrings".
+  let subs: Vec<String> = match &args[1] {
+    Expr::List(items) => {
+      let mut v = Vec::with_capacity(items.len());
+      for it in items {
+        v.push(expr_to_str(it)?);
+      }
+      v
+    }
+    _ => vec![expr_to_str(&args[1])?],
+  };
+
+  let s_chars: Vec<char> = s.chars().collect();
+  // For each match: (start_index_0based, length)
+  let mut raw_matches: Vec<(usize, usize)> = Vec::new();
+
+  for sub in &subs {
+    if sub.is_empty() {
+      continue;
+    }
+    let sub_chars: Vec<char> = sub.chars().collect();
+    if sub_chars.len() > s_chars.len() {
+      continue;
+    }
+    for i in 0..=s_chars.len() - sub_chars.len() {
+      let mut matched = true;
+      for (j, &sub_char) in sub_chars.iter().enumerate() {
+        if s_chars[i + j] != sub_char {
+          matched = false;
+          break;
+        }
+      }
+      if matched {
+        raw_matches.push((i, sub_chars.len()));
+      }
+    }
   }
 
-  let mut positions = Vec::new();
-  let s_chars: Vec<char> = s.chars().collect();
-  let sub_chars: Vec<char> = sub.chars().collect();
+  // Sort by start position, then by length, and drop duplicates so that
+  // multiple alternatives matching at the same span don't yield repeats.
+  raw_matches.sort();
+  raw_matches.dedup();
 
-  for i in 0..=s_chars.len().saturating_sub(sub_chars.len()) {
+  let mut positions = Vec::new();
+  for (start, len) in raw_matches {
     if let Some(max) = max_results
       && positions.len() >= max
     {
       break;
     }
-    let mut matched = true;
-    for (j, &sub_char) in sub_chars.iter().enumerate() {
-      if s_chars[i + j] != sub_char {
-        matched = false;
-        break;
-      }
-    }
-    if matched {
-      let start = (i + 1) as i128;
-      let end = (i + sub_chars.len()) as i128;
-      positions
-        .push(Expr::List(vec![Expr::Integer(start), Expr::Integer(end)]));
-    }
+    let s1 = (start + 1) as i128;
+    let e1 = (start + len) as i128;
+    positions.push(Expr::List(vec![Expr::Integer(s1), Expr::Integer(e1)]));
   }
 
   Ok(Expr::List(positions))
