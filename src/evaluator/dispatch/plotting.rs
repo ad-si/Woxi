@@ -185,9 +185,15 @@ pub fn dispatch_plotting(
     "BarChart" if !args.is_empty() => {
       Some(crate::functions::chart::bar_chart_ast(args))
     }
+    "BarChart3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::bar_chart_3d_ast(args)
+    })),
     "PieChart" if !args.is_empty() => {
       Some(crate::functions::chart::pie_chart_ast(args))
     }
+    "PieChart3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::pie_chart_3d_ast(args)
+    })),
     "Histogram" if !args.is_empty() => {
       Some(crate::functions::chart::histogram_ast(args))
     }

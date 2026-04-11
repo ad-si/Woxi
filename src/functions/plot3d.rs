@@ -14,15 +14,15 @@ const Z_SCALE: f64 = 0.4;
 // --- 3D math types and helpers ---
 
 #[derive(Clone, Copy)]
-struct Point3D {
-  x: f64,
-  y: f64,
-  z: f64,
+pub(crate) struct Point3D {
+  pub x: f64,
+  pub y: f64,
+  pub z: f64,
 }
 
-struct Camera {
-  azimuth: f64,
-  elevation: f64,
+pub(crate) struct Camera {
+  pub azimuth: f64,
+  pub elevation: f64,
 }
 
 impl Default for Camera {
@@ -35,10 +35,10 @@ impl Default for Camera {
   }
 }
 
-struct Triangle {
-  projected: [(f64, f64); 3],
-  depth: f64,
-  color: (u8, u8, u8),
+pub(crate) struct Triangle {
+  pub projected: [(f64, f64); 3],
+  pub depth: f64,
+  pub color: (u8, u8, u8),
 }
 
 struct MeshLine {
@@ -58,7 +58,7 @@ const MESH_STEP: usize = 3;
 
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
-fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
+pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
   let (sa, ca) = cam.azimuth.sin_cos();
   let (se, ce) = cam.elevation.sin_cos();
 
@@ -72,7 +72,7 @@ fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
 
 /// Depth along the camera direction. Positive = further from viewer.
 /// Used for painter's algorithm: draw largest depth first.
-fn depth(p: Point3D, cam: &Camera) -> f64 {
+pub(crate) fn depth(p: Point3D, cam: &Camera) -> f64 {
   let (sa, ca) = cam.azimuth.sin_cos();
   let (se, ce) = cam.elevation.sin_cos();
   // Negate projection onto camera direction so positive = further
@@ -80,7 +80,11 @@ fn depth(p: Point3D, cam: &Camera) -> f64 {
 }
 
 /// Cross product for triangle normal (used for lighting)
-fn triangle_normal(v0: Point3D, v1: Point3D, v2: Point3D) -> [f64; 3] {
+pub(crate) fn triangle_normal(
+  v0: Point3D,
+  v1: Point3D,
+  v2: Point3D,
+) -> [f64; 3] {
   let ux = v1.x - v0.x;
   let uy = v1.y - v0.y;
   let uz = v1.z - v0.z;
@@ -139,7 +143,10 @@ fn height_color(z_norm: f64) -> (u8, u8, u8) {
 }
 
 /// Apply diffuse + ambient lighting
-fn apply_lighting(color: (u8, u8, u8), normal: [f64; 3]) -> (u8, u8, u8) {
+pub(crate) fn apply_lighting(
+  color: (u8, u8, u8),
+  normal: [f64; 3],
+) -> (u8, u8, u8) {
   // Light direction: upper-left-front (normalized)
   let lx = 0.4_f64;
   let ly = -0.5_f64;
@@ -1336,7 +1343,7 @@ fn tessellate_sphere(
 }
 
 /// Tessellate a cuboid into 12 triangles (2 per face).
-fn tessellate_cuboid(
+pub(crate) fn tessellate_cuboid(
   p_min: &Point3D,
   p_max: &Point3D,
 ) -> Vec<(Point3D, Point3D, Point3D)> {

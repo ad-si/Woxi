@@ -5148,7 +5148,6 @@ pub fn evaluate_function_call_ast_inner(
       | "PixelValuePositions"
       | "Weights"
       | "WhitespaceCharacter"
-      | "BarChart3D"
       | "VerticalSlider"
       | "CycleGraph"
       | "OverDot"
