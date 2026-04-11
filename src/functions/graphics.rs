@@ -5923,7 +5923,7 @@ fn grid_svg_styled_internal(
           theme().text_primary.to_string()
         };
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"{col_align}\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
         ));
       }
@@ -6175,7 +6175,7 @@ pub fn matrixform_3d_ast(
         let cx = x_off + cell_w / 2.0;
         let cy = sub_y_start + k as f64 * row_height + row_height / 2.0;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(item)
         ));
       }
