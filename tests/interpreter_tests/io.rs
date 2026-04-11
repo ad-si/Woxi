@@ -2476,6 +2476,69 @@ mod txt_import {
     let result = interpret(&format!(r#"Import["{url}"]"#)).unwrap();
     assert_eq!(result, "hello world");
   }
+
+  #[test]
+  fn import_txt_data_non_uniform_returns_lines() {
+    // article.txt has varying token counts per line, so "Data" returns a
+    // flat list of line strings (same as "Lines"), matching wolframscript.
+    let result =
+      interpret(r#"Import["tests/data/article.txt", "Data"]"#).unwrap();
+    assert_eq!(
+      result,
+      "{This is a sample article for Import tests., Line two., Line three.}"
+    );
+  }
+
+  #[test]
+  fn import_txt_lines_element() {
+    let result =
+      interpret(r#"Import["tests/data/article.txt", "Lines"]"#).unwrap();
+    assert_eq!(
+      result,
+      "{This is a sample article for Import tests., Line two., Line three.}"
+    );
+  }
+
+  #[test]
+  fn import_txt_words_element() {
+    let result =
+      interpret(r#"Import["tests/data/article.txt", "Words"]"#).unwrap();
+    assert!(result.starts_with("{This, is, a, sample"));
+    assert!(result.contains("Line, three.}"));
+  }
+
+  #[test]
+  fn import_txt_string_element() {
+    // "String" / "Plaintext" return the full file content.
+    let result =
+      interpret(r#"Import["tests/data/article.txt", "String"]"#).unwrap();
+    assert!(result.contains("sample article"));
+    assert!(result.contains("Line three."));
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_txt_data_from_url_parses_table() {
+    // Regression: Import[url, "Data"] on a whitespace-delimited table must
+    // return a list-of-lists with numeric columns auto-converted (and
+    // trailing blank lines stripped), matching wolframscript.
+    let url =
+      serve_txt_once("Joe Smith  94\nJane Smith  85\nBob Example  82\n\n");
+    let result = interpret(&format!(r#"Import["{url}", "Data"]"#)).unwrap();
+    assert_eq!(
+      result,
+      "{{Joe, Smith, 94}, {Jane, Smith, 85}, {Bob, Example, 82}}"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_txt_data_from_url_numeric_column_head_is_integer() {
+    let url = serve_txt_once("Joe Smith  94\nJane Smith  85\n");
+    let result =
+      interpret(&format!(r#"Head[Import["{url}", "Data"][[1, 3]]]"#)).unwrap();
+    assert_eq!(result, "Integer");
+  }
 }
 
 mod import_string {

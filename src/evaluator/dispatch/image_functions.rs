@@ -147,14 +147,10 @@ pub fn dispatch_image_functions(
           if ext == "txt" {
             return Some(crate::functions::xlsx_ast::download_url(&path).map(
               |bytes| {
-                let mut s = String::from_utf8_lossy(&bytes).into_owned();
-                if s.ends_with('\n') {
-                  s.pop();
-                  if s.ends_with('\r') {
-                    s.pop();
-                  }
-                }
-                Expr::String(s)
+                let content = String::from_utf8_lossy(&bytes).into_owned();
+                Expr::String(crate::functions::txt_ast::strip_trailing_newline(
+                  content,
+                ))
               },
             ));
           }
@@ -192,16 +188,10 @@ pub fn dispatch_image_functions(
           "txt" => {
             return Some(
               std::fs::read_to_string(&path)
-                .map(|mut s| {
-                  // Match wolframscript, which strips a single trailing
-                  // newline (either "\n" or "\r\n") from Import["file.txt"].
-                  if s.ends_with('\n') {
-                    s.pop();
-                    if s.ends_with('\r') {
-                      s.pop();
-                    }
-                  }
-                  Expr::String(s)
+                .map(|s| {
+                  Expr::String(
+                    crate::functions::txt_ast::strip_trailing_newline(s),
+                  )
                 })
                 .map_err(|e| {
                   InterpreterError::EvaluationError(format!(
@@ -295,6 +285,54 @@ pub fn dispatch_image_functions(
         {
           return Some(Err(InterpreterError::EvaluationError(
             "Import: xlsx import is not available in the browser".into(),
+          )));
+        }
+      }
+
+      if ext == "txt" {
+        // The element must be a string like "Data", "Lines", "Words", etc.
+        let element = match &args[1] {
+          Expr::String(e) => e.clone(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "Import".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          let content = if is_url {
+            match crate::functions::xlsx_ast::download_url(&path) {
+              Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+              Err(e) => return Some(Err(e)),
+            }
+          } else {
+            match std::fs::read_to_string(&path) {
+              Ok(s) => s,
+              Err(e) => {
+                return Some(Err(InterpreterError::EvaluationError(format!(
+                  "Import: cannot open \"{}\": {}",
+                  path, e
+                ))));
+              }
+            }
+          };
+          match crate::functions::txt_ast::import_element(&content, &element) {
+            Some(expr) => return Some(Ok(expr)),
+            None => {
+              return Some(Err(InterpreterError::EvaluationError(format!(
+                "Import: unsupported element \"{}\" for txt file",
+                element
+              ))));
+            }
+          }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          let _ = element;
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: txt element import is not available in the browser".into(),
           )));
         }
       }
