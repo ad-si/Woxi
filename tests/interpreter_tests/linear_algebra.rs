@@ -245,6 +245,20 @@ mod tr {
   fn trace_vector_with_times() {
     assert_eq!(interpret("Tr[{2, 3, 4}, Times]").unwrap(), "24");
   }
+
+  #[test]
+  fn trace_matrix_with_list_returns_diagonal() {
+    // Tr[m, List] returns the list of diagonal entries.
+    assert_eq!(
+      interpret("Tr[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, List]").unwrap(),
+      "{1, 5, 9}"
+    );
+    // Non-square matrix: take min(rows, cols) diagonal entries.
+    assert_eq!(
+      interpret("Tr[{{1, 2, 3}, {4, 5, 6}}, List]").unwrap(),
+      "{1, 5}"
+    );
+  }
 }
 
 mod identity_matrix {
