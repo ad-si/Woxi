@@ -793,6 +793,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains('?')
       && !trimmed.contains(';')
       && !trimmed.contains('@')
+      && !trimmed.contains('\u{2A2F}') // ⨯ Cross product
+      && !trimmed.contains('\u{F3C4}') // \[Cross] PUA form
+      && !trimmed.contains("\\[")
+    // any named character operator
     // Reals may need scientific notation formatting
     {
       // Check if any element needs evaluation (named colors, date symbols, etc.)

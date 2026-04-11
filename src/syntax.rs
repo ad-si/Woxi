@@ -511,6 +511,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DirectedEdge" => Some("\u{F3D1}"),
     "UndirectedEdge" => Some("\u{F3D0}"),
     "Distributed" => Some("\u{F3D2}"),
+    "Cross" => Some("\u{F3C4}"),
     // Dots
     "Ellipsis" => Some("\u{2026}"),
     "CenterEllipsis" => Some("\u{22EF}"),
@@ -650,6 +651,7 @@ fn named_char_to_expr(s: &str) -> Expr {
     "DirectedEdge" => "\u{F3D1}",
     "UndirectedEdge" => "\u{F3D0}",
     "Distributed" => "\u{F3D2}",
+    "Cross" => "\u{F3C4}",
     // Unknown: keep original name as identifier
     _ => return Expr::Identifier(name.to_string()),
   };
@@ -1555,10 +1557,12 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::List(items)
     }
     Rule::ListExtended => {
-      // Merged rule: List + optional suffix (PartIndexSuffix, ListAnonSuffix, ListCallSuffix)
+      // Merged rule: List + optional suffix (PartIndexSuffix or ListCallSuffix)
       // Eliminates exponential backtracking for deeply nested lists.
+      // Note: Anonymous function suffix (&) is NOT handled here — it is handled
+      // at the Expression level via AnonymousFunctionSuffix so `&` gets the
+      // correct low precedence.
       let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
-      let full_str = pair.as_str();
 
       // First inner pair is always List
       let list_expr = pair_to_expr(inner_pairs[0].clone());
@@ -1567,73 +1571,11 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let has_part_index = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
-      let has_list_anon = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::ListAnonSuffix));
       let has_list_call = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::ListCallSuffix));
-      let has_part_anon = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::ListPartAnonSuffix));
 
-      if has_part_index && has_part_anon {
-        // List[[...]] with anonymous function suffix: {a,b}[[1]] op ... &
-        let part_indices: Vec<Expr> = inner_pairs
-          .iter()
-          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-          .collect();
-        let mut part_result = list_expr;
-        for idx in &part_indices {
-          part_result = Expr::Part {
-            expr: Box::new(part_result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        // Parse the full body (everything before &) as anonymous function body
-        let body_str = {
-          let s = full_str.trim();
-          if let Some(amp_pos) = s.rfind('&') {
-            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
-              s[..amp_pos].trim()
-            } else {
-              s
-            }
-          } else {
-            s
-          }
-        };
-        let body = parse_anonymous_body(body_str);
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::ListPartAnonSuffix))
-          .unwrap();
-        let anon_brackets: Vec<Vec<Expr>> = suffix_pair
-          .clone()
-          .into_inner()
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-          .collect();
-        let anon_func = Expr::Function {
-          body: Box::new(body),
-        };
-        if anon_brackets.is_empty() {
-          anon_func
-        } else {
-          let mut result = Expr::CurriedCall {
-            func: Box::new(anon_func),
-            args: anon_brackets[0].clone(),
-          };
-          for args in anon_brackets.into_iter().skip(1) {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args,
-            };
-          }
-          result
-        }
-      } else if has_part_index {
+      if has_part_index {
         // List[[...]]: PartExtract with List base
         let part_indices: Vec<Expr> = inner_pairs
           .iter()
@@ -1648,49 +1590,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           };
         }
         result
-      } else if has_list_anon {
-        // List& : ListAnonymousFunction
-        let body_str = {
-          let s = full_str.trim();
-          if let Some(amp_pos) = s.rfind('&') {
-            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
-              s[..amp_pos].trim()
-            } else {
-              s
-            }
-          } else {
-            s
-          }
-        };
-        let body = parse_anonymous_body(body_str);
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::ListAnonSuffix))
-          .unwrap();
-        let anon_brackets: Vec<Vec<Expr>> = suffix_pair
-          .clone()
-          .into_inner()
-          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-          .collect();
-        let anon_func = Expr::Function {
-          body: Box::new(body),
-        };
-        if anon_brackets.is_empty() {
-          anon_func
-        } else {
-          let mut result = Expr::CurriedCall {
-            func: Box::new(anon_func),
-            args: anon_brackets[0].clone(),
-          };
-          for args in anon_brackets.into_iter().skip(1) {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args,
-            };
-          }
-          result
-        }
       } else if has_list_call {
         // List[...]: ListCall
         let suffix_pair = inner_pairs
@@ -1720,10 +1619,12 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::FunctionCallExtended => {
-      // Merged rule: FunctionCall + optional Part extraction + optional anonymous function suffix
-      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ [PartIndexSuffix [FunctionCallPartAnonSuffix] | FunctionCallAnonSuffix]
+      // Merged rule: FunctionCall + optional Part extraction + optional implicit multiplication suffix
+      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ [PartIndexSuffix | FunctionCallImplicitSuffix]
+      // Note: Anonymous function suffix (&) is NOT handled here — it is handled
+      // at the Expression level via AnonymousFunctionSuffix so that `&` gets the
+      // correct low precedence (binds the whole infix chain, not just the call).
       let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
-      let full_str = pair.as_str();
 
       let name_pair = &inner_pairs[0];
 
@@ -1746,12 +1647,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let has_part_index = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
-      let has_anon_suffix = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::FunctionCallAnonSuffix));
-      let has_part_anon_suffix = inner_pairs
-        .iter()
-        .any(|p| matches!(p.as_rule(), Rule::FunctionCallPartAnonSuffix));
       let has_implicit_suffix = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix));
@@ -1822,39 +1717,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           }
         };
 
-      // Helper: extract BracketArgs from a suffix pair
-      let extract_suffix_brackets =
-        |suffix_pair: &pest::iterators::Pair<Rule>| -> Vec<Vec<Expr>> {
-          suffix_pair
-            .clone()
-            .into_inner()
-            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-            .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
-            .collect::<Vec<Vec<Expr>>>()
-        };
-
-      // Helper: wrap body in Function and optionally apply to bracket args
-      let make_anon_func = |body: Expr, bracket_args: Vec<Vec<Expr>>| -> Expr {
-        let anon_func = Expr::Function {
-          body: Box::new(body),
-        };
-        if bracket_args.is_empty() {
-          anon_func
-        } else {
-          let mut result = Expr::CurriedCall {
-            func: Box::new(anon_func),
-            args: bracket_args[0].clone(),
-          };
-          for args in bracket_args.into_iter().skip(1) {
-            result = Expr::CurriedCall {
-              func: Box::new(result),
-              args,
-            };
-          }
-          result
-        }
-      };
-
       // Helper: parse FunctionCallImplicitSuffix inner pairs into multiplication factors
       // (same logic as ImplicitTimes handler)
       let parse_implicit_factors =
@@ -1902,36 +1764,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         })
       };
 
-      if has_part_index && has_part_anon_suffix {
-        // PartAnonymousFunction: f[x][[i]] op ... &[args]
-        let mut part_result = base_func;
-        for idx in &part_indices {
-          part_result = Expr::Part {
-            expr: Box::new(part_result),
-            index: Box::new(idx.clone()),
-          };
-        }
-        // Re-parse the full body (everything before &) as anonymous function body
-        let body_str = {
-          let s = full_str.trim();
-          if let Some(amp_pos) = s.rfind('&') {
-            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
-              s[..amp_pos].trim()
-            } else {
-              s
-            }
-          } else {
-            s
-          }
-        };
-        let body = parse_anonymous_body(body_str);
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::FunctionCallPartAnonSuffix))
-          .unwrap();
-        let anon_brackets = extract_suffix_brackets(suffix_pair);
-        make_anon_func(body, anon_brackets)
-      } else if has_part_index && has_implicit_suffix {
+      if has_part_index && has_implicit_suffix {
         // PartExtract with implicit multiplication: f[x][[i]]^2 y
         let mut result = base_func;
         for idx in &part_indices {
@@ -1973,23 +1806,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           };
         }
         result
-      } else if has_anon_suffix {
-        // FunctionAnonymousFunction: f[x]&[args]
-        let body_str = {
-          let s = full_str.trim();
-          if let Some(amp_pos) = s.rfind('&') {
-            s[..amp_pos].trim()
-          } else {
-            s
-          }
-        };
-        let body = parse_anonymous_body(body_str);
-        let suffix_pair = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::FunctionCallAnonSuffix))
-          .unwrap();
-        let anon_brackets = extract_suffix_brackets(suffix_pair);
-        make_anon_func(body, anon_brackets)
       } else if has_implicit_suffix {
         // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
         let mut result = base_func;
@@ -2457,65 +2273,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         };
       }
       result
-    }
-    Rule::FunctionAnonymousFunction
-    | Rule::ParenAnonymousFunction
-    | Rule::ListAnonymousFunction
-    | Rule::PartAnonymousFunction => {
-      // Anonymous function like If[#>0,#,0]& or (#===0)& or {#,#^2}&
-      // May optionally have BracketArgs for direct calls: (#+1)&[5]
-      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
-      let bracket_args: Vec<Vec<Expr>> = inner_pairs
-        .iter()
-        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
-        .map(|bracket| {
-          bracket
-            .clone()
-            .into_inner()
-            .filter(|p| {
-              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
-            })
-            .map(pair_to_expr)
-            .collect()
-        })
-        .collect();
-      // Extract body string: everything before the first BracketArgs, trimmed of &
-      let body_str = if bracket_args.is_empty() {
-        pair.as_str().trim().trim_end_matches('&').to_string()
-      } else {
-        // Find where the first BracketArgs starts in the string
-        let first_bracket = inner_pairs
-          .iter()
-          .find(|p| matches!(p.as_rule(), Rule::BracketArgs))
-          .unwrap();
-        let bracket_start = first_bracket.as_span().start();
-        let pair_start = pair.as_span().start();
-        let body_end = bracket_start - pair_start;
-        pair.as_str()[..body_end]
-          .trim()
-          .trim_end_matches('&')
-          .to_string()
-      };
-      let body = parse_anonymous_body(&body_str);
-      let anon_func = Expr::Function {
-        body: Box::new(body),
-      };
-      if bracket_args.is_empty() {
-        anon_func
-      } else {
-        // Build curried calls for direct application: (#+1)&[5] or (#+1)&[5][6]
-        let mut result = Expr::CurriedCall {
-          func: Box::new(anon_func),
-          args: bracket_args[0].clone(),
-        };
-        for args in bracket_args.into_iter().skip(1) {
-          result = Expr::CurriedCall {
-            func: Box::new(result),
-            args,
-          };
-        }
-        result
-      }
     }
     Rule::RuleAnonymousFunction => {
       // Anonymous function with Rule body: {#, First@#2} -> "Q" &
@@ -3251,6 +3008,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
     "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
+    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
     | "\u{2265}" | "===" | "=!=" => 7, // Comparisons
     "~~" => 8,          // StringExpression (lower than Alternatives)
@@ -3418,6 +3176,26 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "Distributed".to_string(),
       args: vec![left.clone(), right.clone()],
     },
+    "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => {
+      // Cross is Flat/associative — flatten chains: a ⨯ b ⨯ c → Cross[a, b, c].
+      let mut parts = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "Cross" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "Cross" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "Cross".to_string(),
+        args: parts,
+      }
+    }
     "~~" => {
       // Flatten nested StringExpression (it's Flat/associative)
       let mut parts = Vec::new();

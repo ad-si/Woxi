@@ -3285,10 +3285,85 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     return simplify_with_assumptions(&args[0], &args[1], false);
   }
-  Ok(simplify_expr(&args[0]))
+  // Single argument: consult $Assumptions from the environment (e.g. set by
+  // Assuming[...]) and apply refinement if any are active.
+  let simplified = simplify_expr_with_together(&args[0]);
+  Ok(apply_active_assumptions(&simplified))
 }
 
-/// FullSimplify[expr] or FullSimplify[expr, Assumptions -> cond]
+/// Run `simplify_expr` and also try `together_expr`, both at the top level and
+/// recursively on sub-expressions, picking the leaf-smallest result. This lets
+/// nested fraction forms (e.g. continued fractions like `1 + 1/(1 + 1/(1 + 1/x))`
+/// or `1/(1 + 1/x)`) collapse into a single fraction without having to sprinkle
+/// Together calls through every branch of `simplify_expr`. Sub-expression
+/// combining handles the case where combining the whole expression makes the
+/// leaf count larger but combining an inner fraction still helps.
+fn simplify_expr_with_together(expr: &Expr) -> Expr {
+  let simplified = simplify_expr(expr);
+  let mut best = simplified.clone();
+  let mut best_c = leaf_count(&best);
+
+  // Candidate 1: Together the whole simplified expression.
+  let togethered = super::together::together_expr(&simplified);
+  let tc = leaf_count(&togethered);
+  if tc < best_c {
+    // Re-run simplify_expr to absorb any cancellations Together exposed.
+    let resimplified = simplify_expr(&togethered);
+    let rc = leaf_count(&resimplified);
+    if rc <= tc {
+      best = resimplified;
+      best_c = rc;
+    } else {
+      best = togethered;
+      best_c = tc;
+    }
+  }
+
+  // Candidate 2: Together sub-expressions (leaves outer structure alone).
+  // This helps cases like `1 + 1/(1 + 1/x)` where the whole-expression Together
+  // is tied with the original, but combining only the inner fraction is
+  // strictly better.
+  let sub_togethered = together_subexpressions(&simplified);
+  let sc = leaf_count(&sub_togethered);
+  if sc < best_c {
+    best = sub_togethered;
+    let _ = best_c;
+  }
+
+  best
+}
+
+/// Apply `together_expr` only to proper sub-expressions of `expr`, leaving the
+/// outermost operator untouched. Used to combine inner fractions inside an
+/// expression whose top-level combining doesn't help.
+fn together_subexpressions(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      let l = super::together::together_expr(left);
+      let r = super::together::together_expr(right);
+      Expr::BinaryOp {
+        op: *op,
+        left: Box::new(l),
+        right: Box::new(r),
+      }
+    }
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(super::together::together_expr(operand)),
+    },
+    Expr::FunctionCall { name, args } if name == "Plus" || name == "Times" => {
+      let new_args: Vec<Expr> =
+        args.iter().map(super::together::together_expr).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// FullSimplify[expr] or FullSimplify[expr, assum]
 pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3300,73 +3375,142 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Thread over Lists
   if let Expr::List(items) = &args[0] {
-    let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
+    let results: Vec<Expr> = items
+      .iter()
+      .map(|e| apply_active_assumptions(&full_simplify_expr_with_together(e)))
+      .collect();
     return Ok(Expr::List(results));
   }
-  Ok(full_simplify_expr(&args[0]))
+  let simplified = full_simplify_expr_with_together(&args[0]);
+  Ok(apply_active_assumptions(&simplified))
 }
 
-/// Apply Simplify or FullSimplify with an Assumptions option.
+/// Full-simplify variant that also tries Together (whole and sub-expression)
+/// and picks the simpler form.
+fn full_simplify_expr_with_together(expr: &Expr) -> Expr {
+  let simplified = full_simplify_expr(expr);
+  let mut best = simplified.clone();
+  let mut best_c = leaf_count(&best);
+
+  let togethered = super::together::together_expr(&simplified);
+  let tc = leaf_count(&togethered);
+  if tc < best_c {
+    let resimplified = full_simplify_expr(&togethered);
+    let rc = leaf_count(&resimplified);
+    if rc <= tc {
+      best = resimplified;
+      best_c = rc;
+    } else {
+      best = togethered;
+      best_c = tc;
+    }
+  }
+
+  let sub_togethered = together_subexpressions(&simplified);
+  let sc = leaf_count(&sub_togethered);
+  if sc < best_c {
+    best = sub_togethered;
+    let _ = best_c;
+  }
+
+  best
+}
+
+/// Retrieve the current `$Assumptions` from the environment, if any, as an Expr.
+/// Returns None when `$Assumptions` is unset or equals `True`.
+fn current_assumptions() -> Option<Expr> {
+  let assumptions_str = crate::ENV.with(|e| {
+    e.borrow().get("$Assumptions").map(|sv| match sv {
+      crate::StoredValue::Raw(s) => s.clone(),
+      crate::StoredValue::ExprVal(e) => expr_to_string(e),
+      _ => "True".to_string(),
+    })
+  })?;
+  if assumptions_str == "True" || assumptions_str.is_empty() {
+    return None;
+  }
+  let parsed = crate::syntax::string_to_expr(&assumptions_str).ok()?;
+  crate::evaluator::evaluate_expr_to_expr(&parsed).ok()
+}
+
+/// Apply any currently active `$Assumptions` (set by `Assuming[...]` or
+/// `Simplify[expr, assum]`) to the given already-simplified expression by
+/// running it through `refine_expr`. Returns the original expression unchanged
+/// when no assumptions are active.
+fn apply_active_assumptions(expr: &Expr) -> Expr {
+  if let Some(assumption_expr) = current_assumptions() {
+    let info = extract_assumption_info(&assumption_expr);
+    refine_expr(expr, &info, &assumption_expr)
+  } else {
+    expr.clone()
+  }
+}
+
+/// Apply Simplify or FullSimplify with an explicit assumption argument.
+///
+/// Accepts either the direct form `Simplify[expr, assum]` (where `assum` is a
+/// predicate like `x > 0`) or the option form `Simplify[expr, Assumptions -> assum]`.
+/// The assumption is combined with any existing `$Assumptions` (e.g. set by a
+/// surrounding `Assuming[...]`) using `And`, so nested assumptions accumulate.
 fn simplify_with_assumptions(
   expr: &Expr,
   opts: &Expr,
   full: bool,
 ) -> Result<Expr, InterpreterError> {
-  // Extract Assumptions -> value from the options argument
-  let assumption = match opts {
+  // Extract the assumption: either from `Assumptions -> assum` or taken directly.
+  let assumption_val = match opts {
     Expr::Rule {
       pattern,
       replacement,
-    } => {
-      if let Expr::Identifier(name) = pattern.as_ref() {
-        if name == "Assumptions" {
-          Some(replacement.as_ref().clone())
-        } else {
-          None
-        }
-      } else {
-        None
-      }
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions") => {
+      replacement.as_ref().clone()
     }
-    _ => None,
+    _ => opts.clone(),
   };
 
-  if let Some(assumption_val) = assumption {
-    // Save previous $Assumptions
-    let prev = crate::ENV.with(|e| e.borrow().get("$Assumptions").cloned());
-
-    // Set $Assumptions
-    let val = expr_to_string(&assumption_val);
-    crate::ENV.with(|e| {
-      e.borrow_mut()
-        .insert("$Assumptions".to_string(), crate::StoredValue::Raw(val))
-    });
-
-    let result = if full {
-      full_simplify_expr(expr)
-    } else {
-      simplify_expr(expr)
-    };
-
-    // Restore previous $Assumptions
-    crate::ENV.with(|e| {
-      let mut env = e.borrow_mut();
-      if let Some(v) = prev {
-        env.insert("$Assumptions".to_string(), v);
-      } else {
-        env.remove("$Assumptions");
-      }
-    });
-
-    Ok(result)
-  } else {
-    // Unknown option, just simplify normally
-    if full {
-      Ok(full_simplify_expr(expr))
-    } else {
-      Ok(simplify_expr(expr))
+  // Combine with any already-active $Assumptions (e.g. from an outer Assuming)
+  // so `Assuming[x > 0, Simplify[expr, y > 0]]` uses both.
+  let combined = if let Some(prev_assum) = current_assumptions() {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: vec![prev_assum, assumption_val.clone()],
     }
-  }
+  } else {
+    assumption_val.clone()
+  };
+
+  // Save previous $Assumptions
+  let prev = crate::ENV.with(|e| e.borrow().get("$Assumptions").cloned());
+
+  // Set $Assumptions to the combined expression so any nested Simplify/Refine
+  // calls inside the expression also see it.
+  let val = expr_to_string(&combined);
+  crate::ENV.with(|e| {
+    e.borrow_mut()
+      .insert("$Assumptions".to_string(), crate::StoredValue::Raw(val))
+  });
+
+  let simplified = if full {
+    full_simplify_expr_with_together(expr)
+  } else {
+    simplify_expr_with_together(expr)
+  };
+
+  // Apply refinement using the combined assumption.
+  let info = extract_assumption_info(&combined);
+  let result = refine_expr(&simplified, &info, &combined);
+
+  // Restore previous $Assumptions
+  crate::ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    if let Some(v) = prev {
+      env.insert("$Assumptions".to_string(), v);
+    } else {
+      env.remove("$Assumptions");
+    }
+  });
+
+  Ok(result)
 }
 
 /// FullSimplify: more aggressive than Simplify.

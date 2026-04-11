@@ -66,7 +66,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Transpose]" | "\\[ConjugateTranspose]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -79,27 +79,19 @@ SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | SlotSequence | Slot | "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
 // Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
-FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" ~ BracketArgs* }
-// ParenAnonymousFunction handles (Expression)& - for expressions like (# === "")&
-// Optional BracketArgs allow direct calls: (# + 1)&[5]
-ParenAnonymousFunction = { "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ "&" ~ !"&" ~ BracketArgs* }
-// ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
-// Optional BracketArgs allow direct calls: {#, #^2}&[3]
-ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
 // ListCall handles List used as a function head: {f, g}[x] → applies each element to args
 ListCall = { List ~ BracketArgs+ }
-// ListExtended merges List, ListAnonymousFunction, ListCall, and List-based
-// PartExtract/PartAnonymousFunction into a single rule to avoid exponential
-// backtracking. Parses List ONCE, then checks for optional suffixes.
-// Named suffix rules for pair_to_expr detection.
-ListAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
+// ListExtended merges List, ListCall, and List-based PartExtract into a single
+// rule to avoid exponential backtracking. Parses List ONCE, then checks for
+// optional Part or Call suffixes.
+// Note: The anonymous-function suffix (&) is NOT consumed here — it is handled
+// at the Expression level via AnonymousFunctionSuffix so that `&` has the
+// correct low precedence (binds the whole infix chain, not just the list).
 ListCallSuffix = { BracketArgs+ }
-ListPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 ListExtended = {
     List ~ (
-        PartIndexSuffix ~ ListPartAnonSuffix?   // List[[...]] or List[[...]]& (PartExtract/PartAnonymousFunction)
-      | ListAnonSuffix                           // List& (ListAnonymousFunction)
-      | ListCallSuffix                           // List[...] (ListCall)
+        PartIndexSuffix   // List[[...]]
+      | ListCallSuffix    // List[...] (ListCall)
     )?
 }
 // ParenExtended handles Part extraction and bracket-call on parenthesized expressions:
@@ -109,10 +101,6 @@ ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
     "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ (PartIndexSuffix | ParenCallSuffix)
 }
-// PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
-// Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.
-// Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
-PartAnonymousFunction = { PartExtract ~ (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
@@ -129,6 +117,7 @@ Operator = @{
   | "\\[DirectedEdge]" | "\u{F3D1}" // Named character operator: DirectedEdge
   | "\\[UndirectedEdge]" | "\u{F3D0}" // Named character operator: UndirectedEdge
   | "\\[Distributed]" | "\u{F3D2}" // Named character operator: Distributed
+  | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product operator: a ⨯ b → Cross[a, b]
   | "/@"     // keep first
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
@@ -285,14 +274,11 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 // infix operators like `==`, `+`, etc. — otherwise `Mod[#1,3] == Mod[#2,3] &`
 // would parse as `Equal[Mod[#1,3], Function[Mod[#2,3]]]` instead of
 // `Function[Equal[Mod[#1,3], Mod[#2,3]]]`.
-FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs+ }
-FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {
     Identifier ~ DerivativePrime? ~ BracketArgs+
     ~ (
-        PartIndexSuffix ~ (FunctionCallPartAnonSuffix | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
-      | FunctionCallAnonSuffix
+        PartIndexSuffix ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
     )?
 }
@@ -304,7 +290,6 @@ Term = _{
     FunctionCallExtended
   | SlotCall
   | ImplicitTimes
-  | PartAnonymousFunction
   | Unset
   | AddTo
   | SubtractFrom
@@ -316,7 +301,6 @@ Term = _{
   | Constant
   | String
   | ListExtended
-  | ParenAnonymousFunction
   | NumericValue
   | PreIncrement
   | PreDecrement
@@ -358,7 +342,6 @@ SimpleTerm = _{
 TermNoImplicit = _{
     FunctionCallExtended
   | ImplicitTimes
-  | PartAnonymousFunction
   | Unset
   | AddTo
   | SubtractFrom
@@ -370,7 +353,6 @@ TermNoImplicit = _{
   | Constant
   | String
   | ListExtended
-  | ParenAnonymousFunction
   | NumericValue
   | PreIncrement
   | PreDecrement
@@ -411,6 +393,7 @@ ConditionOp = @{
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
   | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
+  | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product (⨯)
   | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // Comparison, ⩵, ≠
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥
