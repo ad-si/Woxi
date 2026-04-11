@@ -619,6 +619,33 @@ mod power_with_negative_exponent {
   fn power_negative_two_exponent() {
     assert_eq!(interpret("Power[3, -2]").unwrap(), "1/9");
   }
+
+  #[test]
+  fn rational_to_rational_power_negative_half() {
+    // (5/2)^(-1/2) → Sqrt[2/5], exact symbolic (not a numeric decimal).
+    assert_eq!(interpret("(5/2)^(-1/2)").unwrap(), "Sqrt[2/5]");
+  }
+
+  #[test]
+  fn rational_to_rational_power_perfect_cube_root() {
+    assert_eq!(interpret("(8/27)^(1/3)").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn rational_to_rational_power_stays_unevaluated_when_no_simplification() {
+    // (5/2)^(1/3) has no exact simplification — keep unevaluated.
+    assert_eq!(interpret("(5/2)^(1/3)").unwrap(), "(5/2)^(1/3)");
+  }
+
+  #[test]
+  fn rational_to_rational_power_three_halves() {
+    assert_eq!(interpret("(2/3)^(3/2)").unwrap(), "(2*Sqrt[2/3])/3");
+  }
+
+  #[test]
+  fn rational_to_rational_power_minus_three_halves() {
+    assert_eq!(interpret("(2/3)^(-3/2)").unwrap(), "(3*Sqrt[3/2])/2");
+  }
 }
 
 mod power_of_i {

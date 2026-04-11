@@ -457,6 +457,27 @@ mod total {
   }
 
   #[test]
+  fn total_level_range() {
+    // Total[list, {n1, n2}] collapses levels n1..=n2 together.
+    assert_eq!(
+      interpret("Total[{{1, 2, 3}, {4, 5, 6}}, {1, 2}]").unwrap(),
+      "21"
+    );
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 2}]").unwrap(),
+      "{16, 20}"
+    );
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {2, 3}]").unwrap(),
+      "{10, 26}"
+    );
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 3}]").unwrap(),
+      "36"
+    );
+  }
+
+  #[test]
   fn total_3d_exact_level_2() {
     assert_eq!(
       interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {2}]").unwrap(),
@@ -2687,6 +2708,15 @@ mod standardize {
       interpret("Standardize[{0, 2}][[1]] + Standardize[{0, 2}][[2]] // Chop")
         .unwrap(),
       "0"
+    );
+  }
+
+  #[test]
+  fn standardize_exact_symbolic() {
+    // Integer input must stay exact/symbolic (matches Wolfram Language).
+    assert_eq!(
+      interpret("Standardize[{1, 2, 3, 4, 5}]").unwrap(),
+      "{-2*Sqrt[2/5], -Sqrt[2/5], 0, Sqrt[2/5], 2*Sqrt[2/5]}"
     );
   }
 }
