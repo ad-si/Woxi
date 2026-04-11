@@ -1809,6 +1809,29 @@ mod nest_while_list {
       "{6, 3, 10, 5, 16, 8, 4, 2, 1}"
     );
   }
+
+  #[test]
+  fn with_max_iterations_cap() {
+    // NestWhile[f, x, test, m, max] — max caps the number of iterations.
+    assert_eq!(
+      interpret("NestWhile[#/2 &, 1024, # > 1 &, 1, 5]").unwrap(),
+      "32"
+    );
+  }
+
+  #[test]
+  fn list_form_with_max_iterations_cap() {
+    assert_eq!(
+      interpret("NestWhileList[#/2 &, 1024, # > 1 &, 1, 5]").unwrap(),
+      "{1024, 512, 256, 128, 64, 32}"
+    );
+  }
+
+  #[test]
+  fn four_arg_form_with_default_m() {
+    // NestWhile[f, x, test, 1] behaves like the 3-arg form.
+    assert_eq!(interpret("NestWhile[#/2 &, 16, # > 1 &, 1]").unwrap(), "1");
+  }
 }
 
 mod reap_sow {
