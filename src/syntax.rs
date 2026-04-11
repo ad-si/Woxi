@@ -6044,6 +6044,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           ))
         || (matches!(op, BinaryOperator::Power)
           && matches!(left.as_ref(), Expr::Integer(n) if *n < 0))
+        // Power with a Rational base must wrap the base in parens, since
+        // Rational prints as `p/q` and unparenthesized `p/q^e` parses
+        // as `p/(q^e)` rather than `(p/q)^e`.
+        || (matches!(op, BinaryOperator::Power)
+          && matches!(
+            left.as_ref(),
+            Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+          ))
         // Power is right-associative: (x^a)^b must be parenthesized to avoid x^a^b = x^(a^b)
         || (matches!(op, BinaryOperator::Power)
           && (matches!(

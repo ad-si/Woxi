@@ -13,13 +13,35 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A small helper that accepts either a finite level number or
+  // `Infinity` and turns it into a `usize`.
+  fn level_to_usize(e: &Expr) -> Option<usize> {
+    match e {
+      Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+      other => expr_to_num(other).map(|n| n as usize),
+    }
+  }
+
   // Parse level spec from second argument
   let level_spec = if args.len() == 2 {
     match &args[1] {
       // Total[list, {n}] - exact level n
       Expr::List(items) if items.len() == 1 => {
-        if let Some(n) = expr_to_num(&items[0]) {
-          TotalLevelSpec::Exact(n as usize)
+        if let Some(n) = level_to_usize(&items[0]) {
+          TotalLevelSpec::Exact(n)
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "Total".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+      // Total[list, {n1, n2}] - sum across levels n1 through n2
+      Expr::List(items) if items.len() == 2 => {
+        if let (Some(n1), Some(n2)) =
+          (level_to_usize(&items[0]), level_to_usize(&items[1]))
+        {
+          TotalLevelSpec::Range(n1, n2)
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
@@ -59,8 +81,9 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub enum TotalLevelSpec {
-  Through(usize), // sum levels 1..=n
-  Exact(usize),   // sum at exactly level n
+  Through(usize),      // sum levels 1..=n
+  Exact(usize),        // sum at exactly level n
+  Range(usize, usize), // sum levels n1..=n2 (collapsed together)
 }
 
 /// Sum a list at level 1 using Plus (Apply[Plus, list])
@@ -102,6 +125,34 @@ pub fn total_with_level(
   match level_spec {
     TotalLevelSpec::Through(n) => total_through_level(expr, *n),
     TotalLevelSpec::Exact(n) => total_at_exact_level(expr, *n),
+    TotalLevelSpec::Range(n1, n2) => total_range_levels(expr, *n1, *n2),
+  }
+}
+
+/// Total[list, {n1, n2}] - sum across levels n1 through n2 (inclusive),
+/// collapsing those levels into a scalar while preserving the structure
+/// above n1 and (implicitly) below n2.
+pub fn total_range_levels(
+  expr: &Expr,
+  n1: usize,
+  n2: usize,
+) -> Result<Expr, InterpreterError> {
+  if n2 < n1 {
+    return Ok(expr.clone());
+  }
+  if n1 <= 1 {
+    // From the top level down to n2: same as summing levels 1..=n2.
+    return total_through_level(expr, n2);
+  }
+  match expr {
+    Expr::List(items) => {
+      let processed: Vec<Expr> = items
+        .iter()
+        .map(|item| total_range_levels(item, n1 - 1, n2 - 1))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(Expr::List(processed))
+    }
+    _ => Ok(expr.clone()),
   }
 }
 

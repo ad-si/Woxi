@@ -4257,6 +4257,79 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Special case: Rational^Rational — keep the result exact/symbolic
+  // rather than falling through to numeric evaluation.
+  if let Expr::FunctionCall {
+    name: rname,
+    args: rargs,
+  } = base
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *q > 0
+    && let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = exp
+    && ename == "Rational"
+    && eargs.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&eargs[0], &eargs[1])
+    && *d > 0
+  {
+    // For a negative exponent, flip the base: (p/q)^(-n/d) = (q/p)^(n/d).
+    // Only do this flip when p > 0 so the flipped base is still a plain
+    // positive rational (handling signs of p is tricky and uncommon).
+    if *n < 0 && *p > 0 {
+      let flipped_base = make_rational(*q, *p);
+      let flipped_exp = make_rational(-*n, *d);
+      return power_two(&flipped_base, &flipped_exp);
+    }
+    // Positive rational exponent with p > 0 and n > 1: rewrite as
+    // ((p/q)^n)^(1/d). (p/q)^n is an exact rational, then raising to
+    // 1/d delegates to the Integer^Rational / Sqrt simplifier.
+    if *n > 1 && *p > 0 {
+      let base_to_n = power_two(base, &Expr::Integer(*n))?;
+      // Only recurse further if the integer power actually simplified
+      // down to a plain rational/integer (otherwise we risk recursion).
+      let simplified =
+        matches!(&base_to_n, Expr::Integer(_) | Expr::BigInteger(_))
+          || matches!(
+            &base_to_n,
+            Expr::FunctionCall { name, .. } if name == "Rational"
+          );
+      if simplified {
+        let one_over_d = make_rational(1, *d);
+        return power_two(&base_to_n, &one_over_d);
+      }
+    }
+    // n == 1 with d == 2: delegate to sqrt_ast for exact simplification.
+    if *n == 1 && *d == 2 && *p > 0 {
+      return crate::functions::sqrt_ast(&[base.clone()]);
+    }
+    // n == 1 with d > 2 (e.g. (8/27)^(1/3)): try to extract the d-th root
+    // of the numerator and denominator separately. If both simplify to
+    // plain integers/rationals, the quotient is the exact answer;
+    // otherwise keep the expression unevaluated.
+    if *n == 1 && *d > 2 && *p > 0 {
+      let exp_1d = make_rational(1, *d);
+      let p_root = power_two(&Expr::Integer(*p), &exp_1d)?;
+      let q_root = power_two(&Expr::Integer(*q), &exp_1d)?;
+      let is_plain = |e: &Expr| -> bool {
+        matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+          || matches!(e,
+            Expr::FunctionCall { name, .. } if name == "Rational")
+      };
+      if is_plain(&p_root) && is_plain(&q_root) {
+        return divide_ast(&[p_root, q_root]);
+      }
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(exp.clone()),
+      });
+    }
+  }
+
   // Special case: Integer^Rational — keep symbolic unless result is exact integer
   if let Expr::Integer(b) = base
     && let Expr::FunctionCall { name, args: rargs } = exp
