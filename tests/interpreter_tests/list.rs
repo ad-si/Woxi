@@ -130,6 +130,35 @@ mod union_sorting {
   fn union_removes_duplicates_and_sorts() {
     assert_eq!(interpret("Union[{3, 1, 2, 1, 3}]").unwrap(), "{1, 2, 3}");
   }
+
+  #[test]
+  fn union_same_test_two_lists_parity() {
+    assert_eq!(
+      interpret(
+        "Union[{1, 2, 3}, {2, 3, 4}, SameTest -> (Mod[#1 - #2, 2] == 0 &)]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn union_same_test_single_list_parity() {
+    assert_eq!(
+      interpret("Union[{3, 1, 2, 4}, SameTest -> (Mod[#1 - #2, 2] == 0 &)]")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn union_same_test_picks_smallest_representative() {
+    assert_eq!(
+      interpret("Union[{3, 5, 2, 4}, SameTest -> (Mod[#1 - #2, 2] == 0 &)]")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
 }
 
 mod subsequences {
