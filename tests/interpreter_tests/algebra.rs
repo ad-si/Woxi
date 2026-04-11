@@ -1669,6 +1669,96 @@ mod simplify_assumptions {
       "2*x"
     );
   }
+
+  // Regression: Simplify should accept a direct assumption (not only
+  // `Assumptions -> val`), and `Assuming[...]` should propagate to a nested
+  // `Simplify[...]` call via `$Assumptions`.
+  #[test]
+  fn simplify_with_direct_assumption() {
+    assert_eq!(interpret("Simplify[Sqrt[x^2], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn assuming_propagates_to_simplify() {
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[Sqrt[x^2]]]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn assuming_combines_with_inner_simplify_assumption() {
+    // Outer Assuming and inner direct assumption should combine via And.
+    assert_eq!(
+      interpret("Assuming[x > 0, Simplify[Sqrt[x^2] + Sqrt[y^2], y > 0]]")
+        .unwrap(),
+      "x + y"
+    );
+  }
+
+  #[test]
+  fn assuming_propagates_to_simplify_multi_var() {
+    assert_eq!(
+      interpret("Assuming[x > 0 && y > 0, Simplify[Sqrt[x^2] + Sqrt[y^2]]]")
+        .unwrap(),
+      "x + y"
+    );
+  }
+}
+
+// Regression: Simplify should collapse nested continued-fraction-like
+// expressions by combining inner fractions, not leave them in the
+// `1 + (1 + x^(-1))^(-1)` form.
+mod simplify_continued_fractions {
+  use super::*;
+
+  #[test]
+  fn single_level_nested_inverse() {
+    // 1/(1 + 1/x) → x/(1 + x)
+    assert_eq!(interpret("Simplify[1/(1 + 1/x)]").unwrap(), "x/(1 + x)");
+  }
+
+  #[test]
+  fn plus_with_single_level_nested_inverse() {
+    // 1 + 1/(1 + 1/x) → 1 + x/(1 + x)
+    assert_eq!(
+      interpret("Simplify[1 + 1/(1 + 1/x)]").unwrap(),
+      "1 + x/(1 + x)"
+    );
+  }
+
+  #[test]
+  fn two_level_nested_inverse() {
+    // 1/(1 + 1/(1 + 1/x)) → (1 + x)/(1 + 2 x)
+    assert_eq!(
+      interpret("Simplify[1/(1 + 1/(1 + 1/x))]").unwrap(),
+      "(1 + x)/(1 + 2*x)"
+    );
+  }
+
+  #[test]
+  fn plus_with_two_level_nested_inverse() {
+    // 1 + 1/(1 + 1/(1 + 1/x)) → (2 + 3 x)/(1 + 2 x)
+    assert_eq!(
+      interpret("Simplify[1 + 1/(1 + 1/(1 + 1/x))]").unwrap(),
+      "(2 + 3*x)/(1 + 2*x)"
+    );
+  }
+
+  #[test]
+  fn nested_inverse_with_symbolic_coefficients() {
+    // a / (b + c/d) → a d / (c + b d)
+    assert_eq!(interpret("Simplify[a/(b + c/d)]").unwrap(), "a*d/(c + b*d)");
+  }
+
+  #[test]
+  fn together_continued_fraction() {
+    // Same input — Together alone should also combine fully.
+    assert_eq!(
+      interpret("Together[1 + 1/(1 + 1/(1 + 1/x))]").unwrap(),
+      "(2 + 3*x)/(1 + 2*x)"
+    );
+  }
 }
 
 mod roots {

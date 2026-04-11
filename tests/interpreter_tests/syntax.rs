@@ -5738,3 +5738,84 @@ mod unicode_operators {
     assert_eq!(interpret("1 ≤ 3 ≥ 2").unwrap(), "True");
   }
 }
+
+// Regression tests for `&` (Function) precedence. `&` has very low precedence
+// in Wolfram — it binds looser than any infix operator. Inner-term rules must
+// not consume the `&` greedily when there are preceding operators, otherwise
+// `a + b &` would mis-parse as `a + (b &)` instead of `(a + b) &`.
+mod anonymous_function_precedence {
+  use super::*;
+
+  #[test]
+  fn amp_after_function_call_with_logical_operator() {
+    // `# > 10 && PrimeQ[#] &[11]` should parse as
+    // `Function[And[Greater[#, 10], PrimeQ[#]]][11]` = True.
+    assert_eq!(interpret("# > 10 && PrimeQ[#] &[11]").unwrap(), "True");
+    assert_eq!(
+      interpret("FullForm[Hold[# > 10 && PrimeQ[#] &[11]]]").unwrap(),
+      "Hold[Function[And[Greater[Slot[1], 10], PrimeQ[Slot[1]]]][11]]"
+    );
+  }
+
+  #[test]
+  fn amp_after_function_call_with_plus() {
+    // `a + PrimeQ[#] &[11]` should parse as `Function[a + PrimeQ[#]][11]`.
+    assert_eq!(
+      interpret("FullForm[Hold[a + PrimeQ[#] &[11]]]").unwrap(),
+      "Hold[Function[Plus[a, PrimeQ[Slot[1]]]][11]]"
+    );
+  }
+
+  #[test]
+  fn amp_after_list_with_plus() {
+    // `a + {1, 2} &[5]` should parse as `Function[a + {1, 2}][5]`.
+    assert_eq!(
+      interpret("FullForm[Hold[a + {1, 2} &[5]]]").unwrap(),
+      "Hold[Function[Plus[a, List[1, 2]]][5]]"
+    );
+  }
+
+  #[test]
+  fn amp_after_parenthesized_with_plus() {
+    // `a + (b) &[5]` should parse as `Function[a + b][5]`.
+    assert_eq!(
+      interpret("FullForm[Hold[a + (b) &[5]]]").unwrap(),
+      "Hold[Function[Plus[a, b]][5]]"
+    );
+  }
+
+  #[test]
+  fn amp_after_part_extract_with_plus() {
+    // `a + f[{1,2,3}][[1]] &[5]` should wrap the whole Plus.
+    assert_eq!(
+      interpret("FullForm[Hold[a + f[{1,2,3}][[1]] &[5]]]").unwrap(),
+      "Hold[Function[Plus[a, Part[f[List[1, 2, 3]], 1]]][5]]"
+    );
+  }
+
+  #[test]
+  fn amp_after_slot_part_extract_with_plus() {
+    // `a + #[[1]] &[{5, 6}]` should wrap the whole Plus.
+    assert_eq!(
+      interpret("FullForm[Hold[a + #[[1]] &[{5, 6}]]]").unwrap(),
+      "Hold[Function[Plus[a, Part[Slot[1], 1]]][List[5, 6]]]"
+    );
+  }
+
+  #[test]
+  fn simple_direct_call_forms_still_work() {
+    // Standalone `f[x] &[y]` cases (no preceding operator) still work.
+    assert_eq!(interpret("PrimeQ[#] &[11]").unwrap(), "True");
+    assert_eq!(interpret("(# + 1 &)[5]").unwrap(), "6");
+    assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
+  }
+
+  #[test]
+  fn amp_inside_select() {
+    // The predicate form used with Select: full function body wrapped.
+    assert_eq!(
+      interpret("Select[Range[20], # > 10 && PrimeQ[#] &]").unwrap(),
+      "{11, 13, 17, 19}"
+    );
+  }
+}

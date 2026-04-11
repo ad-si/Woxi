@@ -307,11 +307,137 @@ pub(super) fn negate_expr(expr: &Expr) -> Expr {
   }
 }
 
+/// Recursively run `together_expr` on sub-expressions so that nested fractions
+/// inside Power bases, Divide operands, and Times factors are combined first.
+/// Also rewrites `1 / (a/b)` → `b/a` (Power[Divide[a,b], -1]) so the outer
+/// Together pass sees a clean rational form.
+fn together_expr_preprocess(expr: &Expr) -> Expr {
+  match expr {
+    // Leaf
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_) => expr.clone(),
+
+    // a/b: Together each operand, then return as division — the outer
+    // together_expr will see it as a single fraction via extract_num_den.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num = together_expr(left);
+      let den = together_expr(right);
+      // If the denominator itself is now a fraction p/q, flip: a / (p/q) → a*q/p
+      let (d_num, d_den) = extract_num_den(&den);
+      if !matches!(&d_den, Expr::Integer(1)) {
+        let new_num = multiply_exprs(&num, &d_den);
+        let new_den = d_num;
+        return make_fraction(new_num, new_den);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(num),
+        right: Box::new(den),
+      }
+    }
+
+    // a^b: Together the base; for negative integer exponents, flip if base is a fraction
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = together_expr(left);
+      let exp = together_expr_preprocess(right);
+      // If exp is -1 and base is a fraction p/q, return q/p
+      if matches!(&exp, Expr::Integer(-1)) {
+        let (b_num, b_den) = extract_num_den(&base);
+        if !matches!(&b_den, Expr::Integer(1)) {
+          return make_fraction(b_den, b_num);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(exp),
+      }
+    }
+
+    // Power[base, exp] as FunctionCall form
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let base = together_expr(&args[0]);
+      let exp = together_expr_preprocess(&args[1]);
+      if matches!(&exp, Expr::Integer(-1)) {
+        let (b_num, b_den) = extract_num_den(&base);
+        if !matches!(&b_den, Expr::Integer(1)) {
+          return make_fraction(b_den, b_num);
+        }
+      }
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base, exp],
+      }
+    }
+
+    // Binary plus/minus: recurse into each side. together_expr itself will
+    // combine additive terms after preprocessing.
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(together_expr_preprocess(left)),
+      right: Box::new(together_expr_preprocess(right)),
+    },
+
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(together_expr_preprocess(operand)),
+    },
+
+    // Plus/Times as FunctionCall: recurse into each argument.
+    Expr::FunctionCall { name, args } if name == "Plus" || name == "Times" => {
+      let new_args: Vec<Expr> =
+        args.iter().map(together_expr_preprocess).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+
+    // Other function calls — do not descend (e.g. Sin[...], f[x]); leave as-is.
+    _ => expr.clone(),
+  }
+}
+
+/// Build a Divide expression, collapsing trivial cases.
+fn make_fraction(num: Expr, den: Expr) -> Expr {
+  if matches!(&den, Expr::Integer(1)) {
+    num
+  } else if matches!(&num, Expr::Integer(0)) {
+    Expr::Integer(0)
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(num),
+      right: Box::new(den),
+    }
+  }
+}
+
 pub fn together_expr(expr: &Expr) -> Expr {
+  // First recursively apply Together to sub-expressions so that nested
+  // fractions (e.g. `1/(1 + 1/x)` or continued-fraction-like forms) get
+  // combined bottom-up. `together_expr_preprocess` leaves polynomial-shaped
+  // expressions alone but pushes Together into Power bases, Divide operands,
+  // and Times factors.
+  let expr_rec = together_expr_preprocess(expr);
+
   // Collect additive terms and put them over a common denominator
-  let terms = collect_additive_terms(expr);
+  let terms = collect_additive_terms(&expr_rec);
   if terms.len() <= 1 {
-    return expr.clone();
+    // Even though there is nothing to combine additively at this level, the
+    // recursive preprocessing may have produced a cleaner form — return that.
+    return expr_rec;
   }
 
   // Extract numerator and denominator for each term
@@ -340,7 +466,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
 
   if base_exp_map.is_empty() {
     // No fractions to combine
-    return expr.clone();
+    return expr_rec;
   }
 
   // Build numerator: for each term, multiply by (common_den / den_i)

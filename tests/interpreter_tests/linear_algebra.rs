@@ -358,6 +358,58 @@ mod cross {
   fn cross_2d_sqrt() {
     assert_eq!(interpret("Cross[{1, Sqrt[3]}]").unwrap(), "{-Sqrt[3], 1}");
   }
+
+  // Regression: the cross product operator (⨯, U+2A2F) should desugar to
+  // Cross[a, b]. Also accepts the PUA form U+F3C4 and the `\[Cross]` escape.
+  #[test]
+  fn cross_operator_unicode_u2a2f() {
+    assert_eq!(
+      interpret("{1, 2, 3} \u{2A2F} {4, 5, 6}").unwrap(),
+      "{-3, 6, -3}"
+    );
+  }
+
+  #[test]
+  fn cross_operator_symbolic() {
+    assert_eq!(
+      interpret("{a, b, c} \u{2A2F} {d, e, f}").unwrap(),
+      "{-(c*e) + b*f, c*d - a*f, -(b*d) + a*e}"
+    );
+  }
+
+  #[test]
+  fn cross_operator_named_character() {
+    assert_eq!(
+      interpret("{1, 2, 3} \\[Cross] {4, 5, 6}").unwrap(),
+      "{-3, 6, -3}"
+    );
+  }
+
+  #[test]
+  fn cross_operator_pua() {
+    // U+F3C4 is Mathematica's PUA representation of \[Cross].
+    assert_eq!(
+      interpret("{1, 2, 3} \u{F3C4} {4, 5, 6}").unwrap(),
+      "{-3, 6, -3}"
+    );
+  }
+
+  #[test]
+  fn cross_operator_parses_to_cross_function_call() {
+    // Flat/associative: a ⨯ b ⨯ c → Cross[a, b, c]
+    assert_eq!(
+      interpret("FullForm[Hold[a \u{2A2F} b \u{2A2F} c]]").unwrap(),
+      "Hold[Cross[a, b, c]]"
+    );
+  }
+
+  #[test]
+  fn cross_operator_inside_hold() {
+    assert_eq!(
+      interpret("FullForm[Hold[{1, 2, 3} \u{2A2F} {4, 5, 6}]]").unwrap(),
+      "Hold[Cross[List[1, 2, 3], List[4, 5, 6]]]"
+    );
+  }
 }
 
 mod projection {
