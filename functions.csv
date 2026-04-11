@@ -170,7 +170,7 @@ Column,Displays elements in a vertical column,✅,pure,6.0,174
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
 NIntegrate,Computes a numerical integral,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
-Import,Imports data from a file (images and CSV),✅,effectful,4.0,178
+Import,Imports data from a file (images CSV XLSX TXT),✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
 Min,Returns the minimum value from a set of arguments or a list,✅,pure,1.0,180
 Arrow,Represents an arrow graphics primitive,✅,pure,6.0,181

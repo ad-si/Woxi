@@ -82,6 +82,7 @@ features = ["text"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
+calamine = "0.34"
 
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }

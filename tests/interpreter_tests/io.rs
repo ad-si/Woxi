@@ -2328,6 +2328,156 @@ mod csv_import {
   }
 }
 
+mod xlsx_import {
+  use super::*;
+
+  fn xlsx_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/population.xlsx")
+  }
+
+  #[test]
+  fn import_xlsx_default_wraps_sheets() {
+    // Import[path] returns a list of sheets, each sheet being a list of rows.
+    let path = xlsx_path();
+    let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    assert!(
+      result.starts_with("{{{"),
+      "expected outer list of sheets, got: {}",
+      result
+    );
+    assert!(result.contains("China"));
+    assert!(result.contains("Japan"));
+  }
+
+  #[test]
+  fn import_xlsx_data_first_sheet() {
+    // Import[path, {"Data", 1}] returns the first sheet directly.
+    let path = xlsx_path();
+    let result =
+      interpret(&format!(r#"Import["{path}", {{"Data", 1}}]"#)).unwrap();
+    assert!(
+      result.starts_with("{{1.313973713*^9, China}"),
+      "unexpected: {}",
+      result
+    );
+    assert!(result.contains("{1.27463611*^8, Japan}"));
+  }
+
+  #[test]
+  fn import_xlsx_dimensions_first_sheet() {
+    let path = xlsx_path();
+    let result =
+      interpret(&format!(r#"Dimensions[Import["{path}", {{"Data", 1}}]]"#))
+        .unwrap();
+    assert_eq!(result, "{10, 2}");
+  }
+
+  #[test]
+  fn import_xlsx_sheet_names() {
+    let path = xlsx_path();
+    let result = interpret(&format!(r#"Import["{path}", "Sheets"]"#)).unwrap();
+    assert_eq!(result, "{Sheet1}");
+  }
+
+  #[test]
+  fn import_xlsx_data_element_equals_default() {
+    // "Data" and no element should produce identical output.
+    let path = xlsx_path();
+    let a = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    let b = interpret(&format!(r#"Import["{path}", "Data"]"#)).unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn import_xlsx_out_of_range_sheet_fails() {
+    let path = xlsx_path();
+    let err = interpret(&format!(r#"Import["{path}", {{"Data", 99}}]"#));
+    assert!(err.is_err(), "expected error for out-of-range sheet");
+  }
+
+  #[test]
+  fn import_xlsx_numbers_are_reals() {
+    // Regression test: xlsx values must come back as Reals (matching
+    // wolframscript), not Integers — even when the cell happens to hold a
+    // whole-number value.
+    let path = xlsx_path();
+    let result =
+      interpret(&format!(r#"Head[Import["{path}", {{"Data", 1}}][[1, 1]]]"#))
+        .unwrap();
+    assert_eq!(result, "Real");
+  }
+}
+
+mod txt_import {
+  use super::*;
+
+  fn txt_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/tests/data/article.txt")
+  }
+
+  #[test]
+  fn import_txt_returns_string() {
+    let path = txt_path();
+    let result = interpret(&format!(r#"Head[Import["{path}"]]"#)).unwrap();
+    assert_eq!(result, "String");
+  }
+
+  #[test]
+  fn import_txt_content() {
+    let path = txt_path();
+    let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
+    assert!(result.contains("sample article"));
+    assert!(result.contains("Line two."));
+    assert!(result.contains("Line three."));
+  }
+
+  #[test]
+  fn import_txt_strips_trailing_newline() {
+    // Match wolframscript: Import["file.txt"] strips a single trailing
+    // newline so StringLength matches the visible content.
+    let path = txt_path();
+    let result =
+      interpret(&format!(r#"StringLength[Import["{path}"]]"#)).unwrap();
+    assert_eq!(result, "64");
+  }
+
+  /// Minimal one-shot HTTP server — mirrors `serve_csv_once` above but
+  /// serves a plain-text body. Lets us regression-test Import of `.txt`
+  /// URLs without hitting the network.
+  #[cfg(not(target_arch = "wasm32"))]
+  fn serve_txt_once(body: &'static str) -> String {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+      if let Ok((mut stream, _)) = listener.accept() {
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let response = format!(
+          "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+          body.len(),
+          body
+        );
+        let _ = stream.write_all(response.as_bytes());
+      }
+    });
+    format!("http://{}/article.txt", addr)
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_txt_from_url() {
+    // Regression: Import[url] for a .txt URL used to fall through to the
+    // image importer and fail with "cannot decode image".
+    let url = serve_txt_once("hello world\n");
+    let result = interpret(&format!(r#"Import["{url}"]"#)).unwrap();
+    assert_eq!(result, "hello world");
+  }
+}
+
 mod import_string {
   use super::*;
 

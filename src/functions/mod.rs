@@ -37,6 +37,8 @@ pub mod tabular_ast;
 pub mod tree_form;
 pub mod turing_machine_ast;
 pub mod voronoi;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod xlsx_ast;
 
 // Re-export all function implementations
 pub use association_ast::*;
