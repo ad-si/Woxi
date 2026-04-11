@@ -183,6 +183,37 @@ pub fn differences_n_ast(
   Ok(Expr::List(current))
 }
 
+/// Differences[list, {n1, n2, ...}] - apply `ni` differences at level `i`.
+///
+/// At the top level we take `n1` successive differences. Each element of
+/// the resulting list is then recursively passed to
+/// `differences_spec_ast(_, {n2, ...})` which applies the next level of
+/// differencing. A single-element spec `{n}` is equivalent to
+/// `Differences[list, n]`.
+pub fn differences_spec_ast(
+  list: &Expr,
+  spec: &[usize],
+) -> Result<Expr, InterpreterError> {
+  if spec.is_empty() {
+    return Ok(list.clone());
+  }
+  let first = spec[0];
+  let outer = differences_n_ast(list, first)?;
+  if spec.len() == 1 {
+    return Ok(outer);
+  }
+  let rest = &spec[1..];
+  let items: Vec<Expr> = match &outer {
+    Expr::List(items) => items.clone(),
+    _ => return Ok(outer),
+  };
+  let mut result = Vec::with_capacity(items.len());
+  for item in items {
+    result.push(differences_spec_ast(&item, rest)?);
+  }
+  Ok(Expr::List(result))
+}
+
 /// AST-based Scan: apply function to each element for side effects.
 /// Returns Null but evaluates function on each element.
 pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {

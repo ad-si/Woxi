@@ -3913,6 +3913,34 @@ mod join_non_list {
   }
 
   #[test]
+  fn differences_with_level_list_single() {
+    // `{n}` spec equals the scalar n form.
+    assert_eq!(
+      interpret("Differences[{1, 4, 9, 16, 25, 36}, {2}]").unwrap(),
+      "{2, 2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn differences_with_level_list_matrix_row_only() {
+    // {0, 1}: no differences on rows, 1st difference along columns.
+    assert_eq!(
+      interpret("Differences[{{1, 2, 3, 4}, {5, 7, 9, 11}}, {0, 1}]").unwrap(),
+      "{{1, 1, 1}, {2, 2, 2}}"
+    );
+  }
+
+  #[test]
+  fn differences_with_level_list_matrix_both() {
+    // {1, 1}: 1st difference along rows then along columns.
+    assert_eq!(
+      interpret("Differences[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {1, 1}]")
+        .unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
   fn clip_three_args() {
     assert_eq!(interpret("Clip[0.5, {0, 1}, {-1, 1}]").unwrap(), "0.5");
     assert_eq!(interpret("Clip[-0.5, {0, 1}, {-1, 1}]").unwrap(), "-1");
