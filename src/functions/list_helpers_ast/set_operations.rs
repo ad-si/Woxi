@@ -124,16 +124,41 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based DeleteDuplicates: remove duplicate elements.
 /// DeleteDuplicates[{a, b, a, c, b}] -> {a, b, c}
-pub fn delete_duplicates_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+/// DeleteDuplicates[list, test] uses `test[a, b]` to decide if `b`
+/// collapses into an already-kept representative `a`.
+pub fn delete_duplicates_ast(
+  list: &Expr,
+  test: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
+      let mut call_args = vec![list.clone()];
+      if let Some(t) = test {
+        call_args.push(t.clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "DeleteDuplicates".to_string(),
-        args: vec![list.clone()],
+        args: call_args,
       });
     }
   };
+
+  if let Some(test_fn) = test {
+    // Custom equivalence: keep the first element from each equivalence
+    // class, in first-seen order.
+    let mut reps: Vec<Expr> = Vec::new();
+    'outer: for item in items {
+      for rep in &reps {
+        let r = apply_func_to_two_args(test_fn, rep, item)?;
+        if matches!(r, Expr::Identifier(ref s) if s == "True") {
+          continue 'outer;
+        }
+      }
+      reps.push(item.clone());
+    }
+    return Ok(Expr::List(reps));
+  }
 
   use std::collections::HashSet;
   let mut seen: HashSet<String> = HashSet::new();

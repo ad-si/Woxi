@@ -2959,6 +2959,36 @@ mod range_real {
   }
 }
 
+mod delete_duplicates_with_test {
+  use super::*;
+
+  #[test]
+  fn delete_duplicates_parity_test() {
+    assert_eq!(
+      interpret("DeleteDuplicates[{1, 2, 3, 4, 5}, Mod[#1 - #2, 2] == 0 &]")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn delete_duplicates_test_keeps_first_seen() {
+    assert_eq!(
+      interpret("DeleteDuplicates[{3, 1, 2, 3, 4, 5}, Mod[#1 - #2, 2] == 0 &]")
+        .unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn delete_duplicates_test_equal_is_passthrough() {
+    assert_eq!(
+      interpret("DeleteDuplicates[{1, 2, 3, 4, 5, 6, 7}, #1 == #2 &]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7}"
+    );
+  }
+}
+
 mod delete_deep {
   use super::*;
 
