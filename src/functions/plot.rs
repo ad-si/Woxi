@@ -683,6 +683,31 @@ impl Filling {
       Filling::Value(v) => Some(*v),
     }
   }
+
+  /// Convert to the serializable `SeriesFilling` variant stored on
+  /// `PlotSeriesData` so `Show` can re-render filled regions.
+  pub fn to_series_filling(self) -> crate::syntax::SeriesFilling {
+    match self {
+      Filling::None => crate::syntax::SeriesFilling::None,
+      Filling::Axis => crate::syntax::SeriesFilling::Axis,
+      Filling::Bottom => crate::syntax::SeriesFilling::Bottom,
+      Filling::Top => crate::syntax::SeriesFilling::Top,
+      Filling::Value(v) => crate::syntax::SeriesFilling::Value(v),
+    }
+  }
+}
+
+impl crate::syntax::SeriesFilling {
+  /// Reference y-value for the fill, given the current y-range.
+  pub fn reference_y(self, y_min: f64, y_max: f64) -> Option<f64> {
+    match self {
+      crate::syntax::SeriesFilling::None => None,
+      crate::syntax::SeriesFilling::Axis => Some(0.0),
+      crate::syntax::SeriesFilling::Bottom => Some(y_min),
+      crate::syntax::SeriesFilling::Top => Some(y_max),
+      crate::syntax::SeriesFilling::Value(v) => Some(v),
+    }
+  }
 }
 
 /// Parse a `Filling` option value from an expression.
@@ -1445,7 +1470,9 @@ pub(crate) fn build_plot_source(
   y_range: (f64, f64),
   image_size: (u32, u32),
   is_scatter: bool,
+  filling: Filling,
 ) -> crate::syntax::PlotSource {
+  let series_filling = filling.to_series_filling();
   let series = all_points
     .iter()
     .enumerate()
@@ -1455,6 +1482,7 @@ pub(crate) fn build_plot_source(
         points: points.clone(),
         color,
         is_scatter,
+        filling: series_filling,
       }
     })
     .collect();
@@ -1756,6 +1784,22 @@ pub(crate) fn render_merged_plot_source(
           .copied()
           .filter(|(x, y)| x.is_finite() && y.is_finite())
           .collect();
+
+        // Stem lines from each point to the fill reference level
+        if let Some(ref_y) = sd.filling.reference_y(y_min, y_max) {
+          let stem_style = color.mix(0.2).stroke_width(RESOLUTION_SCALE);
+          for &(x, y) in &finite_pts {
+            chart
+              .draw_series(std::iter::once(PathElement::new(
+                vec![(x, y), (x, ref_y)],
+                stem_style,
+              )))
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
+        }
+
         chart
           .draw_series(
             finite_pts
@@ -1768,6 +1812,25 @@ pub(crate) fn render_merged_plot_source(
       } else {
         // Line series (split into finite segments)
         let segments = split_into_segments(&sd.points);
+
+        // Draw filled area before the line so the line renders on top
+        if let Some(ref_y) = sd.filling.reference_y(y_min, y_max) {
+          for segment in &segments {
+            if segment.len() < 2 {
+              continue;
+            }
+            chart
+              .draw_series(AreaSeries::new(
+                segment.iter().copied(),
+                ref_y,
+                color.mix(0.2),
+              ))
+              .map_err(|e| {
+                InterpreterError::EvaluationError(format!("Plot: {e}"))
+              })?;
+          }
+        }
+
         for segment in &segments {
           chart
             .draw_series(LineSeries::new(
@@ -3287,6 +3350,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_display_min, y_display_max),
     (plot_opts.svg_width, plot_opts.svg_height),
     false,
+    plot_opts.filling,
   );
 
   // Return -Graphics- as the text representation

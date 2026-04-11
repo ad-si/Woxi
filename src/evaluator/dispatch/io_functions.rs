@@ -252,8 +252,30 @@ pub fn dispatch_io_functions(
         fmt.as_str(),
         "PNG" | "JPG" | "JPEG" | "GIF" | "BMP" | "TIF" | "TIFF"
       ) {
+        // Parse ImageResolution option (default 96 DPI to match
+        // usvg's default output resolution).
+        let mut dpi: f64 = 96.0;
+        for opt in &args[2..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = opt
+            && let Expr::Identifier(k) = pattern.as_ref()
+            && k == "ImageResolution"
+          {
+            match replacement.as_ref() {
+              Expr::Integer(n) => dpi = *n as f64,
+              Expr::Real(f) => dpi = *f,
+              _ => {
+                return Some(Err(InterpreterError::EvaluationError(
+                  "Export: ImageResolution must be a numeric value".into(),
+                )));
+              }
+            }
+          }
+        }
         let svg = expr_to_svg(&args[1]);
-        match crate::functions::image_ast::rasterize_svg(&svg, 96.0) {
+        match crate::functions::image_ast::rasterize_svg(&svg, dpi) {
           Ok(Expr::Image {
             width,
             height,

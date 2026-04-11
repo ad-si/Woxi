@@ -3944,9 +3944,38 @@ mod font_size {
 
   #[test]
   fn font_size_in_style() {
+    // Style[expr, ...] unwraps to its content in OutputForm
+    // (matching wolframscript).
     assert_eq!(
       interpret("Style[\"hello\", FontSize -> 24]").unwrap(),
-      "Style[hello, FontSize -> 24]"
+      "hello"
+    );
+  }
+
+  #[test]
+  fn style_list_output_unwraps_to_content() {
+    // Regression: {Style["green", Italic, Green], Style["red", Bold, Red]}
+    // should render as {green, red}, matching wolframscript. Previously
+    // Woxi kept the full Style[...] wrappers in OutputForm.
+    assert_eq!(
+      interpret("{Style[\"green\", Italic, Green], Style[\"red\", Bold, Red]}")
+        .unwrap(),
+      "{green, red}"
+    );
+  }
+
+  #[test]
+  fn style_single_output_unwraps_to_content() {
+    assert_eq!(interpret("Style[\"hello\", Bold, Red]").unwrap(), "hello");
+  }
+
+  #[test]
+  fn style_input_form_preserves_wrapper() {
+    // ToString[..., InputForm] should still show the full Style[...] head.
+    assert_eq!(
+      interpret("ToString[Style[\"green\", Italic, Green], InputForm]")
+        .unwrap(),
+      "Style[\"green\", Italic, RGBColor[0, 1, 0]]"
     );
   }
 }
@@ -4026,9 +4055,11 @@ mod font_family {
 
   #[test]
   fn font_family_in_style() {
+    // Style[expr, ...] unwraps to its content in OutputForm
+    // (matching wolframscript).
     assert_eq!(
       interpret("Style[\"hello\", FontFamily -> \"Arial\"]").unwrap(),
-      "Style[hello, FontFamily -> Arial]"
+      "hello"
     );
   }
 }

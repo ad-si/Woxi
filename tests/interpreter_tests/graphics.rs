@@ -906,6 +906,45 @@ mod plot3d {
       std::fs::remove_file(path).ok();
     }
 
+    /// Regression: Export[..., png, ImageResolution -> n] should scale
+    /// the rasterized output to n DPI (vs the default 96 DPI). A Plot
+    /// with ImageSize -> 800 at 300 DPI should come out at 2500 px wide.
+    #[test]
+    fn export_png_with_image_resolution() {
+      let path_hi = "/tmp/test_plot_export_hi.png";
+      let path_lo = "/tmp/test_plot_export_lo.png";
+      let result_hi = interpret(&format!(
+        "Export[\"{path_hi}\", \
+         Plot[Sin[x], {{x, -3 Pi, 3 Pi}}, ImageSize -> 800], \
+         ImageResolution -> 300]"
+      ));
+      assert!(result_hi.is_ok(), "Export returned error: {result_hi:?}");
+      let result_lo = interpret(&format!(
+        "Export[\"{path_lo}\", \
+         Plot[Sin[x], {{x, -3 Pi, 3 Pi}}, ImageSize -> 800]]"
+      ));
+      assert!(result_lo.is_ok(), "Export returned error: {result_lo:?}");
+
+      let bytes_hi = std::fs::read(path_hi).unwrap();
+      let bytes_lo = std::fs::read(path_lo).unwrap();
+      // PNG magic
+      assert_eq!(
+        &bytes_hi[..8],
+        &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+      );
+
+      let img_hi = ::image::load_from_memory(&bytes_hi).unwrap();
+      let img_lo = ::image::load_from_memory(&bytes_lo).unwrap();
+      // 300 DPI / 96 DPI == 3.125×; 800 * 3.125 == 2500
+      assert_eq!(img_hi.width(), 2500);
+      assert_eq!(img_lo.width(), 800);
+      // Height scales proportionally
+      assert!(img_hi.height() > img_lo.height() * 3);
+
+      std::fs::remove_file(path_hi).ok();
+      std::fs::remove_file(path_lo).ok();
+    }
+
     #[test]
     fn export_jpeg_from_plot() {
       let path = "/tmp/test_plot_export.jpg";
@@ -4052,6 +4091,27 @@ mod show_function {
     let svg =
       export_svg("Show[Plot[x^2, {x, 0, 5}], ListPlot[{1, 4, 9, 16, 25}]]");
     assert!(svg.starts_with("<svg"), "should be valid SVG");
+    assert!(svg.contains("<polyline"), "should contain line from Plot");
+    assert!(
+      svg.contains("<circle"),
+      "should contain points from ListPlot"
+    );
+  }
+
+  #[test]
+  fn show_plot_filling_preserved_with_list_plot() {
+    // Regression: Filling -> Axis from Plot[] must survive merging with
+    // ListPlot[] through Show[] and still render the filled polygon.
+    let svg = export_svg(
+      "Show[Plot[Exp[-x^2/2]/Sqrt[2 Pi], {x, -3, 3}, Filling -> Axis], \
+       ListPlot[{{-2, 0.1}, {0, 0.4}, {1.5, 0.05}}, \
+       PlotStyle -> {Red, PointSize[Medium]}]]",
+    );
+    assert!(svg.starts_with("<svg"));
+    assert!(
+      svg.contains("<polygon"),
+      "Filling polygon should be present in merged Show[] output"
+    );
     assert!(svg.contains("<polyline"), "should contain line from Plot");
     assert!(
       svg.contains("<circle"),

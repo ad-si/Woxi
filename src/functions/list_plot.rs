@@ -264,6 +264,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y_range,
     (opts.svg_width, opts.svg_height),
     !joined,
+    opts.filling,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }
