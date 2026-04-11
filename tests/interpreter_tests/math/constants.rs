@@ -507,4 +507,18 @@ mod constant_real_arithmetic {
   fn pi_times_integer_stays_symbolic() {
     assert_eq!(interpret("2 * Pi").unwrap(), "2*Pi");
   }
+
+  #[test]
+  fn unicode_exponential_e_double_struck() {
+    // ⅇ (U+2147 DOUBLE-STRUCK ITALIC SMALL E) → E
+    assert_eq!(interpret("N[ⅇ]").unwrap(), "2.718281828459045");
+  }
+
+  #[test]
+  fn n_of_cross_with_unicode_pi_and_e() {
+    assert_eq!(
+      interpret("N[Cross[{1, 3, 5}, {π, ⅇ, 0}]]").unwrap(),
+      "{-13.591409142295225, 15.707963267948966, -6.706496132310335}"
+    );
+  }
 }
