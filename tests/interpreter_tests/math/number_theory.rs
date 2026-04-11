@@ -1637,3 +1637,29 @@ mod random_prime {
     assert!(result >= 1_000_000_000 && result <= 10_000_000_000);
   }
 }
+
+mod divisors_tests {
+  use super::*;
+
+  #[test]
+  fn positive_integer() {
+    assert_eq!(interpret("Divisors[12]").unwrap(), "{1, 2, 3, 4, 6, 12}");
+  }
+
+  #[test]
+  fn negative_integer_same_as_positive() {
+    assert_eq!(interpret("Divisors[-12]").unwrap(), "{1, 2, 3, 4, 6, 12}");
+  }
+
+  #[test]
+  fn zero_stays_unevaluated() {
+    // Divisors[0] is mathematically undefined; Wolfram leaves it
+    // unevaluated.
+    assert_eq!(interpret("Divisors[0]").unwrap(), "Divisors[0]");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(interpret("Divisors[x]").unwrap(), "Divisors[x]");
+  }
+}
