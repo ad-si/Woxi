@@ -53,6 +53,26 @@ mod list_tests {
   }
 
   #[test]
+  fn gather_by_nested_funcs() {
+    // GatherBy with a list of functions does a nested gather: first by
+    // f1, then each resulting sublist is gathered by f2, and so on.
+    assert_eq!(
+      interpret("GatherBy[{1, 2, 3, 4, 5, 6}, {OddQ, PrimeQ}]").unwrap(),
+      "{{{1}, {3, 5}}, {{2}, {4, 6}}}"
+    );
+    assert_eq!(
+      interpret("GatherBy[Range[10], {EvenQ, PrimeQ}]").unwrap(),
+      "{{{1, 9}, {3, 5, 7}}, {{2}, {4, 6, 8, 10}}}"
+    );
+    // A list with a single function behaves like GatherBy[list, f1] but
+    // wraps the result in an extra level.
+    assert_eq!(
+      interpret("GatherBy[{{1,3},{2,2},{1,5},{2,1},{3,6}}, {First}]").unwrap(),
+      "{{{1, 3}, {1, 5}}, {{2, 2}, {2, 1}}, {{3, 6}}}"
+    );
+  }
+
+  #[test]
   fn split() {
     assert_eq!(
       interpret("Split[{1, 1, 2, 2, 3}]").unwrap(),

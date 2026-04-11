@@ -582,11 +582,25 @@ pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
 }
 
-/// GatherBy[list, f] - gathers elements into sublists by applying f
+/// GatherBy[list, f] - gathers elements into sublists by applying f.
+/// GatherBy[list, {f1, f2, ...}] - nested gather: first by `f1`, then each
+/// resulting group is recursively gathered by `f2`, and so on.
 pub fn gather_by_ast(
   func: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Handle the nested list-of-functions form.
+  if let Expr::List(funcs) = func {
+    let items = match list {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "GatherBy expects a list as first argument".into(),
+        ));
+      }
+    };
+    return gather_by_nested(&items, funcs);
+  }
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -609,6 +623,38 @@ pub fn gather_by_ast(
   Ok(Expr::List(
     groups.into_iter().map(|(_, v)| Expr::List(v)).collect(),
   ))
+}
+
+fn gather_by_nested(
+  items: &[Expr],
+  funcs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if funcs.is_empty() {
+    // No further grouping: return the items as a flat list unchanged.
+    return Ok(Expr::List(items.to_vec()));
+  }
+  let func = &funcs[0];
+  let rest = &funcs[1..];
+  let mut groups: Vec<(String, Vec<Expr>)> = Vec::new();
+  for item in items {
+    let key = apply_func_ast(func, item)?;
+    let key_str = crate::syntax::expr_to_string(&key);
+    let found = groups.iter_mut().find(|(k, _)| *k == key_str);
+    if let Some((_, group)) = found {
+      group.push(item.clone());
+    } else {
+      groups.push((key_str, vec![item.clone()]));
+    }
+  }
+  let mut result: Vec<Expr> = Vec::with_capacity(groups.len());
+  for (_, group) in groups {
+    if rest.is_empty() {
+      result.push(Expr::List(group));
+    } else {
+      result.push(gather_by_nested(&group, rest)?);
+    }
+  }
+  Ok(Expr::List(result))
 }
 
 /// Split[list] - splits into sublists of identical consecutive elements

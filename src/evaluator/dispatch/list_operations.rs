@@ -1513,8 +1513,14 @@ pub fn dispatch_list_operations(
     "Gather" if args.len() == 1 => {
       return Some(list_helpers_ast::gather_ast(&args[0]));
     }
-    "GatherBy" if args.len() == 2 => {
-      return Some(list_helpers_ast::gather_by_ast(&args[1], &args[0]));
+    "GatherBy" if args.len() >= 2 => {
+      // GatherBy[list, f1, f2, ...] is equivalent to GatherBy[list, {f1, f2, ...}]
+      let func = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::List(args[1..].to_vec())
+      };
+      return Some(list_helpers_ast::gather_by_ast(&func, &args[0]));
     }
     "Split" if args.len() == 1 || args.len() == 2 => {
       if args.len() == 1 {
