@@ -2718,12 +2718,29 @@ mod set_directory {
   #[test]
   fn set_and_check() {
     // SetDirectory returns the new directory path as a string
-    // Use a single interpret call to avoid affecting other parallel tests
     let result = interpret(
       r#"Block[{}, result = StringQ[SetDirectory["src"]]; ResetDirectory[]; result]"#,
     )
     .unwrap();
     assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn does_not_mutate_process_cwd() {
+    // Regression test: SetDirectory/ResetDirectory must not touch the
+    // process-wide current working directory. Cargo runs tests in parallel
+    // threads within one process, so mutating the real CWD here races
+    // against any concurrent test that resolves a relative path, leading
+    // to flaky CI failures (observed in interpreter_tests::io and
+    // interpreter_tests::image::image_io).
+    let before = std::env::current_dir().unwrap();
+    let result = interpret(
+      r#"Block[{}, SetDirectory["/tmp"]; d = Directory[]; ResetDirectory[]; d]"#,
+    )
+    .unwrap();
+    let after = std::env::current_dir().unwrap();
+    assert_eq!(before, after, "process CWD must not change");
+    assert_eq!(result, "/tmp", "virtual CWD must reflect SetDirectory");
   }
 }
 
