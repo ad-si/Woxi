@@ -6677,10 +6677,77 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       pattern,
       replacement,
     } => {
+      // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so
+      // that e.g. `Initialization :> (d[t_] := ...)` renders with the
+      // parentheses required to disambiguate operator precedence.
+      let rhs_str = expr_to_input_form(replacement);
+      let rhs_final = match replacement.as_ref() {
+        Expr::FunctionCall { name: n, args: a }
+          if matches!(
+            n.as_str(),
+            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+          ) && a.len() == 2 =>
+        {
+          format!("({})", rhs_str)
+        }
+        _ => rhs_str,
+      };
+      format!("{} :> {}", expr_to_input_form(pattern), rhs_final)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RuleDelayed" && args.len() == 2 =>
+    {
+      let rhs_str = expr_to_input_form(&args[1]);
+      let rhs_final = match &args[1] {
+        Expr::FunctionCall { name: n, args: a }
+          if matches!(
+            n.as_str(),
+            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+          ) && a.len() == 2 =>
+        {
+          format!("({})", rhs_str)
+        }
+        _ => rhs_str,
+      };
+      format!("{} :> {}", expr_to_input_form(&args[0]), rhs_final)
+    }
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
-        "{} :> {}",
-        expr_to_input_form(pattern),
-        expr_to_input_form(replacement)
+        "{} -> {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
+      format!(
+        "{} = {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SetDelayed" && args.len() == 2 =>
+    {
+      format!(
+        "{} := {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "UpSet" && args.len() == 2 => {
+      format!(
+        "{} ^= {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "UpSetDelayed" && args.len() == 2 =>
+    {
+      format!(
+        "{} ^:= {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
       )
     }
     // Quantity: InputForm quotes string unit names

@@ -708,12 +708,13 @@ mod correlation {
     );
   }
 
-  // Constant list -> zero variance -> Indeterminate.
+  // Constant list -> zero variance. Wolfram emits Correlation::zerosd
+  // and leaves the expression unevaluated.
   #[test]
   fn correlation_constant_list() {
     assert_eq!(
       interpret("Correlation[{1, 1, 1}, {2, 4, 6}]").unwrap(),
-      "Indeterminate"
+      "Correlation[{1, 1, 1}, {2, 4, 6}]"
     );
   }
 }
@@ -2666,7 +2667,7 @@ mod johnson_distribution {
         r#"Variance[JohnsonDistribution["SU", gamma, delta, mu, sigma]]"#
       )
       .unwrap(),
-      "(sigma^2*(-1 + E^delta^(-2))*(1 + E^delta^(-2)*Cosh[(2*gamma)/delta]))/2"
+      "(sigma^2*(1 + E^delta^(-2)*Cosh[(2*gamma)/delta])*(-1 + E^delta^(-2)))/2"
     );
   }
 

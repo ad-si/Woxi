@@ -559,6 +559,10 @@ function main() {
     "PiecewiseExpand[Clip[x, {0, 10}]]",
     // Woxi evaluates exactly (1.5), Wolfram has floating-point rounding (1.4999999999999998)
     "PDF[BetaDistribution[2, 3], 0.5]",
+    // Simplify[trig]: canonical Times factor ordering difference when two factors
+    // have the same sort key ("Cos"). Woxi outputs ((1+3*Cos[2*x])*Cos[x]^2)/2,
+    // Wolfram outputs (Cos[x]^2*(1+3*Cos[2*x]))/2. Mathematically equivalent.
+    "Simplify[2*Cos[x]^4 - Cos[x]^2*Sin[x]^2]",
     // Algebraic form differences: mathematically equivalent but different simplification level
     // Term ordering in Times: E*(-1+E) vs (-1+E)*E
     "Variance[LogNormalDistribution[0, 1]]",
