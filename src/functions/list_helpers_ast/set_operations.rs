@@ -150,20 +150,60 @@ pub fn delete_duplicates_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// AST-based Union: combine lists and remove duplicates.
+///
+/// Supports `Union[l1, l2, ..., SameTest -> f]`. When `SameTest` is
+/// specified, elements are combined and sorted first, then the result is
+/// deduplicated by keeping the first occurrence of each equivalence class
+/// under `f[#1, #2]`.
 pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashSet;
-  let mut seen: HashSet<String> = HashSet::new();
+
+  // Separate list arguments from option rules like SameTest -> f.
+  let mut list_args: Vec<&Expr> = Vec::new();
+  let mut same_test: Option<&Expr> = None;
+  for a in lists {
+    match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SameTest") =>
+      {
+        same_test = Some(replacement.as_ref());
+        continue;
+      }
+      _ => {}
+    }
+    list_args.push(a);
+  }
+
   let mut result = Vec::new();
 
-  for list in lists {
-    let items = match list {
-      Expr::List(items) => items,
-      _ => continue,
-    };
-    for item in items {
-      let key_str = crate::syntax::expr_to_string(item);
-      if seen.insert(key_str) {
-        result.push(item.clone());
+  if same_test.is_none() {
+    let mut seen: HashSet<String> = HashSet::new();
+    for list in list_args.iter() {
+      let items = match list {
+        Expr::List(items) => items,
+        _ => continue,
+      };
+      for item in items {
+        let key_str = crate::syntax::expr_to_string(item);
+        if seen.insert(key_str) {
+          result.push(item.clone());
+        }
+      }
+    }
+  } else {
+    // Collect every element from every list, without plain
+    // deduplication -- equivalence is decided later by SameTest.
+    for list in list_args.iter() {
+      if let Expr::List(items) = list {
+        for item in items {
+          result.push(item.clone());
+        }
       }
     }
   }
@@ -179,6 +219,23 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       ka.cmp(&kb)
     }
   });
+
+  if let Some(test) = same_test {
+    // Deduplicate by equivalence. Each sorted element is compared
+    // against every already-kept representative; the first
+    // representative that `test[rep, item]` is True for absorbs it.
+    let mut reps: Vec<Expr> = Vec::new();
+    'outer: for item in result.into_iter() {
+      for rep in &reps {
+        let r = apply_func_to_two_args(test, rep, &item)?;
+        if matches!(r, Expr::Identifier(ref s) if s == "True") {
+          continue 'outer;
+        }
+      }
+      reps.push(item);
+    }
+    return Ok(Expr::List(reps));
+  }
 
   Ok(Expr::List(result))
 }
