@@ -1688,7 +1688,8 @@ pub fn dispatch_list_operations(
       return Some(array_pad_ast(args));
     }
     // ArrayReshape[list, {d1, d2, ...}] — reshape a flat list into given dimensions
-    "ArrayReshape" if args.len() == 2 => {
+    // ArrayReshape[list, dims, padding] — pad trailing slots with the given value(s)
+    "ArrayReshape" if args.len() == 2 || args.len() == 3 => {
       return Some(array_reshape_ast(args));
     }
     // PositionIndex[list] — association mapping values to their positions
@@ -2891,9 +2892,22 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
-  // Build the reshaped array, padding with 0 if needed
+  // Optional padding: a scalar or a list of elements to cycle through.
+  // `ArrayReshape[list, dims, pad]` fills trailing slots with the padding
+  // values, cycling through the list if needed. Defaults to `0`.
+  let pad: Vec<Expr> = if args.len() >= 3 {
+    match &args[2] {
+      Expr::List(items) if !items.is_empty() => items.clone(),
+      Expr::List(_) => vec![Expr::Integer(0)],
+      other => vec![other.clone()],
+    }
+  } else {
+    vec![Expr::Integer(0)]
+  };
+
+  // Build the reshaped array, padding with `pad` if needed
   let mut idx = 0;
-  Ok(build_reshaped(&flat, &dims, 0, &mut idx))
+  Ok(build_reshaped(&flat, &dims, 0, &mut idx, &pad))
 }
 
 fn flatten_to_vec(expr: &Expr) -> Vec<Expr> {
@@ -2908,6 +2922,7 @@ fn build_reshaped(
   dims: &[usize],
   depth: usize,
   idx: &mut usize,
+  pad: &[Expr],
 ) -> Expr {
   if depth == dims.len() - 1 {
     // Leaf level: collect dims[depth] elements
@@ -2917,7 +2932,8 @@ fn build_reshaped(
       if *idx < flat.len() {
         row.push(flat[*idx].clone());
       } else {
-        row.push(Expr::Integer(0));
+        let pad_idx = (*idx - flat.len()) % pad.len();
+        row.push(pad[pad_idx].clone());
       }
       *idx += 1;
     }
@@ -2926,7 +2942,7 @@ fn build_reshaped(
     let n = dims[depth];
     let mut result = Vec::with_capacity(n);
     for _ in 0..n {
-      result.push(build_reshaped(flat, dims, depth + 1, idx));
+      result.push(build_reshaped(flat, dims, depth + 1, idx, pad));
     }
     Expr::List(result)
   }
