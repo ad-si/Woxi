@@ -314,6 +314,31 @@ mod overflow_safety {
   }
 
   #[test]
+  fn rationalize_symbolic_constant_passes_through() {
+    assert_eq!(interpret("Rationalize[Pi]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn rationalize_symbolic_constant_with_tolerance() {
+    assert_eq!(interpret("Rationalize[Pi, 0.01]").unwrap(), "22/7");
+  }
+
+  #[test]
+  fn rationalize_exact_rational_passes_through() {
+    assert_eq!(interpret("Rationalize[1/3]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn rationalize_integer_passes_through() {
+    assert_eq!(interpret("Rationalize[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn rationalize_undefined_symbol_passes_through() {
+    assert_eq!(interpret("Rationalize[x]").unwrap(), "x");
+  }
+
+  #[test]
   fn n_erf_evaluates_numerically() {
     // N[Erf[1], 20] should produce a numeric result, not stay symbolic
     let result = interpret("N[Erf[1], 20]").unwrap();

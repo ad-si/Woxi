@@ -629,13 +629,40 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Rationalize leaves exact values (integers, rationals, symbolic
+  // constants like Pi, symbolic expressions) alone unless a non-zero
+  // tolerance is given. With a tolerance, we numerically evaluate the
+  // input first and then search for a rational approximation.
+  let is_exact_rational =
+    matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(
+        &args[0],
+        Expr::FunctionCall { name, .. } if name == "Rational"
+      );
+  let is_symbolic = matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_));
+  if is_exact_rational {
+    // Integers and rationals are already exact — return unchanged
+    // regardless of whether a tolerance was provided.
+    return Ok(args[0].clone());
+  }
+  if is_symbolic && args.len() == 1 {
+    return Ok(args[0].clone());
+  }
+
   let x = match expr_to_num(&args[0]) {
     Some(x) => x,
     None => {
-      return Ok(Expr::FunctionCall {
-        name: "Rationalize".to_string(),
-        args: args.to_vec(),
-      });
+      // Fall back to numeric evaluation (e.g. for Pi, E) when available.
+      match crate::functions::math_ast::numeric_utils::try_eval_to_f64(&args[0])
+      {
+        Some(x) => x,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "Rationalize".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
     }
   };
 
