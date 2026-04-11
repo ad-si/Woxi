@@ -2,17 +2,20 @@
  * PDF exporter, so that graphics rendered by the browser in the playground
  * match the glyphs users see when they Export[…] a plot to PNG / PDF. */
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("AtkinsonHyperlegible-Regular.ttf") format("truetype");
-  font-weight: 400;
+  font-family: "Atkinson Hyperlegible Next";
+  src: url("AtkinsonHyperlegibleNext-VariableFont_wght.ttf")
+      format("truetype-variations"),
+    url("AtkinsonHyperlegibleNext-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 800;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "Roboto Mono";
-  src: url("RobotoMono-VariableFont_wght.ttf") format("truetype-variations"),
-    url("RobotoMono-VariableFont_wght.ttf") format("truetype");
-  font-weight: 100 700;
+  font-family: "Atkinson Hyperlegible Mono";
+  src: url("AtkinsonHyperlegibleMono-VariableFont_wght.ttf")
+      format("truetype-variations"),
+    url("AtkinsonHyperlegibleMono-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 800;
   font-style: normal;
   font-display: swap;
 }
@@ -22,12 +25,12 @@
  * overrides those presentation attributes, so this one rule makes the
  * playground pick up the embedded fonts without touching SVG generation. */
 svg text {
-  font-family: "Atkinson Hyperlegible", sans-serif;
+  font-family: "Atkinson Hyperlegible Next", sans-serif;
 }
 svg text[font-family~="monospace"],
 svg text[font-family*="Mono"],
 svg text[font-family*="Courier"] {
-  font-family: "Roboto Mono", monospace;
+  font-family: "Atkinson Hyperlegible Mono", monospace;
 }
 
 :root {
@@ -99,7 +102,7 @@ html.dark {
 }
 
 body {
-  font-family: "Atkinson Hyperlegible", -apple-system, BlinkMacSystemFont,
+  font-family: "Atkinson Hyperlegible Next", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Helvetica, Arial, sans-serif;
   max-width: 60rem;
   margin: 0 auto;
@@ -222,8 +225,8 @@ a:hover {
 }
 
 .editor-container .cm-scroller {
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   line-height: 1.5;
   padding: 0.5rem 0;
 }
@@ -352,8 +355,8 @@ pre.output-box {
 .output-box.print-box {
   background: var(--output-bg);
   color: var(--output-text);
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   font-size: 15px;
   line-height: 1.5;
   overflow-x: auto;
@@ -376,8 +379,8 @@ pre.output-box {
   background: var(--status-info-bg);
   color: var(--status-info-text);
   border-color: var(--status-info-border);
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   font-size: 14px;
 }
 
@@ -385,8 +388,8 @@ pre.output-box {
   background: var(--status-error-bg);
   color: var(--status-error-text);
   border-color: var(--status-error-border);
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   font-size: 14px;
 }
 
@@ -424,8 +427,8 @@ pre.output-box {
 }
 
 .manipulate-value {
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   font-size: 12px;
   color: var(--text-muted);
   min-width: 3rem;
@@ -448,8 +451,8 @@ pre.output-box {
 
 .manipulate-output pre {
   margin: 0;
-  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Liberation Mono",
-    Menlo, monospace;
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
   font-size: 14px;
   white-space: pre-wrap;
   word-wrap: break-word;

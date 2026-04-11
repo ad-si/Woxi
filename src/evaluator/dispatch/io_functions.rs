@@ -1757,18 +1757,22 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
 
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
-    include_bytes!("../../../resources/RobotoMono-VariableFont_wght.ttf")
-      .to_vec(),
+    include_bytes!(
+      "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
+    )
+    .to_vec(),
   );
   fontdb.load_font_data(
-    include_bytes!("../../../resources/AtkinsonHyperlegible-Regular.ttf")
-      .to_vec(),
+    include_bytes!(
+      "../../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
+    )
+    .to_vec(),
   );
-  fontdb.set_monospace_family("Roboto Mono");
-  fontdb.set_sans_serif_family("Atkinson Hyperlegible");
-  fontdb.set_serif_family("Atkinson Hyperlegible");
-  fontdb.set_cursive_family("Atkinson Hyperlegible");
-  fontdb.set_fantasy_family("Atkinson Hyperlegible");
+  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
+  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  fontdb.set_cursive_family("Atkinson Hyperlegible Next");
+  fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
   // Load system fonts as fallback for any remaining missing glyphs
   fontdb.load_system_fonts();
 
