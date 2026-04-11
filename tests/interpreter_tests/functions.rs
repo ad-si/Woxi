@@ -8054,12 +8054,13 @@ mod array_rules {
   // Inferred dimensions: 2D rules with no explicit dims
   #[test]
   fn sparse_array_inferred_dims_2d() {
+    // Wolfram's CSR internal form: {1, {row_ptr, inner_positions}, values}
     assert_eq!(
       interpret(
         "SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {1, 3} -> 4}]"
       )
       .unwrap(),
-      "SparseArray[Automatic, {3, 3}, 0, {{1, 1} -> 1, {1, 3} -> 4, {2, 2} -> 2, {3, 3} -> 3}]"
+      "SparseArray[Automatic, {3, 3}, 0, {1, {{0, 2, 3, 4}, {{1}, {3}, {2}, {3}}}, {1, 4, 2, 3}}]"
     );
   }
 
@@ -8101,7 +8102,7 @@ mod array_rules {
   fn sparse_array_inferred_1d_scalar_positions() {
     assert_eq!(
       interpret("SparseArray[{1 -> 5, 3 -> 7, 5 -> 2}]").unwrap(),
-      "SparseArray[Automatic, {5}, 0, {{1} -> 5, {3} -> 7, {5} -> 2}]"
+      "SparseArray[Automatic, {5}, 0, {1, {{0, 3}, {{1}, {3}, {5}}}, {5, 7, 2}}]"
     );
   }
 
@@ -8110,7 +8111,7 @@ mod array_rules {
   fn sparse_array_from_dense_2d() {
     assert_eq!(
       interpret("SparseArray[{{0, a}, {b, 0}}]").unwrap(),
-      "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {a, b}}]"
     );
   }
 
@@ -8127,7 +8128,7 @@ mod array_rules {
   fn sparse_array_custom_default() {
     assert_eq!(
       interpret("SparseArray[{{1, 2} -> a}, {3, 3}, x]").unwrap(),
-      "SparseArray[Automatic, {3, 3}, x, {{1, 2} -> a}]"
+      "SparseArray[Automatic, {3, 3}, x, {1, {{0, 1, 1, 1}, {{2}}}, {a}}]"
     );
   }
 
@@ -8144,16 +8145,17 @@ mod array_rules {
   fn sparse_array_drops_default_rules() {
     assert_eq!(
       interpret("SparseArray[{{1, 1} -> 0, {2, 2} -> 3}, {2, 2}]").unwrap(),
-      "SparseArray[Automatic, {2, 2}, 0, {{2, 2} -> 3}]"
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 0, 1}, {{2}}}, {3}}]"
     );
   }
 
-  // Later rules override earlier rules at the same position.
+  // Earlier rules win over later rules at the same position (matches
+  // wolframscript: Normal[SparseArray[{1 -> 5, 1 -> 9}, 3]] == {5, 0, 0}).
   #[test]
-  fn sparse_array_later_rule_wins() {
+  fn sparse_array_earlier_rule_wins() {
     assert_eq!(
       interpret("Normal[SparseArray[{1 -> 5, 1 -> 9}, 3]]").unwrap(),
-      "{9, 0, 0}"
+      "{5, 0, 0}"
     );
   }
 
@@ -8162,10 +8164,10 @@ mod array_rules {
   fn sparse_array_canonical_idempotent() {
     assert_eq!(
       interpret(
-        "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+        "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {a, b}}]"
       )
       .unwrap(),
-      "SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]"
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {a, b}}]"
     );
   }
 }

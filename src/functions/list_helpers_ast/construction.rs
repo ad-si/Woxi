@@ -840,7 +840,23 @@ fn build_range_indices(
     return Ok(Vec::new());
   }
   if n == 1 {
-    return Ok(vec![a.clone()]);
+    // Wolfram gives the midpoint (a + b) / 2 when requesting a single
+    // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
+    let half = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Integer(2), Expr::Integer(-1)],
+    };
+    let mid = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        half,
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![a.clone(), b.clone()],
+        },
+      ],
+    };
+    return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
   // value_i = a + i * (b - a) / (n - 1)
@@ -1262,9 +1278,11 @@ pub fn sparse_array_normalize_ast(
     inferred_dims
   };
 
-  // Drop rules that are out of bounds or equal to the default value. Later
-  // rules for the same position override earlier ones (Wolfram semantics),
-  // and BTreeMap gives us deterministic lexicographic ordering.
+  // Drop rules that are out of bounds or equal to the default value. When
+  // the same position appears more than once, the *first* rule wins — this
+  // matches wolframscript:
+  //   Normal[SparseArray[{1 -> 5, 1 -> 9}, 3]] == {5, 0, 0}
+  // BTreeMap gives us deterministic lexicographic ordering.
   let default_str = crate::syntax::expr_to_string(&default);
   let mut dedup: std::collections::BTreeMap<Vec<i128>, Expr> =
     std::collections::BTreeMap::new();
@@ -1280,24 +1298,57 @@ pub fn sparse_array_normalize_ast(
       continue;
     }
     if crate::syntax::expr_to_string(&val) == default_str {
-      dedup.remove(&pos);
       continue;
     }
-    dedup.insert(pos, val);
+    dedup.entry(pos).or_insert(val);
   }
 
-  let rules_expr: Vec<Expr> = dedup
-    .into_iter()
-    .map(|(pos, val)| Expr::Rule {
-      pattern: Box::new(Expr::List(
-        pos.into_iter().map(Expr::Integer).collect(),
-      )),
-      replacement: Box::new(val),
-    })
-    .collect();
-
+  // Build the CSR-style fourth argument that wolframscript exposes for
+  // SparseArray:
+  //   {1, {row_ptr, inner_positions}, values}
+  // where `row_ptr` groups entries by their first coordinate and
+  // `inner_positions` lists the remaining coordinates for each entry.
+  let sorted: Vec<(Vec<i128>, Expr)> = dedup.into_iter().collect();
   let dims_expr =
     Expr::List(dims.iter().map(|&n| Expr::Integer(n as i128)).collect());
+  let rank = dims.len();
+
+  // row_ptr length: for rank 1 Wolfram uses {0, nnz}; for rank >= 2 it
+  // groups by the first axis, giving length dims[0] + 1.
+  let row_ptr: Vec<i128> = if rank <= 1 {
+    vec![0, sorted.len() as i128]
+  } else {
+    let mut ptr = vec![0i128; dims[0] + 1];
+    for (pos, _) in &sorted {
+      let row = pos[0] as usize; // 1-based row index
+      for slot in &mut ptr[row..] {
+        *slot += 1;
+      }
+    }
+    ptr
+  };
+
+  let inner_positions: Vec<Expr> = sorted
+    .iter()
+    .map(|(pos, _)| {
+      let tail: Vec<Expr> = if rank <= 1 {
+        // 1D arrays still show a single-element inner position.
+        pos.iter().cloned().map(Expr::Integer).collect()
+      } else {
+        pos[1..].iter().cloned().map(Expr::Integer).collect()
+      };
+      Expr::List(tail)
+    })
+    .collect();
+  let values_list: Vec<Expr> = sorted.into_iter().map(|(_, v)| v).collect();
+
+  let row_ptr_expr =
+    Expr::List(row_ptr.into_iter().map(Expr::Integer).collect());
+  let structure = Expr::List(vec![
+    Expr::Integer(1),
+    Expr::List(vec![row_ptr_expr, Expr::List(inner_positions)]),
+    Expr::List(values_list),
+  ]);
 
   Ok(Expr::FunctionCall {
     name: "SparseArray".to_string(),
@@ -1305,9 +1356,100 @@ pub fn sparse_array_normalize_ast(
       Expr::Identifier("Automatic".to_string()),
       dims_expr,
       default,
-      Expr::List(rules_expr),
+      structure,
     ],
   })
+}
+
+/// Extract (position, value) pairs from the fourth argument of a canonical
+/// SparseArray. Accepts either the legacy list-of-rules form or the
+/// CSR-style `{1, {row_ptr, inner_positions}, values}` form used by
+/// wolframscript.
+pub fn sparse_array_extract_rules(
+  dims: &[usize],
+  arg: &Expr,
+) -> Vec<(Vec<i128>, Expr)> {
+  let Expr::List(items) = arg else {
+    return Vec::new();
+  };
+
+  // Legacy list-of-rules form
+  if items.iter().all(|i| matches!(i, Expr::Rule { .. })) {
+    return items
+      .iter()
+      .filter_map(|r| match r {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          let pos = match pattern.as_ref() {
+            Expr::List(ps) => {
+              let mut v = Vec::with_capacity(ps.len());
+              for p in ps {
+                v.push(expr_to_i128(p)?);
+              }
+              v
+            }
+            other => vec![expr_to_i128(other)?],
+          };
+          Some((pos, replacement.as_ref().clone()))
+        }
+        _ => None,
+      })
+      .collect();
+  }
+
+  // CSR form: {1, {row_ptr, inner_positions}, values}
+  if items.len() == 3
+    && matches!(&items[0], Expr::Integer(1))
+    && let (Expr::List(structure), Expr::List(values)) = (&items[1], &items[2])
+    && structure.len() == 2
+    && let (Expr::List(row_ptr), Expr::List(inner_list)) =
+      (&structure[0], &structure[1])
+  {
+    let rank = dims.len();
+    let row_ptr_vals: Option<Vec<i128>> =
+      row_ptr.iter().map(expr_to_i128).collect();
+    let Some(row_ptr_vals) = row_ptr_vals else {
+      return Vec::new();
+    };
+    let mut out: Vec<(Vec<i128>, Expr)> = Vec::with_capacity(values.len());
+    // Determine row for each entry from row_ptr cumulative counts.
+    let num_rows = if rank <= 1 { 1 } else { dims[0] };
+    let mut entry_idx: usize = 0;
+    for row in 0..num_rows {
+      let count = (row_ptr_vals.get(row + 1).copied().unwrap_or(0)
+        - row_ptr_vals.get(row).copied().unwrap_or(0))
+        as usize;
+      for _ in 0..count {
+        if entry_idx >= values.len() || entry_idx >= inner_list.len() {
+          break;
+        }
+        let Expr::List(tail_exprs) = &inner_list[entry_idx] else {
+          entry_idx += 1;
+          continue;
+        };
+        let tail: Option<Vec<i128>> =
+          tail_exprs.iter().map(expr_to_i128).collect();
+        let Some(tail) = tail else {
+          entry_idx += 1;
+          continue;
+        };
+        let mut pos = Vec::with_capacity(rank);
+        if rank >= 2 {
+          pos.push((row + 1) as i128);
+          pos.extend(tail);
+        } else {
+          pos.extend(tail);
+        }
+        out.push((pos, values[entry_idx].clone()));
+        entry_idx += 1;
+      }
+    }
+    return out;
+  }
+
+  Vec::new()
 }
 
 /// Build a dense k-D nested list from a canonical rule list.
@@ -1395,31 +1537,7 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let default = &sa_args[2];
-  let rules_list: Vec<(Vec<i128>, Expr)> = match &sa_args[3] {
-    Expr::List(items) => items
-      .iter()
-      .filter_map(|r| match r {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } => {
-          let pos = match pattern.as_ref() {
-            Expr::List(ps) => {
-              let mut v = Vec::with_capacity(ps.len());
-              for p in ps {
-                v.push(expr_to_i128(p)?);
-              }
-              v
-            }
-            other => vec![expr_to_i128(other)?],
-          };
-          Some((pos, replacement.as_ref().clone()))
-        }
-        _ => None,
-      })
-      .collect(),
-    _ => Vec::new(),
-  };
+  let rules_list = sparse_array_extract_rules(&dims, &sa_args[3]);
   Ok(build_dense_from_rules(&dims, default, &rules_list))
 }
 

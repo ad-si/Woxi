@@ -890,6 +890,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let a = &coeffs[1]; // coefficient of x
       let neg_b = negate_expr(b);
       let solution = simplify(solve_divide(&neg_b, a));
+      // Run the user-level Simplify so forms like -((1 - z)/2) collapse
+      // to (-1 + z)/2, matching wolframscript's canonical output.
+      let solution =
+        crate::functions::polynomial_ast::simplify_ast(&[solution.clone()])
+          .unwrap_or(solution);
       Ok(Expr::List(vec![make_rule(solution)]))
     }
     2 => {
@@ -1642,6 +1647,58 @@ fn try_solve_inverse_function(
       return Some(solve_ast(&[new_eq, Expr::Identifier(var.to_string())]));
     }
     if !is_constant_wrt(&exp, var) && is_constant_wrt(&base, var) {
+      // Special case E^x == val (val positive real or 1): produce the
+      // general complex solution as a ConditionalExpression, matching
+      // wolframscript:
+      //   Solve[Exp[x] == 1, x] → {{x -> ConditionalExpression[
+      //     (2*I)*Pi*C[1], Element[C[1], Integers]]}}
+      if matches!(&base, Expr::Constant(n) if n == "E")
+        && matches!(&exp, Expr::Identifier(n) if n == var)
+      {
+        // Principal part: Log[val]
+        let log_val =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![val.clone()],
+          })
+          .ok()?;
+        // Periodic part: 2*Pi*I*C[1]
+        let c1 = Expr::FunctionCall {
+          name: "C".to_string(),
+          args: vec![Expr::Integer(1)],
+        };
+        let two_pi_i_c1 =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(2),
+              Expr::Identifier("I".to_string()),
+              Expr::Identifier("Pi".to_string()),
+              c1.clone(),
+            ],
+          })
+          .ok()?;
+        let general =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![log_val, two_pi_i_c1],
+          })
+          .ok()?;
+        let cond = Expr::FunctionCall {
+          name: "ConditionalExpression".to_string(),
+          args: vec![
+            general,
+            Expr::FunctionCall {
+              name: "Element".to_string(),
+              args: vec![c1, Expr::Identifier("Integers".to_string())],
+            },
+          ],
+        };
+        return Some(Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
+          pattern: Box::new(Expr::Identifier(var.to_string())),
+          replacement: Box::new(cond),
+        }])])));
+      }
       // base^exp == val where base is constant, exp contains var
       // → exp == Log[val] / Log[base]
       let inverse_rhs = Expr::BinaryOp {
@@ -5019,9 +5076,15 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
           rhs_expr = eval_entry(add_exprs(&rhs_expr, &neg_term));
         }
       }
+      // Run the user-level Simplify so the RHS collapses forms like
+      // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
+      let intermediate = eval_entry(rhs_expr);
+      let simplified_rhs =
+        crate::functions::polynomial_ast::simplify_ast(&[intermediate.clone()])
+          .unwrap_or(intermediate);
       rules.push(Expr::Rule {
         pattern: Box::new(Expr::Identifier(var_names[col].clone())),
-        replacement: Box::new(eval_entry(rhs_expr)),
+        replacement: Box::new(simplified_rhs),
       });
     }
     rules

@@ -5308,10 +5308,10 @@ mod manipulate {
 
   #[test]
   fn attributes_match_wolframscript() {
-    // Matches Attributes[Manipulate] in Wolfram: no HoldAll exposed.
+    // Matches Attributes[Manipulate] in Wolfram: HoldAll is exposed.
     assert_eq!(
       interpret("Attributes[Manipulate]").unwrap(),
-      "{Protected, ReadProtected}"
+      "{HoldAll, Protected, ReadProtected}"
     );
   }
 
@@ -5337,7 +5337,7 @@ mod manipulate {
         "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> (d[t_] := 1/(2*-9.8*t^2) + 50)]"
       )
       .unwrap(),
-      "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> SetDelayed[d[t_], 1/(2*-9.8*t^2) + 50]]"
+      "Manipulate[Plot[d[t], {t, 0, 5}], {{a, 1}, 0, 10}, Initialization :> (d[t_] := 1/(2*-9.8*t^2) + 50)]"
     );
   }
 
