@@ -1,9 +1,29 @@
 #[allow(unused_imports)]
 use super::*;
 
+// Virtual working-directory stack used by SetDirectory / ResetDirectory.
+//
+// We deliberately do NOT call `std::env::set_current_dir` here: that mutates
+// process-wide state, and cargo runs tests in parallel threads within a
+// single process. Mutating the real CWD from one test races against any
+// other test that resolves relative paths (Import, FileNames, etc.), causing
+// flaky failures in CI. Instead we track a per-thread virtual stack; the top
+// of the stack is what `Directory[]` reports, and the process CWD is used as
+// the fallback when the stack is empty.
 #[cfg(not(target_arch = "wasm32"))]
 thread_local! {
   static DIRECTORY_STACK: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn virtual_current_dir() -> String {
+  DIRECTORY_STACK
+    .with(|s| s.borrow().last().cloned())
+    .unwrap_or_else(|| {
+      std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+    })
 }
 
 pub fn dispatch_io_functions(
@@ -414,10 +434,7 @@ pub fn dispatch_io_functions(
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Directory" if args.is_empty() => {
-      return Some(match std::env::current_dir() {
-        Ok(path) => Ok(Expr::String(path.to_string_lossy().into_owned())),
-        Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
-      });
+      return Some(Ok(Expr::String(virtual_current_dir())));
     }
     // DirectoryName["path"] or DirectoryName["path", n]
     "DirectoryName" if args.len() == 1 || args.len() == 2 => {
@@ -1422,7 +1439,8 @@ pub fn dispatch_io_functions(
         files.into_iter().map(Expr::String).collect(),
       )));
     }
-    // SetDirectory["dir"] — set the current working directory
+    // SetDirectory["dir"] — push "dir" onto the virtual directory stack.
+    // Does not mutate the process CWD; see the note on DIRECTORY_STACK.
     #[cfg(not(target_arch = "wasm32"))]
     "SetDirectory" if args.len() == 1 => {
       let dir = match &args[0] {
@@ -1434,17 +1452,26 @@ pub fn dispatch_io_functions(
           }));
         }
       };
-      // Save current directory to stack before changing
-      let old_dir = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default();
-      match std::env::set_current_dir(&dir) {
-        Ok(_) => {
-          DIRECTORY_STACK.with(|s| s.borrow_mut().push(old_dir));
-          let new_dir = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or(dir);
+      // Resolve the requested path against the current virtual directory so
+      // that relative paths behave like the real Wolfram SetDirectory.
+      let requested = std::path::Path::new(&dir);
+      let resolved = if requested.is_absolute() {
+        requested.to_path_buf()
+      } else {
+        std::path::PathBuf::from(virtual_current_dir()).join(requested)
+      };
+      // Canonicalize both to validate existence and normalize the result.
+      match std::fs::canonicalize(&resolved) {
+        Ok(canonical) if canonical.is_dir() => {
+          let new_dir = canonical.to_string_lossy().into_owned();
+          DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
           return Some(Ok(Expr::String(new_dir)));
+        }
+        Ok(_) => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "SetDirectory: {} is not a directory.",
+            dir
+          ))));
         }
         Err(e) => {
           return Some(Err(InterpreterError::EvaluationError(format!(
@@ -1454,25 +1481,15 @@ pub fn dispatch_io_functions(
         }
       }
     }
-    // ResetDirectory[] — restore the previous working directory
+    // ResetDirectory[] — pop the virtual directory stack and return the
+    // restored directory (or the process CWD if the stack becomes empty).
     #[cfg(not(target_arch = "wasm32"))]
     "ResetDirectory" if args.is_empty() => {
-      let prev = DIRECTORY_STACK.with(|s| s.borrow_mut().pop());
-      match prev {
-        Some(dir) => match std::env::set_current_dir(&dir) {
-          Ok(_) => {
-            let restored = std::env::current_dir()
-              .map(|p| p.to_string_lossy().to_string())
-              .unwrap_or(dir);
-            return Some(Ok(Expr::String(restored)));
-          }
-          Err(e) => {
-            return Some(Err(InterpreterError::EvaluationError(format!(
-              "ResetDirectory: {}",
-              e
-            ))));
-          }
-        },
+      let popped = DIRECTORY_STACK.with(|s| s.borrow_mut().pop());
+      match popped {
+        Some(_) => {
+          return Some(Ok(Expr::String(virtual_current_dir())));
+        }
         None => {
           return Some(Err(InterpreterError::EvaluationError(
             "ResetDirectory: directory stack is empty.".into(),
