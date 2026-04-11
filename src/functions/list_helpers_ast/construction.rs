@@ -418,6 +418,68 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let max_f = try_numeric(&max_expr);
     let step_f = try_numeric(&step_expr);
 
+    // If the endpoints are purely symbolic (e.g. `Range[a, a+5]`) the
+    // difference `max - min` may still simplify to a numeric value, even
+    // though the individual endpoints don't. In that case we can still
+    // enumerate the range using the numeric count and render each
+    // element symbolically.
+    if min_f.is_none() || max_f.is_none() {
+      if let Some(step_val) = step_f {
+        if step_val == 0.0 {
+          return Err(InterpreterError::EvaluationError(
+            "Range: step cannot be zero".into(),
+          ));
+        }
+        let diff_expr = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            max_expr.clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), min_expr.clone()],
+            },
+          ],
+        };
+        if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&diff_expr)
+          && let Some(diff_val) = expr_to_f64(&evaled)
+        {
+          let count = (diff_val / step_val).floor() as i128 + 1;
+          if count <= 0 {
+            return Ok(Expr::List(vec![]));
+          }
+          if count > 1_000_000 {
+            return Err(InterpreterError::EvaluationError(
+              "Range: result too large".into(),
+            ));
+          }
+          let mut results = Vec::with_capacity(count as usize);
+          for k in 0..count {
+            let elem = if k == 0 {
+              min_expr.clone()
+            } else {
+              let k_times_step = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(k), step_expr.clone()],
+              };
+              let sum = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![min_expr.clone(), k_times_step],
+              };
+              crate::evaluator::evaluate_expr_to_expr(&sum)?
+            };
+            results.push(elem);
+          }
+          return Ok(Expr::List(results));
+        }
+      }
+      // Fully symbolic with no way to determine length — leave
+      // unevaluated like Mathematica.
+      return Ok(Expr::FunctionCall {
+        name: "Range".to_string(),
+        args: args.to_vec(),
+      });
+    }
+
     if let (Some(min_val), Some(max_val), Some(step_val)) =
       (min_f, max_f, step_f)
     {
