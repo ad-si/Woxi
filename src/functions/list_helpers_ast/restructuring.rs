@@ -801,6 +801,95 @@ pub fn rotate_multi_ast(
   }
 }
 
+/// Build a nested-list "filler" of shape `ns` filled with the scalar `pad`.
+/// E.g. `build_pad_shape(x, &[3, 2])` → `{{x, x}, {x, x}, {x, x}}`.
+fn build_pad_shape(pad: &Expr, ns: &[i128]) -> Expr {
+  if ns.is_empty() {
+    return pad.clone();
+  }
+  let n = ns[0].max(0) as usize;
+  let inner = build_pad_shape(pad, &ns[1..]);
+  Expr::List(vec![inner; n])
+}
+
+/// Multi-dimensional PadLeft with a scalar pad value. Recursively pads
+/// each level and prepends "filler" shapes for missing outer rows.
+pub fn pad_left_multidim(
+  list: &Expr,
+  ns: &[i128],
+  pad: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if ns.is_empty() {
+    return Ok(list.clone());
+  }
+  let n = ns[0];
+  let rest = &ns[1..];
+
+  let items: Vec<Expr> = match list {
+    Expr::List(items) => items.clone(),
+    _ => vec![],
+  };
+
+  let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
+  for item in &items {
+    padded_children.push(pad_left_multidim(item, rest, pad)?);
+  }
+
+  let len = padded_children.len() as i128;
+
+  if n <= 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  if len >= n {
+    // Truncate from the left (mirror single-dim PadLeft behavior).
+    let skip = (len - n) as usize;
+    return Ok(Expr::List(padded_children[skip..].to_vec()));
+  }
+
+  let filler = build_pad_shape(pad, rest);
+  let needed = (n - len) as usize;
+  let mut result: Vec<Expr> = vec![filler; needed];
+  result.extend(padded_children);
+  Ok(Expr::List(result))
+}
+
+/// Multi-dimensional PadRight with a scalar pad value.
+pub fn pad_right_multidim(
+  list: &Expr,
+  ns: &[i128],
+  pad: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if ns.is_empty() {
+    return Ok(list.clone());
+  }
+  let n = ns[0];
+  let rest = &ns[1..];
+
+  let items: Vec<Expr> = match list {
+    Expr::List(items) => items.clone(),
+    _ => vec![],
+  };
+
+  let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
+  for item in &items {
+    padded_children.push(pad_right_multidim(item, rest, pad)?);
+  }
+
+  let len = padded_children.len() as i128;
+
+  if n <= 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  if len >= n {
+    return Ok(Expr::List(padded_children[..n as usize].to_vec()));
+  }
+
+  let filler = build_pad_shape(pad, rest);
+  let needed = (n - len) as usize;
+  padded_children.extend(vec![filler; needed]);
+  Ok(Expr::List(padded_children))
+}
+
 /// AST-based PadLeft: pad list on the left to length n.
 /// If n < len, truncates from the left.
 /// Get cyclic padding element at a given position (0-based).
