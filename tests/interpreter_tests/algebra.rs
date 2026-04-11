@@ -673,6 +673,21 @@ mod collect_tests {
       "c*x*y + x^2*(a + b*y)"
     );
   }
+
+  #[test]
+  fn collect_two_variables_shared_factor_ascending_powers() {
+    // Regression: when collecting by {x, y} and every grouped term shares
+    // the y factor, terms should be ordered by ascending power of x and
+    // each term's Plus coefficient should appear *before* the monomial
+    // factors (Plus * x^k * y), matching wolframscript exactly.
+    assert_eq!(
+      interpret(
+        "Collect[a^2 y + 2 a b y + b^2 y + 2 a x y + 2 b x y + x^2 y + c^2 x^2 y + 2 c d x^2 y + d^2 x^2 y, {x, y}]"
+      )
+      .unwrap(),
+      "(a^2 + 2*a*b + b^2)*y + (2*a + 2*b)*x*y + (1 + c^2 + 2*c*d + d^2)*x^2*y"
+    );
+  }
 }
 
 mod together {
@@ -1471,6 +1486,20 @@ mod solve {
       interpret("Solve[{3 x ^ 2 - 3 y == 0, 3 y ^ 2 - 3 x == 0}, {x, y}]")
         .unwrap(),
       "{{x -> 0, y -> 0}, {x -> 1, y -> 1}, {x -> -(-1)^(1/3), y -> (-1)^(2/3)}, {x -> (-1)^(2/3), y -> -(-1)^(1/3)}}"
+    );
+  }
+
+  #[test]
+  fn linear_system_with_and_in_list() {
+    // Solve[{eq1 && eq2}, {x, y}] should behave like
+    // Solve[{eq1, eq2}, {x, y}] — the conjunction inside the list is
+    // flattened into individual equations.
+    assert_eq!(
+      interpret(
+        "{x, y} /. Solve[{2 x + y == 12 && x + 4 y == 34}, {x, y}] // First"
+      )
+      .unwrap(),
+      "{2, 8}"
     );
   }
 

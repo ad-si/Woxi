@@ -768,6 +768,18 @@ mod rule_display {
   }
 
   #[test]
+  fn replace_all_function_form_reevaluates_result() {
+    // ReplaceAll[...] (function-call form) should re-evaluate the result
+    // after substitution so e.g. 1 + 2 becomes 3. Regression: previously
+    // only the /. operator did this, while the function form returned
+    // "{2, 1 + 2, 2 + 2}" unchanged.
+    assert_eq!(
+      interpret("ReplaceAll[{x, x + 1, x + 2}, x -> 2]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
   fn rule_sequence_hold() {
     // Rule has SequenceHold: Sequence should not be spliced
     assert_eq!(

@@ -498,7 +498,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Handle system of equations: Solve[{eq1,...}, {var1,...}]
-  if let (Expr::List(eqs), Expr::List(vars_exprs)) = (&args[0], &args[1]) {
+  if let (Expr::List(eqs_raw), Expr::List(vars_exprs)) = (&args[0], &args[1]) {
+    // Flatten any And conjunctions inside the list, so that
+    // Solve[{a == b && c == d}, {x, y}] behaves like Solve[{a == b, c == d}, {x, y}].
+    let eqs: Vec<Expr> = flatten_and_constraints(eqs_raw);
+    let eqs = &eqs;
     let var_names: Vec<String> = vars_exprs
       .iter()
       .filter_map(|v| {

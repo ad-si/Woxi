@@ -153,7 +153,11 @@ fn collect_in_coefficients(
     }
   }
 
-  power_groups.sort_by_key(|(p, _)| std::cmp::Reverse(*p));
+  // Sort by power ascending. The final canonical Plus order is applied
+  // to `result_terms` below via `sort_collect_terms`, so the insertion
+  // order here only determines tie-breaks when the monomial signatures
+  // are equal.
+  power_groups.sort_by_key(|(p, _)| *p);
 
   let mut result_terms = Vec::new();
   for (power, coeffs) in power_groups {
@@ -199,6 +203,15 @@ fn collect_in_coefficients(
           } else {
             multiply_exprs(&c, &v)
           }
+        } else if let Some((plus_factor, other_factors)) = split_plus_factor(&c)
+        {
+          // Coefficient is a Times containing a Plus (e.g. `(a+b)*y`).
+          // Preserve the Plus-first display order that Collect wants:
+          //   Plus * x^power * other_factors.
+          let mut factors = vec![plus_factor];
+          factors.push(v);
+          factors.extend(other_factors);
+          build_times_chain(&factors)
         } else {
           let mut factors = Vec::new();
           flatten_product_factors_collect(&c, &mut factors);
@@ -213,8 +226,177 @@ fn collect_in_coefficients(
   if result_terms.is_empty() {
     Ok(Expr::Integer(0))
   } else {
-    Ok(build_sum(result_terms))
+    // Flatten any nested Plus (e.g. a coefficient that was itself a sum
+    // from the recursive collect pass) so every leaf term gets its own
+    // monomial signature and participates in the canonical Plus ordering.
+    let mut flat_terms: Vec<Expr> = Vec::new();
+    for t in &result_terms {
+      flatten_plus_terms(t, &mut flat_terms);
+    }
+    if flat_terms.len() == 1 {
+      Ok(flat_terms.into_iter().next().unwrap())
+    } else {
+      sort_collect_terms(&mut flat_terms);
+      Ok(build_sum(flat_terms))
+    }
   }
+}
+
+/// Recursively flatten Plus terms (both `BinaryOp::Plus` chains and
+/// `FunctionCall["Plus"]`) into a flat vector of addends.
+fn flatten_plus_terms(e: &Expr, out: &mut Vec<Expr>) {
+  match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      flatten_plus_terms(left, out);
+      flatten_plus_terms(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args {
+        flatten_plus_terms(a, out);
+      }
+    }
+    _ => out.push(e.clone()),
+  }
+}
+
+/// Sort Collect's result terms using Wolfram's canonical Plus ordering
+/// over their monomial signatures.
+///
+/// Each term has the form `coeff * monomial` where `coeff` may be a numeric
+/// factor or a `Plus[...]` (the collected coefficient) and `monomial` is a
+/// product of the collect variables and possibly other identifiers. We sort
+/// by a monomial signature — a sorted list of `(variable, exponent)` pairs
+/// extracted from the non-`Plus`, non-numeric factors — comparing the
+/// entries from the last (largest) variable backwards. Terms with shorter
+/// signatures come first when all compared entries match.
+fn sort_collect_terms(terms: &mut [Expr]) {
+  terms.sort_by(|a, b| {
+    let sig_a = monomial_signature(a);
+    let sig_b = monomial_signature(b);
+    compare_monomial_signatures(&sig_a, &sig_b)
+  });
+}
+
+/// Return the monomial signature (sorted by variable name) for a Collect term.
+fn monomial_signature(term: &Expr) -> Vec<(String, i128)> {
+  let mut pairs: Vec<(String, i128)> = Vec::new();
+  collect_monomial_factors(term, &mut pairs);
+  pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+  pairs
+}
+
+fn collect_monomial_factors(e: &Expr, out: &mut Vec<(String, i128)>) {
+  match e {
+    Expr::Identifier(name) => out.push((name.clone(), 1)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_monomial_factors(left, out);
+      collect_monomial_factors(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        collect_monomial_factors(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let (Expr::Identifier(name), Expr::Integer(exp)) =
+        (left.as_ref(), right.as_ref())
+      {
+        out.push((name.clone(), *exp));
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let (Expr::Identifier(var), Expr::Integer(exp)) = (&args[0], &args[1])
+      {
+        out.push((var.clone(), *exp));
+      }
+    }
+    // Plus coefficients, numbers, and other compound exprs contribute nothing.
+    _ => {}
+  }
+}
+
+/// Compare monomial signatures by Wolfram's canonical Plus order: walk
+/// the entries from the end (largest variable) inward. When one signature
+/// is a strict prefix of the other (after matching the largest entries),
+/// the shorter one sorts first.
+fn compare_monomial_signatures(
+  a: &[(String, i128)],
+  b: &[(String, i128)],
+) -> std::cmp::Ordering {
+  let mut ia = a.iter().rev();
+  let mut ib = b.iter().rev();
+  loop {
+    match (ia.next(), ib.next()) {
+      (Some((va, ea)), Some((vb, eb))) => {
+        let name_cmp = va.cmp(vb);
+        if name_cmp != std::cmp::Ordering::Equal {
+          return name_cmp;
+        }
+        let exp_cmp = ea.cmp(eb);
+        if exp_cmp != std::cmp::Ordering::Equal {
+          return exp_cmp;
+        }
+      }
+      (None, Some(_)) => return std::cmp::Ordering::Less,
+      (Some(_), None) => return std::cmp::Ordering::Greater,
+      (None, None) => return std::cmp::Ordering::Equal,
+    }
+  }
+}
+
+/// If `expr` is a Times expression with exactly one `Plus` factor, return
+/// the Plus factor and the remaining (non-Plus) factors in their original
+/// order. Otherwise return `None`.
+fn split_plus_factor(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
+  let mut factors = Vec::new();
+  flatten_product_factors_collect(expr, &mut factors);
+  let mut plus: Option<Expr> = None;
+  let mut rest: Vec<Expr> = Vec::new();
+  for f in factors {
+    if is_sum(&f) {
+      if plus.is_some() {
+        return None; // more than one Plus factor — caller can fall back
+      }
+      plus = Some(f);
+    } else {
+      rest.push(f);
+    }
+  }
+  plus.map(|p| (p, rest))
+}
+
+/// Build a Times expression by chaining the given factors with
+/// `BinaryOp::Times`, preserving their order (so the caller controls the
+/// display ordering). For a single factor, returns it directly.
+fn build_times_chain(factors: &[Expr]) -> Expr {
+  if factors.is_empty() {
+    return Expr::Integer(1);
+  }
+  if factors.len() == 1 {
+    return factors[0].clone();
+  }
+  let mut iter = factors.iter();
+  let mut result = iter.next().unwrap().clone();
+  for f in iter {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(result),
+      right: Box::new(f.clone()),
+    };
+  }
+  result
 }
 
 /// Flatten a Times expression into its factors.
