@@ -669,6 +669,34 @@ mod linear_solve {
       "{2/5, 1/5}"
     );
   }
+
+  #[test]
+  fn solve_matrix_rhs_2x2() {
+    // When b is a matrix, the result must stay in exact rational form,
+    // not be converted to Reals. Regression test for a bug where list
+    // threading in Plus/Times/Divide pushed values through f64.
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{1, 9, 8}, {1, 2, 7}, {3, 8, 4}}, \
+         {{6, 5}, {4, 3}, {2, 1}}]"
+      )
+      .unwrap(),
+      "{{-82/121, -109/121}, {24/121, 26/121}, {74/121, 60/121}}"
+    );
+  }
+
+  #[test]
+  fn solve_matrix_rhs_3x3_identity() {
+    // Solving m.x = I gives the inverse of m, with exact rational entries.
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}, \
+         {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]"
+      )
+      .unwrap(),
+      "{{-2/3, -4/3, 1}, {-2/3, 11/3, -2}, {1, -2, 1}}"
+    );
+  }
 }
 
 mod eigenvectors {

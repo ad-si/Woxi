@@ -1051,6 +1051,7 @@ fn cdf_inverse_gaussian(
 // ─── Probability ─────────────────────────────────────────────────────
 
 /// Probability[event, x \[Distributed] dist]
+/// Probability[event, x \[Distributed] d1 && y \[Distributed] d2 && ...]
 /// event can be: x > a, x < a, x >= a, x <= a, x == k, a < x < b, etc.
 pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1061,6 +1062,24 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let event = &args[0];
   let dist_spec = &args[1];
+
+  // Joint distribution form:
+  //   x \[Distributed] d1 && y \[Distributed] d2 && ...
+  // Handle it by enumerating the finite discrete support of every variable.
+  if let Some(pairs) = collect_distributed_pairs(dist_spec)
+    && pairs.len() >= 2
+  {
+    if let Some(result) = try_joint_probability_discrete(event, &pairs)? {
+      return eval(Expr::FunctionCall {
+        name: "Together".to_string(),
+        args: vec![result],
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Probability".to_string(),
+      args: args.to_vec(),
+    });
+  }
 
   // Parse Distributed[var, dist] from the second argument
   let (var_name, dist) = match dist_spec {
@@ -1223,6 +1242,136 @@ fn probability_from_event(
       },
     ],
   })
+}
+
+/// Walk an `And[Distributed[x1, d1], Distributed[x2, d2], ...]` expression
+/// (or a single `Distributed[x, d]`) and collect every `(var, dist)` pair.
+/// Returns `None` if any branch isn't a well-formed `Distributed[...]`.
+fn collect_distributed_pairs(expr: &Expr) -> Option<Vec<(String, Expr)>> {
+  fn walk(expr: &Expr, out: &mut Vec<(String, Expr)>) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().all(|a| walk(a, out))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Distributed" && args.len() == 2 =>
+      {
+        if let Expr::Identifier(v) = &args[0] {
+          out.push((v.clone(), args[1].clone()));
+          true
+        } else {
+          false
+        }
+      }
+      _ => false,
+    }
+  }
+  let mut out = Vec::new();
+  if walk(expr, &mut out) && !out.is_empty() {
+    Some(out)
+  } else {
+    None
+  }
+}
+
+/// Return the finite integer support of a discrete distribution as
+/// `(Vec<Expr>, point_probability)` if and only if we can enumerate it
+/// cheaply. Currently supports `DiscreteUniformDistribution[{a, b}]`.
+fn discrete_finite_support(dist: &Expr) -> Option<(Vec<Expr>, Expr)> {
+  let Expr::FunctionCall { name, args } = dist else {
+    return None;
+  };
+  match name.as_str() {
+    "DiscreteUniformDistribution" => {
+      if args.len() != 1 {
+        return None;
+      }
+      let Expr::List(range) = &args[0] else {
+        return None;
+      };
+      if range.len() != 2 {
+        return None;
+      }
+      let (Expr::Integer(lo), Expr::Integer(hi)) = (&range[0], &range[1])
+      else {
+        return None;
+      };
+      if hi < lo {
+        return None;
+      }
+      let count = hi - lo + 1;
+      let support: Vec<Expr> = (*lo..=*hi).map(Expr::Integer).collect();
+      let prob = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(count)],
+      };
+      Some((support, prob))
+    }
+    _ => None,
+  }
+}
+
+/// Attempt to compute a joint discrete probability by enumerating the
+/// Cartesian product of each variable's finite support. Returns `Ok(None)`
+/// if any distribution isn't a supported discrete finite distribution.
+fn try_joint_probability_discrete(
+  event: &Expr,
+  pairs: &[(String, Expr)],
+) -> Result<Option<Expr>, InterpreterError> {
+  // Collect (support, point_prob) for every variable.
+  let mut per_var: Vec<(String, Vec<Expr>, Expr)> =
+    Vec::with_capacity(pairs.len());
+  for (var, dist) in pairs {
+    let Some((support, prob)) = discrete_finite_support(dist) else {
+      return Ok(None);
+    };
+    per_var.push((var.clone(), support, prob));
+  }
+
+  // Accumulate probability mass for all points where the event evaluates
+  // to True after substituting the sampled values for each variable.
+  let mut total: Expr = Expr::Integer(0);
+  // Iterate the Cartesian product via an index vector.
+  let sizes: Vec<usize> = per_var.iter().map(|(_, s, _)| s.len()).collect();
+  let mut idx = vec![0usize; sizes.len()];
+  loop {
+    // Build the substituted event.
+    let mut substituted = event.clone();
+    let mut point_prob: Expr = Expr::Integer(1);
+    for (i, (var, support, pprob)) in per_var.iter().enumerate() {
+      substituted = crate::functions::plot::substitute_var(
+        &substituted,
+        var,
+        &support[idx[i]],
+      );
+      point_prob = eval(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![point_prob, pprob.clone()],
+      })?;
+    }
+    let evaluated = evaluate_expr_to_expr(&substituted)?;
+    let is_true = matches!(&evaluated, Expr::Identifier(n) if n == "True");
+    if is_true {
+      total = eval(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![total, point_prob],
+      })?;
+    }
+
+    // Advance the index vector (little-endian odometer).
+    let mut i = 0;
+    loop {
+      if i == sizes.len() {
+        return Ok(Some(total));
+      }
+      idx[i] += 1;
+      if idx[i] < sizes[i] {
+        break;
+      }
+      idx[i] = 0;
+      i += 1;
+    }
+  }
 }
 
 /// Extract a bound from a comparison involving the variable.
