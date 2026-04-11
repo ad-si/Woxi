@@ -208,12 +208,22 @@ pub fn dispatch_io_functions(
         }
         return Some(Ok(Expr::String(filename)));
       }
-      // Determine if PDF export is requested (by extension or explicit format)
-      let is_pdf = filename.ends_with(".pdf")
-        || args
-          .get(2)
-          .is_some_and(|a| matches!(a, Expr::String(s) if s == "PDF"));
-      if is_pdf {
+      // Determine the export format from the explicit third argument or,
+      // failing that, from the filename extension.
+      let explicit_fmt = args.get(2).and_then(|a| {
+        if let Expr::String(s) = a {
+          Some(s.to_ascii_uppercase())
+        } else {
+          None
+        }
+      });
+      let ext_fmt = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_uppercase());
+      let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
+
+      if fmt == "PDF" {
         let svg = expr_to_svg(&args[1]);
         match svg_to_pdf_bytes(&svg) {
           Ok(pdf_bytes) => {
@@ -224,6 +234,32 @@ pub fn dispatch_io_functions(
             }
             return Some(Ok(Expr::String(filename)));
           }
+          Err(e) => return Some(Err(e)),
+        }
+      }
+
+      // Raster image formats: rasterize the SVG and write via the image crate.
+      if matches!(
+        fmt.as_str(),
+        "PNG" | "JPG" | "JPEG" | "GIF" | "BMP" | "TIF" | "TIFF"
+      ) {
+        let svg = expr_to_svg(&args[1]);
+        match crate::functions::image_ast::rasterize_svg(&svg, 96.0) {
+          Ok(Expr::Image {
+            width,
+            height,
+            channels,
+            ref data,
+            ..
+          }) => {
+            if let Err(e) = crate::functions::image_ast::export_image(
+              &filename, width, height, channels, data,
+            ) {
+              return Some(Err(e));
+            }
+            return Some(Ok(Expr::String(filename)));
+          }
+          Ok(_) => unreachable!("rasterize_svg returns Expr::Image"),
           Err(e) => return Some(Err(e)),
         }
       }
@@ -1712,12 +1748,18 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
 
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
-    include_bytes!("../../../resources/CourierPrime-Regular.ttf").to_vec(),
+    include_bytes!("../../../resources/RobotoMono-VariableFont_wght.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
-    include_bytes!("../../../resources/CourierPrime-Bold.ttf").to_vec(),
+    include_bytes!("../../../resources/AtkinsonHyperlegible-Regular.ttf")
+      .to_vec(),
   );
-  fontdb.set_monospace_family("Courier Prime");
+  fontdb.set_monospace_family("Roboto Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible");
+  fontdb.set_serif_family("Atkinson Hyperlegible");
+  fontdb.set_cursive_family("Atkinson Hyperlegible");
+  fontdb.set_fantasy_family("Atkinson Hyperlegible");
   // Load system fonts as fallback for any remaining missing glyphs
   fontdb.load_system_fonts();
 

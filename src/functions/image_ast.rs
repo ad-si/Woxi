@@ -2489,6 +2489,41 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
+/// Populate a usvg font database with the embedded fallback fonts and wire
+/// each CSS generic family to a reasonable default. This is shared by the
+/// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths so
+/// that SVGs referring to `font-family="sans-serif"` (emitted by Plot and
+/// friends) still render when no matching system font is installed.
+///
+/// We ship:
+/// - **Atkinson Hyperlegible** (OFL, ~54 KB) as the sans-serif / serif
+///   fallback; its Latin + Latin-Extended coverage is more than enough
+///   for tick labels, axis labels, titles, and similar plot chrome, and
+///   it was literally designed for on-screen legibility.
+/// - **Roboto Mono** (Apache 2.0, ~180 KB, variable-weight) as the
+///   monospace fallback. One file covers every weight from Thin to
+///   Bold, and the humanist design is a close aesthetic cousin to
+///   Adobe Source Code Pro.
+///
+/// Anything with exotic glyphs outside the embedded fonts will fall
+/// through to `load_system_fonts()`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
+  fontdb.load_font_data(
+    include_bytes!("../../resources/RobotoMono-VariableFont_wght.ttf").to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegible-Regular.ttf").to_vec(),
+  );
+  fontdb.set_monospace_family("Roboto Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible");
+  // We don't ship a dedicated serif face, so fall back to the sans-serif
+  // for "serif" requests rather than leaving them unresolved.
+  fontdb.set_serif_family("Atkinson Hyperlegible");
+  fontdb.set_cursive_family("Atkinson Hyperlegible");
+  fontdb.set_fantasy_family("Atkinson Hyperlegible");
+}
+
 /// Rasterize[expr] or Rasterize[expr, ImageResolution -> n]
 /// Converts a Graphics, Grid, or other visual expression to a raster image.
 #[cfg(not(target_arch = "wasm32"))]
@@ -2560,16 +2595,11 @@ pub fn rasterize_svg(
 ) -> Result<Expr, InterpreterError> {
   use std::sync::Arc as StdArc;
 
-  // Set up font database with embedded monospace font
   let mut fontdb = resvg::usvg::fontdb::Database::new();
-  fontdb.load_font_data(
-    include_bytes!("../../resources/CourierPrime-Regular.ttf").to_vec(),
-  );
-  fontdb.load_font_data(
-    include_bytes!("../../resources/CourierPrime-Bold.ttf").to_vec(),
-  );
-  // Set monospace family to our embedded font
-  fontdb.set_monospace_family("Courier Prime");
+  load_embedded_fonts(&mut fontdb);
+  // Prefer real system fonts when available (they'll outrank the embedded
+  // fallbacks above for non-generic family names like "Arial").
+  fontdb.load_system_fonts();
 
   // Parse SVG
   let mut opt = resvg::usvg::Options::default();
