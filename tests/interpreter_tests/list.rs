@@ -2646,6 +2646,40 @@ mod range {
       "Range::argb: Range called with 0 arguments; between 1 and 3 arguments are expected."
     ));
   }
+
+  #[test]
+  fn range_symbolic_endpoints_shift() {
+    assert_eq!(
+      interpret("Range[a, a + 5]").unwrap(),
+      "{a, 1 + a, 2 + a, 3 + a, 4 + a, 5 + a}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_endpoints_with_coefficient() {
+    assert_eq!(
+      interpret("Range[2 a, 2 a + 3]").unwrap(),
+      "{2*a, 1 + 2*a, 2 + 2*a, 3 + 2*a}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_endpoints_with_step() {
+    assert_eq!(
+      interpret("Range[a, a + 5, 2]").unwrap(),
+      "{a, 2 + a, 4 + a}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_empty() {
+    assert_eq!(interpret("Range[a, a - 1]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn range_fully_symbolic_unevaluated() {
+    assert_eq!(interpret("Range[a, b]").unwrap(), "Range[a, b]");
+  }
 }
 
 mod intersection_sorting {
