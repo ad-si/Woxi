@@ -4352,6 +4352,46 @@ mod nearest {
   fn exact_match() {
     assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 5]").unwrap(), "{5}");
   }
+
+  #[test]
+  fn with_all_and_radius() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 5, 8, 13, 21}, 10, {All, 5}]").unwrap(),
+      "{8, 13, 5}"
+    );
+  }
+
+  #[test]
+  fn with_count_and_radius() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 5, 8, 13, 21}, 10, {3, 5}]").unwrap(),
+      "{8, 13, 5}"
+    );
+  }
+
+  #[test]
+  fn with_radius_too_small() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 5, 8, 13, 21}, 10, {1, 1}]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn with_all_and_large_radius() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 5, 8, 13, 21}, 10, {All, 10}]").unwrap(),
+      "{8, 13, 5, 3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn with_zero_radius() {
+    assert_eq!(
+      interpret("Nearest[{1, 2, 3, 5, 8, 13, 21}, 10, {All, 0}]").unwrap(),
+      "{}"
+    );
+  }
 }
 
 mod array_pad {
