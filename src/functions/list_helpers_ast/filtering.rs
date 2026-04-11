@@ -775,55 +775,102 @@ fn collect_at_level_range(
   }
 }
 
-/// AST-based Position: find positions of elements matching a pattern.
+/// AST-based Position: find positions of elements matching a pattern,
+/// optionally restricted to a levelspec.
 pub fn position_ast(
   list: &Expr,
   pattern: &Expr,
+  level_spec: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     Expr::FunctionCall { args, .. } => args.as_slice(),
     _ => {
+      let mut call_args = vec![list.clone(), pattern.clone()];
+      if let Some(ls) = level_spec {
+        call_args.push(ls.clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "Position".to_string(),
-        args: vec![list.clone(), pattern.clone()],
+        args: call_args,
       });
     }
   };
 
+  // Parse levelspec. Default is {1, Infinity} — any depth below the root.
+  let (min_level, max_level) = match level_spec {
+    Some(spec) => parse_level_spec(spec)?,
+    None => (1, i64::MAX),
+  };
+
   let mut positions = Vec::new();
   let mut path = Vec::new();
-  position_recursive(items, pattern, &mut path, &mut positions);
+  position_recursive(
+    items,
+    pattern,
+    &mut path,
+    &mut positions,
+    1,
+    min_level,
+    max_level,
+  );
 
   Ok(Expr::List(positions))
 }
 
-/// Recursively find positions of elements matching pattern
+/// Recursively find positions of elements matching pattern, filtering by
+/// the current depth against the levelspec. `depth` is the Mathematica
+/// level of the items in `items` (the children of the current expression).
 fn position_recursive(
   items: &[Expr],
   pattern: &Expr,
   path: &mut Vec<i128>,
   positions: &mut Vec<Expr>,
+  depth: i64,
+  min_level: i64,
+  max_level: i64,
 ) {
   for (i, item) in items.iter().enumerate() {
     let idx = (i + 1) as i128;
     path.push(idx);
 
-    // Check if this item matches
-    if matches_pattern_ast(item, pattern) {
+    // Check if this item matches and is within the requested depth range.
+    if depth >= min_level
+      && depth <= max_level
+      && matches_pattern_ast(item, pattern)
+    {
       positions
         .push(Expr::List(path.iter().map(|p| Expr::Integer(*p)).collect()));
     }
 
-    // Recurse into sublists and function calls
-    match item {
-      Expr::List(sub_items) => {
-        position_recursive(sub_items, pattern, path, positions);
+    // Recurse into sublists and function calls only if there might still
+    // be matches at a deeper level.
+    if depth < max_level {
+      match item {
+        Expr::List(sub_items) => {
+          position_recursive(
+            sub_items,
+            pattern,
+            path,
+            positions,
+            depth + 1,
+            min_level,
+            max_level,
+          );
+        }
+        Expr::FunctionCall { args, .. } => {
+          position_recursive(
+            args,
+            pattern,
+            path,
+            positions,
+            depth + 1,
+            min_level,
+            max_level,
+          );
+        }
+        _ => {}
       }
-      Expr::FunctionCall { args, .. } => {
-        position_recursive(args, pattern, path, positions);
-      }
-      _ => {}
     }
 
     path.pop();

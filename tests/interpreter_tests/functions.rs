@@ -1370,6 +1370,42 @@ mod pattern_matching {
     }
 
     #[test]
+    fn position_with_integer_levelspec() {
+      // Position[expr, pat, n] only returns matches at depth <= n.
+      assert_eq!(
+        interpret("Position[{a, {a, b}, {a, {a, b}}}, a, 2]").unwrap(),
+        "{{1}, {2, 1}, {3, 1}}"
+      );
+    }
+
+    #[test]
+    fn position_with_exact_levelspec() {
+      // Position[expr, pat, {n}] returns only matches at exact depth n.
+      assert_eq!(
+        interpret("Position[{a, {a, b}, {a, {a, b}}}, a, {2}]").unwrap(),
+        "{{2, 1}, {3, 1}}"
+      );
+    }
+
+    #[test]
+    fn position_with_infinity_levelspec() {
+      // Explicit Infinity matches the default behaviour.
+      assert_eq!(
+        interpret("Position[{a, {a, b}, {a, {a, b}}}, a, Infinity]").unwrap(),
+        "{{1}, {2, 1}, {3, 1}, {3, 2, 1}}"
+      );
+    }
+
+    #[test]
+    fn position_with_pattern_and_levelspec() {
+      // Pattern-based match across a nested list, limited to depth 2.
+      assert_eq!(
+        interpret("Position[{{1, 2, 3}, {4, 5, 6}}, _Integer, 2]").unwrap(),
+        "{{1, 1}, {1, 2}, {1, 3}, {2, 1}, {2, 2}, {2, 3}}"
+      );
+    }
+
+    #[test]
     fn multiple_blank_sequences_in_definition() {
       // f[x__, y__] splits args: first gets minimum, rest goes to second
       assert_eq!(
