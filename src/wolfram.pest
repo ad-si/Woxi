@@ -10,13 +10,19 @@ SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
 // PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
 PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
 
-// Part extraction suffix: [[expr, ...]] for indexing
-PartIndexSuffix = { ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
+// Part bracket openers/closers: both ASCII "[[" / "]]" and the Unicode
+// DOUBLE-STRUCK brackets 〚 (U+301A) / 〛 (U+301B). Silent rules so the
+// existing PartIndexSuffix structure is unchanged.
+PartOpen  = _{ "[[" | "\u{301A}" }
+PartClose = _{ "]]" | "\u{301B}" }
+
+// Part extraction suffix: [[expr, ...]] or 〚expr, ...〛 for indexing
+PartIndexSuffix = { (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 
 // PartExtract for non-FunctionCall bases only (Slot, Identifier)
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
 // List-based Part extraction is handled by ListExtended
-PartExtract = { (Slot | Identifier) ~ ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
+PartExtract = { (Slot | Identifier) ~ (PartOpen ~ PartIndex ~ ("," ~ PartIndex)* ~ PartClose)+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 // Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
@@ -60,7 +66,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" }
+NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Transpose]" | "\\[ConjugateTranspose]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
 Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -230,11 +236,23 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // FactorialSuffix: n! or n!! (Factorial / Factorial2)
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
+
+// TransposeSuffix: expr \[Transpose] → Transpose[expr]
+// Both the ASCII named-character form and the Unicode PUA glyph
+// (U+F3C5) are accepted. This is a postfix operator that binds as a
+// suffix on the preceding Term.
+TransposeSuffix = @{ "\\[Transpose]" | "\u{F3C5}" | "\u{F3C7}" }
+// ConjugateTransposeSuffix: expr \[ConjugateTranspose] → ConjugateTranspose[expr]
+ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}" }
+// TermSuffix: postfix suffix tokens that can follow a Term (after
+// FactorialSuffix). Silent choice rule — the underlying named rules
+// are the ones that appear in the parse tree.
+TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -370,10 +388,10 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
@@ -384,7 +402,7 @@ PatternTest = { PatternName? ~ PatternBlanks ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ ((ConditionOp | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*) ~ ((ConditionOp | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*))*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.

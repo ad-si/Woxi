@@ -1406,6 +1406,18 @@ mod part_binary_op {
     assert_eq!(interpret("(a^b)[[-1]]").unwrap(), "b");
     assert_eq!(interpret("(a^b)[[-2]]").unwrap(), "a");
   }
+
+  #[test]
+  fn part_unicode_double_struck_brackets() {
+    // 〚 (U+301A) and 〛 (U+301B) are the Wolfram double-struck
+    // part-bracket glyphs and should behave identically to [[ ]].
+    assert_eq!(
+      interpret("myList = {10,20,30,40,50}; myList〚3〛").unwrap(),
+      "30"
+    );
+    assert_eq!(interpret("{{1,2,3},{4,5,6}}〚2, 3〛").unwrap(), "6");
+    assert_eq!(interpret("{1,2,3,4,5}〚2;;4〛").unwrap(), "{2, 3, 4}");
+  }
 }
 
 mod part_out_of_bounds {

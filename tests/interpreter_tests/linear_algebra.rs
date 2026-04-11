@@ -464,6 +464,32 @@ mod conjugate_transpose {
       "{{1, 3}, {2, 4}}"
     );
   }
+
+  #[test]
+  fn transpose_postfix_named_char() {
+    // \[Transpose] is a postfix operator: expr \[Transpose] → Transpose[expr]
+    assert_eq!(
+      interpret("{{1,2,3}, {4,5,6}} \\[Transpose]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+  }
+
+  #[test]
+  fn transpose_postfix_on_identifier() {
+    assert_eq!(
+      interpret("m = {{1,2,3}, {4,5,6}}; m \\[Transpose]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+  }
+
+  #[test]
+  fn conjugate_transpose_postfix_named_char() {
+    // \[ConjugateTranspose] is the postfix form of ConjugateTranspose
+    assert_eq!(
+      interpret("{{0, I}, {0, 0}} \\[ConjugateTranspose]").unwrap(),
+      "{{0, 0}, {-I, 0}}"
+    );
+  }
 }
 
 mod box_matrix {

@@ -1170,6 +1170,23 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Normalize[{0, 0, 0}] => {0, 0, 0}
 /// Norm[v] - Euclidean norm (L2) of a vector
 /// Norm[v, p] - Lp norm
+/// Recursively check whether an expression tree contains any
+/// inexact-Real or BigFloat leaf. Used by Norm (and similar) to
+/// decide between exact/symbolic and machine-precision numerical
+/// evaluation.
+fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::List(items) => items.iter().any(contains_inexact_real),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    _ => false,
+  }
+}
+
 pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1199,21 +1216,27 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[0] {
     Expr::List(items) => {
-      let mut vals = Vec::new();
-      let mut all_numeric = true;
-      for item in items {
-        match try_eval_to_f64(item) {
-          Some(v) => vals.push(v),
-          None => {
-            all_numeric = false;
-            break;
-          }
-        }
-      }
-
       let p = p_val.unwrap_or(2.0);
 
-      if all_numeric {
+      // "Inexact" mode: any item contains a Real/BigFloat leaf — collapse
+      // to a machine-precision numeric result, mirroring Wolfram's
+      // behavior (Norm[{1.0, 2, 3}] → 3.741…).
+      // Otherwise stay in "exact" mode and build a symbolic expression.
+      let inexact = items.iter().any(contains_inexact_real);
+
+      if inexact {
+        let mut vals = Vec::with_capacity(items.len());
+        for item in items {
+          match try_eval_to_f64(item) {
+            Some(v) => vals.push(v),
+            None => {
+              return Ok(Expr::FunctionCall {
+                name: "Norm".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          }
+        }
         if p == 1.0 {
           let result: f64 = vals.iter().map(|x| x.abs()).sum();
           return Ok(num_to_expr(result));
@@ -1223,71 +1246,91 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(num_to_expr(result));
         }
         let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
-        let result = sum.powf(1.0 / p);
-        if p == 2.0 && items.iter().all(|i| matches!(i, Expr::Integer(_))) {
-          let sum_sq: i128 = items
-            .iter()
-            .filter_map(|i| {
-              if let Expr::Integer(n) = i {
-                Some(n * n)
-              } else {
-                None
-              }
-            })
-            .sum();
-          let root = (sum_sq as f64).sqrt() as i128;
-          if root * root == sum_sq {
-            return Ok(Expr::Integer(root));
-          }
-          return Ok(make_sqrt(Expr::Integer(sum_sq)));
-        }
-        Ok(num_to_expr(result))
-      } else {
-        // Symbolic vector: build symbolic norm expression
-        if is_infinity {
-          // Max[Abs[x], Abs[y], ...]
-          let abs_items: Vec<Expr> = items
-            .iter()
-            .map(|item| Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![item.clone()],
-            })
-            .collect();
-          Ok(Expr::FunctionCall {
-            name: "Max".to_string(),
-            args: abs_items,
-          })
-        } else if p == 2.0 {
-          // Sqrt[Abs[x]^2 + Abs[y]^2 + ...]
-          let abs_sq_items: Vec<Expr> = items
-            .iter()
-            .map(|item| Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
-                Expr::FunctionCall {
-                  name: "Abs".to_string(),
-                  args: vec![item.clone()],
-                },
-                Expr::Integer(2),
-              ],
-            })
-            .collect();
-          let sum = if abs_sq_items.len() == 1 {
-            abs_sq_items.into_iter().next().unwrap()
-          } else {
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: abs_sq_items,
-            }
-          };
-          Ok(make_sqrt(sum))
-        } else {
-          Ok(Expr::FunctionCall {
-            name: "Norm".to_string(),
-            args: args.to_vec(),
-          })
-        }
+        return Ok(num_to_expr(sum.powf(1.0 / p)));
       }
+
+      // Exact/symbolic mode.
+      use crate::evaluator::evaluate_expr_to_expr;
+
+      // For each item decide whether to wrap in Abs: if the item is a
+      // numerically-evaluable (hence known-real) expression — integers,
+      // rationals, Pi, Sin[1], 2 Sin[2], … — drop the Abs and build
+      // item^p directly so that known scalars combine. For unknown
+      // symbols (x, f[x]) keep Abs to preserve correctness over ℂ.
+      let is_real_valued =
+        |item: &Expr| -> bool { try_eval_to_f64(item).is_some() };
+
+      if is_infinity {
+        // Max[Abs[x], Abs[y], ...]
+        let abs_items: Vec<Expr> = items
+          .iter()
+          .map(|item| Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![item.clone()],
+          })
+          .collect();
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Max".to_string(),
+          args: abs_items,
+        });
+      }
+
+      if p == 1.0 {
+        // Sum of Abs[item]
+        let terms: Vec<Expr> = items
+          .iter()
+          .map(|item| Expr::FunctionCall {
+            name: "Abs".to_string(),
+            args: vec![item.clone()],
+          })
+          .collect();
+        let sum = if terms.len() == 1 {
+          terms.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms,
+          }
+        };
+        return evaluate_expr_to_expr(&sum);
+      }
+
+      if p == 2.0 {
+        // Sqrt[Plus[item^2, ...]] (or Abs[item]^2 for unknown items)
+        let sq_items: Vec<Expr> = items
+          .iter()
+          .map(|item| {
+            let base = if is_real_valued(item) {
+              item.clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![item.clone()],
+              }
+            };
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![base, Expr::Integer(2)],
+            }
+          })
+          .collect();
+        let sum = if sq_items.len() == 1 {
+          sq_items.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: sq_items,
+          }
+        };
+        let sum_eval = evaluate_expr_to_expr(&sum)?;
+        return evaluate_expr_to_expr(&make_sqrt(sum_eval));
+      }
+
+      // Fallback: leave unevaluated for other p values
+      Ok(Expr::FunctionCall {
+        name: "Norm".to_string(),
+        args: args.to_vec(),
+      })
     }
     // Norm of a scalar: Abs[x]
     _ => {

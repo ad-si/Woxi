@@ -1934,6 +1934,35 @@ mod expand_threading {
   }
 
   #[test]
+  fn norm_symbolic_list_with_sin() {
+    // Known-real scalar elements (integers, Sin[k] for integer k, etc.)
+    // should stay exact/symbolic — not collapse to a machine float.
+    assert_eq!(
+      interpret("myFunction[x_] := x Sin[x]; Norm[Array[myFunction, 5]]")
+        .unwrap(),
+      "Sqrt[Sin[1]^2 + 4*Sin[2]^2 + 9*Sin[3]^2 + 16*Sin[4]^2 + 25*Sin[5]^2]"
+    );
+  }
+
+  #[test]
+  fn norm_exact_integer_list() {
+    assert_eq!(interpret("Norm[{1, 2, 3}]").unwrap(), "Sqrt[14]");
+  }
+
+  #[test]
+  fn norm_list_with_pi() {
+    assert_eq!(interpret("Norm[{1, 2, Pi}]").unwrap(), "Sqrt[5 + Pi^2]");
+  }
+
+  #[test]
+  fn norm_list_with_real_is_numeric() {
+    assert_eq!(
+      interpret("Norm[{1.0, 2, 3}]").unwrap(),
+      "3.7416573867739413"
+    );
+  }
+
+  #[test]
   fn string_replace_operator_form() {
     assert_eq!(
       interpret("StringReplace[\"y\" -> \"ies\"][\"city\"]").unwrap(),

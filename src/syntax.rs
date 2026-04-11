@@ -552,9 +552,13 @@ fn named_char_to_expr(s: &str) -> Expr {
     "\u{03F5}" => return Expr::Identifier("\u{03F5}".to_string()), // ϵ
     "\u{03C0}" => return Expr::Constant("Pi".to_string()),         // π
     "\u{212F}" => return Expr::Constant("E".to_string()),          // ℯ
-    "\u{00B0}" => return Expr::Constant("Degree".to_string()),     // °
+    "\u{2147}" => return Expr::Constant("E".to_string()), // ⅇ (DOUBLE-STRUCK ITALIC SMALL E)
+    "\u{F74D}" => return Expr::Constant("E".to_string()), // Wolfram PUA \[ExponentialE]
+    "\u{00B0}" => return Expr::Constant("Degree".to_string()), // °
     "\u{221E}" => return Expr::Identifier("Infinity".to_string()), // ∞
-    "\u{2148}" => return Expr::Identifier("I".to_string()),        // ⅈ
+    "\u{2148}" => return Expr::Identifier("I".to_string()), // ⅈ
+    "\u{F74E}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryI]
+    "\u{F74F}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryJ]
     _ => {}
   }
 
@@ -2968,6 +2972,24 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           };
           terms.push(Expr::FunctionCall {
             name: func_name.to_string(),
+            args: vec![last],
+          });
+        }
+      }
+      Rule::TransposeSuffix => {
+        // expr \[Transpose] → Transpose[expr]
+        if let Some(last) = terms.pop() {
+          terms.push(Expr::FunctionCall {
+            name: "Transpose".to_string(),
+            args: vec![last],
+          });
+        }
+      }
+      Rule::ConjugateTransposeSuffix => {
+        // expr \[ConjugateTranspose] → ConjugateTranspose[expr]
+        if let Some(last) = terms.pop() {
+          terms.push(Expr::FunctionCall {
+            name: "ConjugateTranspose".to_string(),
             args: vec![last],
           });
         }
