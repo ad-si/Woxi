@@ -3597,6 +3597,38 @@ mod join_non_list {
   }
 
   #[test]
+  fn pad_left_multidim() {
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 3}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 2}, {0, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3, 4}}, {3, 3}, x]").unwrap(),
+      "{{x, x, x}, {x, 1, 2}, {x, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, {5}]").unwrap(),
+      "{0, 0, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{{1}}}, {2, 2, 2}, 0]").unwrap(),
+      "{{{0, 0}, {0, 0}}, {{0, 0}, {0, 1}}}"
+    );
+  }
+
+  #[test]
+  fn pad_right_multidim() {
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, {3, 3}]").unwrap(),
+      "{{1, 2, 0}, {3, 4, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4}}, {4, 4}, 9]").unwrap(),
+      "{{1, 2, 9, 9}, {3, 4, 9, 9}, {9, 9, 9, 9}, {9, 9, 9, 9}}"
+    );
+  }
+
+  #[test]
   fn string_position_with_limit() {
     assert_eq!(
       interpret("StringPosition[\"123ABCxyABCzzzABCABC\", \"ABC\", 2]")

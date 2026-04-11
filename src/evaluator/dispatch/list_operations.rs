@@ -1171,6 +1171,21 @@ pub fn dispatch_list_operations(
       }
     }
     "PadLeft" if args.len() >= 2 => {
+      // Multi-dim form: PadLeft[list, {n1, n2, ...}, pad?]
+      if let Expr::List(dim_items) = &args[1] {
+        let ns_opt: Option<Vec<i128>> =
+          dim_items.iter().map(expr_to_i128).collect();
+        if let Some(ns) = ns_opt {
+          let pad = if args.len() >= 3 {
+            args[2].clone()
+          } else {
+            Expr::Integer(0)
+          };
+          return Some(list_helpers_ast::pad_left_multidim(
+            &args[0], &ns, &pad,
+          ));
+        }
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         let pad = if args.len() >= 3 {
           args[2].clone()
@@ -1212,6 +1227,20 @@ pub fn dispatch_list_operations(
       }
     }
     "PadRight" if args.len() >= 2 => {
+      if let Expr::List(dim_items) = &args[1] {
+        let ns_opt: Option<Vec<i128>> =
+          dim_items.iter().map(expr_to_i128).collect();
+        if let Some(ns) = ns_opt {
+          let pad = if args.len() >= 3 {
+            args[2].clone()
+          } else {
+            Expr::Integer(0)
+          };
+          return Some(list_helpers_ast::pad_right_multidim(
+            &args[0], &ns, &pad,
+          ));
+        }
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         let pad = if args.len() >= 3 {
           args[2].clone()
