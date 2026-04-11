@@ -3265,6 +3265,39 @@ mod transpose_extended {
   fn one_d_list() {
     assert_eq!(interpret("Transpose[{a, b, c}]").unwrap(), "{a, b, c}");
   }
+
+  #[test]
+  fn matrix_with_permutation_swap() {
+    // Transpose[m, {2, 1}] is the same as the default matrix transpose.
+    assert_eq!(
+      interpret("Transpose[{{1, 2, 3}, {4, 5, 6}}, {2, 1}]").unwrap(),
+      "{{1, 4}, {2, 5}, {3, 6}}"
+    );
+  }
+
+  #[test]
+  fn matrix_with_permutation_identity() {
+    assert_eq!(
+      interpret("Transpose[{{1, 2, 3}, {4, 5, 6}}, {1, 2}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+  }
+
+  #[test]
+  fn rank_three_tensor_permutations() {
+    // Transpose[a, {2, 1, 3}] swaps the first two levels.
+    assert_eq!(
+      interpret("Transpose[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {2, 1, 3}]")
+        .unwrap(),
+      "{{{1, 2}, {5, 6}}, {{3, 4}, {7, 8}}}"
+    );
+    // Transpose[a, {3, 1, 2}] cycles: original axis 1 -> result axis 3.
+    assert_eq!(
+      interpret("Transpose[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {3, 1, 2}]")
+        .unwrap(),
+      "{{{1, 5}, {2, 6}}, {{3, 7}, {4, 8}}}"
+    );
+  }
 }
 
 mod product_extended {

@@ -455,6 +455,134 @@ pub fn reverse_level_ast(
 }
 
 /// AST-based Transpose: transpose a matrix (list of lists).
+/// Get the (rectangular) dimensions of a nested list, descending only
+/// through the levels where all sibling sublists have the same length.
+fn tensor_dims(expr: &Expr) -> Vec<usize> {
+  match expr {
+    Expr::List(items) => {
+      let mut dims = vec![items.len()];
+      if items.is_empty() {
+        return dims;
+      }
+      let first = tensor_dims(&items[0]);
+      // Every sibling must share the same deeper shape to count as a
+      // regular tensor at this level.
+      for item in items.iter().skip(1) {
+        if tensor_dims(item) != first {
+          return dims;
+        }
+      }
+      dims.extend(first);
+      dims
+    }
+    _ => vec![],
+  }
+}
+
+/// Read a tensor element at the given multi-index (1-based per Wolfram).
+fn tensor_get(expr: &Expr, idx: &[usize]) -> Expr {
+  let mut cur = expr;
+  for &i in idx {
+    match cur {
+      Expr::List(items) => {
+        cur = &items[i - 1];
+      }
+      _ => return cur.clone(),
+    }
+  }
+  cur.clone()
+}
+
+/// Build a tensor of the given shape by calling `f` with a 1-based
+/// multi-index for each cell.
+fn tensor_build(shape: &[usize], f: &mut dyn FnMut(&[usize]) -> Expr) -> Expr {
+  let mut idx = vec![1usize; shape.len()];
+  tensor_build_recursive(shape, 0, &mut idx, f)
+}
+
+fn tensor_build_recursive(
+  shape: &[usize],
+  level: usize,
+  idx: &mut Vec<usize>,
+  f: &mut dyn FnMut(&[usize]) -> Expr,
+) -> Expr {
+  if level == shape.len() {
+    return f(idx);
+  }
+  let mut items = Vec::with_capacity(shape[level]);
+  for i in 1..=shape[level] {
+    idx[level] = i;
+    items.push(tensor_build_recursive(shape, level + 1, idx, f));
+  }
+  Expr::List(items)
+}
+
+/// Transpose[list, {n1, n2, ..., nk}] — permute the levels of a
+/// rank-k tensor so that the k-th level of `list` becomes the n_k-th
+/// level of the result.
+pub fn transpose_perm_ast(
+  list: &Expr,
+  perm: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let dims = tensor_dims(list);
+  let rank = dims.len();
+  if rank < perm.len() {
+    return Err(InterpreterError::EvaluationError(
+      "Transpose: permutation length exceeds tensor rank".into(),
+    ));
+  }
+  // Parse and validate the permutation into 1-based axis indices.
+  let mut sigma: Vec<usize> = Vec::with_capacity(perm.len());
+  for p in perm {
+    match p {
+      Expr::Integer(n) if *n >= 1 && (*n as usize) <= rank => {
+        sigma.push(*n as usize);
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Transpose: second argument must be a permutation of 1..n".into(),
+        ));
+      }
+    }
+  }
+  // Verify it's a permutation of 1..=perm.len() (must touch each axis
+  // exactly once; all remaining axes are left untouched).
+  let mut seen = vec![false; rank];
+  for &s in &sigma {
+    if seen[s - 1] {
+      return Err(InterpreterError::EvaluationError(
+        "Transpose: duplicate axis in permutation".into(),
+      ));
+    }
+    seen[s - 1] = true;
+  }
+  // Identity permutation → return the list unchanged.
+  let is_identity =
+    sigma.iter().enumerate().all(|(k, &n)| k + 1 == n) && sigma.len() == rank;
+  if is_identity {
+    return Ok(list.clone());
+  }
+  if sigma.len() != rank {
+    return Err(InterpreterError::EvaluationError(
+      "Transpose: permutation must cover every level of the tensor".into(),
+    ));
+  }
+
+  // Compute the inverse permutation so result axis t corresponds to
+  // list axis sigma^-1(t).
+  let mut inv = vec![0usize; rank];
+  for (k, &n) in sigma.iter().enumerate() {
+    inv[n - 1] = k + 1;
+  }
+  let result_shape: Vec<usize> = (0..rank).map(|t| dims[inv[t] - 1]).collect();
+
+  Ok(tensor_build(&result_shape, &mut |j| {
+    // Original index i_s = j_{sigma(s)} = j_{sigma[s-1] - 1}
+    let i: Vec<usize> = (0..rank).map(|s| j[sigma[s] - 1]).collect();
+    tensor_get(list, &i)
+  }))
+}
+
 pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let rows = match list {
     Expr::List(items) => items,

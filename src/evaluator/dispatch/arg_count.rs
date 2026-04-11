@@ -978,7 +978,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Tr" => Some((1, 2)),
     "TraditionalForm" => Some((1, 1)),
     "TranslationTransform" => Some((1, 1)),
-    "Transpose" => Some((1, 1)),
+    "Transpose" => Some((1, 2)),
     "Triangle" => Some((0, 1)),
     "TriangleWave" => Some((1, 2)),
     "TrigExpand" => Some((1, 1)),
