@@ -3582,6 +3582,25 @@ mod join_non_list {
   }
 
   #[test]
+  fn permutations_length_range() {
+    // Permutations[list, {kmin, kmax}] gives permutations of lengths
+    // kmin through kmax inclusive.
+    assert_eq!(
+      interpret("Permutations[{1, 2, 3}, {1, 2}]").unwrap(),
+      "{{1}, {2}, {3}, {1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("Permutations[{1, 2, 3}, {2, 3}]").unwrap(),
+      "{{1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}, \
+       {1, 2, 3}, {1, 3, 2}, {2, 1, 3}, {2, 3, 1}, {3, 1, 2}, {3, 2, 1}}"
+    );
+    assert_eq!(
+      interpret("Permutations[{1, 2, 3}, {0, 1}]").unwrap(),
+      "{{}, {1}, {2}, {3}}"
+    );
+  }
+
+  #[test]
   fn flatten_dim_spec_transpose() {
     assert_eq!(
       interpret("Flatten[{{a, b}, {c, d}}, {{2}, {1}}]").unwrap(),

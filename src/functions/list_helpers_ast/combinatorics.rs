@@ -40,6 +40,27 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
         return Ok(Expr::List(result));
       }
+      // {kmin, kmax} means permutations of lengths kmin..=kmax
+      Expr::List(spec) if spec.len() == 2 => {
+        let kmin = expr_to_i128(&spec[0]).unwrap_or(0).max(0) as usize;
+        let kmax = expr_to_i128(&spec[1]).unwrap_or(n as i128) as usize;
+        let kmax = kmax.min(n);
+        let mut result = Vec::new();
+        let indices: Vec<usize> = (0..n).collect();
+        if kmin <= kmax {
+          for k in kmin..=kmax {
+            generate_k_permutations(
+              &indices,
+              k,
+              &mut vec![],
+              &mut vec![false; n],
+              &items,
+              &mut result,
+            );
+          }
+        }
+        return Ok(Expr::List(result));
+      }
       // Plain integer k means all permutations of length 0 through k
       _ => {
         let max_k = expr_to_i128(&args[1]).unwrap_or(n as i128) as usize;
