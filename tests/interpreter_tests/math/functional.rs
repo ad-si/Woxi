@@ -269,6 +269,47 @@ mod composition_edge_cases {
   }
 }
 
+mod constant_function {
+  use super::*;
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("ConstantFunction[5][x]").unwrap(), "5");
+  }
+
+  #[test]
+  fn multiple_args() {
+    assert_eq!(interpret("ConstantFunction[5][1, 2, 3]").unwrap(), "5");
+  }
+
+  #[test]
+  fn list_value() {
+    assert_eq!(interpret("ConstantFunction[{1, 2}][x]").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn compound_value() {
+    assert_eq!(interpret("ConstantFunction[a + b][x, y]").unwrap(), "a + b");
+  }
+
+  #[test]
+  fn mapped_over_list() {
+    assert_eq!(
+      interpret("Map[ConstantFunction[0], {1, 2, 3}]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn as_select_predicate() {
+    // ConstantFunction[True] keeps every element.
+    assert_eq!(
+      interpret("Select[{1, 2, 3}, ConstantFunction[True]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
 mod listable {
   use super::*;
 
