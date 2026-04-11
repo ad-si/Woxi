@@ -223,6 +223,15 @@ pub fn dispatch_io_functions(
         .map(|e| e.to_ascii_uppercase());
       let fmt = explicit_fmt.or(ext_fmt).unwrap_or_default();
 
+      if fmt == "XLSX" {
+        if let Err(e) =
+          crate::functions::xlsx_ast::xlsx_export_file(&filename, &args[1])
+        {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
+
       if fmt == "PDF" {
         let svg = expr_to_svg(&args[1]);
         match svg_to_pdf_bytes(&svg) {

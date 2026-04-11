@@ -206,7 +206,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         .collect(),
     )),
     "$ExportFormats" => Some(Expr::List(
-      ["BMP", "GIF", "JPEG", "PDF", "PNG", "SVG", "TIFF"]
+      ["BMP", "GIF", "JPEG", "PDF", "PNG", "SVG", "TIFF", "XLSX"]
         .iter()
         .map(|s| Expr::String((*s).to_string()))
         .collect(),

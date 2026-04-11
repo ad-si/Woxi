@@ -1,6 +1,8 @@
 use crate::InterpreterError;
+use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 use calamine::{Data, Reader, open_workbook_auto, open_workbook_auto_from_rs};
+use rust_xlsxwriter::Workbook;
 use std::io::Cursor;
 
 /// Convert a single calamine cell value to an `Expr`.
@@ -139,6 +141,115 @@ pub fn xlsx_import_from_url(
   let bytes = download_url(url)?;
   let (names, sheets) = load_sheets_from_bytes(bytes, url)?;
   select_element(names, sheets, element)
+}
+
+/// Write a single cell value. We mirror how Wolfram's `Export[_, _, "XLSX"]`
+/// behaves: numeric expressions (including symbolic constants like `Pi` and
+/// rationals like `1/7`) are written as IEEE-754 doubles, booleans stay
+/// boolean, strings stay string, and anything else is rendered to its
+/// canonical textual form so no data silently disappears.
+fn write_cell(
+  worksheet: &mut rust_xlsxwriter::Worksheet,
+  row: u32,
+  col: u16,
+  value: &Expr,
+) -> Result<(), InterpreterError> {
+  let to_err = |e: rust_xlsxwriter::XlsxError| {
+    InterpreterError::EvaluationError(format!("Export: xlsx write error: {e}"))
+  };
+  match value {
+    Expr::String(s) => {
+      worksheet.write_string(row, col, s).map_err(to_err)?;
+    }
+    Expr::Identifier(name) if name == "True" => {
+      worksheet.write_boolean(row, col, true).map_err(to_err)?;
+    }
+    Expr::Identifier(name) if name == "False" => {
+      worksheet.write_boolean(row, col, false).map_err(to_err)?;
+    }
+    Expr::Identifier(name) if name == "Null" => {
+      // Write nothing – leave the cell empty.
+    }
+    _ => {
+      if let Some(f) = try_eval_to_f64(value) {
+        worksheet.write_number(row, col, f).map_err(to_err)?;
+      } else {
+        // Fall back to the canonical textual form (e.g. unbound symbols,
+        // complex numbers, nested expressions).
+        let text = crate::syntax::expr_to_string(value);
+        worksheet.write_string(row, col, &text).map_err(to_err)?;
+      }
+    }
+  }
+  Ok(())
+}
+
+/// Return `Some(rows)` if `expr` is a 2-D list (list of lists of atoms),
+/// `None` otherwise.
+fn as_sheet_rows(expr: &Expr) -> Option<Vec<&[Expr]>> {
+  let Expr::List(rows) = expr else {
+    return None;
+  };
+  let mut out: Vec<&[Expr]> = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    out.push(cells.as_slice());
+  }
+  Some(out)
+}
+
+/// Export `data` to an xlsx file at `path`.
+///
+/// Supported shapes for `data`:
+/// - A 2-D list `{{...}, {...}}` — written as a single worksheet `Sheet1`.
+/// - A 3-D list `{{{...}}, {{...}}}` — each outer element becomes one
+///   worksheet in workbook order (`Sheet1`, `Sheet2`, ...).
+/// - A flat 1-D list `{a, b, c}` — written as a single-row worksheet.
+pub fn xlsx_export_file(
+  path: &str,
+  data: &Expr,
+) -> Result<(), InterpreterError> {
+  let mut workbook = Workbook::new();
+
+  // Decide whether `data` is a list of sheets or a single sheet.
+  let sheets: Vec<Vec<&[Expr]>> = if let Expr::List(outer) = data {
+    // A 3-D list: every element itself decomposes into rows.
+    let three_d: Option<Vec<Vec<&[Expr]>>> =
+      outer.iter().map(as_sheet_rows).collect();
+    if let Some(all_sheets) = three_d.filter(|v| !v.is_empty()) {
+      all_sheets
+    } else if let Some(rows) = as_sheet_rows(data) {
+      // A 2-D list: one sheet.
+      vec![rows]
+    } else {
+      // A 1-D list of atoms: treat as a single row in a single sheet.
+      vec![vec![outer.as_slice()]]
+    }
+  } else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Export: xlsx data must be a list, got {}",
+      crate::syntax::expr_to_string(data)
+    )));
+  };
+
+  for sheet_rows in &sheets {
+    let worksheet = workbook.add_worksheet();
+    for (r, row_cells) in sheet_rows.iter().enumerate() {
+      for (c, cell) in row_cells.iter().enumerate() {
+        write_cell(worksheet, r as u32, c as u16, cell)?;
+      }
+    }
+  }
+
+  workbook.save(path).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Export: cannot write \"{}\": {}",
+      path, e
+    ))
+  })?;
+  Ok(())
 }
 
 fn select_element(
