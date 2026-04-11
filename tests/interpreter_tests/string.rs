@@ -797,6 +797,27 @@ mod ignore_case {
       "True"
     );
   }
+
+  #[test]
+  fn string_match_q_threads_over_list() {
+    assert_eq!(
+      interpret(r#"StringMatchQ[{"abc", "ab1", "abcd"}, "abc"]"#).unwrap(),
+      "{True, False, False}"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[{"abc", "ab1", "abcd"}, RegularExpression["[a-z]+"]]"#
+      )
+      .unwrap(),
+      "{True, False, True}"
+    );
+    // IgnoreCase option still threads.
+    assert_eq!(
+      interpret(r#"StringMatchQ[{"ABC", "ab1"}, "abc", IgnoreCase -> True]"#)
+        .unwrap(),
+      "{True, False}"
+    );
+  }
 }
 
 mod string_patterns {
