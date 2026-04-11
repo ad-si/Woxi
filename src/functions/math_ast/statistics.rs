@@ -1092,37 +1092,70 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let mut x_vals = Vec::new();
-  let mut y_vals = Vec::new();
-  for (x, y) in xs.iter().zip(ys.iter()) {
-    match (expr_to_num(x), expr_to_num(y)) {
-      (Some(xv), Some(yv)) => {
-        x_vals.push(xv);
-        y_vals.push(yv);
-      }
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Correlation".to_string(),
-          args: args.to_vec(),
-        });
-      }
-    }
+  // Require all elements to be numeric; otherwise leave unevaluated.
+  let all_numeric = xs.iter().all(|x| expr_to_num(x).is_some())
+    && ys.iter().all(|y| expr_to_num(y).is_some());
+  if !all_numeric {
+    return Ok(Expr::FunctionCall {
+      name: "Correlation".to_string(),
+      args: args.to_vec(),
+    });
   }
-  let n = x_vals.len() as f64;
-  let mean_x = x_vals.iter().sum::<f64>() / n;
-  let mean_y = y_vals.iter().sum::<f64>() / n;
-  let cov: f64 = x_vals
+  // If any input is a machine-precision Real, fall through to a direct
+  // f64 computation: the result is a machine number either way, and the
+  // exact operation order matches wolframscript's floating-point output.
+  let has_real = xs
     .iter()
-    .zip(y_vals.iter())
-    .map(|(x, y)| (x - mean_x) * (y - mean_y))
-    .sum::<f64>();
-  let var_x: f64 = x_vals.iter().map(|x| (x - mean_x).powi(2)).sum::<f64>();
-  let var_y: f64 = y_vals.iter().map(|y| (y - mean_y).powi(2)).sum::<f64>();
-  let denom = (var_x * var_y).sqrt();
-  if denom == 0.0 {
+    .chain(ys.iter())
+    .any(|e| matches!(e, Expr::Real(_)));
+  if has_real {
+    let x_vals: Vec<f64> = xs.iter().map(|x| expr_to_num(x).unwrap()).collect();
+    let y_vals: Vec<f64> = ys.iter().map(|y| expr_to_num(y).unwrap()).collect();
+    let n = x_vals.len() as f64;
+    let mean_x = x_vals.iter().sum::<f64>() / n;
+    let mean_y = y_vals.iter().sum::<f64>() / n;
+    let cov: f64 = x_vals
+      .iter()
+      .zip(y_vals.iter())
+      .map(|(x, y)| (x - mean_x) * (y - mean_y))
+      .sum();
+    let var_x: f64 = x_vals.iter().map(|x| (x - mean_x).powi(2)).sum();
+    let var_y: f64 = y_vals.iter().map(|y| (y - mean_y).powi(2)).sum();
+    let denom = (var_x * var_y).sqrt();
+    if denom == 0.0 {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    return Ok(num_to_expr(cov / denom));
+  }
+  // All inputs are exact (Integer/Rational): compute symbolically.
+  // r = Cov(x,y) / Sqrt[Cov(x,x) * Cov(y,y)]
+  // The (n-1) divisors in each covariance cancel in the ratio, so this is
+  // equivalent to the standard Pearson formula while reusing the symbolic
+  // covariance implementation to preserve exact arithmetic.
+  let cov_xy = covariance_ast(&[args[0].clone(), args[1].clone()])?;
+  let var_x = covariance_ast(&[args[0].clone(), args[0].clone()])?;
+  let var_y = covariance_ast(&[args[1].clone(), args[1].clone()])?;
+  // Guard against zero variance (constant list) -> Indeterminate.
+  if let (Some(vx), Some(vy)) = (expr_to_num(&var_x), expr_to_num(&var_y))
+    && (vx == 0.0 || vy == 0.0)
+  {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
-  Ok(num_to_expr(cov / denom))
+  let var_product = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(var_x),
+    right: Box::new(var_y),
+  };
+  let denom = Expr::FunctionCall {
+    name: "Sqrt".to_string(),
+    args: vec![var_product],
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(cov_xy),
+    right: Box::new(denom),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// CentralMoment[list, r] - r-th central moment of a numeric list
