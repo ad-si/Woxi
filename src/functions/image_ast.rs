@@ -2496,32 +2496,38 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 /// friends) still render when no matching system font is installed.
 ///
 /// We ship:
-/// - **Atkinson Hyperlegible** (OFL, ~54 KB) as the sans-serif / serif
-///   fallback; its Latin + Latin-Extended coverage is more than enough
-///   for tick labels, axis labels, titles, and similar plot chrome, and
-///   it was literally designed for on-screen legibility.
-/// - **Roboto Mono** (Apache 2.0, ~180 KB, variable-weight) as the
+/// - **Atkinson Hyperlegible Next** (OFL, variable-weight) as the
+///   sans-serif / serif fallback; its Latin + Latin-Extended coverage is
+///   more than enough for tick labels, axis labels, titles, and similar
+///   plot chrome, and it was literally designed for on-screen legibility.
+/// - **Atkinson Hyperlegible Mono** (OFL, variable-weight) as the
 ///   monospace fallback. One file covers every weight from Thin to
-///   Bold, and the humanist design is a close aesthetic cousin to
-///   Adobe Source Code Pro.
+///   ExtraBold, and it shares the same hyperlegible design language as
+///   its proportional sibling.
 ///
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
-    include_bytes!("../../resources/RobotoMono-VariableFont_wght.ttf").to_vec(),
+    include_bytes!(
+      "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
+    )
+    .to_vec(),
   );
   fontdb.load_font_data(
-    include_bytes!("../../resources/AtkinsonHyperlegible-Regular.ttf").to_vec(),
+    include_bytes!(
+      "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
+    )
+    .to_vec(),
   );
-  fontdb.set_monospace_family("Roboto Mono");
-  fontdb.set_sans_serif_family("Atkinson Hyperlegible");
+  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
+  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
   // We don't ship a dedicated serif face, so fall back to the sans-serif
   // for "serif" requests rather than leaving them unresolved.
-  fontdb.set_serif_family("Atkinson Hyperlegible");
-  fontdb.set_cursive_family("Atkinson Hyperlegible");
-  fontdb.set_fantasy_family("Atkinson Hyperlegible");
+  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  fontdb.set_cursive_family("Atkinson Hyperlegible Next");
+  fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 }
 
 /// Rasterize[expr] or Rasterize[expr, ImageResolution -> n]
