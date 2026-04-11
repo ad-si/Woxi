@@ -382,7 +382,13 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::histogram_list_ast(args));
     }
     "DeleteDuplicates" if args.len() == 1 => {
-      return Some(list_helpers_ast::delete_duplicates_ast(&args[0]));
+      return Some(list_helpers_ast::delete_duplicates_ast(&args[0], None));
+    }
+    "DeleteDuplicates" if args.len() == 2 => {
+      return Some(list_helpers_ast::delete_duplicates_ast(
+        &args[0],
+        Some(&args[1]),
+      ));
     }
     "Union" => {
       return Some(list_helpers_ast::union_ast(args));
