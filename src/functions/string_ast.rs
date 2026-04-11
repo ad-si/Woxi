@@ -1055,6 +1055,19 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Thread over a list of strings: StringMatchQ[{s1, s2, ...}, pat]
+  // returns {StringMatchQ[s1, pat], StringMatchQ[s2, pat], ...}.
+  if let Expr::List(items) = &args[0] {
+    let mut result: Vec<Expr> = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub_args: Vec<Expr> = Vec::with_capacity(args.len());
+      sub_args.push(item.clone());
+      sub_args.extend(args[1..].iter().cloned());
+      result.push(string_match_q_ast(&sub_args)?);
+    }
+    return Ok(Expr::List(result));
+  }
+
   let ignore_case = has_ignore_case_option(args);
   let s = if ignore_case {
     expr_to_str(&args[0])?.to_lowercase()
