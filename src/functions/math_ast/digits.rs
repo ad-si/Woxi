@@ -1129,19 +1129,69 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let base: i128 = if args.len() == 2 {
+  // The base may be an integer >= 2 (fast numeric path) or a symbolic
+  // expression (e.g. `FromDigits[{1,2,3}, x]` => `3 + 2*x + x^2`).
+  let numeric_base: Option<i128> = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
-      Some(b) if b >= 2 => b,
-      _ => {
+      Some(b) if b >= 2 => Some(b),
+      Some(_) => {
         return Err(InterpreterError::EvaluationError(
           "FromDigits: base must be an integer >= 2".into(),
         ));
       }
+      None => None,
     }
   } else {
-    10
+    Some(10)
   };
 
+  // Symbolic base path: build an expanded polynomial sum in the base.
+  // For `FromDigits[{d0, d1, ..., d_{n-1}}, b]` we produce
+  //   d0*b^(n-1) + d1*b^(n-2) + ... + d_{n-2}*b + d_{n-1}.
+  if numeric_base.is_none() {
+    let items = match &args[0] {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FromDigits".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    if items.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+    let base_expr = args[1].clone();
+    let n = items.len();
+    let mut terms: Vec<Expr> = Vec::with_capacity(n);
+    for (i, item) in items.iter().enumerate() {
+      let power = (n - 1 - i) as i128;
+      let term = if power == 0 {
+        item.clone()
+      } else {
+        let base_pow = if power == 1 {
+          base_expr.clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![base_expr.clone(), Expr::Integer(power)],
+          }
+        };
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![item.clone(), base_pow],
+        }
+      };
+      terms.push(term);
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sum);
+  }
+
+  let base: i128 = numeric_base.unwrap();
   let big_base = BigInt::from(base);
 
   // Handle string argument: FromDigits["1234"] or FromDigits["1a", 16]

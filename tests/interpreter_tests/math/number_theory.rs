@@ -415,6 +415,32 @@ mod from_digits {
   fn empty_list() {
     assert_eq!(interpret("FromDigits[{}]").unwrap(), "0");
   }
+
+  #[test]
+  fn symbolic_base_numeric_digits() {
+    assert_eq!(
+      interpret("FromDigits[{1, 2, 3}, x]").unwrap(),
+      "3 + 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn symbolic_base_with_zero_digit() {
+    assert_eq!(interpret("FromDigits[{1, 0, 1}, x]").unwrap(), "1 + x^2");
+  }
+
+  #[test]
+  fn symbolic_base_symbolic_digits() {
+    assert_eq!(
+      interpret("FromDigits[{a, b, c}, x]").unwrap(),
+      "c + b*x + a*x^2"
+    );
+  }
+
+  #[test]
+  fn symbolic_base_single_digit() {
+    assert_eq!(interpret("FromDigits[{3}, x]").unwrap(), "3");
+  }
 }
 
 mod integer_string {
