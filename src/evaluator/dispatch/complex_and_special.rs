@@ -966,7 +966,12 @@ pub fn dispatch_complex_and_special(
       } else {
         &args[1]
       };
-      return Some(apply_replace_all_ast(&args[0], rules));
+      // Re-evaluate the result so e.g. {1 + 2} becomes {3} after substitution.
+      // This matches the /. operator form, which re-evaluates via TailCall.
+      return Some(
+        apply_replace_all_ast(&args[0], rules)
+          .and_then(|r| evaluate_expr_to_expr(&r)),
+      );
     }
     "ReplaceRepeated" if args.len() == 2 => {
       let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
@@ -981,10 +986,16 @@ pub fn dispatch_complex_and_special(
       return Some(apply_replace_repeated_ast(&args[0], rules));
     }
     "Replace" if args.len() == 2 => {
-      return Some(apply_replace_ast(&args[0], &args[1]));
+      return Some(
+        apply_replace_ast(&args[0], &args[1])
+          .and_then(|r| evaluate_expr_to_expr(&r)),
+      );
     }
     "Replace" if args.len() == 3 => {
-      return Some(apply_replace_with_level_ast(&args[0], &args[1], &args[2]));
+      return Some(
+        apply_replace_with_level_ast(&args[0], &args[1], &args[2])
+          .and_then(|r| evaluate_expr_to_expr(&r)),
+      );
     }
 
     // Format[expr, OutputForm] and OutputForm[expr] → 2D rendering
