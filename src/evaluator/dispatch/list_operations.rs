@@ -1027,6 +1027,15 @@ pub fn dispatch_list_operations(
       if let Some(n) = expr_to_i128(&args[1]) {
         return Some(list_helpers_ast::differences_n_ast(&args[0], n as usize));
       }
+      if let Expr::List(spec_items) = &args[1] {
+        let spec: Option<Vec<usize>> = spec_items
+          .iter()
+          .map(|e| expr_to_i128(e).map(|n| n as usize))
+          .collect();
+        if let Some(spec) = spec {
+          return Some(list_helpers_ast::differences_spec_ast(&args[0], &spec));
+        }
+      }
     }
     "Ratios" if args.len() == 1 => {
       if let Expr::List(items) = &args[0] {
