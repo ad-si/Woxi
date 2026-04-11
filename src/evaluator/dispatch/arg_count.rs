@@ -731,7 +731,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PolynomialQuotient" => Some((3, 3)),
     "PolynomialQuotientRemainder" => Some((3, 3)),
     "PolynomialRemainder" => Some((3, 3)),
-    "Position" => Some((1, 2)),
+    "Position" => Some((1, 3)),
     "PositionIndex" => Some((1, 1)),
     "Positive" => Some((1, 1)),
     "PositiveDefiniteMatrixQ" => Some((1, 1)),
