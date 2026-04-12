@@ -1795,6 +1795,10 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   use std::sync::Arc as StdArc;
 
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
+  // Load system fonts first, then embedded fonts + generic-family aliases.
+  // load_system_fonts() resets the generic family mappings, so our
+  // set_sans_serif_family() etc. must come *after* it.
+  fontdb.load_system_fonts();
   fontdb.load_font_data(
     include_bytes!(
       "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
@@ -1812,8 +1816,6 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   fontdb.set_serif_family("Atkinson Hyperlegible Next");
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
-  // Load system fonts as fallback for any remaining missing glyphs
-  fontdb.load_system_fonts();
 
   let mut opt = svg2pdf::usvg::Options::default();
   opt.fontdb = StdArc::new(fontdb);

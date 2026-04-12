@@ -2493,10 +2493,6 @@ mod high_level_functions_tests {
     }
   }
 
-  mod association_dedup_tests {
-    use super::*;
-  }
-
   mod collect_multi_variable_tests {
     use super::*;
 
