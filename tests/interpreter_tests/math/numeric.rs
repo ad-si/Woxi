@@ -8,7 +8,7 @@ mod n_arbitrary_precision {
     // N[expr] with 1 arg should still return f64 precision
     assert_eq!(interpret("N[Pi]").unwrap(), "3.141592653589793");
     assert_eq!(interpret("N[E]").unwrap(), "2.718281828459045");
-    assert_eq!(interpret("N[Degree]").unwrap(), "0.0174532925199433");
+    assert_eq!(interpret("N[Degree]").unwrap(), "0.017453292519943295");
   }
 
   #[test]
@@ -219,7 +219,7 @@ mod real_precision {
   #[test]
   fn full_precision_when_needed() {
     // Power[1.5, 2.5] needs full precision
-    assert_eq!(interpret("Power[1.5, 2.5]").unwrap(), "2.755675960631075");
+    assert_eq!(interpret("Power[1.5, 2.5]").unwrap(), "2.7556759606310752");
   }
 
   #[test]

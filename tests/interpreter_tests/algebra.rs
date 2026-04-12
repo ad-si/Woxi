@@ -2392,7 +2392,7 @@ mod find_root {
   fn polynomial_root() {
     assert_eq!(
       interpret("FindRoot[x^2 - 2, {x, 1}]").unwrap(),
-      "{x -> 1.414213562373095}"
+      "{x -> 1.4142135623730951}"
     );
   }
 
@@ -2400,7 +2400,7 @@ mod find_root {
   fn polynomial_root_negative_start() {
     assert_eq!(
       interpret("FindRoot[x^2 - 2, {x, -1}]").unwrap(),
-      "{x -> -1.414213562373095}"
+      "{x -> -1.4142135623730951}"
     );
   }
 

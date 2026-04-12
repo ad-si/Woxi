@@ -3486,11 +3486,11 @@ pub fn format_real(f: f64) -> String {
     // Whole number in normal range - format with trailing dot
     format!("{}.", f as i64)
   } else {
-    // Wolfram Language displays machine-precision numbers with at most
-    // 16 significant digits (⌈$MachinePrecision⌉ = ⌈15.955⌉ = 16).
-    // Rust's shortest round-trip can produce up to 17; truncate when needed.
+    // IEEE 754 doubles need up to 17 significant digits for faithful
+    // round-trip representation.  Wolfram displays all 17 when needed
+    // (e.g. 0.1 + 0.2 → 0.30000000000000004).
     let s = format!("{}", f);
-    cap_significant_digits(&s, f, 16)
+    cap_significant_digits(&s, f, 17)
   }
 }
 
@@ -3561,23 +3561,46 @@ fn cap_significant_digits(s: &str, f: f64, max_sig: usize) -> String {
 /// Format a real number using Wolfram's *^ scientific notation.
 /// E.g. 2.733467611516948*^33 or -1.5*^-6
 ///
-/// Uses format!("{:.15e}", f) for 16 significant digits (matching Wolfram's
-/// machine precision), then converts to Wolfram's *^ notation.
+/// Uses the shortest round-trip representation (matching Rust's `format!("{}", f)`)
+/// to determine how many significant digits are needed, then converts to
+/// Wolfram's *^ notation.
 fn format_real_scientific(f: f64) -> String {
   let negative = f < 0.0;
-  // Format with 16 significant digits (15 after the leading digit)
-  let sci = format!("{:.15e}", f.abs());
+  let abs = f.abs();
+  let sign = if negative { "-" } else { "" };
+
+  // Count significant digits from the shortest round-trip representation
+  let shortest = format!("{}", abs);
+  let mut sig = 0usize;
+  let mut started = false;
+  for ch in shortest.chars() {
+    if ch == '.' || ch == '-' {
+      continue;
+    }
+    if !ch.is_ascii_digit() {
+      break;
+    }
+    if ch != '0' {
+      started = true;
+    }
+    if started {
+      sig += 1;
+    }
+  }
+  let prec = sig.saturating_sub(1);
+
+  // Format with exactly the right number of significant digits
+  let sci = format!("{:.prec$e}", abs, prec = prec);
   let (mantissa, exp_str) = sci.split_once('e').unwrap();
   let exp: i32 = exp_str.parse().unwrap();
   // Trim trailing zeros from mantissa, keeping the dot
   let mantissa = mantissa.trim_end_matches('0');
-  // Ensure mantissa ends with '.' at minimum (Wolfram uses "1.*^6" not "1*^6")
-  let mantissa = if mantissa.ends_with('.') {
+  // Ensure mantissa contains '.' (Wolfram uses "1.*^6" not "1*^6")
+  let mantissa = if mantissa.contains('.') {
     mantissa.to_string()
   } else {
-    mantissa.to_string()
+    format!("{}.", mantissa)
   };
-  let sign = if negative { "-" } else { "" };
   format!("{}{}*^{}", sign, mantissa, exp)
 }
 
@@ -6323,7 +6346,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
       let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
-        format!("({})", func_str.trim_end())
+        format!("({})", func_str)
       } else {
         func_str
       };
@@ -7236,7 +7259,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let args_str: Vec<String> = args.iter().map(expr_to_input_form).collect();
       let func_str = expr_to_input_form(func);
       let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
-        format!("({})", func_str.trim_end())
+        format!("({})", func_str)
       } else {
         func_str
       };
