@@ -39,6 +39,7 @@ pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
   pub depth: f64,
   pub color: (u8, u8, u8),
+  pub opacity: f64,
 }
 
 struct MeshLine {
@@ -485,6 +486,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
+            opacity: 1.0,
           });
         }
 
@@ -532,6 +534,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             projected: [p0, p1, p2],
             depth: depth(center, &camera),
             color,
+            opacity: 1.0,
           });
         }
       }
@@ -1039,46 +1042,115 @@ fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
 }
 
 /// A 3D primitive for Graphics3D
+#[derive(Clone)]
+struct StyleState3D {
+  color: Option<(u8, u8, u8)>,
+  opacity: f64,
+}
+
+impl Default for StyleState3D {
+  fn default() -> Self {
+    Self {
+      color: None, // None means use default blue
+      opacity: 1.0,
+    }
+  }
+}
+
 enum Primitive3D {
   Sphere {
     center: Point3D,
     radius: f64,
+    style: StyleState3D,
   },
   Cuboid {
     p_min: Point3D,
     p_max: Point3D,
+    style: StyleState3D,
   },
   Polygon3D {
     points: Vec<Point3D>,
+    style: StyleState3D,
   },
   Line3D {
     segments: Vec<Vec<Point3D>>,
+    style: StyleState3D,
   },
   Point3DPrim {
     points: Vec<Point3D>,
+    style: StyleState3D,
   },
   Arrow3D {
     points: Vec<Point3D>,
+    style: StyleState3D,
   },
   Cylinder {
     p1: Point3D,
     p2: Point3D,
     radius: f64,
+    style: StyleState3D,
   },
   Cone {
     p1: Point3D,
     p2: Point3D,
     radius: f64,
+    style: StyleState3D,
   },
 }
 
+/// Try to apply a 3D style directive (color or Opacity). Returns true if consumed.
+fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
+  use crate::functions::graphics::parse_color;
+  use crate::functions::math_ast::expr_to_f64;
+
+  if let Some(color) = parse_color(expr) {
+    let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
+    style.color = Some((r, g, b));
+    if color.a < 1.0 {
+      style.opacity = color.a;
+    }
+    return true;
+  }
+
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Opacity"
+    && !args.is_empty()
+  {
+    if let Some(o) = expr_to_f64(&args[0]) {
+      style.opacity = o.clamp(0.0, 1.0);
+      if args.len() >= 2
+        && let Some(color) = parse_color(&args[1])
+      {
+        let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
+        style.color = Some((r, g, b));
+      }
+    }
+    return true;
+  }
+
+  false
+}
+
 /// Collect 3D primitives from an expression.
-fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
+fn collect_3d_primitives(
+  expr: &Expr,
+  style: &mut StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
   match expr {
     Expr::List(items) => {
+      let saved = style.clone();
       for item in items {
-        collect_3d_primitives(item, prims);
+        collect_3d_primitives(item, style, prims);
       }
+      *style = saved;
+    }
+    Expr::Identifier(_) => {
+      apply_3d_directive(expr, style);
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
@@ -1104,7 +1176,11 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
           } else {
             1.0
           };
-          prims.push(Primitive3D::Sphere { center, radius });
+          prims.push(Primitive3D::Sphere {
+            center,
+            radius,
+            style: style.clone(),
+          });
         }
         "Cuboid" => {
           let p_min = if !args.is_empty() {
@@ -1133,30 +1209,47 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
               z: p_min.z + 1.0,
             }
           };
-          prims.push(Primitive3D::Cuboid { p_min, p_max });
+          prims.push(Primitive3D::Cuboid {
+            p_min,
+            p_max,
+            style: style.clone(),
+          });
         }
         "Polygon" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
-            prims.push(Primitive3D::Polygon3D { points: pts });
+            prims.push(Primitive3D::Polygon3D {
+              points: pts,
+              style: style.clone(),
+            });
           }
         }
         "Line" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Line3D {
               segments: vec![pts],
+              style: style.clone(),
             });
           }
         }
         "Point" if !args.is_empty() => {
           if let Some(pt) = parse_point3d(&args[0]) {
-            prims.push(Primitive3D::Point3DPrim { points: vec![pt] });
+            prims.push(Primitive3D::Point3DPrim {
+              points: vec![pt],
+              style: style.clone(),
+            });
           } else if let Some(pts) = parse_point3d_list(&args[0]) {
-            prims.push(Primitive3D::Point3DPrim { points: pts });
+            prims.push(Primitive3D::Point3DPrim {
+              points: pts,
+              style: style.clone(),
+            });
           }
         }
         "Arrow" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
-            prims.push(Primitive3D::Arrow3D { points: pts });
+            prims.push(Primitive3D::Arrow3D {
+              points: pts,
+              style: style.clone(),
+            });
           }
         }
         "Cylinder" => {
@@ -1224,7 +1317,12 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
           } else {
             1.0
           };
-          prims.push(Primitive3D::Cylinder { p1, p2, radius });
+          prims.push(Primitive3D::Cylinder {
+            p1,
+            p2,
+            radius,
+            style: style.clone(),
+          });
         }
         "Cone" => {
           let (p1, p2) = if !args.is_empty() {
@@ -1291,12 +1389,20 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
           } else {
             1.0
           };
-          prims.push(Primitive3D::Cone { p1, p2, radius });
+          prims.push(Primitive3D::Cone {
+            p1,
+            p2,
+            radius,
+            style: style.clone(),
+          });
         }
         _ => {
-          // Recurse into unknown function calls
-          for a in args {
-            collect_3d_primitives(a, prims);
+          // Try as directive first
+          if !apply_3d_directive(expr, style) {
+            // Recurse into unknown function calls
+            for a in args {
+              collect_3d_primitives(a, style, prims);
+            }
           }
         }
       }
@@ -1584,25 +1690,50 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
+  let mut show_box = true;
+  let mut background: Option<(u8, u8, u8)> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
       pattern,
       replacement,
     } = &opt_eval
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) =
-        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+      && let Expr::Identifier(name) = pattern.as_ref()
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        "Boxed" => match replacement.as_ref() {
+          Expr::Identifier(s) if s == "False" => show_box = false,
+          Expr::Identifier(s) if s == "True" => show_box = true,
+          _ => {}
+        },
+        "Background" => {
+          if let Some(color) =
+            crate::functions::graphics::parse_color(replacement)
+          {
+            let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
+            background = Some((r, g, b));
+          }
+        }
+        _ => {}
+      }
     }
   }
 
   // Collect primitives
   let mut prims = Vec::new();
-  collect_3d_primitives(&content, &mut prims);
+  let mut style3d = StyleState3D::default();
+  collect_3d_primitives(&content, &mut style3d, &mut prims);
 
   if prims.is_empty() {
     // Even with no primitives, return the marker
@@ -1618,32 +1749,56 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
 
   for prim in &prims {
-    let tris: Vec<(Point3D, Point3D, Point3D)> = match prim {
-      Primitive3D::Sphere { center, radius } => {
-        tessellate_sphere(center, *radius)
-      }
-      Primitive3D::Cuboid { p_min, p_max } => tessellate_cuboid(p_min, p_max),
-      Primitive3D::Cylinder { p1, p2, radius } => {
-        tessellate_cylinder(p1, p2, *radius)
-      }
-      Primitive3D::Cone { p1, p2, radius } => tessellate_cone(p1, p2, *radius),
-      Primitive3D::Polygon3D { points } => {
-        // Simple fan triangulation
-        if points.len() >= 3 {
-          (1..points.len() - 1)
-            .map(|i| (points[0], points[i], points[i + 1]))
-            .collect()
-        } else {
-          vec![]
+    let (tris, prim_style): (Vec<(Point3D, Point3D, Point3D)>, &StyleState3D) =
+      match prim {
+        Primitive3D::Sphere {
+          center,
+          radius,
+          style,
+        } => (tessellate_sphere(center, *radius), style),
+        Primitive3D::Cuboid {
+          p_min,
+          p_max,
+          style,
+        } => (tessellate_cuboid(p_min, p_max), style),
+        Primitive3D::Cylinder {
+          p1,
+          p2,
+          radius,
+          style,
+        } => (tessellate_cylinder(p1, p2, *radius), style),
+        Primitive3D::Cone {
+          p1,
+          p2,
+          radius,
+          style,
+        } => (tessellate_cone(p1, p2, *radius), style),
+        Primitive3D::Polygon3D { points, style } => {
+          // Simple fan triangulation
+          let t = if points.len() >= 3 {
+            (1..points.len() - 1)
+              .map(|i| (points[0], points[i], points[i + 1]))
+              .collect()
+          } else {
+            vec![]
+          };
+          (t, style)
         }
-      }
-      // Line and Point are handled separately below
-      _ => vec![],
-    };
+        // Line and Point are handled separately below
+        _ => (
+          vec![],
+          &StyleState3D {
+            color: None,
+            opacity: 1.0,
+          },
+        ),
+      };
+    let prim_color = prim_style.color.unwrap_or(base_color);
+    let prim_opacity = prim_style.opacity;
 
     for (v0, v1, v2) in tris {
       let normal = triangle_normal(v0, v1, v2);
-      let color = apply_lighting(base_color, normal);
+      let color = apply_lighting(prim_color, normal);
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
       let p2 = project(v2, &camera);
@@ -1656,6 +1811,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         projected: [p0, p1, p2],
         depth: depth(center, &camera),
         color,
+        opacity: prim_opacity,
       });
     }
   }
@@ -1667,7 +1823,213 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
-  // Compute projected bounding box
+  // Compute 3D bounding box of all primitives for the wireframe box
+  let mut x3_min = f64::INFINITY;
+  let mut x3_max = f64::NEG_INFINITY;
+  let mut y3_min = f64::INFINITY;
+  let mut y3_max = f64::NEG_INFINITY;
+  let mut z3_min = f64::INFINITY;
+  let mut z3_max = f64::NEG_INFINITY;
+
+  let extend_3d = |pt: &Point3D,
+                   x3_min: &mut f64,
+                   x3_max: &mut f64,
+                   y3_min: &mut f64,
+                   y3_max: &mut f64,
+                   z3_min: &mut f64,
+                   z3_max: &mut f64| {
+    *x3_min = x3_min.min(pt.x);
+    *x3_max = x3_max.max(pt.x);
+    *y3_min = y3_min.min(pt.y);
+    *y3_max = y3_max.max(pt.y);
+    *z3_min = z3_min.min(pt.z);
+    *z3_max = z3_max.max(pt.z);
+  };
+
+  for prim in &prims {
+    match prim {
+      Primitive3D::Sphere { center, radius, .. } => {
+        let r = *radius;
+        extend_3d(
+          &Point3D {
+            x: center.x - r,
+            y: center.y - r,
+            z: center.z - r,
+          },
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+        extend_3d(
+          &Point3D {
+            x: center.x + r,
+            y: center.y + r,
+            z: center.z + r,
+          },
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+      }
+      Primitive3D::Cuboid { p_min, p_max, .. } => {
+        extend_3d(
+          p_min,
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+        extend_3d(
+          p_max,
+          &mut x3_min,
+          &mut x3_max,
+          &mut y3_min,
+          &mut y3_max,
+          &mut z3_min,
+          &mut z3_max,
+        );
+      }
+      Primitive3D::Cylinder { p1, p2, radius, .. }
+      | Primitive3D::Cone { p1, p2, radius, .. } => {
+        let r = *radius;
+        for p in [p1, p2] {
+          extend_3d(
+            &Point3D {
+              x: p.x - r,
+              y: p.y - r,
+              z: p.z - r,
+            },
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+          extend_3d(
+            &Point3D {
+              x: p.x + r,
+              y: p.y + r,
+              z: p.z + r,
+            },
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Polygon3D { points, .. } => {
+        for pt in points {
+          extend_3d(
+            pt,
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          extend_3d(
+            pt,
+            &mut x3_min,
+            &mut x3_max,
+            &mut y3_min,
+            &mut y3_max,
+            &mut z3_min,
+            &mut z3_max,
+          );
+        }
+      }
+      Primitive3D::Line3D { segments, .. } => {
+        for seg in segments {
+          for pt in seg {
+            extend_3d(
+              pt,
+              &mut x3_min,
+              &mut x3_max,
+              &mut y3_min,
+              &mut y3_max,
+              &mut z3_min,
+              &mut z3_max,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  // Add some padding to the 3D bounding box
+  let pad_x = (x3_max - x3_min) * 0.05;
+  let pad_y = (y3_max - y3_min) * 0.05;
+  let pad_z = (z3_max - z3_min) * 0.05;
+  x3_min -= pad_x;
+  x3_max += pad_x;
+  y3_min -= pad_y;
+  y3_max += pad_y;
+  z3_min -= pad_z;
+  z3_max += pad_z;
+
+  // Build box corners
+  let box_corners = [
+    Point3D {
+      x: x3_min,
+      y: y3_min,
+      z: z3_min,
+    },
+    Point3D {
+      x: x3_max,
+      y: y3_min,
+      z: z3_min,
+    },
+    Point3D {
+      x: x3_min,
+      y: y3_max,
+      z: z3_min,
+    },
+    Point3D {
+      x: x3_max,
+      y: y3_max,
+      z: z3_min,
+    },
+    Point3D {
+      x: x3_min,
+      y: y3_min,
+      z: z3_max,
+    },
+    Point3D {
+      x: x3_max,
+      y: y3_min,
+      z: z3_max,
+    },
+    Point3D {
+      x: x3_min,
+      y: y3_max,
+      z: z3_max,
+    },
+    Point3D {
+      x: x3_max,
+      y: y3_max,
+      z: z3_max,
+    },
+  ];
+
+  // Compute projected bounding box (include box corners for sizing)
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
   let mut py_min = f64::INFINITY;
@@ -1685,7 +2047,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Also check line/point primitives
   for prim in &prims {
     match prim {
-      Primitive3D::Line3D { segments } => {
+      Primitive3D::Line3D { segments, .. } => {
         for seg in segments {
           for pt in seg {
             let (px, py) = project(*pt, &camera);
@@ -1696,7 +2058,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      Primitive3D::Point3DPrim { points } | Primitive3D::Arrow3D { points } => {
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
         for pt in points {
           let (px, py) = project(*pt, &camera);
           px_min = px_min.min(px);
@@ -1706,6 +2069,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       _ => {}
+    }
+  }
+
+  // Include box corners in projected bounding box
+  if show_box {
+    for &corner in &box_corners {
+      let (px, py) = project(corner, &camera);
+      px_min = px_min.min(px);
+      px_max = px_max.max(px);
+      py_min = py_min.min(py);
+      py_max = py_max.max(py);
     }
   }
 
@@ -1734,6 +2108,55 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
   };
 
+  // Build depth-sorted box-edge segments for interleaving with triangles
+  const EDGE_SUBDIVISIONS: usize = 20;
+  let sorted_edges = if show_box {
+    let edge_pairs: [(usize, usize); 12] = [
+      (0, 1),
+      (0, 2),
+      (1, 3),
+      (2, 3),
+      (4, 5),
+      (4, 6),
+      (5, 7),
+      (6, 7),
+      (0, 4),
+      (1, 5),
+      (2, 6),
+      (3, 7),
+    ];
+    let mut segments: Vec<BoxEdge> = Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
+    for &(i, j) in &edge_pairs {
+      let a = box_corners[i];
+      let b = box_corners[j];
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        let tm = (t0 + t1) * 0.5;
+        let lerp = |t: f64| Point3D {
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t,
+          z: a.z + (b.z - a.z) * t,
+        };
+        segments.push(BoxEdge {
+          endpoints: [lerp(t0), lerp(t1)],
+          depth: depth(lerp(tm), &camera),
+        });
+      }
+    }
+    segments.sort_by(|a, b| {
+      b.depth
+        .partial_cmp(&a.depth)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    segments
+  } else {
+    Vec::new()
+  };
+
+  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+
   let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
   if full_width {
     svg.push_str(&format!(
@@ -1747,30 +2170,84 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   {
-    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    let (default_bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    let bg = background.unwrap_or((default_bg.0, default_bg.1, default_bg.2));
     svg.push_str(&format!(
       "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
       svg_width, svg_height, bg.0, bg.1, bg.2
     ));
   }
 
-  // Render triangles
-  for tri in &all_triangles {
-    let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
-    let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
-    let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
-    let (r, g, b) = tri.color;
-    svg.push_str(&format!(
-      "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"/>\n",
-      x0, y0, x1, y1, x2, y2, r, g, b
-    ));
+  // Render triangles interleaved with box edges (painter's algorithm)
+  {
+    let mut ei = 0;
+    for tri in &all_triangles {
+      // Emit any box edges further from camera than this triangle
+      while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
+        let edge = &sorted_edges[ei];
+        let (ex0, ey0) = to_svg(
+          project(edge.endpoints[0], &camera).0,
+          project(edge.endpoints[0], &camera).1,
+        );
+        let (ex1, ey1) = to_svg(
+          project(edge.endpoints[1], &camera).0,
+          project(edge.endpoints[1], &camera).1,
+        );
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+          ex0, ey0, ex1, ey1, axis_color
+        ));
+        ei += 1;
+      }
+      // Emit triangle
+      let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
+      let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
+      let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
+      let (r, g, b) = tri.color;
+      let opacity_attr = if tri.opacity < 1.0 {
+        format!(" opacity=\"{}\"", tri.opacity)
+      } else {
+        String::new()
+      };
+      svg.push_str(&format!(
+        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"{}/>\n",
+        x0, y0, x1, y1, x2, y2, r, g, b, opacity_attr
+      ));
+    }
+    // Emit remaining box edges (closest to viewer)
+    while ei < sorted_edges.len() {
+      let edge = &sorted_edges[ei];
+      let (ex0, ey0) = to_svg(
+        project(edge.endpoints[0], &camera).0,
+        project(edge.endpoints[0], &camera).1,
+      );
+      let (ex1, ey1) = to_svg(
+        project(edge.endpoints[1], &camera).0,
+        project(edge.endpoints[1], &camera).1,
+      );
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+        ex0, ey0, ex1, ey1, axis_color
+      ));
+      ei += 1;
+    }
   }
 
   // Render lines and points
-  let prim_color = crate::functions::graphics::theme().text_primary;
+  let default_prim_color = crate::functions::graphics::theme().text_primary;
   for prim in &prims {
     match prim {
-      Primitive3D::Line3D { segments } => {
+      Primitive3D::Line3D { segments, style } => {
+        let stroke_color = if let Some((r, g, b)) = style.color {
+          format!("rgb({r},{g},{b})")
+        } else {
+          default_prim_color.to_string()
+        };
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         for seg in segments {
           let pts: Vec<String> = seg
             .iter()
@@ -1781,22 +2258,42 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect();
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{prim_color}\" stroke-width=\"1.5\"/>\n",
-            pts.join(" ")
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
+            pts.join(" "), stroke_color, opacity_attr
           ));
         }
       }
-      Primitive3D::Point3DPrim { points } => {
+      Primitive3D::Point3DPrim { points, style } => {
+        let fill_color = if let Some((r, g, b)) = style.color {
+          format!("rgb({r},{g},{b})")
+        } else {
+          default_prim_color.to_string()
+        };
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         for pt in points {
           let (sx, sy) =
             to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
           svg.push_str(&format!(
-            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"{prim_color}\"/>\n",
-            sx, sy
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"{}\"{}/>\n",
+            sx, sy, fill_color, opacity_attr
           ));
         }
       }
-      Primitive3D::Arrow3D { points } if points.len() >= 2 => {
+      Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
+        let stroke_color = if let Some((r, g, b)) = style.color {
+          format!("rgb({r},{g},{b})")
+        } else {
+          default_prim_color.to_string()
+        };
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         let pts: Vec<String> = points
           .iter()
           .map(|p| {
@@ -1806,8 +2303,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .collect();
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{prim_color}\" stroke-width=\"1.5\"/>\n",
-          pts.join(" ")
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
+          pts.join(" "), stroke_color, opacity_attr
         ));
         // Arrowhead
         let last = points.len() - 1;
@@ -1832,8 +2329,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let bx2 = sx2 - ux * hl - (-uy) * hw;
           let by2 = sy2 - uy * hl - ux * hw;
           svg.push_str(&format!(
-            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{prim_color}\"/>\n",
-            sx2, sy2, bx1, by1, bx2, by2
+            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"{}/>\n",
+            sx2, sy2, bx1, by1, bx2, by2, stroke_color, opacity_attr
           ));
         }
       }
@@ -2110,6 +2607,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
 
@@ -2152,6 +2650,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
     }
@@ -2451,6 +2950,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
 
@@ -2479,6 +2979,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [proj0, proj1, proj2],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
     }
@@ -2824,6 +3325,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               projected: [p0, p1, p2],
               depth: depth(center, &camera),
               color,
+              opacity: 1.0,
             });
           }
 
@@ -2843,6 +3345,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               projected: [p0, p2, p3],
               depth: depth(center, &camera),
               color,
+              opacity: 1.0,
             });
           }
         }
@@ -3471,6 +3974,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [pa, pb, pc],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
 
@@ -3501,6 +4005,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [pa, pb, pc],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
     }
@@ -3684,6 +4189,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
+          opacity: 1.0,
         });
       }
 
@@ -3728,6 +4234,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           color,
           depth: depth(center, &camera),
+          opacity: 1.0,
         });
       }
     }
@@ -3993,6 +4500,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
             depth: depth(center, &camera),
             color,
+            opacity: 1.0,
           });
         }
 
@@ -4018,6 +4526,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
             depth: depth(center, &camera),
             color,
+            opacity: 1.0,
           });
         }
       }

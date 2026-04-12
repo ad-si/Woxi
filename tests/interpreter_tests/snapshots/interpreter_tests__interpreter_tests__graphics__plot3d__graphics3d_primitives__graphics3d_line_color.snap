@@ -1,6 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-expression: "export_svg(\"Graphics3D[Line[{{0,0,0}, {1,1,1}}]]\")"
+expression: "export_svg(\"Graphics3D[{Red, Line[{{0,0,0}, {1,1,1}}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
@@ -244,5 +244,5 @@ expression: "export_svg(\"Graphics3D[Line[{{0,0,0}, {1,1,1}}]]\")"
 <line x1="222.0" y1="179.1" x2="227.1" y2="173.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="222.0" y1="187.7" x2="222.0" y2="179.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="212.7" y1="176.1" x2="222.0" y2="179.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<polyline points="49.5,280.2 310.5,79.8" fill="none" stroke="#333" stroke-width="1.5"/>
+<polyline points="49.5,280.2 310.5,79.8" fill="none" stroke="rgb(255,0,0)" stroke-width="1.5"/>
 </svg>

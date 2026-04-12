@@ -2734,6 +2734,69 @@ mod plot3d {
         "Graphics3D[{Arrow[{{0,0,0},{1,0,1}}]}, Background -> Red]"
       ));
     }
+
+    #[test]
+    fn graphics3d_color_directive() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1,1,1}, {2,2,2}]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_rgbcolor() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{RGBColor[0, 1, 0], Sphere[]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_opacity() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{Opacity[0.5], Sphere[]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_opacity_with_color() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{Opacity[0.3, Red], Cuboid[]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_boxed_false() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[Sphere[], Boxed -> False]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_boxed_true() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[Sphere[], Boxed -> True]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_line_color() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{Red, Line[{{0,0,0}, {1,1,1}}]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_point_opacity() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{Opacity[0.5], Blue, Point[{0, 0, 0}]}]"
+      ));
+    }
+
+    #[test]
+    fn graphics3d_scoped_styles() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics3D[{{Red, Sphere[{0,0,0}]}, Sphere[{2,0,0}]}]"
+      ));
+    }
   }
 }
 

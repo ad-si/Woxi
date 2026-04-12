@@ -554,6 +554,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       }
     }
@@ -671,6 +672,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
           depth: depth(center, &camera),
           color,
+          opacity: 1.0,
         });
       };
 
