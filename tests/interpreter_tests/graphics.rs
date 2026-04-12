@@ -2473,6 +2473,34 @@ mod plot3d {
     }
 
     #[test]
+    fn vector_plot3d_basic() {
+      insta::assert_snapshot!(export_svg(
+        "VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+      ));
+    }
+
+    #[test]
+    fn vector_plot3d_curl() {
+      insta::assert_snapshot!(export_svg(
+        "VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+      ));
+    }
+
+    #[test]
+    fn vector_plot3d_tube_markers() {
+      insta::assert_snapshot!(export_svg(
+        "VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorMarkers -> \"Tube\"]"
+      ));
+    }
+
+    #[test]
+    fn vector_plot3d_multiple_fields() {
+      insta::assert_snapshot!(export_svg(
+        "VectorPlot3D[{{x, y, z}, {-y, x, 0}}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+      ));
+    }
+
+    #[test]
     fn stream_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]"
