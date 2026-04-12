@@ -1621,6 +1621,12 @@ impl WoxiStudio {
             keyboard::Key::Character("z") => {
               return Some(text_editor::Binding::Custom(Message::Undo(idx)));
             }
+            // Suppress character insertion for other Cmd shortcuts
+            // (e.g. Cmd+S, Cmd+O, Cmd+N) — these are handled by the
+            // global event handler and must not insert text.
+            keyboard::Key::Character(_) => {
+              return Some(text_editor::Binding::Sequence(vec![]));
+            }
             _ => {}
           }
         }
