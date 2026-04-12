@@ -2288,6 +2288,93 @@ mod high_level_functions_tests {
     }
   }
 
+  mod graphics_frame_tests {
+    use super::*;
+
+    #[test]
+    fn test_graphics_frame_true_renders_rect() {
+      let svg =
+        interpret("ExportString[Graphics[Disk[], Frame -> True], \"SVG\"]")
+          .unwrap();
+      // Should have a frame rect element
+      assert!(
+        svg.contains("<rect") && svg.contains("fill=\"none\""),
+        "Frame should render a border rect: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_frame_true_has_tick_labels() {
+      let svg =
+        interpret("ExportString[Graphics[Disk[], Frame -> True], \"SVG\"]")
+          .unwrap();
+      // Should have tick label text elements
+      assert!(
+        svg.contains("<text"),
+        "Frame should have tick labels: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_frame_true_has_margins() {
+      let svg =
+        interpret("ExportString[Graphics[Disk[], Frame -> True], \"SVG\"]")
+          .unwrap();
+      // Should have a translate for margins
+      assert!(
+        svg.contains("translate(50,10)"),
+        "Frame should offset for margin: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_frame_with_plot_range() {
+      let svg = interpret(
+        "ExportString[Graphics[Disk[], PlotRange -> 6, Frame -> True], \"SVG\"]",
+      )
+      .unwrap();
+      // Ticks should show values up to 6
+      assert!(
+        svg.contains(">6<") || svg.contains("\">6</"),
+        "Frame ticks should reach PlotRange bounds: {}",
+        svg
+      );
+      assert!(
+        svg.contains(">-6<") || svg.contains("\">-6</"),
+        "Frame ticks should reach negative PlotRange bounds: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_graphics_no_frame_by_default() {
+      let svg = interpret("ExportString[Graphics[Disk[]], \"SVG\"]").unwrap();
+      // Should NOT have frame border or tick labels
+      assert!(
+        !svg.contains("translate(50"),
+        "No frame margin by default: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn test_plot_range_single_number() {
+      // PlotRange -> n should be equivalent to PlotRange -> {{-n, n}, {-n, n}}
+      let svg = interpret(
+        "ExportString[Graphics[Disk[], PlotRange -> 3, Frame -> True], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("\">-3</") || svg.contains(">-3<"),
+        "PlotRange -> 3 should give range -3 to 3: {}",
+        svg
+      );
+    }
+  }
+
   mod string_split_delimiter_tests {
     use super::*;
 

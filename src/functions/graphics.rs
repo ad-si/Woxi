@@ -1842,6 +1842,86 @@ fn render_axes(
   }
 }
 
+/// Render a rectangular frame around the plot area with tick marks and labels
+/// on the bottom and left edges, and minor ticks on the top and right edges.
+fn render_frame(svg: &mut String, bb: &BBox, svg_w: f64, svg_h: f64) {
+  let t = theme();
+  let frame_stroke = t.framed_border;
+  let tick_label_fill = t.tick_label_fill;
+
+  // Draw the rectangular border
+  svg.push_str(&format!(
+    "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+  ));
+
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
+
+  // Bottom edge: ticks + labels
+  for &t_val in &x_ticks {
+    let x = coord_x(t_val, bb, svg_w);
+    if !x.is_finite() {
+      continue;
+    }
+    // Tick mark inward from bottom edge
+    svg.push_str(&format!(
+      "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+      svg_h - 5.0
+    ));
+    // Label below the bottom edge
+    let label = format_tick_value(t_val);
+    svg.push_str(&format!(
+      "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
+      svg_h + 4.0,
+      svg_escape(&label),
+    ));
+  }
+
+  // Top edge: ticks only (no labels)
+  for &t_val in &x_ticks {
+    let x = coord_x(t_val, bb, svg_w);
+    if !x.is_finite() {
+      continue;
+    }
+    svg.push_str(&format!(
+      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+      5.0
+    ));
+  }
+
+  // Left edge: ticks + labels
+  for &t_val in &y_ticks {
+    let y = coord_y(t_val, bb, svg_h);
+    if !y.is_finite() {
+      continue;
+    }
+    // Tick mark inward from left edge
+    svg.push_str(&format!(
+      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+      5.0
+    ));
+    // Label to the left of the frame
+    let label = format_tick_value(t_val);
+    svg.push_str(&format!(
+      "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
+      -4.0,
+      svg_escape(&label),
+    ));
+  }
+
+  // Right edge: ticks only (no labels)
+  for &t_val in &y_ticks {
+    let y = coord_y(t_val, bb, svg_h);
+    if !y.is_finite() {
+      continue;
+    }
+    svg.push_str(&format!(
+      "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+      svg_w - 5.0
+    ));
+  }
+}
+
 /// Truncate a BigFloat digit string to `prec` significant digits for graphical display.
 /// E.g. digits="0.84147098480789650665" with prec=3 → "0.841"
 fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
@@ -2542,7 +2622,10 @@ fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
       Some((lo, hi))
     }
     Expr::Identifier(s) if s == "All" || s == "Automatic" => None,
-    _ => None,
+    _ => {
+      // Single number n means {-n, n}
+      expr_to_f64(expr).map(|v| (-v, v))
+    }
   }
 }
 
@@ -2719,6 +2802,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
   let mut axes = (false, false);
+  let mut frame = false;
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
@@ -2760,6 +2844,18 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Axes" => {
           if let Some(parsed_axes) = parse_axes(replacement) {
             axes = parsed_axes;
+          }
+        }
+        "Frame" => {
+          if let Expr::Identifier(s) = replacement.as_ref() {
+            if s == "True" {
+              frame = true;
+            }
+          } else if let Expr::FunctionCall { name: fn_name, .. } =
+            replacement.as_ref()
+            && fn_name == "True"
+          {
+            frame = true;
           }
         }
         "AspectRatio" => {
@@ -2855,11 +2951,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Compute margins for axis tick labels when axes are enabled.
-  let margin_left: f64 = if axes.1 { 50.0 } else { 0.0 };
-  let margin_bottom: f64 = if axes.0 { 25.0 } else { 0.0 };
-  let total_width = svg_w + margin_left;
-  let total_height = svg_h + margin_bottom;
+  // Compute margins for axis/frame tick labels.
+  let margin_left: f64 = if frame {
+    50.0
+  } else if axes.1 {
+    50.0
+  } else {
+    0.0
+  };
+  let margin_bottom: f64 = if frame {
+    25.0
+  } else if axes.0 {
+    25.0
+  } else {
+    0.0
+  };
+  let margin_right: f64 = if frame { 10.0 } else { 0.0 };
+  let margin_top: f64 = if frame { 10.0 } else { 0.0 };
+  let total_width = svg_w + margin_left + margin_right;
+  let total_height = svg_h + margin_bottom + margin_top;
 
   let mut svg = String::with_capacity(4096);
 
@@ -2881,10 +2991,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Offset the drawing area so axes labels fit in the margins
-  if margin_left > 0.0 || margin_bottom > 0.0 {
+  // Offset the drawing area so axes/frame labels fit in the margins
+  let has_margin = margin_left > 0.0 || margin_bottom > 0.0 || margin_top > 0.0;
+  if has_margin {
     svg.push_str(&format!(
-      "<g transform=\"translate({margin_left:.0},0)\">\n"
+      "<g transform=\"translate({margin_left:.0},{margin_top:.0})\">\n"
     ));
   }
 
@@ -2917,7 +3028,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     render_primitive(prim, &bb, svg_w, svg_h, &mut svg);
   }
 
-  if margin_left > 0.0 || margin_bottom > 0.0 {
+  if frame {
+    render_frame(&mut svg, &bb, svg_w, svg_h);
+  }
+
+  if has_margin {
     svg.push_str("</g>\n");
   }
 
