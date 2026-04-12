@@ -222,7 +222,7 @@ mod harmonic_number {
   fn real_argument() {
     assert_eq!(
       interpret("HarmonicNumber[3.8]").unwrap(),
-      "2.038063405630649"
+      "2.0380634056306492"
     );
   }
 }

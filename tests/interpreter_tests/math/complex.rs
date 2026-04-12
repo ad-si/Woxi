@@ -94,7 +94,7 @@ mod abs_complex_tests {
 
   #[test]
   fn abs_float_complex() {
-    assert_eq!(interpret("Abs[3.0 + I]").unwrap(), "3.16227766016838");
+    assert_eq!(interpret("Abs[3.0 + I]").unwrap(), "3.1622776601683795");
   }
 
   #[test]
