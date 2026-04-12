@@ -771,6 +771,15 @@ pub(crate) struct SeriesStyle {
   pub dashing: Option<Vec<f64>>,
 }
 
+/// Position for plot legends
+#[derive(Clone, Copy, PartialEq, Default)]
+pub(crate) enum LegendPosition {
+  #[default]
+  Right,
+  Top,
+  Bottom,
+}
+
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
 pub(crate) struct PlotOptions {
   pub svg_width: u32,
@@ -789,6 +798,8 @@ pub(crate) struct PlotOptions {
   pub plot_points: usize,
   /// Legend labels for each series (empty = no legend)
   pub plot_legends: Vec<String>,
+  /// Position of the legend (Right, Top, Bottom)
+  pub legend_position: LegendPosition,
   /// Show horizontal grid lines (dashed)
   pub grid_lines_y: bool,
   /// Show vertical grid lines (dashed)
@@ -801,6 +812,8 @@ pub(crate) struct PlotOptions {
   pub log_x: bool,
   /// Whether y-axis is logarithmic (data is in log10 space)
   pub log_y: bool,
+  /// Callout labels for each series (None = no callout for that series)
+  pub callout_labels: Vec<Option<String>>,
 }
 
 impl Default for PlotOptions {
@@ -818,10 +831,12 @@ impl Default for PlotOptions {
       ticks: true,
       plot_points: NUM_SAMPLES,
       plot_legends: Vec::new(),
+      legend_position: LegendPosition::default(),
       grid_lines_y: false,
       grid_lines_x: false,
       frame: false,
       date_axis: false,
+      callout_labels: Vec::new(),
       log_x: false,
       log_y: false,
     }
@@ -1456,6 +1471,82 @@ fn generate_svg_with_options(
     }
   }
 
+  // Inject Callout labels: text annotation near each labeled series
+  if !opts.callout_labels.is_empty()
+    && opts.callout_labels.iter().any(|c| c.is_some())
+  {
+    let margin_left_f = margin_left as f64;
+    let margin_right_f = margin_right as f64;
+    let margin_bottom_f = margin_bottom as f64;
+    let margin_top_f = top_margin as f64;
+    let plot_x0 = margin_left_f + y_label_area as f64;
+    let plot_w = render_width as f64
+      - margin_left_f
+      - margin_right_f
+      - y_label_area as f64;
+    let plot_h = render_height as f64
+      - margin_top_f
+      - margin_bottom_f
+      - x_label_area as f64;
+    let callout_font_size = sf * 16.0;
+
+    if let Some(insert_pos) = buf.rfind("</svg>") {
+      let mut callout_svg = String::new();
+
+      for (series_idx, label) in opts.callout_labels.iter().enumerate() {
+        let Some(label_text) = label else { continue };
+        if series_idx >= all_points.len() {
+          continue;
+        }
+        let points = &all_points[series_idx];
+
+        // Find a good label point: pick the point closest to 2/3 of x range
+        let target_x = x_min + (x_max - x_min) * 2.0 / 3.0;
+        let best = points
+          .iter()
+          .filter(|(x, y)| x.is_finite() && y.is_finite())
+          .min_by(|a, b| {
+            (a.0 - target_x)
+              .abs()
+              .partial_cmp(&(b.0 - target_x).abs())
+              .unwrap_or(std::cmp::Ordering::Equal)
+          });
+
+        let Some(&(data_x, data_y)) = best else {
+          continue;
+        };
+
+        // Convert data coordinates to SVG pixel coordinates
+        let frac_x = (data_x - x_min) / (x_max - x_min);
+        let frac_y = (data_y - y_min) / (y_max - y_min);
+        let px = plot_x0 + frac_x * plot_w;
+        let py = margin_top_f + plot_h * (1.0 - frac_y);
+
+        // Label offset: place text above the curve point
+        let label_px = px + sf * 5.0;
+        let label_py = py - sf * 12.0;
+
+        // Draw a small line from the curve point to the label
+        let (r, g, b) = series_color(&opts.plot_style, series_idx);
+        let color_str = format!("rgb({r},{g},{b})");
+
+        callout_svg.push_str(&format!(
+          "<line x1=\"{px:.1}\" y1=\"{py:.1}\" x2=\"{label_px:.1}\" y2=\"{label_py:.1}\" \
+           stroke=\"{color_str}\" stroke-width=\"{sw}\" />\n",
+          sw = sf * 1.0,
+        ));
+        callout_svg.push_str(&format!(
+          "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
+           font-family=\"sans-serif\" font-size=\"{callout_font_size:.0}\" \
+           fill=\"{color_str}\" dominant-baseline=\"auto\">{}</text>\n",
+          html_escape(label_text)
+        ));
+      }
+
+      buf.insert_str(insert_pos, &callout_svg);
+    }
+  }
+
   inject_legend(&mut buf, opts);
 
   Ok(buf)
@@ -2005,6 +2096,11 @@ pub(crate) fn generate_bar_svg(
 
   add_bar_borders(&mut buf, RESOLUTION_SCALE);
 
+  // Inject hover tooltips into bar rects
+  let bar_values: Vec<f64> =
+    groups.iter().flat_map(|g| g.iter().copied()).collect();
+  inject_bar_tooltips(&mut buf, &bar_values);
+
   rewrite_svg_header(
     &mut buf,
     svg_width,
@@ -2154,8 +2250,8 @@ fn html_escape(s: &str) -> String {
     .replace('"', "&quot;")
 }
 
-/// Inject a legend into an SVG plot. Widens the SVG to make room for the legend
-/// on the right side, then draws colored line swatches with text labels.
+/// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
+/// is placed on the right (default), top, or bottom of the plot.
 pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   if opts.plot_legends.is_empty() {
     return;
@@ -2171,15 +2267,7 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   let swatch_gap = sf * 6.0;
   let legend_padding = sf * 10.0;
 
-  // Measure legend width: swatch + gap + text
-  let max_text_width = opts
-    .plot_legends
-    .iter()
-    .map(|s| s.len() as f64 * font_size * 0.55)
-    .fold(0.0_f64, f64::max);
-  let legend_width = swatch_len + swatch_gap + max_text_width + legend_padding;
-
-  // Parse current viewBox to widen
+  // Parse current viewBox
   let vb_re = regex::Regex::new(
     r#"viewBox="(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)""#,
   )
@@ -2193,93 +2281,212 @@ pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
     return;
   };
 
-  let new_vb_w = vb_w + legend_width;
+  match opts.legend_position {
+    LegendPosition::Top | LegendPosition::Bottom => {
+      // Horizontal legend: all entries in one row
+      let legend_height = line_height + legend_padding;
 
-  // Update viewBox width
-  let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
-  let new_vb = format!("viewBox=\"0 0 {} {}\"", new_vb_w as u32, vb_h as u32);
-  *buf = buf.replacen(&old_vb, &new_vb, 1);
+      // Calculate per-entry widths for horizontal layout
+      let entry_widths: Vec<f64> = opts
+        .plot_legends
+        .iter()
+        .map(|s| swatch_len + swatch_gap + s.len() as f64 * font_size * 0.55)
+        .collect();
+      let entry_spacing = legend_padding;
 
-  // Update width attribute if present (non-full-width)
-  let w_re = regex::Regex::new(r#"width="(\d+)""#).unwrap();
-  if let Some(caps) = w_re.captures(&buf.clone()) {
-    let old_w: u32 = caps[1].parse().unwrap_or(0);
-    if old_w > 0 {
-      let render_w = vb_w as u32;
-      let render_new_w = new_vb_w as u32;
-      // Scale display width proportionally
-      let new_display_w =
-        (old_w as f64 * render_new_w as f64 / render_w as f64).round() as u32;
-      let old_attr = format!("width=\"{}\"", old_w);
-      let new_attr = format!("width=\"{}\"", new_display_w);
-      *buf = buf.replacen(&old_attr, &new_attr, 1);
+      let new_vb_h = vb_h + legend_height;
 
-      // Also update height if present to maintain aspect ratio
+      // Update viewBox height
+      let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
+      let new_vb =
+        format!("viewBox=\"0 0 {} {}\"", vb_w as u32, new_vb_h as u32);
+      *buf = buf.replacen(&old_vb, &new_vb, 1);
+
+      // Update height attribute if present
       let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
       if let Some(hcaps) = h_re.captures(&buf.clone()) {
         let old_h: u32 = hcaps[1].parse().unwrap_or(0);
         if old_h > 0 {
-          let new_display_h =
-            (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
+          let new_display_h = (old_h as f64 * new_vb_h / vb_h).round() as u32;
           let old_hattr = format!("height=\"{}\"", old_h);
           let new_hattr = format!("height=\"{}\"", new_display_h);
           *buf = buf.replacen(&old_hattr, &new_hattr, 1);
         }
       }
-    }
-  }
 
-  // Insert legend elements before </svg>
-  if let Some(insert_pos) = buf.rfind("</svg>") {
-    let mut legend_svg = String::new();
-    let legend_x = vb_w + legend_padding * 0.5;
-    let n = opts.plot_legends.len();
-    let legend_total_h = n as f64 * line_height;
-    let legend_y0 = (vb_h - legend_total_h) / 2.0;
+      // For Top: shift existing content down and draw legend at top
+      // For Bottom: draw legend at the bottom
+      let legend_y = if opts.legend_position == LegendPosition::Top {
+        // Shift existing content down by wrapping in a translate group
+        // Find end of opening <svg ...> tag
+        if let Some(svg_tag_end) = buf.find('>') {
+          let after_tag = svg_tag_end + 1;
+          let shift_open =
+            format!("<g transform=\"translate(0,{})\">", legend_height as u32);
+          buf.insert_str(after_tag, &shift_open);
+          // Insert closing </g> before </svg>
+          if let Some(close_pos) = buf.rfind("</svg>") {
+            buf.insert_str(close_pos, "</g>");
+          }
+        }
+        legend_padding * 0.5 + line_height * 0.5
+      } else {
+        // Bottom: legend goes after existing content
+        vb_h + legend_padding * 0.5 + line_height * 0.5
+      };
 
-    for (i, label) in opts.plot_legends.iter().enumerate() {
-      let (r, g, b) = series_color(&opts.plot_style, i);
-      let thickness = series_thickness(&opts.plot_style, i);
-      let dashing = series_dashing(&opts.plot_style, i);
-      let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
-      let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
+      // Draw legend entries horizontally
+      if let Some(insert_pos) = buf.rfind("</svg>") {
+        let mut legend_svg = String::new();
+        // Center the legend row within the viewBox width
+        let total_w: f64 = entry_widths.iter().sum::<f64>()
+          + entry_spacing * (entry_widths.len().max(1) - 1) as f64;
+        let mut cursor_x = (vb_w - total_w).max(0.0) / 2.0;
 
-      // Colored line swatch (with optional dashing)
-      let mut dash_attr = String::new();
-      if let Some(ref pattern) = dashing {
-        // Convert fractional dash pattern to pixel values for swatch
-        let dash_vals: Vec<String> = pattern
-          .iter()
-          .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
-          .collect();
-        dash_attr = format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+        for (i, label) in opts.plot_legends.iter().enumerate() {
+          let (r, g, b) = series_color(&opts.plot_style, i);
+          let thickness = series_thickness(&opts.plot_style, i);
+          let dashing = series_dashing(&opts.plot_style, i);
+          let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
+
+          let mut dash_attr = String::new();
+          if let Some(ref pattern) = dashing {
+            let dash_vals: Vec<String> = pattern
+              .iter()
+              .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
+              .collect();
+            dash_attr =
+              format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+          }
+
+          // Swatch line
+          legend_svg.push_str(&format!(
+            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+             stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
+            cursor_x,
+            legend_y,
+            cursor_x + swatch_len,
+            legend_y,
+            r,
+            g,
+            b,
+            sw as u32,
+            dash_attr,
+          ));
+
+          // Text label
+          let text_x = cursor_x + swatch_len + swatch_gap;
+          let text_y = legend_y + font_size * 0.35;
+          legend_svg.push_str(&format!(
+            "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{label_fill}\">{}</text>\n",
+            html_escape(label),
+          ));
+
+          cursor_x += entry_widths[i] + entry_spacing;
+        }
+
+        buf.insert_str(insert_pos, &legend_svg);
       }
-      legend_svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-         stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
-        legend_x,
-        y,
-        legend_x + swatch_len,
-        y,
-        r,
-        g,
-        b,
-        sw as u32,
-        dash_attr,
-      ));
-
-      // Text label
-      let text_x = legend_x + swatch_len + swatch_gap;
-      let text_y = y + font_size * 0.35;
-      legend_svg.push_str(&format!(
-        "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{label_fill}\">{}</text>\n",
-        html_escape(label),
-      ));
     }
+    LegendPosition::Right => {
+      // Original right-side legend behavior
+      let max_text_width = opts
+        .plot_legends
+        .iter()
+        .map(|s| s.len() as f64 * font_size * 0.55)
+        .fold(0.0_f64, f64::max);
+      let legend_width =
+        swatch_len + swatch_gap + max_text_width + legend_padding;
 
-    buf.insert_str(insert_pos, &legend_svg);
+      let new_vb_w = vb_w + legend_width;
+
+      // Update viewBox width
+      let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
+      let new_vb =
+        format!("viewBox=\"0 0 {} {}\"", new_vb_w as u32, vb_h as u32);
+      *buf = buf.replacen(&old_vb, &new_vb, 1);
+
+      // Update width attribute if present (non-full-width)
+      let w_re = regex::Regex::new(r#"width="(\d+)""#).unwrap();
+      if let Some(caps) = w_re.captures(&buf.clone()) {
+        let old_w: u32 = caps[1].parse().unwrap_or(0);
+        if old_w > 0 {
+          let render_w = vb_w as u32;
+          let render_new_w = new_vb_w as u32;
+          let new_display_w = (old_w as f64 * render_new_w as f64
+            / render_w as f64)
+            .round() as u32;
+          let old_attr = format!("width=\"{}\"", old_w);
+          let new_attr = format!("width=\"{}\"", new_display_w);
+          *buf = buf.replacen(&old_attr, &new_attr, 1);
+
+          let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
+          if let Some(hcaps) = h_re.captures(&buf.clone()) {
+            let old_h: u32 = hcaps[1].parse().unwrap_or(0);
+            if old_h > 0 {
+              let new_display_h =
+                (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
+              let old_hattr = format!("height=\"{}\"", old_h);
+              let new_hattr = format!("height=\"{}\"", new_display_h);
+              *buf = buf.replacen(&old_hattr, &new_hattr, 1);
+            }
+          }
+        }
+      }
+
+      // Insert legend elements before </svg>
+      if let Some(insert_pos) = buf.rfind("</svg>") {
+        let mut legend_svg = String::new();
+        let legend_x = vb_w + legend_padding * 0.5;
+        let n = opts.plot_legends.len();
+        let legend_total_h = n as f64 * line_height;
+        let legend_y0 = (vb_h - legend_total_h) / 2.0;
+
+        for (i, label) in opts.plot_legends.iter().enumerate() {
+          let (r, g, b) = series_color(&opts.plot_style, i);
+          let thickness = series_thickness(&opts.plot_style, i);
+          let dashing = series_dashing(&opts.plot_style, i);
+          let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
+          let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
+
+          let mut dash_attr = String::new();
+          if let Some(ref pattern) = dashing {
+            let dash_vals: Vec<String> = pattern
+              .iter()
+              .map(|d| format!("{:.1}", (d * swatch_len / 0.02).max(0.5)))
+              .collect();
+            dash_attr =
+              format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+          }
+          legend_svg.push_str(&format!(
+            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+             stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
+            legend_x,
+            y,
+            legend_x + swatch_len,
+            y,
+            r,
+            g,
+            b,
+            sw as u32,
+            dash_attr,
+          ));
+
+          let text_x = legend_x + swatch_len + swatch_gap;
+          let text_y = y + font_size * 0.35;
+          legend_svg.push_str(&format!(
+            "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"{label_fill}\">{}</text>\n",
+            html_escape(label),
+          ));
+        }
+
+        buf.insert_str(insert_pos, &legend_svg);
+      }
+    }
   }
 }
 
@@ -2442,6 +2649,18 @@ pub(crate) fn generate_histogram_svg(
   }
 
   add_bar_borders(&mut buf, RESOLUTION_SCALE);
+
+  // Inject hover tooltips with bin range and count into histogram rects
+  let hist_tooltips: Vec<String> = counts
+    .iter()
+    .enumerate()
+    .map(|(i, &c)| {
+      let lo = format_tooltip_value(bin_edges[i]);
+      let hi = format_tooltip_value(bin_edges[i + 1]);
+      format!("[{lo}, {hi}): {c}")
+    })
+    .collect();
+  inject_bar_tooltips_str(&mut buf, &hist_tooltips);
 
   rewrite_svg_header(
     &mut buf,
@@ -2701,6 +2920,67 @@ pub(crate) fn add_bar_borders(buf: &mut String, stroke_width: u32) {
     buf.truncate(after_first);
     buf.push_str(&rest);
   }
+}
+
+/// Format a numeric value for tooltip display.
+/// Integers (or values very close to integers) are shown without decimals.
+fn format_tooltip_value(v: f64) -> String {
+  if (v - v.round()).abs() < 1e-10 {
+    format!("{}", v as i64)
+  } else {
+    format!("{v}")
+  }
+}
+
+/// Inject `<title>` tooltip elements into bar `<rect>` elements.
+/// Skips the first `<rect` with `stroke="none"` (the background).
+/// All subsequent `<rect` elements that end with `/>` are bars.
+fn inject_bar_tooltips(buf: &mut String, values: &[f64]) {
+  let tooltips: Vec<String> =
+    values.iter().map(|&v| format_tooltip_value(v)).collect();
+  inject_bar_tooltips_str(buf, &tooltips);
+}
+
+/// Inject `<title>` tooltip strings into bar `<rect>` elements.
+/// Skips the first `<rect` with `stroke="none"` (the background rect).
+fn inject_bar_tooltips_str(buf: &mut String, tooltips: &[String]) {
+  // After add_bar_borders, bar rects have a border style while the
+  // background rect still has stroke="none". Find all <rect ... /> that
+  // do NOT have stroke="none" and inject titles.
+  let mut result = String::with_capacity(buf.len() + tooltips.len() * 30);
+  let mut remaining = buf.as_str();
+  let mut tooltip_idx = 0;
+
+  while let Some(rect_start) = remaining.find("<rect ") {
+    // Find the end of this rect element
+    let after_rect = &remaining[rect_start..];
+    if let Some(close_pos) = after_rect.find("/>") {
+      let rect_tag = &after_rect[..close_pos + 2];
+      let is_background = rect_tag.contains("stroke=\"none\"");
+
+      // Copy everything up to the rect
+      result.push_str(&remaining[..rect_start]);
+
+      if !is_background && tooltip_idx < tooltips.len() {
+        // Replace self-closing /> with ><title>...</title></rect>
+        let escaped = html_escape(&tooltips[tooltip_idx]);
+        result.push_str(&after_rect[..close_pos]);
+        result.push_str(&format!("><title>{escaped}</title></rect>"));
+        tooltip_idx += 1;
+      } else {
+        // Keep as-is
+        result.push_str(rect_tag);
+      }
+
+      remaining = &remaining[rect_start + close_pos + 2..];
+    } else {
+      break;
+    }
+  }
+
+  // Append any remaining content
+  result.push_str(remaining);
+  *buf = result;
 }
 
 /// Rewrite the SVG header to use viewBox for display scaling.
@@ -3006,13 +3286,39 @@ pub(crate) fn parse_grid_lines(expr: &Expr) -> (bool, bool) {
 }
 
 /// Parse PlotLegends option value into a list of legend strings.
-/// Returns (legends, is_automatic, is_expressions).
-pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool, bool) {
+/// Returns (legends, is_automatic, is_expressions, legend_position).
+pub(crate) fn parse_plot_legends(
+  value: &Expr,
+) -> (Vec<String>, bool, bool, LegendPosition) {
   let val = evaluate_expr_to_expr(value).unwrap_or(value.clone());
+
+  // Check for Placed[content, position] wrapper
+  if let Expr::FunctionCall { name, args } = &val
+    && name == "Placed"
+    && args.len() == 2
+  {
+    let pos = match &args[1] {
+      Expr::Identifier(s) => match s.as_str() {
+        "Top" | "Above" => LegendPosition::Top,
+        "Bottom" | "Below" => LegendPosition::Bottom,
+        _ => LegendPosition::Right,
+      },
+      _ => LegendPosition::Right,
+    };
+    let (labels, auto, expressions, _) = parse_plot_legends(&args[0]);
+    return (labels, auto, expressions, pos);
+  }
+
   match &val {
-    Expr::Identifier(s) if s == "Automatic" => (Vec::new(), true, false),
-    Expr::Identifier(s) if s == "None" => (Vec::new(), false, false),
-    Expr::String(s) if s == "Expressions" => (Vec::new(), false, true),
+    Expr::Identifier(s) if s == "Automatic" => {
+      (Vec::new(), true, false, LegendPosition::Right)
+    }
+    Expr::Identifier(s) if s == "None" => {
+      (Vec::new(), false, false, LegendPosition::Right)
+    }
+    Expr::String(s) if s == "Expressions" => {
+      (Vec::new(), false, true, LegendPosition::Right)
+    }
     Expr::List(items) => {
       let labels = items
         .iter()
@@ -3021,10 +3327,10 @@ pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool, bool) {
             .unwrap_or_else(|| crate::syntax::expr_to_string(item))
         })
         .collect();
-      (labels, false, false)
+      (labels, false, false, LegendPosition::Right)
     }
-    Expr::String(s) => (vec![s.clone()], false, false),
-    _ => (Vec::new(), false, false),
+    Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
+    _ => (Vec::new(), false, false, LegendPosition::Right),
   }
 }
 
@@ -3195,7 +3501,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "PlotLegends" => {
-          let (labels, auto, expressions) = parse_plot_legends(replacement);
+          let (labels, auto, expressions, position) =
+            parse_plot_legends(replacement);
+          plot_opts.legend_position = position;
           if auto {
             legends_automatic = true;
           } else if expressions {
@@ -3249,10 +3557,29 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Collect function bodies: single function or list of functions
-  let bodies: Vec<&Expr> = match body {
+  let raw_bodies: Vec<&Expr> = match body {
     Expr::List(items) => items.iter().collect(),
     _ => vec![body],
   };
+
+  // Unwrap Callout[expr, label] wrappers, storing labels
+  let mut bodies: Vec<&Expr> = Vec::with_capacity(raw_bodies.len());
+  for b in &raw_bodies {
+    if let Expr::FunctionCall { name, args: cargs } = b
+      && name == "Callout"
+      && cargs.len() >= 2
+    {
+      bodies.push(&cargs[0]);
+      let label = match &cargs[1] {
+        Expr::String(s) => s.clone(),
+        other => crate::syntax::expr_to_output(other),
+      };
+      plot_opts.callout_labels.push(Some(label));
+    } else {
+      bodies.push(b);
+      plot_opts.callout_labels.push(None);
+    }
+  }
 
   // Fill automatic legends from expression strings
   if (legends_automatic || legends_expressions)
@@ -3476,7 +3803,9 @@ fn log_scale_plot_ast(
           plot_opts.filling = parse_filling(replacement);
         }
         "PlotLegends" => {
-          let (labels, auto, expressions) = parse_plot_legends(replacement);
+          let (labels, auto, expressions, position) =
+            parse_plot_legends(replacement);
+          plot_opts.legend_position = position;
           if auto {
             legends_automatic = true;
           } else if expressions {

@@ -338,6 +338,16 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
   }
 }
 
+/// Format a numeric value for display in chart tooltips.
+/// Integers (or values very close to integers) are shown without decimals.
+fn format_chart_value(v: f64) -> String {
+  if (v - v.round()).abs() < 1e-10 {
+    format!("{}", v as i64)
+  } else {
+    format!("{v}")
+  }
+}
+
 /// BarChart[{v1, v2, ...}] or BarChart[{{v1, v2}, {v3, v4}, ...}]
 pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let groups = extract_grouped_values(&args[0])?;
@@ -412,9 +422,10 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let y2 = cy + radius * end_angle.sin();
     let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
 
+    let tooltip = format_chart_value(val);
     svg.push_str(&format!(
       "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{radius:.2},{radius:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"/>\n"
+       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
     ));
 
     start_angle = end_angle;
@@ -1374,9 +1385,14 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let y2 = cy + sector_r * end_angle.sin();
     let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
 
+    let tooltip = format!(
+      "{{{}, {}}}",
+      format_chart_value(angle_val),
+      format_chart_value(radius_val)
+    );
     svg.push_str(&format!(
       "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{sector_r:.2},{sector_r:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"/>\n"
+       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
     ));
 
     start_angle = end_angle;

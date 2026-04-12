@@ -5832,3 +5832,204 @@ mod manipulate {
     assert_eq!(b, vec![("label".to_string(), "\"αβγ\"".to_string())]);
   }
 }
+
+// ----- Callout tests -----
+
+#[test]
+fn callout_plot_produces_svg_with_label() {
+  let svg = export_svg(r#"Plot[Callout[Sin[x], "sine"], {x, 0, 2 Pi}]"#);
+  assert!(
+    svg.contains(">sine</text>"),
+    "SVG should contain the callout label text"
+  );
+}
+
+#[test]
+fn callout_plot_multiple_labels() {
+  let svg = export_svg(
+    r#"Plot[{Callout[Sin[x], "sin"], Callout[Cos[x], "cos"]}, {x, 0, 2 Pi}]"#,
+  );
+  assert!(
+    svg.contains(">sin</text>"),
+    "SVG should contain sin callout"
+  );
+  assert!(
+    svg.contains(">cos</text>"),
+    "SVG should contain cos callout"
+  );
+}
+
+#[test]
+fn callout_plot_with_plot_style() {
+  // Callout labels should use the correct series color from PlotStyle
+  let svg = export_svg(
+    r#"Plot[{Callout[Sin[x], "sin(x)"], Callout[Cos[x], "cos(x)"]}, {x, 0, 2 Pi}, PlotStyle -> {Red, Blue}]"#,
+  );
+  assert!(svg.contains(">sin(x)</text>"));
+  assert!(svg.contains(">cos(x)</text>"));
+  // Red series label
+  assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+  // Blue series label
+  assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+}
+
+#[test]
+fn callout_mixed_with_plain_body() {
+  // Only the Callout-wrapped function should get a label
+  let svg =
+    export_svg(r#"Plot[{Sin[x], Callout[Cos[x], "cosine"]}, {x, 0, 2 Pi}]"#);
+  assert!(
+    svg.contains(">cosine</text>"),
+    "SVG should contain the callout label"
+  );
+  // sin(x) should NOT have a callout
+  assert!(!svg.contains(">Sin[x]</text>"));
+}
+
+#[test]
+fn callout_connector_line_present() {
+  let svg = export_svg(r#"Plot[Callout[Sin[x], "s"], {x, 0, 2 Pi}]"#);
+  // Should have a connector line element
+  assert!(
+    svg.contains("<line "),
+    "SVG should contain a connector line for the callout"
+  );
+}
+
+#[test]
+fn plot_legends_placed_top() {
+  let svg = export_svg(
+    r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Placed["Expressions", Top]]"#,
+  );
+  assert!(svg.contains("Sin[x]"), "Should contain Sin[x] legend");
+  assert!(svg.contains("Cos[x]"), "Should contain Cos[x] legend");
+  // Top placement shifts content down via a translate group
+  assert!(
+    svg.contains("translate(0,"),
+    "Should shift content down for top legend"
+  );
+}
+
+#[test]
+fn plot_legends_placed_top_custom_labels() {
+  let svg = export_svg(
+    r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Placed[{"a", "b"}, Top]]"#,
+  );
+  assert!(svg.contains(">a</text>"), "Should contain custom label 'a'");
+  assert!(svg.contains(">b</text>"), "Should contain custom label 'b'");
+  assert!(
+    svg.contains("translate(0,"),
+    "Should shift content down for top legend"
+  );
+}
+
+#[test]
+fn plot_legends_expressions_right_regression() {
+  // Regression test: default PlotLegends -> "Expressions" should still work (right side)
+  let svg = export_svg(
+    r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
+  );
+  assert!(svg.contains("Sin[x]"), "Should contain Sin[x] legend");
+  assert!(svg.contains("Cos[x]"), "Should contain Cos[x] legend");
+  // Right placement should NOT have a translate group for shifting content
+  assert!(
+    !svg.contains("translate(0,"),
+    "Right legend should not shift content down"
+  );
+}
+
+#[test]
+fn pie_chart_hover_tooltips() {
+  let svg = export_svg("PieChart[{1, 2, 3}]");
+  assert!(
+    svg.contains("<title>1</title>"),
+    "PieChart should have tooltip for value 1"
+  );
+  assert!(
+    svg.contains("<title>2</title>"),
+    "PieChart should have tooltip for value 2"
+  );
+  assert!(
+    svg.contains("<title>3</title>"),
+    "PieChart should have tooltip for value 3"
+  );
+}
+
+#[test]
+fn pie_chart_hover_tooltips_float() {
+  let svg = export_svg("PieChart[{1.5, 2.7}]");
+  assert!(
+    svg.contains("<title>1.5</title>"),
+    "PieChart should have tooltip for value 1.5"
+  );
+  assert!(
+    svg.contains("<title>2.7</title>"),
+    "PieChart should have tooltip for value 2.7"
+  );
+}
+
+#[test]
+fn sector_chart_hover_tooltips() {
+  let svg = export_svg("SectorChart[{{1, 2}, {3, 4}}]");
+  assert!(
+    svg.contains("<title>{1, 2}</title>"),
+    "SectorChart should have tooltip for {{1, 2}}"
+  );
+  assert!(
+    svg.contains("<title>{3, 4}</title>"),
+    "SectorChart should have tooltip for {{3, 4}}"
+  );
+}
+
+#[test]
+fn bar_chart_hover_tooltips() {
+  let svg = export_svg("BarChart[{3, 1, 2}]");
+  assert!(
+    svg.contains("<title>3</title>"),
+    "BarChart should have tooltip for value 3"
+  );
+  assert!(
+    svg.contains("<title>1</title>"),
+    "BarChart should have tooltip for value 1"
+  );
+  assert!(
+    svg.contains("<title>2</title>"),
+    "BarChart should have tooltip for value 2"
+  );
+}
+
+#[test]
+fn bar_chart_hover_tooltips_grouped() {
+  let svg = export_svg("BarChart[{{1, 2}, {3, 4}}]");
+  assert!(
+    svg.contains("<title>1</title>"),
+    "BarChart should have tooltip for value 1"
+  );
+  assert!(
+    svg.contains("<title>2</title>"),
+    "BarChart should have tooltip for value 2"
+  );
+  assert!(
+    svg.contains("<title>3</title>"),
+    "BarChart should have tooltip for value 3"
+  );
+  assert!(
+    svg.contains("<title>4</title>"),
+    "BarChart should have tooltip for value 4"
+  );
+}
+
+#[test]
+fn histogram_hover_tooltips() {
+  let svg = export_svg("Histogram[{1, 1, 2, 3, 3, 3}]");
+  // Histogram tooltips show bin range and count
+  assert!(
+    svg.contains("<title>"),
+    "Histogram should have tooltip elements"
+  );
+  // Check that at least one tooltip contains a count with bracket notation
+  assert!(
+    svg.contains("): "),
+    "Histogram tooltips should contain bin range and count"
+  );
+}

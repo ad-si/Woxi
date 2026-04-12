@@ -78,12 +78,12 @@ expression: svg
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,157 749,157 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<rect x="818" y="1562" width="275" height="187" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="1093" y="1375" width="275" height="374" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"/>
-<rect x="1505" y="1187" width="275" height="562" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="1780" y="1000" width="275" height="749" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"/>
-<rect x="2193" y="813" width="275" height="936" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="2468" y="625" width="275" height="1124" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"/>
-<rect x="2880" y="438" width="275" height="1311" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="3155" y="250" width="275" height="1499" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"/>
+<rect x="818" y="1562" width="275" height="187" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>1</title></rect>
+<rect x="1093" y="1375" width="275" height="374" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>2</title></rect>
+<rect x="1505" y="1187" width="275" height="562" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<rect x="1780" y="1000" width="275" height="749" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>4</title></rect>
+<rect x="2193" y="813" width="275" height="936" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
+<rect x="2468" y="625" width="275" height="1124" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>6</title></rect>
+<rect x="2880" y="438" width="275" height="1311" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>7</title></rect>
+<rect x="3155" y="250" width="275" height="1499" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>8</title></rect>
 </svg>
