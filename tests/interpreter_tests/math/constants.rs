@@ -10,7 +10,7 @@ mod degree_constant {
 
   #[test]
   fn degree_numeric() {
-    assert_eq!(interpret("N[Degree]").unwrap(), "0.017453292519943295");
+    assert_eq!(interpret("N[Degree]").unwrap(), "0.0174532925199433");
   }
 
   #[test]
@@ -518,7 +518,7 @@ mod constant_real_arithmetic {
   fn n_of_cross_with_unicode_pi_and_e() {
     assert_eq!(
       interpret("N[Cross[{1, 3, 5}, {π, ⅇ, 0}]]").unwrap(),
-      "{-13.591409142295225, 15.707963267948966, -6.706496132310335}"
+      "{-13.59140914229523, 15.70796326794897, -6.706496132310335}"
     );
   }
 }

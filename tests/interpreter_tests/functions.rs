@@ -3674,7 +3674,7 @@ mod compile {
     clear_state();
     assert_eq!(
       interpret("cf = Compile[{{x, _Real}, {y, _Integer}}, If[x == 0.0 && y <= 0, 0.0, Sin[x ^ y] + 1 / Min[x, 0.5]] + 0.5]; cf[3.5, 2]").unwrap(),
-      "2.1888806450188727"
+      "2.188880645018873"
     );
   }
 
@@ -5510,7 +5510,7 @@ mod elliptic_theta_prime {
   fn theta3() {
     assert_eq!(
       interpret("EllipticThetaPrime[3, 0.5, 0.1]").unwrap(),
-      "-0.33731583355805805"
+      "-0.3373158335580581"
     );
   }
 
@@ -5518,7 +5518,7 @@ mod elliptic_theta_prime {
   fn theta4() {
     assert_eq!(
       interpret("EllipticThetaPrime[4, 0.5, 0.1]").unwrap(),
-      "0.33586095767513946"
+      "0.3358609576751395"
     );
   }
 
@@ -5567,7 +5567,7 @@ mod bessel_j_zero {
   fn numeric_j1_1() {
     assert_eq!(
       interpret("N[BesselJZero[1, 1]]").unwrap(),
-      "3.8317059702075125"
+      "3.831705970207512"
     );
   }
 
@@ -10802,7 +10802,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn glaisher_numeric() {
-    assert_eq!(interpret("N[Glaisher]").unwrap(), "1.2824271291006226");
+    assert_eq!(interpret("N[Glaisher]").unwrap(), "1.282427129100623");
   }
   #[test]
   fn nminvalue_basic() {

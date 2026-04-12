@@ -15,10 +15,7 @@ mod gudermannian {
 
   #[test]
   fn numeric() {
-    assert_eq!(
-      interpret("Gudermannian[4.2]").unwrap(),
-      "1.5408074208608435"
-    );
+    assert_eq!(interpret("Gudermannian[4.2]").unwrap(), "1.540807420860844");
   }
 
   #[test]
@@ -2680,7 +2677,7 @@ mod fourier {
   fn two_equal_elements() {
     // All imaginary parts are exactly 0 → Real output
     let result = interpret("Fourier[{2, 2}]").unwrap();
-    assert!(result.contains("2.828427124746190"), "got: {}", result);
+    assert!(result.contains("2.82842712474619"), "got: {}", result);
     assert!(result.contains("0."), "got: {}", result);
     // Should not contain I (all real)
     assert!(!result.contains("I"), "got: {}", result);
@@ -2864,7 +2861,7 @@ mod nsum {
   fn finite_sum() {
     assert_eq!(
       interpret("NSum[1/i^2, {i, 1, 10}]").unwrap(),
-      "1.5497677311665408"
+      "1.549767731166541"
     );
   }
 
@@ -3409,7 +3406,7 @@ mod hypergeometric_pfq {
   fn numeric_2f1() {
     assert_eq!(
       interpret("HypergeometricPFQ[{1, 2}, {3}, 0.5]").unwrap(),
-      "1.5451774444795623"
+      "1.545177444479562"
     );
   }
 
@@ -3417,7 +3414,7 @@ mod hypergeometric_pfq {
   fn numeric_1f1() {
     assert_eq!(
       interpret("HypergeometricPFQ[{1}, {2}, 1.0]").unwrap(),
-      "1.7182818284590453"
+      "1.718281828459045"
     );
   }
 
@@ -3441,7 +3438,7 @@ mod hypergeometric_pfq {
   fn n_wrapper() {
     assert_eq!(
       interpret("N[HypergeometricPFQ[{1, 2}, {3}, 1/2]]").unwrap(),
-      "1.5451774444795623"
+      "1.545177444479562"
     );
   }
 }
@@ -4403,7 +4400,7 @@ mod window_functions {
 
   #[test]
   fn hann_numeric() {
-    assert_eq!(interpret("HannWindow[0.3]").unwrap(), "0.34549150281252633");
+    assert_eq!(interpret("HannWindow[0.3]").unwrap(), "0.3454915028125263");
   }
 
   #[test]
@@ -4475,20 +4472,17 @@ mod prime_zeta_p {
 
   #[test]
   fn numeric_2() {
-    assert_eq!(interpret("PrimeZetaP[2.0]").unwrap(), "0.45224742004106566");
+    assert_eq!(interpret("PrimeZetaP[2.0]").unwrap(), "0.4522474200410657");
   }
 
   #[test]
   fn numeric_via_n() {
-    assert_eq!(
-      interpret("N[PrimeZetaP[2]]").unwrap(),
-      "0.45224742004106566"
-    );
+    assert_eq!(interpret("N[PrimeZetaP[2]]").unwrap(), "0.4522474200410657");
   }
 
   #[test]
   fn numeric_3() {
-    assert_eq!(interpret("PrimeZetaP[3.0]").unwrap(), "0.17476263929944316");
+    assert_eq!(interpret("PrimeZetaP[3.0]").unwrap(), "0.1747626392994432");
   }
 
   #[test]
@@ -4662,7 +4656,7 @@ mod bandpass_filter {
   fn basic() {
     assert_eq!(
       interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]").unwrap(),
-      "{0.18547982385040732, 0.288059447503783, 0.4244918102099795, 0.5609241729161761, 0.6635037965695517}"
+      "{0.1854798238504073, 0.288059447503783, 0.4244918102099795, 0.5609241729161761, 0.6635037965695517}"
     );
   }
 
@@ -4670,7 +4664,7 @@ mod bandpass_filter {
   fn with_order() {
     assert_eq!(
       interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 3]").unwrap(),
-      "{0.07991129198211216, 0.14898970746732165, 0.22348456120098245, 0.2979794149346433, 0.3670578304198528}"
+      "{0.07991129198211216, 0.1489897074673217, 0.2234845612009825, 0.2979794149346433, 0.3670578304198528}"
     );
   }
 
@@ -4678,7 +4672,7 @@ mod bandpass_filter {
   fn order_1() {
     assert_eq!(
       interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 1]").unwrap(),
-      "{0.06366197723675814, 0.12732395447351627, 0.1909859317102744, 0.25464790894703254, 0.3183098861837907}"
+      "{0.06366197723675814, 0.1273239544735163, 0.1909859317102744, 0.2546479089470325, 0.3183098861837907}"
     );
   }
 
@@ -4686,7 +4680,7 @@ mod bandpass_filter {
   fn even_order() {
     assert_eq!(
       interpret("BandpassFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}, 4]").unwrap(),
-      "{0.11353554513578962, 0.167668935248101, 0.270666950561557, 0.3789337307861797, 0.4819317460996357}"
+      "{0.1135355451357896, 0.167668935248101, 0.270666950561557, 0.3789337307861797, 0.4819317460996357}"
     );
   }
 
@@ -4695,7 +4689,7 @@ mod bandpass_filter {
     assert_eq!(
       interpret("BandpassFilter[{1, 2, 3, 4, 5, 6, 7, 8}, {0.1, 0.3}]")
         .unwrap(),
-      "{0.3161491615585342, 0.43414813964807336, 0.6126020827245306, 0.8301409615621332, 1.061990802805853, 1.2938406440495724, 1.5113795228871751, 1.6898334659636323}"
+      "{0.3161491615585342, 0.4341481396480734, 0.6126020827245306, 0.8301409615621332, 1.061990802805853, 1.293840644049572, 1.511379522887175, 1.689833465963632}"
     );
   }
 
@@ -4744,7 +4738,7 @@ mod lowpass_filter {
   fn basic() {
     assert_eq!(
       interpret("LowpassFilter[{1, 2, 3, 4, 5}, 0.3]").unwrap(),
-      "{1.3128492422860063, 2.0366239766680576, 3., 3.963376023331943, 4.687150757713994}"
+      "{1.312849242286006, 2.036623976668058, 3., 3.963376023331943, 4.687150757713994}"
     );
   }
 
@@ -4776,7 +4770,7 @@ mod bandstop_filter {
   fn basic() {
     assert_eq!(
       interpret("BandstopFilter[{1, 2, 3, 4, 5}, {0.1, 0.3}]").unwrap(),
-      "{0.8145201761495926, 1.711940552496217, 2.5755081897900203, 3.439075827083824, 4.336496203430448}"
+      "{0.8145201761495926, 1.711940552496217, 2.57550818979002, 3.439075827083824, 4.336496203430448}"
     );
   }
 }
@@ -4796,7 +4790,7 @@ mod airy_ai_prime {
   fn at_one() {
     assert_eq!(
       interpret("AiryAiPrime[1.0]").unwrap(),
-      "-0.15914744129679328"
+      "-0.1591474412967933"
     );
   }
 
@@ -4809,7 +4803,7 @@ mod airy_ai_prime {
   fn negative_arg() {
     assert_eq!(
       interpret("AiryAiPrime[-1.0]").unwrap(),
-      "-0.010160567116645175"
+      "-0.01016056711664517"
     );
   }
 }

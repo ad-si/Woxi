@@ -160,7 +160,7 @@ mod image_core {
     // ImageData returns f32-precision values (matching wolframscript)
     assert_eq!(
       result,
-      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}, {0.4000000059604645, 0.5, 0.6000000238418579}}"
+      "{{0.1000000014901161, 0.2000000029802322, 0.300000011920929}, {0.4000000059604645, 0.5, 0.6000000238418579}}"
     );
   }
 
@@ -340,7 +340,7 @@ mod image_processing {
     // f32 precision values (matching wolframscript)
     assert_eq!(
       result,
-      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}}"
+      "{{0.1000000014901161, 0.2000000029802322, 0.300000011920929}}"
     );
   }
 }
@@ -559,7 +559,7 @@ mod image_advanced {
     // Wolfram does NOT clamp ImageAdd results to [0,1]
     let result =
       interpret("ImageData[ImageAdd[Image[{{0.8}}], Image[{{0.5}}]]]").unwrap();
-    assert_eq!(result, "{{1.2999999523162842}}");
+    assert_eq!(result, "{{1.299999952316284}}");
   }
 
   #[test]
@@ -570,7 +570,7 @@ mod image_advanced {
     )
     .unwrap();
     // f32 precision: 0.5-0.2 = 0.30000001192092896 in f32
-    assert_eq!(result, "{{0.30000001192092896, 0.5}}");
+    assert_eq!(result, "{{0.300000011920929, 0.5}}");
   }
 
   #[test]
@@ -580,7 +580,7 @@ mod image_advanced {
     let result =
       interpret("ImageData[ImageSubtract[Image[{{0.2}}], Image[{{0.5}}]]]")
         .unwrap();
-    assert_eq!(result, "{{-0.30000001192092896}}");
+    assert_eq!(result, "{{-0.300000011920929}}");
   }
 
   #[test]
