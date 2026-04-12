@@ -62,11 +62,11 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,364 749,364 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1270 3499,1270 "/>
-<rect x="804" y="1095" width="440" height="174" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="1354" y="956" width="440" height="313" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="1904" y="434" width="440" height="835" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="2454" y="852" width="440" height="417" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
-<rect x="3004" y="887" width="440" height="382" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"/>
+<rect x="804" y="1095" width="440" height="174" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
+<rect x="1354" y="956" width="440" height="313" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
+<rect x="1904" y="434" width="440" height="835" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
+<rect x="2454" y="852" width="440" height="417" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>12</title></rect>
+<rect x="3004" y="887" width="440" height="382" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>11</title></rect>
 <text x="1025.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Anna</text>
 <text x="1575.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Ben</text>
 <text x="2125.0" y="1540.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Carl</text>

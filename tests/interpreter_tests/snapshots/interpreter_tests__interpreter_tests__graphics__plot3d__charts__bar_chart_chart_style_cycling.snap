@@ -54,9 +54,9 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3, 4, 5}, ChartStyle -> {Red, Blue}]
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,100 749,100 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<rect x="804" y="1450" width="440" height="299" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"/>
-<rect x="1354" y="1150" width="440" height="599" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"/>
-<rect x="1904" y="850" width="440" height="899" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"/>
-<rect x="2454" y="550" width="440" height="1199" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"/>
-<rect x="3004" y="250" width="440" height="1499" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"/>
+<rect x="804" y="1450" width="440" height="299" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"><title>1</title></rect>
+<rect x="1354" y="1150" width="440" height="599" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"><title>2</title></rect>
+<rect x="1904" y="850" width="440" height="899" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<rect x="2454" y="550" width="440" height="1199" opacity="1" fill="#0000FF" stroke="#000000" stroke-width="10"><title>4</title></rect>
+<rect x="3004" y="250" width="440" height="1499" opacity="1" fill="#FF0000" stroke="#000000" stroke-width="10"><title>5</title></rect>
 </svg>

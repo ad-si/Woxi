@@ -169,7 +169,8 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
           opts.plot_style = parse_plot_style(replacement);
         }
         "PlotLegends" => {
-          let (labels, _auto, _expressions) = parse_plot_legends(replacement);
+          let (labels, _auto, _expressions, _pos) =
+            parse_plot_legends(replacement);
           opts.plot_legends = labels;
         }
         "Mesh" => {

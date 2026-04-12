@@ -1001,7 +1001,7 @@ TranslationTransform,Creates an affine translation transformation,✅,none,6.0,1
 TagBox,Low-level box construct that associates a tag with box content,✅,pure,3.0,1012
 Divisible,Tests if one number is divisible by another,✅,pure,6.0,1013
 PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3.0,1014
-Callout,,🚫,,11.0,1015
+Callout,Annotates a plot element with a label,✅,pure,11.0,1015
 MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10.0,1016
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3.0,1017
 VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7.0,1018
