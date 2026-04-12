@@ -284,6 +284,31 @@ mod options {
       "{{a -> 1}, {b -> 2}}"
     );
   }
+
+  #[test]
+  fn builtin_plot_options() {
+    // Options[Plot] should return the built-in default options
+    let result = interpret("Options[Plot]").unwrap();
+    assert!(result.starts_with(
+      "{AlignmentPoint -> Center, AspectRatio -> GoldenRatio^(-1)"
+    ));
+    assert!(result.contains("PlotRange -> {Full, Automatic}"));
+    assert!(result.contains("RegionFunction -> (True & )"));
+    assert!(result.contains("WorkingPrecision -> MachinePrecision}"));
+  }
+
+  #[test]
+  fn builtin_plot_specific_option() {
+    assert_eq!(
+      interpret("Options[Plot, PlotRange]").unwrap(),
+      "{PlotRange -> {Full, Automatic}}"
+    );
+  }
+
+  #[test]
+  fn builtin_plot_option_not_found() {
+    assert_eq!(interpret("Options[Plot, NonExistentOption]").unwrap(), "{}");
+  }
 }
 
 mod options_pattern {

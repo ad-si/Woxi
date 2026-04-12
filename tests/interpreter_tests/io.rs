@@ -2726,6 +2726,32 @@ mod set_directory {
   }
 
   #[test]
+  fn no_args_sets_home() {
+    // SetDirectory[] with no arguments sets to $HomeDirectory
+    let result = interpret(
+      r#"Block[{}, d = SetDirectory[]; ResetDirectory[]; StringQ[d]]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn no_args_matches_home_env() {
+    // SetDirectory[] should set to the HOME environment variable
+    let home = std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .unwrap();
+    let home = std::fs::canonicalize(&home)
+      .unwrap()
+      .to_string_lossy()
+      .into_owned();
+    let result =
+      interpret(r#"Block[{}, d = SetDirectory[]; ResetDirectory[]; d]"#)
+        .unwrap();
+    assert_eq!(result, home);
+  }
+
+  #[test]
   fn does_not_mutate_process_cwd() {
     // Regression test: SetDirectory/ResetDirectory must not touch the
     // process-wide current working directory. Cargo runs tests in parallel

@@ -848,7 +848,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SeriesCoefficient" => Some((2, 2)),
     "Set" => Some((2, 2)),
     "SetAttributes" => Some((2, 2)),
-    "SetDirectory" => Some((1, 1)),
+    "SetDirectory" => Some((0, 1)),
     "SetStreamPosition" => Some((2, 2)),
     "Sharpen" => Some((1, 2)),
     "ShearingMatrix" => Some((3, 3)),
