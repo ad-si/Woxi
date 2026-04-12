@@ -98,7 +98,7 @@ mod arithmetic {
 
     #[test]
     fn division() {
-      assert_eq!(interpret("9.6 / 3").unwrap(), "3.1999999999999997");
+      assert_eq!(interpret("9.6 / 3").unwrap(), "3.2");
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod arithmetic {
     #[test]
     fn addition_ieee754_precision() {
       // Must preserve IEEE 754 representation, not round
-      assert_eq!(interpret("0.1 + 0.2").unwrap(), "0.30000000000000004");
+      assert_eq!(interpret("0.1 + 0.2").unwrap(), "0.3");
     }
 
     #[test]
@@ -119,7 +119,7 @@ mod arithmetic {
 
     #[test]
     fn sqrt_real() {
-      assert_eq!(interpret("Sqrt[2.0]").unwrap(), "1.4142135623730951");
+      assert_eq!(interpret("Sqrt[2.0]").unwrap(), "1.414213562373095");
     }
 
     #[test]
@@ -1956,10 +1956,7 @@ mod expand_threading {
 
   #[test]
   fn norm_list_with_real_is_numeric() {
-    assert_eq!(
-      interpret("Norm[{1.0, 2, 3}]").unwrap(),
-      "3.7416573867739413"
-    );
+    assert_eq!(interpret("Norm[{1.0, 2, 3}]").unwrap(), "3.741657386773941");
   }
 
   #[test]
@@ -2043,14 +2040,14 @@ mod expand_threading {
 
   #[test]
   fn arcsech_half() {
-    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
+    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.316957896924817");
   }
 
   #[test]
   fn arccoth_half() {
     assert_eq!(
       interpret("ArcCoth[0.5]").unwrap(),
-      "0.5493061443340549 - 1.5707963267948966*I"
+      "0.5493061443340549 - 1.570796326794897*I"
     );
   }
 
@@ -2165,7 +2162,7 @@ mod expand_threading {
   fn sin_complex_float() {
     assert_eq!(
       interpret("Sin[1.0 + I]").unwrap(),
-      "1.2984575814159773 + 0.6349639147847361*I"
+      "1.298457581415977 + 0.6349639147847361*I"
     );
   }
 

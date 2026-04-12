@@ -87,7 +87,7 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_sinh_real() {
-      assert_eq!(interpret("Sinh[1.0]").unwrap(), "1.1752011936438014");
+      assert_eq!(interpret("Sinh[1.0]").unwrap(), "1.175201193643801");
     }
     #[test]
     fn test_sinh_symbolic() {
@@ -151,7 +151,7 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_cosh_real() {
-      assert_eq!(interpret("Cosh[1.0]").unwrap(), "1.5430806348152437");
+      assert_eq!(interpret("Cosh[1.0]").unwrap(), "1.543080634815244");
     }
     #[test]
     fn test_cosh_symbolic() {
@@ -204,7 +204,7 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_arccosh_real() {
-      assert_eq!(interpret("ArcCosh[2.0]").unwrap(), "1.3169578969248166");
+      assert_eq!(interpret("ArcCosh[2.0]").unwrap(), "1.316957896924817");
     }
   }
 

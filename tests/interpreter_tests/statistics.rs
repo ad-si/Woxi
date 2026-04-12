@@ -726,7 +726,7 @@ mod central_moment {
   fn central_moment_fourth() {
     assert_eq!(
       interpret("CentralMoment[{1.1, 1.2, 1.4, 2.1, 2.4}, 4]").unwrap(),
-      "0.10084511999999998"
+      "0.10084512"
     );
   }
 
@@ -744,7 +744,7 @@ mod kurtosis {
   fn kurtosis_reals() {
     assert_eq!(
       interpret("Kurtosis[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
-      "1.4209750290831373"
+      "1.420975029083137"
     );
   }
 

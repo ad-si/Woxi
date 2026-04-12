@@ -1821,7 +1821,10 @@ mod simplify_continued_fractions {
   #[test]
   fn nested_inverse_with_symbolic_coefficients() {
     // a / (b + c/d) → a d / (c + b d)
-    assert_eq!(interpret("Simplify[a/(b + c/d)]").unwrap(), "a*d/(c + b*d)");
+    assert_eq!(
+      interpret("Simplify[a/(b + c/d)]").unwrap(),
+      "(a*d)/(c + b*d)"
+    );
   }
 
   #[test]
@@ -2389,7 +2392,7 @@ mod find_root {
   fn polynomial_root() {
     assert_eq!(
       interpret("FindRoot[x^2 - 2, {x, 1}]").unwrap(),
-      "{x -> 1.4142135623730951}"
+      "{x -> 1.414213562373095}"
     );
   }
 
@@ -2397,7 +2400,7 @@ mod find_root {
   fn polynomial_root_negative_start() {
     assert_eq!(
       interpret("FindRoot[x^2 - 2, {x, -1}]").unwrap(),
-      "{x -> -1.4142135623730951}"
+      "{x -> -1.414213562373095}"
     );
   }
 
@@ -3847,7 +3850,7 @@ mod root {
     let result = interpret("N[Root[#^2 - 2 &, 1]]").unwrap();
     let val: f64 = result.parse().expect("should be a number");
     assert!(
-      (val - (-1.4142135623730951)).abs() < 1e-10,
+      (val - (-1.414213562373095)).abs() < 1e-10,
       "Expected -1.414..., got {}",
       val
     );

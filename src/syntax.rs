@@ -3486,56 +3486,99 @@ pub fn format_real(f: f64) -> String {
     // Whole number in normal range - format with trailing dot
     format!("{}.", f as i64)
   } else {
-    // Use Rust's default formatter which produces the shortest
-    // representation that round-trips to the same f64 value
-    format!("{}", f)
+    // Wolfram Language displays machine-precision numbers with at most
+    // 16 significant digits (⌈$MachinePrecision⌉ = ⌈15.955⌉ = 16).
+    // Rust's shortest round-trip can produce up to 17; truncate when needed.
+    let s = format!("{}", f);
+    cap_significant_digits(&s, f, 16)
   }
+}
+
+/// Cap a formatted decimal number string to at most `max_sig` significant digits.
+/// Uses `format!("{:.prec$e}", f)` for proper rounding when truncation is needed,
+/// then reconstructs the decimal notation.
+fn cap_significant_digits(s: &str, f: f64, max_sig: usize) -> String {
+  // Count significant digits in the string
+  let negative = s.starts_with('-');
+  let abs_s = if negative { &s[1..] } else { s };
+  let mut sig = 0usize;
+  let mut started = false;
+  for ch in abs_s.chars() {
+    if ch == '.' {
+      continue;
+    }
+    if !ch.is_ascii_digit() {
+      break;
+    }
+    if ch != '0' {
+      started = true;
+    }
+    if started {
+      sig += 1;
+    }
+  }
+  if sig <= max_sig {
+    return s.to_string();
+  }
+  // Reformat with proper rounding via scientific notation
+  let sci = format!("{:.prec$e}", f.abs(), prec = max_sig - 1);
+  let (mantissa, exp_str) = sci.split_once('e').unwrap();
+  let exp: i32 = exp_str.parse().unwrap();
+  let digits: String =
+    mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+  let digits = digits.trim_end_matches('0');
+  if digits.is_empty() {
+    return "0.".to_string();
+  }
+  let dot_offset = exp + 1;
+  let mut result = String::new();
+  if negative {
+    result.push('-');
+  }
+  if dot_offset <= 0 {
+    result.push_str("0.");
+    for _ in 0..(-dot_offset) {
+      result.push('0');
+    }
+    result.push_str(digits);
+  } else {
+    let dp = dot_offset as usize;
+    if dp >= digits.len() {
+      result.push_str(digits);
+      for _ in 0..(dp - digits.len()) {
+        result.push('0');
+      }
+      result.push('.');
+    } else {
+      result.push_str(&digits[..dp]);
+      result.push('.');
+      result.push_str(&digits[dp..]);
+    }
+  }
+  result
 }
 
 /// Format a real number using Wolfram's *^ scientific notation.
 /// E.g. 2.733467611516948*^33 or -1.5*^-6
 ///
-/// Uses string manipulation on Rust's shortest round-trip representation
-/// to avoid precision loss from dividing by 10^exp.
+/// Uses format!("{:.15e}", f) for 16 significant digits (matching Wolfram's
+/// machine precision), then converts to Wolfram's *^ notation.
 fn format_real_scientific(f: f64) -> String {
   let negative = f < 0.0;
-  let abs = f.abs();
-  // Use Rust's shortest round-trip representation (like Wolfram's approach)
-  let s = format!("{}", abs);
-  // Find the decimal point position
-  let (digits, dot_pos) = if let Some(dot) = s.find('.') {
-    // Remove the dot to get all digits, remember where it was
-    let mut d = String::with_capacity(s.len());
-    d.push_str(&s[..dot]);
-    d.push_str(&s[dot + 1..]);
-    (d, dot as i32)
+  // Format with 16 significant digits (15 after the leading digit)
+  let sci = format!("{:.15e}", f.abs());
+  let (mantissa, exp_str) = sci.split_once('e').unwrap();
+  let exp: i32 = exp_str.parse().unwrap();
+  // Trim trailing zeros from mantissa, keeping the dot
+  let mantissa = mantissa.trim_end_matches('0');
+  // Ensure mantissa ends with '.' at minimum (Wolfram uses "1.*^6" not "1*^6")
+  let mantissa = if mantissa.ends_with('.') {
+    mantissa.to_string()
   } else {
-    (s.clone(), s.len() as i32)
+    mantissa.to_string()
   };
-  // Remove leading zeros to find first significant digit
-  let leading_zeros = digits.chars().take_while(|&c| c == '0').count();
-  let sig_digits = &digits[leading_zeros..];
-  if sig_digits.is_empty() {
-    return "0.*^0".to_string();
-  }
-  // Exponent: position of first significant digit relative to decimal point
-  let exp = dot_pos - leading_zeros as i32 - 1;
-  // Build mantissa: first digit, dot, remaining digits
-  let mut mantissa = String::new();
-  if negative {
-    mantissa.push('-');
-  }
-  mantissa.push_str(&sig_digits[..1]);
-  mantissa.push('.');
-  if sig_digits.len() > 1 {
-    mantissa.push_str(&sig_digits[1..]);
-  }
-  // Trim trailing zeros after the decimal point, keeping the dot
-  // Wolfram uses "1.*^6" not "1.0*^6"
-  while mantissa.ends_with('0') {
-    mantissa.pop();
-  }
-  format!("{}*^{}", mantissa, exp)
+  let sign = if negative { "-" } else { "" };
+  format!("{}{}*^{}", sign, mantissa, exp)
 }
 
 /// Format a BigFloat (arbitrary-precision real) for display.
@@ -4876,6 +4919,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
         // Flatten nested Times (Times is Flat)
+        // Also decompose BinaryOp::Divide into numerator + Power[denom, -1]
+        // so that format_times_with_denominator can render e.g. Times[a, d/(c+b*d)]
+        // as (a*d)/(c + b*d).
         let flat_args: Vec<Expr> = args
           .iter()
           .flat_map(|a| match a {
@@ -4888,6 +4934,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               left,
               right,
             } => vec![*left.clone(), *right.clone()],
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left,
+              right,
+            } => vec![
+              *left.clone(),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![*right.clone(), Expr::Integer(-1)],
+              },
+            ],
             other => vec![other.clone()],
           })
           .collect();
@@ -6262,8 +6319,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::CurriedCall { func, args } => {
       // Display as nested calls: f[a][b, c]
+      // When func is a Function (body &), wrap in parens: (body & )[args]
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
-      format!("{}[{}]", fmt(func), args_str.join(", "))
+      let func_str = fmt(func);
+      let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
+        format!("({})", func_str.trim_end())
+      } else {
+        func_str
+      };
+      format!("{}[{}]", func_display, args_str.join(", "))
     }
   }
 }
@@ -7167,9 +7231,16 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     }
 
     // CurriedCall: display as nested calls f[a][b, c] using InputForm
+    // When func is a Function (body &), wrap in parens: (body &)[args]
     Expr::CurriedCall { func, args } => {
       let args_str: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      format!("{}[{}]", expr_to_input_form(func), args_str.join(", "))
+      let func_str = expr_to_input_form(func);
+      let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
+        format!("({})", func_str.trim_end())
+      } else {
+        func_str
+      };
+      format!("{}[{}]", func_display, args_str.join(", "))
     }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
