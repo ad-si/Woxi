@@ -2602,10 +2602,12 @@ pub fn rasterize_svg(
   use std::sync::Arc as StdArc;
 
   let mut fontdb = resvg::usvg::fontdb::Database::new();
-  load_embedded_fonts(&mut fontdb);
-  // Prefer real system fonts when available (they'll outrank the embedded
-  // fallbacks above for non-generic family names like "Arial").
+  // Load system fonts first so they're available as fallbacks for exotic
+  // glyphs, then load embedded fonts and set generic-family mappings.
+  // Order matters: load_system_fonts() resets the generic family aliases,
+  // so our set_sans_serif_family() etc. must come *after* it.
   fontdb.load_system_fonts();
+  load_embedded_fonts(&mut fontdb);
 
   // Parse SVG
   let mut opt = resvg::usvg::Options::default();
