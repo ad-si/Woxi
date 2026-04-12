@@ -164,6 +164,9 @@ pub fn dispatch_plotting(
     "VectorPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::vector_plot_ast(args)
     })),
+    "VectorPlot3D" if args.len() >= 4 => Some(quiet_plot(|| {
+      crate::functions::plot3d::vector_plot3d_ast(args)
+    })),
     "StreamPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::stream_plot_ast(args)
     })),

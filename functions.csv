@@ -1004,7 +1004,7 @@ PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3.0,1014
 Callout,Annotates a plot element with a label,✅,pure,11.0,1015
 MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10.0,1016
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3.0,1017
-VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7.0,1018
+VectorPlot3D,Creates a 3D vector field plot,✅,pure,7.0,1018
 RandomPoint,,🚫,,10.2,1020
 TemplateBox,,🚫,,7.0,1020
 ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6.0,1021

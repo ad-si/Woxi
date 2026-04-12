@@ -1015,6 +1015,471 @@ fn draw_axes(
   }
 }
 
+// ── VectorPlot3D implementation ─────────────────────────────────────
+
+/// Grid resolution for VectorPlot3D (N x N x N sample points).
+const VECTOR3D_GRID: usize = 7;
+
+/// Evaluate a 3-component vector field {vx, vy, vz} at (x, y, z).
+fn evaluate_vector3d(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  zvar: &str,
+  xval: f64,
+  yval: f64,
+  zval: f64,
+) -> Option<(f64, f64, f64)> {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  let sub3 = substitute_var(&sub2, zvar, &Expr::Real(zval));
+  let result = evaluate_expr_to_expr(&sub3).ok()?;
+  if let Expr::List(items) = &result
+    && items.len() == 3
+  {
+    let vx = try_eval_to_f64(&items[0])?;
+    let vy = try_eval_to_f64(&items[1])?;
+    let vz = try_eval_to_f64(&items[2])?;
+    if vx.is_finite() && vy.is_finite() && vz.is_finite() {
+      return Some((vx, vy, vz));
+    }
+  }
+  None
+}
+
+/// VectorPlot3D[{vx, vy, vz}, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
+pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 4 {
+    return Err(InterpreterError::EvaluationError(
+      "VectorPlot3D requires at least 4 arguments: VectorPlot3D[{vx,vy,vz}, {x,xmin,xmax}, {y,ymin,ymax}, {z,zmin,zmax}]".into(),
+    ));
+  }
+
+  // Collect one or more vector field bodies
+  let bodies: Vec<&Expr> = if let Expr::List(items) = &args[0]
+    && !items.is_empty()
+    && items.iter().all(|e| matches!(e, Expr::List(_)))
+  {
+    items.iter().collect()
+  } else {
+    vec![&args[0]]
+  };
+
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "first")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "second")?;
+  let (zvar, z_min, z_max) = parse_iterator(&args[3], "third")?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_axes = true;
+  let mut vector_markers = "Arrow"; // "Arrow" or "Tube"
+
+  for opt in &args[4..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+    {
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) =
+            parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+          {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        "Axes" => {
+          if let Expr::Identifier(v) = replacement.as_ref()
+            && v == "False"
+          {
+            show_axes = false;
+          }
+        }
+        "VectorMarkers" => {
+          if let Expr::String(s) = replacement.as_ref()
+            && s == "Tube"
+          {
+            vector_markers = "Tube";
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  let grid_n = VECTOR3D_GRID;
+  let x_step = (x_max - x_min) / grid_n as f64;
+  let y_step = (y_max - y_min) / grid_n as f64;
+  let z_step = (z_max - z_min) / grid_n as f64;
+
+  // Sample vectors from all fields and find global max magnitude
+  struct VecSample {
+    /// Position in data space
+    px: f64,
+    py: f64,
+    pz: f64,
+    /// Vector components in data space
+    vx: f64,
+    vy: f64,
+    vz: f64,
+    mag: f64,
+    field_idx: usize,
+  }
+
+  let mut samples: Vec<VecSample> = Vec::new();
+  let mut max_mag = 0.0_f64;
+
+  for (field_idx, body) in bodies.iter().enumerate() {
+    for i in 0..=grid_n {
+      let x = x_min + i as f64 * x_step;
+      for j in 0..=grid_n {
+        let y = y_min + j as f64 * y_step;
+        for k in 0..=grid_n {
+          let z = z_min + k as f64 * z_step;
+          if let Some((vx, vy, vz)) =
+            evaluate_vector3d(body, &xvar, &yvar, &zvar, x, y, z)
+          {
+            let mag = (vx * vx + vy * vy + vz * vz).sqrt();
+            max_mag = max_mag.max(mag);
+            samples.push(VecSample {
+              px: x,
+              py: y,
+              pz: z,
+              vx,
+              vy,
+              vz,
+              mag,
+              field_idx,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if samples.is_empty() || max_mag < 1e-15 {
+    return Err(InterpreterError::EvaluationError(
+      "VectorPlot3D: vector field produced no finite nonzero vectors".into(),
+    ));
+  }
+
+  // Map data coordinates to normalized [-1, 1] (x, y) and [-Z_SCALE, Z_SCALE] (z)
+  let x_range_d = x_max - x_min;
+  let y_range_d = y_max - y_min;
+  let z_range_d = z_max - z_min;
+  let x_range_d = if x_range_d.abs() < 1e-15 {
+    1.0
+  } else {
+    x_range_d
+  };
+  let y_range_d = if y_range_d.abs() < 1e-15 {
+    1.0
+  } else {
+    y_range_d
+  };
+  let z_range_d = if z_range_d.abs() < 1e-15 {
+    1.0
+  } else {
+    z_range_d
+  };
+
+  let to_norm = |x: f64, y: f64, z: f64| -> Point3D {
+    Point3D {
+      x: (x - x_min) / x_range_d * 2.0 - 1.0,
+      y: (y - y_min) / y_range_d * 2.0 - 1.0,
+      z: ((z - z_min) / z_range_d * 2.0 - 1.0) * Z_SCALE,
+    }
+  };
+
+  // Arrow scale: normalize so that the longest arrow fits roughly half a grid cell
+  let cell_size = (2.0 / grid_n as f64)
+    .min(2.0 / grid_n as f64)
+    .min(2.0 * Z_SCALE / grid_n as f64);
+  let arrow_scale = cell_size * 0.4 / max_mag;
+
+  // Scale factors to convert data-space vector to normalized-space vector
+  let sx = 2.0 / x_range_d;
+  let sy = 2.0 / y_range_d;
+  let sz = 2.0 * Z_SCALE / z_range_d;
+
+  // Build projected arrow data for depth-sorted rendering
+  struct ArrowData {
+    start: Point3D,
+    end: Point3D,
+    depth: f64,
+    color: (u8, u8, u8),
+  }
+
+  let camera = Camera::default();
+  let mut arrows: Vec<ArrowData> = Vec::with_capacity(samples.len());
+
+  let num_fields = bodies.len();
+  for s in &samples {
+    if s.mag < 1e-15 {
+      continue;
+    }
+
+    let center = to_norm(s.px, s.py, s.pz);
+    // Vector in normalized space
+    let dvx = s.vx * sx * arrow_scale * 0.5;
+    let dvy = s.vy * sy * arrow_scale * 0.5;
+    let dvz = s.vz * sz * arrow_scale * 0.5;
+
+    let start = Point3D {
+      x: center.x - dvx,
+      y: center.y - dvy,
+      z: center.z - dvz,
+    };
+    let end = Point3D {
+      x: center.x + dvx,
+      y: center.y + dvy,
+      z: center.z + dvz,
+    };
+
+    // Color: use PLOT_COLORS for multiple fields, magnitude gradient for single
+    let color = if num_fields > 1 {
+      PLOT_COLORS[s.field_idx % PLOT_COLORS.len()]
+    } else {
+      let t = (s.mag / max_mag).clamp(0.0, 1.0);
+      (
+        (t * 200.0) as u8 + 50,
+        ((1.0 - t) * 150.0) as u8 + 50,
+        100_u8,
+      )
+    };
+
+    arrows.push(ArrowData {
+      start,
+      end,
+      depth: depth(center, &camera),
+      color,
+    });
+  }
+
+  // Sort arrows back-to-front (painter's algorithm)
+  arrows.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Compute projected bounding box (include the standard box corners)
+  let bbox_corners = bounding_box_corners();
+  let mut px_min = f64::INFINITY;
+  let mut px_max = f64::NEG_INFINITY;
+  let mut py_min = f64::INFINITY;
+  let mut py_max = f64::NEG_INFINITY;
+
+  for &corner in &bbox_corners {
+    let (px, py) = project(corner, &camera);
+    px_min = px_min.min(px);
+    px_max = px_max.max(px);
+    py_min = py_min.min(py);
+    py_max = py_max.max(py);
+  }
+  for arrow in &arrows {
+    for pt in [&arrow.start, &arrow.end] {
+      let (px, py) = project(*pt, &camera);
+      px_min = px_min.min(px);
+      px_max = px_max.max(px);
+      py_min = py_min.min(py);
+      py_max = py_max.max(py);
+    }
+  }
+
+  let p_width = (px_max - px_min).max(1e-15);
+  let p_height = (py_max - py_min).max(1e-15);
+
+  let margin = 25.0;
+  let draw_w = svg_width as f64 - 2.0 * margin;
+  let draw_h = svg_height as f64 - 2.0 * margin;
+  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let cx = margin + draw_w / 2.0;
+  let cy = margin + draw_h / 2.0;
+  let p_cx = (px_min + px_max) / 2.0;
+  let p_cy = (py_min + py_max) / 2.0;
+
+  let to_svg = |px: f64, py: f64| -> (f64, f64) {
+    (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
+  };
+
+  // Build depth-sorted box edges
+  const EDGE_SUBDIVISIONS: usize = 20;
+  let (sorted_edges, axis_color) = if show_axes {
+    let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+    let ac = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
+    let corners = bounding_box_corners();
+    let edge_pairs: [(usize, usize); 12] = [
+      (0, 1),
+      (0, 2),
+      (1, 3),
+      (2, 3),
+      (4, 5),
+      (4, 6),
+      (5, 7),
+      (6, 7),
+      (0, 4),
+      (1, 5),
+      (2, 6),
+      (3, 7),
+    ];
+    let mut segs: Vec<BoxEdge> = Vec::with_capacity(12 * EDGE_SUBDIVISIONS);
+    for &(i, j) in &edge_pairs {
+      let a = corners[i];
+      let b = corners[j];
+      for s in 0..EDGE_SUBDIVISIONS {
+        let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
+        let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
+        let tm = (t0 + t1) * 0.5;
+        let lerp = |t: f64| Point3D {
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t,
+          z: a.z + (b.z - a.z) * t,
+        };
+        segs.push(BoxEdge {
+          endpoints: [lerp(t0), lerp(t1)],
+          depth: depth(lerp(tm), &camera),
+        });
+      }
+    }
+    segs.sort_by(|a, b| {
+      b.depth
+        .partial_cmp(&a.depth)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    (segs, ac)
+  } else {
+    (Vec::new(), String::new())
+  };
+
+  // Build SVG
+  let mut svg = String::with_capacity(arrows.len() * 200 + 2000);
+
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height, svg_width, svg_height
+    ));
+  }
+  {
+    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
+      svg_width, svg_height, bg.0, bg.1, bg.2
+    ));
+  }
+
+  // Render box edges behind arrows, interleaved by depth
+  {
+    let mut ei = 0;
+    for arrow in &arrows {
+      // Emit box edges further from camera than this arrow
+      while ei < sorted_edges.len() && sorted_edges[ei].depth >= arrow.depth {
+        let edge = &sorted_edges[ei];
+        let (ex0, ey0) = to_svg(
+          project(edge.endpoints[0], &camera).0,
+          project(edge.endpoints[0], &camera).1,
+        );
+        let (ex1, ey1) = to_svg(
+          project(edge.endpoints[1], &camera).0,
+          project(edge.endpoints[1], &camera).1,
+        );
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+          ex0, ey0, ex1, ey1, axis_color
+        ));
+        ei += 1;
+      }
+
+      // Emit arrow
+      let (sx0, sy0) = to_svg(
+        project(arrow.start, &camera).0,
+        project(arrow.start, &camera).1,
+      );
+      let (sx1, sy1) =
+        to_svg(project(arrow.end, &camera).0, project(arrow.end, &camera).1);
+      let (r, g, b) = arrow.color;
+      let color_str = format!("rgb({r},{g},{b})");
+
+      if vector_markers == "Tube" {
+        // Tube: thicker stroke with rounded caps
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n",
+          sx0, sy0, sx1, sy1, color_str
+        ));
+      } else {
+        // Arrow: line + arrowhead
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"1.2\"/>\n",
+          sx0, sy0, sx1, sy1, color_str
+        ));
+
+        // Arrowhead
+        let dx = sx1 - sx0;
+        let dy = sy1 - sy0;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len > 2.0 {
+          let ux = dx / len;
+          let uy = dy / len;
+          let hl = len * 0.3;
+          let hw = hl * 0.4;
+          let bx1 = sx1 - ux * hl + (-uy) * hw;
+          let by1 = sy1 - uy * hl + ux * hw;
+          let bx2 = sx1 - ux * hl - (-uy) * hw;
+          let by2 = sy1 - uy * hl - ux * hw;
+          svg.push_str(&format!(
+            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"/>\n",
+            sx1, sy1, bx1, by1, bx2, by2, color_str
+          ));
+        }
+      }
+    }
+
+    // Emit remaining box edges
+    while ei < sorted_edges.len() {
+      let edge = &sorted_edges[ei];
+      let (ex0, ey0) = to_svg(
+        project(edge.endpoints[0], &camera).0,
+        project(edge.endpoints[0], &camera).1,
+      );
+      let (ex1, ey1) = to_svg(
+        project(edge.endpoints[1], &camera).0,
+        project(edge.endpoints[1], &camera).1,
+      );
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n",
+        ex0, ey0, ex1, ey1, axis_color
+      ));
+      ei += 1;
+    }
+  }
+
+  // Draw axes on top
+  if show_axes {
+    draw_axes(
+      &mut svg,
+      &camera,
+      &to_svg,
+      (x_min, x_max),
+      (y_min, y_max),
+      (z_min, z_max),
+    );
+  }
+
+  svg.push_str("</svg>");
+  Ok(crate::graphics3d_result(svg))
+}
+
 // ── Graphics3D implementation ────────────────────────────────────────
 
 /// Parse a 3D point {x, y, z} from an expression.
