@@ -718,12 +718,15 @@ pub fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
       break;
     }
     let shift = rem_deg - b_deg;
-    // Multiply remainder by b_lead and subtract rem_lead * shifted b
+    // Multiply remainder by b_lead and subtract rem_lead * shifted b.
+    // Use checked arithmetic so pathological inputs fall back to "no
+    // pseudo-remainder found" instead of crashing in debug builds.
     for c in &mut rem {
-      *c *= b_lead;
+      *c = c.checked_mul(b_lead)?;
     }
     for (i, &bc) in b.iter().enumerate() {
-      rem[i + shift] -= rem_lead * bc;
+      let prod = rem_lead.checked_mul(bc)?;
+      rem[i + shift] = rem[i + shift].checked_sub(prod)?;
     }
     // Trim trailing zeros
     while rem.last() == Some(&0) && rem.len() > 1 {

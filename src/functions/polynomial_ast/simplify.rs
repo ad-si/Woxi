@@ -3610,8 +3610,440 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // Try partial factoring by variable connectivity. Splits a sum into
+  // variable-disjoint groups and factors each group separately. This is what
+  // turns `1 + c^2 + 2*c*d + d^2` into `1 + (c + d)^2`.
+  if let Some(pf) = try_partial_factor_components(&trig_simplified) {
+    let c = leaf_count(&pf);
+    if c < best_complexity {
+      best = pf;
+      best_complexity = c;
+    }
+  }
+
+  // Try Collect[expr, v] for each free variable, recursively full-simplifying
+  // each collected coefficient. This produces compact nested forms like
+  // `(a + b)^2 + 2*(a + b)*x + (1 + (c + d)^2)*x^2` for polynomials in x.
+  // Skipped at greater depth to keep the combinatorial blow-up bounded — each
+  // level multiplies work by the number of free variables.
+  let cur_depth = FULL_SIMPLIFY_DEPTH.with(|d| d.get());
+  if cur_depth < MAX_COLLECT_SIMPLIFY_DEPTH
+    && let Some(cs) = try_collect_recursive_simplify(&trig_simplified)
+  {
+    let c = leaf_count(&cs);
+    if c < best_complexity {
+      best = cs;
+      best_complexity = c;
+    }
+  }
+
+  // If `best` is a Times that contains a Plus factor (e.g. `y * big_sum`),
+  // recursively full-simplify the inner sum so that nested factoring kicks in.
+  // This is cheap (at most one recursive call per factor) so we always run it,
+  // bounded by the overall `MAX_FULL_SIMPLIFY_DEPTH` guard.
+  let inner_simplified = simplify_inside_times(&best);
+  {
+    let c = leaf_count(&inner_simplified);
+    if c < best_complexity {
+      best = inner_simplified;
+      best_complexity = c;
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
+}
+
+// ─── Recursion guard for nested full_simplify ──────────────────────────────
+
+thread_local! {
+  static FULL_SIMPLIFY_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+const MAX_FULL_SIMPLIFY_DEPTH: usize = 3;
+
+/// Beyond this depth we disable the expensive `Collect[...]`-based candidate
+/// in `full_simplify_expr`, only relying on the cheaper Factor/partial-factor
+/// paths. Empirically one level is enough to reach the nested factored form
+/// for most practical inputs while keeping the combinatorial blow-up bounded.
+const MAX_COLLECT_SIMPLIFY_DEPTH: usize = 1;
+
+/// Run `full_simplify_expr` while incrementing the recursion-depth counter.
+/// Returns `None` if the depth limit has been reached, so callers can fall
+/// back to leaving the sub-expression alone.
+fn full_simplify_recursive(expr: &Expr) -> Option<Expr> {
+  let depth = FULL_SIMPLIFY_DEPTH.with(|d| d.get());
+  if depth >= MAX_FULL_SIMPLIFY_DEPTH {
+    return None;
+  }
+  FULL_SIMPLIFY_DEPTH.with(|d| d.set(depth + 1));
+  let result = full_simplify_expr(expr);
+  FULL_SIMPLIFY_DEPTH.with(|d| d.set(depth));
+  Some(result)
+}
+
+/// Group additive terms by variable connectivity and factor each group
+/// separately. Returns `Some(_)` only when at least two variable-disjoint
+/// components exist *and* the result is strictly simpler than the input.
+fn try_partial_factor_components(expr: &Expr) -> Option<Expr> {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 3 {
+    return None;
+  }
+
+  // Variables for each term.
+  let term_vars: Vec<std::collections::BTreeSet<String>> = terms
+    .iter()
+    .map(|t| {
+      let mut set = std::collections::BTreeSet::new();
+      collect_free_vars_simple(t, &mut set);
+      set
+    })
+    .collect();
+
+  // Union–find over term indices: connected if they share any variable.
+  let n = terms.len();
+  let mut parent: Vec<usize> = (0..n).collect();
+  fn find(p: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while p[r] != r {
+      r = p[r];
+    }
+    let mut cur = i;
+    while p[cur] != r {
+      let next = p[cur];
+      p[cur] = r;
+      cur = next;
+    }
+    r
+  }
+  for i in 0..n {
+    for j in (i + 1)..n {
+      if term_vars[i].is_empty() || term_vars[j].is_empty() {
+        continue;
+      }
+      if !term_vars[i].is_disjoint(&term_vars[j]) {
+        let ri = find(&mut parent, i);
+        let rj = find(&mut parent, j);
+        if ri != rj {
+          parent[ri] = rj;
+        }
+      }
+    }
+  }
+
+  // Bucket terms by component root.
+  let mut groups: std::collections::BTreeMap<usize, Vec<Expr>> =
+    std::collections::BTreeMap::new();
+  for (i, term) in terms.iter().enumerate() {
+    let root = if term_vars[i].is_empty() {
+      // Constants form their own singleton component.
+      n + i
+    } else {
+      find(&mut parent, i)
+    };
+    groups.entry(root).or_default().push(term.clone());
+  }
+
+  if groups.len() < 2 {
+    return None;
+  }
+
+  let original_complexity = leaf_count(expr);
+  let mut result_parts: Vec<Expr> = Vec::new();
+  for (_, group_terms) in groups {
+    let group_sum = build_sum(group_terms);
+    if let Ok(factored) =
+      crate::functions::polynomial_ast::factor_ast(&[group_sum.clone()])
+    {
+      // Pick whichever is simpler for this component.
+      if leaf_count(&factored) <= leaf_count(&group_sum) {
+        result_parts.push(factored);
+      } else {
+        result_parts.push(group_sum);
+      }
+    } else {
+      result_parts.push(group_sum);
+    }
+  }
+
+  let result = crate::functions::math_ast::plus_ast(&result_parts)
+    .unwrap_or_else(|_| build_sum(result_parts));
+  if leaf_count(&result) < original_complexity {
+    Some(result)
+  } else {
+    None
+  }
+}
+
+/// Lightweight free-variable collector that ignores built-in constants.
+fn collect_free_vars_simple(
+  expr: &Expr,
+  out: &mut std::collections::BTreeSet<String>,
+) {
+  match expr {
+    Expr::Identifier(name)
+      if !crate::functions::polynomial_ast::is_builtin_constant_sa(name) =>
+    {
+      out.insert(name.clone());
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_free_vars_simple(left, out);
+      collect_free_vars_simple(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_free_vars_simple(operand, out),
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_free_vars_simple(a, out);
+      }
+    }
+    Expr::List(items) | Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_free_vars_simple(it, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Try `Collect[expr, v]` for each free variable `v`, recursively
+/// full-simplifying each resulting coefficient. Returns the simplest variant
+/// that strictly improves on `expr`'s leaf count.
+fn try_collect_recursive_simplify(expr: &Expr) -> Option<Expr> {
+  // Only meaningful for sums with multiple terms.
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return None;
+  }
+
+  let mut vars_set = std::collections::BTreeSet::new();
+  collect_free_vars_simple(expr, &mut vars_set);
+  if vars_set.len() < 2 {
+    return None;
+  }
+
+  let original = leaf_count(expr);
+  let mut best: Option<(Expr, usize)> = None;
+
+  for var in &vars_set {
+    let collected = match crate::functions::polynomial_ast::collect_ast(&[
+      expr.clone(),
+      Expr::Identifier(var.clone()),
+    ]) {
+      Ok(c) => c,
+      Err(_) => continue,
+    };
+
+    let simplified_raw = match simplify_collected_coefficients(&collected, var)
+    {
+      Some(s) => s,
+      None => continue,
+    };
+    // Pull out any common symbolic factor that's shared across all terms of
+    // the collected sum without going back through `expand_and_combine`, which
+    // would undo the nested factoring we just performed.
+    let simplified = pull_common_factor(&simplified_raw);
+    let c = leaf_count(&simplified);
+    if c < original && best.as_ref().map(|(_, bc)| c < *bc).unwrap_or(true) {
+      best = Some((simplified, c));
+    }
+  }
+
+  best.map(|(e, _)| e)
+}
+
+/// Pull out a common multiplicative factor shared across all top-level
+/// additive terms of `expr`, without re-expanding the sub-factors. This is
+/// used to post-process the result of a Collect-based candidate so that e.g.
+/// `y*(a+b)^2 + 2*y*(a+b)*x + y*(1+(c+d)^2)*x^2` becomes
+/// `((a+b)^2 + 2*(a+b)*x + (1+(c+d)^2)*x^2)*y`.
+fn pull_common_factor(expr: &Expr) -> Expr {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return expr.clone();
+  }
+
+  let term_factor_strs: Vec<Vec<(String, Expr)>> = terms
+    .iter()
+    .map(|t| {
+      collect_multiplicative_factors(t)
+        .into_iter()
+        .filter_map(|f| {
+          // Exclude pure numeric/−1 factors — those are handled elsewhere.
+          if matches!(&f, Expr::Integer(_) | Expr::Real(_)) {
+            return None;
+          }
+          if matches!(&f, Expr::UnaryOp { op: UnaryOperator::Minus, operand }
+            if matches!(operand.as_ref(), Expr::Integer(_)))
+          {
+            return None;
+          }
+          Some((expr_to_string(&f), f))
+        })
+        .collect()
+    })
+    .collect();
+
+  // Find non-numeric factor strings common to every term.
+  let mut common: Vec<(String, Expr)> = Vec::new();
+  for (s, e) in &term_factor_strs[0] {
+    if term_factor_strs[1..]
+      .iter()
+      .all(|ts| ts.iter().any(|(k, _)| k == s))
+      && !common.iter().any(|(k, _)| k == s)
+    {
+      common.push((s.clone(), e.clone()));
+    }
+  }
+
+  if common.is_empty() {
+    return expr.clone();
+  }
+
+  // Strip one occurrence of each common factor from each term.
+  let mut stripped: Vec<Expr> = Vec::with_capacity(terms.len());
+  for term in &terms {
+    let mut factors = collect_multiplicative_factors(term);
+    for (s, _) in &common {
+      if let Some(pos) = factors.iter().position(|f| &expr_to_string(f) == s) {
+        factors.remove(pos);
+      }
+    }
+    let new_term = if factors.is_empty() {
+      Expr::Integer(1)
+    } else if factors.len() == 1 {
+      factors.into_iter().next().unwrap()
+    } else {
+      build_product(factors)
+    };
+    stripped.push(new_term);
+  }
+
+  let stripped_sum = crate::functions::math_ast::plus_ast(&stripped)
+    .unwrap_or_else(|_| build_sum(stripped));
+  let common_expr = if common.len() == 1 {
+    common.into_iter().next().unwrap().1
+  } else {
+    build_product(common.into_iter().map(|(_, e)| e).collect())
+  };
+
+  // Build final product: (common) * (remaining sum).
+  Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(stripped_sum),
+    right: Box::new(common_expr),
+  }
+}
+
+/// Walk the result of `Collect[expr, var]` and full-simplify each coefficient
+/// (the part of each additive term that doesn't depend on `var`).
+fn simplify_collected_coefficients(
+  collected: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  let terms = collect_additive_terms(collected);
+
+  // Group terms by power-of-var first, summing the per-term coefficients,
+  // so that all `x^0` parts of the collected expression get full-simplified
+  // together rather than each leaf in isolation.
+  let mut power_groups: Vec<(i128, Vec<Expr>)> = Vec::new();
+  for term in &terms {
+    let (power, coeff) = term_var_power_and_coeff(term, var);
+    if power < 0 {
+      // Sentinel: term has a complex var-dependence. Bail out.
+      return None;
+    }
+    if let Some(entry) = power_groups.iter_mut().find(|(p, _)| *p == power) {
+      entry.1.push(coeff);
+    } else {
+      power_groups.push((power, vec![coeff]));
+    }
+  }
+  power_groups.sort_by_key(|(p, _)| *p);
+
+  let mut new_terms: Vec<Expr> = Vec::with_capacity(power_groups.len());
+  for (power, coeffs) in power_groups {
+    let summed_coeff = if coeffs.len() == 1 {
+      coeffs.into_iter().next().unwrap()
+    } else {
+      build_sum(coeffs)
+    };
+    let simplified_coeff =
+      full_simplify_recursive(&summed_coeff).unwrap_or(summed_coeff);
+    let var_part: Option<Expr> = match power {
+      0 => None,
+      1 => Some(Expr::Identifier(var.to_string())),
+      _ => Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(var.to_string())),
+        right: Box::new(Expr::Integer(power)),
+      }),
+    };
+    let new_term = match (simplified_coeff, var_part) {
+      (c, None) => c,
+      (Expr::Integer(1), Some(v)) => v,
+      (Expr::Integer(-1), Some(v)) => Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(v),
+      },
+      (c, Some(v)) => multiply_exprs(&c, &v),
+    };
+    new_terms.push(new_term);
+  }
+
+  Some(
+    crate::functions::math_ast::plus_ast(&new_terms)
+      .unwrap_or_else(|_| build_sum(new_terms)),
+  )
+}
+
+/// If `expr` is `factor * Plus[...]` (or `Times[..., Plus[...]]`),
+/// recursively full-simplify the inner Plus and rebuild the product.
+fn simplify_inside_times(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let new_left = simplify_plus_factor(left);
+      let new_right = simplify_plus_factor(right);
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(new_left),
+        right: Box::new(new_right),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> = args.iter().map(simplify_plus_factor).collect();
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+fn simplify_plus_factor(expr: &Expr) -> Expr {
+  if is_plus_expr(expr)
+    && let Some(simpler) = full_simplify_recursive(expr)
+    && leaf_count(&simpler) < leaf_count(expr)
+  {
+    return simpler;
+  }
+  expr.clone()
+}
+
+fn is_plus_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } if name == "Plus" => true,
+    _ => false,
+  }
 }
 
 /// Full simplification: expand, combine like terms, simplify.
