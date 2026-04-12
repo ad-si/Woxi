@@ -3283,6 +3283,31 @@ mod trig_expand {
       "4*Cos[x]^3*Sin[x] - 4*Cos[x]*Sin[x]^3"
     );
   }
+
+  #[test]
+  fn distributes_product_over_sum() {
+    // Regression: TrigExpand should distribute Times over Plus.
+    assert_eq!(
+      interpret("TrigExpand[Sin[x^2] * Cos[2 x]]").unwrap(),
+      "Cos[x]^2*Sin[x^2] - Sin[x]^2*Sin[x^2]"
+    );
+  }
+
+  #[test]
+  fn distributes_sum_times_cos_sum() {
+    assert_eq!(
+      interpret("TrigExpand[(a + b) Cos[x + y]]").unwrap(),
+      "a*Cos[x]*Cos[y] + b*Cos[x]*Cos[y] - a*Sin[x]*Sin[y] - b*Sin[x]*Sin[y]"
+    );
+  }
+
+  #[test]
+  fn expands_squared_sum_alongside_sin() {
+    assert_eq!(
+      interpret("TrigExpand[Sin[2 x] + (a + b)^2]").unwrap(),
+      "a^2 + 2*a*b + b^2 + 2*Cos[x]*Sin[x]"
+    );
+  }
 }
 
 mod fourier_transform {

@@ -1678,6 +1678,44 @@ mod full_simplify {
       "(k*q*(1 + (1 + s)^(15/4)))/(2*a^4*(1 + s)^(3/2))"
     );
   }
+
+  // Regression: FullSimplify should partially factor sums whose terms split
+  // into variable-disjoint groups. `1 + c^2 + 2 c d + d^2` has a constant
+  // `1` plus a group connected by c,d that factors to `(c+d)^2`.
+  #[test]
+  fn partial_factor_disjoint_groups() {
+    assert_eq!(
+      interpret("FullSimplify[1 + c^2 + 2 c d + d^2]").unwrap(),
+      "1 + (c + d)^2"
+    );
+  }
+
+  // Regression: FullSimplify should recursively re-simplify inside a factored
+  // product. After pulling `y` out of the sum, the remaining polynomial in x
+  // should be collected by x with each coefficient factored in turn.
+  #[test]
+  fn nested_factor_after_common_factor() {
+    assert_eq!(
+      interpret(
+        "FullSimplify[(a^2 + 2 a b + b^2) y + (2 a + 2 b) x y + (1 + c^2 + 2 c d + d^2) x^2 y]"
+      )
+      .unwrap(),
+      "((a + b)^2 + 2*(a + b)*x + (1 + (c + d)^2)*x^2)*y"
+    );
+  }
+
+  // Regression: FullSimplify should collect a multi-variable polynomial by a
+  // chosen variable and factor each collected coefficient.
+  #[test]
+  fn collect_and_factor_coefficients() {
+    assert_eq!(
+      interpret(
+        "FullSimplify[a^2 + 2 a b + b^2 + 2 a x + 2 b x + x^2 + c^2 x^2 + 2 c d x^2 + d^2 x^2]"
+      )
+      .unwrap(),
+      "(a + b)^2 + 2*(a + b)*x + (1 + (c + d)^2)*x^2"
+    );
+  }
 }
 
 mod simplify_assumptions {
@@ -1705,6 +1743,12 @@ mod simplify_assumptions {
   #[test]
   fn simplify_with_direct_assumption() {
     assert_eq!(interpret("Simplify[Sqrt[x^2], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn simplify_power_one_half_with_assumption() {
+    // (x^2)^(1/2) is the unevaluated Power form of Sqrt[x^2].
+    assert_eq!(interpret("Simplify[(x^2)^(1/2), x > 0]").unwrap(), "x");
   }
 
   #[test]

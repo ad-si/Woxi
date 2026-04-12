@@ -3171,7 +3171,9 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   let result = trig_expand_recursive(&args[0]);
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  // TrigExpand distributes products over sums (and expands powers).
+  let expanded = crate::functions::expand_and_combine(&result);
+  crate::evaluator::evaluate_expr_to_expr(&expanded)
 }
 
 /// Recursively apply TrigExpand to an expression.
