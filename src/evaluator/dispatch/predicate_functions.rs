@@ -684,7 +684,7 @@ pub fn dispatch_predicate_functions(
       };
       let stored =
         crate::FUNC_OPTIONS.with(|m| m.borrow().get(&func_name).cloned());
-      let opts = stored.unwrap_or_default();
+      let opts = stored.unwrap_or_else(|| builtin_default_options(&func_name));
       if args.len() == 1 {
         return Some(Ok(Expr::List(opts)));
       } else {
@@ -827,4 +827,109 @@ pub fn dispatch_predicate_functions(
     _ => {}
   }
   None
+}
+
+/// Helper to create a Rule expression: name -> value
+fn make_rule(name: &str, value: Expr) -> Expr {
+  Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  }
+}
+
+/// Helper to create a RuleDelayed expression: name :> value
+fn make_rule_delayed(name: &str, value: Expr) -> Expr {
+  Expr::RuleDelayed {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  }
+}
+
+/// Return built-in default options for known functions.
+fn builtin_default_options(func_name: &str) -> Vec<Expr> {
+  let id = |s: &str| Expr::Identifier(s.to_string());
+  let real = |f: f64| Expr::Real(f);
+  let list = |v: Vec<Expr>| Expr::List(v);
+  let func_slot1 = |body: Expr| Expr::Function {
+    body: Box::new(body),
+  };
+  match func_name {
+    "Plot" => vec![
+      make_rule("AlignmentPoint", id("Center")),
+      make_rule(
+        "AspectRatio",
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![id("GoldenRatio"), Expr::Integer(-1)],
+        },
+      ),
+      make_rule("Axes", id("True")),
+      make_rule("AxesLabel", id("None")),
+      make_rule("AxesOrigin", id("Automatic")),
+      make_rule("AxesStyle", list(vec![])),
+      make_rule("Background", id("None")),
+      make_rule("BaselinePosition", id("Automatic")),
+      make_rule("BaseStyle", list(vec![])),
+      make_rule("ClippingStyle", id("None")),
+      make_rule("ColorFunction", id("Automatic")),
+      make_rule("ColorFunctionScaling", id("True")),
+      make_rule("ColorOutput", id("Automatic")),
+      make_rule("ContentSelectable", id("Automatic")),
+      make_rule("CoordinatesToolOptions", id("Automatic")),
+      make_rule_delayed("DisplayFunction", id("$DisplayFunction")),
+      make_rule("Epilog", list(vec![])),
+      make_rule("Evaluated", id("Automatic")),
+      make_rule("EvaluationMonitor", id("None")),
+      make_rule("Exclusions", id("Automatic")),
+      make_rule("ExclusionsStyle", id("None")),
+      make_rule("Filling", id("None")),
+      make_rule("FillingStyle", id("Automatic")),
+      make_rule_delayed("FormatType", id("TraditionalForm")),
+      make_rule("Frame", id("False")),
+      make_rule("FrameLabel", id("None")),
+      make_rule("FrameStyle", list(vec![])),
+      make_rule("FrameTicks", id("Automatic")),
+      make_rule("FrameTicksStyle", list(vec![])),
+      make_rule("GridLines", id("None")),
+      make_rule("GridLinesStyle", list(vec![])),
+      make_rule("ImageMargins", real(0.)),
+      make_rule("ImagePadding", id("All")),
+      make_rule("ImageSize", id("Automatic")),
+      make_rule("ImageSizeRaw", id("Automatic")),
+      make_rule("IntervalMarkers", id("Automatic")),
+      make_rule("IntervalMarkersStyle", id("Automatic")),
+      make_rule("LabelingSize", id("Automatic")),
+      make_rule("LabelStyle", list(vec![])),
+      make_rule("MaxRecursion", id("Automatic")),
+      make_rule("Mesh", id("None")),
+      make_rule("MeshFunctions", list(vec![func_slot1(Expr::Slot(1))])),
+      make_rule("MeshShading", id("None")),
+      make_rule("MeshStyle", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule_delayed("PerformanceGoal", id("$PerformanceGoal")),
+      make_rule("PlotHighlighting", id("Automatic")),
+      make_rule_delayed("PlotInteractivity", id("$PlotInteractivity")),
+      make_rule("PlotLabel", id("None")),
+      make_rule("PlotLabels", id("None")),
+      make_rule("PlotLayout", id("Automatic")),
+      make_rule("PlotLegends", id("None")),
+      make_rule("PlotPoints", id("Automatic")),
+      make_rule("PlotRange", list(vec![id("Full"), id("Automatic")])),
+      make_rule("PlotRangeClipping", id("True")),
+      make_rule("PlotRangePadding", id("Automatic")),
+      make_rule("PlotRegion", id("Automatic")),
+      make_rule("PlotStyle", id("Automatic")),
+      make_rule_delayed("PlotTheme", id("$PlotTheme")),
+      make_rule("PreserveImageOptions", id("Automatic")),
+      make_rule("Prolog", list(vec![])),
+      make_rule("RegionFunction", func_slot1(id("True"))),
+      make_rule("RotateLabel", id("True")),
+      make_rule("ScalingFunctions", id("None")),
+      make_rule("TargetUnits", id("Automatic")),
+      make_rule("Ticks", id("Automatic")),
+      make_rule("TicksStyle", list(vec![])),
+      make_rule("WorkingPrecision", id("MachinePrecision")),
+    ],
+    _ => vec![],
+  }
 }

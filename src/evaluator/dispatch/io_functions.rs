@@ -1439,6 +1439,30 @@ pub fn dispatch_io_functions(
         files.into_iter().map(Expr::String).collect(),
       )));
     }
+    // SetDirectory[] — with no arguments, set to $HomeDirectory.
+    #[cfg(not(target_arch = "wasm32"))]
+    "SetDirectory" if args.is_empty() => {
+      let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+      if home.is_empty() {
+        return Some(Err(InterpreterError::EvaluationError(
+          "SetDirectory: cannot determine home directory.".into(),
+        )));
+      }
+      match std::fs::canonicalize(&home) {
+        Ok(canonical) if canonical.is_dir() => {
+          let new_dir = canonical.to_string_lossy().into_owned();
+          DIRECTORY_STACK.with(|s| s.borrow_mut().push(new_dir.clone()));
+          return Some(Ok(Expr::String(new_dir)));
+        }
+        _ => {
+          return Some(Err(InterpreterError::EvaluationError(
+            "SetDirectory: home directory does not exist.".into(),
+          )));
+        }
+      }
+    }
     // SetDirectory["dir"] — push "dir" onto the virtual directory stack.
     // Does not mutate the process CWD; see the note on DIRECTORY_STACK.
     #[cfg(not(target_arch = "wasm32"))]

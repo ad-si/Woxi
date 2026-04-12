@@ -6083,7 +6083,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       pattern,
       replacement,
     } => {
-      format!("{} -> {}", fmt(pattern), fmt(replacement))
+      // Parenthesize RHS if it's a pure function (& has low precedence)
+      let rhs_str = fmt(replacement);
+      let rhs_final = match replacement.as_ref() {
+        Expr::Function { .. } => format!("({})", rhs_str),
+        _ => rhs_str,
+      };
+      format!("{} -> {}", fmt(pattern), rhs_final)
     }
     Expr::RuleDelayed {
       pattern,
