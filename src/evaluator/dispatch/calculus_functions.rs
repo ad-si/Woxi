@@ -298,6 +298,48 @@ pub fn dispatch_calculus_functions(
         &args[0], &args[1], &args[2],
       ));
     }
+    // InverseFunction[f] — returns the inverse of known functions
+    "InverseFunction" if args.len() == 1 => {
+      if let Expr::Identifier(func_name) = &args[0] {
+        let inverse = match func_name.as_str() {
+          // Trig -> ArcTrig
+          "Sin" => Some("ArcSin"),
+          "Cos" => Some("ArcCos"),
+          "Tan" => Some("ArcTan"),
+          "Cot" => Some("ArcCot"),
+          "Sec" => Some("ArcSec"),
+          "Csc" => Some("ArcCsc"),
+          // Hyperbolic -> ArcHyperbolic
+          "Sinh" => Some("ArcSinh"),
+          "Cosh" => Some("ArcCosh"),
+          "Tanh" => Some("ArcTanh"),
+          "Coth" => Some("ArcCoth"),
+          "Sech" => Some("ArcSech"),
+          "Csch" => Some("ArcCsch"),
+          // ArcTrig -> Trig
+          "ArcSin" => Some("Sin"),
+          "ArcCos" => Some("Cos"),
+          "ArcTan" => Some("Tan"),
+          "ArcCot" => Some("Cot"),
+          "ArcSec" => Some("Sec"),
+          "ArcCsc" => Some("Csc"),
+          // ArcHyperbolic -> Hyperbolic
+          "ArcSinh" => Some("Sinh"),
+          "ArcCosh" => Some("Cosh"),
+          "ArcTanh" => Some("Tanh"),
+          "ArcCoth" => Some("Coth"),
+          "ArcSech" => Some("Sech"),
+          "ArcCsch" => Some("Csch"),
+          // Exp <-> Log
+          "Exp" => Some("Log"),
+          "Log" => Some("Exp"),
+          _ => None,
+        };
+        if let Some(inv_name) = inverse {
+          return Some(Ok(Expr::Identifier(inv_name.to_string())));
+        }
+      }
+    }
     _ => {}
   }
   None
