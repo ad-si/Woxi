@@ -627,3 +627,54 @@ mod inverse_trig_identities {
     assert_eq!(interpret("Tanh[ArcTanh[x]]").unwrap(), "x");
   }
 }
+
+mod inverse_function {
+  use super::*;
+
+  #[test]
+  fn trig_inverses() {
+    assert_eq!(interpret("InverseFunction[Sin]").unwrap(), "ArcSin");
+    assert_eq!(interpret("InverseFunction[Cos]").unwrap(), "ArcCos");
+    assert_eq!(interpret("InverseFunction[Tan]").unwrap(), "ArcTan");
+    assert_eq!(interpret("InverseFunction[Cot]").unwrap(), "ArcCot");
+    assert_eq!(interpret("InverseFunction[Sec]").unwrap(), "ArcSec");
+    assert_eq!(interpret("InverseFunction[Csc]").unwrap(), "ArcCsc");
+  }
+
+  #[test]
+  fn arc_trig_inverses() {
+    assert_eq!(interpret("InverseFunction[ArcSin]").unwrap(), "Sin");
+    assert_eq!(interpret("InverseFunction[ArcCos]").unwrap(), "Cos");
+    assert_eq!(interpret("InverseFunction[ArcTan]").unwrap(), "Tan");
+  }
+
+  #[test]
+  fn hyperbolic_inverses() {
+    assert_eq!(interpret("InverseFunction[Sinh]").unwrap(), "ArcSinh");
+    assert_eq!(interpret("InverseFunction[Cosh]").unwrap(), "ArcCosh");
+    assert_eq!(interpret("InverseFunction[Tanh]").unwrap(), "ArcTanh");
+    assert_eq!(interpret("InverseFunction[ArcSinh]").unwrap(), "Sinh");
+    assert_eq!(interpret("InverseFunction[ArcCosh]").unwrap(), "Cosh");
+    assert_eq!(interpret("InverseFunction[ArcTanh]").unwrap(), "Tanh");
+  }
+
+  #[test]
+  fn exp_log_inverses() {
+    assert_eq!(interpret("InverseFunction[Exp]").unwrap(), "Log");
+    assert_eq!(interpret("InverseFunction[Log]").unwrap(), "Exp");
+  }
+
+  #[test]
+  fn unknown_stays_unevaluated() {
+    assert_eq!(
+      interpret("InverseFunction[f]").unwrap(),
+      "InverseFunction[f]"
+    );
+  }
+
+  #[test]
+  fn applied_to_argument() {
+    assert_eq!(interpret("InverseFunction[Sin][1/2]").unwrap(), "Pi/6");
+    assert_eq!(interpret("InverseFunction[Exp][5]").unwrap(), "Log[5]");
+  }
+}
