@@ -1853,7 +1853,7 @@ LeastSquares,Least squares solution,,unevaluated,6.0,1885
 CovarianceFunction,Covariance function,,unevaluated,9.0,1887
 XYZColor,XYZ color specification,,unevaluated,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
-ImageTrim,Trim image,,unevaluated,8.0,1889
+ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
 BSplineSurface,B-spline surface,,unevaluated,7.0,1891
 Setting,Setting wrapper,,unevaluated,6.0,1891
 SingularValueList,Singular value list,,unevaluated,5.0,1892

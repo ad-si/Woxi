@@ -65,6 +65,9 @@ pub fn dispatch_image_functions(
     "ImageResize" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_resize_ast(args));
     }
+    "ImageTrim" if args.len() == 2 => {
+      return Some(crate::functions::image_ast::image_trim_ast(args));
+    }
     "ImageCrop" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_crop_ast(args));
     }

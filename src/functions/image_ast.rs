@@ -779,26 +779,13 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// ImageResize[img, {w, h}] - Resize to target dimensions
+/// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageResize expects exactly 2 arguments".into(),
     ));
   }
-
-  let (new_w, new_h) = match &args[1] {
-    Expr::List(dims) if dims.len() == 2 => {
-      let w = expr_to_f64(&dims[0])? as u32;
-      let h = expr_to_f64(&dims[1])? as u32;
-      (w, h)
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ImageResize: second argument must be {width, height}".into(),
-      ));
-    }
-  };
 
   match &args[0] {
     Expr::Image {
@@ -808,6 +795,21 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       data,
       ..
     } => {
+      let (new_w, new_h) = match &args[1] {
+        Expr::List(dims) if dims.len() == 2 => {
+          let w = expr_to_f64(&dims[0])? as u32;
+          let h = expr_to_f64(&dims[1])? as u32;
+          (w, h)
+        }
+        other => {
+          // Single number: set width, scale height proportionally
+          let w = expr_to_f64(other)? as u32;
+          let h =
+            ((w as f64) * (*height as f64) / (*width as f64)).round() as u32;
+          (w, h)
+        }
+      };
+
       let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
       let resized = dyn_img.resize_exact(
         new_w,
@@ -816,9 +818,10 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       Ok(dynamic_image_to_expr(&resized))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageResize: first argument is not an Image".into(),
-    )),
+    _ => Ok(Expr::FunctionCall {
+      name: "ImageResize".to_string(),
+      args: args.to_vec(),
+    }),
   }
 }
 
@@ -854,6 +857,93 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Err(InterpreterError::EvaluationError(
       "ImageCrop: first argument is not an Image".into(),
     )),
+  }
+}
+
+/// ImageTrim[img, {{x1,y1},{x2,y2}}] - Trim image to a coordinate region.
+/// Coordinates use Wolfram's bottom-left origin system where pixel i spans [i, i+1].
+/// All pixels whose interval overlaps the specified rectangle are included.
+pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageTrim expects exactly 2 arguments".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      // Parse {{x1, y1}, {x2, y2}}
+      let (x1, y1, x2, y2) = match &args[1] {
+        Expr::List(outer) if outer.len() == 2 => {
+          let (ax, ay) = match &outer[0] {
+            Expr::List(p) if p.len() == 2 => {
+              (expr_to_f64(&p[0])?, expr_to_f64(&p[1])?)
+            }
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "ImageTrim".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          let (bx, by) = match &outer[1] {
+            Expr::List(p) if p.len() == 2 => {
+              (expr_to_f64(&p[0])?, expr_to_f64(&p[1])?)
+            }
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "ImageTrim".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          (ax.min(bx), ay.min(by), ax.max(bx), ay.max(by))
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "ImageTrim".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+
+      let w = *width;
+      let h = *height;
+
+      // Convert y from bottom-left origin to top-left pixel coordinates
+      let top = h as f64 - y2;
+      let bottom = h as f64 - y1;
+
+      // Pixel i spans [i, i+1]. Include all pixels whose interval
+      // overlaps the specified range (inclusive on boundaries).
+      let first_col = (x1 - 1.0).ceil().max(0.0) as u32;
+      let last_col = (x2.floor() as u32).min(w.saturating_sub(1));
+      let first_row = (top - 1.0).ceil().max(0.0) as u32;
+      let last_row = (bottom.floor() as u32).min(h.saturating_sub(1));
+
+      if first_col > last_col || first_row > last_row {
+        return Err(InterpreterError::EvaluationError(
+          "ImageTrim: specified region is empty".into(),
+        ));
+      }
+
+      let crop_w = last_col - first_col + 1;
+      let crop_h = last_row - first_row + 1;
+
+      let dyn_img = expr_to_dynamic_image(w, h, *channels, data);
+      let cropped = dyn_img.crop_imm(first_col, first_row, crop_w, crop_h);
+      Ok(dynamic_image_to_expr(&cropped))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "ImageTrim".to_string(),
+      args: args.to_vec(),
+    }),
   }
 }
 

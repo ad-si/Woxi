@@ -267,6 +267,113 @@ mod image_processing {
   }
 
   #[test]
+  fn image_resize_single_number_wide() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageResize[ConstantImage[0.5, {200, 100}], 128]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{128, 64}");
+  }
+
+  #[test]
+  fn image_resize_single_number_tall() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageResize[ConstantImage[0.5, {100, 200}], 128]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{128, 256}");
+  }
+
+  #[test]
+  fn image_resize_single_number_small() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageResize[ConstantImage[0.5, {200, 100}], 50]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{50, 25}");
+  }
+
+  #[test]
+  fn image_trim_basic() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {10, 10}], {{0, 0}, {5, 5}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{6, 6}");
+  }
+
+  #[test]
+  fn image_trim_full_image() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {10, 10}], {{0, 0}, {10, 10}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{10, 10}");
+  }
+
+  #[test]
+  fn image_trim_inner_region() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {10, 10}], {{2, 3}, {7, 8}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{7, 7}");
+  }
+
+  #[test]
+  fn image_trim_single_pixel() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {10, 10}], {{0, 0}, {0, 0}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{1, 1}");
+  }
+
+  #[test]
+  fn image_trim_float_coords() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {10, 10}], {{0.9, 0.9}, {1.1, 1.1}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{2, 2}");
+  }
+
+  #[test]
+  fn image_trim_clips_to_bounds() {
+    clear_state();
+    let result = interpret(
+      "ImageDimensions[ImageTrim[ConstantImage[0.5, {300, 200}], {{81., 10.}, {250., 240.}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{171, 191}");
+  }
+
+  #[test]
+  fn image_trim_preserves_content() {
+    clear_state();
+    let result = interpret(
+      "ImageQ[ImageTrim[ConstantImage[0.5, {10, 10}], {{2, 2}, {8, 8}}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn image_trim_non_image_returns_unevaluated() {
+    clear_state();
+    let result = interpret("ImageTrim[42, {{0, 0}, {5, 5}}]").unwrap();
+    assert_eq!(result, "ImageTrim[42, {{0, 0}, {5, 5}}]");
+  }
+
+  #[test]
   fn image_crop_manual_returns_unevaluated() {
     clear_state();
     // Wolfram's ImageCrop does not accept {{x1,y1},{x2,y2}} as a region spec
