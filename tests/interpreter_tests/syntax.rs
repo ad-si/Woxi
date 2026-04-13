@@ -3977,6 +3977,92 @@ mod grid {
     assert!(svg.starts_with("<svg"));
     assert!(svg.contains("<line"), "Frame -> All should produce lines");
   }
+
+  #[test]
+  fn traditional_form_grid() {
+    clear_state();
+    assert_eq!(
+      interpret("TraditionalForm[Grid[{{1, 2}, {3, 4}}, Frame -> All]]")
+        .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn traditional_form_grid_svg_content() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TraditionalForm[Grid[{{a, b}, {c, d}}, Frame -> All]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">d</text>"));
+    assert!(svg.contains("<line"), "Frame -> All should produce lines");
+  }
+
+  #[test]
+  fn traditional_form_grid_with_table() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] := x^2; values = Table[{i, f[i]}, {i, 1, 10, 1}]; PrependTo[values, {\"x\", \"x^2\"}]; TraditionalForm[Grid[values, Frame -> All]]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+}
+
+mod text_grid {
+  use super::*;
+
+  #[test]
+  fn basic_2x2() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TextGrid[{{\"item 1\", \"item 2\"}, {\"item 3\", \"item 4\"}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">item 1</text>"));
+    assert!(svg.contains(">item 4</text>"));
+  }
+
+  #[test]
+  fn renders_as_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "TextGrid[{{\"item 1\", \"item 2\"}, {\"item 3\", \"item 4\"}}, Frame -> All]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn frame_all() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TextGrid[{{\"a\", \"b\"}, {\"c\", \"d\"}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("<line"), "Frame -> All should produce lines");
+  }
+
+  #[test]
+  fn with_numeric_data() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[TextGrid[{{1, 2}, {3, 4}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">4</text>"));
+  }
 }
 
 mod tag_set_delayed {
