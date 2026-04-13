@@ -1765,7 +1765,7 @@ SequencePosition,Find positions of a subsequence in a list,✅,pure,10.1,1796
 ColorCombine,Combine color channels,,unevaluated,7.0,1800
 CoordinatesToolOptions,Coordinates tool options,,unevaluated,7.0,1800
 Highlighted,Highlighted display,,unevaluated,10.4,1800
-TextGrid,Text grid layout,,unevaluated,10.3,1800
+TextGrid,Displays data in a text grid layout,✅,pure,10.3,1800
 NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control,,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803

@@ -1230,18 +1230,40 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 }
 
-/// If `expr` is a Grid[…] or TableForm[…] call (possibly nested in a list),
-/// render it as SVG and return `-Graphics-`. Grid/TableForm stay symbolic
+/// If `expr` is a Grid[…] or TextGrid[…] call (possibly nested in a list),
+/// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
-/// at the output stage.
+/// at the output stage.  Also unwraps TraditionalForm[Grid[…]] wrappers.
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if name == "Grid" && !args.is_empty() =>
+      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
     {
       match functions::graphics::grid_ast(args) {
         Ok(result) => result,
         Err(_) => expr,
+      }
+    }
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(
+          &args[0],
+          syntax::Expr::FunctionCall { name: inner, args: inner_args }
+          if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
+        ) =>
+    {
+      if let syntax::Expr::FunctionCall {
+        args: grid_args, ..
+      } = &args[0]
+      {
+        match functions::graphics::grid_ast(grid_args) {
+          Ok(result) => result,
+          Err(_) => expr,
+        }
+      } else {
+        expr
       }
     }
     // Style[Grid[...], directives...] — propagate style into grid
@@ -1251,7 +1273,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         && matches!(
           &args[0],
           syntax::Expr::FunctionCall { name: inner, args: inner_args }
-          if inner == "Grid" && !inner_args.is_empty()
+          if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
         ) =>
     {
       if let syntax::Expr::FunctionCall {

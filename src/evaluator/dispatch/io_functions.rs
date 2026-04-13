@@ -1677,9 +1677,36 @@ fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall {
       name: grid_name,
       args: grid_args,
-    } if grid_name == "Grid" && !grid_args.is_empty() => {
+    } if (grid_name == "Grid" || grid_name == "TextGrid")
+      && !grid_args.is_empty() =>
+    {
       if crate::functions::graphics::grid_ast(grid_args).is_ok() {
         crate::get_captured_graphics().unwrap_or_default()
+      } else {
+        String::new()
+      }
+    }
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]]
+    Expr::FunctionCall {
+      name: tf_name,
+      args: tf_args,
+    } if tf_name == "TraditionalForm"
+      && tf_args.len() == 1
+      && matches!(
+        &tf_args[0],
+        Expr::FunctionCall { name, args }
+        if (name == "Grid" || name == "TextGrid") && !args.is_empty()
+      ) =>
+    {
+      if let Expr::FunctionCall {
+        args: grid_args, ..
+      } = &tf_args[0]
+      {
+        if crate::functions::graphics::grid_ast(grid_args).is_ok() {
+          crate::get_captured_graphics().unwrap_or_default()
+        } else {
+          String::new()
+        }
       } else {
         String::new()
       }
@@ -1692,7 +1719,7 @@ fn expr_to_svg(expr: &Expr) -> String {
       && matches!(
         &style_args[0],
         Expr::FunctionCall { name, args }
-        if name == "Grid" && !args.is_empty()
+        if (name == "Grid" || name == "TextGrid") && !args.is_empty()
       ) =>
     {
       if let Expr::FunctionCall {
