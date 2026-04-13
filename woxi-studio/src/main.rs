@@ -1436,47 +1436,51 @@ impl WoxiStudio {
     .into();
 
     // ── Graphics modal overlay ──
-    if let Some(modal_idx) = self.graphics_modal_cell {
-      let editor = &self.cell_editors[modal_idx];
+    // Always use stack! so the widget tree structure stays the same
+    // when the modal opens/closes, preserving scroll position.
+    let modal_layer: Element<'_, Message> =
+      if let Some(modal_idx) = self.graphics_modal_cell {
+        let editor = &self.cell_editors[modal_idx];
 
-      let graphic: Element<'_, Message> =
-        if let Some((ref img_handle, _w, _h)) = editor.graphics_image {
-          image(img_handle.clone())
-            .width(iced::Length::Shrink)
-            .height(iced::Length::Shrink)
-            .content_fit(iced::ContentFit::Contain)
-            .into()
-        } else if let Some(ref handle) = editor.graphics_handle {
-          svg::Svg::new(handle.clone())
-            .width(iced::Length::Shrink)
-            .height(iced::Length::Shrink)
-            .into()
-        } else {
-          text("No graphic").into()
-        };
+        let graphic: Element<'_, Message> =
+          if let Some((ref img_handle, _w, _h)) = editor.graphics_image {
+            image(img_handle.clone())
+              .width(iced::Length::Shrink)
+              .height(iced::Length::Shrink)
+              .content_fit(iced::ContentFit::Contain)
+              .into()
+          } else if let Some(ref handle) = editor.graphics_handle {
+            svg::Svg::new(handle.clone())
+              .width(iced::Length::Shrink)
+              .height(iced::Length::Shrink)
+              .into()
+          } else {
+            text("No graphic").into()
+          };
 
-      let close_btn = button(text("Close").size(13))
+        let close_btn = button(text("Close").size(13))
+          .on_press(Message::CloseGraphicsModal)
+          .padding([6, 16])
+          .style(muted_button_style);
+
+        let modal_content =
+          container(column![graphic, close_btn].spacing(12).align_x(Center))
+            .center(Fill)
+            .padding(40);
+
+        mouse_area(
+          container(opaque(modal_content))
+            .width(Fill)
+            .height(Fill)
+            .style(graphics_modal_backdrop_style),
+        )
         .on_press(Message::CloseGraphicsModal)
-        .padding([6, 16])
-        .style(muted_button_style);
+        .into()
+      } else {
+        column![].into()
+      };
 
-      let modal_content =
-        container(column![graphic, close_btn].spacing(12).align_x(Center))
-          .center(Fill)
-          .padding(40);
-
-      let backdrop = mouse_area(
-        container(opaque(modal_content))
-          .width(Fill)
-          .height(Fill)
-          .style(graphics_modal_backdrop_style),
-      )
-      .on_press(Message::CloseGraphicsModal);
-
-      stack![main_view, backdrop].into()
-    } else {
-      main_view
-    }
+    stack![main_view, modal_layer].into()
   }
 
   /// Compute which cells are hidden due to a collapsed Chapter or
