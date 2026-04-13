@@ -105,6 +105,10 @@ struct CellEditor {
   /// produced a well-formed `Manipulate[…]` expression. When present,
   /// the cell renders sliders / pick lists instead of the plain echo.
   manipulate_state: Option<manipulate::ManipulateState>,
+  /// Selectable text_editor content for the output text.
+  output_content: text_editor::Content,
+  /// Selectable text_editor content for stdout (Print output).
+  stdout_content: text_editor::Content,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -127,6 +131,10 @@ enum Message {
 
   // Cell editing
   CellAction(usize, text_editor::Action),
+  /// Action on a read-only output editor (selection only, edits discarded).
+  OutputAction(usize, text_editor::Action),
+  /// Action on a read-only stdout editor (selection only, edits discarded).
+  StdoutAction(usize, text_editor::Action),
   WrapSelection(usize, char, char),
   Undo(usize),
   Redo(usize),
@@ -340,6 +348,8 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: cell.collapsed,
             manipulate_state: None,
+            output_content: text_editor::Content::new(),
+            stdout_content: text_editor::Content::new(),
           });
         }
         CellEntry::Group(group) => {
@@ -369,6 +379,25 @@ impl WoxiStudio {
                 }
                 j += 1;
               }
+              let output_content = match &output {
+                Some(s) => {
+                  let d = s
+                    .replace("-Graphics-", "")
+                    .replace("-Graphics3D-", "")
+                    .replace("-Image-", "");
+                  let d = d.trim();
+                  if d.is_empty() {
+                    text_editor::Content::new()
+                  } else {
+                    text_editor::Content::with_text(d)
+                  }
+                }
+                None => text_editor::Content::new(),
+              };
+              let stdout_content = match &stdout {
+                Some(s) => text_editor::Content::with_text(s),
+                None => text_editor::Content::new(),
+              };
               editors.push(CellEditor {
                 content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
@@ -383,6 +412,8 @@ impl WoxiStudio {
                 output_stale: false,
                 is_collapsed: false,
                 manipulate_state: None,
+                output_content,
+                stdout_content,
               });
               i = j;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
@@ -404,6 +435,8 @@ impl WoxiStudio {
                 output_stale: false,
                 is_collapsed: false,
                 manipulate_state: None,
+                output_content: text_editor::Content::new(),
+                stdout_content: text_editor::Content::new(),
               });
               i += 1;
             }
@@ -701,6 +734,20 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::OutputAction(idx, action) => {
+        if idx < self.cell_editors.len() && !action.is_edit() {
+          self.cell_editors[idx].output_content.perform(action);
+        }
+        Task::none()
+      }
+
+      Message::StdoutAction(idx, action) => {
+        if idx < self.cell_editors.len() && !action.is_edit() {
+          self.cell_editors[idx].stdout_content.perform(action);
+        }
+        Task::none()
+      }
+
       Message::WrapSelection(idx, open, close) => {
         if idx < self.cell_editors.len() {
           if let Some(sel) = self.cell_editors[idx].content.selection() {
@@ -898,7 +945,9 @@ impl WoxiStudio {
           self.cell_editors[idx].style = style;
           if style != CellStyle::Input {
             self.cell_editors[idx].output = None;
+            self.cell_editors[idx].output_content = text_editor::Content::new();
             self.cell_editors[idx].stdout = None;
+            self.cell_editors[idx].stdout_content = text_editor::Content::new();
             self.cell_editors[idx].graphics_svg = None;
             self.cell_editors[idx].graphics_handle = None;
             self.cell_editors[idx].graphics_image = None;
@@ -1043,6 +1092,8 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: false,
             manipulate_state: None,
+            output_content: text_editor::Content::new(),
+            stdout_content: text_editor::Content::new(),
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1069,6 +1120,8 @@ impl WoxiStudio {
             output_stale: false,
             is_collapsed: false,
             manipulate_state: None,
+            output_content: text_editor::Content::new(),
+            stdout_content: text_editor::Content::new(),
           },
         );
         self.focused_cell = Some(insert_at);
@@ -1770,14 +1823,17 @@ impl WoxiStudio {
       }
 
       // Stdout (Print output)
-      if let Some(ref stdout) = editor.stdout {
-        let mut stdout_text = text(stdout).size(12).font(Font::MONOSPACE);
-        if stale {
-          stdout_text = stdout_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
-        }
-        let stdout_display = container(stdout_text).padding(6).width(Fill);
-
-        output_col = output_col.push(stdout_display);
+      if editor.stdout.is_some() {
+        let stdout_editor = text_editor(&editor.stdout_content)
+          .on_action(move |action| Message::StdoutAction(idx, action))
+          .font(Font::MONOSPACE)
+          .height(iced::Length::Shrink)
+          .padding(6)
+          .size(12)
+          .style(move |theme, status| {
+            output_editor_style(theme, status, stale)
+          });
+        output_col = output_col.push(stdout_editor);
       }
 
       // Graphics rendering (pre-rasterized image, falls back to SVG)
@@ -1810,22 +1866,19 @@ impl WoxiStudio {
       }
 
       // Text output (filter out graphics placeholders)
-      if let Some(ref output) = editor.output {
-        let display = output
-          .replace("-Graphics-", "")
-          .replace("-Graphics3D-", "")
-          .replace("-Image-", "");
-        let display = display.trim().to_string();
-        if !display.is_empty() {
-          let mut output_text = text(display).size(12).font(Font::MONOSPACE);
-          if stale {
-            output_text =
-              output_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
-          }
-          let output_display = container(output_text).padding(6).width(Fill);
-
-          output_col = output_col.push(output_display);
-        }
+      if editor.output.is_some()
+        && !editor.output_content.text().trim().is_empty()
+      {
+        let output_editor = text_editor(&editor.output_content)
+          .on_action(move |action| Message::OutputAction(idx, action))
+          .font(Font::MONOSPACE)
+          .height(iced::Length::Shrink)
+          .padding(6)
+          .size(12)
+          .style(move |theme, status| {
+            output_editor_style(theme, status, stale)
+          });
+        output_col = output_col.push(output_editor);
       }
 
       content_col = content_col
@@ -1849,14 +1902,17 @@ impl WoxiStudio {
         content_col = content_col.push(warning_display);
       }
 
-      if let Some(ref stdout) = editor.stdout {
-        let mut stdout_text = text(stdout).size(12).font(Font::MONOSPACE);
-        if stale {
-          stdout_text = stdout_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
-        }
-        let stdout_display = container(stdout_text).padding(6).width(Fill);
-
-        content_col = content_col.push(stdout_display);
+      if editor.stdout.is_some() {
+        let stdout_editor = text_editor(&editor.stdout_content)
+          .on_action(move |action| Message::StdoutAction(idx, action))
+          .font(Font::MONOSPACE)
+          .height(iced::Length::Shrink)
+          .padding(6)
+          .size(12)
+          .style(move |theme, status| {
+            output_editor_style(theme, status, stale)
+          });
+        content_col = content_col.push(stdout_editor);
       }
 
       if let Some((ref img_handle, w, h)) = editor.graphics_image {
@@ -1886,22 +1942,19 @@ impl WoxiStudio {
           content_col.push(render_manipulate_widget(idx, state, stale));
       }
 
-      if let Some(ref output) = editor.output {
-        let display = output
-          .replace("-Graphics-", "")
-          .replace("-Graphics3D-", "")
-          .replace("-Image-", "");
-        let display = display.trim().to_string();
-        if !display.is_empty() {
-          let mut output_text = text(display).size(12).font(Font::MONOSPACE);
-          if stale {
-            output_text =
-              output_text.color(Color::from_rgba(0.5, 0.5, 0.5, 0.5));
-          }
-          let output_display = container(output_text).padding(6).width(Fill);
-
-          content_col = content_col.push(output_display);
-        }
+      if editor.output.is_some()
+        && !editor.output_content.text().trim().is_empty()
+      {
+        let output_editor = text_editor(&editor.output_content)
+          .on_action(move |action| Message::OutputAction(idx, action))
+          .font(Font::MONOSPACE)
+          .height(iced::Length::Shrink)
+          .padding(6)
+          .size(12)
+          .style(move |theme, status| {
+            output_editor_style(theme, status, stale)
+          });
+        content_col = content_col.push(output_editor);
       }
     }
 
@@ -2418,10 +2471,29 @@ fn evaluate_cell_statements(
   } else {
     Some(outputs.join("\n"))
   };
+  editor.output_content = match &editor.output {
+    Some(s) => {
+      let display = s
+        .replace("-Graphics-", "")
+        .replace("-Graphics3D-", "")
+        .replace("-Image-", "");
+      let display = display.trim();
+      if display.is_empty() {
+        text_editor::Content::new()
+      } else {
+        text_editor::Content::with_text(display)
+      }
+    }
+    None => text_editor::Content::new(),
+  };
   editor.stdout = if all_stdout.is_empty() {
     None
   } else {
     Some(all_stdout)
+  };
+  editor.stdout_content = match &editor.stdout {
+    Some(s) => text_editor::Content::with_text(s),
+    None => text_editor::Content::new(),
   };
   editor.graphics_svg = last_graphics;
   editor.graphics_handle = editor
@@ -2534,6 +2606,42 @@ fn graphics_modal_backdrop_style(_theme: &Theme) -> container::Style {
   container::Style {
     background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.75))),
     ..container::Style::default()
+  }
+}
+
+/// Style for read-only output text editors (selectable but not editable).
+fn output_editor_style(
+  theme: &Theme,
+  _status: text_editor::Status,
+  stale: bool,
+) -> text_editor::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let bg = if is_dark {
+    Color::from_rgb(0.14, 0.14, 0.16)
+  } else {
+    Color::from_rgb(0.97, 0.97, 0.98)
+  };
+  let value = if stale {
+    Color::from_rgba(0.5, 0.5, 0.5, 0.5)
+  } else if is_dark {
+    Color::from_rgb(0.85, 0.85, 0.88)
+  } else {
+    Color::from_rgb(0.15, 0.15, 0.15)
+  };
+  text_editor::Style {
+    background: Background::Color(bg),
+    border: Border {
+      color: Color::TRANSPARENT,
+      width: 0.0,
+      radius: 0.0.into(),
+    },
+    placeholder: Color::TRANSPARENT,
+    value,
+    selection: if is_dark {
+      Color::from_rgba(0.3, 0.5, 0.8, 0.3)
+    } else {
+      Color::from_rgba(0.3, 0.5, 0.8, 0.2)
+    },
   }
 }
 
