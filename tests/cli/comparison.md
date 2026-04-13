@@ -52,6 +52,16 @@ to provide a better user experience.
     about the state of the kernel.
     If you want to reuse results, assign them to a variable.
 
+- **No support for the Wolfram Knowledgebase** \
+    This includes functions like:
+    - `WolframAlpha[]`
+    - Built-in `Entity[]` objects
+    - Natural language input with `ctrl =`
+    - Most functions listed on
+        http://reference.wolfram.com/language/guide/KnowledgeRepresentationAndAccess.html
+
+- **No support for Machine Learning and Neural Networks** (yet)
+
 
 ## Mathics
 
