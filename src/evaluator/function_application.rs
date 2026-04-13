@@ -404,6 +404,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "Dataset" && func_args.len() == 3 => {
+      // Dataset[data, type, meta][args...] — dataset querying
+      crate::functions::dataset_ast::dataset_query(func_args, args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "BezierFunction" && func_args.len() == 1 => {
       // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
       evaluate_bezier_function(func_args, args)
