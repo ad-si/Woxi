@@ -646,6 +646,10 @@ function main() {
     "Entity[\"Pet\", \"cat1\"][\"Name\"]",
     // Graph option wrapping differs: Woxi uses bare options, Wolfram wraps in {VertexSize -> {Medium}}
     "Graph[{UndirectedEdge[1, 2]}, VertexSize -> Medium]",
+    // Norm[{1.0, 2, 3}]: Wolfram's Norm uses an internal BLAS-style algorithm that
+    // produces 3.741657386773941 (1 ULP below correctly-rounded Sqrt[14.]),
+    // while Woxi's Sqrt[sum-of-squares] gives the IEEE 754 correct 3.7416573867739413.
+    "Norm[{1.0, 2, 3}]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

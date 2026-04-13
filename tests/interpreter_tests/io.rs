@@ -2766,7 +2766,12 @@ mod set_directory {
     .unwrap();
     let after = std::env::current_dir().unwrap();
     assert_eq!(before, after, "process CWD must not change");
-    assert_eq!(result, "/tmp", "virtual CWD must reflect SetDirectory");
+    // On macOS, /tmp is a symlink to /private/tmp, so Directory[] may
+    // return the canonicalized path.
+    assert!(
+      result == "/tmp" || result == "/private/tmp",
+      "virtual CWD must reflect SetDirectory, got: {result}"
+    );
   }
 }
 
