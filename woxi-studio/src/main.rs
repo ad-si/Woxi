@@ -269,7 +269,9 @@ impl WoxiStudio {
 
     let cell_editors = Self::editors_from_notebook(&notebook);
 
-    let task = if let Some(path) = load_last_file_path() {
+    let task = if !std::env::args().any(|a| a == "--new")
+      && let Some(path) = load_last_file_path()
+    {
       Task::perform(open_file_path(path), Message::FileOpened)
     } else {
       Task::none()
@@ -541,16 +543,14 @@ impl WoxiStudio {
       }
 
       Message::NewNotebook => {
-        self.file_path = None;
-        self.notebook = Notebook::new();
-        self
-          .notebook
-          .push_cell(Cell::new(CellStyle::Title, "Untitled Notebook"));
-        self.notebook.push_cell(Cell::new(CellStyle::Input, ""));
-        self.cell_editors = Self::editors_from_notebook(&self.notebook);
-        self.focused_cell = Some(1);
-        self.is_dirty = false;
-        self.status = String::from("New notebook created");
+        if let Ok(exe) = std::env::current_exe() {
+          let _ = std::process::Command::new(exe)
+            .arg("--new")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        }
         Task::none()
       }
 
