@@ -10959,6 +10959,37 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn sequence_cases_condition() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4, 5}, {x_, y_} /; x + y > 6]")
+        .unwrap(),
+      "{{3, 4}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_condition_equality() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 4, 5}, {x_, y_} /; x + y == 5]")
+        .unwrap(),
+      "{{2, 3}}"
+    );
+  }
+  #[test]
+  fn sequence_cases_rule_delayed() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3, 1, 2}, {x_, y_} :> x + y]").unwrap(),
+      "{3, 4}"
+    );
+  }
+  #[test]
+  fn sequence_cases_three_element_condition() {
+    assert_eq!(
+      interpret("SequenceCases[Range[10], {x_, y_, z_} /; x + y == z]")
+        .unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+  #[test]
   fn chebyshev_distance_basic() {
     assert_eq!(interpret("ChebyshevDistance[{1, 2}, {3, 5}]").unwrap(), "3");
   }
