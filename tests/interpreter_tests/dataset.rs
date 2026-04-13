@@ -41,11 +41,14 @@ mod dataset_ast {
 
   #[test]
   fn dataset_plain_list() {
-    // Plain lists (not associations) don't render as table
-    assert_eq!(
-      interpret("Dataset[{1, 2, 3}]").unwrap(),
-      "Dataset[{1, 2, 3}, TypeSystem`Vector[TypeSystem`Atom[Integer], 3], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{1, 2, 3}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">3</text>"));
   }
 
   #[test]
@@ -58,42 +61,51 @@ mod dataset_ast {
 
   #[test]
   fn dataset_string_list() {
-    assert_eq!(
-      interpret("Dataset[{\"a\", \"b\"}]").unwrap(),
-      "Dataset[{a, b}, TypeSystem`Vector[TypeSystem`Atom[String], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{\"a\", \"b\"}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
   }
 
   #[test]
   fn dataset_real_list() {
-    assert_eq!(
-      interpret("Dataset[{1.5, 2.3}]").unwrap(),
-      "Dataset[{1.5, 2.3}, TypeSystem`Vector[TypeSystem`Atom[Real], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{1.5, 2.3}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1.5</text>"));
+    assert!(svg.contains(">2.3</text>"));
   }
 
   #[test]
   fn dataset_mixed_types_tuple() {
-    assert_eq!(
-      interpret("Dataset[{1, \"a\"}]").unwrap(),
-      "Dataset[{1, a}, TypeSystem`Tuple[{TypeSystem`Atom[Integer], TypeSystem`Atom[String]}], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{1, \"a\"}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">a</text>"));
   }
 
   #[test]
   fn dataset_boolean_list() {
-    assert_eq!(
-      interpret("Dataset[{True, False}]").unwrap(),
-      "Dataset[{True, False}, TypeSystem`Vector[TypeSystem`Atom[TypeSystem`Boolean], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{True, False}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">True</text>"));
+    assert!(svg.contains(">False</text>"));
   }
 
   #[test]
   fn dataset_nested_lists() {
-    assert_eq!(
-      interpret("Dataset[{{1, 2}, {3, 4}}]").unwrap(),
-      "Dataset[{{1, 2}, {3, 4}}, TypeSystem`Vector[TypeSystem`Vector[TypeSystem`Atom[Integer], 2], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{{1, 2}, {3, 4}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>") || svg.contains(">{1, 2}</text>"));
   }
 
   #[test]
@@ -206,11 +218,13 @@ mod dataset_ast {
 
   #[test]
   fn dataset_already_typed() {
-    // Dataset with 3 args should pass through
-    assert_eq!(
-      interpret("Dataset[{1, 2}, foo, bar]").unwrap(),
-      "Dataset[{1, 2}, foo, bar]"
-    );
+    // Dataset with 3 args containing list data renders as graphics
+    clear_state();
+    let result = interpret_with_stdout("Dataset[{1, 2}, foo, bar]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
   }
 
   #[test]
@@ -261,5 +275,75 @@ mod dataset_ast {
       result.graphics.is_some(),
       "graphics should be set for Dataset"
     );
+  }
+
+  #[test]
+  fn dataset_all_column() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ds = Dataset[{<|\"a\" -> 1, \"b\" -> 2|>, <|\"a\" -> 3, \"b\" -> 4|>}]; ds[All, \"a\"]"
+    ).unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">3</text>"));
+  }
+
+  #[test]
+  fn dataset_all_column_mixed_types() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ds = Dataset[{<|\"x\" -> 1, \"y\" -> \"hello\"|>, <|\"x\" -> 2, \"y\" -> \"world\"|>}]; ds[All, \"y\"]"
+    ).unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">hello</text>"));
+    assert!(svg.contains(">world</text>"));
+  }
+
+  #[test]
+  fn dataset_all_column_boolean() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ds = Dataset[{<|\"s\" -> True|>, <|\"s\" -> False|>}]; ds[All, \"s\"]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">True</text>"));
+    assert!(svg.contains(">False</text>"));
+  }
+
+  #[test]
+  fn delete_missing_dataset() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ds = Dataset[{<|\"a\" -> 1|>, <|\"a\" -> 2|>}]; DeleteMissing[ds[All, \"a\"]]"
+    ).unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
+  }
+
+  #[test]
+  fn dataset_titanic_example() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "titanic = Dataset[{\
+        <|\"class\" -> \"1st\", \"age\" -> 29, \"sex\" -> \"female\", \"survived\" -> True|>,\
+        <|\"class\" -> \"1st\", \"age\" -> 1, \"sex\" -> \"male\", \"survived\" -> True|>,\
+        <|\"class\" -> \"1st\", \"age\" -> 2, \"sex\" -> \"female\", \"survived\" -> False|>,\
+        <|\"class\" -> \"1st\", \"age\" -> 30, \"sex\" -> \"male\", \"survived\" -> False|>,\
+        <|\"class\" -> \"1st\", \"age\" -> 25, \"sex\" -> \"female\", \"survived\" -> False|>\
+      }]; titanic[All, \"age\"]"
+    ).unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">29</text>"));
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">30</text>"));
+    assert!(svg.contains(">25</text>"));
   }
 }

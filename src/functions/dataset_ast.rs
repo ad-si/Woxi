@@ -156,6 +156,50 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
   }
 }
 
+/// Dataset[data, type, meta][row_spec, col_spec] — query a dataset.
+pub fn dataset_query(
+  func_args: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, crate::InterpreterError> {
+  let data = &func_args[0];
+
+  // Dataset[list_of_assocs][All, "column"] — extract a column
+  if args.len() == 2
+    && let Expr::Identifier(row_spec) = &args[0]
+    && row_spec == "All"
+    && let Expr::List(rows) = data
+  {
+    let col_key = &args[1];
+    let col_key_str = crate::syntax::expr_to_string(col_key);
+    let values: Vec<Expr> = rows
+      .iter()
+      .map(|row| {
+        if let Expr::Association(pairs) = row {
+          for (k, v) in pairs {
+            if crate::syntax::expr_to_string(k) == col_key_str {
+              return v.clone();
+            }
+          }
+        }
+        Expr::FunctionCall {
+          name: "Missing".to_string(),
+          args: vec![Expr::String("KeyAbsent".to_string()), col_key.clone()],
+        }
+      })
+      .collect();
+    return Ok(dataset_ast(&[Expr::List(values)]));
+  }
+
+  // Fallback: return unevaluated
+  Ok(Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: "Dataset".to_string(),
+      args: func_args.to_vec(),
+    }),
+    args: args.to_vec(),
+  })
+}
+
 /// Dataset[data] — wraps data with type information.
 /// Dataset[data, type, metadata] — already constructed, return as-is.
 pub fn dataset_ast(args: &[Expr]) -> Expr {

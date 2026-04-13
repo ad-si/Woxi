@@ -6480,10 +6480,98 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
   Some(svg)
 }
 
+/// Plain list of values: single-column table with no header.
+fn dataset_plain_list_to_svg(items: &[Expr]) -> Option<String> {
+  if items.is_empty() {
+    return None;
+  }
+
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let pad_x: f64 = 16.0;
+  let pad_y: f64 = 8.0;
+  let row_height = font_size + pad_y;
+  let num_rows = items.len();
+
+  // Compute column width from data
+  let mut col_w: f64 = 0.0;
+  for item in items {
+    let w = estimate_display_width(item) * char_width + pad_x;
+    if w > col_w {
+      col_w = w;
+    }
+  }
+
+  let total_width = col_w;
+  let total_height = num_rows as f64 * row_height;
+
+  let svg_w = total_width.ceil() as u32;
+  let svg_h = total_height.ceil() as u32;
+  let mut svg = String::with_capacity(2048);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    svg_w, svg_h, svg_w, svg_h
+  ));
+
+  let t = theme();
+  let text_fill = t.text_primary;
+
+  // Data rows
+  let mut y_offset: f64 = 0.0;
+  for item in items {
+    let cx = col_w / 2.0;
+    let cy = y_offset + row_height / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      expr_to_svg_markup(item)
+    ));
+    y_offset += row_height;
+  }
+
+  // Grid lines
+  let border_color = t.table_border_strong;
+  let light_color = t.table_border_light;
+  // Horizontal lines
+  let mut y = 0.0_f64;
+  for i in 0..=num_rows {
+    let stroke_width = if i == 0 || i == num_rows {
+      "1.5"
+    } else {
+      "0.5"
+    };
+    let color = if i == 0 || i == num_rows {
+      border_color
+    } else {
+      light_color
+    };
+    svg.push_str(&format!(
+      "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>\n"
+    ));
+    y += row_height;
+  }
+  // Vertical lines (outer borders)
+  svg.push_str(&format!(
+    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
+  ));
+  svg.push_str(&format!(
+    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
+  ));
+
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
 /// List of associations: multi-row table with column headers on top.
 fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   if items.is_empty() {
     return None;
+  }
+  // Check if this is a list of associations or a plain list
+  let is_assoc_list = items
+    .iter()
+    .all(|item| matches!(item, Expr::Association(_)));
+  if !is_assoc_list {
+    return dataset_plain_list_to_svg(items);
   }
   // Collect all unique keys in order of first appearance
   let mut headers: Vec<String> = Vec::new();
@@ -6496,8 +6584,6 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
           headers.push(key_str);
         }
       }
-    } else {
-      return None; // Not a list of associations
     }
   }
   // Build rows aligned to headers

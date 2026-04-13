@@ -54,6 +54,24 @@ pub use quantity_functions::*;
 pub use string_functions::*;
 pub use structural::*;
 
+/// Transform a Dataset type expression for DeleteMissing:
+/// Replace the fixed-length count in Vector[elem_type, N] with TypeSystem`AnyLength.
+fn delete_missing_type(type_expr: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = type_expr
+    && name == "TypeSystem`Vector"
+    && args.len() == 2
+  {
+    return Expr::FunctionCall {
+      name: "TypeSystem`Vector".to_string(),
+      args: vec![
+        args[0].clone(),
+        Expr::Identifier("TypeSystem`AnyLength".to_string()),
+      ],
+    };
+  }
+  type_expr.clone()
+}
+
 /// Generate next lexicographic permutation in-place. Returns false when done.
 fn next_permutation(arr: &mut [usize]) -> bool {
   let n = arr.len();
@@ -4558,18 +4576,42 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // DeleteMissing[list] — remove Missing[] elements from a list
-  if name == "DeleteMissing"
-    && args.len() == 1
-    && let Expr::List(items) = &args[0]
-  {
-    let filtered: Vec<Expr> = items
-        .iter()
-        .filter(|item| {
-          !matches!(item, Expr::FunctionCall { name, .. } if name == "Missing")
-        })
-        .cloned()
-        .collect();
-    return Ok(Expr::List(filtered));
+  if name == "DeleteMissing" && args.len() == 1 {
+    match &args[0] {
+      Expr::List(items) => {
+        let filtered: Vec<Expr> = items
+            .iter()
+            .filter(|item| {
+              !matches!(item, Expr::FunctionCall { name, .. } if name == "Missing")
+            })
+            .cloned()
+            .collect();
+        return Ok(Expr::List(filtered));
+      }
+      Expr::FunctionCall {
+        name: ds_name,
+        args: ds_args,
+      } if ds_name == "Dataset" && ds_args.len() == 3 => {
+        // DeleteMissing[Dataset[data, type, meta]]
+        if let Expr::List(items) = &ds_args[0] {
+          let filtered: Vec<Expr> = items
+              .iter()
+              .filter(|item| {
+                !matches!(item, Expr::FunctionCall { name, .. } if name == "Missing")
+              })
+              .cloned()
+              .collect();
+          // Recompute type with AnyLength instead of fixed count
+          let type_expr = delete_missing_type(&ds_args[1]);
+          return Ok(Expr::FunctionCall {
+            name: "Dataset".to_string(),
+            args: vec![Expr::List(filtered), type_expr, ds_args[2].clone()],
+          });
+        }
+        // Non-list data in Dataset: pass through
+      }
+      _ => {}
+    }
   }
 
   // PiecewiseExpand — expand certain functions into Piecewise form
