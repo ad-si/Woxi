@@ -925,6 +925,55 @@ mod sort_canonical {
   }
 
   #[test]
+  fn sort_nested_lists_element_wise() {
+    // Nested lists should be compared element-wise, not as strings
+    assert_eq!(
+      interpret("Sort[{{10, 1}, {2, 5}}]").unwrap(),
+      "{{2, 5}, {10, 1}}"
+    );
+    assert_eq!(
+      interpret("Sort[{{2, 1}, {1, 3}, {1, 2}}]").unwrap(),
+      "{{1, 2}, {1, 3}, {2, 1}}"
+    );
+  }
+
+  #[test]
+  fn sort_nested_lists_by_length() {
+    // Shorter lists come before longer lists when prefixes match
+    assert_eq!(
+      interpret("Sort[{{1, 2, 3}, {1}, {1, 2}}]").unwrap(),
+      "{{1}, {1, 2}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn sort_lists_after_atoms() {
+    // Numbers sort before lists
+    assert_eq!(
+      interpret("Sort[{3, {1, 2}, 1, {0}}]").unwrap(),
+      "{1, 3, {0}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn sort_function_calls_element_wise() {
+    // Function calls compared by name, then args
+    assert_eq!(
+      interpret("Sort[{f[2], f[1], g[1]}]").unwrap(),
+      "{f[1], f[2], g[1]}"
+    );
+  }
+
+  #[test]
+  fn sort_function_calls_before_lists() {
+    // Function calls sort before lists
+    assert_eq!(
+      interpret("Sort[{f[2], {1}, g[1]}]").unwrap(),
+      "{f[2], g[1], {1}}"
+    );
+  }
+
+  #[test]
   fn sort_with_infinity() {
     // Wolfram canonical ordering: finite numbers first, then -Infinity, then Infinity
     assert_eq!(
