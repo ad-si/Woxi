@@ -52,15 +52,25 @@ to provide a better user experience.
     about the state of the kernel.
     If you want to reuse results, assign them to a variable.
 
-- **No support for the Wolfram Knowledgebase** \
-    This includes functions like:
-    - `WolframAlpha[]`
-    - Built-in `Entity[]` objects
-    - Natural language input with `ctrl =`
-    - Most functions listed on
-        http://reference.wolfram.com/language/guide/KnowledgeRepresentationAndAccess.html
-
-- **No support for Machine Learning and Neural Networks** (yet)
+- **Mostly not implemented yet**
+    - [Wolfram Knowledgebase](https://www.wolfram.com/language/core-areas/knowledgebase/) \
+        This includes functions like:
+        - `WolframAlpha[]`
+        - Built-in `Entity[]` objects
+        - Natural language input with `ctrl =`
+        - Most functions listed on
+            http://reference.wolfram.com/language/guide/KnowledgeRepresentationAndAccess.html
+    - [Machine Learning and Neural Networks](https://www.wolfram.com/language/core-areas/machine-learning/)
+    - [Optimization](https://www.wolfram.com/language/core-areas/optimization/)
+    - [FEM](https://www.wolfram.com/language/core-areas/fem/)
+    - [Chemistry](https://www.wolfram.com/language/core-areas/chemistry/)
+    - [Audio Computation](https://www.wolfram.com/language/core-areas/audio/)
+    - [Video Computation](https://www.wolfram.com/language/core-areas/video/)
+    - [Geography](https://www.wolfram.com/language/core-areas/geography/)
+    - [Astronomy](https://www.wolfram.com/language/core-areas/astronomy/)
+    - [Control Systems](https://www.wolfram.com/language/core-areas/controls/)
+    - [Signal Processing](https://www.wolfram.com/language/core-areas/signal/)
+    - [Tools for AIs](https://www.wolfram.com/artificial-intelligence/)
 
 
 ## Mathics

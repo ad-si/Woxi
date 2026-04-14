@@ -1134,6 +1134,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           let result_expr = render_color_if_needed(result_expr);
           let result_expr = render_tableform_if_needed(result_expr);
           let result_expr = render_matrixform_if_needed(result_expr);
+          let result_expr = render_traditionalform_list_if_needed(result_expr);
           let result_expr = render_column_if_needed(result_expr);
           let result_expr = render_row_if_needed(result_expr);
           let result_expr = render_treeform_if_needed(result_expr);
@@ -1510,8 +1511,19 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
         }
         _ => return expr,
       };
-      // Forward extra args (options like TableHeadings) to grid rendering
+      // Forward extra args (options like TableHeadings) to grid rendering.
+      // TableForm defaults to left alignment (unlike Grid which centers).
       let mut grid_args = vec![grid_data];
+      let has_alignment = args[1..].iter().any(|a| {
+        matches!(a, syntax::Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "Alignment"))
+      });
+      if !has_alignment {
+        grid_args.push(syntax::Expr::Rule {
+          pattern: Box::new(syntax::Expr::Identifier("Alignment".into())),
+          replacement: Box::new(syntax::Expr::Identifier("Left".into())),
+        });
+      }
       grid_args.extend(args[1..].iter().cloned());
       let result = if group_gaps.is_empty() {
         functions::graphics::grid_ast(&grid_args)
@@ -1571,6 +1583,51 @@ fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
           }
         }
         // 1D list: column vector
+        syntax::Expr::List(items) if !items.is_empty() => {
+          let grid_data = syntax::Expr::List(
+            items
+              .iter()
+              .map(|e| syntax::Expr::List(vec![e.clone()]))
+              .collect(),
+          );
+          match functions::graphics::grid_ast_with_parens(&[grid_data]) {
+            Ok(result) => result,
+            Err(_) => expr,
+          }
+        }
+        _ => expr,
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is `TraditionalForm[{…}]`, render the list as a parenthesized matrix
+/// (same visual treatment as MatrixForm).
+fn render_traditionalform_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(&args[0], syntax::Expr::List(_)) =>
+    {
+      let data = &args[0];
+      if contains_graphics_placeholder(data) {
+        return expr;
+      }
+      match data {
+        // 2D list: matrix with parentheses
+        syntax::Expr::List(items)
+          if items
+            .iter()
+            .all(|item| matches!(item, syntax::Expr::List(_))) =>
+        {
+          match functions::graphics::grid_ast_with_parens(&[data.clone()]) {
+            Ok(result) => result,
+            Err(_) => expr,
+          }
+        }
+        // 1D list: column vector with parentheses
         syntax::Expr::List(items) if !items.is_empty() => {
           let grid_data = syntax::Expr::List(
             items
