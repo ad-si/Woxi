@@ -226,6 +226,26 @@ mod round {
   fn round_to_tens() {
     assert_eq!(interpret("Round[37, 10]").unwrap(), "40");
   }
+
+  #[test]
+  fn round_two_args_bankers_rounding() {
+    // Banker's rounding: ties round to even
+    assert_eq!(interpret("Round[2.5, 1]").unwrap(), "2");
+    assert_eq!(interpret("Round[3.5, 1]").unwrap(), "4");
+    assert_eq!(interpret("Round[4.5, 1]").unwrap(), "4");
+  }
+
+  #[test]
+  fn round_two_args_bankers_decimal() {
+    assert_eq!(interpret("Round[3.45, 0.1]").unwrap(), "3.4000000000000004");
+  }
+
+  #[test]
+  fn round_two_args_integer_step_returns_integer() {
+    // When step is Integer, result should be Integer
+    assert_eq!(interpret("Round[2.7, 1]").unwrap(), "3");
+    assert_eq!(interpret("Round[2.3, 1]").unwrap(), "2");
+  }
 }
 
 mod cube_root {
