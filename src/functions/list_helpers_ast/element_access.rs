@@ -602,6 +602,40 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Drop[list, rows, cols] — 3-argument Drop.
+/// When `rows` is `None`, all rows are kept and `cols` is applied to each row.
+pub fn drop_multi_ast(
+  list: &Expr,
+  rows: &Expr,
+  cols: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // First apply row dropping
+  let after_rows = if matches!(rows, Expr::Identifier(s) if s == "None") {
+    list.clone()
+  } else {
+    drop_ast(list, rows)?
+  };
+
+  // Then apply column dropping to each element
+  if matches!(cols, Expr::Identifier(s) if s == "None") {
+    return Ok(after_rows);
+  }
+
+  match &after_rows {
+    Expr::List(items) => {
+      let mut result = Vec::with_capacity(items.len());
+      for item in items {
+        result.push(drop_ast(item, cols)?);
+      }
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Drop".to_string(),
+      args: vec![list.clone(), rows.clone(), cols.clone()],
+    }),
+  }
+}
+
 /// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
 pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
   // Try decomposing BinaryOp/UnaryOp to canonical form first

@@ -2360,6 +2360,32 @@ mod drop_extended {
   fn drop_zero() {
     assert_eq!(interpret("Drop[{a, b, c, d}, 0]").unwrap(), "{a, b, c, d}");
   }
+
+  #[test]
+  fn drop_none_columns() {
+    // Drop[list, None, n] drops n columns from each row
+    assert_eq!(
+      interpret("Drop[{{a, b, c}, {d, e, f}}, None, 1]").unwrap(),
+      "{{b, c}, {e, f}}"
+    );
+  }
+
+  #[test]
+  fn drop_none_columns_negative() {
+    assert_eq!(
+      interpret("Drop[{{a, b, c}, {d, e, f}}, None, -1]").unwrap(),
+      "{{a, b}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn drop_none_columns_single() {
+    // Drop[list, None, {n}] drops the nth column
+    assert_eq!(
+      interpret("Drop[{{a, b, c}, {d, e, f}}, None, {2}]").unwrap(),
+      "{{a, c}, {d, f}}"
+    );
+  }
 }
 
 mod partition_extended {

@@ -1962,6 +1962,7 @@ pub(crate) fn generate_bar_svg(
   plot_label: Option<&StyledLabel>,
   axes_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
+  chart_legends: &[String],
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -2003,6 +2004,16 @@ pub(crate) fn generate_bar_svg(
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
 
+  // Reserve extra right margin for chart legends
+  let legend_margin_right = if chart_legends.is_empty() {
+    10 * s as u32
+  } else {
+    let max_label_len =
+      chart_legends.iter().map(|l| l.len()).max().unwrap_or(0);
+    // swatch width + gap + estimated text width + padding
+    (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
+  };
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -2015,7 +2026,7 @@ pub(crate) fn generate_bar_svg(
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
-      .margin_right(10 * s as u32)
+      .margin_right(legend_margin_right)
       .margin_bottom(10 * s as u32)
       .margin_left(10 * s as u32)
       .x_label_area_size(x_label_area)
@@ -2071,6 +2082,9 @@ pub(crate) fn generate_bar_svg(
         } else if k > 1 {
           // Grouped: color by position within group
           PLOT_COLORS[bi % PLOT_COLORS.len()]
+        } else if !chart_legends.is_empty() {
+          // Flat with legends: distinct color per group
+          PLOT_COLORS[gi % PLOT_COLORS.len()]
         } else {
           // Flat: single default color
           PLOT_COLORS[0]
@@ -2113,7 +2127,7 @@ pub(crate) fn generate_bar_svg(
   // Compute plot area coordinates (same logic as generate_axes_only_opts)
   let margin_left = 10.0 * sf;
   let margin_top = top_margin as f64;
-  let margin_right = 10.0 * sf;
+  let margin_right = legend_margin_right as f64;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = margin_top;
   let plot_w =
@@ -2234,6 +2248,44 @@ pub(crate) fn generate_bar_svg(
            fill=\"{fill}\"{style_attrs}>{}</text>\n",
         html_escape(&sl.text)
       ));
+    }
+
+    // ChartLegends: color swatch + label, positioned to the right of the plot
+    if !chart_legends.is_empty() {
+      let legend_font = sf * 16.0;
+      let swatch_size = sf * 12.0;
+      let swatch_gap = sf * 6.0;
+      let legend_x = plot_x0 + plot_w + sf * 16.0;
+      let legend_y_start = plot_y0 + sf * 8.0;
+      let line_height = sf * 22.0;
+
+      for (i, label) in chart_legends.iter().enumerate() {
+        let (cr, cg, cb) = if !chart_style.is_empty() {
+          let c = &chart_style[i % chart_style.len()];
+          (
+            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+          )
+        } else {
+          PLOT_COLORS[i % PLOT_COLORS.len()]
+        };
+        let ly = legend_y_start + i as f64 * line_height;
+        // Color swatch
+        labels_svg.push_str(&format!(
+          "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
+           fill=\"rgb({cr},{cg},{cb})\"/>\n",
+          ly
+        ));
+        // Label text
+        labels_svg.push_str(&format!(
+          "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
+           fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+          legend_x + swatch_size + swatch_gap,
+          ly + swatch_size / 2.0,
+          html_escape(label)
+        ));
+      }
     }
 
     buf.insert_str(insert_pos, &labels_svg);

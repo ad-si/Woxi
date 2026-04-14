@@ -992,7 +992,7 @@ BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8.0,1002
 GridGraph,Requires external services or GUI infrastructure,🚫,io,8.0,1005
 ToUpperCase,Converts a string to uppercase,✅,pure,2.0,1005
 ViewAngle,,🚫,,6.0,1005
-ChartLegends,,🚫,,7.0,1006
+ChartLegends,Specifies legend labels for chart elements,✅,pure,7.0,1006
 SystemOpen,Requires external services or GUI infrastructure,🚫,io,7.0,1007
 TemporalData,,🚫,,9.0,1008
 Parallelization,,🚫,,8.0,1009
