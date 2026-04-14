@@ -4588,11 +4588,61 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Ok(num_to_expr(result))
       }
     }
-    _ => Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(exp.clone()),
-    }),
+    _ => {
+      // Try complex float evaluation: z^w = exp(w * log(z))
+      // Only apply when at least one operand contains an actual Real (float),
+      // to avoid prematurely converting exact symbolic forms like E^(I*Pi/3).
+      if let (Some((a, b)), Some((c, d))) = (
+        try_extract_complex_float(base),
+        try_extract_complex_float(exp),
+      ) && (b != 0.0 || d != 0.0)
+        && (contains_real(base) || contains_real(exp))
+      {
+        // log(z) = ln|z| + i*arg(z)
+        let abs_z = (a * a + b * b).sqrt();
+        if abs_z == 0.0 {
+          // 0^w with complex w: return 0 if Re(w)>0, else Indeterminate
+          return if c > 0.0 {
+            Ok(Expr::Integer(0))
+          } else {
+            Ok(Expr::Identifier("Indeterminate".to_string()))
+          };
+        }
+        let ln_abs = abs_z.ln();
+        let arg_z = b.atan2(a);
+        // w * log(z) = (c + di)(ln|z| + i*arg(z))
+        //            = (c*ln|z| - d*arg(z)) + i*(d*ln|z| + c*arg(z))
+        let re_exp = c * ln_abs - d * arg_z;
+        let im_exp = d * ln_abs + c * arg_z;
+        // exp(re_exp + i*im_exp) = e^re_exp * (cos(im_exp) + i*sin(im_exp))
+        let mag = re_exp.exp();
+        let re = mag * im_exp.cos();
+        let im = mag * im_exp.sin();
+        // Round near-zero components to avoid floating-point noise
+        let re = if re.abs() < 1e-15 { 0.0 } else { re };
+        let im = if im.abs() < 1e-15 { 0.0 } else { im };
+        return Ok(build_complex_float_expr(re, im));
+      }
+      Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(exp.clone()),
+      })
+    }
+  }
+}
+
+/// Check if an expression contains any `Expr::Real` (float) value.
+fn contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_real(left) || contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_real(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
+    Expr::List(items) => items.iter().any(contains_real),
+    _ => false,
   }
 }
 
