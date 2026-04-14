@@ -898,6 +898,20 @@ pub fn floor_ceil_two_arg(
   })
 }
 
+/// Banker's rounding: round half to even
+fn bankers_round(n: f64) -> f64 {
+  if n.fract().abs() == 0.5 {
+    let floor = n.floor();
+    if floor as i128 % 2 == 0 {
+      floor
+    } else {
+      n.ceil()
+    }
+  } else {
+    n.round()
+  }
+}
+
 /// Round[x] - Round to nearest integer using banker's rounding (round half to even)
 pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -918,7 +932,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (try_eval_to_f64(&eval_x), try_eval_to_f64(&eval_a))
       && a_val != 0.0
     {
-      let n = (x_val / a_val).round() as i128;
+      let n = bankers_round(x_val / a_val) as i128;
       // Return n * (num/den) as a rational
       if let (Some(num), Some(den)) =
         (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
@@ -934,7 +948,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if a_val == 0.0 {
         return Ok(eval_x);
       }
-      let n = (x_val / a_val).round() as i128;
+      let n = bankers_round(x_val / a_val) as i128;
       // If a is not a plain number, return n * a symbolically
       let a_is_real = matches!(&eval_a, Expr::Real(_));
       let a_is_int = matches!(&eval_a, Expr::Integer(_));
@@ -947,11 +961,13 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
       let rounded = n as f64 * a_val;
-      // When the step a is Real, result should be Real
-      let x_is_real = matches!(&eval_x, Expr::Real(_));
-      if (a_is_real || x_is_real)
-        && rounded.fract() == 0.0
-        && rounded.abs() < i128::MAX as f64
+      // When the step a is Real, result should be Real;
+      // when a is Integer, result should be Integer (if whole)
+      if a_is_int && rounded.fract() == 0.0 && rounded.abs() < i128::MAX as f64
+      {
+        return Ok(Expr::Integer(rounded as i128));
+      }
+      if a_is_real || matches!(&eval_x, Expr::Real(_)) || rounded.fract() != 0.0
       {
         return Ok(Expr::Real(rounded));
       }
@@ -966,17 +982,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    // Banker's rounding: round half to even
-    let rounded = if n.fract().abs() == 0.5 {
-      let floor = n.floor();
-      if floor as i128 % 2 == 0 {
-        floor
-      } else {
-        n.ceil()
-      }
-    } else {
-      n.round()
-    };
+    let rounded = bankers_round(n);
     Ok(Expr::Integer(rounded as i128))
   } else {
     Ok(Expr::FunctionCall {
