@@ -75,6 +75,8 @@ struct WoxiStudio {
   graphics_modal_cell: Option<usize>,
   /// Whether the table of contents sidebar is visible.
   show_toc: bool,
+  /// Current window width in logical pixels.
+  window_width: f32,
   /// Which cell's gutter area is currently hovered (for showing drag handle).
   hovered_gutter: Option<usize>,
   /// Cell index currently being dragged for reordering.
@@ -203,6 +205,7 @@ enum Message {
 
   // Display
   ScaleFactorChanged(f32),
+  WindowResized(iced::Size),
 
   // Graphics modal
   OpenGraphicsModal(usize),
@@ -342,6 +345,7 @@ impl WoxiStudio {
         },
         graphics_modal_cell: None,
         show_toc: false,
+        window_width: 1024.0,
         hovered_gutter: None,
         dragging_cell: None,
         drop_target: None,
@@ -1305,6 +1309,11 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::WindowResized(size) => {
+        self.window_width = size.width;
+        Task::none()
+      }
+
       Message::ScaleFactorChanged(scale) => {
         if (scale - self.scale_factor).abs() > f32::EPSILON {
           self.scale_factor = scale;
@@ -1894,18 +1903,10 @@ impl WoxiStudio {
     // ── Table of contents sidebar ──
     let content_area: Element<'_, Message> = if self.show_toc {
       let mut toc_col = Column::new().spacing(0).padding([8, 8]);
-      toc_col = toc_col.push(
-        text("Table of Contents")
-          .size(12)
-          .font(Font::DEFAULT)
-          .style(|theme: &Theme| text::Style {
-            color: Some(theme.palette().text),
-          }),
-      );
-      toc_col = toc_col
-        .push(container(space::horizontal()).height(iced::Length::Fixed(6.0)));
 
       let hidden = self.compute_hidden_cells();
+      // Track the widest entry to size the panel dynamically.
+      let mut max_entry_width: f32 = 0.0;
       for (idx, editor) in self.cell_editors.iter().enumerate() {
         if hidden[idx] {
           continue;
@@ -1915,8 +1916,8 @@ impl WoxiStudio {
           let label = label.trim();
           let label = if label.is_empty() {
             format!("(empty {})", editor.style)
-          } else if label.len() > 40 {
-            format!("{}…", &label[..39])
+          } else if label.len() > 60 {
+            format!("{}…", &label[..59])
           } else {
             label.to_string()
           };
@@ -1926,6 +1927,14 @@ impl WoxiStudio {
             1 => 12.0,
             _ => 11.0,
           };
+          // Estimate entry width: left pad + text + right pad.
+          // Average character width ≈ 0.48 × font_size for proportional fonts.
+          let char_width = font_size * 0.48;
+          let entry_width =
+            (8 + indent) as f32 + label.len() as f32 * char_width + 8.0;
+          if entry_width > max_entry_width {
+            max_entry_width = entry_width;
+          }
           toc_col = toc_col.push(
             button(text(label).size(font_size).font(Font::DEFAULT))
               .on_press(Message::ScrollToCell(idx))
@@ -1941,8 +1950,13 @@ impl WoxiStudio {
         }
       }
 
+      // Size to fit content (with outer padding), but shrink when
+      // the window is narrow (at most 30% of window width).
+      let content_width = max_entry_width + 16.0;
+      let window_cap = self.window_width * 0.3;
+      let toc_width = content_width.min(window_cap).max(160.0);
       let toc_panel = container(scrollable(toc_col).height(Fill))
-        .width(220)
+        .width(toc_width)
         .height(Fill)
         .style(toc_panel_style);
 
@@ -2738,6 +2752,10 @@ fn handle_event(
 
   if let iced::Event::Window(iced::window::Event::Rescaled(scale)) = &event {
     return Some(Message::ScaleFactorChanged(*scale));
+  }
+
+  if let iced::Event::Window(iced::window::Event::Resized(size)) = &event {
+    return Some(Message::WindowResized(*size));
   }
 
   if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
