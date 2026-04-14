@@ -75,6 +75,12 @@ struct WoxiStudio {
   graphics_modal_cell: Option<usize>,
   /// Whether the table of contents sidebar is visible.
   show_toc: bool,
+  /// Which cell's gutter area is currently hovered (for showing drag handle).
+  hovered_gutter: Option<usize>,
+  /// Cell index currently being dragged for reordering.
+  dragging_cell: Option<usize>,
+  /// Drop target index (the cell index before which the dragged cell will be inserted).
+  drop_target: Option<usize>,
 }
 
 /// Editor state for a single cell.
@@ -163,6 +169,15 @@ enum Message {
 
   // Cell type menu
   ToggleCellTypeMenu(usize),
+
+  // Gutter hover (for showing drag handle)
+  GutterEnter(usize),
+  GutterExit(usize),
+
+  // Cell drag-and-drop reordering
+  DragStart(usize),
+  DragOverCell(usize),
+  DragEnd,
 
   // Collapse/expand Chapter or Subchapter
   ToggleCollapse(usize),
@@ -326,6 +341,9 @@ impl WoxiStudio {
         },
         graphics_modal_cell: None,
         show_toc: false,
+        hovered_gutter: None,
+        dragging_cell: None,
+        drop_target: None,
       },
       task,
     )
@@ -984,6 +1002,59 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::GutterEnter(idx) => {
+        if self.dragging_cell.is_some() {
+          // During drag, entering a cell updates the drop target
+          return self.update(Message::DragOverCell(idx));
+        }
+        self.hovered_gutter = Some(idx);
+        Task::none()
+      }
+
+      Message::GutterExit(idx) => {
+        if self.hovered_gutter == Some(idx) && self.dragging_cell.is_none() {
+          self.hovered_gutter = None;
+        }
+        Task::none()
+      }
+
+      Message::DragStart(idx) => {
+        self.dragging_cell = Some(idx);
+        self.drop_target = None;
+        Task::none()
+      }
+
+      Message::DragOverCell(idx) => {
+        if let Some(src) = self.dragging_cell {
+          // Dropping at src or src+1 would leave the cell in the same place
+          if idx != src && idx != src + 1 {
+            self.drop_target = Some(idx);
+          } else {
+            self.drop_target = None;
+          }
+        }
+        Task::none()
+      }
+
+      Message::DragEnd => {
+        if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target) {
+          if src != dst && dst <= self.cell_editors.len() {
+            let cell = self.cell_editors.remove(src);
+            let insert_at = if dst > src { dst - 1 } else { dst };
+            self
+              .cell_editors
+              .insert(insert_at.min(self.cell_editors.len()), cell);
+            self.focused_cell =
+              Some(insert_at.min(self.cell_editors.len() - 1));
+            self.is_dirty = true;
+          }
+        }
+        self.dragging_cell = None;
+        self.drop_target = None;
+        self.hovered_gutter = None;
+        Task::none()
+      }
+
       Message::TogglePreview => {
         self.preview_mode = !self.preview_mode;
         Task::none()
@@ -1478,9 +1549,20 @@ impl WoxiStudio {
 
       let hidden = self.compute_hidden_cells();
 
+      let is_dragging = self.dragging_cell.is_some();
+
       if !self.preview_mode {
         // Add cell divider above the first cell
-        col = col.push(self.view_add_cell_divider_above(0));
+        let divider = self.view_add_cell_divider_above(0);
+        if is_dragging {
+          col = col.push(
+            mouse_area(divider)
+              .on_enter(Message::DragOverCell(0))
+              .interaction(iced::mouse::Interaction::Grabbing),
+          );
+        } else {
+          col = col.push(divider);
+        }
       }
 
       let mut visible_count = 0usize;
@@ -1490,22 +1572,75 @@ impl WoxiStudio {
         }
         // Add cell divider between cells
         if !self.preview_mode && visible_count > 0 {
-          col = col.push(self.view_add_cell_divider(idx.saturating_sub(1)));
+          let divider = self.view_add_cell_divider(idx.saturating_sub(1));
+          if is_dragging {
+            col = col.push(
+              mouse_area(divider)
+                .on_enter(Message::DragOverCell(idx))
+                .interaction(iced::mouse::Interaction::Grabbing),
+            );
+          } else {
+            col = col.push(divider);
+          }
+        }
+
+        // Drop indicator above this cell
+        if self.drop_target == Some(idx) {
+          col = col.push(
+            container(rule::horizontal(2).style(drop_indicator_style))
+              .padding([0, 20]),
+          );
         }
 
         let is_focused = self.focused_cell == Some(idx);
-        col = col.push(self.view_cell(idx, editor, is_focused));
+        let cell_el = self.view_cell(idx, editor, is_focused);
+
+        // During drag, wrap each cell in a mouse_area to detect hover
+        let cell_el: Element<'_, Message> = if is_dragging {
+          let is_being_dragged = self.dragging_cell == Some(idx);
+          let inner: Element<'_, Message> = if is_being_dragged {
+            container(cell_el).style(dragged_cell_style).into()
+          } else {
+            cell_el
+          };
+          mouse_area(inner)
+            .on_enter(Message::DragOverCell(idx))
+            .interaction(iced::mouse::Interaction::Grabbing)
+            .into()
+        } else {
+          cell_el
+        };
+
+        col = col.push(cell_el);
         visible_count += 1;
       }
 
+      let cell_count = self.cell_editors.len();
+
       if !self.preview_mode {
         // Final add-cell divider after last cell
-        col =
-          col
-            .push(self.view_add_cell_divider(
-              self.cell_editors.len().saturating_sub(1),
-            ));
+        let divider = self.view_add_cell_divider(cell_count.saturating_sub(1));
+        if is_dragging {
+          col = col.push(
+            mouse_area(divider)
+              .on_enter(Message::DragOverCell(cell_count))
+              .interaction(iced::mouse::Interaction::Grabbing),
+          );
+        } else {
+          col = col.push(divider);
+        }
       }
+
+      // Drop indicator after the last cell
+      if self.drop_target == Some(cell_count) {
+        col = col.push(
+          container(rule::horizontal(2).style(drop_indicator_style))
+            .padding([0, 20]),
+        );
+      }
+
+      // Bottom padding so the last element isn't clipped by the status bar
+      col = col.push(space::Space::new().height(32));
 
       scrollable(container(col.max_width(800)).center_x(Fill))
         .id(iced::widget::Id::from("cells-scroll"))
@@ -1723,7 +1858,43 @@ impl WoxiStudio {
         Message::ToggleCellTypeMenu(idx),
         move |s| Message::CellStyleChanged(idx, s),
       ));
+
+      // Drag handle: visible only when hovering the gutter area
+      let show_handle =
+        self.hovered_gutter == Some(idx) && self.dragging_cell.is_none();
+      let drag_handle: Element<'a, Message> = if show_handle {
+        let grip_svg = svg::Handle::from_memory(ICON_GRIP.as_bytes().to_vec());
+        mouse_area(
+          container(
+            svg::Svg::new(grip_svg)
+              .width(14)
+              .height(14)
+              .style(trash_icon_style),
+          )
+          .padding([4, 4])
+          .style(drag_handle_container_style),
+        )
+        .on_press(Message::DragStart(idx))
+        .interaction(iced::mouse::Interaction::Grab)
+        .into()
+      } else {
+        // Invisible spacer to keep layout stable
+        space::Space::new().width(22).into()
+      };
+
+      gutter = gutter.push(drag_handle);
+      // Fill remaining gutter height so hover zone extends below
+      gutter = gutter.push(space::Space::new().width(22).height(Fill));
     }
+
+    let gutter: Element<'a, Message> = if !self.preview_mode {
+      mouse_area(gutter)
+        .on_enter(Message::GutterEnter(idx))
+        .on_exit(Message::GutterExit(idx))
+        .into()
+    } else {
+      gutter.into()
+    };
 
     // ── Text editor ──
     let font_size = match editor.style {
@@ -2305,6 +2476,14 @@ fn handle_event(
   status: iced::event::Status,
   _id: iced::window::Id,
 ) -> Option<Message> {
+  // Global mouse release ends any cell drag in progress
+  if let iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+    iced::mouse::Button::Left,
+  )) = &event
+  {
+    return Some(Message::DragEnd);
+  }
+
   if let iced::Event::Window(iced::window::Event::CloseRequested) = &event {
     return Some(Message::CloseRequested(_id));
   }
@@ -2902,6 +3081,57 @@ fn trash_button_style(theme: &Theme, status: button::Status) -> button::Style {
   style
 }
 
+fn drag_handle_container_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  container::Style {
+    background: Some(Background::Color(if is_dark {
+      Color::from_rgba(1.0, 1.0, 1.0, 0.06)
+    } else {
+      Color::from_rgba(0.0, 0.0, 0.0, 0.04)
+    })),
+    border: Border {
+      radius: 4.0.into(),
+      ..Border::default()
+    },
+    ..container::Style::default()
+  }
+}
+
+fn drop_indicator_style(theme: &Theme) -> rule::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  rule::Style {
+    color: if is_dark {
+      Color::from_rgb(0.35, 0.55, 0.95)
+    } else {
+      Color::from_rgb(0.25, 0.45, 0.85)
+    },
+    radius: 2.0.into(),
+    fill_mode: rule::FillMode::Full,
+    snap: true,
+  }
+}
+
+fn dragged_cell_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  container::Style {
+    background: Some(Background::Color(if is_dark {
+      Color::from_rgba(1.0, 1.0, 1.0, 0.04)
+    } else {
+      Color::from_rgba(0.0, 0.0, 0.0, 0.03)
+    })),
+    border: Border {
+      color: if is_dark {
+        Color::from_rgba(0.35, 0.55, 0.95, 0.4)
+      } else {
+        Color::from_rgba(0.25, 0.45, 0.85, 0.3)
+      },
+      width: 1.0,
+      radius: 4.0.into(),
+    },
+    ..container::Style::default()
+  }
+}
+
 fn add_cell_button_style(
   theme: &Theme,
   status: button::Status,
@@ -3076,6 +3306,8 @@ const ICON_TOC: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" hei
 
 const ICON_CHEVRON_DOWN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
 const ICON_CHEVRON_RIGHT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
+
+const ICON_GRIP: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>"#;
 
 // ── CellStyle display/picklist support ──────────────────────────────
 
