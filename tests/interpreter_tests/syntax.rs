@@ -4012,6 +4012,36 @@ mod grid {
       "-Graphics-"
     );
   }
+
+  #[test]
+  fn traditional_form_list_renders_as_matrix() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TraditionalForm[{{1, 2}, {3, 4}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Should render all elements
+    for val in ["1", "2", "3", "4"] {
+      assert!(
+        svg.contains(&format!(">{val}</text>")),
+        "Missing value {val} in TraditionalForm matrix SVG"
+      );
+    }
+  }
+
+  #[test]
+  fn traditional_form_1d_list_renders_as_column_vector() {
+    clear_state();
+    let result = interpret_with_stdout("TraditionalForm[{a, b, c}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    for val in ["a", "b", "c"] {
+      assert!(
+        svg.contains(&format!(">{val}</text>")),
+        "Missing value {val} in TraditionalForm column SVG"
+      );
+    }
+  }
 }
 
 mod text_grid {

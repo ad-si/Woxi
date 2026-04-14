@@ -3966,6 +3966,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── FunctionCall ──
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
+        // Missing[...] → rendered as a dash
+        "Missing" => "-".to_string(),
+
         // Plus[a, b, ...] with negative-term handling
         "Plus" if args.len() >= 2 => {
           let mut result = expr_to_svg_markup(&args[0]);
@@ -6598,7 +6601,10 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
               .map(|(_, v)| v.clone())
-              .unwrap_or(Expr::Identifier("Missing[]".to_string()))
+              .unwrap_or(Expr::FunctionCall {
+                name: "Missing".to_string(),
+                args: vec![],
+              })
           })
           .collect()
       } else {
@@ -7404,7 +7410,10 @@ fn tabular_list_of_assocs_to_svg(
               .iter()
               .find(|(k, _)| expr_to_svg_markup(k) == *h)
               .map(|(_, v)| v.clone())
-              .unwrap_or(Expr::Identifier("Missing[]".to_string()))
+              .unwrap_or(Expr::FunctionCall {
+                name: "Missing".to_string(),
+                args: vec![],
+              })
           })
           .collect()
       } else {
@@ -7481,14 +7490,17 @@ fn tabular_column_assoc_to_svg(
       .iter()
       .map(|(_, v)| {
         if let Expr::List(items) = v {
-          items
-            .get(i)
-            .cloned()
-            .unwrap_or(Expr::Identifier("Missing[]".to_string()))
+          items.get(i).cloned().unwrap_or(Expr::FunctionCall {
+            name: "Missing".to_string(),
+            args: vec![],
+          })
         } else if i == 0 {
           v.clone()
         } else {
-          Expr::Identifier("Missing[]".to_string())
+          Expr::FunctionCall {
+            name: "Missing".to_string(),
+            args: vec![],
+          }
         }
       })
       .collect();

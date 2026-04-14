@@ -3158,6 +3158,35 @@ mod graphics_list {
       );
     }
   }
+
+  #[test]
+  fn tableform_default_left_alignment() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TableForm[{{1, 2, 3}, {4, 5, 6}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // TableForm should use left alignment (text-anchor="start") by default
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "TableForm should default to left alignment"
+    );
+  }
+
+  #[test]
+  fn tableform_explicit_center_alignment() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TableForm[{{1, 2}, {3, 4}}, Alignment -> Center]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Explicit Center should override the default left alignment
+    assert!(
+      !svg.contains("text-anchor=\"start\""),
+      "Explicit Center alignment should not produce left-aligned text"
+    );
+  }
 }
 
 mod matrix_form {
@@ -3714,6 +3743,24 @@ mod graphics_grid {
       "Should have bold header"
     );
     assert!(svg.contains("<image"), "Should have image element");
+  }
+
+  #[test]
+  fn missing_rendered_as_dash() {
+    clear_state();
+    // Missing[] in SVG markup should render as "-"
+    let result =
+      interpret_with_stdout("Grid[{{1, 2}, {3, Missing[]}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">-</text>"),
+      "Missing[] should render as dash in grid SVG"
+    );
+    assert!(
+      !svg.contains(">Missing[]</text>"),
+      "Missing[] should not render as literal text"
+    );
   }
 }
 

@@ -2276,11 +2276,18 @@ impl WoxiStudio {
         left: 4.0,
       });
       if is_input {
+        let play_svg =
+          svg::Handle::from_memory(PLAY_CIRCLE_SVG.as_bytes().to_vec());
         right_col = right_col.push(
-          button(text("\u{25B6}").size(14))
-            .on_press(Message::EvaluateCell(idx))
-            .padding([4, 8])
-            .style(muted_button_style),
+          button(
+            svg::Svg::new(play_svg)
+              .width(14)
+              .height(14)
+              .style(trash_icon_style),
+          )
+          .on_press(Message::EvaluateCell(idx))
+          .padding([2, 4])
+          .style(trash_button_style),
         );
       }
       right_col = right_col.push(trash_btn);
