@@ -59,11 +59,44 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
-      Ok(Expr::BinaryOp {
+      let new_expr = Expr::BinaryOp {
         op: *op,
         left: Box::new(n_eval(left)?),
         right: Box::new(n_eval(right)?),
-      })
+      };
+      // Re-evaluate to allow numeric simplification (e.g. complex powers)
+      let result = match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
+        Ok(result) => result,
+        Err(_) => new_expr,
+      };
+      // If the result is still a Power with complex operands, force
+      // numeric evaluation via z^w = exp(w * log(z))
+      if let Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: ref base,
+        right: ref exp,
+      } = result
+        && let (Some((a, b)), Some((c, d))) = (
+          try_extract_complex_float(base),
+          try_extract_complex_float(exp),
+        )
+        && (b != 0.0 || d != 0.0)
+      {
+        let abs_z = (a * a + b * b).sqrt();
+        if abs_z > 0.0 {
+          let ln_abs = abs_z.ln();
+          let arg_z = b.atan2(a);
+          let re_exp = c * ln_abs - d * arg_z;
+          let im_exp = d * ln_abs + c * arg_z;
+          let mag = re_exp.exp();
+          let re = mag * im_exp.cos();
+          let im = mag * im_exp.sin();
+          let re = if re.abs() < 1e-15 { 0.0 } else { re };
+          let im = if im.abs() < 1e-15 { 0.0 } else { im };
+          return Ok(build_complex_float_expr(re, im));
+        }
+      }
+      Ok(result)
     }
     // Rule: keep the pattern, apply N to the replacement
     Expr::Rule {

@@ -737,6 +737,73 @@ mod complex_power_tests {
   }
 }
 
+mod complex_power_numeric {
+  use woxi::interpret;
+
+  #[test]
+  fn n_i_to_the_i() {
+    // I^I = e^(-Pi/2) ≈ 0.2078795763...
+    assert_eq!(interpret("N[I^I]").unwrap(), "0.20787957635076193");
+  }
+
+  #[test]
+  fn n_2_to_the_i() {
+    assert_eq!(
+      interpret("N[2^I]").unwrap(),
+      "0.7692389013639721 + 0.6389612763136348*I"
+    );
+  }
+
+  #[test]
+  fn n_1_plus_i_to_the_1_plus_i() {
+    assert_eq!(
+      interpret("N[(1 + I)^(1 + I)]").unwrap(),
+      "0.2739572538301211 + 0.5837007587586147*I"
+    );
+  }
+
+  #[test]
+  fn n_sqrt_i() {
+    assert_eq!(
+      interpret("N[Sqrt[I]]").unwrap(),
+      "0.7071067811865476 + 0.7071067811865475*I"
+    );
+  }
+
+  #[test]
+  fn n_i_to_the_one_half() {
+    assert_eq!(
+      interpret("N[I^(1/2)]").unwrap(),
+      "0.7071067811865476 + 0.7071067811865475*I"
+    );
+  }
+
+  #[test]
+  fn n_neg1_to_the_one_third() {
+    assert_eq!(
+      interpret("N[(-1)^(1/3)]").unwrap(),
+      "0.5000000000000001 + 0.8660254037844386*I"
+    );
+  }
+
+  #[test]
+  fn i_to_float_exponent() {
+    // Direct float exponent (no N wrapper needed)
+    assert_eq!(
+      interpret("I^0.5").unwrap(),
+      "0.7071067811865476 + 0.7071067811865475*I"
+    );
+  }
+
+  #[test]
+  fn complex_float_power() {
+    assert_eq!(
+      interpret("(1.0 + I)^(2.0 + 3.0 I)").unwrap(),
+      "-0.163450932107355 + 0.09600498360894891*I"
+    );
+  }
+}
+
 mod re_im_constants {
   use woxi::interpret;
 
