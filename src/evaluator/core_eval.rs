@@ -1672,30 +1672,35 @@ pub fn evaluate_expr_to_expr_inner(
         apply_part_indices(&base_val, &indices)?
       } else {
         // Fast path: no All, use original optimized approach
-        // Apply indices one at a time with ENV optimization for identifiers
-        let mut result = if let Expr::Identifier(var_name) = base_expr {
-          let env_result = ENV.with(|env| {
-            let env = env.borrow();
-            if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
-              Some(extract_part_ast(stored, &indices[0]))
-            } else {
-              None
+        let base_val = eval_part_base(base_expr)?;
+        let mut result = extract_part_ast(&base_val, &indices[0])?;
+
+        if indices.len() > 1 {
+          // Multi-index Part: if extraction returns an unevaluated Part at
+          // any level, the spec is deeper than the object — return the full
+          // Part expression unevaluated (matching wolframscript Part::partd).
+          let mut part_too_deep = false;
+          for idx in &indices[1..] {
+            if let Expr::Part { .. } = &result {
+              part_too_deep = true;
+              break;
             }
-          });
-          if let Some(r) = env_result {
-            r?
-          } else {
-            let evaluated_expr = evaluate_expr_to_expr(base_expr)?;
-            extract_part_ast(&evaluated_expr, &indices[0])?
+            result = extract_part_ast(&result, idx)?;
           }
-        } else {
-          let evaluated_expr = evaluate_expr_to_expr(base_expr)?;
-          extract_part_ast(&evaluated_expr, &indices[0])?
-        };
-        // Apply remaining indices
-        for idx in &indices[1..] {
-          result = extract_part_ast(&result, idx)?;
+          if let Expr::Part { .. } = &result {
+            part_too_deep = true;
+          }
+          if part_too_deep {
+            result = base_val;
+            for idx in &indices {
+              result = Expr::Part {
+                expr: Box::new(result),
+                index: Box::new(idx.clone()),
+              };
+            }
+          }
         }
+
         result
       };
       PART_DEPTH.with(|d| *d.borrow_mut() -= 1);

@@ -251,18 +251,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         dims
       }
-      Expr::Image {
-        width,
-        height,
-        channels,
-        ..
-      } => {
-        let mut dims = vec![*height as i128, *width as i128];
-        if *channels > 1 {
-          dims.push(*channels as i128);
-        }
-        dims
-      }
+      // Image objects are opaque to Dimensions — use ImageDimensions instead
       _ => vec![],
     }
   }

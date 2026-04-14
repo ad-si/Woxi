@@ -93,6 +93,19 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
           let im = mag * im_exp.sin();
           let re = if re.abs() < 1e-15 { 0.0 } else { re };
           let im = if im.abs() < 1e-15 { 0.0 } else { im };
+          if im == 0.0 {
+            // Preserve complex form: re + 0.*I (matching Wolfram's convention
+            // for complex power results where imaginary part is numerically zero)
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(Expr::Real(re)),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Real(0.0)),
+                right: Box::new(Expr::Identifier("I".to_string())),
+              }),
+            });
+          }
           return Ok(build_complex_float_expr(re, im));
         }
       }

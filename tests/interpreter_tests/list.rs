@@ -3279,10 +3279,11 @@ mod part_multi_index {
     // returns unevaluated (matching wolframscript behavior)
     assert_eq!(interpret(r#"Part["Alice", 0]"#).unwrap(), "String");
     assert_eq!(interpret(r#"Part["Alice", 2]"#).unwrap(), r#""Alice"[[2]]"#);
-    // Multi-index Part that hits a string at intermediate depth
+    // Multi-index Part that hits a string at intermediate depth:
+    // Part spec is deeper than the object, so the entire Part stays unevaluated
     assert_eq!(
       interpret(r#"x = {{"Alice", 95}, {"Bob", 82}}; x[[1, 1, 2]]"#).unwrap(),
-      r#""Alice"[[2]]"#
+      r#"{{"Alice", 95}, {"Bob", 82}}[[1,1,2]]"#
     );
   }
 

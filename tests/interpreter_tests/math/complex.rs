@@ -742,8 +742,8 @@ mod complex_power_numeric {
 
   #[test]
   fn n_i_to_the_i() {
-    // I^I = e^(-Pi/2) ≈ 0.2078795763...
-    assert_eq!(interpret("N[I^I]").unwrap(), "0.20787957635076193");
+    // I^I = e^(-Pi/2) ≈ 0.2078795763... (preserves complex form with 0.*I)
+    assert_eq!(interpret("N[I^I]").unwrap(), "0.20787957635076193 + 0.*I");
   }
 
   #[test]
