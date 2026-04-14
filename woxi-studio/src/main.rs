@@ -148,6 +148,7 @@ enum Message {
   Redo(usize),
   IndentLines(usize),
   UnindentLines(usize),
+  ToggleComment(usize),
   CellStyleChanged(usize, CellStyle),
   FocusCell(usize),
   ScrollCellsToEnd,
@@ -960,6 +961,212 @@ impl WoxiStudio {
             }
             self.is_dirty = true;
             self.cell_editors[idx].output_stale = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::ToggleComment(idx) => {
+        if idx < self.cell_editors.len() {
+          let snap = self.cell_editors[idx].content.text();
+          let cursor = self.cell_editors[idx].content.cursor().position;
+          let selection = self.cell_editors[idx].content.selection();
+
+          if let Some(sel_text) = selection {
+            let lines: Vec<&str> = snap.lines().collect();
+            let (anchor, cursor_end) = selection_endpoints(
+              cursor.line,
+              cursor.column,
+              &sel_text,
+              &lines,
+            );
+            let sel_newlines = sel_text.chars().filter(|c| *c == '\n').count();
+
+            if sel_newlines > 0 {
+              // Multi-line selection: comment/uncomment whole lines
+              let (start_line, end_line) =
+                selection_line_range(cursor.line, &sel_text, lines.len());
+
+              let all_commented = (start_line..=end_line).all(|i| {
+                let trimmed = lines[i].trim();
+                trimmed.starts_with("(*") && trimmed.ends_with("*)")
+              });
+
+              let new_text: String = lines
+                .iter()
+                .enumerate()
+                .map(|(i, line)| {
+                  if i >= start_line && i <= end_line {
+                    if all_commented {
+                      let trimmed = line.trim();
+                      let leading_ws =
+                        &line[..line.len() - line.trim_start().len()];
+                      let inner = trimmed.strip_prefix("(*").unwrap_or(trimmed);
+                      let inner = inner.strip_prefix(' ').unwrap_or(inner);
+                      let inner = inner.strip_suffix("*)").unwrap_or(inner);
+                      let inner = inner.strip_suffix(' ').unwrap_or(inner);
+                      format!("{leading_ws}{inner}")
+                    } else {
+                      let leading_ws =
+                        &line[..line.len() - line.trim_start().len()];
+                      let content = line.trim_start();
+                      format!("{leading_ws}(* {content} *)")
+                    }
+                  } else {
+                    line.to_string()
+                  }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+              let new_text = preserve_trailing_newline(&snap, new_text);
+
+              if new_text != snap {
+                let old_anchor_len = lines[anchor.0].len();
+                let old_cursor_len = lines[cursor_end.0].len();
+                self.cell_editors[idx].undo_stack.push(snap);
+                self.cell_editors[idx].redo_stack.clear();
+                self.cell_editors[idx].content =
+                  text_editor::Content::with_text(&new_text);
+                let new_lines: Vec<&str> = new_text.lines().collect();
+                let anchor_shift = new_lines
+                  .get(anchor.0)
+                  .map(|l| l.len() as isize - old_anchor_len as isize)
+                  .unwrap_or(0);
+                let cursor_shift = new_lines
+                  .get(cursor_end.0)
+                  .map(|l| l.len() as isize - old_cursor_len as isize)
+                  .unwrap_or(0);
+                restore_selection(
+                  &mut self.cell_editors[idx].content,
+                  (
+                    anchor.0,
+                    (anchor.1 as isize + anchor_shift).max(0) as usize,
+                  ),
+                  (
+                    cursor_end.0,
+                    (cursor_end.1 as isize + cursor_shift).max(0) as usize,
+                  ),
+                );
+                self.is_dirty = true;
+                self.cell_editors[idx].output_stale = true;
+              }
+            } else {
+              // Single-line selection: wrap/unwrap only the selected text
+              let (start, end) = if anchor.1 <= cursor_end.1 {
+                (anchor, cursor_end)
+              } else {
+                (cursor_end, anchor)
+              };
+
+              let is_commented =
+                sel_text.starts_with("(* ") && sel_text.ends_with(" *)");
+
+              // Compute byte offset of selection start
+              let mut byte_offset = 0;
+              for (i, line) in lines.iter().enumerate() {
+                if i == start.0 {
+                  byte_offset += start.1;
+                  break;
+                }
+                byte_offset += line.len() + 1;
+              }
+
+              let new_text = if is_commented {
+                let before = &snap[..byte_offset];
+                let after = &snap[byte_offset + sel_text.len()..];
+                let inner = &sel_text[3..sel_text.len() - 3];
+                format!("{before}{inner}{after}")
+              } else {
+                let before = &snap[..byte_offset];
+                let after = &snap[byte_offset + sel_text.len()..];
+                format!("{before}(* {sel_text} *){after}")
+              };
+
+              self.cell_editors[idx].undo_stack.push(snap);
+              self.cell_editors[idx].redo_stack.clear();
+              self.cell_editors[idx].content =
+                text_editor::Content::with_text(&new_text);
+
+              let new_end_col = (end.1 as isize
+                + if is_commented { -6 } else { 6 })
+              .max(0) as usize;
+              for _ in 0..end.0 {
+                self.cell_editors[idx].content.perform(
+                  text_editor::Action::Move(text_editor::Motion::Down),
+                );
+              }
+              self.cell_editors[idx]
+                .content
+                .perform(text_editor::Action::Move(text_editor::Motion::Home));
+              for _ in 0..new_end_col {
+                self.cell_editors[idx].content.perform(
+                  text_editor::Action::Move(text_editor::Motion::Right),
+                );
+              }
+              self.is_dirty = true;
+              self.cell_editors[idx].output_stale = true;
+            }
+          } else {
+            // No selection: toggle comment on the current line
+            let lines: Vec<&str> = snap.lines().collect();
+            let line = lines[cursor.line];
+            let trimmed = line.trim();
+            let leading_ws: &str =
+              &line[..line.len() - line.trim_start().len()];
+
+            let (new_line, col_shift) =
+              if trimmed.starts_with("(*") && trimmed.ends_with("*)") {
+                // Uncomment
+                let inner = trimmed.strip_prefix("(*").unwrap_or(trimmed);
+                let inner = inner.strip_prefix(' ').unwrap_or(inner);
+                let inner = inner.strip_suffix("*)").unwrap_or(inner);
+                let inner = inner.strip_suffix(' ').unwrap_or(inner);
+                let removed = line.len() as isize
+                  - leading_ws.len() as isize
+                  - inner.len() as isize;
+                (format!("{leading_ws}{inner}"), -removed)
+              } else {
+                // Comment
+                (format!("{leading_ws}(* {trimmed} *)"), 3isize)
+              };
+
+            let new_text: String = lines
+              .iter()
+              .enumerate()
+              .map(|(i, l)| {
+                if i == cursor.line {
+                  new_line.clone()
+                } else {
+                  l.to_string()
+                }
+              })
+              .collect::<Vec<_>>()
+              .join("\n");
+            let new_text = preserve_trailing_newline(&snap, new_text);
+
+            if new_text != snap {
+              self.cell_editors[idx].undo_stack.push(snap);
+              self.cell_editors[idx].redo_stack.clear();
+              self.cell_editors[idx].content =
+                text_editor::Content::with_text(&new_text);
+              let new_col =
+                (cursor.column as isize + col_shift).max(0) as usize;
+              for _ in 0..cursor.line {
+                self.cell_editors[idx].content.perform(
+                  text_editor::Action::Move(text_editor::Motion::Down),
+                );
+              }
+              self.cell_editors[idx]
+                .content
+                .perform(text_editor::Action::Move(text_editor::Motion::Home));
+              for _ in 0..new_col {
+                self.cell_editors[idx].content.perform(
+                  text_editor::Action::Move(text_editor::Motion::Right),
+                );
+              }
+              self.is_dirty = true;
+              self.cell_editors[idx].output_stale = true;
+            }
           }
         }
         Task::none()
@@ -1970,6 +2177,11 @@ impl WoxiStudio {
             }
             keyboard::Key::Character("z") => {
               return Some(text_editor::Binding::Custom(Message::Undo(idx)));
+            }
+            keyboard::Key::Character("/") => {
+              return Some(text_editor::Binding::Custom(
+                Message::ToggleComment(idx),
+              ));
             }
             // Let Cmd+V/C/X/A pass through to iced's default handling
             // (paste, copy, cut, select-all).
