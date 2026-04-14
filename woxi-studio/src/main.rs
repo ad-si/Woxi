@@ -73,6 +73,8 @@ struct WoxiStudio {
   fontdb: Arc<resvg::usvg::fontdb::Database>,
   /// Index of the cell whose graphic is shown in the fullscreen modal.
   graphics_modal_cell: Option<usize>,
+  /// Whether the table of contents sidebar is visible.
+  show_toc: bool,
 }
 
 /// Editor state for a single cell.
@@ -167,6 +169,10 @@ enum Message {
 
   // Preview mode
   TogglePreview,
+
+  // Table of contents sidebar
+  ToggleToc,
+  ScrollToCell(usize),
 
   // Window
   CloseRequested(iced::window::Id),
@@ -319,6 +325,7 @@ impl WoxiStudio {
           Arc::new(db)
         },
         graphics_modal_cell: None,
+        show_toc: false,
       },
       task,
     )
@@ -982,6 +989,26 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ToggleToc => {
+        self.show_toc = !self.show_toc;
+        Task::none()
+      }
+
+      Message::ScrollToCell(idx) => {
+        if idx < self.cell_editors.len() {
+          self.focused_cell = Some(idx);
+          self.focused_divider = None;
+          self.cell_type_menu_open = None;
+          let scroll_task = scroll_cell_into_view(
+            iced::widget::Id::from("cells-scroll"),
+            iced::widget::Id::from(format!("cell-{idx}")),
+          );
+          let focus_task = focus(iced::widget::Id::from(format!("cell-{idx}")));
+          return Task::batch([scroll_task, focus_task]);
+        }
+        Task::none()
+      }
+
       Message::OpenGraphicsModal(idx) => {
         if idx < self.cell_editors.len()
           && self.cell_editors[idx].graphics_svg.is_some()
@@ -1386,6 +1413,15 @@ impl WoxiStudio {
       .menu_style(dropdown_menu_style),
       space::horizontal(),
       button(
+        svg::Svg::new(svg::Handle::from_memory(ICON_TOC.as_bytes().to_vec(),))
+          .width(16)
+          .height(16)
+          .style(gutter_icon_style),
+      )
+      .on_press(Message::ToggleToc)
+      .padding([3, 6])
+      .style(trash_button_style),
+      button(
         svg::Svg::new(svg::Handle::from_memory(
           if self.preview_mode {
             ICON_EYE_OFF
@@ -1478,11 +1514,73 @@ impl WoxiStudio {
     .spacing(4)
     .padding([3, 8]);
 
+    // ── Table of contents sidebar ──
+    let content_area: Element<'_, Message> = if self.show_toc {
+      let mut toc_col = Column::new().spacing(0).padding([8, 8]);
+      toc_col = toc_col.push(
+        text("Table of Contents")
+          .size(12)
+          .font(Font::DEFAULT)
+          .style(|theme: &Theme| text::Style {
+            color: Some(theme.palette().text),
+          }),
+      );
+      toc_col = toc_col
+        .push(container(space::horizontal()).height(iced::Length::Fixed(6.0)));
+
+      let hidden = self.compute_hidden_cells();
+      for (idx, editor) in self.cell_editors.iter().enumerate() {
+        if hidden[idx] {
+          continue;
+        }
+        if let Some(level) = heading_level(editor.style) {
+          let label = editor.content.text();
+          let label = label.trim();
+          let label = if label.is_empty() {
+            format!("(empty {})", editor.style)
+          } else if label.len() > 40 {
+            format!("{}…", &label[..39])
+          } else {
+            label.to_string()
+          };
+          let indent = (level as u16) * 12;
+          let font_size = match level {
+            0 => 13.0,
+            1 => 12.0,
+            _ => 11.0,
+          };
+          toc_col = toc_col.push(
+            button(text(label).size(font_size).font(Font::DEFAULT))
+              .on_press(Message::ScrollToCell(idx))
+              .padding(iced::Padding {
+                top: 2.0,
+                right: 8.0,
+                bottom: 2.0,
+                left: (8 + indent) as f32,
+              })
+              .width(Fill)
+              .style(toc_entry_style),
+          );
+        }
+      }
+
+      let toc_panel = container(scrollable(toc_col).height(Fill))
+        .width(220)
+        .height(Fill)
+        .style(toc_panel_style);
+
+      row![toc_panel, rule::vertical(1).style(separator_style), cells,]
+        .height(Fill)
+        .into()
+    } else {
+      cells
+    };
+
     // ── Layout ──
     let main_view: Element<'_, Message> = column![
       toolbar,
       rule::horizontal(1).style(separator_style),
-      cells,
+      content_area,
       status_bar,
     ]
     .spacing(0)
@@ -2512,6 +2610,45 @@ fn evaluate_cell_statements(
 
 // ── Custom styles ───────────────────────────────────────────────────
 
+fn toc_panel_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  container::Style {
+    background: Some(Background::Color(if is_dark {
+      Color::from_rgb(0.12, 0.12, 0.14)
+    } else {
+      Color::from_rgb(0.95, 0.95, 0.96)
+    })),
+    ..Default::default()
+  }
+}
+
+fn toc_entry_style(theme: &Theme, status: button::Status) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let text_color = if is_dark {
+    Color::from_rgb(0.78, 0.78, 0.82)
+  } else {
+    Color::from_rgb(0.15, 0.15, 0.20)
+  };
+  match status {
+    button::Status::Hovered | button::Status::Pressed => button::Style {
+      background: Some(Background::Color(if is_dark {
+        Color::from_rgb(0.22, 0.22, 0.26)
+      } else {
+        Color::from_rgb(0.88, 0.88, 0.92)
+      })),
+      text_color,
+      border: Border::default().rounded(4),
+      ..Default::default()
+    },
+    _ => button::Style {
+      background: None,
+      text_color,
+      border: Border::default().rounded(4),
+      ..Default::default()
+    },
+  }
+}
+
 fn separator_style(theme: &Theme) -> rule::Style {
   let is_dark = !matches!(theme, Theme::Light);
   rule::Style {
@@ -2911,6 +3048,8 @@ const ICON_EYE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" hei
 
 const ICON_EYE_OFF: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>"#;
 
+const ICON_TOC: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 12H3"/><path d="M16 18H3"/><path d="M16 6H3"/><path d="M21 12h.01"/><path d="M21 18h.01"/><path d="M21 6h.01"/></svg>"#;
+
 const ICON_CHEVRON_DOWN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
 const ICON_CHEVRON_RIGHT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
 
@@ -2951,6 +3090,88 @@ fn compute_hidden_cells_from_states(states: &[(CellStyle, bool)]) -> Vec<bool> {
     }
   }
   hidden
+}
+
+/// Creates a [`Task`] that scrolls the scrollable with `scrollable_id` so
+/// that the focusable widget with `target_id` is at the top of the viewport.
+///
+/// Phase 1: traverse the widget tree and record the scrollable's viewport
+/// bounds/translation and the target widget's screen bounds.
+/// Phase 2 (chained via `Outcome::Chain`): `scroll_to` with the computed
+/// absolute offset.
+fn scroll_cell_into_view(
+  scrollable_id: iced::widget::Id,
+  target_id: iced::widget::Id,
+) -> Task<Message> {
+  use iced::advanced::widget::Operation;
+  use iced::advanced::widget::operation;
+  use iced::widget::operation::AbsoluteOffset;
+
+  struct FindTarget {
+    scrollable_id: iced::widget::Id,
+    target_id: iced::widget::Id,
+    scrollable_bounds_y: Option<f32>,
+    target_bounds_y: Option<f32>,
+  }
+
+  impl Operation for FindTarget {
+    fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation)) {
+      operate(self);
+    }
+
+    fn scrollable(
+      &mut self,
+      id: Option<&iced::widget::Id>,
+      bounds: iced::Rectangle,
+      _content_bounds: iced::Rectangle,
+      _translation: iced::Vector,
+      _state: &mut dyn operation::Scrollable,
+    ) {
+      if id == Some(&self.scrollable_id) {
+        self.scrollable_bounds_y = Some(bounds.y);
+      }
+    }
+
+    fn focusable(
+      &mut self,
+      id: Option<&iced::widget::Id>,
+      bounds: iced::Rectangle,
+      _state: &mut dyn operation::Focusable,
+    ) {
+      if id == Some(&self.target_id) {
+        self.target_bounds_y = Some(bounds.y);
+      }
+    }
+
+    fn finish(&self) -> operation::Outcome<()> {
+      if let (Some(scroll_y), Some(target_y)) =
+        (self.scrollable_bounds_y, self.target_bounds_y)
+      {
+        // Inside operate(), child bounds are in content-space
+        // (not translated by scroll offset). So the content offset
+        // of the target is simply its Y minus the scrollable's Y.
+        let desired_offset = target_y - scroll_y;
+        let id = self.scrollable_id.clone();
+        operation::Outcome::Chain(Box::new(operation::scrollable::scroll_to(
+          id,
+          AbsoluteOffset {
+            x: None,
+            y: Some(desired_offset),
+          },
+        )))
+      } else {
+        operation::Outcome::None
+      }
+    }
+  }
+
+  iced::advanced::widget::operate(FindTarget {
+    scrollable_id,
+    target_id,
+    scrollable_bounds_y: None,
+    target_bounds_y: None,
+  })
+  .discard()
 }
 
 /// Heading level used for collapse/expand scoping. Lower numbers are
