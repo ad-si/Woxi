@@ -598,6 +598,52 @@ mod nothing {
   fn nothing_standalone() {
     assert_eq!(interpret("Nothing").unwrap(), "Nothing");
   }
+
+  #[test]
+  fn nothing_filtered_in_map() {
+    assert_eq!(
+      interpret("Map[If[OddQ[#], #, Nothing] &, {1, 2, 3, 4, 5}]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn nothing_filtered_in_table() {
+    assert_eq!(
+      interpret("Table[If[OddQ[k], k, Nothing], {k, 1, 5}]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn nothing_filtered_in_array() {
+    assert_eq!(
+      interpret("Array[If[OddQ[#], #, Nothing] &, 5]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn nothing_filtered_in_map_indexed() {
+    assert_eq!(
+      interpret(
+        "MapIndexed[If[OddQ[First[#2]], #1, Nothing] &, {a, b, c, d, e}]"
+      )
+      .unwrap(),
+      "{a, c, e}"
+    );
+  }
+
+  #[test]
+  fn nothing_filtered_in_map_thread() {
+    assert_eq!(
+      interpret(
+        "MapThread[If[#1 > #2, Nothing, #2] &, {{1, 5, 3}, {4, 2, 6}}]"
+      )
+      .unwrap(),
+      "{4, 6}"
+    );
+  }
 }
 
 mod list_function {

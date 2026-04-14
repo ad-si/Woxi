@@ -13,7 +13,9 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| apply_func_ast(func, item))
         .collect();
-      Ok(Expr::List(results?))
+      let results: Vec<Expr> =
+        results?.into_iter().filter(|e| !is_nothing(e)).collect();
+      Ok(Expr::List(results))
     }
     Expr::Association(items) => {
       // Map over association applies function to values only
@@ -456,8 +458,9 @@ pub fn map_indexed_ast(
       apply_func_to_two_args(func, item, &index)
     })
     .collect();
-
-  Ok(Expr::List(results?))
+  let results: Vec<Expr> =
+    results?.into_iter().filter(|e| !is_nothing(e)).collect();
+  Ok(Expr::List(results))
 }
 
 /// MapIndexed with level spec: MapIndexed[f, expr, levelspec]
@@ -612,7 +615,9 @@ pub fn map_thread_ast(
     for i in 0..len {
       let args: Vec<Expr> = sublists.iter().map(|sl| sl[i].clone()).collect();
       let result = apply_func_to_n_args(func, &args)?;
-      results.push(result);
+      if !is_nothing(&result) {
+        results.push(result);
+      }
     }
     Ok(Expr::List(results))
   } else {
