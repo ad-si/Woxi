@@ -600,6 +600,10 @@ impl WoxiStudio {
               save_last_file_path(&path);
               self.file_path = Some(path);
               self.is_dirty = false;
+              self.show_toc = self
+                .cell_editors
+                .iter()
+                .any(|e| heading_level(e.style).is_some());
               self.focused_cell = if self.cell_editors.is_empty() {
                 None
               } else {
@@ -1849,10 +1853,17 @@ impl WoxiStudio {
       // Bottom padding so the last element isn't clipped by the status bar
       col = col.push(space::Space::new().height(32));
 
-      scrollable(container(col.max_width(800)).center_x(Fill))
-        .id(iced::widget::Id::from("cells-scroll"))
-        .height(Fill)
-        .into()
+      scrollable(container(col.max_width(800)).center_x(Fill).padding(
+        iced::Padding {
+          top: 0.0,
+          right: 14.0,
+          bottom: 0.0,
+          left: 0.0,
+        },
+      ))
+      .id(iced::widget::Id::from("cells-scroll"))
+      .height(Fill)
+      .into()
     };
 
     // ── Status bar ──
