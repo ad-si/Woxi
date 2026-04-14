@@ -2170,6 +2170,24 @@ impl WoxiStudio {
         if !matches!(status, text_editor::Status::Focused { .. }) {
           return text_editor::Binding::from_key_press(key_press);
         }
+        // Ctrl+A / Ctrl+E: Emacs-style Home / End.
+        // Must be checked before the `command()` block because on Linux
+        // control() == command(), so Ctrl+A would otherwise become SelectAll.
+        if modifiers.control() {
+          match key.as_ref() {
+            keyboard::Key::Character("a") => {
+              return Some(text_editor::Binding::Move(
+                text_editor::Motion::Home,
+              ));
+            }
+            keyboard::Key::Character("e") => {
+              return Some(text_editor::Binding::Move(
+                text_editor::Motion::End,
+              ));
+            }
+            _ => {}
+          }
+        }
         if modifiers.command() {
           match key.as_ref() {
             keyboard::Key::Character("z") if modifiers.shift() => {
@@ -2185,7 +2203,7 @@ impl WoxiStudio {
             }
             // Let Cmd+V/C/X/A pass through to iced's default handling
             // (paste, copy, cut, select-all).
-            keyboard::Key::Character("v" | "c" | "x" | "a") => {
+            keyboard::Key::Character("v" | "c" | "x") => {
               return text_editor::Binding::from_key_press(key_press);
             }
             // Suppress character insertion for other Cmd shortcuts
