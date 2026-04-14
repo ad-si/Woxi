@@ -3716,7 +3716,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // 1^x -> 1 for any finite x (1^Infinity is Indeterminate, handled below)
   if matches!(base, Expr::Integer(1))
     && !matches!(exp, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
-    && !crate::functions::math_ast::special_functions::is_neg_infinity(exp)
+    && !crate::functions::math_ast::is_neg_infinity(exp)
   {
     return Ok(Expr::Integer(1));
   }
@@ -3726,18 +3726,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && !matches!(base, Expr::Integer(0))
     && !matches!(base, Expr::Real(f) if *f == 0.0)
     && !matches!(base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
-    && !crate::functions::math_ast::special_functions::is_neg_infinity(base)
+    && !crate::functions::math_ast::is_neg_infinity(base)
   {
     return Ok(Expr::Integer(1));
   }
 
   // Handle Power with Infinity in base or exponent
   let base_is_pos_inf = matches!(base, Expr::Identifier(s) if s == "Infinity");
-  let base_is_neg_inf =
-    crate::functions::math_ast::special_functions::is_neg_infinity(base);
+  let base_is_neg_inf = crate::functions::math_ast::is_neg_infinity(base);
   let exp_is_pos_inf = matches!(exp, Expr::Identifier(s) if s == "Infinity");
-  let exp_is_neg_inf =
-    crate::functions::math_ast::special_functions::is_neg_infinity(exp);
+  let exp_is_neg_inf = crate::functions::math_ast::is_neg_infinity(exp);
   let base_is_complex_inf =
     matches!(base, Expr::Identifier(s) if s == "ComplexInfinity");
   let exp_is_complex_inf =

@@ -221,7 +221,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(bigint_to_expr(result << shift))
   } else if let Expr::Real(f) = &args[0] {
     // Factorial[x] = Gamma[x+1] for real numbers
-    let result = super::special_functions::gamma_fn(*f + 1.0);
+    let result = super::gamma_fn(*f + 1.0);
     if result.is_infinite() {
       Ok(Expr::Identifier("ComplexInfinity".to_string()))
     } else {
@@ -256,7 +256,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
     };
-    super::special_functions::gamma_ast(&[n_plus_1])
+    super::gamma_ast(&[n_plus_1])
   }
 }
 

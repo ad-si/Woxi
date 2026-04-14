@@ -1574,9 +1574,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
       // Log[-Infinity] = Infinity (principal value)
-      if crate::functions::math_ast::special_functions::is_neg_infinity(
-        &args[0],
-      ) {
+      if crate::functions::math_ast::is_neg_infinity(&args[0]) {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
       // Log[p/q] where 0 < p < q: return -Log[q/p]
@@ -2008,7 +2006,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
   // ArcTan[-Infinity] = -Pi/2
-  if crate::functions::math_ast::special_functions::is_neg_infinity(&args[0]) {
+  if crate::functions::math_ast::is_neg_infinity(&args[0]) {
     return Ok(Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![
