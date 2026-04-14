@@ -2428,6 +2428,21 @@ mod integrate_u_substitution {
   fn x_cos_x_squared() {
     assert_eq!(interpret("Integrate[x Cos[x^2], x]").unwrap(), "Sin[x^2]/2");
   }
+
+  #[test]
+  fn log_x_over_x() {
+    // ∫ Log[x]/x dx = Log[x]^2/2 via u = Log[x]
+    assert_eq!(interpret("Integrate[Log[x]/x, x]").unwrap(), "Log[x]^2/2");
+  }
+
+  #[test]
+  fn sin_cos_product_u_sub() {
+    // ∫ Sin[x]*Cos[x] dx = -Cos[x]^2/2 via u = Cos[x]
+    assert_eq!(
+      interpret("Integrate[Sin[x] Cos[x], x]").unwrap(),
+      "-1/2*Cos[x]^2"
+    );
+  }
 }
 
 mod integrate_polynomial_power {
