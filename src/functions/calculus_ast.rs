@@ -4281,6 +4281,97 @@ fn try_integrate_poly_times_const_exp(
   }
 }
 
+/// Try u-substitution for a product of two factors: ∫ f(x) * g(h(x)) dx.
+/// If f(x) is proportional to h'(x), the integral is (1/c) * G(h(x))
+/// where G is the antiderivative of g and f(x) = c * h'(x).
+fn try_u_substitution_binary(
+  left: &Expr,
+  right: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  // Try both orderings: left * g(right_inner) and right * g(left_inner)
+  for (factor, composite) in [(left, right), (right, left)] {
+    // Look for composite functions: Exp[h(x)], Sin[h(x)], Cos[h(x)], etc.
+    let (outer_fn, inner) = match composite {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } => {
+        // E^h(x) or base^h(x)
+        if matches!(base.as_ref(), Expr::Constant(c) if c == "E")
+          || matches!(base.as_ref(), Expr::Identifier(c) if c == "E")
+        {
+          ("Exp", exp.as_ref())
+        } else {
+          continue;
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(name.as_str(), "Sin" | "Cos" | "Tan" | "Log" | "Exp") =>
+      {
+        (name.as_str(), &args[0])
+      }
+      _ => continue,
+    };
+
+    // Compute h'(x) and check if factor is proportional to h'(x)
+    let h_deriv = differentiate(inner, var).ok()?;
+    if is_constant_wrt(&h_deriv, var) && !is_constant_wrt(factor, var) {
+      continue; // h'(x) is constant but factor depends on var — no match
+    }
+    // Try to compute factor / h'(x) and check if it's constant
+    let ratio = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(factor.clone()),
+      right: Box::new(h_deriv.clone()),
+    })
+    .ok()?;
+    if !is_constant_wrt(&ratio, var) {
+      continue;
+    }
+    // factor = ratio * h'(x), so ∫ factor * g(h(x)) dx = ratio * G(h(x))
+    // where G is the antiderivative of g.
+    // Compute G(h(x)) directly based on the outer function.
+    let antideriv_of_h = match outer_fn {
+      "Exp" => composite.clone(), // G(Exp) = Exp, so G(h(x)) = Exp[h(x)]
+      "Sin" => Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![inner.clone()],
+      }, // ∫ Sin = -Cos → handle sign below
+      "Cos" => Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![inner.clone()],
+      },
+      _ => {
+        continue; // Other functions: skip for now
+      }
+    };
+    // For Sin, the antiderivative is -Cos, so flip the ratio sign
+    let ratio = if outer_fn == "Sin" {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(ratio),
+      })
+      .ok()?
+    } else {
+      ratio
+    };
+    // Multiply by the constant ratio
+    let final_result =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(ratio),
+        right: Box::new(antideriv_of_h),
+      })
+      .ok()?;
+    return Some(final_result);
+  }
+  None
+}
+
 /// Try integration by parts: ∫ u dv = u*v - ∫ v du
 /// `factors` are the factors that depend on `var`.
 /// We pick `u` using the LIATE heuristic and `dv` is the product of the remaining factors.
@@ -4537,7 +4628,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(int_a),
             })
           } else {
-            // Both factors depend on var: try trig product first
+            // Both factors depend on var: try u-substitution first
+            if let Some(result) = try_u_substitution_binary(left, right, var) {
+              return Some(result);
+            }
+            // Try trig product
             if let Some(result) =
               try_integrate_sin_cos_product(&[left, right], var)
             {
@@ -5088,6 +5183,30 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                   right: Box::new(trig_result),
                 });
               }
+            }
+            // Try u-substitution for pairs of variable-dependent factors
+            if var_factors.len() == 2
+              && let Some(usub_result) =
+                try_u_substitution_binary(var_factors[0], var_factors[1], var)
+            {
+              let result = if const_factors.is_empty() {
+                usub_result
+              } else {
+                let const_expr = if const_factors.len() == 1 {
+                  const_factors[0].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: const_factors.into_iter().cloned().collect(),
+                  }
+                };
+                Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(const_expr),
+                  right: Box::new(usub_result),
+                }
+              };
+              return Some(result);
             }
             // Fall through to integration by parts
             if let Some(ibp_result) = try_integration_by_parts(&var_refs, var) {

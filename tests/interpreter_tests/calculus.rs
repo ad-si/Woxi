@@ -2387,6 +2387,49 @@ mod integrate_by_parts {
   }
 }
 
+mod integrate_u_substitution {
+  use super::*;
+
+  #[test]
+  fn x_exp_neg_x_squared() {
+    assert_eq!(
+      interpret("Integrate[x Exp[-x^2], x]").unwrap(),
+      "-1/2*1/E^x^2"
+    );
+  }
+
+  #[test]
+  fn x_exp_x_squared() {
+    assert_eq!(interpret("Integrate[x Exp[x^2], x]").unwrap(), "E^x^2/2");
+  }
+
+  #[test]
+  fn x_squared_exp_x_cubed() {
+    assert_eq!(interpret("Integrate[x^2 Exp[x^3], x]").unwrap(), "E^x^3/3");
+  }
+
+  #[test]
+  fn cos_x_exp_sin_x() {
+    assert_eq!(
+      interpret("Integrate[Cos[x] Exp[Sin[x]], x]").unwrap(),
+      "E^Sin[x]"
+    );
+  }
+
+  #[test]
+  fn x_sin_x_squared() {
+    assert_eq!(
+      interpret("Integrate[x Sin[x^2], x]").unwrap(),
+      "-1/2*Cos[x^2]"
+    );
+  }
+
+  #[test]
+  fn x_cos_x_squared() {
+    assert_eq!(interpret("Integrate[x Cos[x^2], x]").unwrap(), "Sin[x^2]/2");
+  }
+}
+
 mod integrate_polynomial_power {
   use super::*;
 
