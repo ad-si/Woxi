@@ -166,6 +166,11 @@ pub fn identity_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   Ok(arg.clone())
 }
 
+/// Check if an expression is the symbol Nothing
+pub fn is_nothing(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) if s == "Nothing")
+}
+
 /// Check if an expression is an atomic (non-compound) expression
 pub fn is_atom_expr(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))
