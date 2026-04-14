@@ -365,21 +365,8 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
-    Expr::String(s) => {
-      let chars: Vec<char> = s.chars().collect();
-      let len = chars.len() as i64;
-      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
-      if actual_idx >= 0 && actual_idx < len {
-        Ok(Expr::String(chars[actual_idx as usize].to_string()))
-      } else {
-        // Print warning to stderr and return unevaluated Part expression
-        crate::emit_message(&format!(
-          "Part::partw: Part {} of \"{}\" does not exist.",
-          idx, s
-        ));
-        Ok(part_take_unevaluated(expr, index))
-      }
-    }
+    // Strings are atoms in Wolfram Language — Part[string, n] for n ≠ 0
+    // returns unevaluated (handled by the fallback arm below).
     Expr::BinaryOp { op, left, right } => {
       use crate::syntax::BinaryOperator;
       // Decompose BinaryOp into head + args consistent with Head[]

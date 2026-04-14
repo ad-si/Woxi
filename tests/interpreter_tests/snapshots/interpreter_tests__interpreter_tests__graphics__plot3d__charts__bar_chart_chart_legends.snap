@@ -1,0 +1,62 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: svg
+---
+<svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
+<text x="670" y="1749" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+0
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1749 749,1749 "/>
+<text x="670" y="1585" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1585 749,1585 "/>
+<text x="670" y="1420" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1420 749,1420 "/>
+<text x="670" y="1255" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1255 749,1255 "/>
+<text x="670" y="1091" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1091 749,1091 "/>
+<text x="670" y="926" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+50
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,926 749,926 "/>
+<text x="670" y="761" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,761 749,761 "/>
+<text x="670" y="596" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,596 749,596 "/>
+<text x="670" y="432" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,432 749,432 "/>
+<text x="670" y="267" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,267 749,267 "/>
+<text x="670" y="102" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
+100
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,102 749,102 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 2559,1750 "/>
+<rect x="810" y="300" width="482" height="1449" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>88</title></rect>
+<rect x="1413" y="250" width="482" height="1499" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>91</title></rect>
+<rect x="2016" y="349" width="482" height="1400" opacity="1" fill="#8FB032" stroke="#000000" stroke-width="10"><title>85</title></rect>
+<rect x="2720.0" y="180.0" width="120" height="120" fill="rgb(94,129,181)"/>
+<text x="2900.0" y="240.0" font-family="sans-serif" font-size="160" fill="#666" dominant-baseline="central">Alice</text>
+<rect x="2720.0" y="400.0" width="120" height="120" fill="rgb(224,147,44)"/>
+<text x="2900.0" y="460.0" font-family="sans-serif" font-size="160" fill="#666" dominant-baseline="central">Bob</text>
+<rect x="2720.0" y="620.0" width="120" height="120" fill="rgb(143,176,50)"/>
+<text x="2900.0" y="680.0" font-family="sans-serif" font-size="160" fill="#666" dominant-baseline="central">Charlie</text>
+</svg>

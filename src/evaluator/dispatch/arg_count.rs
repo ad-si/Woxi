@@ -262,7 +262,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DominantColors" => Some((1, 2)),
     "Dot" => Some((2, 2)),
     "Downsample" => Some((2, 3)),
-    "Drop" => Some((2, 2)),
+    "Drop" => Some((2, 3)),
     "DSolve" => Some((3, 3)),
     "DSolveValue" => Some((3, 3)),
     "Dt" => Some((2, 2)),

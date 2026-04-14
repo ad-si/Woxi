@@ -2318,6 +2318,18 @@ mod plot3d {
     }
 
     #[test]
+    fn bar_chart_chart_legends() {
+      let svg = export_svg(
+        r#"BarChart[{88, 91, 85}, ChartLegends -> {"Alice", "Bob", "Charlie"}]"#,
+      );
+      // Should contain legend text labels
+      assert!(svg.contains("Alice"), "legend should contain Alice");
+      assert!(svg.contains("Bob"), "legend should contain Bob");
+      assert!(svg.contains("Charlie"), "legend should contain Charlie");
+      insta::assert_snapshot!(svg);
+    }
+
+    #[test]
     fn bar_chart_grouped_basic() {
       // 4 groups, 2 bars each → 8 bars with 2 colors
       let svg = export_svg("BarChart[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]");

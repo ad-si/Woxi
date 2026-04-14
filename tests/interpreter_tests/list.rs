@@ -3274,6 +3274,31 @@ mod part_multi_index {
   }
 
   #[test]
+  fn part_string_is_atom() {
+    // Strings are atoms in Wolfram Language — Part[string, n] for n ≠ 0
+    // returns unevaluated (matching wolframscript behavior)
+    assert_eq!(interpret(r#"Part["Alice", 0]"#).unwrap(), "String");
+    assert_eq!(interpret(r#"Part["Alice", 2]"#).unwrap(), r#""Alice"[[2]]"#);
+    // Multi-index Part that hits a string at intermediate depth
+    assert_eq!(
+      interpret(r#"x = {{"Alice", 95}, {"Bob", 82}}; x[[1, 1, 2]]"#).unwrap(),
+      r#""Alice"[[2]]"#
+    );
+  }
+
+  #[test]
+  fn part_multi_index_on_nested_list() {
+    // Multi-index Part on a 3-level deep structure
+    assert_eq!(
+      interpret(
+        "x = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; {x[[1, 1, 2]], x[[1, 2, 2]]}"
+      )
+      .unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
   fn part_all_from_list_of_rules() {
     // Extracting second element from each rule in a list
     assert_eq!(

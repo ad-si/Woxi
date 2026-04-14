@@ -816,6 +816,11 @@ pub fn dispatch_list_operations(
     "Drop" if args.len() == 2 => {
       return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
     }
+    "Drop" if args.len() == 3 => {
+      return Some(list_helpers_ast::drop_multi_ast(
+        &args[0], &args[1], &args[2],
+      ));
+    }
     "ArrayRules" if args.len() == 1 || args.len() == 2 => {
       return Some(array_rules_ast(args));
     }

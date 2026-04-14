@@ -162,6 +162,7 @@ pub(crate) struct ChartOptions {
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
+  pub chart_legends: Vec<String>,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -222,6 +223,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     plot_label: None,
     axes_label: None,
     chart_style: Vec::new(),
+    chart_legends: Vec::new(),
   };
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -295,6 +297,19 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             let x = expr_to_label(&items[0]).unwrap_or_default();
             let y = expr_to_label(&items[1]).unwrap_or_default();
             opts.axes_label = Some((x, y));
+          }
+        }
+        "ChartLegends" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val {
+            for item in items {
+              if let Some(s) = expr_to_label(item) {
+                opts.chart_legends.push(s);
+              }
+            }
+          } else if let Some(s) = expr_to_label(&val) {
+            opts.chart_legends.push(s);
           }
         }
         "ChartStyle" => {
@@ -371,6 +386,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .as_ref()
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
+    &opts.chart_legends,
   )?;
   Ok(crate::graphics_result(svg))
 }
