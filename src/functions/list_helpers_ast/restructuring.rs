@@ -200,7 +200,9 @@ pub fn flatten_head_ast(
     }
   }
 
-  // The outer expression must also have the matching head
+  // If the outer head matches the target head, flatten its children directly.
+  // Otherwise, recurse into children to flatten matching subexpressions,
+  // preserving the outer structure.
   match list {
     Expr::FunctionCall { name, args } if name == head => {
       let mut result = Vec::new();
@@ -213,6 +215,25 @@ pub fn flatten_head_ast(
       })
     }
     Expr::List(items) if head == "List" => {
+      let mut result = Vec::new();
+      for item in items {
+        flatten_with_head(item, depth, head, &mut result);
+      }
+      Ok(Expr::List(result))
+    }
+    Expr::FunctionCall { name, args } => {
+      // Outer head doesn't match: flatten matching children into parent
+      let mut result = Vec::new();
+      for item in args {
+        flatten_with_head(item, depth, head, &mut result);
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: result,
+      })
+    }
+    Expr::List(items) => {
+      // Outer is List but target is not List: flatten matching children
       let mut result = Vec::new();
       for item in items {
         flatten_with_head(item, depth, head, &mut result);

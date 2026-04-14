@@ -248,6 +248,40 @@ mod list_tests {
     );
   }
 
+  #[test]
+  fn flatten_with_custom_head() {
+    // Flatten[f[g[a, b], g[c, d]], Infinity, g] splices g children into f
+    assert_eq!(
+      interpret("Flatten[f[g[a, b], g[c, d]], Infinity, g]").unwrap(),
+      "f[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn flatten_with_custom_head_in_list() {
+    assert_eq!(
+      interpret("Flatten[{f[a, b], f[c, d]}, Infinity, f]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+
+  #[test]
+  fn flatten_with_custom_head_nested() {
+    assert_eq!(
+      interpret("Flatten[f[g[a, b], g[c, g[d, e]]], Infinity, g]").unwrap(),
+      "f[a, b, c, d, e]"
+    );
+  }
+
+  #[test]
+  fn flatten_with_custom_head_mixed() {
+    // h[b] is not g, so it stays
+    assert_eq!(
+      interpret("Flatten[f[g[a], h[b], g[c]], Infinity, g]").unwrap(),
+      "f[a, h[b], c]"
+    );
+  }
+
   // --- SubsetPosition ---
   #[test]
   fn subset_position_literal() {
