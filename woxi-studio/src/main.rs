@@ -2228,7 +2228,7 @@ impl WoxiStudio {
             }
             // Let Cmd+V/C/X/A pass through to iced's default handling
             // (paste, copy, cut, select-all).
-            keyboard::Key::Character("v" | "c" | "x") => {
+            keyboard::Key::Character("v" | "c" | "x" | "a") => {
               return text_editor::Binding::from_key_press(key_press);
             }
             // Suppress character insertion for other Cmd shortcuts
