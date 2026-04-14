@@ -379,6 +379,21 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let h = *height as usize;
       let ch = *channels as usize;
 
+      let expected_len = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(ch))
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "ImageData: image dimensions overflow".into(),
+          )
+        })?;
+      if data.len() < expected_len {
+        return Err(InterpreterError::EvaluationError(
+          "ImageData: image data buffer is too small for the given dimensions"
+            .into(),
+        ));
+      }
+
       // Convert values to the appropriate precision.
       // Bit images (from Binarize) return integers 0 and 1.
       // Real32 images store f64 internally but should output f32-precision values.
@@ -394,21 +409,17 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for y in 0..h {
         if ch == 1 {
           // Grayscale: {{v, v, ...}, ...}
-          let mut row = Vec::with_capacity(w);
-          for x in 0..w {
-            let idx = y * w + x;
-            row.push(to_expr(data[idx]));
-          }
+          let row: Vec<Expr> =
+            (0..w).map(|x| to_expr(data[y * w + x])).collect();
           rows.push(Expr::List(row));
         } else {
           // Color: {{{r, g, b}, ...}, ...}
-          let mut row = Vec::with_capacity(w);
-          for x in 0..w {
-            let base = (y * w + x) * ch;
-            let pixel: Vec<Expr> =
-              (0..ch).map(|c| to_expr(data[base + c])).collect();
-            row.push(Expr::List(pixel));
-          }
+          let row: Vec<Expr> = (0..w)
+            .map(|x| {
+              let base = (y * w + x) * ch;
+              Expr::List((0..ch).map(|c| to_expr(data[base + c])).collect())
+            })
+            .collect();
           rows.push(Expr::List(row));
         }
       }
