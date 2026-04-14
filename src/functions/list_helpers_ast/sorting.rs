@@ -178,29 +178,54 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (Some(_), None) => std::cmp::Ordering::Less, // numbers before non-numbers
     (None, Some(_)) => std::cmp::Ordering::Greater,
     (None, None) => {
-      // Non-numeric: string comparison
-      let sa = crate::syntax::expr_to_string(a);
-      let sb = crate::syntax::expr_to_string(b);
-      let la = sa.to_lowercase();
-      let lb = sb.to_lowercase();
-      match la.cmp(&lb) {
-        std::cmp::Ordering::Equal => {
-          for (ca, cb) in sa.chars().zip(sb.chars()) {
-            if ca != cb {
-              if ca.to_lowercase().eq(cb.to_lowercase()) {
-                if ca.is_lowercase() {
-                  return std::cmp::Ordering::Less;
-                } else {
-                  return std::cmp::Ordering::Greater;
-                }
-              }
-              return ca.cmp(&cb);
+      // Handle compound expressions (lists, function calls) element-wise
+      match (a, b) {
+        // Both lists: compare element-wise
+        (Expr::List(a_items), Expr::List(b_items)) => {
+          for (ai, bi) in a_items.iter().zip(b_items.iter()) {
+            let ord = canonical_cmp(ai, bi);
+            if ord != std::cmp::Ordering::Equal {
+              return ord;
             }
           }
-          sa.len().cmp(&sb.len())
+          return a_items.len().cmp(&b_items.len());
         }
-        other => other,
+        // Both function calls: compare by name first, then args element-wise
+        (
+          Expr::FunctionCall {
+            name: a_name,
+            args: a_args,
+          },
+          Expr::FunctionCall {
+            name: b_name,
+            args: b_args,
+          },
+        ) => {
+          let name_ord = wolfram_string_cmp(a_name, b_name);
+          if name_ord != std::cmp::Ordering::Equal {
+            return name_ord;
+          }
+          for (ai, bi) in a_args.iter().zip(b_args.iter()) {
+            let ord = canonical_cmp(ai, bi);
+            if ord != std::cmp::Ordering::Equal {
+              return ord;
+            }
+          }
+          return a_args.len().cmp(&b_args.len());
+        }
+        // Lists sort after non-lists
+        (Expr::List(_), _) => return std::cmp::Ordering::Greater,
+        (_, Expr::List(_)) => return std::cmp::Ordering::Less,
+        // Function calls sort after atoms but before lists
+        (Expr::FunctionCall { .. }, _) => return std::cmp::Ordering::Greater,
+        (_, Expr::FunctionCall { .. }) => return std::cmp::Ordering::Less,
+        _ => {}
       }
+
+      // Atomic non-numeric: string/symbol comparison
+      let sa = crate::syntax::expr_to_string(a);
+      let sb = crate::syntax::expr_to_string(b);
+      wolfram_string_cmp(&sa, &sb)
     }
   }
 }
@@ -696,6 +721,30 @@ pub fn expr_sort_key(e: &Expr) -> String {
       }
     }
     _ => crate::syntax::expr_to_string(e),
+  }
+}
+
+/// Wolfram canonical string comparison (returns std::cmp::Ordering)
+fn wolfram_string_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let la = a.to_lowercase();
+  let lb = b.to_lowercase();
+  match la.cmp(&lb) {
+    std::cmp::Ordering::Equal => {
+      for (ca, cb) in a.chars().zip(b.chars()) {
+        if ca != cb {
+          if ca.to_lowercase().eq(cb.to_lowercase()) {
+            if ca.is_lowercase() {
+              return std::cmp::Ordering::Less;
+            } else {
+              return std::cmp::Ordering::Greater;
+            }
+          }
+          return ca.cmp(&cb);
+        }
+      }
+      a.len().cmp(&b.len())
+    }
+    other => other,
   }
 }
 
