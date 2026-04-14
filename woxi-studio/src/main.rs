@@ -1304,6 +1304,30 @@ impl WoxiStudio {
           }
         }
 
+        // Ctrl+A: move cursor to start of line
+        if modifiers.control() {
+          if let keyboard::Key::Character("a") = key.as_ref() {
+            if let Some(idx) = self.focused_cell {
+              self.cell_editors[idx]
+                .content
+                .perform(text_editor::Action::Move(text_editor::Motion::Home));
+            }
+            return Task::none();
+          }
+        }
+
+        // Ctrl+E: move cursor to end of line
+        if modifiers.control() {
+          if let keyboard::Key::Character("e") = key.as_ref() {
+            if let Some(idx) = self.focused_cell {
+              self.cell_editors[idx]
+                .content
+                .perform(text_editor::Action::Move(text_editor::Motion::End));
+            }
+            return Task::none();
+          }
+        }
+
         // Ctrl+W: delete previous word
         if modifiers.control() {
           if let keyboard::Key::Character("w") = key.as_ref() {

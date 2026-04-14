@@ -1266,4 +1266,47 @@ mod constant_image {
       "{{{1., 0., 0.}, {1., 0., 0.}}}"
     );
   }
+
+  #[test]
+  fn dimensions_image_data_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret("Dimensions[ImageData[Image[{{0, 0.5, 1}, {0.2, 0.4, 0.6}}]]]")
+        .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn dimensions_image_data_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dimensions[ImageData[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]]]"
+      )
+      .unwrap(),
+      "{2, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn dimensions_image_directly() {
+    clear_state();
+    assert_eq!(
+      interpret("Dimensions[Image[{{0, 0.5, 1}, {0.2, 0.4, 0.6}}]]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn dimensions_rgb_image_directly() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dimensions[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]]"
+      )
+      .unwrap(),
+      "{2, 2, 3}"
+    );
+  }
 }
