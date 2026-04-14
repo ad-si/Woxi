@@ -1292,9 +1292,10 @@ mod constant_image {
   #[test]
   fn dimensions_image_directly() {
     clear_state();
+    // Dimensions returns {} for Image objects — use ImageDimensions instead
     assert_eq!(
       interpret("Dimensions[Image[{{0, 0.5, 1}, {0.2, 0.4, 0.6}}]]").unwrap(),
-      "{2, 3}"
+      "{}"
     );
   }
 
@@ -1306,7 +1307,7 @@ mod constant_image {
         "Dimensions[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]]"
       )
       .unwrap(),
-      "{2, 2, 3}"
+      "{}"
     );
   }
 }
