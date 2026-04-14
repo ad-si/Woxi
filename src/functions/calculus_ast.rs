@@ -4369,6 +4369,45 @@ fn try_u_substitution_binary(
       .ok()?;
     return Some(final_result);
   }
+  // Strategy 2: ∫ c * f'(x) * f(x) dx = c * f(x)^2 / 2
+  // More generally: ∫ c * h'(x) * g(h(x)) dx where one factor is
+  // the derivative of the other (not wrapped in a composite function).
+  for (candidate_h, other) in [(left, right), (right, left)] {
+    // Skip trivial cases (variable itself)
+    if matches!(candidate_h, Expr::Identifier(name) if name == var) {
+      continue;
+    }
+    let h_deriv = differentiate(candidate_h, var).ok()?;
+    if is_constant_wrt(&h_deriv, var) {
+      continue; // h'(x) is constant — not useful
+    }
+    // Check if other = c * h'(x)
+    let ratio = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(other.clone()),
+      right: Box::new(h_deriv),
+    })
+    .ok()?;
+    if !is_constant_wrt(&ratio, var) {
+      continue;
+    }
+    // ∫ c * h'(x) * h(x) dx = c * h(x)^2 / 2
+    let result = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(ratio),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(candidate_h.clone()),
+          right: Box::new(Expr::Integer(2)),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      }),
+    })
+    .ok()?;
+    return Some(result);
+  }
   None
 }
 
