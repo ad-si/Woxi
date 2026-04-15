@@ -65,6 +65,9 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24}, ChartLabels -> {\"Anna\", \"Ben
 <rect x="841" y="1243" width="733" height="266" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
 <rect x="1757" y="1029" width="734" height="480" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
 <rect x="2674" y="229" width="733" height="1280" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
+<line x1="710.0" y1="1510.0" x2="680.0" y2="1510.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="975.9" x2="680.0" y2="975.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="441.8" x2="680.0" y2="441.8" stroke="#666" stroke-width="10"/>
 <text x="1208.3" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Anna</text>
 <text x="2125.0" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Ben</text>
 <text x="3041.7" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">Carl</text>

@@ -137,4 +137,11 @@ expression: "export_svg(\"ListLinePlot[{{{1, 1}, {2, 4}, {3, 9}, {4, 16}, {5, 25
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 1488,1498 2124,1179 2760,734 3397,162 "/>
 <polyline fill="none" opacity="1" stroke="#E0932C" stroke-width="15" points="851,1561 1488,1434 2124,1307 2760,1179 "/>
 <polyline fill="none" opacity="1" stroke="#8FB032" stroke-width="15" points="851,1625 1488,1434 2124,1179 2760,861 3397,480 "/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1116.0" x2="680.0" y2="1116.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="479.4" x2="680.0" y2="479.4" stroke="#666" stroke-width="10"/>
 </svg>

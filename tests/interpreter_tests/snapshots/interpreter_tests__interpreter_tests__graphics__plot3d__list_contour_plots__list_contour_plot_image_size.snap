@@ -158,6 +158,16 @@ expression: "export_svg(\"ListContourPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10,
 10
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1899,750 1899,790 "/>
+<line x1="877.8" y1="790.0" x2="877.8" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1133.3" y1="790.0" x2="1133.3" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1388.9" y1="790.0" x2="1388.9" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1644.4" y1="790.0" x2="1644.4" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1900.0" y1="790.0" x2="1900.0" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="605.6" x2="680.0" y2="605.6" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="461.1" x2="680.0" y2="461.1" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="316.7" x2="680.0" y2="316.7" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="172.2" x2="680.0" y2="172.2" stroke="#666" stroke-width="10"/>
 <rect x="750.0" y="743.5" width="12.0" height="7.0" fill="rgb(0,0,255)" stroke="none"/>
 <rect x="750.0" y="737.0" width="12.0" height="7.0" fill="rgb(0,0,255)" stroke="none"/>
 <rect x="750.0" y="730.5" width="12.0" height="7.0" fill="rgb(0,0,255)" stroke="none"/>

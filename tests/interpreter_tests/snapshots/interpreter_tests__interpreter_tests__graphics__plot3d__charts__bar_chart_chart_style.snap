@@ -73,4 +73,8 @@ expression: "export_svg(r##\"BarChart[{1, 2, 3}, ChartStyle -> {RGBColor[\"#2646
 <rect x="841" y="1250" width="733" height="499" opacity="1" fill="#264653" stroke="#000000" stroke-width="10"><title>1</title></rect>
 <rect x="1757" y="750" width="734" height="999" opacity="1" fill="#2A9D8F" stroke="#000000" stroke-width="10"><title>2</title></rect>
 <rect x="2674" y="250" width="733" height="1499" opacity="1" fill="#E9C46A" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<line x1="710.0" y1="1750.0" x2="680.0" y2="1750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1250.0" x2="680.0" y2="1250.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="250.0" x2="680.0" y2="250.0" stroke="#666" stroke-width="10"/>
 </svg>

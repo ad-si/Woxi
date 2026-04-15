@@ -168,6 +168,16 @@ expression: "export_svg(r#\"ListLinePlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> 
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3269,1750 3269,1790 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 2124,925 3397,162 "/>
 <polyline fill="none" opacity="1" stroke="#E0932C" stroke-width="15" points="851,162 2124,925 3397,1688 "/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1306.9" x2="680.0" y2="1306.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
 <line x1="3650.0" y1="981.0" x2="3850.0" y2="981.0" stroke="rgb(94,129,181)" stroke-width="15"/>
 <text x="3910.0" y="1044.0" font-family="sans-serif" font-size="180" fill="#666">Up</text>
 <line x1="3650.0" y1="1269.0" x2="3850.0" y2="1269.0" stroke="rgb(224,147,44)" stroke-width="15"/>

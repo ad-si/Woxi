@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 2621
 expression: "export_svg(\"ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 3600 3600" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -167,6 +166,16 @@ expression: "export_svg(\"ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3361,3100 3361,3140 "/>
+<line x1="750.0" y1="3140.0" x2="750.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="1437.5" y1="3140.0" x2="1437.5" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="3140.0" x2="2125.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="2812.5" y1="3140.0" x2="2812.5" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="3500.0" y1="3140.0" x2="3500.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="3100.0" x2="680.0" y2="3100.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="2350.0" x2="680.0" y2="2350.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="850.0" x2="680.0" y2="850.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="100.0" x2="680.0" y2="100.0" stroke="#666" stroke-width="10"/>
 <rect x="750.0" y="3070.0" width="28.0" height="30.5" fill="rgb(0,128,97)" stroke="none"/>
 <rect x="750.0" y="3040.0" width="28.0" height="30.5" fill="rgb(0,128,96)" stroke="none"/>
 <rect x="750.0" y="3010.0" width="28.0" height="30.5" fill="rgb(0,128,96)" stroke="none"/>

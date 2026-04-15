@@ -654,6 +654,97 @@ pub(crate) fn format_tick(v: f64) -> String {
   }
 }
 
+/// Inject SVG `<line>` elements extending labeled (major) ticks a few pixels
+/// further out than the minor ticks drawn by plotters. This is called after
+/// plotters renders the chart, using post-render coordinates in the final SVG
+/// space.
+///
+/// `x_axis` and `y_axis` are `Some((min, max, major_step))` if that axis
+/// should get extensions, or `None` to skip (e.g. for log/date axes where
+/// plotters places ticks itself and linear spacing is wrong).
+///
+/// The extension is drawn from `minor_len` to `major_len` along the tick
+/// direction, so it connects seamlessly with the plotters-drawn tick.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn inject_major_tick_extensions(
+  buf: &mut String,
+  plot_x0: f64,
+  plot_y0: f64,
+  plot_w: f64,
+  plot_h: f64,
+  x_axis: Option<(f64, f64, f64)>,
+  y_axis: Option<(f64, f64, f64)>,
+  minor_len: f64,
+  major_len: f64,
+  stroke_w: f64,
+  color: &str,
+) {
+  let extension = major_len - minor_len;
+  if extension <= 0.0 {
+    return;
+  }
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let mut svg = String::new();
+
+  // X axis: major ticks extend downward (below the plot area).
+  if let Some((x_min, x_max, x_major)) = x_axis
+    && x_major > 0.0
+    && x_max > x_min
+  {
+    let axis_y = plot_y0 + plot_h;
+    let y1 = axis_y + minor_len;
+    let y2 = y1 + extension;
+    let eps = x_major * 1e-6;
+    let mut v = (x_min / x_major).ceil() * x_major;
+    let max_steps = ((x_max - x_min) / x_major).abs() as usize + 4;
+    for _ in 0..max_steps {
+      if v > x_max + eps {
+        break;
+      }
+      let x = plot_x0 + (v - x_min) / (x_max - x_min) * plot_w;
+      svg.push_str(&format!(
+        "<line x1=\"{x:.1}\" y1=\"{y1:.1}\" x2=\"{x:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+      ));
+      v += x_major;
+    }
+  }
+
+  // Y axis: major ticks extend leftward (to the left of the plot area).
+  if let Some((y_min, y_max, y_major)) = y_axis
+    && y_major > 0.0
+    && y_max > y_min
+  {
+    let axis_x = plot_x0;
+    let x1 = axis_x - minor_len;
+    let x2 = x1 - extension;
+    let eps = y_major * 1e-6;
+    let mut v = (y_min / y_major).ceil() * y_major;
+    let max_steps = ((y_max - y_min) / y_major).abs() as usize + 4;
+    for _ in 0..max_steps {
+      if v > y_max + eps {
+        break;
+      }
+      let y = plot_y0 + plot_h - (v - y_min) / (y_max - y_min) * plot_h;
+      svg.push_str(&format!(
+        "<line x1=\"{x1:.1}\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+      ));
+      v += y_major;
+    }
+  }
+
+  if !svg.is_empty() {
+    buf.insert_str(insert_pos, &svg);
+  }
+}
+
+/// Default minor (unlabeled) tick length in render-space units.
+pub(crate) const MINOR_TICK_LEN: i32 = 4;
+/// Default major (labeled) tick length in render-space units — slightly longer
+/// than minor ticks so labeled ticks stand out visually.
+pub(crate) const MAJOR_TICK_LEN: i32 = 7;
+
 /// Filling mode for line plots.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Filling {
@@ -1007,7 +1098,7 @@ fn generate_svg_with_options(
       .fill(&bg_color)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     // Macro to configure mesh and draw series on any chart coordinate type.
     // This avoids duplicating the drawing code for each LogCoord combination.
@@ -1334,6 +1425,50 @@ fn generate_svg_with_options(
     full_width,
   );
 
+  // Extend labeled (major) ticks so they appear slightly longer than the
+  // unlabeled minor ticks drawn by plotters. Only applies when ticks are
+  // enabled, a visible axis style is used, and the axis uses linear
+  // (non-log, non-date) spacing — log/date axes have their own tick placement.
+  if show_ticks && !opts.frame && (show_x_axis || show_y_axis) {
+    let margin_left_f = margin_left as f64;
+    let margin_right_f = margin_right as f64;
+    let margin_bottom_f = margin_bottom as f64;
+    let margin_top_f = top_margin as f64;
+    let plot_x0 = margin_left_f + y_label_area as f64;
+    let plot_y0 = margin_top_f;
+    let plot_w = render_width as f64
+      - margin_left_f
+      - margin_right_f
+      - y_label_area as f64;
+    let plot_h = render_height as f64
+      - margin_top_f
+      - margin_bottom_f
+      - x_label_area as f64;
+    let x_axis_ext = if show_x_axis && !opts.log_x && !opts.date_axis {
+      Some((x_min, x_max, nice_step(x_max - x_min, 5)))
+    } else {
+      None
+    };
+    let y_axis_ext = if show_y_axis && !opts.log_y {
+      Some((y_min, y_max, nice_step(y_max - y_min, 5)))
+    } else {
+      None
+    };
+    inject_major_tick_extensions(
+      &mut buf,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      x_axis_ext,
+      y_axis_ext,
+      MINOR_TICK_LEN as f64 * sf,
+      MAJOR_TICK_LEN as f64 * sf,
+      sf,
+      label_fill,
+    );
+  }
+
   // Inject label SVG elements before </svg>
   if has_plot_label || has_x_axis_label || has_y_axis_label {
     let margin_left_f = margin_left as f64;
@@ -1643,8 +1778,7 @@ pub(crate) fn generate_scatter_svg_with_options(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  let (bg_color, dark_gray, light_gray, _label_fill, _title_fill) =
-    plot_theme();
+  let (bg_color, dark_gray, light_gray, label_fill, _title_fill) = plot_theme();
 
   let mut buf = String::new();
   {
@@ -1655,7 +1789,7 @@ pub(crate) fn generate_scatter_svg_with_options(
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let s = RESOLUTION_SCALE as i32;
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
@@ -1769,6 +1903,32 @@ pub(crate) fn generate_scatter_svg_with_options(
     render_height,
     full_width,
   );
+
+  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  {
+    let sf = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * sf;
+    let plot_x0 = margin + 65.0 * sf;
+    let plot_y0 = margin;
+    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
+    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
+    let x_major = nice_step(x_max - x_min, 5);
+    let y_major = nice_step(y_max - y_min, 5);
+    inject_major_tick_extensions(
+      &mut buf,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      Some((x_min, x_max, x_major)),
+      Some((y_min, y_max, y_major)),
+      MINOR_TICK_LEN as f64 * sf,
+      MAJOR_TICK_LEN as f64 * sf,
+      sf,
+      label_fill,
+    );
+  }
+
   inject_legend(&mut buf, opts);
   Ok(buf)
 }
@@ -1785,8 +1945,7 @@ pub(crate) fn render_merged_plot_source(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  let (bg_color, dark_gray, light_gray, _label_fill, _title_fill) =
-    plot_theme();
+  let (bg_color, dark_gray, light_gray, label_fill, _title_fill) = plot_theme();
 
   let mut buf = String::new();
   {
@@ -1797,7 +1956,7 @@ pub(crate) fn render_merged_plot_source(
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let s = RESOLUTION_SCALE as i32;
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
@@ -1948,6 +2107,32 @@ pub(crate) fn render_merged_plot_source(
     render_height,
     false,
   );
+
+  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  {
+    let sf = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * sf;
+    let plot_x0 = margin + 65.0 * sf;
+    let plot_y0 = margin;
+    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
+    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
+    let x_major = nice_step(x_max - x_min, 5);
+    let y_major = nice_step(y_max - y_min, 5);
+    inject_major_tick_extensions(
+      &mut buf,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      Some((x_min, x_max, x_major)),
+      Some((y_min, y_max, y_major)),
+      MINOR_TICK_LEN as f64 * sf,
+      MAJOR_TICK_LEN as f64 * sf,
+      sf,
+      label_fill,
+    );
+  }
+
   Ok(buf)
 }
 
@@ -2022,7 +2207,7 @@ pub(crate) fn generate_bar_svg(
       InterpreterError::EvaluationError(format!("BarChart: {e}"))
     })?;
 
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
@@ -2135,6 +2320,21 @@ pub(crate) fn generate_bar_svg(
   let plot_h =
     render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
+
+  // Extend labeled (major) y ticks. BarChart has no x ticks.
+  inject_major_tick_extensions(
+    &mut buf,
+    plot_x0,
+    plot_y0,
+    plot_w,
+    plot_h,
+    None,
+    Some((0.0, y_max, nice_step(y_max, 5))),
+    MINOR_TICK_LEN as f64 * sf,
+    MAJOR_TICK_LEN as f64 * sf,
+    sf,
+    label_fill,
+  );
 
   let font_size = sf * 18.0;
   let title_font_size = sf * 22.0;
@@ -2629,7 +2829,7 @@ pub(crate) fn generate_histogram_svg(
     })?;
 
     let s = RESOLUTION_SCALE as i32;
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
@@ -2722,6 +2922,33 @@ pub(crate) fn generate_histogram_svg(
     render_height,
     full_width,
   );
+
+  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  {
+    let sf = RESOLUTION_SCALE as f64;
+    let margin = 10.0 * sf;
+    let plot_x0 = margin + 65.0 * sf;
+    let plot_y0 = margin;
+    let plot_w = render_width as f64 - 2.0 * margin - 65.0 * sf;
+    let plot_h = render_height as f64 - 2.0 * margin - 40.0 * sf;
+    let x_major = nice_step(x_hi - x_lo, 5);
+    let y_major = nice_step(y_max, 5);
+    let (_, _, _, label_fill, _) = plot_theme();
+    inject_major_tick_extensions(
+      &mut buf,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      Some((x_lo, x_hi, x_major)),
+      Some((0.0, y_max, y_major)),
+      MINOR_TICK_LEN as f64 * sf,
+      MAJOR_TICK_LEN as f64 * sf,
+      sf,
+      label_fill,
+    );
+  }
+
   Ok(buf)
 }
 
@@ -2794,7 +3021,7 @@ pub(crate) fn generate_axes_only_opts(
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let s = RESOLUTION_SCALE as i32;
-    let tick = 4 * s;
+    let tick = MINOR_TICK_LEN * s;
 
     let top_margin = margins
       .map(|m| m.top_margin)
@@ -2918,9 +3145,35 @@ pub(crate) fn generate_axes_only_opts(
   let plot_w = render_width as f64 - 2.0 * margin - y_label_area_f;
   let plot_h = render_height as f64 - top_margin_f - margin - x_label_area_f;
 
-  // Draw custom x-axis tick marks if specified
+  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  // In custom-tick mode, the x axis is drawn manually (below) at the major
+  // tick length, so we only extend the y axis here.
+  {
+    let y_major = nice_step(y_max - y_min, 5);
+    let x_axis_ext = if x_tick_positions.is_none() {
+      Some((x_min, x_max, nice_step(x_max - x_min, 5)))
+    } else {
+      None
+    };
+    inject_major_tick_extensions(
+      &mut buf,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      x_axis_ext,
+      Some((y_min, y_max, y_major)),
+      MINOR_TICK_LEN as f64 * s,
+      MAJOR_TICK_LEN as f64 * s,
+      s,
+      label_fill,
+    );
+  }
+
+  // Draw custom x-axis tick marks if specified. These are at user-supplied
+  // positions and all get the "major" tick length since they're all labeled.
   if let Some(positions) = x_tick_positions {
-    let tick_len = 4.0 * s;
+    let tick_len = MAJOR_TICK_LEN as f64 * s;
     let axis_y = plot_y0 + plot_h;
     let stroke_w = s;
     if let Some(insert_pos) = buf.rfind("</svg>") {

@@ -139,4 +139,11 @@ expression: "export_svg(\"DiscretePlot[n^2, {n, 1, 5}]\")"
 <circle cx="2124" cy="1179" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="2760" cy="734" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="3397" cy="162" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1116.0" x2="680.0" y2="1116.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="479.4" x2="680.0" y2="479.4" stroke="#666" stroke-width="10"/>
 </svg>

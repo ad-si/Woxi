@@ -110,6 +110,12 @@ expression: "export_svg(\"ComplexPlot[Sin[z], {z, -Pi - Pi I, Pi + Pi I}]\")"
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3437,3100 3437,3140 "/>
+<line x1="1249.6" y1="3140.0" x2="1249.6" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="3140.0" x2="2125.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="3000.4" y1="3140.0" x2="3000.4" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="2554.9" x2="680.0" y2="2554.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="645.1" x2="680.0" y2="645.1" stroke="#666" stroke-width="10"/>
 <rect x="750.0" y="3070.0" width="28.0" height="30.5" fill="rgb(97,12,172)" stroke="none"/>
 <rect x="750.0" y="3040.0" width="28.0" height="30.5" fill="rgb(96,12,171)" stroke="none"/>
 <rect x="750.0" y="3010.0" width="28.0" height="30.5" fill="rgb(95,11,170)" stroke="none"/>

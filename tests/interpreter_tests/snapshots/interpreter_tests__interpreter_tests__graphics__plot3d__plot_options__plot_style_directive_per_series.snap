@@ -372,4 +372,13 @@ expression: "export_svg(\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Dir
 <polyline fill="none" opacity="1" stroke="#0000FF" stroke-width="15" points="3474,163 3478,162 "/>
 <polyline fill="none" opacity="1" stroke="#0000FF" stroke-width="15" points="3478,162 3481,162 "/>
 <polyline fill="none" opacity="1" stroke="#0000FF" stroke-width="15" points="3481,162 3482,162 "/>
+<line x1="750.0" y1="1790.0" x2="750.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1625.4" y1="1790.0" x2="1625.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2500.7" y1="1790.0" x2="2500.7" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3376.1" y1="1790.0" x2="3376.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1307.0" x2="680.0" y2="1307.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
 </svg>

@@ -94,7 +94,12 @@ expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My T
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,376 499,376 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="500,2070 3499,2070 "/>
-<line x1="2000.0" y1="2070.0" x2="2000.0" y2="2110.0" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="1944.5" x2="430.0" y2="1944.5" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="1552.2" x2="430.0" y2="1552.2" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="1160.0" x2="430.0" y2="1160.0" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="767.8" x2="430.0" y2="767.8" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="375.5" x2="430.0" y2="375.5" stroke="#666" stroke-width="10"/>
+<line x1="2000.0" y1="2070.0" x2="2000.0" y2="2140.0" stroke="#666" stroke-width="10"/>
 <line x1="2000.0" y1="375.5" x2="2000.0" y2="1944.5" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="375.5" x2="2450.0" y2="375.5" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="1944.5" x2="2450.0" y2="1944.5" stroke="#666" stroke-width="5.4"/>

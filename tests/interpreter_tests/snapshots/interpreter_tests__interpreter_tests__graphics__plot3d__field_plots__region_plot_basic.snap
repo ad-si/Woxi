@@ -166,6 +166,16 @@ expression: "export_svg(\"RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]\")"
 
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3361,3100 3361,3140 "/>
+<line x1="750.0" y1="3140.0" x2="750.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="1437.5" y1="3140.0" x2="1437.5" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="3140.0" x2="2125.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="2812.5" y1="3140.0" x2="2812.5" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="3500.0" y1="3140.0" x2="3500.0" y2="3170.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="3100.0" x2="680.0" y2="3100.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="2350.0" x2="680.0" y2="2350.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1600.0" x2="680.0" y2="1600.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="850.0" x2="680.0" y2="850.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="100.0" x2="680.0" y2="100.0" stroke="#666" stroke-width="10"/>
 <rect x="1437.5" y="1720.0" width="28.0" height="30.5" fill="rgb(94,129,181)" stroke="none"/>
 <rect x="1437.5" y="1690.0" width="28.0" height="30.5" fill="rgb(94,129,181)" stroke="none"/>
 <rect x="1437.5" y="1660.0" width="28.0" height="30.5" fill="rgb(94,129,181)" stroke="none"/>

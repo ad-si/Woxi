@@ -1615,6 +1615,28 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_labeled_ticks_are_longer_than_unlabeled() {
+      // Major (labeled) x-axis ticks get a small extension below the axis
+      // so they appear visually longer than the unlabeled minor ticks.
+      // The range [0, 2 Pi] has labeled ticks at 0, 2, 4 and 6.
+      let svg = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      // Count the tick extension lines the post-render helper inserts.
+      // They share a distinctive shape: short vertical segments starting
+      // exactly at y1=1790.0 on the bottom axis.
+      let x_extensions = svg.matches("y1=\"1790.0\" x2=").count();
+      assert_eq!(
+        x_extensions, 4,
+        "expected 4 labeled x-ticks (0, 2, 4, 6) to be extended, got {x_extensions}"
+      );
+      // Likewise, labeled y-axis ticks get a small extension to the left.
+      let y_extensions = svg.matches("x1=\"710.0\" y1=").count();
+      assert!(
+        y_extensions >= 3,
+        "expected labeled y-ticks to be extended, got {y_extensions}"
+      );
+    }
+
+    #[test]
     fn plot_legends_explicit() {
       insta::assert_snapshot!(export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
