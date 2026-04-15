@@ -964,3 +964,23 @@ mod association_thread_rule_form {
     );
   }
 }
+
+mod lookup {
+  use super::*;
+
+  #[test]
+  fn lookup_threads_over_list_of_associations() {
+    assert_eq!(
+      interpret("Lookup[{<|a -> 1, b -> 2|>, <|a -> 3, c -> 4|>}, a]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn lookup_threads_with_default() {
+    assert_eq!(
+      interpret(r#"Lookup[{<|a -> 1|>, <|b -> 2|>}, a, "miss"]"#).unwrap(),
+      "{1, miss}"
+    );
+  }
+}

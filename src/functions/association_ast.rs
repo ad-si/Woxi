@@ -206,6 +206,18 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![Expr::String("KeyAbsent".to_string()), args[1].clone()],
       })
     }
+    Expr::List(items) => {
+      // Thread Lookup over a list of associations
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|item| {
+          let mut new_args = vec![item.clone()];
+          new_args.extend(args[1..].iter().cloned());
+          lookup_ast(&new_args)
+        })
+        .collect();
+      Ok(Expr::List(results?))
+    }
     _ => Err(InterpreterError::EvaluationError(
       "Lookup expects an association as first argument".into(),
     )),
