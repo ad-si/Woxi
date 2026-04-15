@@ -577,6 +577,63 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       result.extend_from_slice(&items[idx + 1..]);
       return Ok(Expr::List(result));
     }
+    // Drop[list, {m, n, s}] - drop elements m, m+s, m+2s, ..., up to n.
+    // Negative indices count from the end. Step may be negative to walk
+    // through positions in reverse, matching Wolfram's Drop step semantics.
+    if spec.len() == 3
+      && let (Some(m), Some(n_end), Some(step)) = (
+        expr_to_i128(&spec[0]),
+        expr_to_i128(&spec[1]),
+        expr_to_i128(&spec[2]),
+      )
+    {
+      if step == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Drop: step cannot be zero".into(),
+        ));
+      }
+      let start_idx = if m > 0 { m - 1 } else { len + m };
+      let end_idx = if n_end > 0 { n_end - 1 } else { len + n_end };
+      let mut to_drop = std::collections::HashSet::new();
+      let mut i = start_idx;
+      if step > 0 {
+        while i <= end_idx {
+          if i < 0 || i >= len {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Drop: position {} is out of range for list of length {}",
+              i + 1,
+              len
+            )));
+          }
+          to_drop.insert(i as usize);
+          i += step;
+        }
+      } else {
+        while i >= end_idx {
+          if i < 0 || i >= len {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Drop: position {} is out of range for list of length {}",
+              i + 1,
+              len
+            )));
+          }
+          to_drop.insert(i as usize);
+          i += step;
+        }
+      }
+      let result: Vec<Expr> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| {
+          if to_drop.contains(&idx) {
+            None
+          } else {
+            Some(item.clone())
+          }
+        })
+        .collect();
+      return Ok(Expr::List(result));
+    }
     return Ok(Expr::FunctionCall {
       name: "Drop".to_string(),
       args: vec![list.clone(), n.clone()],
