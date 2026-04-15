@@ -134,11 +134,19 @@ fn parse_single_series(
   Ok(points)
 }
 
+/// Parsed list-plot options, including explicit PlotRange overrides.
+#[derive(Default)]
+struct ParsedOptions {
+  opts: PlotOptions,
+  joined: bool,
+  plot_range_x: Option<(f64, f64)>,
+  plot_range_y: Option<(f64, f64)>,
+}
+
 /// Parse common plot options from args[1..].
-/// Returns (PlotOptions, joined).
-fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
-  let mut opts = PlotOptions::default();
-  let mut joined = false;
+fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
+  let mut out = ParsedOptions::default();
+  let opts = &mut out.opts;
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -159,8 +167,13 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
         "Joined" => {
           if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True")
           {
-            joined = true;
+            out.joined = true;
           }
+        }
+        "PlotRange" => {
+          let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
+          out.plot_range_x = rx;
+          out.plot_range_y = ry;
         }
         "Filling" => {
           opts.filling = parse_filling(replacement);
@@ -180,7 +193,7 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
         }
         "PlotTheme" => {
           if let Expr::String(theme) = replacement.as_ref() {
-            apply_plot_theme(&mut opts, theme);
+            apply_plot_theme(opts, theme);
           }
         }
         "GridLines" => {
@@ -194,7 +207,21 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
       }
     }
   }
-  (opts, joined)
+  out
+}
+
+/// Apply explicit PlotRange overrides from parsed options on top of the
+/// auto-computed (x_range, y_range) pair. Axes that were not specified
+/// (None) keep their auto-computed values.
+fn apply_plot_range_override(
+  parsed: &ParsedOptions,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+) -> ((f64, f64), (f64, f64)) {
+  (
+    parsed.plot_range_x.unwrap_or(x_range),
+    parsed.plot_range_y.unwrap_or(y_range),
+  )
 }
 
 /// Compute x/y ranges from data with 4% padding.
@@ -248,14 +275,17 @@ fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, joined) = parse_plot_options(args);
+  let parsed = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let joined = parsed.joined;
+  let opts = &parsed.opts;
 
   let svg = if joined {
-    generate_svg_with_filling(&all_series, x_range, y_range, &opts)?
+    generate_svg_with_filling(&all_series, x_range, y_range, opts)?
   } else {
-    generate_scatter_svg_with_options(&all_series, x_range, y_range, &opts)?
+    generate_scatter_svg_with_options(&all_series, x_range, y_range, opts)?
   };
 
   let source = build_plot_source(
@@ -273,19 +303,21 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let parsed = parse_plot_options(args);
   let (x_range, mut y_range) = compute_ranges(&all_series);
 
-  y_range = adjust_y_range_for_filling(opts.filling, y_range);
+  y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
-  let svg = generate_svg_with_filling(&all_series, x_range, y_range, &opts)?;
+  let svg =
+    generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let parsed = parse_plot_options(args);
 
   // Transform each series into staircase coordinates
   let step_series: Vec<Vec<(f64, f64)>> = all_series
@@ -303,16 +335,18 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&step_series);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&step_series, x_range, y_range, &opts)?;
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&step_series, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (mut opts, _) = parse_plot_options(args);
-  opts.log_y = true;
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.log_y = true;
 
   // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
   let filtered: Vec<Vec<(f64, f64)>> = all_series
@@ -321,17 +355,19 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&filtered);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (mut opts, _) = parse_plot_options(args);
-  opts.log_x = true;
-  opts.log_y = true;
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.log_x = true;
+  parsed.opts.log_y = true;
 
   // Filter non-positive values; data stays in original space (LogCoord handles scaling)
   let filtered: Vec<Vec<(f64, f64)>> = all_series
@@ -346,8 +382,10 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&filtered);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
@@ -356,8 +394,8 @@ pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (mut opts, _) = parse_plot_options(args);
-  opts.log_x = true;
+  let mut parsed = parse_plot_options(args);
+  parsed.opts.log_x = true;
 
   // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
   let filtered: Vec<Vec<(f64, f64)>> = all_series
@@ -366,15 +404,17 @@ pub fn list_log_linear_plot_ast(
     .collect();
 
   let (x_range, y_range) = compute_ranges(&filtered);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&filtered, x_range, y_range, &opts)?;
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
 pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (opts, _) = parse_plot_options(args);
+  let parsed = parse_plot_options(args);
 
   let polar_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
@@ -392,8 +432,10 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&polar_series);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  let svg = generate_svg_with_filling(&polar_series, x_range, y_range, &opts)?;
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let svg =
+    generate_svg_with_filling(&polar_series, x_range, y_range, &parsed.opts)?;
   Ok(crate::graphics_result(svg))
 }
 
@@ -486,11 +528,16 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let all_series = vec![points];
-  let (opts, _) = parse_plot_options(args);
+  let parsed = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
+  let y_range = adjust_y_range_for_filling(parsed.opts.filling, y_range);
+  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
-  let svg =
-    generate_scatter_svg_with_options(&all_series, x_range, y_range, &opts)?;
+  let svg = generate_scatter_svg_with_options(
+    &all_series,
+    x_range,
+    y_range,
+    &parsed.opts,
+  )?;
   Ok(crate::graphics_result(svg))
 }

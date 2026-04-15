@@ -1966,6 +1966,110 @@ mod plot3d {
     fn list_plot_single_element() {
       insta::assert_snapshot!(export_svg("ListPlot[{5}]"));
     }
+
+    /// PlotRange -> {{xmin, xmax}, {ymin, ymax}} should constrain both axes.
+    /// With data x ∈ [1, 20] shown on x ∈ [0, 50] and default width,
+    /// the data polyline should occupy only the left ~38% of the plot area.
+    #[test]
+    fn list_line_plot_plot_range_both_axes() {
+      let svg = export_svg(
+        "ListLinePlot[Table[{n, Prime[n]}, {n, 1, 20, 1}], \
+         PlotRange -> {{0, 50}, {0, 250}}]",
+      );
+      // Find the data polyline (drawn with the default series color).
+      let line = svg
+        .lines()
+        .find(|l| l.contains("stroke=\"#5E81B5\"") && l.contains("points=\""))
+        .expect("expected a data polyline");
+      let pts_str = line
+        .split("points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+      let xs: Vec<f64> = pts_str
+        .split_whitespace()
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      let ys: Vec<f64> = pts_str
+        .split_whitespace()
+        .map(|p| p.split(',').nth(1).unwrap().parse().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 20, "expected 20 data points");
+
+      // The left edge of the plotting area is ~749 and the right edge
+      // ~3499 (width 2750). With x ∈ [0, 50], data x=1..20 should span
+      // 1/50..20/50 of the area → roughly 804..1849.
+      let left = 749.0_f64;
+      let right = 3499.0_f64;
+      let expected_first_x = left + (right - left) * (1.0 / 50.0);
+      let expected_last_x = left + (right - left) * (20.0 / 50.0);
+      assert!(
+        (xs[0] - expected_first_x).abs() < 5.0,
+        "first x {} should be near {}",
+        xs[0],
+        expected_first_x
+      );
+      assert!(
+        (xs[19] - expected_last_x).abs() < 5.0,
+        "last x {} should be near {}",
+        xs[19],
+        expected_last_x
+      );
+
+      // On the y-axis, ymin=0 maps to ~1749 and ymax=250 maps to ~100
+      // (height 1649). Prime[1]=2 → y≈1736; Prime[20]=71 → y≈1286.
+      let top = 100.0_f64;
+      let bottom = 1749.0_f64;
+      let y_for = |v: f64| bottom - (bottom - top) * (v / 250.0);
+      assert!(
+        (ys[0] - y_for(2.0)).abs() < 5.0,
+        "first y {} should be near {}",
+        ys[0],
+        y_for(2.0)
+      );
+      assert!(
+        (ys[19] - y_for(71.0)).abs() < 5.0,
+        "last y {} should be near {}",
+        ys[19],
+        y_for(71.0)
+      );
+    }
+
+    /// PlotRange -> {ymin, ymax} should only override the y-axis; the
+    /// x-axis stays on its auto-computed range.
+    #[test]
+    fn list_line_plot_plot_range_y_only() {
+      let svg =
+        export_svg("ListLinePlot[{1, 2, 3, 2, 1}, PlotRange -> {0, 10}]");
+      let line = svg
+        .lines()
+        .find(|l| l.contains("stroke=\"#5E81B5\"") && l.contains("points=\""))
+        .expect("expected a data polyline");
+      let pts_str = line
+        .split("points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+      let ys: Vec<f64> = pts_str
+        .split_whitespace()
+        .map(|p| p.split(',').nth(1).unwrap().parse().unwrap())
+        .collect();
+      // With y ∈ [0, 10], the values 1..3 should all sit in the lower
+      // third of the plot area (rows 100..1749).
+      let top = 100.0_f64;
+      let bottom = 1749.0_f64;
+      for y in &ys {
+        let frac = (bottom - y) / (bottom - top);
+        assert!(
+          (0.0..=0.35).contains(&frac),
+          "y={y} (fraction {frac}) outside lower third for PlotRange -> {{0, 10}}"
+        );
+      }
+    }
   }
 
   mod parametric_plot {

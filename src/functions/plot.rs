@@ -3337,6 +3337,66 @@ pub(crate) fn parse_grid_lines(expr: &Expr) -> (bool, bool) {
   }
 }
 
+/// Parse a PlotRange option value into (x_range, y_range) overrides.
+///
+/// Supported forms:
+/// - `All` / `Automatic` / `Full` → (None, None)
+/// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
+/// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
+/// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
+#[allow(clippy::type_complexity)]
+pub(crate) fn parse_plot_range(
+  value: &Expr,
+) -> (Option<(f64, f64)>, Option<(f64, f64)>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+
+  // Automatic / All / Full → no override
+  if matches!(&val, Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
+  {
+    return (None, None);
+  }
+
+  let parse_pair = |e: &Expr| -> Option<(f64, f64)> {
+    if let Expr::List(items) = e
+      && items.len() == 2
+    {
+      let a = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[0]).unwrap_or_else(|_| items[0].clone()),
+      )?;
+      let b = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[1]).unwrap_or_else(|_| items[1].clone()),
+      )?;
+      Some((a, b))
+    } else {
+      None
+    }
+  };
+
+  if let Expr::List(items) = &val
+    && items.len() == 2
+  {
+    // {{xmin,xmax}, {ymin,ymax}} (optionally with All/Automatic as a placeholder)
+    if matches!(&items[0], Expr::List(_))
+      || matches!(&items[1], Expr::List(_))
+      || matches!(&items[0], Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
+    {
+      let x_range = parse_pair(&items[0]);
+      let y_range = parse_pair(&items[1]);
+      // If neither inner is a pair, fall through to {ymin, ymax} handling.
+      if x_range.is_some() || y_range.is_some() {
+        return (x_range, y_range);
+      }
+    }
+
+    // {ymin, ymax}: y range only
+    if let Some(y) = parse_pair(&val) {
+      return (None, Some(y));
+    }
+  }
+
+  (None, None)
+}
+
 /// Parse PlotLegends option value into a list of legend strings.
 /// Returns (legends, is_automatic, is_expressions, legend_position).
 pub(crate) fn parse_plot_legends(
@@ -3458,57 +3518,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           plot_opts.grid_lines_y = gy;
         }
         "PlotRange" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          match &val {
-            // PlotRange -> All or Automatic: use auto range (default)
-            Expr::Identifier(s)
-              if s == "All" || s == "Automatic" || s == "Full" =>
-            {
-              plot_range_x = None;
-              plot_range_y = None;
-            }
-            // PlotRange -> {ymin, ymax}: set y range only
-            Expr::List(items) if items.len() == 2 => {
-              let a = try_eval_to_f64(
-                &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
-              );
-              let b = try_eval_to_f64(
-                &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
-              );
-              match (a, b) {
-                (Some(lo), Some(hi)) => plot_range_y = Some((lo, hi)),
-                // {All/Automatic, {ymin, ymax}} or similar list-of-ranges form
-                _ => {
-                  if let (Expr::List(xa), Expr::List(ya)) =
-                    (&items[0], &items[1])
-                    && xa.len() == 2
-                    && ya.len() == 2
-                  {
-                    let x0 = try_eval_to_f64(
-                      &evaluate_expr_to_expr(&xa[0]).unwrap_or(xa[0].clone()),
-                    );
-                    let x1 = try_eval_to_f64(
-                      &evaluate_expr_to_expr(&xa[1]).unwrap_or(xa[1].clone()),
-                    );
-                    let y0 = try_eval_to_f64(
-                      &evaluate_expr_to_expr(&ya[0]).unwrap_or(ya[0].clone()),
-                    );
-                    let y1 = try_eval_to_f64(
-                      &evaluate_expr_to_expr(&ya[1]).unwrap_or(ya[1].clone()),
-                    );
-                    if let (Some(x0), Some(x1)) = (x0, x1) {
-                      plot_range_x = Some((x0, x1));
-                    }
-                    if let (Some(y0), Some(y1)) = (y0, y1) {
-                      plot_range_y = Some((y0, y1));
-                    }
-                  }
-                }
-              }
-            }
-            _ => {}
-          }
+          let (rx, ry) = parse_plot_range(replacement);
+          plot_range_x = rx;
+          plot_range_y = ry;
         }
         "Axes" => {
           let parse_bool =
@@ -3826,20 +3838,9 @@ fn log_scale_plot_ast(
           plot_opts.grid_lines_y = gy;
         }
         "PlotRange" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Expr::List(items) = &val
-            && items.len() == 2
-          {
-            let a = try_eval_to_f64(
-              &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
-            );
-            let b = try_eval_to_f64(
-              &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
-            );
-            if let (Some(lo), Some(hi)) = (a, b) {
-              plot_range_y = Some((lo, hi));
-            }
+          let (_rx, ry) = parse_plot_range(replacement);
+          if ry.is_some() {
+            plot_range_y = ry;
           }
         }
         "PlotPoints" => {
