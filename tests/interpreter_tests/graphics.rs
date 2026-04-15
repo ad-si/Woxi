@@ -3410,6 +3410,43 @@ mod graphics_list {
     );
   }
 
+  /// Regression: a plain 1-D list with many graphics should also
+  /// re-render each child at a smaller `ImageSize`, matching how
+  /// `GraphicsRow` handles the same scenario. Before, every cell was
+  /// rendered at its native 360 px and then scaled down inside the
+  /// combined SVG, making text unreadable.
+  #[test]
+  fn list_with_many_cells_rerenders_smaller() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{Plot[Sin[x],{x,0,2 Pi}], Plot[Cos[x],{x,0,2 Pi}], \
+        Plot[Tan[x],{x,0,2 Pi}], Plot[Sin[2 x],{x,0,2 Pi}], \
+        Plot[Cos[2 x],{x,0,2 Pi}], Plot[Sin[x] Cos[x],{x,0,2 Pi}]}",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Inner cell widths should reflect the shrunk ImageSize, not the
+    // original 360 px native. Skip the outermost <svg> wrapper.
+    let cell_widths: Vec<u32> = svg
+      .match_indices("<svg x=\"")
+      .filter_map(|(idx, _)| {
+        let rest = &svg[idx..];
+        let w_start = rest.find("width=\"")? + "width=\"".len();
+        let w_end = rest[w_start..].find('"')? + w_start;
+        rest[w_start..w_end].parse().ok()
+      })
+      .collect();
+    assert_eq!(
+      cell_widths.len(),
+      6,
+      "expected 6 nested cells for a 6-element list, got {cell_widths:?}"
+    );
+    assert!(
+      cell_widths.iter().all(|w| (120..=240).contains(w)),
+      "expected each list cell to be re-rendered near 180 px, got {cell_widths:?}"
+    );
+  }
+
   #[test]
   fn table_2d_list_of_graphics() {
     clear_state();
@@ -4197,6 +4234,68 @@ mod graphics_row {
       cell_widths[0] >= 300,
       "expected cells to render near their native 360 width, got \
        {cell_widths:?}"
+    );
+  }
+
+  /// Regression: with many cells in a row, the layout used to simply
+  /// scale each graphic down to fit, so text and strokes ended up
+  /// sub-legible (~3 px fonts for 6 plots in a row). Instead, each
+  /// child should be re-rendered with `ImageSize -> per_cell_w`
+  /// injected, producing smaller SVGs with text at their normal pixel
+  /// size. The total row width is then capped near 1080 px.
+  #[test]
+  fn many_cells_rerender_at_smaller_size() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "GraphicsRow[{Plot[Sin[x],{x,0,2 Pi}], Plot[Cos[x],{x,0,2 Pi}], \
+         Plot[Tan[x],{x,0,2 Pi}], Plot[Sin[2 x],{x,0,2 Pi}], \
+         Plot[Cos[2 x],{x,0,2 Pi}], Plot[Sin[x] Cos[x],{x,0,2 Pi}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let cell_widths: Vec<u32> = svg
+      .match_indices("<svg x=\"")
+      .filter_map(|(idx, _)| {
+        let rest = &svg[idx..];
+        let w_start = rest.find("width=\"")? + "width=\"".len();
+        let w_end = rest[w_start..].find('"')? + w_start;
+        rest[w_start..w_end].parse().ok()
+      })
+      .collect();
+    assert_eq!(
+      cell_widths.len(),
+      6,
+      "expected 6 cells, got {cell_widths:?}"
+    );
+    // Each cell should be well below the native 360 px (we re-rendered
+    // at ~180) and well above the old ~80 px scaled-down artifacts.
+    assert!(
+      cell_widths.iter().all(|w| (120..=240).contains(w)),
+      "expected cells in 120..=240 px range after re-rendering, got {cell_widths:?}"
+    );
+    // Each inner SVG should have a shrunken viewBox (Plot's internal
+    // resolution scales with ImageSize), confirming it was actually
+    // re-rendered rather than scaled via a wrapper viewBox.
+    let viewbox_widths: Vec<u32> = svg
+      .match_indices("viewBox=\"")
+      .filter_map(|(idx, _)| {
+        let rest = &svg[idx + "viewBox=\"".len()..];
+        let end = rest.find('"')?;
+        let parts: Vec<f64> = rest[..end]
+          .split_whitespace()
+          .filter_map(|s| s.parse().ok())
+          .collect();
+        (parts.len() >= 4).then(|| parts[2] as u32)
+      })
+      .collect();
+    // The outer wrapper's viewBox matches the total width; skip it and
+    // check the inner cells. A native Plot at ImageSize 180 has
+    // internal viewBox width 1800 (RESOLUTION_SCALE = 10), well under
+    // the 3600 value that the old 360-native rendering would produce.
+    assert!(
+      viewbox_widths.iter().skip(1).all(|&w| w < 3000),
+      "expected inner viewBox widths to reflect re-rendering at a \
+       smaller ImageSize, got {viewbox_widths:?}"
     );
   }
 
