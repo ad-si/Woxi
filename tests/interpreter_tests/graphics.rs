@@ -2031,6 +2031,38 @@ mod plot3d {
     }
 
     #[test]
+    fn pie_chart_multi_ring() {
+      // Regression: a matrix of values must render as concentric rings
+      // (one ring per sublist), not silently drop to an empty SVG.
+      // Selecting PieChart from a Manipulate-over-chart-functions picker
+      // produced a blank cell before this was fixed.
+      let svg = export_svg("PieChart[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]");
+      // 4 rows × 2 slices each = 8 wedge paths (plus tooltips).
+      let paths = svg.matches("<path").count();
+      assert_eq!(paths, 8, "expected 8 wedge paths, got {paths}");
+      // Each slice should carry a numeric tooltip.
+      for v in &["1", "2", "3", "4", "5", "6", "7", "8"] {
+        assert!(
+          svg.contains(&format!("<title>{v}</title>")),
+          "missing tooltip for value {v}"
+        );
+      }
+    }
+
+    #[test]
+    fn pie_chart_3d_multi_ring() {
+      // Regression: a matrix of values must render as concentric 3D rings
+      // instead of being silently dropped to a blank Graphics3D cell.
+      let svg = export_svg("PieChart3D[{{1, 2}, {3, 4}, {5, 6}, {7, 8}}]");
+      // At least one triangle per slice: 8 slices → plenty of polygons.
+      let polys = svg.matches("<polygon").count();
+      assert!(
+        polys > 100,
+        "expected tessellated concentric rings, got {polys} polygons"
+      );
+    }
+
+    #[test]
     fn histogram_basic() {
       insta::assert_snapshot!(export_svg("Histogram[{1, 2, 2, 3, 3, 3}]"));
     }
