@@ -278,7 +278,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute base radius for vertices
   let base_radius = if n <= 2 {
-    0.15
+    0.09
   } else {
     let min_dist = positions
       .iter()
@@ -289,7 +289,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(move |&(x2, y2)| ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())
       })
       .fold(f64::INFINITY, f64::min);
-    (min_dist * 0.2).min(0.15).max(0.04)
+    (min_dist * 0.12).min(0.09).max(0.024)
   };
   let vertex_radius = base_radius * vertex_size_scale;
 
