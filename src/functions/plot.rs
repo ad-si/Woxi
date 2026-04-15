@@ -2148,20 +2148,38 @@ pub(crate) fn generate_bar_svg(
   axes_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
+  plot_range_x: Option<(f64, f64)>,
+  plot_range_y: Option<(f64, f64)>,
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
   let n = groups.len(); // number of groups
   let k = groups.iter().map(|g| g.len()).max().unwrap_or(1); // max bars per group
-  let y_max = groups
-    .iter()
-    .flat_map(|g| g.iter())
-    .cloned()
-    .fold(f64::NEG_INFINITY, f64::max)
-    .max(0.0)
-    * 1.1;
-  let y_max = if y_max <= 0.0 { 1.0 } else { y_max };
+
+  // y-axis range: explicit PlotRange overrides the auto-computed extent
+  // (which adds 10% headroom above the tallest bar and anchors at 0).
+  let (y_min, y_max) = if let Some((ymin, ymax)) = plot_range_y {
+    (ymin, ymax)
+  } else {
+    let y_max_auto = groups
+      .iter()
+      .flat_map(|g| g.iter())
+      .cloned()
+      .fold(f64::NEG_INFINITY, f64::max)
+      .max(0.0)
+      * 1.1;
+    let y_max_auto = if y_max_auto <= 0.0 { 1.0 } else { y_max_auto };
+    (0.0, y_max_auto)
+  };
+  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
+
+  // x-axis range: bars are categorical, living at 0..n. An explicit
+  // PlotRange -> {{xmin, xmax}, ...} extends the drawn axis (bars stay
+  // at their slots and the excess becomes empty padding), mirroring
+  // the way ListLinePlot treats an x-range wider than the data.
+  let (x_min, x_max) = plot_range_x.unwrap_or((0.0, n as f64));
+  let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
   let s = RESOLUTION_SCALE as i32;
   let sf = RESOLUTION_SCALE as f64;
@@ -2216,14 +2234,15 @@ pub(crate) fn generate_bar_svg(
       .margin_left(10 * s as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
-      .build_cartesian_2d(0.0..(n as f64), 0.0..y_max)
+      .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| {
         InterpreterError::EvaluationError(format!("BarChart: {e}"))
       })?;
 
-    let y_major = nice_step(y_max, 5);
+    let y_span = y_max - y_min;
+    let y_major = nice_step(y_span, 5);
     let y_minor_step = y_major / 5.0;
-    let y_tick_count = (y_max / y_minor_step).round() as usize + 1;
+    let y_tick_count = (y_span / y_minor_step).round() as usize + 1;
 
     chart
       .configure_mesh()
@@ -2329,7 +2348,7 @@ pub(crate) fn generate_bar_svg(
     plot_w,
     plot_h,
     None,
-    Some((0.0, y_max, nice_step(y_max, 5))),
+    Some((y_min, y_max, nice_step(y_max - y_min, 5))),
     MINOR_TICK_LEN as f64 * sf,
     MAJOR_TICK_LEN as f64 * sf,
     sf,
@@ -2345,11 +2364,18 @@ pub(crate) fn generate_bar_svg(
 
     // ChartLabels: position based on chart_label_position
     if has_chart_labels {
-      let slot_w = plot_w / n as f64;
+      // Bars live on the categorical x-axis 0..n, which may be a subset of
+      // the displayed x-range when PlotRange extends the axis beyond the
+      // data. Map slot centers through the same linear transform used by
+      // the cartesian chart above so labels line up with their bars.
+      let x_span = x_max - x_min;
+      let map_x_val =
+        |v: f64| -> f64 { plot_x0 + (v - x_min) / x_span * plot_w };
+      let y_span = y_max - y_min;
       let map_y_val =
-        |v: f64| -> f64 { plot_y0 + (y_max - v) / y_max * plot_h };
+        |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
       for (i, label) in chart_labels.iter().enumerate().take(n) {
-        let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
+        let cx = map_x_val(i as f64 + 0.5);
         // For Above/Center positioning, use the max value in the group
         let group_max =
           groups[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
