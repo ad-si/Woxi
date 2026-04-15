@@ -133,3 +133,90 @@ Arguments are still evaluated:
 $ wo 'TableForm[Table[{i, i^2}, {i, 3}]]'
 TableForm[{{1, 1}, {2, 4}, {3, 9}}]
 ```
+
+
+## `Hold`
+
+Prevents its argument from being evaluated.
+
+```scrut
+$ wo 'Hold[1 + 2]'
+Hold[1 + 2]
+```
+
+
+## `ReleaseHold`
+
+Strips a `Hold` wrapper and evaluates the contents.
+
+```scrut
+$ wo 'ReleaseHold[Hold[1 + 2]]'
+3
+```
+
+
+## `Unevaluated`
+
+A marker that tells the evaluator to pass its argument to the surrounding
+function without first evaluating it.
+Wrappers like `List` leave `Unevaluated` alone.
+
+```scrut
+$ wo 'List[Unevaluated[1 + 2], 3]'
+{Unevaluated[1 + 2], 3}
+```
+
+
+## `Depth`
+
+Returns the maximum depth (+1) of the expression tree.
+
+```scrut
+$ wo 'Depth[{{1, 2}, {3, 4}}]'
+3
+```
+
+
+## `Level`
+
+Returns the sub-expressions at a given level.
+
+```scrut
+$ wo 'Level[{{a, b}, {c, d}}, {1}]'
+{{a, b}, {c, d}}
+```
+
+```scrut
+$ wo 'Level[{{a, b}, {c, d}}, {2}]'
+{a, b, c, d}
+```
+
+
+## `LeafCount`
+
+Counts the number of atoms (leaves) in an expression tree.
+
+```scrut
+$ wo 'LeafCount[1 + x + y^2]'
+6
+```
+
+
+## `ByteCount`
+
+Returns the storage size (in bytes) of an expression.
+
+```scrut
+$ wo 'IntegerQ[ByteCount["hello"]]'
+True
+```
+
+
+## `Context`
+
+Returns the context in which a symbol lives.
+
+```scrut
+$ wo 'Context[Plus]'
+System`
+```

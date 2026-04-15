@@ -139,3 +139,81 @@ $ wo 'KeyTake[<|a -> 1, b -> 2, c -> 3|>, {a, c}]'
 $ wo 'KeyDrop[<|a -> 1, b -> 2, c -> 3|>, {a}]'
 <|b -> 2, c -> 3|>
 ```
+
+
+## `Association`
+
+Constructs an association from a list of rules.
+Equivalent to `<|…|>` syntax.
+
+```scrut
+$ wo 'Association[a -> 1, b -> 2]'
+<|a -> 1, b -> 2|>
+```
+
+
+## `Lookup`
+
+Looks up a key in an association, returning a default value if the key is
+absent.
+
+```scrut
+$ wo 'Lookup[<|a -> 1, b -> 2|>, a]'
+1
+```
+
+```scrut
+$ wo 'Lookup[<|a -> 1, b -> 2|>, c, "missing"]'
+missing
+```
+
+
+## `GroupBy`
+
+Groups a list's elements by the value of a classifier function,
+returning an association.
+
+```scrut
+$ wo 'GroupBy[{1, 2, 3, 4, 5, 6}, OddQ]'
+<|True -> {1, 3, 5}, False -> {2, 4, 6}|>
+```
+
+
+## `KeyValueMap`
+
+Applies a two-argument function to each key/value pair.
+
+```scrut
+$ wo 'KeyValueMap[List, <|a -> 1, b -> 2|>]'
+{{a, 1}, {b, 2}}
+```
+
+
+## `AssociationMap`
+
+Builds an association by mapping a function over a list of keys.
+
+```scrut
+$ wo 'AssociationMap[f, {a, b, c}]'
+<|a -> f[a], b -> f[b], c -> f[c]|>
+```
+
+
+## `Length`
+
+Returns the number of key/value pairs.
+
+```scrut
+$ wo 'Length[<|a -> 1, b -> 2, c -> 3|>]'
+3
+```
+
+
+## `Normal`
+
+Converts an association to a plain list of rules.
+
+```scrut
+$ wo 'Normal[<|a -> 1, b -> 2|>]'
+{a -> 1, b -> 2}
+```

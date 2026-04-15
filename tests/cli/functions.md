@@ -328,6 +328,276 @@ $ wo 'With[{l = Length[{1,2,3}]}, l + 1]'
 ```
 
 
+# Control Flow
+
+## `If`
+
+Conditional expression — covered in [boolean.md](boolean.md#if) as well.
+
+```scrut
+$ wo 'If[1 > 0, "yes", "no"]'
+yes
+```
+
+
+## `For`
+
+`For[init, test, step, body]` loop.
+
+```scrut
+$ wo 'For[i = 0; s = 0, i <= 10, i++, s = s + i]; s'
+55
+```
+
+
+## `While`
+
+`While[test, body]` loop.
+
+```scrut
+$ wo 'i = 0; While[i < 5, i++]; i'
+5
+```
+
+
+## `Do`
+
+`Do[expr, {iter}]` iterates `expr` for each value of the iterator.
+The result is always `Null`.
+
+```scrut
+$ wo 'Do[Print[k], {k, 1, 3}]'
+1
+2
+3
+Null
+```
+
+
+## `Switch`
+
+Multi-way branching — the first pattern that matches wins.
+
+```scrut
+$ wo 'Switch[2, 1, "one", 2, "two", _, "other"]'
+two
+```
+
+
+## `Which`
+
+Returns the first value whose test evaluates to `True`.
+
+```scrut
+$ wo 'Which[2 > 1, "a", True, "b"]'
+a
+```
+
+
+## `Piecewise`
+
+Defines a piecewise-defined expression from a list of
+`{value, condition}` pairs.
+
+```scrut
+$ wo 'Piecewise[{{1, x > 0}}] /. x -> 1'
+1
+```
+
+
+## `FixedPoint`
+
+Applies a function repeatedly until the result stops changing,
+or until `n` iterations have occurred.
+
+```scrut
+$ wo 'FixedPoint[# + 1 &, 0, 3]'
+3
+```
+
+
+## `FixedPointList`
+
+Like `FixedPoint` but returns the entire history of values.
+
+```scrut
+$ wo 'FixedPointList[#/2 &, 8, 3]'
+{8, 4, 2, 1}
+```
+
+
+## `NestWhile`
+
+Applies a function repeatedly while a predicate holds.
+
+```scrut
+$ wo 'NestWhile[#/2 &, 8, EvenQ]'
+1
+```
+
+
+## `NestWhileList`
+
+Like `NestWhile` but returns the entire history.
+
+```scrut
+$ wo 'NestWhileList[#/2 &, 8, EvenQ]'
+{8, 4, 2, 1}
+```
+
+
+## `CompoundExpression`
+
+`CompoundExpression[e1, e2, …]` (written `e1; e2; …`) evaluates
+each argument in order and returns the last one.
+
+```scrut
+$ wo 'CompoundExpression[1, 2, 3]'
+3
+```
+
+
+# Mutating Assignment
+
+## `AddTo` (`+=`)
+
+Increments a variable in place.
+
+```scrut
+$ wo 'x = 5; x += 3; x'
+8
+```
+
+
+## `SubtractFrom` (`-=`)
+
+Decrements a variable in place.
+
+```scrut
+$ wo 'x = 5; x -= 3; x'
+2
+```
+
+
+## `TimesBy` (`*=`)
+
+Multiplies a variable in place.
+
+```scrut
+$ wo 'x = 5; x *= 3; x'
+15
+```
+
+
+## `DivideBy` (`/=`)
+
+Divides a variable in place.
+
+```scrut
+$ wo 'x = 6; x /= 3; x'
+2
+```
+
+
+## `Increment` (`x++`)
+
+Post-increment — returns the old value, then adds 1.
+
+```scrut
+$ wo 'x = 5; x++'
+5
+```
+
+
+## `Decrement` (`x--`)
+
+Post-decrement — returns the old value, then subtracts 1.
+
+```scrut
+$ wo 'x = 5; x--'
+5
+```
+
+
+## `PreIncrement` (`++x`)
+
+Pre-increment — adds 1, then returns the new value.
+
+```scrut
+$ wo 'x = 5; ++x'
+6
+```
+
+
+## `PreDecrement` (`--x`)
+
+Pre-decrement — subtracts 1, then returns the new value.
+
+```scrut
+$ wo 'x = 5; --x'
+4
+```
+
+
+# Scoping and Exceptions
+
+## `Block`
+
+Like `Module`, but temporarily rebinds *global* symbols rather than
+introducing fresh locals. Changes are undone when `Block` returns.
+
+```scrut
+$ wo 'Block[{x = 10}, x^2]'
+100
+```
+
+
+## `Catch` / `Throw`
+
+Non-local exit — `Throw[val]` unwinds until the innermost `Catch`.
+
+```scrut
+$ wo 'Catch[Throw[42]]'
+42
+```
+
+```scrut
+$ wo 'Catch[Do[If[i == 3, Throw[i]], {i, 1, 5}]]'
+3
+```
+
+
+## `Check`
+
+Returns its first argument unless a message is emitted, in which case
+it returns the second argument.
+
+```scrut
+$ wo 'Check[1/2, error]'
+1/2
+```
+
+
+## `Quiet`
+
+Evaluates an expression while suppressing its messages.
+
+```scrut
+$ wo 'Quiet[1/0]'
+ComplexInfinity
+```
+
+
+## `Return`
+
+Inside a function body, exits early returning a value.
+
+```scrut
+$ wo 'f[x_] := Return[x + 1]; f[5]'
+6
+```
+
+
 ## `DateString`
 
 ```scrut
