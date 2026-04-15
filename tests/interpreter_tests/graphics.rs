@@ -2295,6 +2295,31 @@ mod plot3d {
       ));
     }
 
+    /// BubbleChart should accept a list of datasets
+    /// ({{{x,y,z},...},{{x,y,z},...}, ...}) and render one distinctly
+    /// colored bubble per point, grouped by dataset.
+    #[test]
+    fn bubble_chart_multi_dataset() {
+      let svg = export_svg(
+        "BubbleChart[{Table[{i, i, 1}, {i, 3}], \
+         Table[{i, i + 1, 1}, {i, 3}], \
+         Table[{i, i + 2, 1}, {i, 3}]}]",
+      );
+      // 3 datasets × 3 points = 9 bubbles.
+      assert_eq!(
+        svg.matches("<circle").count(),
+        9,
+        "expected 9 bubbles in multi-dataset BubbleChart: {svg}"
+      );
+      // Each dataset gets its own color from the default palette.
+      for color in ["#5E81B5", "#8FB032", "#E0932C"] {
+        assert!(
+          svg.contains(color),
+          "multi-dataset BubbleChart should use color {color}: {svg}"
+        );
+      }
+    }
+
     /// BubbleChart[] must render labeled axes by default — the SVG should
     /// contain numeric tick labels, axis lines, and the bubbles themselves.
     #[test]
