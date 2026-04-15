@@ -309,6 +309,13 @@ mod high_level_functions_tests {
         "{acac, xy}"
       );
     }
+    #[test]
+    fn test_string_delete_list_of_patterns() {
+      assert_eq!(
+        interpret(r#"StringDelete["hello world", {"l", "o"}]"#).unwrap(),
+        "he wrd"
+      );
+    }
   }
 
   // ─── List Functions ────────────────────────────────────────────────
