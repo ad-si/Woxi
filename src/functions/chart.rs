@@ -188,11 +188,16 @@ impl ChartLabel {
   }
 }
 
-/// Extract a string from an Expr (Identifier or String).
+/// Extract a string from an Expr suitable for use as a chart label.
+/// Accepts strings, identifiers, and numeric values (so `ChartLabels ->
+/// Range[16]` and similar numeric label lists render correctly).
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
   match e {
     Expr::String(s) => Some(s.clone()),
     Expr::Identifier(s) => Some(s.clone()),
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
+      Some(crate::syntax::expr_to_string(e))
+    }
     _ => None,
   }
 }
@@ -1435,38 +1440,68 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   }
 
-  // Turn a value that is either a single triple `{x,y,z}` or a list of
-  // triples `{{x,y,z},...}` into a dataset. Non-list values and lists
-  // whose shape can't be recognized produce an empty dataset.
-  fn parse_dataset(val: &Expr) -> Vec<(f64, f64, f64)> {
+  // Parse a value that is either a single triple `{x,y,z}` or a list of
+  // triples `{{x,y,z},...}` into a dataset. Alongside the parsed triples,
+  // records the flat input position of each successfully parsed point in
+  // `kept` (using the provided `cursor`). Non-list values and lists whose
+  // shape can't be recognized produce an empty dataset, and still advance
+  // the cursor by one so that labels line up with subsequent valid points.
+  fn parse_dataset(
+    val: &Expr,
+    cursor: &mut usize,
+    kept: &mut Vec<usize>,
+  ) -> Vec<(f64, f64, f64)> {
     let ev = evaluate_expr_to_expr(val).unwrap_or(val.clone());
     if let Expr::List(inner) = &ev {
       if inner.is_empty() {
+        *cursor += 1;
         return Vec::new();
       }
       if matches!(inner[0], Expr::List(_)) {
-        // List of triples.
-        inner.iter().filter_map(parse_triple).collect()
-      } else if let Some(t) = parse_triple(&ev) {
-        // Single triple.
-        vec![t]
+        // List of triples — each entry is its own flat position.
+        let mut out = Vec::with_capacity(inner.len());
+        for item in inner {
+          let pos = *cursor;
+          *cursor += 1;
+          if let Some(t) = parse_triple(item) {
+            out.push(t);
+            kept.push(pos);
+          }
+        }
+        out
       } else {
-        Vec::new()
+        // Single triple — counts as one flat position.
+        let pos = *cursor;
+        *cursor += 1;
+        if let Some(t) = parse_triple(&ev) {
+          kept.push(pos);
+          vec![t]
+        } else {
+          Vec::new()
+        }
       }
     } else {
+      *cursor += 1;
       Vec::new()
     }
   }
+
+  // `kept_flat_indices[i]` is the original flat input position of the i-th
+  // successfully parsed point (in the order points appear in `groups`).
+  // It's used below to filter `ChartLabels` so that an invalid input
+  // position drops its data *and* its label together.
+  let mut kept_flat_indices: Vec<usize> = Vec::new();
 
   // Association input: each key becomes a dataset label, each value is
   // either a single triple or a list of triples.
   let (groups, assoc_labels) = if let Expr::Association(pairs) = &data {
     let mut gs: Vec<Vec<(f64, f64, f64)>> = Vec::with_capacity(pairs.len());
     let mut labels: Vec<String> = Vec::with_capacity(pairs.len());
+    let mut cursor = 0usize;
     for (k, v) in pairs {
       let key_eval = evaluate_expr_to_expr(k).unwrap_or(k.clone());
       let label = expr_to_label(&key_eval).unwrap_or_default();
-      gs.push(parse_dataset(v));
+      gs.push(parse_dataset(v, &mut cursor, &mut kept_flat_indices));
       labels.push(label);
     }
     (gs, Some(labels))
@@ -1498,18 +1533,36 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
 
     let gs: Vec<Vec<(f64, f64, f64)>> = if is_multi_dataset {
+      let mut cursor = 0usize;
       items
         .iter()
         .map(|ds| {
           if let Expr::List(inner) = ds {
-            inner.iter().filter_map(parse_triple).collect()
+            let mut out = Vec::with_capacity(inner.len());
+            for item in inner {
+              let pos = cursor;
+              cursor += 1;
+              if let Some(t) = parse_triple(item) {
+                out.push(t);
+                kept_flat_indices.push(pos);
+              }
+            }
+            out
           } else {
+            cursor += 1;
             Vec::new()
           }
         })
         .collect()
     } else {
-      vec![items.iter().filter_map(parse_triple).collect()]
+      let mut out = Vec::with_capacity(items.len());
+      for (i, item) in items.iter().enumerate() {
+        if let Some(t) = parse_triple(item) {
+          out.push(t);
+          kept_flat_indices.push(i);
+        }
+      }
+      vec![out]
     };
     (gs, None)
   };
@@ -1545,6 +1598,24 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !user_set_image_size {
     opts.svg_height = opts.svg_width.saturating_sub(25);
   }
+  // Align ChartLabels with the surviving points: labels at positions whose
+  // input failed to parse (e.g. Missing[], complex numbers, symbols) are
+  // dropped along with their data, so the i-th surviving point keeps the
+  // label that was originally at its flat input position.
+  let filtered_labels: Vec<ChartLabel> = if opts.chart_labels.is_empty() {
+    Vec::new()
+  } else {
+    kept_flat_indices
+      .iter()
+      .map(|&i| {
+        opts
+          .chart_labels
+          .get(i)
+          .cloned()
+          .unwrap_or_else(|| ChartLabel::plain(String::new()))
+      })
+      .collect()
+  };
   let svg = crate::functions::plot::generate_bubble_chart_svg(
     &groups,
     opts.svg_width,
@@ -1557,6 +1628,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
+    &filtered_labels,
     opts.plot_range_x,
     opts.plot_range_y,
   )?;
