@@ -7301,28 +7301,286 @@ fn default_layout_options() -> LayoutOptions {
   }
 }
 
+/// Maximum default total row width (in pixels) before cells are
+/// re-rendered at a smaller per-cell size. With `DEFAULT_WIDTH = 360`,
+/// this gives 3 cells at native size before shrinking kicks in.
+const GRID_ROW_CAP_WIDTH: f64 = 1080.0;
+
+/// Compute the per-cell pixel width for a row of `n` cells. When an
+/// explicit total width is given, divide it evenly; otherwise use the
+/// natural cell width up to `GRID_ROW_CAP_WIDTH` total.
+///
+/// This is used to pre-render each child Plot/BarChart/etc. at a size
+/// that matches its final display footprint, so text and strokes stay
+/// at their intended pixel dimensions instead of being scaled down to
+/// sub-legible sizes when the row is packed with many items.
+fn compute_per_cell_width(n: usize, explicit_total: Option<f64>) -> i128 {
+  let n_f = n.max(1) as f64;
+  let natural = DEFAULT_WIDTH as f64;
+  let total =
+    explicit_total.unwrap_or_else(|| (natural * n_f).min(GRID_ROW_CAP_WIDTH));
+  let per = (total / n_f).round() as i128;
+  per.max(1)
+}
+
+/// Whitelist of function heads that are known to produce graphics and
+/// honor the `ImageSize` option. Used to avoid injecting `ImageSize`
+/// into arbitrary user functions (which might error or behave oddly on
+/// unknown options) while still catching the common plot/chart cases.
+fn is_graphics_producing_head(name: &str) -> bool {
+  matches!(
+    name,
+    // Core graphics primitives
+    "Graphics"
+      | "Graphics3D"
+      | "Image"
+      // 2-D / 3-D plots
+      | "Plot"
+      | "Plot3D"
+      | "LogPlot"
+      | "LogLogPlot"
+      | "LogLinearPlot"
+      | "ParametricPlot"
+      | "ParametricPlot3D"
+      | "PolarPlot"
+      | "ContourPlot"
+      | "ContourPlot3D"
+      | "DensityPlot"
+      | "DensityPlot3D"
+      | "RegionPlot"
+      | "RegionPlot3D"
+      | "DiscretePlot"
+      | "DiscretePlot3D"
+      | "StreamPlot"
+      | "VectorPlot"
+      | "VectorPlot3D"
+      | "NumberLinePlot"
+      | "ComplexPlot"
+      | "ComplexPlot3D"
+      | "ComplexListPlot"
+      | "ComplexArrayPlot"
+      | "ComplexContourPlot"
+      | "ComplexRegionPlot"
+      | "ComplexVectorPlot"
+      | "ComplexStreamPlot"
+      // List plots
+      | "ListPlot"
+      | "ListLinePlot"
+      | "ListLogPlot"
+      | "ListLogLogPlot"
+      | "ListLogLinearPlot"
+      | "ListStepPlot"
+      | "ListContourPlot"
+      | "ListDensityPlot"
+      | "ListPolarPlot"
+      | "ListStreamPlot"
+      | "ListVectorPlot"
+      | "ListPlot3D"
+      | "ListLinePlot3D"
+      | "DateListPlot"
+      | "DateListLogPlot"
+      | "DateListStepPlot"
+      // Charts
+      | "BarChart"
+      | "BarChart3D"
+      | "PieChart"
+      | "PieChart3D"
+      | "Histogram"
+      | "Histogram3D"
+      | "DensityHistogram"
+      | "DateHistogram"
+      | "BubbleChart"
+      | "BubbleChart3D"
+      | "BoxWhiskerChart"
+      | "DistributionChart"
+      | "SectorChart"
+      | "CandlestickChart"
+      // Arrays / matrices
+      | "ArrayPlot"
+      | "ArrayPlot3D"
+      | "MatrixPlot"
+      // Graphs / trees / meshes
+      | "Graph"
+      | "TreeForm"
+      | "TreePlot"
+      | "TreeGraph"
+      | "VoronoiMesh"
+      | "DelaunayMesh"
+      // Misc
+      | "BodePlot"
+      | "AbsArgPlot"
+      | "Framed"
+  )
+}
+
+/// Return a copy of `expr` with `ImageSize -> size` appended if `expr`
+/// is a FunctionCall with a known graphics-producing head that doesn't
+/// already carry an `ImageSize` option. Other expression shapes
+/// (identifiers, literals, already-evaluated Graphics, user functions)
+/// are returned unchanged so we never override user options or break
+/// unrelated calls.
+fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
+  let Expr::FunctionCall { name, args } = expr else {
+    return expr.clone();
+  };
+  if !is_graphics_producing_head(name) {
+    return expr.clone();
+  }
+  let has_image_size = args.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+  });
+  if has_image_size {
+    return expr.clone();
+  }
+  let mut new_args = args.clone();
+  new_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::Integer(size)),
+  });
+  Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args,
+  }
+}
+
+/// If `expr` is a top-level list that looks like a list of graphics
+/// (1-D `{p1, p2, ...}` or 2-D `{{p1, p2}, {p3, p4}}`), return a new
+/// expression with `ImageSize -> per_cell_w` injected on each child so
+/// the items get re-rendered at the correct per-cell size during
+/// evaluation. Returns `None` for anything else so the caller can
+/// evaluate the original expression unchanged.
+pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
+  // 2-D list (grid): rows × cells
+  if let Expr::List(rows) = expr
+    && !rows.is_empty()
+    && rows.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let any_graphic = rows.iter().any(|r| {
+      if let Expr::List(items) = r {
+        items.iter().any(|it| {
+          matches!(it, Expr::FunctionCall { name, .. }
+            if is_graphics_producing_head(name))
+        })
+      } else {
+        false
+      }
+    });
+    if !any_graphic {
+      return None;
+    }
+    let max_cols = rows
+      .iter()
+      .map(|r| {
+        if let Expr::List(items) = r {
+          items.len()
+        } else {
+          0
+        }
+      })
+      .max()
+      .unwrap_or(0);
+    if max_cols == 0 {
+      return None;
+    }
+    let per_cell_w = compute_per_cell_width(max_cols, None);
+    let new_rows: Vec<Expr> = rows
+      .iter()
+      .map(|row| {
+        if let Expr::List(items) = row {
+          Expr::List(
+            items
+              .iter()
+              .map(|it| with_default_image_size(it, per_cell_w))
+              .collect(),
+          )
+        } else {
+          row.clone()
+        }
+      })
+      .collect();
+    return Some(Expr::List(new_rows));
+  }
+
+  // 1-D list
+  if let Expr::List(items) = expr
+    && !items.is_empty()
+  {
+    let any_graphic = items.iter().any(|it| {
+      matches!(it, Expr::FunctionCall { name, .. }
+        if is_graphics_producing_head(name))
+    });
+    if !any_graphic {
+      return None;
+    }
+    let per_cell_w = compute_per_cell_width(items.len(), None);
+    let new_items: Vec<Expr> = items
+      .iter()
+      .map(|it| with_default_image_size(it, per_cell_w))
+      .collect();
+    return Some(Expr::List(new_items));
+  }
+
+  None
+}
+
+/// Evaluate each item with `ImageSize -> per_cell_w` injected (when the
+/// item is a rewritable FunctionCall) and collect the resulting SVGs.
+/// Items that are already evaluated (variables, literals) pass through
+/// unchanged and are rendered at their natural size.
+fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
+  items
+    .iter()
+    .filter_map(|item| {
+      let rewritten = with_default_image_size(item, per_cell_w);
+      let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      (!svg.is_empty()).then_some(svg)
+    })
+    .collect()
+}
+
 /// GraphicsRow[{g1, g2, ...}] or GraphicsRow[{g1, g2, ...}, opts...]
 /// Arranges graphics side-by-side in a single row.
+///
+/// When the first argument is a literal list of function calls, each
+/// child is re-rendered with `ImageSize -> per_cell_w` injected so text
+/// and strokes come out at their intended pixel sizes instead of being
+/// scaled down to illegibility when the row is packed with many items.
 pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Evaluate the first argument (should be a list of graphics)
-  let list_expr = evaluate_expr_to_expr(&args[0])?;
-  let items = match &list_expr {
-    Expr::List(items) => items.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "GraphicsRow expects a list as its first argument".into(),
+  let opts = parse_layout_options(&args[1..]);
+
+  // Prefer rewriting the unevaluated items so we can re-render each at
+  // the final per-cell size. Fall back to post-evaluation scaling when
+  // the argument is a variable / computed list whose items are already
+  // Graphics objects and can't be re-rendered.
+  let svgs = if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Ok(crate::graphics_result(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
+    let per_cell_w = compute_per_cell_width(items.len(), opts.target_width);
+    render_items_at_size(items, per_cell_w)
+  } else {
+    let list_expr = evaluate_expr_to_expr(&args[0])?;
+    let items = match &list_expr {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "GraphicsRow expects a list as its first argument".into(),
+        ));
+      }
+    };
+    extract_svgs_from_list(&items)
   };
 
-  let svgs = extract_svgs_from_list(&items);
   if svgs.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
 
-  let opts = parse_layout_options(&args[1..]);
   let row = vec![svgs];
   match combine_svgs_grid(&row, &opts) {
     Some(combined) => {
@@ -7338,24 +7596,38 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// GraphicsColumn[{g1, g2, ...}] or GraphicsColumn[{g1, g2, ...}, opts...]
 /// Arranges graphics vertically in a single column.
 pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let list_expr = evaluate_expr_to_expr(&args[0])?;
-  let items = match &list_expr {
-    Expr::List(items) => items.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "GraphicsColumn expects a list as its first argument".into(),
+  let opts = parse_layout_options(&args[1..]);
+
+  // A column has one cell per row, so each cell takes the full column
+  // width. Re-render at DEFAULT_WIDTH (or the explicit ImageSize) so
+  // text stays legible regardless of how many rows there are.
+  let svgs = if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Ok(crate::graphics_result(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
+    let per_cell_w = compute_per_cell_width(1, opts.target_width);
+    render_items_at_size(items, per_cell_w)
+  } else {
+    let list_expr = evaluate_expr_to_expr(&args[0])?;
+    let items = match &list_expr {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "GraphicsColumn expects a list as its first argument".into(),
+        ));
+      }
+    };
+    extract_svgs_from_list(&items)
   };
 
-  let svgs = extract_svgs_from_list(&items);
   if svgs.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
 
-  let opts = parse_layout_options(&args[1..]);
   // Each SVG becomes its own row (single-column layout)
   let rows: Vec<Vec<String>> = svgs.into_iter().map(|s| vec![s]).collect();
   match combine_svgs_grid(&rows, &opts) {
@@ -7372,29 +7644,50 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
 /// Arranges graphics in a 2D grid.
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let grid_expr = evaluate_expr_to_expr(&args[0])?;
-  let outer_items = match &grid_expr {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "GraphicsGrid expects a list of lists as its first argument".into(),
+  let opts = parse_layout_options(&args[1..]);
+
+  let rows: Vec<Vec<String>> = if let Expr::List(outer_items) = &args[0] {
+    // Determine the widest row so every cell in the grid is re-rendered
+    // at the same per-cell width (grids typically expect uniform cells).
+    let max_cols = outer_items
+      .iter()
+      .map(|item| match item {
+        Expr::List(row_items) => row_items.len(),
+        _ => 1,
+      })
+      .max()
+      .unwrap_or(0);
+    if max_cols == 0 {
+      return Ok(crate::graphics_result(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
-  };
-
-  let mut rows: Vec<Vec<String>> = Vec::new();
-  for item in outer_items {
-    match item {
-      Expr::List(row_items) => {
-        rows.push(extract_svgs_from_list(row_items));
-      }
+    let per_cell_w = compute_per_cell_width(max_cols, opts.target_width);
+    outer_items
+      .iter()
+      .map(|item| match item {
+        Expr::List(row_items) => render_items_at_size(row_items, per_cell_w),
+        other => render_items_at_size(std::slice::from_ref(other), per_cell_w),
+      })
+      .collect()
+  } else {
+    let grid_expr = evaluate_expr_to_expr(&args[0])?;
+    let outer_items = match &grid_expr {
+      Expr::List(items) => items.clone(),
       _ => {
-        // Single item treated as a single-element row
-        let svgs = extract_svgs_from_list(&[item.clone()]);
-        rows.push(svgs);
+        return Err(InterpreterError::EvaluationError(
+          "GraphicsGrid expects a list of lists as its first argument".into(),
+        ));
       }
-    }
-  }
+    };
+    outer_items
+      .iter()
+      .map(|item| match item {
+        Expr::List(row_items) => extract_svgs_from_list(row_items),
+        _ => extract_svgs_from_list(std::slice::from_ref(item)),
+      })
+      .collect()
+  };
 
   // Check if we have any SVGs at all
   if rows.iter().all(|r| r.is_empty()) {
@@ -7403,7 +7696,6 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let opts = parse_layout_options(&args[1..]);
   match combine_svgs_grid(&rows, &opts) {
     Some(combined) => {
       crate::clear_captured_graphics();

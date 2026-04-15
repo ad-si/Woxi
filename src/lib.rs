@@ -1081,7 +1081,22 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       ProgramStmt::Expr(expr) => {
         // Evaluate using AST-based evaluation
         // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
-        let result_expr = match evaluator::evaluate_expr_to_expr(expr) {
+        //
+        // Pre-pass (visual mode only): when the top-level expression is a
+        // list (1-D or 2-D) of graphics-producing function calls, inject
+        // `ImageSize -> per_cell_w` into each child so plots are rendered
+        // at the right per-cell size instead of being scaled down after
+        // the fact. Skipped in plain `interpret()` mode so symbolic text
+        // output (e.g. `{TreeForm[f[x]], TreeForm[g[y]]}`) isn't polluted
+        // with an injected ImageSize option that was never written.
+        let rewritten_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          functions::graphics::inject_image_size_for_list_of_graphics(expr)
+        } else {
+          None
+        };
+        let expr_to_eval: &syntax::Expr =
+          rewritten_expr.as_ref().unwrap_or(expr);
+        let result_expr = match evaluator::evaluate_expr_to_expr(expr_to_eval) {
           Err(InterpreterError::ReturnValue(val)) => {
             syntax::Expr::FunctionCall {
               name: "Return".to_string(),
