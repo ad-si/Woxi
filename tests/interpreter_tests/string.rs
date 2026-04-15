@@ -3242,4 +3242,28 @@ mod string_position_alternatives {
       "{{{1, 1}, {2, 2}, {4, 4}, {5, 5}}, {{3, 3}, {4, 4}}}"
     );
   }
+
+  #[test]
+  fn string_position_with_regex() {
+    assert_eq!(
+      interpret(r#"StringPosition["hello", RegularExpression["l+"]]"#).unwrap(),
+      "{{3, 4}, {4, 4}}"
+    );
+  }
+
+  #[test]
+  fn string_position_with_regex_single_char() {
+    assert_eq!(
+      interpret(r#"StringPosition["hello", RegularExpression["l"]]"#).unwrap(),
+      "{{3, 3}, {4, 4}}"
+    );
+  }
+
+  #[test]
+  fn string_position_with_regex_overlapping() {
+    assert_eq!(
+      interpret(r#"StringPosition["aabaa", RegularExpression["a+"]]"#).unwrap(),
+      "{{1, 2}, {2, 2}, {4, 5}, {5, 5}}"
+    );
+  }
 }
