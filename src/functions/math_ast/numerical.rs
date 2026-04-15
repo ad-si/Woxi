@@ -1391,9 +1391,21 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    // Normalize[v, f] — divides v by f[v]
+    let norm_val =
+      crate::functions::list_helpers_ast::apply_func_ast(&args[1], &args[0])?;
+    // v / norm_val
+    let result = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(args[0].clone()),
+      right: Box::new(norm_val),
+    })?;
+    return Ok(result);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
-      "Normalize expects exactly 1 argument".into(),
+      "Normalize expects 1 or 2 arguments".into(),
     ));
   }
   match &args[0] {
