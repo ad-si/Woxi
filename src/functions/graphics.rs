@@ -2386,7 +2386,53 @@ fn render_primitive(
         let dy = sy2 - sy1;
         let len = (dx * dx + dy * dy).sqrt();
         if len > 0.0 {
-          let head_len = (sw * 6.0).max(9.0);
+          // Compute the path length AND bounding-box diagonal in SVG
+          // pixels so short edges and small self-loops (common in small
+          // or multi-component graphs) get proportionally smaller
+          // arrowheads instead of the absolute 9 px floor swallowing the
+          // whole shape. The path length captures straight-line edges,
+          // while the bbox diagonal captures curved shapes like self-
+          // loops whose total arc length is large but whose visual size
+          // (= loop diameter) is small.
+          let mut total_len_px = 0.0_f64;
+          let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+          let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+          for (i, w) in trimmed.windows(2).enumerate() {
+            let a = (coord_x(w[0].0, bb, svg_w), coord_y(w[0].1, bb, svg_h));
+            let b = (coord_x(w[1].0, bb, svg_w), coord_y(w[1].1, bb, svg_h));
+            total_len_px += ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+            if i == 0 {
+              min_x = a.0.min(b.0);
+              max_x = a.0.max(b.0);
+              min_y = a.1.min(b.1);
+              max_y = a.1.max(b.1);
+            } else {
+              if b.0 < min_x {
+                min_x = b.0;
+              }
+              if b.0 > max_x {
+                max_x = b.0;
+              }
+              if b.1 < min_y {
+                min_y = b.1;
+              }
+              if b.1 > max_y {
+                max_y = b.1;
+              }
+            }
+          }
+          let bbox_w = max_x - min_x;
+          let bbox_h = max_y - min_y;
+          let bbox_diag = (bbox_w * bbox_w + bbox_h * bbox_h).sqrt();
+
+          // Three caps: 45 % of total path length (keeps straight arrows
+          // from being dominated), 40 % of the shape's bbox diagonal
+          // (keeps self-loops and curved arrows proportional to their
+          // visible size), and the usual default of max(sw*6, 9).
+          let path_cap = total_len_px * 0.45;
+          let bbox_cap = bbox_diag * 0.4;
+          let default_head = (sw * 6.0).max(9.0);
+          let head_len = default_head.min(path_cap).min(bbox_cap).max(1.0);
           let head_half_w = head_len * 0.45;
           let ux = dx / len;
           let uy = dy / len;
