@@ -62,6 +62,21 @@ mod sign_complex_tests {
   fn sign_complex_2_plus_i() {
     assert_eq!(interpret("Sign[2 + I]").unwrap(), "(2 + I)/Sqrt[5]");
   }
+
+  #[test]
+  fn sign_infinity() {
+    assert_eq!(interpret("Sign[Infinity]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sign_negative_infinity() {
+    assert_eq!(interpret("Sign[-Infinity]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn sign_complex_infinity() {
+    assert_eq!(interpret("Sign[ComplexInfinity]").unwrap(), "Indeterminate");
+  }
 }
 
 mod abs_complex_tests {

@@ -114,6 +114,49 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sign expects exactly 1 argument".into(),
     ));
   }
+  // Handle Infinity, -Infinity, ComplexInfinity, Indeterminate
+  if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
+    return Ok(Expr::Integer(1));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  // Check for -Infinity (UnaryOp::Minus applied to Infinity)
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = &args[0]
+    && matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity")
+  {
+    return Ok(Expr::Integer(-1));
+  }
+  // Check for negative infinity: Times[n, Infinity] where n < 0
+  if let Expr::FunctionCall { name, args: fargs } = &args[0]
+    && name == "Times"
+  {
+    let has_infinity = fargs
+      .iter()
+      .any(|a| matches!(a, Expr::Identifier(s) if s == "Infinity"));
+    if has_infinity {
+      let coeff = fargs.iter().find_map(|a| {
+        if let Expr::Integer(n) = a {
+          Some(*n as f64)
+        } else {
+          try_eval_to_f64(a)
+        }
+      });
+      if let Some(c) = coeff {
+        if c < 0.0 {
+          return Ok(Expr::Integer(-1));
+        } else if c > 0.0 {
+          return Ok(Expr::Integer(1));
+        }
+      }
+    }
+  }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     return Ok(Expr::Integer(if n > 0.0 {
       1
