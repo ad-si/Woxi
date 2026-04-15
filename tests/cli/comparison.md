@@ -22,8 +22,20 @@ and is available for macOS, Linux, and Windows.
   <dd>Proprietary</dd>
 </dl>
 
+
+## Woxi
+
 Woxi is our alternative to WolframScript and
 Woxi Studio is our alternative to Mathematica.
+
+<dl>
+  <dt>Implementation Language</dt>
+  <dd>Rust</dd>
+  <dt>First Release</dt>
+  <dd>2024</dd>
+  <dt>License</dt>
+  <dd>AGPL-3.0-or-later</dd>
+</dl>
 
 They try to be as compatible as possible, but there are a few features,
 they intentionally deviate from the official Wolfram Language implementations
