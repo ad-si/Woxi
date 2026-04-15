@@ -4060,6 +4060,31 @@ mod graphics_row {
     .unwrap();
     assert_eq!(result, "-Graphics-");
   }
+
+  /// Regression: GraphicsRow used to silently drop items whose top-level
+  /// head was not literally `Graphics` (e.g. `Graph`, `TreeForm`), so a
+  /// mixed row like `{BubbleChart[...], Graph[...], TreeForm[...]}` only
+  /// rendered the BubbleChart. Every item should be rendered as its own
+  /// cell.
+  #[test]
+  fn mixed_graph_and_treeform_all_rendered() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "GraphicsRow[{BubbleChart[{{1,5,3},{4,6,9}}], \
+         Graph[{a->b,b->a,b<->b}], TreeForm[a+b^2+c^3+d]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    // Outer <svg> plus one nested <svg> per cell → at least 4.
+    let nested_count = svg.matches("<svg ").count();
+    assert!(
+      nested_count >= 4,
+      "Expected outer + 3 nested SVGs, got {}: {}",
+      nested_count,
+      &svg[..svg.len().min(200)]
+    );
+  }
 }
 
 mod graphics_column {
