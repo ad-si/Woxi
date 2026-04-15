@@ -16,31 +16,38 @@ pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
   a
 }
 
-/// GCD[a, b, ...] - Greatest common divisor
+/// GCD[a, b, ...] - Greatest common divisor.
+///
+/// Accepts integers and rationals. For rationals,
+/// `GCD[a/b, c/d] = GCD[a, c] / LCM[b, d]`.
 pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
   }
 
-  let mut result: Option<BigInt> = None;
+  // Convert each arg to (numerator, denominator); bail out for non-numeric.
+  let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
   for arg in args {
-    let val = match arg {
-      Expr::Integer(n) => BigInt::from(*n),
-      Expr::BigInteger(n) => n.clone(),
-      _ => {
+    match expr_to_fraction(arg) {
+      Some(f) => fractions.push(f),
+      None => {
         return Ok(Expr::FunctionCall {
           name: "GCD".to_string(),
           args: args.to_vec(),
         });
       }
-    };
-    result = Some(match result {
-      Some(r) => bigint_gcd(r, val),
-      None => val.abs(),
-    });
+    }
   }
 
-  Ok(bigint_to_expr(result.unwrap_or_else(|| BigInt::from(0))))
+  // GCD over the numerators; LCM over the denominators.
+  let mut num_gcd = fractions[0].0.clone().abs();
+  let mut den_lcm = fractions[0].1.clone().abs();
+  for (n, d) in &fractions[1..] {
+    num_gcd = bigint_gcd(num_gcd, n.clone());
+    den_lcm = bigint_lcm(den_lcm, d.clone());
+  }
+
+  Ok(make_rational_expr(num_gcd, den_lcm))
 }
 
 /// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
@@ -140,39 +147,96 @@ pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ]))
 }
 
-/// LCM[a, b, ...] - Least common multiple
+/// LCM[a, b, ...] - Least common multiple.
+///
+/// Accepts integers and rationals. For rationals,
+/// `LCM[a/b, c/d] = LCM[a, c] / GCD[b, d]`.
 pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
   }
 
-  let mut result: Option<BigInt> = None;
+  let mut fractions: Vec<(BigInt, BigInt)> = Vec::with_capacity(args.len());
   for arg in args {
-    let val = match arg {
-      Expr::Integer(n) => BigInt::from(*n),
-      Expr::BigInteger(n) => n.clone(),
-      _ => {
+    match expr_to_fraction(arg) {
+      Some(f) => fractions.push(f),
+      None => {
         return Ok(Expr::FunctionCall {
           name: "LCM".to_string(),
           args: args.to_vec(),
         });
       }
-    };
-    result = Some(match result {
-      Some(r) => {
-        use num_traits::Zero;
-        if r.is_zero() || val.is_zero() {
-          BigInt::from(0)
-        } else {
-          let g = bigint_gcd(r.clone(), val.clone());
-          (r.abs() / g) * val.abs()
-        }
-      }
-      None => val.abs(),
-    });
+    }
   }
 
-  Ok(bigint_to_expr(result.unwrap_or_else(|| BigInt::from(1))))
+  let mut num_lcm = fractions[0].0.clone().abs();
+  let mut den_gcd = fractions[0].1.clone().abs();
+  for (n, d) in &fractions[1..] {
+    num_lcm = bigint_lcm(num_lcm, n.clone());
+    den_gcd = bigint_gcd(den_gcd, d.clone());
+  }
+
+  Ok(make_rational_expr(num_lcm, den_gcd))
+}
+
+/// Convert an Expr to (numerator, denominator) if it's an integer, big
+/// integer, or `Rational[p, q]`. Returns None otherwise.
+fn expr_to_fraction(expr: &Expr) -> Option<(BigInt, BigInt)> {
+  match expr {
+    Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
+    Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let num = match &args[0] {
+        Expr::Integer(n) => BigInt::from(*n),
+        Expr::BigInteger(n) => n.clone(),
+        _ => return None,
+      };
+      let den = match &args[1] {
+        Expr::Integer(n) => BigInt::from(*n),
+        Expr::BigInteger(n) => n.clone(),
+        _ => return None,
+      };
+      Some((num, den))
+    }
+    _ => None,
+  }
+}
+
+/// LCM helper for BigInts. LCM(0, _) = LCM(_, 0) = 0.
+fn bigint_lcm(a: BigInt, b: BigInt) -> BigInt {
+  use num_traits::Zero;
+  if a.is_zero() || b.is_zero() {
+    return BigInt::from(0);
+  }
+  let g = bigint_gcd(a.clone(), b.clone());
+  (a.abs() / g) * b.abs()
+}
+
+/// Reduce numerator/denominator and emit either an Integer (when the
+/// denominator is 1) or a `Rational[p, q]` Expr.
+fn make_rational_expr(num: BigInt, den: BigInt) -> Expr {
+  use num_traits::{One, Zero};
+  if den.is_zero() {
+    // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
+    // callers see the same surface behaviour.
+    return Expr::Identifier("ComplexInfinity".to_string());
+  }
+  let g = bigint_gcd(num.clone(), den.clone());
+  let mut n = num / &g;
+  let mut d = den / g;
+  if d < BigInt::from(0) {
+    n = -n;
+    d = -d;
+  }
+  if d.is_one() {
+    return bigint_to_expr(n);
+  }
+  Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![bigint_to_expr(n), bigint_to_expr(d)],
+  }
 }
 
 /// Helper function to compute GCD

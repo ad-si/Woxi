@@ -607,7 +607,7 @@ ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2.0,612
 BesselK,Modified Bessel function of the second kind,✅,pure,1.0,613
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3.0,614
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3.0,615
-GCD,Returns the greatest common divisor of integers,✅,pure,1.0,616
+GCD,Returns the greatest common divisor of integers and rationals,✅,pure,1.0,616
 RegularExpression,Represents a regular expression pattern for string matching,✅,pure,5.1,617
 GeoPosition,Geographic position specification,✅,none,7.0,618
 BaselinePosition,Option for baseline alignment,✅,none,6.0,619
@@ -1065,7 +1065,7 @@ VertexTextureCoordinates,,🚫,,8.0,1076
 BarSpacing,,🚫,,7.0,1077
 WeierstrassP,Weierstrass elliptic function,✅,pure,1.0,1078
 StateSpaceModel,,🚫,,8.0,1079
-LCM,Returns the least common multiple of integers,✅,pure,1.0,1080
+LCM,Returns the least common multiple of integers and rationals,✅,pure,1.0,1080
 Predict,,🚫,,10.0,1081
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
 FourierTrigSeries,,🚫,,7.0,1085
