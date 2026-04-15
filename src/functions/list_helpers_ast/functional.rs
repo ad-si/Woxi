@@ -296,23 +296,37 @@ pub fn fixed_point_list_ast(
 }
 
 /// AST-based NestWhile: nest while condition is true.
+///
+/// `extra_n` corresponds to Wolfram's 6th argument: after the test stops
+/// being True (or `max_iterations` is reached), apply `func` an additional
+/// `n` times when `n > 0`, or return the result `|n|` iterations earlier
+/// when `n < 0`.
 pub fn nest_while_ast(
   func: &Expr,
   init: &Expr,
   test: &Expr,
   max_iterations: Option<i128>,
+  extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
-  let max = max_iterations.unwrap_or(10000);
-  let mut current = init.clone();
-
-  for _ in 0..max {
-    let test_result = apply_func_ast(test, &current)?;
-    if expr_to_bool(&test_result) != Some(true) {
-      break;
-    }
+  // We always materialise the full history when `extra_n` could need it,
+  // so that negative `extra_n` can step back through previously seen values.
+  let history = nest_while_history(func, init, test, max_iterations)?;
+  let len = history.len() as i128;
+  let target = (len - 1) + extra_n;
+  if target < 0 {
+    // Asked for a step before the initial value — Wolfram returns the
+    // initial value in this case as the closest available result.
+    return Ok(history[0].clone());
+  }
+  if (target as usize) < history.len() {
+    return Ok(history[target as usize].clone());
+  }
+  // Need to keep applying `func` past the point where the test stopped.
+  let mut current = history.last().cloned().unwrap_or_else(|| init.clone());
+  let extra = (target as usize) - (history.len() - 1);
+  for _ in 0..extra {
     current = apply_func_ast(func, &current)?;
   }
-
   Ok(current)
 }
 
@@ -322,21 +336,45 @@ pub fn nest_while_list_ast(
   init: &Expr,
   test: &Expr,
   max_iterations: Option<i128>,
+  extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
-  let max = max_iterations.unwrap_or(10000);
-  let mut results = vec![init.clone()];
-  let mut current = init.clone();
+  let mut history = nest_while_history(func, init, test, max_iterations)?;
+  if extra_n > 0 {
+    // Continue applying `func` for the requested extra iterations.
+    let mut current = history.last().cloned().unwrap_or_else(|| init.clone());
+    for _ in 0..extra_n {
+      current = apply_func_ast(func, &current)?;
+      history.push(current.clone());
+    }
+  } else if extra_n < 0 {
+    // Drop the trailing `|extra_n|` values, but never below the initial.
+    let drop = (-extra_n) as usize;
+    let new_len = history.len().saturating_sub(drop).max(1);
+    history.truncate(new_len);
+  }
+  Ok(Expr::List(history))
+}
 
+/// Iterate `func` from `init` while `test` is True, returning the entire
+/// history (initial value first). Stops at `max_iterations` if provided.
+fn nest_while_history(
+  func: &Expr,
+  init: &Expr,
+  test: &Expr,
+  max_iterations: Option<i128>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let max = max_iterations.unwrap_or(10000);
+  let mut history = vec![init.clone()];
+  let mut current = init.clone();
   for _ in 0..max {
     let test_result = apply_func_ast(test, &current)?;
     if expr_to_bool(&test_result) != Some(true) {
       break;
     }
     current = apply_func_ast(func, &current)?;
-    results.push(current.clone());
+    history.push(current.clone());
   }
-
-  Ok(Expr::List(results))
+  Ok(history)
 }
 
 /// Extract the children of any expression in Wolfram canonical form.

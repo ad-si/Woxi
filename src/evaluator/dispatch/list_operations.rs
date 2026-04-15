@@ -1332,34 +1332,46 @@ pub fn dispatch_list_operations(
     "ConstantArray" if args.len() == 2 => {
       return Some(list_helpers_ast::constant_array_ast(&args[0], &args[1]));
     }
-    "NestWhile" if (3..=5).contains(&args.len()) => {
+    "NestWhile" if (3..=6).contains(&args.len()) => {
       // NestWhile[f, x, test]              — plain
       // NestWhile[f, x, test, m]           — m = supply-last-m (currently only
       //                                        m == 1 is supported)
       // NestWhile[f, x, test, m, max]      — max is the maximum iteration cap
-      if args.len() == 4 && !matches!(&args[3], Expr::Integer(1)) {
+      // NestWhile[f, x, test, m, max, n]   — n extra iterations (or -|n|
+      //                                        steps back) once test fails
+      if args.len() >= 4 && !matches!(&args[3], Expr::Integer(1)) {
         return None; // let the default unevaluated path handle m > 1
       }
-      let max_iter = if args.len() == 5 {
+      let max_iter = if args.len() >= 5 {
         expr_to_i128(&args[4])
       } else {
         None
+      };
+      let extra_n = if args.len() == 6 {
+        expr_to_i128(&args[5])?
+      } else {
+        0
       };
       return Some(list_helpers_ast::nest_while_ast(
-        &args[0], &args[1], &args[2], max_iter,
+        &args[0], &args[1], &args[2], max_iter, extra_n,
       ));
     }
-    "NestWhileList" if (3..=5).contains(&args.len()) => {
-      if args.len() == 4 && !matches!(&args[3], Expr::Integer(1)) {
+    "NestWhileList" if (3..=6).contains(&args.len()) => {
+      if args.len() >= 4 && !matches!(&args[3], Expr::Integer(1)) {
         return None;
       }
-      let max_iter = if args.len() == 5 {
+      let max_iter = if args.len() >= 5 {
         expr_to_i128(&args[4])
       } else {
         None
       };
+      let extra_n = if args.len() == 6 {
+        expr_to_i128(&args[5])?
+      } else {
+        0
+      };
       return Some(list_helpers_ast::nest_while_list_ast(
-        &args[0], &args[1], &args[2], max_iter,
+        &args[0], &args[1], &args[2], max_iter, extra_n,
       ));
     }
     "Thread" if args.len() == 1 => {
