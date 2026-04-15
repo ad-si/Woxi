@@ -901,6 +901,24 @@ mod gcd {
   fn symbolic() {
     assert_eq!(interpret("GCD[x, 5]").unwrap(), "GCD[5, x]");
   }
+
+  #[test]
+  fn rationals() {
+    // GCD[a/b, c/d] = GCD[a, c] / LCM[b, d]
+    assert_eq!(interpret("GCD[1/2, 1/3]").unwrap(), "1/6");
+    assert_eq!(interpret("GCD[2/3, 4/9]").unwrap(), "2/9");
+  }
+
+  #[test]
+  fn three_rationals() {
+    assert_eq!(interpret("GCD[3/4, 5/6, 1/2]").unwrap(), "1/12");
+  }
+
+  #[test]
+  fn mixed_integer_and_rational() {
+    // 2 = 2/1, so GCD[2, 1/3] = GCD[2, 1] / LCM[1, 3] = 1/3
+    assert_eq!(interpret("GCD[2, 1/3]").unwrap(), "1/3");
+  }
 }
 
 mod extended_gcd {
@@ -993,6 +1011,19 @@ mod lcm {
   #[test]
   fn symbolic() {
     assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[5, x]");
+  }
+
+  #[test]
+  fn rationals() {
+    // LCM[a/b, c/d] = LCM[a, c] / GCD[b, d]
+    assert_eq!(interpret("LCM[1/2, 1/3]").unwrap(), "1");
+    assert_eq!(interpret("LCM[2/3, 4/9]").unwrap(), "4/3");
+  }
+
+  #[test]
+  fn mixed_integer_and_rational() {
+    // 6 = 6/1, LCM[6, 2/3] = LCM[6, 2] / GCD[1, 3] = 6/1 = 6
+    assert_eq!(interpret("LCM[6, 2/3]").unwrap(), "6");
   }
 }
 
