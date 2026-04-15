@@ -391,10 +391,65 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// PieChart[{v1, v2, ...}]
+/// Extract pie-chart rows. A flat list `{v1, v2, ...}` becomes a single
+/// row; a matrix `{{v1, v2, ...}, {w1, w2, ...}, ...}` becomes one row
+/// per sublist and renders as concentric rings (one ring per dataset).
+fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Chart: first argument must be a list".into(),
+      ));
+    }
+  };
+  if items.is_empty() {
+    return Ok(vec![]);
+  }
+
+  let evaluated: Vec<Expr> = items
+    .iter()
+    .map(|i| evaluate_expr_to_expr(i).unwrap_or_else(|_| i.clone()))
+    .collect();
+
+  // Matrix mode: every item is a sublist → one ring per sublist.
+  if evaluated.iter().all(|e| matches!(e, Expr::List(_))) {
+    let mut rows = Vec::with_capacity(evaluated.len());
+    for e in &evaluated {
+      if let Expr::List(inner) = e {
+        let mut row = Vec::with_capacity(inner.len());
+        for v in inner {
+          let vv = evaluate_expr_to_expr(v).unwrap_or_else(|_| v.clone());
+          if let Some(f) = try_eval_to_f64(&vv) {
+            row.push(f);
+          }
+        }
+        rows.push(row);
+      }
+    }
+    return Ok(rows);
+  }
+
+  // Flat list: single-ring dataset.
+  let mut row = Vec::with_capacity(evaluated.len());
+  for e in &evaluated {
+    if let Some(f) = try_eval_to_f64(e) {
+      row.push(f);
+    }
+  }
+  Ok(vec![row])
+}
+
+/// PieChart[{v1, v2, ...}] or PieChart[{{v1, v2, ...}, ...}]
+///
+/// Flat input renders as a single pie. A list of sublists renders as
+/// concentric rings, one ring per sublist, innermost first — matching
+/// the multi-dataset convention used by Wolfram's PieChart.
 pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let values = extract_values(&args[0])?;
-  if values.is_empty() {
+  let rows = extract_pie_rows(&args[0])?;
+  let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
+  if !has_data {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -408,43 +463,84 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cx = w / 2.0;
   let cy = h / 2.0;
   let radius = (w.min(h) / 2.0) * 0.85;
-  let total: f64 = values.iter().sum();
-  if total <= 0.0 {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
 
-  // Sort slices smallest-to-largest, drawn clockwise.
-  // The smallest slice sits right above the negative x-axis,
-  // with sizes increasing in the clockwise direction.
-  let mut indexed: Vec<(usize, f64)> =
-    values.iter().copied().enumerate().collect();
-  indexed
-    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  let n_rings = rows.len();
+  // Split the total radius between `n_rings` equal-width rings and
+  // `n_rings - 1` inter-ring gaps. Every ring ends up with the same
+  // thickness and the outermost ring still reaches the full radius.
+  let ring_gap = if n_rings > 1 {
+    3.0_f64.min(radius / n_rings as f64 * 0.25)
+  } else {
+    0.0
+  };
+  let ring_width =
+    (radius - (n_rings.saturating_sub(1)) as f64 * ring_gap) / n_rings as f64;
 
-  // Start at π (negative x-axis) so the smallest slice sits right above it.
-  let mut start_angle = std::f64::consts::PI;
-  for (color_idx, &(_orig_idx, val)) in indexed.iter().enumerate() {
-    let (r, g, b) = PLOT_COLORS[color_idx % PLOT_COLORS.len()];
-    let sweep = 2.0 * std::f64::consts::PI * val / total;
-    let end_angle = start_angle + sweep;
+  for (ring_idx, row) in rows.iter().enumerate() {
+    let total: f64 = row.iter().sum();
+    if total <= 0.0 {
+      continue;
+    }
+    let r_in = ring_idx as f64 * (ring_width + ring_gap);
+    let r_out = r_in + ring_width;
 
-    let x1 = cx + radius * start_angle.cos();
-    let y1 = cy + radius * start_angle.sin();
-    let x2 = cx + radius * end_angle.cos();
-    let y2 = cy + radius * end_angle.sin();
-    let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+    // Single-ring (flat) input sorts slices smallest-to-largest so the
+    // smallest one sits right above the negative x-axis, matching the
+    // long-standing PieChart layout. Multi-ring input keeps insertion
+    // order per row so rings stay easy to compare across rows.
+    let order: Vec<usize> = if n_rings == 1 {
+      let mut idx: Vec<(usize, f64)> =
+        row.iter().copied().enumerate().collect();
+      idx.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+      });
+      idx.iter().map(|(i, _)| *i).collect()
+    } else {
+      (0..row.len()).collect()
+    };
 
-    let tooltip = format_chart_value(val);
-    svg.push_str(&format!(
-      "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{radius:.2},{radius:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
-    ));
+    // Start at π (negative x-axis) so the first slice sits right above it.
+    let mut start_angle = std::f64::consts::PI;
+    // Restart the color cycle at each ring so every row uses the same
+    // palette — the rings themselves carry the "dataset" distinction.
+    for (slice_idx, &i) in order.iter().enumerate() {
+      let val = row[i];
+      let (r, g, b) = PLOT_COLORS[slice_idx % PLOT_COLORS.len()];
+      let sweep = 2.0 * std::f64::consts::PI * val / total;
+      let end_angle = start_angle + sweep;
+      let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+      let tooltip = format_chart_value(val);
 
-    start_angle = end_angle;
+      if r_in <= 1e-9 {
+        // Innermost ring with no hole: render as a center-anchored wedge.
+        let x1 = cx + r_out * start_angle.cos();
+        let y1 = cy + r_out * start_angle.sin();
+        let x2 = cx + r_out * end_angle.cos();
+        let y2 = cy + r_out * end_angle.sin();
+        svg.push_str(&format!(
+          "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
+           fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+        ));
+      } else {
+        // Outer ring: render as an annulus wedge.
+        let xi1 = cx + r_in * start_angle.cos();
+        let yi1 = cy + r_in * start_angle.sin();
+        let xi2 = cx + r_in * end_angle.cos();
+        let yi2 = cy + r_in * end_angle.sin();
+        let xo1 = cx + r_out * start_angle.cos();
+        let yo1 = cy + r_out * start_angle.sin();
+        let xo2 = cx + r_out * end_angle.cos();
+        let yo2 = cy + r_out * end_angle.sin();
+        svg.push_str(&format!(
+          "<path d=\"M{xi1:.2},{yi1:.2} L{xo1:.2},{yo1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {xo2:.2},{yo2:.2} L{xi2:.2},{yi2:.2} A{r_in:.2},{r_in:.2} 0 {large_arc},0 {xi1:.2},{yi1:.2} Z\" \
+           fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+        ));
+      }
+
+      start_angle = end_angle;
+    }
   }
 
   svg.push_str("</svg>");
@@ -599,15 +695,19 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
-/// PieChart3D[{v1, v2, ...}]
-/// Renders a 3D pie chart: a short cylinder split into colored wedges.
+/// PieChart3D[{v1, v2, ...}] or PieChart3D[{{v1, v2, ...}, ...}]
+///
+/// Flat input renders as a short cylinder split into colored wedges.
+/// A list of sublists renders as concentric cylindrical rings — one
+/// ring per sublist, innermost first — matching Wolfram's multi-dataset
+/// PieChart3D convention.
 pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::plot3d::{
     Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
   };
 
-  let values = match extract_values(&args[0]) {
-    Ok(v) => v,
+  let rows = match extract_pie_rows(&args[0]) {
+    Ok(r) => r,
     Err(_) => {
       return Ok(Expr::FunctionCall {
         name: "PieChart3D".to_string(),
@@ -615,13 +715,8 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  if values.is_empty() {
-    return Ok(crate::graphics3d_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-  let total: f64 = values.iter().sum();
-  if total <= 0.0 {
+  let has_data = rows.iter().any(|r| r.iter().sum::<f64>() > 0.0);
+  if !has_data {
     return Ok(crate::graphics3d_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -631,148 +726,194 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (opts.svg_width, opts.svg_height, opts.full_width);
 
   // Geometry constants in normalized world space.
-  let radius = 0.95_f64;
+  let max_radius = 0.95_f64;
   let half_thickness = 0.12_f64;
   let z_top = half_thickness;
   let z_bot = -half_thickness;
 
-  // Sort slices smallest-to-largest, drawn clockwise — same convention as
-  // the 2D PieChart.
-  let mut indexed: Vec<(usize, f64)> =
-    values.iter().copied().enumerate().collect();
-  indexed
-    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  let n_rings = rows.len();
+  // Split `max_radius` between `n_rings` equal-width rings and
+  // `n_rings - 1` inter-ring gaps (normalized world units).
+  let ring_gap = if n_rings > 1 {
+    0.015_f64.min(max_radius / n_rings as f64 * 0.25)
+  } else {
+    0.0
+  };
+  let ring_width = (max_radius - (n_rings.saturating_sub(1)) as f64 * ring_gap)
+    / n_rings as f64;
 
   let camera = chart_3d_camera();
   let mut all_triangles: Vec<Triangle> = Vec::new();
-  // Number of segments per full circle for tessellating arcs
+  // Number of segments per full circle for tessellating arcs.
   const SEG_PER_TURN: usize = 64;
 
-  let mut start_angle = std::f64::consts::PI;
-  for (color_idx, &(_orig_idx, val)) in indexed.iter().enumerate() {
-    let sweep = 2.0 * std::f64::consts::PI * val / total;
-    if sweep <= 0.0 {
+  for (ring_idx, row) in rows.iter().enumerate() {
+    let total: f64 = row.iter().sum();
+    if total <= 0.0 {
       continue;
     }
-    let end_angle = start_angle + sweep;
+    let r_in = ring_idx as f64 * (ring_width + ring_gap);
+    let r_out = r_in + ring_width;
 
-    let base_color = if !opts.chart_style.is_empty() {
-      let c = &opts.chart_style[color_idx % opts.chart_style.len()];
-      (
-        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-      )
+    // Single-ring input sorts slices smallest-to-largest, matching the
+    // long-standing 3D layout. Multi-ring input preserves insertion
+    // order per row so rings stay easy to compare.
+    let order: Vec<usize> = if n_rings == 1 {
+      let mut idx: Vec<(usize, f64)> =
+        row.iter().copied().enumerate().collect();
+      idx.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+      });
+      idx.iter().map(|(i, _)| *i).collect()
     } else {
-      PLOT_COLORS[color_idx % PLOT_COLORS.len()]
+      (0..row.len()).collect()
     };
 
-    // Number of subdivisions for this slice (at least 1).
-    let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * SEG_PER_TURN as f64)
-      .ceil() as usize)
-      .max(1);
-    let center_top = Point3D {
-      x: 0.0,
-      y: 0.0,
-      z: z_top,
-    };
-    let center_bot = Point3D {
-      x: 0.0,
-      y: 0.0,
-      z: z_bot,
-    };
+    let mut start_angle = std::f64::consts::PI;
+    // Restart the color cycle at each ring so every row uses the same
+    // palette — the rings themselves carry the "dataset" distinction.
+    for (slot_color_idx, &i) in order.iter().enumerate() {
+      let val = row[i];
+      let sweep = 2.0 * std::f64::consts::PI * val / total;
+      if sweep <= 0.0 {
+        continue;
+      }
+      let end_angle = start_angle + sweep;
 
-    let push_tri =
-      |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
-        let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
+      let base_color = if !opts.chart_style.is_empty() {
+        let c = &opts.chart_style[slot_color_idx % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[slot_color_idx % PLOT_COLORS.len()]
+      };
+
+      let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * SEG_PER_TURN as f64)
+        .ceil() as usize)
+        .max(1);
+
+      let push_tri =
+        |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
+          let normal = triangle_normal(v0, v1, v2);
+          let color = apply_lighting(base_color, normal);
+          let center = Point3D {
+            x: (v0.x + v1.x + v2.x) / 3.0,
+            y: (v0.y + v1.y + v2.y) / 3.0,
+            z: (v0.z + v1.z + v2.z) / 3.0,
+          };
+          all.push(Triangle {
+            projected: [
+              project(v0, &camera),
+              project(v1, &camera),
+              project(v2, &camera),
+            ],
+            depth: depth(center, &camera),
+            color,
+            opacity: 1.0,
+          });
         };
-        all.push(Triangle {
-          projected: [
-            project(v0, &camera),
-            project(v1, &camera),
-            project(v2, &camera),
-          ],
-          depth: depth(center, &camera),
-          color,
-          opacity: 1.0,
-        });
-      };
 
-    // Top fan, bottom fan, and outer cylindrical surface.
-    for s in 0..n_seg {
-      let t0 = s as f64 / n_seg as f64;
-      let t1 = (s + 1) as f64 / n_seg as f64;
-      let a0 = start_angle + t0 * sweep;
-      let a1 = start_angle + t1 * sweep;
-      let (c0, s0) = (a0.cos(), a0.sin());
-      let (c1, s1) = (a1.cos(), a1.sin());
+      let pt = |r: f64, a: f64, z: f64| Point3D {
+        x: r * a.cos(),
+        y: r * a.sin(),
+        z,
+      };
+      let is_innermost = r_in <= 1e-9;
 
-      let p_top_0 = Point3D {
-        x: radius * c0,
-        y: radius * s0,
-        z: z_top,
-      };
-      let p_top_1 = Point3D {
-        x: radius * c1,
-        y: radius * s1,
-        z: z_top,
-      };
-      let p_bot_0 = Point3D {
-        x: radius * c0,
-        y: radius * s0,
-        z: z_bot,
-      };
-      let p_bot_1 = Point3D {
-        x: radius * c1,
-        y: radius * s1,
-        z: z_bot,
-      };
+      for s in 0..n_seg {
+        let t0 = s as f64 / n_seg as f64;
+        let t1 = (s + 1) as f64 / n_seg as f64;
+        let a0 = start_angle + t0 * sweep;
+        let a1 = start_angle + t1 * sweep;
 
-      // Top face (fan from center)
-      push_tri(center_top, p_top_0, p_top_1, &mut all_triangles);
-      // Bottom face (reverse winding so the normal points down)
-      push_tri(center_bot, p_bot_1, p_bot_0, &mut all_triangles);
-      // Outer cylindrical wall: two triangles per quad
-      push_tri(p_top_0, p_bot_0, p_bot_1, &mut all_triangles);
-      push_tri(p_top_0, p_bot_1, p_top_1, &mut all_triangles);
+        let o_top_0 = pt(r_out, a0, z_top);
+        let o_top_1 = pt(r_out, a1, z_top);
+        let o_bot_0 = pt(r_out, a0, z_bot);
+        let o_bot_1 = pt(r_out, a1, z_bot);
+
+        if is_innermost {
+          // Innermost ring: top/bottom faces are triangle fans from
+          // the central axis; there's no inner cylindrical wall.
+          let center_top = pt(0.0, 0.0, z_top);
+          let center_bot = pt(0.0, 0.0, z_bot);
+          push_tri(center_top, o_top_0, o_top_1, &mut all_triangles);
+          push_tri(center_bot, o_bot_1, o_bot_0, &mut all_triangles);
+        } else {
+          let i_top_0 = pt(r_in, a0, z_top);
+          let i_top_1 = pt(r_in, a1, z_top);
+          let i_bot_0 = pt(r_in, a0, z_bot);
+          let i_bot_1 = pt(r_in, a1, z_bot);
+
+          // Top annular face (quad → two triangles).
+          push_tri(i_top_0, o_top_0, o_top_1, &mut all_triangles);
+          push_tri(i_top_0, o_top_1, i_top_1, &mut all_triangles);
+          // Bottom annular face (reverse winding so the normal points down).
+          push_tri(i_bot_0, o_bot_1, o_bot_0, &mut all_triangles);
+          push_tri(i_bot_0, i_bot_1, o_bot_1, &mut all_triangles);
+
+          // Inner cylindrical wall (normal points inward).
+          push_tri(i_top_0, i_top_1, i_bot_1, &mut all_triangles);
+          push_tri(i_top_0, i_bot_1, i_bot_0, &mut all_triangles);
+        }
+
+        // Outer cylindrical wall: two triangles per quad.
+        push_tri(o_top_0, o_bot_0, o_bot_1, &mut all_triangles);
+        push_tri(o_top_0, o_bot_1, o_top_1, &mut all_triangles);
+      }
+
+      // Two flat side walls (one for each radial edge of the slice).
+      let edge0_out_top = pt(r_out, start_angle, z_top);
+      let edge0_out_bot = pt(r_out, start_angle, z_bot);
+      let edge1_out_top = pt(r_out, end_angle, z_top);
+      let edge1_out_bot = pt(r_out, end_angle, z_bot);
+
+      if is_innermost {
+        let center_top = pt(0.0, 0.0, z_top);
+        let center_bot = pt(0.0, 0.0, z_bot);
+        // Side at start_angle.
+        push_tri(center_top, center_bot, edge0_out_bot, &mut all_triangles);
+        push_tri(center_top, edge0_out_bot, edge0_out_top, &mut all_triangles);
+        // Side at end_angle (reverse winding for the opposing face).
+        push_tri(center_top, edge1_out_top, edge1_out_bot, &mut all_triangles);
+        push_tri(center_top, edge1_out_bot, center_bot, &mut all_triangles);
+      } else {
+        let edge0_in_top = pt(r_in, start_angle, z_top);
+        let edge0_in_bot = pt(r_in, start_angle, z_bot);
+        let edge1_in_top = pt(r_in, end_angle, z_top);
+        let edge1_in_bot = pt(r_in, end_angle, z_bot);
+        // Side at start_angle.
+        push_tri(
+          edge0_in_top,
+          edge0_in_bot,
+          edge0_out_bot,
+          &mut all_triangles,
+        );
+        push_tri(
+          edge0_in_top,
+          edge0_out_bot,
+          edge0_out_top,
+          &mut all_triangles,
+        );
+        // Side at end_angle (reverse winding for the opposing face).
+        push_tri(
+          edge1_in_top,
+          edge1_out_top,
+          edge1_out_bot,
+          &mut all_triangles,
+        );
+        push_tri(
+          edge1_in_top,
+          edge1_out_bot,
+          edge1_in_bot,
+          &mut all_triangles,
+        );
+      }
+
+      start_angle = end_angle;
     }
-
-    // Two flat side walls (one for each radial edge of the slice).
-    let (cs_lo, ss_lo) = (start_angle.cos(), start_angle.sin());
-    let (cs_hi, ss_hi) = (end_angle.cos(), end_angle.sin());
-    let edge0_top = Point3D {
-      x: radius * cs_lo,
-      y: radius * ss_lo,
-      z: z_top,
-    };
-    let edge0_bot = Point3D {
-      x: radius * cs_lo,
-      y: radius * ss_lo,
-      z: z_bot,
-    };
-    let edge1_top = Point3D {
-      x: radius * cs_hi,
-      y: radius * ss_hi,
-      z: z_top,
-    };
-    let edge1_bot = Point3D {
-      x: radius * cs_hi,
-      y: radius * ss_hi,
-      z: z_bot,
-    };
-    // Side at start_angle
-    push_tri(center_top, center_bot, edge0_bot, &mut all_triangles);
-    push_tri(center_top, edge0_bot, edge0_top, &mut all_triangles);
-    // Side at end_angle (reverse winding for the opposing face)
-    push_tri(center_top, edge1_top, edge1_bot, &mut all_triangles);
-    push_tri(center_top, edge1_bot, center_bot, &mut all_triangles);
-
-    start_angle = end_angle;
   }
 
   // Painter's algorithm
@@ -1388,9 +1529,21 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
 
-  let mut start_angle = -std::f64::consts::FRAC_PI_2;
-  for (i, &(angle_val, radius_val)) in sectors.iter().enumerate() {
-    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+  // Sort sectors smallest-to-largest by their angular weight, drawn
+  // clockwise starting at π so the smallest slice sits right above the
+  // negative x-axis — same convention as PieChart.
+  let mut order: Vec<usize> = (0..sectors.len()).collect();
+  order.sort_by(|&a, &b| {
+    sectors[a]
+      .0
+      .partial_cmp(&sectors[b].0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let mut start_angle = std::f64::consts::PI;
+  for (slice_idx, &i) in order.iter().enumerate() {
+    let (angle_val, radius_val) = sectors[i];
+    let (r, g, b) = PLOT_COLORS[slice_idx % PLOT_COLORS.len()];
     let sweep = 2.0 * std::f64::consts::PI * angle_val / total_angle;
     let sector_r = (radius_val / r_max) * max_radius;
     let end_angle = start_angle + sweep;
