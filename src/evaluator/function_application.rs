@@ -48,9 +48,10 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Plus".to_string()
   };
 
-  // Get the outer function call
+  // Get the outer function call (or List)
   let (outer_name, outer_args) = match expr {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    Expr::List(items) => ("List".to_string(), items.clone()),
     _ => {
       // Not a function call - return as-is
       return Ok(expr.clone());
@@ -97,15 +98,17 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build result: wrap each combination in outer_name, then combine with distribute_over
   let terms: Vec<Expr> = combinations
     .into_iter()
-    .map(|combo| Expr::FunctionCall {
-      name: outer_name.clone(),
-      args: combo,
+    .map(|combo| {
+      if outer_name == "List" {
+        Expr::List(combo)
+      } else {
+        Expr::FunctionCall {
+          name: outer_name.clone(),
+          args: combo,
+        }
+      }
     })
     .collect();
-
-  if terms.len() == 1 {
-    return evaluate_expr_to_expr(&terms[0]);
-  }
 
   let result = if distribute_over == "List" {
     Expr::List(terms)
@@ -123,6 +126,7 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == head => args.clone(),
+    Expr::List(items) if head == "List" => items.clone(),
     _ => vec![expr.clone()],
   }
 }

@@ -2557,6 +2557,22 @@ mod distribute {
   fn atom_input() {
     assert_eq!(interpret("Distribute[x]").unwrap(), "x");
   }
+
+  #[test]
+  fn distribute_over_list() {
+    assert_eq!(
+      interpret("Distribute[f[{a, b}, {c, d}], List]").unwrap(),
+      "{f[a, c], f[a, d], f[b, c], f[b, d]}"
+    );
+  }
+
+  #[test]
+  fn distribute_nested_lists() {
+    assert_eq!(
+      interpret("Distribute[{{1, 2}, {3, 4}}, List]").unwrap(),
+      "{{1, 3}, {1, 4}, {2, 3}, {2, 4}}"
+    );
+  }
 }
 
 mod polynomial_remainder {
