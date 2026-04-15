@@ -883,6 +883,21 @@ mod array_predicates {
   }
 
   #[test]
+  fn array_q_with_depth() {
+    assert_eq!(interpret("ArrayQ[{{1, 2}, {3, 4}}, 2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn array_q_with_wrong_depth() {
+    assert_eq!(interpret("ArrayQ[{{1, 2}, {3, 4}}, 1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn array_q_vector_depth_1() {
+    assert_eq!(interpret("ArrayQ[{1, 2, 3}, 1]").unwrap(), "True");
+  }
+
+  #[test]
   fn matrix_q_true() {
     assert_eq!(interpret("MatrixQ[{{1, 2}, {3, 4}}]").unwrap(), "True");
   }
