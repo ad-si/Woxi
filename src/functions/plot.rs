@@ -2520,6 +2520,336 @@ pub(crate) fn generate_bar_svg(
   Ok(buf)
 }
 
+/// Generate SVG for a BubbleChart — a scatter plot with variable-radius
+/// circles drawn over labeled x/y axes. Each input triple is `(x, y, z)`
+/// where `z` drives the bubble area (matching Mathematica's convention).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_bubble_chart_svg(
+  triples: &[(f64, f64, f64)],
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+  plot_label: Option<&StyledLabel>,
+  axes_label: Option<(&str, &str)>,
+  chart_style: &[WoxiColor],
+  chart_legends: &[String],
+  plot_range_x: Option<(f64, f64)>,
+  plot_range_y: Option<(f64, f64)>,
+) -> Result<String, InterpreterError> {
+  // Auto-compute x/y ranges with 10% padding so bubbles sit inside the axes.
+  let compute_range = |vals: &[f64]| -> (f64, f64) {
+    let mn = vals
+      .iter()
+      .copied()
+      .filter(|v| v.is_finite())
+      .fold(f64::INFINITY, f64::min);
+    let mx = vals
+      .iter()
+      .copied()
+      .filter(|v| v.is_finite())
+      .fold(f64::NEG_INFINITY, f64::max);
+    if !mn.is_finite() || !mx.is_finite() {
+      return (0.0, 1.0);
+    }
+    let span = mx - mn;
+    let pad = if span.abs() < f64::EPSILON {
+      1.0
+    } else {
+      span * 0.1
+    };
+    (mn - pad, mx + pad)
+  };
+  let xs: Vec<f64> = triples.iter().map(|t| t.0).collect();
+  let ys: Vec<f64> = triples.iter().map(|t| t.1).collect();
+  let (x_min_auto, x_max_auto) = compute_range(&xs);
+  let (y_min_auto, y_max_auto) = compute_range(&ys);
+  let (x_min, x_max) = plot_range_x.unwrap_or((x_min_auto, x_max_auto));
+  let (y_min, y_max) = plot_range_y.unwrap_or((y_min_auto, y_max_auto));
+  let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
+  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
+
+  let z_max = triples.iter().map(|t| t.2.abs()).fold(0.0_f64, f64::max);
+
+  let render_width = svg_width * RESOLUTION_SCALE;
+  let render_height = svg_height * RESOLUTION_SCALE;
+  let s = RESOLUTION_SCALE as i32;
+  let sf = RESOLUTION_SCALE as f64;
+
+  let has_x_axis_label =
+    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
+
+  let top_margin = if has_plot_label { 35 * s } else { 10 * s };
+  let bottom_extra = if has_x_axis_label { 24.0 * sf } else { 0.0 };
+  let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
+  let y_label_area = 65 * RESOLUTION_SCALE;
+
+  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
+    plot_theme();
+
+  let legend_margin_right = if chart_legends.is_empty() {
+    10 * s as u32
+  } else {
+    let max_label_len =
+      chart_legends.iter().map(|l| l.len()).max().unwrap_or(0);
+    (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
+  };
+
+  // Max bubble radius in render-space pixels. 20 display pixels matches the
+  // previous (axis-less) implementation and stays readable without occluding
+  // neighbors at the default image size.
+  let max_bubble_radius = 20.0 * sf;
+
+  let mut buf = String::new();
+  {
+    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
+      .into_drawing_area();
+    root.fill(&bg_color).map_err(|e| {
+      InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+    })?;
+
+    let tick = MINOR_TICK_LEN * s;
+
+    let mut chart = ChartBuilder::on(&root)
+      .margin_top(top_margin as u32)
+      .margin_right(legend_margin_right)
+      .margin_bottom(10 * s as u32)
+      .margin_left(10 * s as u32)
+      .x_label_area_size(x_label_area)
+      .y_label_area_size(y_label_area)
+      .build_cartesian_2d(x_min..x_max, y_min..y_max)
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+      })?;
+
+    let x_major = nice_step(x_max - x_min, 5);
+    let y_major = nice_step(y_max - y_min, 5);
+    let x_minor_step = x_major / 5.0;
+    let y_minor_step = y_major / 5.0;
+    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
+    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+
+    chart
+      .configure_mesh()
+      .disable_mesh()
+      .x_labels(x_tick_count)
+      .y_labels(y_tick_count)
+      .x_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, x_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .y_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, y_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+      .label_style(("sans-serif", sf * 18.0).into_font().color(&dark_gray))
+      .set_tick_mark_size(LabelAreaPosition::Left, tick)
+      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+      .draw()
+      .map_err(|e| {
+        InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+      })?;
+
+    // Origin lines — rendered only when the axis crosses zero.
+    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
+    if y_min < 0.0 && y_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(x_min, 0.0), (x_max, 0.0)],
+          origin_line,
+        )))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+        })?;
+    }
+    if x_min < 0.0 && x_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(0.0, y_min), (0.0, y_max)],
+          origin_line,
+        )))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+        })?;
+    }
+
+    // Draw the bubbles with pixel-space radii so they look the same
+    // regardless of the data range.
+    for (i, &(x, y, z)) in triples.iter().enumerate() {
+      if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+        continue;
+      }
+      let (cr, cg, cb) = if !chart_style.is_empty() {
+        let c = &chart_style[i % chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      };
+      // Area-proportional: radius ∝ sqrt(z / z_max) * max_radius.
+      let radius = if z_max > 0.0 {
+        ((z.abs() / z_max).sqrt() * max_bubble_radius).max(2.0 * sf)
+      } else {
+        5.0 * sf
+      };
+      let fill = RGBColor(cr, cg, cb).mix(0.7);
+      chart
+        .draw_series(std::iter::once(Circle::new(
+          (x, y),
+          radius as i32,
+          fill.filled(),
+        )))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+        })?;
+    }
+
+    root.present().map_err(|e| {
+      InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+    })?;
+  }
+
+  rewrite_svg_header(
+    &mut buf,
+    svg_width,
+    svg_height,
+    render_width,
+    render_height,
+    full_width,
+  );
+
+  // Plot area coordinates (must match the margins/areas above).
+  let margin_left = 10.0 * sf;
+  let margin_top = top_margin as f64;
+  let margin_right = legend_margin_right as f64;
+  let plot_x0 = margin_left + y_label_area as f64;
+  let plot_y0 = margin_top;
+  let plot_w =
+    render_width as f64 - margin_left - margin_right - y_label_area as f64;
+  let plot_h =
+    render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
+  let axis_y = plot_y0 + plot_h;
+
+  inject_major_tick_extensions(
+    &mut buf,
+    plot_x0,
+    plot_y0,
+    plot_w,
+    plot_h,
+    Some((x_min, x_max, nice_step(x_max - x_min, 5))),
+    Some((y_min, y_max, nice_step(y_max - y_min, 5))),
+    MINOR_TICK_LEN as f64 * sf,
+    MAJOR_TICK_LEN as f64 * sf,
+    sf,
+    label_fill,
+  );
+
+  let font_size = sf * 18.0;
+  let title_font_size = sf * 22.0;
+
+  if let Some(insert_pos) = buf.rfind("</svg>") {
+    let mut labels_svg = String::new();
+
+    if let Some((x_label, y_label)) = &axes_label {
+      if !x_label.is_empty() {
+        let cx = plot_x0 + plot_w / 2.0;
+        let base_y = axis_y + font_size * 2.8;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\">{}</text>\n",
+          html_escape(x_label)
+        ));
+      }
+      if !y_label.is_empty() {
+        let cy = plot_y0 + plot_h / 2.0;
+        let lx = margin_left + font_size * 0.8;
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+          html_escape(y_label)
+        ));
+      }
+    }
+
+    if let Some(sl) = plot_label
+      && !sl.text.is_empty()
+    {
+      let cx = plot_x0 + plot_w / 2.0;
+      let ty = margin_top - title_font_size * 0.5;
+      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fill = sl
+        .color
+        .as_ref()
+        .map(|c| c.to_svg_rgb())
+        .unwrap_or_else(|| title_default_fill.to_string());
+      let mut style_attrs = String::new();
+      if sl.bold {
+        style_attrs.push_str(" font-weight=\"bold\"");
+      }
+      if sl.italic {
+        style_attrs.push_str(" font-style=\"italic\"");
+      }
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+           fill=\"{fill}\"{style_attrs}>{}</text>\n",
+        html_escape(&sl.text)
+      ));
+    }
+
+    if !chart_legends.is_empty() {
+      let legend_font = sf * 16.0;
+      let swatch_size = sf * 12.0;
+      let swatch_gap = sf * 6.0;
+      let legend_x = plot_x0 + plot_w + sf * 16.0;
+      let legend_y_start = plot_y0 + sf * 8.0;
+      let line_height = sf * 22.0;
+
+      for (i, label) in chart_legends.iter().enumerate() {
+        let (cr, cg, cb) = if !chart_style.is_empty() {
+          let c = &chart_style[i % chart_style.len()];
+          (
+            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+          )
+        } else {
+          PLOT_COLORS[i % PLOT_COLORS.len()]
+        };
+        let ly = legend_y_start + i as f64 * line_height;
+        labels_svg.push_str(&format!(
+          "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
+           fill=\"rgb({cr},{cg},{cb})\"/>\n",
+          ly
+        ));
+        labels_svg.push_str(&format!(
+          "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
+           fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+          legend_x + swatch_size + swatch_gap,
+          ly + swatch_size / 2.0,
+          html_escape(label)
+        ));
+      }
+    }
+
+    buf.insert_str(insert_pos, &labels_svg);
+  }
+
+  Ok(buf)
+}
+
 /// Escape special characters for SVG text content.
 fn html_escape(s: &str) -> String {
   s.replace('&', "&amp;")

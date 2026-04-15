@@ -2295,6 +2295,66 @@ mod plot3d {
       ));
     }
 
+    /// BubbleChart[] must render labeled axes by default — the SVG should
+    /// contain numeric tick labels, axis lines, and the bubbles themselves.
+    #[test]
+    fn bubble_chart_has_default_axes() {
+      let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
+      // Tick labels from the numeric axes — plotters emits each tick as a
+      // <text>\n{value}\n</text> element, so look for the value between a
+      // `>` and a newline. At least one of the data-range integers should
+      // appear as a tick.
+      let has_tick_label = ["1", "2", "3", "4", "5"]
+        .iter()
+        .any(|t| svg.contains(&format!(">\n{t}\n</text>")));
+      assert!(
+        has_tick_label,
+        "BubbleChart should render numeric tick labels, got: {svg}"
+      );
+      // Axis line drawn by plotters (polyline stroke) should be present.
+      assert!(
+        svg.contains("<polyline"),
+        "BubbleChart should render axis lines: {svg}"
+      );
+      // Bubble circles should still be present.
+      assert!(svg.contains("<circle"));
+    }
+
+    /// BubbleChart has a square *plot area* by default. Because the y-axis
+    /// label column (~65 px) is wider than the x-axis label row (~40 px),
+    /// the outer SVG is 25 px shorter than wide so the inner cartesian
+    /// region comes out square.
+    #[test]
+    fn bubble_chart_default_square() {
+      let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
+      assert!(
+        svg.contains("width=\"360\" height=\"335\""),
+        "BubbleChart default should give a square plot area (360x335 outer SVG), got: {}",
+        &svg[..200.min(svg.len())]
+      );
+    }
+
+    #[test]
+    fn bubble_chart_explicit_image_size_wins() {
+      let svg = export_svg(
+        "BubbleChart[{{1, 2, 3}, {4, 5, 1}}, ImageSize -> {400, 200}]",
+      );
+      assert!(
+        svg.contains("width=\"400\" height=\"200\""),
+        "Explicit ImageSize should override the square default: {}",
+        &svg[..200.min(svg.len())]
+      );
+    }
+
+    #[test]
+    fn bubble_chart_axes_label() {
+      let svg = export_svg(
+        r#"BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}, AxesLabel -> {"xs", "ys"}]"#,
+      );
+      assert!(svg.contains(">xs<"), "missing x axis label: {svg}");
+      assert!(svg.contains(">ys<"), "missing y axis label: {svg}");
+    }
+
     #[test]
     fn sector_chart() {
       insta::assert_snapshot!(export_svg(

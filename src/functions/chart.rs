@@ -1433,57 +1433,37 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let opts = parse_chart_options(args);
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
-  let w = svg_width as f64;
-  let h = svg_height as f64;
-  let margin = 50.0;
-  let plot_w = w - 2.0 * margin;
-  let plot_h = h - 2.0 * margin;
-
-  let x_min = triples.iter().map(|t| t.0).fold(f64::INFINITY, f64::min);
-  let x_max = triples
-    .iter()
-    .map(|t| t.0)
-    .fold(f64::NEG_INFINITY, f64::max);
-  let y_min = triples.iter().map(|t| t.1).fold(f64::INFINITY, f64::min);
-  let y_max = triples
-    .iter()
-    .map(|t| t.1)
-    .fold(f64::NEG_INFINITY, f64::max);
-  let z_max = triples.iter().map(|t| t.2.abs()).fold(0.0_f64, f64::max);
-  let max_radius = 20.0;
-
-  let x_range = if (x_max - x_min).abs() < f64::EPSILON {
-    1.0
-  } else {
-    x_max - x_min
-  };
-  let y_range = if (y_max - y_min).abs() < f64::EPSILON {
-    1.0
-  } else {
-    y_max - y_min
-  };
-
-  let mut svg = svg_header(svg_width, svg_height, full_width);
-
-  for (i, &(x, y, z)) in triples.iter().enumerate() {
-    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
-    let sx = margin + ((x - x_min) / x_range) * plot_w;
-    let sy = margin + ((y_max - y) / y_range) * plot_h;
-    let radius = if z_max > 0.0 {
-      (z.abs() / z_max) * max_radius
-    } else {
-      5.0
-    };
-    let radius = radius.max(2.0);
-    svg.push_str(&format!(
-      "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"{radius:.1}\" fill=\"rgb({r},{g},{b})\" fill-opacity=\"0.7\"/>\n"
-    ));
+  let mut opts = parse_chart_options(args);
+  // BubbleChart's plot area is square by default — override the generic
+  // (non-square) DEFAULT_HEIGHT unless the caller provided an explicit
+  // ImageSize. The y-axis label column (~65 px) is wider than the x-axis
+  // label row (~40 px), so the outer SVG has to be 25 px shorter than it
+  // is wide for the inner cartesian area to come out square.
+  let user_set_image_size = args[1..].iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+    )
+  });
+  if !user_set_image_size {
+    opts.svg_height = opts.svg_width.saturating_sub(25);
   }
-
-  svg.push_str("</svg>");
+  let svg = crate::functions::plot::generate_bubble_chart_svg(
+    &triples,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+    opts.plot_label.as_ref(),
+    opts
+      .axes_label
+      .as_ref()
+      .map(|(x, y)| (x.as_str(), y.as_str())),
+    &opts.chart_style,
+    &opts.chart_legends,
+    opts.plot_range_x,
+    opts.plot_range_y,
+  )?;
   Ok(crate::graphics_result(svg))
 }
 
