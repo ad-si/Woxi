@@ -3007,6 +3007,7 @@ fn operator_precedence(op: &str) -> u8 {
     "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
     "\\[DirectedEdge]" | "\u{F3D1}" => 7, // DirectedEdge (same level as comparisons)
     "\\[UndirectedEdge]" | "\u{F3D0}" => 7, // UndirectedEdge (same level as comparisons)
+    "<->" => 7, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 7, // Distributed (same level as comparisons)
     "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" => 12, // Cross (same level as Dot)
     "==" | "!=" | "\u{2260}" | "<" | "<=" | "\u{2264}" | ">" | ">="
@@ -3170,6 +3171,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[UndirectedEdge]" | "\u{F3D0}" => Expr::FunctionCall {
       name: "UndirectedEdge".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "<->" => Expr::FunctionCall {
+      name: "TwoWayRule".to_string(),
       args: vec![left.clone(), right.clone()],
     },
     "\\[Distributed]" | "\u{F3D2}" => Expr::FunctionCall {
