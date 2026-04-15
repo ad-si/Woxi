@@ -399,7 +399,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "GreaterEqual" => Some((2, usize::MAX)),
     "GreaterEqualThan" => Some((1, 1)),
     "GreaterThan" => Some((1, 1)),
-    "GroupBy" => Some((1, 2)),
+    "GroupBy" => Some((1, 3)),
     "GroupGenerators" => Some((1, 1)),
     "Groupings" => Some((2, 2)),
     "Gudermannian" => Some((1, 1)),

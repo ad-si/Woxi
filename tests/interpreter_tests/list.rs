@@ -4226,6 +4226,22 @@ mod join_non_list {
   }
 
   #[test]
+  fn group_by_with_reducer() {
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4, 5, 6}, EvenQ, Total]").unwrap(),
+      "<|False -> 9, True -> 12|>"
+    );
+  }
+
+  #[test]
+  fn group_by_with_length_reducer() {
+    assert_eq!(
+      interpret("GroupBy[{1, 2, 3, 4, 5, 6}, EvenQ, Length]").unwrap(),
+      "<|False -> 3, True -> 3|>"
+    );
+  }
+
+  #[test]
   fn counts_by_operator_form() {
     assert_eq!(
       interpret("CountsBy[Sign][{1, -1, 2, -2, 3}]").unwrap(),
