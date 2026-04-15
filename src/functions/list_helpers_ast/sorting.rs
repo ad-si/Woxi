@@ -632,6 +632,29 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         }
       }
       (false, false) => {
+        // Same-head plain function calls: compare arguments structurally.
+        // This matches Wolfram's canonical ordering, e.g. Cos[x] before
+        // Cos[Cos[x]] (because x < Cos[x] — atoms precede function calls).
+        if let (
+          Expr::FunctionCall { name: na, args: aa },
+          Expr::FunctionCall { name: nb, args: ab },
+        ) = (a, b)
+          && na == nb
+          && a_is_func_call
+          && b_is_func_call
+        {
+          for (ai, bi) in aa.iter().zip(ab.iter()) {
+            let ord = compare_exprs(ai, bi);
+            if ord != 0 {
+              return ord;
+            }
+          }
+          return match aa.len().cmp(&ab.len()) {
+            std::cmp::Ordering::Less => 1,
+            std::cmp::Ordering::Greater => -1,
+            std::cmp::Ordering::Equal => 0,
+          };
+        }
         // Both compounds: compare sort keys, then by full string
         let a_key = expr_sort_key(a);
         let b_key = expr_sort_key(b);

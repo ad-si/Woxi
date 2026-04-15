@@ -1572,7 +1572,7 @@ mod hyperbolic_distribution {
   fn variance_symbolic() {
     assert_eq!(
       interpret("Variance[HyperbolicDistribution[a, b, d, m]]").unwrap(),
-      "-((b^2*d^2*BesselK[2, Sqrt[a^2 - b^2]*d]^2)/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]^2)) + (b^2*d^2*BesselK[3, Sqrt[a^2 - b^2]*d])/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]) + (d*BesselK[2, Sqrt[a^2 - b^2]*d])/(Sqrt[a^2 - b^2]*BesselK[1, Sqrt[a^2 - b^2]*d])"
+      "(d*BesselK[2, Sqrt[a^2 - b^2]*d])/(Sqrt[a^2 - b^2]*BesselK[1, Sqrt[a^2 - b^2]*d]) - (b^2*d^2*BesselK[2, Sqrt[a^2 - b^2]*d]^2)/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d]^2) + (b^2*d^2*BesselK[3, Sqrt[a^2 - b^2]*d])/((a^2 - b^2)*BesselK[1, Sqrt[a^2 - b^2]*d])"
     );
   }
 
