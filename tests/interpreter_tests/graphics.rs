@@ -3361,6 +3361,55 @@ mod graphics_list {
     assert!(svg.contains(">,</text>"));
   }
 
+  /// Regression: plain 1-D lists of graphics with mixed aspect ratios
+  /// used to lay out every cell as a fixed 100×100 square, so the
+  /// natural widths of the graphics were ignored entirely. Lists
+  /// should render with the same natural-dimension layout as
+  /// `GraphicsRow`: items with equal natural widths get equal cell
+  /// widths, items with shorter natural heights get vertically
+  /// centered within the row.
+  #[test]
+  fn list_preserves_natural_widths_across_aspect_ratios() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{Plot[Sin[x], {x, 0, 2 Pi}], \
+         BarChart[{1,5,3,4,7,9}], \
+         NumberLinePlot[{Interval[{1,9}],Interval[{3,7}],Interval[{2,4}]}]}",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("list of graphics should render");
+    // Braces / commas should still be there.
+    assert!(svg.contains(">{</text>"), "should have opening brace");
+    assert!(svg.contains(">}</text>"), "should have closing brace");
+    assert!(svg.contains(">,</text>"), "should have comma separators");
+    // Extract widths from every nested cell.
+    let cell_widths: Vec<u32> = svg
+      .match_indices("<svg x=\"")
+      .filter_map(|(idx, _)| {
+        let rest = &svg[idx..];
+        let w_start = rest.find("width=\"")? + "width=\"".len();
+        let w_end = rest[w_start..].find('"')? + w_start;
+        rest[w_start..w_end].parse().ok()
+      })
+      .collect();
+    assert_eq!(
+      cell_widths.len(),
+      3,
+      "expected 3 nested cell widths, got {cell_widths:?}"
+    );
+    // All three native widths are 360 → all three cell widths should
+    // be equal (and far above the old 100 px fixed square).
+    assert!(
+      cell_widths.iter().all(|w| *w == cell_widths[0]),
+      "expected all 3 list cells to have equal widths, got {cell_widths:?}"
+    );
+    assert!(
+      cell_widths[0] >= 300,
+      "expected list cells to render near their native 360 width, got \
+       {cell_widths:?}"
+    );
+  }
+
   #[test]
   fn table_2d_list_of_graphics() {
     clear_state();
@@ -4059,6 +4108,96 @@ mod graphics_row {
     )
     .unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+
+  /// Regression: GraphicsRow used to clamp its total width to a fixed
+  /// 360 px default, so a row of 3 plots rendered at ~54 px tall with
+  /// sub-pixel strokes and 3 px fonts. The default total width should
+  /// instead derive from the natural widths of the child graphics so
+  /// each cell gets rendered near its native size.
+  #[test]
+  fn default_width_scales_with_cell_count() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "GraphicsRow[{Plot[Sin[x], {x, 0, 2 Pi}], \
+         BarChart[{1,5,3,4,7,9}], \
+         NumberLinePlot[{Interval[{1,9}],Interval[{3,7}],Interval[{2,4}]}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Outer <svg width="..."> — the width attribute should be well above
+    // the old hard-coded 360 default (the three 360-wide cells alone
+    // sum to 1080).
+    let width_str = svg
+      .split_once("width=\"")
+      .and_then(|(_, rest)| rest.split_once('"'))
+      .map(|(w, _)| w.to_string())
+      .expect("outer <svg> should have a width attribute");
+    let width: f64 = width_str.parse().expect("width should be numeric");
+    assert!(
+      width >= 1000.0,
+      "expected GraphicsRow default width to scale with cell count (>=1000), \
+       got {width}"
+    );
+    // And the combined row should not collapse to an absurdly short
+    // height: each plot was natively 225 tall, NumberLinePlot pulls
+    // row_h down somewhat but it should still be >= 100.
+    let height_str = svg
+      .split_once("height=\"")
+      .and_then(|(_, rest)| rest.split_once('"'))
+      .map(|(h, _)| h.to_string())
+      .expect("outer <svg> should have a height attribute");
+    let height: f64 = height_str.parse().expect("height should be numeric");
+    assert!(
+      height >= 100.0,
+      "expected GraphicsRow default height to leave cells legible (>=100), \
+       got {height}"
+    );
+  }
+
+  /// Regression: items with different native aspect ratios used to be
+  /// sized so that all cells in the row shared a single height. That
+  /// made short-tall items like NumberLinePlot (natively 360×105)
+  /// balloon out much wider than adjacent Plots (natively 360×225), even
+  /// though both plots have the same natural width. Cells should instead
+  /// keep their natural widths and let the row height be the max.
+  #[test]
+  fn cells_preserve_natural_widths_across_aspect_ratios() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "GraphicsRow[{Plot[Sin[x], {x, 0, 2 Pi}], \
+         BarChart[{1,5,3,4,7,9}], \
+         NumberLinePlot[{Interval[{1,9}],Interval[{3,7}],Interval[{2,4}]}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Collect the width attribute of every nested <svg x=...> cell.
+    let cell_widths: Vec<u32> = svg
+      .match_indices("<svg x=\"")
+      .filter_map(|(idx, _)| {
+        let rest = &svg[idx..];
+        let w_start = rest.find("width=\"")? + "width=\"".len();
+        let w_end = rest[w_start..].find('"')? + w_start;
+        rest[w_start..w_end].parse().ok()
+      })
+      .collect();
+    assert_eq!(
+      cell_widths.len(),
+      3,
+      "expected 3 nested cell widths, got {cell_widths:?}"
+    );
+    // All three source SVGs are natively 360 wide → all three cells
+    // should render at the same width regardless of their heights.
+    assert!(
+      cell_widths.iter().all(|w| *w == cell_widths[0]),
+      "expected all 3 cells to have equal widths (natural widths match), \
+       got {cell_widths:?}"
+    );
+    assert!(
+      cell_widths[0] >= 300,
+      "expected cells to render near their native 360 width, got \
+       {cell_widths:?}"
+    );
   }
 
   /// Regression: GraphicsRow used to silently drop items whose top-level
