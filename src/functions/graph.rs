@@ -273,8 +273,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build petgraph for rendering
   let (graph, _index_map) = build_render_graph(&vertices, &raw_edges);
 
-  // Compute vertex positions using circular embedding
-  let positions: Vec<(f64, f64)> = compute_layout(n);
+  // Compute vertex positions. For a single weakly-connected component we
+  // keep the simple circular embedding; for multi-component graphs each
+  // component is laid out independently (force-directed when large enough)
+  // and the components are packed into a grid so clusters are visible.
+  let positions: Vec<(f64, f64)> = compute_layout(&graph);
 
   // Compute base radius for vertices
   let base_radius = if n <= 2 {
@@ -600,20 +603,289 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   graphics_ast(&[content, image_size_opt])
 }
 
-/// Circular layout: place n vertices equally spaced on a circle
-fn compute_layout(n: usize) -> Vec<(f64, f64)> {
+/// Compute vertex positions for the rendered graph.
+///
+/// Single-component graphs get the existing circular embedding so the
+/// output stays stable for the small graphs used in unit tests. Graphs
+/// with multiple weakly-connected components are laid out component by
+/// component (force-directed once a component is big enough) and the
+/// components are packed into a grid, which makes clusters visible — e.g.
+/// `Graph[Table[i -> Mod[i^2, 74], {i, 100}]]` renders as 8 clusters.
+fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
+  let n = graph.node_count();
+  if n == 0 {
+    return vec![];
+  }
   if n == 1 {
     return vec![(0.0, 0.0)];
   }
   if n == 2 {
     return vec![(-0.5, 0.0), (0.5, 0.0)];
   }
+
+  let components = weakly_connected_components(graph);
+
+  if components.len() <= 1 {
+    return circular_layout(n);
+  }
+
+  // Lay out each component independently.
+  let mut component_positions: Vec<Vec<(f64, f64)>> =
+    Vec::with_capacity(components.len());
+  for comp in &components {
+    component_positions.push(layout_component(graph, comp));
+  }
+
+  pack_components(&components, &component_positions, n)
+}
+
+/// Circular layout in [-1, 1]^2 for a connected graph of `n` vertices.
+fn circular_layout(n: usize) -> Vec<(f64, f64)> {
   (0..n)
     .map(|k| {
       let angle = PI / 2.0 + (k as f64) * 2.0 * PI / (n as f64);
       (snap_coord(angle.cos()), snap_coord(angle.sin()))
     })
     .collect()
+}
+
+/// Weakly connected components of `graph` (directed edges treated as
+/// undirected). Components are returned sorted by size in descending order
+/// so the largest cluster ends up in a predictable slot of the grid.
+fn weakly_connected_components(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Vec<Vec<usize>> {
+  let n = graph.node_count();
+  let mut parent: Vec<usize> = (0..n).collect();
+
+  fn find(parent: &mut [usize], mut x: usize) -> usize {
+    while parent[x] != x {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    x
+  }
+
+  for edge in graph.edge_references() {
+    let a = find(&mut parent, edge.source().index());
+    let b = find(&mut parent, edge.target().index());
+    if a != b {
+      parent[a] = b;
+    }
+  }
+
+  let mut comps: HashMap<usize, Vec<usize>> = HashMap::new();
+  for i in 0..n {
+    let root = find(&mut parent, i);
+    comps.entry(root).or_default().push(i);
+  }
+
+  let mut result: Vec<Vec<usize>> = comps.into_values().collect();
+  // Sort deterministically: largest first, ties broken by first node index.
+  result.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a[0].cmp(&b[0])));
+  result
+}
+
+/// Lay out a single component in a local [-1, 1]^2 coordinate system.
+/// Small components (≤ 8 nodes) use a circular layout; larger ones use
+/// a Fruchterman-Reingold force-directed layout with deterministic
+/// initialization so the output is reproducible.
+fn layout_component(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  comp: &[usize],
+) -> Vec<(f64, f64)> {
+  let m = comp.len();
+  if m == 0 {
+    return vec![];
+  }
+  if m == 1 {
+    return vec![(0.0, 0.0)];
+  }
+  if m <= 8 {
+    return (0..m)
+      .map(|k| {
+        let angle = PI / 2.0 + (k as f64) * 2.0 * PI / (m as f64);
+        (angle.cos(), angle.sin())
+      })
+      .collect();
+  }
+
+  // Map global node index → local index within this component.
+  let idx_in_comp: HashMap<usize, usize> = comp
+    .iter()
+    .enumerate()
+    .map(|(i, &node)| (node, i))
+    .collect();
+
+  // Undirected adjacency list for the component.
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); m];
+  for edge in graph.edge_references() {
+    let si = edge.source().index();
+    let di = edge.target().index();
+    if let (Some(&a), Some(&b)) = (idx_in_comp.get(&si), idx_in_comp.get(&di))
+      && a != b
+    {
+      adj[a].push(b);
+      adj[b].push(a);
+    }
+  }
+
+  // Deterministic initial placement on a sunflower spiral.
+  let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
+  let mut pos: Vec<(f64, f64)> = (0..m)
+    .map(|i| {
+      let r = ((i as f64) + 0.5).sqrt() / (m as f64).sqrt();
+      let angle = (i as f64) * golden_angle;
+      (r * angle.cos(), r * angle.sin())
+    })
+    .collect();
+
+  // Fruchterman-Reingold on the unit square [-1, 1]^2.
+  let w = 2.0_f64;
+  let h = 2.0_f64;
+  let area = w * h;
+  let k = (area / (m as f64)).sqrt();
+  let iterations = 120;
+  let mut temp = w * 0.1;
+  let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
+
+  for _ in 0..iterations {
+    let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
+
+    // Repulsive force between every pair.
+    for i in 0..m {
+      for j in (i + 1)..m {
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d2 = dx * dx + dy * dy;
+        let d = d2.sqrt().max(1e-4);
+        let force = (k * k) / d;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 += fx;
+        disp[i].1 += fy;
+        disp[j].0 -= fx;
+        disp[j].1 -= fy;
+      }
+    }
+
+    // Attractive force along edges (each undirected edge is listed twice
+    // in `adj`, so we guard on i < j to count it once).
+    for i in 0..m {
+      for &j in &adj[i] {
+        if i >= j {
+          continue;
+        }
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d = (dx * dx + dy * dy).sqrt().max(1e-4);
+        let force = (d * d) / k;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 -= fx;
+        disp[i].1 -= fy;
+        disp[j].0 += fx;
+        disp[j].1 += fy;
+      }
+    }
+
+    // Apply displacement, clamped by the current temperature, and keep
+    // everything inside [-w/2, w/2] × [-h/2, h/2].
+    for i in 0..m {
+      let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
+        .sqrt()
+        .max(1e-9);
+      let step = dlen.min(temp);
+      pos[i].0 += disp[i].0 / dlen * step;
+      pos[i].1 += disp[i].1 / dlen * step;
+      pos[i].0 = pos[i].0.clamp(-w / 2.0, w / 2.0);
+      pos[i].1 = pos[i].1.clamp(-h / 2.0, h / 2.0);
+    }
+
+    temp *= cool;
+  }
+
+  pos
+}
+
+/// Pack per-component layouts into a global [-1, 1]^2 grid. Cells in the
+/// grid are weighted roughly by sqrt(component_size) so a 34-node cluster
+/// visually dominates a 2-node cluster, but tiny components still get a
+/// visible amount of space.
+fn pack_components(
+  components: &[Vec<usize>],
+  component_positions: &[Vec<(f64, f64)>],
+  n: usize,
+) -> Vec<(f64, f64)> {
+  let mut result = vec![(0.0, 0.0); n];
+  let k = components.len();
+  if k == 0 {
+    return result;
+  }
+
+  // Arrange cells in a near-square grid. For k = 8 this gives cols = 3.
+  let cols = (k as f64).sqrt().ceil() as usize;
+  let rows = k.div_ceil(cols);
+
+  let cell_w = 2.0 / cols as f64;
+  let cell_h = 2.0 / rows as f64;
+
+  for (ci, (comp, ps)) in components
+    .iter()
+    .zip(component_positions.iter())
+    .enumerate()
+  {
+    let row = ci / cols;
+    let col = ci % cols;
+
+    // Center of this cell in global coords, shifting rows so the grid is
+    // centered around (0, 0) and rows go top→bottom (matches usual reading
+    // order once the y-axis is interpreted as math-up).
+    let cell_cx = -1.0 + (col as f64 + 0.5) * cell_w;
+    let cell_cy = 1.0 - (row as f64 + 0.5) * cell_h;
+
+    // Bounding box of this component's local layout.
+    let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &(x, y) in ps {
+      if x < min_x {
+        min_x = x;
+      }
+      if x > max_x {
+        max_x = x;
+      }
+      if y < min_y {
+        min_y = y;
+      }
+      if y > max_y {
+        max_y = y;
+      }
+    }
+    let local_cx = (min_x + max_x) / 2.0;
+    let local_cy = (min_y + max_y) / 2.0;
+    let local_w = (max_x - min_x).max(1e-6);
+    let local_h = (max_y - min_y).max(1e-6);
+
+    // Fit the component into ~70% of its cell (leaves a visible gutter
+    // between clusters), then scale by sqrt(size)/sqrt(max_size) so
+    // larger clusters look larger while tiny ones still get a minimum
+    // size so single-node components don't shrink to nothing.
+    let max_size = components.iter().map(|c| c.len()).max().unwrap_or(1);
+    let size_scale =
+      ((comp.len() as f64).sqrt() / (max_size as f64).sqrt()).max(0.35);
+    let fit_scale = (cell_w * 0.7 / local_w).min(cell_h * 0.7 / local_h);
+    let scale = fit_scale * size_scale;
+
+    for (i, &node_idx) in comp.iter().enumerate() {
+      let (px, py) = ps[i];
+      result[node_idx] = (
+        cell_cx + (px - local_cx) * scale,
+        cell_cy + (py - local_cy) * scale,
+      );
+    }
+  }
+
+  result
 }
 
 fn snap_coord(v: f64) -> f64 {

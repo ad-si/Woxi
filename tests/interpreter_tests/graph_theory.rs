@@ -921,4 +921,168 @@ mod two_way_rule {
       "1"
     );
   }
+
+  #[test]
+  fn short_arrow_edges_get_proportionally_smaller_arrowheads() {
+    // Regression: multi-component cluster graphs pack many short edges
+    // into small cells. The arrowhead must scale down with the edge so
+    // it doesn't swallow the whole line. For each directed edge we
+    // verify that the arrowhead's triangle is no larger than ~half the
+    // edge's polyline length in pixel space.
+    let svg = interpret(
+      "ExportString[Graph[Table[i -> Mod[i^2, 74], {i, 100}]], \"SVG\"]",
+    )
+    .unwrap();
+
+    // Extract (polyline points, polygon points) pairs — in graph
+    // rendering each directed edge produces one polyline followed
+    // immediately by one arrowhead polygon.
+    let polyline_re = "<polyline points=\"";
+    let polygon_re = "<polygon points=\"";
+
+    let mut idx = 0;
+    let mut pairs_checked = 0;
+    while let Some(p_off) = svg[idx..].find(polyline_re) {
+      let p_start = idx + p_off + polyline_re.len();
+      let p_end = svg[p_start..].find('"').map(|e| p_start + e).unwrap();
+      let polyline_pts_str = &svg[p_start..p_end];
+
+      // Find the next polygon after this polyline.
+      let after = p_end;
+      let Some(g_off) = svg[after..].find(polygon_re) else {
+        break;
+      };
+      let g_start = after + g_off + polygon_re.len();
+      let g_end = svg[g_start..].find('"').map(|e| g_start + e).unwrap();
+      let polygon_pts_str = &svg[g_start..g_end];
+
+      idx = g_end;
+
+      // Parse points like "x,y x,y ..." into Vec<(f64,f64)>.
+      let parse = |s: &str| -> Vec<(f64, f64)> {
+        s.split_whitespace()
+          .filter_map(|tok| {
+            let (a, b) = tok.split_once(',')?;
+            Some((a.parse().ok()?, b.parse().ok()?))
+          })
+          .collect()
+      };
+      let pl = parse(polyline_pts_str);
+      let pg = parse(polygon_pts_str);
+      if pl.len() < 2 || pg.len() != 3 {
+        continue;
+      }
+
+      // Polyline length in pixels, and bounding-box diagonal.
+      let mut line_len = 0.0_f64;
+      let (mut minx, mut maxx) = (f64::INFINITY, f64::NEG_INFINITY);
+      let (mut miny, mut maxy) = (f64::INFINITY, f64::NEG_INFINITY);
+      for &(x, y) in &pl {
+        if x < minx {
+          minx = x;
+        }
+        if x > maxx {
+          maxx = x;
+        }
+        if y < miny {
+          miny = y;
+        }
+        if y > maxy {
+          maxy = y;
+        }
+      }
+      for w in pl.windows(2) {
+        line_len +=
+          ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
+      }
+      let bbox_diag = ((maxx - minx).powi(2) + (maxy - miny).powi(2)).sqrt();
+
+      // Arrowhead length = distance from tip to midpoint of the base.
+      // The tip is vertex 0 of the polygon (emitted first in graphics.rs).
+      let tip = pg[0];
+      let base_mid = ((pg[1].0 + pg[2].0) / 2.0, (pg[1].1 + pg[2].1) / 2.0);
+      let head_len =
+        ((tip.0 - base_mid.0).powi(2) + (tip.1 - base_mid.1).powi(2)).sqrt();
+
+      // Skip pathologically collapsed edges (e.g. FR layouts sometimes
+      // put two nodes on top of each other, producing a line of length
+      // < 1 px). The arrow is invisible anyway.
+      if line_len < 2.0 {
+        continue;
+      }
+
+      // Head must be small compared to both the path length and the
+      // shape's bbox diagonal (the latter catches tight self-loops).
+      let shape_size = line_len.min(bbox_diag).max(1.0);
+      assert!(
+        head_len <= shape_size * 0.6 + 0.5,
+        "arrowhead too large: head_len={head_len:.2} shape_size={shape_size:.2}"
+      );
+      pairs_checked += 1;
+    }
+    assert!(
+      pairs_checked >= 50,
+      "expected to find many arrow edges, got {pairs_checked}"
+    );
+  }
+
+  #[test]
+  fn multi_component_graph_renders_separated_clusters() {
+    // Regression: Graph[Table[i -> Mod[i^2, 74], {i, 100}]] has 8
+    // weakly-connected components (sizes 34, 32, 12, 10, 5, 5, 2, 1).
+    // A plain circular layout would place all 101 vertices on a single
+    // circle and hide the cluster structure, so we lay out each
+    // component separately and pack them into a grid. Verify that the
+    // SVG contains all 101 vertices and that their centers are not all
+    // on a common circle (which would indicate the old circular layout
+    // is still being used for multi-component graphs).
+    let svg = interpret(
+      "ExportString[Graph[Table[i -> Mod[i^2, 74], {i, 100}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+
+    // Collect vertex centers from the rendered <ellipse cx="..." cy="..." ...> tags.
+    let centers: Vec<(f64, f64)> = svg
+      .match_indices("<ellipse")
+      .filter_map(|(i, _)| {
+        let rest = &svg[i..];
+        let cx_idx = rest.find("cx=\"")? + 4;
+        let cx_end = rest[cx_idx..].find('"')? + cx_idx;
+        let cy_idx = rest.find("cy=\"")? + 4;
+        let cy_end = rest[cy_idx..].find('"')? + cy_idx;
+        let cx: f64 = rest[cx_idx..cx_end].parse().ok()?;
+        let cy: f64 = rest[cy_idx..cy_end].parse().ok()?;
+        Some((cx, cy))
+      })
+      .collect();
+    assert_eq!(
+      centers.len(),
+      101,
+      "expected 101 rendered vertices, got {}",
+      centers.len()
+    );
+
+    // If every vertex were on a common circle its distance to the bbox
+    // centroid would be nearly constant. Check that the stddev of those
+    // distances is substantially larger than 5% of the mean — i.e. the
+    // layout is clearly not a single circle.
+    let cx0: f64 =
+      centers.iter().map(|p| p.0).sum::<f64>() / centers.len() as f64;
+    let cy0: f64 =
+      centers.iter().map(|p| p.1).sum::<f64>() / centers.len() as f64;
+    let dists: Vec<f64> = centers
+      .iter()
+      .map(|&(x, y)| ((x - cx0).powi(2) + (y - cy0).powi(2)).sqrt())
+      .collect();
+    let mean = dists.iter().sum::<f64>() / dists.len() as f64;
+    let var = dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
+      / dists.len() as f64;
+    let stddev = var.sqrt();
+    assert!(
+      stddev / mean > 0.15,
+      "vertices look like a single circle (stddev/mean = {:.3})",
+      stddev / mean
+    );
+  }
 }
