@@ -6911,16 +6911,16 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
 
 /// Extract SVG strings from a list of evaluated expressions.
-/// Each item must be an Expr::Graphics to be included.
+/// Items that are already Expr::Graphics are used directly; other
+/// expressions (Graph, TreeForm, Dataset, plain values, ...) are
+/// converted to SVG via the shared `expr_to_svg` helper so they render
+/// alongside native graphics in GraphicsRow/Column/Grid layouts.
 fn extract_svgs_from_list(items: &[Expr]) -> Vec<String> {
   items
     .iter()
     .filter_map(|item| {
-      if let Expr::Graphics { svg, .. } = item {
-        Some(svg.clone())
-      } else {
-        None
-      }
+      let svg = crate::evaluator::expr_to_svg(item);
+      if svg.is_empty() { None } else { Some(svg) }
     })
     .collect()
 }

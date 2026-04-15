@@ -1650,7 +1650,7 @@ fn boxes_to_text_svg(boxes: &Expr) -> String {
 }
 
 /// Convert an expression to its SVG string representation.
-fn expr_to_svg(expr: &Expr) -> String {
+pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   match expr {
     Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
     Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
