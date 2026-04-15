@@ -514,7 +514,7 @@ pub fn dispatch_math_functions(
     "Rescale" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::rescale_ast(args));
     }
-    "Normalize" if args.len() == 1 => {
+    "Normalize" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::normalize_ast(args));
     }
     "Norm" if args.len() == 1 || args.len() == 2 => {

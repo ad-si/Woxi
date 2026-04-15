@@ -4357,6 +4357,19 @@ mod join_non_list {
   }
 
   #[test]
+  fn normalize_with_norm_function() {
+    assert_eq!(interpret("Normalize[{3, 4}, Norm]").unwrap(), "{3/5, 4/5}");
+  }
+
+  #[test]
+  fn normalize_with_custom_norm() {
+    assert_eq!(
+      interpret("Normalize[{1, 2, 3}, (Max[Abs[#]] &)]").unwrap(),
+      "{1/3, 2/3, 1}"
+    );
+  }
+
+  #[test]
   fn keys_list_of_rules() {
     assert_eq!(interpret("Keys[{a -> x, b -> y}]").unwrap(), "{a, b}");
   }
