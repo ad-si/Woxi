@@ -6741,6 +6741,31 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
 struct ParsedSvg {
   view_box: String,
   inner_content: String,
+  /// Natural display width from the root `width="..."` attribute, if present.
+  /// Falls back to the viewBox width when the attribute is missing. Used by
+  /// `combine_svgs_grid` to pick a default total width that lets each cell
+  /// render near its native size instead of being scaled down to illegibility.
+  nat_w: f64,
+  /// Natural display height from the root `height="..."` attribute, if
+  /// present. Falls back to the viewBox height when the attribute is missing.
+  nat_h: f64,
+}
+
+/// Parse a numeric attribute value like `width="360"` or `height="225px"` from
+/// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
+fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
+  // Only consider the first `<svg ...>` opening tag to avoid matching
+  // attributes on nested cells.
+  let tag_end = svg.find('>')?;
+  let header = &svg[..tag_end];
+  let needle = format!("{attr}=\"");
+  let start = header.find(&needle)? + needle.len();
+  let rel_end = header[start..].find('"')?;
+  let raw = header[start..start + rel_end].trim();
+  let numeric_end = raw
+    .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+    .unwrap_or(raw.len());
+  raw[..numeric_end].parse().ok()
 }
 
 /// Parse width, height, and viewBox from an SVG string
@@ -6759,6 +6784,7 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   if parts.len() < 4 {
     return None;
   }
+  let (vb_w, vb_h) = (parts[2], parts[3]);
 
   // Extract inner content (everything between first > and last </svg>)
   let inner_start = svg.find('>')? + 1;
@@ -6771,137 +6797,122 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   let inner_end = svg.rfind("</svg>")?;
   let inner_content = svg[inner_start..inner_end].to_string();
 
+  // Prefer the root width/height attributes (the natural display size);
+  // fall back to the viewBox dimensions when absent.
+  let nat_w = parse_svg_numeric_attr(svg, "width").unwrap_or(vb_w);
+  let nat_h = parse_svg_numeric_attr(svg, "height").unwrap_or(vb_h);
+
   Some(ParsedSvg {
     view_box,
     inner_content,
+    nat_w,
+    nat_h,
   })
 }
 
 /// Combine multiple SVG strings arranged as rows of cells into a single SVG.
-/// `rows` is a Vec of rows, each row is a Vec of SVG strings.
+/// `rows` is a Vec of rows, each row is a Vec of SVG strings. Used for 2-D
+/// and 3-D lists of graphics at the top level of an expression.
+///
+/// Uses the same natural-dimension layout as `GraphicsRow`/`GraphicsGrid`
+/// so each cell renders near its native size (instead of being crammed
+/// into fixed 80-pixel squares that make plots illegible).
 pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
-  if rows.is_empty() {
-    return None;
-  }
-
-  // Determine cell size based on grid dimensions
-  let num_rows = rows.len();
-  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
-  if num_cols == 0 {
-    return None;
-  }
-
-  let gap = 4.0_f64;
-  let cell_size = if num_rows == 1 { 100.0 } else { 80.0 };
-
-  let total_width = num_cols as f64 * cell_size + (num_cols as f64 - 1.0) * gap;
-  let total_height =
-    num_rows as f64 * cell_size + (num_rows as f64 - 1.0) * gap;
-
-  let mut svg = String::with_capacity(4096);
-  svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    total_width.ceil() as u32,
-    total_height.ceil() as u32,
-    total_width.ceil() as u32,
-    total_height.ceil() as u32,
-  ));
-
-  for (i, row) in rows.iter().enumerate() {
-    for (j, cell_svg) in row.iter().enumerate() {
-      if let Some(parsed) = parse_svg_dimensions(cell_svg) {
-        let x = j as f64 * (cell_size + gap);
-        let y = i as f64 * (cell_size + gap);
-        svg.push_str(&format!(
-          "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{}\">\n",
-          x.round() as u32,
-          y.round() as u32,
-          cell_size as u32,
-          cell_size as u32,
-          parsed.view_box,
-        ));
-        svg.push_str(&parsed.inner_content);
-        svg.push_str("</svg>\n");
-      }
-    }
-  }
-
-  svg.push_str("</svg>");
-  Some(svg)
+  combine_svgs_grid(rows, &default_layout_options())
 }
 
 /// Render a 1-D list of SVGs as `{ svg₁, svg₂, … }` with brace/comma text
 /// interleaved between the nested graphic cells.
+///
+/// Uses the same natural-dimension layout as `GraphicsRow` so each cell
+/// renders near its native size, with brace and comma decorations sized
+/// proportionally to the row height.
 pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
   if svgs.is_empty() {
     return None;
   }
 
-  let cell_size = 100.0_f64;
-  let font_size = 18.0_f64;
-  let brace_w = 12.0_f64; // width reserved for `{` / `}`
-  let comma_w = 20.0_f64; // width reserved for `, `
-  let height = cell_size;
-  let text_y = height / 2.0;
+  // Lay out the cells as a single row using the shared grid engine.
+  let rows = vec![svgs.to_vec()];
+  let layout = compute_grid_layout(&rows, &default_layout_options())?;
+  let row = layout.rows.first()?;
+  if row.cells.is_empty() {
+    return None;
+  }
 
-  // Total width: { + cells with commas + }
-  let n = svgs.len() as f64;
-  let total_width = brace_w + n * cell_size + (n - 1.0) * comma_w + brace_w;
+  // Decoration sizes scale with the row height so braces/commas match
+  // the visual weight of the contained graphics.
+  let row_h = row.row_h;
+  let font_size = (row_h * 0.18).max(12.0);
+  let brace_w = (row_h * 0.12).max(10.0);
+  let comma_w = (row_h * 0.08).max(6.0);
+  let text_y = row_h / 2.0;
+
+  // Extra horizontal space needed for braces and per-gap commas. The
+  // grid layout already placed cells at x = Σ(prev cell_w + h_gap); we
+  // shift everything right by brace_w and inject extra comma_w slots
+  // into each gap between cells.
+  let n = row.cells.len();
+  let n_gaps = (n - 1) as f64;
+  let total_width = layout.total_width + 2.0 * brace_w + n_gaps * comma_w;
 
   let mut out = String::with_capacity(4096);
   out.push_str(&format!(
     "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
      xmlns=\"http://www.w3.org/2000/svg\">\n",
     total_width.ceil() as u32,
-    height as u32,
+    row_h.ceil() as u32,
     total_width.ceil() as u32,
-    height as u32,
+    row_h.ceil() as u32,
   ));
-
-  let mut x = 0.0_f64;
 
   let text_fill = theme().text_primary;
 
   // Opening brace
   out.push_str(&format!(
     "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
+     font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\">{{</text>\n",
-    x + brace_w / 2.0,
+    brace_w / 2.0,
   ));
-  x += brace_w;
 
-  for (i, cell_svg) in svgs.iter().enumerate() {
+  // Place each cell at its layout-computed x, shifted by brace_w plus
+  // one comma_w for every preceding gap.
+  for (i, cell) in row.cells.iter().enumerate() {
+    let shift = brace_w + (i as f64) * comma_w;
+    let cell_x = cell.x + shift;
+
     if i > 0 {
-      // Comma separator
+      // Comma goes in the middle of the slot between the previous cell
+      // and this one, i.e. just left of the current shifted cell x.
+      let comma_center = cell_x - comma_w / 2.0;
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-         font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
+         font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
          dominant-baseline=\"central\">,</text>\n",
-        x + comma_w / 2.0,
+        comma_center,
       ));
-      x += comma_w;
     }
 
-    // Nested graphic cell
-    if let Some(parsed) = parse_svg_dimensions(cell_svg) {
-      out.push_str(&format!(
-        "<svg x=\"{:.0}\" y=\"0\" width=\"{cell_size:.0}\" \
-         height=\"{cell_size:.0}\" viewBox=\"{}\">\n",
-        x, parsed.view_box,
-      ));
-      out.push_str(&parsed.inner_content);
-      out.push_str("</svg>\n");
-    }
-    x += cell_size;
+    out.push_str(&format!(
+      "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+      cell_x,
+      cell.y_off,
+      cell.w,
+      cell.h,
+      cell.view_box,
+    ));
+    out.push_str(&cell.inner);
+    out.push_str("</svg>\n");
   }
 
-  // Closing brace
+  // Closing brace — sits just past the last cell's right edge.
+  let close_x = total_width - brace_w / 2.0;
   out.push_str(&format!(
     "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
+     font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\">}}</text>\n",
-    x + brace_w / 2.0,
+    close_x,
   ));
 
   out.push_str("</svg>");
@@ -7046,26 +7057,45 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
   opts
 }
 
-/// Get the aspect ratio (width/height) from a viewBox string "x y w h".
-fn viewbox_aspect(vb: &str) -> f64 {
-  let parts: Vec<f64> = vb
-    .split_whitespace()
-    .filter_map(|s| s.parse().ok())
-    .collect();
-  if parts.len() >= 4 && parts[3] > 0.0 {
-    parts[2] / parts[3]
-  } else {
-    1.0 // fallback to square
-  }
+/// A single laid-out cell in a grid: position within its row plus
+/// scaled display dimensions and the raw SVG fragment to emit.
+struct LayoutCell {
+  x: f64,
+  y_off: f64,
+  w: f64,
+  h: f64,
+  view_box: String,
+  inner: String,
 }
 
-/// Combine SVG strings in a grid layout with configurable spacing and size.
-/// Uses aspect-ratio-aware sizing: within each row, all cells share the same
-/// height and each cell's width is determined by its native aspect ratio.
-fn combine_svgs_grid(
+struct GridRowLayout {
+  cells: Vec<LayoutCell>,
+  row_h: f64,
+}
+
+/// Computed layout for a grid of graphics. All coordinates are in
+/// final pixel space (already scaled). Row `y` positions must be derived
+/// by walking `rows` in order and adding `v_gap` between them.
+struct GridLayout {
+  rows: Vec<GridRowLayout>,
+  total_width: f64,
+  total_height: f64,
+  v_gap: f64,
+}
+
+/// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
+///
+/// Each cell keeps its natural width and height (parsed from the root
+/// `width="..."` / `height="..."` attributes of each input SVG), scaled by a
+/// single uniform factor so the widest row fits the target total width.
+/// Within a row, cells with shorter natural heights are vertically centered,
+/// which keeps widths consistent across cells of different aspect ratios —
+/// e.g. a NumberLinePlot (natively 360×105) and a Plot (natively 360×225)
+/// both render at 360 wide instead of the NumberLinePlot ballooning out.
+fn compute_grid_layout(
   rows: &[Vec<String>],
   opts: &LayoutOptions,
-) -> Option<String> {
+) -> Option<GridLayout> {
   if rows.is_empty() {
     return None;
   }
@@ -7073,17 +7103,15 @@ fn combine_svgs_grid(
     return None;
   }
 
-  // Parse all SVGs and collect their viewBox + inner content.
-  // For each row, collect (viewBox, inner_content, aspect_ratio).
-  let parsed_rows: Vec<Vec<(String, String, f64)>> = rows
+  // Parse all SVGs: (viewBox, inner_content, nat_w, nat_h).
+  let parsed_rows: Vec<Vec<(String, String, f64, f64)>> = rows
     .iter()
     .map(|row| {
       row
         .iter()
         .filter_map(|svg| {
           let p = parse_svg_dimensions(svg)?;
-          let ar = viewbox_aspect(&p.view_box);
-          Some((p.view_box, p.inner_content, ar))
+          Some((p.view_box, p.inner_content, p.nat_w, p.nat_h))
         })
         .collect()
     })
@@ -7093,96 +7121,109 @@ fn combine_svgs_grid(
     return None;
   }
 
-  // Default total width when no ImageSize given
-  let default_total_w = 360.0_f64;
+  // Natural row widths (sum of child nat_w) and natural row heights
+  // (max of child nat_h). These drive the default layout before any
+  // target-width scaling.
+  let row_nat_dims: Vec<(f64, f64)> = parsed_rows
+    .iter()
+    .map(|row| {
+      let w: f64 = row.iter().map(|(_, _, nw, _)| *nw).sum();
+      let h: f64 = row.iter().map(|(_, _, _, nh)| *nh).fold(0.0_f64, f64::max);
+      (w, h)
+    })
+    .collect();
+  let max_nat_row_w = row_nat_dims
+    .iter()
+    .map(|(w, _)| *w)
+    .fold(0.0_f64, f64::max)
+    .max(10.0);
+
+  // Default total width: widest natural row + padding for Scaled[0.1]
+  // gaps so cells aren't compressed below their native resolution.
+  let max_cols = parsed_rows.iter().map(|r| r.len()).max().unwrap_or(1);
+  let gap_pad = if max_cols > 1 {
+    1.0 + 0.1 * (max_cols as f64 - 1.0) / max_cols as f64
+  } else {
+    1.0
+  };
+  let default_total_w = max_nat_row_w * gap_pad;
   let target_w = opts.target_width.unwrap_or(default_total_w);
 
-  // For each row: compute cell widths and row height given target_w.
-  // In a row, all cells have the same height h.
-  // cell_i width = aspect_i * h
-  // sum(aspect_i * h) + (n-1)*h_gap = target_w
-  // h = (target_w - (n-1)*h_gap) / sum(aspect_i)
-  // But h_gap may depend on h (if Scaled), so we use an initial estimate
-  // and iterate once.
-  struct RowLayout {
-    cells: Vec<(f64, f64, String, String)>, // (x, cell_w, viewBox, inner)
-    row_h: f64,
+  // Uniform scale: the same factor applies to every cell so relative
+  // proportions across rows stay intact.
+  let mut scale = target_w / default_total_w;
+
+  // If an explicit height is also given, shrink further so the whole
+  // grid fits. The natural total height is sum of row maxes plus the
+  // per-row v_gap estimated from the average natural row height.
+  if let Some(total_h) = opts.target_height {
+    let nat_total_h: f64 = row_nat_dims.iter().map(|(_, h)| *h).sum();
+    let num_nonempty = row_nat_dims.iter().filter(|(_, h)| *h > 0.0).count();
+    if nat_total_h > 0.0 && num_nonempty > 0 {
+      let avg_row_h = nat_total_h / num_nonempty as f64;
+      let v_gap_nat = opts.v_spacing.to_px(avg_row_h);
+      let nat_total_h_with_gaps =
+        nat_total_h + (num_nonempty as f64 - 1.0).max(0.0) * v_gap_nat;
+      let scale_h = total_h / nat_total_h_with_gaps.max(1e-6);
+      // Use whichever constraint is tighter so both dimensions fit.
+      scale = scale.min(scale_h);
+    }
   }
 
-  let mut row_layouts: Vec<RowLayout> = Vec::new();
+  // Per-cell layout: keep natural aspect ratios, vertically center
+  // shorter cells within their row.
+  let mut row_layouts: Vec<GridRowLayout> = Vec::new();
 
   for parsed_row in &parsed_rows {
     if parsed_row.is_empty() {
-      row_layouts.push(RowLayout {
+      row_layouts.push(GridRowLayout {
         cells: Vec::new(),
         row_h: 0.0,
       });
       continue;
     }
-    let n = parsed_row.len();
-    let sum_aspect: f64 = parsed_row.iter().map(|(_, _, ar)| ar).sum();
 
-    // First estimate of row_h (assume h_gap = 0 initially for Scaled)
-    let h_est = if sum_aspect > 0.0 {
-      target_w / sum_aspect
-    } else {
-      target_w / n as f64
-    };
+    // Scaled per-cell dimensions (enforce a minimum so pathological
+    // zero-sized inputs don't vanish entirely).
+    let cell_dims: Vec<(f64, f64)> = parsed_row
+      .iter()
+      .map(|(_, _, nw, nh)| ((nw * scale).max(1.0), (nh * scale).max(1.0)))
+      .collect();
 
-    // Resolve h_gap using estimated cell width
-    let avg_cell_w = if sum_aspect > 0.0 {
-      h_est * sum_aspect / n as f64
-    } else {
-      h_est
-    };
+    let row_h = cell_dims
+      .iter()
+      .map(|(_, h)| *h)
+      .fold(0.0_f64, f64::max)
+      .max(10.0);
+
+    // Horizontal gap: Scaled is resolved against the average cell width.
+    let avg_cell_w: f64 =
+      cell_dims.iter().map(|(w, _)| *w).sum::<f64>() / cell_dims.len() as f64;
     let h_gap = opts.h_spacing.to_px(avg_cell_w);
 
-    // Now compute actual row height with gaps accounted for
-    let available_w = target_w - (n as f64 - 1.0).max(0.0) * h_gap;
-    let row_h = if sum_aspect > 0.0 {
-      (available_w / sum_aspect).max(10.0)
-    } else {
-      (available_w / n as f64).max(10.0)
-    };
-
-    // Lay out cells left-to-right
     let mut x = 0.0_f64;
-    let mut cells = Vec::new();
-    for (vb, inner, ar) in parsed_row {
-      let cell_w = ar * row_h;
-      cells.push((x, cell_w, vb.clone(), inner.clone()));
-      x += cell_w + h_gap;
+    let mut cells = Vec::with_capacity(parsed_row.len());
+    for ((vb, inner, _, _), (cw, ch)) in parsed_row.iter().zip(cell_dims.iter())
+    {
+      let y_off = ((row_h - ch) / 2.0).max(0.0);
+      cells.push(LayoutCell {
+        x,
+        y_off,
+        w: *cw,
+        h: *ch,
+        view_box: vb.clone(),
+        inner: inner.clone(),
+      });
+      x += cw + h_gap;
     }
 
-    row_layouts.push(RowLayout { cells, row_h });
+    row_layouts.push(GridRowLayout { cells, row_h });
   }
 
-  // If explicit height given, scale rows to fit
-  if let Some(total_h) = opts.target_height {
-    let num_nonempty = row_layouts.iter().filter(|r| r.row_h > 0.0).count();
-    if num_nonempty > 0 {
-      let current_h: f64 = row_layouts.iter().map(|r| r.row_h).sum();
-      // Estimate v_gap from average row height
-      let avg_row_h = current_h / num_nonempty as f64;
-      let v_gap = opts.v_spacing.to_px(avg_row_h);
-      let available_h = total_h - (num_nonempty as f64 - 1.0).max(0.0) * v_gap;
-      if current_h > 0.0 && available_h > 0.0 {
-        let scale = available_h / current_h;
-        for layout in &mut row_layouts {
-          layout.row_h *= scale;
-          for cell in &mut layout.cells {
-            cell.0 *= scale; // x
-            cell.1 *= scale; // cell_w
-          }
-        }
-      }
-    }
-  }
-
-  // Compute total dimensions
+  // Compute total dimensions.
   let total_width = row_layouts
     .iter()
-    .map(|r| r.cells.last().map_or(0.0, |(x, w, _, _)| x + w))
+    .map(|r| r.cells.last().map_or(0.0, |c: &LayoutCell| c.x + c.w))
     .fold(0.0_f64, f64::max);
   let v_gap = if !row_layouts.is_empty() {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
@@ -7196,33 +7237,68 @@ fn combine_svgs_grid(
       .max(0.0)
       * v_gap;
 
+  Some(GridLayout {
+    rows: row_layouts,
+    total_width,
+    total_height,
+    v_gap,
+  })
+}
+
+/// Write a single `<svg>` cell element to `out`.
+fn write_cell_svg(out: &mut String, cell: &LayoutCell, y: f64) {
+  out.push_str(&format!(
+    "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+    cell.x,
+    y + cell.y_off,
+    cell.w,
+    cell.h,
+    cell.view_box,
+  ));
+  out.push_str(&cell.inner);
+  out.push_str("</svg>\n");
+}
+
+/// Combine SVG strings in a grid layout with configurable spacing and size.
+/// See `compute_grid_layout` for the sizing rules.
+fn combine_svgs_grid(
+  rows: &[Vec<String>],
+  opts: &LayoutOptions,
+) -> Option<String> {
+  let layout = compute_grid_layout(rows, opts)?;
+
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
     "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    total_width.ceil() as u32,
-    total_height.ceil() as u32,
-    total_width.ceil() as u32,
-    total_height.ceil() as u32,
+    layout.total_width.ceil() as u32,
+    layout.total_height.ceil() as u32,
+    layout.total_width.ceil() as u32,
+    layout.total_height.ceil() as u32,
   ));
 
   let mut y = 0.0_f64;
-  for layout in &row_layouts {
-    if layout.row_h <= 0.0 {
+  for row in &layout.rows {
+    if row.row_h <= 0.0 {
       continue;
     }
-    for (cx, cw, vb, inner) in &layout.cells {
-      svg.push_str(&format!(
-        "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
-        cx, y, cw, layout.row_h, vb,
-      ));
-      svg.push_str(inner);
-      svg.push_str("</svg>\n");
+    for cell in &row.cells {
+      write_cell_svg(&mut svg, cell, y);
     }
-    y += layout.row_h + v_gap;
+    y += row.row_h + layout.v_gap;
   }
 
   svg.push_str("</svg>");
   Some(svg)
+}
+
+/// Default layout options (Scaled[0.1] spacing, natural sizing).
+fn default_layout_options() -> LayoutOptions {
+  LayoutOptions {
+    h_spacing: SpacingSpec::default_val(),
+    v_spacing: SpacingSpec::default_val(),
+    target_width: None,
+    target_height: None,
+  }
 }
 
 /// GraphicsRow[{g1, g2, ...}] or GraphicsRow[{g1, g2, ...}, opts...]
