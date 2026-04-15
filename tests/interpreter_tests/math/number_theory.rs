@@ -116,6 +116,60 @@ mod fibonacci_builtin {
   fn fibonacci_symbolic() {
     assert_eq!(interpret("Fibonacci[x]").unwrap(), "Fibonacci[x]");
   }
+
+  #[test]
+  fn fibonacci_polynomial_n_one() {
+    // F_1(x) = 1
+    assert_eq!(interpret("Fibonacci[1, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_n_zero() {
+    // F_0(x) = 0
+    assert_eq!(interpret("Fibonacci[0, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_small() {
+    // F_2(x) = x; F_3(x) = 1 + x^2; F_4(x) = 2 x + x^3
+    assert_eq!(interpret("Fibonacci[2, x]").unwrap(), "x");
+    assert_eq!(interpret("Fibonacci[3, x]").unwrap(), "1 + x^2");
+    assert_eq!(interpret("Fibonacci[4, x]").unwrap(), "2*x + x^3");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_six() {
+    // F_6(x) = 3 x + 4 x^3 + x^5
+    assert_eq!(interpret("Fibonacci[6, x]").unwrap(), "3*x + 4*x^3 + x^5");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_ten() {
+    // F_10(x) = 5 x + 20 x^3 + 21 x^5 + 8 x^7 + x^9
+    assert_eq!(
+      interpret("Fibonacci[10, x]").unwrap(),
+      "5*x + 20*x^3 + 21*x^5 + 8*x^7 + x^9"
+    );
+  }
+
+  #[test]
+  fn fibonacci_polynomial_at_one_matches_fibonacci() {
+    // Fibonacci[n, 1] == Fibonacci[n]
+    assert_eq!(interpret("Fibonacci[10, 1]").unwrap(), "55");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_at_two() {
+    // Fibonacci[5, 2] = 29 (Pell numbers)
+    assert_eq!(interpret("Fibonacci[5, 2]").unwrap(), "29");
+  }
+
+  #[test]
+  fn fibonacci_polynomial_negative_index() {
+    // F_{-n}(x) = (-1)^{n+1} F_n(x)
+    // F_{-3}(x) = F_3(x) = 1 + x^2
+    assert_eq!(interpret("Fibonacci[-3, x]").unwrap(), "1 + x^2");
+  }
 }
 
 mod integer_exponent {

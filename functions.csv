@@ -513,7 +513,7 @@ MakeBoxes,Construct box form of an expression,✅,pure,3.0,516
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2.0,517
 RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6.0,518
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12.0,519
-Fibonacci,Returns the nth Fibonacci number,✅,pure,3.0,520
+Fibonacci,Returns the nth Fibonacci number or Fibonacci polynomial,✅,pure,3.0,520
 Tally,Counts occurrences of each distinct element,✅,pure,6.0,521
 MatrixRank,Returns the rank of a matrix,✅,pure,5.0,523
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
