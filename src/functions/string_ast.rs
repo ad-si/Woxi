@@ -1026,41 +1026,62 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  // Collect the list of sub-patterns (alternatives). A List in args[1]
-  // represents "match any of these substrings".
-  let subs: Vec<String> = match &args[1] {
-    Expr::List(items) => {
-      let mut v = Vec::with_capacity(items.len());
-      for it in items {
-        v.push(expr_to_str(it)?);
-      }
-      v
-    }
-    _ => vec![expr_to_str(&args[1])?],
-  };
+  // Check if the pattern is a RegularExpression
+  let regex_pat = extract_regex_pattern(&args[1]);
 
   let s_chars: Vec<char> = s.chars().collect();
-  // For each match: (start_index_0based, length)
+  // For each match: (start_index_0based, length_in_chars)
   let mut raw_matches: Vec<(usize, usize)> = Vec::new();
 
-  for sub in &subs {
-    if sub.is_empty() {
-      continue;
-    }
-    let sub_chars: Vec<char> = sub.chars().collect();
-    if sub_chars.len() > s_chars.len() {
-      continue;
-    }
-    for i in 0..=s_chars.len() - sub_chars.len() {
-      let mut matched = true;
-      for (j, &sub_char) in sub_chars.iter().enumerate() {
-        if s_chars[i + j] != sub_char {
-          matched = false;
-          break;
+  if let Some(pat) = regex_pat.as_ref() {
+    // Regex-based matching: find all overlapping matches
+    if let Ok(re) = regex::Regex::new(pat) {
+      for start_char in 0..s_chars.len() {
+        // Get byte offset for this character position
+        let byte_offset: usize =
+          s_chars[..start_char].iter().map(|c| c.len_utf8()).sum();
+        let substr = &s[byte_offset..];
+        if let Some(m) = re.find(substr)
+          && m.start() == 0
+          && !m.is_empty()
+        {
+          let match_chars = m.as_str().chars().count();
+          raw_matches.push((start_char, match_chars));
         }
       }
-      if matched {
-        raw_matches.push((i, sub_chars.len()));
+    }
+  } else {
+    // Literal substring matching
+    let subs: Vec<String> = match &args[1] {
+      Expr::List(items) => {
+        let mut v = Vec::with_capacity(items.len());
+        for it in items {
+          v.push(expr_to_str(it)?);
+        }
+        v
+      }
+      _ => vec![expr_to_str(&args[1])?],
+    };
+
+    for sub in &subs {
+      if sub.is_empty() {
+        continue;
+      }
+      let sub_chars: Vec<char> = sub.chars().collect();
+      if sub_chars.len() > s_chars.len() {
+        continue;
+      }
+      for i in 0..=s_chars.len() - sub_chars.len() {
+        let mut matched = true;
+        for (j, &sub_char) in sub_chars.iter().enumerate() {
+          if s_chars[i + j] != sub_char {
+            matched = false;
+            break;
+          }
+        }
+        if matched {
+          raw_matches.push((i, sub_chars.len()));
+        }
       }
     }
   }
