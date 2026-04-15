@@ -401,6 +401,43 @@ mod drop_extended {
       "{{a, c}, {d, f}}"
     );
   }
+
+  #[test]
+  fn drop_stepped_range() {
+    // Drop[list, {m, n, s}] drops elements m, m+s, m+2s, ..., up to n.
+    // Drop[{1,2,3,4,5}, {1,5,2}] -> drops positions 1, 3, 5 -> {2, 4}
+    assert_eq!(
+      interpret("Drop[{1, 2, 3, 4, 5}, {1, 5, 2}]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn drop_stepped_range_interior() {
+    // Drop[{a..g}, {2,6,2}] -> drops positions 2, 4, 6 (b, d, f)
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e, f, g}, {2, 6, 2}]").unwrap(),
+      "{a, c, e, g}"
+    );
+  }
+
+  #[test]
+  fn drop_stepped_range_negative_end() {
+    // Drop[{a..g}, {2,-2,2}] -> drops positions 2, 4, 6 (b, d, f)
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e, f, g}, {2, -2, 2}]").unwrap(),
+      "{a, c, e, g}"
+    );
+  }
+
+  #[test]
+  fn drop_stepped_range_step_three() {
+    // Drop[{a..g}, {1,-1,3}] -> drops positions 1, 4, 7 (a, d, g)
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e, f, g}, {1, -1, 3}]").unwrap(),
+      "{b, c, e, f}"
+    );
+  }
 }
 
 mod partition_extended {
