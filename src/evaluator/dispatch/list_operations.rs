@@ -300,8 +300,28 @@ pub fn dispatch_list_operations(
     "CountBy" if args.len() == 2 => {
       return Some(list_helpers_ast::count_by_ast(&args[0], &args[1]));
     }
-    "GroupBy" if args.len() == 2 => {
-      return Some(list_helpers_ast::group_by_ast(&args[0], &args[1]));
+    "GroupBy" if args.len() == 2 || args.len() == 3 => {
+      let result = list_helpers_ast::group_by_ast(&args[0], &args[1]);
+      if args.len() == 3 {
+        // GroupBy[list, f, reducer] - apply reducer to each group
+        return Some(result.and_then(|grouped| match &grouped {
+          Expr::Association(pairs) => {
+            let new_pairs: Result<Vec<(Expr, Expr)>, InterpreterError> = pairs
+              .iter()
+              .map(|(k, v)| {
+                let reduced =
+                  crate::functions::list_helpers_ast::apply_func_ast(
+                    &args[2], v,
+                  )?;
+                Ok((k.clone(), reduced))
+              })
+              .collect();
+            Ok(Expr::Association(new_pairs?))
+          }
+          _ => Ok(grouped),
+        }));
+      }
+      return Some(result);
     }
     "SortBy" if args.len() == 2 => {
       return Some(list_helpers_ast::sort_by_ast(&args[0], &args[1]));
