@@ -168,4 +168,14 @@ expression: "export_svg(\"ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Top]\")"
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3269,1750 3269,1790 "/>
 <polygon opacity="0.2" fill="#5E81B5" points="851,1688 1488,543 2124,1307 2760,162 3397,925 3397,100 851,100 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 1488,543 2124,1307 2760,162 3397,925 "/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1306.9" x2="680.0" y2="1306.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
 </svg>

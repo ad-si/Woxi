@@ -138,4 +138,11 @@ expression: "export_svg(\"ListPlot[{1, 4, 9, 16}, Filling -> 5]\")"
 <circle cx="1700" cy="1383" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="2548" cy="874" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="3397" cy="162" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1700.6" y1="1790.0" x2="1700.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2549.4" y1="1790.0" x2="2549.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1281.5" x2="680.0" y2="1281.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="772.2" x2="680.0" y2="772.2" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="263.0" x2="680.0" y2="263.0" stroke="#666" stroke-width="10"/>
 </svg>

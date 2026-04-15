@@ -74,8 +74,11 @@ expression: "export_svg(r#\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}},
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,114 499,114 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="500,1920 3499,1920 "/>
-<line x1="1250.0" y1="1920.0" x2="1250.0" y2="1960.0" stroke="#666" stroke-width="10"/>
-<line x1="2750.0" y1="1920.0" x2="2750.0" y2="1960.0" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="1570.3" x2="430.0" y2="1570.3" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="1010.0" x2="430.0" y2="1010.0" stroke="#666" stroke-width="10"/>
+<line x1="460.0" y1="449.7" x2="430.0" y2="449.7" stroke="#666" stroke-width="10"/>
+<line x1="1250.0" y1="1920.0" x2="1250.0" y2="1990.0" stroke="#666" stroke-width="10"/>
+<line x1="2750.0" y1="1920.0" x2="2750.0" y2="1990.0" stroke="#666" stroke-width="10"/>
 <line x1="1250.0" y1="225.5" x2="1250.0" y2="1346.2" stroke="#666" stroke-width="5.4"/>
 <line x1="1025.0" y1="225.5" x2="1475.0" y2="225.5" stroke="#666" stroke-width="5.4"/>
 <line x1="1025.0" y1="1346.2" x2="1475.0" y2="1346.2" stroke="#666" stroke-width="5.4"/>

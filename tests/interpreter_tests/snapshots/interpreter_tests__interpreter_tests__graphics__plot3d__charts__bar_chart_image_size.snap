@@ -73,4 +73,8 @@ expression: "export_svg(\"BarChart[{1, 2, 3}, ImageSize -> 400]\")"
 <rect x="854" y="1424" width="840" height="575" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>1</title></rect>
 <rect x="1904" y="849" width="840" height="1150" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>2</title></rect>
 <rect x="2954" y="273" width="840" height="1726" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<line x1="710.0" y1="2000.0" x2="680.0" y2="2000.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1424.2" x2="680.0" y2="1424.2" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="848.5" x2="680.0" y2="848.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="272.7" x2="680.0" y2="272.7" stroke="#666" stroke-width="10"/>
 </svg>

@@ -141,4 +141,12 @@ expression: "export_svg(\"ListPlot[{{1, 2}, {3, 5}, {7, 1}}]\")"
 <circle cx="851" cy="1307" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="1700" cy="162" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="3397" cy="1688" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="1276.2" y1="1790.0" x2="1276.2" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2973.8" y1="1790.0" x2="2973.8" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1306.9" x2="680.0" y2="1306.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="543.1" x2="680.0" y2="543.1" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="161.1" x2="680.0" y2="161.1" stroke="#666" stroke-width="10"/>
 </svg>

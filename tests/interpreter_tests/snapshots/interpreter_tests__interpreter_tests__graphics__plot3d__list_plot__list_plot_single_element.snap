@@ -167,4 +167,14 @@ expression: "export_svg(\"ListPlot[{5}]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3361,1750 3361,1790 "/>
 <circle cx="2124" cy="925" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="750.0" y1="1790.0" x2="750.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1437.5" y1="1790.0" x2="1437.5" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2812.5" y1="1790.0" x2="2812.5" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3500.0" y1="1790.0" x2="3500.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1750.0" x2="680.0" y2="1750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1337.5" x2="680.0" y2="1337.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.0" x2="680.0" y2="925.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="512.5" x2="680.0" y2="512.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="100.0" x2="680.0" y2="100.0" stroke="#666" stroke-width="10"/>
 </svg>

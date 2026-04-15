@@ -68,6 +68,10 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3227,1750 3227,1790 "/>
 <polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1749 3499,1749 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1749 1700,1749 2548,1749 3397,1749 "/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1700.6" y1="1790.0" x2="1700.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2549.4" y1="1790.0" x2="2549.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
 <text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">1</text>
 <text x="670.2" y="NaN" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">3</tspan></text>
 </svg>

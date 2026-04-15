@@ -189,4 +189,15 @@ expression: svg
 <rect x="750" y="1250" width="1099" height="499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[1, 3): 3</title></rect>
 <rect x="1849" y="1250" width="550" height="499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[3, 4): 3</title></rect>
 <rect x="2399" y="250" width="1100" height="1499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[4, 6): 9</title></rect>
+<line x1="750.0" y1="1790.0" x2="750.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1300.0" y1="1790.0" x2="1300.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1850.0" y1="1790.0" x2="1850.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2400.0" y1="1790.0" x2="2400.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2950.0" y1="1790.0" x2="2950.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3500.0" y1="1790.0" x2="3500.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1750.0" x2="680.0" y2="1750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1416.7" x2="680.0" y2="1416.7" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1083.3" x2="680.0" y2="1083.3" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="416.7" x2="680.0" y2="416.7" stroke="#666" stroke-width="10"/>
 </svg>

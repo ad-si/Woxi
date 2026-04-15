@@ -68,6 +68,10 @@ expression: "export_svg(r#\"BarChart[{{1, 2}, {3, 4}, {5, 6}}, ChartLabels -> {\
 <rect x="2124" y="656" width="367" height="853" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>4</title></rect>
 <rect x="2674" y="442" width="366" height="1067" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
 <rect x="3040" y="229" width="367" height="1280" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>6</title></rect>
+<line x1="710.0" y1="1510.0" x2="680.0" y2="1510.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1082.7" x2="680.0" y2="1082.7" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="655.5" x2="680.0" y2="655.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="228.2" x2="680.0" y2="228.2" stroke="#666" stroke-width="10"/>
 <text x="1208.3" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">A</text>
 <text x="2125.0" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">B</text>
 <text x="3041.7" y="1780.0" text-anchor="middle" font-family="sans-serif" font-size="180" fill="#666">C</text>

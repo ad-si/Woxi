@@ -141,4 +141,12 @@ expression: "export_svg(\"ListPolarPlot[{1, 2, 3, 2, 1}]\")"
 <polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1105 3499,1105 "/>
 <polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="2654,1749 2654,100 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="3397,1105 3113,162 851,230 1452,1688 2883,1577 "/>
+<line x1="1169.2" y1="1790.0" x2="1169.2" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1912.1" y1="1790.0" x2="1912.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2655.1" y1="1790.0" x2="2655.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1601.7" x2="680.0" y2="1601.7" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1105.3" x2="680.0" y2="1105.3" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="608.9" x2="680.0" y2="608.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="112.5" x2="680.0" y2="112.5" stroke="#666" stroke-width="10"/>
 </svg>

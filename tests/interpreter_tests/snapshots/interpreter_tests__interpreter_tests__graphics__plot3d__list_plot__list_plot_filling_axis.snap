@@ -143,4 +143,12 @@ expression: "export_svg(\"ListPlot[{1, 4, 9, 16}, Filling -> Axis]\")"
 <circle cx="1700" cy="1304" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="2548" cy="826" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="3397" cy="158" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1700.6" y1="1790.0" x2="1700.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2549.4" y1="1790.0" x2="2549.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1686.5" x2="680.0" y2="1686.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1208.7" x2="680.0" y2="1208.7" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="730.8" x2="680.0" y2="730.8" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="252.9" x2="680.0" y2="252.9" stroke="#666" stroke-width="10"/>
 </svg>

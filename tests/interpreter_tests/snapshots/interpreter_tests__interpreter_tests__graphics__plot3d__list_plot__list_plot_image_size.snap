@@ -169,4 +169,14 @@ expression: "export_svg(\"ListPlot[{1, 2, 3}, ImageSize -> 200]\")"
 <circle cx="792" cy="725" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="1324" cy="425" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
 <circle cx="1856" cy="125" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="792.6" y1="790.0" x2="792.6" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1058.8" y1="790.0" x2="1058.8" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1325.0" y1="790.0" x2="1325.0" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1591.2" y1="790.0" x2="1591.2" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="1857.4" y1="790.0" x2="1857.4" y2="820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="725.9" x2="680.0" y2="725.9" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="575.5" x2="680.0" y2="575.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="425.0" x2="680.0" y2="425.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="274.5" x2="680.0" y2="274.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="124.1" x2="680.0" y2="124.1" stroke="#666" stroke-width="10"/>
 </svg>

@@ -53,6 +53,9 @@ expression: svg
 <rect x="810" y="300" width="482" height="1449" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>88</title></rect>
 <rect x="1413" y="250" width="482" height="1499" opacity="1" fill="#E0932C" stroke="#000000" stroke-width="10"><title>91</title></rect>
 <rect x="2016" y="349" width="482" height="1400" opacity="1" fill="#8FB032" stroke="#000000" stroke-width="10"><title>85</title></rect>
+<line x1="710.0" y1="1750.0" x2="680.0" y2="1750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="925.8" x2="680.0" y2="925.8" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="101.6" x2="680.0" y2="101.6" stroke="#666" stroke-width="10"/>
 <rect x="2720.0" y="180.0" width="120" height="120" fill="rgb(94,129,181)"/>
 <text x="2900.0" y="240.0" font-family="sans-serif" font-size="160" fill="#666" dominant-baseline="central">Alice</text>
 <rect x="2720.0" y="400.0" width="120" height="120" fill="rgb(224,147,44)"/>

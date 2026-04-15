@@ -154,4 +154,13 @@ expression: "export_svg(\"Histogram[{1, 2, 2, 3, 3, 3}]\")"
 <rect x="1437" y="1749" width="687" height="0" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[1.5, 2): 0</title></rect>
 <rect x="2124" y="750" width="687" height="999" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[2, 2.5): 2</title></rect>
 <rect x="2811" y="250" width="688" height="1499" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>[2.5, 3): 3</title></rect>
+<line x1="750.0" y1="1790.0" x2="750.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1437.5" y1="1790.0" x2="1437.5" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2812.5" y1="1790.0" x2="2812.5" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3500.0" y1="1790.0" x2="3500.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1750.0" x2="680.0" y2="1750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1250.0" x2="680.0" y2="1250.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="750.0" x2="680.0" y2="750.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="250.0" x2="680.0" y2="250.0" stroke="#666" stroke-width="10"/>
 </svg>

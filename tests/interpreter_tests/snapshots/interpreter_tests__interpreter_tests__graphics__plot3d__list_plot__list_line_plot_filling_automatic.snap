@@ -133,4 +133,12 @@ expression: "export_svg(\"ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Automatic]\")
 <polyline fill="none" opacity="1" stroke="#CCCCCC" stroke-width="10" points="750,1686 3499,1686 "/>
 <polygon opacity="0.2" fill="#5E81B5" points="851,1379 1488,457 2124,1072 2760,150 3397,764 3397,1686 851,1686 "/>
 <polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1379 1488,457 2124,1072 2760,150 3397,764 "/>
+<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1686.5" x2="680.0" y2="1686.5" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="1071.6" x2="680.0" y2="1071.6" stroke="#666" stroke-width="10"/>
+<line x1="710.0" y1="456.7" x2="680.0" y2="456.7" stroke="#666" stroke-width="10"/>
 </svg>
