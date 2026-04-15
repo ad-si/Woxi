@@ -2380,6 +2380,95 @@ mod plot3d {
       assert!(svg.contains(">ys<"), "missing y axis label: {svg}");
     }
 
+    /// BubbleChart should accept an Association whose values are each a
+    /// single `{x,y,z}` triple — each key becomes its own dataset (and,
+    /// with `ChartLegends -> Automatic`, its own legend entry).
+    #[test]
+    fn bubble_chart_association_single_triples() {
+      let svg = export_svg(
+        r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
+      );
+      // One bubble per key.
+      assert_eq!(
+        svg.matches("<circle").count(),
+        4,
+        "expected 4 bubbles in Association BubbleChart: {svg}"
+      );
+      // Legend label text for each key.
+      for key in ["a", "b", "c", "d"] {
+        assert!(
+          svg.contains(&format!(">{key}<")),
+          "expected legend entry {key:?}: {svg}"
+        );
+      }
+      // Each dataset gets its own color from the default palette —
+      // assert that at least four distinct palette colors are used.
+      let distinct_colors = ["#5E81B5", "#8FB032", "#E0932C", "#D95119"];
+      for color in distinct_colors {
+        assert!(
+          svg.contains(color),
+          "Association BubbleChart should use color {color}: {svg}"
+        );
+      }
+    }
+
+    /// BubbleChart with an Association whose values are themselves lists of
+    /// triples should render one dataset per key, with multiple bubbles in
+    /// each dataset sharing a color.
+    #[test]
+    fn bubble_chart_association_multi_triples() {
+      let svg = export_svg(
+        r#"BubbleChart[<|"x" -> {{1, 1, 1}, {2, 2, 1}}, "y" -> {{3, 3, 1}, {4, 4, 1}, {5, 5, 1}}|>, ChartLegends -> Automatic]"#,
+      );
+      // 2 + 3 = 5 bubbles total.
+      assert_eq!(
+        svg.matches("<circle").count(),
+        5,
+        "expected 5 bubbles in Association BubbleChart with list values: {svg}"
+      );
+      assert!(svg.contains(">x<"));
+      assert!(svg.contains(">y<"));
+    }
+
+    /// Regression: the legend swatches next to a BubbleChart must visually
+    /// match the bubbles. Plotters draws each bubble with 0.7 opacity (from
+    /// `RGBColor.mix(0.7)`), so the swatches need the same fill opacity —
+    /// otherwise the swatches look noticeably more saturated than the
+    /// bubbles they label.
+    #[test]
+    fn bubble_chart_legend_swatches_match_bubble_opacity() {
+      let svg = export_svg(
+        r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
+      );
+      // Bubbles use opacity="0.7" on the circle. Sanity check that's still
+      // the case so this test catches a real mismatch.
+      assert!(
+        svg.contains(r#"<circle"#) && svg.contains(r#"opacity="0.7""#),
+        "bubble circles should carry opacity=\"0.7\": {svg}"
+      );
+      // Each legend swatch should also carry fill-opacity="0.7" so it
+      // matches the pastel tone of the rendered bubbles.
+      let swatch_count = svg.matches("fill-opacity=\"0.7\"").count();
+      assert!(
+        swatch_count >= 4,
+        "expected all 4 legend swatches to use fill-opacity=\"0.7\", got {swatch_count}: {svg}"
+      );
+    }
+
+    /// Regression: `ChartLegends -> Automatic` on a plain list input must
+    /// not inject a literal "Automatic" legend entry. Previously the option
+    /// parser treated the `Automatic` symbol as a label string.
+    #[test]
+    fn chart_legends_automatic_is_not_literal_label() {
+      let svg = export_svg(
+        "BubbleChart[{{1, 2, 3}, {4, 5, 6}}, ChartLegends -> Automatic]",
+      );
+      assert!(
+        !svg.contains("Automatic"),
+        "ChartLegends -> Automatic must not produce a literal 'Automatic' label: {svg}"
+      );
+    }
+
     #[test]
     fn sector_chart() {
       insta::assert_snapshot!(export_svg(

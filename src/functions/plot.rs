@@ -2839,9 +2839,13 @@ pub(crate) fn generate_bubble_chart_svg(
           PLOT_COLORS[i % PLOT_COLORS.len()]
         };
         let ly = legend_y_start + i as f64 * line_height;
+        // Bubbles are drawn with `mix(0.7)`, which plotters serializes as
+        // `opacity="0.7"` on each <circle>. Match that on the swatch so
+        // the legend color visually matches the rendered bubbles instead
+        // of looking noticeably more saturated.
         labels_svg.push_str(&format!(
           "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\"/>\n",
+           fill=\"rgb({cr},{cg},{cb})\" fill-opacity=\"0.7\"/>\n",
           ly
         ));
         labels_svg.push_str(&format!(

@@ -163,6 +163,10 @@ pub(crate) struct ChartOptions {
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
   pub chart_legends: Vec<String>,
+  /// Set when the user passed `ChartLegends -> Automatic`. Callers that know
+  /// how to derive default labels from the input (e.g. Association keys)
+  /// should populate `chart_legends` themselves when this is true.
+  pub chart_legends_auto: bool,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
 }
@@ -226,6 +230,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     axes_label: None,
     chart_style: Vec::new(),
     chart_legends: Vec::new(),
+    chart_legends_auto: false,
     plot_range_x: None,
     plot_range_y: None,
   };
@@ -306,14 +311,25 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "ChartLegends" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Expr::List(items) = &val {
-            for item in items {
-              if let Some(s) = expr_to_label(item) {
+          match &val {
+            // `ChartLegends -> Automatic` — let the caller fill in legend
+            // labels from the input shape (e.g. Association keys). Fall
+            // through without appending a literal "Automatic" entry.
+            Expr::Identifier(s) if s == "Automatic" => {
+              opts.chart_legends_auto = true;
+            }
+            Expr::List(items) => {
+              for item in items {
+                if let Some(s) = expr_to_label(item) {
+                  opts.chart_legends.push(s);
+                }
+              }
+            }
+            _ => {
+              if let Some(s) = expr_to_label(&val) {
                 opts.chart_legends.push(s);
               }
             }
-          } else if let Some(s) = expr_to_label(&val) {
-            opts.chart_legends.push(s);
           }
         }
         "PlotRange" => {
@@ -1394,18 +1410,11 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// BubbleChart[{{x,y,z}, ...}] or BubbleChart[{{{x,y,z},...}, ...}]
+/// BubbleChart[{{x,y,z}, ...}], BubbleChart[{{{x,y,z},...}, ...}],
+/// or BubbleChart[<| label -> {x,y,z}, ... |>] /
+/// BubbleChart[<| label -> {{x,y,z},...}, ... |>]
 pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let items = match &data {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "BubbleChart: first argument must be a list of {x, y, z} triples"
-          .into(),
-      ));
-    }
-  };
 
   // Helper: parse a single {x,y,z} triple from an expression.
   fn parse_triple(item: &Expr) -> Option<(f64, f64, f64)> {
@@ -1426,34 +1435,83 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   }
 
-  // Detect shape: if every top-level item is itself a list of triples
-  // (i.e., none of its entries are numeric), treat as multi-dataset.
-  // Otherwise treat as a single flat dataset.
-  let is_multi_dataset = !items.is_empty()
-    && items.iter().all(|item| {
-      if let Expr::List(inner) = item {
-        // A triple has >=3 entries, at least one of which is numeric.
-        // A dataset is a list of such triples — its first entry is itself
-        // a list. Use that to disambiguate.
-        !inner.is_empty() && matches!(inner[0], Expr::List(_))
-      } else {
-        false
+  // Turn a value that is either a single triple `{x,y,z}` or a list of
+  // triples `{{x,y,z},...}` into a dataset. Non-list values and lists
+  // whose shape can't be recognized produce an empty dataset.
+  fn parse_dataset(val: &Expr) -> Vec<(f64, f64, f64)> {
+    let ev = evaluate_expr_to_expr(val).unwrap_or(val.clone());
+    if let Expr::List(inner) = &ev {
+      if inner.is_empty() {
+        return Vec::new();
       }
-    });
+      if matches!(inner[0], Expr::List(_)) {
+        // List of triples.
+        inner.iter().filter_map(parse_triple).collect()
+      } else if let Some(t) = parse_triple(&ev) {
+        // Single triple.
+        vec![t]
+      } else {
+        Vec::new()
+      }
+    } else {
+      Vec::new()
+    }
+  }
 
-  let groups: Vec<Vec<(f64, f64, f64)>> = if is_multi_dataset {
-    items
-      .iter()
-      .map(|ds| {
-        if let Expr::List(inner) = ds {
-          inner.iter().filter_map(parse_triple).collect()
-        } else {
-          Vec::new()
-        }
-      })
-      .collect()
+  // Association input: each key becomes a dataset label, each value is
+  // either a single triple or a list of triples.
+  let (groups, assoc_labels) = if let Expr::Association(pairs) = &data {
+    let mut gs: Vec<Vec<(f64, f64, f64)>> = Vec::with_capacity(pairs.len());
+    let mut labels: Vec<String> = Vec::with_capacity(pairs.len());
+    for (k, v) in pairs {
+      let key_eval = evaluate_expr_to_expr(k).unwrap_or(k.clone());
+      let label = expr_to_label(&key_eval).unwrap_or_default();
+      gs.push(parse_dataset(v));
+      labels.push(label);
+    }
+    (gs, Some(labels))
   } else {
-    vec![items.iter().filter_map(parse_triple).collect()]
+    let items = match &data {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "BubbleChart: first argument must be a list of {x, y, z} triples \
+             or an Association"
+            .into(),
+        ));
+      }
+    };
+
+    // Detect shape: if every top-level item is itself a list of triples
+    // (i.e., none of its entries are numeric), treat as multi-dataset.
+    // Otherwise treat as a single flat dataset.
+    let is_multi_dataset = !items.is_empty()
+      && items.iter().all(|item| {
+        if let Expr::List(inner) = item {
+          // A triple has >=3 entries, at least one of which is numeric.
+          // A dataset is a list of such triples — its first entry is
+          // itself a list. Use that to disambiguate.
+          !inner.is_empty() && matches!(inner[0], Expr::List(_))
+        } else {
+          false
+        }
+      });
+
+    let gs: Vec<Vec<(f64, f64, f64)>> = if is_multi_dataset {
+      items
+        .iter()
+        .map(|ds| {
+          if let Expr::List(inner) = ds {
+            inner.iter().filter_map(parse_triple).collect()
+          } else {
+            Vec::new()
+          }
+        })
+        .collect()
+    } else {
+      vec![items.iter().filter_map(parse_triple).collect()]
+    };
+    (gs, None)
   };
 
   let total_points: usize = groups.iter().map(|g| g.len()).sum();
@@ -1464,6 +1522,14 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut opts = parse_chart_options(args);
+  // `ChartLegends -> Automatic` with Association input pulls the legend
+  // labels straight from the association's keys.
+  if opts.chart_legends_auto
+    && opts.chart_legends.is_empty()
+    && let Some(labels) = &assoc_labels
+  {
+    opts.chart_legends = labels.clone();
+  }
   // BubbleChart's plot area is square by default — override the generic
   // (non-square) DEFAULT_HEIGHT unless the caller provided an explicit
   // ImageSize. The y-axis label column (~65 px) is wider than the x-axis
