@@ -3609,6 +3609,15 @@ pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
   let s = expr_to_str(&args[0])?;
+  // Handle list of patterns: delete each one
+  if let Expr::List(items) = &args[1] {
+    let mut result = s;
+    for item in items {
+      let sub = expr_to_str(item)?;
+      result = result.replace(&sub, "");
+    }
+    return Ok(Expr::String(result));
+  }
   let sub = expr_to_str(&args[1])?;
   Ok(Expr::String(s.replace(&sub, "")))
 }
