@@ -2702,7 +2702,10 @@ pub(crate) fn generate_bubble_chart_svg(
       } else {
         PLOT_COLORS[gi % PLOT_COLORS.len()]
       };
-      let fill = RGBColor(cr, cg, cb).mix(0.7);
+      let fill = RGBColor(cr, cg, cb);
+      // Semi-transparent black so the underlying bubble color bleeds
+      // through the border, tinting it slightly toward the fill.
+      let border = RGBColor(0, 0, 0).mix(0.4).stroke_width(RESOLUTION_SCALE);
       for &(x, y, z) in group {
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
           continue;
@@ -2718,6 +2721,15 @@ pub(crate) fn generate_bubble_chart_svg(
             (x, y),
             radius as i32,
             fill.filled(),
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+          })?;
+        chart
+          .draw_series(std::iter::once(Circle::new(
+            (x, y),
+            radius as i32,
+            border,
           )))
           .map_err(|e| {
             InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
@@ -2840,13 +2852,11 @@ pub(crate) fn generate_bubble_chart_svg(
           PLOT_COLORS[i % PLOT_COLORS.len()]
         };
         let ly = legend_y_start + i as f64 * line_height;
-        // Bubbles are drawn with `mix(0.7)`, which plotters serializes as
-        // `opacity="0.7"` on each <circle>. Match that on the swatch so
-        // the legend color visually matches the rendered bubbles instead
-        // of looking noticeably more saturated.
+        // Bubbles are drawn fully opaque with a black border — mirror that
+        // on the swatch so the legend color visually matches the bubbles.
         labels_svg.push_str(&format!(
           "<rect x=\"{legend_x:.1}\" y=\"{:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\" fill-opacity=\"0.7\"/>\n",
+           fill=\"rgb({cr},{cg},{cb})\" stroke=\"#000000\" stroke-width=\"1\"/>\n",
           ly
         ));
         labels_svg.push_str(&format!(
@@ -2887,10 +2897,12 @@ pub(crate) fn generate_bubble_chart_svg(
           } else {
             String::new()
           };
+          // Bubble labels use full black (not the axis label gray) so
+          // they stay legible against the colored fill.
           labels_svg.push_str(&format!(
             "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"middle\" \
              dominant-baseline=\"central\" font-family=\"sans-serif\" \
-             font-size=\"{bubble_label_font:.0}\" fill=\"{label_fill}\"\
+             font-size=\"{bubble_label_font:.0}\" fill=\"#000000\"\
              {transform}>{}</text>\n",
             html_escape(&label.text)
           ));

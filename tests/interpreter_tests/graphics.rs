@@ -2305,11 +2305,12 @@ mod plot3d {
          Table[{i, i + 1, 1}, {i, 3}], \
          Table[{i, i + 2, 1}, {i, 3}]}]",
       );
-      // 3 datasets × 3 points = 9 bubbles.
+      // 3 datasets × 3 points = 9 bubbles; each bubble emits two <circle>
+      // elements (filled body + black border).
       assert_eq!(
         svg.matches("<circle").count(),
-        9,
-        "expected 9 bubbles in multi-dataset BubbleChart: {svg}"
+        18,
+        "expected 18 circles (9 bubbles × 2) in multi-dataset BubbleChart: {svg}"
       );
       // Each dataset gets its own color from the default palette.
       for color in ["#5E81B5", "#8FB032", "#E0932C"] {
@@ -2388,11 +2389,12 @@ mod plot3d {
       let svg = export_svg(
         r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
       );
-      // One bubble per key.
+      // One bubble per key; each bubble emits two <circle> elements
+      // (filled body + black border).
       assert_eq!(
         svg.matches("<circle").count(),
-        4,
-        "expected 4 bubbles in Association BubbleChart: {svg}"
+        8,
+        "expected 8 circles (4 bubbles × 2) in Association BubbleChart: {svg}"
       );
       // Legend label text for each key.
       for key in ["a", "b", "c", "d"] {
@@ -2420,38 +2422,41 @@ mod plot3d {
       let svg = export_svg(
         r#"BubbleChart[<|"x" -> {{1, 1, 1}, {2, 2, 1}}, "y" -> {{3, 3, 1}, {4, 4, 1}, {5, 5, 1}}|>, ChartLegends -> Automatic]"#,
       );
-      // 2 + 3 = 5 bubbles total.
+      // 2 + 3 = 5 bubbles total; each bubble emits two <circle> elements
+      // (filled body + black border).
       assert_eq!(
         svg.matches("<circle").count(),
-        5,
-        "expected 5 bubbles in Association BubbleChart with list values: {svg}"
+        10,
+        "expected 10 circles (5 bubbles × 2) in Association BubbleChart with list values: {svg}"
       );
       assert!(svg.contains(">x<"));
       assert!(svg.contains(">y<"));
     }
 
     /// Regression: the legend swatches next to a BubbleChart must visually
-    /// match the bubbles. Plotters draws each bubble with 0.7 opacity (from
-    /// `RGBColor.mix(0.7)`), so the swatches need the same fill opacity —
-    /// otherwise the swatches look noticeably more saturated than the
-    /// bubbles they label.
+    /// match the bubbles. Bubbles are rendered fully opaque with a black
+    /// border, so each swatch should also be fully opaque with a black
+    /// stroke — otherwise the legend looks noticeably different from the
+    /// bubbles it labels.
     #[test]
-    fn bubble_chart_legend_swatches_match_bubble_opacity() {
+    fn bubble_chart_legend_swatches_match_bubble_style() {
       let svg = export_svg(
         r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
       );
-      // Bubbles use opacity="0.7" on the circle. Sanity check that's still
-      // the case so this test catches a real mismatch.
+      // Bubble fill circles should be fully opaque — sanity-check that the
+      // bubbles are not rendered with reduced opacity.
       assert!(
-        svg.contains(r#"<circle"#) && svg.contains(r#"opacity="0.7""#),
-        "bubble circles should carry opacity=\"0.7\": {svg}"
+        !svg.contains(r#"<circle cx="#) || !svg.contains(r#"opacity="0.7""#),
+        "bubble circles should not carry opacity=\"0.7\": {svg}"
       );
-      // Each legend swatch should also carry fill-opacity="0.7" so it
-      // matches the pastel tone of the rendered bubbles.
-      let swatch_count = svg.matches("fill-opacity=\"0.7\"").count();
+      // Each legend swatch should carry a black stroke so it visually
+      // matches the bordered bubbles.
+      let swatch_count = svg
+        .matches(r##"stroke="#000000" stroke-width="1""##)
+        .count();
       assert!(
         swatch_count >= 4,
-        "expected all 4 legend swatches to use fill-opacity=\"0.7\", got {swatch_count}: {svg}"
+        "expected all 4 legend swatches to carry a black stroke, got {swatch_count}: {svg}"
       );
     }
 
