@@ -2533,6 +2533,7 @@ pub(crate) fn generate_bubble_chart_svg(
   axes_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
   chart_legends: &[String],
+  chart_labels: &[crate::functions::chart::ChartLabel],
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
 ) -> Result<String, InterpreterError> {
@@ -2855,6 +2856,45 @@ pub(crate) fn generate_bubble_chart_svg(
           ly + swatch_size / 2.0,
           html_escape(label)
         ));
+      }
+    }
+
+    // ChartLabels — draw each label centered on its bubble. Labels map to
+    // points in input order, flattened across datasets.
+    if !chart_labels.is_empty() {
+      let bubble_label_font = sf * 16.0;
+      let x_span = x_max - x_min;
+      let y_span = y_max - y_min;
+      let mut idx = 0usize;
+      'outer: for group in groups.iter() {
+        for &(x, y, _z) in group {
+          if idx >= chart_labels.len() {
+            break 'outer;
+          }
+          let label = &chart_labels[idx];
+          idx += 1;
+          if !x.is_finite() || !y.is_finite() || label.text.is_empty() {
+            continue;
+          }
+          let px = plot_x0 + (x - x_min) / x_span * plot_w;
+          let py = plot_y0 + (y_max - y) / y_span * plot_h;
+          let transform = if label.rotation.abs() > f64::EPSILON {
+            // ChartLabel rotation is in radians; SVG rotates clockwise for
+            // positive degrees, so negate to match Wolfram's convention
+            // (positive radians = counter-clockwise).
+            let deg = -label.rotation.to_degrees();
+            format!(" transform=\"rotate({deg:.2},{px:.1},{py:.1})\"")
+          } else {
+            String::new()
+          };
+          labels_svg.push_str(&format!(
+            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"middle\" \
+             dominant-baseline=\"central\" font-family=\"sans-serif\" \
+             font-size=\"{bubble_label_font:.0}\" fill=\"{label_fill}\"\
+             {transform}>{}</text>\n",
+            html_escape(&label.text)
+          ));
+        }
       }
     }
 

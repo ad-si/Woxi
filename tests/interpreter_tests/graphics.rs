@@ -2455,6 +2455,63 @@ mod plot3d {
       );
     }
 
+    /// `BubbleChart[data, ChartLabels -> {..}]` should render a text label
+    /// centered on each bubble. Matches Mathematica, where ChartLabels for
+    /// BubbleChart places labels in-bubble.
+    #[test]
+    fn bubble_chart_labels() {
+      let svg = export_svg(
+        r#"BubbleChart[{{1, 1, 1}, {2, 2, 1}, {3, 3, 1}}, ChartLabels -> {"a", "b", "c"}]"#,
+      );
+      for label in ["a", "b", "c"] {
+        assert!(
+          svg.contains(&format!(">{label}</text>")),
+          "BubbleChart should render bubble label {label:?}: {svg}"
+        );
+      }
+    }
+
+    /// Regression: ChartLabels for BubbleChart accepts numeric entries
+    /// (e.g. `Range[n]`), not just strings and identifiers.
+    #[test]
+    fn bubble_chart_numeric_labels() {
+      let svg = export_svg(
+        "BubbleChart[{{1, 1, 1}, {2, 2, 1}, {3, 3, 1}}, ChartLabels -> Range[3]]",
+      );
+      for n in ["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{n}</text>")),
+          "BubbleChart should render numeric bubble label {n}: {svg}"
+        );
+      }
+    }
+
+    /// Regression: when some input positions fail to parse (Missing[],
+    /// complex numbers, symbols), the ChartLabels at those positions must
+    /// also be dropped — matching wolframscript, which emits only the
+    /// labels at the surviving positions (verified with
+    /// `Cases[BubbleChart[...], Text[s_, _, ___] :> s, Infinity]`).
+    #[test]
+    fn bubble_chart_labels_skip_invalid_input() {
+      let svg = export_svg(
+        r#"BubbleChart[{{1, 1, 1}, Missing[], {3, 3, 1}, 1 + I, {5, 5, 1}}, ChartLabels -> {"a", "b", "c", "d", "e"}]"#,
+      );
+      // Labels at the surviving positions (1, 3, 5) should appear.
+      for label in ["a", "c", "e"] {
+        assert!(
+          svg.contains(&format!(">{label}</text>")),
+          "expected label {label:?} for surviving bubble: {svg}"
+        );
+      }
+      // Labels at dropped positions (2, 4) must NOT appear.
+      for label in ["b", "d"] {
+        assert!(
+          !svg.contains(&format!(">{label}</text>")),
+          "label {label:?} at invalid input position should be dropped: {svg}"
+        );
+      }
+    }
+
     /// Regression: `ChartLegends -> Automatic` on a plain list input must
     /// not inject a literal "Automatic" legend entry. Previously the option
     /// parser treated the `Automatic` symbol as a label string.
