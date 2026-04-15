@@ -163,6 +163,8 @@ pub(crate) struct ChartOptions {
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
   pub chart_legends: Vec<String>,
+  pub plot_range_x: Option<(f64, f64)>,
+  pub plot_range_y: Option<(f64, f64)>,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -224,6 +226,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     axes_label: None,
     chart_style: Vec::new(),
     chart_legends: Vec::new(),
+    plot_range_x: None,
+    plot_range_y: None,
   };
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -312,6 +316,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.chart_legends.push(s);
           }
         }
+        "PlotRange" => {
+          let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
+          opts.plot_range_x = rx;
+          opts.plot_range_y = ry;
+        }
         "ChartStyle" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
@@ -387,6 +396,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|(x, y)| (x.as_str(), y.as_str())),
     &opts.chart_style,
     &opts.chart_legends,
+    opts.plot_range_x,
+    opts.plot_range_y,
   )?;
   Ok(crate::graphics_result(svg))
 }

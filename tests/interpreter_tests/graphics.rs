@@ -2487,6 +2487,100 @@ mod plot3d {
       insta::assert_snapshot!(svg);
     }
 
+    /// PlotRange -> {{xmin, xmax}, {ymin, ymax}} should extend the
+    /// y-axis (bars retain their heights on the new scale) and pad the
+    /// x-axis so the categorical bar slots occupy only the left portion
+    /// of the plot area. Mirrors list_line_plot_plot_range_both_axes.
+    #[test]
+    fn bar_chart_plot_range_both_axes() {
+      let svg = export_svg(
+        "BarChart[Table[Prime[n], {n, 1, 20, 1}], \
+         PlotRange -> {{0, 50}, {0, 250}}]",
+      );
+
+      // With y in {0, 250}, the label "250" must appear (default y_max
+      // for Prime[1..20] would be 71 * 1.1, so "250" is proof the
+      // override applied).
+      assert!(svg.contains(">\n250\n"), "y-axis should reach 250");
+
+      // Collect bar rect x positions (filled bars have the default
+      // series color #5E81B5).
+      let bar_xs: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .map(|l| {
+          let x_str =
+            l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+          x_str.parse::<f64>().unwrap()
+        })
+        .collect();
+      assert_eq!(bar_xs.len(), 20, "expected 20 bars");
+
+      // Plot area left edge ~749, right edge ~3499 (width 2750). With
+      // x ∈ [0, 50], bar i spans [i + 0.1, i + 0.9] in data space, so
+      // the first bar starts at ~749 + 0.1/50 * 2750 ≈ 754.5 and the
+      // last (i=19) at ~749 + 19.1/50 * 2750 ≈ 1799.5 — i.e. the bars
+      // only cover ~38% of the plot width.
+      assert!(
+        (bar_xs[0] - 754.5).abs() < 5.0,
+        "first bar x {} should be near 754.5",
+        bar_xs[0]
+      );
+      assert!(
+        (bar_xs[19] - 1799.5).abs() < 5.0,
+        "last bar x {} should be near 1799.5",
+        bar_xs[19]
+      );
+
+      // Bar heights follow the y override: Prime[20]=71 at y=250 should
+      // occupy 71/250 of the plot height (~1649 px) ≈ 468 px.
+      let last_bar_line = svg
+        .lines()
+        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .next_back()
+        .unwrap();
+      let h_str = last_bar_line
+        .split("height=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+      let last_h: f64 = h_str.parse().unwrap();
+      assert!(
+        (last_h - 468.0).abs() < 5.0,
+        "last bar height {} should be near 468",
+        last_h
+      );
+    }
+
+    /// PlotRange -> {ymin, ymax} should override only the y-axis; the
+    /// categorical x-axis stays on its auto 0..n range.
+    #[test]
+    fn bar_chart_plot_range_y_only() {
+      let svg = export_svg("BarChart[{1, 2, 3}, PlotRange -> {0, 10}]");
+      // y=10 tick label must appear.
+      assert!(svg.contains(">\n10\n"), "y-axis should reach 10");
+      // The three bars still fill the whole plot width.
+      let bar_xs: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .map(|l| {
+          let x_str =
+            l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+          x_str.parse::<f64>().unwrap()
+        })
+        .collect();
+      assert_eq!(bar_xs.len(), 3);
+      // Last bar should sit near the right edge (plot right ~3499,
+      // slot 2.1..2.9 → last bar x ≈ 3499 - (0.1 + 0.8)/3 * 2750 ≈ 2672).
+      assert!(
+        bar_xs[2] > 2400.0,
+        "last bar x {} should be well past midplot",
+        bar_xs[2]
+      );
+    }
+
     #[test]
     fn bar_chart_grouped_basic() {
       // 4 groups, 2 bars each → 8 bars with 2 colors
