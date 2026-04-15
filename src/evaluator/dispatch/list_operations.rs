@@ -1458,8 +1458,27 @@ pub fn dispatch_list_operations(
     "TensorRank" if args.len() == 1 => {
       return Some(list_helpers_ast::tensor_rank_ast(&args[0]));
     }
-    "ArrayQ" if args.len() == 1 => {
-      return Some(list_helpers_ast::array_q_ast(&args[0]));
+    "ArrayQ" if !args.is_empty() && args.len() <= 3 => {
+      let is_array = match list_helpers_ast::array_q_ast(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      if args.len() >= 2 {
+        // ArrayQ[expr, n] - check if expr is an array of depth n
+        if matches!(&is_array, Expr::Identifier(s) if s == "True")
+          && let Ok(dims) = list_helpers_ast::dimensions_ast(&[args[0].clone()])
+          && let Expr::List(d) = &dims
+          && let Some(n) = expr_to_i128(&args[1])
+        {
+          return Some(Ok(if d.len() == n as usize {
+            Expr::Identifier("True".to_string())
+          } else {
+            Expr::Identifier("False".to_string())
+          }));
+        }
+        return Some(Ok(is_array));
+      }
+      return Some(Ok(is_array));
     }
     "VectorQ" if args.len() == 1 => {
       return Some(list_helpers_ast::vector_q_ast(&args[0]));
