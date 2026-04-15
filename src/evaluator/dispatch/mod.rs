@@ -2092,6 +2092,35 @@ pub fn evaluate_function_call_ast_inner(
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {
+    // Normalize TwoWayRule[a, b] (produced by the `<->` operator) to
+    // UndirectedEdge[a, b] inside edge lists so all downstream edge
+    // handling stays uniform. Recursively rewrites through Lists and
+    // Labeled wrappers.
+    fn rewrite_two_way_rules(e: &Expr) -> Expr {
+      match e {
+        Expr::FunctionCall { name, args } if name == "TwoWayRule" => {
+          Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: args.clone(),
+          }
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Labeled" && args.len() == 2 =>
+        {
+          Expr::FunctionCall {
+            name: "Labeled".to_string(),
+            args: vec![rewrite_two_way_rules(&args[0]), args[1].clone()],
+          }
+        }
+        Expr::List(items) => {
+          Expr::List(items.iter().map(rewrite_two_way_rules).collect())
+        }
+        other => other.clone(),
+      }
+    }
+    let args_vec: Vec<Expr> = args.iter().map(rewrite_two_way_rules).collect();
+    let args: &[Expr] = &args_vec;
+
     // Helper: check if expr is a graph edge (DirectedEdge/UndirectedEdge,
     // possibly wrapped in Labeled)
     fn is_graph_edge(e: &Expr) -> bool {
@@ -2144,65 +2173,50 @@ pub fn evaluate_function_call_ast_inner(
     if !args.is_empty()
       && let Expr::List(edges) = &args[0]
     {
-      // Graph[{rule1, rule2, ...}, opts...]
-      let all_rules = edges.iter().all(|e| matches!(e, Expr::Rule { .. }));
-      if all_rules && !edges.is_empty() {
+      // Graph[{item1, item2, ...}, opts...] where each item is either
+      // a Rule (a -> b, becomes DirectedEdge), a DirectedEdge, or an
+      // UndirectedEdge (possibly wrapped in Labeled). Mixed lists are
+      // supported — Wolfram accepts them too.
+      let all_edge_like = edges
+        .iter()
+        .all(|e| matches!(e, Expr::Rule { .. }) || is_graph_edge(e));
+      if all_edge_like && !edges.is_empty() {
         let mut vertex_set: Vec<Expr> = Vec::new();
-        let mut directed_edges: Vec<Expr> = Vec::new();
-        for e in edges {
-          if let Expr::Rule {
-            pattern,
-            replacement,
-          } = e
-          {
-            let src = (**pattern).clone();
-            let dst = (**replacement).clone();
-            if !vertex_set
-              .iter()
-              .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &src))
-            {
-              vertex_set.push(src.clone());
-            }
-            if !vertex_set
-              .iter()
-              .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &dst))
-            {
-              vertex_set.push(dst.clone());
-            }
-            directed_edges.push(Expr::FunctionCall {
-              name: "DirectedEdge".to_string(),
-              args: vec![src, dst],
-            });
+        let mut out_edges: Vec<Expr> = Vec::with_capacity(edges.len());
+        let push_vertex = |v: &Expr, set: &mut Vec<Expr>| {
+          if !set.iter().any(|existing| {
+            crate::evaluator::pattern_matching::expr_equal(existing, v)
+          }) {
+            set.push(v.clone());
           }
-        }
-        vertex_set.sort_by(crate::functions::canonical_cmp);
-        let mut result_args =
-          vec![Expr::List(vertex_set), Expr::List(directed_edges)];
-        result_args.extend(trailing_options);
-        return Ok(Expr::FunctionCall {
-          name: "Graph".to_string(),
-          args: result_args,
-        });
-      }
-
-      // Graph[{edge1, edge2, ...}, opts...] where edges may be Labeled
-      let all_edges = edges.iter().all(is_graph_edge);
-      if all_edges && !edges.is_empty() {
-        let mut vertex_set: Vec<Expr> = Vec::new();
+        };
         for e in edges {
-          if let Some((src, dst)) = edge_vertices(e) {
-            for v in [src, dst] {
-              if !vertex_set.iter().any(|existing| {
-                crate::evaluator::pattern_matching::expr_equal(existing, v)
-              }) {
-                vertex_set.push(v.clone());
+          match e {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => {
+              let src = (**pattern).clone();
+              let dst = (**replacement).clone();
+              push_vertex(&src, &mut vertex_set);
+              push_vertex(&dst, &mut vertex_set);
+              out_edges.push(Expr::FunctionCall {
+                name: "DirectedEdge".to_string(),
+                args: vec![src, dst],
+              });
+            }
+            _ => {
+              if let Some((src, dst)) = edge_vertices(e) {
+                push_vertex(src, &mut vertex_set);
+                push_vertex(dst, &mut vertex_set);
               }
+              out_edges.push(e.clone());
             }
           }
         }
         vertex_set.sort_by(crate::functions::canonical_cmp);
         let mut result_args =
-          vec![Expr::List(vertex_set), Expr::List(edges.clone())];
+          vec![Expr::List(vertex_set), Expr::List(out_edges)];
         result_args.extend(trailing_options);
         return Ok(Expr::FunctionCall {
           name: "Graph".to_string(),

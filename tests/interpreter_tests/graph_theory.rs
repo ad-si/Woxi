@@ -759,3 +759,166 @@ mod group_orbits {
     assert_eq!(interpret("Head[GroupOrbits]").unwrap(), "Symbol");
   }
 }
+
+mod two_way_rule {
+  use super::*;
+
+  #[test]
+  fn operator_parses_as_two_way_rule() {
+    // Matches Wolfram: a <-> b has Head TwoWayRule (not UndirectedEdge).
+    assert_eq!(interpret("FullForm[a <-> b]").unwrap(), "TwoWayRule[a, b]");
+    assert_eq!(interpret("Head[a <-> b]").unwrap(), "TwoWayRule");
+  }
+
+  #[test]
+  fn roundtrip_display() {
+    assert_eq!(interpret("a <-> b").unwrap(), "a <-> b");
+    assert_eq!(interpret("TwoWayRule[a, b]").unwrap(), "a <-> b");
+  }
+
+  #[test]
+  fn precedence_tighter_than_rule() {
+    // `<->` binds tighter than `->`: a <-> b -> c == Rule[TwoWayRule[a, b], c]
+    assert_eq!(
+      interpret("FullForm[a <-> b -> c]").unwrap(),
+      "Rule[TwoWayRule[a, b], c]"
+    );
+  }
+
+  #[test]
+  fn precedence_looser_than_arithmetic() {
+    // `<->` binds looser than `+`: a + b <-> c + d == TwoWayRule[a+b, c+d]
+    assert_eq!(
+      interpret("FullForm[a + b <-> c + d]").unwrap(),
+      "TwoWayRule[Plus[a, b], Plus[c, d]]"
+    );
+  }
+
+  #[test]
+  fn inside_list() {
+    // List elements containing `<->` must not be mis-parsed as ReplacementRule.
+    assert_eq!(
+      interpret("{a <-> b, c <-> d}").unwrap(),
+      "{a <-> b, c <-> d}"
+    );
+  }
+
+  #[test]
+  fn inside_function_args() {
+    assert_eq!(interpret("f[a <-> b]").unwrap(), "f[a <-> b]");
+    // Mixed with a real rule argument — both should parse distinctly.
+    assert_eq!(
+      interpret("f[a <-> b, x -> y]").unwrap(),
+      "f[a <-> b, x -> y]"
+    );
+  }
+
+  #[test]
+  fn graph_accepts_two_way_rule_edges() {
+    // Graph[] should treat TwoWayRule edges as undirected edges.
+    assert_eq!(
+      interpret("VertexCount[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("EdgeCount[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn graph_two_way_rule_connected_components() {
+    assert_eq!(
+      interpret("ConnectedComponents[Graph[{1 <-> 2, 2 <-> 3, 4 <-> 5}]]")
+        .unwrap(),
+      "{{1, 2, 3}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn graph_two_way_rule_with_self_loop() {
+    // Regression for the user's `Graph[{"A" <-> "B", "B" <-> "B"}]` example
+    // — parser must accept self-loops with `<->` without failing.
+    assert_eq!(
+      interpret("VertexCount[Graph[{\"A\" <-> \"B\", \"B\" <-> \"B\"}]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn graph_mixed_directed_and_two_way_rule() {
+    // Regression: mixing `->` (Rule → DirectedEdge) with `<->` in the
+    // same edge list must work. Wolfram accepts this.
+    assert_eq!(
+      interpret("VertexList[Graph[{a -> b, b -> a, b <-> b}]]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("VertexCount[Graph[{a -> b, b -> a, b <-> b}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("EdgeCount[Graph[{a -> b, b -> a, b <-> b}]]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("EdgeList[Graph[{a -> b, b -> a, b <-> b}]]").unwrap(),
+      "{DirectedEdge[a, b], DirectedEdge[b, a], UndirectedEdge[b, b]}"
+    );
+  }
+
+  #[test]
+  fn graph_mixed_rule_and_undirected_edge() {
+    // Same mixed case but with an explicit UndirectedEdge[..] alongside a Rule.
+    assert_eq!(
+      interpret("EdgeList[Graph[{1 -> 2, UndirectedEdge[2, 3]}]]").unwrap(),
+      "{DirectedEdge[1, 2], UndirectedEdge[2, 3]}"
+    );
+  }
+
+  #[test]
+  fn antiparallel_edges_render_as_distinct_curves() {
+    // Regression: Graph[{a -> b, b -> a}] must render two visually
+    // distinct arrow curves, not two arrows overlapping on a single
+    // straight line between the vertices.
+    let result =
+      interpret("ExportString[Graph[{a -> b, b -> a}], \"SVG\"]").unwrap();
+    // Two polylines for the two edges…
+    assert_eq!(result.matches("<polyline").count(), 2);
+    // …and two arrowhead polygons (one per directed edge).
+    assert_eq!(result.matches("<polygon").count(), 2);
+    // The two polylines must not be identical (that was the bug —
+    // both edges were drawn as the same horizontal segment).
+    let polylines: Vec<&str> = result
+      .match_indices("<polyline")
+      .map(|(i, _)| {
+        let end = result[i..].find("/>").unwrap_or(0) + i;
+        &result[i..end]
+      })
+      .collect();
+    assert_ne!(polylines[0], polylines[1]);
+  }
+
+  #[test]
+  fn mixed_antiparallel_plus_self_loop_renders_three_edges() {
+    // The original report: Graph[{a -> b, b -> a, b <-> b}] must have
+    // two separate edges between a and b (curved) plus a self-loop on b.
+    // Expect 3 polylines total (2 curves + 1 loop) and 2 arrowheads
+    // (one per directed antiparallel edge; the self-loop is undirected).
+    let result =
+      interpret("ExportString[Graph[{a -> b, b -> a, b <-> b}], \"SVG\"]")
+        .unwrap();
+    assert_eq!(result.matches("<polyline").count(), 3);
+    assert_eq!(result.matches("<polygon").count(), 2);
+  }
+
+  #[test]
+  fn labeled_two_way_rule_edge() {
+    // Labeled wrapper around `<->` should still be recognized as an edge.
+    assert_eq!(
+      interpret("EdgeCount[Graph[{Labeled[a <-> b, \"e1\"]}]]").unwrap(),
+      "1"
+    );
+  }
+}

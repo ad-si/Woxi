@@ -122,6 +122,7 @@ Operator = @{
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
   | "@*"     // Composition operator (must be before single @)
+  | "<->"    // TwoWayRule operator (must be before <>, <=, <, and before -> so its "->" substring isn't matched)
   | "<>"     // StringJoin operator (must be before < and >)
   | "~~"     // StringExpression operator (must be before single ~)
   | "&&"     // And operator (must be before single &)
@@ -395,6 +396,7 @@ ConditionOp = @{
   | "\\[Distributed]" | "\u{F3D2}"      // Named character operator: Distributed
   | "\\[Cross]" | "\u{F3C4}" | "\u{2A2F}" // Cross product (⨯)
   | "===" | "=!=" | "==" | "\u{2A75}" | "!=" | "\u{2260}"  // Comparison, ⩵, ≠
+  | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | ">=" | "\u{2264}" | "\u{2265}" | "<" | ">"       // Order comparison, ≤, ≥
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
@@ -455,6 +457,7 @@ HasRuleOperator = _{ (
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | "<->"                       // skip TwoWayRule (don't match its "->" substring as a rule operator)
   | !("->" | "\u{2192}" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
 )* ~ ("->" | "\u{2192}" | ":>") }
 // Scan forward looking for ;; (span separator) at the current nesting depth.

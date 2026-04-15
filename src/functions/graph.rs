@@ -305,6 +305,24 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: vec![Expr::Real(1.5)],
   });
 
+  // Group parallel (including antiparallel) non-loop edges by unordered
+  // vertex pair so that multi-edges can be rendered as separate curves
+  // instead of overlapping on the same straight line. The position of an
+  // edge within its group determines its perpendicular offset.
+  let mut parallel_groups: std::collections::HashMap<
+    (usize, usize),
+    Vec<petgraph::graph::EdgeIndex>,
+  > = std::collections::HashMap::new();
+  for edge_ref in graph.edge_references() {
+    let si = edge_ref.source().index();
+    let di = edge_ref.target().index();
+    if si == di {
+      continue;
+    }
+    let key = (si.min(di), si.max(di));
+    parallel_groups.entry(key).or_default().push(edge_ref.id());
+  }
+
   for edge_ref in graph.edge_references() {
     let si = edge_ref.source().index();
     let di = edge_ref.target().index();
@@ -365,32 +383,109 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: vec![Expr::List(pts)],
         });
       }
-    } else if edge_data.directed {
-      // Draw arrow for directed edges — shorten to vertex boundary
-      let dx = x2 - x1;
-      let dy = y2 - y1;
-      let len = (dx * dx + dy * dy).sqrt();
-      let ux = dx / len;
-      let uy = dy / len;
-      let sx = x1 + ux * vertex_radius;
-      let sy = y1 + uy * vertex_radius;
-      let ex = x2 - ux * vertex_radius;
-      let ey = y2 - uy * vertex_radius;
-      primitives.push(Expr::FunctionCall {
-        name: "Arrow".to_string(),
-        args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Real(sx), Expr::Real(sy)]),
-          Expr::List(vec![Expr::Real(ex), Expr::Real(ey)]),
-        ])],
-      });
     } else {
-      primitives.push(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(vec![
-          Expr::List(vec![Expr::Real(x1), Expr::Real(y1)]),
-          Expr::List(vec![Expr::Real(x2), Expr::Real(y2)]),
-        ])],
-      });
+      // Determine this edge's position within its parallel group.
+      // A group of size 1 → straight edge (current behavior).
+      // A group of size ≥ 2 → quadratic Bézier curve with a
+      // perpendicular offset that is unique to this edge's position.
+      let key = (si.min(di), si.max(di));
+      let group = &parallel_groups[&key];
+      let k_in_group = group
+        .iter()
+        .position(|&id| id == edge_ref.id())
+        .unwrap_or(0);
+      let total = group.len();
+
+      // Canonical perpendicular direction, computed from the low→high
+      // ordering so that antiparallel edges pick the *same* perpendicular
+      // axis and therefore curve on opposite physical sides automatically
+      // when rendered with the actual source→target direction.
+      let (lo, hi) = key;
+      let (lx, ly) = positions[lo];
+      let (hx, hy) = positions[hi];
+      let cdx = hx - lx;
+      let cdy = hy - ly;
+      let clen = (cdx * cdx + cdy * cdy).sqrt().max(1e-9);
+      let perp_x = -cdy / clen;
+      let perp_y = cdx / clen;
+
+      // Offset index centered around 0. With total=2 we get [-0.5, +0.5];
+      // with total=3 we get [-1, 0, +1]; etc.
+      let offset_idx = k_in_group as f64 - (total as f64 - 1.0) / 2.0;
+      let spacing = vertex_radius * 1.4;
+      let offset_mag = offset_idx * spacing;
+
+      if total == 1 || offset_mag.abs() < 1e-9 {
+        // Straight edge — unchanged behavior.
+        if edge_data.directed {
+          let dx = x2 - x1;
+          let dy = y2 - y1;
+          let len = (dx * dx + dy * dy).sqrt();
+          let ux = dx / len;
+          let uy = dy / len;
+          let sx = x1 + ux * vertex_radius;
+          let sy = y1 + uy * vertex_radius;
+          let ex = x2 - ux * vertex_radius;
+          let ey = y2 - uy * vertex_radius;
+          primitives.push(Expr::FunctionCall {
+            name: "Arrow".to_string(),
+            args: vec![Expr::List(vec![
+              Expr::List(vec![Expr::Real(sx), Expr::Real(sy)]),
+              Expr::List(vec![Expr::Real(ex), Expr::Real(ey)]),
+            ])],
+          });
+        } else {
+          primitives.push(Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(vec![
+              Expr::List(vec![Expr::Real(x1), Expr::Real(y1)]),
+              Expr::List(vec![Expr::Real(x2), Expr::Real(y2)]),
+            ])],
+          });
+        }
+      } else {
+        // Curved edge: quadratic Bézier through a perpendicular-offset
+        // control point. The same perp axis is used regardless of which
+        // direction the edge travels, so a pair (a→b, b→a) with indices
+        // 0 and 1 in the group get offsets -0.5 and +0.5 respectively
+        // and render as two clearly distinct curves on opposite sides.
+        let ctrl_x = (x1 + x2) / 2.0 + perp_x * offset_mag;
+        let ctrl_y = (y1 + y2) / 2.0 + perp_y * offset_mag;
+
+        // Shorten each endpoint toward the control point by vertex_radius
+        // so the curve starts/ends on the vertex boundary with its tangent
+        // pointing into the curve.
+        let shorten = |vx: f64, vy: f64| -> (f64, f64) {
+          let dx = ctrl_x - vx;
+          let dy = ctrl_y - vy;
+          let d = (dx * dx + dy * dy).sqrt().max(1e-9);
+          (vx + dx / d * vertex_radius, vy + dy / d * vertex_radius)
+        };
+        let (sx, sy) = shorten(x1, y1);
+        let (ex, ey) = shorten(x2, y2);
+
+        let segments = 18;
+        let mut pts = Vec::with_capacity(segments + 1);
+        for k in 0..=segments {
+          let t = k as f64 / segments as f64;
+          let omt = 1.0 - t;
+          let bx = omt * omt * sx + 2.0 * omt * t * ctrl_x + t * t * ex;
+          let by = omt * omt * sy + 2.0 * omt * t * ctrl_y + t * t * ey;
+          pts.push(Expr::List(vec![Expr::Real(bx), Expr::Real(by)]));
+        }
+
+        if edge_data.directed {
+          primitives.push(Expr::FunctionCall {
+            name: "Arrow".to_string(),
+            args: vec![Expr::List(pts)],
+          });
+        } else {
+          primitives.push(Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(pts)],
+          });
+        }
+      }
     }
 
     // Edge label
