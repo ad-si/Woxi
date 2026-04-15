@@ -3854,6 +3854,48 @@ mod join_non_list {
   }
 
   #[test]
+  fn permutations_with_duplicates() {
+    // Permutations of a multiset should return only distinct permutations.
+    // Wolfram: Permutations[{1, 1, 2}] -> {{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}
+    assert_eq!(
+      interpret("Permutations[{1, 1, 2}]").unwrap(),
+      "{{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn permutations_with_two_pairs_of_duplicates() {
+    // Wolfram: Permutations[{a, a, b, b}] ->
+    //   {{a, a, b, b}, {a, b, a, b}, {a, b, b, a},
+    //    {b, a, a, b}, {b, a, b, a}, {b, b, a, a}}
+    assert_eq!(
+      interpret("Permutations[{a, a, b, b}]").unwrap(),
+      "{{a, a, b, b}, {a, b, a, b}, {a, b, b, a}, \
+       {b, a, a, b}, {b, a, b, a}, {b, b, a, a}}"
+    );
+  }
+
+  #[test]
+  fn permutations_k_with_duplicates() {
+    // Permutations[{1, 1, 2}, {2}] should also dedupe.
+    // Wolfram: -> {{1, 1}, {1, 2}, {2, 1}}
+    assert_eq!(
+      interpret("Permutations[{1, 1, 2}, {2}]").unwrap(),
+      "{{1, 1}, {1, 2}, {2, 1}}"
+    );
+  }
+
+  #[test]
+  fn permutations_up_to_length_with_duplicates() {
+    // Permutations[{1, 1, 2}, 2] -> distinct perms of length 0, 1, 2.
+    // Wolfram: -> {{}, {1}, {2}, {1, 1}, {1, 2}, {2, 1}}
+    assert_eq!(
+      interpret("Permutations[{1, 1, 2}, 2]").unwrap(),
+      "{{}, {1}, {2}, {1, 1}, {1, 2}, {2, 1}}"
+    );
+  }
+
+  #[test]
   fn flatten_dim_spec_transpose() {
     assert_eq!(
       interpret("Flatten[{{a, b}, {c, d}}, {{2}, {1}}]").unwrap(),

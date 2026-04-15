@@ -96,7 +96,12 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result))
 }
 
-/// Helper to generate k-permutations
+/// Helper to generate k-permutations.
+///
+/// When the input contains duplicate elements, only distinct permutations
+/// are emitted (matching Wolfram's `Permutations`). This is achieved by
+/// skipping any item at the current recursion level that is structurally
+/// equal to a previously tried item at the same level.
 fn generate_k_permutations(
   _indices: &[usize],
   k: usize,
@@ -110,14 +115,23 @@ fn generate_k_permutations(
     result.push(Expr::List(perm));
     return;
   }
+  // Track which item "values" we've already used at this recursion level
+  // so that {1, 1, 2} doesn't produce {1, 1, 2} twice.
+  let mut seen_at_level: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   for i in 0..items.len() {
-    if !used[i] {
-      used[i] = true;
-      current.push(i);
-      generate_k_permutations(_indices, k, current, used, items, result);
-      current.pop();
-      used[i] = false;
+    if used[i] {
+      continue;
     }
+    let key = crate::syntax::expr_to_string(&items[i]);
+    if !seen_at_level.insert(key) {
+      continue;
+    }
+    used[i] = true;
+    current.push(i);
+    generate_k_permutations(_indices, k, current, used, items, result);
+    current.pop();
+    used[i] = false;
   }
 }
 
