@@ -1547,14 +1547,18 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       if cmp != Ordering::Equal {
         return cmp;
       }
-      // For Plus, Wolfram's canonical ordering compares the highest-degree
-      // term first (the last argument, since Plus args are sorted by
-      // ascending degree). When lengths differ and all compared terms
-      // match, the Plus with MORE terms sorts FIRST.
+      // For Plus and Times (both Orderless), Wolfram's canonical ordering
+      // compares the highest-key argument first (the last argument, since
+      // args are stored in ascending canonical order). When lengths differ
+      // and all compared terms match, the one with MORE terms sorts FIRST.
       //
-      // Example: Order[1+n, -1+3*n+3*n^2] = 1 (1+n first), because the
-      // leading term `n` of `1+n` has lower degree than `3*n^2`.
-      if na == "Plus" {
+      // Example (Plus): Order[1+n, -1+3*n+3*n^2] = 1 (1+n first), because
+      // the leading term `n` of `1+n` has lower degree than `3*n^2`.
+      //
+      // Example (Times): Order[x^2*(1+x^2)^-1, x^4*(1+x^2)^-2] = -1
+      // (the x^4*(1+x^2)^-2 term sorts first, because the trailing factor
+      // (1+x^2)^-2 has a smaller exponent than (1+x^2)^-1).
+      if na == "Plus" || na == "Times" {
         let mut ia = aa.iter().rev();
         let mut ib = ab.iter().rev();
         loop {
@@ -1686,6 +1690,26 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
     }
     _ => {
+      // When one side is a Power and the other is its base, treat the bare
+      // base as `Power[base, 1]` so they compare consistently by exponent.
+      // This matters for Times canonical ordering where e.g. `K2` (bare)
+      // and `K2^2` appear side-by-side in different Times products.
+      if let Some((b_base, b_exp)) = extract_power_base_exp(b)
+        && exprs_equal_canonically(a, &b_base)
+      {
+        let exp_cmp = compare_expr_canonical(&Expr::Integer(1), &b_exp);
+        if exp_cmp != Ordering::Equal {
+          return exp_cmp;
+        }
+      }
+      if let Some((a_base, a_exp)) = extract_power_base_exp(a)
+        && exprs_equal_canonically(&a_base, b)
+      {
+        let exp_cmp = compare_expr_canonical(&a_exp, &Expr::Integer(1));
+        if exp_cmp != Ordering::Equal {
+          return exp_cmp;
+        }
+      }
       if ta != tb {
         ta.cmp(&tb)
       } else {
@@ -1696,6 +1720,26 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
     }
   }
+}
+
+/// Extract (base, exponent) from a Power expression. Returns None for non-Powers.
+fn extract_power_base_exp(e: &Expr) -> Option<(Expr, Expr)> {
+  match e {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    _ => None,
+  }
+}
+
+/// Structural equality check using canonical comparison.
+fn exprs_equal_canonically(a: &Expr, b: &Expr) -> bool {
+  compare_expr_canonical(a, b) == std::cmp::Ordering::Equal
 }
 
 /// Check if an expression is a negated form: UnaryOp::Minus(x), Times[-1, x],

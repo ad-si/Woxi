@@ -1563,6 +1563,55 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
   }
 }
 
+/// Wrap a box form in parentheses: RowBox[{"(", inner, ")"}].
+fn paren_box(inner: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "RowBox".to_string(),
+    args: vec![Expr::List(vec![
+      Expr::String("(".to_string()),
+      inner,
+      Expr::String(")".to_string()),
+    ])],
+  }
+}
+
+/// Returns true if `expr` is an additive expression (Plus or BinaryOp::Plus/Minus)
+/// that needs to be parenthesized when used as a sub-expression in a Power base
+/// or Times factor (so the rendered output is unambiguous).
+fn needs_paren_in_product(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "Plus" && args.len() >= 2)
+        // Negative term Times[-n, ...] renders with a leading minus sign
+        // and also needs parens when used as a multiplicand/Power base.
+        || (name == "Times"
+          && args.len() >= 2
+          && matches!(&args[0], Expr::Integer(n) if *n < 0))
+    }
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus
+    ),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    _ => false,
+  }
+}
+
+/// Box form of `expr`, parenthesized when the expression is additive so it
+/// renders unambiguously as the base of a Power or a factor in a Times product.
+fn box_with_paren_if_needed(expr: &Expr) -> Expr {
+  let boxed = expr_to_box_form(expr);
+  if needs_paren_in_product(expr) {
+    paren_box(boxed)
+  } else {
+    boxed
+  }
+}
+
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
@@ -1768,15 +1817,31 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     Expr::FunctionCall { name, args }
       if name == "Times"
-        && args.len() == 2
+        && args.len() >= 2
         && matches!(&args[0], Expr::Integer(-1)) =>
     {
       // Times[-1, x] → RowBox[{"-", box(x)}]
+      // Times[-1, a, b, c, ...] → RowBox[{"-", RowBox[{"(", a " " b " " c, ")"}]}]
+      // so the leading minus applies to the whole product without showing
+      // a literal "1" coefficient.
+      if args.len() == 2 {
+        return Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            Expr::String("-".to_string()),
+            box_with_paren_if_needed(&args[1]),
+          ])],
+        };
+      }
+      let rest = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: args[1..].to_vec(),
+      };
       Expr::FunctionCall {
         name: "RowBox".to_string(),
         args: vec![Expr::List(vec![
           Expr::String("-".to_string()),
-          expr_to_box_form(&args[1]),
+          paren_box(expr_to_box_form(&rest)),
         ])],
       }
     }
@@ -1817,12 +1882,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         };
       }
       // General Times: RowBox[{a, " ", b, " ", ...}]
+      // Additive sub-expressions (e.g. Plus[1, x]) are wrapped in parens so
+      // that `2*(1+x)` renders as `2 (1+x)` rather than `2 1+x`.
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {
         if i > 0 {
           parts.push(Expr::String(" ".to_string()));
         }
-        parts.push(expr_to_box_form(arg));
+        parts.push(box_with_paren_if_needed(arg));
       }
       Expr::FunctionCall {
         name: "RowBox".to_string(),
@@ -1874,9 +1941,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         };
       }
       // General power: SuperscriptBox[box(base), box(exp)]
+      // The base is parenthesized when it's additive (e.g. (1+x)^2) so the
+      // result reads unambiguously instead of 1+x² looking like 1 + x².
       Expr::FunctionCall {
         name: "SuperscriptBox".to_string(),
-        args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+        args: vec![
+          box_with_paren_if_needed(&args[0]),
+          expr_to_box_form(&args[1]),
+        ],
       }
     }
     Expr::FunctionCall { name, args }
@@ -1961,7 +2033,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       }
       Expr::FunctionCall {
         name: "SuperscriptBox".to_string(),
-        args: vec![expr_to_box_form(left), expr_to_box_form(right)],
+        args: vec![box_with_paren_if_needed(left), expr_to_box_form(right)],
       }
     }
     // List → RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}]
