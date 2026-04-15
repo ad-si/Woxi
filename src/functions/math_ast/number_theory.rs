@@ -1346,8 +1346,18 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Fibonacci[n] - Returns the nth Fibonacci number
+/// Fibonacci[n] - Returns the nth Fibonacci number.
+/// Fibonacci[n, x] - Returns the nth Fibonacci polynomial in x.
+///
+/// The Fibonacci polynomials satisfy F_0(x) = 0, F_1(x) = 1, and
+/// F_n(x) = x * F_{n-1}(x) + F_{n-2}(x). For negative indices,
+/// F_{-n}(x) = (-1)^{n+1} F_n(x). When `x` is itself an integer or
+/// rational, the recurrence collapses to a single number.
 pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    return fibonacci_polynomial_ast(&args[0], &args[1]);
+  }
+
   match expr_to_i128(&args[0]) {
     Some(n) => {
       if n < 0 {
@@ -1367,6 +1377,61 @@ pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Fibonacci".to_string(),
       args: args.to_vec(),
     }),
+  }
+}
+
+/// Fibonacci[n, x] - the n-th Fibonacci polynomial evaluated at `x`.
+fn fibonacci_polynomial_ast(
+  n_arg: &Expr,
+  x: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let Some(n) = expr_to_i128(n_arg) else {
+    return Ok(Expr::FunctionCall {
+      name: "Fibonacci".to_string(),
+      args: vec![n_arg.clone(), x.clone()],
+    });
+  };
+
+  // Negative index: F_{-n}(x) = (-1)^{n+1} F_n(x)
+  if n < 0 {
+    let pos = -n;
+    let positive = fibonacci_polynomial_ast(&Expr::Integer(pos), x)?;
+    if pos % 2 == 0 {
+      // (-1)^{n+1} = -1 when n is even (since -n flips parity to odd)
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Integer(-1), positive],
+      );
+    }
+    return Ok(positive);
+  }
+
+  if n == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  if n == 1 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Iterative recurrence: a = F_{k-2}, b = F_{k-1}, next = x*b + a.
+  // We let the regular evaluator simplify each step so that integer x
+  // collapses to a number while symbolic x builds up the polynomial.
+  let mut a = Expr::Integer(0);
+  let mut b = Expr::Integer(1);
+  for _ in 2..=n {
+    let xb = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[x.clone(), b.clone()],
+    )?;
+    let next = crate::evaluator::evaluate_function_call_ast("Plus", &[xb, a])?;
+    a = b;
+    b = next;
+  }
+  // For symbolic `x`, expand the result so it prints in canonical form.
+  if matches!(x, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)) {
+    Ok(b)
+  } else {
+    crate::evaluator::evaluate_function_call_ast("Expand", &[b])
   }
 }
 

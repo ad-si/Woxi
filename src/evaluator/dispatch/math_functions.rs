@@ -1122,7 +1122,7 @@ pub fn dispatch_math_functions(
     "Prime" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_ast(args));
     }
-    "Fibonacci" if args.len() == 1 => {
+    "Fibonacci" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::fibonacci_ast(args));
     }
     "LinearRecurrence" if args.len() == 3 => {
