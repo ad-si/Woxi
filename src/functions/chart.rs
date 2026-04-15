@@ -1394,7 +1394,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// BubbleChart[{{x,y,z}, ...}]
+/// BubbleChart[{{x,y,z}, ...}] or BubbleChart[{{{x,y,z},...}, ...}]
 pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let items = match &data {
@@ -1407,27 +1407,57 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut triples = Vec::new();
-  for item in items {
+  // Helper: parse a single {x,y,z} triple from an expression.
+  fn parse_triple(item: &Expr) -> Option<(f64, f64, f64)> {
     if let Expr::List(inner) = item
       && inner.len() >= 3
     {
       let x = try_eval_to_f64(
         &evaluate_expr_to_expr(&inner[0]).unwrap_or(inner[0].clone()),
-      );
+      )?;
       let y = try_eval_to_f64(
         &evaluate_expr_to_expr(&inner[1]).unwrap_or(inner[1].clone()),
-      );
+      )?;
       let z = try_eval_to_f64(
         &evaluate_expr_to_expr(&inner[2]).unwrap_or(inner[2].clone()),
-      );
-      if let (Some(x), Some(y), Some(z)) = (x, y, z) {
-        triples.push((x, y, z));
-      }
+      )?;
+      return Some((x, y, z));
     }
+    None
   }
 
-  if triples.is_empty() {
+  // Detect shape: if every top-level item is itself a list of triples
+  // (i.e., none of its entries are numeric), treat as multi-dataset.
+  // Otherwise treat as a single flat dataset.
+  let is_multi_dataset = !items.is_empty()
+    && items.iter().all(|item| {
+      if let Expr::List(inner) = item {
+        // A triple has >=3 entries, at least one of which is numeric.
+        // A dataset is a list of such triples — its first entry is itself
+        // a list. Use that to disambiguate.
+        !inner.is_empty() && matches!(inner[0], Expr::List(_))
+      } else {
+        false
+      }
+    });
+
+  let groups: Vec<Vec<(f64, f64, f64)>> = if is_multi_dataset {
+    items
+      .iter()
+      .map(|ds| {
+        if let Expr::List(inner) = ds {
+          inner.iter().filter_map(parse_triple).collect()
+        } else {
+          Vec::new()
+        }
+      })
+      .collect()
+  } else {
+    vec![items.iter().filter_map(parse_triple).collect()]
+  };
+
+  let total_points: usize = groups.iter().map(|g| g.len()).sum();
+  if total_points == 0 {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
@@ -1450,7 +1480,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.svg_height = opts.svg_width.saturating_sub(25);
   }
   let svg = crate::functions::plot::generate_bubble_chart_svg(
-    &triples,
+    &groups,
     opts.svg_width,
     opts.svg_height,
     opts.full_width,

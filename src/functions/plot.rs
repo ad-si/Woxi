@@ -2525,7 +2525,7 @@ pub(crate) fn generate_bar_svg(
 /// where `z` drives the bubble area (matching Mathematica's convention).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_bubble_chart_svg(
-  triples: &[(f64, f64, f64)],
+  groups: &[Vec<(f64, f64, f64)>],
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -2559,8 +2559,10 @@ pub(crate) fn generate_bubble_chart_svg(
     };
     (mn - pad, mx + pad)
   };
-  let xs: Vec<f64> = triples.iter().map(|t| t.0).collect();
-  let ys: Vec<f64> = triples.iter().map(|t| t.1).collect();
+  let xs: Vec<f64> =
+    groups.iter().flat_map(|g| g.iter().map(|t| t.0)).collect();
+  let ys: Vec<f64> =
+    groups.iter().flat_map(|g| g.iter().map(|t| t.1)).collect();
   let (x_min_auto, x_max_auto) = compute_range(&xs);
   let (y_min_auto, y_max_auto) = compute_range(&ys);
   let (x_min, x_max) = plot_range_x.unwrap_or((x_min_auto, x_max_auto));
@@ -2568,7 +2570,12 @@ pub(crate) fn generate_bubble_chart_svg(
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
 
-  let z_max = triples.iter().map(|t| t.2.abs()).fold(0.0_f64, f64::max);
+  // Max |z| across all groups — used to normalize bubble radii so that
+  // bubbles are comparable between datasets.
+  let z_max = groups
+    .iter()
+    .flat_map(|g| g.iter().map(|t| t.2.abs()))
+    .fold(0.0_f64, f64::max);
 
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -2681,37 +2688,40 @@ pub(crate) fn generate_bubble_chart_svg(
     }
 
     // Draw the bubbles with pixel-space radii so they look the same
-    // regardless of the data range.
-    for (i, &(x, y, z)) in triples.iter().enumerate() {
-      if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-        continue;
-      }
+    // regardless of the data range. Colors are assigned per group so that
+    // multi-dataset BubbleChart input visually distinguishes the datasets.
+    for (gi, group) in groups.iter().enumerate() {
       let (cr, cg, cb) = if !chart_style.is_empty() {
-        let c = &chart_style[i % chart_style.len()];
+        let c = &chart_style[gi % chart_style.len()];
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
       } else {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
-      };
-      // Area-proportional: radius ∝ sqrt(z / z_max) * max_radius.
-      let radius = if z_max > 0.0 {
-        ((z.abs() / z_max).sqrt() * max_bubble_radius).max(2.0 * sf)
-      } else {
-        5.0 * sf
+        PLOT_COLORS[gi % PLOT_COLORS.len()]
       };
       let fill = RGBColor(cr, cg, cb).mix(0.7);
-      chart
-        .draw_series(std::iter::once(Circle::new(
-          (x, y),
-          radius as i32,
-          fill.filled(),
-        )))
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
-        })?;
+      for &(x, y, z) in group {
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+          continue;
+        }
+        // Area-proportional: radius ∝ sqrt(z / z_max) * max_radius.
+        let radius = if z_max > 0.0 {
+          ((z.abs() / z_max).sqrt() * max_bubble_radius).max(2.0 * sf)
+        } else {
+          5.0 * sf
+        };
+        chart
+          .draw_series(std::iter::once(Circle::new(
+            (x, y),
+            radius as i32,
+            fill.filled(),
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
+          })?;
+      }
     }
 
     root.present().map_err(|e| {
