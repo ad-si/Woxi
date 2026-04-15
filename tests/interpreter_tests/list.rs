@@ -1968,6 +1968,62 @@ mod nest_while_list {
     // NestWhile[f, x, test, 1] behaves like the 3-arg form.
     assert_eq!(interpret("NestWhile[#/2 &, 16, # > 1 &, 1]").unwrap(), "1");
   }
+
+  #[test]
+  fn six_arg_extra_iterations_after_test_fails() {
+    // NestWhile[f, x, test, m, max, n] with n > 0 applies f an additional
+    // n times after the test stops being True.
+    // 1 -> 2 -> 3 -> 4 -> 5 (test fails), then +2 more: 6, 7
+    assert_eq!(
+      interpret("NestWhile[# + 1 &, 1, # < 5 &, 1, Infinity, 2]").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn six_arg_negative_n_returns_earlier_value() {
+    // NestWhile[..., n] with n < 0 returns the result n iterations *before*
+    // the test stopped being True.
+    // 1024 -> 512 -> ... -> 2 -> 1 (test fails); n = -1 -> 2.
+    assert_eq!(
+      interpret(
+        "NestWhile[#/2 &, 1024, IntegerQ[#] && # > 1 &, 1, Infinity, -1]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn six_arg_zero_n_is_identity() {
+    // n = 0 is the same as the 5-arg form.
+    assert_eq!(
+      interpret("NestWhile[# + 1 &, 1, # < 5 &, 1, Infinity, 0]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn list_form_six_arg_extra_iterations() {
+    // NestWhileList with n > 0 extends the list by n extra iterations
+    // beyond the value at which the test failed.
+    assert_eq!(
+      interpret("NestWhileList[# + 1 &, 1, # < 5 &, 1, Infinity, 2]").unwrap(),
+      "{1, 2, 3, 4, 5, 6, 7}"
+    );
+  }
+
+  #[test]
+  fn list_form_six_arg_negative_n_truncates() {
+    // NestWhileList with n < 0 drops the trailing |n| values.
+    assert_eq!(
+      interpret(
+        "NestWhileList[#/2 &, 1024, IntegerQ[#] && # > 1 &, 1, Infinity, -1]"
+      )
+      .unwrap(),
+      "{1024, 512, 256, 128, 64, 32, 16, 8, 4, 2}"
+    );
+  }
 }
 
 mod reap_sow {
