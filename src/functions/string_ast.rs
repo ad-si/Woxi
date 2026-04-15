@@ -1304,12 +1304,14 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
   match expr {
     // String literal patterns — convert Wolfram metacharacters (* and @)
     // to regex equivalents before escaping the rest.
+    // In Wolfram Language string patterns, `*` matches any sequence
+    // (including empty) and `@` matches one or more non-uppercase characters.
     Expr::String(s) => {
       let mut result = String::new();
       for ch in s.chars() {
         match ch {
           '*' => result.push_str(".*"),
-          '@' => result.push_str("[^A-Z]"),
+          '@' => result.push_str("[^A-Z]+"),
           _ => result.push_str(&regex::escape(&ch.to_string())),
         }
       }
