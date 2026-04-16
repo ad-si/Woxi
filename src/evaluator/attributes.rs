@@ -73,8 +73,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Beta"
     | "Zeta"
     | "PolyGamma"
-    | "AiryAi"
-    | "AiryBi"
     | "Hypergeometric0F1"
     | "Hypergeometric0F1Regularized"
     | "Hypergeometric1F1"
@@ -149,6 +147,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // These have ReadProtected too
     "Exp"
+    | "AiryAi"
+    | "AiryBi"
     | "InverseJacobiCN"
     | "InverseJacobiSN"
     | "InverseJacobiDN"
