@@ -7,7 +7,9 @@ import {
   StreamLanguage,
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
 } from "https://esm.sh/@codemirror/language@6"
-import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6"
+import {
+  defaultKeymap, history, historyKeymap, indentWithTab,
+} from "https://esm.sh/@codemirror/commands@6"
 import {
   closeBrackets, closeBracketsKeymap,
 } from "https://esm.sh/@codemirror/autocomplete@6"
@@ -23,7 +25,7 @@ let editorView = null
 
 const wolframLanguage = StreamLanguage.define(mathematica)
 const themeConfig = new Compartment()
-const STORAGE_KEY_THEME = "woxi-playground-theme"
+const STORAGE_KEY_THEME = "woxi-landing-theme"
 const THEME_MODES = ["auto", "light", "dark"]
 const THEME_ICONS = { auto: "\u25D0", light: "\u2600", dark: "\u263E" }
 const THEME_LABELS = { auto: "Auto", light: "Light", dark: "Dark" }
@@ -82,8 +84,8 @@ const runKeymap = keymap.of([{
   },
 }])
 
-const STORAGE_KEY = "woxi-playground-code"
-const STORAGE_KEY_OUTPUTS = "woxi-playground-outputs"
+const STORAGE_KEY = "woxi-landing-code"
+const STORAGE_KEY_OUTPUTS = "woxi-landing-outputs"
 const DEFAULT_CODE = `GraphicsRow[{
   Plot[Sin[x], {x, 0, 4 Pi}],
   BarChart[{1, 5, 3, 4, 7, 9}],
@@ -121,6 +123,7 @@ editorView = new EditorView({
     highlightActiveLine(),
     runKeymap,
     keymap.of([
+      indentWithTab,
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
