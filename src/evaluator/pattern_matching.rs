@@ -580,17 +580,29 @@ pub fn apply_replace_ast(
 
 /// Apply Replace with level specification: Replace[expr, rules, levelspec]
 /// Traverses the expression and applies rules at the specified levels.
+/// Supports both positive levels (distance from root) and negative levels
+/// (counted from the leaves: -1 = atoms, -2 = depth-2 subtrees, etc.).
 pub fn apply_replace_with_level_ast(
   expr: &Expr,
   rules: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Parse level spec: {n} = exactly level n, n = levels 0..n, {min, max} = range
+  // Parse level spec: n = {0, n}, {n} = exactly level n, {min, max} = range.
+  // Negative endpoints are interpreted relative to the depth of the subtree.
   let level_val = |e: &Expr| -> Option<i64> {
     match e {
       Expr::Integer(n) => Some(*n as i64),
       Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
         Some(i64::MAX)
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Minus" && args.len() == 1 =>
+      {
+        if let Expr::Integer(n) = &args[0] {
+          Some(-(*n as i64))
+        } else {
+          None
+        }
       }
       _ => crate::evaluator::type_helpers::expr_to_i128(e).map(|n| n as i64),
     }
@@ -615,57 +627,89 @@ pub fn apply_replace_with_level_ast(
       let max = level_val(&items[1]).unwrap_or(0);
       (min, max)
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Replace".to_string(),
-        args: vec![expr.clone(), rules.clone(), level_spec.clone()],
-      });
-    }
+    _ => match level_val(level_spec) {
+      Some(n) => (0, n),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Replace".to_string(),
+          args: vec![expr.clone(), rules.clone(), level_spec.clone()],
+        });
+      }
+    },
   };
 
-  replace_at_depth(expr, rules, 0, min_level, max_level)
+  let (result, _depth) =
+    replace_at_depth(expr, rules, 0, min_level, max_level)?;
+  Ok(result)
 }
 
-/// Recursively apply Replace rules at specified levels (bottom-up, like Mathematica)
+/// Recursively apply Replace rules at the specified levels (bottom-up, like
+/// Mathematica). Returns the rewritten expression along with its Mathematica
+/// `Depth` (1 for atoms, 1 + max(child Depth) otherwise) so that negative
+/// level endpoints can be evaluated.
 fn replace_at_depth(
   expr: &Expr,
   rules: &Expr,
-  current_depth: i64,
+  pos_level: i64,
   min_level: i64,
   max_level: i64,
-) -> Result<Expr, InterpreterError> {
-  // First recurse into children
-  let recursed = match expr {
+) -> Result<(Expr, i64), InterpreterError> {
+  // First recurse into children, tracking the maximum child Depth so we can
+  // compute Depth[expr] for negative-level matching.
+  let (recursed, max_child_depth) = match expr {
     Expr::List(items) => {
-      let mapped: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| {
-          replace_at_depth(item, rules, current_depth + 1, min_level, max_level)
-        })
-        .collect();
-      Expr::List(mapped?)
+      let mut mapped = Vec::with_capacity(items.len());
+      let mut max_depth: i64 = 0;
+      for item in items {
+        let (e, d) =
+          replace_at_depth(item, rules, pos_level + 1, min_level, max_level)?;
+        max_depth = max_depth.max(d);
+        mapped.push(e);
+      }
+      (Expr::List(mapped), max_depth)
     }
     Expr::FunctionCall { name, args } => {
-      let mapped: Result<Vec<Expr>, _> = args
-        .iter()
-        .map(|item| {
-          replace_at_depth(item, rules, current_depth + 1, min_level, max_level)
-        })
-        .collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: mapped?,
+      let mut mapped = Vec::with_capacity(args.len());
+      let mut max_depth: i64 = 0;
+      for item in args {
+        let (e, d) =
+          replace_at_depth(item, rules, pos_level + 1, min_level, max_level)?;
+        max_depth = max_depth.max(d);
+        mapped.push(e);
       }
+      (
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: mapped,
+        },
+        max_depth,
+      )
     }
-    _ => expr.clone(),
+    _ => (expr.clone(), 0),
   };
 
-  // Then try replacement at this depth if in range
-  if current_depth >= min_level && current_depth <= max_level {
-    apply_replace_ast(&recursed, rules)
+  let depth = 1 + max_child_depth; // Mathematica Depth (atoms = 1)
+  let neg_level = -depth;
+
+  // Check both endpoints against the appropriate axis (positive or negative).
+  let min_ok = if min_level >= 0 {
+    pos_level >= min_level
   } else {
-    Ok(recursed)
-  }
+    neg_level >= min_level
+  };
+  let max_ok = if max_level >= 0 {
+    pos_level <= max_level
+  } else {
+    neg_level <= max_level
+  };
+
+  let result = if min_ok && max_ok {
+    apply_replace_ast(&recursed, rules)?
+  } else {
+    recursed
+  };
+
+  Ok((result, depth))
 }
 
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args

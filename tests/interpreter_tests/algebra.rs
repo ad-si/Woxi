@@ -2496,6 +2496,41 @@ mod replace {
   fn pattern_match() {
     assert_eq!(interpret("Replace[42, n_Integer -> n + 1]").unwrap(), "43");
   }
+
+  #[test]
+  fn negative_levelspec_leaves() {
+    // {-1} matches all atoms (Depth = 1).
+    assert_eq!(
+      interpret("Replace[f[1, g[2, h[3]]], _Integer -> 0, {-1}]").unwrap(),
+      "f[0, g[0, h[0]]]"
+    );
+  }
+
+  #[test]
+  fn negative_levelspec_leaves_in_list() {
+    assert_eq!(
+      interpret("Replace[{1, {2, {3, 4}}}, _Integer -> 0, {-1}]").unwrap(),
+      "{0, {0, {0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn negative_levelspec_subtree_depth_two() {
+    // {-2} matches subtrees with Depth = 2 (e.g. h[3] in this expression).
+    assert_eq!(
+      interpret("Replace[f[1, g[2, h[3]]], h[_] -> X, {-2}]").unwrap(),
+      "f[1, g[2, X]]"
+    );
+  }
+
+  #[test]
+  fn negative_levelspec_no_match_at_wrong_depth() {
+    // {-3} of f[1,g[2,h[3]]] only matches the subtree g[2,h[3]] (Depth = 3).
+    assert_eq!(
+      interpret("Replace[f[1, g[2, h[3]]], _ -> X, {-3}]").unwrap(),
+      "f[1, X]"
+    );
+  }
 }
 
 mod distribute {
