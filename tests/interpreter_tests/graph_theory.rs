@@ -641,6 +641,23 @@ mod graph_rendering {
   }
 
   #[test]
+  fn graph_labeled_edge_label_is_black() {
+    // Regression: edge labels previously inherited the edge's grey stroke
+    // color instead of being rendered in black.
+    let result = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, Labeled[3 <-> 1, \"hello\"]}, VertexLabels -> \"Name\"], \"SVG\"]"
+    ).unwrap();
+    let hello_tag = result
+      .lines()
+      .find(|l| l.contains(">hello</text>"))
+      .expect("edge label should be rendered");
+    assert!(
+      hello_tag.contains("fill=\"rgb(0,0,0)\""),
+      "edge label should be black, got: {hello_tag}"
+    );
+  }
+
+  #[test]
   fn graph_with_diamond_shape() {
     let result = interpret(
       "ExportString[Graph[{UndirectedEdge[1, 2]}, VertexShapeFunction -> \"Diamond\"], \"SVG\"]"

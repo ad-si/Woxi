@@ -518,6 +518,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         (y1 + y2) / 2.0
       };
+      // Force labels to black so they don't inherit the edge color.
+      primitives.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+      });
       primitives.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
