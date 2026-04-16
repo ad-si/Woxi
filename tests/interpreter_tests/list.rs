@@ -5642,6 +5642,63 @@ mod cases_count_level_spec {
       "{1, {}, {{5}}}"
     );
   }
+
+  #[test]
+  fn cases_with_max_count() {
+    // Cases[expr, pat, levelspec, n] returns at most n matches in scan order.
+    assert_eq!(
+      interpret("Cases[{1, {2, 3}, {4, {5, 6}}}, _Integer, Infinity, 3]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn cases_with_max_count_flat() {
+    assert_eq!(interpret("Cases[{a, b, c, a, b}, a, 1, 1]").unwrap(), "{a}");
+    assert_eq!(
+      interpret("Cases[{a, b, c, a, b}, a, Infinity, 5]").unwrap(),
+      "{a, a}"
+    );
+  }
+
+  #[test]
+  fn cases_with_max_count_zero() {
+    // n = 0 should always yield {}.
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, _Integer, 1, 0]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn cases_with_infinite_max_count() {
+    // n = Infinity behaves the same as the 3-arg form.
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, _Integer, Infinity, Infinity]")
+        .unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn cases_with_rule_and_levelspec() {
+    // The 3-arg form should still apply Rule/RuleDelayed replacements
+    // to matched elements (a regression check for the pattern :> rhs path).
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4}, x_Integer :> x^2, 1]").unwrap(),
+      "{1, 4, 9, 16}"
+    );
+  }
+
+  #[test]
+  fn cases_with_rule_and_max_count() {
+    // 4-arg form combined with a Rule pattern.
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, x_Integer :> x^2, 1, 3]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
 }
 
 mod tally_with_test {

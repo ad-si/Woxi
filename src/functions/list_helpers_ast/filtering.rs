@@ -706,73 +706,125 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
 }
 
 /// Cases with level specification: Cases[list, pattern, levelspec]
+/// or Cases[list, pattern, levelspec, n] limiting the number of results.
 pub fn cases_with_level_ast(
   list: &Expr,
   pattern: &Expr,
   level_spec: &Expr,
+  max_count: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let (min_level, max_level) = parse_level_spec(level_spec)?;
+
+  // Parse the optional max-count argument. None means "no limit".
+  let limit = match max_count {
+    Some(expr) => parse_max_count(expr)?,
+    None => None,
+  };
+
+  // n = 0 short-circuits to the empty list.
+  if limit == Some(0) {
+    return Ok(Expr::List(Vec::new()));
+  }
+
+  // Honor Rule / RuleDelayed patterns by extracting the LHS pattern and an
+  // optional RHS to substitute into when a match is found.
+  let (match_pat, replacement) = extract_rule_parts(pattern);
 
   let mut results = Vec::new();
   collect_at_level_range(
     list,
-    pattern,
+    match_pat,
+    replacement,
     0,
     min_level as usize,
     max_level as usize,
+    limit,
     &mut results,
-  );
+  )?;
   Ok(Expr::List(results))
 }
 
-/// Recursively collect elements matching pattern within a level range
+/// Recursively collect elements matching pattern within a level range,
+/// optionally applying a Rule replacement and stopping once `limit` matches
+/// have been recorded.
 fn collect_at_level_range(
   expr: &Expr,
   pattern: &Expr,
+  replacement: Option<&Expr>,
   current_level: usize,
   min_level: usize,
   max_level: usize,
+  limit: Option<usize>,
   results: &mut Vec<Expr>,
-) {
-  if current_level >= min_level
-    && current_level <= max_level
-    && matches_pattern_ast(expr, pattern)
+) -> Result<(), InterpreterError> {
+  if let Some(n) = limit
+    && results.len() >= n
   {
-    results.push(expr.clone());
+    return Ok(());
+  }
+
+  if current_level >= min_level && current_level <= max_level {
+    if let Some(repl) = replacement {
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(expr, pattern)
+      {
+        let result =
+          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
+        results.push(result);
+      }
+    } else if matches_pattern_ast(expr, pattern) {
+      results.push(expr.clone());
+    }
   }
 
   if current_level >= max_level {
-    return;
+    return Ok(());
   }
 
   // Recurse into sublists/subexpressions
   match expr {
     Expr::List(items) => {
       for item in items {
+        if let Some(n) = limit
+          && results.len() >= n
+        {
+          break;
+        }
         collect_at_level_range(
           item,
           pattern,
+          replacement,
           current_level + 1,
           min_level,
           max_level,
+          limit,
           results,
-        );
+        )?;
       }
     }
     Expr::FunctionCall { args, .. } => {
       for arg in args {
+        if let Some(n) = limit
+          && results.len() >= n
+        {
+          break;
+        }
         collect_at_level_range(
           arg,
           pattern,
+          replacement,
           current_level + 1,
           min_level,
           max_level,
+          limit,
           results,
-        );
+        )?;
       }
     }
     _ => {}
   }
+
+  Ok(())
 }
 
 /// AST-based Position: find positions of elements matching a pattern,

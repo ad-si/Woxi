@@ -354,7 +354,15 @@ pub fn dispatch_list_operations(
     }
     "Cases" if args.len() == 3 => {
       return Some(list_helpers_ast::cases_with_level_ast(
-        &args[0], &args[1], &args[2],
+        &args[0], &args[1], &args[2], None,
+      ));
+    }
+    "Cases" if args.len() == 4 => {
+      return Some(list_helpers_ast::cases_with_level_ast(
+        &args[0],
+        &args[1],
+        &args[2],
+        Some(&args[3]),
       ));
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
