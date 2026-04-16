@@ -7,7 +7,9 @@ import {
   StreamLanguage,
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
 } from "https://esm.sh/@codemirror/language@6"
-import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6"
+import {
+  defaultKeymap, history, historyKeymap, indentWithTab,
+} from "https://esm.sh/@codemirror/commands@6"
 import {
   closeBrackets, closeBracketsKeymap,
 } from "https://esm.sh/@codemirror/autocomplete@6"
@@ -121,6 +123,7 @@ editorView = new EditorView({
     highlightActiveLine(),
     runKeymap,
     keymap.of([
+      indentWithTab,
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
