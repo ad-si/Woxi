@@ -45,6 +45,7 @@
 - [File System & I/O](file_system.md)
 - [Scripting](scripting.md)
 - [Jupyter](jupyter.md)
+- [Studio](studio.md)
 - [Effect Levels](effect_levels.md)
 - [Resources](resources.md)
 - [Related](related.md)
