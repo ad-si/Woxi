@@ -3,17 +3,16 @@
  * match the glyphs users see when they Export[…] a plot to PNG / PDF. */
 @font-face {
   font-family: "Atkinson Hyperlegible Next";
-  src: url("AtkinsonHyperlegibleNext-VariableFont_wght.ttf")
-      format("truetype-variations"),
+  src: url("AtkinsonHyperlegibleNext-VariableFont_wght.ttf") format("truetype-variations"),
     url("AtkinsonHyperlegibleNext-VariableFont_wght.ttf") format("truetype");
   font-weight: 200 800;
   font-style: normal;
   font-display: swap;
 }
+
 @font-face {
   font-family: "Atkinson Hyperlegible Mono";
-  src: url("AtkinsonHyperlegibleMono-VariableFont_wght.ttf")
-      format("truetype-variations"),
+  src: url("AtkinsonHyperlegibleMono-VariableFont_wght.ttf") format("truetype-variations"),
     url("AtkinsonHyperlegibleMono-VariableFont_wght.ttf") format("truetype");
   font-weight: 200 800;
   font-style: normal;
@@ -27,6 +26,7 @@
 svg text {
   font-family: "Atkinson Hyperlegible Next", sans-serif;
 }
+
 svg text[font-family~="monospace"],
 svg text[font-family*="Mono"],
 svg text[font-family*="Courier"] {
@@ -205,7 +205,7 @@ a:hover {
 
 /* CodeMirror editor */
 .editor-container {
-  margin: 1rem 0;
+  margin: 1rem 0 0.5rem 0;
   border: 2px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
@@ -251,6 +251,18 @@ a:hover {
   gap: 0.5rem;
   margin-left: auto;
 }
+
+.disclaimer {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--text-hint);
+
+  small {
+    display: block;
+    font-size: 0.7rem;
+  }
+}
+
 
 #runBtn {
   background-color: var(--run-bg);
