@@ -658,6 +658,50 @@ mod graph_rendering {
   }
 
   #[test]
+  fn graph_with_per_vertex_style_color() {
+    // Style[3, Red] inside the vertex list should color that vertex red
+    // without losing the edges that reference `3`.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, Style[3, Red]}, {1 <-> 2, 2 <-> 3, 3 <-> 1}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("fill=\"rgb(255,0,0)\""));
+    // All three edges must still be drawn.
+    assert_eq!(result.matches("<polyline").count(), 3);
+  }
+
+  #[test]
+  fn graph_with_per_edge_style_color() {
+    // Style[3 <-> 1, Green] should color that single edge green.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, 3}, {1 <-> 2, 2 <-> 3, Style[3 <-> 1, Green]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("stroke=\"rgb(0,255,0)\""));
+    // All three edges must still be drawn.
+    assert_eq!(result.matches("<polyline").count(), 3);
+  }
+
+  #[test]
+  fn graph_with_mixed_style_wrappers() {
+    // Combined per-vertex and per-edge Style wrappers should coexist.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, Style[3, Red]}, {1 <-> 2, 2 <-> 3, Style[3 <-> 1, Green]}], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains("fill=\"rgb(255,0,0)\""));
+    assert!(result.contains("stroke=\"rgb(0,255,0)\""));
+    assert_eq!(result.matches("<polyline").count(), 3);
+  }
+
+  #[test]
+  fn graph_with_styled_vertex_and_label() {
+    // Label of a styled vertex should strip the Style wrapper.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, Style[3, Red]}, {1 <-> 2, 2 <-> 3, 3 <-> 1}, VertexLabels -> \"Name\"], \"SVG\"]"
+    ).unwrap();
+    assert!(result.contains(">3</text>"));
+    assert!(!result.contains("Style"));
+  }
+
+  #[test]
   fn complete_graph_renders() {
     assert_eq!(interpret("CompleteGraph[4]").unwrap(), "-Graphics-");
   }
