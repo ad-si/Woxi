@@ -805,14 +805,17 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Insert[list, elem, n] - Insert element at position n (1-indexed)
+/// Insert[list, elem, n] - Insert element at position n (1-indexed).
+/// Threads through any non-atomic head, so e.g. Insert[f[a,b], x, 2] returns
+/// f[a, x, b].
 pub fn insert_ast(
   list: &Expr,
   elem: &Expr,
   pos: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
+  let (items, head): (Vec<Expr>, Option<String>) = match list {
+    Expr::List(items) => (items.clone(), None),
+    Expr::FunctionCall { name, args } => (args.clone(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Insert".to_string(),
@@ -911,7 +914,10 @@ pub fn insert_ast(
   for idx in insert_indices.into_iter().rev() {
     result.insert(idx, elem.clone());
   }
-  Ok(Expr::List(result))
+  match head {
+    Some(name) => Ok(Expr::FunctionCall { name, args: result }),
+    None => Ok(Expr::List(result)),
+  }
 }
 
 /// Extract[list, n] - extracts element at position n
