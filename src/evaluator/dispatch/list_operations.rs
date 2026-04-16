@@ -363,13 +363,24 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::first_case_ast(args));
     }
     "Position" if args.len() == 2 => {
-      return Some(list_helpers_ast::position_ast(&args[0], &args[1], None));
+      return Some(list_helpers_ast::position_ast(
+        &args[0], &args[1], None, None,
+      ));
     }
     "Position" if args.len() == 3 => {
       return Some(list_helpers_ast::position_ast(
         &args[0],
         &args[1],
         Some(&args[2]),
+        None,
+      ));
+    }
+    "Position" if args.len() == 4 => {
+      return Some(list_helpers_ast::position_ast(
+        &args[0],
+        &args[1],
+        Some(&args[2]),
+        Some(&args[3]),
       ));
     }
     "FirstPosition" if args.len() >= 2 => {

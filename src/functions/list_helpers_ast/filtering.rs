@@ -776,11 +776,13 @@ fn collect_at_level_range(
 }
 
 /// AST-based Position: find positions of elements matching a pattern,
-/// optionally restricted to a levelspec.
+/// optionally restricted to a levelspec, and optionally limited to the
+/// first `n` matches in scan order.
 pub fn position_ast(
   list: &Expr,
   pattern: &Expr,
   level_spec: Option<&Expr>,
+  max_count: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
@@ -789,6 +791,9 @@ pub fn position_ast(
       let mut call_args = vec![list.clone(), pattern.clone()];
       if let Some(ls) = level_spec {
         call_args.push(ls.clone());
+      }
+      if let Some(mc) = max_count {
+        call_args.push(mc.clone());
       }
       return Ok(Expr::FunctionCall {
         name: "Position".to_string(),
@@ -803,6 +808,17 @@ pub fn position_ast(
     None => (1, i64::MAX),
   };
 
+  // Parse the max-count argument. None means "no limit".
+  let limit = match max_count {
+    Some(expr) => parse_max_count(expr)?,
+    None => None,
+  };
+
+  // A limit of 0 short-circuits to the empty result.
+  if limit == Some(0) {
+    return Ok(Expr::List(Vec::new()));
+  }
+
   let mut positions = Vec::new();
   let mut path = Vec::new();
   position_recursive(
@@ -813,14 +829,29 @@ pub fn position_ast(
     1,
     min_level,
     max_level,
+    limit,
   );
 
   Ok(Expr::List(positions))
 }
 
+/// Parse the `n` argument of Position[expr, pat, levelspec, n].
+/// `n` may be a non-negative integer or `Infinity` (treated as no limit).
+fn parse_max_count(expr: &Expr) -> Result<Option<usize>, InterpreterError> {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => Ok(None),
+    Expr::Integer(n) if *n >= 0 => Ok(Some(*n as usize)),
+    _ => Err(InterpreterError::EvaluationError(
+      "Position: max-count must be a non-negative integer or Infinity".into(),
+    )),
+  }
+}
+
 /// Recursively find positions of elements matching pattern, filtering by
 /// the current depth against the levelspec. `depth` is the Mathematica
 /// level of the items in `items` (the children of the current expression).
+/// If `limit` is `Some(n)`, scanning stops once `n` positions have been
+/// recorded.
 fn position_recursive(
   items: &[Expr],
   pattern: &Expr,
@@ -829,8 +860,14 @@ fn position_recursive(
   depth: i64,
   min_level: i64,
   max_level: i64,
+  limit: Option<usize>,
 ) {
   for (i, item) in items.iter().enumerate() {
+    if let Some(n) = limit
+      && positions.len() >= n
+    {
+      return;
+    }
     let idx = (i + 1) as i128;
     path.push(idx);
 
@@ -845,7 +882,7 @@ fn position_recursive(
 
     // Recurse into sublists and function calls only if there might still
     // be matches at a deeper level.
-    if depth < max_level {
+    if depth < max_level && limit.is_none_or(|n| positions.len() < n) {
       match item {
         Expr::List(sub_items) => {
           position_recursive(
@@ -856,6 +893,7 @@ fn position_recursive(
             depth + 1,
             min_level,
             max_level,
+            limit,
           );
         }
         Expr::FunctionCall { args, .. } => {
@@ -867,6 +905,7 @@ fn position_recursive(
             depth + 1,
             min_level,
             max_level,
+            limit,
           );
         }
         _ => {}
