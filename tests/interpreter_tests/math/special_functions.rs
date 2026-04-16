@@ -2586,6 +2586,16 @@ mod airy_ai {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("AiryAi[x]").unwrap(), "AiryAi[x]");
   }
+
+  #[test]
+  fn attributes() {
+    // Wolfram versions disagree on whether AiryAi has ReadProtected, so
+    // only assert that the essential attributes are present.
+    let result = interpret("Attributes[AiryAi]").unwrap();
+    for attr in ["Listable", "NumericFunction", "Protected"] {
+      assert!(result.contains(attr), "missing {attr} in {result}");
+    }
+  }
 }
 
 mod gegenbauer_c {
