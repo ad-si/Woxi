@@ -287,9 +287,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and the components are packed into a grid so clusters are visible.
   let positions: Vec<(f64, f64)> = compute_layout(&graph);
 
-  // Compute base radius for vertices
+  // Compute base radius for vertices. Kept deliberately small so labels
+  // and edges remain legible; a border is drawn around each vertex so the
+  // shape stays visible even at this size.
   let base_radius = if n <= 2 {
-    0.09
+    0.06
   } else {
     let min_dist = positions
       .iter()
@@ -300,7 +302,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(move |&(x2, y2)| ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())
       })
       .fold(f64::INFINITY, f64::min);
-    (min_dist * 0.12).min(0.09).max(0.024)
+    (min_dist * 0.08).min(0.06).max(0.018)
   };
   let vertex_radius = base_radius * vertex_size_scale;
 
@@ -535,9 +537,20 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(ef) = &v_edge_form {
     primitives.push(ef.clone());
   } else {
+    // Default vertex border: a darker outline so small vertices remain
+    // clearly visible and distinguishable from the background.
     primitives.push(Expr::FunctionCall {
       name: "EdgeForm".to_string(),
-      args: vec![],
+      args: vec![Expr::List(vec![
+        Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![Expr::Real(0.15), Expr::Real(0.27), Expr::Real(0.43)],
+        },
+        Expr::FunctionCall {
+          name: "AbsoluteThickness".to_string(),
+          args: vec![Expr::Real(1.0)],
+        },
+      ])],
     });
   }
 
