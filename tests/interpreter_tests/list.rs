@@ -519,6 +519,31 @@ mod insert {
       "{x, a, b, x, c, d, x, e}"
     );
   }
+
+  #[test]
+  fn insert_into_arbitrary_head() {
+    // Insert threads through any non-list head, preserving it.
+    assert_eq!(
+      interpret("Insert[f[a, b, c, d], x, 2]").unwrap(),
+      "f[a, x, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn insert_into_arbitrary_head_negative_position() {
+    assert_eq!(
+      interpret("Insert[g[a, b, c], x, -1]").unwrap(),
+      "g[a, b, c, x]"
+    );
+  }
+
+  #[test]
+  fn insert_into_arbitrary_head_multiple_positions() {
+    assert_eq!(
+      interpret("Insert[g[a, b, c, d], x, {{1}, {3}}]").unwrap(),
+      "g[x, a, b, x, c, d]"
+    );
+  }
 }
 
 mod dimensions {
