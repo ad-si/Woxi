@@ -166,8 +166,15 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 })
 
 
-function showStatus(message, type = "info") {
+let statusHideTimer = null
+
+function showStatus(message, type = "info", { autoHide = true } = {}) {
   const status = document.getElementById("status")
+
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer)
+    statusHideTimer = null
+  }
 
   if (message === "") {
     status.style.display = "none"
@@ -178,8 +185,11 @@ function showStatus(message, type = "info") {
   status.className = `status ${type}`
   status.style.display = "block"
 
-  if (type === "info") {
-    setTimeout(() => { status.style.display = "none" }, 3000)
+  if (type === "info" && autoHide) {
+    statusHideTimer = setTimeout(() => {
+      status.style.display = "none"
+      statusHideTimer = null
+    }, 3000)
   }
 }
 
@@ -449,7 +459,7 @@ function clearOutputs() {
 }
 
 function initWorker() {
-  showStatus("Loading Woxi WebAssembly module ...", "info")
+  showStatus("Loading Woxi WebAssembly module ...", "info", { autoHide: false })
 
   worker = new Worker("worker.js", { type: "module" })
 

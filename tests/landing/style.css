@@ -114,7 +114,7 @@ body {
   background: var(--surface);
   border-bottom-left-radius: 0.5rem;
   border-bottom-right-radius: 0.5rem;
-  padding: 2rem;
+  padding: 0.5rem 2rem 2rem;
   margin-bottom: 2rem;
   box-shadow: 0 2px 1rem var(--shadow);
 }
@@ -122,7 +122,7 @@ body {
 h1 {
   color: var(--text);
   text-align: center;
-  margin-bottom: 0.25rem;
+  margin: 0.5rem 0 0.25rem;
 }
 
 .subtitle {
@@ -138,7 +138,15 @@ h3 {
 }
 
 hr {
-  border-color: var(--hr);
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--hr) 20%,
+    var(--hr) 80%,
+    transparent
+  );
 }
 
 nav {
@@ -382,9 +390,11 @@ pre.output-box {
   background: var(--surface);
 }
 
-.output-box.graphics-box svg {
+.output-box.graphics-box svg,
+.output-box.graphics-box img {
   max-width: 100%;
   height: auto;
+  display: block;
 }
 
 .output-box.warning-box {
@@ -515,9 +525,155 @@ pre.output-box {
   }
 }
 
+/* --- Alternative ways to use Woxi ---------------------------------- */
+
+.alt-divider {
+  margin: 3rem 0 2rem;
+}
+
+.alt-uses h2 {
+  color: var(--text);
+  text-align: center;
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.alt-lede {
+  text-align: center;
+  color: var(--text-muted);
+  margin: 0 auto 2rem;
+  max-width: 38rem;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.alt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.alt-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 1px 2px var(--shadow);
+  position: relative;
+}
+
+.alt-card:hover {
+  box-shadow: 0 8px 24px var(--shadow);
+  border-color: var(--border-focus);
+  text-decoration: none;
+}
+
+.alt-card__image {
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--output-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.alt-card__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+  transition: transform 0.4s ease;
+}
+
+.alt-card:hover .alt-card__image img {
+  transform: scale(1.03);
+}
+
+.alt-card__body {
+  padding: 1rem 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.alt-card__body h3 {
+  color: var(--text);
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.alt-card__body p {
+  color: var(--text-secondary);
+  margin: 0 0 0.9rem;
+  font-size: 14px;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.alt-card__body code {
+  font-family: "Atkinson Hyperlegible Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  font-size: 0.85em;
+  padding: 0.05em 0.3em;
+  background: var(--output-bg);
+  border-radius: 3px;
+}
+
+.alt-card__cta {
+  color: var(--link);
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform 0.2s ease;
+}
+
+.alt-card:hover .alt-card__cta {
+  transform: translateX(3px);
+  text-decoration: none;
+}
+
+/* "Stretched-link" overlay — lets the CTA act as the card's primary
+   link when the card root is not itself an <a>. */
+.alt-card__cta--stretched::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Inline links inside a card body sit above the stretched-link overlay
+   so they remain independently clickable. */
+.alt-card__inline-link {
+  position: relative;
+  z-index: 1;
+}
+
+/* An optional link wrapping a card's image — e.g. on the Jupyter tile
+   the image links to JupyterLite while the rest of the card goes to
+   the Jupyter docs page. */
+.alt-card__image-link {
+  display: block;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 900px) {
+  .alt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   #wrapper {
-    padding: 1rem;
+    padding: 0.5rem 1rem 1rem;
   }
 
   .controls {
@@ -530,5 +686,14 @@ pre.output-box {
 
   .controls-right button {
     flex: 1;
+  }
+
+  .alt-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .alt-uses h2 {
+    font-size: 1.35rem;
   }
 }
