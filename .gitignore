@@ -8,7 +8,7 @@
 /target
 /tests/_*
 /tests/book
-/tests/cli/jupyterlite
-/tests/cli/playground/pkg
+/tests/jupyterlite
+/tests/playground/pkg
 /tests/scripts/_*
 /todos.md

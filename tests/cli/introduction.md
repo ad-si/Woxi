@@ -6,6 +6,10 @@ An interpreter for the
 [Wolfram Language](https://en.wikipedia.org/wiki/Wolfram_Language)
 powered by Rust.
 
+> [!TIP]
+> **Try it instantly in the
+> [browser-based playground](/) — no install required.**
+
 
 ## Features
 
@@ -26,4 +30,4 @@ It has full support for Jupyter Notebooks including graphical output:
 
 > [!TIP]
 > **Try it out yourself in our
-> [JupyterLite instance](https://woxi.ad-si.com/jupyterlite/lab/index.html?path=showcase.ipynb)!**
+> [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**

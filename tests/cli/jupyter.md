@@ -22,4 +22,4 @@ jupyter console --kernel=woxi
 
 > [!TIP]
 > **Try it out yourself in our
-> [JupyterLite instance](https://woxi.ad-si.com/jupyterlite/lab/index.html?path=showcase.ipynb)!**
+> [JupyterLite instance](/jupyterlite/lab/index.html?path=showcase.ipynb)!**

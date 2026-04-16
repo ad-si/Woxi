@@ -189,7 +189,7 @@ edited.
 
 > [!TIP]
 > Woxi Studio is the native counterpart to the in-browser
-> [Playground](playground/index.html) and
-> [JupyterLite](jupyterlite-showcase.html) environments — the same
+> [Playground](/) and
+> [JupyterLite](/jupyterlite/lab/index.html?path=showcase.ipynb) environments — the same
 > interpreter powers all three, so expressions that work in one
 > work in the others.
