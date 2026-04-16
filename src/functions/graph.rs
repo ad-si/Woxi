@@ -18,21 +18,22 @@ pub(crate) fn build_digraph(
   let mut index_map: HashMap<String, NodeIndex> = HashMap::new();
 
   for (i, v) in vertices.iter().enumerate() {
-    let key = expr_to_string(v);
+    let (inner, _) = unwrap_vertex_style(v);
+    let key = expr_to_string(inner);
     let idx = graph.add_node(i);
     index_map.insert(key, idx);
   }
 
   for e in raw_edges {
-    let (edge_expr, _label) = unwrap_labeled(e);
+    let (edge_expr, _label, _color) = unwrap_edge_wrappers(e);
     match edge_expr {
       Expr::FunctionCall {
         name: ename,
         args: eargs,
       } if eargs.len() == 2 => {
         let directed = ename == "DirectedEdge";
-        let src_key = expr_to_string(&eargs[0]);
-        let dst_key = expr_to_string(&eargs[1]);
+        let src_key = expr_to_string(unwrap_vertex_style(&eargs[0]).0);
+        let dst_key = expr_to_string(unwrap_vertex_style(&eargs[1]).0);
         if let (Some(&si), Some(&di)) =
           (index_map.get(&src_key), index_map.get(&dst_key))
         {
@@ -43,8 +44,8 @@ pub(crate) fn build_digraph(
         pattern,
         replacement,
       } => {
-        let src_key = expr_to_string(pattern);
-        let dst_key = expr_to_string(replacement);
+        let src_key = expr_to_string(unwrap_vertex_style(pattern).0);
+        let dst_key = expr_to_string(unwrap_vertex_style(replacement).0);
         if let (Some(&si), Some(&di)) =
           (index_map.get(&src_key), index_map.get(&dst_key))
         {
@@ -69,17 +70,19 @@ pub(crate) fn build_ungraph(
   let mut index_map: HashMap<String, NodeIndex> = HashMap::new();
 
   for (i, v) in vertices.iter().enumerate() {
-    let key = expr_to_string(v);
+    let (inner, _) = unwrap_vertex_style(v);
+    let key = expr_to_string(inner);
     let idx = graph.add_node(i);
     index_map.insert(key, idx);
   }
 
   for edge in edges {
-    if let Expr::FunctionCall { args: eargs, .. } = edge
+    let (edge_expr, _, _) = unwrap_edge_wrappers(edge);
+    if let Expr::FunctionCall { args: eargs, .. } = edge_expr
       && eargs.len() == 2
     {
-      let from_str = expr_to_string(&eargs[0]);
-      let to_str = expr_to_string(&eargs[1]);
+      let from_str = expr_to_string(unwrap_vertex_style(&eargs[0]).0);
+      let to_str = expr_to_string(unwrap_vertex_style(&eargs[1]).0);
       if let (Some(&fi), Some(&ti)) =
         (index_map.get(&from_str), index_map.get(&to_str))
       {
@@ -102,20 +105,22 @@ pub(crate) fn build_flow_graph(
   let mut index_map: HashMap<String, NodeIndex> = HashMap::new();
 
   for (i, v) in vertices.iter().enumerate() {
-    let key = expr_to_string(v);
+    let (inner, _) = unwrap_vertex_style(v);
+    let key = expr_to_string(inner);
     let idx = graph.add_node(i);
     index_map.insert(key, idx);
   }
 
   for edge in edges {
+    let (edge_expr, _, _) = unwrap_edge_wrappers(edge);
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
-    } = edge
+    } = edge_expr
       && eargs.len() == 2
     {
-      let from_str = expr_to_string(&eargs[0]);
-      let to_str = expr_to_string(&eargs[1]);
+      let from_str = expr_to_string(unwrap_vertex_style(&eargs[0]).0);
+      let to_str = expr_to_string(unwrap_vertex_style(&eargs[1]).0);
       if let (Some(&fi), Some(&ti)) =
         (index_map.get(&from_str), index_map.get(&to_str))
       {
@@ -135,6 +140,7 @@ pub(crate) fn build_flow_graph(
 struct RenderEdgeData {
   directed: bool,
   label: Option<String>,
+  color: Option<Color>,
 }
 
 /// Build a petgraph DiGraph for rendering (preserves edge labels and direction info).
@@ -146,13 +152,14 @@ fn build_render_graph(
   let mut index_map: HashMap<String, NodeIndex> = HashMap::new();
 
   for (i, v) in vertices.iter().enumerate() {
-    let key = expr_to_output(v);
+    let (inner, _) = unwrap_vertex_style(v);
+    let key = expr_to_output(inner);
     let idx = graph.add_node(i);
     index_map.insert(key, idx);
   }
 
   for e in raw_edges {
-    let (edge_expr, label) = unwrap_labeled(e);
+    let (edge_expr, label, color) = unwrap_edge_wrappers(e);
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
@@ -160,8 +167,8 @@ fn build_render_graph(
       && eargs.len() == 2
     {
       let directed = ename == "DirectedEdge";
-      let src_key = expr_to_output(&eargs[0]);
-      let dst_key = expr_to_output(&eargs[1]);
+      let src_key = expr_to_output(unwrap_vertex_style(&eargs[0]).0);
+      let dst_key = expr_to_output(unwrap_vertex_style(&eargs[1]).0);
       if let (Some(&si), Some(&di)) =
         (index_map.get(&src_key), index_map.get(&dst_key))
       {
@@ -171,6 +178,7 @@ fn build_render_graph(
           RenderEdgeData {
             directed,
             label: label.clone(),
+            color,
           },
         );
       }
@@ -301,8 +309,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // --- Draw edges ---
   let default_edge_color = Color::new(0.6, 0.6, 0.6);
-  let edge_color = edge_style.as_ref().unwrap_or(&default_edge_color);
-  primitives.push(edge_color.to_expr());
+  let default_applied_edge_color =
+    *edge_style.as_ref().unwrap_or(&default_edge_color);
+  primitives.push(default_applied_edge_color.to_expr());
   primitives.push(Expr::FunctionCall {
     name: "AbsoluteThickness".to_string(),
     args: vec![Expr::Real(1.5)],
@@ -332,6 +341,14 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let edge_data = edge_ref.weight();
     let (x1, y1) = positions[si];
     let (x2, y2) = positions[di];
+
+    // Apply per-edge color when present, otherwise restore the default
+    // edge color so a previous styled edge does not bleed into this one.
+    if let Some(c) = &edge_data.color {
+      primitives.push(c.to_expr());
+    } else {
+      primitives.push(default_applied_edge_color.to_expr());
+    }
 
     if si == di {
       // Self-loop: circular arc that starts and ends exactly on the
@@ -526,15 +543,22 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let default_fill =
     Color::new(0.2588235294117647, 0.4549019607843137, 0.7176470588235294); // Wolfram default blue
-  if let Some(fc) = &v_fill {
-    primitives.push(fc.to_expr());
-  } else {
-    primitives.push(default_fill.to_expr());
-  }
+
+  // Per-vertex color overrides from `Style[v, color]` wrapping.
+  let vertex_colors: Vec<Option<Color>> =
+    vertices.iter().map(|v| unwrap_vertex_style(v).1).collect();
 
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
+
+    // Emit this vertex's fill color: per-vertex Style[] override wins over
+    // the VertexStyle option, which itself wins over the Wolfram default.
+    let fill_for_v: &Color = vertex_colors[i]
+      .as_ref()
+      .or(v_fill.as_ref())
+      .unwrap_or(&default_fill);
+    primitives.push(fill_for_v.to_expr());
 
     match vertex_shape.as_deref() {
       Some("Diamond") => {
@@ -571,7 +595,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     if vertex_labels {
-      let label_text = expr_to_output(&vertices[i]);
+      // Strip any Style wrapper so the label shows the underlying vertex
+      // name (e.g. `3`, not `Style[3, Red]`).
+      let label_text = expr_to_output(unwrap_vertex_style(&vertices[i]).0);
       primitives.push(Expr::FunctionCall {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
@@ -586,11 +612,6 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)]),
         ],
       });
-      if let Some(fc) = &v_fill {
-        primitives.push(fc.to_expr());
-      } else {
-        primitives.push(default_fill.to_expr());
-      }
     }
   }
 
@@ -897,20 +918,56 @@ fn snap_coord(v: f64) -> f64 {
   v
 }
 
-/// Extract the inner expression and optional label from a Labeled wrapper
-fn unwrap_labeled(expr: &Expr) -> (&Expr, Option<String>) {
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Labeled"
-    && args.len() == 2
-  {
-    let label = match &args[1] {
-      Expr::String(s) => s.clone(),
-      other => expr_to_output(other),
-    };
-    (&args[0], Some(label))
-  } else {
-    (expr, None)
+/// Peel off `Labeled[..., label]` and `Style[..., directives...]` wrappers,
+/// in any nesting order, returning the innermost expression along with the
+/// first label and first color directive encountered.
+fn unwrap_edge_wrappers(
+  mut expr: &Expr,
+) -> (&Expr, Option<String>, Option<Color>) {
+  let mut label: Option<String> = None;
+  let mut color: Option<Color> = None;
+  loop {
+    match expr {
+      Expr::FunctionCall { name, args }
+        if name == "Labeled" && args.len() == 2 =>
+      {
+        if label.is_none() {
+          label = Some(match &args[1] {
+            Expr::String(s) => s.clone(),
+            other => expr_to_output(other),
+          });
+        }
+        expr = &args[0];
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() >= 2 =>
+      {
+        if color.is_none() {
+          color = args[1..].iter().find_map(parse_color);
+        }
+        expr = &args[0];
+      }
+      _ => break,
+    }
   }
+  (expr, label, color)
+}
+
+/// Peel off `Style[..., directives...]` wrappers from a vertex, returning
+/// the innermost expression along with the first color directive.
+fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
+  let mut color: Option<Color> = None;
+  while let Expr::FunctionCall { name, args } = expr {
+    if name == "Style" && args.len() >= 2 {
+      if color.is_none() {
+        color = args[1..].iter().find_map(parse_color);
+      }
+      expr = &args[0];
+    } else {
+      break;
+    }
+  }
+  (expr, color)
 }
 
 fn collect_directives(expr: &Expr) -> Vec<Expr> {
