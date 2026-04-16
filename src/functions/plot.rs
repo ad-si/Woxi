@@ -739,6 +739,110 @@ pub(crate) fn inject_major_tick_extensions(
   }
 }
 
+/// Draw top and right axis lines closing the plot rectangle, plus minor/major
+/// tick marks mirroring the bottom and left axes. Ticks point outward (up from
+/// the top axis, right from the right axis), matching the direction of the
+/// bottom/left ticks drawn by plotters + `inject_major_tick_extensions`.
+///
+/// `x_axis` / `y_axis` each supply `(min, max, major_step)`. Minor ticks are
+/// drawn at `major_step / 5` intervals. When an axis is `None` the
+/// corresponding frame line is still drawn, but without tick marks.
+pub(crate) fn inject_top_right_frame(
+  buf: &mut String,
+  plot_x0: f64,
+  plot_y0: f64,
+  plot_w: f64,
+  plot_h: f64,
+  x_axis: Option<(f64, f64, f64)>,
+  y_axis: Option<(f64, f64, f64)>,
+  minor_len: f64,
+  major_len: f64,
+  stroke_w: f64,
+  color: &str,
+) {
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let mut svg = String::new();
+
+  let top_y = plot_y0;
+  let right_x = plot_x0 + plot_w;
+  let bottom_y = plot_y0 + plot_h;
+
+  // Top frame line.
+  svg.push_str(&format!(
+    "<line x1=\"{:.1}\" y1=\"{top_y:.1}\" x2=\"{right_x:.1}\" y2=\"{top_y:.1}\" \
+       stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n",
+    plot_x0,
+  ));
+  // Right frame line.
+  svg.push_str(&format!(
+    "<line x1=\"{right_x:.1}\" y1=\"{:.1}\" x2=\"{right_x:.1}\" y2=\"{bottom_y:.1}\" \
+       stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n",
+    plot_y0,
+  ));
+
+  // Top axis ticks (pointing upward / outward).
+  if let Some((x_min, x_max, x_major)) = x_axis
+    && x_major > 0.0
+    && x_max > x_min
+  {
+    let x_minor = x_major / 5.0;
+    let eps = x_minor.abs() * 1e-6;
+    let mut v = (x_min / x_minor).ceil() * x_minor;
+    let max_steps = ((x_max - x_min) / x_minor).abs() as usize + 8;
+    for _ in 0..max_steps {
+      if v > x_max + eps {
+        break;
+      }
+      let x = plot_x0 + (v - x_min) / (x_max - x_min) * plot_w;
+      let len = if is_major_tick(v, x_major) {
+        major_len
+      } else {
+        minor_len
+      };
+      let y2 = top_y - len;
+      svg.push_str(&format!(
+        "<line x1=\"{x:.1}\" y1=\"{top_y:.1}\" x2=\"{x:.1}\" y2=\"{y2:.1}\" \
+           stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+      ));
+      v += x_minor;
+    }
+  }
+
+  // Right axis ticks (pointing rightward / outward).
+  if let Some((y_min, y_max, y_major)) = y_axis
+    && y_major > 0.0
+    && y_max > y_min
+  {
+    let y_minor = y_major / 5.0;
+    let eps = y_minor.abs() * 1e-6;
+    let mut v = (y_min / y_minor).ceil() * y_minor;
+    let max_steps = ((y_max - y_min) / y_minor).abs() as usize + 8;
+    for _ in 0..max_steps {
+      if v > y_max + eps {
+        break;
+      }
+      let y = plot_y0 + plot_h - (v - y_min) / (y_max - y_min) * plot_h;
+      let len = if is_major_tick(v, y_major) {
+        major_len
+      } else {
+        minor_len
+      };
+      let x2 = right_x + len;
+      svg.push_str(&format!(
+        "<line x1=\"{right_x:.1}\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" \
+           stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
+      ));
+      v += y_minor;
+    }
+  }
+
+  if !svg.is_empty() {
+    buf.insert_str(insert_pos, &svg);
+  }
+}
+
 /// Default minor (unlabeled) tick length in render-space units.
 pub(crate) const MINOR_TICK_LEN: i32 = 4;
 /// Default major (labeled) tick length in render-space units — slightly longer
@@ -2537,47 +2641,6 @@ pub(crate) fn generate_bubble_chart_svg(
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
 ) -> Result<String, InterpreterError> {
-  // Auto-compute x/y ranges with 10% padding so bubbles sit inside the axes.
-  let compute_range = |vals: &[f64]| -> (f64, f64) {
-    let mn = vals
-      .iter()
-      .copied()
-      .filter(|v| v.is_finite())
-      .fold(f64::INFINITY, f64::min);
-    let mx = vals
-      .iter()
-      .copied()
-      .filter(|v| v.is_finite())
-      .fold(f64::NEG_INFINITY, f64::max);
-    if !mn.is_finite() || !mx.is_finite() {
-      return (0.0, 1.0);
-    }
-    let span = mx - mn;
-    let pad = if span.abs() < f64::EPSILON {
-      1.0
-    } else {
-      span * 0.1
-    };
-    (mn - pad, mx + pad)
-  };
-  let xs: Vec<f64> =
-    groups.iter().flat_map(|g| g.iter().map(|t| t.0)).collect();
-  let ys: Vec<f64> =
-    groups.iter().flat_map(|g| g.iter().map(|t| t.1)).collect();
-  let (x_min_auto, x_max_auto) = compute_range(&xs);
-  let (y_min_auto, y_max_auto) = compute_range(&ys);
-  let (x_min, x_max) = plot_range_x.unwrap_or((x_min_auto, x_max_auto));
-  let (y_min, y_max) = plot_range_y.unwrap_or((y_min_auto, y_max_auto));
-  let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
-  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
-
-  // Max |z| across all groups — used to normalize bubble radii so that
-  // bubbles are comparable between datasets.
-  let z_max = groups
-    .iter()
-    .flat_map(|g| g.iter().map(|t| t.2.abs()))
-    .fold(0.0_f64, f64::max);
-
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
   let s = RESOLUTION_SCALE as i32;
@@ -2607,6 +2670,89 @@ pub(crate) fn generate_bubble_chart_svg(
   // previous (axis-less) implementation and stays readable without occluding
   // neighbors at the default image size.
   let max_bubble_radius = 20.0 * sf;
+
+  // Plot-area dimensions in render-space pixels — must stay in sync with the
+  // `ChartBuilder` margins below so that pixel-aware range padding (computed
+  // next) keeps bubbles inside the frame.
+  let plot_w_px = (render_width as f64
+    - 10.0 * sf
+    - legend_margin_right as f64
+    - y_label_area as f64)
+    .max(1.0);
+  let plot_h_px = (render_height as f64
+    - top_margin as f64
+    - 10.0 * sf
+    - x_label_area as f64)
+    .max(1.0);
+
+  // Auto-compute x/y ranges. Raw min/max first, then expand so the largest
+  // possible bubble (`max_bubble_radius` pixels, plus a small visual gap)
+  // fits between every data point and the frame. Only applied when the user
+  // hasn't supplied an explicit PlotRange — an explicit range is respected
+  // verbatim.
+  let raw_range = |vals: &[f64]| -> (f64, f64) {
+    let mn = vals
+      .iter()
+      .copied()
+      .filter(|v| v.is_finite())
+      .fold(f64::INFINITY, f64::min);
+    let mx = vals
+      .iter()
+      .copied()
+      .filter(|v| v.is_finite())
+      .fold(f64::NEG_INFINITY, f64::max);
+    if !mn.is_finite() || !mx.is_finite() {
+      return (0.0, 1.0);
+    }
+    if (mx - mn).abs() < f64::EPSILON {
+      // Single distinct value: start with a unit-wide window so the
+      // pixel-pad step below has a well-defined span to expand.
+      return (mn - 0.5, mx + 0.5);
+    }
+    (mn, mx)
+  };
+
+  // Expand a raw [min, max] so that `pad_px` render-pixels of padding are
+  // reserved on each side of the plot area. Solved for the final span with
+  // `span_final = span_raw * plot_px / (plot_px - 2 * pad_px)` — after the
+  // expansion, data extremes sit exactly `pad_px` pixels from the frame.
+  let pad_for_bubbles =
+    |min_0: f64, max_0: f64, plot_px: f64, pad_px: f64| -> (f64, f64) {
+      let span_0 = max_0 - min_0;
+      // Guard: if the plot is too narrow to even fit the padding, skip the
+      // expansion rather than blow up or invert the range.
+      if span_0 <= 0.0 || plot_px <= 2.0 * pad_px {
+        return (min_0, max_0);
+      }
+      let extra = pad_px * span_0 / (plot_px - 2.0 * pad_px);
+      (min_0 - extra, max_0 + extra)
+    };
+
+  // Extra visual gap beyond the radius so bubbles don't visually kiss the
+  // frame line.
+  let bubble_pad_px = max_bubble_radius + 4.0 * sf;
+
+  let xs: Vec<f64> =
+    groups.iter().flat_map(|g| g.iter().map(|t| t.0)).collect();
+  let ys: Vec<f64> =
+    groups.iter().flat_map(|g| g.iter().map(|t| t.1)).collect();
+  let (x_min_raw, x_max_raw) = raw_range(&xs);
+  let (y_min_raw, y_max_raw) = raw_range(&ys);
+  let (x_min_auto, x_max_auto) =
+    pad_for_bubbles(x_min_raw, x_max_raw, plot_w_px, bubble_pad_px);
+  let (y_min_auto, y_max_auto) =
+    pad_for_bubbles(y_min_raw, y_max_raw, plot_h_px, bubble_pad_px);
+  let (x_min, x_max) = plot_range_x.unwrap_or((x_min_auto, x_max_auto));
+  let (y_min, y_max) = plot_range_y.unwrap_or((y_min_auto, y_max_auto));
+  let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
+  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
+
+  // Max |z| across all groups — used to normalize bubble radii so that
+  // bubbles are comparable between datasets.
+  let z_max = groups
+    .iter()
+    .flat_map(|g| g.iter().map(|t| t.2.abs()))
+    .fold(0.0_f64, f64::max);
 
   let mut buf = String::new();
   {
@@ -2763,14 +2909,34 @@ pub(crate) fn generate_bubble_chart_svg(
     render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
+  let x_major_step = nice_step(x_max - x_min, 5);
+  let y_major_step = nice_step(y_max - y_min, 5);
+
   inject_major_tick_extensions(
     &mut buf,
     plot_x0,
     plot_y0,
     plot_w,
     plot_h,
-    Some((x_min, x_max, nice_step(x_max - x_min, 5))),
-    Some((y_min, y_max, nice_step(y_max - y_min, 5))),
+    Some((x_min, x_max, x_major_step)),
+    Some((y_min, y_max, y_major_step)),
+    MINOR_TICK_LEN as f64 * sf,
+    MAJOR_TICK_LEN as f64 * sf,
+    sf,
+    label_fill,
+  );
+
+  // BubbleChart closes the plot rectangle with a top and right axis line
+  // (each carrying minor + major tick marks) so the plot area reads as a
+  // full frame. Matches Mathematica's default BubbleChart framing.
+  inject_top_right_frame(
+    &mut buf,
+    plot_x0,
+    plot_y0,
+    plot_w,
+    plot_h,
+    Some((x_min, x_max, x_major_step)),
+    Some((y_min, y_max, y_major_step)),
     MINOR_TICK_LEN as f64 * sf,
     MAJOR_TICK_LEN as f64 * sf,
     sf,

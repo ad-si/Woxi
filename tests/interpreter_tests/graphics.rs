@@ -2346,6 +2346,85 @@ mod plot3d {
       assert!(svg.contains("<circle"));
     }
 
+    /// BubbleChart closes the plot rectangle on all four sides: in addition
+    /// to the bottom and left axes, a top line and right line (each with
+    /// their own tick marks) should appear by default.
+    #[test]
+    fn bubble_chart_has_top_right_frame() {
+      let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
+      // Plot area in the default 360x335 layout spans (750, 100)-(3500, 2850)
+      // in render-space units.
+      assert!(
+        svg.contains(
+          "<line x1=\"750.0\" y1=\"100.0\" x2=\"3500.0\" y2=\"100.0\""
+        ),
+        "BubbleChart should render a top frame line: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "<line x1=\"3500.0\" y1=\"100.0\" x2=\"3500.0\" y2=\"2850.0\""
+        ),
+        "BubbleChart should render a right frame line: {svg}"
+      );
+      // Top ticks extend upward (y2 < y1 = 100) and right ticks extend
+      // rightward (x2 > x1 = 3500); check for at least one of each.
+      assert!(
+        svg.contains("y1=\"100.0\" x2=\"3500.0\" y2=\"30.0\"")
+          || svg.contains("y1=\"100.0\"") && svg.contains("y2=\"60.0\""),
+        "BubbleChart top axis should draw tick marks: {svg}"
+      );
+      assert!(
+        svg.contains("x1=\"3500.0\"")
+          && (svg.contains("x2=\"3540.0\"") || svg.contains("x2=\"3570.0\"")),
+        "BubbleChart right axis should draw tick marks: {svg}"
+      );
+    }
+
+    /// BubbleChart must leave visual breathing room between every bubble and
+    /// the plot frame. Regression for: with a max-size bubble (z == z_max)
+    /// sitting at a data extremum, the previous 10%-data padding left the
+    /// bubble only ~3 display pixels from the frame, which on the rendered
+    /// SVG reads as overlap.
+    #[test]
+    fn bubble_chart_bubbles_stay_inside_frame() {
+      // Largest bubble (z = 5) is at (1, 2) — the data min in x and the
+      // data min in y. In the default 360x335 layout the plot area spans
+      // x=[750, 3500], y=[100, 2850] in render-space units.
+      let svg = export_svg("BubbleChart[{{1, 2, 5}, {4, 5, 1}, {2, 3, 5}}]");
+
+      // Parse every `<circle cx="..." cy="..." r="...">` and check that no
+      // bubble's bounding box crosses any of the four frame lines.
+      let re = regex::Regex::new(
+        r#"<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)""#,
+      )
+      .unwrap();
+      let (left, right, top, bottom) = (750.0, 3500.0, 100.0, 2850.0);
+      let mut worst = f64::INFINITY;
+      for caps in re.captures_iter(&svg) {
+        let cx: f64 = caps[1].parse().unwrap();
+        let cy: f64 = caps[2].parse().unwrap();
+        let r: f64 = caps[3].parse().unwrap();
+        let gaps = [
+          cx - r - left,
+          right - (cx + r),
+          cy - r - top,
+          bottom - (cy + r),
+        ];
+        for g in gaps {
+          if g < worst {
+            worst = g;
+          }
+        }
+      }
+      // Expect at least ~30 render-pixels (3 display-pixels) of breathing
+      // room. The implementation targets 40 render-pixels (4 * sf).
+      assert!(
+        worst >= 30.0,
+        "BubbleChart left a bubble too close to the frame: worst gap = \
+         {worst:.1} render-pixels (expected >= 30)"
+      );
+    }
+
     /// BubbleChart has a square *plot area* by default. Because the y-axis
     /// label column (~65 px) is wider than the x-axis label row (~40 px),
     /// the outer SVG is 25 px shorter than wide so the inner cartesian
