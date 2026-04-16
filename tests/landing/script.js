@@ -166,8 +166,15 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 })
 
 
-function showStatus(message, type = "info") {
+let statusHideTimer = null
+
+function showStatus(message, type = "info", { autoHide = true } = {}) {
   const status = document.getElementById("status")
+
+  if (statusHideTimer) {
+    clearTimeout(statusHideTimer)
+    statusHideTimer = null
+  }
 
   if (message === "") {
     status.style.display = "none"
@@ -178,8 +185,11 @@ function showStatus(message, type = "info") {
   status.className = `status ${type}`
   status.style.display = "block"
 
-  if (type === "info") {
-    setTimeout(() => { status.style.display = "none" }, 3000)
+  if (type === "info" && autoHide) {
+    statusHideTimer = setTimeout(() => {
+      status.style.display = "none"
+      statusHideTimer = null
+    }, 3000)
   }
 }
 
@@ -219,6 +229,16 @@ function restoreOutput() {
       document.getElementById("outputs").innerHTML = html
     }
   } catch (_) { /* ignore corrupt data */ }
+}
+
+// The HTML ships with a pre-rendered output for DEFAULT_CODE so the page
+// lands populated.  If the user has edited away from DEFAULT_CODE (but
+// hasn't saved an actual output yet), that preview would be misleading —
+// drop it.  Afterwards restoreOutput() will paint the real saved output
+// on top, if any.
+const savedCodeForOutput = localStorage.getItem(STORAGE_KEY)
+if (savedCodeForOutput !== null && savedCodeForOutput !== DEFAULT_CODE) {
+  clearOutputs()
 }
 
 restoreOutput()
@@ -449,7 +469,7 @@ function clearOutputs() {
 }
 
 function initWorker() {
-  showStatus("Loading Woxi WebAssembly module ...", "info")
+  showStatus("Loading Woxi WebAssembly module ...", "info", { autoHide: false })
 
   worker = new Worker("worker.js", { type: "module" })
 
@@ -547,13 +567,14 @@ document.getElementById("clearBtn").addEventListener("click", () => {
   }
 })
 
-// Share button
+// Share button — always links to the full /playground/ so shared code
+// opens in the side-by-side editor/output layout.
 document.getElementById("shareBtn").addEventListener("click", () => {
   const code = getEditorContent().trim()
   if (!code) return
 
   const compressed = LZString.compressToEncodedURIComponent(code)
-  const url = new URL(window.location.pathname, window.location.origin)
+  const url = new URL("/playground/", window.location.origin)
   url.searchParams.set("code", compressed)
 
   navigator.clipboard.writeText(url.toString()).then(() => {
