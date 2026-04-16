@@ -756,6 +756,111 @@ mod graph_rendering {
     );
   }
 
+  /// Regression: vertex radii for named sizes must increase monotonically,
+  /// and the spread between Tiny and Large must be visibly large (roughly
+  /// matches wolframscript's ratios for a 3-vertex circular graph).
+  #[test]
+  fn graph_vertex_size_named_sizes_have_wide_spread() {
+    let extract_radius = |code: &str| -> f64 {
+      let svg = interpret(code).unwrap();
+      let marker = "rx=\"";
+      let start = svg.find(marker).expect("no rx attribute") + marker.len();
+      let end = svg[start..].find('"').unwrap() + start;
+      svg[start..end].parse::<f64>().unwrap()
+    };
+    let tiny = extract_radius(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, VertexSize -> Tiny], \"SVG\"]",
+    );
+    let small = extract_radius(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, VertexSize -> Small], \"SVG\"]",
+    );
+    let medium = extract_radius(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, VertexSize -> Medium], \"SVG\"]",
+    );
+    let large = extract_radius(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, VertexSize -> Large], \"SVG\"]",
+    );
+    assert!(
+      tiny < small,
+      "Tiny ({tiny}) should be smaller than Small ({small})"
+    );
+    assert!(
+      small < medium,
+      "Small ({small}) should be smaller than Medium ({medium})"
+    );
+    assert!(
+      medium < large,
+      "Medium ({medium}) should be smaller than Large ({large})"
+    );
+    // Large should be noticeably bigger than Tiny (>4x) so Table[... {Tiny,
+    // Small, Medium, Large}] produces visibly different graphs.
+    assert!(
+      large / tiny > 4.0,
+      "Large/Tiny ratio should exceed 4 (got {:.2})",
+      large / tiny
+    );
+  }
+
+  /// Regression: PlotLabel option on a Graph must render the title as
+  /// SVG <text>. Previously the option was silently ignored.
+  #[test]
+  fn graph_plot_label_string() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, PlotLabel -> \"My Triangle\"], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(svg.contains(">My Triangle</text>"), "SVG: {svg}");
+  }
+
+  /// PlotLabel accepts an Identifier (e.g. `PlotLabel -> Tiny` where the
+  /// label is a symbolic name, as used in Table[Graph[..., PlotLabel -> s],
+  /// {s, {Tiny, Small, Medium, Large}}]).
+  #[test]
+  fn graph_plot_label_identifier() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, PlotLabel -> Tiny], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(svg.contains(">Tiny</text>"), "SVG: {svg}");
+  }
+
+  /// Style directives inside PlotLabel (color, font size, Bold, Italic)
+  /// must flow through to the rendered <text> element, overriding defaults.
+  #[test]
+  fn graph_plot_label_styled() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2}, PlotLabel -> Style[\"Red Title\", Red, 20, Italic]], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(svg.contains(">Red Title</text>"), "SVG: {svg}");
+    assert!(
+      svg.contains("fill=\"rgb(255,0,0)\""),
+      "expected red fill; SVG: {svg}"
+    );
+    assert!(
+      svg.contains("font-size=\"20\""),
+      "expected font-size 20; SVG: {svg}"
+    );
+    assert!(
+      svg.contains("font-style=\"italic\""),
+      "expected italic; SVG: {svg}"
+    );
+  }
+
+  /// PlotLabel -> None must suppress the label entirely (no <text> added
+  /// beyond whatever other options may add).
+  #[test]
+  fn graph_plot_label_none_renders_no_label() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1}, PlotLabel -> None], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("<text"),
+      "SVG should have no <text> element: {svg}"
+    );
+  }
+
   #[test]
   fn graph_preserves_vertex_list() {
     assert_eq!(

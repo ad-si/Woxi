@@ -233,6 +233,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
   let mut vertex_size_scale: f64 = 1.0;
+  let mut plot_label: Option<Expr> = None;
 
   for opt in options {
     if let Expr::Rule {
@@ -261,17 +262,32 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "VertexSize" => {
+          // Named sizes use progressively larger gaps so a Table over
+          // {Tiny, Small, Medium, Large} produces a visibly increasing
+          // sequence of vertex sizes. Tiny is kept at the historical 0.5
+          // so existing "barely-a-dot" renderings are preserved.
           vertex_size_scale = match replacement.as_ref() {
             Expr::Identifier(s) => match s.as_str() {
-              "Tiny" => 0.5,
-              "Small" => 0.75,
-              "Medium" => 1.25,
-              "Large" => 1.5,
+              "Tiny" => 0.6,
+              "Small" => 1.2,
+              "Medium" => 2.2,
+              "Large" => 3.6,
               _ => 1.0,
             },
             _ => crate::functions::graphics::expr_to_f64(replacement)
               .unwrap_or(1.0),
           };
+        }
+        "PlotLabel" => {
+          // Ignore PlotLabel -> None / PlotLabel -> Null so that defaults
+          // don't accidentally render an empty label.
+          let is_none = matches!(
+            replacement.as_ref(),
+            Expr::Identifier(s) if s == "None" || s == "Null"
+          );
+          if !is_none {
+            plot_label = Some((**replacement).clone());
+          }
         }
         _ => {}
       }
@@ -631,6 +647,53 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       });
     }
+  }
+
+  // --- PlotLabel: centered title above the graph ---
+  if let Some(label_expr) = plot_label {
+    let (x_min, x_max, y_max) = positions.iter().fold(
+      (f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+      |(xmin, xmax, ymax), &(x, y)| (xmin.min(x), xmax.max(x), ymax.max(y)),
+    );
+    let cx = if positions.is_empty() {
+      0.0
+    } else {
+      (x_min + x_max) / 2.0
+    };
+    let label_y = y_max + vertex_radius + 0.2;
+
+    // If the user already provided a Style[...] wrapper, keep it so their
+    // directives (color, size, Bold/Italic) win. Otherwise wrap the label
+    // so it renders at a larger, bold font by default.
+    let styled = match &label_expr {
+      Expr::FunctionCall { name, args }
+        if name == "Style" && !args.is_empty() =>
+      {
+        label_expr.clone()
+      }
+      _ => Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: vec![
+          Expr::String(expr_to_output(&label_expr)),
+          Expr::Integer(16),
+          Expr::Identifier("Bold".to_string()),
+        ],
+      },
+    };
+
+    // Force black text regardless of any preceding directive (edges may
+    // have set a different color last).
+    primitives.push(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+    });
+    primitives.push(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![
+        styled,
+        Expr::List(vec![Expr::Real(cx), Expr::Real(label_y)]),
+      ],
+    });
   }
 
   let content = Expr::List(primitives);
