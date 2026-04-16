@@ -97,9 +97,13 @@ pub fn fixed_point_ast(
 }
 
 /// AST-based Accumulate: cumulative sums.
+/// Threads through any non-atomic head, preserving it (e.g. Accumulate[g[1,2,3]]
+/// returns g[1, 3, 6]).
 pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  // Determine the head to wrap the result in and the items to accumulate over.
+  let (items, head): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Accumulate".to_string(),
@@ -108,8 +112,18 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  let wrap = |elems: Vec<Expr>| -> Expr {
+    match &head {
+      Some(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: elems,
+      },
+      None => Expr::List(elems),
+    }
+  };
+
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return Ok(wrap(Vec::new()));
   }
 
   // Try numeric accumulation first
@@ -127,7 +141,7 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         results.push(f64_to_expr(sum));
       }
     }
-    Ok(Expr::List(results))
+    Ok(wrap(results))
   } else {
     // Symbolic accumulation using Plus
     let mut results = Vec::new();
@@ -140,7 +154,7 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       )?;
       results.push(running_sum.clone());
     }
-    Ok(Expr::List(results))
+    Ok(wrap(results))
   }
 }
 

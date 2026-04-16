@@ -4163,6 +4163,41 @@ mod join_non_list {
   }
 
   #[test]
+  fn accumulate_preserves_arbitrary_head() {
+    // Accumulate threads through any head (not just List), preserving it.
+    assert_eq!(
+      interpret("Accumulate[g[1, 2, 3, 4]]").unwrap(),
+      "g[1, 3, 6, 10]"
+    );
+  }
+
+  #[test]
+  fn accumulate_preserves_arbitrary_head_symbolic() {
+    assert_eq!(
+      interpret("Accumulate[f[a, b, c, d]]").unwrap(),
+      "f[a, a + b, a + b + c, a + b + c + d]"
+    );
+  }
+
+  #[test]
+  fn accumulate_through_hold_head() {
+    // Even held expressions thread through.
+    assert_eq!(
+      interpret("Accumulate[Hold[1, 2, 3]]").unwrap(),
+      "Hold[1, 3, 6]"
+    );
+  }
+
+  #[test]
+  fn accumulate_through_times_head() {
+    // Times head: cumulative sums recombined under Times.
+    assert_eq!(
+      interpret("Accumulate[Times[a, b, c]]").unwrap(),
+      "a*(a + b)*(a + b + c)"
+    );
+  }
+
+  #[test]
   fn differences_higher_order() {
     assert_eq!(
       interpret("Differences[{1, 4, 9, 16, 25}, 2]").unwrap(),
