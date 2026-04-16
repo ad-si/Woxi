@@ -87,25 +87,21 @@ wasm-build:
 	# Without this, cargo's wasm32 release cache can go stale and skip rebuilding.
 	touch src/lib.rs
 	wasm-pack build \
-		-d tests/cli/playground/pkg \
+		-d tests/playground/pkg \
 		--target web \
 		--dev \
 		--no-default-features \
 		--features wasm
-	mkdir -p tests/book/playground/pkg
-	cp -R tests/cli/playground/pkg/. tests/book/playground/pkg/
 
 
 .PHONY: wasm-build-production
 wasm-build-production:
 	wasm-pack build \
-		-d tests/cli/playground/pkg \
+		-d tests/playground/pkg \
 		--target web \
 		--release \
 		--no-default-features \
 		--features wasm
-	mkdir -p tests/book/playground/pkg
-	cp -R tests/cli/playground/pkg/. tests/book/playground/pkg/
 
 
 .PHONY: jupyterlite-kernel-build
@@ -124,13 +120,8 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 		--with jupyterlite-core \
 		--with jupyterlab \
 		--with ./jupyterlite-woxi-kernel \
-		jupyter lite build --output-dir tests/cli/jupyterlite
-	cp -r tests/cli/playground/pkg tests/cli/jupyterlite/wasm
-
-
-.PHONY: docs/serve
-docs/serve: jupyterlite-build
-	mdbook serve --port 5501 ./tests
+		jupyter lite build --output-dir tests/jupyterlite
+	cp -r tests/playground/pkg tests/jupyterlite/wasm
 
 
 .PHONY: docs/mdbook
@@ -138,16 +129,36 @@ docs/mdbook: wasm-build
 	mdbook build ./tests
 
 
+# Assemble the deployment tree:
+#   - tests/landing/   → tests/book/             (minimal landing page at /)
+#   - tests/playground/→ tests/book/playground/  (full playground at /playground/)
+#   - mdbook output    → tests/book/docs/        (via build-dir in book.toml)
+#   - tests/jupyterlite/→ tests/book/jupyterlite/
+# Both the landing page and the /playground/ copy share the same WASM
+# bundle (built once by wasm-build into tests/playground/pkg/), copied
+# into each location so worker.js can find ./pkg/woxi.js.
 .PHONY: docs/build
 docs/build: jupyterlite-build docs/mdbook
+	cp -R tests/landing/. tests/book/
+	cp -R tests/playground/pkg tests/book/pkg
+	rm -rf tests/book/playground
+	cp -R tests/playground tests/book/playground
+	rm -rf tests/book/jupyterlite
+	cp -R tests/jupyterlite tests/book/jupyterlite
+	cp tests/cli/favicon.png tests/book/favicon.png
+
+
+.PHONY: docs/serve
+docs/serve: docs/build
+	cd tests/book && npx -y http-server -p 5501 -c-1 -s .
 
 
 .PHONY: clean
 clean:
 	cargo clean
-	rm -rf tests/cli/playground/pkg
-	rm -rf tests/book/playground/pkg
-	rm -rf tests/cli/jupyterlite
+	rm -rf tests/playground/pkg
+	rm -rf tests/jupyterlite
+	rm -rf tests/book
 	rm -f .jupyterlite.doit.db
 
 

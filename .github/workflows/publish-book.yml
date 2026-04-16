@@ -29,7 +29,7 @@ jobs:
         id: wasm-cache
         uses: actions/cache@v4
         with:
-          path: tests/cli/playground/pkg
+          path: tests/playground/pkg
           key: wasm-pkg-${{ hashFiles('src/**', 'Cargo.lock', 'Cargo.toml') }}
 
       - name: Setup Rust
@@ -86,14 +86,24 @@ jobs:
             --with jupyterlite-core \
             --with jupyterlab \
             --with ./jupyterlite-woxi-kernel \
-            jupyter lite build --output-dir tests/cli/jupyterlite
-          cp -r tests/cli/playground/pkg tests/cli/jupyterlite/wasm
+            jupyter lite build --output-dir tests/jupyterlite
+          cp -r tests/playground/pkg tests/jupyterlite/wasm
 
       - name: Setup Nix
         uses: cachix/install-nix-action@v31
 
       - name: Build documentation
         run: nix develop -c mdbook build ./tests
+
+      - name: Assemble deployment tree
+        run: |
+          cp -R tests/landing/. tests/book/
+          cp -R tests/playground/pkg tests/book/pkg
+          rm -rf tests/book/playground
+          cp -R tests/playground tests/book/playground
+          rm -rf tests/book/jupyterlite
+          cp -R tests/jupyterlite tests/book/jupyterlite
+          cp tests/cli/favicon.png tests/book/favicon.png
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -6,9 +6,9 @@ This repo contains several related sub-projects:
     - Interpreter for a subset of the Wolfram Language
     - Is a computer algebra system (CAS) and therefore all computations must be solved symbolically
 - Woxi Playground
-    - A simple playground to try out Woxi in the browser (tests/cli/playground)
+    - A simple playground to try out Woxi in the browser (tests/playground)
 - Woxi JupyterLite
-    - JupyterLite instance with an integrated Woxi kernel (tests/cli/jupyterlite)
+    - JupyterLite instance with an integrated Woxi kernel (tests/jupyterlite)
 - Woxi Studio
     - A native notebook editor for Wolfram Language `.nb` files, built with `iced` (woxi-studio)
 

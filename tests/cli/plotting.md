@@ -6,7 +6,7 @@ the Wolfram Language, along with charting and graphics primitives.
 Because graphical output cannot be compared textually, the examples
 below use `Head[...]` to verify that a plot expression returns a
 `Graphics` or `Graphics3D` value. In a Jupyter notebook or the
-[playground](playground/index.html), the same expressions render as
+[playground](/), the same expressions render as
 SVG images.
 
 

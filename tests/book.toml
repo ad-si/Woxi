@@ -4,6 +4,12 @@ language = "en"
 authors = ["Adrian Sieber"]
 src = "cli"
 
+[build]
+# The playground is the landing page at the deployment root; the rendered
+# book lives under /docs/.  See `docs/site` in the makefile for how the
+# final tests/book/ tree is assembled.
+build-dir = "book/docs"
+
 [output.html]
 additional-css = ["cli/custom.css"]
 git-repository-url = "https://github.com/ad-si/Woxi"

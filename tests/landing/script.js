@@ -84,7 +84,16 @@ const runKeymap = keymap.of([{
 
 const STORAGE_KEY = "woxi-playground-code"
 const STORAGE_KEY_OUTPUTS = "woxi-playground-outputs"
-const DEFAULT_CODE = "Select[Range[30], PrimeQ]"
+const DEFAULT_CODE = `GraphicsRow[{
+  Plot[Sin[x], {x, 0, 4 Pi}],
+  BarChart[{1, 5, 3, 4, 7, 9}],
+  NumberLinePlot[{Interval[{1, 9}], Interval[{3, 7}], Interval[{2, 4}]}]
+}]
+GraphicsRow[{
+  BubbleChart[{{1, 5, 3}, {4, 6, 9}}],
+  Graph[{a -> b, b -> a, b <-> b}],
+  TreeForm[a + b^2 + c^3 + d]
+}]`
 
 function saveEditorContent() {
   const content = editorView.state.doc.toString()
