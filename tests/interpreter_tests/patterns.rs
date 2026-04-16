@@ -276,6 +276,67 @@ mod pattern_matching {
     }
 
     #[test]
+    fn position_with_max_count() {
+      // Position[expr, pat, levelspec, n] returns at most n positions
+      // (in scan order).
+      assert_eq!(
+        interpret("Position[{a, b, a, c, a, b, a}, a, 1, 2]").unwrap(),
+        "{{1}, {3}}"
+      );
+      assert_eq!(
+        interpret("Position[{a, b, a, c, a, b, a}, a, {1}, 3]").unwrap(),
+        "{{1}, {3}, {5}}"
+      );
+    }
+
+    #[test]
+    fn position_with_max_count_nested() {
+      // The 4-arg form should also stop early in nested structures.
+      assert_eq!(
+        interpret("Position[{1, {2, 3}, {4, {5, 6}}}, _Integer, Infinity, 4]")
+          .unwrap(),
+        "{{1}, {2, 1}, {2, 2}, {3, 1}}"
+      );
+    }
+
+    #[test]
+    fn position_with_max_count_zero() {
+      // n = 0 should always produce the empty list.
+      assert_eq!(
+        interpret("Position[{1, {2, 3}, {4, {5, 6}}}, _Integer, Infinity, 0]")
+          .unwrap(),
+        "{}"
+      );
+    }
+
+    #[test]
+    fn position_with_max_count_no_match() {
+      // No match should still return the empty list, regardless of n.
+      assert_eq!(
+        interpret("Position[{a, b, c}, x, Infinity, 5]").unwrap(),
+        "{}"
+      );
+    }
+
+    #[test]
+    fn position_with_infinite_max_count() {
+      // n = Infinity behaves the same as the 3-arg form.
+      assert_eq!(
+        interpret("Position[{a, b, a, c, a}, a, Infinity, Infinity]").unwrap(),
+        "{{1}, {3}, {5}}"
+      );
+    }
+
+    #[test]
+    fn position_with_max_count_more_than_matches() {
+      // If n exceeds the number of matches, all matches are returned.
+      assert_eq!(
+        interpret("Position[{a, b, a, c, a}, a, Infinity, 100]").unwrap(),
+        "{{1}, {3}, {5}}"
+      );
+    }
+
+    #[test]
     fn multiple_blank_sequences_in_definition() {
       // f[x__, y__] splits args: first gets minimum, rest goes to second
       assert_eq!(
