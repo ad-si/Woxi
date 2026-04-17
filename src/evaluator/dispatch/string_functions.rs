@@ -69,7 +69,7 @@ pub fn dispatch_string_functions(
     "StringTrim" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::string_ast::string_trim_ast(args));
     }
-    "StringCases" if args.len() == 2 => {
+    "StringCases" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_cases_ast(args));
     }
     "ToString" | "TextString" if args.len() == 1 || args.len() == 2 => {
