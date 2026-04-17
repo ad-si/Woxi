@@ -968,6 +968,49 @@ mod string_patterns {
       "{123, 456}"
     );
   }
+
+  #[test]
+  fn string_cases_max_count() {
+    assert_eq!(interpret(r#"StringCases["abc", _, 2]"#).unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn string_cases_max_count_literal() {
+    assert_eq!(
+      interpret(r#"StringCases["aabbbcc", "b", 2]"#).unwrap(),
+      "{b, b}"
+    );
+  }
+
+  #[test]
+  fn string_cases_max_count_one() {
+    assert_eq!(
+      interpret(r#"StringCases["the cat sat on the mat", "at", 1]"#).unwrap(),
+      "{at}"
+    );
+  }
+
+  #[test]
+  fn string_cases_max_count_pattern() {
+    assert_eq!(
+      interpret(r#"StringCases["abc123def456", DigitCharacter.., 1]"#).unwrap(),
+      "{123}"
+    );
+  }
+
+  #[test]
+  fn string_cases_max_count_infinity() {
+    assert_eq!(
+      interpret(r#"StringCases["hello", _, Infinity]"#).unwrap(),
+      "{h, e, l, l, o}"
+    );
+  }
+
+  #[test]
+  fn string_cases_max_count_exceeds_matches() {
+    // When max count exceeds available matches, return all matches
+    assert_eq!(interpret(r#"StringCases["ab", _, 10]"#).unwrap(), "{a, b}");
+  }
 }
 
 mod string_part {

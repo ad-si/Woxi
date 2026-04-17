@@ -1537,12 +1537,23 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
 
 /// StringCases[s, patt] - find all substrings matching pattern
 pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringCases expects exactly 2 arguments".into(),
+      "StringCases expects 2 or 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
+
+  // Parse optional max count (3rd argument)
+  let max_count: usize = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      Expr::Identifier(s) if s == "Infinity" => usize::MAX,
+      _ => usize::MAX,
+    }
+  } else {
+    usize::MAX
+  };
 
   // Try pattern-based matching first
   if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
@@ -1554,6 +1565,7 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })?;
     let matches: Vec<Expr> = re
       .find_iter(&s)
+      .take(max_count)
       .map(|m| Expr::String(m.as_str().to_string()))
       .collect();
     return Ok(Expr::List(matches));
@@ -1567,6 +1579,9 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   while let Some(pos) = s[start..].find(&patt) {
     matches.push(Expr::String(patt.clone()));
     start = start + pos + patt.len();
+    if matches.len() >= max_count {
+      break;
+    }
   }
 
   Ok(Expr::List(matches))

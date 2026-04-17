@@ -889,7 +889,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StreamPlot" => Some((3, usize::MAX)),
     "StreamPosition" => Some((1, 1)),
     "Streams" => Some((0, 1)),
-    "StringCases" => Some((1, 2)),
+    "StringCases" => Some((1, 3)),
     "StringContainsQ" => Some((2, 3)),
     "StringCount" => Some((2, 2)),
     "StringDelete" => Some((2, 2)),
