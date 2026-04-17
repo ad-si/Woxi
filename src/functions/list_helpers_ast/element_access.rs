@@ -384,13 +384,25 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head): (&[Expr], Option<&str>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],
       });
+    }
+  };
+
+  // Helper to wrap result in the original head.
+  let wrap = |v: Vec<Expr>| -> Expr {
+    match head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: v,
+      },
+      None => Expr::List(v),
     }
   };
 
@@ -401,7 +413,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         let len = items.len() as i128;
         let real_idx = if idx < 0 { len + idx + 1 } else { idx };
         if real_idx >= 1 && real_idx <= len {
-          return Ok(Expr::List(vec![items[(real_idx - 1) as usize].clone()]));
+          return Ok(wrap(vec![items[(real_idx - 1) as usize].clone()]));
         }
       }
     } else if spec.len() >= 2 {
@@ -428,7 +440,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
             result.push(items[(i - 1) as usize].clone());
             i += step;
           }
-          return Ok(Expr::List(result));
+          return Ok(wrap(result));
         }
       }
     }
@@ -450,7 +462,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     let len = items.len() as i128;
     let actual = max_count.min(len);
     if actual >= 0 {
-      return Ok(Expr::List(items[..actual as usize].to_vec()));
+      return Ok(wrap(items[..actual as usize].to_vec()));
     }
   }
 
@@ -478,7 +490,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         args: vec![list.clone(), n.clone()],
       });
     }
-    Ok(Expr::List(items[..count as usize].to_vec()))
+    Ok(wrap(items[..count as usize].to_vec()))
   } else {
     if -count > len {
       // Print warning to stderr and return unevaluated
@@ -492,9 +504,7 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         args: vec![list.clone(), n.clone()],
       });
     }
-    Ok(Expr::List(
-      items[items.len() - (-count) as usize..].to_vec(),
-    ))
+    Ok(wrap(items[items.len() - (-count) as usize..].to_vec()))
   }
 }
 
@@ -532,13 +542,24 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, drop_head): (&[Expr], Option<&str>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Drop".to_string(),
         args: vec![list.clone(), n.clone()],
       });
+    }
+  };
+
+  let wrap_drop = |v: Vec<Expr>| -> Expr {
+    match drop_head {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: v,
+      },
+      None => Expr::List(v),
     }
   };
 
@@ -559,7 +580,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       }
       let mut result = items[..start].to_vec();
       result.extend_from_slice(&items[end..]);
-      return Ok(Expr::List(result));
+      return Ok(wrap_drop(result));
     }
     // Drop[list, {n}] - drop the nth element
     if spec.len() == 1
@@ -575,11 +596,9 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       let idx = idx as usize;
       let mut result = items[..idx].to_vec();
       result.extend_from_slice(&items[idx + 1..]);
-      return Ok(Expr::List(result));
+      return Ok(wrap_drop(result));
     }
     // Drop[list, {m, n, s}] - drop elements m, m+s, m+2s, ..., up to n.
-    // Negative indices count from the end. Step may be negative to walk
-    // through positions in reverse, matching Wolfram's Drop step semantics.
     if spec.len() == 3
       && let (Some(m), Some(n_end), Some(step)) = (
         expr_to_i128(&spec[0]),
@@ -632,7 +651,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
           }
         })
         .collect();
-      return Ok(Expr::List(result));
+      return Ok(wrap_drop(result));
     }
     return Ok(Expr::FunctionCall {
       name: "Drop".to_string(),
@@ -651,11 +670,11 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   };
 
   if count >= 0 {
-    let drop = count.min(len) as usize;
-    Ok(Expr::List(items[drop..].to_vec()))
+    let drop_count = count.min(len) as usize;
+    Ok(wrap_drop(items[drop_count..].to_vec()))
   } else {
     let keep = (len + count).max(0) as usize;
-    Ok(Expr::List(items[..keep].to_vec()))
+    Ok(wrap_drop(items[..keep].to_vec()))
   }
 }
 

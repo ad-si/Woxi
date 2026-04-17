@@ -1695,6 +1695,43 @@ mod take_multi_dim {
   fn take_up_to_exact_length() {
     assert_eq!(interpret("Take[{1, 2, 3}, UpTo[3]]").unwrap(), "{1, 2, 3}");
   }
+
+  #[test]
+  fn take_non_list_head() {
+    assert_eq!(
+      interpret("Take[f[a, b, c, d, e], 3]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn take_non_list_head_negative() {
+    assert_eq!(interpret("Take[f[a, b, c, d, e], -2]").unwrap(), "f[d, e]");
+  }
+
+  #[test]
+  fn take_non_list_head_range() {
+    assert_eq!(
+      interpret("Take[f[a, b, c, d, e], {2, 4}]").unwrap(),
+      "f[b, c, d]"
+    );
+  }
+
+  #[test]
+  fn drop_non_list_head() {
+    assert_eq!(
+      interpret("Drop[f[a, b, c, d, e], 2]").unwrap(),
+      "f[c, d, e]"
+    );
+  }
+
+  #[test]
+  fn drop_non_list_head_negative() {
+    assert_eq!(
+      interpret("Drop[f[a, b, c, d, e], -2]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
 }
 
 mod constant_array {
