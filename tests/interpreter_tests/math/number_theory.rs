@@ -748,6 +748,14 @@ mod prime_pi {
     // PrimePi[7] = 4 (primes: 2, 3, 5, 7)
     assert_eq!(interpret("PrimePi[7]").unwrap(), "4");
   }
+
+  #[test]
+  fn symbolic_constants() {
+    // PrimePi[E] = 1 (only prime 2 <= E ≈ 2.718)
+    assert_eq!(interpret("PrimePi[E]").unwrap(), "1");
+    // PrimePi[Pi] = 2 (primes 2, 3 <= Pi ≈ 3.14159)
+    assert_eq!(interpret("PrimePi[Pi]").unwrap(), "2");
+  }
 }
 
 mod next_prime {

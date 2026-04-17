@@ -2564,10 +2564,27 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Integer(count))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "PrimePi".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {
+      // Try to evaluate symbolic constants (Pi, E, etc.) to f64
+      if let Some(f) = crate::functions::math_ast::try_eval_to_f64(&args[0]) {
+        if f < 2.0 {
+          return Ok(Expr::Integer(0));
+        }
+        let n = f.floor() as usize;
+        let mut count: i128 = 0;
+        for i in 2..=n {
+          if crate::is_prime(i) {
+            count += 1;
+          }
+        }
+        Ok(Expr::Integer(count))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "PrimePi".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
   }
 }
 
