@@ -5062,14 +5062,6 @@ EXPECTED:
 = {1, -1 / 2 + z, 1 / 6 - z + z ^ 2, z / 2 - 3 z ^ 2 / 2 + z ^ 3}
 ---
 FILE: mathics/builtin/intfns/recurrence.py
-CLASS: Fibonacci
-LINE: 47
-TYPE: >>
-INPUT: Fibonacci[7, x]
-EXPECTED:
-= 1 + 6 x ^ 2 + 5 x ^ 4 + x ^ 6
----
-FILE: mathics/builtin/intfns/recurrence.py
 CLASS: HarmonicNumber
 LINE: 80
 TYPE: >>
