@@ -5,13 +5,15 @@ use super::*;
 
 /// AST-based Fold/FoldList: fold a function over a list.
 /// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]
+/// Threads through any non-atomic head (e.g. Fold[f, x, g[a,b]] works).
 pub fn fold_ast(
   func: &Expr,
   init: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let items: &[Expr] = match list {
+    Expr::List(items) => items.as_slice(),
+    Expr::FunctionCall { args, .. } => args.as_slice(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Fold".to_string(),
@@ -22,7 +24,6 @@ pub fn fold_ast(
 
   let mut acc = init.clone();
   for item in items {
-    // Apply func[acc, item]
     acc = apply_func_to_two_args(func, &acc, item)?;
   }
 
@@ -260,13 +261,16 @@ pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based FoldList: fold showing intermediate values.
 /// FoldList[f, x, {a, b, c}] -> {x, f[x, a], f[f[x, a], b], ...}
+/// Threads through any non-atomic head: FoldList[f, x, g[a,b]]
+/// returns g[x, f[x, a], f[f[x, a], b]].
 pub fn fold_list_ast(
   func: &Expr,
   init: &Expr,
   list: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "FoldList".to_string(),
@@ -282,7 +286,13 @@ pub fn fold_list_ast(
     results.push(acc.clone());
   }
 
-  Ok(Expr::List(results))
+  match head {
+    Some(name) => Ok(Expr::FunctionCall {
+      name,
+      args: results,
+    }),
+    None => Ok(Expr::List(results)),
+  }
 }
 
 /// AST-based FixedPointList: list of values until fixed point.

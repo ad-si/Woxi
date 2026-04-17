@@ -2789,6 +2789,48 @@ mod fold_list {
   fn two_arg_fold() {
     assert_eq!(interpret("Fold[Plus, {1, 2, 3, 4}]").unwrap(), "10");
   }
+
+  #[test]
+  fn fold_non_list_head() {
+    // Fold should thread through any non-list head.
+    assert_eq!(
+      interpret("Fold[f, x, g[a, b, c]]").unwrap(),
+      "f[f[f[x, a], b], c]"
+    );
+  }
+
+  #[test]
+  fn fold_two_arg_non_list_head() {
+    assert_eq!(
+      interpret("Fold[f, g[a, b, c, d]]").unwrap(),
+      "f[f[f[a, b], c], d]"
+    );
+  }
+
+  #[test]
+  fn fold_list_non_list_head() {
+    // FoldList wraps the result in the original head.
+    assert_eq!(
+      interpret("FoldList[f, x, g[a, b, c]]").unwrap(),
+      "g[x, f[x, a], f[f[x, a], b], f[f[f[x, a], b], c]]"
+    );
+  }
+
+  #[test]
+  fn fold_list_two_arg_non_list_head() {
+    assert_eq!(
+      interpret("FoldList[f, g[a, b, c, d]]").unwrap(),
+      "g[a, f[a, b], f[f[a, b], c], f[f[f[a, b], c], d]]"
+    );
+  }
+
+  #[test]
+  fn fold_list_numeric_non_list() {
+    assert_eq!(
+      interpret("FoldList[Plus, 0, g[1, 2, 3]]").unwrap(),
+      "g[0, 1, 3, 6]"
+    );
+  }
 }
 
 mod split_with_test {

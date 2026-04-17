@@ -284,18 +284,37 @@ pub fn dispatch_list_operations(
         return Some(list_helpers_ast::fold_ast(&args[0], &args[1], &args[2]));
       }
       // Fold[f, {a, b, c, ...}] = Fold[f, a, {b, c, ...}]
-      if let Expr::List(items) = &args[1] {
-        if items.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+      // Also handles Fold[f, g[a, b, c, ...]] with arbitrary heads.
+      let (items, head): (&[Expr], Option<&str>) = match &args[1] {
+        Expr::List(items) => (items.as_slice(), None),
+        Expr::FunctionCall { name, args: fargs } => {
+          (fargs.as_slice(), Some(name.as_str()))
         }
-        let init = items[0].clone();
-        let rest = Expr::List(items[1..].to_vec());
-        return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Fold".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      if items.is_empty() {
+        return Some(Ok(match head {
+          Some(h) => Expr::FunctionCall {
+            name: h.to_string(),
+            args: vec![],
+          },
+          None => Expr::List(vec![]),
+        }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "Fold".to_string(),
-        args: args.to_vec(),
-      }));
+      let init = items[0].clone();
+      let rest = match head {
+        Some(h) => Expr::FunctionCall {
+          name: h.to_string(),
+          args: items[1..].to_vec(),
+        },
+        None => Expr::List(items[1..].to_vec()),
+      };
+      return Some(list_helpers_ast::fold_ast(&args[0], &init, &rest));
     }
     "CountBy" if args.len() == 2 => {
       return Some(list_helpers_ast::count_by_ast(&args[0], &args[1]));
@@ -1115,18 +1134,37 @@ pub fn dispatch_list_operations(
         ));
       }
       // FoldList[f, {a, b, c, ...}] = FoldList[f, a, {b, c, ...}]
-      if let Expr::List(items) = &args[1] {
-        if items.is_empty() {
-          return Some(Ok(Expr::List(vec![])));
+      // Also handles FoldList[f, g[a, b, c, ...]] with arbitrary heads.
+      let (items, head): (&[Expr], Option<&str>) = match &args[1] {
+        Expr::List(items) => (items.as_slice(), None),
+        Expr::FunctionCall { name, args: fargs } => {
+          (fargs.as_slice(), Some(name.as_str()))
         }
-        let init = items[0].clone();
-        let rest = Expr::List(items[1..].to_vec());
-        return Some(list_helpers_ast::fold_list_ast(&args[0], &init, &rest));
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "FoldList".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      if items.is_empty() {
+        return Some(Ok(match head {
+          Some(h) => Expr::FunctionCall {
+            name: h.to_string(),
+            args: vec![],
+          },
+          None => Expr::List(vec![]),
+        }));
       }
-      return Some(Ok(Expr::FunctionCall {
-        name: "FoldList".to_string(),
-        args: args.to_vec(),
-      }));
+      let init = items[0].clone();
+      let rest = match head {
+        Some(h) => Expr::FunctionCall {
+          name: h.to_string(),
+          args: items[1..].to_vec(),
+        },
+        None => Expr::List(items[1..].to_vec()),
+      };
+      return Some(list_helpers_ast::fold_list_ast(&args[0], &init, &rest));
     }
     "FixedPointList" if args.len() >= 2 => {
       let max_iter = if args.len() == 3 {
