@@ -691,7 +691,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ParametricPlot" => Some((2, usize::MAX)),
     "ParetoDistribution" => Some((2, 2)),
     "Part" => Some((2, usize::MAX)),
-    "Partition" => Some((2, 3)),
+    "Partition" => Some((2, 5)),
     "PartitionsP" => Some((1, 1)),
     "PartitionsQ" => Some((1, 1)),
     "PatternTest" => Some((2, 2)),
