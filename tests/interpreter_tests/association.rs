@@ -983,4 +983,50 @@ mod lookup {
       "{1, miss}"
     );
   }
+
+  #[test]
+  fn lookup_list_of_keys() {
+    assert_eq!(
+      interpret("Lookup[<|a -> 1, b -> 2, c -> 3|>, {a, b}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn lookup_list_of_keys_with_missing() {
+    assert_eq!(
+      interpret("Lookup[<|a -> 1, b -> 2, c -> 3|>, {b, c, d}]").unwrap(),
+      "{2, 3, Missing[KeyAbsent, d]}"
+    );
+  }
+
+  #[test]
+  fn lookup_list_of_keys_with_default() {
+    assert_eq!(
+      interpret(r#"Lookup[<|a -> 1, b -> 2, c -> 3|>, {a, d}, "missing"]"#)
+        .unwrap(),
+      "{1, missing}"
+    );
+  }
+
+  #[test]
+  fn lookup_single_key_still_works() {
+    assert_eq!(interpret("Lookup[<|a -> 1, b -> 2|>, a]").unwrap(), "1");
+  }
+
+  #[test]
+  fn lookup_single_key_missing() {
+    assert_eq!(
+      interpret("Lookup[<|a -> 1, b -> 2|>, c]").unwrap(),
+      "Missing[KeyAbsent, c]"
+    );
+  }
+
+  #[test]
+  fn lookup_single_key_with_default() {
+    assert_eq!(
+      interpret(r#"Lookup[<|a -> 1, b -> 2|>, c, "default"]"#).unwrap(),
+      "default"
+    );
+  }
 }
