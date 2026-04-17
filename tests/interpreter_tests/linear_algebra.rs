@@ -1580,6 +1580,81 @@ mod tensor_rank {
   }
 }
 
+mod array_depth {
+  use super::*;
+
+  #[test]
+  fn scalar() {
+    assert_eq!(interpret("ArrayDepth[42]").unwrap(), "0");
+  }
+
+  #[test]
+  fn vector() {
+    assert_eq!(interpret("ArrayDepth[{1, 2, 3}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn matrix() {
+    assert_eq!(interpret("ArrayDepth[{{1, 2}, {3, 4}}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn rank3() {
+    assert_eq!(
+      interpret("ArrayDepth[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("ArrayDepth[{}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn ragged_different_lengths() {
+    // Sublists have different lengths — not rectangular at level 2
+    assert_eq!(interpret("ArrayDepth[{{1, 2}, {3}}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn ragged_mixed_types() {
+    // First element is atomic, second is a list — not rectangular at level 2
+    assert_eq!(interpret("ArrayDepth[{1, {2, 3}}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn ragged_deep() {
+    // Sublists at level 2 differ in structure
+    assert_eq!(
+      interpret("ArrayDepth[{{{1, 2}, {3, 4}}, {{5, 6}}}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn ragged_at_level_3() {
+    // Rectangular at level 2 but ragged at level 3
+    assert_eq!(
+      interpret("ArrayDepth[{{{1}, {2}}, {{3, 4}, {5}}}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn symbols_are_atoms() {
+    assert_eq!(interpret("ArrayDepth[{a, b, c}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn wide_matrix() {
+    assert_eq!(
+      interpret("ArrayDepth[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "2"
+    );
+  }
+}
+
 mod symmetric_matrix_q {
   use super::*;
 

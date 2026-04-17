@@ -4,15 +4,51 @@ use super::utilities::*;
 use super::*;
 
 /// AST-based ArrayDepth: compute depth of nested lists.
+/// Returns the depth to which the expression forms a rectangular array.
+/// At each level, all elements must be lists of the same length.
 pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   fn compute_depth(expr: &Expr) -> i128 {
     match expr {
       Expr::List(items) => {
-        if items.is_empty() {
-          1
-        } else {
-          1 + items.iter().map(compute_depth).min().unwrap_or(0)
+        // Start with depth 1 (the outermost list counts)
+        let mut depth: i128 = 1;
+        // Collect the current "frontier" of elements to check
+        let mut current_level: Vec<&Expr> = items.iter().collect();
+        loop {
+          if current_level.is_empty() {
+            break;
+          }
+          // Check if all elements at this level are lists
+          let first_len = match current_level[0] {
+            Expr::List(sub) => Some(sub.len()),
+            _ => break, // Not all lists — stop
+          };
+          if let Some(len) = first_len {
+            // All must be lists with the same length
+            let all_same = current_level
+              .iter()
+              .all(|item| matches!(item, Expr::List(sub) if sub.len() == len));
+            if !all_same {
+              break;
+            }
+            // Move to the next level
+            depth += 1;
+            let next_level: Vec<&Expr> = current_level
+              .iter()
+              .flat_map(|item| {
+                if let Expr::List(sub) = item {
+                  sub.iter().collect::<Vec<_>>()
+                } else {
+                  vec![]
+                }
+              })
+              .collect();
+            current_level = next_level;
+          } else {
+            break;
+          }
         }
+        depth
       }
       _ => 0,
     }
