@@ -1,0 +1,16 @@
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: Divisors
+LINE: 174
+TYPE: >>
+INPUT: Divisors[{87, 106, 202, 305}]
+EXPECTED:
+= {{1, 3, 29, 87}, {1, 2, 53, 106}, {1, 2, 101, 202}, {1, 5, 61, 305}}
+---
+FILE: mathics/builtin/numbers/integer.py
+CLASS: FromDigits
+LINE: 250
+TYPE: >>
+INPUT: FromDigits["a0"]
+EXPECTED:
+= 100
+---
