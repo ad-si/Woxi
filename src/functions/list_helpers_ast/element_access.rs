@@ -944,6 +944,40 @@ pub fn insert_ast(
 pub fn extract_ast(
   list: &Expr,
   index: &Expr,
+  head: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  let result = extract_ast_inner(list, index, head)?;
+  // If head is provided and the result is NOT from a multi-position spec
+  // (which already wraps each element), wrap the result with head.
+  if let Some(h) = head {
+    // For multi-position specs (list of lists), wrapping is already done inside.
+    // For single-position specs, wrap here.
+    let is_multi = matches!(index, Expr::List(indices)
+      if !indices.is_empty() && indices.iter().all(|i| matches!(i, Expr::List(_))));
+    if !is_multi {
+      return Ok(wrap_with_head(h, result));
+    }
+  }
+  Ok(result)
+}
+
+fn wrap_with_head(head: &Expr, val: Expr) -> Expr {
+  match head {
+    Expr::Identifier(name) => Expr::FunctionCall {
+      name: name.clone(),
+      args: vec![val],
+    },
+    _ => Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![head.clone(), val],
+    },
+  }
+}
+
+fn extract_ast_inner(
+  list: &Expr,
+  index: &Expr,
+  head: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   match index {
     Expr::Integer(_) | Expr::BigInteger(_) => part_ast(list, index),
@@ -955,7 +989,12 @@ pub fn extract_ast(
         // Multiple positions: Extract[expr, {{p1}, {p2, p3}, ...}]
         let mut results = Vec::new();
         for pos_spec in indices {
-          results.push(extract_ast(list, pos_spec)?);
+          let val = extract_ast_inner(list, pos_spec, None)?;
+          if let Some(h) = head {
+            results.push(wrap_with_head(h, val));
+          } else {
+            results.push(val);
+          }
         }
         return Ok(Expr::List(results));
       }
