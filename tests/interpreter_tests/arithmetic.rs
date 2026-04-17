@@ -190,6 +190,23 @@ mod arithmetic {
       // Mixed chain: different operators → head is Inequality
       assert_eq!(interpret("Head[1 < x <= 10]").unwrap(), "Inequality");
     }
+
+    #[test]
+    fn inequality_display_output_form() {
+      // Inequality should display as chained comparison, not FullForm
+      assert_eq!(
+        interpret("Inequality[-2, Less, x, Less, 2]").unwrap(),
+        "-2 < x < 2"
+      );
+    }
+
+    #[test]
+    fn inequality_less_equal_display() {
+      assert_eq!(
+        interpret("Inequality[0, LessEqual, x, LessEqual, 1]").unwrap(),
+        "0 <= x <= 1"
+      );
+    }
   }
 
   mod times_simplification {
