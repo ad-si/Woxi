@@ -1297,6 +1297,65 @@ mod partition {
       "{{1, 2, 3}}"
     );
   }
+
+  #[test]
+  fn cyclic_11_basic() {
+    // {1, 1} alignment: cyclic wrapping
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e}, 2, 1, {1, 1}]").unwrap(),
+      "{{a, b}, {b, c}, {c, d}, {d, e}, {e, a}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_11_short() {
+    assert_eq!(
+      interpret("Partition[{a, b, c}, 2, 1, {1, 1}]").unwrap(),
+      "{{a, b}, {b, c}, {c, a}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_11_with_stride() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 2, {1, 1}]").unwrap(),
+      "{{a, b, c}, {c, d, a}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_11_large_window() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e, f}, 4, 2, {1, 1}]").unwrap(),
+      "{{a, b, c, d}, {c, d, e, f}, {e, f, a, b}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_neg11_basic() {
+    // {-1, -1}: wraps backwards
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 2, 1, {-1, -1}]").unwrap(),
+      "{{d, a}, {a, b}, {b, c}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn cyclic_neg11_with_stride() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e}, 3, 2, {-1, -1}]").unwrap(),
+      "{{d, e, a}, {a, b, c}, {c, d, e}}"
+    );
+  }
+
+  #[test]
+  fn align_1_neg1_default() {
+    // {1, -1} is the default, same as no overhang
+    assert_eq!(
+      interpret("Partition[{a, b, c, d}, 3, 1, {1, -1}]").unwrap(),
+      "{{a, b, c}, {b, c, d}}"
+    );
+  }
 }
 
 mod symmetric_difference {
