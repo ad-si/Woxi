@@ -1603,11 +1603,21 @@ pub fn dispatch_list_operations(
         return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
       }
     }
-    "MinimalBy" if args.len() == 2 => {
-      return Some(list_helpers_ast::minimal_by_ast(&args[0], &args[1]));
+    "MinimalBy" if args.len() == 2 || args.len() == 3 => {
+      let n = if args.len() == 3 {
+        expr_to_i128(&args[2])
+      } else {
+        None
+      };
+      return Some(list_helpers_ast::minimal_by_ast(&args[0], &args[1], n));
     }
-    "MaximalBy" if args.len() == 2 => {
-      return Some(list_helpers_ast::maximal_by_ast(&args[0], &args[1]));
+    "MaximalBy" if args.len() == 2 || args.len() == 3 => {
+      let n = if args.len() == 3 {
+        expr_to_i128(&args[2])
+      } else {
+        None
+      };
+      return Some(list_helpers_ast::maximal_by_ast(&args[0], &args[1], n));
     }
     "ArrayDepth" if args.len() == 1 => {
       return Some(list_helpers_ast::array_depth_ast(&args[0]));
