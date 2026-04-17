@@ -427,6 +427,51 @@ pub fn map_at_ast(
         args: vec![func.clone(), list.clone(), pos_spec.clone()],
       })
     }
+    // Span[start, end] or Span[start, end, step]
+    Expr::FunctionCall {
+      name,
+      args: span_args,
+    } if name == "Span" && (span_args.len() == 2 || span_args.len() == 3) => {
+      let start_raw = expr_to_i128(&span_args[0]).unwrap_or(1);
+      let step = if span_args.len() == 3 {
+        expr_to_i128(&span_args[2]).unwrap_or(1)
+      } else {
+        1
+      };
+
+      // Resolve end: All means len.
+      let end_raw = match &span_args[1] {
+        Expr::Identifier(s) if s == "All" => len,
+        other => expr_to_i128(other).unwrap_or(len),
+      };
+
+      // Normalize to 0-based indices.
+      let start_idx = if start_raw < 0 {
+        (len + start_raw) as usize
+      } else {
+        (start_raw - 1) as usize
+      };
+      let end_idx = if end_raw < 0 {
+        (len + end_raw) as usize
+      } else {
+        (end_raw - 1) as usize
+      };
+
+      let step = step as usize;
+      if step == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "MapAt: Span step cannot be 0".into(),
+        ));
+      }
+
+      let mut new_items = items.clone();
+      let mut i = start_idx;
+      while i <= end_idx && i < new_items.len() {
+        new_items[i] = apply_func_ast(func, &items[i])?;
+        i += step;
+      }
+      Ok(Expr::List(new_items))
+    }
     _ => Ok(Expr::FunctionCall {
       name: "MapAt".to_string(),
       args: vec![func.clone(), list.clone(), pos_spec.clone()],
