@@ -509,3 +509,56 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result))
 }
+
+/// AST-based SymmetricDifference: elements in an odd number of the input lists.
+/// Result is sorted and deduplicated.
+pub fn symmetric_difference_ast(
+  lists: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use std::collections::HashMap;
+
+  if lists.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Count how many lists contain each element (dedup within each list)
+  let mut membership_count: HashMap<String, (usize, Expr)> = HashMap::new();
+
+  for list in lists {
+    let items = match list {
+      Expr::List(items) => items,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "SymmetricDifference".to_string(),
+          args: lists.to_vec(),
+        });
+      }
+    };
+
+    // Deduplicate within this list
+    let mut seen_in_list = std::collections::HashSet::new();
+    for item in items {
+      let key = crate::syntax::expr_to_string(item);
+      if seen_in_list.insert(key.clone()) {
+        membership_count
+          .entry(key)
+          .and_modify(|(count, _)| *count += 1)
+          .or_insert((1, item.clone()));
+      }
+    }
+  }
+
+  // Keep elements that appear in an odd number of lists
+  let mut result: Vec<Expr> = membership_count
+    .into_values()
+    .filter(|(count, _)| count % 2 == 1)
+    .map(|(_, expr)| expr)
+    .collect();
+
+  // Sort canonically (matching Complement/Union behavior)
+  result.sort_by(|a, b| {
+    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+  });
+
+  Ok(Expr::List(result))
+}
