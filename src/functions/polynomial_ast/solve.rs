@@ -873,6 +873,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let x_zero = make_rule(Expr::Integer(0));
         let mut all_solutions = vec![x_zero];
         all_solutions.extend(reduced_sols.iter().cloned());
+        sort_solutions(&mut all_solutions);
         return Ok(Expr::List(all_solutions));
       }
     }
@@ -1326,6 +1327,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
 
+          sort_solutions(&mut roots);
           return Ok(Expr::List(roots));
         }
       }
@@ -1353,6 +1355,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
           if !all_solutions.is_empty() {
+            sort_solutions(&mut all_solutions);
             return Ok(Expr::List(all_solutions));
           }
         }
@@ -1364,6 +1367,28 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Sort a list of Solve solutions (each is `{var -> val}`) by root value.
+/// Real solutions come first (ascending), then complex solutions.
+fn sort_solutions(solutions: &mut Vec<Expr>) {
+  solutions.sort_by(|a, b| {
+    let val_a = match a {
+      Expr::List(rules) if !rules.is_empty() => match &rules[0] {
+        Expr::Rule { replacement, .. } => replacement.as_ref(),
+        _ => a,
+      },
+      _ => a,
+    };
+    let val_b = match b {
+      Expr::List(rules) if !rules.is_empty() => match &rules[0] {
+        Expr::Rule { replacement, .. } => replacement.as_ref(),
+        _ => b,
+      },
+      _ => b,
+    };
+    root_order(val_a, val_b)
+  });
 }
 
 /// Check if an expression contains complex elements (I, (-1)^(p/q) with q>1, etc.)

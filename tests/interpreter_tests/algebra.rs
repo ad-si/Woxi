@@ -1465,6 +1465,24 @@ mod solve {
   }
 
   #[test]
+  fn cubic_integer_roots_sorted() {
+    // Solutions must be sorted ascending, matching Wolfram Language
+    assert_eq!(
+      interpret("Solve[x^3 - 6 x^2 + 11 x - 6 == 0, x]").unwrap(),
+      "{{x -> 1}, {x -> 2}, {x -> 3}}"
+    );
+  }
+
+  #[test]
+  fn quartic_integer_roots_sorted() {
+    // Solutions must be sorted ascending, matching Wolfram Language
+    assert_eq!(
+      interpret("Solve[x^4 - 10 x^2 + 9 == 0, x]").unwrap(),
+      "{{x -> -3}, {x -> -1}, {x -> 1}, {x -> 3}}"
+    );
+  }
+
+  #[test]
   fn cyclotomic_phi3() {
     assert_eq!(
       interpret("Solve[x^2 + x + 1 == 0, x]").unwrap(),
