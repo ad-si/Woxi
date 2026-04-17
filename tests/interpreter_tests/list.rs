@@ -4016,6 +4016,67 @@ mod part_span {
   }
 }
 
+mod join_level_spec {
+  use super::*;
+
+  #[test]
+  fn level_1_is_default() {
+    assert_eq!(
+      interpret("Join[{a, b}, {c, d}, 1]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+
+  #[test]
+  fn level_2_basic() {
+    assert_eq!(
+      interpret("Join[{{a, b}, {c, d}}, {{e, f}, {g, h}}, 2]").unwrap(),
+      "{{a, b, e, f}, {c, d, g, h}}"
+    );
+  }
+
+  #[test]
+  fn level_2_ragged() {
+    assert_eq!(
+      interpret("Join[{{1, 2}, {3}}, {{4, 5}, {6, 7}}, 2]").unwrap(),
+      "{{1, 2, 4, 5}, {3, 6, 7}}"
+    );
+  }
+
+  #[test]
+  fn level_2_unequal_outer_lengths() {
+    // When second list has fewer rows, only available rows are joined
+    assert_eq!(
+      interpret("Join[{{1, 2}, {3, 4}}, {{5, 6}}, 2]").unwrap(),
+      "{{1, 2, 5, 6}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn level_2_asymmetric_inner() {
+    assert_eq!(
+      interpret("Join[{{a, b}, {c, d}}, {{e}, {f}}, 2]").unwrap(),
+      "{{a, b, e}, {c, d, f}}"
+    );
+  }
+
+  #[test]
+  fn level_3() {
+    assert_eq!(
+      interpret("Join[{{{a}}, {{b}}}, {{{c}}, {{d}}}, 3]").unwrap(),
+      "{{{a, c}}, {{b, d}}}"
+    );
+  }
+
+  #[test]
+  fn level_1_numeric() {
+    assert_eq!(
+      interpret("Join[{1, 2, 3}, {4, 5, 6}, 1]").unwrap(),
+      "{1, 2, 3, 4, 5, 6}"
+    );
+  }
+}
+
 mod join_non_list {
   use super::*;
 

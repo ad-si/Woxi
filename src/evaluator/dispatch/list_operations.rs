@@ -1421,6 +1421,16 @@ pub fn dispatch_list_operations(
       }
     }
     "Join" => {
+      // Check if last argument is an integer level spec
+      if args.len() >= 3
+        && let Expr::Integer(n) = &args[args.len() - 1]
+      {
+        let level = *n as usize;
+        return Some(list_helpers_ast::join_at_level_ast(
+          &args[..args.len() - 1],
+          level,
+        ));
+      }
       return Some(list_helpers_ast::join_ast(args));
     }
     "Append" if args.len() == 2 => {

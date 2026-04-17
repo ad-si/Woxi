@@ -1348,6 +1348,50 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Join at a specified level.
+/// Join[list1, list2, ..., n] joins the lists at level n.
+/// Level 1 is the default (top-level join).
+/// Level 2 means descend one level and join corresponding sublists.
+pub fn join_at_level_ast(
+  lists: &[Expr],
+  level: usize,
+) -> Result<Expr, InterpreterError> {
+  if level <= 1 {
+    return join_ast(lists);
+  }
+
+  // For level > 1, all lists must have the same outer structure.
+  // Get the items from the first list to determine the outer length.
+  let first_items = match &lists[0] {
+    Expr::List(items) => items,
+    _ => return join_ast(lists),
+  };
+  let outer_len = first_items.len();
+
+  // Verify all lists are Lists and collect their items
+  let mut all_items: Vec<&Vec<Expr>> = Vec::new();
+  for list in lists {
+    match list {
+      Expr::List(items) => all_items.push(items),
+      _ => return join_ast(lists),
+    }
+  }
+
+  // For each position in the outer structure, recursively join at level-1
+  let mut result = Vec::with_capacity(outer_len);
+  for i in 0..outer_len {
+    let mut sublists = Vec::new();
+    for items in &all_items {
+      if i < items.len() {
+        sublists.push(items[i].clone());
+      }
+    }
+    result.push(join_at_level_ast(&sublists, level - 1)?);
+  }
+
+  Ok(Expr::List(result))
+}
+
 /// AST-based Append: append element to list.
 pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
   match list {
