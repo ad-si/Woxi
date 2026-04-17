@@ -4171,7 +4171,7 @@ WordFrequency,,🚫,,10.4,4291
 AnnotationRules,,,,12.0,4315
 AskConfirm,,🚫,,10.4,4315
 CanonicalWarpingCorrespondence,,,,11.0,4315
-CarmichaelLambda,,,,4.0,4315
+CarmichaelLambda,Carmichael lambda function (reduced totient),✅,pure,4.0,4315
 DiscreteHadamardTransform,,,,9.0,4315
 FormLayoutFunction,,🚫,,10.0,4315
 GestureHandler,,🚫,,9.0,4315

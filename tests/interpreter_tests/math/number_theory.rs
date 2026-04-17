@@ -1800,3 +1800,69 @@ mod divisors_tests {
     assert_eq!(interpret("Divisors[7]").unwrap(), "{1, 7}");
   }
 }
+
+mod carmichael_lambda {
+  use super::*;
+
+  #[test]
+  fn small_values() {
+    assert_eq!(
+      interpret("Table[CarmichaelLambda[n], {n, 1, 20}]").unwrap(),
+      "{1, 1, 2, 2, 4, 2, 6, 2, 6, 4, 10, 2, 12, 6, 4, 4, 16, 6, 18, 4}"
+    );
+  }
+
+  #[test]
+  fn one() {
+    assert_eq!(interpret("CarmichaelLambda[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn prime() {
+    // For a prime p, CarmichaelLambda[p] = p - 1
+    assert_eq!(interpret("CarmichaelLambda[7]").unwrap(), "6");
+    assert_eq!(interpret("CarmichaelLambda[13]").unwrap(), "12");
+  }
+
+  #[test]
+  fn prime_power() {
+    // CarmichaelLambda[p^k] = p^(k-1)(p-1) for odd prime p
+    assert_eq!(interpret("CarmichaelLambda[9]").unwrap(), "6"); // 3^2
+    assert_eq!(interpret("CarmichaelLambda[27]").unwrap(), "18"); // 3^3
+  }
+
+  #[test]
+  fn power_of_two() {
+    assert_eq!(interpret("CarmichaelLambda[2]").unwrap(), "1");
+    assert_eq!(interpret("CarmichaelLambda[4]").unwrap(), "2");
+    assert_eq!(interpret("CarmichaelLambda[8]").unwrap(), "2");
+    assert_eq!(interpret("CarmichaelLambda[16]").unwrap(), "4");
+    assert_eq!(interpret("CarmichaelLambda[32]").unwrap(), "8");
+  }
+
+  #[test]
+  fn composite() {
+    assert_eq!(interpret("CarmichaelLambda[100]").unwrap(), "20");
+    assert_eq!(interpret("CarmichaelLambda[12]").unwrap(), "2");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("CarmichaelLambda[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative() {
+    // CarmichaelLambda[-n] = CarmichaelLambda[n]
+    assert_eq!(interpret("CarmichaelLambda[-5]").unwrap(), "4");
+    assert_eq!(interpret("CarmichaelLambda[-12]").unwrap(), "2");
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("CarmichaelLambda[{6, 12, 100}]").unwrap(),
+      "{2, 2, 20}"
+    );
+  }
+}
