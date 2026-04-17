@@ -24,6 +24,7 @@ pub fn partition_ast(
   list: &Expr,
   n: i128,
   d: Option<i128>,
+  align: Option<&Expr>,
   pad: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
@@ -49,23 +50,103 @@ pub fn partition_ast(
       "Partition: offset must be positive".into(),
     ));
   }
+  let len = items.len();
 
+  // Parse alignment spec {kL, kR}
+  let (k_l, k_r) = if let Some(align_expr) = align {
+    if let Expr::List(elems) = align_expr {
+      if elems.len() == 2 {
+        if let (Some(kl), Some(kr)) = (
+          super::utilities::expr_to_i128(&elems[0]),
+          super::utilities::expr_to_i128(&elems[1]),
+        ) {
+          (kl, kr)
+        } else {
+          (1, -1) // default: no overhang
+        }
+      } else {
+        (1, -1)
+      }
+    } else {
+      (1, -1)
+    }
+  } else {
+    (1, -1) // default: Partition drops incomplete partitions
+  };
+
+  // Cyclic wrapping: {1, 1} or {-1, -1} or other alignment
+  let is_cyclic = align.is_some() && pad.is_none();
+  let is_default = k_l == 1 && k_r == -1;
+
+  if is_default && !is_cyclic {
+    // Standard partitioning without overhang
+    let mut results = Vec::new();
+    let mut i = 0;
+    while i + n_usize <= len {
+      results.push(Expr::List(items[i..i + n_usize].to_vec()));
+      i += d_usize;
+    }
+    return Ok(Expr::List(results));
+  }
+
+  if is_cyclic && len > 0 {
+    // Cyclic partitioning with alignment {kL, kR}
+    // kL: position (1-based) in the first partition where list[0] goes
+    // kR: position (1-based or negative) in the last partition where list[-1] goes
+    //
+    // The starting offset is -(kL-1) for positive kL, or -(n+kL) for negative kL
+    let start_offset: isize = if k_l > 0 {
+      -(k_l as isize - 1)
+    } else {
+      -(n as isize + k_l as isize)
+    };
+
+    // kR determines the position of the last element in the last partition.
+    // Position where last list element must appear (0-based within partition):
+    let end_pos: isize = if k_r > 0 {
+      k_r as isize - 1
+    } else {
+      n as isize + k_r as isize
+    };
+    // The last partition must start at an offset such that
+    // start + end_pos == len - 1 (mod alignment with d).
+    // last_start + end_pos covers items[len-1]
+    // => last_start = len - 1 - end_pos
+    let last_start = len as isize - 1 - end_pos;
+
+    let mut results = Vec::new();
+    let mut offset = start_offset;
+    while offset <= last_start {
+      let mut chunk = Vec::with_capacity(n_usize);
+      for j in 0..n_usize {
+        let idx =
+          ((offset + j as isize) % len as isize + len as isize) as usize % len;
+        chunk.push(items[idx].clone());
+      }
+      results.push(Expr::List(chunk));
+      offset += d_usize as isize;
+    }
+    return Ok(Expr::List(results));
+  }
+
+  // Overhang with padding (5-arg form with explicit pad)
   let mut results = Vec::new();
   let mut i = 0;
-  while i + n_usize <= items.len() {
+  while i + n_usize <= len {
     results.push(Expr::List(items[i..i + n_usize].to_vec()));
     i += d_usize;
   }
 
-  // Handle overhang: if pad is Some, include the remaining elements
-  if pad.is_some() && i < items.len() {
+  if let Some(pad_expr) = pad
+    && i < len
+  {
     let remaining = &items[i..];
-    match pad {
-      Some(Expr::List(pad_elems)) if pad_elems.is_empty() => {
+    match pad_expr {
+      Expr::List(pad_elems) if pad_elems.is_empty() => {
         // {} means allow short sublists (no padding)
         results.push(Expr::List(remaining.to_vec()));
       }
-      Some(pad_expr) => {
+      _ => {
         // Pad with the given element(s) to fill to size n
         let mut chunk = remaining.to_vec();
         let pad_items: Vec<Expr> = match pad_expr {
@@ -81,7 +162,6 @@ pub fn partition_ast(
         }
         results.push(Expr::List(chunk));
       }
-      None => unreachable!(),
     }
   }
 
