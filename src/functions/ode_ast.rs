@@ -2102,14 +2102,14 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Clamp order to valid range
-  let order = interp_order.max(1).min(3) as usize;
+  let mut order = interp_order.max(1).min(3) as usize;
   if order >= n {
-    return Err(InterpreterError::EvaluationError(format!(
-      "Interpolation: InterpolationOrder {} requires at least {} data points, but only {} were given",
-      order,
-      order + 1,
-      n
-    )));
+    let reduced = n - 1;
+    crate::emit_message(&format!(
+      "Interpolation::inhr: Requested order is too high; order has been reduced to {{{}}}.",
+      reduced
+    ));
+    order = reduced;
   }
 
   let x_min = points[0].0;
@@ -2264,6 +2264,10 @@ pub fn evaluate_interpolating_function(
     };
     let y_val = y0 + t * (y1 - y0);
     Ok(real_or_integer(y_val))
+  } else if order == 2 {
+    // Quadratic interpolation using local Lagrange polynomials
+    let y_val = lagrange_interpolate(data_points, x_clamped, n, idx, order)?;
+    Ok(real_or_integer(y_val))
   } else {
     // Cubic interpolation using natural cubic spline
     let y_val = cubic_spline_evaluate(data_points, x_clamped, n)?;
@@ -2356,6 +2360,48 @@ fn cubic_spline_evaluate(
 
   let dx = x_val - xs[idx];
   let result = ys[idx] + b[idx] * dx + c[idx] * dx * dx + d[idx] * dx * dx * dx;
+  Ok(result)
+}
+
+/// Lagrange polynomial interpolation using (order+1) nearest points.
+fn lagrange_interpolate(
+  data_points: &[Expr],
+  x_val: f64,
+  n: usize,
+  idx: usize,
+  order: usize,
+) -> Result<f64, InterpreterError> {
+  // Select (order+1) points centered around idx
+  let needed = order + 1;
+  let start = if idx + 1 >= needed {
+    (idx + 1)
+      .saturating_sub(needed)
+      .min(n.saturating_sub(needed))
+  } else {
+    0
+  };
+  let end = (start + needed).min(n);
+
+  let mut xs = Vec::with_capacity(end - start);
+  let mut ys = Vec::with_capacity(end - start);
+  for pt in &data_points[start..end] {
+    let (x, y) = extract_point(pt)?;
+    xs.push(x);
+    ys.push(y);
+  }
+
+  // Lagrange basis polynomials
+  let m = xs.len();
+  let mut result = 0.0;
+  for i in 0..m {
+    let mut basis = 1.0;
+    for j in 0..m {
+      if j != i {
+        basis *= (x_val - xs[j]) / (xs[i] - xs[j]);
+      }
+    }
+    result += ys[i] * basis;
+  }
   Ok(result)
 }
 

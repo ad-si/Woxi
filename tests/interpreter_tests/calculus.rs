@@ -3220,6 +3220,27 @@ mod interpolation {
       result
     );
   }
+
+  #[test]
+  fn order_reduced_when_too_few_points() {
+    // Default order 3 with only 3 points should reduce to order 2
+    let result =
+      interpret("f = Interpolation[{{1, 3}, {2, 5}, {3, 11}}]; f[1.5]")
+        .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 3.5).abs() < 0.001, "Expected 3.5, got {}", val);
+  }
+
+  #[test]
+  fn quadratic_interpolation() {
+    // Quadratic interpolation of x^2 data: 1.5^2 = 2.25
+    let result = interpret(
+      "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}, {4, 16}}, InterpolationOrder -> 2]; f[1.5]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 2.25).abs() < 0.001, "Expected 2.25, got {}", val);
+  }
 }
 
 mod list_interpolation {
