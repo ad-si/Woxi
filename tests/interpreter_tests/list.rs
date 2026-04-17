@@ -3644,6 +3644,44 @@ mod extract_multi {
       "{{a, b}, d}"
     );
   }
+
+  #[test]
+  fn extract_with_head_multi() {
+    // Extract[expr, positions, h] wraps each result with h
+    assert_eq!(
+      interpret("Extract[{a, {b, c}, d}, {{2, 1}, {3}}, f]").unwrap(),
+      "{f[b], f[d]}"
+    );
+  }
+
+  #[test]
+  fn extract_with_head_single_position() {
+    assert_eq!(interpret("Extract[{a, b, c}, {2}, f]").unwrap(), "f[b]");
+  }
+
+  #[test]
+  fn extract_with_head_nested() {
+    assert_eq!(
+      interpret("Extract[{{a, b}, {c, d}}, {1, 2}, g]").unwrap(),
+      "g[b]"
+    );
+  }
+
+  #[test]
+  fn extract_with_head_multiple_flat() {
+    assert_eq!(
+      interpret("Extract[{a, b, c, d}, {{1}, {3}}, f]").unwrap(),
+      "{f[a], f[c]}"
+    );
+  }
+
+  #[test]
+  fn extract_with_head_preserves_order() {
+    assert_eq!(
+      interpret("Extract[{10, 20, 30, 40}, {{1}, {4}, {2}}, f]").unwrap(),
+      "{f[10], f[40], f[20]}"
+    );
+  }
 }
 
 mod matrix_constructors {

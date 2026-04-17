@@ -1788,8 +1788,13 @@ pub fn dispatch_list_operations(
     "SplitBy" if args.len() == 2 => {
       return Some(list_helpers_ast::split_by_ast(&args[1], &args[0]));
     }
-    "Extract" if args.len() == 2 => {
-      return Some(list_helpers_ast::extract_ast(&args[0], &args[1]));
+    "Extract" if args.len() == 2 || args.len() == 3 => {
+      let head = if args.len() == 3 {
+        Some(&args[2])
+      } else {
+        None
+      };
+      return Some(list_helpers_ast::extract_ast(&args[0], &args[1], head));
     }
     "Catenate" if args.len() == 1 => {
       return Some(list_helpers_ast::catenate_ast(&args[0]));
