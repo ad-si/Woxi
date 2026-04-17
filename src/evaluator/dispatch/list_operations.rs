@@ -1868,7 +1868,47 @@ pub fn dispatch_list_operations(
       }));
     }
     "Outer" if args.len() >= 3 => {
-      return Some(list_helpers_ast::outer_ast(&args[0], &args[1..]));
+      // Outer[f, list1, list2, ..., n] or Outer[f, list1, list2, ..., n1, n2, ...]
+      // Detect trailing integer level specifications.
+      let rest = &args[1..];
+      // Count how many list args there are (at least 1).
+      // Lists come first, then optional integer level specs at the end.
+      // We need at least 1 list. Find where integers start from the end.
+      let num_rest = rest.len();
+      let mut num_level_args = 0;
+      for i in (0..num_rest).rev() {
+        if matches!(&rest[i], Expr::Integer(_)) {
+          num_level_args += 1;
+        } else {
+          break;
+        }
+      }
+      // Must have at least 1 list arg
+      let num_lists = num_rest - num_level_args;
+      if num_lists == 0 {
+        num_level_args = 0; // all args are lists (integers can be list elements)
+      }
+      let (lists, level_args) = if num_level_args > 0 {
+        (&rest[..num_lists], &rest[num_lists..])
+      } else {
+        (rest, &rest[0..0])
+      };
+
+      // Parse level specs
+      let levels: Vec<usize> = level_args
+        .iter()
+        .filter_map(|e| {
+          if let Expr::Integer(n) = e {
+            Some(*n as usize)
+          } else {
+            None
+          }
+        })
+        .collect();
+
+      return Some(list_helpers_ast::outer_ast_with_levels(
+        &args[0], lists, &levels,
+      ));
     }
     "TensorProduct" if args.len() >= 2 => {
       // TensorProduct[v1, v2, ...] = Outer[Times, v1, v2, ...]
