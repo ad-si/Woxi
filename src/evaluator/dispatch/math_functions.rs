@@ -1240,6 +1240,9 @@ pub fn dispatch_math_functions(
     "EulerPhi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::euler_phi_ast(args));
     }
+    "CarmichaelLambda" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::carmichael_lambda_ast(args));
+    }
     "JacobiSymbol" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_symbol_ast(args));
     }

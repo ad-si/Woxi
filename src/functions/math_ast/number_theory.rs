@@ -2059,6 +2059,85 @@ pub fn euler_phi_i128(n: i128) -> i128 {
   result as i128
 }
 
+/// CarmichaelLambda[n] - Compute the Carmichael lambda function.
+/// The smallest positive integer m such that a^m ≡ 1 (mod n) for all a coprime to n.
+pub fn carmichael_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CarmichaelLambda expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(0) => return Ok(Expr::Integer(0)),
+    Some(n) => n.unsigned_abs(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CarmichaelLambda".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if n <= 1 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Factor n into prime powers
+  let mut remaining = n;
+  let mut result: u128 = 1; // will accumulate LCM
+
+  let mut p: u128 = 2;
+  while p * p <= remaining {
+    if remaining % p == 0 {
+      let mut pk: u128 = 1;
+      while remaining % p == 0 {
+        pk *= p;
+        remaining /= p;
+      }
+      // Compute lambda(p^k)
+      let lambda_pk = if p == 2 {
+        if pk <= 2 {
+          1 // lambda(2) = 1
+        } else if pk == 4 {
+          2 // lambda(4) = 2
+        } else {
+          pk / 4 // lambda(2^k) = 2^(k-2) for k >= 3
+        }
+      } else {
+        // lambda(p^k) = phi(p^k) = p^(k-1) * (p - 1)
+        (pk / p) * (p - 1)
+      };
+      result = lcm_u128(result, lambda_pk);
+    }
+    p += 1;
+  }
+  if remaining > 1 {
+    // remaining is a prime p with exponent 1
+    // lambda(p) = p - 1
+    result = lcm_u128(result, remaining - 1);
+  }
+
+  Ok(Expr::Integer(result as i128))
+}
+
+fn lcm_u128(a: u128, b: u128) -> u128 {
+  if a == 0 || b == 0 {
+    0
+  } else {
+    a / gcd_u128(a, b) * b
+  }
+}
+
+fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
 /// JacobiSymbol[n, m] - Compute the Jacobi symbol (n/m)
 pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
