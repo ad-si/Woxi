@@ -513,7 +513,24 @@ pub fn dispatch_list_operations(
       } else {
         None
       };
-      return Some(list_helpers_ast::map_thread_ast(&args[0], &args[1], level));
+      return Some(
+        match list_helpers_ast::map_thread_ast(&args[0], &args[1], level) {
+          Err(InterpreterError::EvaluationError(msg))
+            if msg.contains("same length") =>
+          {
+            crate::emit_message(&format!(
+              "MapThread::mptc: Incompatible dimensions of objects in MapThread[{}, {}].",
+              crate::syntax::expr_to_string(&args[0]),
+              crate::syntax::expr_to_string(&args[1]),
+            ));
+            Ok(Expr::FunctionCall {
+              name: "MapThread".to_string(),
+              args: args.to_vec(),
+            })
+          }
+          other => other,
+        },
+      );
     }
     "Downsample" if args.len() == 2 || args.len() == 3 => {
       if let Expr::List(items) = &args[0]
@@ -1175,7 +1192,21 @@ pub fn dispatch_list_operations(
       ));
     }
     "Transpose" if args.len() == 1 => {
-      return Some(list_helpers_ast::transpose_ast(&args[0]));
+      return Some(match list_helpers_ast::transpose_ast(&args[0]) {
+        Err(InterpreterError::EvaluationError(msg))
+          if msg.contains("same length") =>
+        {
+          crate::emit_message(&format!(
+            "Transpose::nmtx: The first two levels of {} cannot be transposed.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          Ok(Expr::FunctionCall {
+            name: "Transpose".to_string(),
+            args: args.to_vec(),
+          })
+        }
+        other => other,
+      });
     }
     "Transpose" if args.len() == 2 => {
       if let Expr::List(perm) = &args[1] {
@@ -1430,13 +1461,37 @@ pub fn dispatch_list_operations(
       ));
     }
     "Thread" if args.len() == 1 => {
-      return Some(list_helpers_ast::thread_ast(&args[0], None));
+      return Some(match list_helpers_ast::thread_ast(&args[0], None) {
+        Err(InterpreterError::EvaluationError(msg))
+          if msg.contains("same length") =>
+        {
+          crate::emit_message(&format!(
+            "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          Ok(args[0].clone())
+        }
+        other => other,
+      });
     }
     "Thread" if args.len() == 2 => {
-      if let Expr::Identifier(head) = &args[1] {
-        return Some(list_helpers_ast::thread_ast(&args[0], Some(head)));
-      }
-      return Some(list_helpers_ast::thread_ast(&args[0], None));
+      let head = if let Expr::Identifier(head) = &args[1] {
+        Some(head.as_str())
+      } else {
+        None
+      };
+      return Some(match list_helpers_ast::thread_ast(&args[0], head) {
+        Err(InterpreterError::EvaluationError(msg))
+          if msg.contains("same length") =>
+        {
+          crate::emit_message(&format!(
+            "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          Ok(args[0].clone())
+        }
+        other => other,
+      });
     }
     "Through" if args.len() == 1 => {
       return Some(list_helpers_ast::through_ast(&args[0], None));

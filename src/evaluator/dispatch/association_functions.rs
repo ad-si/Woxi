@@ -48,9 +48,33 @@ pub fn dispatch_association_functions(
       ));
     }
     "AssociationThread" if args.len() == 1 || args.len() == 2 => {
-      return Some(crate::functions::association_ast::association_thread_ast(
-        args,
-      ));
+      return Some(
+        match crate::functions::association_ast::association_thread_ast(args) {
+          Err(InterpreterError::EvaluationError(msg))
+            if msg.contains("same length") =>
+          {
+            let keys_str = if !args.is_empty() {
+              crate::syntax::expr_to_string(&args[0])
+            } else {
+              String::new()
+            };
+            let vals_str = if args.len() >= 2 {
+              crate::syntax::expr_to_string(&args[1])
+            } else {
+              String::new()
+            };
+            crate::emit_message(&format!(
+              "AssociationThread::idim: {} and {} must have the same length.",
+              keys_str, vals_str,
+            ));
+            Ok(Expr::FunctionCall {
+              name: "AssociationThread".to_string(),
+              args: args.to_vec(),
+            })
+          }
+          other => other,
+        },
+      );
     }
     "Merge" if args.len() == 2 => {
       return Some(crate::functions::association_ast::merge_ast(args));

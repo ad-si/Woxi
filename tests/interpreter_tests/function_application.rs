@@ -746,3 +746,48 @@ mod operate {
     );
   }
 }
+
+mod dimension_mismatch_returns_unevaluated {
+  use super::*;
+
+  #[test]
+  fn thread_unequal_lengths() {
+    // Thread with unequal length lists should return unevaluated, not error
+    assert_eq!(
+      interpret("Thread[f[{a, b, c}, {1, 2}]]").unwrap(),
+      "f[{a, b, c}, {1, 2}]"
+    );
+  }
+
+  #[test]
+  fn map_thread_unequal_lengths() {
+    assert_eq!(
+      interpret("MapThread[f, {{a, b}, {1, 2, 3}}]").unwrap(),
+      "MapThread[f, {{a, b}, {1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn transpose_ragged() {
+    assert_eq!(
+      interpret("Transpose[{{1, 2}, {3}}]").unwrap(),
+      "Transpose[{{1, 2}, {3}}]"
+    );
+  }
+
+  #[test]
+  fn association_thread_unequal() {
+    assert_eq!(
+      interpret("AssociationThread[{a, b, c}, {1, 2}]").unwrap(),
+      "AssociationThread[{a, b, c}, {1, 2}]"
+    );
+  }
+
+  #[test]
+  fn inner_incompatible() {
+    assert_eq!(
+      interpret("Inner[f, {a, b}, {x, y, z}, g]").unwrap(),
+      "Inner[f, {a, b}, {x, y, z}, g]"
+    );
+  }
+}
