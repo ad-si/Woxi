@@ -1515,13 +1515,14 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
     // PatternTest with BlankSequence: x__?IntegerQ or __?IntegerQ
     Expr::PatternTest {
       name,
+      head,
       blank_type,
       test,
     } if *blank_type >= 2 => {
       let min = if *blank_type == 2 { 1 } else { 0 };
       Some(SeqInfo {
         name: name.clone(),
-        head: None,
+        head: head.clone(),
         min_count: min,
         max_count: None,
         test: Some(test.clone()),
@@ -1852,8 +1853,17 @@ fn match_pattern_impl(
       }
       Some(vec![(name.clone(), expr.clone())])
     }
-    Expr::PatternTest { name, test, .. } => {
-      // _?test or x_?test — matches if test[expr] is True
+    Expr::PatternTest {
+      name, head, test, ..
+    } => {
+      // _?test or x_?test or x_Head?test — matches if head matches and test[expr] is True
+      // Check head constraint first
+      if let Some(h) = head {
+        let expr_head = get_expr_head(expr);
+        if expr_head != *h {
+          return None;
+        }
+      }
       let test_result = match test.as_ref() {
         Expr::Identifier(func_name) => {
           let call = Expr::FunctionCall {

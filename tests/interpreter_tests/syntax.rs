@@ -1487,6 +1487,64 @@ mod pattern_test_function {
       "{1, 3}"
     );
   }
+
+  #[test]
+  fn pattern_test_with_head_match_q() {
+    assert_eq!(
+      interpret("MatchQ[3, _Integer?NonNegative]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_no_match_head() {
+    // 3.5 is Real, not Integer — head doesn't match
+    assert_eq!(
+      interpret("MatchQ[3.5, _Integer?NonNegative]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_no_match_test() {
+    // -3 is Integer but not NonNegative — test fails
+    assert_eq!(
+      interpret("MatchQ[-3, _Integer?NonNegative]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_in_function_def() {
+    assert_eq!(
+      interpret("f[n_Integer?NonNegative] := n + 1; f[3]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_function_no_match() {
+    assert_eq!(
+      interpret("g[n_Integer?NonNegative] := n + 1; g[-1]").unwrap(),
+      "g[-1]"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_display() {
+    assert_eq!(
+      interpret("Hold[n_Integer?NonNegative]").unwrap(),
+      "Hold[n_Integer?NonNegative]"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_head_fullform() {
+    assert_eq!(
+      interpret("FullForm[Hold[_Integer?NonNegative]]").unwrap(),
+      "Hold[PatternTest[Blank[Integer], NonNegative]]"
+    );
+  }
 }
 
 mod blank_null_sequence {

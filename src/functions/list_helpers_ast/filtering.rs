@@ -280,11 +280,14 @@ fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
       })
     }
     Expr::PatternTest {
-      blank_type, test, ..
+      head,
+      blank_type,
+      test,
+      ..
     } if *blank_type >= 2 => {
       let min = if *blank_type == 2 { 1 } else { 0 };
       Some(SeqInfoBool {
-        head: None,
+        head: head.clone(),
         min_count: min,
         max_count: None,
         test: Some(test.clone()),
