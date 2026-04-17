@@ -2395,6 +2395,16 @@ mod add_to_function {
     // FunctionDefinition returns "\0" (suppressed Null)
     assert!(interpret("F[x_] := x[[2]] += 9").is_ok());
   }
+
+  #[test]
+  fn add_to_rvalue_error() {
+    // AddTo on uninitialized variable should return the variable unchanged
+    clear_state();
+    assert_eq!(
+      interpret("AddTo[freshAddVar, 3]; freshAddVar").unwrap(),
+      "freshAddVar"
+    );
+  }
 }
 
 mod subtract_from_function {
@@ -2405,6 +2415,15 @@ mod subtract_from_function {
     assert_eq!(
       interpret("Attributes[SubtractFrom]").unwrap(),
       "{HoldFirst, Protected}"
+    );
+  }
+
+  #[test]
+  fn subtract_from_rvalue_error() {
+    clear_state();
+    assert_eq!(
+      interpret("SubtractFrom[freshSubVar, 2]; freshSubVar").unwrap(),
+      "freshSubVar"
     );
   }
 }
@@ -2419,6 +2438,15 @@ mod times_by_function {
       "{HoldFirst, Protected}"
     );
   }
+
+  #[test]
+  fn times_by_rvalue_error() {
+    clear_state();
+    assert_eq!(
+      interpret("TimesBy[freshTimVar, 3]; freshTimVar").unwrap(),
+      "freshTimVar"
+    );
+  }
 }
 
 mod divide_by_function {
@@ -2429,6 +2457,15 @@ mod divide_by_function {
     assert_eq!(
       interpret("Attributes[DivideBy]").unwrap(),
       "{HoldFirst, Protected}"
+    );
+  }
+
+  #[test]
+  fn divide_by_rvalue_error() {
+    clear_state();
+    assert_eq!(
+      interpret("DivideBy[freshDivVar, 2]; freshDivVar").unwrap(),
+      "freshDivVar"
     );
   }
 }

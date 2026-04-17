@@ -709,15 +709,21 @@ pub fn evaluate_expr_to_expr_inner(
             _ => unreachable!(),
           };
           if let Expr::Identifier(var_name) = &args[0] {
-            let rhs = evaluate_expr_to_expr(&args[1])?;
             let current = ENV.with(|e| e.borrow().get(var_name).cloned());
             let current_val = match current {
               Some(StoredValue::ExprVal(e)) => e,
               Some(StoredValue::Raw(s)) => {
                 crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
               }
-              _ => Expr::Integer(0),
+              _ => {
+                crate::emit_message(&format!(
+                  "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+                  name, var_name
+                ));
+                return Ok(Expr::Identifier(var_name.clone()));
+              }
             };
+            let rhs = evaluate_expr_to_expr(&args[1])?;
             let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
               op,
               left: Box::new(current_val),
