@@ -62,7 +62,7 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(vec![row; size])));
       }
     }
-    "DiagonalMatrix" if args.len() == 1 => {
+    "DiagonalMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(
         args,
       ));
