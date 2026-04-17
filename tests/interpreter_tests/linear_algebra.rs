@@ -288,6 +288,62 @@ mod diagonal_matrix {
       "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
     );
   }
+
+  #[test]
+  fn superdiagonal() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{a, b}, 1]").unwrap(),
+      "{{0, a, 0}, {0, 0, b}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn subdiagonal() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{a, b}, -1]").unwrap(),
+      "{{0, 0, 0}, {a, 0, 0}, {0, b, 0}}"
+    );
+  }
+
+  #[test]
+  fn explicit_zero_offset() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{1, 2, 3}, 0]").unwrap(),
+      "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+    );
+  }
+
+  #[test]
+  fn superdiagonal_three_elements() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{a, b, c}, 1]").unwrap(),
+      "{{0, a, 0, 0}, {0, 0, b, 0}, {0, 0, 0, c}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn subdiagonal_three_elements() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{a, b, c}, -1]").unwrap(),
+      "{{0, 0, 0, 0}, {a, 0, 0, 0}, {0, b, 0, 0}, {0, 0, c, 0}}"
+    );
+  }
+
+  #[test]
+  fn offset_2() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{x}, 2]").unwrap(),
+      "{{0, 0, x}, {0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn offset_neg2() {
+    assert_eq!(
+      interpret("DiagonalMatrix[{x}, -2]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}, {x, 0, 0}}"
+    );
+  }
 }
 
 mod cross {

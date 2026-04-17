@@ -597,9 +597,9 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DiagonalMatrix[list] - diagonal matrix from a list
 pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "DiagonalMatrix expects exactly 1 argument".into(),
+      "DiagonalMatrix expects 1 or 2 arguments".into(),
     ));
   }
   let diag = match &args[0] {
@@ -611,11 +611,36 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  let k: i128 = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(v) => *v,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DiagonalMatrix".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    0
+  };
   let n = diag.len();
-  let mut matrix = Vec::new();
-  for i in 0..n {
-    let mut row = vec![Expr::Integer(0); n];
-    row[i] = diag[i].clone();
+  let size = n + k.unsigned_abs() as usize;
+  let k_abs = k.unsigned_abs() as usize;
+  let mut matrix = Vec::with_capacity(size);
+  for i in 0..size {
+    let mut row = vec![Expr::Integer(0); size];
+    if k >= 0 {
+      // Super-diagonal: element j goes at row j, column j + k
+      if i < n {
+        row[i + k_abs] = diag[i].clone();
+      }
+    } else {
+      // Sub-diagonal: element j goes at row j + |k|, column j
+      if i >= k_abs && i - k_abs < n {
+        row[i - k_abs] = diag[i - k_abs].clone();
+      }
+    }
     matrix.push(Expr::List(row));
   }
   Ok(Expr::List(matrix))
