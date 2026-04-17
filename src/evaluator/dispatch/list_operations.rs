@@ -2838,6 +2838,8 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
 
 /// ArrayFlatten[{{block11, block12, ...}, {block21, ...}, ...}]
 /// Combines a matrix of sub-matrices (blocks) into a single matrix.
+/// Scalar entries (e.g. 0) are expanded to zero/constant matrices
+/// of the appropriate dimensions inferred from neighboring blocks.
 fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   // arg should be a list of rows, where each row is a list of blocks (sub-matrices)
   let block_rows = match arg {
@@ -2854,9 +2856,12 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
-  // Parse the block matrix structure
-  let mut all_block_rows: Vec<Vec<Vec<Vec<Expr>>>> = Vec::new();
+  // First, determine the grid dimensions (number of block rows and columns)
+  let n_block_rows = block_rows.len();
+  let mut n_block_cols = 0;
 
+  // Collect all blocks as raw expressions in a 2D grid
+  let mut block_grid: Vec<Vec<&Expr>> = Vec::new();
   for block_row in block_rows {
     let blocks_in_row = match block_row {
       Expr::List(blocks) => blocks,
@@ -2867,24 +2872,79 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
         });
       }
     };
+    if n_block_cols == 0 {
+      n_block_cols = blocks_in_row.len();
+    }
+    block_grid.push(blocks_in_row.iter().collect());
+  }
 
+  // Helper: get the dimensions (rows, cols) of a block if it's a matrix
+  fn block_dims(block: &Expr) -> Option<(usize, usize)> {
+    match block {
+      Expr::List(rows) => {
+        if rows.is_empty() {
+          return Some((0, 0));
+        }
+        match &rows[0] {
+          Expr::List(cols) => Some((rows.len(), cols.len())),
+          _ => None, // 1D list, not a matrix block
+        }
+      }
+      _ => None, // Scalar
+    }
+  }
+
+  // Determine the row height for each block-row and column width
+  // for each block-column by scanning actual matrix blocks.
+  let mut row_heights: Vec<Option<usize>> = vec![None; n_block_rows];
+  let mut col_widths: Vec<Option<usize>> = vec![None; n_block_cols];
+
+  for (i, row) in block_grid.iter().enumerate() {
+    for (j, block) in row.iter().enumerate() {
+      if let Some((h, w)) = block_dims(block) {
+        if row_heights[i].is_none() {
+          row_heights[i] = Some(h);
+        }
+        if col_widths[j].is_none() {
+          col_widths[j] = Some(w);
+        }
+      }
+    }
+  }
+
+  // Default any undetermined dimension to 1
+  let row_heights: Vec<usize> =
+    row_heights.into_iter().map(|h| h.unwrap_or(1)).collect();
+  let col_widths: Vec<usize> =
+    col_widths.into_iter().map(|w| w.unwrap_or(1)).collect();
+
+  // Parse each block into a matrix, expanding scalars to the
+  // appropriate size
+  let mut all_block_rows: Vec<Vec<Vec<Vec<Expr>>>> = Vec::new();
+
+  for (i, row) in block_grid.iter().enumerate() {
     let mut parsed_blocks: Vec<Vec<Vec<Expr>>> = Vec::new();
-    for block in blocks_in_row {
-      match block {
+    for (j, block) in row.iter().enumerate() {
+      let matrix = match block {
         Expr::List(rows) => {
-          let mut matrix: Vec<Vec<Expr>> = Vec::new();
-          for row in rows {
-            match row {
-              Expr::List(cols) => matrix.push(cols.clone()),
-              // Scalar treated as 1x1 matrix
-              other => matrix.push(vec![other.clone()]),
+          let mut m: Vec<Vec<Expr>> = Vec::new();
+          for r in rows {
+            match r {
+              Expr::List(cols) => m.push(cols.clone()),
+              other => m.push(vec![other.clone()]),
             }
           }
-          parsed_blocks.push(matrix);
+          m
         }
-        // Scalar treated as 1x1
-        other => parsed_blocks.push(vec![vec![other.clone()]]),
-      }
+        // Scalar: expand to a matrix of the right size filled
+        // with this value (commonly 0)
+        scalar => {
+          let h = row_heights[i];
+          let w = col_widths[j];
+          vec![vec![(*scalar).clone(); w]; h]
+        }
+      };
+      parsed_blocks.push(matrix);
     }
     all_block_rows.push(parsed_blocks);
   }

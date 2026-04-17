@@ -4916,6 +4916,26 @@ mod array_flatten {
       "{{a, b}, {c, d}}"
     );
   }
+
+  #[test]
+  fn scalar_zero_expanded_to_block() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{{{1, 0}, {0, 1}}, 0}, {0, {{2, 0}, {0, 2}}}}]")
+        .unwrap(),
+      "{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 2, 0}, {0, 0, 0, 2}}"
+    );
+  }
+
+  #[test]
+  fn block_diagonal_with_scalar_zeros() {
+    assert_eq!(
+      interpret(
+        "ArrayFlatten[{{IdentityMatrix[2], 0}, {0, IdentityMatrix[3]}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, 1, 0}, {0, 0, 0, 0, 1}}"
+    );
+  }
 }
 
 mod pdf {
