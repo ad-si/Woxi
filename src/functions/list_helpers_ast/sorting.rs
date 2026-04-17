@@ -395,18 +395,35 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result))
 }
 
+/// Comparator for *By key expressions: numeric when possible, lexicographic fallback.
+fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let ka = crate::syntax::expr_to_string(a);
+  let kb = crate::syntax::expr_to_string(b);
+  if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+    na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+  } else {
+    ka.cmp(&kb)
+  }
+}
+
 /// MinimalBy[list, f] - Returns all elements that minimize f
+/// MinimalBy[list, f, n] - Returns the n elements with smallest f values
 pub fn minimal_by_ast(
   list: &Expr,
   func: &Expr,
+  n: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
     Expr::List(_) => return Ok(Expr::List(vec![])),
     _ => {
+      let mut args = vec![list.clone(), func.clone()];
+      if let Some(nv) = n {
+        args.push(Expr::Integer(nv));
+      }
       return Ok(Expr::FunctionCall {
         name: "MinimalBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+        args,
       });
     }
   };
@@ -419,45 +436,60 @@ pub fn minimal_by_ast(
     })
     .collect::<Result<_, InterpreterError>>()?;
 
-  let min_key = keyed
-    .iter()
-    .map(|(_, k)| k)
-    .min_by(|a, b| {
-      let ka = crate::syntax::expr_to_string(a);
-      let kb = crate::syntax::expr_to_string(b);
-      if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-      } else {
-        ka.cmp(&kb)
-      }
-    })
-    .cloned();
+  match n {
+    Some(n_val) => {
+      // Sort by key ascending, take n elements
+      let mut indexed: Vec<(usize, &Expr)> =
+        keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
+      indexed.sort_by(|(_, a), (_, b)| by_key_cmp(a, b));
+      let take = (n_val as usize).min(keyed.len());
+      let result: Vec<Expr> = indexed
+        .into_iter()
+        .take(take)
+        .map(|(i, _)| keyed[i].0.clone())
+        .collect();
+      Ok(Expr::List(result))
+    }
+    None => {
+      let min_key = keyed
+        .iter()
+        .map(|(_, k)| k)
+        .min_by(|a, b| by_key_cmp(a, b))
+        .cloned();
 
-  if let Some(min_k) = min_key {
-    let min_str = crate::syntax::expr_to_string(&min_k);
-    let result: Vec<Expr> = keyed
-      .into_iter()
-      .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
-      .map(|(item, _)| item)
-      .collect();
-    Ok(Expr::List(result))
-  } else {
-    Ok(Expr::List(vec![]))
+      if let Some(min_k) = min_key {
+        let min_str = crate::syntax::expr_to_string(&min_k);
+        let result: Vec<Expr> = keyed
+          .into_iter()
+          .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
+          .map(|(item, _)| item)
+          .collect();
+        Ok(Expr::List(result))
+      } else {
+        Ok(Expr::List(vec![]))
+      }
+    }
   }
 }
 
 /// MaximalBy[list, f] - Returns all elements that maximize f
+/// MaximalBy[list, f, n] - Returns the n elements with largest f values
 pub fn maximal_by_ast(
   list: &Expr,
   func: &Expr,
+  n: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) if !items.is_empty() => items,
     Expr::List(_) => return Ok(Expr::List(vec![])),
     _ => {
+      let mut args = vec![list.clone(), func.clone()];
+      if let Some(nv) = n {
+        args.push(Expr::Integer(nv));
+      }
       return Ok(Expr::FunctionCall {
         name: "MaximalBy".to_string(),
-        args: vec![list.clone(), func.clone()],
+        args,
       });
     }
   };
@@ -470,30 +502,39 @@ pub fn maximal_by_ast(
     })
     .collect::<Result<_, InterpreterError>>()?;
 
-  let max_key = keyed
-    .iter()
-    .map(|(_, k)| k)
-    .max_by(|a, b| {
-      let ka = crate::syntax::expr_to_string(a);
-      let kb = crate::syntax::expr_to_string(b);
-      if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-      } else {
-        ka.cmp(&kb)
-      }
-    })
-    .cloned();
+  match n {
+    Some(n_val) => {
+      // Sort by key descending, take n elements
+      let mut indexed: Vec<(usize, &Expr)> =
+        keyed.iter().enumerate().map(|(i, (_, k))| (i, k)).collect();
+      indexed.sort_by(|(_, a), (_, b)| by_key_cmp(b, a));
+      let take = (n_val as usize).min(keyed.len());
+      let result: Vec<Expr> = indexed
+        .into_iter()
+        .take(take)
+        .map(|(i, _)| keyed[i].0.clone())
+        .collect();
+      Ok(Expr::List(result))
+    }
+    None => {
+      let max_key = keyed
+        .iter()
+        .map(|(_, k)| k)
+        .max_by(|a, b| by_key_cmp(a, b))
+        .cloned();
 
-  if let Some(max_k) = max_key {
-    let max_str = crate::syntax::expr_to_string(&max_k);
-    let result: Vec<Expr> = keyed
-      .into_iter()
-      .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
-      .map(|(item, _)| item)
-      .collect();
-    Ok(Expr::List(result))
-  } else {
-    Ok(Expr::List(vec![]))
+      if let Some(max_k) = max_key {
+        let max_str = crate::syntax::expr_to_string(&max_k);
+        let result: Vec<Expr> = keyed
+          .into_iter()
+          .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
+          .map(|(item, _)| item)
+          .collect();
+        Ok(Expr::List(result))
+      } else {
+        Ok(Expr::List(vec![]))
+      }
+    }
   }
 }
 

@@ -751,6 +751,31 @@ mod minimal_by {
       "{10}"
     );
   }
+
+  #[test]
+  fn take_n() {
+    assert_eq!(
+      interpret("MinimalBy[{-3, 1, 2, -5, 4}, Abs, 3]").unwrap(),
+      "{1, 2, -3}"
+    );
+  }
+
+  #[test]
+  fn take_one() {
+    assert_eq!(
+      interpret("MinimalBy[{5, 3, 1, 4, 2}, Identity, 1]").unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn take_n_exceeds_length() {
+    // When n > length, return all elements sorted by criterion.
+    assert_eq!(
+      interpret("MinimalBy[{5, 3, 1}, Identity, 10]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
 }
 
 mod maximal_by {
@@ -774,6 +799,39 @@ mod maximal_by {
     assert_eq!(
       interpret("MaximalBy[{5, 3, 7, 1, 4}, Identity]").unwrap(),
       "{7}"
+    );
+  }
+
+  #[test]
+  fn take_n() {
+    assert_eq!(
+      interpret("MaximalBy[{-3, 1, 2, -5, 4}, Abs, 3]").unwrap(),
+      "{-5, 4, -3}"
+    );
+  }
+
+  #[test]
+  fn take_one() {
+    assert_eq!(
+      interpret("MaximalBy[{5, 3, 7, 1, 4}, Identity, 1]").unwrap(),
+      "{7}"
+    );
+  }
+
+  #[test]
+  fn take_n_string_length() {
+    assert_eq!(
+      interpret(r#"MaximalBy[{"abc", "a", "ab"}, StringLength, 2]"#).unwrap(),
+      "{abc, ab}"
+    );
+  }
+
+  #[test]
+  fn take_n_exceeds_length() {
+    // When n > length, return all elements sorted by criterion.
+    assert_eq!(
+      interpret("MaximalBy[{-3, 1, 2, -5, 4}, Abs, 10]").unwrap(),
+      "{-5, 4, -3, 2, 1}"
     );
   }
 }
