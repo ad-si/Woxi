@@ -124,31 +124,19 @@ impl fmt::Display for CellStyle {
 
 /// Parse a `.nb` file's contents into a `Notebook`.
 pub fn parse_notebook(input: &str) -> Result<Notebook, String> {
-  let trimmed = input.trim();
-
-  // The file should start with Notebook[{
-  let inner = strip_wrapper(trimmed, "Notebook")
+  // Real .nb files have comment headers/footers around Notebook[{...}].
+  // Find the start of the Notebook expression.
+  let nb_start = input
+    .find("Notebook[{")
     .ok_or("Expected Notebook[{...}] wrapper")?;
+  let after_prefix = &input[nb_start + "Notebook[{".len()..];
 
-  let cells = parse_cell_list(inner)?;
+  // Find the matching `}` that closes the cell list.
+  let (cell_list, _remainder) = find_matching_brace(after_prefix)
+    .map_err(|e| format!("Parsing Notebook cell list: {e}"))?;
+
+  let cells = parse_cell_list(cell_list)?;
   Ok(Notebook { cells })
-}
-
-/// Strip `Name[{ ... }]` and return the inner content.
-fn strip_wrapper<'a>(s: &'a str, name: &str) -> Option<&'a str> {
-  let s = s.trim();
-  let rest = s.strip_prefix(name)?;
-  let rest = rest.trim();
-  let rest = rest.strip_prefix('[')?;
-  let rest = rest.trim();
-  let rest = rest.strip_prefix('{')?;
-
-  // Find the matching closing `}]` from the end.
-  let rest_end = rest.trim_end();
-  let rest_end = rest_end.strip_suffix(']')?;
-  let rest_end = rest_end.trim_end();
-  let rest_end = rest_end.strip_suffix('}')?;
-  Some(rest_end)
 }
 
 /// Parse a comma-separated list of Cell[...] or
@@ -347,7 +335,16 @@ fn extract_rowbox_content(s: &str) -> String {
 fn extract_string_content(s: &str) -> String {
   let s = s.trim();
   if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    unescape_string(&s[1..s.len() - 1])
+    let inner = &s[1..s.len() - 1];
+    let result = unescape_string(inner);
+    // When the raw string used \<...\> delimiters (multi-line text cells),
+    // the line-continuation newlines adjacent to the delimiters produce
+    // spurious leading/trailing newlines – trim them.
+    if inner.starts_with("\\<") || inner.ends_with("\\>") {
+      result.trim_matches('\n').to_string()
+    } else {
+      result
+    }
   } else {
     s.to_string()
   }
@@ -364,6 +361,12 @@ fn unescape_string(s: &str) -> String {
         Some('t') => result.push('\t'),
         Some('\\') => result.push('\\'),
         Some('"') => result.push('"'),
+        Some('<') => {
+          // \< is a Wolfram string delimiter in box expressions – skip
+        }
+        Some('>') => {
+          // \> is a Wolfram string delimiter in box expressions – skip
+        }
         Some('[') => {
           // Wolfram special character like \[Alpha]
           let mut name = String::new();
@@ -375,6 +378,11 @@ fn unescape_string(s: &str) -> String {
           }
           // Keep as \[Name] for now
           result.push_str(&format!("\\[{name}]"));
+        }
+        Some('\n') => {
+          // \<newline> is a Wolfram line continuation – keep the
+          // newline but drop the backslash.
+          result.push('\n');
         }
         Some(other) => {
           result.push('\\');
@@ -1425,5 +1433,143 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(json_source_lines(""), "[\"\"]");
     assert_eq!(json_source_lines("hello"), "[\"hello\"]");
     assert_eq!(json_source_lines("a\nb"), "[\"a\\n\", \"b\"]");
+  }
+
+  #[test]
+  fn test_parse_real_hello_world_nb() {
+    let contents =
+      std::fs::read_to_string("../tests/notebooks/hello_world.nb").unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    assert_eq!(nb.cells.len(), 1);
+    match &nb.cells[0] {
+      CellEntry::Group(group) => {
+        assert!(group.open);
+        assert_eq!(group.cells.len(), 2);
+        assert_eq!(group.cells[0].style, CellStyle::Input);
+        // Content should be the reconstructed expression
+        assert!(
+          group.cells[0].content.contains("StringJoin"),
+          "Expected Input cell to contain 'StringJoin', got: {:?}",
+          group.cells[0].content
+        );
+        assert_eq!(group.cells[1].style, CellStyle::Output);
+        assert!(
+          group.cells[1].content.contains("Hello World!"),
+          "Expected Output cell to contain 'Hello World!', got: {:?}",
+          group.cells[1].content
+        );
+      }
+      _ => panic!("Expected a cell group"),
+    }
+  }
+
+  #[test]
+  fn test_parse_real_syntax_nb() {
+    let contents =
+      std::fs::read_to_string("../tests/notebooks/syntax.nb").unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    // syntax.nb has 8 cell groups (each input/output pair)
+    assert_eq!(nb.cells.len(), 8);
+    for entry in &nb.cells {
+      match entry {
+        CellEntry::Group(group) => {
+          assert!(group.open);
+          assert_eq!(group.cells.len(), 2);
+          assert_eq!(group.cells[0].style, CellStyle::Input);
+          assert_eq!(group.cells[1].style, CellStyle::Output);
+        }
+        _ => panic!("Expected all entries to be cell groups"),
+      }
+    }
+  }
+
+  #[test]
+  fn test_parse_real_layout_typography_nb() {
+    let contents =
+      std::fs::read_to_string("../tests/notebooks/layout_typography.nb")
+        .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    // Should have one top-level group containing all the heading cells
+    assert!(!nb.cells.is_empty(), "Expected at least one cell entry");
+    let flat = nb.flat_cells();
+    let styles: Vec<CellStyle> = flat.iter().map(|(_, c)| c.style).collect();
+    assert!(styles.contains(&CellStyle::Title), "Expected a Title cell");
+    assert!(
+      styles.contains(&CellStyle::Subtitle),
+      "Expected a Subtitle cell"
+    );
+    assert!(
+      styles.contains(&CellStyle::Chapter),
+      "Expected Chapter cells"
+    );
+    assert!(
+      styles.contains(&CellStyle::Section),
+      "Expected Section cells"
+    );
+    assert!(
+      styles.contains(&CellStyle::Subsection),
+      "Expected Subsection cells"
+    );
+    assert!(
+      styles.contains(&CellStyle::Subsubsection),
+      "Expected Subsubsection cells"
+    );
+    assert!(styles.contains(&CellStyle::Text), "Expected a Text cell");
+  }
+
+  #[test]
+  fn test_unescape_wolfram_string_delimiters() {
+    // \< and \> are Wolfram string delimiters in box expressions
+    assert_eq!(unescape_string(r#"\<"Hello"\>"#), r#""Hello""#);
+    assert_eq!(unescape_string(r#"\<Hello World!\>"#), "Hello World!");
+  }
+
+  #[test]
+  fn test_unescape_line_continuation() {
+    // \ at end of line is a Wolfram line continuation:
+    // the newline is kept but the backslash is dropped.
+    assert_eq!(unescape_string("hello\\\nworld"), "hello\nworld");
+    // Combined with \< and \>
+    assert_eq!(
+      unescape_string("\\<\\\nSome text.\\\n\\>"),
+      "\nSome text.\n"
+    );
+  }
+
+  #[test]
+  fn test_parse_layout_typography_no_backslashes() {
+    let contents =
+      std::fs::read_to_string("../tests/notebooks/layout_typography.nb")
+        .unwrap();
+    let nb = parse_notebook(&contents).unwrap();
+    let flat = nb.flat_cells();
+
+    // Find the Subtitle cell
+    let subtitle = flat
+      .iter()
+      .find(|(_, c)| c.style == CellStyle::Subtitle)
+      .map(|(_, c)| c)
+      .expect("Expected a Subtitle cell");
+    assert_eq!(
+      subtitle.content,
+      "Showcasing all layout and typography features of Wolfram notebooks."
+    );
+    assert!(
+      !subtitle.content.contains('\\'),
+      "Subtitle should not contain backslashes, got: {:?}",
+      subtitle.content
+    );
+
+    // Find the Text cell
+    let text_cell = flat
+      .iter()
+      .find(|(_, c)| c.style == CellStyle::Text)
+      .map(|(_, c)| c)
+      .expect("Expected a Text cell");
+    assert!(
+      !text_cell.content.contains('\\'),
+      "Text cell should not contain backslashes, got: {:?}",
+      text_cell.content
+    );
   }
 }

@@ -10,10 +10,10 @@
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
 NotebookDataPosition[       154,          7]
-NotebookDataLength[      1512,         51]
-NotebookOptionsPosition[      1039,         34]
-NotebookOutlinePosition[      1433,         50]
-CellTagsIndexPosition[      1390,         47]
+NotebookDataLength[      1641,         53]
+NotebookOptionsPosition[      1168,         36]
+NotebookOutlinePosition[      1562,         52]
+CellTagsIndexPosition[      1519,         49]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
@@ -21,15 +21,17 @@ Notebook[{
 
 Cell[CellGroupData[{
 Cell[BoxData[
- RowBox[{"1", " ", "+", " ", "2", " ", "+", " ", "3", " ", "+", " ", 
-  "4"}]], "Input",
+ RowBox[{"StringJoin", "[", 
+  RowBox[{"\"\<Hello\>\"", ",", " ", "\"\< \>\"", ",", 
+   " ", "\"\<World!\>\""}], "]"}]], "Input",
  CellChangeTimes->{{3.979539634998089*^9, 3.979539634999322*^9}, {
-  3.979539927309093*^9, 3.979539929150152*^9}},
+  3.979539927309093*^9, 3.979539929150152*^9}, {3.98542855710907*^9, 
+  3.985428567921555*^9}},
  CellLabel->"In[1]:=",ExpressionUUID->"036b8a36-c26c-422e-8935-92fbb0c5b2d0"],
 
-Cell[BoxData["10"], "Output",
- CellChangeTimes->{3.979616855730513*^9},
- CellLabel->"Out[1]=",ExpressionUUID->"2a8c9bb2-9b87-47c6-bcad-bef10b961f62"]
+Cell[BoxData["\<\"Hello World!\"\>"], "Output",
+ CellChangeTimes->{3.979616855730513*^9, 3.985428570642437*^9},
+ CellLabel->"Out[1]=",ExpressionUUID->"ebdac650-4101-40e4-a070-a9a564c141c4"]
 }, Open  ]]
 },
 WindowSize->{808, 911},
@@ -50,8 +52,8 @@ CellTagsIndex->{}
 (*NotebookFileOutline
 Notebook[{
 Cell[CellGroupData[{
-Cell[576, 22, 295, 5, 29, "Input",ExpressionUUID->"036b8a36-c26c-422e-8935-92fbb0c5b2d0"],
-Cell[874, 29, 149, 2, 33, "Output",ExpressionUUID->"2a8c9bb2-9b87-47c6-bcad-bef10b961f62"]
+Cell[576, 22, 384, 7, 29, "Input",ExpressionUUID->"036b8a36-c26c-422e-8935-92fbb0c5b2d0"],
+Cell[963, 31, 189, 2, 33, "Output",ExpressionUUID->"ebdac650-4101-40e4-a070-a9a564c141c4"]
 }, Open  ]]
 }
 ]
