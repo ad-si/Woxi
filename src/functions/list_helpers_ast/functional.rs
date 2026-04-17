@@ -705,7 +705,32 @@ pub fn inner_ast(
   list2: &Expr,
   g: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  inner_recursive(f, list1, list2, g)
+  match inner_recursive(f, list1, list2, g) {
+    Err(InterpreterError::EvaluationError(msg))
+      if msg.contains("incompatible dimensions") =>
+    {
+      let l1_len = match list1 {
+        Expr::List(items) => items.len(),
+        _ => 0,
+      };
+      let l2_len = match list2 {
+        Expr::List(items) => items.len(),
+        _ => 0,
+      };
+      crate::emit_message(&format!(
+        "Inner::incom: Length {} of dimension 1 in {} is incommensurate with length {} of dimension 1 in {}.",
+        l1_len,
+        crate::syntax::expr_to_string(list1),
+        l2_len,
+        crate::syntax::expr_to_string(list2),
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Inner".to_string(),
+        args: vec![f.clone(), list1.clone(), list2.clone(), g.clone()],
+      })
+    }
+    other => other,
+  }
 }
 
 fn inner_recursive(
