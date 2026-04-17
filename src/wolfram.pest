@@ -239,10 +239,10 @@ ConjugateTransposeSuffix = @{ "\\[ConjugateTranspose]" | "\u{F3C6}" | "\u{F3C8}"
 // are the ones that appear in the parse tree.
 TermSuffix = _{ TransposeSuffix | ConjugateTransposeSuffix }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingPlus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | Term ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -371,10 +371,10 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?) ~ (UnsetSuffix | (Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)? | TermNoImplicit ~ FactorialSuffix? ~ TermSuffix* ~ (RepeatedNullSuffix | RepeatedSuffix)?))*  ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
@@ -385,7 +385,7 @@ PatternTest = { PatternName? ~ PatternBlanks ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*) ~ ((ConditionOp | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*))*
+    (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*) ~ ((ConditionOp | TildeInfix) ~ (LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix*))*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
