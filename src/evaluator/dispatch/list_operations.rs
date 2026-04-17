@@ -1133,24 +1133,41 @@ pub fn dispatch_list_operations(
         }
       }
     }
-    "Ratios" if args.len() == 1 => {
+    "Ratios" if args.len() == 1 || args.len() == 2 => {
+      let n = if args.len() == 2 {
+        match expr_to_i128(&args[1]) {
+          Some(n) if n >= 0 => n as usize,
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "Ratios".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      } else {
+        1
+      };
       if let Expr::List(items) = &args[0] {
-        if items.len() < 2 {
-          return Some(Ok(Expr::List(vec![])));
+        let mut current = items.clone();
+        for _ in 0..n {
+          if current.len() < 2 {
+            return Some(Ok(Expr::List(vec![])));
+          }
+          let mut next = Vec::with_capacity(current.len() - 1);
+          for i in 1..current.len() {
+            let ratio = match evaluate_expr_to_expr(&Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(current[i].clone()),
+              right: Box::new(current[i - 1].clone()),
+            }) {
+              Ok(v) => v,
+              Err(e) => return Some(Err(e)),
+            };
+            next.push(ratio);
+          }
+          current = next;
         }
-        let mut result = Vec::with_capacity(items.len() - 1);
-        for i in 1..items.len() {
-          let ratio = match evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(items[i].clone()),
-            right: Box::new(items[i - 1].clone()),
-          }) {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-          };
-          result.push(ratio);
-        }
-        return Some(Ok(Expr::List(result)));
+        return Some(Ok(Expr::List(current)));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "Ratios".to_string(),
