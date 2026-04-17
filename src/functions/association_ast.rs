@@ -184,6 +184,24 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Lookup expects at least 2 arguments".into(),
     ));
   }
+
+  // If the second argument is a list of keys, look up each one
+  if let Expr::List(keys) = &args[1]
+    && let Expr::Association(_) = &args[0]
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = keys
+      .iter()
+      .map(|key| {
+        let mut new_args = vec![args[0].clone(), key.clone()];
+        if args.len() >= 3 {
+          new_args.push(args[2].clone());
+        }
+        lookup_ast(&new_args)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let key_str = crate::syntax::expr_to_string(&args[1]);
   let key_cmp = key_str.trim_matches('"');
 
