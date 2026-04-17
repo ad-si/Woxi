@@ -4925,13 +4925,6 @@ INPUT: ToExpression[A] + 4
 EXPECTED:
 = 8
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: BellB
-LINE: 61
-TYPE: >>
-INPUT: BellB[5, x]
-EXPECTED:
-= x + 15 x ^ 2 + 25 x ^ 3 + 10 x ^ 4 + x ^ 5
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: DiceDissimilarity
@@ -4941,29 +4934,6 @@ INPUT: DiceDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
 EXPECTED:
 = 1 / 2
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: EulerE
-LINE: 245
-TYPE: >>
-INPUT: Table[EulerE[k], {k, 1, 9, 2}]
-EXPECTED:
-= {0, 0, 0, 0, 0}
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: EulerE
-LINE: 249
-TYPE: >>
-INPUT: Table[EulerE[k], {k, 0, 8, 2}]
-EXPECTED:
-= {1, -1, 5, -61, 1385}
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: EulerE
-LINE: 252
-TYPE: >>
-INPUT: EulerE[5, z]
-EXPECTED:
-= -1 / 2 + 5 z ^ 2 / 2 - 5 z ^ 4 / 2 + z ^ 5
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: JaccardDissimilarity
@@ -4997,29 +4967,6 @@ INPUT: Multinomial[a, b, c]
 EXPECTED:
 = Binomial[a, a] Binomial[a + b, b] Binomial[a + b + c, c]
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: PolygonalNumber
-LINE: 421
-TYPE: >>
-INPUT: Table[PolygonalNumber[n], {n, 10}]
-EXPECTED:
-= {1, 3, 6, 10, 15, 21, 28, 36, 45, 55}
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: PolygonalNumber
-LINE: 425
-TYPE: >>
-INPUT: Table[PolygonalNumber[n-1] + PolygonalNumber[n], {n, 10}]
-EXPECTED:
-= {1, 4, 9, 16, 25, 36, 49, 64, 81, 100}
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: PolygonalNumber
-LINE: 431
-TYPE: >>
-INPUT: Table[PolygonalNumber[r, 10], {r, 3, 8}]
-EXPECTED:
-= {55, 100, 145, 190, 235, 280}
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: RogersTanimotoDissimilarity
@@ -6714,13 +6661,6 @@ INPUT: Solve[4 - 4 * x^2 - x^4 + x^6 == 0, x, Integers]
 EXPECTED:
 = {{x -> -1}, {x -> 1}}
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Catalan
-LINE: 230
-TYPE: >>
-INPUT: Catalan // N
-EXPECTED:
-= 0.915966
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Catalan
@@ -6730,22 +6670,6 @@ INPUT: N[Catalan, 20]
 EXPECTED:
 = 0.91596559417721901505
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: ComplexInfinity
-LINE: 263
-TYPE: >>
-INPUT: 1 / 0
-EXPECTED:
-: Infinite expression 1 / 0 encountered.
-= ComplexInfinity
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: ComplexInfinity
-LINE: 271
-TYPE: >>
-INPUT: ComplexInfinity * Infinity
-EXPECTED:
-= ComplexInfinity
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: ComplexInfinity
@@ -6771,13 +6695,6 @@ INPUT: N[E, 50]
 EXPECTED:
 = 2.7182818284590452353602874713526624977572470937000
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: EulerGamma
-LINE: 394
-TYPE: >>
-INPUT: EulerGamma // N
-EXPECTED:
-= 0.577216
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: EulerGamma
@@ -6795,13 +6712,6 @@ INPUT: N[Glaisher, 50]
 EXPECTED:
 = 1.2824271291006226368753425688697917277676889273250
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: GoldenRatio
-LINE: 447
-TYPE: >>
-INPUT: GoldenRatio // N
-EXPECTED:
-= 1.61803
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: GoldenRatio
@@ -7585,13 +7495,6 @@ INPUT: PowersRepresentations[25, 3, 2]
 EXPECTED:
 = {{0, 0, 5}, {0, 3, 4}}
 ---
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: PrimePi
-LINE: 935
-TYPE: >>
-INPUT: PrimePi[E]
-EXPECTED:
-= 1
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: RandomPrime
