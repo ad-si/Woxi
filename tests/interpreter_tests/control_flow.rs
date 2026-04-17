@@ -1506,3 +1506,62 @@ mod trace_scan {
     assert_eq!(result.stdout.trim(), "");
   }
 }
+
+mod piecewise {
+  use super::*;
+
+  #[test]
+  fn basic_true_condition() {
+    assert_eq!(interpret("Piecewise[{{1, True}, {2, True}}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn basic_false_then_true() {
+    assert_eq!(
+      interpret("Piecewise[{{1, False}, {2, True}}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn all_false_returns_zero() {
+    assert_eq!(
+      interpret("Piecewise[{{1, False}, {2, False}}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn symbolic_condition_stays_unevaluated_before_true_branch() {
+    // x > 0 is symbolic, so the True branch should NOT be eagerly selected
+    let result =
+      interpret("Piecewise[{{x, x > 0}, {-x, True}}] /. x -> 5").unwrap();
+    assert_eq!(result, "5");
+  }
+
+  #[test]
+  fn symbolic_condition_negative_substitution() {
+    let result =
+      interpret("Piecewise[{{x, x > 0}, {-x, True}}] /. x -> -3").unwrap();
+    assert_eq!(result, "3");
+  }
+
+  #[test]
+  fn three_branches_with_substitution() {
+    assert_eq!(
+      interpret("Piecewise[{{x^2, x > 0}, {-x, x < 0}, {0, True}}] /. x -> 3")
+        .unwrap(),
+      "9"
+    );
+    assert_eq!(
+      interpret("Piecewise[{{x^2, x > 0}, {-x, x < 0}, {0, True}}] /. x -> -2")
+        .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Piecewise[{{x^2, x > 0}, {-x, x < 0}, {0, True}}] /. x -> 0")
+        .unwrap(),
+      "0"
+    );
+  }
+}
