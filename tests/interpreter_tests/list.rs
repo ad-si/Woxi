@@ -2828,6 +2828,12 @@ mod fold_list {
   }
 
   #[test]
+  fn fold_empty_list_unevaluated() {
+    // Fold[f, {}] is unevaluated in Wolfram Language
+    assert_eq!(interpret("Fold[Plus, {}]").unwrap(), "Fold[Plus, {}]");
+  }
+
+  #[test]
   fn fold_non_list_head() {
     // Fold should thread through any non-list head.
     assert_eq!(

@@ -298,12 +298,10 @@ pub fn dispatch_list_operations(
         }
       };
       if items.is_empty() {
-        return Some(Ok(match head {
-          Some(h) => Expr::FunctionCall {
-            name: h.to_string(),
-            args: vec![],
-          },
-          None => Expr::List(vec![]),
+        // Fold[f, {}] is unevaluated in Wolfram Language
+        return Some(Ok(Expr::FunctionCall {
+          name: "Fold".to_string(),
+          args: args.to_vec(),
         }));
       }
       let init = items[0].clone();
