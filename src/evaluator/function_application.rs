@@ -283,6 +283,20 @@ pub fn apply_function_to_arg(
     }
     Expr::NamedFunction { params, body } => {
       // Named-parameter function: substitute params with arg
+      if params.len() > 1 {
+        // Too many parameters for a single argument — return unevaluated
+        crate::emit_message(&format!(
+          "Function::fpct: Too many parameters in {{{}}} to be filled from Function[{{{}}}, {}][{}].",
+          params.join(", "),
+          params.join(", "),
+          crate::syntax::expr_to_string(body),
+          crate::syntax::expr_to_string(arg),
+        ));
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: vec![arg.clone()],
+        });
+      }
       let mut substituted = (**body).clone();
       if let Some(param) = params.first() {
         substituted =
@@ -361,6 +375,22 @@ pub fn apply_curried_call(
     }
     Expr::NamedFunction { params, body } => {
       // Named-parameter function: substitute each param with corresponding arg
+      if params.len() > args.len() {
+        // Too many parameters for the given arguments — return unevaluated
+        let args_str: Vec<String> =
+          args.iter().map(crate::syntax::expr_to_string).collect();
+        crate::emit_message(&format!(
+          "Function::fpct: Too many parameters in {{{}}} to be filled from Function[{{{}}}, {}][{}].",
+          params.join(", "),
+          params.join(", "),
+          crate::syntax::expr_to_string(body),
+          args_str.join(", "),
+        ));
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
         .zip(args.iter())
