@@ -253,6 +253,75 @@ mod subdivide {
       "{0, 2, 4, 6, 8, 10}"
     );
   }
+
+  #[test]
+  fn zero_subdivisions_returns_unevaluated() {
+    assert_eq!(
+      interpret("Subdivide[0, 1, 0]").unwrap(),
+      "Subdivide[0, 1, 0]"
+    );
+  }
+
+  #[test]
+  fn negative_subdivisions_returns_unevaluated() {
+    assert_eq!(
+      interpret("Subdivide[0, 1, -1]").unwrap(),
+      "Subdivide[0, 1, -1]"
+    );
+  }
+
+  #[test]
+  fn one_arg_zero_returns_unevaluated() {
+    assert_eq!(interpret("Subdivide[0]").unwrap(), "Subdivide[0]");
+  }
+
+  #[test]
+  fn symbolic_endpoints() {
+    assert_eq!(
+      interpret("Subdivide[a, b, 3]").unwrap(),
+      "{a, (2*a)/3 + b/3, a/3 + (2*b)/3, b}"
+    );
+  }
+
+  #[test]
+  fn symbolic_with_pi() {
+    assert_eq!(
+      interpret("Subdivide[Pi, 2 Pi, 3]").unwrap(),
+      "{Pi, (4*Pi)/3, (5*Pi)/3, 2*Pi}"
+    );
+  }
+
+  #[test]
+  fn vector_endpoints() {
+    assert_eq!(
+      interpret("Subdivide[{0, 0}, {1, 1}, 3]").unwrap(),
+      "{{0, 0}, {1/3, 1/3}, {2/3, 2/3}, {1, 1}}"
+    );
+  }
+
+  #[test]
+  fn vector_endpoints_different_ranges() {
+    assert_eq!(
+      interpret("Subdivide[{0, 0}, {1, 2}, 4]").unwrap(),
+      "{{0, 0}, {1/4, 1/2}, {1/2, 1}, {3/4, 3/2}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn real_endpoints() {
+    assert_eq!(
+      interpret("Subdivide[0.0, 1.0, 3]").unwrap(),
+      "{0., 0.3333333333333333, 0.6666666666666666, 1.}"
+    );
+  }
+
+  #[test]
+  fn negative_range() {
+    assert_eq!(
+      interpret("Subdivide[-1, 1, 4]").unwrap(),
+      "{-1, -1/2, 0, 1/2, 1}"
+    );
+  }
 }
 
 mod composition_edge_cases {

@@ -1651,83 +1651,114 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Subdivide expects 1 to 3 arguments".into(),
     ));
   }
-  let (xmin, xmax, n_val) = match args.len() {
-    1 => {
-      // Subdivide[n]
-      match &args[0] {
-        Expr::Integer(n) => (0i128, 1i128, *n),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Subdivide".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      }
-    }
-    2 => {
-      // Subdivide[xmax, n]
-      match (&args[0], &args[1]) {
-        (Expr::Integer(xmax), Expr::Integer(n)) => (0, *xmax, *n),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Subdivide".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      }
-    }
-    3 => {
-      // Subdivide[xmin, xmax, n]
-      match (&args[0], &args[1], &args[2]) {
-        (Expr::Integer(xmin), Expr::Integer(xmax), Expr::Integer(n)) => {
-          (*xmin, *xmax, *n)
-        }
-        _ => {
-          // Try float version
-          if let (Some(xmin_f), Some(xmax_f), Some(n_f)) = (
-            try_eval_to_f64(&args[0]),
-            try_eval_to_f64(&args[1]),
-            try_eval_to_f64(&args[2]),
-          ) {
-            let n = n_f as i128;
-            if n < 0 {
-              return Err(InterpreterError::EvaluationError(
-                "Subdivide: n must be non-negative".into(),
-              ));
-            }
-            let mut items = Vec::with_capacity(n as usize + 1);
-            for i in 0..=n {
-              let t = i as f64 / n as f64;
-              let val = xmin_f + t * (xmax_f - xmin_f);
-              items.push(num_to_expr(val));
-            }
-            return Ok(Expr::List(items));
-          }
-          return Ok(Expr::FunctionCall {
-            name: "Subdivide".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      }
-    }
+
+  // Extract (xmin, xmax, n) based on arity
+  let (xmin, xmax, n_expr) = match args.len() {
+    1 => (Expr::Integer(0), Expr::Integer(1), args[0].clone()),
+    2 => (Expr::Integer(0), args[0].clone(), args[1].clone()),
+    3 => (args[0].clone(), args[1].clone(), args[2].clone()),
     _ => unreachable!(),
   };
-  if n_val < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Subdivide: n must be non-negative".into(),
-    ));
+
+  // n must be a positive integer
+  let n_val = match &n_expr {
+    Expr::Integer(n) if *n > 0 => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Subdivide".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Fast path: both endpoints are integers
+  if let (Expr::Integer(xmin_i), Expr::Integer(xmax_i)) = (&xmin, &xmax) {
+    let mut items = Vec::with_capacity(n_val as usize + 1);
+    let range = xmax_i - xmin_i;
+    for i in 0..=n_val {
+      let numer = xmin_i * n_val + i * range;
+      items.push(make_rational(numer, n_val));
+    }
+    return Ok(Expr::List(items));
   }
-  if n_val == 0 {
-    return Ok(Expr::List(vec![Expr::Integer(xmin)]));
+
+  // General path: build xmin + i*(xmax - xmin)/n symbolically and evaluate.
+  // For vector endpoints, thread element-wise.
+  let is_vector =
+    matches!(&xmin, Expr::List(_)) || matches!(&xmax, Expr::List(_));
+  if is_vector {
+    // Both must be lists of the same length
+    if let (Expr::List(xmin_items), Expr::List(xmax_items)) = (&xmin, &xmax) {
+      if xmin_items.len() != xmax_items.len() {
+        return Ok(Expr::FunctionCall {
+          name: "Subdivide".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      let dim = xmin_items.len();
+      let mut result_items = Vec::with_capacity(n_val as usize + 1);
+      for i in 0..=n_val {
+        let mut point = Vec::with_capacity(dim);
+        for d in 0..dim {
+          let val =
+            subdivide_scalar_at(&xmin_items[d], &xmax_items[d], i, n_val)?;
+          point.push(val);
+        }
+        result_items.push(Expr::List(point));
+      }
+      return Ok(Expr::List(result_items));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Subdivide".to_string(),
+      args: args.to_vec(),
+    });
   }
+
+  // Scalar, general (symbolic or float) endpoints
   let mut items = Vec::with_capacity(n_val as usize + 1);
-  let range = xmax - xmin;
   for i in 0..=n_val {
-    // Compute xmin + i * range / n as exact rational
-    let numer = xmin * n_val + i * range;
-    items.push(make_rational(numer, n_val));
+    items.push(subdivide_scalar_at(&xmin, &xmax, i, n_val)?);
   }
   Ok(Expr::List(items))
+}
+
+/// Compute xmin*(n-i)/n + xmax*i/n for a single scalar pair of endpoints.
+fn subdivide_scalar_at(
+  xmin: &Expr,
+  xmax: &Expr,
+  i: i128,
+  n: i128,
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr;
+  use crate::syntax::BinaryOperator;
+
+  if i == 0 {
+    return Ok(xmin.clone());
+  }
+  if i == n {
+    return Ok(xmax.clone());
+  }
+
+  // Build: xmin*(n-i)/n + xmax*i/n  and evaluate
+  let coeff_min = make_rational(n - i, n);
+  let coeff_max = make_rational(i, n);
+
+  let term_min = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(coeff_min),
+    right: Box::new(xmin.clone()),
+  };
+  let term_max = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(coeff_max),
+    right: Box::new(xmax.clone()),
+  };
+  let result = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(term_min),
+    right: Box::new(term_max),
+  };
+  evaluate_expr_to_expr(&result)
 }
 
 /// Ramp[x] - returns max(0, x)
