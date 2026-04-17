@@ -1210,12 +1210,8 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec(),
         });
       };
-      if d >= base {
-        return Err(InterpreterError::EvaluationError(format!(
-          "FromDigits: invalid digit {} for base {}",
-          ch, base
-        )));
-      }
+      // Wolfram allows digit values >= base (overflow digits)
+      // e.g. FromDigits["a0"] in base 10 gives 10*10+0 = 100
       result = result * &big_base + BigInt::from(d);
     }
     return Ok(bigint_to_expr(result));

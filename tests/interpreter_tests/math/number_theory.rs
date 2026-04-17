@@ -495,6 +495,17 @@ mod from_digits {
   fn symbolic_base_single_digit() {
     assert_eq!(interpret("FromDigits[{3}, x]").unwrap(), "3");
   }
+
+  #[test]
+  fn string_with_overflow_digits() {
+    // "a" = 10, "0" = 0, so 10*10 + 0 = 100
+    assert_eq!(interpret(r#"FromDigits["a0"]"#).unwrap(), "100");
+  }
+
+  #[test]
+  fn string_numeric() {
+    assert_eq!(interpret(r#"FromDigits["1234"]"#).unwrap(), "1234");
+  }
 }
 
 mod integer_string {
