@@ -865,6 +865,48 @@ mod map_at {
       "{10, 21, 30}"
     );
   }
+
+  #[test]
+  fn span_basic() {
+    // MapAt[f, list, start;;end] applies f to elements at positions start..end.
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d, e}, 1;;3]").unwrap(),
+      "{f[a], f[b], f[c], d, e}"
+    );
+  }
+
+  #[test]
+  fn span_with_negative_end() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d, e}, 2;;-1]").unwrap(),
+      "{a, f[b], f[c], f[d], f[e]}"
+    );
+  }
+
+  #[test]
+  fn span_with_step() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d, e}, 1;;-1;;2]").unwrap(),
+      "{f[a], b, f[c], d, f[e]}"
+    );
+  }
+
+  #[test]
+  fn span_all() {
+    // ;; is 1;;All, i.e. all elements.
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d, e}, ;;]").unwrap(),
+      "{f[a], f[b], f[c], f[d], f[e]}"
+    );
+  }
+
+  #[test]
+  fn span_from_position_to_end() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d, e}, 3;;]").unwrap(),
+      "{a, b, f[c], f[d], f[e]}"
+    );
+  }
 }
 
 mod sort_by {
