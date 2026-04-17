@@ -172,6 +172,45 @@ mod fibonacci_builtin {
   }
 }
 
+mod euler_phi {
+  use super::*;
+
+  #[test]
+  fn basic_values() {
+    assert_eq!(interpret("EulerPhi[1]").unwrap(), "1");
+    assert_eq!(interpret("EulerPhi[10]").unwrap(), "4");
+    assert_eq!(interpret("EulerPhi[12]").unwrap(), "4");
+    assert_eq!(interpret("EulerPhi[100]").unwrap(), "40");
+  }
+
+  #[test]
+  fn prime_argument() {
+    // EulerPhi[p] = p - 1 for prime p
+    assert_eq!(interpret("EulerPhi[7]").unwrap(), "6");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("EulerPhi[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_integers() {
+    // EulerPhi[-n] == EulerPhi[n]
+    assert_eq!(interpret("EulerPhi[-1]").unwrap(), "1");
+    assert_eq!(interpret("EulerPhi[-12]").unwrap(), "4");
+    assert_eq!(interpret("EulerPhi[-11] == EulerPhi[11]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_argument() {
+    assert_eq!(
+      interpret("EulerPhi[{1, 2, 3, 4, 5}]").unwrap(),
+      "{1, 1, 2, 2, 4}"
+    );
+  }
+}
+
 mod integer_exponent {
   use super::*;
 

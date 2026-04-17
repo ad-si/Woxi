@@ -2007,11 +2007,12 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = match expr_to_i128(&args[0]) {
     Some(0) => return Ok(Expr::Integer(0)),
-    Some(n) if n >= 1 => n as u128,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "EulerPhi: argument must be a non-negative integer".into(),
-      ));
+    Some(n) => n.unsigned_abs(),
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "EulerPhi".to_string(),
+        args: args.to_vec(),
+      });
     }
   };
 
