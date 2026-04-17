@@ -312,6 +312,16 @@ mod harmonic_number {
   }
 
   #[test]
+  fn negative_order() {
+    // HarmonicNumber[n, -r] = Sum[k^r, {k, 1, n}]
+    assert_eq!(interpret("HarmonicNumber[3, -1]").unwrap(), "6");
+    assert_eq!(interpret("HarmonicNumber[3, -2]").unwrap(), "14");
+    assert_eq!(interpret("HarmonicNumber[4, -1]").unwrap(), "10");
+    assert_eq!(interpret("HarmonicNumber[5, -2]").unwrap(), "55");
+    assert_eq!(interpret("HarmonicNumber[0, -1]").unwrap(), "0");
+  }
+
+  #[test]
   fn real_argument() {
     assert_eq!(
       interpret("HarmonicNumber[3.8]").unwrap(),

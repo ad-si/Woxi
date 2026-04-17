@@ -1271,18 +1271,29 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut num = BigInt::from(0);
   let mut den = BigInt::from(1);
-  for k in 1..=n {
-    let k_big = BigInt::from(k);
-    let k_pow = num_traits::pow::pow(k_big, r as usize);
-    // Add 1/k_pow to num/den: num/den + 1/k_pow = (num*k_pow + den) / (den*k_pow)
-    num = &num * &k_pow + &den;
-    den = &den * &k_pow;
-    // Reduce
-    let g = bigint_gcd(&num, &den);
-    use num_traits::One;
-    if g > BigInt::one() {
-      num /= &g;
-      den /= &g;
+  if r >= 0 {
+    // Standard case: sum of 1/k^r
+    for k in 1..=n {
+      let k_big = BigInt::from(k);
+      let k_pow = num_traits::pow::pow(k_big, r as usize);
+      // Add 1/k_pow to num/den: num/den + 1/k_pow = (num*k_pow + den) / (den*k_pow)
+      num = &num * &k_pow + &den;
+      den = &den * &k_pow;
+      // Reduce
+      let g = bigint_gcd(&num, &den);
+      use num_traits::One;
+      if g > BigInt::one() {
+        num /= &g;
+        den /= &g;
+      }
+    }
+  } else {
+    // Negative r: sum of k^|r| (each term is an integer, result is integer)
+    let abs_r = r.unsigned_abs() as usize;
+    for k in 1..=n {
+      let k_big = BigInt::from(k);
+      let k_pow = num_traits::pow::pow(k_big, abs_r);
+      num += k_pow;
     }
   }
 
