@@ -1773,4 +1773,30 @@ mod divisors_tests {
   fn symbolic_stays_unevaluated() {
     assert_eq!(interpret("Divisors[x]").unwrap(), "Divisors[x]");
   }
+
+  #[test]
+  fn listable_threads_over_list() {
+    assert_eq!(
+      interpret("Divisors[{6, 12}]").unwrap(),
+      "{{1, 2, 3, 6}, {1, 2, 3, 4, 6, 12}}"
+    );
+  }
+
+  #[test]
+  fn listable_multiple_elements() {
+    assert_eq!(
+      interpret("Divisors[{1, 2, 3, 4, 5}]").unwrap(),
+      "{{1}, {1, 2}, {1, 3}, {1, 2, 4}, {1, 5}}"
+    );
+  }
+
+  #[test]
+  fn divisors_one() {
+    assert_eq!(interpret("Divisors[1]").unwrap(), "{1}");
+  }
+
+  #[test]
+  fn divisors_prime() {
+    assert_eq!(interpret("Divisors[7]").unwrap(), "{1, 7}");
+  }
 }
