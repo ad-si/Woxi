@@ -1137,6 +1137,32 @@ mod false_symbol {
   }
 
   #[test]
+  fn not_prefix_after_and_operator() {
+    // !q must parse correctly after &&
+    assert_eq!(interpret("True && !False").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_prefix_after_or_operator() {
+    // !q must parse correctly after ||
+    assert_eq!(interpret("False || !False").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_prefix_symbolic_after_and() {
+    assert_eq!(interpret("p && !q").unwrap(), "p &&  !q");
+  }
+
+  #[test]
+  fn boolean_minimize_with_not_prefix() {
+    // p && q || p && !q simplifies to p
+    assert_eq!(
+      interpret("BooleanMinimize[p && q || p && !q]").unwrap(),
+      "p"
+    );
+  }
+
+  #[test]
   fn false_in_list() {
     assert_eq!(
       interpret("{False, True, False}").unwrap(),
