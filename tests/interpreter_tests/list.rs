@@ -328,6 +328,41 @@ mod outer_extended {
       "{{{f[a, x, 1], f[a, x, 2]}, {f[a, y, 1], f[a, y, 2]}, {f[a, z, 1], f[a, z, 2]}}, {{f[b, x, 1], f[b, x, 2]}, {f[b, y, 1], f[b, y, 2]}, {f[b, z, 1], f[b, z, 2]}}}"
     );
   }
+
+  #[test]
+  fn non_list_head() {
+    // Outer should thread through non-List heads, preserving them.
+    assert_eq!(
+      interpret("Outer[g, f[a, b], f[c, d]]").unwrap(),
+      "f[f[g[a, c], g[a, d]], f[g[b, c], g[b, d]]]"
+    );
+  }
+
+  #[test]
+  fn non_list_head_asymmetric() {
+    assert_eq!(
+      interpret("Outer[g, f[a, b, c], f[d, e]]").unwrap(),
+      "f[f[g[a, d], g[a, e]], f[g[b, d], g[b, e]], f[g[c, d], g[c, e]]]"
+    );
+  }
+
+  #[test]
+  fn non_list_head_single_element() {
+    assert_eq!(
+      interpret("Outer[g, f[a], f[c, d]]").unwrap(),
+      "f[f[g[a, c], g[a, d]]]"
+    );
+  }
+
+  #[test]
+  fn mixed_heads_return_unevaluated() {
+    // Different heads should return an error or unevaluated form.
+    // Mathematica gives Outer::heads error and returns unevaluated.
+    assert_eq!(
+      interpret("Outer[g, f[a, b], {c, d}]").unwrap(),
+      "Outer[g, f[a, b], {c, d}]"
+    );
+  }
 }
 
 mod map_indexed {
