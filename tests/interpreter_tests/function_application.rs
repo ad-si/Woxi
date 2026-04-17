@@ -791,3 +791,26 @@ mod dimension_mismatch_returns_unevaluated {
     );
   }
 }
+
+mod named_function_arity_check {
+  use super::*;
+
+  #[test]
+  fn too_few_args_returns_unevaluated() {
+    // Function[{x, y}, body] called with 1 argument should not partially bind
+    assert_eq!(
+      interpret("Function[{x, y}, x + y][{1, 2}]").unwrap(),
+      "Function[{x, y}, x + y][{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn exact_args_works() {
+    assert_eq!(interpret("Function[{x, y}, x + y][1, 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn single_param_single_arg_works() {
+    assert_eq!(interpret("Function[{x}, x^2][3]").unwrap(), "9");
+  }
+}
