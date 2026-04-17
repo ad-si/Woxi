@@ -1,16 +1,17 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 3117
 expression: svg
 ---
 <svg width="360" height="180" viewBox="0 0 3600 1800" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="1800" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="0" y="0" width="900" height="900" opacity="1" fill="#DFDFDF" stroke="none"/>
-<rect x="900" y="0" width="900" height="900" opacity="1" fill="#BFBFBF" stroke="none"/>
-<rect x="1800" y="0" width="900" height="900" opacity="1" fill="#9F9F9F" stroke="none"/>
-<rect x="2700" y="0" width="900" height="900" opacity="1" fill="#808080" stroke="none"/>
-<rect x="0" y="900" width="900" height="900" opacity="1" fill="#606060" stroke="none"/>
-<rect x="900" y="900" width="900" height="900" opacity="1" fill="#404040" stroke="none"/>
-<rect x="1800" y="900" width="900" height="900" opacity="1" fill="#202020" stroke="none"/>
+<rect x="0" y="0" width="900" height="900" opacity="1" fill="#FFFFFF" stroke="none"/>
+<rect x="900" y="0" width="900" height="900" opacity="1" fill="#DBDBDB" stroke="none"/>
+<rect x="1800" y="0" width="900" height="900" opacity="1" fill="#B6B6B6" stroke="none"/>
+<rect x="2700" y="0" width="900" height="900" opacity="1" fill="#929292" stroke="none"/>
+<rect x="0" y="900" width="900" height="900" opacity="1" fill="#6D6D6D" stroke="none"/>
+<rect x="900" y="900" width="900" height="900" opacity="1" fill="#494949" stroke="none"/>
+<rect x="1800" y="900" width="900" height="900" opacity="1" fill="#242424" stroke="none"/>
 <rect x="2700" y="900" width="900" height="900" opacity="1" fill="#000000" stroke="none"/>
 <rect x="0" y="0" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
 <rect x="0" y="1790" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>

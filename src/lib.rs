@@ -2858,15 +2858,25 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         blank_types.push(blank_count.min(3) as u8);
       }
       Rule::PatternTest => {
-        // PatternTest: x_?test or _?test or x__?test or __?test etc.
+        // PatternTest: x_?test or _?test or x_Head?test or _Head?test etc.
         let full_str = item.as_str();
         let mut pat_inner = item.into_inner();
         let first = pat_inner.next().unwrap();
-        let (param_name, test_pair) = if first.as_rule() == Rule::PatternName {
+        let (param_name, remaining) = if first.as_rule() == Rule::PatternName {
           (first.as_str().to_owned(), pat_inner.next().unwrap())
         } else {
           // Anonymous blank _?test — generate a placeholder param name
           (format!("__pt{}", params.len()), first)
+        };
+        // Check for optional head (PatternTestHead)
+        let (head, test_pair) = if remaining.as_rule() == Rule::PatternTestHead
+        {
+          (
+            Some(remaining.as_str().to_owned()),
+            pat_inner.next().unwrap(),
+          )
+        } else {
+          (None, remaining)
         };
         // Extract blank_type from underscores between name and ?
         // Skip auto-generated names when computing offset
@@ -2889,7 +2899,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         params.push(param_name);
         conditions.push(Some(cond_expr));
         defaults.push(None);
-        heads.push(None);
+        heads.push(head);
         blank_types.push(bt);
         has_any_condition = true;
       }
@@ -3265,7 +3275,9 @@ fn extract_pattern_info_from_expr(
     syntax::Expr::PatternOptional { name, head, .. } => {
       (name.clone(), head.clone())
     }
-    syntax::Expr::PatternTest { name, .. } => (name.clone(), None),
+    syntax::Expr::PatternTest { name, head, .. } => {
+      (name.clone(), head.clone())
+    }
     syntax::Expr::Identifier(name) => {
       // Could be "x_Integer" or "x_" in text form
       if let Some(pos) = name.find('_') {

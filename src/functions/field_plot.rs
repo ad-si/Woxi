@@ -1580,6 +1580,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse matrix: each cell is either a numeric value or a color directive
   let mut matrix: Vec<Vec<ArrayCell>> = Vec::new();
+  let mut v_min = f64::INFINITY;
   let mut v_max = f64::NEG_INFINITY;
 
   for row in rows {
@@ -1600,6 +1601,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let ArrayCell::Value(v) = cell
           && v.is_finite()
         {
+          v_min = v_min.min(*v);
           v_max = v_max.max(*v);
         }
       }
@@ -1665,10 +1667,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
             }
             found.unwrap_or_else(|| {
-              let t = if v_max.abs() < f64::EPSILON {
-                0.0
+              let range = v_max - v_min;
+              let t = if range.abs() < f64::EPSILON {
+                0.5
               } else {
-                (*val / v_max).clamp(0.0, 1.0)
+                ((*val - v_min) / range).clamp(0.0, 1.0)
               };
               if let Some(ref cf_name) = color_function {
                 apply_named_color_function(cf_name, t)

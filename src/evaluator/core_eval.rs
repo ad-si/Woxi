@@ -1777,10 +1777,12 @@ pub fn evaluate_expr_to_expr_inner(
     }),
     Expr::PatternTest {
       name,
+      head,
       blank_type,
       test,
     } => Ok(Expr::PatternTest {
       name: name.clone(),
+      head: head.clone(),
       blank_type: *blank_type,
       test: test.clone(),
     }),

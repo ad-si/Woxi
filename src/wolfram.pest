@@ -381,7 +381,8 @@ ExpressionNoImplicit = {
 // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
 // The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
 PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
-PatternTest = { PatternName? ~ PatternBlanks ~ "?" ~ PatternTestFunc }
+PatternTest = { PatternName? ~ PatternBlanks ~ PatternTestHead? ~ "?" ~ PatternTestFunc }
+PatternTestHead = { !("_") ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {

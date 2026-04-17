@@ -896,6 +896,29 @@ pub fn set_delayed_ast(
           heads.push(Some("List".to_string()));
           blank_types.push(1);
         }
+        // PatternTest: x_?test or x_Head?test — store as structural pattern
+        // to preserve the test condition during dispatch
+        Expr::PatternTest {
+          name,
+          head,
+          blank_type,
+          ..
+        } => {
+          let param_name = if name.is_empty() {
+            format!("__sp{}", i)
+          } else {
+            name.clone()
+          };
+          let normalized = normalize_structural_pattern(arg);
+          conditions.push(Some(Expr::FunctionCall {
+            name: "__StructuralPattern__".to_string(),
+            args: vec![Expr::Identifier(param_name.clone()), normalized],
+          }));
+          params.push(param_name);
+          defaults.push(None);
+          heads.push(head.clone());
+          blank_types.push(*blank_type);
+        }
         // Simple pattern: x_ or x_Head
         _ => {
           let (pat_name, head, blank_type) = extract_pattern_info(arg);
@@ -1106,6 +1129,13 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
     } => (name.clone(), head.clone(), *blank_type),
     // AST PatternOptional node: x_:default or x_Head:default
     Expr::PatternOptional { name, head, .. } => (name.clone(), head.clone(), 1),
+    // AST PatternTest node: x_?test or x_Head?test
+    Expr::PatternTest {
+      name,
+      head,
+      blank_type,
+      ..
+    } => (name.clone(), head.clone(), *blank_type),
     Expr::Identifier(name) => {
       // Could be a pattern like "x_Integer", "x_", "x__", "x___" in text form
       if let Some(pos) = name.find('_') {
