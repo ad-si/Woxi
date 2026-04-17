@@ -6828,6 +6828,42 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       );
       escape_string_for_input_form(&s)
     }
+    // Or[a, b, ...] in InputForm: render as a || b || ... using InputForm for children
+    Expr::FunctionCall { name, args } if name == "Or" && args.len() >= 2 => {
+      let parts: Vec<String> = args
+        .iter()
+        .map(|arg| {
+          let s = expr_to_input_form(arg);
+          let is_and = matches!(
+            arg,
+            Expr::BinaryOp {
+              op: BinaryOperator::And,
+              ..
+            }
+          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
+          if is_and { format!("({})", s) } else { s }
+        })
+        .collect();
+      parts.join(" || ")
+    }
+    // And[a, b, ...] in InputForm: render as a && b && ... using InputForm for children
+    Expr::FunctionCall { name, args } if name == "And" && args.len() >= 2 => {
+      let parts: Vec<String> = args
+        .iter()
+        .map(|arg| {
+          let s = expr_to_input_form(arg);
+          let is_or = matches!(
+            arg,
+            Expr::BinaryOp {
+              op: BinaryOperator::Or,
+              ..
+            }
+          ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or");
+          if is_or { format!("({})", s) } else { s }
+        })
+        .collect();
+      parts.join(" && ")
+    }
     // Inequality[...] in InputForm always uses the head form Inequality[a, Less, b, Less, c],
     // even when all operators are the same (infix is only used in OutputForm).
     Expr::FunctionCall { name, args }
