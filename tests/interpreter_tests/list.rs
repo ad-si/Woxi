@@ -6422,3 +6422,80 @@ mod ratios_tests {
     );
   }
 }
+
+mod splice {
+  use super::*;
+
+  #[test]
+  fn splice_in_list() {
+    assert_eq!(interpret("{1, Splice[{2, 3}], 4}").unwrap(), "{1, 2, 3, 4}");
+  }
+
+  #[test]
+  fn splice_not_in_other_heads() {
+    // Splice without head arg only works inside List, not other heads.
+    assert_eq!(
+      interpret("f[1, Splice[{2, 3}], 4]").unwrap(),
+      "f[1, Splice[{2, 3}], 4]"
+    );
+  }
+
+  #[test]
+  fn splice_unevaluated_at_top_level() {
+    assert_eq!(interpret("Splice[{a, b, c}]").unwrap(), "Splice[{a, b, c}]");
+  }
+
+  #[test]
+  fn splice_with_matching_head() {
+    // Splice[list, head] splices into functions with that head.
+    assert_eq!(interpret("f[Splice[{1, 2}, f]]").unwrap(), "f[1, 2]");
+  }
+
+  #[test]
+  fn splice_with_non_matching_head() {
+    // Splice[list, head] does NOT splice when the enclosing head differs.
+    assert_eq!(
+      interpret("f[Splice[{1, 2}, List]]").unwrap(),
+      "f[Splice[{1, 2}, List]]"
+    );
+  }
+
+  #[test]
+  fn splice_with_head_not_in_list() {
+    // Splice[list, f] does NOT splice inside List.
+    assert_eq!(
+      interpret("{Splice[{1, 2}, f]}").unwrap(),
+      "{Splice[{1, 2}, f]}"
+    );
+  }
+
+  #[test]
+  fn splice_empty_list() {
+    assert_eq!(interpret("{1, Splice[{}], 2}").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn splice_multiple() {
+    assert_eq!(
+      interpret("{Splice[{a}], Splice[{b, c}]}").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn splice_with_explicit_list_head() {
+    // Splice[list, List] should also work inside List.
+    assert_eq!(
+      interpret("{1, Splice[{2, 3}, List], 4}").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn splice_two_arg_unevaluated_at_top_level() {
+    assert_eq!(
+      interpret("Splice[{1, 2}, List]").unwrap(),
+      "Splice[{1, 2}, List]"
+    );
+  }
+}

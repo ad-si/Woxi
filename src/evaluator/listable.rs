@@ -248,6 +248,20 @@ pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
       had_sequence = true;
       continue;
     }
+    // Splice[list, head] — splice when the enclosing function matches head
+    if let Expr::FunctionCall {
+      name: splice_name,
+      args: splice_args,
+    } = arg
+      && splice_name == "Splice"
+      && splice_args.len() == 2
+      && matches!(&splice_args[1], Expr::Identifier(h) if h == name)
+      && let Expr::List(items) = &splice_args[0]
+    {
+      result.extend(items.iter().cloned());
+      had_sequence = true;
+      continue;
+    }
     result.push(arg.clone());
   }
   if had_sequence { result } else { args.to_vec() }

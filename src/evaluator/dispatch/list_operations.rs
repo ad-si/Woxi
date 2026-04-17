@@ -2607,15 +2607,13 @@ pub fn dispatch_list_operations(
         }));
       }
     }
-    // Splice[list] — splice a list into the enclosing List (at evaluation level, acts like Sequence)
-    "Splice" if args.len() == 1 => {
-      if let Expr::List(items) = &args[0] {
-        // Splice[{a, b, c}] evaluates to Sequence[a, b, c]
-        return Some(Ok(Expr::FunctionCall {
-          name: "Sequence".to_string(),
-          args: items.clone(),
-        }));
-      }
+    // Splice[list] and Splice[list, head] — stay unevaluated; splicing is done
+    // by the enclosing context (List evaluation or flatten_sequences).
+    "Splice" if args.len() == 1 || args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "Splice".to_string(),
+        args: args.to_vec(),
+      }));
     }
     // SubsetMap[f, list, positions] — apply f to elements at positions, put results back
     "SubsetMap" if args.len() == 3 => {

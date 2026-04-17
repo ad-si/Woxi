@@ -872,7 +872,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Sow" => Some((1, 2)),
     "SphericalBesselJ" => Some((2, 2)),
     "SphericalHarmonicY" => Some((4, 4)),
-    "Splice" => Some((1, 1)),
+    "Splice" => Some((1, 2)),
     "Split" => Some((1, 2)),
     "SplitBy" => Some((2, 2)),
     "Sqrt" => Some((1, 1)),
