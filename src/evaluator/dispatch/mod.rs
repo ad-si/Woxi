@@ -1535,6 +1535,59 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // PermutationCycles[{p1, p2, ...}] — convert permutation list to cycle notation
+  if name == "PermutationCycles" && args.len() == 1 {
+    if let Expr::List(perm) = &args[0] {
+      let n = perm.len();
+      // Extract integer values
+      let mut perm_vals: Vec<usize> = Vec::with_capacity(n);
+      let mut valid = true;
+      for p in perm {
+        if let Expr::Integer(val) = p {
+          let v = *val as usize;
+          if v >= 1 && v <= n {
+            perm_vals.push(v);
+          } else {
+            valid = false;
+            break;
+          }
+        } else {
+          valid = false;
+          break;
+        }
+      }
+      if valid && perm_vals.len() == n {
+        let mut visited = vec![false; n + 1];
+        let mut cycles: Vec<Expr> = Vec::new();
+        for i in 1..=n {
+          if !visited[i] && perm_vals[i - 1] != i {
+            // Found start of a non-trivial cycle
+            let mut cycle = Vec::new();
+            let mut j = i;
+            while !visited[j] {
+              visited[j] = true;
+              cycle.push(Expr::Integer(j as i128));
+              j = perm_vals[j - 1];
+            }
+            if cycle.len() >= 2 {
+              cycles.push(Expr::List(cycle));
+            }
+          } else {
+            visited[i] = true;
+          }
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Cycles".to_string(),
+          args: vec![Expr::List(cycles)],
+        });
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // CompleteGraph[n] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}]
   if name == "CompleteGraph" && args.len() == 1 {
     if let Expr::Integer(n) = &args[0] {
@@ -5208,7 +5261,6 @@ pub fn evaluate_function_call_ast_inner(
       | "CycleGraph"
       | "OverDot"
       | "MaxPlotPoints"
-      | "PermutationCycles"
       | "AnimationRepetitions"
       | "ARMAProcess"
       | "FileNameTake"

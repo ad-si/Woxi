@@ -1381,6 +1381,67 @@ mod cycles {
       "{2, 1, 3, 4}"
     );
   }
+
+  #[test]
+  fn permutation_cycles_single_cycle() {
+    assert_eq!(
+      interpret("PermutationCycles[{3, 1, 2}]").unwrap(),
+      "Cycles[{{1, 3, 2}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_transposition() {
+    assert_eq!(
+      interpret("PermutationCycles[{2, 1, 3}]").unwrap(),
+      "Cycles[{{1, 2}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_identity() {
+    assert_eq!(
+      interpret("PermutationCycles[{1, 2, 3}]").unwrap(),
+      "Cycles[{}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_single_element() {
+    assert_eq!(interpret("PermutationCycles[{1}]").unwrap(), "Cycles[{}]");
+  }
+
+  #[test]
+  fn permutation_cycles_full_cycle() {
+    assert_eq!(
+      interpret("PermutationCycles[{2, 3, 4, 1}]").unwrap(),
+      "Cycles[{{1, 2, 3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_two_transpositions() {
+    assert_eq!(
+      interpret("PermutationCycles[{2, 1, 4, 3}]").unwrap(),
+      "Cycles[{{1, 2}, {3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_mixed() {
+    assert_eq!(
+      interpret("PermutationCycles[{3, 1, 2, 5, 4}]").unwrap(),
+      "Cycles[{{1, 3, 2}, {4, 5}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_cycles_roundtrip() {
+    assert_eq!(
+      interpret("PermutationList[PermutationCycles[{3, 1, 2, 5, 4}]]").unwrap(),
+      "{3, 1, 2, 5, 4}"
+    );
+  }
 }
 
 mod circle_plus {
