@@ -363,6 +363,67 @@ mod outer_extended {
       "Outer[g, f[a, b], {c, d}]"
     );
   }
+
+  #[test]
+  fn level_spec_single() {
+    // Outer[f, nested, flat, 1] — descend 1 level into the nested list,
+    // treating sublists as atomic elements.
+    assert_eq!(
+      interpret("Outer[f, {{a, b}, {c, d}}, {x, y}, 1]").unwrap(),
+      "{{f[{a, b}, x], f[{a, b}, y]}, {f[{c, d}, x], f[{c, d}, y]}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_per_list() {
+    // Per-list level specs: descend 1 level in first, 1 level in second.
+    assert_eq!(
+      interpret("Outer[f, {a, b}, {x, y}, 1, 1]").unwrap(),
+      "{{f[a, x], f[a, y]}, {f[b, x], f[b, y]}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_asymmetric() {
+    // Descend 1 level in first list, 2 levels in second.
+    assert_eq!(
+      interpret("Outer[f, {a, b}, {{x, y}, {z, w}}, 1, 2]").unwrap(),
+      "{{{f[a, x], f[a, y]}, {f[a, z], f[a, w]}}, {{f[b, x], f[b, y]}, {f[b, z], f[b, w]}}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_shallow_second() {
+    // Descend 1 level in each, treating inner lists as atomic.
+    assert_eq!(
+      interpret("Outer[f, {a, b}, {{x, y}, {z, w}}, 1, 1]").unwrap(),
+      "{{f[a, {x, y}], f[a, {z, w}]}, {f[b, {x, y}], f[b, {z, w}]}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_both_nested() {
+    assert_eq!(
+      interpret("Outer[f, {{a, b}, {c, d}}, {{x, y}, {z, w}}, 1, 1]").unwrap(),
+      "{{f[{a, b}, {x, y}], f[{a, b}, {z, w}]}, {f[{c, d}, {x, y}], f[{c, d}, {z, w}]}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_times() {
+    assert_eq!(
+      interpret("Outer[Times, {{a, b}, {c, d}}, {x, y}, 1]").unwrap(),
+      "{{{a*x, b*x}, {a*y, b*y}}, {{c*x, d*x}, {c*y, d*y}}}"
+    );
+  }
+
+  #[test]
+  fn level_spec_ragged() {
+    assert_eq!(
+      interpret("Outer[f, {{1, 2}, {3}}, {{a, b}, {c}}, 1]").unwrap(),
+      "{{f[{1, 2}, {a, b}], f[{1, 2}, {c}]}, {f[{3}, {a, b}], f[{3}, {c}]}}"
+    );
+  }
 }
 
 mod map_indexed {

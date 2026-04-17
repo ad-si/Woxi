@@ -609,6 +609,14 @@ pub fn outer_ast(
   func: &Expr,
   lists: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  outer_ast_with_levels(func, lists, &[])
+}
+
+pub fn outer_ast_with_levels(
+  func: &Expr,
+  lists: &[Expr],
+  levels: &[usize],
+) -> Result<Expr, InterpreterError> {
   if lists.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "Outer expects at least one list argument".into(),
@@ -637,7 +645,23 @@ pub fn outer_ast(
     }
   }
 
-  outer_impl(func, &lists[0], &lists[1..], &[], &head)
+  if levels.is_empty() {
+    outer_impl(func, &lists[0], &lists[1..], &[], &head)
+  } else {
+    // Build per-list level specs
+    let per_list_levels: Vec<usize> = if levels.len() == 1 {
+      // Single level spec applies to all lists
+      vec![levels[0]; lists.len()]
+    } else {
+      // One level per list
+      let mut v = levels.to_vec();
+      while v.len() < lists.len() {
+        v.push(*v.last().unwrap_or(&1));
+      }
+      v
+    };
+    outer_impl_leveled(func, lists, 0, &per_list_levels, &[], &head)
+  }
 }
 
 /// Return the head name for an expression that can be threaded by Outer.
@@ -696,6 +720,66 @@ fn outer_impl(
       outer_impl(func, &remaining[0], &remaining[1..], &new_acc, head)
     }
   }
+}
+
+/// Level-aware Outer: descend only `levels[list_idx]` levels into each list.
+fn outer_impl_leveled(
+  func: &Expr,
+  lists: &[Expr],
+  list_idx: usize,
+  levels: &[usize],
+  accumulated: &[Expr],
+  head: &str,
+) -> Result<Expr, InterpreterError> {
+  if list_idx >= lists.len() {
+    // All lists consumed: apply f to accumulated args
+    return apply_func_to_n_args(func, accumulated);
+  }
+  let depth = levels[list_idx];
+  outer_descend(
+    func,
+    &lists[list_idx],
+    lists,
+    list_idx,
+    levels,
+    accumulated,
+    head,
+    depth,
+  )
+}
+
+fn outer_descend(
+  func: &Expr,
+  current: &Expr,
+  lists: &[Expr],
+  list_idx: usize,
+  levels: &[usize],
+  accumulated: &[Expr],
+  head: &str,
+  depth_remaining: usize,
+) -> Result<Expr, InterpreterError> {
+  if depth_remaining > 0
+    && let Some(items) = expr_items(current)
+  {
+    let mut results = Vec::new();
+    for item in items {
+      results.push(outer_descend(
+        func,
+        item,
+        lists,
+        list_idx,
+        levels,
+        accumulated,
+        head,
+        depth_remaining - 1,
+      )?);
+    }
+    return Ok(wrap_in_head(head, results));
+  }
+  // Reached target depth or hit an atom: treat as a single element
+  let mut new_acc = accumulated.to_vec();
+  new_acc.push(current.clone());
+  outer_impl_leveled(func, lists, list_idx + 1, levels, &new_acc, head)
 }
 
 /// Inner[f, list1, list2, g] - generalized inner product
