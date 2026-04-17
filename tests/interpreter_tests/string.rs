@@ -311,6 +311,35 @@ mod string_replace {
       "hello"
     );
   }
+
+  #[test]
+  fn named_pattern_rule_delayed() {
+    // RuleDelayed with named pattern variable and function application
+    assert_eq!(
+      interpret(r#"StringReplace["hello world", " " ~~ x_ :> ToUpperCase[x]]"#)
+        .unwrap(),
+      "helloWorld"
+    );
+  }
+
+  #[test]
+  fn named_pattern_rule() {
+    // Rule with named pattern variable — substitutes matched string
+    assert_eq!(
+      interpret(r#"StringReplace["hello world", " " ~~ x_ -> x]"#).unwrap(),
+      "helloworld"
+    );
+  }
+
+  #[test]
+  fn named_pattern_multiple_matches() {
+    // Multiple matches with delayed replacement
+    assert_eq!(
+      interpret(r#"StringReplace["the cat sat", " " ~~ x_ :> ToUpperCase[x]]"#)
+        .unwrap(),
+      "theCatSat"
+    );
+  }
 }
 
 mod to_character_code {

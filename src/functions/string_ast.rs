@@ -722,18 +722,24 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       regex: regex::Regex,
       replacement: String,
     },
+    /// Regex pattern with a delayed replacement expression (RuleDelayed).
+    /// Captured named groups are substituted into the expression before evaluation.
+    RegexDelayed {
+      regex: regex::Regex,
+      replacement_expr: Expr,
+    },
   }
 
   fn extract_rule(expr: &Expr) -> Result<ReplaceRule, InterpreterError> {
-    let (pattern_expr, replacement_expr) = match expr {
+    let (pattern_expr, replacement_expr, is_delayed) = match expr {
       Expr::Rule {
         pattern,
         replacement,
-      } => (pattern.as_ref(), replacement.as_ref()),
+      } => (pattern.as_ref(), replacement.as_ref(), false),
       Expr::RuleDelayed {
         pattern,
         replacement,
-      } => (pattern.as_ref(), replacement.as_ref()),
+      } => (pattern.as_ref(), replacement.as_ref(), true),
       _ => {
         return Err(InterpreterError::EvaluationError(
           "StringReplace: rules must be of the form pattern -> replacement"
@@ -742,10 +748,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
 
-    let replacement = expr_to_str(replacement_expr)?;
-
-    // For simple string literals, use direct matching
+    // For simple string literals, use direct matching (delayed doesn't matter
+    // since there are no pattern variables to bind)
     if let Expr::String(pat_str) = pattern_expr {
+      let replacement = expr_to_str(replacement_expr)?;
       return Ok(ReplaceRule::Simple {
         pattern: pat_str.clone(),
         replacement,
@@ -760,6 +766,25 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           e
         ))
       })?;
+
+      // If delayed and the regex has named captures, keep the expression
+      if is_delayed && re.capture_names().flatten().next().is_some() {
+        return Ok(ReplaceRule::RegexDelayed {
+          regex: re,
+          replacement_expr: replacement_expr.clone(),
+        });
+      }
+
+      // For Rule (->), also substitute captured names into the replacement
+      // as strings before returning
+      if re.capture_names().flatten().next().is_some() {
+        return Ok(ReplaceRule::RegexDelayed {
+          regex: re,
+          replacement_expr: replacement_expr.clone(),
+        });
+      }
+
+      let replacement = expr_to_str(replacement_expr)?;
       return Ok(ReplaceRule::Regex {
         regex: re,
         replacement,
@@ -768,6 +793,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Fallback: try expr_to_str for identifiers etc.
     if let Ok(pat_str) = expr_to_str(pattern_expr) {
+      let replacement = expr_to_str(replacement_expr)?;
       return Ok(ReplaceRule::Simple {
         pattern: pat_str,
         replacement,
@@ -791,12 +817,53 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rule => vec![extract_rule(rule)?],
   };
 
+  // Substitute named captures into an expression, replacing pattern variable
+  // identifiers with matched string values.
+  fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
+    match expr {
+      Expr::Identifier(name) => {
+        // Check if this identifier matches a named capture group
+        if let Some(m) = captures.name(name) {
+          Expr::String(m.as_str().to_string())
+        } else {
+          expr.clone()
+        }
+      }
+      Expr::FunctionCall { name, args } => {
+        let new_args: Vec<Expr> = args
+          .iter()
+          .map(|a| substitute_captures(a, captures))
+          .collect();
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args,
+        }
+      }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(substitute_captures(left, captures)),
+        right: Box::new(substitute_captures(right, captures)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(substitute_captures(operand, captures)),
+      },
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|a| substitute_captures(a, captures))
+          .collect(),
+      ),
+      _ => expr.clone(),
+    }
+  }
+
   // Scan-based replacement: scan left-to-right, at each position try each rule
   fn scan_replace(
     s: &str,
     rules: &[ReplaceRule],
     max: Option<usize>,
-  ) -> String {
+  ) -> Result<String, InterpreterError> {
     let mut result = String::new();
     let mut count = 0usize;
     let mut i = 0;
@@ -835,6 +902,32 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               break;
             }
           }
+          ReplaceRule::RegexDelayed {
+            regex,
+            replacement_expr,
+          } => {
+            if let Some(caps) = regex.captures(&s[i..])
+              && let Some(m) = caps.get(0)
+              && m.start() == 0
+              && !m.as_str().is_empty()
+            {
+              // Substitute named captures into the replacement expr
+              let substituted = substitute_captures(replacement_expr, &caps);
+              // Evaluate the substituted expression
+              let evaluated =
+                crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              // Convert result to string
+              let replacement_str = match &evaluated {
+                Expr::String(s) => s.clone(),
+                other => crate::syntax::expr_to_string(other),
+              };
+              result.push_str(&replacement_str);
+              i += m.len();
+              count += 1;
+              matched = true;
+              break;
+            }
+          }
         }
       }
       if !matched {
@@ -843,10 +936,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         i += ch.len_utf8();
       }
     }
-    result
+    Ok(result)
   }
 
-  Ok(Expr::String(scan_replace(&s, &rules, max_replacements)))
+  Ok(Expr::String(scan_replace(&s, &rules, max_replacements)?))
 }
 
 /// ToUpperCase[s] - converts string to uppercase
@@ -1335,15 +1428,23 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
 
     // Blank/BlankSequence/BlankNullSequence as Pattern AST nodes
     Expr::Pattern {
-      name: _,
+      name,
       head: None,
       blank_type,
-    } => match blank_type {
-      1 => Some(".".to_string()), // Blank: any single character
-      2 => Some(".+".to_string()), // BlankSequence: one or more characters
-      3 => Some(".*".to_string()), // BlankNullSequence: zero or more characters
-      _ => None,
-    },
+    } => {
+      let inner = match blank_type {
+        1 => ".",  // Blank: any single character
+        2 => ".+", // BlankSequence: one or more characters
+        3 => ".*", // BlankNullSequence: zero or more characters
+        _ => return None,
+      };
+      if !name.is_empty() {
+        // Named pattern — create a named capture group
+        Some(format!("(?P<{}>{})", name, inner))
+      } else {
+        Some(inner.to_string())
+      }
+    }
 
     // Alternatives as BinaryOp (e.g. pat1 | pat2)
     Expr::BinaryOp {
