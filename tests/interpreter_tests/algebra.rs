@@ -363,6 +363,34 @@ mod simplify {
       "((1 + 3*Cos[2*x])*Cos[x]^2)/2"
     );
   }
+
+  #[test]
+  fn equation_algebraically_equal() {
+    // x^2 - y^2 == (x+y)(x-y) is always True
+    assert_eq!(
+      interpret("Simplify[x^2 - y^2 == (x + y)(x - y)]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn equation_expansion_equal() {
+    assert_eq!(
+      interpret("Simplify[(a + b)^2 == a^2 + 2 a b + b^2]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn equation_constant_difference_false() {
+    // x^2 == x^2 + 1 is always False
+    assert_eq!(interpret("Simplify[x^2 == x^2 + 1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn equation_symbolic_stays_unevaluated() {
+    assert_eq!(interpret("Simplify[x == y]").unwrap(), "x == y");
+  }
 }
 
 mod factor {

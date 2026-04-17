@@ -4194,6 +4194,38 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
       _ => expr.clone(),
     },
 
+    // Simplify equations: check if lhs - rhs expands to 0
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && matches!(operators[0], crate::syntax::ComparisonOp::Equal) =>
+    {
+      let lhs = simplify_expr(&operands[0]);
+      let rhs = simplify_expr(&operands[1]);
+      // Check lhs - rhs == 0 by expanding
+      let diff = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(lhs.clone()),
+        right: Box::new(rhs.clone()),
+      };
+      let expanded_diff = super::expand_and_combine(&diff);
+      if matches!(&expanded_diff, Expr::Integer(0)) {
+        Expr::Identifier("True".to_string())
+      } else if matches!(&expanded_diff, Expr::Integer(n) if *n != 0)
+        || matches!(&expanded_diff, Expr::Real(f) if *f != 0.0)
+      {
+        // Nonzero constant difference means the equation is always False
+        Expr::Identifier("False".to_string())
+      } else {
+        Expr::Comparison {
+          operands: vec![lhs, rhs],
+          operators: operators.clone(),
+        }
+      }
+    }
+
     _ => simplify(expr.clone()),
   }
 }
