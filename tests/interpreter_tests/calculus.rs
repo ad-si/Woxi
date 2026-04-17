@@ -3627,7 +3627,7 @@ mod function_domain {
     // 1/(x^2 - 1) → interval complement of {-1, 1}
     assert_eq!(
       interpret("FunctionDomain[1/(x^2 - 1), x]").unwrap(),
-      "x < -1 || Inequality[-1, Less, x, Less, 1] || x > 1"
+      "x < -1 || -1 < x < 1 || x > 1"
     );
   }
 

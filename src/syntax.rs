@@ -4477,6 +4477,31 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
     Expr::FunctionCall { name, args } => {
       // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
+        if is_output {
+          // OutputForm: render as chained comparison, e.g. -2 < x < 2
+          let mut result = String::new();
+          for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+              result.push(' ');
+            }
+            if i % 2 == 1 {
+              // Operator position: convert Identifier to symbol
+              match arg {
+                Expr::Identifier(s) => match s.as_str() {
+                  "Less" => result.push('<'),
+                  "Greater" => result.push('>'),
+                  "LessEqual" => result.push_str("<="),
+                  "GreaterEqual" => result.push_str(">="),
+                  _ => result.push_str(&fmt(arg)),
+                },
+                _ => result.push_str(&fmt(arg)),
+              }
+            } else {
+              result.push_str(&fmt(arg));
+            }
+          }
+          return result;
+        }
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("Inequality[{}]", parts.join(", "));
       }
@@ -6105,6 +6130,29 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             .map(|e| format_expr(e, ExprForm::Input))
             .collect();
           parts.join(op_str)
+        } else if is_output {
+          // OutputForm: render mixed chained comparison as infix, e.g. 0 <= x < 1
+          let mut result = String::new();
+          for (i, operand) in operands.iter().enumerate() {
+            if i > 0 {
+              result.push(' ');
+            }
+            result.push_str(&fmt(operand));
+            if i < operators.len() {
+              let op_str = match &operators[i] {
+                ComparisonOp::Less => " <",
+                ComparisonOp::LessEqual => " <=",
+                ComparisonOp::Greater => " >",
+                ComparisonOp::GreaterEqual => " >=",
+                ComparisonOp::Equal => " ==",
+                ComparisonOp::NotEqual => " !=",
+                ComparisonOp::SameQ => " ===",
+                ComparisonOp::UnsameQ => " =!=",
+              };
+              result.push_str(op_str);
+            }
+          }
+          result
         } else {
           let mut parts = Vec::with_capacity(operands.len() + operators.len());
           for (i, operand) in operands.iter().enumerate() {
