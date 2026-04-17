@@ -592,7 +592,9 @@ fn apply_func_as_head(
   }
 }
 
-/// Outer[f, list1, list2, ...] - generalized outer product
+/// Outer[f, list1, list2, ...] - generalized outer product.
+/// Threads through any shared head (not just `List`). All arguments must have
+/// the same head; if they differ, the call is returned unevaluated.
 pub fn outer_ast(
   func: &Expr,
   lists: &[Expr],
@@ -602,7 +604,60 @@ pub fn outer_ast(
       "Outer expects at least one list argument".into(),
     ));
   }
-  outer_impl(func, &lists[0], &lists[1..], &[])
+
+  // Determine the common head. All arguments must share the same head.
+  let head = expr_head_name(&lists[0]);
+  if head.is_none() {
+    // First argument is atomic — apply f directly.
+    return apply_func_to_n_args(func, lists);
+  }
+  let head = head.unwrap();
+  for arg in &lists[1..] {
+    match expr_head_name(arg) {
+      Some(h) if h == head => {}
+      _ => {
+        // Mismatched or atomic — return unevaluated.
+        let mut call_args = vec![func.clone()];
+        call_args.extend(lists.iter().cloned());
+        return Ok(Expr::FunctionCall {
+          name: "Outer".to_string(),
+          args: call_args,
+        });
+      }
+    }
+  }
+
+  outer_impl(func, &lists[0], &lists[1..], &[], &head)
+}
+
+/// Return the head name for an expression that can be threaded by Outer.
+fn expr_head_name(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::List(_) => Some("List".to_string()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    _ => None,
+  }
+}
+
+/// Get child items from a List or FunctionCall.
+fn expr_items(expr: &Expr) -> Option<&[Expr]> {
+  match expr {
+    Expr::List(items) => Some(items.as_slice()),
+    Expr::FunctionCall { args, .. } => Some(args.as_slice()),
+    _ => None,
+  }
+}
+
+/// Wrap items in the given head.
+fn wrap_in_head(head: &str, items: Vec<Expr>) -> Expr {
+  if head == "List" {
+    Expr::List(items)
+  } else {
+    Expr::FunctionCall {
+      name: head.to_string(),
+      args: items,
+    }
+  }
 }
 
 fn outer_impl(
@@ -610,14 +665,15 @@ fn outer_impl(
   current: &Expr,
   remaining: &[Expr],
   accumulated: &[Expr],
+  head: &str,
 ) -> Result<Expr, InterpreterError> {
-  if let Expr::List(items) = current {
-    // Thread through list elements
+  if let Some(items) = expr_items(current) {
+    // Thread through child elements, wrapping the result in the common head.
     let mut results = Vec::new();
     for item in items {
-      results.push(outer_impl(func, item, remaining, accumulated)?);
+      results.push(outer_impl(func, item, remaining, accumulated, head)?);
     }
-    Ok(Expr::List(results))
+    Ok(wrap_in_head(head, results))
   } else {
     // Atomic element: add to accumulated args
     let mut new_acc = accumulated.to_vec();
@@ -627,7 +683,7 @@ fn outer_impl(
       apply_func_to_n_args(func, &new_acc)
     } else {
       // Move to next list
-      outer_impl(func, &remaining[0], &remaining[1..], &new_acc)
+      outer_impl(func, &remaining[0], &remaining[1..], &new_acc, head)
     }
   }
 }
