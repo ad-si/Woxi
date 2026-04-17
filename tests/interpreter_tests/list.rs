@@ -1189,6 +1189,51 @@ mod complement {
   }
 }
 
+mod symmetric_difference {
+  use super::*;
+
+  #[test]
+  fn basic_two_lists() {
+    assert_eq!(
+      interpret("SymmetricDifference[{1, 2, 3}, {2, 3, 4}]").unwrap(),
+      "{1, 4}"
+    );
+  }
+
+  #[test]
+  fn three_lists() {
+    assert_eq!(
+      interpret("SymmetricDifference[{1, 2, 3}, {2, 3, 4}, {3, 4, 5}]")
+        .unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn with_duplicates() {
+    assert_eq!(
+      interpret("SymmetricDifference[{1, 2, 2, 3}, {2, 3, 4}]").unwrap(),
+      "{1, 4}"
+    );
+  }
+
+  #[test]
+  fn identical_lists() {
+    assert_eq!(
+      interpret("SymmetricDifference[{1, 2, 3}, {1, 2, 3}]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn disjoint_lists() {
+    assert_eq!(
+      interpret("SymmetricDifference[{1, 2}, {3, 4}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+}
+
 mod count {
   use super::*;
 
