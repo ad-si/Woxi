@@ -6101,6 +6101,114 @@ mod tally_with_test {
       "{{a, 3}, {b, 2}, {c, 1}}"
     );
   }
+}
+
+mod take_largest {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("TakeLargest[{3, 1, 4, 1, 5, 9, 2, 6}, 3]").unwrap(),
+      "{9, 6, 5}"
+    );
+  }
+
+  #[test]
+  fn reals() {
+    assert_eq!(
+      interpret("TakeLargest[{3.5, 1.2, 4.7}, 2]").unwrap(),
+      "{4.7, 3.5}"
+    );
+  }
+
+  #[test]
+  fn rationals() {
+    assert_eq!(
+      interpret("TakeLargest[{1/3, 1/2, 1/4, 1/5}, 2]").unwrap(),
+      "{1/2, 1/3}"
+    );
+  }
+
+  #[test]
+  fn negative_numbers() {
+    assert_eq!(
+      interpret("TakeLargest[{-3, -1, -4, -1, -5}, 3]").unwrap(),
+      "{-1, -1, -3}"
+    );
+  }
+
+  #[test]
+  fn n_exceeds_length() {
+    // When n > length, return unevaluated.
+    assert_eq!(
+      interpret("TakeLargest[{5, 2, 8}, 5]").unwrap(),
+      "TakeLargest[{5, 2, 8}, 5]"
+    );
+  }
+
+  #[test]
+  fn take_zero() {
+    assert_eq!(interpret("TakeLargest[{3, 1, 4}, 0]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn empty_list_zero() {
+    assert_eq!(interpret("TakeLargest[{}, 0]").unwrap(), "{}");
+  }
+}
+
+mod take_smallest {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("TakeSmallest[{3, 1, 4, 1, 5, 9, 2, 6}, 3]").unwrap(),
+      "{1, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn reals() {
+    assert_eq!(
+      interpret("TakeSmallest[{3.5, 1.2, 4.7}, 2]").unwrap(),
+      "{1.2, 3.5}"
+    );
+  }
+
+  #[test]
+  fn rationals() {
+    assert_eq!(
+      interpret("TakeSmallest[{1/3, 1/2, 1/4, 1/5}, 2]").unwrap(),
+      "{1/5, 1/4}"
+    );
+  }
+
+  #[test]
+  fn negative_numbers() {
+    assert_eq!(
+      interpret("TakeSmallest[{-3, -1, -4, -1, -5}, 3]").unwrap(),
+      "{-5, -4, -3}"
+    );
+  }
+
+  #[test]
+  fn n_exceeds_length() {
+    assert_eq!(
+      interpret("TakeSmallest[{5, 2, 8}, 5]").unwrap(),
+      "TakeSmallest[{5, 2, 8}, 5]"
+    );
+  }
+
+  #[test]
+  fn take_zero() {
+    assert_eq!(interpret("TakeSmallest[{3, 1, 4}, 0]").unwrap(), "{}");
+  }
+}
+
+mod ratios_tests {
+  use super::*;
 
   #[test]
   fn ratios_basic() {

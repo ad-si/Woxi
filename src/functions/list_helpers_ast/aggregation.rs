@@ -383,6 +383,24 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Helper to convert an expression to f64, handling Rational.
+fn take_expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+        Some(*a as f64 / *b as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// AST-based TakeLargest: take n largest elements.
 pub fn take_largest_ast(
   list: &Expr,
@@ -398,10 +416,17 @@ pub fn take_largest_ast(
     }
   };
 
+  if n as usize > items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeLargest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
+  }
+
   // Extract numeric values with indices
   let mut keyed: Vec<(f64, Expr)> = Vec::new();
   for item in items {
-    if let Some(v) = expr_to_f64(item) {
+    if let Some(v) = take_expr_to_f64(item) {
       keyed.push((v, item.clone()));
     } else {
       return Ok(Expr::FunctionCall {
@@ -414,9 +439,8 @@ pub fn take_largest_ast(
   keyed
     .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-  let take = (n as usize).min(keyed.len());
   let result: Vec<Expr> =
-    keyed.into_iter().take(take).map(|(_, e)| e).collect();
+    keyed.into_iter().take(n as usize).map(|(_, e)| e).collect();
 
   Ok(Expr::List(result))
 }
@@ -436,10 +460,17 @@ pub fn take_smallest_ast(
     }
   };
 
+  if n as usize > items.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeSmallest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
+  }
+
   // Extract numeric values with indices
   let mut keyed: Vec<(f64, Expr)> = Vec::new();
   for item in items {
-    if let Some(v) = expr_to_f64(item) {
+    if let Some(v) = take_expr_to_f64(item) {
       keyed.push((v, item.clone()));
     } else {
       return Ok(Expr::FunctionCall {
@@ -452,9 +483,8 @@ pub fn take_smallest_ast(
   keyed
     .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-  let take = (n as usize).min(keyed.len());
   let result: Vec<Expr> =
-    keyed.into_iter().take(take).map(|(_, e)| e).collect();
+    keyed.into_iter().take(n as usize).map(|(_, e)| e).collect();
 
   Ok(Expr::List(result))
 }
