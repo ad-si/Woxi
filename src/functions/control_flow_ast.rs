@@ -91,8 +91,11 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             continue;
           }
           _ => {
-            // Symbolic condition — can't evaluate
+            // Symbolic condition — can't evaluate.
+            // We must stop here: later True branches may not be
+            // reachable if this condition turns out to be True.
             has_symbolic = true;
+            break;
           }
         }
       }
