@@ -6101,4 +6101,61 @@ mod tally_with_test {
       "{{a, 3}, {b, 2}, {c, 1}}"
     );
   }
+
+  #[test]
+  fn ratios_basic() {
+    assert_eq!(interpret("Ratios[{1, 2, 4, 8}]").unwrap(), "{2, 2, 2}");
+  }
+
+  #[test]
+  fn ratios_symbolic() {
+    assert_eq!(
+      interpret("Ratios[{a, b, c, d}]").unwrap(),
+      "{b/a, c/b, d/c}"
+    );
+  }
+
+  #[test]
+  fn ratios_empty() {
+    assert_eq!(interpret("Ratios[{}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn ratios_single_element() {
+    assert_eq!(interpret("Ratios[{5}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn ratios_iterated_second_arg() {
+    // Ratios[list, n] applies Ratios n times.
+    assert_eq!(interpret("Ratios[{1, 2, 4, 8}, 2]").unwrap(), "{1, 1}");
+  }
+
+  #[test]
+  fn ratios_iterated_three() {
+    assert_eq!(interpret("Ratios[{1, 2, 4, 8, 16}, 3]").unwrap(), "{1, 1}");
+  }
+
+  #[test]
+  fn ratios_iterated_symbolic() {
+    assert_eq!(
+      interpret("Ratios[{a, b, c, d, e}, 2]").unwrap(),
+      "{(a*c)/b^2, (b*d)/c^2, (c*e)/d^2}"
+    );
+  }
+
+  #[test]
+  fn ratios_iterated_zero() {
+    // Ratios[list, 0] returns the original list.
+    assert_eq!(interpret("Ratios[{1, 2, 3}, 0]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn ratios_non_list_head() {
+    // Ratios only works on List; other heads return unevaluated.
+    assert_eq!(
+      interpret("Ratios[f[a, b, c]]").unwrap(),
+      "Ratios[f[a, b, c]]"
+    );
+  }
 }
