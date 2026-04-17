@@ -545,6 +545,18 @@ pub fn evaluate_expr_to_expr_inner(
           evaluated.extend(args.iter().cloned());
           continue;
         }
+        // Flatten Splice in lists: Splice[{...}] (1-arg, default List head)
+        // or Splice[{...}, List] (explicit List head)
+        if let Expr::FunctionCall { name, args } = &val
+          && name == "Splice"
+          && (args.len() == 1
+            || (args.len() == 2
+              && matches!(&args[1], Expr::Identifier(h) if h == "List")))
+          && let Expr::List(splice_items) = &args[0]
+        {
+          evaluated.extend(splice_items.iter().cloned());
+          continue;
+        }
         evaluated.push(val);
       }
       Ok(Expr::List(evaluated))
