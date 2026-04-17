@@ -24,6 +24,7 @@ pub fn partition_ast(
   list: &Expr,
   n: i128,
   d: Option<i128>,
+  pad: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
@@ -54,6 +55,34 @@ pub fn partition_ast(
   while i + n_usize <= items.len() {
     results.push(Expr::List(items[i..i + n_usize].to_vec()));
     i += d_usize;
+  }
+
+  // Handle overhang: if pad is Some, include the remaining elements
+  if pad.is_some() && i < items.len() {
+    let remaining = &items[i..];
+    match pad {
+      Some(Expr::List(pad_elems)) if pad_elems.is_empty() => {
+        // {} means allow short sublists (no padding)
+        results.push(Expr::List(remaining.to_vec()));
+      }
+      Some(pad_expr) => {
+        // Pad with the given element(s) to fill to size n
+        let mut chunk = remaining.to_vec();
+        let pad_items: Vec<Expr> = match pad_expr {
+          Expr::List(items) => items.clone(),
+          other => vec![other.clone()],
+        };
+        if !pad_items.is_empty() {
+          let mut pad_idx = 0;
+          while chunk.len() < n_usize {
+            chunk.push(pad_items[pad_idx % pad_items.len()].clone());
+            pad_idx += 1;
+          }
+        }
+        results.push(Expr::List(chunk));
+      }
+      None => unreachable!(),
+    }
   }
 
   Ok(Expr::List(results))

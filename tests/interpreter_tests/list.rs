@@ -1189,6 +1189,58 @@ mod complement {
   }
 }
 
+mod partition {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5, 6}, 2]").unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}}"
+    );
+  }
+
+  #[test]
+  fn with_offset() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 3, 1]").unwrap(),
+      "{{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn overhang_short_sublists() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5, 6, 7}, 3, 3, {1, 1}, {}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}, {7}}"
+    );
+  }
+
+  #[test]
+  fn overhang_with_padding() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 2, 2, {1, 1}, x]").unwrap(),
+      "{{1, 2}, {3, 4}, {5, x}}"
+    );
+  }
+
+  #[test]
+  fn overhang_no_remainder() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4}, 2, 2, {1, 1}, {}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn drops_incomplete_without_overhang() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+}
+
 mod symmetric_difference {
   use super::*;
 

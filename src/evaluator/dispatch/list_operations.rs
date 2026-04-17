@@ -560,19 +560,34 @@ pub fn dispatch_list_operations(
         } else {
           None
         };
-        return Some(list_helpers_ast::partition_ast(&args[1], n, d).and_then(
-          |partitioned| list_helpers_ast::map_ast(&args[0], &partitioned),
-        ));
+        return Some(
+          list_helpers_ast::partition_ast(&args[1], n, d, None).and_then(
+            |partitioned| list_helpers_ast::map_ast(&args[0], &partitioned),
+          ),
+        );
       }
     }
-    "Partition" if args.len() == 2 || args.len() == 3 => {
+    "Partition" if args.len() >= 2 && args.len() <= 5 => {
       if let Some(n) = expr_to_i128(&args[1]) {
-        let d = if args.len() == 3 {
+        let d = if args.len() >= 3 {
           expr_to_i128(&args[2])
         } else {
           None
         };
-        return Some(list_helpers_ast::partition_ast(&args[0], n, d));
+        // args[3] is alignment spec ({1,1} = default), args[4] is pad element
+        let pad = if args.len() == 5 {
+          Some(&args[4])
+        } else if args.len() == 4 {
+          // 4 args: Partition[list, n, d, pad] where pad element
+          // is implicitly {} when only alignment is given
+          // In Wolfram, 4-arg form is Partition[list, n, d, {kL, kR}]
+          // We don't fully support alignment yet, but treat 4-arg
+          // as having no overhang for now
+          None
+        } else {
+          None
+        };
+        return Some(list_helpers_ast::partition_ast(&args[0], n, d, pad));
       }
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
