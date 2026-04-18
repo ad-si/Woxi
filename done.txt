@@ -2203,3 +2203,11 @@ INPUT: f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}
 EXPECTED:
 = {{a}, {b, c, d}} (matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/__init__.py
+CLASS: None
+LINE: 19
+TYPE: >>
+INPUT: f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}
+EXPECTED:
+= {a, {b, c, d}} (matches wolframscript)
+---
