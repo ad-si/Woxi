@@ -2107,3 +2107,11 @@ INPUT: Solve[x^2 == -1, x, Complexes]
 EXPECTED:
 = {{x -> -I}, {x -> I}} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2328
+TYPE: >>
+INPUT: Solve[4 - 4 * x^2 - x^4 + x^6 == 0, x, Integers]
+EXPECTED:
+= {{x -> -1}, {x -> 1}} (matches wolframscript)
+---

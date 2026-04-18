@@ -5578,14 +5578,6 @@ EXPECTED:
 : Equations may not give solutions for all "solve" variables.
 = {{x -> -1, z -> -I}, {x -> -1, z -> I}, {x -> 1, z -> -I}, {x -> 1, z -> I}}
 ---
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2328
-TYPE: >>
-INPUT: Solve[4 - 4 * x^2 - x^4 + x^6 == 0, x, Integers]
-EXPECTED:
-= {{x -> -1}, {x -> 1}}
----
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Catalan
