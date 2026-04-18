@@ -526,7 +526,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KroneckerProduct" => Some((2, 2)),
     "KroneckerSymbol" => Some((2, 2)),
     "Kurtosis" => Some((1, 1)),
-    "LaguerreL" => Some((2, 2)),
+    "LaguerreL" => Some((2, 3)),
     "LaplaceDistribution" => Some((2, 2)),
     "LambertW" => Some((1, 2)),
     "LaplaceTransform" => Some((3, 3)),

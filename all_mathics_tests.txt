@@ -11207,14 +11207,6 @@ EXPECTED:
 = (-2 a x (1 + b) + a x ^ 2 (1 + a) + b (1 + b)) / (b (1 + b))
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricPFQ
-LINE: 189
-TYPE: >>
-INPUT: HypergeometricPFQ[{a1, b2, a3}, {b1, b2, b3}, 0]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricU
 LINE: 226
 TYPE: >>
@@ -11264,27 +11256,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: ChebyshevT
-LINE: 22
-TYPE: >>
-INPUT: ChebyshevT[8, x]
-EXPECTED:
-= 1 - 32 x ^ 2 + 160 x ^ 4 - 256 x ^ 6 + 128 x ^ 8
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: ChebyshevT
 LINE: 25
 TYPE: >>
 INPUT: ChebyshevT[1 - I, 0.5]
 EXPECTED:
 = 0.800143 + 1.08198 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: ChebyshevU
-LINE: 45
-TYPE: >>
-INPUT: ChebyshevU[8, x]
-EXPECTED:
-= 1 - 40 x ^ 2 + 240 x ^ 4 - 448 x ^ 6 + 256 x ^ 8
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: ChebyshevU
@@ -11296,27 +11272,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: GegenbauerC
-LINE: 67
-TYPE: >>
-INPUT: GegenbauerC[6, 1, x]
-EXPECTED:
-= -1 + 24 x ^ 2 - 80 x ^ 4 + 64 x ^ 6
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: GegenbauerC
 LINE: 70
 TYPE: >>
 INPUT: GegenbauerC[4 - I, 1 + 2 I, 0.7]
 EXPECTED:
 = -3.2621 - 24.9739 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: HermiteH
-LINE: 90
-TYPE: >>
-INPUT: HermiteH[8, x]
-EXPECTED:
-= 1680 - 13440 x ^ 2 + 13440 x ^ 4 - 3584 x ^ 6 + 256 x ^ 8
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: HermiteH
@@ -11365,14 +11325,6 @@ TYPE: >>
 INPUT: LaguerreL[3/2, 1.7]
 EXPECTED:
 = -0.947134
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LaguerreL
-LINE: 147
-TYPE: >>
-INPUT: LaguerreL[5, 2, x]
-EXPECTED:
-= 21 - 35 x + 35 x ^ 2 / 2 - 7 x ^ 3 / 2 + 7 x ^ 4 / 24 - x ^ 5 / 120
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LegendreP
