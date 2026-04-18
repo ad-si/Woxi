@@ -1517,3 +1517,11 @@ INPUT: Position[{1 + x^2, x y ^ 2,  4 y,  x ^ z}, x^_]
 EXPECTED:
 = {{1, 2}, {4}}
 ---
+FILE: mathics/builtin/atomic/atomic.py
+CLASS: AtomQ
+LINE: 27
+TYPE: >>
+INPUT: Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]
+EXPECTED:
+= {True, True, True, True, True}
+---
