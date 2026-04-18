@@ -1169,3 +1169,43 @@ INPUT: VectorAngle[{1, 1, 0}, {1, 0, 1}]
 EXPECTED:
 = Pi / 3
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: StringExpression
+LINE: 234
+TYPE: >>
+INPUT: "a" ~~ "b" // FullForm
+EXPECTED:
+= "ab"
+---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileBaseName
+LINE: 419
+TYPE: >>
+INPUT: FileBaseName["file.txt"]
+EXPECTED:
+= file
+---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileBaseName
+LINE: 422
+TYPE: >>
+INPUT: FileBaseName["file.tar.gz"]
+EXPECTED:
+= file.tar
+---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileExtension
+LINE: 532
+TYPE: >>
+INPUT: FileExtension["file.txt"]
+EXPECTED:
+= txt
+---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileExtension
+LINE: 535
+TYPE: >>
+INPUT: FileExtension["file.tar.gz"]
+EXPECTED:
+= gz
+---

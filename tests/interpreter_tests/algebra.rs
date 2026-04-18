@@ -756,6 +756,14 @@ mod collect_tests {
   }
 
   #[test]
+  fn collect_with_head() {
+    assert_eq!(
+      interpret("Collect[a x + b x + c, x, h]").unwrap(),
+      "h[c] + x*h[a + b]"
+    );
+  }
+
+  #[test]
   fn collect_two_variables_shared_factor_ascending_powers() {
     // Regression: when collecting by {x, y} and every grouped term shares
     // the y factor, terms should be ordered by ascending power of x and

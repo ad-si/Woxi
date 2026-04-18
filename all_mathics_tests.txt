@@ -3260,22 +3260,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileBaseName
-LINE: 419
-TYPE: >>
-INPUT: FileBaseName["file.txt"]
-EXPECTED:
-= file
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileBaseName
-LINE: 422
-TYPE: >>
-INPUT: FileBaseName["file.tar.gz"]
-EXPECTED:
-= file.tar
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileByteCount
 LINE: 448
 TYPE: >>
@@ -3298,22 +3282,6 @@ TYPE: >>
 INPUT: FileExistsQ["ExampleData/sunflowers.png"]
 EXPECTED:
 = False
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileExtension
-LINE: 532
-TYPE: >>
-INPUT: FileExtension["file.txt"]
-EXPECTED:
-= txt
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileExtension
-LINE: 535
-TYPE: >>
-INPUT: FileExtension["file.tar.gz"]
-EXPECTED:
-= gz
 ---
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileInformation
@@ -4658,14 +4626,6 @@ TYPE: >>
 INPUT: StringCases["abba", {"a" -> 10, "b" -> 20}, 2]
 EXPECTED:
 = {10, 20}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: StringExpression
-LINE: 234
-TYPE: >>
-INPUT: "a" ~~ "b" // FullForm
-EXPECTED:
-= "ab"
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: WordBoundary

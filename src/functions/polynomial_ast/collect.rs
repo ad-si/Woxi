@@ -11,11 +11,19 @@ use crate::functions::polynomial_ast::expand::is_sum;
 
 /// Collect[expr, x] - Collects terms by powers of x
 pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Collect expects exactly 2 arguments".into(),
+      "Collect expects 2 or 3 arguments".into(),
     ));
   }
+
+  // Extract optional head function (3rd argument)
+  let head = if args.len() == 3 {
+    Some(&args[2])
+  } else {
+    None
+  };
+
   // Handle list of variables: Collect[expr, {x, y, ...}]
   // Collects by first variable, then recursively collects each coefficient by remaining.
   if let Expr::List(vars) = &args[1] {
@@ -23,12 +31,26 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(args[0].clone());
     }
     if vars.len() == 1 {
-      return collect_ast(&[args[0].clone(), vars[0].clone()]);
+      let mut call = vec![args[0].clone(), vars[0].clone()];
+      if let Some(h) = head {
+        call.push(h.clone());
+      }
+      return collect_ast(&call);
     }
-    // Collect by first variable
-    let first_collected = collect_ast(&[args[0].clone(), vars[0].clone()])?;
-    // For each coefficient sub-expression, recursively collect by remaining vars
+    // Collect by first variable, then recursively by remaining
+    // For multi-variable collect with head, apply head at the innermost level
+    let first_call = vec![args[0].clone(), vars[0].clone()];
+    let first_collected = collect_ast(&first_call)?;
     let remaining = Expr::List(vars[1..].to_vec());
+    // Pass head to the inner collect via collect_in_coefficients
+    if let Some(h) = head {
+      return collect_in_coefficients_with_head(
+        &first_collected,
+        &vars[0],
+        &remaining,
+        h,
+      );
+    }
     return collect_in_coefficients(&first_collected, &vars[0], &remaining);
   }
   let var = match &args[1] {
@@ -77,6 +99,21 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&combined_coeff, Expr::Integer(0)) {
       continue;
     }
+
+    // Apply head function to coefficient if provided
+    let combined_coeff = if let Some(h) = head {
+      let wrapped = Expr::FunctionCall {
+        name: if let Expr::Identifier(n) = h {
+          n.clone()
+        } else {
+          crate::syntax::expr_to_string(h)
+        },
+        args: vec![combined_coeff],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&wrapped).unwrap_or(wrapped)
+    } else {
+      combined_coeff
+    };
 
     let var_part = if power == 0 {
       None
@@ -417,4 +454,83 @@ fn flatten_product_factors_collect(expr: &Expr, out: &mut Vec<Expr>) {
     }
     _ => out.push(expr.clone()),
   }
+}
+
+/// Like collect_in_coefficients but passes a head function to the inner collect calls
+fn collect_in_coefficients_with_head(
+  expr: &Expr,
+  collected_var: &Expr,
+  remaining_vars: &Expr,
+  head: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let var_str = match collected_var {
+    Expr::Identifier(s) => s.as_str(),
+    _ => return Ok(expr.clone()),
+  };
+
+  let expanded = expand_and_combine(expr);
+  let terms = collect_additive_terms(&expanded);
+
+  let mut power_groups: Vec<(i128, Vec<Expr>)> = Vec::new();
+  for term in &terms {
+    let (power, coeff) = term_var_power_and_coeff(term, var_str);
+    if let Some(entry) = power_groups.iter_mut().find(|(p, _)| *p == power) {
+      entry.1.push(coeff);
+    } else {
+      power_groups.push((power, vec![coeff]));
+    }
+  }
+
+  power_groups.sort_by_key(|(p, _)| *p);
+
+  let mut result_terms = Vec::new();
+  for (power, coeffs) in power_groups {
+    let combined = if coeffs.len() == 1 {
+      coeffs.into_iter().next().unwrap()
+    } else {
+      coeffs
+        .into_iter()
+        .reduce(|a, b| add_exprs(&a, &b))
+        .unwrap_or(Expr::Integer(0))
+    };
+
+    // Recursively collect with head
+    let collected_coeff =
+      collect_ast(&[combined, remaining_vars.clone(), head.clone()])?;
+
+    if matches!(&collected_coeff, Expr::Integer(0)) {
+      continue;
+    }
+
+    let var_part = if power == 0 {
+      None
+    } else if power == 1 {
+      Some(collected_var.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(collected_var.clone()),
+        right: Box::new(Expr::Integer(power)),
+      })
+    };
+
+    let rebuilt = match (collected_coeff, var_part) {
+      (c, None) => c,
+      (Expr::Integer(1), Some(v)) => v,
+      (c, Some(v)) => multiply_exprs(&c, &v),
+    };
+    result_terms.push(rebuilt);
+  }
+
+  if result_terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  if result_terms.len() == 1 {
+    return Ok(result_terms.into_iter().next().unwrap());
+  }
+  let result = result_terms
+    .into_iter()
+    .reduce(|a, b| add_exprs(&a, &b))
+    .unwrap();
+  Ok(result)
 }
