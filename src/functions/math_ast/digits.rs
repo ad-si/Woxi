@@ -1782,3 +1782,43 @@ fn make_rational_expr(num: i128, den: i128) -> Expr {
 fn gcd_convergents(a: i128, b: i128) -> i128 {
   if b == 0 { a } else { gcd_convergents(b, a % b) }
 }
+
+/// NumberDigit[x, n] — returns the digit at position n of a real number x.
+/// Position 0 is the ones digit, positive n goes left (tens, hundreds, ...),
+/// negative n goes right (tenths, hundredths, ...).
+pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NumberDigit expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let val = match &args[0] {
+    Expr::Integer(n) => *n as f64,
+    Expr::Real(f) => *f,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NumberDigit".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let pos = match expr_to_i128(&args[1]) {
+    Some(n) => n,
+    None => {
+      return Err(InterpreterError::EvaluationError(
+        "NumberDigit: position must be an integer".into(),
+      ));
+    }
+  };
+
+  let abs_val = val.abs();
+
+  // Shift the number so the desired digit is in the ones place,
+  // then extract it: floor(abs_val / 10^pos) % 10
+  let factor = 10f64.powi(pos as i32);
+  let digit = ((abs_val / factor).floor() as i128) % 10;
+
+  Ok(Expr::Integer(digit))
+}

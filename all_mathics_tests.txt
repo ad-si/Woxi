@@ -8196,22 +8196,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: NumberDigit
-LINE: 313
-TYPE: >>
-INPUT: NumberDigit[210.345, 2]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: NumberDigit
-LINE: 317
-TYPE: >>
-INPUT: NumberDigit[210.345, -1]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: NumberDigit
 LINE: 320
 TYPE: >>
 INPUT: BaseForm[N[Pi], 2]

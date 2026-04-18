@@ -1645,3 +1645,19 @@ INPUT: SplitBy[{1, 2, 1, 1.2}, {Round, Identity}]
 EXPECTED:
 = {{{1}}, {{2}}, {{1}, {1.2}}}
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: NumberDigit
+LINE: 313
+TYPE: >>
+INPUT: NumberDigit[210.345, 2]
+EXPECTED:
+= 2
+---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: NumberDigit
+LINE: 317
+TYPE: >>
+INPUT: NumberDigit[210.345, -1]
+EXPECTED:
+= 3
+---

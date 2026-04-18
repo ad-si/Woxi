@@ -2842,3 +2842,21 @@ mod real_digits_base {
     assert_eq!(interpret("RealDigits[0]").unwrap(), "{{0}, 1}");
   }
 }
+
+mod number_digit {
+  use super::*;
+
+  #[test]
+  fn positive_position() {
+    assert_eq!(interpret("NumberDigit[210.345, 2]").unwrap(), "2");
+    assert_eq!(interpret("NumberDigit[210.345, 1]").unwrap(), "1");
+    assert_eq!(interpret("NumberDigit[210.345, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_position() {
+    assert_eq!(interpret("NumberDigit[210.345, -1]").unwrap(), "3");
+    assert_eq!(interpret("NumberDigit[210.345, -2]").unwrap(), "4");
+    assert_eq!(interpret("NumberDigit[210.345, -3]").unwrap(), "5");
+  }
+}
