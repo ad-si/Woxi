@@ -226,6 +226,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       .or_else(|_| std::env::var("USERNAME"))
       .ok()
       .map(Expr::String),
+    "$VersionNumber" => Some(Expr::Real(14.3)),
     "$SystemID" => {
       // Match wolframscript's SystemID format: e.g. "MacOSX-ARM64", "Linux-x86-64"
       let os = if cfg!(target_os = "macos") {

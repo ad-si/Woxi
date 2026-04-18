@@ -320,6 +320,11 @@ mod precision {
       "2"
     );
   }
+
+  #[test]
+  fn version_number() {
+    assert_eq!(interpret("$VersionNumber").unwrap(), "14.3");
+  }
 }
 
 mod accuracy {
