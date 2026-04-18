@@ -323,7 +323,11 @@ mod precision {
 
   #[test]
   fn version_number() {
-    assert_eq!(interpret("$VersionNumber").unwrap(), "14.3");
+    // $VersionNumber should return the git-describe output of the Woxi repo
+    // (e.g. "v0.1.0-1234-gabcdef" or similar). Just check it's non-empty.
+    let result = interpret("$VersionNumber").unwrap();
+    assert!(!result.is_empty());
+    assert_ne!(result, "$VersionNumber");
   }
 }
 
