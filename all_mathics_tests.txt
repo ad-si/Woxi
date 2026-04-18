@@ -863,14 +863,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/exp_structure/general.py
-CLASS: FreeQ
-LINE: 100
-TYPE: >>
-INPUT: FreeQ[a+b+c, x_+y_+z_]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/exp_structure/general.py
 CLASS: Null
 LINE: 216
 TYPE: >>

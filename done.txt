@@ -1931,3 +1931,11 @@ INPUT: PolyGamma[3, 5]
 EXPECTED:
 = 6*(-22369/20736 + Pi^4/90) (matches wolframscript, not mathics)
 ---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: FreeQ
+LINE: 100
+TYPE: >>
+INPUT: FreeQ[a+b+c, x_+y_+z_]
+EXPECTED:
+= False
+---

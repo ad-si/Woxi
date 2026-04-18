@@ -1238,6 +1238,26 @@ mod free_q {
   fn free_q_with_string_pattern_true() {
     assert_eq!(interpret("FreeQ[{1, 2, 3}, _String]").unwrap(), "True");
   }
+
+  #[test]
+  fn free_q_with_nested_pattern_in_plus() {
+    // The form is Plus[x_, y_, z_] — a FunctionCall containing patterns.
+    // FreeQ must detect the nested pattern and do pattern matching.
+    assert_eq!(
+      interpret("FreeQ[a+b+c, x_+y_+z_]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn free_q_with_nested_pattern_no_match() {
+    // Pattern with 4 blanks can't match Plus with 3 operands (non-Flat
+    // pattern matching). The expression is free of the pattern.
+    assert_eq!(
+      interpret("FreeQ[a+b, x_+y_+z_+w_]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod select_first {

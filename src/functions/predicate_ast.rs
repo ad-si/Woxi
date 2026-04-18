@@ -926,24 +926,44 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Detect if the form is a pattern (contains Blank, Pattern, etc.)
-  let use_pattern = matches!(
-    form,
-    Expr::Pattern { .. }
-      | Expr::PatternTest { .. }
-      | Expr::PatternOptional { .. }
-  ) || matches!(form, Expr::FunctionCall { name, .. }
+  // Detect if the form is or contains a pattern (Blank, Pattern, etc.)
+  fn contains_pattern(form: &Expr) -> bool {
+    if matches!(
+      form,
+      Expr::Pattern { .. }
+        | Expr::PatternTest { .. }
+        | Expr::PatternOptional { .. }
+    ) {
+      return true;
+    }
+    if matches!(form, Expr::FunctionCall { name, .. }
       if name == "Blank" || name == "BlankSequence" || name == "BlankNullSequence"
         || name == "Alternatives" || name == "Repeated" || name == "RepeatedNull"
         || name == "Pattern" || name == "Except" || name == "Condition"
         || name == "PatternTest"
-  ) || matches!(
-    form,
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
-      ..
+    ) {
+      return true;
     }
-  );
+    if matches!(
+      form,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Alternatives,
+        ..
+      }
+    ) {
+      return true;
+    }
+    match form {
+      Expr::FunctionCall { args, .. } => args.iter().any(contains_pattern),
+      Expr::BinaryOp { left, right, .. } => {
+        contains_pattern(left) || contains_pattern(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_pattern(operand),
+      Expr::List(items) => items.iter().any(contains_pattern),
+      _ => false,
+    }
+  }
+  let use_pattern = contains_pattern(form);
 
   Ok(bool_expr(!contains_form(
     &args[0],
