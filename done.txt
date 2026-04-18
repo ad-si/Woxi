@@ -1685,3 +1685,11 @@ INPUT: ArcTan[1, 1]
 EXPECTED:
 = Pi / 4
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: ToString
+LINE: 869
+TYPE: >>
+INPUT: ToString[2] // InputForm
+EXPECTED:
+= "2"
+---

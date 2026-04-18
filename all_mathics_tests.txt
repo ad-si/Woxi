@@ -8541,14 +8541,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: ToString
-LINE: 869
-TYPE: >>
-INPUT: ToString[2] // InputForm
-EXPECTED:
-= "2"
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: ToString
 LINE: 873
 TYPE: >>
 INPUT: "U" <> 2
