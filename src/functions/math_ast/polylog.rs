@@ -14,6 +14,25 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let s_expr = &args[0];
   let z_expr = &args[1];
 
+  // PolyLog[s, 0] = 0 for any s
+  if matches!(z_expr, Expr::Integer(0)) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // PolyLog[s, 1] = Zeta[s] for s with Re(s) > 1 or symbolic s
+  // (For integer s <= 1, the specialized handlers below deal with poles)
+  if matches!(z_expr, Expr::Integer(1)) {
+    // Only apply for symbolic s or integer s >= 2
+    let is_small_int = matches!(s_expr, Expr::Integer(n) if *n <= 1);
+    if !is_small_int {
+      let zeta_expr = Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: vec![s_expr.clone()],
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&zeta_expr);
+    }
+  }
+
   match s_expr {
     Expr::Integer(s) => {
       return polylog_integer_s(*s, z_expr, args);

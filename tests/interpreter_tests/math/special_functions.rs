@@ -866,6 +866,12 @@ mod polylog {
   }
 
   #[test]
+  fn symbolic_s_at_one() {
+    // PolyLog[s, 1] = Zeta[s] for symbolic s
+    assert_eq!(interpret("PolyLog[s, 1]").unwrap(), "Zeta[s]");
+  }
+
+  #[test]
   fn numeric_real() {
     let result: f64 = interpret("PolyLog[2, 0.5]").unwrap().parse().unwrap();
     assert!((result - 0.5822405264650125).abs() < 1e-8);

@@ -5446,30 +5446,6 @@ EXPECTED:
 = Log[1048576]
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: FullSimplify
-LINE: 1662
-TYPE: >>
-INPUT: FullSimplify[2*Sin[x]^2 + 2*Cos[x]^2]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: MinimalPolynomial
-LINE: 1686
-TYPE: >>
-INPUT: MinimalPolynomial[7, x]
-EXPECTED:
-= -7 + x
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: MinimalPolynomial
-LINE: 1688
-TYPE: >>
-INPUT: MinimalPolynomial[Sqrt[2] + Sqrt[3], x]
-EXPECTED:
-= 1 - 10 x ^ 2 + x ^ 4
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: MinimalPolynomial
 LINE: 1690
 TYPE: >>
@@ -10206,22 +10182,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1109
-TYPE: >>
-INPUT: {1, 2, 3, 4}[[2;;4]]
-EXPECTED:
-= {2, 3, 4}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
-LINE: 1111
-TYPE: >>
-INPUT: {1, 2, 3, 4}[[2;;-1]]
-EXPECTED:
-= {2, 3, 4}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1120
 TYPE: >>
 INPUT: B[[;;, 2]]
@@ -11704,27 +11664,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/zeta.py
 CLASS: PolyLog
-LINE: 80
-TYPE: >>
-INPUT: PolyLog[s, 1]
-EXPECTED:
-= Zeta[s]
----
-FILE: mathics/builtin/specialfns/zeta.py
-CLASS: PolyLog
 LINE: 82
 TYPE: >>
 INPUT: PolyLog[-7, I] //Chop
 EXPECTED:
 = 136.
----
-FILE: mathics/builtin/specialfns/zeta.py
-CLASS: Zeta
-LINE: 114
-TYPE: >>
-INPUT: Zeta[2]
-EXPECTED:
-= Pi ^ 2 / 6
 ---
 FILE: mathics/builtin/specialfns/zeta.py
 CLASS: Zeta
