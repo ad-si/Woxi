@@ -430,6 +430,7 @@ function runWolframBatch(
       encoding: "utf-8",
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
+      killSignal: "SIGKILL", // SIGTERM is ignored by wolframscript during computation
     });
   } catch (err: any) {
     throw new Error(err.stderr || err.message || "wolframscript batch failed");
@@ -529,6 +530,7 @@ function main() {
     /\bIndexGraph\[/,       // Returns Graph object (edge list vs SparseArray representation)
     /\bConnectedGraphComponents\[/, // Returns Graph objects (edge list vs SparseArray representation)
     /\bFindSpanningTree\[/, // Wolfram uses SparseArray internal Graph representation
+    /\bMersennePrimeExponent\[/, // Woxi uses a lookup table; Wolfram computes primality of 2^p-1 which hangs for large indices
     /\bStationaryDistribution\[/, // Complex computation, Woxi keeps as inert wrapper
     /\bDatedUnit\[/,        // Version-specific evaluation behavior
     /\bVoronoiMesh\[/,      // Different bounding box and vertex coordinates
