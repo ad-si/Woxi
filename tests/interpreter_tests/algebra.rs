@@ -681,6 +681,22 @@ mod expand_modulus {
       "1 + a^3"
     );
   }
+
+  #[test]
+  fn trig_sin_sum() {
+    assert_eq!(
+      interpret("Expand[Sin[x + y], Trig -> True]").unwrap(),
+      "Cos[y]*Sin[x] + Cos[x]*Sin[y]"
+    );
+  }
+
+  #[test]
+  fn trig_tanh_sum() {
+    assert_eq!(
+      interpret("Expand[Tanh[x + y], Trig -> True]").unwrap(),
+      "(Cosh[y]*Sinh[x])/(Cosh[x]*Cosh[y] + Sinh[x]*Sinh[y]) + (Cosh[x]*Sinh[y])/(Cosh[x]*Cosh[y] + Sinh[x]*Sinh[y])"
+    );
+  }
 }
 
 mod expand_all {
