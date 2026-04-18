@@ -1041,6 +1041,9 @@ pub fn dispatch_math_functions(
     "InverseErf" if args.len() == 1 => {
       return Some(crate::functions::math_ast::inverse_erf_ast(args));
     }
+    "InverseErfc" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::inverse_erfc_ast(args));
+    }
     "Log" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::log_ast(args));
     }

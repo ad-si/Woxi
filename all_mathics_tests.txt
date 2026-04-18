@@ -4831,14 +4831,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Cancel
-LINE: 436
-TYPE: >>
-INPUT: Cancel[f[x] / x + x * f[x] / x ^ 2]
-EXPECTED:
-= 2 f[x] / x
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Cancel
 LINE: 440
 TYPE: >>
 INPUT: a == "A" // Cancel // InputForm
@@ -5668,30 +5660,6 @@ TYPE: >>
 INPUT: O[x] // FullForm
 EXPECTED:
 = SeriesData[x, 0, {}, 1, 1, 1]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Reals
-LINE: 1631
-TYPE: >>
-INPUT: Solve[x^3 == 1, x, Reals]
-EXPECTED:
-= {{x -> 1}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Root
-LINE: 1648
-TYPE: >>
-INPUT: Root[#1 ^ 2 - 1&, 1]
-EXPECTED:
-= -1
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Root
-LINE: 1650
-TYPE: >>
-INPUT: Root[#1 ^ 2 - 1&, 2]
-EXPECTED:
-= 1
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Root
@@ -10580,14 +10548,6 @@ TYPE: >>
 INPUT: InverseErf /@ {0.9, 1.0, 1.1}
 EXPECTED:
 = {1.16309, Infinity, InverseErf[1.1]}
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: InverseErfc
-LINE: 220
-TYPE: >>
-INPUT: InverseErfc /@ {0, 1, 2}
-EXPECTED:
-= {Infinity, 0, -Infinity}
 ---
 FILE: mathics/builtin/specialfns/expintegral.py
 CLASS: ProductLog

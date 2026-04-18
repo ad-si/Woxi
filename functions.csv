@@ -2155,7 +2155,7 @@ RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,Non
 WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8.0,2197
 ProbabilityPlot,Creates a probability plot for assessing data distribution fit,🚫,None,8.0,2198
 Gradient,Symbolic gradient operator,🚫,None,2.2,2203
-InverseErfc,Inverse complementary error function,🚫,None,3.0,2203
+InverseErfc,Inverse complementary error function,✅,pure,3.0,2203
 PlotLayout,Option specifying the layout arrangement of multiple plots,🚫,None,8.0,2203
 ReflectionMatrix,Gives the reflection matrix for a normal vector,✅,None,6.0,2203
 TTest,Performs a Student t-test for statistical hypothesis testing,🚫,None,8.0,2203

@@ -1468,6 +1468,45 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// InverseErfc[x] — inverse complementary error function
+/// InverseErfc[x] = InverseErf[1 - x]
+pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseErfc expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // InverseErfc[0] = Infinity
+    Expr::Integer(0) => Ok(Expr::Identifier("Infinity".to_string())),
+    // InverseErfc[1] = 0
+    Expr::Integer(1) => Ok(Expr::Integer(0)),
+    // InverseErfc[2] = -Infinity
+    Expr::Integer(2) => Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::Identifier("Infinity".to_string())),
+    }),
+    // Numeric evaluation for Real arguments in (0, 2)
+    Expr::Real(f) => {
+      if *f > 0.0 && *f < 2.0 {
+        // InverseErfc[x] = InverseErf[1 - x]
+        Ok(Expr::Real(
+          crate::functions::math_ast::numeric_utils::inverse_erf_f64(1.0 - *f),
+        ))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "InverseErfc".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "InverseErfc".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")

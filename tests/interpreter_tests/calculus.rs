@@ -1271,6 +1271,14 @@ mod erf {
   }
 
   #[test]
+  fn inverse_erfc_special_values() {
+    assert_eq!(
+      interpret("InverseErfc /@ {0, 1, 2}").unwrap(),
+      "{Infinity, 0, -Infinity}"
+    );
+  }
+
+  #[test]
   fn d_erf_x() {
     // D[Erf[x], x] = 2/(E^(x^2)*Sqrt[Pi]) — tests denominator formatting
     assert_eq!(interpret("D[Erf[x],x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
