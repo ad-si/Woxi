@@ -1955,3 +1955,11 @@ INPUT: PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/testing_expressions/expression_tests.py
+CLASS: PatternsOrderedQ
+LINE: 160
+TYPE: >>
+INPUT: PatternsOrderedQ[b, a]
+EXPECTED:
+= PatternsOrderedQ[b, a] (matches wolframscript; mathics expected True)
+---
