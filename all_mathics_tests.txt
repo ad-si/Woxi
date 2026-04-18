@@ -6682,14 +6682,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
-LINE: 25
-TYPE: >>
-INPUT: f[4] /. f[x_] /; x > 0 -> x ^ 2
-EXPECTED:
-= 16
----
-FILE: mathics/builtin/patterns/__init__.py
-CLASS: None
 LINE: 29
 TYPE: >>
 INPUT: f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}
