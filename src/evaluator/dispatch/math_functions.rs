@@ -1029,7 +1029,7 @@ pub fn dispatch_math_functions(
     "Exp" if args.len() == 1 => {
       return Some(crate::functions::math_ast::exp_ast(args));
     }
-    "Erf" if args.len() == 1 => {
+    "Erf" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::erf_ast(args));
     }
     "Erfc" if args.len() == 1 => {

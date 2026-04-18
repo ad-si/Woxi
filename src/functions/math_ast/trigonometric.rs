@@ -1122,10 +1122,39 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Erf expects 1 argument".into(),
+      "Erf expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // Two-argument form: Erf[z0, z1] = Erf[z1] - Erf[z0]
+  if args.len() == 2 {
+    // Erf[0, z] = Erf[z]
+    if matches!(&args[0], Expr::Integer(0)) {
+      return erf_ast(&args[1..]);
+    }
+    // Erf[z, 0] = -Erf[z]
+    if matches!(&args[1], Expr::Integer(0)) {
+      let erf_z0 = erf_ast(&args[..1])?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(erf_z0),
+      });
+    }
+    // Numeric: both are real
+    if let (Expr::Real(f0), Expr::Real(f1)) = (&args[0], &args[1]) {
+      return Ok(Expr::Real(erf_f64(*f1) - erf_f64(*f0)));
+    }
+    // General case: Erf[z1] - Erf[z0]
+    let erf_z0 = erf_ast(&[args[0].clone()])?;
+    let erf_z1 = erf_ast(&[args[1].clone()])?;
+    let diff = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(erf_z1),
+      right: Box::new(erf_z0),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&diff);
   }
   // Helper: negate the Erf of the positive part
   let negate_erf = |inner: Expr| -> Expr {
@@ -1258,6 +1287,49 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           args: args.to_vec(),
         }),
       }
+    }
+    // Erfc[-x] = 2 - Erfc[x]
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let erfc_pos = Expr::FunctionCall {
+        name: "Erfc".to_string(),
+        args: vec![*operand.clone()],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(erfc_pos),
+      })
+    }
+    // Erfc[Times[-1, x]] = 2 - Erfc[x]
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times"
+        && fargs.len() == 2
+        && matches!(&fargs[0], Expr::Integer(-1)) =>
+    {
+      let erfc_pos = Expr::FunctionCall {
+        name: "Erfc".to_string(),
+        args: vec![fargs[1].clone()],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(erfc_pos),
+      })
+    }
+    // Erfc[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => {
+      let erfc_pos = Expr::FunctionCall {
+        name: "Erfc".to_string(),
+        args: vec![Expr::Integer(-*n)],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(erfc_pos),
+      })
     }
     // Numeric evaluation for Real arguments
     Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
