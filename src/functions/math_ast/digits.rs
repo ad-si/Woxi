@@ -1060,16 +1060,81 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(0)]));
   }
 
-  // For rationals without explicit num_digits, use long division with cycle detection
-  if !explicit_num_digits
-    && let Some((numer, denom)) = extract_rational_for_digits(&abs_expr)
+  // For rationals, use long division with cycle detection
+  if let Some((numer, denom)) = extract_rational_for_digits(&abs_expr)
     && denom != 0
   {
-    let (digit_list, exponent) = real_digits_rational_base(numer, denom, base);
-    return Ok(Expr::List(vec![
-      Expr::List(digit_list),
-      Expr::Integer(exponent),
-    ]));
+    if !explicit_num_digits {
+      let (digit_list, exponent) =
+        real_digits_rational_base(numer, denom, base);
+      return Ok(Expr::List(vec![
+        Expr::List(digit_list),
+        Expr::Integer(exponent),
+      ]));
+    } else {
+      // With explicit num_digits: use long division and produce exactly
+      // num_digits significant digits starting from the first nonzero.
+      // The rational long division already gives us digits starting
+      // from the most significant, but the integer part may be 0 so
+      // we need to generate enough fractional digits.
+      let mut remainder = numer.abs();
+      let d = denom.abs();
+      let int_part = remainder / d;
+      remainder %= d;
+
+      // Determine exponent from integer part
+      let exponent: i128 = if int_part == 0 {
+        let mut temp = remainder * base;
+        let mut leading_zeros: i128 = 0;
+        while temp < d && temp > 0 {
+          leading_zeros += 1;
+          temp *= base;
+        }
+        -leading_zeros
+      } else {
+        let mut count = 0i128;
+        let mut temp = int_part;
+        while temp > 0 {
+          count += 1;
+          temp /= base;
+        }
+        count
+      };
+
+      // Extract integer part digits
+      let mut digits: Vec<i128> = Vec::new();
+      if int_part > 0 {
+        let mut temp = int_part;
+        let mut int_digs = Vec::new();
+        while temp > 0 {
+          int_digs.push(temp % base);
+          temp /= base;
+        }
+        int_digs.reverse();
+        digits.extend(int_digs);
+      } else {
+        // Skip leading fractional zeros (they're accounted for in exponent)
+        while remainder > 0 && remainder * base < d {
+          remainder *= base;
+        }
+      }
+
+      // Generate fractional digits until we have enough
+      while digits.len() < num_digits {
+        remainder *= base;
+        let digit = remainder / d;
+        remainder %= d;
+        digits.push(digit);
+      }
+      digits.truncate(num_digits);
+
+      let digit_exprs: Vec<Expr> =
+        digits.iter().map(|&dig| Expr::Integer(dig)).collect();
+      return Ok(Expr::List(vec![
+        Expr::List(digit_exprs),
+        Expr::Integer(exponent),
+      ]));
+    }
   }
 
   // Compute with extra precision to avoid rounding errors in the last digits
