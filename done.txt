@@ -2083,3 +2083,11 @@ INPUT: FindRoot[Sin[x] + Exp[x],{x, 0}]
 EXPECTED:
 = {x -> -0.5885327439818611} (matches wolframscript; mathics shows rounded -0.588533)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMinimum
+LINE: 818
+TYPE: >>
+INPUT: FindMinimum[(x-3)^2+2., {x, 1}]
+EXPECTED:
+= {2., {x -> 3.}} (matches wolframscript)
+---
