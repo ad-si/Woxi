@@ -1781,3 +1781,10 @@ INPUT: Attributes[MakeBoxes]
 EXPECTED:
 = {HoldAllComplete}
 ---
+FILE: mathics/test/builtin/test_system.py
+FUNCTION: None
+LINE: 37
+INPUT: Head[$SystemWordLength] == Integer
+EXPECTED: True
+MESSAGE: $SystemWordLength
+---

@@ -312,6 +312,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Rest"
     | "Most"
     | "Length"
+    | "Level"
     | "Depth"
     | "Head"
     | "Nest"

@@ -3537,6 +3537,11 @@ mod automatic_symbol {
   }
 
   #[test]
+  fn level_is_protected() {
+    assert_eq!(interpret("Attributes[Level]").unwrap(), "{Protected}");
+  }
+
+  #[test]
   fn automatic_in_list() {
     assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
   }
