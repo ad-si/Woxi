@@ -521,6 +521,29 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(filtered));
       }
     }
+    if dom == "Integers" {
+      // Filter to only integer solutions
+      if let Expr::List(solutions) = &base_solutions {
+        let filtered: Vec<Expr> = solutions
+          .iter()
+          .filter(|sol| {
+            if let Expr::List(rules) = sol {
+              rules.iter().all(|rule| {
+                if let Expr::Rule { replacement, .. } = rule {
+                  is_integer_expr(replacement)
+                } else {
+                  false
+                }
+              })
+            } else {
+              false
+            }
+          })
+          .cloned()
+          .collect();
+        return Ok(Expr::List(filtered));
+      }
+    }
     // For other domains, just return the base solutions
     return Ok(base_solutions);
   }
