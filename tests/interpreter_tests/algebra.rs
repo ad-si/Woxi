@@ -2764,6 +2764,19 @@ mod solve_with_domain {
       "{{x -> -1}, {x -> 1}}"
     );
   }
+
+  #[test]
+  fn integers_filters_non_integer() {
+    assert_eq!(
+      interpret("Solve[-4 - 4 x + x^4 + x^5 == 0, x, Integers]").unwrap(),
+      "{{x -> -1}}"
+    );
+  }
+
+  #[test]
+  fn integers_no_solutions() {
+    assert_eq!(interpret("Solve[x^4 == 4, x, Integers]").unwrap(), "{}");
+  }
 }
 
 mod solve_always {
