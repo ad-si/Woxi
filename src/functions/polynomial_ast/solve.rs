@@ -2381,14 +2381,30 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// `expr` can be an expression (finds where it equals 0) or an equation `lhs == rhs`.
 /// Returns `{var -> root_value}`.
 pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "FindRoot expects 2 arguments".into(),
+      "FindRoot expects at least 2 arguments".into(),
     ));
   }
 
-  // Parse second argument: {var, x0}
-  let (var, x0) = match &args[1] {
+  // Parse options from additional arguments (Method, etc.) — currently ignored
+  let mut use_secant = false;
+  for opt in &args[2..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(s) = pattern.as_ref()
+      && s == "Method"
+      && let Expr::String(m) = replacement.as_ref()
+      && m == "Secant"
+    {
+      use_secant = true;
+    }
+  }
+
+  // Parse second argument: {var, x0} or {var, x0, x1}
+  let (var, x0, x1_opt) = match &args[1] {
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -2399,14 +2415,29 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       let x0 = find_root_eval_number(&items[1])?;
-      (var_name, x0)
+      (var_name, x0, None)
+    }
+    Expr::List(items) if items.len() == 3 => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      let x0 = find_root_eval_number(&items[1])?;
+      let x1 = find_root_eval_number(&items[2])?;
+      (var_name, x0, Some(x1))
     }
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "FindRoot: second argument must be {var, x0}".into(),
+        "FindRoot: second argument must be {var, x0} or {var, x0, x1}".into(),
       ));
     }
   };
+  // Use secant method if x1 is provided or Method -> "Secant"
+  let use_secant = use_secant || x1_opt.is_some();
 
   // Extract the function to find root of: expr or lhs - rhs for equations
   let func = match &args[0] {
@@ -2434,6 +2465,41 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     other => other.clone(),
   };
+
+  // Secant method when requested
+  if use_secant {
+    let max_iter = 100;
+    let tol = 1e-15;
+    let mut x_prev = x0;
+    let mut x_curr = x1_opt.unwrap_or(x0 + 0.1);
+    let mut f_prev = find_root_eval_at(&func, &var, x_prev)?;
+
+    for _ in 0..max_iter {
+      let f_curr = find_root_eval_at(&func, &var, x_curr)?;
+      if f_curr.abs() < tol {
+        break;
+      }
+      let denom = f_curr - f_prev;
+      if denom.abs() < 1e-30 {
+        break;
+      }
+      let x_next = x_curr - f_curr * (x_curr - x_prev) / denom;
+      x_prev = x_curr;
+      f_prev = f_curr;
+      x_curr = x_next;
+    }
+
+    let result_val =
+      if x_curr == 0.0 || (x_curr.abs() > 1e-15 && x_curr.abs() < 1e15) {
+        Expr::Real(x_curr)
+      } else {
+        Expr::Real(x_curr)
+      };
+    return Ok(Expr::List(vec![Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var)),
+      replacement: Box::new(result_val),
+    }]));
+  }
 
   // Try symbolic derivative; fall back to numerical if unavailable
   let deriv_expr =
