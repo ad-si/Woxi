@@ -13856,18 +13856,6 @@ INPUT: Flatten[m, {2, 1}]
 EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
 FILE: mathics/test/test_structure.py
-FUNCTION: test_flatten
-LINE: 49
-INPUT: Flatten[p[1, p[2], p[3]]]
-EXPECTED: p[1, 2, 3]
----
-FILE: mathics/test/test_structure.py
-FUNCTION: test_flatten
-LINE: 50
-INPUT: Flatten[p[1, p[2], p[3]], 2]
-EXPECTED: p[1, 2, 3]
----
-FILE: mathics/test/test_structure.py
 FUNCTION: test_operate
 LINE: 66
 INPUT: Operate[p, f[a][b][c], 3]

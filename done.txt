@@ -1473,3 +1473,15 @@ INPUT: MatchQ[-3, _Integer?(#>0&)]
 EXPECTED:
 = False
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_flatten
+LINE: 49
+INPUT: Flatten[p[1, p[2], p[3]]]
+EXPECTED: p[1, 2, 3]
+---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_flatten
+LINE: 50
+INPUT: Flatten[p[1, p[2], p[3]], 2]
+EXPECTED: p[1, 2, 3]
+---
