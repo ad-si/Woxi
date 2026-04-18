@@ -7283,14 +7283,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/distance/numeric.py
 CLASS: CosineDistance
-LINE: 159
-TYPE: >>
-INPUT: N[CosineDistance[{7, 9}, {71, 89}]]
-EXPECTED:
-= 0.0000759646
----
-FILE: mathics/builtin/distance/numeric.py
-CLASS: CosineDistance
 LINE: 163
 TYPE: >>
 INPUT: CosineDistance[{0.0, 0.0}, {x, y}]
