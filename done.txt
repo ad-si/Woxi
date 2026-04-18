@@ -1819,3 +1819,11 @@ INPUT: $Machine
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: MachineName
+LINE: 345
+TYPE: S>
+INPUT: $MachineName
+EXPECTED:
+= ...
+---

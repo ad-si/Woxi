@@ -509,14 +509,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: MachineName
-LINE: 345
-TYPE: S>
-INPUT: $MachineName
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: MathicsVersion
 LINE: 369
 TYPE: >>

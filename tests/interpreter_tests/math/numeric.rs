@@ -270,6 +270,15 @@ mod precision {
       "True"
     );
   }
+
+  #[cfg(unix)]
+  #[test]
+  fn machine_name_head_is_string() {
+    assert_eq!(
+      interpret("Head[$MachineName] == String").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod accuracy {

@@ -202,7 +202,26 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
     "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),
     #[cfg(unix)]
-    "$ParentProcessID" => Some(Expr::Integer(unsafe { libc::getppid() } as i128)),
+    "$ParentProcessID" => {
+      Some(Expr::Integer(unsafe { libc::getppid() } as i128))
+    }
+    #[cfg(unix)]
+    "$MachineName" => {
+      let mut buf = [0u8; 256];
+      let ret = unsafe {
+        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
+      };
+      if ret == 0 {
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        // Strip trailing .local, .lan etc to match wolframscript which returns
+        // the short name (e.g. "Mac" rather than "Mac.local").
+        let host = std::str::from_utf8(&buf[..len]).unwrap_or("");
+        let short = host.split('.').next().unwrap_or(host);
+        Some(Expr::String(short.to_string()))
+      } else {
+        None
+      }
+    }
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![
