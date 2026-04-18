@@ -2227,3 +2227,11 @@ INPUT: f[-3] /. f[x_] /; x>0 -> t
 EXPECTED:
 = f[-3] (matches wolframscript)
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: Nearest
+LINE: 394
+TYPE: >>
+INPUT: Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12]
+EXPECTED:
+= {11} (matches wolframscript)
+---
