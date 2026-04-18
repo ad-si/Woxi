@@ -2251,3 +2251,11 @@ INPUT: BrayCurtisDistance[{-1, -1}, {10, 10}]
 EXPECTED:
 = 11/9 (matches wolframscript)
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CanberraDistance
+LINE: 95
+TYPE: >>
+INPUT: CanberraDistance[{-1, -1}, {1, 1}]
+EXPECTED:
+= 2 (matches wolframscript)
+---
