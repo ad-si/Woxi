@@ -2075,3 +2075,11 @@ INPUT: FindRoot[Cos[x], {x, 1}]
 EXPECTED:
 = {x -> 1.5707963267948966} (matches wolframscript; mathics shows rounded 1.5708)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 874
+TYPE: >>
+INPUT: FindRoot[Sin[x] + Exp[x],{x, 0}]
+EXPECTED:
+= {x -> -0.5885327439818611} (matches wolframscript; mathics shows rounded -0.588533)
+---
