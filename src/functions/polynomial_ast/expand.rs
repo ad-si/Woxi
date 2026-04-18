@@ -16,11 +16,16 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Parse Modulus option from second argument
+  // Parse options from second argument
   let modulus = if args.len() == 2 {
     extract_modulus_option(&args[1])
   } else {
     None
+  };
+  let trig = if args.len() == 2 {
+    extract_trig_option(&args[1])
+  } else {
+    false
   };
 
   // Thread over Lists
@@ -55,12 +60,41 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
-  let expanded = expand_and_combine(&args[0]);
+  let mut expanded = expand_and_combine(&args[0]);
+  if trig {
+    // Apply trig expansion: Sin[a+b] → Sin[a]Cos[b] + Cos[a]Sin[b], etc.
+    expanded = crate::functions::math_ast::trig_expand_ast(&[expanded])
+      .unwrap_or_else(|_| args[0].clone());
+    // Re-expand after trig expansion to distribute products
+    expanded = expand_and_combine(&expanded);
+  }
   if let Some(m) = modulus {
     Ok(reduce_coefficients_mod(&expanded, m))
   } else {
     Ok(expanded)
   }
+}
+
+/// Extract Trig -> True from an option argument
+fn extract_trig_option(opt: &Expr) -> bool {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && let Expr::Identifier(s) = pattern.as_ref()
+    && s == "Trig"
+  {
+    return matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True");
+  }
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && let Expr::Identifier(s) = &args[0]
+    && s == "Trig"
+  {
+    return matches!(&args[1], Expr::Identifier(v) if v == "True");
+  }
+  false
 }
 
 /// Extract Modulus -> n from an option argument

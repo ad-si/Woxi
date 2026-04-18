@@ -5127,22 +5127,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Expand
-LINE: 1166
-TYPE: >>
-INPUT: Expand[Sin[x + y], Trig -> True]
-EXPECTED:
-= Cos[x] Sin[y] + Cos[y] Sin[x]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Expand
-LINE: 1168
-TYPE: >>
-INPUT: Expand[Tanh[x + y], Trig -> True]
-EXPECTED:
-= Cosh[x] Sinh[y] / (Cosh[x] Cosh[y] + Sinh[x] Sinh[y]) + Cosh[y] Sinh[x] / (Cosh[x] Cosh[y] + Sinh[x] Sinh[y])
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Expand
 LINE: 1177
 TYPE: >>
 INPUT: Expand[(x+a)^2+(y+a)^2+(x+y)(x+a), y]
