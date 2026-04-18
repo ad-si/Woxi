@@ -6682,14 +6682,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
-LINE: 29
-TYPE: >>
-INPUT: f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}
-EXPECTED:
-= {{a}, {b, c, d}}
----
-FILE: mathics/builtin/patterns/__init__.py
-CLASS: None
 LINE: 33
 TYPE: >>
 INPUT: f[a] /. f[x_, y_:3] -> {x, y}

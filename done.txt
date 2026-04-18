@@ -2195,3 +2195,11 @@ INPUT: f[4] /. f[x_] /; x > 0 -> x ^ 2
 EXPECTED:
 = 16 (matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/__init__.py
+CLASS: None
+LINE: 29
+TYPE: >>
+INPUT: f[a, b, c, d] /. f[start__, end__] -> {{start}, {end}}
+EXPECTED:
+= {{a}, {b, c, d}} (matches wolframscript)
+---
