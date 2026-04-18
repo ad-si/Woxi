@@ -1995,3 +1995,11 @@ INPUT: Integrate[Sin[x] ^ 5, x]
 EXPECTED:
 = (-5*Cos[x])/8 + (5*Cos[3*x])/48 - Cos[5*x]/80 (matches wolframscript; mathics shows equivalent factored form Cos[x] (-1 - Cos[x]^4/5 + 2 Cos[x]^2/3))
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Apart
+LINE: 383
+TYPE: >>
+INPUT: Apart[{1 / (x^2 + 5x + 6)}]
+EXPECTED:
+= {(2 + x)^(-1) - (3 + x)^(-1)} (matches wolframscript)
+---
