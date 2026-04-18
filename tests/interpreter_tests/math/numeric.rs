@@ -289,7 +289,10 @@ mod precision {
 
   #[test]
   fn environment_returns_string_for_set_var() {
-    assert_eq!(interpret("Head[Environment[\"PATH\"]] == String").unwrap(), "True");
+    assert_eq!(
+      interpret("Head[Environment[\"PATH\"]] == String").unwrap(),
+      "True"
+    );
   }
 
   #[test]
@@ -297,6 +300,24 @@ mod precision {
     assert_eq!(
       interpret("Environment[\"NONEXISTENT_VAR_XYZ_12345\"]").unwrap(),
       "$Failed"
+    );
+  }
+
+  #[test]
+  fn get_environment_string_returns_rule() {
+    // Head of the result of GetEnvironment["PATH"] is Rule
+    assert_eq!(
+      interpret("Head[GetEnvironment[\"PATH\"]] == Rule").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn get_environment_list_returns_list_of_rules() {
+    // Length of GetEnvironment[{"PATH", "HOME"}] is 2
+    assert_eq!(
+      interpret("Length[GetEnvironment[{\"PATH\", \"HOME\"}]]").unwrap(),
+      "2"
     );
   }
 }

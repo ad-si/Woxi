@@ -44,6 +44,37 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    // GetEnvironment["name"] — return "name" -> "value" rule
+    // GetEnvironment[{"n1","n2"}] — list of rules
+    "GetEnvironment" if args.len() == 1 => {
+      let make_rule = |var: &str| -> Expr {
+        Expr::Rule {
+          pattern: Box::new(Expr::String(var.to_string())),
+          replacement: Box::new(match std::env::var(var) {
+            Ok(val) => Expr::String(val),
+            Err(_) => Expr::Identifier("None".to_string()),
+          }),
+        }
+      };
+      match &args[0] {
+        Expr::String(var) => return Some(Ok(make_rule(var))),
+        Expr::List(items) => {
+          let rules: Vec<Expr> = items
+            .iter()
+            .map(|item| match item {
+              Expr::String(v) => make_rule(v),
+              _ => item.clone(),
+            })
+            .collect();
+          return Some(Ok(Expr::List(rules)));
+        }
+        _ => {}
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "GetEnvironment".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
       return Some(Ok(Expr::List(vec![
