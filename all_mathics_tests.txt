@@ -4318,14 +4318,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: MachineNumberQ
-LINE: 229
-TYPE: >>
-INPUT: MachineNumberQ[1.5 + 2.3 I]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: MachineNumberQ
 LINE: 231
 TYPE: >>
 INPUT: MachineNumberQ[2.71828182845904524 + 3.14159265358979324 I]

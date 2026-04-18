@@ -596,6 +596,16 @@ mod machine_number_q {
   fn string_is_false() {
     assert_eq!(interpret("MachineNumberQ[\"hello\"]").unwrap(), "False");
   }
+
+  #[test]
+  fn machine_complex_is_true() {
+    assert_eq!(interpret("MachineNumberQ[1.5 + 2.3 I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_complex_is_false() {
+    assert_eq!(interpret("MachineNumberQ[1 + 2 I]").unwrap(), "False");
+  }
 }
 
 mod text_string {

@@ -1741,3 +1741,11 @@ INPUT: $SystemWordLength
 EXPECTED:
 = 64
 ---
+FILE: mathics/builtin/testing_expressions/numerical_properties.py
+CLASS: MachineNumberQ
+LINE: 229
+TYPE: >>
+INPUT: MachineNumberQ[1.5 + 2.3 I]
+EXPECTED:
+= True
+---

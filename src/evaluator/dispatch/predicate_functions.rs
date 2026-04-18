@@ -74,13 +74,31 @@ pub fn dispatch_predicate_functions(
       return Some(crate::functions::predicate_ast::integer_q_ast(args));
     }
     "MachineNumberQ" if args.len() == 1 => {
-      return Some(Ok(Expr::Identifier(
-        if matches!(&args[0], Expr::Real(_)) {
-          "True"
-        } else {
-          "False"
+      fn contains_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) => true,
+          Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
+          Expr::BinaryOp { left, right, .. } => {
+            contains_real(left) || contains_real(right)
+          }
+          Expr::UnaryOp { operand, .. } => contains_real(operand),
+          _ => false,
         }
-        .to_string(),
+      }
+      let is_machine = match &args[0] {
+        Expr::Real(_) => true,
+        Expr::FunctionCall { name, args: ca } if name == "Complex" && ca.len() == 2 => {
+          matches!(&ca[0], Expr::Real(_)) || matches!(&ca[1], Expr::Real(_))
+        }
+        _ => {
+          // A Plus/Times expression like `1.5 + 2.3 I` that forms a complex number
+          // with at least one machine Real component.
+          crate::functions::predicate_ast::is_complex_number(&args[0])
+            && contains_real(&args[0])
+        }
+      };
+      return Some(Ok(Expr::Identifier(
+        if is_machine { "True" } else { "False" }.to_string(),
       )));
     }
     "MissingQ" if args.len() == 1 => {
