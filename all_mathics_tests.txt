@@ -6626,14 +6626,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: Csc
-LINE: 663
-TYPE: >>
-INPUT: Csc[1] (* Csc[1] in Mathematica *)
-EXPECTED:
-= 1 / Sin[1]
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Csc
 LINE: 665
 TYPE: >>
 INPUT: Csc[1.]

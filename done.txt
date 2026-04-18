@@ -2155,3 +2155,11 @@ INPUT: MantissaExponent[125., 2]
 EXPECTED:
 = {0.9765625, 7} (matches wolframscript; mathics shows rounded 0.976563)
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Csc
+LINE: 663
+TYPE: >>
+INPUT: Csc[1] (* Csc[1] in Mathematica *)
+EXPECTED:
+= Csc[1] (matches wolframscript; mathics expected 1 / Sin[1])
+---
