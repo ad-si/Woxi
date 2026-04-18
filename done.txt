@@ -1795,3 +1795,11 @@ INPUT: Head[$SessionID] == Integer
 EXPECTED: True
 MESSAGE: $SessionID
 ---
+FILE: mathics/builtin/system.py
+CLASS: ProcessID
+LINE: 550
+TYPE: S>
+INPUT: $ProcessID
+EXPECTED:
+= ...
+---

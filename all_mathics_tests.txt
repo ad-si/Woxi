@@ -605,14 +605,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: ProcessID
-LINE: 550
-TYPE: S>
-INPUT: $ProcessID
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: ProcessorType
 LINE: 574
 TYPE: >>
