@@ -195,12 +195,13 @@ pub fn table_ast(
               "Table: iterator bound must be numeric".into(),
             )
           })?;
-        let step_num = crate::functions::math_ast::try_eval_to_f64(&step_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Table: step must be numeric".into(),
-            )
-          })?;
+        let step_num =
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
+            .ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "Table: step must be numeric".into(),
+              )
+            })?;
 
         if step_num.abs() <= f64::EPSILON {
           return Err(InterpreterError::EvaluationError(
@@ -214,12 +215,14 @@ pub fn table_ast(
         if step_num > 0.0 {
           loop {
             let current_num =
-              crate::functions::math_ast::try_eval_to_f64(&current_expr)
-                .ok_or_else(|| {
-                  InterpreterError::EvaluationError(
-                    "Table: iterator value became non-numeric".into(),
-                  )
-                })?;
+              crate::functions::math_ast::try_eval_to_f64_with_infinity(
+                &current_expr,
+              )
+              .ok_or_else(|| {
+                InterpreterError::EvaluationError(
+                  "Table: iterator value became non-numeric".into(),
+                )
+              })?;
             if current_num > max_num + f64::EPSILON {
               break;
             }
@@ -247,12 +250,14 @@ pub fn table_ast(
         } else {
           loop {
             let current_num =
-              crate::functions::math_ast::try_eval_to_f64(&current_expr)
-                .ok_or_else(|| {
-                  InterpreterError::EvaluationError(
-                    "Table: iterator value became non-numeric".into(),
-                  )
-                })?;
+              crate::functions::math_ast::try_eval_to_f64_with_infinity(
+                &current_expr,
+              )
+              .ok_or_else(|| {
+                InterpreterError::EvaluationError(
+                  "Table: iterator value became non-numeric".into(),
+                )
+              })?;
             if current_num < max_num - f64::EPSILON {
               break;
             }

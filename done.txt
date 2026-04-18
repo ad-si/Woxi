@@ -1525,3 +1525,11 @@ INPUT: Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]
 EXPECTED:
 = {True, True, True, True, True}
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Table
+LINE: 552
+TYPE: >>
+INPUT: Table[i, {i, 1, 9, Infinity}]
+EXPECTED:
+= {1}
+---
