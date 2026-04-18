@@ -1774,7 +1774,7 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
   // Symbolic fallback: Log10[x] = Log[x] / Log[10]
-  Ok(Expr::BinaryOp {
+  let expr = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
@@ -1784,7 +1784,8 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Log".to_string(),
       args: vec![Expr::Integer(10)],
     }),
-  })
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// Log2[x] - Base-2 logarithm
@@ -1808,7 +1809,7 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
   // Symbolic fallback: Log2[x] = Log[x] / Log[2]
-  Ok(Expr::BinaryOp {
+  let expr = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::FunctionCall {
       name: "Log".to_string(),
@@ -1818,7 +1819,8 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Log".to_string(),
       args: vec![Expr::Integer(2)],
     }),
-  })
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// ArcSin[x] - Inverse sine (symbolic)
