@@ -4767,14 +4767,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: ExpandAll
-LINE: 1236
-TYPE: >>
-INPUT: ExpandAll[Sin[(x+y)^2]]
-EXPECTED:
-= Sin[x ^ 2 + 2 x y + y ^ 2]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: ExpandAll
 LINE: 1239
 TYPE: >>
 INPUT: ExpandAll[Sin[(x+y)^2], Trig->True]

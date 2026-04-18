@@ -2035,3 +2035,11 @@ INPUT: Cancel[x / x ^ 2 + y / y ^ 2]
 EXPECTED:
 = x^(-1) + y^(-1) (matches wolframscript; mathics expected 1/x + 1/y)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: ExpandAll
+LINE: 1236
+TYPE: >>
+INPUT: ExpandAll[Sin[(x+y)^2]]
+EXPECTED:
+= Sin[x^2 + 2*x*y + y^2] (matches wolframscript)
+---
