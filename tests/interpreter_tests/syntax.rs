@@ -2585,6 +2585,24 @@ mod complex_symbol {
   fn complex_attributes() {
     assert_eq!(interpret("Attributes[Complex]").unwrap(), "{Protected}");
   }
+
+  #[test]
+  fn match_complex_pattern() {
+    assert_eq!(interpret("MatchQ[2I, _Complex]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[4 - I, _Complex]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[I, _Complex]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[3 + 2I, _Complex]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[5, _Complex]").unwrap(), "False");
+    assert_eq!(interpret("MatchQ[3.14, _Complex]").unwrap(), "False");
+  }
+
+  #[test]
+  fn cases_complex_pattern() {
+    assert_eq!(
+      interpret("Cases[{1, 2I, 3, 4 - I, 5}, _Complex]").unwrap(),
+      "{2*I, 4 - I}"
+    );
+  }
 }
 
 mod hold_all_symbol {

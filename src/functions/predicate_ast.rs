@@ -1126,7 +1126,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Check if an expression represents a complex number (has nonzero imaginary part).
 /// In Wolfram Language, I, 3*I, 2+3*I, Complex[a,b] are all Complex atoms.
-fn is_complex_number(expr: &Expr) -> bool {
+pub fn is_complex_number(expr: &Expr) -> bool {
   // I itself is Complex[0, 1]
   if let Expr::Identifier(name) = expr {
     return name == "I";
