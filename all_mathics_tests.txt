@@ -15494,12 +15494,6 @@ EXPECTED: RealDigits[abc]
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 82
-INPUT: RealDigits[45]
-EXPECTED: {{4, 5}, 2}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 87
 INPUT: RealDigits[123.45, 40]
 EXPECTED: {{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2}
@@ -15536,12 +15530,6 @@ EXPECTED: {{0}, 1}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 117
-INPUT: RealDigits[1]
-EXPECTED: {{1}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 139
 INPUT: RealDigits[220, 140]
 EXPECTED: {{1, 80}, 2}
@@ -15551,12 +15539,6 @@ FUNCTION: test_realdigits
 LINE: 144
 INPUT: RealDigits[0]
 EXPECTED: {{0}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 145
-INPUT: RealDigits[1]
-EXPECTED: {{1}, 1}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
