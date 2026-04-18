@@ -222,6 +222,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         None
       }
     }
+    "$UserName" => std::env::var("USER")
+      .or_else(|_| std::env::var("USERNAME"))
+      .ok()
+      .map(Expr::String),
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![

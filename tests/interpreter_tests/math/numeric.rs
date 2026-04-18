@@ -274,10 +274,12 @@ mod precision {
   #[cfg(unix)]
   #[test]
   fn machine_name_head_is_string() {
-    assert_eq!(
-      interpret("Head[$MachineName] == String").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("Head[$MachineName] == String").unwrap(), "True");
+  }
+
+  #[test]
+  fn user_name_head_is_string() {
+    assert_eq!(interpret("Head[$UserName] == String").unwrap(), "True");
   }
 }
 

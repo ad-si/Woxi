@@ -684,14 +684,6 @@ EXPECTED:
 = linux
 ---
 FILE: mathics/builtin/system.py
-CLASS: UserName
-LINE: 886
-TYPE: X>
-INPUT: $UserName
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: Version
 LINE: 913
 TYPE: >>
