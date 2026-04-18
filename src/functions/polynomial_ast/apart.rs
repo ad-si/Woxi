@@ -13,6 +13,21 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Thread over lists
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        if args.len() == 2 {
+          apart_ast(&[item.clone(), args[1].clone()])
+        } else {
+          apart_ast(&[item.clone()])
+        }
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let var = if args.len() == 2 {
     match &args[1] {
       Expr::Identifier(name) => name.clone(),
