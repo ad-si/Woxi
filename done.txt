@@ -1637,3 +1637,11 @@ LINE: 144
 INPUT: RealDigits[0]
 EXPECTED: {{0}, 1}
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: SplitBy
+LINE: 1319
+TYPE: >>
+INPUT: SplitBy[{1, 2, 1, 1.2}, {Round, Identity}]
+EXPECTED:
+= {{{1}}, {{2}}, {{1}, {1.2}}}
+---

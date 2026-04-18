@@ -9846,14 +9846,6 @@ EXPECTED:
 = {{x -> a, x -> y}, {2 -> a}, {z -> c, z -> a}}
 ---
 FILE: mathics/builtin/list/rearrange.py
-CLASS: SplitBy
-LINE: 1319
-TYPE: >>
-INPUT: SplitBy[{1, 2, 1, 1.2}, {Round, Identity}]
-EXPECTED:
-= {{{1}}, {{2}}, {{1}, {1.2}}}
----
-FILE: mathics/builtin/list/rearrange.py
 CLASS: Union
 LINE: 1424
 TYPE: >>
