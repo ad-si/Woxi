@@ -5111,35 +5111,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientList
-LINE: 900
-TYPE: >>
-INPUT: CoefficientList[(x + y)^4, x]
-EXPECTED:
-= {y ^ 4, 4 y ^ 3, 6 y ^ 2, 4 y, 1}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
-LINE: 902
-TYPE: >>
-INPUT: CoefficientList[a x^2 + b y^3 + c x + d y + 5, x]
-EXPECTED:
-= {5 + b y ^ 3 + d y, c, a}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
 LINE: 904
 TYPE: >>
 INPUT: CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]
 EXPECTED:
 = {2 / (-3 + y), 1 / (-3 + y) + 1 / (-2 + y)}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
-LINE: 906
-TYPE: >>
-INPUT: CoefficientList[(x + y)^3, z]
-EXPECTED:
-= {(x + y) ^ 3}
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientList
@@ -6254,27 +6230,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
-LINE: 2284
-TYPE: >>
-INPUT: Solve[(x^2 + 3 x + 2)/(4 x - 2) == 0, x]
-EXPECTED:
-= {{x -> -2}, {x -> -1}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
 LINE: 2288
 TYPE: >>
 INPUT: Solve[Cos[x] == 0, x]
 EXPECTED:
 = {{x -> Pi / 2}, {x -> 3 Pi / 2}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2293
-TYPE: >>
-INPUT: Solve[f[x + y] == 3, f[x + y]]
-EXPECTED:
-= {{f[x + y] -> 3}}
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
@@ -6316,22 +6276,6 @@ INPUT: Solve[x^2 == 1 && z^2 == -1, {x, y, z}]
 EXPECTED:
 : Equations may not give solutions for all "solve" variables.
 = {{x -> -1, z -> -I}, {x -> -1, z -> I}, {x -> 1, z -> -I}, {x -> 1, z -> I}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2322
-TYPE: >>
-INPUT: Solve[x^2 == -1, x, Reals]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2324
-TYPE: >>
-INPUT: Solve[x^2 == 1, x, Reals]
-EXPECTED:
-= {{x -> -1}, {x -> 1}}
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve

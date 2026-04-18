@@ -868,7 +868,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Slot" => Some((1, 1)),
     "SlotSequence" => Some((1, 1)),
     "SmithDecomposition" => Some((1, 1)),
-    "Solve" => Some((2, 2)),
+    "Solve" => Some((2, 3)),
     "SolveAlways" => Some((2, 2)),
     "Sort" => Some((1, 2)),
     "SortBy" => Some((1, 2)),

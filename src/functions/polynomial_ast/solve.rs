@@ -491,10 +491,38 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Also handles systems: Solve[{eq1, eq2, ...}, {x1, x2, ...}]
 /// And inequality constraints: Solve[eq && ineq, var]
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Solve expects exactly 2 arguments".into(),
+      "Solve expects 2 or 3 arguments".into(),
     ));
+  }
+
+  // Parse domain from optional 3rd argument (Reals, Integers, Complexes, etc.)
+  let domain = if args.len() == 3 {
+    match &args[2] {
+      Expr::Identifier(s) => Some(s.clone()),
+      _ => None,
+    }
+  } else {
+    None
+  };
+
+  // If domain is specified, solve without domain first, then filter
+  if let Some(ref dom) = domain {
+    let base_solutions = solve_ast(&args[..2])?;
+    if dom == "Reals" {
+      // Filter out complex solutions
+      if let Expr::List(solutions) = &base_solutions {
+        let filtered: Vec<Expr> = solutions
+          .iter()
+          .filter(|sol| !contains_complex(sol))
+          .cloned()
+          .collect();
+        return Ok(Expr::List(filtered));
+      }
+    }
+    // For other domains, just return the base solutions
+    return Ok(base_solutions);
   }
 
   // Handle system of equations: Solve[{eq1,...}, {var1,...}]
@@ -695,23 +723,44 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec(),
       });
     }
-    _ => {
-      // Check if first arg is not an equation → emit naqs warning
-      let is_equation = matches!(&args[0],
-        Expr::Comparison { operands, operators, .. }
-          if operands.len() == 2
-            && operators.len() == 1
-            && operators[0] == crate::syntax::ComparisonOp::Equal
-      ) || matches!(&args[0],
-        Expr::FunctionCall { name, args: fargs }
-          if name == "Equal" && fargs.len() == 2
-      );
-      if !is_equation {
-        let expr_str = crate::syntax::expr_to_message_form(&args[0]);
-        crate::emit_message(&format!(
-          "Solve::naqs: {} is not a quantified system of equations and inequalities.",
-          expr_str
-        ));
+    target_expr => {
+      // Non-identifier solve target (e.g., f[x + y])
+      // Handle Solve[target == value, target] → {{target -> value}}
+      let (lhs, rhs, is_eq) = match &args[0] {
+        Expr::Comparison {
+          operands,
+          operators,
+        } if operands.len() == 2
+          && operators.len() == 1
+          && operators[0] == crate::syntax::ComparisonOp::Equal =>
+        {
+          (operands[0].clone(), operands[1].clone(), true)
+        }
+        Expr::FunctionCall {
+          name: fname,
+          args: fargs,
+        } if fname == "Equal" && fargs.len() == 2 => {
+          (fargs[0].clone(), fargs[1].clone(), true)
+        }
+        _ => (Expr::Integer(0), Expr::Integer(0), false),
+      };
+      if is_eq {
+        // Check if lhs matches target → solve for target
+        let target_str = crate::syntax::expr_to_string(target_expr);
+        let lhs_str = crate::syntax::expr_to_string(&lhs);
+        let rhs_str = crate::syntax::expr_to_string(&rhs);
+        if lhs_str == target_str {
+          return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
+            pattern: Box::new(target_expr.clone()),
+            replacement: Box::new(rhs),
+          }])]));
+        }
+        if rhs_str == target_str {
+          return Ok(Expr::List(vec![Expr::List(vec![Expr::Rule {
+            pattern: Box::new(target_expr.clone()),
+            replacement: Box::new(lhs),
+          }])]));
+        }
       }
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
