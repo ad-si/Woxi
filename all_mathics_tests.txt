@@ -6666,14 +6666,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: Sec
-LINE: 750
-TYPE: >>
-INPUT: Sec[1] (* Sec[1] in Mathematica *)
-EXPECTED:
-= 1 / Cos[1]
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Sec
 LINE: 752
 TYPE: >>
 INPUT: Sec[1.]

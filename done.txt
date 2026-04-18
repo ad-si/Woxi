@@ -2163,3 +2163,11 @@ INPUT: Csc[1] (* Csc[1] in Mathematica *)
 EXPECTED:
 = Csc[1] (matches wolframscript; mathics expected 1 / Sin[1])
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Sec
+LINE: 750
+TYPE: >>
+INPUT: Sec[1] (* Sec[1] in Mathematica *)
+EXPECTED:
+= Sec[1] (matches wolframscript; mathics expected 1 / Cos[1])
+---
