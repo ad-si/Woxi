@@ -1934,15 +1934,14 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Parse allowed elements from third arg
-  let allowed: Option<Vec<u64>> = if args.len() == 3 {
+  let allowed_signed: Option<Vec<i128>> = if args.len() >= 3 {
     match &args[2] {
+      Expr::Identifier(s) if s == "All" => None,
       Expr::List(elems) => {
         let mut vals = Vec::new();
         for e in elems {
-          match e {
-            e if expr_to_i128(e).is_some_and(|v| v > 0) => {
-              vals.push(expr_to_i128(e).unwrap() as u64)
-            }
+          match expr_to_i128(e) {
+            Some(v) => vals.push(v),
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "IntegerPartitions".to_string(),
@@ -1967,6 +1966,35 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // Check if allowed set has any non-positive values
+  let has_non_positive = allowed_signed
+    .as_ref()
+    .is_some_and(|v| v.iter().any(|&x| x <= 0));
+
+  // Convert to unsigned if all positive (optimization for common case)
+  let allowed: Option<Vec<u64>> = if has_non_positive {
+    None // we'll use the signed path
+  } else {
+    allowed_signed
+      .as_ref()
+      .map(|v| v.iter().map(|&x| x as u64).collect())
+  };
+
+  // Parse max results from fourth arg
+  let max_results: Option<usize> = if args.len() >= 4 {
+    match expr_to_i128(&args[3]) {
+      Some(k) if k >= 0 => Some(k as usize),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerPartitions".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    None
+  };
+
   // Special case: n == 0
   // The only partition of 0 is the empty partition {}, which has 0 parts
   if n == 0 {
@@ -1975,6 +2003,29 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       return Ok(Expr::List(vec![]));
     }
+  }
+
+  if has_non_positive {
+    // Use signed partition generator for sets containing non-positive values
+    let elems = allowed_signed.as_ref().unwrap();
+    let mut result_signed: Vec<Vec<i128>> = Vec::new();
+    let mut current_signed: Vec<i128> = Vec::new();
+    generate_partitions_restricted_signed(
+      n as i128,
+      max_len,
+      min_len,
+      elems,
+      0,
+      &mut current_signed,
+      &mut result_signed,
+      max_results,
+    );
+    return Ok(Expr::List(
+      result_signed
+        .into_iter()
+        .map(|p| Expr::List(p.into_iter().map(Expr::Integer).collect()))
+        .collect(),
+    ));
   }
 
   let mut result = Vec::new();
@@ -1990,10 +2041,19 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         0,
         &mut current,
         &mut result,
+        max_results,
       );
     }
     None => {
-      generate_partitions(n, n, max_len, min_len, &mut current, &mut result);
+      generate_partitions(
+        n,
+        n,
+        max_len,
+        min_len,
+        &mut current,
+        &mut result,
+        max_results,
+      );
     }
   }
 
@@ -2016,7 +2076,11 @@ pub fn generate_partitions(
   min_len: u64,
   current: &mut Vec<u64>,
   result: &mut Vec<Vec<u64>>,
+  max_results: Option<usize>,
 ) {
+  if max_results.is_some_and(|m| result.len() >= m) {
+    return;
+  }
   if remaining == 0 {
     if current.len() as u64 >= min_len {
       result.push(current.clone());
@@ -2036,12 +2100,16 @@ pub fn generate_partitions(
       min_len,
       current,
       result,
+      max_results,
     );
     current.pop();
+    if max_results.is_some_and(|m| result.len() >= m) {
+      return;
+    }
   }
 }
 
-/// Generate partitions using only elements from `elems` (sorted descending).
+/// Generate partitions using only elements from `elems` (sorted descending, positive).
 pub fn generate_partitions_restricted(
   remaining: u64,
   max_len: u64,
@@ -2050,7 +2118,11 @@ pub fn generate_partitions_restricted(
   start_idx: usize,
   current: &mut Vec<u64>,
   result: &mut Vec<Vec<u64>>,
+  max_results: Option<usize>,
 ) {
+  if max_results.is_some_and(|m| result.len() >= m) {
+    return;
+  }
   if remaining == 0 {
     if current.len() as u64 >= min_len {
       result.push(current.clone());
@@ -2074,8 +2146,75 @@ pub fn generate_partitions_restricted(
       i,
       current,
       result,
+      max_results,
     );
     current.pop();
+    if max_results.is_some_and(|m| result.len() >= m) {
+      return;
+    }
+  }
+}
+
+/// Generate partitions using signed elements (supports negative and zero values).
+/// `elems` should be sorted descending.
+fn generate_partitions_restricted_signed(
+  remaining: i128,
+  max_len: u64,
+  min_len: u64,
+  elems: &[i128],
+  start_idx: usize,
+  current: &mut Vec<i128>,
+  result: &mut Vec<Vec<i128>>,
+  max_results: Option<usize>,
+) {
+  if max_results.is_some_and(|m| result.len() >= m) {
+    return;
+  }
+  if remaining == 0 && current.len() as u64 >= min_len {
+    result.push(current.clone());
+    return;
+  }
+  if current.len() as u64 >= max_len {
+    return;
+  }
+  for i in start_idx..elems.len() {
+    let part = elems[i];
+    // Skip if adding this part makes the remaining impossible
+    // (for positive parts, remaining must stay >= 0 eventually;
+    //  for non-positive parts, remaining must stay <= n eventually)
+    if part > remaining && !elems[i..].iter().any(|&e| e < 0) {
+      continue;
+    }
+    // For non-positive parts, we need remaining to still be achievable
+    let new_remaining = remaining - part;
+    // Bound: with (max_len - current.len() - 1) parts left,
+    // using the largest element can give at most that * max_elem,
+    // and using smallest can give that * min_elem
+    let parts_left = max_len as i128 - current.len() as i128 - 1;
+    if parts_left >= 0 {
+      let max_elem = elems[0]; // largest
+      let min_elem = *elems.last().unwrap(); // smallest
+      let max_achievable = parts_left * max_elem;
+      let min_achievable = parts_left * min_elem;
+      if new_remaining > max_achievable || new_remaining < min_achievable {
+        continue;
+      }
+    }
+    current.push(part);
+    generate_partitions_restricted_signed(
+      new_remaining,
+      max_len,
+      min_len,
+      elems,
+      i,
+      current,
+      result,
+      max_results,
+    );
+    current.pop();
+    if max_results.is_some_and(|m| result.len() >= m) {
+      return;
+    }
   }
 }
 
