@@ -1947,3 +1947,11 @@ INPUT: a == b == c == 2
 EXPECTED:
 = a == b == c == 2 (matches wolframscript; mathics expected True because prior Set statements bound the symbols in context)
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: PauliMatrix
+LINE: 106
+TYPE: >>
+INPUT: PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]
+EXPECTED:
+= True
+---

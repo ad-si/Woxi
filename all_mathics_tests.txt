@@ -3581,14 +3581,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: PauliMatrix
-LINE: 106
-TYPE: >>
-INPUT: PauliMatrix[1] . PauliMatrix[2] == I PauliMatrix[3]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: PauliMatrix
 LINE: 109
 TYPE: >>
 INPUT: MatrixExp[I \\[Phi]/2 PauliMatrix[3]]
