@@ -2817,3 +2817,23 @@ mod rational_overflow {
     assert!(out.contains(" + x"), "unexpected output: {out}");
   }
 }
+
+mod real_digits_base {
+  use super::*;
+
+  #[test]
+  fn base_140() {
+    assert_eq!(interpret("RealDigits[220, 140]").unwrap(), "{{1, 80}, 2}");
+  }
+
+  #[test]
+  fn base_7_rational() {
+    assert_eq!(interpret("RealDigits[1/2, 7]").unwrap(), "{{{3}}, 0}");
+    assert_eq!(interpret("RealDigits[3/2, 7]").unwrap(), "{{1, {3}}, 1}");
+  }
+
+  #[test]
+  fn base_6_terminating() {
+    assert_eq!(interpret("RealDigits[3/2, 6]").unwrap(), "{{1, 3}, 1}");
+  }
+}

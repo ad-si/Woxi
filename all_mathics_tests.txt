@@ -15408,45 +15408,9 @@ MESSAGE: Issue #153
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 64
-INPUT: RealDigits[-3/2, 7]
-EXPECTED: {{1, {3}}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 65
-INPUT: RealDigits[3/2, 6]
-EXPECTED: {{1, 3}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 70
 INPUT: RealDigits[Pi, 260, 5]
 EXPECTED: {{3, 36, 211, 172, 124}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 72
-INPUT: RealDigits[1/2, 7]
-EXPECTED: {{{3}}, 0}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 73
-INPUT: RealDigits[3/2, 7]
-EXPECTED: {{1, {3}}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 74
-INPUT: RealDigits[-3/2, 7]
-EXPECTED: {{1, {3}}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 75
-INPUT: RealDigits[3/2, 6]
-EXPECTED: {{1, 3}, 1}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
@@ -15480,21 +15444,9 @@ EXPECTED: {{246, 208, 137, 67, 80}, -5}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 111
-INPUT: RealDigits[220, 140]
-EXPECTED: {{1, 80}, 2}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 116
 INPUT: RealDigits[0]
 EXPECTED: {{0}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 139
-INPUT: RealDigits[220, 140]
-EXPECTED: {{1, 80}, 2}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
