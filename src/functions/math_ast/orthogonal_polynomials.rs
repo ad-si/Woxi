@@ -76,10 +76,15 @@ pub fn jacobi_p_f64(n: usize, a: f64, b: f64, x: f64) -> f64 {
 
 /// LegendreP[n, x] - Legendre polynomial of degree n
 pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "LegendreP expects exactly 2 arguments".into(),
+      "LegendreP expects 2 or 3 arguments".into(),
     ));
+  }
+
+  // 3-argument form: LegendreP[n, m, x] — associated Legendre polynomial
+  if args.len() == 3 {
+    return associated_legendre_p_ast(&args[0], &args[1], &args[2]);
   }
 
   let n = match &args[0] {
@@ -129,6 +134,168 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+}
+
+/// LegendreP[n, m, x] — associated Legendre polynomial P_n^m(x)
+/// P_n^m(x) = (-1)^m * (1 - x^2)^(m/2) * d^m/dx^m P_n(x)
+fn associated_legendre_p_ast(
+  n_expr: &Expr,
+  m_expr: &Expr,
+  x_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match n_expr {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      // Try numeric evaluation
+      if let (Some(nf), Some(mf), Some(xf)) = (
+        try_eval_to_f64(n_expr),
+        try_eval_to_f64(m_expr),
+        try_eval_to_f64(x_expr),
+      ) {
+        return Ok(Expr::Real(associated_legendre_f64(
+          nf as i64, mf as i64, xf,
+        )));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  let m = match m_expr {
+    Expr::Integer(m) if *m >= 0 => *m as usize,
+    _ => {
+      if let (Some(mf), Some(xf)) =
+        (try_eval_to_f64(m_expr), try_eval_to_f64(x_expr))
+      {
+        return Ok(Expr::Real(associated_legendre_f64(
+          n as i64, mf as i64, xf,
+        )));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  if m > n {
+    return Ok(Expr::Integer(0));
+  }
+
+  // m == 0 case: just regular LegendreP
+  if m == 0 {
+    return legendre_p_ast(&[n_expr.clone(), x_expr.clone()]);
+  }
+
+  // Build P_n^m(x) = (-1)^m * (1 - x^2)^(m/2) * D^m[P_n(x), x]
+  // First compute P_n(x) symbolically
+  let pn = legendre_p_ast(&[Expr::Integer(n as i128), x_expr.clone()])?;
+
+  // Differentiate m times
+  let mut deriv = pn;
+  let var_name = match x_expr {
+    Expr::Identifier(s) => s.clone(),
+    _ => {
+      // Numeric evaluation fallback
+      if let Some(xf) = try_eval_to_f64(x_expr) {
+        return Ok(Expr::Real(associated_legendre_f64(n as i64, m as i64, xf)));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  for _ in 0..m {
+    let d_expr = Expr::FunctionCall {
+      name: "D".to_string(),
+      args: vec![deriv, Expr::Identifier(var_name.clone())],
+    };
+    deriv = crate::evaluator::evaluate_expr_to_expr(&d_expr)?;
+  }
+
+  // Multiply by (-1)^m * (1 - x^2)^(m/2)
+  let sign = if m % 2 == 0 { 1i128 } else { -1i128 };
+
+  let factor = if m % 2 == 0 {
+    // (1 - x^2)^(m/2) — integer power
+    let half_m = m / 2;
+    Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(x_expr.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        },
+        Expr::Integer(half_m as i128),
+      ],
+    }
+  } else {
+    // (1 - x^2)^(m/2) with m odd → (1 - x^2)^((m-1)/2) * Sqrt[1 - x^2]
+    let half_m = (m - 1) / 2;
+    let sqrt_part = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(x_expr.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        },
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)],
+        },
+      ],
+    };
+    if half_m == 0 {
+      sqrt_part
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(x_expr.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            },
+            Expr::Integer(half_m as i128),
+          ],
+        }),
+        right: Box::new(sqrt_part),
+      }
+    }
+  };
+
+  // Build: sign * factor * deriv
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(sign)),
+    right: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(factor),
+      right: Box::new(deriv),
+    }),
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Evaluate P_n(p/q) as a rational number using the recurrence

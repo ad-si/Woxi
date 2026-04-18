@@ -958,6 +958,24 @@ mod legendre_p {
       "(-63 + 3465*x^2 - 30030*x^4 + 90090*x^6 - 109395*x^8 + 46189*x^10)/256"
     );
   }
+
+  #[test]
+  fn associated_legendre() {
+    assert_eq!(
+      interpret("LegendreP[2, 1, x]").unwrap(),
+      "-3*Sqrt[1 - x^2]*x"
+    );
+  }
+
+  #[test]
+  fn associated_legendre_m0() {
+    assert_eq!(interpret("LegendreP[3, 0, x]").unwrap(), "(-3*x + 5*x^3)/2");
+  }
+
+  #[test]
+  fn associated_legendre_m_gt_n() {
+    assert_eq!(interpret("LegendreP[2, 3, x]").unwrap(), "0");
+  }
 }
 
 mod legendre_q {

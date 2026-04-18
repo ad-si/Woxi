@@ -609,7 +609,7 @@ pub fn dispatch_math_functions(
     "PolyGamma" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::polygamma_ast(args));
     }
-    "LegendreP" if args.len() == 2 => {
+    "LegendreP" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_p_ast(args));
     }
     "JacobiP" if args.len() == 4 => {
