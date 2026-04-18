@@ -8,17 +8,32 @@ use crate::functions::calculus_ast::simplify;
 // ─── Expand ─────────────────────────────────────────────────────────
 
 /// Expand[expr] - Expands products and positive integer powers
+/// Expand[expr, Modulus -> n] - Expands and reduces coefficients modulo n
 pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Expand expects exactly 1 argument".into(),
+      "Expand expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Parse Modulus option from second argument
+  let modulus = if args.len() == 2 {
+    extract_modulus_option(&args[1])
+  } else {
+    None
+  };
+
   // Thread over Lists
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|item| expand_ast(&[item.clone()]))
+      .map(|item| {
+        if modulus.is_some() {
+          expand_ast(&[item.clone(), args[1].clone()])
+        } else {
+          expand_ast(&[item.clone()])
+        }
+      })
       .collect();
     return Ok(Expr::List(results?));
   }
@@ -30,12 +45,178 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let expanded_pattern = expand_and_combine(pattern);
     let expanded_replacement = expand_and_combine(replacement);
-    return Ok(Expr::Rule {
+    let result = Expr::Rule {
       pattern: Box::new(expanded_pattern),
       replacement: Box::new(expanded_replacement),
-    });
+    };
+    if let Some(m) = modulus {
+      return Ok(reduce_coefficients_mod(&result, m));
+    }
+    return Ok(result);
   }
-  Ok(expand_and_combine(&args[0]))
+
+  let expanded = expand_and_combine(&args[0]);
+  if let Some(m) = modulus {
+    Ok(reduce_coefficients_mod(&expanded, m))
+  } else {
+    Ok(expanded)
+  }
+}
+
+/// Extract Modulus -> n from an option argument
+fn extract_modulus_option(opt: &Expr) -> Option<i128> {
+  // Handle Expr::Rule { pattern, replacement } form (from -> syntax)
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+    && let Expr::Identifier(s) = pattern.as_ref()
+    && s == "Modulus"
+  {
+    return crate::functions::math_ast::expr_to_i128(replacement)
+      .filter(|&m| m > 1);
+  }
+  // Handle FunctionCall form (Rule[...])
+  if let Expr::FunctionCall { name, args } = opt
+    && (name == "Rule" || name == "RuleDelayed")
+    && args.len() == 2
+    && let Expr::Identifier(s) = &args[0]
+    && s == "Modulus"
+  {
+    return crate::functions::math_ast::expr_to_i128(&args[1])
+      .filter(|&m| m > 1);
+  }
+  None
+}
+
+/// Reduce all integer coefficients in an expression modulo m,
+/// dropping terms where coefficient becomes 0
+fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
+  match expr {
+    Expr::Integer(n) => {
+      let r = n.rem_euclid(m);
+      Expr::Integer(r)
+    }
+    // a + b + ... → reduce each term, drop zeros
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: _,
+      right: _,
+    } => {
+      // Collect all additive terms
+      let terms = collect_additive_terms(expr);
+      let reduced: Vec<Expr> = terms
+        .into_iter()
+        .map(|t| reduce_term_mod(&t, m))
+        .filter(|t| !is_zero_expr(t))
+        .collect();
+      if reduced.is_empty() {
+        return Expr::Integer(0);
+      }
+      build_mod_sum(reduced)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let reduced: Vec<Expr> = args
+        .iter()
+        .map(|t| reduce_term_mod(t, m))
+        .filter(|t| !is_zero_expr(t))
+        .collect();
+      if reduced.is_empty() {
+        return Expr::Integer(0);
+      }
+      build_mod_sum(reduced)
+    }
+    _ => reduce_term_mod(expr, m),
+  }
+}
+
+/// Reduce a single term's coefficient mod m
+fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
+  match term {
+    Expr::Integer(n) => {
+      let r = n.rem_euclid(m);
+      Expr::Integer(r)
+    }
+    // c * rest → (c mod m) * rest
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(c) = left.as_ref() {
+        let r = c.rem_euclid(m);
+        if r == 0 {
+          return Expr::Integer(0);
+        }
+        if r == 1 {
+          return *right.clone();
+        }
+        return Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(r)),
+          right: right.clone(),
+        };
+      }
+      // Check Times function form
+      term.clone()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      if let Expr::Integer(c) = &args[0] {
+        let r = c.rem_euclid(m);
+        if r == 0 {
+          return Expr::Integer(0);
+        }
+        let mut new_args = args.clone();
+        if r == 1 {
+          new_args.remove(0);
+          if new_args.len() == 1 {
+            return new_args.into_iter().next().unwrap();
+          }
+          return Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: new_args,
+          };
+        }
+        new_args[0] = Expr::Integer(r);
+        return Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args,
+        };
+      }
+      term.clone()
+    }
+    // For Plus inside a term, recurse
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      ..
+    } => reduce_coefficients_mod(term, m),
+    Expr::FunctionCall { name, .. } if name == "Plus" => {
+      reduce_coefficients_mod(term, m)
+    }
+    _ => term.clone(),
+  }
+}
+
+fn is_zero_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0))
+}
+
+fn build_mod_sum(terms: Vec<Expr>) -> Expr {
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  if terms.len() == 1 {
+    return terms.into_iter().next().unwrap();
+  }
+  let mut iter = terms.into_iter();
+  let first = iter.next().unwrap();
+  iter.fold(first, |acc, t| Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(acc),
+    right: Box::new(t),
+  })
 }
 
 /// Expand an expression and combine like terms.

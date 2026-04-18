@@ -646,6 +646,34 @@ mod cancel {
   }
 }
 
+mod expand_modulus {
+  use super::*;
+
+  #[test]
+  fn modulus_3() {
+    assert_eq!(
+      interpret("Expand[(1 + a)^12, Modulus -> 3]").unwrap(),
+      "1 + a^3 + a^9 + a^12"
+    );
+  }
+
+  #[test]
+  fn modulus_4() {
+    assert_eq!(
+      interpret("Expand[(1 + a)^12, Modulus -> 4]").unwrap(),
+      "1 + 2*a^2 + 3*a^4 + 3*a^8 + 2*a^10 + a^12"
+    );
+  }
+
+  #[test]
+  fn modulus_simple() {
+    assert_eq!(
+      interpret("Expand[(1 + a)^3, Modulus -> 3]").unwrap(),
+      "1 + a^3"
+    );
+  }
+}
+
 mod expand_all {
   use super::*;
 
