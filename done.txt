@@ -119,3 +119,59 @@ INPUT: PrimePi[E]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/intfns/recurrence.py
+CLASS: HarmonicNumber
+LINE: 80
+TYPE: >>
+INPUT: HarmonicNumber[3.8]
+EXPECTED:
+= 2.03806
+---
+FILE: mathics/builtin/vectors/constructing.py
+CLASS: AngleVector
+LINE: 32
+TYPE: >>
+INPUT: AngleVector[90 Degree]
+EXPECTED:
+= {0, 1}
+---
+FILE: mathics/builtin/vectors/math_ops.py
+CLASS: Cross
+LINE: 32
+TYPE: >>
+INPUT: Cross[{x1, y1, z1}, {x2, y2, z2}]
+EXPECTED:
+= {y1 z2 - y2 z1, -x1 z2 + x2 z1, x1 y2 - x2 y1}
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: Multinomial
+LINE: 380
+TYPE: >>
+INPUT: Multinomial[a, b, c]
+EXPECTED:
+= Multinomial[a, b, c] (matches wolframscript, not mathics)
+---
+FILE: mathics/builtin/matrices/calculus.py
+CLASS: Det
+LINE: 62
+TYPE: >>
+INPUT: Det[{{a, b, c}, {d, e, f}, {g, h, i}}]
+EXPECTED:
+= -(c e g) + b f g + c d h - a f h - b d i + a e i
+---
+FILE: mathics/builtin/intfns/misc.py
+CLASS: BernoulliB
+LINE: 40
+TYPE: >>
+INPUT: Table[BernoulliB[k, z], {k, 0, 3}]
+EXPECTED:
+= {1, -1 / 2 + z, 1 / 6 - z + z ^ 2, z / 2 - 3 z ^ 2 / 2 + z ^ 3}
+---
+FILE: mathics/builtin/intfns/recurrence.py
+CLASS: LinearRecurrence
+LINE: 118
+TYPE: >>
+INPUT: LinearRecurrence[{1, 1}, {1, 1}, {6}]
+EXPECTED:
+= 8
+---
