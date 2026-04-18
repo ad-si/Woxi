@@ -1485,3 +1485,11 @@ LINE: 50
 INPUT: Flatten[p[1, p[2], p[3]], 2]
 EXPECTED: p[1, 2, 3]
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Cases
+LINE: 186
+TYPE: >>
+INPUT: Cases[_Complex][{1, 2I, 3, 4-I, 5}]
+EXPECTED:
+= {2 I, 4 - I}
+---

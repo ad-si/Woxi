@@ -2293,6 +2293,11 @@ fn match_pattern_impl(
 /// Get the head of an expression (for pattern matching with head constraints)
 pub fn get_expr_head(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
+  // Check for complex numbers before general matching,
+  // so that e.g. 2I (stored as Times[2, I]) is recognized as Complex
+  if crate::functions::predicate_ast::is_complex_number(expr) {
+    return "Complex".to_string();
+  }
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),

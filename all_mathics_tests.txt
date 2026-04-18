@@ -9530,14 +9530,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Cases
-LINE: 186
-TYPE: >>
-INPUT: Cases[_Complex][{1, 2I, 3, 4-I, 5}]
-EXPECTED:
-= {2 I, 4 - I}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Cases
 LINE: 194
 TYPE: >>
 INPUT: Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]
