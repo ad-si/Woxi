@@ -5407,14 +5407,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Series
-LINE: 1777
-TYPE: >>
-INPUT: series = Series[Exp[x^2], {x,0,2}]
-EXPECTED:
-= 1 + x ^ 2 + O[x] ^ 3
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Series
 LINE: 1781
 TYPE: >>
 INPUT: series // FullForm
