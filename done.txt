@@ -1669,3 +1669,11 @@ INPUT: N[BesselJZero[0, 1]]
 EXPECTED:
 = 2.40483
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Factor
+LINE: 1389
+TYPE: >>
+INPUT: Factor[x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3]
+EXPECTED:
+= (x + y) ^ 3
+---

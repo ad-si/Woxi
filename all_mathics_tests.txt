@@ -5047,14 +5047,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Factor
-LINE: 1389
-TYPE: >>
-INPUT: Factor[x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3]
-EXPECTED:
-= (x + y) ^ 3
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Factor
 LINE: 1393
 TYPE: >>
 INPUT: x^2 - x == 0 // Factor
