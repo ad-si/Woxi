@@ -6196,14 +6196,6 @@ INPUT: MantissaExponent[2.5*10^20]
 EXPECTED:
 = {0.25, 21}
 ---
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: MantissaExponent
-LINE: 607
-TYPE: >>
-INPUT: MantissaExponent[125., 2]
-EXPECTED:
-= {0.976563, 7}
----
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: RandomPrime

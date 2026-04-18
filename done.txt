@@ -2147,3 +2147,11 @@ INPUT: LinearSolve[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}, {1, 2, 3}]
 EXPECTED:
 = {0, 1, 2} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: MantissaExponent
+LINE: 607
+TYPE: >>
+INPUT: MantissaExponent[125., 2]
+EXPECTED:
+= {0.9765625, 7} (matches wolframscript; mathics shows rounded 0.976563)
+---
