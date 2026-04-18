@@ -1963,3 +1963,11 @@ INPUT: PatternsOrderedQ[b, a]
 EXPECTED:
 = PatternsOrderedQ[b, a] (matches wolframscript; mathics expected True)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Cancel
+LINE: 430
+TYPE: >>
+INPUT: Cancel[x / x ^ 2]
+EXPECTED:
+= x^(-1) (matches wolframscript, mathics expected 1/x)
+---
