@@ -81,7 +81,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BandstopFilter" => Some((2, 4)),
     "BellB" => Some((1, 2)),
     "BellY" => Some((3, 3)),
-    "BernoulliB" => Some((1, 1)),
+    "BernoulliB" => Some((1, 2)),
     "BernoulliDistribution" => Some((1, 1)),
     "BesselI" => Some((2, 2)),
     "BesselJ" => Some((2, 2)),

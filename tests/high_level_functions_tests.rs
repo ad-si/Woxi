@@ -664,6 +664,36 @@ mod high_level_functions_tests {
     fn test_bernoulli_4() {
       assert_eq!(interpret("BernoulliB[4]").unwrap(), "-1/30");
     }
+    #[test]
+    fn test_bernoulli_poly_0() {
+      assert_eq!(interpret("BernoulliB[0, z]").unwrap(), "1");
+    }
+    #[test]
+    fn test_bernoulli_poly_1() {
+      assert_eq!(interpret("BernoulliB[1, z]").unwrap(), "-1/2 + z");
+    }
+    #[test]
+    fn test_bernoulli_poly_2() {
+      assert_eq!(interpret("BernoulliB[2, z]").unwrap(), "1/6 - z + z^2");
+    }
+    #[test]
+    fn test_bernoulli_poly_3() {
+      assert_eq!(
+        interpret("BernoulliB[3, z]").unwrap(),
+        "z/2 - (3*z^2)/2 + z^3"
+      );
+    }
+    #[test]
+    fn test_bernoulli_poly_table() {
+      assert_eq!(
+        interpret("Table[BernoulliB[k, z], {k, 0, 3}]").unwrap(),
+        "{1, -1/2 + z, 1/6 - z + z^2, z/2 - (3*z^2)/2 + z^3}"
+      );
+    }
+    #[test]
+    fn test_bernoulli_poly_numeric() {
+      assert_eq!(interpret("BernoulliB[2, 3]").unwrap(), "37/6");
+    }
   }
 
   mod euler_e_tests {

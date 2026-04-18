@@ -4959,14 +4959,6 @@ INPUT: MatchingDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
 EXPECTED:
 = 4 / 7
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: Multinomial
-LINE: 380
-TYPE: >>
-INPUT: Multinomial[a, b, c]
-EXPECTED:
-= Binomial[a, a] Binomial[a + b, b] Binomial[a + b + c, c]
----
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: RogersTanimotoDissimilarity
@@ -5000,38 +4992,6 @@ INPUT: YuleDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
 EXPECTED:
 = 6 / 5
 ---
-FILE: mathics/builtin/intfns/misc.py
-CLASS: BernoulliB
-LINE: 40
-TYPE: >>
-INPUT: Table[BernoulliB[k, z], {k, 0, 3}]
-EXPECTED:
-= {1, -1 / 2 + z, 1 / 6 - z + z ^ 2, z / 2 - 3 z ^ 2 / 2 + z ^ 3}
----
-FILE: mathics/builtin/intfns/recurrence.py
-CLASS: HarmonicNumber
-LINE: 80
-TYPE: >>
-INPUT: HarmonicNumber[3.8]
-EXPECTED:
-= 2.03806
----
-FILE: mathics/builtin/intfns/recurrence.py
-CLASS: LinearRecurrence
-LINE: 118
-TYPE: >>
-INPUT: LinearRecurrence[{1, 1}, {1, 1}, {6}]
-EXPECTED:
-= 8
----
-FILE: mathics/builtin/vectors/constructing.py
-CLASS: AngleVector
-LINE: 32
-TYPE: >>
-INPUT: AngleVector[90 Degree]
-EXPECTED:
-= {0, 1}
----
 FILE: mathics/builtin/vectors/constructing.py
 CLASS: AngleVector
 LINE: 35
@@ -5039,14 +4999,6 @@ TYPE: >>
 INPUT: AngleVector[{1, 10}, a]
 EXPECTED:
 = {1 + Cos[a], 10 + Sin[a]}
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Cross
-LINE: 32
-TYPE: >>
-INPUT: Cross[{x1, y1, z1}, {x2, y2, z2}]
-EXPECTED:
-= {y1 z2 - y2 z1, -x1 z2 + x2 z1, x1 y2 - x2 y1}
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Cross
@@ -7042,14 +6994,6 @@ TYPE: >>
 INPUT: DesignMatrix[{{2, 1}, {3, 4}, {5, 3}, {7, 6}}, f[x], x]
 EXPECTED:
 = {{1, f[2]}, {1, f[3]}, {1, f[5]}, {1, f[7]}}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: Det
-LINE: 63
-TYPE: >>
-INPUT: Det[{{a, b, c}, {d, e, f}, {g, h, i}}]
-EXPECTED:
-= a e i - a f h - b d i + b f g + c d h - c e g
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: Eigensystem

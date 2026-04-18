@@ -1461,7 +1461,7 @@ pub fn dispatch_math_functions(
     "DivisorSum" if args.len() == 2 => {
       return Some(crate::functions::math_ast::divisor_sum_ast(args));
     }
-    "BernoulliB" if args.len() == 1 => {
+    "BernoulliB" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::bernoulli_b_ast(args));
     }
     "NorlundB" if args.len() == 2 => {

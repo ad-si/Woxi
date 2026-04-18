@@ -577,10 +577,11 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ─── Combinatorics Functions ─────────────────────────────────────
 
 /// BernoulliB[n] - nth Bernoulli number
+/// BernoulliB[n, z] - nth Bernoulli polynomial
 pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "BernoulliB expects exactly 1 argument".into(),
+      "BernoulliB expects 1 or 2 arguments".into(),
     ));
   }
   let n = match expr_to_i128(&args[0]) {
@@ -592,6 +593,10 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  if args.len() == 2 {
+    return bernoulli_polynomial(n, &args[1]);
+  }
 
   // Use the formula: B(n) computed via the explicit sum formula
   // Store as rational numbers (numer, denom)
@@ -667,6 +672,144 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (num, den) = b[n];
   Ok(make_rational(num, den))
+}
+
+/// Compute the nth Bernoulli polynomial B_n(z) = sum_{k=0}^{n} C(n,k) * B_k * z^(n-k)
+fn bernoulli_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
+  fn rat_gcd(a: i128, b: i128) -> i128 {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+
+  fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+    let num = a.0 * b.1 + b.0 * a.1;
+    let den = a.1 * b.1;
+    let g = rat_gcd(num, den);
+    if den < 0 {
+      (-num / g, -den / g)
+    } else {
+      (num / g, den / g)
+    }
+  }
+
+  fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+    let num = a.0 * b.0;
+    let den = a.1 * b.1;
+    let g = rat_gcd(num, den);
+    if den < 0 {
+      (-num / g, -den / g)
+    } else {
+      (num / g, den / g)
+    }
+  }
+
+  // First compute all Bernoulli numbers B_0 through B_n as rationals
+  let mut b_nums: Vec<(i128, i128)> = Vec::with_capacity(n + 1);
+  b_nums.push((1, 1)); // B(0) = 1
+  if n >= 1 {
+    b_nums.push((-1, 2)); // B(1) = -1/2
+  }
+  for m in 2..=n {
+    if m % 2 != 0 && m > 1 {
+      b_nums.push((0, 1));
+      continue;
+    }
+    let mut sum: (i128, i128) = (0, 1);
+    let mut binom: i128 = 1;
+    for k in 0..m {
+      sum = rat_add(sum, rat_mul((binom, 1), b_nums[k]));
+      binom = binom * (m as i128 + 1 - k as i128) / (k as i128 + 1);
+    }
+    b_nums.push(rat_mul((-1, m as i128 + 1), sum));
+  }
+
+  // Compute polynomial coefficients: coeff of z^(n-k) = C(n,k) * B_k
+  // We'll store as coeffs[j] = coefficient of z^j
+  let mut coeffs: Vec<(i128, i128)> = vec![(0, 1); n + 1];
+  let mut binom: i128 = 1; // C(n, k)
+  for k in 0..=n {
+    let j = n - k; // power of z
+    coeffs[j] = rat_mul((binom, 1), b_nums[k]);
+    if k < n {
+      binom = binom * (n as i128 - k as i128) / (k as i128 + 1);
+    }
+  }
+
+  // If z is numeric, evaluate directly
+  if let Some(z_val) = expr_to_rational(z) {
+    let (z_num, z_den) = z_val;
+    let mut result = (0i128, 1i128);
+    for k in (0..=n).rev() {
+      let rn = result.0 * z_num;
+      let rd = result.1 * z_den;
+      let g = rat_gcd(rn, rd);
+      let (rn, rd) = if rd < 0 {
+        (-rn / g, -rd / g)
+      } else {
+        (rn / g, rd / g)
+      };
+      result = rat_add((rn, rd), coeffs[k]);
+    }
+    return Ok(make_rational(result.0, result.1));
+  }
+
+  // Build symbolic polynomial
+  let mut terms = Vec::new();
+  for k in 0..=n {
+    let (cn, cd) = coeffs[k];
+    if cn == 0 {
+      continue;
+    }
+    let coeff_expr = make_rational(cn, cd);
+    let term = if k == 0 {
+      coeff_expr
+    } else {
+      let power = if k == 1 {
+        z.clone()
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(z.clone()),
+          right: Box::new(Expr::Integer(k as i128)),
+        }
+      };
+      if cn == cd {
+        power
+      } else if cn == -cd {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(power),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(coeff_expr),
+          right: Box::new(power),
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  let mut result = terms[0].clone();
+  for term in &terms[1..] {
+    result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(term.clone()),
+    };
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// EulerE[n] - nth Euler number
@@ -1471,11 +1614,81 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(n) => factor_integer_i128(*n),
     Expr::BigInteger(n) => factor_integer_bigint(n),
+    // Handle Rational[numerator, denominator]
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      factor_integer_rational(&rat_args[0], &rat_args[1])
+    }
     _ => Ok(Expr::FunctionCall {
       name: "FactorInteger".to_string(),
       args: args.to_vec(),
     }),
   }
+}
+
+/// Factor a rational number p/q: factor numerator and denominator separately,
+/// then merge with denominator factors getting negative exponents.
+fn factor_integer_rational(
+  numer: &Expr,
+  denom: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use std::collections::BTreeMap;
+
+  // Factor numerator and denominator
+  let numer_factors = factor_integer_ast(&[numer.clone()])?;
+  let denom_factors = factor_integer_ast(&[denom.clone()])?;
+
+  // Collect into a map: prime -> exponent
+  let mut factor_map: BTreeMap<i128, i128> = BTreeMap::new();
+  let mut has_neg_one = false;
+
+  if let Expr::List(pairs) = &numer_factors {
+    for pair in pairs {
+      if let Expr::List(pv) = pair
+        && pv.len() == 2
+        && let Expr::Integer(p) = &pv[0]
+        && let Expr::Integer(e) = &pv[1]
+      {
+        if *p == -1 {
+          has_neg_one = true;
+        } else {
+          *factor_map.entry(*p).or_insert(0) += e;
+        }
+      }
+    }
+  }
+
+  if let Expr::List(pairs) = &denom_factors {
+    for pair in pairs {
+      if let Expr::List(pv) = pair
+        && pv.len() == 2
+        && let Expr::Integer(p) = &pv[0]
+        && let Expr::Integer(e) = &pv[1]
+      {
+        if *p == -1 {
+          has_neg_one = !has_neg_one;
+        } else {
+          *factor_map.entry(*p).or_insert(0) -= e;
+        }
+      }
+    }
+  }
+
+  let mut result: Vec<Expr> = Vec::new();
+
+  if has_neg_one {
+    result.push(Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)]));
+  }
+
+  for (prime, exp) in &factor_map {
+    if *exp != 0 {
+      result.push(Expr::List(vec![Expr::Integer(*prime), Expr::Integer(*exp)]));
+    }
+  }
+
+  Ok(Expr::List(result))
 }
 
 pub fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
