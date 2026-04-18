@@ -455,3 +455,131 @@ INPUT: MatrixQ[{{1, 2 I}, {3, 4 + 5}}, Positive]
 EXPECTED:
 = False
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Limit
+LINE: 1260
+TYPE: >>
+INPUT: Limit[1/x, x->0, Direction->-1]
+EXPECTED:
+= Infinity
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Limit
+LINE: 1262
+TYPE: >>
+INPUT: Limit[1/x, x->0, Direction->1]
+EXPECTED:
+= -Infinity
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: NIntegrate
+LINE: 1328
+TYPE: >>
+INPUT: NIntegrate[Exp[-x],{x,0,Infinity},Tolerance->1*^-6, Method->"Internal"]
+EXPECTED:
+= 1.
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: NIntegrate
+LINE: 1330
+TYPE: >>
+INPUT: NIntegrate[Exp[x],{x,-Infinity, 0},Tolerance->1*^-6, Method->"Internal"]
+EXPECTED:
+= 1.
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: NIntegrate
+LINE: 1332
+TYPE: >>
+INPUT: NIntegrate[Exp[-x^2/2.],{x,-Infinity, Infinity},Tolerance->1*^-6, Method->"Internal"]
+EXPECTED:
+= 2.5066...
+---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: StringFreeQ
+LINE: 112
+TYPE: >>
+INPUT: StringFreeQ["mathics", "m" ~~ __ ~~ "s"]
+EXPECTED:
+= False
+---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: StringFreeQ
+LINE: 115
+TYPE: >>
+INPUT: StringFreeQ["mathics", "a" ~~ __ ~~ "m"]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: StringMatchQ
+LINE: 166
+TYPE: >>
+INPUT: StringMatchQ["15a94xcZ6", (DigitCharacter | LetterCharacter)..]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: SyntaxQ
+LINE: 256
+TYPE: >>
+INPUT: SyntaxQ["a[b"]
+EXPECTED:
+= False
+---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: SyntaxQ
+LINE: 259
+TYPE: >>
+INPUT: SyntaxQ["a[b]"]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/numerical_properties.py
+CLASS: PossibleZeroQ
+LINE: 451
+TYPE: >>
+INPUT: PossibleZeroQ[Sqrt[x^2] - x]
+EXPECTED:
+= False
+---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringSplit
+LINE: 743
+TYPE: >>
+INPUT: StringSplit["12312123", "12"..]
+EXPECTED:
+= {3, 3}
+---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringTrim
+LINE: 919
+TYPE: >>
+INPUT: StringJoin["a", StringTrim["  \tb\n "], "c"]
+EXPECTED:
+= abc
+---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringTrim
+LINE: 922
+TYPE: >>
+INPUT: StringTrim["ababaxababyaabab", RegularExpression["(ab)+"]]
+EXPECTED:
+= axababya
+---
+FILE: mathics/builtin/string/patterns.py
+CLASS: StringCases
+LINE: 176
+TYPE: >>
+INPUT: StringCases["axbaxxb", "a" ~~ x_ ~~ "b"]
+EXPECTED:
+= {axb}
+---
+FILE: mathics/builtin/string/patterns.py
+CLASS: StringCases
+LINE: 179
+TYPE: >>
+INPUT: StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]
+EXPECTED:
+= {axbaxxb}
+---
