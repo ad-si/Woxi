@@ -1551,3 +1551,41 @@ LINE: 145
 INPUT: RealDigits[1]
 EXPECTED: {{1}, 1}
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: RealDigits
+LINE: 363
+TYPE: >>
+INPUT: RealDigits[19 / 7]
+EXPECTED:
+= {{2, {7, 1, 4, 2, 8, 5}}, 1}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 66
+INPUT: RealDigits[20 / 3]
+EXPECTED: {{6, {6}}, 1}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 67
+INPUT: RealDigits[3 / 4]
+EXPECTED: {{7, 5}, 0}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 68
+INPUT: RealDigits[23 / 4]
+EXPECTED: {{5, 7, 5}, 1}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 69
+INPUT: RealDigits[1/3]
+EXPECTED: {{{3}}, 0}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 71
+INPUT: RealDigits[1/3]
+EXPECTED: {{{3}}, 0}
+---
