@@ -1788,3 +1788,10 @@ INPUT: Head[$SystemWordLength] == Integer
 EXPECTED: True
 MESSAGE: $SystemWordLength
 ---
+FILE: mathics/test/builtin/test_system.py
+FUNCTION: None
+LINE: 36
+INPUT: Head[$SessionID] == Integer
+EXPECTED: True
+MESSAGE: $SessionID
+---

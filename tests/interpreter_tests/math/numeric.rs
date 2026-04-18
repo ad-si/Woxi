@@ -251,6 +251,22 @@ mod precision {
   fn system_word_length() {
     assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
   }
+
+  #[test]
+  fn session_id_head_is_integer() {
+    assert_eq!(
+      interpret("Head[$SessionID] == Integer").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn process_id_head_is_integer() {
+    assert_eq!(
+      interpret("Head[$ProcessID] == Integer").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod accuracy {

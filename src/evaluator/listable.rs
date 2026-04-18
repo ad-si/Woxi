@@ -199,6 +199,8 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$MaxMachineNumber" => Some(Expr::Real(1.7976931348623157e308)),
     "$MinMachineNumber" => Some(Expr::Real(5e-324)),
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),
+    "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
+    "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![

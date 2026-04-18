@@ -15090,13 +15090,6 @@ LINE: 135
 INPUT: ToString[%]
 EXPECTED: Null
 ---
-FILE: mathics/test/builtin/test_system.py
-FUNCTION: None
-LINE: 36
-INPUT: Head[$SessionID] == Integer
-EXPECTED: True
-MESSAGE: $SessionID
----
 FILE: mathics/test/builtin/test_trace.py
 FUNCTION: test_TraceEvaluation
 LINE: 36
