@@ -10207,14 +10207,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/specialfns/gamma.py
-CLASS: PolyGamma
-LINE: 506
-TYPE: >>
-INPUT: PolyGamma[3, 5]
-EXPECTED:
-= -22369 / 3456 + Pi ^ 4 / 15
----
-FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Subfactorial
 LINE: 583
 TYPE: >>

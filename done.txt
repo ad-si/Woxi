@@ -1923,3 +1923,11 @@ INPUT: PolynomialQ[f[a] + f[a]^2, f[a]]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: PolyGamma
+LINE: 506
+TYPE: >>
+INPUT: PolyGamma[3, 5]
+EXPECTED:
+= 6*(-22369/20736 + Pi^4/90) (matches wolframscript, not mathics)
+---
