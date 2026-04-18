@@ -555,6 +555,74 @@ mod derivative_prime_notation {
       "E^x*Cos[x] + E^x*Sin[x]"
     );
   }
+
+  // Derivative[n][f] returning pure functions
+  #[test]
+  fn derivative_n_sin() {
+    assert_eq!(interpret("Derivative[1][Sin]").unwrap(), "Cos[#1] & ");
+  }
+
+  #[test]
+  fn derivative_n_cos() {
+    assert_eq!(interpret("Derivative[1][Cos]").unwrap(), "-Sin[#1] & ");
+  }
+
+  #[test]
+  fn derivative_n_exp() {
+    assert_eq!(interpret("Derivative[1][Exp]").unwrap(), "E^#1 & ");
+  }
+
+  #[test]
+  fn derivative_n_log() {
+    assert_eq!(interpret("Derivative[1][Log]").unwrap(), "#1^(-1) & ");
+  }
+
+  #[test]
+  fn derivative_n_sin_second() {
+    assert_eq!(interpret("Derivative[2][Sin]").unwrap(), "-Sin[#1] & ");
+  }
+
+  #[test]
+  fn derivative_n_sin_third() {
+    assert_eq!(interpret("Derivative[3][Sin]").unwrap(), "-Cos[#1] & ");
+  }
+
+  #[test]
+  fn derivative_n_sin_fourth() {
+    assert_eq!(interpret("Derivative[4][Sin]").unwrap(), "Sin[#1] & ");
+  }
+
+  #[test]
+  fn derivative_n_pure_function_cubic() {
+    assert_eq!(interpret("Derivative[1][#^3&]").unwrap(), "3*#1^2 & ");
+  }
+
+  #[test]
+  fn derivative_n_pure_function_cubic_second() {
+    assert_eq!(interpret("Derivative[2][#^3&]").unwrap(), "6*#1 & ");
+  }
+
+  #[test]
+  fn derivative_n_pure_function_cubic_third() {
+    assert_eq!(interpret("Derivative[3][#^3&]").unwrap(), "6 & ");
+  }
+
+  #[test]
+  fn derivative_n_applied() {
+    // Derivative[1][Sin][x] should evaluate like Sin'[x]
+    assert_eq!(interpret("Derivative[1][Sin][x]").unwrap(), "Cos[x]");
+  }
+
+  #[test]
+  fn derivative_n_applied_numeric() {
+    assert_eq!(interpret("Derivative[1][Sin][0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn derivative_n_undefined_function() {
+    // Derivative of undefined function stays symbolic
+    assert_eq!(interpret("Derivative[1][g]").unwrap(), "Derivative[1][g]");
+  }
 }
 
 mod series {
