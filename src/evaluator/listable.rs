@@ -226,6 +226,28 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       .or_else(|_| std::env::var("USERNAME"))
       .ok()
       .map(Expr::String),
+    "$SystemID" => {
+      // Match wolframscript's SystemID format: e.g. "MacOSX-ARM64", "Linux-x86-64"
+      let os = if cfg!(target_os = "macos") {
+        "MacOSX"
+      } else if cfg!(target_os = "linux") {
+        "Linux"
+      } else if cfg!(target_os = "windows") {
+        "Windows"
+      } else {
+        "Unknown"
+      };
+      let arch = if cfg!(target_arch = "aarch64") {
+        "ARM64"
+      } else if cfg!(target_arch = "x86_64") {
+        "x86-64"
+      } else if cfg!(target_arch = "x86") {
+        "x86"
+      } else {
+        std::env::consts::ARCH
+      };
+      Some(Expr::String(format!("{}-{}", os, arch)))
+    }
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![

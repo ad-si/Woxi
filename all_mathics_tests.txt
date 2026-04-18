@@ -676,14 +676,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: SystemID
-LINE: 838
-TYPE: X>
-INPUT: $SystemID
-EXPECTED:
-= linux
----
-FILE: mathics/builtin/system.py
 CLASS: Version
 LINE: 913
 TYPE: >>

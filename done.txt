@@ -1835,3 +1835,11 @@ INPUT: $UserName
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: SystemID
+LINE: 838
+TYPE: X>
+INPUT: $SystemID
+EXPECTED:
+= linux
+---

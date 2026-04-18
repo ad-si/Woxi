@@ -281,6 +281,11 @@ mod precision {
   fn user_name_head_is_string() {
     assert_eq!(interpret("Head[$UserName] == String").unwrap(), "True");
   }
+
+  #[test]
+  fn system_id_head_is_string() {
+    assert_eq!(interpret("Head[$SystemID] == String").unwrap(), "True");
+  }
 }
 
 mod accuracy {
