@@ -5287,14 +5287,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 986
-TYPE: >>
-INPUT: Integrate[Sin[x] ^ 5, x]
-EXPECTED:
-= Cos[x] (-1 - Cos[x] ^ 4 / 5 + 2 Cos[x] ^ 2 / 3)
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 996
 TYPE: >>
 INPUT: Integrate[1 / (1 - 4 x + x^2), x]

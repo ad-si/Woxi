@@ -1987,3 +1987,11 @@ INPUT: Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]
 EXPECTED:
 = 10*x - 2*x^2 + 3*x^3 (matches wolframscript; mathics shows factored form x (10 - 2 x + 3 x ^ 2))
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 986
+TYPE: >>
+INPUT: Integrate[Sin[x] ^ 5, x]
+EXPECTED:
+= (-5*Cos[x])/8 + (5*Cos[3*x])/48 - Cos[5*x]/80 (matches wolframscript; mathics shows equivalent factored form Cos[x] (-1 - Cos[x]^4/5 + 2 Cos[x]^2/3))
+---
