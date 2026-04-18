@@ -7782,14 +7782,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/distance/numeric.py
 CLASS: CanberraDistance
-LINE: 92
-TYPE: >>
-INPUT: CanberraDistance[-7, 5]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/distance/numeric.py
-CLASS: CanberraDistance
 LINE: 95
 TYPE: >>
 INPUT: CanberraDistance[{-1, -1}, {1, 1}]

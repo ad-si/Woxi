@@ -1867,6 +1867,19 @@ mod expand_threading {
   }
 
   #[test]
+  fn canberra_distance_scalar() {
+    assert_eq!(interpret("CanberraDistance[-7, 5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn canberra_distance_vector() {
+    assert_eq!(
+      interpret("CanberraDistance[{-1, -1}, {1, 1}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn string_replace_with_limit() {
     assert_eq!(
       interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")

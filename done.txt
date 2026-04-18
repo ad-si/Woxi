@@ -1717,3 +1717,11 @@ INPUT: BrayCurtisDistance[-7, 5]
 EXPECTED:
 = 6
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CanberraDistance
+LINE: 92
+TYPE: >>
+INPUT: CanberraDistance[-7, 5]
+EXPECTED:
+= 1
+---
