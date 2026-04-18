@@ -1358,6 +1358,11 @@ pub fn dispatch_math_functions(
     "PowerMod" if args.len() == 3 => {
       return Some(crate::functions::math_ast::power_mod_ast(args));
     }
+    "MersennePrimeExponent" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::mersenne_prime_exponent_ast(
+        args,
+      ));
+    }
     "PrimePi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_pi_ast(args));
     }

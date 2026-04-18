@@ -38,6 +38,22 @@ mod factor_integer {
     assert_eq!(interpret("FactorInteger[8]").unwrap(), "{{2, 3}}");
     assert_eq!(interpret("FactorInteger[27]").unwrap(), "{{3, 3}}");
   }
+
+  #[test]
+  fn rational() {
+    assert_eq!(
+      interpret("FactorInteger[2010 / 2011]").unwrap(),
+      "{{2, 1}, {3, 1}, {5, 1}, {67, 1}, {2011, -1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[12/35]").unwrap(),
+      "{{2, 2}, {3, 1}, {5, -1}, {7, -1}}"
+    );
+    assert_eq!(
+      interpret("FactorInteger[-12/35]").unwrap(),
+      "{{-1, 1}, {2, 2}, {3, 1}, {5, -1}, {7, -1}}"
+    );
+  }
 }
 
 mod divisible {
@@ -1932,5 +1948,29 @@ mod carmichael_lambda {
       interpret("CarmichaelLambda[{6, 12, 100}]").unwrap(),
       "{2, 2, 20}"
     );
+  }
+}
+
+mod mersenne_prime_exponent {
+  use super::*;
+
+  #[test]
+  fn first_ten() {
+    assert_eq!(
+      interpret("Table[MersennePrimeExponent[n], {n, 10}]").unwrap(),
+      "{2, 3, 5, 7, 13, 17, 19, 31, 61, 89}"
+    );
+  }
+
+  #[test]
+  fn single_values() {
+    assert_eq!(interpret("MersennePrimeExponent[1]").unwrap(), "2");
+    assert_eq!(interpret("MersennePrimeExponent[5]").unwrap(), "13");
+    assert_eq!(interpret("MersennePrimeExponent[20]").unwrap(), "4423");
+  }
+
+  #[test]
+  fn large_index() {
+    assert_eq!(interpret("MersennePrimeExponent[51]").unwrap(), "82589933");
   }
 }

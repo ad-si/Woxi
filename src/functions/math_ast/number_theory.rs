@@ -2736,6 +2736,47 @@ pub fn mod_inverse(a: i128, m: i128) -> Option<i128> {
   }
 }
 
+// ─── MersennePrimeExponent ─────────────────────────────────────────
+
+/// MersennePrimeExponent[n] - gives the nth Mersenne prime exponent
+/// A Mersenne prime is a prime of the form 2^p - 1; this returns p.
+pub fn mersenne_prime_exponent_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MersennePrimeExponent expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Known Mersenne prime exponents (OEIS A000043)
+  const MERSENNE_EXPONENTS: &[i128] = &[
+    2, 3, 5, 7, 13, 17, 19, 31, 61, 89, 107, 127, 521, 607, 1279, 2203, 2281,
+    3217, 4253, 4423, 9689, 9941, 11213, 19937, 21701, 23209, 44497, 86243,
+    110503, 132049, 216091, 756839, 859433, 1257787, 1398269, 2976221, 3021377,
+    6972593, 13466917, 20996011, 24036583, 25964951, 30402457, 32582657,
+    37156667, 42643801, 43112609, 57885161, 74207281, 77232917, 82589933,
+  ];
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 1 && n <= MERSENNE_EXPONENTS.len() as i128 => n as usize,
+    Some(n) if n < 1 => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "The argument {} should be a positive integer.",
+        n
+      )));
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MersennePrimeExponent".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  Ok(Expr::Integer(MERSENNE_EXPONENTS[n - 1]))
+}
+
 // ─── PrimePi ───────────────────────────────────────────────────────
 
 /// PrimePi[n] - Counts the number of primes <= n
