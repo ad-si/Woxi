@@ -549,14 +549,6 @@ EXPECTED:
 = {ImportExport`, XML`, Internal`, System`, Global`}
 ---
 FILE: mathics/builtin/system.py
-CLASS: ProcessorType
-LINE: 574
-TYPE: >>
-INPUT: $ProcessorType
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: PythonImplementation
 LINE: 595
 TYPE: >>

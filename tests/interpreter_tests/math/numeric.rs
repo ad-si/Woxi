@@ -288,6 +288,14 @@ mod precision {
   }
 
   #[test]
+  fn processor_type_head_is_string() {
+    assert_eq!(
+      interpret("Head[$ProcessorType] == String").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn environment_returns_string_for_set_var() {
     assert_eq!(
       interpret("Head[Environment[\"PATH\"]] == String").unwrap(),

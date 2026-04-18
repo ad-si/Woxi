@@ -2241,7 +2241,9 @@ pub fn dispatch_math_functions(
     "CanberraDistance" if args.len() == 2 => {
       // CanberraDistance[u, v] = Sum[Abs[ui - vi] / (Abs[ui] + Abs[vi])]
       // Scalar fallback: Abs[a - b] / (Abs[a] + Abs[b])
-      if !matches!(&args[0], Expr::List(_)) && !matches!(&args[1], Expr::List(_)) {
+      if !matches!(&args[0], Expr::List(_))
+        && !matches!(&args[1], Expr::List(_))
+      {
         let num = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {

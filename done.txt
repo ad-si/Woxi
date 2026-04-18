@@ -1899,3 +1899,11 @@ INPUT: $SessionID
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: ProcessorType
+LINE: 574
+TYPE: >>
+INPUT: $ProcessorType
+EXPECTED:
+= ...
+---

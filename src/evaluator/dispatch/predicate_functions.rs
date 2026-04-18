@@ -87,7 +87,9 @@ pub fn dispatch_predicate_functions(
       }
       let is_machine = match &args[0] {
         Expr::Real(_) => true,
-        Expr::FunctionCall { name, args: ca } if name == "Complex" && ca.len() == 2 => {
+        Expr::FunctionCall { name, args: ca }
+          if name == "Complex" && ca.len() == 2 =>
+        {
           matches!(&ca[0], Expr::Real(_)) || matches!(&ca[1], Expr::Real(_))
         }
         _ => {

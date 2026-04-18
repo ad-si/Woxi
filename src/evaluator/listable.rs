@@ -257,6 +257,19 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       };
       Some(Expr::String(format!("{}-{}", os, arch)))
     }
+    "$ProcessorType" => {
+      // wolframscript returns just the arch string, e.g. "ARM64" or "x86-64"
+      let arch = if cfg!(target_arch = "aarch64") {
+        "ARM64"
+      } else if cfg!(target_arch = "x86_64") {
+        "x86-64"
+      } else if cfg!(target_arch = "x86") {
+        "x86"
+      } else {
+        std::env::consts::ARCH
+      };
+      Some(Expr::String(arch.to_string()))
+    }
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![
