@@ -149,6 +149,15 @@ mod coefficient {
     assert_eq!(interpret("Coefficient[3 x^2 + 5 x, x^2]").unwrap(), "3");
     assert_eq!(interpret("Coefficient[(x + y)^4, x^2]").unwrap(), "6*y^2");
   }
+
+  #[test]
+  fn non_polynomial_factor() {
+    // x*Cos[x+3] is linear in x; Cos[x+3] is the coefficient
+    assert_eq!(
+      interpret("Coefficient[x*Cos[x + 3] + 6*y, x]").unwrap(),
+      "Cos[3 + x]"
+    );
+  }
 }
 
 mod expand {

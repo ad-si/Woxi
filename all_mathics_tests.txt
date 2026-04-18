@@ -4999,14 +4999,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Coefficient
-LINE: 494
-TYPE: >>
-INPUT: Coefficient[(x + 3 y)^5, x]
-EXPECTED:
-= 405 y ^ 4
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
 LINE: 496
 TYPE: >>
 INPUT: Coefficient[(x + 3 y)^5, x * y^4]
@@ -5023,27 +5015,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Coefficient
-LINE: 500
-TYPE: >>
-INPUT: Coefficient[x*Cos[x + 3] + 6*y, x]
-EXPECTED:
-= Cos[3 + x]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
 LINE: 512
 TYPE: >>
 INPUT: Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]
 EXPECTED:
 = (2 + x) ^ 3 + (3 + x) ^ 2
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
-LINE: 514
-TYPE: >>
-INPUT: Coefficient[a x^2 + b y^3 + c x + d y + 5, x, 0]
-EXPECTED:
-= 5 + b y ^ 3 + d y
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientArrays
@@ -5236,14 +5212,6 @@ TYPE: >>
 INPUT: Exponent[x^(n + 1) + Sqrt[x] + 1, x]
 EXPECTED:
 = Max[1 / 2, 1 + n]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Exponent
-LINE: 1322
-TYPE: >>
-INPUT: Exponent[x / y, y]
-EXPECTED:
-= -1
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Factor
