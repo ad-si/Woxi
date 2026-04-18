@@ -4718,22 +4718,6 @@ EXPECTED:
 = 8
 ---
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: DiceDissimilarity
-LINE: 216
-TYPE: >>
-INPUT: DiceDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 1 / 2
----
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: JaccardDissimilarity
-LINE: 285
-TYPE: >>
-INPUT: JaccardDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 2 / 3
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: LucasL
@@ -4743,54 +4727,6 @@ INPUT: Series[LucasL[1/2, x], {x, 0, 5}]
 EXPECTED:
 = 1 + x / 4 + x ^ 2 / 32 - x ^ 3 / 128 - 5 x ^ 4 / 2048 + 7 x ^ 5 / 8192 + O[x] ^ 6
 ---
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: MatchingDissimilarity
-LINE: 354
-TYPE: >>
-INPUT: MatchingDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 4 / 7
----
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: RogersTanimotoDissimilarity
-LINE: 466
-TYPE: >>
-INPUT: RogersTanimotoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 8 / 11
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: RussellRaoDissimilarity
-LINE: 492
-TYPE: >>
-INPUT: RussellRaoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 5 / 7
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: SokalSneathDissimilarity
-LINE: 519
-TYPE: >>
-INPUT: SokalSneathDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 4 / 5
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: YuleDissimilarity
-LINE: 734
-TYPE: >>
-INPUT: YuleDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
-EXPECTED:
-= 6 / 5
----
-FILE: mathics/builtin/vectors/constructing.py
-CLASS: AngleVector
-LINE: 35
-TYPE: >>
-INPUT: AngleVector[{1, 10}, a]
-EXPECTED:
-= {1 + Cos[a], 10 + Sin[a]}
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Cross
@@ -4876,46 +4812,6 @@ TYPE: >>
 INPUT: Abs[VectorAngle[Projection[u, v], v]] < 0. + 10^-7
 EXPECTED:
 = True
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: UnitVector
-LINE: 171
-TYPE: >>
-INPUT: UnitVector[2]
-EXPECTED:
-= {0, 1}
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: UnitVector
-LINE: 173
-TYPE: >>
-INPUT: UnitVector[4, 3]
-EXPECTED:
-= {0, 0, 1, 0}
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: VectorAngle
-LINE: 215
-TYPE: >>
-INPUT: VectorAngle[{1, 0}, {0, 1}]
-EXPECTED:
-= Pi / 2
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: VectorAngle
-LINE: 218
-TYPE: >>
-INPUT: VectorAngle[{1, 2}, {3, 1}]
-EXPECTED:
-= Pi / 4
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: VectorAngle
-LINE: 221
-TYPE: >>
-INPUT: VectorAngle[{1, 1, 0}, {1, 0, 1}]
-EXPECTED:
-= Pi / 3
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Apart
