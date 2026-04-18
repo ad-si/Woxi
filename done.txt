@@ -383,3 +383,75 @@ INPUT: Hypergeometric1F1[1, 2, 3.0]
 EXPECTED:
 = 6.36185
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: SlotSequence
+LINE: 224
+TYPE: >>
+INPUT: Plus[##]& [1, 2, 3]
+EXPECTED:
+= 6
+---
+FILE: mathics/builtin/functional/application.py
+CLASS: SlotSequence
+LINE: 226
+TYPE: >>
+INPUT: Plus[##2]& [1, 2, 3]
+EXPECTED:
+= 5
+---
+FILE: mathics/builtin/functional/application.py
+CLASS: SlotSequence
+LINE: 229
+TYPE: >>
+INPUT: FullForm[##]
+EXPECTED:
+= SlotSequence[1]
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: ArrayQ
+LINE: 42
+TYPE: >>
+INPUT: ArrayQ[{{a, b}, {c, d}}, 2, SymbolQ]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: MemberQ
+LINE: 210
+TYPE: >>
+INPUT: MemberQ[{"a", b, f[x]}, _?NumericQ]
+EXPECTED:
+= False
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: MemberQ
+LINE: 212
+TYPE: >>
+INPUT: MemberQ[_List][{{}}]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: MatrixQ
+LINE: 169
+TYPE: >>
+INPUT: MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: MatrixQ
+LINE: 180
+TYPE: >>
+INPUT: MatrixQ[{{1, 2}, {3, 4 + 5}}, Positive]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: MatrixQ
+LINE: 183
+TYPE: >>
+INPUT: MatrixQ[{{1, 2 I}, {3, 4 + 5}}, Positive]
+EXPECTED:
+= False
+---

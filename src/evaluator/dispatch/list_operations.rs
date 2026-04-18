@@ -1660,6 +1660,11 @@ pub fn dispatch_list_operations(
     "MatrixQ" if args.len() == 1 => {
       return Some(list_helpers_ast::matrix_q_ast(&args[0]));
     }
+    "MatrixQ" if args.len() == 2 => {
+      return Some(list_helpers_ast::matrix_q_with_test_ast(
+        &args[0], &args[1],
+      ));
+    }
     "ContainsAny" if args.len() == 2 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         let set1: std::collections::HashSet<String> =
