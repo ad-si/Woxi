@@ -2737,6 +2737,35 @@ mod polynomial_remainder {
   }
 }
 
+mod solve_expression_target {
+  use super::*;
+
+  #[test]
+  fn solve_for_function_call() {
+    assert_eq!(
+      interpret("Solve[f[x + y] == 3, f[x + y]]").unwrap(),
+      "{{f[x + y] -> 3}}"
+    );
+  }
+}
+
+mod solve_with_domain {
+  use super::*;
+
+  #[test]
+  fn reals_no_complex() {
+    assert_eq!(interpret("Solve[x^2 == -1, x, Reals]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn reals_with_solutions() {
+    assert_eq!(
+      interpret("Solve[x^2 == 1, x, Reals]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+  }
+}
+
 mod solve_always {
   use super::*;
 
