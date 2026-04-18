@@ -493,6 +493,11 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Special case: HypergeometricU[0, b, z] = 1
+  if matches!(&args[0], Expr::Integer(0)) {
+    return Ok(Expr::Integer(1));
+  }
+
   // Numeric evaluation when at least one argument is Real and all are numeric
   let a_val = expr_to_f64(&args[0]);
   let b_val = expr_to_f64(&args[1]);
