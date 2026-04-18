@@ -2243,3 +2243,11 @@ INPUT: Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12, {All, 5}]
 EXPECTED:
 = {11, 10, 14, 15, 8.5} (matches wolframscript; mathics returns only first 3)
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: BrayCurtisDistance
+LINE: 59
+TYPE: >>
+INPUT: BrayCurtisDistance[{-1, -1}, {10, 10}]
+EXPECTED:
+= 11/9 (matches wolframscript)
+---
