@@ -5247,38 +5247,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
-LINE: 373
-TYPE: >>
-INPUT: Derivative[1][Sin]
-EXPECTED:
-= Cos[#1]&
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 375
-TYPE: >>
-INPUT: Derivative[3][Sin]
-EXPECTED:
-= -Cos[#1]&
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 377
-TYPE: >>
-INPUT: Derivative[2][# ^ 3&]
-EXPECTED:
-= 6 #1&
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 381
-TYPE: >>
-INPUT: Sin'[x]
-EXPECTED:
-= Cos[x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
 LINE: 383
 TYPE: >>
 INPUT: (# ^ 4&)''

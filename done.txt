@@ -1401,3 +1401,35 @@ INPUT: Table[Pochhammer[0, n], {n, 0, -4, -1}]
 EXPECTED:
 = {1, -1, 1 / 2, -1 / 6, 1 / 24}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 373
+TYPE: >>
+INPUT: Derivative[1][Sin]
+EXPECTED:
+= Cos[#1]&
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 375
+TYPE: >>
+INPUT: Derivative[3][Sin]
+EXPECTED:
+= -Cos[#1]&
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 377
+TYPE: >>
+INPUT: Derivative[2][# ^ 3&]
+EXPECTED:
+= 6 #1&
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 381
+TYPE: >>
+INPUT: Sin'[x]
+EXPECTED:
+= Cos[x]
+---
