@@ -1661,3 +1661,11 @@ INPUT: NumberDigit[210.345, -1]
 EXPECTED:
 = 3
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselJZero
+LINE: 489
+TYPE: >>
+INPUT: N[BesselJZero[0, 1]]
+EXPECTED:
+= 2.40483
+---
