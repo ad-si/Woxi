@@ -281,6 +281,24 @@ mod cube_root {
     // Non-perfect cubes return n^(1/3)
     assert_eq!(interpret("CubeRoot[2]").unwrap(), "2^(1/3)");
   }
+
+  #[test]
+  fn non_perfect_cube_with_factor() {
+    // CubeRoot[16] = CubeRoot[8*2] = 2 * 2^(1/3)
+    assert_eq!(interpret("CubeRoot[16]").unwrap(), "2*2^(1/3)");
+  }
+
+  #[test]
+  fn cube_factor_54() {
+    // CubeRoot[54] = CubeRoot[27*2] = 3 * 2^(1/3)
+    assert_eq!(interpret("CubeRoot[54]").unwrap(), "3*2^(1/3)");
+  }
+
+  #[test]
+  fn negative_with_factor() {
+    // CubeRoot[-16] = -2 * 2^(1/3)
+    assert_eq!(interpret("CubeRoot[-16]").unwrap(), "-2*2^(1/3)");
+  }
 }
 
 mod sqrt_rational {

@@ -663,3 +663,27 @@ INPUT: MinimalPolynomial[Sqrt[2] + Sqrt[3], x]
 EXPECTED:
 = 1 - 10 x ^ 2 + x ^ 4
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: CubeRoot
+LINE: 63
+TYPE: >>
+INPUT: CubeRoot[16]
+EXPECTED:
+= 2 2 ^ (1 / 3)
+---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: Level
+LINE: 173
+TYPE: >>
+INPUT: Level[a ^ 2 + 2 * b, {-1}, Heads -> True]
+EXPECTED:
+= {Plus, Power, a, 2, Times, 2, b}
+---
+FILE: mathics/builtin/exp_structure/size_and_sig.py
+CLASS: LeafCount
+LINE: 164
+TYPE: >>
+INPUT: LeafCount[Sqrt[2]]
+EXPECTED:
+= 5
+---
