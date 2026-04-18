@@ -1160,31 +1160,60 @@ pub fn dispatch_math_functions(
     "PrimeNu" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_nu_ast(args));
     }
-    "MantissaExponent" if args.len() == 1 => match &args[0] {
-      Expr::Real(f) => {
-        if *f == 0.0 {
-          return Some(Ok(Expr::List(vec![Expr::Real(0.0), Expr::Integer(0)])));
+    "MantissaExponent" if args.len() == 1 || args.len() == 2 => {
+      // Parse base (default 10)
+      let base: f64 = if args.len() == 2 {
+        match &args[1] {
+          Expr::Integer(b) => *b as f64,
+          Expr::Real(b) => *b,
+          _ => 10.0,
         }
-        let abs_f = f.abs();
-        let e = abs_f.log10().floor() as i128 + 1;
-        let m = f / 10.0_f64.powi(e as i32);
-        return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
-      }
-      Expr::Integer(n) => {
-        if *n == 0 {
-          return Some(Ok(Expr::List(vec![
-            Expr::Integer(0),
-            Expr::Integer(0),
-          ])));
+      } else {
+        10.0
+      };
+      match &args[0] {
+        Expr::Real(f) => {
+          if *f == 0.0 {
+            return Some(Ok(Expr::List(vec![
+              Expr::Real(0.0),
+              Expr::Integer(0),
+            ])));
+          }
+          let abs_f = f.abs();
+          let e = (abs_f.ln() / base.ln()).floor() as i128 + 1;
+          let m = f / base.powi(e as i32);
+          return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
         }
-        let abs_n = n.unsigned_abs();
-        let e = (abs_n as f64).log10().floor() as i128 + 1;
-        let denom = 10_i128.pow(e as u32);
-        let mantissa = crate::functions::math_ast::make_rational_pub(*n, denom);
-        return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)])));
+        Expr::Integer(n) if base == 10.0 => {
+          if *n == 0 {
+            return Some(Ok(Expr::List(vec![
+              Expr::Integer(0),
+              Expr::Integer(0),
+            ])));
+          }
+          let abs_n = n.unsigned_abs();
+          let e = (abs_n as f64).log10().floor() as i128 + 1;
+          let denom = 10_i128.pow(e as u32);
+          let mantissa =
+            crate::functions::math_ast::make_rational_pub(*n, denom);
+          return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)])));
+        }
+        Expr::Integer(n) => {
+          if *n == 0 {
+            return Some(Ok(Expr::List(vec![
+              Expr::Integer(0),
+              Expr::Integer(0),
+            ])));
+          }
+          let f = *n as f64;
+          let abs_f = f.abs();
+          let e = (abs_f.ln() / base.ln()).floor() as i128 + 1;
+          let m = f / base.powi(e as i32);
+          return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
+        }
+        _ => {}
       }
-      _ => {}
-    },
+    }
     "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }

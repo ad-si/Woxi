@@ -587,7 +587,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MachineNumberQ" => Some((1, 1)),
     "MangoldtLambda" => Some((1, 1)),
     "ManhattanDistance" => Some((2, 2)),
-    "MantissaExponent" => Some((1, 1)),
+    "MantissaExponent" => Some((1, 2)),
     "Map" => Some((1, 3)),
     "MapAll" => Some((2, 2)),
     "MapApply" => Some((2, 2)),
