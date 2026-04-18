@@ -1733,3 +1733,11 @@ INPUT: Attributes[Undefined]
 EXPECTED:
 = {Protected}
 ---
+FILE: mathics/builtin/system.py
+CLASS: SystemWordLength
+LINE: 859
+TYPE: X>
+INPUT: $SystemWordLength
+EXPECTED:
+= 64
+---

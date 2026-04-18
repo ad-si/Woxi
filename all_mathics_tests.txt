@@ -724,14 +724,6 @@ EXPECTED:
 = linux
 ---
 FILE: mathics/builtin/system.py
-CLASS: SystemWordLength
-LINE: 859
-TYPE: X>
-INPUT: $SystemWordLength
-EXPECTED:
-= 64
----
-FILE: mathics/builtin/system.py
 CLASS: UserName
 LINE: 886
 TYPE: X>

@@ -246,6 +246,11 @@ mod precision {
   fn machine_real() {
     assert_eq!(interpret("Precision[0.5]").unwrap(), "MachinePrecision");
   }
+
+  #[test]
+  fn system_word_length() {
+    assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
+  }
 }
 
 mod accuracy {
