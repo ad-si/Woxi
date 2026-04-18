@@ -477,14 +477,6 @@ EXPECTED:
 = {...}
 ---
 FILE: mathics/builtin/system.py
-CLASS: GetEnvironment
-LINE: 196
-TYPE: S>
-INPUT: GetEnvironment[{"HOME", "USER"}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: Language
 LINE: 281
 TYPE: >>

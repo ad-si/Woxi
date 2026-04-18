@@ -1859,3 +1859,11 @@ INPUT: GetEnvironment["HOME"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: GetEnvironment
+LINE: 196
+TYPE: S>
+INPUT: GetEnvironment[{"HOME", "USER"}]
+EXPECTED:
+= ...
+---
