@@ -174,6 +174,65 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// MatrixQ[m, test] - True if m is a matrix and test[elem] is True for all elements.
+pub fn matrix_q_with_test_ast(
+  expr: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // First check if it's a valid matrix structure
+  let rows = match expr {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    Expr::List(_) => return Ok(Expr::Identifier("True".to_string())),
+    _ => return Ok(Expr::Identifier("False".to_string())),
+  };
+
+  let mut ncols = None;
+  for row in rows {
+    match row {
+      Expr::List(cols) => {
+        if let Some(expected) = ncols {
+          if cols.len() != expected {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        } else {
+          ncols = Some(cols.len());
+        }
+        // Check each element with the test function
+        for elem in cols {
+          if matches!(elem, Expr::List(_)) {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          let test_call = Expr::FunctionCall {
+            name: if let Expr::Identifier(n) = test {
+              n.clone()
+            } else {
+              // For non-identifier tests, build an application
+              "__test__".to_string()
+            },
+            args: vec![elem.clone()],
+          };
+          let result = if let Expr::Identifier(_) = test {
+            crate::evaluator::evaluate_expr_to_expr(&test_call)?
+          } else {
+            // Apply test as a function
+            let apply = Expr::FunctionCall {
+              name: "Apply".to_string(),
+              args: vec![test.clone(), Expr::List(vec![elem.clone()])],
+            };
+            crate::evaluator::evaluate_expr_to_expr(&apply)?
+          };
+          match &result {
+            Expr::Identifier(s) if s == "True" => {}
+            _ => return Ok(Expr::Identifier("False".to_string())),
+          }
+        }
+      }
+      _ => return Ok(Expr::Identifier("False".to_string())),
+    }
+  }
+  Ok(Expr::Identifier("True".to_string()))
+}
+
 /// SymmetricMatrixQ[m] - True if m is a symmetric square matrix (m[i][j] == m[j][i]).
 pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {

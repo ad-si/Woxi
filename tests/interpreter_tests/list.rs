@@ -6621,3 +6621,37 @@ mod splice {
     );
   }
 }
+
+mod matrix_q_with_test {
+  use super::*;
+
+  #[test]
+  fn number_q() {
+    assert_eq!(
+      interpret("MatrixQ[{{1, 3}, {4.0, 3/2}}, NumberQ]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn positive() {
+    assert_eq!(
+      interpret("MatrixQ[{{1, 2}, {3, 4 + 5}}, Positive]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn positive_with_complex() {
+    assert_eq!(
+      interpret("MatrixQ[{{1, 2 I}, {3, 4 + 5}}, Positive]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn one_arg_still_works() {
+    assert_eq!(interpret("MatrixQ[{{1, 2}, {3, 4}}]").unwrap(), "True");
+    assert_eq!(interpret("MatrixQ[{{1, 2}, {3}}]").unwrap(), "False");
+  }
+}
