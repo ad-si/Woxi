@@ -2603,6 +2603,14 @@ mod complex_symbol {
       "{2*I, 4 - I}"
     );
   }
+
+  #[test]
+  fn depth_complex_is_atom() {
+    assert_eq!(interpret("Depth[1 + 2 I]").unwrap(), "1");
+    assert_eq!(interpret("Depth[3 + 4I]").unwrap(), "1");
+    assert_eq!(interpret("Depth[I]").unwrap(), "1");
+    assert_eq!(interpret("Depth[2I]").unwrap(), "1");
+  }
 }
 
 mod hold_all_symbol {

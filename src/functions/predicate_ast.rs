@@ -1333,6 +1333,10 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   fn calc_depth(expr: &Expr) -> i128 {
+    // Complex numbers are atoms with depth 1
+    if is_complex_number(expr) {
+      return 1;
+    }
     match expr {
       Expr::List(items) => 1 + items.iter().map(calc_depth).max().unwrap_or(0),
       Expr::FunctionCall { args, .. } => {
