@@ -335,6 +335,15 @@ mod precision {
     // $CommandLine should return a list (of string args).
     assert_eq!(interpret("Head[$CommandLine] == List").unwrap(), "True");
   }
+
+  #[test]
+  fn script_command_line_head_is_list() {
+    // $ScriptCommandLine should return a list (of string args).
+    assert_eq!(
+      interpret("Head[$ScriptCommandLine] == List").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod accuracy {

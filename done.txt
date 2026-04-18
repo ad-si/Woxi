@@ -1883,3 +1883,11 @@ INPUT: $CommandLine
 EXPECTED:
 = {...}
 ---
+FILE: mathics/builtin/system.py
+CLASS: ScriptCommandLine
+LINE: 642
+TYPE: S>
+INPUT: $ScriptCommandLine
+EXPECTED:
+= {...}
+---

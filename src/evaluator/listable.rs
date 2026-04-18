@@ -229,9 +229,12 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$VersionNumber" => {
       Some(Expr::String(env!("WOXI_GIT_VERSION").to_string()))
     }
-    "$CommandLine" => Some(Expr::List(
-      std::env::args().map(Expr::String).collect(),
-    )),
+    "$CommandLine" => {
+      Some(Expr::List(std::env::args().map(Expr::String).collect()))
+    }
+    "$ScriptCommandLine" => {
+      Some(Expr::List(std::env::args().map(Expr::String).collect()))
+    }
     "$SystemID" => {
       // Match wolframscript's SystemID format: e.g. "MacOSX-ARM64", "Linux-x86-64"
       let os = if cfg!(target_os = "macos") {
