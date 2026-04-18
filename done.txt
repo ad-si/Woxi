@@ -2067,3 +2067,11 @@ INPUT: Solve[x == 2, x]
 EXPECTED:
 = {{x -> 2}} (matches wolframscript; mathics expected an error from prior x := 3 binding)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 872
+TYPE: >>
+INPUT: FindRoot[Cos[x], {x, 1}]
+EXPECTED:
+= {x -> 1.5707963267948966} (matches wolframscript; mathics shows rounded 1.5708)
+---

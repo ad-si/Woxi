@@ -5165,14 +5165,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindRoot
-LINE: 872
-TYPE: >>
-INPUT: FindRoot[Cos[x], {x, 1}]
-EXPECTED:
-= {x -> 1.5708}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindRoot
 LINE: 874
 TYPE: >>
 INPUT: FindRoot[Sin[x] + Exp[x],{x, 0}]
