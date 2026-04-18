@@ -1709,3 +1709,11 @@ INPUT: ChessboardDistance[-7, 5]
 EXPECTED:
 = 12
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: BrayCurtisDistance
+LINE: 56
+TYPE: >>
+INPUT: BrayCurtisDistance[-7, 5]
+EXPECTED:
+= 6
+---

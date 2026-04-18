@@ -2143,7 +2143,9 @@ pub fn dispatch_math_functions(
         return Some(evaluate_expr_to_expr(&max_expr));
       }
       // Scalar fallback: ChessboardDistance[a, b] = Abs[a - b]
-      if !matches!(&args[0], Expr::List(_)) && !matches!(&args[1], Expr::List(_)) {
+      if !matches!(&args[0], Expr::List(_))
+        && !matches!(&args[1], Expr::List(_))
+      {
         let abs_expr = Expr::FunctionCall {
           name: "Abs".to_string(),
           args: vec![Expr::BinaryOp {
@@ -2161,6 +2163,35 @@ pub fn dispatch_math_functions(
     }
     "BrayCurtisDistance" if args.len() == 2 => {
       // BrayCurtisDistance[u, v] = Total[Abs[u - v]] / Total[Abs[u + v]]
+      // Scalar fallback: Abs[a - b] / Abs[a + b]
+      if !matches!(&args[0], Expr::List(_)) && !matches!(&args[1], Expr::List(_)) {
+        let num = Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: Box::new(args[1].clone()),
+            }),
+          }],
+        };
+        let den = Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(args[0].clone()),
+            right: Box::new(args[1].clone()),
+          }],
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(num),
+          right: Box::new(den),
+        };
+        return Some(evaluate_expr_to_expr(&result));
+      }
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
         && a.len() == b.len()
         && !a.is_empty()

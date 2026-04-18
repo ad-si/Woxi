@@ -1854,6 +1854,19 @@ mod expand_threading {
   }
 
   #[test]
+  fn bray_curtis_distance_scalar() {
+    assert_eq!(interpret("BrayCurtisDistance[-7, 5]").unwrap(), "6");
+  }
+
+  #[test]
+  fn bray_curtis_distance_vector() {
+    assert_eq!(
+      interpret("BrayCurtisDistance[{-1, -1}, {10, 10}]").unwrap(),
+      "11/9"
+    );
+  }
+
+  #[test]
   fn string_replace_with_limit() {
     assert_eq!(
       interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")
