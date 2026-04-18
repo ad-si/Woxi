@@ -1625,3 +1625,15 @@ LINE: 92
 INPUT: RealDigits[12345, 2, 4]
 EXPECTED: {{1, 1, 0, 0}, 14}
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 116
+INPUT: RealDigits[0]
+EXPECTED: {{0}, 1}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 144
+INPUT: RealDigits[0]
+EXPECTED: {{0}, 1}
+---

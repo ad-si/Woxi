@@ -1056,8 +1056,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || matches!(&abs_expr, Expr::Real(f) if *f == 0.0);
 
   if is_zero {
-    let digits = vec![Expr::Integer(0); num_digits];
-    return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(0)]));
+    let count = if explicit_num_digits { num_digits } else { 1 };
+    let exp = if explicit_num_digits { 0 } else { 1 };
+    let digits = vec![Expr::Integer(0); count];
+    return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(exp)]));
   }
 
   // For rationals, use long division with cycle detection

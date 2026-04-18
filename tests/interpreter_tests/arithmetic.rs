@@ -2836,4 +2836,9 @@ mod real_digits_base {
   fn base_6_terminating() {
     assert_eq!(interpret("RealDigits[3/2, 6]").unwrap(), "{{1, 3}, 1}");
   }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("RealDigits[0]").unwrap(), "{{0}, 1}");
+  }
 }

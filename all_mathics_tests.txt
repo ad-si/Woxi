@@ -15437,18 +15437,6 @@ INPUT: RealDigits[1/197, 260, 5, -6]
 EXPECTED: {{246, 208, 137, 67, 80}, -5}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 116
-INPUT: RealDigits[0]
-EXPECTED: {{0}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 144
-INPUT: RealDigits[0]
-EXPECTED: {{0}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
 LINE: 166
 INPUT: N[Pi, Pi]
