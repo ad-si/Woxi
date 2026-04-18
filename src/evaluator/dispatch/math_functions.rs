@@ -1116,7 +1116,11 @@ pub fn dispatch_math_functions(
     "LogisticSigmoid" if args.len() == 1 => {
       return Some(crate::functions::math_ast::logistic_sigmoid_ast(args));
     }
-    "ProductLog" if args.len() == 1 => {
+    "LambertW" => {
+      // LambertW is an alias for ProductLog — rewrite and evaluate
+      return Some(crate::functions::math_ast::product_log_ast(args));
+    }
+    "ProductLog" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::product_log_ast(args));
     }
     "Prime" if args.len() == 1 => {

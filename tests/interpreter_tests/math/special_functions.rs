@@ -5815,3 +5815,47 @@ mod gamma_incomplete {
     assert_eq!(interpret("Gamma[1, 1.]").unwrap(), "E^-1.");
   }
 }
+
+mod lambert_w {
+  use super::*;
+
+  #[test]
+  fn alias_to_product_log() {
+    assert_eq!(interpret("LambertW[k, z]").unwrap(), "ProductLog[k, z]");
+  }
+
+  #[test]
+  fn single_arg() {
+    assert_eq!(interpret("LambertW[0]").unwrap(), "0");
+    assert_eq!(interpret("LambertW[E]").unwrap(), "1");
+  }
+
+  #[test]
+  fn product_log_branch_0() {
+    assert_eq!(interpret("ProductLog[0, E]").unwrap(), "1");
+  }
+}
+
+mod subfactorial {
+  use super::*;
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("Subfactorial[{0, 1, 2, 3}]").unwrap(),
+      "{1, 0, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn float_arg() {
+    assert_eq!(interpret("Subfactorial[6.0]").unwrap(), "265");
+  }
+
+  #[test]
+  fn basic_values() {
+    assert_eq!(interpret("Subfactorial[0]").unwrap(), "1");
+    assert_eq!(interpret("Subfactorial[1]").unwrap(), "0");
+    assert_eq!(interpret("Subfactorial[4]").unwrap(), "9");
+  }
+}

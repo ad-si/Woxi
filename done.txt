@@ -319,3 +319,67 @@ INPUT: Gudermannian[-4.2] == -Gudermannian[4.2]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/specialfns/expintegral.py
+CLASS: ExpIntegralE
+LINE: 30
+TYPE: >>
+INPUT: ExpIntegralE[2.0, 2.0]
+EXPECTED:
+= 0.0375343
+---
+FILE: mathics/builtin/specialfns/expintegral.py
+CLASS: ExpIntegralEi
+LINE: 50
+TYPE: >>
+INPUT: ExpIntegralEi[2.0]
+EXPECTED:
+= 4.95423
+---
+FILE: mathics/builtin/specialfns/expintegral.py
+CLASS: LambertW
+LINE: 74
+TYPE: >>
+INPUT: LambertW[k, z]
+EXPECTED:
+= ProductLog[k, z]
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Beta
+LINE: 69
+TYPE: >>
+INPUT: Beta[2, 3]
+EXPECTED:
+= 1 / 12
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: PolyGamma
+LINE: 503
+TYPE: >>
+INPUT: PolyGamma[5]
+EXPECTED:
+= 25 / 12 - EulerGamma
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Subfactorial
+LINE: 575
+TYPE: >>
+INPUT: Subfactorial[{0, 1, 2, 3}]
+EXPECTED:
+= {1, 0, 1, 2}
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Subfactorial
+LINE: 579
+TYPE: >>
+INPUT: Subfactorial[6.0]
+EXPECTED:
+= 265
+---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric1F1
+LINE: 45
+TYPE: >>
+INPUT: Hypergeometric1F1[1, 2, 3.0]
+EXPECTED:
+= 6.36185
+---
