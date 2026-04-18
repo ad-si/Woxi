@@ -2099,3 +2099,11 @@ INPUT: FindMaximum[-(x-3)^2+2., {x, 1}]
 EXPECTED:
 = {2., {x -> 3.}} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2326
+TYPE: >>
+INPUT: Solve[x^2 == -1, x, Complexes]
+EXPECTED:
+= {{x -> -I}, {x -> I}} (matches wolframscript)
+---
