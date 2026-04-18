@@ -7148,14 +7148,6 @@ EXPECTED:
 = t
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: HoldPattern
-LINE: 192
-TYPE: >>
-INPUT: Attributes[HoldPattern]
-EXPECTED:
-= {HoldAll, Protected}
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Longest
 LINE: 241
 TYPE: >>

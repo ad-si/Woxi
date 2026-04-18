@@ -3521,6 +3521,14 @@ mod automatic_symbol {
   }
 
   #[test]
+  fn hold_pattern_attributes() {
+    assert_eq!(
+      interpret("Attributes[HoldPattern]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
   fn automatic_in_list() {
     assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
   }

@@ -1765,3 +1765,11 @@ INPUT: Attributes[Composition]
 EXPECTED:
 = {Flat, OneIdentity, Protected}
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: HoldPattern
+LINE: 192
+TYPE: >>
+INPUT: Attributes[HoldPattern]
+EXPECTED:
+= {HoldAll, Protected}
+---

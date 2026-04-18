@@ -196,10 +196,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // HoldAll + Protected
-    "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
-    | "Block" | "With" | "Assuming" | "Trace" | "TraceScan" | "Defer"
-    | "Compile" | "CompoundExpression" | "Switch" | "Which" | "Catch"
-    | "Throw" | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
+    "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
+    | "Module" | "Block" | "With" | "Assuming" | "Trace" | "TraceScan"
+    | "Defer" | "Compile" | "CompoundExpression" | "Switch" | "Which"
+    | "Catch" | "Throw" | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
     | "Definition" | "FullDefinition" | "Attributes" | "Quiet" | "Assert" => {
       vec!["HoldAll", "Protected"]
