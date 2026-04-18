@@ -302,6 +302,17 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "DiceDissimilarity"
+    | "JaccardDissimilarity"
+    | "MatchingDissimilarity"
+    | "RogersTanimotoDissimilarity"
+    | "RussellRaoDissimilarity"
+    | "SokalSneathDissimilarity"
+    | "YuleDissimilarity"
+      if args.len() == 2 =>
+    {
+      return Some(binary_dissimilarity_ast(name, &args[0], &args[1]));
+    }
     "UpperTriangularize" if args.len() == 1 || args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::upper_triangularize_ast(args),
@@ -1751,4 +1762,78 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
     a = t;
   }
   a
+}
+
+/// Binary dissimilarity functions for binary (0/1) vectors.
+fn binary_dissimilarity_ast(
+  name: &str,
+  a: &Expr,
+  b: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let (list_a, list_b) = match (a, b) {
+    (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => (la, lb),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![a.clone(), b.clone()],
+      });
+    }
+  };
+
+  // Count n11 (both 1), n10 (a=1,b=0), n01 (a=0,b=1), n00 (both 0)
+  let mut n11: i128 = 0;
+  let mut n10: i128 = 0;
+  let mut n01: i128 = 0;
+  let mut n00: i128 = 0;
+
+  for (ai, bi) in list_a.iter().zip(list_b.iter()) {
+    let av = match ai {
+      Expr::Integer(v) => *v,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: vec![a.clone(), b.clone()],
+        });
+      }
+    };
+    let bv = match bi {
+      Expr::Integer(v) => *v,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: vec![a.clone(), b.clone()],
+        });
+      }
+    };
+    match (av != 0, bv != 0) {
+      (true, true) => n11 += 1,
+      (true, false) => n10 += 1,
+      (false, true) => n01 += 1,
+      (false, false) => n00 += 1,
+    }
+  }
+
+  let (num, den) = match name {
+    "DiceDissimilarity" => (n10 + n01, 2 * n11 + n10 + n01),
+    "JaccardDissimilarity" => (n10 + n01, n11 + n10 + n01),
+    "MatchingDissimilarity" => (n10 + n01, n11 + n10 + n01 + n00),
+    "RogersTanimotoDissimilarity" => {
+      (2 * (n10 + n01), 2 * (n10 + n01) + n11 + n00)
+    }
+    "RussellRaoDissimilarity" => (n10 + n01 + n00, n11 + n10 + n01 + n00),
+    "SokalSneathDissimilarity" => (2 * (n10 + n01), n11 + 2 * (n10 + n01)),
+    "YuleDissimilarity" => (2 * n10 * n01, n11 * n00 + n10 * n01),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![a.clone(), b.clone()],
+      });
+    }
+  };
+
+  if den == 0 {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  Ok(crate::functions::math_ast::make_rational(num, den))
 }

@@ -3801,7 +3801,7 @@ ImageApplyIndexed,,🚫,,10.0,3916
 KatzCentrality,,,,8.0,3916
 LinearOffsetFunction,,,,7.0,3916
 MarchenkoPasturDistribution,,,,10.3,3916
-MatchingDissimilarity,,,,6.0,3916
+MatchingDissimilarity,Matching dissimilarity between binary vectors,✅,pure,6.0,3916
 MenuStyle,,🚫,,8.0,3916
 MeyerWavelet,,🚫,,8.0,3916
 SearchQueryString,,🚫,,11.0,3916
@@ -3986,7 +3986,7 @@ HeunG,,,,12.1,4104
 ImageMarker,,🚫,,10.4,4104
 InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1.0,4104
 InverseTransformedRegion,,,,10.0,4104
-JaccardDissimilarity,,,,6.0,4104
+JaccardDissimilarity,Jaccard dissimilarity between binary vectors,✅,pure,6.0,4104
 LogBarnesG,,,,7.0,4104
 ParallelArray,,🚫,,7.0,4104
 RamanujanTauTheta,,,,6.0,4104
@@ -4064,7 +4064,7 @@ BoxObject,,🚫,,10.0,4204
 CloudExpressions,,🚫,,10.4,4204
 ControllabilityGramian,,,,8.0,4204
 CreateManagedLibraryExpression,,🚫,,10.0,4204
-DiceDissimilarity,,,,6.0,4204
+DiceDissimilarity,Dice dissimilarity between binary vectors,✅,pure,6.0,4204
 DualPolyhedron,,,,12.0,4204
 FileTemplate,,,,10.0,4204
 FractionalGaussianNoiseProcess,,🚫,,10.0,4204
@@ -4136,7 +4136,7 @@ PoissonWindow,,,,9.0,4262
 QuartileSkewness,,,,6.0,4262
 SequencePredict,,🚫,,11.1,4262
 SnDispersion,,,,11.1,4262
-SokalSneathDissimilarity,,,,6.0,4262
+SokalSneathDissimilarity,Sokal-Sneath dissimilarity between binary vectors,✅,pure,6.0,4262
 SortedEntityClass,,🚫,,12.0,4262
 SpellingCorrectionList,,🚫,,10.4,4262
 WelchWindow,Compute WelchWindow value,✅,pure,9.0,4262
@@ -4252,7 +4252,7 @@ PolygonAngle,,,,12.0,4387
 PredictorFunction,,🚫,,10.0,4387
 ProcessParameterQ,,,,9.0,4387
 QnDispersion,,,,11.1,4387
-RussellRaoDissimilarity,,,,6.0,4387
+RussellRaoDissimilarity,Russell-Rao dissimilarity between binary vectors,✅,pure,6.0,4387
 SequenceMostLayer,,🚫,,11.1,4387
 ServiceObject,,🚫,,10.0,4387
 ShowPageBreaks,,,,3.0,4387
@@ -4293,7 +4293,7 @@ PeanoCurve,,,,11.1,4437
 PrimitivePolynomialQ,,,,11.1,4437
 RadonTransform,,,,11.2,4437
 ReadByteArray,,,,11.3,4437
-RogersTanimotoDissimilarity,,,,6.0,4437
+RogersTanimotoDissimilarity,Rogers-Tanimoto dissimilarity between binary vectors,✅,pure,6.0,4437
 SimplePolygonQ,,,,12.0,4437
 SolidRegionQ,,,,11.0,4437
 SystemModelSimulate,,🚫,,11.3,4437
@@ -4766,7 +4766,7 @@ VertexCosineSimilarity,,,,9.0,4947
 VertexDiceSimilarity,,,,9.0,4947
 VertexJaccardSimilarity,,,,9.0,4947
 WeierstrassInvariantG3,,,,11.2,4947
-YuleDissimilarity,,,,6.0,4947
+YuleDissimilarity,Yule dissimilarity between binary vectors,✅,pure,6.0,4947
 AudioStreams,,🚫,,11.2,5013
 BioSequenceTranscribe,,🚫,,12.2,5013
 ClickToCopyEnabled,,🚫,,12.3,5013

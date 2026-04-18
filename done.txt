@@ -1065,3 +1065,107 @@ INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]
 EXPECTED:
 = 4 x Sin[x z] + x ^ 3 + y (3 x + 3 x ^ 2) + y ^ 2 (3 x + 4 Sin[x z]) + y ^ 3
 ---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: DiceDissimilarity
+LINE: 216
+TYPE: >>
+INPUT: DiceDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 1 / 2
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: JaccardDissimilarity
+LINE: 285
+TYPE: >>
+INPUT: JaccardDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 2 / 3
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: MatchingDissimilarity
+LINE: 354
+TYPE: >>
+INPUT: MatchingDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 4 / 7
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: RogersTanimotoDissimilarity
+LINE: 466
+TYPE: >>
+INPUT: RogersTanimotoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 8 / 11
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: RussellRaoDissimilarity
+LINE: 492
+TYPE: >>
+INPUT: RussellRaoDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 5 / 7
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: SokalSneathDissimilarity
+LINE: 519
+TYPE: >>
+INPUT: SokalSneathDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 4 / 5
+---
+FILE: mathics/builtin/intfns/combinatorial.py
+CLASS: YuleDissimilarity
+LINE: 734
+TYPE: >>
+INPUT: YuleDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
+EXPECTED:
+= 6 / 5
+---
+FILE: mathics/builtin/vectors/constructing.py
+CLASS: AngleVector
+LINE: 35
+TYPE: >>
+INPUT: AngleVector[{1, 10}, a]
+EXPECTED:
+= {1 + Cos[a], 10 + Sin[a]}
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: UnitVector
+LINE: 171
+TYPE: >>
+INPUT: UnitVector[2]
+EXPECTED:
+= {0, 1}
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: UnitVector
+LINE: 173
+TYPE: >>
+INPUT: UnitVector[4, 3]
+EXPECTED:
+= {0, 0, 1, 0}
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: VectorAngle
+LINE: 215
+TYPE: >>
+INPUT: VectorAngle[{1, 0}, {0, 1}]
+EXPECTED:
+= Pi / 2
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: VectorAngle
+LINE: 218
+TYPE: >>
+INPUT: VectorAngle[{1, 2}, {3, 1}]
+EXPECTED:
+= Pi / 4
+---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: VectorAngle
+LINE: 221
+TYPE: >>
+INPUT: VectorAngle[{1, 1, 0}, {1, 0, 1}]
+EXPECTED:
+= Pi / 3
+---
