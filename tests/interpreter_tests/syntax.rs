@@ -2611,6 +2611,17 @@ mod complex_symbol {
     assert_eq!(interpret("Depth[I]").unwrap(), "1");
     assert_eq!(interpret("Depth[2I]").unwrap(), "1");
   }
+
+  #[test]
+  fn atom_q_complex() {
+    assert_eq!(interpret("AtomQ[2 + I]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[3 + 4I]").unwrap(), "True");
+    assert_eq!(interpret("AtomQ[I]").unwrap(), "True");
+    assert_eq!(
+      interpret("Map[AtomQ, {2, 2.1, 1/2, 2 + I}]").unwrap(),
+      "{True, True, True, True}"
+    );
+  }
 }
 
 mod hold_all_symbol {
