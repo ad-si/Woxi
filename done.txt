@@ -1939,3 +1939,11 @@ INPUT: FreeQ[a+b+c, x_+y_+z_]
 EXPECTED:
 = False
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 110
+TYPE: >>
+INPUT: a == b == c == 2
+EXPECTED:
+= a == b == c == 2 (matches wolframscript; mathics expected True because prior Set statements bound the symbols in context)
+---

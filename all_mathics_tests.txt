@@ -1384,14 +1384,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
-LINE: 110
-TYPE: >>
-INPUT: a == b == c == 2
-EXPECTED:
-= True
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: Set
 LINE: 115
 TYPE: >>
 INPUT: A[[1, 2]] = 5
