@@ -1533,3 +1533,21 @@ INPUT: Table[i, {i, 1, 9, Infinity}]
 EXPECTED:
 = {1}
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 82
+INPUT: RealDigits[45]
+EXPECTED: {{4, 5}, 2}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 117
+INPUT: RealDigits[1]
+EXPECTED: {{1}, 1}
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 145
+INPUT: RealDigits[1]
+EXPECTED: {{1}, 1}
+---
