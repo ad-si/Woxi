@@ -482,6 +482,12 @@ mod hypergeometric_u {
     // HypergeometricU[a, a+1, z] = z^(-a) (matching wolframscript)
     assert_eq!(interpret("HypergeometricU[1, 2, x]").unwrap(), "x^(-1)");
   }
+
+  #[test]
+  fn a_zero_gives_one() {
+    // HypergeometricU[0, b, z] = 1 for any b and z
+    assert_eq!(interpret("HypergeometricU[0, b, z]").unwrap(), "1");
+  }
 }
 
 mod elliptic_k {
