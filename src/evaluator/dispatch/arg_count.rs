@@ -605,6 +605,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "MedianDeviation" => Some((1, 1)),
     "MeijerG" => Some((3, 3)),
     "MemberQ" => Some((1, 3)),
+    "MersennePrimeExponent" => Some((1, 1)),
     "Merge" => Some((2, 2)),
     "Midpoint" => Some((1, 1)),
     "Min" => Some((0, usize::MAX)),

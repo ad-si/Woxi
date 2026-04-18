@@ -3369,7 +3369,7 @@ HotellingTSquareDistribution,,,,8.0,3462
 JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1.0,3462
 KaiserWindow,,,,9.0,3462
 ListVectorDensityPlot,,🚫,,7.0,3462
-MersennePrimeExponent,,,,10.4,3462
+MersennePrimeExponent,Gives the nth Mersenne prime exponent,✅,pure,10.4,3462
 Once,,,,11.0,3462
 PacletSites,,🚫,,12.1,3462
 PageBreakBelow,,🚫,,3.0,3462
