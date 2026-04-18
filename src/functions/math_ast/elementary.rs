@@ -1600,6 +1600,31 @@ pub fn chop_expr(
 // ─── CubeRoot ──────────────────────────────────────────────────────
 
 /// CubeRoot[x] - Real-valued cube root
+/// Extract the largest perfect cube factor from n.
+/// Returns (cube_root_of_cube_part, remainder) such that n = cube_part^3 * remainder.
+fn extract_cube_factor(mut n: u128) -> (u128, u128) {
+  let mut cube_root = 1u128;
+  // Trial division by small primes
+  let mut p = 2u128;
+  while p * p * p <= n {
+    let mut count = 0u32;
+    while n.is_multiple_of(p) {
+      n /= p;
+      count += 1;
+    }
+    let cube_groups = count / 3;
+    let leftover = count % 3;
+    for _ in 0..cube_groups {
+      cube_root *= p;
+    }
+    for _ in 0..leftover {
+      n *= p; // put non-cube parts back into remainder
+    }
+    p += if p == 2 { 1 } else { 2 };
+  }
+  (cube_root, n)
+}
+
 pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1608,22 +1633,46 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(n) => {
-      // Check for perfect cubes
+      if *n == 0 {
+        return Ok(Expr::Integer(0));
+      }
       let sign = n.signum();
       let abs_n = n.unsigned_abs();
+      // Check for perfect cube
       let root = (abs_n as f64).cbrt().round() as u128;
       if root * root * root == abs_n {
         return Ok(Expr::Integer(sign * root as i128));
       }
-      // Not a perfect cube — return n^(1/3)
-      Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Power,
-        left: Box::new(args[0].clone()),
-        right: Box::new(Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(3)],
-        }),
-      })
+      // Factor out the largest perfect cube
+      // Find prime factorization and extract cube parts
+      let (cube_part, remainder) = extract_cube_factor(abs_n);
+      if cube_part > 1 {
+        // CubeRoot[n] = cube_part * CubeRoot[remainder]
+        let cube_root_remainder = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(Expr::Integer(remainder as i128)),
+          right: Box::new(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(3)],
+          }),
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(sign * cube_part as i128)),
+          right: Box::new(cube_root_remainder),
+        };
+        crate::evaluator::evaluate_expr_to_expr(&result)
+      } else {
+        // No cube factor — return n^(1/3)
+        Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(Expr::Integer(sign * abs_n as i128)),
+          right: Box::new(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(3)],
+          }),
+        })
+      }
     }
     Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
     _ => {
