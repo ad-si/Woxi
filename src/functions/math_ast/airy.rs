@@ -11,6 +11,11 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // AiryAi[0] = 3^(-2/3) / Gamma[2/3]
+  if matches!(&args[0], Expr::Integer(0)) {
+    return airy_build_value((-2, 3), (2, 3), false);
+  }
+
   // Numeric evaluation
   if let Some(x_f) = expr_to_f64(&args[0])
     && matches!(&args[0], Expr::Real(_))
@@ -88,6 +93,11 @@ pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // AiryBi[0] = 3^(5/6) / (3 * Gamma[2/3])
+  if matches!(&args[0], Expr::Integer(0)) {
+    return airy_build_value((5, 6), (2, 3), true);
+  }
+
   // Numeric evaluation
   if let Some(x_f) = expr_to_f64(&args[0])
     && matches!(&args[0], Expr::Real(_))
@@ -160,6 +170,15 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "AiryAiPrime expects exactly 1 argument".into(),
     ));
+  }
+
+  // AiryAiPrime[0] = -3^(2/3) / (3 * Gamma[1/3])
+  if matches!(&args[0], Expr::Integer(0)) {
+    let result = airy_build_value((2, 3), (1, 3), true)?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(result),
+    });
   }
 
   if let Some(x_f) = expr_to_f64(&args[0])
@@ -243,6 +262,34 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // AiryBiPrime[0] = 3^(1/6) / Gamma[1/3]
+  if matches!(&args[0], Expr::Integer(0)) {
+    // 3^(1/6) / Gamma[1/3] — no factor of 3 in denominator
+    let power_3 = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Integer(3),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(6)],
+        },
+      ],
+    };
+    let gamma = Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(3)],
+      }],
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(power_3),
+      right: Box::new(gamma),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
   if let Some(x_f) = expr_to_f64(&args[0])
     && matches!(&args[0], Expr::Real(_))
   {
@@ -311,4 +358,43 @@ fn airy_bi_prime(x: f64) -> f64 {
     }
     prefactor * sum
   }
+}
+
+/// Build 3^(p/q) / Gamma[r/s] or 3^(p/q) / (3 * Gamma[r/s])
+fn airy_build_value(
+  power_frac: (i128, i128),
+  gamma_frac: (i128, i128),
+  with_extra_3: bool,
+) -> Result<Expr, InterpreterError> {
+  let power_3 = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::Integer(3),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)],
+      },
+    ],
+  };
+  let gamma = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(gamma_frac.0), Expr::Integer(gamma_frac.1)],
+    }],
+  };
+  let denom = if with_extra_3 {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(3), gamma],
+    }
+  } else {
+    gamma
+  };
+  let result = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(power_3),
+    right: Box::new(denom),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
