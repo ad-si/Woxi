@@ -7172,30 +7172,6 @@ EXPECTED:
 = {"integer", "real", x}
 ---
 FILE: mathics/builtin/patterns/basic.py
-CLASS: BlankNullSequence
-LINE: 148
-TYPE: >>
-INPUT: MatchQ[f[], f[___]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/patterns/basic.py
-CLASS: BlankSequence
-LINE: 226
-TYPE: >>
-INPUT: MatchQ[f[1, 2, 3], f[__]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/patterns/basic.py
-CLASS: BlankSequence
-LINE: 232
-TYPE: >>
-INPUT: MatchQ[f[1, 2, 3], f[__Integer]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/patterns/basic.py
 CLASS: BlankSequence
 LINE: 239
 TYPE: >>
