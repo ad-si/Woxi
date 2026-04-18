@@ -13,6 +13,13 @@ This repo contains several related sub-projects:
     - A native notebook editor for Wolfram Language `.nb` files, built with `iced` (woxi-studio)
 
 
+## Environment
+
+Nix Flake is used to manage system dependencies.
+Therefore, some tools in the path are the GNU versions.
+E.g. GNU sed, GNU make, GNU coreutils, and GNU bash.
+
+
 ## Development
 
 There is 3 levels of tests:
