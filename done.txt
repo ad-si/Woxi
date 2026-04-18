@@ -1493,3 +1493,11 @@ INPUT: Cases[_Complex][{1, 2I, 3, 4-I, 5}]
 EXPECTED:
 = {2 I, 4 - I}
 ---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: Depth
+LINE: 65
+TYPE: >>
+INPUT: Depth[1 + 2 I]
+EXPECTED:
+= 1
+---

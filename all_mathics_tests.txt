@@ -999,14 +999,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/exp_structure/general.py
-CLASS: Depth
-LINE: 65
-TYPE: >>
-INPUT: Depth[1 + 2 I]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/exp_structure/general.py
 CLASS: FreeQ
 LINE: 100
 TYPE: >>
