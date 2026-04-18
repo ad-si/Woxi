@@ -17,6 +17,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "GCD" | "LCM" => {
       vec!["Flat", "Listable", "OneIdentity", "Orderless", "Protected"]
     }
+    "Composition" => vec!["Flat", "OneIdentity", "Protected"],
     "Power" => vec!["Listable", "NumericFunction", "OneIdentity", "Protected"],
     "Max" | "Min" => vec![
       "Flat",

@@ -1757,3 +1757,11 @@ INPUT: Begin["test`"]
 EXPECTED:
 = test`
 ---
+FILE: mathics/builtin/functional/composition.py
+CLASS: Composition
+LINE: 49
+TYPE: >>
+INPUT: Attributes[Composition]
+EXPECTED:
+= {Flat, OneIdentity, Protected}
+---

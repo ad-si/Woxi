@@ -2157,14 +2157,6 @@ INPUT: MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]
 EXPECTED:
 = a + b f[g] c ^ e
 ---
-FILE: mathics/builtin/functional/composition.py
-CLASS: Composition
-LINE: 49
-TYPE: >>
-INPUT: Attributes[Composition]
-EXPECTED:
-= {Flat, OneIdentity, Protected}
----
 FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: FixedPointList
 LINE: 107

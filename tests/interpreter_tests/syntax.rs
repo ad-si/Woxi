@@ -3513,6 +3513,14 @@ mod automatic_symbol {
   }
 
   #[test]
+  fn composition_attributes() {
+    assert_eq!(
+      interpret("Attributes[Composition]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
   fn automatic_in_list() {
     assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
   }
