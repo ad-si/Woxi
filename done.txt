@@ -967,3 +967,37 @@ INPUT: Expand[Tanh[x + y], Trig -> True]
 EXPECTED:
 = Cosh[x] Sinh[y] / (Cosh[x] Cosh[y] + Sinh[x] Sinh[y]) + Cosh[y] Sinh[x] / (Cosh[x] Cosh[y] + Sinh[x] Sinh[y])
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: PolynomialQ
+LINE: 1803
+TYPE: >>
+INPUT: PolynomialQ[x^2 + axy^2 - bSin[c], {x, y}]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: PolynomialQ
+LINE: 1805
+TYPE: >>
+INPUT: PolynomialQ[x^2 + axy^2 - bSin[c], {a, b, c}]
+EXPECTED:
+= False
+---
+FILE: mathics/test/builtin/numbers/test_algebra.py
+FUNCTION: test_collect
+LINE: 14
+INPUT: Collect[ 1+ a x + b x^3 + Cos[t] x, x]
+EXPECTED: 1 + (a + Cos[t]) x + b x^3
+---
+FILE: mathics/test/builtin/numbers/test_algebra.py
+FUNCTION: test_polynomialq
+LINE: 292
+INPUT: PolynomialQ[1/x[1]^2]
+EXPECTED: False
+---
+FILE: mathics/test/builtin/numbers/test_algebra.py
+FUNCTION: test_polynomialq
+LINE: 294
+INPUT: PolynomialQ[y[1] ^ 3 / 6 + y[3] / 3 + y[1] y[2] / 2]
+EXPECTED: True
+---

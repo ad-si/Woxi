@@ -17,6 +17,10 @@ pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     // 1-arg form: check if expr is a polynomial in all its variables
+    // First check for negative powers or non-polynomial structure
+    if has_negative_powers(&args[0]) {
+      return Ok(bool_expr(false));
+    }
     let mut vars = std::collections::HashSet::new();
     collect_poly_vars(&args[0], &mut vars);
     if vars.is_empty() {
@@ -47,6 +51,49 @@ pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Second argument of PolynomialQ must be a symbol or list of symbols"
         .into(),
     )),
+  }
+}
+
+/// Check if an expression contains any negative powers (indicating non-polynomial structure)
+fn has_negative_powers(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_) => false,
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Power => {
+        if let Expr::Integer(n) = right.as_ref()
+          && *n < 0
+        {
+          return true;
+        }
+        has_negative_powers(left) || has_negative_powers(right)
+      }
+      BinaryOperator::Divide => {
+        // a / b — check if b contains variables (non-constant denominator)
+        if !matches!(right.as_ref(), Expr::Integer(_) | Expr::Real(_)) {
+          return true;
+        }
+        has_negative_powers(left)
+      }
+      _ => has_negative_powers(left) || has_negative_powers(right),
+    },
+    Expr::UnaryOp { operand, .. } => has_negative_powers(operand),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Power" if args.len() == 2 => {
+        if let Expr::Integer(n) = &args[1]
+          && *n < 0
+        {
+          return true;
+        }
+        args.iter().any(has_negative_powers)
+      }
+      "Times" | "Plus" => args.iter().any(has_negative_powers),
+      "Rational" => false,
+      _ => false, // Function calls (Sin, Cos, x[1]) don't count
+    },
+    _ => false,
   }
 }
 
