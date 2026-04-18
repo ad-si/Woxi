@@ -5597,14 +5597,6 @@ EXPECTED:
 = DirectedInfinity[]
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Degree
-LINE: 311
-TYPE: >>
-INPUT: N[\\[Degree]] == N[Degree]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: E
 LINE: 367
 TYPE: >>

@@ -2115,3 +2115,11 @@ INPUT: Solve[4 - 4 * x^2 - x^4 + x^6 == 0, x, Integers]
 EXPECTED:
 = {{x -> -1}, {x -> 1}} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Degree
+LINE: 311
+TYPE: >>
+INPUT: N[\[Degree]] == N[Degree]
+EXPECTED:
+= True (matches wolframscript)
+---
