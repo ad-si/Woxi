@@ -1501,3 +1501,19 @@ INPUT: Depth[1 + 2 I]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Position
+LINE: 1292
+TYPE: >>
+INPUT: Position[{1 + Sin[x], x, (Tan[x] - y)^2}, x, 3]
+EXPECTED:
+= {{1, 2, 1}, {2}}
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Position
+LINE: 1297
+TYPE: >>
+INPUT: Position[{1 + x^2, x y ^ 2,  4 y,  x ^ z}, x^_]
+EXPECTED:
+= {{1, 2}, {4}}
+---

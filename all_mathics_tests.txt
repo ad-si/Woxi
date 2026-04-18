@@ -9699,22 +9699,6 @@ EXPECTED:
 = {{{1, 2, k}, {2, t, k}, {3, t, 9}}, {{2, 4, k}, {4, t, k}, {6, t, 18}}, {{3, 6, k}, {6, t, k}, {9, t, 27}}}
 ---
 FILE: mathics/builtin/list/eol.py
-CLASS: Position
-LINE: 1292
-TYPE: >>
-INPUT: Position[{1 + Sin[x], x, (Tan[x] - y)^2}, x, 3]
-EXPECTED:
-= {{1, 2, 1}, {2}}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Position
-LINE: 1297
-TYPE: >>
-INPUT: Position[{1 + x^2, x y ^ 2,  4 y,  x ^ z}, x^_]
-EXPECTED:
-= {{1, 2}, {4}}
----
-FILE: mathics/builtin/list/eol.py
 CLASS: PrependTo
 LINE: 1399
 TYPE: >>
