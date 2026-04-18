@@ -1178,7 +1178,7 @@ pub fn dispatch_math_functions(
       }
       _ => {}
     },
-    "IntegerPartitions" if !args.is_empty() && args.len() <= 3 => {
+    "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
     "Divisors" if args.len() == 1 => {

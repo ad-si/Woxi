@@ -1037,6 +1037,20 @@ mod high_level_functions_tests {
         "{{3}, {2, 1}}"
       );
     }
+    #[test]
+    fn test_integer_partitions_max_results() {
+      assert_eq!(
+        interpret("IntegerPartitions[5, All, All, 3]").unwrap(),
+        "{{5}, {4, 1}, {3, 2}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_signed_elements() {
+      assert_eq!(
+        interpret("IntegerPartitions[4, {2}, {-1, 0, 1, 4, 5}]").unwrap(),
+        "{{5, -1}, {4, 0}}"
+      );
+    }
   }
 
   mod save_tests {

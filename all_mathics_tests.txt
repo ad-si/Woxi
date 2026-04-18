@@ -7344,38 +7344,6 @@ EXPECTED:
 = {{2, 1}, {3, 1}, {5, 1}, {67, 1}, {2011, -1}}
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: IntegerPartitions
-LINE: 494
-TYPE: >>
-INPUT: IntegerPartitions[5, All, All, 3]
-EXPECTED:
-= {{5}, {4, 1}, {3, 2}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: IntegerPartitions
-LINE: 510
-TYPE: >>
-INPUT: IntegerPartitions[4, {2}, {-1, 0, 1, 4, 5}]
-EXPECTED:
-= {{5, -1}, {4, 0}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: JacobiSymbol
-LINE: 548
-TYPE: >>
-INPUT: Table[JacobiSymbol[n, m], {n, 0, 10}, {m, 1, n, 2}]
-EXPECTED:
-= {{}, {1}, {1}, {1, 0}, {1, 1}, {1, -1, 0}, {1, 0, 1}, {1, 1, -1, 0}, {1, -1, -1, 1}, {1, 0, 1, 1, 0}, {1, 1, 0, -1, 1}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: KroneckerSymbol
-LINE: 571
-TYPE: >>
-INPUT: Table[KroneckerSymbol[n, m], {n, 5}, {m, 5}]
-EXPECTED:
-= {{1, 1, 1, 1, 1}, {1, 0, -1, 0, -1}, {1, -1, 0, 1, -1}, {1, 0, 1, 0, 1}, {1, -1, -1, 1, 0}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: MantissaExponent
 LINE: 601
 TYPE: >>
