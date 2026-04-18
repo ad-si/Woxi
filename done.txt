@@ -1725,3 +1725,11 @@ INPUT: CanberraDistance[-7, 5]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Undefined
+LINE: 708
+TYPE: >>
+INPUT: Attributes[Undefined]
+EXPECTED:
+= {Protected}
+---

@@ -3508,6 +3508,11 @@ mod automatic_symbol {
   }
 
   #[test]
+  fn undefined_is_protected() {
+    assert_eq!(interpret("Attributes[Undefined]").unwrap(), "{Protected}");
+  }
+
+  #[test]
   fn automatic_in_list() {
     assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
   }

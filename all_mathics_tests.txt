@@ -6060,14 +6060,6 @@ EXPECTED:
 = 3.1415...
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Undefined
-LINE: 708
-TYPE: >>
-INPUT: Attributes[Undefined]
-EXPECTED:
-= {Protected}
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Underflow
 LINE: 727
 TYPE: >>
