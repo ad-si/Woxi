@@ -1833,6 +1833,27 @@ mod expand_threading {
   }
 
   #[test]
+  fn chessboard_distance_scalar() {
+    assert_eq!(interpret("ChessboardDistance[-7, 5]").unwrap(), "12");
+  }
+
+  #[test]
+  fn chessboard_distance_vector() {
+    assert_eq!(
+      interpret("ChessboardDistance[{-1, -1}, {1, 1}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn chessboard_distance_symbolic() {
+    assert_eq!(
+      interpret("ChessboardDistance[{a, b, c}, {x, y, z}]").unwrap(),
+      "Max[Abs[a - x], Abs[b - y], Abs[c - z]]"
+    );
+  }
+
+  #[test]
   fn string_replace_with_limit() {
     assert_eq!(
       interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")
