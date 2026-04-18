@@ -5335,14 +5335,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: O_
-LINE: 1605
-TYPE: >>
-INPUT: Series[1/(1-x),{x,0,2}]
-EXPECTED:
-= 1 + x + x ^ 2 + O[x] ^ 3
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: O_
 LINE: 1609
 TYPE: >>
 INPUT: O[x] // FullForm

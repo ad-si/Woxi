@@ -2051,3 +2051,11 @@ INPUT: series = Series[Exp[x^2], {x,0,2}]
 EXPECTED:
 = SeriesData[x, 0, {1, 0, 1}, 0, 3, 1] (matches wolframscript; mathics displays as 1 + x^2 + O[x]^3)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: O_
+LINE: 1605
+TYPE: >>
+INPUT: Series[1/(1-x),{x,0,2}]
+EXPECTED:
+= SeriesData[x, 0, {1, 1, 1}, 0, 3, 1] (matches wolframscript; mathics displays as 1 + x + x^2 + O[x]^3)
+---
