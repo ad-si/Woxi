@@ -1749,3 +1749,11 @@ INPUT: MachineNumberQ[1.5 + 2.3 I]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: Begin
+LINE: 83
+TYPE: >>
+INPUT: Begin["test`"]
+EXPECTED:
+= test`
+---
