@@ -2171,3 +2171,11 @@ INPUT: Sec[1] (* Sec[1] in Mathematica *)
 EXPECTED:
 = Sec[1] (matches wolframscript; mathics expected 1 / Cos[1])
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: InverseHaversine
+LINE: 720
+TYPE: >>
+INPUT: InverseHaversine[0.5]
+EXPECTED:
+= 1.5707963267948968 (matches wolframscript; mathics shows rounded 1.5708)
+---

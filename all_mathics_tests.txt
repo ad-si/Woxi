@@ -6650,14 +6650,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: InverseHaversine
-LINE: 720
-TYPE: >>
-INPUT: InverseHaversine[0.5]
-EXPECTED:
-= 1.5708
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: InverseHaversine
 LINE: 723
 TYPE: >>
 INPUT: InverseHaversine[1 + 2.5 I]
