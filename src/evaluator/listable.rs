@@ -57,6 +57,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Sqrt"
       | "Surd"
       | "Factorial"
+      | "Subfactorial"
       | "Gamma"
       | "Erf"
       | "Erfc"

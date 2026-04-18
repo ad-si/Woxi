@@ -76,11 +76,25 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ProductLog[z] - Lambert W function (principal branch)
 pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "ProductLog expects 1 argument".into(),
+      "ProductLog expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Two-argument form: ProductLog[k, z] — branch k of Lambert W
+  if args.len() == 2 {
+    // ProductLog[0, z] == ProductLog[z] (principal branch)
+    if matches!(&args[0], Expr::Integer(0)) {
+      return product_log_ast(&args[1..]);
+    }
+    // Otherwise return unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "ProductLog".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   match &args[0] {
     // ProductLog[0] = 0
     Expr::Integer(0) => return Ok(Expr::Integer(0)),

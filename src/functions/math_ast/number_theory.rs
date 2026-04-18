@@ -388,7 +388,18 @@ pub fn subfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Subfactorial expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_i128(&args[0]) {
+  // Handle float args that are whole numbers (e.g., 6.0 → 6)
+  let n_opt = expr_to_i128(&args[0]).or_else(|| {
+    if let Expr::Real(f) = &args[0]
+      && f.fract() == 0.0
+      && *f >= 0.0
+      && *f <= i128::MAX as f64
+    {
+      return Some(*f as i128);
+    }
+    None
+  });
+  if let Some(n) = n_opt {
     if n < 0 {
       return Ok(Expr::FunctionCall {
         name: "Subfactorial".to_string(),
