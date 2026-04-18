@@ -1891,3 +1891,11 @@ INPUT: $ScriptCommandLine
 EXPECTED:
 = {...}
 ---
+FILE: mathics/builtin/system.py
+CLASS: SessionID
+LINE: 670
+TYPE: X>
+INPUT: $SessionID
+EXPECTED:
+= ...
+---

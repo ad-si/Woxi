@@ -573,14 +573,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: SessionID
-LINE: 670
-TYPE: X>
-INPUT: $SessionID
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: SetEnvironment
 LINE: 702
 TYPE: S>
