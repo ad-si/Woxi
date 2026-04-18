@@ -1971,3 +1971,11 @@ INPUT: Cancel[x / x ^ 2]
 EXPECTED:
 = x^(-1) (matches wolframscript, mathics expected 1/x)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: D
+LINE: 141
+TYPE: >>
+INPUT: D[Sin[Cos[x]], x]
+EXPECTED:
+= -(Cos[Cos[x]]*Sin[x]) (matches wolframscript)
+---
