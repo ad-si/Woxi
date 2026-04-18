@@ -259,7 +259,7 @@ pub fn dispatch_polynomial_functions(
     "Cancel" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::cancel_ast(args));
     }
-    "Collect" if args.len() == 2 => {
+    "Collect" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::collect_ast(args));
     }
     "Together" if args.len() == 1 => {
