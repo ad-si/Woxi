@@ -6655,3 +6655,12 @@ mod matrix_q_with_test {
     assert_eq!(interpret("MatrixQ[{{1, 2}, {3}}]").unwrap(), "False");
   }
 }
+
+mod table_infinity_step {
+  use super::*;
+
+  #[test]
+  fn infinity_step_gives_start_only() {
+    assert_eq!(interpret("Table[i, {i, 1, 9, Infinity}]").unwrap(), "{1}");
+  }
+}
