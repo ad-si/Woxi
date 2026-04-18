@@ -1843,3 +1843,11 @@ INPUT: $SystemID
 EXPECTED:
 = linux
 ---
+FILE: mathics/builtin/system.py
+CLASS: Environment
+LINE: 152
+TYPE: S>
+INPUT: Environment["HOME"]
+EXPECTED:
+= ...
+---

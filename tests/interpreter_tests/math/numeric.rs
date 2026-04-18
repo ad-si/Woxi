@@ -286,6 +286,19 @@ mod precision {
   fn system_id_head_is_string() {
     assert_eq!(interpret("Head[$SystemID] == String").unwrap(), "True");
   }
+
+  #[test]
+  fn environment_returns_string_for_set_var() {
+    assert_eq!(interpret("Head[Environment[\"PATH\"]] == String").unwrap(), "True");
+  }
+
+  #[test]
+  fn environment_returns_failed_for_unset_var() {
+    assert_eq!(
+      interpret("Environment[\"NONEXISTENT_VAR_XYZ_12345\"]").unwrap(),
+      "$Failed"
+    );
+  }
 }
 
 mod accuracy {

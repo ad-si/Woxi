@@ -31,6 +31,19 @@ pub fn dispatch_io_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    // Environment["name"] — return the named environment variable value
+    "Environment" if args.len() == 1 => {
+      if let Expr::String(var_name) = &args[0] {
+        return Some(Ok(match std::env::var(var_name) {
+          Ok(val) => Expr::String(val),
+          Err(_) => Expr::Identifier("$Failed".to_string()),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Environment".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
       return Some(Ok(Expr::List(vec![
