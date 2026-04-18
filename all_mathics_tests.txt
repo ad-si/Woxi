@@ -5582,15 +5582,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
-LINE: 2301
-TYPE: >>
-INPUT: Solve[x == 2, x]
-EXPECTED:
-: 3 is not a valid variable.
-= Solve[False, 3]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
 LINE: 2304
 TYPE: >>
 INPUT: Clear[x]

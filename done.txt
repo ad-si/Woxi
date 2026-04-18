@@ -2059,3 +2059,11 @@ INPUT: Series[1/(1-x),{x,0,2}]
 EXPECTED:
 = SeriesData[x, 0, {1, 1, 1}, 0, 3, 1] (matches wolframscript; mathics displays as 1 + x + x^2 + O[x]^3)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2301
+TYPE: >>
+INPUT: Solve[x == 2, x]
+EXPECTED:
+= {{x -> 2}} (matches wolframscript; mathics expected an error from prior x := 3 binding)
+---
