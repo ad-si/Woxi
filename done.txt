@@ -1803,3 +1803,11 @@ INPUT: $ProcessID
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: ParentProcessID
+LINE: 528
+TYPE: S>
+INPUT: $ParentProcessID
+EXPECTED:
+= ...
+---

@@ -254,16 +254,19 @@ mod precision {
 
   #[test]
   fn session_id_head_is_integer() {
-    assert_eq!(
-      interpret("Head[$SessionID] == Integer").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("Head[$SessionID] == Integer").unwrap(), "True");
   }
 
   #[test]
   fn process_id_head_is_integer() {
+    assert_eq!(interpret("Head[$ProcessID] == Integer").unwrap(), "True");
+  }
+
+  #[cfg(unix)]
+  #[test]
+  fn parent_process_id_head_is_integer() {
     assert_eq!(
-      interpret("Head[$ProcessID] == Integer").unwrap(),
+      interpret("Head[$ParentProcessID] == Integer").unwrap(),
       "True"
     );
   }

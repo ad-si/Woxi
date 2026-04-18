@@ -201,6 +201,8 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),
     "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
     "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),
+    #[cfg(unix)]
+    "$ParentProcessID" => Some(Expr::Integer(unsafe { libc::getppid() } as i128)),
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![
