@@ -2219,3 +2219,11 @@ INPUT: f[3] /. f[x_] /; x>0 -> t
 EXPECTED:
 = t (matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/restrictions.py
+CLASS: Condition
+LINE: 42
+TYPE: >>
+INPUT: f[-3] /. f[x_] /; x>0 -> t
+EXPECTED:
+= f[-3] (matches wolframscript)
+---
