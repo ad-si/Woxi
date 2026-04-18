@@ -2211,3 +2211,11 @@ INPUT: f[a, b, c, d] /. f[first_, rest___] -> {first, {rest}}
 EXPECTED:
 = {a, {b, c, d}} (matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/restrictions.py
+CLASS: Condition
+LINE: 40
+TYPE: >>
+INPUT: f[3] /. f[x_] /; x>0 -> t
+EXPECTED:
+= t (matches wolframscript)
+---
