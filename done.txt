@@ -1345,3 +1345,11 @@ INPUT: BesselY[0, 0]
 EXPECTED:
 = -Infinity
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Symbol_
+LINE: 645
+TYPE: >>
+INPUT: Symbol["x"] + Symbol["x"]
+EXPECTED:
+= 2 x
+---

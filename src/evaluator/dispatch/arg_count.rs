@@ -344,7 +344,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindMaximum" => Some((2, 2)),
     "FindMinimum" => Some((2, 2)),
     "FindPermutation" => Some((2, 2)),
-    "FindRoot" => Some((2, 2)),
+    "FindRoot" => Some((2, usize::MAX)),
     "FindSequenceFunction" => Some((2, 2)),
     "First" => Some((1, 2)),
     "FirstCase" => Some((2, 3)),

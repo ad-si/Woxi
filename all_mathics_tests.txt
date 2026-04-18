@@ -9064,14 +9064,6 @@ EXPECTED:
 = 5
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: Symbol_
-LINE: 645
-TYPE: >>
-INPUT: Symbol["x"] + Symbol["x"]
-EXPECTED:
-= 2 x
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: SymbolName
 LINE: 683
 TYPE: >>
