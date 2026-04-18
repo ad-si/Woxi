@@ -1311,10 +1311,15 @@ pub fn gegenbauer_coefficients(
 
 /// LaguerreL[n, x] - Laguerre polynomial
 pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "LaguerreL expects exactly 2 arguments".into(),
+      "LaguerreL expects 2 or 3 arguments".into(),
     ));
+  }
+
+  // 3-argument form: LaguerreL[n, a, x] — generalized Laguerre polynomial
+  if args.len() == 3 {
+    return generalized_laguerre_l_ast(&args[0], &args[1], &args[2]);
   }
 
   let n = match &args[0] {
@@ -1359,6 +1364,178 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+}
+
+/// LaguerreL[n, a, x] — generalized/associated Laguerre polynomial L_n^(a)(x)
+/// Uses explicit sum: L_n^(a)(x) = sum_{k=0}^{n} C(n+a, n-k) * (-x)^k / k!
+/// For integer a, this produces exact symbolic results.
+fn generalized_laguerre_l_ast(
+  n_expr: &Expr,
+  a_expr: &Expr,
+  x_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match n_expr {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LaguerreL".to_string(),
+        args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  // For integer a, compute exact polynomial via the sum formula
+  if let Some(a) = expr_to_i128(a_expr) {
+    // L_n^(a)(x) = sum_{k=0}^{n} C(n+a, n-k) * (-1)^k * x^k / k!
+    // Build polynomial coefficients as rationals (num, den)
+    let mut coeffs: Vec<(i128, i128)> = Vec::with_capacity(n + 1);
+
+    // C(n+a, n) and iterate: C(n+a, n-k) = C(n+a, n-(k-1)) * (n-k+1) / (a+k)
+    // Start: C(n+a, n) = (n+a)! / (n! * a!) — but for negative a this needs care
+    // Use the product formula: C(n+a, n) = prod_{i=1}^{n} (a + i) / i
+    let mut binom_num = 1i128;
+    let mut binom_den = 1i128;
+    for i in 1..=n as i128 {
+      binom_num *= a + i;
+      binom_den *= i;
+    }
+    // Simplify
+    let g = gcd(
+      binom_num.unsigned_abs() as i128,
+      binom_den.unsigned_abs() as i128,
+    );
+    if g > 0 {
+      binom_num /= g;
+      binom_den /= g;
+    }
+    if binom_den < 0 {
+      binom_num = -binom_num;
+      binom_den = -binom_den;
+    }
+
+    // k = 0: coeff = C(n+a, n) / 0! = binom
+    let mut factorial_k = 1i128;
+    let mut cur_binom_n = binom_num;
+    let mut cur_binom_d = binom_den;
+    coeffs.push((cur_binom_n, cur_binom_d));
+
+    for k in 1..=n {
+      let kf = k as i128;
+      factorial_k *= kf;
+      // C(n+a, n-k) = C(n+a, n-k+1) * (n - k + 1) / (a + k)
+      // But it's easier: C(n+a, n-k) = C(n+a, n) * prod_{j=1}^{k} (n-j+1)/(a+j)... no.
+      // Actually: C(n+a, n-k) / C(n+a, n-(k-1)) = (n - k + 1) / (n + a - (n - k)) = (n-k+1)/(a+k)
+      let nf = n as i128;
+      cur_binom_n *= nf - kf + 1;
+      cur_binom_d *= a + kf;
+      let g2 = gcd(
+        cur_binom_n.unsigned_abs() as i128,
+        cur_binom_d.unsigned_abs() as i128,
+      );
+      if g2 > 0 {
+        cur_binom_n /= g2;
+        cur_binom_d /= g2;
+      }
+      if cur_binom_d < 0 {
+        cur_binom_n = -cur_binom_n;
+        cur_binom_d = -cur_binom_d;
+      }
+
+      // coeff[k] = (-1)^k * C(n+a, n-k) / k!
+      let sign = if k % 2 == 0 { 1i128 } else { -1i128 };
+      let cn = sign * cur_binom_n;
+      let cd = cur_binom_d * factorial_k;
+      let g3 = gcd(cn.unsigned_abs() as i128, cd.unsigned_abs() as i128);
+      let (cn, cd) = if g3 > 0 { (cn / g3, cd / g3) } else { (cn, cd) };
+      let (cn, cd) = if cd < 0 { (-cn, -cd) } else { (cn, cd) };
+      coeffs.push((cn, cd));
+    }
+
+    // Build the polynomial expression
+    let mut terms = Vec::new();
+    for (k, &(cn, cd)) in coeffs.iter().enumerate() {
+      if cn == 0 {
+        continue;
+      }
+      let coeff_expr = make_rational(cn, cd);
+      let term = if k == 0 {
+        coeff_expr
+      } else {
+        let power = if k == 1 {
+          x_expr.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(x_expr.clone()),
+            right: Box::new(Expr::Integer(k as i128)),
+          }
+        };
+        if cn == cd {
+          power
+        } else if cn == -cd {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(power),
+          }
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(coeff_expr),
+            right: Box::new(power),
+          }
+        }
+      };
+      terms.push(term);
+    }
+
+    if terms.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+
+    let mut result = terms[0].clone();
+    for term in &terms[1..] {
+      result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(term.clone()),
+      };
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+
+  // For non-integer a or numeric evaluation, try float
+  if let (Some(af), Some(xf)) =
+    (try_eval_to_f64(a_expr), try_eval_to_f64(x_expr))
+  {
+    let result = generalized_laguerre_f64(n, af, xf);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "LaguerreL".to_string(),
+    args: vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
+  })
+}
+
+/// Numerical evaluation of generalized Laguerre polynomial via recurrence
+fn generalized_laguerre_f64(n: usize, a: f64, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return 1.0 + a - x;
+  }
+  let mut lm1 = 1.0;
+  let mut l = 1.0 + a - x;
+  for k in 1..n {
+    let kf = k as f64;
+    let next = ((2.0 * kf + 1.0 + a - x) * l - (kf + a) * lm1) / (kf + 1.0);
+    lm1 = l;
+    l = next;
+  }
+  l
 }
 
 /// Evaluate L_n(p/q) using recurrence

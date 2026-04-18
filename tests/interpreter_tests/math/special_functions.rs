@@ -2418,6 +2418,24 @@ mod laguerre_l {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("LaguerreL[n, x]").unwrap(), "LaguerreL[n, x]");
   }
+
+  #[test]
+  fn generalized_laguerre() {
+    assert_eq!(
+      interpret("LaguerreL[5, 2, x]").unwrap(),
+      "21 - 35*x + (35*x^2)/2 - (7*x^3)/2 + (7*x^4)/24 - x^5/120"
+    );
+  }
+
+  #[test]
+  fn generalized_laguerre_l0() {
+    assert_eq!(interpret("LaguerreL[0, 5, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn generalized_laguerre_l1() {
+    assert_eq!(interpret("LaguerreL[1, 3, x]").unwrap(), "4 - x");
+  }
 }
 
 mod beta_fn {

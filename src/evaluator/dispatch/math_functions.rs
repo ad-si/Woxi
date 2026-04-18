@@ -813,7 +813,7 @@ pub fn dispatch_math_functions(
     "GegenbauerC" if args.len() == 3 => {
       return Some(crate::functions::math_ast::gegenbauer_c_ast(args));
     }
-    "LaguerreL" if args.len() == 2 => {
+    "LaguerreL" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::laguerre_l_ast(args));
     }
     "Beta" if args.len() == 2 => {
