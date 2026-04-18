@@ -1979,3 +1979,11 @@ INPUT: D[Sin[Cos[x]], x]
 EXPECTED:
 = -(Cos[Cos[x]]*Sin[x]) (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 982
+TYPE: >>
+INPUT: Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]
+EXPECTED:
+= 10*x - 2*x^2 + 3*x^3 (matches wolframscript; mathics shows factored form x (10 - 2 x + 3 x ^ 2))
+---
