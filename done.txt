@@ -1915,3 +1915,11 @@ INPUT: $SystemMemory
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: PolynomialQ
+LINE: 1798
+TYPE: >>
+INPUT: PolynomialQ[f[a] + f[a]^2, f[a]]
+EXPECTED:
+= True
+---

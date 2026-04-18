@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::evaluator::pattern_matching::expr_equal;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 use crate::functions::calculus_ast::is_constant_wrt;
@@ -33,24 +34,68 @@ pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[1] {
     Expr::Identifier(name) => Ok(bool_expr(is_polynomial(&args[0], name))),
     Expr::List(vars) => {
-      // PolynomialQ[expr, {x, y, ...}] — polynomial in all listed vars
+      // PolynomialQ[expr, {v1, v2, ...}] — polynomial in all listed vars.
+      // Each vi may be a symbol or a sub-expression treated as an atomic variable.
       for v in vars {
-        if let Expr::Identifier(name) = v {
-          if !is_polynomial(&args[0], name) {
-            return Ok(bool_expr(false));
-          }
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "Second argument of PolynomialQ must be a symbol or list of symbols".into(),
-          ));
+        if !is_polynomial_in_var(&args[0], v) {
+          return Ok(bool_expr(false));
         }
       }
       Ok(bool_expr(true))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Second argument of PolynomialQ must be a symbol or list of symbols"
-        .into(),
-    )),
+    other => {
+      // Non-symbol expression like f[a] — treat as atomic variable.
+      Ok(bool_expr(is_polynomial_in_var(&args[0], other)))
+    }
+  }
+}
+
+/// Check if `expr` is a polynomial in `var_expr`, which may be a symbol or a
+/// sub-expression (e.g. f[a]) treated as an atomic variable. Implemented by
+/// substituting every occurrence of `var_expr` in `expr` with a fresh
+/// identifier, then delegating to the symbol-based `is_polynomial`.
+fn is_polynomial_in_var(expr: &Expr, var_expr: &Expr) -> bool {
+  if let Expr::Identifier(name) = var_expr {
+    return is_polynomial(expr, name);
+  }
+  const FRESH: &str = "$__PolyVar__";
+  let fresh = Expr::Identifier(FRESH.to_string());
+  let substituted = replace_subexpr(expr, var_expr, &fresh);
+  if has_negative_powers(&substituted) {
+    return false;
+  }
+  is_polynomial(&substituted, FRESH)
+}
+
+/// Structurally replace every occurrence of `target` in `expr` with `replacement`.
+fn replace_subexpr(expr: &Expr, target: &Expr, replacement: &Expr) -> Expr {
+  if expr_equal(expr, target) {
+    return replacement.clone();
+  }
+  match expr {
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: op.clone(),
+      left: Box::new(replace_subexpr(left, target, replacement)),
+      right: Box::new(replace_subexpr(right, target, replacement)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: op.clone(),
+      operand: Box::new(replace_subexpr(operand, target, replacement)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_subexpr(a, target, replacement))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_subexpr(a, target, replacement))
+        .collect(),
+    ),
+    _ => expr.clone(),
   }
 }
 

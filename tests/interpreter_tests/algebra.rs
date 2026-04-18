@@ -46,6 +46,25 @@ mod polynomial_q {
       "False"
     );
   }
+
+  #[test]
+  fn subexpression_as_variable() {
+    // f[a] treated as an atomic variable — f[a] + f[a]^2 is a polynomial in f[a]
+    assert_eq!(
+      interpret("PolynomialQ[f[a] + f[a]^2, f[a]]").unwrap(),
+      "True"
+    );
+    // Subexpression inside a list of variables
+    assert_eq!(
+      interpret("PolynomialQ[f[a] + g[b]^2, {f[a], g[b]}]").unwrap(),
+      "True"
+    );
+    // Not a polynomial: 1/f[a] has negative power of f[a]
+    assert_eq!(
+      interpret("PolynomialQ[1/f[a], f[a]]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod exponent {

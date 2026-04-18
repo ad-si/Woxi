@@ -5006,14 +5006,6 @@ EXPECTED:
 = 49 - 10 x ^ 4 + x ^ 8
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: PolynomialQ
-LINE: 1798
-TYPE: >>
-INPUT: PolynomialQ[f[a] + f[a]^2, f[a]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Together
 LINE: 1904
 TYPE: >>
