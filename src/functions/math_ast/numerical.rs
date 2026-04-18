@@ -11,12 +11,25 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 2 {
     // N[expr, precision] — arbitrary-precision evaluation
+    // Precision can be a numeric expression (e.g. N[Pi, Pi])
     let precision = match &args[1] {
       Expr::Integer(n) if *n > 0 => *n as usize,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "N: precision must be a positive integer".into(),
-        ));
+      other => {
+        // Try evaluating to a float
+        if let Some(v) = try_eval_to_f64(other) {
+          let p = v.floor() as i128;
+          if p > 0 {
+            p as usize
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "N: precision must be a positive number".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "N: precision must be a positive number".into(),
+          ));
+        }
       }
     };
     return n_eval_arbitrary(&args[0], precision);
