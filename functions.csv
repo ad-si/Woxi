@@ -1873,7 +1873,7 @@ InverseErf,Inverse error function,✅,pure,3.0,1906
 SmoothDensityHistogram,Smooth density histogram,,unevaluated,8.0,1907
 NetExtract,Extract net components,,unevaluated,11.0,1908
 Friday,Friday day name,,unevaluated,9.0,1910
-HankelH1,Hankel function H1,,unevaluated,6.0,1910
+HankelH1,Hankel function of the first kind,✅,pure,6.0,1910
 CloudImport,Import from cloud,,unevaluated,10.0,1912
 Temporary,Temporary option,,unevaluated,2.0,1912
 NonlinearStateSpaceModel,Nonlinear state-space model,,unevaluated,10.0,1914
@@ -2149,7 +2149,7 @@ FourierCosTransform,Fourier cosine transform of a function,✅,pure,4.0,2190
 KeySelect,Selects elements of an association by a key criterion,✅,pure,10.0,2191
 SkewNormalDistribution,Probability distribution,🚫,None,8.0,2193
 Sunset,Gives the time of sunset for a given location and date,🚫,None,10.0,2193
-HankelH2,Hankel function of the second kind,🚫,None,6.0,2197
+HankelH2,Hankel function of the second kind,✅,pure,6.0,2197
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3.0,2197
 RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,None,8.0,2197
 WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8.0,2197

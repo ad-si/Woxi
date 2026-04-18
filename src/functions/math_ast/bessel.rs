@@ -591,3 +591,95 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
+
+/// Helper to build a Hankel-type function from two Bessel-type results
+fn build_hankel(
+  name: &str,
+  j_name: &str,
+  y_name: &str,
+  sign: i128,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects exactly 2 arguments",
+      name
+    )));
+  }
+  // Try numeric evaluation: compute BesselJ + sign*I*BesselY
+  let j_result =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: j_name.to_string(),
+      args: args.to_vec(),
+    })?;
+  let y_result =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: y_name.to_string(),
+      args: args.to_vec(),
+    })?;
+  // Only proceed if both evaluated to numbers
+  let j_val = try_eval_to_f64(&j_result);
+  let y_val = try_eval_to_f64(&y_result);
+  if let (Some(j), Some(y)) = (j_val, y_val)
+    && j.is_finite()
+    && y.is_finite()
+  {
+    let expr = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(j),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Complex".to_string(),
+              args: vec![Expr::Integer(0), Expr::Integer(sign)],
+            },
+            Expr::Real(y),
+          ],
+        },
+      ],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&expr);
+  }
+  Ok(Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// HankelH1[n, z] = BesselJ[n, z] + I * BesselY[n, z]
+pub fn hankel_h1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  build_hankel("HankelH1", "BesselJ", "BesselY", 1, args)
+}
+
+/// HankelH2[n, z] = BesselJ[n, z] - I * BesselY[n, z]
+pub fn hankel_h2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  build_hankel("HankelH2", "BesselJ", "BesselY", -1, args)
+}
+
+/// SphericalHankelH1[n, z] = SphericalBesselJ[n, z] + I * SphericalBesselY[n, z]
+pub fn spherical_hankel_h1_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  build_hankel(
+    "SphericalHankelH1",
+    "SphericalBesselJ",
+    "SphericalBesselY",
+    1,
+    args,
+  )
+}
+
+/// SphericalHankelH2[n, z] = SphericalBesselJ[n, z] - I * SphericalBesselY[n, z]
+pub fn spherical_hankel_h2_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  build_hankel(
+    "SphericalHankelH2",
+    "SphericalBesselJ",
+    "SphericalBesselY",
+    -1,
+    args,
+  )
+}

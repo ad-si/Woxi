@@ -558,6 +558,12 @@ pub fn dispatch_math_functions(
     "BesselJZero" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_j_zero_ast(args));
     }
+    "HankelH1" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::hankel_h1_ast(args));
+    }
+    "HankelH2" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::hankel_h2_ast(args));
+    }
     "AiryAi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_ai_ast(args));
     }

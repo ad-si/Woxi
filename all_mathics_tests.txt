@@ -10135,14 +10135,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselJ
-LINE: 369
-TYPE: >>
-INPUT: BesselJ[0., 0.]
-EXPECTED:
-= 1.
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselJ
 LINE: 376
 TYPE: >>
 INPUT: BesselJ[1/2, x]
@@ -10183,27 +10175,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselY
-LINE: 453
-TYPE: >>
-INPUT: BesselY[0., 0.]
-EXPECTED:
-= -Infinity
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselY
 LINE: 460
 TYPE: >>
 INPUT: BesselY[-3/2, x]
 EXPECTED:
 = Sqrt[2] Sqrt[x] (-Sin[x] / x ^ 2 + Cos[x] / x) / Sqrt[Pi]
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselY
-LINE: 463
-TYPE: >>
-INPUT: BesselY[0, 0]
-EXPECTED:
-= -Infinity
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselJZero

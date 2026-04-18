@@ -417,6 +417,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Head" => Some((1, 1)),
     "HeavisideLambda" => Some((1, 1)),
     "HeavisidePi" => Some((1, 1)),
+    "HankelH1" => Some((2, 2)),
+    "HankelH2" => Some((2, 2)),
     "HermiteH" => Some((2, 2)),
     "HermitianMatrixQ" => Some((1, 1)),
     "HighpassFilter" => Some((2, 4)),
