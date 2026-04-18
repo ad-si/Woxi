@@ -469,14 +469,6 @@ EXPECTED:
 = SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]
 ---
 FILE: mathics/builtin/system.py
-CLASS: CommandLine
-LINE: 128
-TYPE: S>
-INPUT: $CommandLine
-EXPECTED:
-= {...}
----
-FILE: mathics/builtin/system.py
 CLASS: Language
 LINE: 281
 TYPE: >>

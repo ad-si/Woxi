@@ -329,6 +329,12 @@ mod precision {
     assert!(!result.is_empty());
     assert_ne!(result, "$VersionNumber");
   }
+
+  #[test]
+  fn command_line_head_is_list() {
+    // $CommandLine should return a list (of string args).
+    assert_eq!(interpret("Head[$CommandLine] == List").unwrap(), "True");
+  }
 }
 
 mod accuracy {

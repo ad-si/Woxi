@@ -1875,3 +1875,11 @@ INPUT: $VersionNumber
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: CommandLine
+LINE: 128
+TYPE: S>
+INPUT: $CommandLine
+EXPECTED:
+= {...}
+---
