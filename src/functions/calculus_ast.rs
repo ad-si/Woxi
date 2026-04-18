@@ -6919,10 +6919,40 @@ fn gcd(a: i128, b: i128) -> i128 {
 
 /// NIntegrate[expr, {var, lo, hi}] - Numerical integration
 pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "NIntegrate expects exactly 2 arguments".into(),
+      "NIntegrate expects at least 2 arguments".into(),
     ));
+  }
+
+  // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
+  let mut tolerance = 1e-10_f64;
+  let mut max_recursion = 50_u32;
+  for opt in &args[2..] {
+    if let Expr::FunctionCall { name, args: rargs } = opt
+      && (name == "Rule" || name == "RuleDelayed")
+      && rargs.len() == 2
+    {
+      let opt_name = match &rargs[0] {
+        Expr::Identifier(s) => s.as_str(),
+        _ => continue,
+      };
+      match opt_name {
+        "Tolerance" => {
+          if let Some(t) =
+            crate::functions::math_ast::try_eval_to_f64(&rargs[1])
+          {
+            tolerance = t;
+          }
+        }
+        "MaxRecursion" => {
+          if let Some(n) = crate::functions::math_ast::expr_to_i128(&rargs[1]) {
+            max_recursion = n.max(1) as u32;
+          }
+        }
+        _ => {} // Ignore other options (Method, etc.)
+      }
+    }
   }
 
   // Second argument must be {var, lo, hi}
@@ -6981,14 +7011,13 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       eval_at(x).map(|v| v * jacobian)
     };
     let half_pi = std::f64::consts::FRAC_PI_2;
-    // Use slightly inside to avoid tan(±π/2) = ±∞
     let eps = 1e-10;
     adaptive_simpson(
       &eval_transformed,
       -half_pi + eps,
       half_pi - eps,
-      1e-10,
-      50,
+      tolerance,
+      max_recursion,
     )
   } else if lo_inf {
     // (-∞, b): substitute x = b - tan(t), dx = -sec²(t) dt, t in (0, π/2)
@@ -6999,7 +7028,13 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
-    adaptive_simpson(&eval_transformed, eps, half_pi - eps, 1e-10, 50)
+    adaptive_simpson(
+      &eval_transformed,
+      eps,
+      half_pi - eps,
+      tolerance,
+      max_recursion,
+    )
   } else if hi_inf {
     // (a, ∞): substitute x = a + tan(t), dx = sec²(t) dt, t in (0, π/2)
     let eval_transformed = |t: f64| -> Option<f64> {
@@ -7009,9 +7044,15 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
-    adaptive_simpson(&eval_transformed, eps, half_pi - eps, 1e-10, 50)
+    adaptive_simpson(
+      &eval_transformed,
+      eps,
+      half_pi - eps,
+      tolerance,
+      max_recursion,
+    )
   } else {
-    adaptive_simpson(&eval_at, lo, hi, 1e-12, 50)
+    adaptive_simpson(&eval_at, lo, hi, tolerance, max_recursion)
   };
 
   match result {

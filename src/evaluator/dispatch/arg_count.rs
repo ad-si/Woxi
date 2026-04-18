@@ -649,7 +649,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NestWhile" => Some((3, usize::MAX)),
     "NestWhileList" => Some((3, usize::MAX)),
     "NextPrime" => Some((1, 2)),
-    "NIntegrate" => Some((2, 2)),
+    "NIntegrate" => Some((2, usize::MAX)),
     "NMaximize" => Some((2, 2)),
     "NMaxValue" => Some((2, 2)),
     "NMinimize" => Some((2, 2)),
