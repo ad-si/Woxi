@@ -120,7 +120,88 @@ pub fn dispatch_calculus_functions(
         args: args.to_vec(),
       }));
     }
-    "Derivative" if args.len() <= 2 => {
+    "Derivative" if args.len() == 2 => {
+      // Derivative[n][f] → compute the nth derivative symbolically
+      // and return as a pure function body&
+      if let Expr::Integer(n) = &args[0] {
+        let n = *n as usize;
+        if let Expr::Identifier(func_name) = &args[1] {
+          // Use a dummy variable, differentiate, then replace with Slot[1]
+          let dummy = "__d_slot__";
+          let dummy_expr = Expr::Identifier(dummy.to_string());
+          let mut deriv = Expr::FunctionCall {
+            name: func_name.clone(),
+            args: vec![dummy_expr.clone()],
+          };
+          let mut resolved = true;
+          for _ in 0..n {
+            deriv = match crate::functions::calculus_ast::differentiate_expr(
+              &deriv, dummy,
+            ) {
+              Ok(v) => v,
+              Err(_) => {
+                resolved = false;
+                break;
+              }
+            };
+            if contains_unresolved_derivative(&deriv, func_name) {
+              resolved = false;
+              break;
+            }
+          }
+          if resolved {
+            let simplified = crate::functions::calculus_ast::simplify(deriv);
+            // Replace dummy variable with Slot(1)
+            let with_slot = crate::syntax::substitute_variable(
+              &simplified,
+              dummy,
+              &Expr::Slot(1),
+            );
+            return Some(Ok(Expr::Function {
+              body: Box::new(with_slot),
+            }));
+          }
+        }
+        // Handle pure function: Derivative[n][body&]
+        if let Expr::Function { body } = &args[1] {
+          let dummy = "__d_slot__";
+          // Replace Slot(1) with dummy variable for differentiation
+          let with_dummy = crate::syntax::substitute_slots(
+            body,
+            &[Expr::Identifier(dummy.to_string())],
+          );
+          let mut deriv = with_dummy;
+          let mut resolved = true;
+          for _ in 0..n {
+            deriv = match crate::functions::calculus_ast::differentiate_expr(
+              &deriv, dummy,
+            ) {
+              Ok(v) => v,
+              Err(_) => {
+                resolved = false;
+                break;
+              }
+            };
+          }
+          if resolved {
+            let simplified = crate::functions::calculus_ast::simplify(deriv);
+            let with_slot = crate::syntax::substitute_variable(
+              &simplified,
+              dummy,
+              &Expr::Slot(1),
+            );
+            return Some(Ok(Expr::Function {
+              body: Box::new(with_slot),
+            }));
+          }
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "Derivative" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "Derivative".to_string(),
         args: args.to_vec(),
