@@ -1693,3 +1693,11 @@ INPUT: ToString[2] // InputForm
 EXPECTED:
 = "2"
 ---
+FILE: mathics/builtin/statistics/location.py
+CLASS: Median
+LINE: 61
+TYPE: >>
+INPUT: Median[{{100, 1, 10, 50}, {-1, 1, -2, 2}}]
+EXPECTED:
+= {99 / 2, 1, 4, 26}
+---
