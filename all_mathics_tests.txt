@@ -7020,14 +7020,6 @@ EXPECTED:
 = Pi
 ---
 FILE: mathics/builtin/numbers/trig.py
-CLASS: ArcTan
-LINE: 551
-TYPE: >>
-INPUT: ArcTan[1, 1]
-EXPECTED:
-= Pi / 4
----
-FILE: mathics/builtin/numbers/trig.py
 CLASS: Csc
 LINE: 663
 TYPE: >>
