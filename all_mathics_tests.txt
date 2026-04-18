@@ -10823,14 +10823,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticE
-LINE: 43
-TYPE: >>
-INPUT: EllipticE[0]
-EXPECTED:
-= Pi / 2
----
-FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticE
 LINE: 46
 TYPE: >>
 INPUT: EllipticE[0.3, 0.8]
@@ -10862,28 +10854,12 @@ EXPECTED:
 = 1.85407
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticK
-LINE: 142
-TYPE: >>
-INPUT: EllipticK[0]
-EXPECTED:
-= Pi / 2
----
-FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticPi
 LINE: 183
 TYPE: >>
 INPUT: EllipticPi[0.4, 0.6]
 EXPECTED:
 = 2.89281
----
-FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticPi
-LINE: 187
-TYPE: >>
-INPUT: EllipticPi[0, 0]
-EXPECTED:
-= Pi / 2
 ---
 FILE: mathics/builtin/specialfns/erf.py
 CLASS: Erf
@@ -10892,22 +10868,6 @@ TYPE: >>
 INPUT: Erf[1.0]
 EXPECTED:
 = 0.842701
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: Erf
-LINE: 42
-TYPE: >>
-INPUT: {Erf[0, x], Erf[x, 0]}
-EXPECTED:
-= {Erf[x], -Erf[x]}
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: Erfc
-LINE: 78
-TYPE: >>
-INPUT: Erfc[-x] / 2
-EXPECTED:
-= (2 - Erfc[x]) / 2
 ---
 FILE: mathics/builtin/specialfns/erf.py
 CLASS: Erfc
@@ -10919,27 +10879,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/erf.py
 CLASS: FresnelC
-LINE: 110
-TYPE: >>
-INPUT: FresnelC[{0, Infinity}]
-EXPECTED:
-= {0, 1 / 2}
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: FresnelC
 LINE: 114
 TYPE: >>
 INPUT: Integrate[Cos[x^2 Pi/2], {x, 0, z}]
 EXPECTED:
 = FresnelC[z]
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: FresnelS
-LINE: 141
-TYPE: >>
-INPUT: FresnelS[{0, Infinity}]
-EXPECTED:
-= {0, 1 / 2}
 ---
 FILE: mathics/builtin/specialfns/erf.py
 CLASS: FresnelS

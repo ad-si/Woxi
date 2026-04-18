@@ -1258,6 +1258,19 @@ mod erf {
   }
 
   #[test]
+  fn erf_two_arg() {
+    assert_eq!(
+      interpret("{Erf[0, x], Erf[x, 0]}").unwrap(),
+      "{Erf[x], -Erf[x]}"
+    );
+  }
+
+  #[test]
+  fn erfc_negative_arg() {
+    assert_eq!(interpret("Erfc[-x] / 2").unwrap(), "(2 - Erfc[x])/2");
+  }
+
+  #[test]
   fn d_erf_x() {
     // D[Erf[x], x] = 2/(E^(x^2)*Sqrt[Pi]) — tests denominator formatting
     assert_eq!(interpret("D[Erf[x],x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
