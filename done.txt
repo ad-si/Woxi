@@ -583,3 +583,27 @@ INPUT: StringCases["axbaxxb", "a" ~~ x__ ~~ "b"]
 EXPECTED:
 = {axbaxxb}
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Expand
+LINE: 1172
+TYPE: >>
+INPUT: Expand[Sin[x (1 + y)]]
+EXPECTED:
+= Sin[x (1 + y)]
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Expand
+LINE: 1180
+TYPE: >>
+INPUT: Expand[(1 + a)^12, Modulus -> 3]
+EXPECTED:
+= 1 + a ^ 3 + a ^ 9 + a ^ 12
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Expand
+LINE: 1183
+TYPE: >>
+INPUT: Expand[(1 + a)^12, Modulus -> 4]
+EXPECTED:
+= 1 + 2 a ^ 2 + 3 a ^ 4 + 3 a ^ 8 + 2 a ^ 10 + a ^ 12
+---
