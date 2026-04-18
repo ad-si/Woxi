@@ -3529,6 +3529,14 @@ mod automatic_symbol {
   }
 
   #[test]
+  fn make_boxes_attributes() {
+    assert_eq!(
+      interpret("Attributes[MakeBoxes]").unwrap(),
+      "{HoldAllComplete}"
+    );
+  }
+
+  #[test]
   fn automatic_in_list() {
     assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
   }

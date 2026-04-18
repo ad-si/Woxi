@@ -191,9 +191,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
 
     // HoldAllComplete + Protected
-    "HoldComplete" | "Unevaluated" | "MakeBoxes" => {
+    "HoldComplete" | "Unevaluated" => {
       vec!["HoldAllComplete", "Protected"]
     }
+    // MakeBoxes: HoldAllComplete only (matches wolframscript)
+    "MakeBoxes" => vec!["HoldAllComplete"],
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"

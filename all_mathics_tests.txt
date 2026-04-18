@@ -13074,14 +13074,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 955
-TYPE: >>
-INPUT: Attributes[MakeBoxes]
-EXPECTED:
-= {HoldAllComplete}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 958
 TYPE: >>
 INPUT: MakeBoxes[squared[args___], TraditionalForm] := squared[args] ^ 2
