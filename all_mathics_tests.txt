@@ -5095,14 +5095,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Collect
-LINE: 1043
-TYPE: >>
-INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]
-EXPECTED:
-= 4 x Sin[x z] + x ^ 3 + y (3 x + 3 x ^ 2) + y ^ 2 (3 x + 4 Sin[x z]) + y ^ 3
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Collect
 LINE: 1045
 TYPE: >>
 INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, {x,y}]
@@ -7885,14 +7877,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceAll
-LINE: 276
-TYPE: >>
-INPUT: {a, b} /. {{a->x, b->y}, {a->u, b->v}}
-EXPECTED:
-= {{x, y}, {u, v}}
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceAll
 LINE: 279
 TYPE: >>
 INPUT: {a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}
@@ -10351,14 +10335,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselI
-LINE: 321
-TYPE: >>
-INPUT: BesselI[0, 0]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselI
 LINE: 324
 TYPE: >>
 INPUT: BesselI[1.5, 4]
@@ -11245,14 +11221,6 @@ TYPE: >>
 INPUT: LegendreP[1.6, 3.1, 1.5]
 EXPECTED:
 = -0.303998 - 1.91937 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LegendreP
-LINE: 196
-TYPE: >>
-INPUT: LegendreP[2, 1, x]
-EXPECTED:
-= -3 x Sqrt[1 - x^2]
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LegendreQ

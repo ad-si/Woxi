@@ -1033,3 +1033,35 @@ INPUT: Collect[2 Sin[x z] (x+2 y^2 + Sin[y] x), y]
 EXPECTED:
 = 2 x Sin[x z] + 2 x Sin[x z] Sin[y] + 4 y ^ 2 Sin[x z]
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreP
+LINE: 196
+TYPE: >>
+INPUT: LegendreP[2, 1, x]
+EXPECTED:
+= -3 x Sqrt[1 - x^2]
+---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselI
+LINE: 321
+TYPE: >>
+INPUT: BesselI[0, 0]
+EXPECTED:
+= 1
+---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceAll
+LINE: 276
+TYPE: >>
+INPUT: {a, b} /. {{a->x, b->y}, {a->u, b->v}}
+EXPECTED:
+= {{x, y}, {u, v}}
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Collect
+LINE: 1043
+TYPE: >>
+INPUT: Collect[3 x y+2 Sin[x z] (x+2 y^2 + x) + (x+y)^3, y]
+EXPECTED:
+= 4 x Sin[x z] + x ^ 3 + y (3 x + 3 x ^ 2) + y ^ 2 (3 x + 4 Sin[x z]) + y ^ 3
+---
