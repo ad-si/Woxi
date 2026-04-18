@@ -1457,3 +1457,19 @@ INPUT: MatchQ[f[1, 2, 3], f[__Integer]]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/patterns/restrictions.py
+CLASS: PatternTest
+LINE: 122
+TYPE: >>
+INPUT: MatchQ[3, _Integer?(#>0&)]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/patterns/restrictions.py
+CLASS: PatternTest
+LINE: 124
+TYPE: >>
+INPUT: MatchQ[-3, _Integer?(#>0&)]
+EXPECTED:
+= False
+---
