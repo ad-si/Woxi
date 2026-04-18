@@ -300,11 +300,11 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
         }
       }
       _ => {
-        if is_constant_wrt(term, var) {
-          (0, term.clone())
-        } else {
-          (-1, term.clone())
-        }
+        // Non-algebraic functions (Sin, Cos, etc.) are treated as coefficients
+        // even if they contain the variable. Only Times/Power have polynomial
+        // structure. This matches Wolfram's Coefficient behavior where
+        // Coefficient[x*Cos[x], x] = Cos[x].
+        (0, term.clone())
       }
     },
     _ => {

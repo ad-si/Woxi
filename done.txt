@@ -919,3 +919,35 @@ INPUT: Log10[E ^ 3]
 EXPECTED:
 = 3 / Log[10]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 494
+TYPE: >>
+INPUT: Coefficient[(x + 3 y)^5, x]
+EXPECTED:
+= 405 y ^ 4
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 500
+TYPE: >>
+INPUT: Coefficient[x*Cos[x + 3] + 6*y, x]
+EXPECTED:
+= Cos[3 + x]
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 514
+TYPE: >>
+INPUT: Coefficient[a x^2 + b y^3 + c x + d y + 5, x, 0]
+EXPECTED:
+= 5 + b y ^ 3 + d y
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Exponent
+LINE: 1322
+TYPE: >>
+INPUT: Exponent[x / y, y]
+EXPECTED:
+= -1
+---
