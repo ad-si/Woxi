@@ -903,3 +903,19 @@ INPUT: HypergeometricPFQ[{a1, b2, a3}, {b1, b2, b3}, 0]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/numbers/exp.py
+CLASS: Log2
+LINE: 248
+TYPE: >>
+INPUT: Log2[E ^ 2]
+EXPECTED:
+= 2 / Log[2]
+---
+FILE: mathics/builtin/numbers/exp.py
+CLASS: Log10
+LINE: 273
+TYPE: >>
+INPUT: Log10[E ^ 3]
+EXPECTED:
+= 3 / Log[10]
+---

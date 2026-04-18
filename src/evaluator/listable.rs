@@ -49,6 +49,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Log"
       | "Log2"
       | "Log10"
+      | "LogisticSigmoid"
       | "Abs"
       | "Sign"
       | "Floor"
