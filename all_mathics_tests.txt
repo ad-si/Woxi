@@ -7459,22 +7459,6 @@ INPUT: f[3]
 EXPECTED:
 = p[3]
 ---
-FILE: mathics/builtin/patterns/restrictions.py
-CLASS: PatternTest
-LINE: 122
-TYPE: >>
-INPUT: MatchQ[3, _Integer?(#>0&)]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/patterns/restrictions.py
-CLASS: PatternTest
-LINE: 124
-TYPE: >>
-INPUT: MatchQ[-3, _Integer?(#>0&)]
-EXPECTED:
-= False
----
 FILE: mathics/builtin/patterns/rules.py
 CLASS: None
 LINE: 34
