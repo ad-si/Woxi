@@ -5416,6 +5416,14 @@ pub fn simplify(mut expr: Expr) -> Expr {
         if let Expr::Integer(n) = operand {
           return Expr::Integer(-n);
         }
+        // --x → x (double negation)
+        if let Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: ref inner,
+        } = operand
+        {
+          return *inner.clone();
+        }
       }
       Expr::UnaryOp {
         op,
@@ -5438,6 +5446,16 @@ pub fn simplify(mut expr: Expr) -> Expr {
         {
           return result;
         }
+      }
+      // Convert Exp[x] → E^x
+      if name == "Exp"
+        && args.len() == 1
+        && let Ok(result) = crate::functions::math_ast::power_two(
+          &Expr::Constant("E".to_string()),
+          &args[0],
+        )
+      {
+        return result;
       }
       // Delegate Sqrt to handle Sqrt[0] → 0, Sqrt[1] → 1, etc.
       if name == "Sqrt" && args.len() == 1 {
