@@ -1249,3 +1249,43 @@ INPUT: InverseErfc /@ {0, 1, 2}
 EXPECTED:
 = {Infinity, 0, -Infinity}
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: EulerPhi
+LINE: 250
+TYPE: >>
+INPUT: EulerPhi[-11] == EulerPhi[11]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: FactorInteger
+LINE: 301
+TYPE: >>
+INPUT: FactorInteger[2010 / 2011]
+EXPECTED:
+= {{2, 1}, {3, 1}, {5, 1}, {67, 1}, {2011, -1}}
+---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: MantissaExponent
+LINE: 604
+TYPE: >>
+INPUT: MantissaExponent[125.24]
+EXPECTED:
+= {0.12524, 3}
+---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: PseudoInverse
+LINE: 709
+TYPE: >>
+INPUT: PseudoInverse[{{1, 2}, {2, 3}, {3, 4}}]
+EXPECTED:
+= {{-11 / 6, -1 / 3, 7 / 6}, {4 / 3, 1 / 3, -2 / 3}}
+---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: PseudoInverse
+LINE: 712
+TYPE: >>
+INPUT: PseudoInverse[{{1, 2, 0}, {2, 3, 0}, {3, 4, 1}}]
+EXPECTED:
+= {{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}
+---
