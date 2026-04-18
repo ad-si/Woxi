@@ -2091,3 +2091,11 @@ INPUT: FindMinimum[(x-3)^2+2., {x, 1}]
 EXPECTED:
 = {2., {x -> 3.}} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindMaximum
+LINE: 767
+TYPE: >>
+INPUT: FindMaximum[-(x-3)^2+2., {x, 1}]
+EXPECTED:
+= {2., {x -> 3.}} (matches wolframscript)
+---
