@@ -95,6 +95,23 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
+    // Numeric evaluation: Pochhammer[a, n] = Gamma[a + n] / Gamma[a]
+    if let (Some(a_f), Some(n_f)) =
+      (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+    {
+      let has_real =
+        matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+      if has_real {
+        let gamma_a = super::gamma_fn(a_f);
+        let gamma_a_n = super::gamma_fn(a_f + n_f);
+        if gamma_a.is_finite()
+          && gamma_a_n.is_finite()
+          && gamma_a.abs() > 1e-300
+        {
+          return Ok(Expr::Real(gamma_a_n / gamma_a));
+        }
+      }
+    }
     Ok(Expr::FunctionCall {
       name: "Pochhammer".to_string(),
       args: args.to_vec(),

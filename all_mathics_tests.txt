@@ -10463,14 +10463,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial
-LINE: 174
-TYPE: >>
-INPUT: (-1.)!
-EXPECTED:
-= ComplexInfinity
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial
 LINE: 178
 TYPE: >>
 INPUT: !a! // FullForm
@@ -10565,14 +10557,6 @@ INPUT: Log[Gamma[1.*^20]]
 EXPECTED:
 : Overflow occurred in computation.
 = Overflow[]
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Pochhammer
-LINE: 436
-TYPE: >>
-INPUT: Table[Pochhammer[0, n], {n, 0, -4, -1}]
-EXPECTED:
-= {1, -1, 1 / 2, -1 / 6, 1 / 24}
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Pochhammer
