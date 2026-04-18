@@ -6948,14 +6948,6 @@ EXPECTED:
 = 1 - Re[z] + 2 Re[z] ^ 3 - 6 Im[z] ^ 2 Re[z]
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: Gudermannian
-LINE: 372
-TYPE: >>
-INPUT: Gudermannian[-4.2] ==  -Gudermannian[4.2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: InverseGudermannian
 LINE: 417
 TYPE: >>
@@ -11439,14 +11431,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Gamma
-LINE: 308
-TYPE: >>
-INPUT: Gamma[1/2]
-EXPECTED:
-= Sqrt[Pi]
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Gamma
 LINE: 311
 TYPE: >>
 INPUT: Gamma[123.78]
@@ -11460,22 +11444,6 @@ TYPE: >>
 INPUT: Gamma[1. + I]
 EXPECTED:
 = 0.498016 - 0.15495 I
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Gamma
-LINE: 319
-TYPE: >>
-INPUT: Gamma[1, x]
-EXPECTED:
-= E ^ (-x)
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Gamma
-LINE: 321
-TYPE: >>
-INPUT: Gamma[0, x]
-EXPECTED:
-= ExpIntegralE[1, x]
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: LogGamma

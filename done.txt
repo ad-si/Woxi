@@ -287,3 +287,35 @@ INPUT: IntegerPartitions[4, {2}, {-1, 0, 1, 4, 5}]
 EXPECTED:
 = {{5, -1}, {4, 0}}
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Gamma
+LINE: 308
+TYPE: >>
+INPUT: Gamma[1/2]
+EXPECTED:
+= Sqrt[Pi]
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Gamma
+LINE: 319
+TYPE: >>
+INPUT: Gamma[1, x]
+EXPECTED:
+= E ^ (-x)
+---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Gamma
+LINE: 321
+TYPE: >>
+INPUT: Gamma[0, x]
+EXPECTED:
+= ExpIntegralE[1, x]
+---
+FILE: mathics/builtin/numbers/hyperbolic.py
+CLASS: Gudermannian
+LINE: 372
+TYPE: >>
+INPUT: Gudermannian[-4.2] == -Gudermannian[4.2]
+EXPECTED:
+= True
+---

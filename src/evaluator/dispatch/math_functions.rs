@@ -546,7 +546,7 @@ pub fn dispatch_math_functions(
     "FactorialPower" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::factorial_power_ast(args));
     }
-    "Gamma" if args.len() == 1 => {
+    "Gamma" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::gamma_ast(args));
     }
     "BesselJ" if args.len() == 2 => {

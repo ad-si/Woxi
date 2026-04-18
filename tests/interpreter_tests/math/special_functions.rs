@@ -5784,3 +5784,34 @@ mod powers_representations {
     );
   }
 }
+
+mod gamma_incomplete {
+  use super::*;
+
+  #[test]
+  fn gamma_1_x() {
+    assert_eq!(interpret("Gamma[1, x]").unwrap(), "E^(-x)");
+  }
+
+  #[test]
+  fn gamma_0_x() {
+    assert_eq!(interpret("Gamma[0, x]").unwrap(), "ExpIntegralE[1, x]");
+  }
+
+  #[test]
+  fn gamma_2_x() {
+    assert_eq!(interpret("Gamma[2, x]").unwrap(), "(1 + x)/E^x");
+  }
+
+  #[test]
+  fn gamma_1_arg_still_works() {
+    assert_eq!(interpret("Gamma[1/2]").unwrap(), "Sqrt[Pi]");
+    assert_eq!(interpret("Gamma[5]").unwrap(), "24");
+  }
+
+  #[test]
+  fn gamma_1_numeric() {
+    // Gamma[1, 1.0] should simplify to E^(-1.0)
+    assert_eq!(interpret("Gamma[1, 1.]").unwrap(), "E^-1.");
+  }
+}
