@@ -270,6 +270,39 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       };
       Some(Expr::String(arch.to_string()))
     }
+    #[cfg(target_os = "macos")]
+    "$SystemMemory" => {
+      // sysctlbyname("hw.memsize") returns total physical memory in bytes
+      let mut size: u64 = 0;
+      let mut len = std::mem::size_of::<u64>();
+      let name = std::ffi::CString::new("hw.memsize").ok()?;
+      let ret = unsafe {
+        libc::sysctlbyname(
+          name.as_ptr(),
+          &mut size as *mut u64 as *mut libc::c_void,
+          &mut len,
+          std::ptr::null_mut(),
+          0,
+        )
+      };
+      if ret == 0 {
+        Some(Expr::Integer(size as i128))
+      } else {
+        None
+      }
+    }
+    #[cfg(target_os = "linux")]
+    "$SystemMemory" => {
+      // Parse /proc/meminfo for MemTotal (kB) and convert to bytes
+      let contents = std::fs::read_to_string("/proc/meminfo").ok()?;
+      for line in contents.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+          let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
+          return Some(Expr::Integer((kb * 1024) as i128));
+        }
+      }
+      None
+    }
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
     "$ContextPath" => Some(Expr::List(vec![

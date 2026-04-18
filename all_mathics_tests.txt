@@ -629,14 +629,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/system.py
 CLASS: VersionNumber
-LINE: 958
-TYPE: S>
-INPUT: $SystemMemory
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
-CLASS: VersionNumber
 LINE: 979
 TYPE: S>
 INPUT: MemoryAvailable[]

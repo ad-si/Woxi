@@ -289,10 +289,22 @@ mod precision {
 
   #[test]
   fn processor_type_head_is_string() {
+    assert_eq!(interpret("Head[$ProcessorType] == String").unwrap(), "True");
+  }
+
+  #[cfg(any(target_os = "macos", target_os = "linux"))]
+  #[test]
+  fn system_memory_head_is_integer() {
     assert_eq!(
-      interpret("Head[$ProcessorType] == String").unwrap(),
+      interpret("Head[$SystemMemory] == Integer").unwrap(),
       "True"
     );
+  }
+
+  #[cfg(any(target_os = "macos", target_os = "linux"))]
+  #[test]
+  fn system_memory_is_positive() {
+    assert_eq!(interpret("$SystemMemory > 0").unwrap(), "True");
   }
 
   #[test]
