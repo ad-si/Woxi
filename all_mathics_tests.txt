@@ -4615,14 +4615,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Cancel
-LINE: 433
-TYPE: >>
-INPUT: Cancel[x / x ^ 2 + y / y ^ 2]
-EXPECTED:
-= 1 / x + 1 / y
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Cancel
 LINE: 440
 TYPE: >>
 INPUT: a == "A" // Cancel // InputForm

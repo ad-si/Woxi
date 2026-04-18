@@ -2027,3 +2027,11 @@ INPUT: FactorTermsList[x^2 - 2 x + 1]
 EXPECTED:
 = {1, 1 - 2*x + x^2} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Cancel
+LINE: 433
+TYPE: >>
+INPUT: Cancel[x / x ^ 2 + y / y ^ 2]
+EXPECTED:
+= x^(-1) + y^(-1) (matches wolframscript; mathics expected 1/x + 1/y)
+---
