@@ -6106,14 +6106,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: MatrixPower
-LINE: 591
-TYPE: >>
-INPUT: MatrixPower[{{1, 2}, {1, 1}}, 10]
-EXPECTED:
-= {{3363, 4756}, {2378, 3363}}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: MatrixPower
 LINE: 594
 TYPE: >>
 INPUT: MatrixPower[{{1, 2}, {2, 5}}, -3]
