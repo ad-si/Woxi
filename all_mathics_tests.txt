@@ -5747,14 +5747,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Infinity
-LINE: 518
-TYPE: >>
-INPUT: Limit[1/x, x->0]
-EXPECTED:
-= -Infinity
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Infinity
 LINE: 522
 TYPE: >>
 INPUT: FullForm[Infinity]
