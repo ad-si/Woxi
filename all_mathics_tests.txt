@@ -7282,14 +7282,6 @@ EXPECTED:
 = {b}
 ---
 FILE: mathics/builtin/distance/numeric.py
-CLASS: ChessboardDistance
-LINE: 132
-TYPE: >>
-INPUT: ChessboardDistance[{-1, -1}, {1, 1}]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/distance/numeric.py
 CLASS: CosineDistance
 LINE: 159
 TYPE: >>

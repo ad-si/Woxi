@@ -2259,3 +2259,11 @@ INPUT: CanberraDistance[{-1, -1}, {1, 1}]
 EXPECTED:
 = 2 (matches wolframscript)
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: ChessboardDistance
+LINE: 132
+TYPE: >>
+INPUT: ChessboardDistance[{-1, -1}, {1, 1}]
+EXPECTED:
+= 2 (matches wolframscript)
+---
