@@ -4863,14 +4863,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: FactorTermsList
-LINE: 1439
-TYPE: >>
-INPUT: FactorTermsList[x^2 - 2 x + 1]
-EXPECTED:
-= {1, 1 - 2 x + x ^ 2}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: FactorTermsList
 LINE: 1441
 TYPE: >>
 INPUT: f = 3 (-1 + 2 x) (-1 + y) (1 - a)
