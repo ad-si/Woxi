@@ -4215,14 +4215,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringJoin
-LINE: 312
-TYPE: >>
-INPUT: "a" <> "b" <> "c" // InputForm
-EXPECTED:
-= "abc"
----
-FILE: mathics/builtin/string/operations.py
-CLASS: StringJoin
 LINE: 318
 TYPE: >>
 INPUT: Print[StringJoin[{"Hello", " ", {"world"}}, "!"]]

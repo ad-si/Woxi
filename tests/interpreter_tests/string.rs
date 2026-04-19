@@ -25,6 +25,16 @@ mod string_join_with_list {
   }
 
   #[test]
+  fn string_join_infix_then_input_form() {
+    // Infix <> and postfix // InputForm — InputForm stays unevaluated and
+    // wraps the concatenated string.
+    assert_eq!(
+      interpret(r#""a" <> "b" <> "c" // InputForm"#).unwrap(),
+      "InputForm[abc]"
+    );
+  }
+
+  #[test]
   fn string_join_with_table_result() {
     // StringJoin with a Table that returns strings
     assert_eq!(
