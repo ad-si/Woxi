@@ -452,6 +452,14 @@ mod precision {
     assert_eq!(interpret("Head[$ProcessorType] == String").unwrap(), "True");
   }
 
+  #[test]
+  fn operating_system_head_is_string() {
+    assert_eq!(
+      interpret("Head[$OperatingSystem] == String").unwrap(),
+      "True"
+    );
+  }
+
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   #[test]
   fn system_memory_head_is_integer() {

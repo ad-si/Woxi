@@ -257,6 +257,19 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       };
       Some(Expr::String(format!("{}-{}", os, arch)))
     }
+    "$OperatingSystem" => {
+      // wolframscript returns "MacOSX", "Unix", or "Windows".
+      let os = if cfg!(target_os = "macos") {
+        "MacOSX"
+      } else if cfg!(target_os = "linux") {
+        "Unix"
+      } else if cfg!(target_os = "windows") {
+        "Windows"
+      } else {
+        "Unknown"
+      };
+      Some(Expr::String(os.to_string()))
+    }
     "$ProcessorType" => {
       // wolframscript returns just the arch string, e.g. "ARM64" or "x86-64"
       let arch = if cfg!(target_arch = "aarch64") {
