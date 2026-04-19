@@ -5077,3 +5077,10 @@ TYPE: >>
 INPUT: x // InputForm
 EXPECTED: InputForm[x] (Woxi and wolframscript byte-identical; mathics "x" is the rendered form)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 847
+TYPE: >>
+INPUT: Format[x, TeXForm] = "z";
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
