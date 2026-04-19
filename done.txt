@@ -4142,3 +4142,10 @@ TYPE: >>
 INPUT: Drop[mylist, 2] (with mylist = {a, b, c, d})
 EXPECTED: {c, d} (matches wolframscript; drops first N elements)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 460
+TYPE: >>
+INPUT: First[mymatrix] (with mymatrix = {{1, 2}, {3, 4}, {5, 6}})
+EXPECTED: {1, 2} (matches wolframscript; First returns first row of a matrix)
+---

@@ -10726,14 +10726,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 460
-TYPE: >>
-INPUT: First[mymatrix]
-EXPECTED:
-= {1, 2}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 462
 TYPE: >>
 INPUT: Last[mylist]
