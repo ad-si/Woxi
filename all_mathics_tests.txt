@@ -8317,14 +8317,6 @@ EXPECTED:
 = dir1\\dir2\\dir3
 ---
 FILE: mathics/builtin/directories/directory_names.py
-CLASS: FileNameSplit
-LINE: 231
-TYPE: >>
-INPUT: FileNameSplit["example/path/file.txt"]
-EXPECTED:
-= {example, path, file.txt}
----
-FILE: mathics/builtin/directories/directory_names.py
 CLASS: ParentDirectory
 LINE: 292
 TYPE: >>

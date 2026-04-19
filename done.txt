@@ -2435,3 +2435,11 @@ INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}]
 EXPECTED:
 = dir1/dir2/dir3 (matches wolframscript)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameSplit
+LINE: 231
+TYPE: >>
+INPUT: FileNameSplit["example/path/file.txt"]
+EXPECTED:
+= {example, path, file.txt} (matches wolframscript)
+---
