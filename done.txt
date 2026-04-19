@@ -5179,3 +5179,8 @@ LINE: 161
 ACTUAL: (x + 2y) /. {x -> y, y -> x}
 EXPECTED: 2*x + y (Woxi and wolframscript both return "2*x + y"; simultaneous replacement)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 228
+ACTUAL: (x*x + y) /. {x -> c + y}
+EXPECTED: y + (c + y)^2 (Woxi and wolframscript both return "y + (c + y)^2")
+---
