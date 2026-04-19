@@ -2595,3 +2595,11 @@ INPUT: PythonForm[Infinity]
 EXPECTED:
 = PythonForm[Infinity] (matches wolframscript; mathics-specific math.inf is a Mathics extension, not standard Wolfram)
 ---
+FILE: mathics/builtin/forms/mathics3.py
+CLASS: PythonForm
+LINE: 29
+TYPE: >>
+INPUT: PythonForm[Pi]
+EXPECTED:
+= PythonForm[Pi] (matches wolframscript; Mathics-specific sympy.pi is a Mathics extension)
+---
