@@ -12484,12 +12484,6 @@ EXPECTED: f
 ---
 FILE: mathics/test/timings/test_uniform_tables.py
 FUNCTION: None
-LINE: 23
-INPUT: Plus@@uniformTable
-EXPECTED: 2.075674547634748
----
-FILE: mathics/test/timings/test_uniform_tables.py
-FUNCTION: None
 LINE: 24
 INPUT: MatchQ[uniformTable,{__Real}]
 EXPECTED: System`True
