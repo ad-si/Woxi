@@ -630,13 +630,6 @@ EXPECTED:
 | ...
 ---
 FILE: mathics/builtin/trace.py
-CLASS: ClearTrace
-LINE: 101
-TYPE: >>
-INPUT: ClearTrace[]
-EXPECTED: (none)
----
-FILE: mathics/builtin/trace.py
 CLASS: PrintTrace
 LINE: 141
 TYPE: >>

@@ -5248,3 +5248,10 @@ TYPE: >>
 INPUT: bigFactorial = ToString[500!]; StringTake[bigFactorial, {310, 330}]
 EXPECTED: 787849543848959553753 (Woxi and wolframscript byte-identical; mathics "..." accepts any)
 ---
+FILE: mathics/builtin/trace.py
+CLASS: ClearTrace
+LINE: 101
+TYPE: >>
+INPUT: ClearTrace[]
+EXPECTED: ClearTrace[] (Woxi and wolframscript byte-identical: both return unevaluated; Mathics3-specific function)
+---
