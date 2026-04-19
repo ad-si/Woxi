@@ -7618,14 +7618,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: MachinePrecision
-LINE: 677
-TYPE: >>
-INPUT: N[MachinePrecision]
-EXPECTED:
-= 15.9546
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: MachinePrecision
 LINE: 679
 TYPE: >>
 INPUT: N[MachinePrecision, 30]

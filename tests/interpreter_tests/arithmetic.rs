@@ -1343,6 +1343,15 @@ mod n_constants {
     let r = interpret("N[MachinePrecision]").unwrap();
     assert!(r.starts_with("15.9545"), "got: {}", r);
   }
+
+  #[test]
+  fn machine_precision_exact() {
+    // Full double-precision value matches wolframscript exactly.
+    assert_eq!(
+      interpret("N[MachinePrecision]").unwrap(),
+      "15.954589770191003"
+    );
+  }
 }
 
 mod symbol_function {
