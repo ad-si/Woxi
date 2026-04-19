@@ -4832,14 +4832,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Series
-LINE: 1789
-TYPE: >>
-INPUT: series // Normal
-EXPECTED:
-= 1 + x ^ 2
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Series
 LINE: 1791
 TYPE: >>
 INPUT: (series // Normal) /. x-> 4

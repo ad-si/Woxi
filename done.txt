@@ -4623,3 +4623,10 @@ TYPE: >>
 INPUT: Normal[%] (with % = Series[Exp[x], {x, 0, 5}])
 EXPECTED: 1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120 (matches wolframscript byte-for-byte)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Series
+LINE: 1789
+TYPE: >>
+INPUT: series // Normal (with series = Series[1 + x^2, {x, 0, 2}])
+EXPECTED: 1 + x^2 (matches wolframscript; Normal drops the O[x]^3 term)
+---
