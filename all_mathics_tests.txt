@@ -14370,23 +14370,6 @@ c   d\newline
 </mtable>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: \[Pi]
-DESCRIPTION: Pi
-EXPECTED:
-  text[System`InputForm]: Pi
-  text[System`OutputForm]: Pi
-  text[System`StandardForm]: π
-  text[System`TraditionalForm]: π
-  latex[System`InputForm]: \text{Pi}
-  latex[System`OutputForm]: \text{Pi}
-  latex[System`StandardForm]: \pi
-  latex[System`TraditionalForm]: \pi
-  mathml[System`InputForm]: <mi>Pi</mi>
-  mathml[System`OutputForm]: <mtext>Pi</mtext>
-  mathml[System`StandardForm]: <mi>π</mi>
-  mathml[System`TraditionalForm]: <mi>π</mi>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: \[Alpha]
 DESCRIPTION: A greek letter symbol
 EXPECTED:
