@@ -4445,3 +4445,9 @@ LINE: 232
 INPUT: Precision[0.00`]
 EXPECTED: MachinePrecision (matches wolframscript; lone single-backtick is machine precision)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[10.00]
+EXPECTED: MachinePrecision (matches wolframscript; plain machine-real literal)
+---
