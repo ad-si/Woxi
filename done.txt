@@ -3015,3 +3015,9 @@ LINE: 23
 INPUT: Plus@@uniformTable
 EXPECTED: uniformTable (matches wolframscript; mathics expected numeric result from prior uniformTable definition)
 ---
+FILE: mathics/test/timings/test_uniform_tables.py
+FUNCTION: None
+LINE: 24
+INPUT: MatchQ[uniformTable,{__Real}]
+EXPECTED: False (matches wolframscript; mathics expected True from prior uniformTable definition)
+---
