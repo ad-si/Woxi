@@ -2283,3 +2283,11 @@ INPUT: CosineDistance[{x, y}, {1, 0}]
 EXPECTED:
 = 1 - x/Sqrt[Abs[x]^2 + Abs[y]^2] (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: NumberDigit
+LINE: 320
+TYPE: >>
+INPUT: BaseForm[N[Pi], 2]
+EXPECTED:
+= BaseForm[3.141592653589793, 2] (matches wolframscript; mathics displays binary 11.00100100001111110_2)
+---

@@ -7624,14 +7624,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: NumberDigit
-LINE: 320
-TYPE: >>
-INPUT: BaseForm[N[Pi], 2]
-EXPECTED:
-= 11.00100100001111110_2
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: RealDigits
 LINE: 359
 TYPE: >>
