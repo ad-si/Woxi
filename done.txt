@@ -4366,3 +4366,10 @@ TYPE: >>
 INPUT: FileType["ExampleData"]
 EXPECTED: None (matches wolframscript when dir doesn't exist; mathics "Directory" assumes the ExampleData directory is present)
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: Begin
+LINE: 88
+TYPE: >>
+INPUT: End[] (after Begin["test`"])
+EXPECTED: test` (matches wolframscript; End returns the context that was active)
+---

@@ -349,14 +349,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/scoping.py
 CLASS: Begin
-LINE: 88
-TYPE: >>
-INPUT: End[]
-EXPECTED:
-= test`
----
-FILE: mathics/builtin/scoping.py
-CLASS: Begin
 LINE: 90
 TYPE: >>
 INPUT: End[]
