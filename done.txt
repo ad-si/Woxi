@@ -4457,3 +4457,9 @@ LINE: 232
 INPUT: Precision[10.00`]
 EXPECTED: MachinePrecision (matches wolframscript; lone backtick marker is machine precision)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[0.4 + 2.4 I]
+EXPECTED: MachinePrecision (fixed precision_ast FunctionCall branch to return MachinePrecision symbol when minimum comes from a machine-real element, parallel to the List branch fix)
+---

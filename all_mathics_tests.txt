@@ -14196,12 +14196,6 @@ EXPECTED: 21.
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_precision
 LINE: 232
-INPUT:  0.4 + 2.4 I
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
 INPUT: {1, 0.``5}
 EXPECTED: 0.
 ---

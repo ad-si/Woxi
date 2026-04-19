@@ -386,8 +386,15 @@ mod precision {
     // here one machine real and one exact integer, so MachinePrecision wins.
     // Previously Precision was marked listable and returned {Infinity,
     // MachinePrecision}; wolframscript returns the single symbol.
+    assert_eq!(interpret("Precision[{1, 0.}]").unwrap(), "MachinePrecision");
+  }
+
+  #[test]
+  fn precision_of_machine_complex_literal() {
+    // Precision of a machine-precision complex literal returns the symbol
+    // MachinePrecision, not the numeric value (matches wolframscript).
     assert_eq!(
-      interpret("Precision[{1, 0.}]").unwrap(),
+      interpret("Precision[0.4 + 2.4 I]").unwrap(),
       "MachinePrecision"
     );
   }
