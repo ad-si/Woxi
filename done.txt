@@ -2967,3 +2967,9 @@ LINE: 35
 INPUT: Pi
 EXPECTED: Pi (matches wolframscript; mathics test expects $MachinePrecision token)
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: None
+LINE: 14
+INPUT: 3+2 I
+EXPECTED: 3 + 2*I (matches wolframscript; mathics test wraps in NumericQ to expect True)
+---

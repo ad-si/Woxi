@@ -12436,12 +12436,6 @@ EXPECTED: Global`Builtin2\n
 ---
 FILE: mathics/test/test_numericq.py
 FUNCTION: None
-LINE: 14
-INPUT: 3+2 I
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: None
 LINE: 19
 INPUT: Infinity
 EXPECTED: False
