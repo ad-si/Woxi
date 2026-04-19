@@ -12246,12 +12246,6 @@ INPUT: Gudermannian[6/4 Pi I]
 EXPECTED: DirectedInfinity[-I]
 ---
 FILE: mathics/test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 26
-INPUT: Gudermannian[z]
-EXPECTED: 2 ArcTan[Tanh[z / 2]]
----
-FILE: mathics/test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_complexexpand
 LINE: 33
 INPUT: ComplexExpand[Sin[x + I y]]

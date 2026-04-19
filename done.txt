@@ -4610,3 +4610,9 @@ TYPE: >>
 INPUT: Hold[x] /. OwnValues[x]
 EXPECTED: Hold[x] (matches wolframscript when OwnValues[x] is empty; mathics "Hold[y]" assumes `x := y` defined earlier — Woxi's OwnValues is not populated for SetDelayed, but since wolframscript also returns Hold[x] without setup both match here)
 ---
+FILE: mathics/test/builtin/numbers/test_hyperbolic.py
+FUNCTION: test_gudermannian
+LINE: 26
+INPUT: Gudermannian[z]
+EXPECTED: Gudermannian[z] (matches wolframscript; symbolic Gudermannian stays unevaluated — mathics "2 ArcTan[Tanh[z / 2]]" reflects a rewrite rule)
+---
