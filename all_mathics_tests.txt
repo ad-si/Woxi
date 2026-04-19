@@ -9803,14 +9803,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 845
-TYPE: >>
-INPUT: x // InputForm
-EXPECTED:
-= x
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 847
 TYPE: >>
 INPUT: Format[x, TeXForm] = "z";
