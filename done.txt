@@ -2483,3 +2483,11 @@ INPUT: OwnValues[x]
 EXPECTED:
 = {} (matches wolframscript; mathics expected {HoldPattern[x] :> 2} from prior x = 2 assignment)
 ---
+FILE: mathics/builtin/drawing/drawing_options.py
+CLASS: Automatic
+LINE: 36
+TYPE: >>
+INPUT: Cases[Options[Plot], HoldPattern[_ :> Automatic]]
+EXPECTED:
+= {} (matches wolframscript; mathics expected list of options because Plot's option set differs)
+---

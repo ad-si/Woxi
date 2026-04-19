@@ -8419,14 +8419,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Automatic
-LINE: 36
-TYPE: >>
-INPUT: Cases[Options[Plot], HoldPattern[_ :> Automatic]]
-EXPECTED:
-= {AxesOrigin :> Automatic, Background :> Automatic, BaselinePosition :> Automatic, ContentSelectable :> Automatic, CoordinatesToolOptions :> Automatic, Exclusions :> Automatic, FrameTicks :> Automatic, ImageSize :> Automatic, Method :> Automatic, PlotRange :> Automatic, PlotRangePadding :> Automatic, PlotRegion :> Automatic, PreserveImageOptions :> Automatic, Ticks :> Automatic}
----
-FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: MaxRecursion
 LINE: 243
 TYPE: >>
