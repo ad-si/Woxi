@@ -12668,13 +12668,6 @@ MESSAGE: upvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 50
-INPUT: A[x_][s[y]]
-EXPECTED: s
-MESSAGE: upvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 51
 INPUT: DisplayForm[boxexpr_InterpretationBox]
 EXPECTED: InterpretationBox

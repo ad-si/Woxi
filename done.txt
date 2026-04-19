@@ -3129,3 +3129,9 @@ LINE: 511
 INPUT: Symbol
 EXPECTED: Symbol (matches wolframscript; mathics test compares to special unicode form a\uf522c)
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 50
+INPUT: A[x_][s[y]]
+EXPECTED: A[x_][s[y]] (matches wolframscript; mathics test expects "s" via upvalues lookup)
+---
