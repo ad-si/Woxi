@@ -5508,3 +5508,9 @@ LINE: 462-569
 INPUT: Less / LessEqual / Greater / GreaterEqual / And / Not / BitAnd / BitOr / BitXor / BitNot
 EXPECTED: each returns its own symbol name (Woxi and wolframscript byte-identical for all 17 entries)
 ---
+FILE: mathics/test/test_context.py
+FUNCTION: test_context1
+LINE: 60
+INPUT: foo[42]
+EXPECTED: foo[42] (Woxi and wolframscript byte-identical when run in isolation; mathics expected "42" depends on prior context-based definition)
+---

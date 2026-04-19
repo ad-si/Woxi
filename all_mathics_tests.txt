@@ -13480,12 +13480,6 @@ EXPECTED: 3.
 ---
 FILE: mathics/test/test_context.py
 FUNCTION: test_context1
-LINE: 60
-INPUT: foo[42]
-EXPECTED: 42
----
-FILE: mathics/test/test_context.py
-FUNCTION: test_context1
 LINE: 61
 INPUT: bar[]
 EXPECTED: 42
