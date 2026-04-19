@@ -5703,3 +5703,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-074-079, 081-090 Plot variants (Evaluate, Exp, Gudermannian, Hypergeometric, InverseErf/Gudermannian, Kelvin*, LambertW, LerchPhi, Log)
 EXPECTED: -Graphics- (16 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-091/093/094/095/096/097/098/099 Plot variants (LucasL, PolyLog, ProductLog, Sin variants)
+EXPECTED: -Graphics- (8 tests; Woxi and wolframscript byte-identical)
+---

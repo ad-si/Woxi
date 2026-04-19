@@ -14226,50 +14226,10 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-091
-EXPECTED:
-  expr: Plot[LucasL[1/2, x], {x, -5, 5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-092
 EXPECTED:
   expr: Plot[Piecewise[{{Log[x], x > 0}, {x*-0.5, x < 0}}], {x, -1, 1}]
   skip: True
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-093
-EXPECTED:
-  expr: Plot[PolyLog[2,x], {x, -20, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-094
-EXPECTED:
-  expr: Plot[ProductLog[x], {x, -1/E, E}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-095
-EXPECTED:
-  expr: Plot[Sin[Cos[x^2]],{x,-4,4}, PlotPoints->22]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-096
-EXPECTED:
-  expr: Plot[Sin[Cos[x^2]],{x,-4,4}, PlotRange -> All]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-097
-EXPECTED:
-  expr: Plot[Sin[Cos[x^2]],{x,-4,4},Mesh->All]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-098
-EXPECTED:
-  expr: Plot[Sin[x], {x, -Pi, Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-099
-EXPECTED:
-  expr: Plot[Sin[x], {x, 0, 10}, ImageSize -> Small]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-100
