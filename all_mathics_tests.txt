@@ -12749,12 +12749,6 @@ EXPECTED: I
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 121
-INPUT: \\[Infinity]
-EXPECTED: Infinity
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 128
 INPUT: x=.01
 EXPECTED: x = .01
