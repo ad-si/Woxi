@@ -5318,3 +5318,10 @@ TYPE: >>
 INPUT: collatz[x_] := 3 x + 1;
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Remove
+LINE: 186
+TYPE: >>
+INPUT: Remove[a]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

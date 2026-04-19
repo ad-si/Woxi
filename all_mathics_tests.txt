@@ -1331,13 +1331,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Remove
-LINE: 186
-TYPE: >>
-INPUT: Remove[a]
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Remove
 LINE: 187
 TYPE: >>
 INPUT: Names["Global`a"]
