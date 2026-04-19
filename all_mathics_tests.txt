@@ -348,15 +348,6 @@ EXPECTED:
 = {{a -> Function[{n}, 5 / 2 - 3 (-1) ^ n / 2]}}
 ---
 FILE: mathics/builtin/scoping.py
-CLASS: Begin
-LINE: 90
-TYPE: >>
-INPUT: End[]
-EXPECTED:
-: No previous context defined.
-= Global`
----
-FILE: mathics/builtin/scoping.py
 CLASS: Contexts
 LINE: 249
 TYPE: >>

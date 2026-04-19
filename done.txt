@@ -4373,3 +4373,10 @@ TYPE: >>
 INPUT: End[] (after Begin["test`"])
 EXPECTED: test` (matches wolframscript; End returns the context that was active)
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: Begin
+LINE: 90
+TYPE: >>
+INPUT: End[] (no prior Begin)
+EXPECTED: Global` (matches wolframscript; End with no prior Begin returns Global context — wolframscript also emits End::noctx warning)
+---
