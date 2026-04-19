@@ -4401,3 +4401,10 @@ TYPE: >>
 INPUT: f[x] (with Options[f] = {n -> 2}; f[x_, OptionsPattern[]] := x^OptionValue[n])
 EXPECTED: x^2 (matches wolframscript; OptionsPattern picks up default n->2)
 ---
+FILE: mathics/builtin/options.py
+CLASS: Options
+LINE: 322
+TYPE: >>
+INPUT: f[x, n -> 3] (with Options[f] = {n -> 2}; f[x_, OptionsPattern[]] := x^OptionValue[n])
+EXPECTED: x^3 (matches wolframscript; caller-supplied n->3 overrides default n->2)
+---

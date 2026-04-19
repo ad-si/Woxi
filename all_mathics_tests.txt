@@ -16,14 +16,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/options.py
 CLASS: Options
-LINE: 322
-TYPE: >>
-INPUT: f[x, n -> 3]
-EXPECTED:
-= x ^ 3
----
-FILE: mathics/builtin/options.py
-CLASS: Options
 LINE: 326
 TYPE: >>
 INPUT: f[a :> Print["value"]] /. f[OptionsPattern[{}]] :> (OptionValue[a]; Print["between"]; OptionValue[a]);
