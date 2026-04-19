@@ -5600,3 +5600,8 @@ INPUT: -1. 10^-6
 DESCRIPTION: very small negative real number (<10^-6)
 EXPECTED: -1.*^-6 (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: -1. 10^6
+DESCRIPTION: very large negative real number (>10^6)
+EXPECTED: -1.*^6 (Woxi and wolframscript byte-identical for InputForm)
+---

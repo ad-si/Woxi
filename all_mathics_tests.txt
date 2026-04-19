@@ -13511,19 +13511,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/format_tests.yaml
-INPUT: -1. 10^6
-DESCRIPTION: very large negative real number (>10^6)
-EXPECTED:
-  text[System`InputForm]: -1.*^6
-  text[System`OutputForm]: -1.×10^6
-  text[System`StandardForm]: -1.`*^6
-  text[System`TraditionalForm]: -1.`×10^6
-  latex[System`InputForm]: -1.*{}^{\wedge}6
-  latex[System`OutputForm]: \text{-1.$\times$10${}^{\wedge}$6}
-  latex[System`StandardForm]: -1.\text{*${}^{\wedge}$}6
-  latex[System`TraditionalForm]: -1.\times 10^6
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: -4.326563712`2
 DESCRIPTION: A negative Real number
 EXPECTED:
