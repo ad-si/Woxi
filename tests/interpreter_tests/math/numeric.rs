@@ -311,6 +311,15 @@ mod precision {
   }
 
   #[test]
+  fn precision_of_real_part_machine_complex() {
+    // Re[0.5 + 2.3 I] extracts the machine-real 0.5 with MachinePrecision.
+    assert_eq!(
+      interpret("Precision[Re[0.5+2.3 I]]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
+  #[test]
   fn arbitrary_precision_literal() {
     // 1.23`10 is a literal with explicit precision of 10 digits.
     assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");

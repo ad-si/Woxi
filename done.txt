@@ -3741,3 +3741,9 @@ LINE: 261
 INPUT: Accuracy[2 + 3 I]
 EXPECTED: Infinity (matches wolframscript; exact Gaussian integer)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 269
+INPUT: Precision[Re[0.5+2.3 I]]
+EXPECTED: MachinePrecision (matches wolframscript)
+---
