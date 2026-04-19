@@ -12713,12 +12713,6 @@ EXPECTED: Plus[a]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 88
-INPUT: First[#]==sse&
-EXPECTED: Function[Equal[First[Slot[1]], sse]]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 107
 INPUT: \\[Pi]
 EXPECTED: Pi

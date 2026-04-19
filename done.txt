@@ -3075,3 +3075,9 @@ LINE: 87
 INPUT: a==b&
 EXPECTED: a == b & (matches wolframscript; mathics test compares to FullForm Function[Equal[a, b]])
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 88
+INPUT: First[#]==sse&
+EXPECTED: First[#1] == sse & (matches wolframscript; mathics test compares to FullForm)
+---
