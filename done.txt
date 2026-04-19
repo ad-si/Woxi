@@ -4310,3 +4310,10 @@ TYPE: >>
 INPUT: EllipticF[0, 0.8]
 EXPECTED: 0. (matches wolframscript; EllipticF is 0 when phi=0)
 ---
+FILE: mathics/builtin/specialfns/elliptic.py
+CLASS: EllipticF
+LINE: 97
+TYPE: >>
+INPUT: EllipticF[0.3, 0.8]
+EXPECTED: 0.30365239221539364 (matches wolframscript byte-for-byte; mathics "0.303652" is shorter display)
+---

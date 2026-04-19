@@ -8538,14 +8538,6 @@ EXPECTED:
 = 0.296426
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticF
-LINE: 97
-TYPE: >>
-INPUT: EllipticF[0.3, 0.8]
-EXPECTED:
-= 0.303652
----
-FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticPi
 LINE: 183
 TYPE: >>
