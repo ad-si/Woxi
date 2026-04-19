@@ -4540,3 +4540,10 @@ TYPE: >>
 INPUT: Read[stream, String] (with stream = StringToStream["abc123"])
 EXPECTED: abc123 (matches wolframscript; reads the whole line as a string)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 780
+TYPE: >>
+INPUT: Read[stream, String] (second call after reading "abc123")
+EXPECTED: EndOfFile (matches wolframscript; no more input after first read)
+---

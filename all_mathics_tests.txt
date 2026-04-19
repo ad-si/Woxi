@@ -2172,14 +2172,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 780
-TYPE: >>
-INPUT: Read[stream, String]
-EXPECTED:
-= EndOfFile
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 782
 TYPE: #>
 INPUT: Close[stream];
