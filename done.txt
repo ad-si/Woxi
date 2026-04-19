@@ -4086,3 +4086,10 @@ TYPE: >>
 INPUT: InputForm["Hello world!"]
 EXPECTED: InputForm[Hello world!] (matches wolframscript; display wrapper stays unevaluated — quotes stripped in text display)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 389
+TYPE: >>
+INPUT: "Debian" <> 6
+EXPECTED: StringJoin[Debian, 6] with StringJoin::string message (updated string_join_ast to validate every leaf is a string; routed BinaryOperator::StringJoin through it so `<>` operator matches direct StringJoin[] call)
+---

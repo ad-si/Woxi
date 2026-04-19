@@ -10694,15 +10694,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 389
-TYPE: >>
-INPUT: "Debian" <> 6
-EXPECTED:
-: String expected.
-= Debian <> 6
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 419
 TYPE: >>
 INPUT: Length[mylist]

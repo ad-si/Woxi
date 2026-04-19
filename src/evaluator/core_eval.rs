@@ -1344,9 +1344,10 @@ pub fn evaluate_expr_to_expr_inner(
           unreachable!()
         }
         BinaryOperator::StringJoin => {
-          let l = expr_to_raw_string(&left_val);
-          let r = expr_to_raw_string(&right_val);
-          Ok(Expr::String(format!("{}{}", l, r)))
+          // Route through string_join_ast so that non-string arguments emit
+          // the StringJoin::string warning and return unevaluated (matching
+          // wolframscript), instead of silently coercing identifiers/integers.
+          crate::functions::string_ast::string_join_ast(&[left_val, right_val])
         }
         BinaryOperator::Alternatives => {
           // Alternatives stays symbolic (used in pattern matching)

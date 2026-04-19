@@ -288,6 +288,38 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Validate: every leaf must be a string; lists of strings are flattened.
+  // On any non-string leaf, emit a StringJoin::string message and return
+  // unevaluated (matches wolframscript).
+  fn validate(expr: &Expr, has_non_string: &mut bool) {
+    match expr {
+      Expr::String(_) => {}
+      Expr::List(items) => {
+        for item in items {
+          validate(item, has_non_string);
+        }
+      }
+      _ => *has_non_string = true,
+    }
+  }
+  let mut has_non_string = false;
+  for arg in args {
+    validate(arg, &mut has_non_string);
+  }
+  if has_non_string {
+    crate::emit_message(&format!(
+      "StringJoin::string: String expected at position 1 in {}.",
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "StringJoin".to_string(),
+        args: args.to_vec(),
+      })
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "StringJoin".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   let mut joined = String::new();
 
   // Check if single argument is a list

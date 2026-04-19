@@ -25,6 +25,26 @@ mod string_length_arg_errors {
   }
 }
 
+mod string_join_arg_errors {
+  use super::*;
+
+  #[test]
+  fn non_string_operand_returns_unevaluated() {
+    // Matches wolframscript: "Debian" <> 6 emits StringJoin::string and
+    // returns StringJoin[Debian, 6]. Previously Woxi coerced and produced
+    // "Debian6".
+    assert_eq!(
+      interpret(r#""Debian" <> 6"#).unwrap(),
+      "StringJoin[Debian, 6]"
+    );
+  }
+
+  #[test]
+  fn plain_string_chain_still_works() {
+    assert_eq!(interpret(r#""a" <> "b" <> "c""#).unwrap(), "abc");
+  }
+}
+
 mod string_join_with_list {
   use super::*;
 
