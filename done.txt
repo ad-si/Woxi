@@ -4931,3 +4931,10 @@ TYPE: >>
 INPUT: AnglePath[{90 Degree, 90 Degree, 90 Degree, 90 Degree}]
 EXPECTED: {{0, 0}, {0, 1}, {-1, 1}, {-1, 0}, {0, 0}} (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: AnglePath
+LINE: 197
+TYPE: >>
+INPUT: AnglePath[{{1, 1}, 90 Degree}, {{1, 90 Degree}, {2, 90 Degree}, {1, 90 Degree}, {2, 90 Degree}}]
+EXPECTED: {{1, 1}, {0, 1}, {0, -1}, {1, -1}, {1, 1}} (implemented AnglePath 2-argument form with initial position and starting angle)
+---

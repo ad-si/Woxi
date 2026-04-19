@@ -5447,6 +5447,18 @@ mod angle_path {
   }
 
   #[test]
+  fn two_argument_form() {
+    // AnglePath[{{x0, y0}, θ0}, steps] starts at {x0,y0} facing θ0.
+    assert_eq!(
+      interpret(
+        "AnglePath[{{1, 1}, 90 Degree}, {{1, 90 Degree}, {2, 90 Degree}, {1, 90 Degree}, {2, 90 Degree}}]"
+      )
+      .unwrap(),
+      "{{1, 1}, {0, 1}, {0, -1}, {1, -1}, {1, 1}}"
+    );
+  }
+
+  #[test]
   fn step_angle_pairs() {
     let result =
       interpret("AnglePath[{{1, 0.5}, {2, -0.3}, {0.5, 0.1}}]").unwrap();

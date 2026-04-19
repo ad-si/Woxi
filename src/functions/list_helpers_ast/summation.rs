@@ -6,21 +6,41 @@ use super::*;
 /// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
 /// AnglePath[{{r1, θ1}, {r2, θ2}, ...}] - path with specified step lengths.
 pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "AnglePath expects 1 argument".into(),
+      "AnglePath expects 1 or 2 arguments".into(),
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "AnglePath".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
+  // AnglePath[{{x0, y0}, θ0}, steps] form: consume initial position and
+  // starting angle from the first argument, then treat the second argument
+  // as the step list.
+  let (start_pos, start_angle, items_vec): (Option<Expr>, Option<Expr>, Vec<Expr>) =
+    if args.len() == 2 {
+      let (pos, theta) = parse_initial_spec(&args[0])?;
+      let step_items = match &args[1] {
+        Expr::List(items) => items.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "AnglePath".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (Some(pos), Some(theta), step_items)
+    } else {
+      let step_items = match &args[0] {
+        Expr::List(items) => items.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "AnglePath".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (None, None, step_items)
+    };
+  let items = &items_vec;
 
   // Start at origin
   let mut x = 0.0_f64;
@@ -40,9 +60,7 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let any_real = if is_pair_form {
     items.iter().any(|item| {
       if let Expr::List(pair) = item {
-        pair
-          .iter()
-          .any(|p| matches!(p, Expr::Real(_)))
+        pair.iter().any(|p| matches!(p, Expr::Real(_)))
       } else {
         matches!(item, Expr::Real(_))
       }
@@ -61,7 +79,9 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     })
   } else {
-    items.iter().all(|item| matches!(item, Expr::Integer(_) | Expr::Real(_)))
+    items
+      .iter()
+      .all(|item| matches!(item, Expr::Integer(_) | Expr::Real(_)))
   };
   let use_numeric = all_floatable && any_real;
 
@@ -69,9 +89,26 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Symbolic mode: keep exact Cos/Sin
     let mut cum_terms_x: Vec<Expr> = Vec::new();
     let mut cum_terms_y: Vec<Expr> = Vec::new();
-    let mut cum_angle = Expr::Integer(0);
+    let mut cum_angle = start_angle.clone().unwrap_or(Expr::Integer(0));
 
-    points.push(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]));
+    let (start_x, start_y) = if let Some(Expr::List(pair)) = &start_pos {
+      if pair.len() == 2 {
+        (pair[0].clone(), pair[1].clone())
+      } else {
+        (Expr::Integer(0), Expr::Integer(0))
+      }
+    } else {
+      (Expr::Integer(0), Expr::Integer(0))
+    };
+    let start_x_expr = start_x.clone();
+    let start_y_expr = start_y.clone();
+    points.push(Expr::List(vec![start_x.clone(), start_y.clone()]));
+    if !matches!(start_x, Expr::Integer(0)) {
+      cum_terms_x.push(start_x_expr);
+    }
+    if !matches!(start_y, Expr::Integer(0)) {
+      cum_terms_y.push(start_y_expr);
+    }
 
     for item in items {
       let (step, theta) = if is_pair_form {
@@ -133,7 +170,28 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     // Numeric mode
-    points.push(Expr::List(vec![Expr::Real(0.0), Expr::Real(0.0)]));
+    if let Some(Expr::List(pair)) = &start_pos {
+      if pair.len() == 2 {
+        x = expr_to_f64(&pair[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "AnglePath: starting x must be numeric".into(),
+          )
+        })?;
+        y = expr_to_f64(&pair[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "AnglePath: starting y must be numeric".into(),
+          )
+        })?;
+      }
+    }
+    if let Some(theta_expr) = &start_angle {
+      angle = expr_to_f64(theta_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting angle must be numeric".into(),
+        )
+      })?;
+    }
+    points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)]));
 
     for item in items {
       let (step, theta) = if is_pair_form {
@@ -180,6 +238,21 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(points))
+}
+
+/// Parse the 2-argument form's first argument: `{{x0, y0}, θ0}`.
+/// Returns (position, initial_angle).
+fn parse_initial_spec(expr: &Expr) -> Result<(Expr, Expr), InterpreterError> {
+  if let Expr::List(items) = expr
+    && items.len() == 2
+    && let Expr::List(pos) = &items[0]
+    && pos.len() == 2
+  {
+    return Ok((Expr::List(pos.clone()), items[1].clone()));
+  }
+  Err(InterpreterError::EvaluationError(
+    "AnglePath: first argument must be {{x, y}, angle}".into(),
+  ))
 }
 
 /// AST-based Product: product of list elements or iterator product.

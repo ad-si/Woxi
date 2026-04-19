@@ -5738,14 +5738,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: AnglePath
-LINE: 197
-TYPE: >>
-INPUT: AnglePath[{{1, 1}, 90 Degree}, {{1, 90 Degree}, {2, 90 Degree}, {1, 90 Degree}, {2, 90 Degree}}]
-EXPECTED:
-= {{1, 1}, {0, 1}, {0, -1}, {1, -1}, {1, 1}}
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: AnglePath
 LINE: 209
 TYPE: >>
 INPUT: Graphics[Line[AnglePath[RandomReal[{-1, 1}, {100}]]]]
