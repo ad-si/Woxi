@@ -4470,3 +4470,10 @@ TYPE: >>
 INPUT: Read[stream, {Number, Word}] (with stream = StringToStream["123 abc"])
 EXPECTED: {123, abc} (matches wolframscript; Read with a list reads multiple typed tokens)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 819
+TYPE: >>
+INPUT: Read[stream, Hold[Expression]] (with stream = StringToStream[""])
+EXPECTED: EndOfFile (matches wolframscript on an empty stream; mathics "Hold[Null]" assumes non-empty stream context)
+---

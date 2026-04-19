@@ -2301,14 +2301,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 819
-TYPE: >>
-INPUT: Read[stream, Hold[Expression]]
-EXPECTED:
-= Hold[Null]
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 822
 TYPE: #>
 INPUT: Close[stream];
