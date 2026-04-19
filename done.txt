@@ -3051,3 +3051,9 @@ LINE: 327
 INPUT: a+b*c
 EXPECTED: a + b*c (matches wolframscript)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 328
+INPUT: a*b+c
+EXPECTED: a*b + c (matches wolframscript)
+---
