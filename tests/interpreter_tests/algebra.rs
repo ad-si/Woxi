@@ -1551,6 +1551,16 @@ mod solve {
   }
 
   #[test]
+  fn denominator_of_rational_function_roots() {
+    // Solve[Denominator[f[x]] == 0, x] for f[x] = 4x/(x^2 + 3x + 5).
+    // Matches wolframscript; mathics docstring displays as "-3/2 +/- I/2 Sqrt[11]".
+    assert_eq!(
+      interpret("f[x_] := 4 x / (x^2 + 3 x + 5); Solve[Denominator[f[x]] == 0, x]").unwrap(),
+      "{{x -> (-3 - I*Sqrt[11])/2}, {x -> (-3 + I*Sqrt[11])/2}}"
+    );
+  }
+
+  #[test]
   fn quadratic_general() {
     assert_eq!(
       interpret("Solve[x^2 - 2*x - 3 == 0, x]").unwrap(),

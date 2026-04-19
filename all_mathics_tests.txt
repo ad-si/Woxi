@@ -11388,14 +11388,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1145
-TYPE: >>
-INPUT: Solve[Denominator[f[x]] == 0, x]
-EXPECTED:
-= {{x -> -3 / 2 - I / 2 Sqrt[11]}, {x -> -3 / 2 + I / 2 Sqrt[11]}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1170
 TYPE: >>
 INPUT: MatrixForm[A]

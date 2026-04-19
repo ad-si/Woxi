@@ -3925,3 +3925,10 @@ TYPE: >>
 INPUT: (a + b + c)[[2]]
 EXPECTED: b (matches wolframscript; Part[2] on Plus picks the second summand)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1145
+TYPE: >>
+INPUT: Solve[Denominator[f[x]] == 0, x] (with f[x_] := 4x/(x^2+3x+5))
+EXPECTED: {{x -> (-3 - I*Sqrt[11])/2}, {x -> (-3 + I*Sqrt[11])/2}} (matches wolframscript; mathics docstring writes the roots in a different form but same values)
+---
