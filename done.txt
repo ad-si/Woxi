@@ -3315,3 +3315,9 @@ LINE: 37
 INPUT: E^(.25 I Pi)
 EXPECTED: 0.7071067811865476 + 0.7071067811865475*I (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_exponential
+LINE: 37
+INPUT: E^(I Pi/2)
+EXPECTED: I (duplicate of test_add line 44; already covered by e_to_i_pi_over_two test)
+---

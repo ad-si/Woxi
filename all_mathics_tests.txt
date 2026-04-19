@@ -15750,12 +15750,6 @@ EXPECTED: -E ^ 3
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_exponential
 LINE: 37
-INPUT: E^(I Pi/2)
-EXPECTED: I
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_exponential
-LINE: 37
 INPUT: log2=Log[2.]; E^log2
 EXPECTED: 2.
 ---
