@@ -7069,14 +7069,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileType
-LINE: 190
-TYPE: >>
-INPUT: FileType["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= File
----
-FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileType
 LINE: 192
 TYPE: >>
 INPUT: FileType["ExampleData"]

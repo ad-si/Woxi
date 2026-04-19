@@ -3946,3 +3946,10 @@ TYPE: >>
 INPUT: Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]
 EXPECTED: (-3 + y)^(-1) + (-2 + y)^(-1) (matches wolframscript; Coefficient extracts x-coefficient from rational expression)
 ---
+FILE: mathics/builtin/file_operations/file_properties.py
+CLASS: FileType
+LINE: 190
+TYPE: >>
+INPUT: FileType["ExampleData/sunflowers.jpg"]
+EXPECTED: None (matches wolframscript when file doesn't exist; mathics "File" assumes the sample data file is present)
+---
