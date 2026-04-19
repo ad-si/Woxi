@@ -97,6 +97,12 @@ mod pattern_matching {
       assert_eq!(interpret("MatchQ[42, Verbatim[_]]").unwrap(), "False");
       assert_eq!(interpret("MatchQ[_, Verbatim[_]]").unwrap(), "True");
     }
+
+    #[test]
+    fn verbatim_blank_as_replace_lhs() {
+      // `_ /. Verbatim[_]->t` replaces a literal Blank with t.
+      assert_eq!(interpret("_ /. Verbatim[_]->t").unwrap(), "t");
+    }
   }
 
   mod blank_sequence_pattern {
@@ -1243,20 +1249,14 @@ mod free_q {
   fn free_q_with_nested_pattern_in_plus() {
     // The form is Plus[x_, y_, z_] — a FunctionCall containing patterns.
     // FreeQ must detect the nested pattern and do pattern matching.
-    assert_eq!(
-      interpret("FreeQ[a+b+c, x_+y_+z_]").unwrap(),
-      "False"
-    );
+    assert_eq!(interpret("FreeQ[a+b+c, x_+y_+z_]").unwrap(), "False");
   }
 
   #[test]
   fn free_q_with_nested_pattern_no_match() {
     // Pattern with 4 blanks can't match Plus with 3 operands (non-Flat
     // pattern matching). The expression is free of the pattern.
-    assert_eq!(
-      interpret("FreeQ[a+b, x_+y_+z_+w_]").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("FreeQ[a+b, x_+y_+z_+w_]").unwrap(), "True");
   }
 }
 

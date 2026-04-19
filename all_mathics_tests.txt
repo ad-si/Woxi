@@ -6826,14 +6826,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Verbatim
-LINE: 711
-TYPE: >>
-INPUT: _ /. Verbatim[_]->t
-EXPECTED:
-= t
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Verbatim
 LINE: 717
 TYPE: >>
 INPUT: x /. _->t

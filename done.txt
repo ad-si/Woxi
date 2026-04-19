@@ -3279,3 +3279,9 @@ LINE: 162
 INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Windows"]
 EXPECTED: dir1\dir2\dir3 (matches wolframscript; backslash separator for Windows)
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Verbatim
+LINE: 711
+INPUT: _ /. Verbatim[_]->t
+EXPECTED: t (matches wolframscript)
+---
