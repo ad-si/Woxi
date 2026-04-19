@@ -4526,3 +4526,10 @@ TYPE: >>
 INPUT: StreamPosition[stream] (after Read[stream, Word] on "Mathics is cool!")
 EXPECTED: 7 (matches wolframscript; position advances to end of "Mathics")
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: StreamPosition
+LINE: 1133
+TYPE: >>
+INPUT: Read[stream, Word] (with stream = StringToStream["Mathics is cool!"])
+EXPECTED: Mathics (matches wolframscript; reads first word)
+---

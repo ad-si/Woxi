@@ -2419,14 +2419,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: StreamPosition
-LINE: 1133
-TYPE: >>
-INPUT: Read[stream, Word]
-EXPECTED:
-= Mathics
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: SetStreamPosition
 LINE: 1173
 TYPE: >>
