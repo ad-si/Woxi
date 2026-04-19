@@ -4630,3 +4630,10 @@ TYPE: >>
 INPUT: series // Normal (with series = Series[1 + x^2, {x, 0, 2}])
 EXPECTED: 1 + x^2 (matches wolframscript; Normal drops the O[x]^3 term)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Series
+LINE: 1791
+TYPE: >>
+INPUT: (series // Normal) /. x-> 4 (with series = Series[1 + x^2, {x, 0, 2}])
+EXPECTED: 17 (matches wolframscript; 1 + 4^2 = 17)
+---

@@ -4832,14 +4832,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Series
-LINE: 1791
-TYPE: >>
-INPUT: (series // Normal) /. x-> 4
-EXPECTED:
-= 17
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Series
 LINE: 1793
 TYPE: >>
 INPUT: Clear[series];
