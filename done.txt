@@ -4128,3 +4128,10 @@ TYPE: >>
 INPUT: Take[mylist, 3] (with mylist = {a, b, c, d})
 EXPECTED: {a, b, c} (matches wolframscript; takes first N elements)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 456
+TYPE: >>
+INPUT: Take[mylist, -2] (with mylist = {a, b, c, d})
+EXPECTED: {c, d} (matches wolframscript; takes last N elements with negative count)
+---
