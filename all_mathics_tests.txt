@@ -7923,14 +7923,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Context
-LINE: 189
-TYPE: >>
-INPUT: Context[a]
-EXPECTED:
-= Global`
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Context
 LINE: 191
 TYPE: >>
 INPUT: Context[b`c]

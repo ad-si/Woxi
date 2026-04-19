@@ -2379,3 +2379,11 @@ INPUT: StringSplit["a  \n b \r\n c d", Whitespace]
 EXPECTED:
 = {a, b, c, d} (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Context
+LINE: 189
+TYPE: >>
+INPUT: Context[a]
+EXPECTED:
+= Global` (matches wolframscript)
+---
