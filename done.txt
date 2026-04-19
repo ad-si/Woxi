@@ -2651,3 +2651,11 @@ INPUT: StandardForm[a + b * c]
 EXPECTED:
 = StandardForm[a + b*c] (matches wolframscript; mathics renders with spaces)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: StandardForm
+LINE: 180
+TYPE: >>
+INPUT: StandardForm["A string"]
+EXPECTED:
+= StandardForm[A string] (matches wolframscript)
+---

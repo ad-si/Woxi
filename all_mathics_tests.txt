@@ -10511,14 +10511,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: StandardForm
-LINE: 180
-TYPE: >>
-INPUT: StandardForm["A string"]
-EXPECTED:
-= A string
----
-FILE: mathics/builtin/forms/print.py
-CLASS: StandardForm
 LINE: 182
 TYPE: >>
 INPUT: f'[x]
