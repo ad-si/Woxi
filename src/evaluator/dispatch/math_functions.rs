@@ -2322,6 +2322,24 @@ pub fn dispatch_math_functions(
         && a.len() == b.len()
         && !a.is_empty()
       {
+        // Special case: if either vector is all-zero, wolframscript returns
+        // 0 (or 0. if any entry is Real), bypassing the 0/0 division.
+        let is_zero_vec = |items: &[Expr]| -> bool {
+          items.iter().all(|e| match e {
+            Expr::Integer(0) => true,
+            Expr::Real(f) => *f == 0.0,
+            _ => false,
+          })
+        };
+        if is_zero_vec(a) || is_zero_vec(b) {
+          let any_real =
+            a.iter().chain(b.iter()).any(|e| matches!(e, Expr::Real(_)));
+          return Some(Ok(if any_real {
+            Expr::Real(0.0)
+          } else {
+            Expr::Integer(0)
+          }));
+        }
         let dot = Expr::FunctionCall {
           name: "Dot".to_string(),
           args: vec![args[0].clone(), args[1].clone()],

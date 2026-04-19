@@ -2776,6 +2776,24 @@ mod batch_unevaluated_wrappers_2 {
   fn cosine_distance_orthogonal() {
     assert_eq!(interpret("CosineDistance[{1, 0}, {0, 1}]").unwrap(), "1");
   }
+
+  #[test]
+  fn cosine_distance_zero_vector_real() {
+    // When one vector is all-zero we bypass 0/0 and return 0. (matches wolframscript)
+    assert_eq!(
+      interpret("CosineDistance[{0.0, 0.0}, {x, y}]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn cosine_distance_zero_vector_integer() {
+    // Integer-only zero vector returns exact 0 (matches wolframscript).
+    assert_eq!(
+      interpret("CosineDistance[{0, 0}, {1, 2}]").unwrap(),
+      "0"
+    );
+  }
   #[test]
   fn key_sort_by_basic() {
     assert_eq!(

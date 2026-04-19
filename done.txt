@@ -4282,3 +4282,10 @@ TYPE: >>
 INPUT: EditDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]
 EXPECTED: 2 (list arguments supported — tokens compared elementwise)
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CosineDistance
+LINE: 163
+TYPE: >>
+INPUT: CosineDistance[{0.0, 0.0}, {x, y}]
+EXPECTED: 0. (added zero-vector special case — returns 0 (or 0. if any Real) instead of 0/0 division error; matches wolframscript)
+---
