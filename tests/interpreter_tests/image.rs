@@ -61,6 +61,25 @@ mod image_core {
   }
 
   #[test]
+  fn image_q_on_invalid_ragged_nested_list() {
+    // Invalid pixel data (ragged nested list) — Image[...] stays unevaluated
+    // and ImageQ returns False (matches wolframscript).
+    clear_state();
+    assert_eq!(
+      interpret("ImageQ[Image[{{{0, 0, 0}, {0, 1}}, {{0, 1, 0}, {0, 1, 1}}}]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn image_q_on_invalid_1d_list() {
+    // 1D list is not a valid image — ImageQ returns False.
+    clear_state();
+    assert_eq!(interpret("ImageQ[Image[{1, 0, 1}]]").unwrap(), "False");
+  }
+
+  #[test]
   fn image_dimensions_rgb() {
     clear_state();
     let result = interpret(

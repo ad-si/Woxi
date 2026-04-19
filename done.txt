@@ -3339,3 +3339,15 @@ LINE: 48
 INPUT: Blend[{Red, Blue}]
 EXPECTED: RGBColor[1/2, 0, 1/2] (matches wolframscript; mathics "0.5, 0., 0.5" reflects older decimal conversion)
 ---
+FILE: mathics/builtin/image/test.py
+CLASS: ImageQ
+LINE: 54
+INPUT: ImageQ[Image[{{{0, 0, 0}, {0, 1}}, {{0, 1, 0}, {0, 1, 1}}}]]
+EXPECTED: False (fixed: Image[invalid] returns unevaluated instead of erroring, so ImageQ returns False)
+---
+FILE: mathics/builtin/image/test.py
+CLASS: ImageQ
+LINE: 57
+INPUT: ImageQ[Image[{1, 0, 1}]]
+EXPECTED: False (matches wolframscript)
+---

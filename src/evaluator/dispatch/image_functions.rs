@@ -21,7 +21,16 @@ pub fn dispatch_image_functions(
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     "Image" if !args.is_empty() && args.len() <= 2 => {
-      return Some(crate::functions::image_ast::image_constructor_ast(args));
+      // Invalid image data shouldn't error — return unevaluated so wrapping
+      // predicates like ImageQ can still classify it as False.
+      let result = crate::functions::image_ast::image_constructor_ast(args);
+      return Some(match result {
+        Ok(expr) => Ok(expr),
+        Err(_) => Ok(Expr::FunctionCall {
+          name: "Image".to_string(),
+          args: args.to_vec(),
+        }),
+      });
     }
     "ImageQ" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_q_ast(args));
