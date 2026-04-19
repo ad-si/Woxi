@@ -2747,3 +2747,11 @@ INPUT: RandomImage[1, {100, 100}]
 EXPECTED:
 = -Image- (matches wolframscript)
 ---
+FILE: mathics/builtin/image/test.py
+CLASS: ImageQ
+LINE: 48
+TYPE: >>
+INPUT: ImageQ[Image[{{0, 1}, {1, 0}}]]
+EXPECTED:
+= True (matches wolframscript)
+---

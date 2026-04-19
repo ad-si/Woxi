@@ -11327,14 +11327,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/image/test.py
 CLASS: ImageQ
-LINE: 48
-TYPE: >>
-INPUT: ImageQ[Image[{{0, 1}, {1, 0}}]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/image/test.py
-CLASS: ImageQ
 LINE: 51
 TYPE: >>
 INPUT: ImageQ[Image[{{{0, 0, 0}, {0, 1, 0}}, {{0, 1, 0}, {0, 1, 1}}}]]
