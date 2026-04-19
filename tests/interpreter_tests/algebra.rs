@@ -940,6 +940,14 @@ mod switch {
   }
 
   #[test]
+  fn symbolic_target_no_match_returns_unevaluated() {
+    assert_eq!(
+      interpret("Switch[p, a, 1, b, 2]").unwrap(),
+      "Switch[p, a, 1, b, 2]"
+    );
+  }
+
+  #[test]
   fn wildcard_match() {
     assert_eq!(interpret("Switch[4, 1, a, _, c]").unwrap(), "c");
   }

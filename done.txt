@@ -3855,3 +3855,10 @@ LINE: 117
 INPUT: A (after A = {{1,2},{3,4}}; A[[1,2]] = 5)
 EXPECTED: {{1, 5}, {3, 4}} (matches wolframscript; matrix Part assignment)
 ---
+FILE: mathics/builtin/procedural.py
+CLASS: Switch
+LINE: 600
+TYPE: >>
+INPUT: Switch[p,a,1,b,2]
+EXPECTED: Switch[p, a, 1, b, 2] (matches wolframscript; mathics "| a->p = 1" reflects old mathics behavior where symbols stayed bound)
+---
