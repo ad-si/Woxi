@@ -12670,13 +12670,6 @@ EXPECTED: {{1, 2}, {3, 4}}
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: None
-LINE: 20
-INPUT: g[2]==g[3]
-EXPECTED: g[2] == g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: None
 LINE: 55
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3]

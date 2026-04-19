@@ -642,6 +642,12 @@ mod equal_edge_cases {
   }
 
   #[test]
+  fn equal_of_non_comparable_function_calls_stays_symbolic() {
+    // g[2] == g[3] — no assumption that g is injective; stays symbolic.
+    assert_eq!(interpret("g[2]==g[3]").unwrap(), "g[2] == g[3]");
+  }
+
+  #[test]
   fn equal_dot_product_symbolic() {
     // Dot product of Array vars with weights == target should stay symbolic
     assert_eq!(

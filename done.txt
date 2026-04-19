@@ -3603,3 +3603,9 @@ LINE: 76
 INPUT: 2+F[x] // InputForm
 EXPECTED: InputForm[2 + F[x]] (matches wolframscript; both leave InputForm wrapper unevaluated)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: None
+LINE: 20
+INPUT: g[2]==g[3]
+EXPECTED: g[2] == g[3] (matches wolframscript; not comparable, Issue #200)
+---
