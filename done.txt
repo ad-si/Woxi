@@ -4240,3 +4240,10 @@ TYPE: >>
 INPUT: RandomPrime[{14, 17}]
 EXPECTED: 17 (matches wolframscript; 17 is the only prime in [14, 17] so the "random" pick is deterministic)
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: RandomPrime
+LINE: 1031
+TYPE: >>
+INPUT: RandomPrime[{8,12}, 3]
+EXPECTED: {11, 11, 11} (matches wolframscript; 11 is the only prime in [8, 12], so 3 picks all return 11)
+---
