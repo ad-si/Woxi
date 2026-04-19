@@ -7382,14 +7382,6 @@ INPUT: $RootDirectory
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/directories/system_directories.py
-CLASS: TemporaryDirectory
-LINE: 108
-TYPE: >>
-INPUT: $TemporaryDirectory
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/directories/user_directories.py
 CLASS: Path
 LINE: 24

@@ -4693,3 +4693,10 @@ TYPE: >>
 INPUT: $HomeDirectory
 EXPECTED: home directory path (added $HomeDirectory system variable reading $HOME or $USERPROFILE; matches wolframscript)
 ---
+FILE: mathics/builtin/directories/system_directories.py
+CLASS: TemporaryDirectory
+LINE: 108
+TYPE: >>
+INPUT: $TemporaryDirectory
+EXPECTED: system temp directory path (added $TemporaryDirectory; uses std::env::temp_dir + fs::canonicalize to match wolframscript's /private/var/... on macOS; strips trailing slash)
+---

@@ -473,10 +473,20 @@ mod precision {
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).
+    assert_eq!(interpret("Head[$HomeDirectory] == String").unwrap(), "True");
+  }
+
+  #[test]
+  fn temporary_directory_head_is_string() {
+    // $TemporaryDirectory is canonicalized and has no trailing slash —
+    // matches wolframscript's output (e.g. /private/var/folders/... on macOS).
     assert_eq!(
-      interpret("Head[$HomeDirectory] == String").unwrap(),
+      interpret("Head[$TemporaryDirectory] == String").unwrap(),
       "True"
     );
+    let result = interpret("$TemporaryDirectory").unwrap();
+    assert!(!result.is_empty());
+    assert!(!result.ends_with('/') || result == "/");
   }
 
   #[cfg(any(target_os = "macos", target_os = "linux"))]

@@ -278,6 +278,18 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       .or_else(|_| std::env::var("USERPROFILE"))
       .ok()
       .map(Expr::String),
+    #[cfg(not(target_arch = "wasm32"))]
+    "$TemporaryDirectory" => {
+      // Canonicalize to match wolframscript's output on macOS
+      // (/var/folders/... -> /private/var/folders/...) and strip trailing slash.
+      let tmp = std::env::temp_dir();
+      let canon = std::fs::canonicalize(&tmp).unwrap_or(tmp);
+      let mut s = canon.to_string_lossy().into_owned();
+      while s.len() > 1 && s.ends_with('/') {
+        s.pop();
+      }
+      Some(Expr::String(s))
+    }
     "$ProcessorType" => {
       // wolframscript returns just the arch string, e.g. "ARM64" or "x86-64"
       let arch = if cfg!(target_arch = "aarch64") {
