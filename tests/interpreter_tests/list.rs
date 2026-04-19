@@ -110,6 +110,15 @@ mod table_with_step {
   }
 
   #[test]
+  fn table_pi_bounds_half_pi_step() {
+    // Table[i, {i, Pi, 2 Pi, Pi/2}] — three elements at Pi, 3 Pi/2, 2 Pi.
+    assert_eq!(
+      interpret("Table[i, {i, Pi, 2 Pi, Pi / 2}]").unwrap(),
+      "{Pi, (3*Pi)/2, 2*Pi}"
+    );
+  }
+
+  #[test]
   fn table_symbolic_pi_step() {
     assert_eq!(
       interpret("Table[θ, {θ, 0, 2 Pi - Pi/4, Pi/4}]").unwrap(),

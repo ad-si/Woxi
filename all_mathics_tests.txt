@@ -8363,14 +8363,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/list/constructing.py
 CLASS: Table
-LINE: 538
-TYPE: >>
-INPUT: Table[i, {i, Pi, 2 Pi, Pi / 2}]
-EXPECTED:
-= {Pi, 3 Pi / 2, 2 Pi}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Table
 LINE: 548
 TYPE: >>
 INPUT: Table[x, {x, a, a + 5 n, n}]
