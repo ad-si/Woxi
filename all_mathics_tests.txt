@@ -15159,13 +15159,6 @@ MESSAGE: assert_tag_message
 FILE: mathics/test/builtin/test_system.py
 FUNCTION: test_private_doctests_system
 LINE: 14
-INPUT: Head[$SessionID] == Integer
-EXPECTED: True
-MESSAGE: $SessionID
----
-FILE: mathics/test/builtin/test_system.py
-FUNCTION: test_private_doctests_system
-LINE: 14
 INPUT: Head[$SystemWordLength] == Integer
 EXPECTED: True
 MESSAGE: $SystemWordLength
