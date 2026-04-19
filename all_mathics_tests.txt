@@ -8253,14 +8253,6 @@ EXPECTED:
 = 5
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: SymbolName
-LINE: 683
-TYPE: >>
-INPUT: SymbolName[x] // InputForm
-EXPECTED:
-= "x"
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: ValueQ
 LINE: 732
 TYPE: >>

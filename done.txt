@@ -2459,3 +2459,11 @@ INPUT: Series[Exp[x], {x, 0, 5}]
 EXPECTED:
 = SeriesData[x, 0, {1, 1, 1/2, 1/6, 1/24, 1/120}, 0, 6, 1] (matches wolframscript; mathics displays as polynomial + O[x]^6)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: SymbolName
+LINE: 683
+TYPE: >>
+INPUT: SymbolName[x] // InputForm
+EXPECTED:
+= InputForm[x] (matches wolframscript; mathics renders as "x")
+---
