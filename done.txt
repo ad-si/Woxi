@@ -3663,3 +3663,9 @@ LINE: 153
 INPUT: a  b  DirectedInfinity[I]
 EXPECTED: a*b*DirectedInfinity[I] (matches wolframscript; mathics "a b (I Infinity)" is display form)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_multiply
+LINE: 169
+INPUT: a  b  DirectedInfinity[q]
+EXPECTED: a*b*DirectedInfinity[q] (matches wolframscript; symbolic direction)
+---

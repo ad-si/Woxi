@@ -13701,12 +13701,6 @@ EXPECTED: E ^ (I / 4 Pi)
 ---
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_multiply
-LINE: 169
-INPUT: a  b  DirectedInfinity[q]
-EXPECTED: a b (q Infinity)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_multiply
 LINE: 172
 INPUT: a  b  DirectedInfinity[-I]
 EXPECTED: a b (-I Infinity)

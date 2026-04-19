@@ -497,6 +497,15 @@ mod infinity_arithmetic {
       "a*b*DirectedInfinity[I]"
     );
   }
+
+  #[test]
+  fn implicit_multiply_with_directed_infinity_symbolic_direction() {
+    // a b DirectedInfinity[q] with unknown direction q stays symbolic.
+    assert_eq!(
+      interpret("a  b  DirectedInfinity[q]").unwrap(),
+      "a*b*DirectedInfinity[q]"
+    );
+  }
 }
 
 mod constant_real_arithmetic {
