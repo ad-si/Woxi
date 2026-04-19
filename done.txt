@@ -4463,3 +4463,10 @@ LINE: 232
 INPUT: Precision[0.4 + 2.4 I]
 EXPECTED: MachinePrecision (fixed precision_ast FunctionCall branch to return MachinePrecision symbol when minimum comes from a machine-real element, parallel to the List branch fix)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 826
+TYPE: >>
+INPUT: Read[stream, {Number, Word}] (with stream = StringToStream["123 abc"])
+EXPECTED: {123, abc} (matches wolframscript; Read with a list reads multiple typed tokens)
+---
