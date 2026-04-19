@@ -10726,14 +10726,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 464
-TYPE: >>
-INPUT: Most[mylist]
-EXPECTED:
-= {a, b, c}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 466
 TYPE: >>
 INPUT: Rest[mylist]
