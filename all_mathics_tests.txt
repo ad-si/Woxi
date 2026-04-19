@@ -3499,14 +3499,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
-LINE: 37
-TYPE: >>
-INPUT: ByteArray["ARkD"]
-EXPECTED:
-= ByteArray[<3>]
----
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
 LINE: 45
 TYPE: >>
 INPUT: AtomQ[ByteArray[{4, 2}]]

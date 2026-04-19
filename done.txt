@@ -4219,3 +4219,10 @@ TYPE: >>
 INPUT: ToString[A] (with A = ByteArray[{1, 25, 3}])
 EXPECTED: ByteArray[<3>] (matches wolframscript; ToString preserves the ByteArray display form)
 ---
+FILE: mathics/builtin/binary/bytearray.py
+CLASS: ByteArray_
+LINE: 37
+TYPE: >>
+INPUT: ByteArray["ARkD"]
+EXPECTED: ByteArray[<3>] (matches wolframscript; base64 "ARkD" decodes to 3 bytes)
+---
