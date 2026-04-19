@@ -1279,13 +1279,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Clear
-LINE: 71
-TYPE: >>
-INPUT: Clear["r"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Clear
 LINE: 72
 TYPE: >>
 INPUT: Attributes[r]

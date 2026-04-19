@@ -5381,3 +5381,10 @@ TYPE: >>
 INPUT: f[x_] := p[x] /; x>0
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 71
+TYPE: >>
+INPUT: Clear["r"]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
