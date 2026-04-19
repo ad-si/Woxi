@@ -11351,14 +11351,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 187
-TYPE: >>
-INPUT: (3 + 2 I) ^ 4
-EXPECTED:
-= -119 + 120 I
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 190
 TYPE: >>
 INPUT: (3 + 2 I) ^ (2.5 - I)

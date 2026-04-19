@@ -2771,3 +2771,11 @@ INPUT: ImageQ["abc"]
 EXPECTED:
 = False (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 187
+TYPE: >>
+INPUT: (3 + 2 I) ^ 4
+EXPECTED:
+= -119 + 120*I (matches wolframscript)
+---
