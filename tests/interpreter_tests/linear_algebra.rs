@@ -850,6 +850,15 @@ mod eigenvectors {
   }
 
   #[test]
+  fn diagonal_3x3_with_zero_entry() {
+    // A diagonal matrix's eigenvectors are the standard basis vectors.
+    assert_eq!(
+      interpret("Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
   fn identity_2x2() {
     assert_eq!(
       interpret("Eigenvectors[{{1, 0}, {0, 1}}]").unwrap(),

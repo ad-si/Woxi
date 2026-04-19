@@ -3561,3 +3561,9 @@ LINE: 783
 INPUT: RowReduce[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}] // MatrixForm
 EXPECTED: {{1, 0, -1}, {0, 1, 2}, {0, 0, 0}} (matches wolframscript; already covered by existing RowReduce tests at linear_algebra.rs:626)
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: Eigenvectors
+LINE: 209
+INPUT: Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]
+EXPECTED: {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}} (matches wolframscript; standard basis for a diagonal matrix)
+---

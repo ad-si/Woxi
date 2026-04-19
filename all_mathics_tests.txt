@@ -5778,14 +5778,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: Eigenvectors
-LINE: 209
-TYPE: >>
-INPUT: Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]
-EXPECTED:
-= {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: Eigenvectors
 LINE: 215
 TYPE: >>
 INPUT: Eigenvectors[{{0.1, 0.2}, {0.8, 0.5}}]
