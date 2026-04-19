@@ -9777,20 +9777,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 788
-TYPE: >>
-INPUT: y = x ^ 3;
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 798
-TYPE: >>
-INPUT: expr = x ^ 2 + x;
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 809
 TYPE: >>
 INPUT: Block[{$RecursionLimit = 30}, x = 2 x]

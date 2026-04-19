@@ -5049,3 +5049,17 @@ TYPE: >>
 INPUT: a = 5;
 EXPECTED: Null (both Woxi and wolframscript print Null; trailing ; suppresses session-mode output)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 788
+TYPE: >>
+INPUT: y = x ^ 3;
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 798
+TYPE: >>
+INPUT: expr = x ^ 2 + x;
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
