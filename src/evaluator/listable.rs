@@ -198,6 +198,8 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
     "$MaxMachineNumber" => Some(Expr::Real(1.7976931348623157e308)),
     "$MinMachineNumber" => Some(Expr::Real(5e-324)),
+    "$MaxPrecision" => Some(Expr::Identifier("Infinity".to_string())),
+    "$MinPrecision" => Some(Expr::Integer(0)),
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),
     "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
     "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),

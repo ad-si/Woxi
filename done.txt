@@ -3953,3 +3953,17 @@ TYPE: >>
 INPUT: FileType["ExampleData/sunflowers.jpg"]
 EXPECTED: None (matches wolframscript when file doesn't exist; mathics "File" assumes the sample data file is present)
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: MaxPrecision
+LINE: 592
+TYPE: >>
+INPUT: $MaxPrecision
+EXPECTED: Infinity (added $MaxPrecision system variable defaulting to Infinity; matches wolframscript)
+---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: MinPrecision
+LINE: 704
+TYPE: >>
+INPUT: $MinPrecision
+EXPECTED: 0 (added $MinPrecision system variable defaulting to 0; matches wolframscript)
+---

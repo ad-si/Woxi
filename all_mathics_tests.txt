@@ -7227,14 +7227,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: MaxPrecision
-LINE: 592
-TYPE: >>
-INPUT: $MaxPrecision
-EXPECTED:
-= Infinity
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: MaxPrecision
 LINE: 597
 TYPE: >>
 INPUT: N[Pi, 11]
@@ -7257,14 +7249,6 @@ TYPE: >>
 INPUT: N[MachinePrecision, 30]
 EXPECTED:
 = 15.9545897701910033463281614204
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: MinPrecision
-LINE: 704
-TYPE: >>
-INPUT: $MinPrecision
-EXPECTED:
-= 0
 ---
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: MinPrecision

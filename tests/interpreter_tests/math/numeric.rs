@@ -369,6 +369,18 @@ mod precision {
   }
 
   #[test]
+  fn dollar_max_precision_value() {
+    // $MaxPrecision defaults to Infinity (matches wolframscript).
+    assert_eq!(interpret("$MaxPrecision").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn dollar_min_precision_value() {
+    // $MinPrecision defaults to 0 (matches wolframscript).
+    assert_eq!(interpret("$MinPrecision").unwrap(), "0");
+  }
+
+  #[test]
   fn system_word_length() {
     assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
   }
