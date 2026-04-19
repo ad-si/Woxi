@@ -14215,41 +14215,6 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-029
-EXPECTED:
-  expr: ListPlot[Table[n ^ 2, {n, 10}], Joined->True]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-030
-EXPECTED:
-  expr: ListPlot[Table[n ^ 2, {n, 30}], Filling->Axis]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-031
-EXPECTED:
-  expr: ListPlot[Table[n ^ 2, {n, 30}], Joined->True]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-032
-EXPECTED:
-  expr: ListPlot[ToCharacterCode["plot this string"], Filling -> Axis]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-033
-EXPECTED:
-  expr: ListStepPlot[{1, 1, 2, 3, 5, 8, 13, 21}, Joined->False]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-034
-EXPECTED:
-  expr: ListStepPlot[{1, 1, 2, 3, 5, 8, 13, 21}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-035
-EXPECTED:
-  expr: ListStepPlot[{{1, 1}, {3, 2}, {4, 5}, {5, 8}, {6, 13}, {7, 21}}, Filling->Axis]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-036
 EXPECTED:
   expr: LogPlot[x^x, {x, 1, 5}]
