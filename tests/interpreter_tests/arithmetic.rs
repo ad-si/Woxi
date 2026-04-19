@@ -960,6 +960,7 @@ mod exact_value_returns {
     assert_eq!(interpret("-5*^3").unwrap(), "-5000");
     assert_eq!(interpret("-5*^-13").unwrap(), "-1/2000000000000");
     assert_eq!(interpret("-2/3 // Head").unwrap(), "Rational");
+    assert_eq!(interpret("-2/3").unwrap(), "-2/3");
 
     // Works in Quantity
     assert_eq!(

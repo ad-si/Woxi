@@ -3327,3 +3327,9 @@ LINE: 329
 INPUT: -2/3//Head
 EXPECTED: Rational (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_miscelanea_private_tests
+LINE: 329
+INPUT: -2/3
+EXPECTED: -2/3 (matches wolframscript)
+---
