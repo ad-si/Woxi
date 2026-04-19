@@ -5189,3 +5189,18 @@ LINE: 242
 ACTUAL: (x + y + y) /. {x -> z, y -> w}
 EXPECTED: 2*w + z (Woxi and wolframscript both simplify y+y to 2w)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 243
+ACTUAL: (x + y + y) /. {x -> 2y, y -> x z}
+EXPECTED: 2*y + 2*x*z (Woxi and wolframscript byte-identical)
+---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 244
+ACTUAL: (x + 2y)    /. {x -> y, y -> x}
+EXPECTED: 2*x + y (Woxi and wolframscript byte-identical)
+---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 245
+ACTUAL: (x + 2 y z) /. {x->z, y->x, z->y}
+EXPECTED: 2*x*y + z (Woxi and wolframscript byte-identical)
+---

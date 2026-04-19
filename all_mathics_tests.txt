@@ -16749,21 +16749,6 @@ ACTUAL (expression): (x = Q)/.{b->5}
 EXPECTED (should equal): (-5 + Sqrt[25-4a c]) / (2a)
 ---
 FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 243
-ACTUAL (expression): (x + y + y) /. {x -> 2y, y -> x z}
-EXPECTED (should equal): 2y + x z + x z
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 244
-ACTUAL (expression): (x + 2y)    /. {x -> y, y -> x}
-EXPECTED (should equal): y + 2x
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 245
-ACTUAL (expression): (x + 2 y z) /. {x->z, y->x, z->y}
-EXPECTED (should equal): z + 2 x y
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
 LINE: 505
 ACTUAL (expression): (x; y; z)
 EXPECTED (should equal): z
