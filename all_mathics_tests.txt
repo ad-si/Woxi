@@ -7366,14 +7366,6 @@ INPUT: $InstallationDirectory
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/directories/system_directories.py
-CLASS: RootDirectory
-LINE: 87
-TYPE: >>
-INPUT: $RootDirectory
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/directories/user_directories.py
 CLASS: Path
 LINE: 24

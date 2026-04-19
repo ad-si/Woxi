@@ -498,6 +498,13 @@ mod precision {
     );
   }
 
+  #[cfg(not(target_os = "windows"))]
+  #[test]
+  fn root_directory_is_slash() {
+    // $RootDirectory is the filesystem root: "/" on Unix/Mac.
+    assert_eq!(interpret("$RootDirectory").unwrap(), "/");
+  }
+
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   #[test]
   fn system_memory_head_is_integer() {

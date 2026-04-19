@@ -4707,3 +4707,10 @@ TYPE: >>
 INPUT: $InitialDirectory
 EXPECTED: current working directory at startup (added $InitialDirectory using std::env::current_dir; matches wolframscript)
 ---
+FILE: mathics/builtin/directories/system_directories.py
+CLASS: RootDirectory
+LINE: 87
+TYPE: >>
+INPUT: $RootDirectory
+EXPECTED: "/" on Unix/Mac, "C:\\" on Windows (added $RootDirectory system variable; matches wolframscript)
+---
