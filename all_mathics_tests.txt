@@ -1196,15 +1196,6 @@ INPUT: Clear[a]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: LoadModule
-LINE: 35
-TYPE: >>
-INPUT: LoadModule["nomodule"]
-EXPECTED:
-: Python import errors with: No module named 'nomodule'.
-= $Failed
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
 LINE: 81
 TYPE: >>

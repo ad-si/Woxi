@@ -4254,3 +4254,10 @@ TYPE: >>
 INPUT: {42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm
 EXPECTED: InputForm[{integer, real, x}] (matches wolframscript; _Integer and _Real patterns match the first two, x stays unchanged)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: LoadModule
+LINE: 35
+TYPE: >>
+INPUT: LoadModule["nomodule"]
+EXPECTED: LoadModule[nomodule] (matches wolframscript; LoadModule is Mathics-specific — wolframscript returns unevaluated)
+---
