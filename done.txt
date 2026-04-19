@@ -2475,3 +2475,11 @@ INPUT: ValueQ[x]
 EXPECTED:
 = False (matches wolframscript; mathics expected True from prior x := y assignment)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: OwnValues
+LINE: 610
+TYPE: >>
+INPUT: OwnValues[x]
+EXPECTED:
+= {} (matches wolframscript; mathics expected {HoldPattern[x] :> 2} from prior x = 2 assignment)
+---
