@@ -10430,14 +10430,6 @@ EXPECTED:
 . a[4, 1]   a[4, 2]   a[4, 3]
 ---
 FILE: mathics/builtin/forms/mathics3.py
-CLASS: PythonForm
-LINE: 33
-TYPE: >>
-INPUT: {1, 2, 3} // PythonForm
-EXPECTED:
-= (1, 2, 3)
----
-FILE: mathics/builtin/forms/mathics3.py
 CLASS: SympyForm
 LINE: 70
 TYPE: >>
