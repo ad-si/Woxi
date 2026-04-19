@@ -1715,10 +1715,7 @@ mod part_extraction {
   fn part_full_span_then_column() {
     // B[[;;, 2]] with a 3x3 matrix extracts column 2.
     assert_eq!(
-      interpret(
-        "B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[;;, 2]]"
-      )
-      .unwrap(),
+      interpret("B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[;;, 2]]").unwrap(),
       "{b, e, h}"
     );
   }
@@ -1727,11 +1724,21 @@ mod part_extraction {
   fn part_span_then_span() {
     // B[[1;;2, 1;;2]] extracts the top-left 2x2 sub-matrix.
     assert_eq!(
+      interpret("B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[1;;2, 1;;2]]")
+        .unwrap(),
+      "{{a, b}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn part_list_rows_and_negative_span_cols() {
+    // Rows 1 and 3, columns -2 through -1 (last two) of a 3×3 matrix.
+    assert_eq!(
       interpret(
-        "B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[1;;2, 1;;2]]"
+        "B = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}; B[[{1, 3}, -2;;-1]]"
       )
       .unwrap(),
-      "{{a, b}, {d, e}}"
+      "{{2, 3}, {8, 9}}"
     );
   }
 
