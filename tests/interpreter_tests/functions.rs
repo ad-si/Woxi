@@ -792,6 +792,12 @@ mod mantissa_exponent {
   }
 
   #[test]
+  fn real_value_2_5() {
+    // MantissaExponent[2.5] = {0.25, 1} since 2.5 = 0.25 * 10^1.
+    assert_eq!(interpret("MantissaExponent[2.5]").unwrap(), "{0.25, 1}");
+  }
+
+  #[test]
   fn integer_value() {
     assert_eq!(interpret("MantissaExponent[100]").unwrap(), "{1/10, 3}");
   }
