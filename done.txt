@@ -2491,3 +2491,11 @@ INPUT: Cases[Options[Plot], HoldPattern[_ :> Automatic]]
 EXPECTED:
 = {} (matches wolframscript; mathics expected list of options because Plot's option set differs)
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: AiryAi
+LINE: 52
+TYPE: >>
+INPUT: AiryAi[0.5]
+EXPECTED:
+= 0.23169360648083343 (matches wolframscript; mathics shows rounded 0.231694)
+---

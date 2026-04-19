@@ -9068,14 +9068,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryAi
-LINE: 52
-TYPE: >>
-INPUT: AiryAi[0.5]
-EXPECTED:
-= 0.231694
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryAi
 LINE: 54
 TYPE: >>
 INPUT: AiryAi[0.5 + I]
