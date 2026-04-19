@@ -502,24 +502,45 @@ pub fn apply_at_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Compute depth so we can resolve negative level values:
+  //   `-k` selects subexpressions whose Depth is k, i.e. level (D - k)
+  // where D = Depth[expr] (atoms have Depth 1).
+  let depth = expr_depth(expr);
+  let resolve = |n: i128| -> usize {
+    if n < 0 {
+      let k = (-n) as i128;
+      let pos = depth as i128 - k;
+      if pos < 0 { 0 } else { pos as usize }
+    } else {
+      n as usize
+    }
+  };
+
   // Parse level spec. For the integer form, `Apply[f, expr, n]` is
   // equivalent to `Apply[f, expr, {1, n}]` — levels 1 through n — not
   // {0, n} as Woxi previously assumed.
   let (min_level, max_level) = match level_spec {
     Expr::Identifier(s) if s == "Infinity" => (1usize, usize::MAX),
-    Expr::Integer(n) => (1usize, (*n).max(0) as usize),
+    Expr::Integer(n) => (1usize, resolve(*n)),
     Expr::List(levels) => {
       if levels.len() == 1 {
         if let Some(n) = expr_to_i128(&levels[0]) {
-          (n as usize, n as usize)
+          let r = resolve(n);
+          (r, r)
         } else {
           (1, 1)
         }
       } else if levels.len() == 2 {
-        let min = expr_to_i128(&levels[0]).unwrap_or(0) as usize;
+        let min = match expr_to_i128(&levels[0]) {
+          Some(n) => resolve(n),
+          None => 0,
+        };
         let max = match &levels[1] {
           Expr::Identifier(s) if s == "Infinity" => usize::MAX,
-          other => expr_to_i128(other).unwrap_or(1) as usize,
+          other => match expr_to_i128(other) {
+            Some(n) => resolve(n),
+            None => 1,
+          },
         };
         (min, max)
       } else {
@@ -530,6 +551,22 @@ pub fn apply_at_level_ast(
   };
 
   apply_at_level_recursive(func, expr, 0, min_level, max_level)
+}
+
+/// Mathematica-style Depth: atoms have depth 1, compound expressions are
+/// 1 + max(depth of children).
+fn expr_depth(expr: &Expr) -> usize {
+  let children: Vec<&Expr> = match expr {
+    Expr::List(items) => items.iter().collect(),
+    Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::BinaryOp { left, right, .. } => vec![left.as_ref(), right.as_ref()],
+    Expr::UnaryOp { operand, .. } => vec![operand.as_ref()],
+    _ => return 1,
+  };
+  if children.is_empty() {
+    return 1;
+  }
+  1 + children.iter().map(|c| expr_depth(c)).max().unwrap_or(0)
 }
 
 fn apply_at_level_recursive(
@@ -555,7 +592,9 @@ fn apply_at_level_recursive(
   };
   let (items, is_list, head_name) = match &normalized {
     Expr::List(items) => (items.clone(), true, None),
-    Expr::FunctionCall { name, args } => (args.clone(), false, Some(name.clone())),
+    Expr::FunctionCall { name, args } => {
+      (args.clone(), false, Some(name.clone()))
+    }
     _ => return Ok(expr.clone()),
   };
 

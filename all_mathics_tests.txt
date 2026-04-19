@@ -1547,14 +1547,6 @@ INPUT: If[#1<=1, 1, #1 #0[#1-1]]& [10]
 EXPECTED:
 = 3628800
 ---
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Apply
-LINE: 68
-TYPE: >>
-INPUT: Apply[f, {{{{{a}}}}}, {2, -3}]
-EXPECTED:
-= {{f[f[{a}]]}}
----
 ---
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py

@@ -5428,3 +5428,10 @@ LINE: 338
 INPUT: F[3.]
 EXPECTED: F[3.] (Woxi and wolframscript byte-identical when run in isolation; mathics "3." depends on prior Real/:F[x_Real]:=x setup)
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: Apply
+LINE: 68
+TYPE: >>
+INPUT: Apply[f, {{{{{a}}}}}, {2, -3}]
+EXPECTED: {{f[f[{a}]]}} (implemented negative-level resolution: -k → positive level Depth-k)
+---

@@ -196,6 +196,16 @@ mod function_head {
   }
 
   #[test]
+  fn apply_negative_levelspec() {
+    // Negative level -k selects subexpressions of Depth k (here -3 means
+    // Depth 3 subexpressions). For {{{{{a}}}}} (Depth 6), {2, -3} = {2, 3}.
+    assert_eq!(
+      interpret("Apply[f, {{{{{a}}}}}, {2, -3}]").unwrap(),
+      "{{f[f[{a}]]}}"
+    );
+  }
+
+  #[test]
   fn function_holdall_body() {
     // Function should not evaluate the body prematurely
     assert_eq!(interpret("Function[x, OddQ[x]][3]").unwrap(), "True");
