@@ -473,6 +473,12 @@ mod accuracy {
   }
 
   #[test]
+  fn gaussian_integer() {
+    // 2 + 3 I is an exact Gaussian integer — infinite accuracy.
+    assert_eq!(interpret("Accuracy[2 + 3 I]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn symbol() {
     assert_eq!(interpret("Accuracy[A]").unwrap(), "Infinity");
   }

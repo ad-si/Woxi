@@ -13448,12 +13448,6 @@ EXPECTED: MachinePrecision
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
-LINE: 261
-INPUT: 2 + 3 I
-EXPECTED: Infinity
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_accuracy
 LINE: 267
 INPUT: {1, 0.}
 EXPECTED: MachinePrecision

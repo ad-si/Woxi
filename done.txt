@@ -3735,3 +3735,9 @@ LINE: 177
 INPUT: N[1.01234567890123456789`]
 EXPECTED: 1.0123456789012346 (matches wolframscript; mathics "1.01235" is display-truncated)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 261
+INPUT: Accuracy[2 + 3 I]
+EXPECTED: Infinity (matches wolframscript; exact Gaussian integer)
+---
