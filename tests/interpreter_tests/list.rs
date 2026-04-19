@@ -1129,6 +1129,15 @@ mod sort_canonical {
   }
 
   #[test]
+  fn sort_function_call_and_byte_array() {
+    // ByteArray sorts before an unrelated FunctionCall in canonical order.
+    assert_eq!(
+      interpret("Sort[{F[2], ByteArray[{2}]}]").unwrap(),
+      "{ByteArray[<1>], F[2]}"
+    );
+  }
+
+  #[test]
   fn sort_complex_same_real_part() {
     assert_eq!(
       interpret("Sort[{3+I, 3, 3-I}]").unwrap(),

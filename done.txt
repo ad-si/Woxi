@@ -3717,3 +3717,9 @@ LINE: 38
 INPUT: Image[{{0.2, 0.4}, {0.9, 0.6}, {0.3, 0.8}}] // ImageDimensions
 EXPECTED: {2, 3} (matches wolframscript; 2-column 3-row real matrix)
 ---
+FILE: mathics/test/builtin/statistics/test_orderstats.py
+FUNCTION: test_canonical_sort
+LINE: 9
+INPUT: Sort[{F[2], ByteArray[{2}]}]
+EXPECTED: {ByteArray[<1>], F[2]} (matches wolframscript; canonical sort)
+---

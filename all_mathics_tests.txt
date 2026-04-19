@@ -13574,12 +13574,6 @@ INPUT: BesselJ[1/2,z]
 EXPECTED: Sqrt[2] Sin[z] / (Sqrt[z] Sqrt[Pi])
 MESSAGE: BesselJ 1/2 rule
 ---
-FILE: mathics/test/builtin/statistics/test_orderstats.py
-FUNCTION: test_canonical_sort
-LINE: 9
-INPUT: Sort[{F[2], ByteArray[{2}]}]
-EXPECTED: {ByteArray[<1>], F[2]}
----
 FILE: mathics/test/builtin/arithmetic/test_assumptions.py
 FUNCTION: None
 LINE: 22
