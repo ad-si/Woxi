@@ -2563,3 +2563,11 @@ INPUT: HypergeometricPFQ[{}, {}, z]
 EXPECTED:
 = E^z (matches wolframscript)
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreP
+LINE: 177
+TYPE: >>
+INPUT: LegendreP[4, x]
+EXPECTED:
+= (3 - 30*x^2 + 35*x^4)/8 (matches wolframscript)
+---
