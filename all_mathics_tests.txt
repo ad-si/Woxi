@@ -11231,14 +11231,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/image/properties.py
 CLASS: ImageChannels
-LINE: 58
-TYPE: >>
-INPUT: ImageChannels[Image[{{0, 1}, {1, 0}}]]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/image/properties.py
-CLASS: ImageChannels
 LINE: 62
 TYPE: >>
 INPUT: ImageChannels[img]

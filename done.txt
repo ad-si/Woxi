@@ -2731,3 +2731,11 @@ INPUT: ImageDimensions[RandomImage[1, {50, 70}]]
 EXPECTED:
 = {50, 70} (matches wolframscript)
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageChannels
+LINE: 58
+TYPE: >>
+INPUT: ImageChannels[Image[{{0, 1}, {1, 0}}]]
+EXPECTED:
+= 1 (matches wolframscript)
+---
