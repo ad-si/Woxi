@@ -10091,14 +10091,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: InputForm
-LINE: 76
-TYPE: >>
-INPUT: 2+F[x] // InputForm
-EXPECTED:
-= 2 + F[x]
----
-FILE: mathics/builtin/forms/print.py
-CLASS: InputForm
 LINE: 88
 TYPE: >>
 INPUT: Foo[x] // InputForm

@@ -532,6 +532,16 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn plus_function_call_inputform_postfix() {
+    // `2 + F[x] // InputForm` — InputForm wraps the Plus expression with
+    // its canonical 2 first.
+    assert_eq!(
+      interpret("2+F[x] // InputForm").unwrap(),
+      "InputForm[2 + F[x]]"
+    );
+  }
+
+  #[test]
   fn derivative_multi_index_symbolic() {
     // Derivative[2, 1][h] — mixed partial derivatives of unknown h
     // stays symbolic in curried form.

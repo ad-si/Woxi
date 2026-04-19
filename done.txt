@@ -3597,3 +3597,9 @@ LINE: 71
 INPUT: InputForm[Derivative[1, 0][f][x]]
 EXPECTED: InputForm[Derivative[1, 0][f][x]] (matches wolframscript; both leave wrapper unevaluated)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: InputForm
+LINE: 76
+INPUT: 2+F[x] // InputForm
+EXPECTED: InputForm[2 + F[x]] (matches wolframscript; both leave InputForm wrapper unevaluated)
+---
