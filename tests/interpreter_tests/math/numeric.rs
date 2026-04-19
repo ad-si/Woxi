@@ -320,6 +320,25 @@ mod precision {
   }
 
   #[test]
+  fn precision_of_real_part_integer_plus_machine_imaginary() {
+    // Re[1 + 2.3 I] is the machine-real 1. (integer real part picks up the
+    // machine precision of the imaginary summand).
+    assert_eq!(
+      interpret("Precision[Re[1+2.3 I]]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
+  #[test]
+  fn precision_of_imaginary_part_machine_complex() {
+    // Im[0.5 + 2.3 I] extracts the machine-real 2.3 with MachinePrecision.
+    assert_eq!(
+      interpret("Precision[Im[0.5+2.3 I]]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
+  #[test]
   fn arbitrary_precision_literal() {
     // 1.23`10 is a literal with explicit precision of 10 digits.
     assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");

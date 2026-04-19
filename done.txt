@@ -3747,3 +3747,15 @@ LINE: 269
 INPUT: Precision[Re[0.5+2.3 I]]
 EXPECTED: MachinePrecision (matches wolframscript)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 270
+INPUT: Precision[Re[1+2.3 I]]
+EXPECTED: MachinePrecision (matches wolframscript)
+---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 271
+INPUT: Precision[Im[0.5+2.3 I]]
+EXPECTED: MachinePrecision (matches wolframscript)
+---
