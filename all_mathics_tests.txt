@@ -1701,13 +1701,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: FixedPointList
-LINE: 115
-TYPE: >>
-INPUT: collatz[x_] := 3 x + 1;
-EXPECTED: (none)
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: FixedPointList
 LINE: 116
 TYPE: >>
 INPUT: list = FixedPointList[collatz, 14]

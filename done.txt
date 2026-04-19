@@ -5311,3 +5311,10 @@ TYPE: >>
 INPUT: f := # ^ 2 &
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/functional/functional_iteration.py
+CLASS: FixedPointList
+LINE: 115
+TYPE: >>
+INPUT: collatz[x_] := 3 x + 1;
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
