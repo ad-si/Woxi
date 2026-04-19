@@ -11890,14 +11890,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 927
-TYPE: >>
-INPUT: c + 1 // MathMLForm
-EXPECTED:
-= ...
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 932
 TYPE: >>
 INPUT: Format[d, MathMLForm] = "<not closed";

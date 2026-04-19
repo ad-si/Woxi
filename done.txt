@@ -2915,3 +2915,11 @@ INPUT: b // TraditionalForm // TeXForm
 EXPECTED:
 = TeXForm[TraditionalForm[b]] (matches wolframscript; mathics expected c from prior MakeBoxes definition)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 927
+TYPE: >>
+INPUT: c + 1 // MathMLForm
+EXPECTED:
+= MathMLForm[1 + c] (matches wolframscript)
+---
