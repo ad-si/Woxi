@@ -12815,12 +12815,6 @@ EXPECTED: Derivative[1][Derivative[x][4]]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 327
-INPUT: a+b*c
-EXPECTED: a+(b*c)
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 328
 INPUT: a*b+c
 EXPECTED: (a*b) + c

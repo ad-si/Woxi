@@ -3045,3 +3045,9 @@ LINE: 310
 INPUT: 1 + 2 + 3 + 4
 EXPECTED: 10 (matches wolframscript; mathics test compares the parsed FullForm Plus[1, 2, 3, 4])
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 327
+INPUT: a+b*c
+EXPECTED: a + b*c (matches wolframscript)
+---
