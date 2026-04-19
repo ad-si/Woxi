@@ -1215,13 +1215,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: SetDelayed
-LINE: 185
-TYPE: >>
-INPUT: F[x_, y_] := y / x;
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
 LINE: 186
 TYPE: >>
 INPUT: F[2, 3]

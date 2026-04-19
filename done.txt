@@ -5276,3 +5276,10 @@ TYPE: #>
 INPUT: Clear[a]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 185
+TYPE: >>
+INPUT: F[x_, y_] := y / x;
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
