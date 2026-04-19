@@ -1563,8 +1563,10 @@ pub fn dispatch_list_operations(
           }),
         );
       }
-      // For n >= 1, we need to wrap the head at depth n
+      // For n >= 1, we need to wrap the head at depth n.
       // For n == 1 (default): f[a, b] -> p[f][a, b]
+      // When depth exceeds the expression's nesting (including atoms at any
+      // depth), return the expression unchanged (matches wolframscript).
       fn wrap_head_at_depth(expr: &Expr, p: &Expr, depth: i128) -> Expr {
         if depth == 0 {
           Expr::FunctionCall {
@@ -1591,10 +1593,7 @@ pub fn dispatch_list_operations(
                 args: args.clone(),
               }
             }
-            _ => Expr::FunctionCall {
-              name: crate::syntax::expr_to_string(p),
-              args: vec![expr.clone()],
-            },
+            _ => expr.clone(),
           }
         }
       }

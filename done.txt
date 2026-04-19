@@ -3405,3 +3405,9 @@ LINE: 372
 INPUT: LogGamma[3]
 EXPECTED: Log[2] (matches wolframscript)
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_operate
+LINE: 68
+INPUT: Operate[p, f]
+EXPECTED: f (fixed: Operate on atomic expr returns it unchanged instead of wrapping with p)
+---

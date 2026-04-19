@@ -745,6 +745,12 @@ mod operate {
       "p[f[a][b][c]]"
     );
   }
+
+  #[test]
+  fn atomic_argument_unchanged() {
+    // Operate[p, f] — f is atomic, nothing to operate on; return f unchanged.
+    assert_eq!(interpret("Operate[p, f]").unwrap(), "f");
+  }
 }
 
 mod dimension_mismatch_returns_unevaluated {
