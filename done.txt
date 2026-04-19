@@ -5466,3 +5466,9 @@ LINE: 54
 INPUT: BesselJ[0,x]
 EXPECTED: BesselJ[0, x] (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_compile_code
+LINE: 55
+INPUT: Exp[BesselJ[0,x]-1.]
+EXPECTED: E^(-1. + BesselJ[0, x]) (Woxi and wolframscript byte-identical)
+---
