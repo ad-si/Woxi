@@ -3321,3 +3321,9 @@ LINE: 37
 INPUT: E^(I Pi/2)
 EXPECTED: I (duplicate of test_add line 44; already covered by e_to_i_pi_over_two test)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_miscelanea_private_tests
+LINE: 329
+INPUT: -2/3//Head
+EXPECTED: Rational (matches wolframscript)
+---

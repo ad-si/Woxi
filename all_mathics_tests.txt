@@ -15845,13 +15845,6 @@ INPUT: -2/3
 EXPECTED: -2 / 3
 MESSAGE: Rational
 ---
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_miscelanea_private_tests
-LINE: 329
-INPUT: -2/3//Head
-EXPECTED: Rational
-MESSAGE: Rational
----
 FILE: mathics/test/builtin/arithmetic/test_element.py
 FUNCTION: test_element
 LINE: 39
