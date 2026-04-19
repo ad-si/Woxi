@@ -3099,3 +3099,9 @@ LINE: 121
 INPUT: \[Infinity]
 EXPECTED: Infinity (matches wolframscript)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 128
+INPUT: x=.01
+EXPECTED: 0.01 (matches wolframscript; mathics test compares to parsed form 'x = .01')
+---
