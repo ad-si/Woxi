@@ -3369,3 +3369,9 @@ LINE: 291
 INPUT: x + 2 x
 EXPECTED: 3*x (matches wolframscript)
 ---
+FILE: mathics/test/builtin/calculus/test_integrate.py
+FUNCTION: test_integrate
+LINE: 11
+INPUT: Integrate[Integrate[1,{y,0,E^x}],{x,0,Log[13]}]
+EXPECTED: 12 (matches wolframscript; nested definite integral)
+---

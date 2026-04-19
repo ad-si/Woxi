@@ -13661,13 +13661,6 @@ LINE: 23
 INPUT: ArcCos[-1/2 Sqrt[3]]
 EXPECTED: 5/6 Pi
 ---
-FILE: mathics/test/builtin/calculus/test_integrate.py
-FUNCTION: test_integrate
-LINE: 11
-INPUT: Integrate[Integrate[1,{y,0,E^x}],{x,0,Log[13]}]
-EXPECTED: 12
-MESSAGE: Issue #153
----
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
 LINE: 70

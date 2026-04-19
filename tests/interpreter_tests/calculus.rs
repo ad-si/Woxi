@@ -2610,6 +2610,15 @@ mod integrate_polynomial_power {
       "x - 2*x^2 + (4*x^3)/3"
     );
   }
+
+  #[test]
+  fn nested_definite_with_exp_bound_to_log13() {
+    // Area under y = e^x over [0, Log[13]] equals 13 - 1 = 12.
+    assert_eq!(
+      interpret("Integrate[Integrate[1,{y,0,E^x}],{x,0,Log[13]}]").unwrap(),
+      "12"
+    );
+  }
 }
 
 mod integrate_exp_integral_ei {
