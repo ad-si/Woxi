@@ -4421,3 +4421,9 @@ LINE: 232
 INPUT: Precision[Re[0.5+2.3 I]]
 EXPECTED: MachinePrecision (matches wolframscript; Re of a machine complex is machine-precision)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[Im[0.5+2.3 I]]
+EXPECTED: MachinePrecision (matches wolframscript; Im of a machine complex is machine-precision)
+---

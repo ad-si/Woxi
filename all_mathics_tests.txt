@@ -14236,12 +14236,6 @@ INPUT: Re[1+2.3 I]
 EXPECTED: MachinePrecision
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
-INPUT: Im[0.5+2.3 I]
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_change_prec
 LINE: 278
 INPUT: str_expr
