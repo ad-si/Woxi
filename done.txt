@@ -5063,3 +5063,10 @@ TYPE: >>
 INPUT: expr = x ^ 2 + x;
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 839
+TYPE: >>
+INPUT: Format[x] = "y";
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

@@ -9795,13 +9795,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 839
-TYPE: >>
-INPUT: Format[x] = "y";
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 841
 TYPE: >>
 INPUT: x
