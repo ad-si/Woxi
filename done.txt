@@ -3237,3 +3237,9 @@ LINE: 1856
 INPUT: SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]
 EXPECTED: -1/8 (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/atomic.py
+CLASS: AtomQ
+LINE: 27
+INPUT: Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]
+EXPECTED: {True, True, True, True, True} (matches wolframscript)
+---

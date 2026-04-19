@@ -2622,6 +2622,15 @@ mod complex_symbol {
       "{True, True, True, True}"
     );
   }
+
+  #[test]
+  fn atom_q_with_base_literal() {
+    // 2^^101 is the binary literal 5, which is an atom.
+    assert_eq!(
+      interpret("Map[AtomQ, {2, 2.1, 1/2, 2 + I, 2^^101}]").unwrap(),
+      "{True, True, True, True, True}"
+    );
+  }
 }
 
 mod hold_all_symbol {
