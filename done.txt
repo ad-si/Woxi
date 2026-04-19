@@ -5472,3 +5472,9 @@ LINE: 55
 INPUT: Exp[BesselJ[0,x]-1.]
 EXPECTED: E^(-1. + BesselJ[0, x]) (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 73-76
+INPUT: Sin[x] / Exp[-x^2/2.] / Sqrt[x] / BesselJ[0,x]
+EXPECTED: same as test_compile_code lines 51-55 (Woxi and wolframscript byte-identical for symbolic eval)
+---

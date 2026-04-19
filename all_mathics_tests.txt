@@ -13474,30 +13474,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/test_compile.py
 FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 73
-INPUT: Sin[x]
-EXPECTED: with x=1.5 -> 0.997495
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 74
-INPUT: Exp[-x^2/2.]
-EXPECTED: with x=0.0 -> 1.0
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 75
-INPUT: Sqrt[x]
-EXPECTED: with x=1.0 -> 1.0
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 76
-INPUT: BesselJ[0,x]
-EXPECTED: with x=0.0 -> 1.0
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
 LINE: 184
 INPUT: Plus
 EXPECTED: with x=lambda x -> y: x + y
