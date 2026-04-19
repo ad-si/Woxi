@@ -5215,3 +5215,9 @@ LINE: 66
 INPUT: Operate[p, f[a][b][c], 3]
 EXPECTED: p[f][a][b][c] (decoded complex head names when recursing through nested FunctionCall/CurriedCall)
 ---
+FILE: mathics/test/builtin/test_datentime.py
+FUNCTION: test_datelist
+LINE: 89
+INPUT: Quiet[DateList[abc]]
+EXPECTED: DateList[abc] (Woxi and wolframscript byte-identical)
+---
