@@ -2507,3 +2507,11 @@ INPUT: AiryAiPrime[0.5]
 EXPECTED:
 = -0.224910532664684 (matches wolframscript; mathics shows rounded -0.224911)
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: AiryBi
+LINE: 170
+TYPE: >>
+INPUT: AiryBi[0.5]
+EXPECTED:
+= 0.8542770431031554 (matches wolframscript; mathics shows rounded 0.854277)
+---

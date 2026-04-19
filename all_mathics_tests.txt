@@ -9084,14 +9084,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryBi
-LINE: 170
-TYPE: >>
-INPUT: AiryBi[0.5]
-EXPECTED:
-= 0.854277
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryBi
 LINE: 172
 TYPE: >>
 INPUT: AiryBi[0.5 + I]
