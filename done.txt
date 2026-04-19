@@ -3483,3 +3483,9 @@ LINE: 102
 INPUT: a = 1.6; a--; a
 EXPECTED: 0.6000000000000001 (matches wolframscript exactly; mathics "0.6" reflects display truncation)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 385
+INPUT: f'[x] // InputForm
+EXPECTED: InputForm[Derivative[1][f][x]] (matches wolframscript; both leave InputForm wrapper unevaluated)
+---

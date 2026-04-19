@@ -4951,14 +4951,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
-LINE: 385
-TYPE: >>
-INPUT: f'[x] // InputForm
-EXPECTED:
-= Derivative[1][f][x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
 LINE: 388
 TYPE: >>
 INPUT: Derivative[1][#2 Sin[#1]+Cos[#2]&]

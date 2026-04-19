@@ -493,6 +493,16 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn derivative_symbolic_via_inputform() {
+    // `f'[x] // InputForm` keeps the symbolic Derivative wrapped in
+    // unevaluated InputForm (matches wolframscript).
+    assert_eq!(
+      interpret("f'[x] // InputForm").unwrap(),
+      "InputForm[Derivative[1][f][x]]"
+    );
+  }
+
+  #[test]
   fn derivative_multi_index_symbolic() {
     // Derivative[2, 1][h] — mixed partial derivatives of unknown h
     // stays symbolic in curried form.
