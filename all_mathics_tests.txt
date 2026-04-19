@@ -11734,14 +11734,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 795
-TYPE: >>
-INPUT: Block[{x = 2}, x * y]
-EXPECTED:
-= 16
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 798
 TYPE: >>
 INPUT: expr = x ^ 2 + x;
