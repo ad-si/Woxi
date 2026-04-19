@@ -5091,3 +5091,10 @@ TYPE: >>
 INPUT: Format[r[args___]] = "<an r object>";
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 867
+TYPE: >>
+INPUT: Format[r[args___]] = Infix[{args}, "~"];
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
