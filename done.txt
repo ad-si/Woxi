@@ -4163,3 +4163,10 @@ TYPE: >>
 INPUT: Most[mylist] (with mylist = {a, b, c, d})
 EXPECTED: {a, b, c} (matches wolframscript; Most returns all but the last element)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 466
+TYPE: >>
+INPUT: Rest[mylist] (with mylist = {a, b, c, d})
+EXPECTED: {b, c, d} (matches wolframscript; Rest returns all but the first element)
+---
