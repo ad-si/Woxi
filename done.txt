@@ -3645,3 +3645,9 @@ LINE: 188
 INPUT: F[3, 2] (with F[x_,y_]/;x<y/;x>0:=x/y; F[x_,y_]:=y/x)
 EXPECTED: 2/3 (matches wolframscript; first condition x<y fails so fallback applies)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 190
+INPUT: F[-3, 2] (with F[x_,y_]/;x<y/;x>0:=x/y; F[x_,y_]:=y/x)
+EXPECTED: -2/3 (matches wolframscript; x>0 fails so fallback applies)
+---

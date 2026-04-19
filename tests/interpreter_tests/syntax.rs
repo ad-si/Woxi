@@ -3393,6 +3393,21 @@ mod condition_operator {
       "2/3"
     );
   }
+
+  #[test]
+  fn chained_conditions_fallback_negative_arg() {
+    // For F[-3, 2], first condition x>0 fails so fallback y/x = 2/-3 = -2/3.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "F[x_, y_] /; x < y /; x>0 := x / y; \
+         F[x_, y_] := y / x; \
+         F[-3, 2]"
+      )
+      .unwrap(),
+      "-2/3"
+    );
+  }
 }
 
 mod integer_symbol {
