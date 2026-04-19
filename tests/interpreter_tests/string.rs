@@ -299,6 +299,15 @@ mod string_replace {
   }
 
   #[test]
+  fn alternatives_pattern() {
+    // "1" | "2" matches either "1" or "2" — replace each with "X".
+    assert_eq!(
+      interpret(r#"StringReplace["0123 3210", "1" | "2" -> "X"]"#).unwrap(),
+      "0XX3 3XX0"
+    );
+  }
+
+  #[test]
   fn replace_all_occurrences() {
     assert_eq!(
       interpret(r#"StringReplace["abcabc", "a" -> "x"]"#).unwrap(),

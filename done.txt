@@ -3687,3 +3687,9 @@ LINE: 278
 INPUT: y = x; ++y
 EXPECTED: 1 + x (matches wolframscript; pre-increment on symbolic value)
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Alternatives
+LINE: 51
+INPUT: StringReplace["0123 3210", "1" | "2" -> "X"]
+EXPECTED: 0XX3 3XX0 (matches wolframscript; Alternatives pattern)
+---
