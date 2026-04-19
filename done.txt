@@ -2587,3 +2587,11 @@ INPUT: PolyLog[-7, I] //Chop
 EXPECTED:
 = 136 (matches wolframscript; mathics shows 136.)
 ---
+FILE: mathics/builtin/forms/mathics3.py
+CLASS: PythonForm
+LINE: 27
+TYPE: >>
+INPUT: PythonForm[Infinity]
+EXPECTED:
+= PythonForm[Infinity] (matches wolframscript; mathics-specific math.inf is a Mathics extension, not standard Wolfram)
+---

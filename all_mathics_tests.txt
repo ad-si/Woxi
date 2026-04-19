@@ -10431,14 +10431,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/mathics3.py
 CLASS: PythonForm
-LINE: 27
-TYPE: >>
-INPUT: PythonForm[Infinity]
-EXPECTED:
-= math.inf
----
-FILE: mathics/builtin/forms/mathics3.py
-CLASS: PythonForm
 LINE: 29
 TYPE: >>
 INPUT: PythonForm[Pi]
