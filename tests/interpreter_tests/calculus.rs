@@ -102,6 +102,16 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_four_sin_cos_product() {
+    // ∫ 4 Sin[x] Cos[x] dx = -2 Cos[x]^2 (up to an additive constant;
+    // matches wolframscript's canonical branch).
+    assert_eq!(
+      interpret("Integrate[4 Sin[x] Cos[x], x]").unwrap(),
+      "-2*Cos[x]^2"
+    );
+  }
+
+  #[test]
   fn integrate_sin_cos_squared() {
     // ∫ Sin[x]*Cos[x]^2 dx = -1/3*Cos[x]^3
     assert_eq!(

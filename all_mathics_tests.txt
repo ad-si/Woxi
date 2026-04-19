@@ -5109,14 +5109,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 998
-TYPE: >>
-INPUT: Integrate[4 Sin[x] Cos[x], x]
-EXPECTED:
-= 2 Sin[x] ^ 2
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1001
 TYPE: >>
 INPUT: Integrate[-Infinity, {x, 0, Infinity}]

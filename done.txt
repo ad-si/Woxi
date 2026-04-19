@@ -3525,3 +3525,9 @@ LINE: 48
 INPUT: ToCharacterCode["\[Alpha]\[Beta]\[Gamma]"]
 EXPECTED: {945, 946, 947} (matches wolframscript; Greek named chars → Unicode code points)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 998
+INPUT: Integrate[4 Sin[x] Cos[x], x]
+EXPECTED: -2*Cos[x]^2 (matches wolframscript; mathics "2 Sin[x]^2" is an equivalent form)
+---
