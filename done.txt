@@ -3657,3 +3657,9 @@ LINE: 151
 INPUT: N[2/9]
 EXPECTED: 0.2222222222222222 (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_multiply
+LINE: 153
+INPUT: a  b  DirectedInfinity[I]
+EXPECTED: a*b*DirectedInfinity[I] (matches wolframscript; mathics "a b (I Infinity)" is display form)
+---

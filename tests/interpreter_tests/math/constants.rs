@@ -488,6 +488,15 @@ mod infinity_arithmetic {
   fn directed_infinity_negative_real() {
     assert_eq!(interpret("DirectedInfinity[-3]").unwrap(), "-Infinity");
   }
+
+  #[test]
+  fn implicit_multiply_with_directed_infinity_imaginary() {
+    // a b DirectedInfinity[I] stays unevaluated as a*b*DirectedInfinity[I].
+    assert_eq!(
+      interpret("a  b  DirectedInfinity[I]").unwrap(),
+      "a*b*DirectedInfinity[I]"
+    );
+  }
 }
 
 mod constant_real_arithmetic {
