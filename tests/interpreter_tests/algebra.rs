@@ -745,6 +745,25 @@ mod collect_tests {
   }
 
   #[test]
+  fn collect_compound_target_function() {
+    // Collect accepts a compound target like q[x] as the variable.
+    assert_eq!(
+      interpret("Collect[q[x] + q[x] q[y], q[x]]").unwrap(),
+      "q[x]*(1 + q[y])"
+    );
+  }
+
+  #[test]
+  fn collect_compound_target_with_constant() {
+    // When the compound target only appears linearly with no other copies,
+    // Collect returns the sum unchanged (with canonical term ordering).
+    assert_eq!(
+      interpret("Collect[q[0, x] q[0, y] + 1, q[0, x]]").unwrap(),
+      "1 + q[0, x]*q[0, y]"
+    );
+  }
+
+  #[test]
   fn collect_symbolic_coefficients() {
     // Coefficients with variables before the collect variable go first
     assert_eq!(

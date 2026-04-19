@@ -13756,18 +13756,6 @@ LINE: 27
 INPUT: f[g, a + b, h] ^= 2
 EXPECTED: 2
 ---
-FILE: mathics/test/builtin/numbers/test_algebra.py
-FUNCTION: test_collect
-LINE: 13
-INPUT: Collect[q[x] + q[x] q[y],q[x]]
-EXPECTED: q[x] (1 + q[y])
----
-FILE: mathics/test/builtin/numbers/test_algebra.py
-FUNCTION: test_collect
-LINE: 15
-INPUT: Collect[ q[0, x] q[0, y] + 1, q[0, x]]
-EXPECTED: 1 + q[0, x] q[0, y]
----
 FILE: mathics/test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_gudermannian
 LINE: 20

@@ -55,6 +55,19 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
+    Expr::FunctionCall { .. } => {
+      // Compound target like q[x] or q[0, x]: replace it with a fresh
+      // identifier, collect over the identifier, then substitute back.
+      let placeholder = "__collect_target__";
+      let placeholder_id = Expr::Identifier(placeholder.to_string());
+      let substituted = substitute_expr_local(&args[0], &args[1], &placeholder_id);
+      let mut sub_call = vec![substituted, placeholder_id.clone()];
+      if let Some(h) = head {
+        sub_call.push(h.clone());
+      }
+      let result = collect_ast(&sub_call)?;
+      return Ok(substitute_expr_local(&result, &placeholder_id, &args[1]));
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Collect".to_string(),
@@ -434,6 +447,39 @@ fn build_times_chain(factors: &[Expr]) -> Expr {
     };
   }
   result
+}
+
+/// Recursively replace every occurrence of `from` with `to` in `expr`,
+/// using structural equality (via pretty-printed form).
+fn substitute_expr_local(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
+  if crate::syntax::expr_to_string(expr) == crate::syntax::expr_to_string(from) {
+    return to.clone();
+  }
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_expr_local(e, from, to))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| substitute_expr_local(e, from, to))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_expr_local(left, from, to)),
+      right: Box::new(substitute_expr_local(right, from, to)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_expr_local(operand, from, to)),
+    },
+    _ => expr.clone(),
+  }
 }
 
 /// Flatten a Times expression into its factors.
