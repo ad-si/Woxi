@@ -2193,14 +2193,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 799
-TYPE: >>
-INPUT: Read[stream, Number]
-EXPECTED:
-= EndOfFile
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 801
 TYPE: #>
 INPUT: Close[stream];

@@ -4568,3 +4568,10 @@ TYPE: >>
 INPUT: Read[stream, Word] (third call — stream exhausted)
 EXPECTED: EndOfFile (matches wolframscript)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 799
+TYPE: >>
+INPUT: Read[stream, Number] (with empty stream)
+EXPECTED: EndOfFile (matches wolframscript)
+---
