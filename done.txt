@@ -2851,3 +2851,11 @@ INPUT: 3 // h
 EXPECTED:
 = h[3] (matches wolframscript; mathics expected 9 from prior h[x_]:=x^2 definition)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 785
+TYPE: >>
+INPUT: t
+EXPECTED:
+= t (matches wolframscript; mathics expected 3 from prior t = 3 assignment)
+---

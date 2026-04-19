@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 785
-TYPE: >>
-INPUT: t
-EXPECTED:
-= 3
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 788
 TYPE: >>
 INPUT: y = x ^ 3;
