@@ -11130,14 +11130,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 519
-TYPE: >>
-INPUT: (a + b + c)[[0]]
-EXPECTED:
-= Plus
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 562
 TYPE: >>
 INPUT: FullForm[3 + 4 I]

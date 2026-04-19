@@ -3837,3 +3837,9 @@ LINE: 270
 INPUT: a + 1.6 (with a = 2.; ++a)
 EXPECTED: 4.6 (matches wolframscript; pre-increment real then add)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 519
+INPUT: (a + b + c)[[0]]
+EXPECTED: Plus (duplicate of eol.py line 1100; already covered by part_of_plus_three_terms_head test)
+---
