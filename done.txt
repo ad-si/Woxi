@@ -4854,3 +4854,10 @@ TYPE: >>
 INPUT: D[f[x, x], x] // InputForm
 EXPECTED: InputForm[Derivative[0, 1][f][x, x] + Derivative[1, 0][f][x, x]] (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: D
+LINE: 157
+TYPE: >>
+INPUT: D[f[x], x]
+EXPECTED: Derivative[1][f][x] (Woxi and wolframscript byte-identical; mathics "f'[x]" is StandardForm rendering of same expression)
+---
