@@ -10106,13 +10106,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1246
-TYPE: >>
-INPUT: Format[Dice[]] := Graphics[{EdgeForm[Black], White, Rectangle[]}, ImageSize -> Tiny]
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1248
 TYPE: >>
 INPUT: Dice[]

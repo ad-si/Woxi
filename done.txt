@@ -5126,3 +5126,10 @@ TYPE: >>
 INPUT: MakeBoxes[squared[args___], TraditionalForm] := squared[args] ^ 2
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1246
+TYPE: >>
+INPUT: Format[Dice[]] := Graphics[{EdgeForm[Black], White, Rectangle[]}, ImageSize -> Tiny]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
