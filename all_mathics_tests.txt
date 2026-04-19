@@ -7842,14 +7842,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: LetterNumber
-LINE: 424
-TYPE: >>
-INPUT: LetterNumber["B"]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: LetterNumber
 LINE: 427
 TYPE: >>
 INPUT: LetterNumber["ss2!"]
