@@ -4247,3 +4247,10 @@ TYPE: >>
 INPUT: RandomPrime[{8,12}, 3]
 EXPECTED: {11, 11, 11} (matches wolframscript; 11 is the only prime in [8, 12], so 3 picks all return 11)
 ---
+FILE: mathics/builtin/patterns/basic.py
+CLASS: Blank
+LINE: 84
+TYPE: >>
+INPUT: {42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm
+EXPECTED: InputForm[{integer, real, x}] (matches wolframscript; _Integer and _Real patterns match the first two, x stays unchanged)
+---

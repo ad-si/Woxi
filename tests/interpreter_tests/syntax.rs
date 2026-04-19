@@ -859,6 +859,17 @@ mod rule_display {
   }
 
   #[test]
+  fn blank_type_replace_list() {
+    // Multiple typed-Blank rules applied to a list with mixed types.
+    // Matches wolframscript.
+    assert_eq!(
+      interpret(r#"{42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm"#)
+        .unwrap(),
+      "InputForm[{integer, real, x}]"
+    );
+  }
+
+  #[test]
   fn rule_map() {
     assert_eq!(
       interpret("Map[Rule[#, #^2] &, {1, 2, 3}]").unwrap(),

@@ -6232,14 +6232,6 @@ INPUT: f[y, a->3] /. f[x_, OptionsPattern[{a->2, b->5}]] -> {x, OptionValue[a], 
 EXPECTED:
 = {y, 3, 5}
 ---
-FILE: mathics/builtin/patterns/basic.py
-CLASS: Blank
-LINE: 84
-TYPE: >>
-INPUT: {42, 1.0, x} /. {_Integer -> "integer", _Real -> "real"} // InputForm
-EXPECTED:
-= {"integer", "real", x}
----
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Except
 LINE: 139
