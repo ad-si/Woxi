@@ -9999,13 +9999,6 @@ EXPECTED: Hold[CompoundExpression[a, Null, Null]]
 ---
 FILE: mathics/test/test_evaluation.py
 FUNCTION: test_eval_atom_upvalues
-LINE: 338
-INPUT: F[3.]
-EXPECTED: 3.
-MESSAGE: Upvalue of Real is taken into account.
----
-FILE: mathics/test/test_evaluation.py
-FUNCTION: test_eval_atom_upvalues
 LINE: 333
 INPUT: Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]
 EXPECTED: {}

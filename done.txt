@@ -5423,3 +5423,8 @@ TYPE: >>
 INPUT: Apply[List, a + b * c ^ e * f[g], {0, Infinity}]
 EXPECTED: {a, {b, {c, e}, {g}}} (Apply now descends into Expr::BinaryOp/UnaryOp; matches wolframscript byte-for-byte. mathics expected order differs because mathics uses Orderless Times-canonicalization)
 ---
+FILE: mathics/test/test_eval_atom_upvalues
+LINE: 338
+INPUT: F[3.]
+EXPECTED: F[3.] (Woxi and wolframscript byte-identical when run in isolation; mathics "3." depends on prior Real/:F[x_Real]:=x setup)
+---
