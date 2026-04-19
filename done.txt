@@ -2451,3 +2451,11 @@ INPUT: Association[{a -> x^2, b -> y}]
 EXPECTED:
 = <|a -> x^2, b -> y|> (matches wolframscript)
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Normal
+LINE: 182
+TYPE: >>
+INPUT: Series[Exp[x], {x, 0, 5}]
+EXPECTED:
+= SeriesData[x, 0, {1, 1, 1/2, 1/6, 1/24, 1/120}, 0, 6, 1] (matches wolframscript; mathics displays as polynomial + O[x]^6)
+---
