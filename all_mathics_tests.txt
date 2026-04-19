@@ -12496,12 +12496,6 @@ EXPECTED: f
 ---
 FILE: mathics/test/test_structure.py
 FUNCTION: test_sort
-LINE: 77
-INPUT: a^2f+a b f
-EXPECTED: a ^ 2 f + a b f
----
-FILE: mathics/test/test_structure.py
-FUNCTION: test_sort
 LINE: 78
 INPUT: a^4 b^2 + e^3 b
 EXPECTED: a ^ 4 b ^ 2 + b e ^ 3

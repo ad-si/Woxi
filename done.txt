@@ -2985,3 +2985,9 @@ LINE: 115
 INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
 EXPECTED: (-1 + Cos[1]^2 + Sin[1]^2)^(-1) (matches wolframscript; mathics test wraps in NumericQ to expect True)
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_sort
+LINE: 77
+INPUT: a^2f+a b f
+EXPECTED: a^2*f + a*b*f (matches wolframscript)
+---
