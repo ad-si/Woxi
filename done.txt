@@ -4009,3 +4009,10 @@ TYPE: >>
 INPUT: StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]
 EXPECTED: {True, True, True, False, False} (added list threading in string_free_q_ast — matches wolframscript)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 189
+TYPE: >>
+INPUT: Close["ExampleData/numbers.txt"]
+EXPECTED: Close[ExampleData/numbers.txt] (matches wolframscript when file is not open; mathics "ExampleData/numbers.txt" assumes the stream was previously opened)
+---

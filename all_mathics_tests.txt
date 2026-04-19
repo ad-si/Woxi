@@ -1939,14 +1939,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Close
-LINE: 189
-TYPE: >>
-INPUT: Close["ExampleData/numbers.txt"]
-EXPECTED:
-= ExampleData/numbers.txt
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Close
 LINE: 194
 TYPE: >>
 INPUT: Read[stream1]
