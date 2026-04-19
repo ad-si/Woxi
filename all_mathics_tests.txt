@@ -1355,13 +1355,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Unset
-LINE: 240
-TYPE: >>
-INPUT: f[x_] = x; f[0] = 1;
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Unset
 LINE: 241
 TYPE: >>
 INPUT: DownValues[f] =.
