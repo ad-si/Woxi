@@ -1804,6 +1804,12 @@ mod pre_increment_function {
   }
 
   #[test]
+  fn pre_increment_real_then_add() {
+    // a = 2.; after ++a, a holds 3.; 3. + 1.6 = 4.6.
+    assert_eq!(interpret("a = 2.; ++a; a + 1.6").unwrap(), "4.6");
+  }
+
+  #[test]
   fn pre_increment_modifies_variable() {
     assert_eq!(interpret("x = 5; ++x; x").unwrap(), "6");
   }

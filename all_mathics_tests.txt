@@ -1162,14 +1162,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreIncrement
-LINE: 270
-TYPE: >>
-INPUT: a + 1.6
-EXPECTED:
-= 4.6
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: PreIncrement
 LINE: 276
 TYPE: #>
 INPUT: Clear[x, y]

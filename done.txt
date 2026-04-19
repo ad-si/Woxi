@@ -3831,3 +3831,9 @@ LINE: 496
 INPUT: FileExistsQ["ExampleData/sunflowers.png"]
 EXPECTED: False (matches wolframscript; already covered by existing FileExistsQ tests)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: PreIncrement
+LINE: 270
+INPUT: a + 1.6 (with a = 2.; ++a)
+EXPECTED: 4.6 (matches wolframscript; pre-increment real then add)
+---
