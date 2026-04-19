@@ -2811,3 +2811,11 @@ INPUT: h[3]
 EXPECTED:
 = h[3] (matches wolframscript; mathics expected 9 from prior h[x_]:=x^2 definition)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 691
+TYPE: >>
+INPUT: sum[4, 6]
+EXPECTED:
+= sum[4, 6] (matches wolframscript; mathics expected 10 from prior sum definition)
+---

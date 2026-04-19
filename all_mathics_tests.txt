@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 691
-TYPE: >>
-INPUT: sum[4, 6]
-EXPECTED:
-= 10
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 696
 TYPE: >>
 INPUT: prod[4, 6]
