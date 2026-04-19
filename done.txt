@@ -3477,3 +3477,9 @@ LINE: 37
 INPUT: log2=Log[2.]; Chop[E^(log2+I Pi)]
 EXPECTED: -2. (matches wolframscript; Chop removes tiny imaginary residue)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: Decrement
+LINE: 102
+INPUT: a = 1.6; a--; a
+EXPECTED: 0.6000000000000001 (matches wolframscript exactly; mathics "0.6" reflects display truncation)
+---

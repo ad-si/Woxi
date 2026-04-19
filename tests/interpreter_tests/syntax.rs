@@ -1768,6 +1768,15 @@ mod decrement_function {
       "{HoldFirst, Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn decrement_real_value_matches_machine_precision() {
+    // 1.6 - 1 in IEEE double is 0.6000000000000001 (matches wolframscript).
+    assert_eq!(
+      interpret("a = 1.6; a--; a").unwrap(),
+      "0.6000000000000001"
+    );
+  }
 }
 
 mod pre_increment_function {

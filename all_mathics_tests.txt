@@ -1084,14 +1084,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: Decrement
-LINE: 102
-TYPE: >>
-INPUT: a = 1.6; a--; a
-EXPECTED:
-= 0.6
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Decrement
 LINE: 110
 TYPE: >>
 INPUT: a--; a
