@@ -1019,13 +1019,6 @@ EXPECTED:
 = 1
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: PreDecrement
-LINE: 237
-TYPE: #>
-INPUT: Clear[a]
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreIncrement
 LINE: 262
 TYPE: >>

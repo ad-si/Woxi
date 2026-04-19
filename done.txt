@@ -5255,3 +5255,10 @@ TYPE: >>
 INPUT: ClearTrace[]
 EXPECTED: ClearTrace[] (Woxi and wolframscript byte-identical: both return unevaluated; Mathics3-specific function)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: PreDecrement
+LINE: 237
+TYPE: #>
+INPUT: Clear[a]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
