@@ -3431,6 +3431,28 @@ mod string_position_alternatives {
   }
 }
 
+mod edit_distance_options {
+  use super::*;
+
+  #[test]
+  fn ignore_case_option() {
+    // EditDistance with IgnoreCase treats upper/lower as equal (matches wolframscript).
+    assert_eq!(
+      interpret(r#"EditDistance["time", "Thyme", IgnoreCase -> True]"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn list_of_items() {
+    // EditDistance accepts lists and compares elementwise by equality.
+    assert_eq!(
+      interpret("EditDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]").unwrap(),
+      "2"
+    );
+  }
+}
+
 mod damerau_levenshtein_distance {
   use super::*;
 

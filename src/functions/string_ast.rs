@@ -3875,17 +3875,38 @@ pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// EditDistance[s1, s2] - Levenshtein distance between two strings
+/// EditDistance[s1, s2] - Levenshtein distance between two strings.
+/// Also accepts lists of items, and an optional IgnoreCase -> True rule.
 pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "EditDistance expects exactly 2 arguments".into(),
+      "EditDistance expects 2 or 3 arguments".into(),
     ));
   }
-  let s1 = expr_to_str(&args[0])?;
-  let s2 = expr_to_str(&args[1])?;
-  let a: Vec<char> = s1.chars().collect();
-  let b: Vec<char> = s2.chars().collect();
+  let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
+
+  fn to_tokens(
+    expr: &Expr,
+    lower: bool,
+  ) -> Result<Vec<String>, InterpreterError> {
+    match expr {
+      Expr::String(s) => {
+        let s = if lower { s.to_lowercase() } else { s.clone() };
+        Ok(s.chars().map(|c| c.to_string()).collect())
+      }
+      Expr::List(items) => {
+        Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+      }
+      _ => {
+        let s = expr_to_str(expr)?;
+        let s = if lower { s.to_lowercase() } else { s };
+        Ok(s.chars().map(|c| c.to_string()).collect())
+      }
+    }
+  }
+
+  let a = to_tokens(&args[0], ignore_case)?;
+  let b = to_tokens(&args[1], ignore_case)?;
   let n = a.len();
   let m = b.len();
 

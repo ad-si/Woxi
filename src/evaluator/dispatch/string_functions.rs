@@ -84,7 +84,7 @@ pub fn dispatch_string_functions(
     "StringPadRight" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::string_ast::string_pad_right_ast(args));
     }
-    "EditDistance" if args.len() == 2 => {
+    "EditDistance" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::edit_distance_ast(args));
     }
     "DamerauLevenshteinDistance" if args.len() == 2 || args.len() == 3 => {

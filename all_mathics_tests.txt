@@ -6801,22 +6801,6 @@ EXPECTED:
 = 1 - (1 / 5 + 2 I / 5) Sqrt[5]
 ---
 FILE: mathics/builtin/distance/stringdata.py
-CLASS: EditDistance
-LINE: 215
-TYPE: >>
-INPUT: EditDistance["time", "Thyme", IgnoreCase -> True]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/distance/stringdata.py
-CLASS: EditDistance
-LINE: 219
-TYPE: >>
-INPUT: EditDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/distance/stringdata.py
 CLASS: HammingDistance
 LINE: 245
 TYPE: >>

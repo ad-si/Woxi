@@ -4268,3 +4268,17 @@ TYPE: >>
 INPUT: DamerauLevenshteinDistance["kitten", "kitchen"] (and 6 more variants)
 EXPECTED: 2, 1, 1, 3, 3, 2, 1 respectively (implemented damerau_levenshtein_distance_ast with classic DP: substitution/insertion/deletion/adjacent-transposition; supports string+string, list+list, IgnoreCase option)
 ---
+FILE: mathics/builtin/distance/stringdata.py
+CLASS: EditDistance
+LINE: 215
+TYPE: >>
+INPUT: EditDistance["time", "Thyme", IgnoreCase -> True]
+EXPECTED: 2 (extended edit_distance_ast to support IgnoreCase option and list arguments)
+---
+FILE: mathics/builtin/distance/stringdata.py
+CLASS: EditDistance
+LINE: 219
+TYPE: >>
+INPUT: EditDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]
+EXPECTED: 2 (list arguments supported — tokens compared elementwise)
+---
