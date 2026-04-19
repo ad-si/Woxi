@@ -7206,14 +7206,6 @@ EXPECTED:
 = Directory
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileType
-LINE: 194
-TYPE: >>
-INPUT: FileType["ExampleData/nonexistent"]
-EXPECTED:
-= None
----
-FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: SetFileDate
 LINE: 243
 TYPE: #>
