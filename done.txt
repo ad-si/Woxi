@@ -5174,3 +5174,8 @@ LINE: 143
 ACTUAL: 4 * ac
 EXPECTED: 4*ac (Woxi and wolframscript byte-identical)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 161
+ACTUAL: (x + 2y) /. {x -> y, y -> x}
+EXPECTED: 2*x + y (Woxi and wolframscript both return "2*x + y"; simultaneous replacement)
+---

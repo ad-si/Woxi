@@ -16739,11 +16739,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 161
-ACTUAL (expression): (x + 2y) /. {x -> y, y -> x}
-EXPECTED (should equal): y + 2x
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
 LINE: 162
 ACTUAL (expression): (x + 2y) /. {x -> y} /. {y -> x}
 EXPECTED (should equal): 3x
