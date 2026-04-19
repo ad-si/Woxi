@@ -4296,3 +4296,10 @@ TYPE: >>
 INPUT: Dispatch[{rule}] (with rule = F[x_] -> g[x])
 EXPECTED: Dispatch[{F[x_] -> g[x]}] (matches wolframscript; Dispatch is an inert wrapper — mathics "Dispatch[<1>]" is a mathics-specific summarized display)
 ---
+FILE: mathics/builtin/specialfns/elliptic.py
+CLASS: EllipticK
+LINE: 138
+TYPE: >>
+INPUT: EllipticK[0.5]
+EXPECTED: 1.8540746773013717 (matches wolframscript byte-for-byte; mathics "1.85407" is a shorter display)
+---

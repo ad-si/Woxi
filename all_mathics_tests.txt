@@ -8554,14 +8554,6 @@ EXPECTED:
 = 0
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticK
-LINE: 138
-TYPE: >>
-INPUT: EllipticK[0.5]
-EXPECTED:
-= 1.85407
----
-FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticPi
 LINE: 183
 TYPE: >>
