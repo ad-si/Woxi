@@ -605,6 +605,12 @@ mod im_tests {
   }
 
   #[test]
+  fn integer_plus_imaginary_pi() {
+    // 3 + I Pi stays in canonical form without evaluation.
+    assert_eq!(interpret("3+I Pi").unwrap(), "3 + I*Pi");
+  }
+
+  #[test]
   fn e_to_i_pi_over_two() {
     // E^(I*Pi/2) = I (Euler's identity, quarter turn).
     assert_eq!(interpret("E^(I Pi/2)").unwrap(), "I");

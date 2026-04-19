@@ -3699,3 +3699,9 @@ LINE: 239
 INPUT: f[1, 2, 3] /. f[x__] -> x
 EXPECTED: 123 (matches wolframscript; Sequence[1,2,3] displays as concatenation; mathics shows FullForm)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 557
+INPUT: 3+I Pi
+EXPECTED: 3 + I*Pi (matches wolframscript; canonical form)
+---

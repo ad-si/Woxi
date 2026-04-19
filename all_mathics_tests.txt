@@ -13157,13 +13157,6 @@ MESSAGE: False
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 557
-INPUT: 3+I Pi
-EXPECTED: 3+I Pi
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 568
 INPUT: Graphics[{Disk[{0,0},1]}]
 EXPECTED: Graphics[{Disk[{0,0},1]}]
