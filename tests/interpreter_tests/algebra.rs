@@ -2664,6 +2664,17 @@ mod find_root {
       result
     );
   }
+
+  #[test]
+  fn undefined_function_returns_unevaluated() {
+    // Matches wolframscript: if the function can't be evaluated numerically
+    // (e.g. f[x] undefined), FindRoot emits FindRoot::nlnum and returns
+    // the expression unevaluated rather than erroring out.
+    assert_eq!(
+      interpret("FindRoot[f[x] == 0, {x, 0}]").unwrap(),
+      "FindRoot[f[x] == 0, {x, 0}]"
+    );
+  }
 }
 
 mod replace {

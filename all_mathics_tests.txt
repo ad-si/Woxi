@@ -4622,15 +4622,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindRoot
-LINE: 897
-TYPE: >>
-INPUT: FindRoot[f[x] == 0, {x, 0}]
-EXPECTED:
-: The function value is not a number at x = 0..
-= FindRoot[f[x] - 0, {x, 0}]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindRoot
 LINE: 902
 TYPE: >>
 INPUT: FindRoot[Sin[x] == x, {x, 0}]

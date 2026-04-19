@@ -131,7 +131,22 @@ pub fn dispatch_polynomial_functions(
       return Some(crate::functions::polynomial_ast::find_instance_ast(args));
     }
     "FindRoot" if args.len() >= 2 => {
-      return Some(crate::functions::polynomial_ast::find_root_ast(args));
+      // Catch "cannot evaluate numerically" errors and return unevaluated
+      // with a FindRoot::nlnum warning (matches wolframscript).
+      match crate::functions::polynomial_ast::find_root_ast(args) {
+        Err(crate::InterpreterError::EvaluationError(msg))
+          if msg.contains("cannot evaluate expression numerically") =>
+        {
+          crate::emit_message(
+            "FindRoot::nlnum: The function value is not a number at the starting point.",
+          );
+          return Some(Ok(Expr::FunctionCall {
+            name: "FindRoot".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        other => return Some(other),
+      }
     }
     "FindMinimum" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::find_minimum_ast(

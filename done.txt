@@ -4791,3 +4791,10 @@ TYPE: >>
 INPUT: MatrixForm[A] (A undefined)
 EXPECTED: MatrixForm[A] (matches wolframscript; display wrapper stays unevaluated)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 897
+TYPE: >>
+INPUT: FindRoot[f[x] == 0, {x, 0}]
+EXPECTED: FindRoot[f[x] == 0, {x, 0}] with FindRoot::nlnum warning (wrapped FindRoot dispatch to catch "cannot evaluate numerically" errors and return unevaluated, matching wolframscript)
+---
