@@ -13511,23 +13511,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/format_tests.yaml
-INPUT: "\[Pi] is a trascendental number"
-DESCRIPTION: A String
-EXPECTED:
-  text[System`InputForm]: "π is a trascendental number"
-  text[System`OutputForm]: π is a trascendental number
-  text[System`StandardForm]: π is a trascendental number
-  text[System`TraditionalForm]: π is a trascendental number
-  latex[System`InputForm]: \text{``$\pi$ is a trascendental number''}
-  latex[System`OutputForm]: \text{$\pi$ is a trascendental number}
-  latex[System`StandardForm]: \text{$\pi$ is a trascendental number}
-  latex[System`TraditionalForm]: \text{$\pi$ is a trascendental number}
-  mathml[System`InputForm]: <ms>π&nbsp;is&nbsp;a&nbsp;trascendental&nbsp;number</ms>
-  mathml[System`OutputForm]: <mtext>π&nbsp;is&nbsp;a&nbsp;trascendental&nbsp;number</mtext>
-  mathml[System`StandardForm]: <mtext>π&nbsp;is&nbsp;a&nbsp;trascendental&nbsp;number</mtext>
-  mathml[System`TraditionalForm]: <mtext>π&nbsp;is&nbsp;a&nbsp;trascendental&nbsp;number</mtext>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: -1. 10^-5
 DESCRIPTION: small negative real number (>10^-5)
 EXPECTED:
