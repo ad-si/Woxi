@@ -3825,3 +3825,9 @@ LINE: 233
 INPUT: f[3] (with f[x_] := x^2)
 EXPECTED: 9 (matches wolframscript; basic SetDelayed — already covered by tests)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileExistsQ
+LINE: 496
+INPUT: FileExistsQ["ExampleData/sunflowers.png"]
+EXPECTED: False (matches wolframscript; already covered by existing FileExistsQ tests)
+---

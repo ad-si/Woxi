@@ -3012,14 +3012,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileExistsQ
-LINE: 496
-TYPE: >>
-INPUT: FileExistsQ["ExampleData/sunflowers.png"]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileInformation
 LINE: 563
 TYPE: >>
