@@ -4359,3 +4359,10 @@ TYPE: >>
 INPUT: AppendTo[y, x] (with y = f[])
 EXPECTED: f[x] (matches wolframscript; AppendTo to empty FunctionCall)
 ---
+FILE: mathics/builtin/file_operations/file_properties.py
+CLASS: FileType
+LINE: 192
+TYPE: >>
+INPUT: FileType["ExampleData"]
+EXPECTED: None (matches wolframscript when dir doesn't exist; mathics "Directory" assumes the ExampleData directory is present)
+---

@@ -6873,14 +6873,6 @@ EXPECTED:
 = 111619807552579450300684600241129773909359865098672286468229443390003894913065
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileType
-LINE: 192
-TYPE: >>
-INPUT: FileType["ExampleData"]
-EXPECTED:
-= Directory
----
-FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: SetFileDate
 LINE: 243
 TYPE: #>
