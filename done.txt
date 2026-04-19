@@ -5164,3 +5164,13 @@ LINE: 138-141
 ACTUAL: 2 * y / 2 y / y * 2 / y 2
 EXPECTED: 2*y (Woxi and wolframscript both return 2*y for all four equivalent forms; mathics shows "2y" implicit-mul rendering)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 142
+ACTUAL: 4 * a * c
+EXPECTED: 4*a*c (Woxi and wolframscript byte-identical)
+---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 143
+ACTUAL: 4 * ac
+EXPECTED: 4*ac (Woxi and wolframscript byte-identical)
+---
