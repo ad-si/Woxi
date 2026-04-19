@@ -467,9 +467,15 @@ mod precision {
       interpret("Head[$PathnameSeparator] == String").unwrap(),
       "True"
     );
+    assert_eq!(interpret("StringLength[$PathnameSeparator]").unwrap(), "1");
+  }
+
+  #[test]
+  fn home_directory_head_is_string() {
+    // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).
     assert_eq!(
-      interpret("StringLength[$PathnameSeparator]").unwrap(),
-      "1"
+      interpret("Head[$HomeDirectory] == String").unwrap(),
+      "True"
     );
   }
 

@@ -4686,3 +4686,10 @@ TYPE: >>
 INPUT: ParentDirectory[]
 EXPECTED: parent of current working directory (implemented ParentDirectory alongside Directory; also accepts ParentDirectory["path"] form; matches wolframscript)
 ---
+FILE: mathics/builtin/directories/user_directories.py
+CLASS: HomeDirectory
+LINE: 46
+TYPE: >>
+INPUT: $HomeDirectory
+EXPECTED: home directory path (added $HomeDirectory system variable reading $HOME or $USERPROFILE; matches wolframscript)
+---

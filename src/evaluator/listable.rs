@@ -270,9 +270,14 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       };
       Some(Expr::String(os.to_string()))
     }
-    "$PathnameSeparator" => Some(Expr::String(
-      std::path::MAIN_SEPARATOR.to_string(),
-    )),
+    "$PathnameSeparator" => {
+      Some(Expr::String(std::path::MAIN_SEPARATOR.to_string()))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    "$HomeDirectory" => std::env::var("HOME")
+      .or_else(|_| std::env::var("USERPROFILE"))
+      .ok()
+      .map(Expr::String),
     "$ProcessorType" => {
       // wolframscript returns just the arch string, e.g. "ARM64" or "x86-64"
       let arch = if cfg!(target_arch = "aarch64") {
