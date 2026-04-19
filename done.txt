@@ -3801,3 +3801,9 @@ LINE: 1089
 INPUT: A[[3]] (with A = {a, b, c, d})
 EXPECTED: c (matches wolframscript)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1120
+INPUT: B[[;;, 2]]
+EXPECTED: {b, e, h} (fixed: Span in non-last Part position now triggers mapping, just like All/List)
+---

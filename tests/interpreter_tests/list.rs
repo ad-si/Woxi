@@ -1708,9 +1708,30 @@ mod part_extraction {
   #[test]
   fn part_single_index_on_named_list() {
     // A = {a, b, c, d}; A[[3]] extracts the third element.
+    assert_eq!(interpret("A = {a, b, c, d}; A[[3]]").unwrap(), "c");
+  }
+
+  #[test]
+  fn part_full_span_then_column() {
+    // B[[;;, 2]] with a 3x3 matrix extracts column 2.
     assert_eq!(
-      interpret("A = {a, b, c, d}; A[[3]]").unwrap(),
-      "c"
+      interpret(
+        "B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[;;, 2]]"
+      )
+      .unwrap(),
+      "{b, e, h}"
+    );
+  }
+
+  #[test]
+  fn part_span_then_span() {
+    // B[[1;;2, 1;;2]] extracts the top-left 2x2 sub-matrix.
+    assert_eq!(
+      interpret(
+        "B = {{a, b, c}, {d, e, f}, {g, h, i}}; B[[1;;2, 1;;2]]"
+      )
+      .unwrap(),
+      "{{a, b}, {d, e}}"
     );
   }
 

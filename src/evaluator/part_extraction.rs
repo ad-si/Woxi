@@ -170,6 +170,33 @@ pub fn apply_part_indices(
       results.push(apply_part_indices(&extracted, rest)?);
     }
     Ok(Expr::List(results))
+  } else if let Expr::FunctionCall { name, .. } = idx
+    && name == "Span"
+    && !rest.is_empty()
+  {
+    // Part[expr, Span[...], rest...] → map remaining indices over each
+    // element of the span-extracted sub-list.
+    let extracted = extract_part_ast(expr, idx)?;
+    match &extracted {
+      Expr::List(items) => {
+        let mapped: Result<Vec<Expr>, InterpreterError> = items
+          .iter()
+          .map(|item| apply_part_indices(item, rest))
+          .collect();
+        Ok(Expr::List(mapped?))
+      }
+      Expr::FunctionCall { name: head, args: fn_args } => {
+        let mapped: Result<Vec<Expr>, InterpreterError> = fn_args
+          .iter()
+          .map(|item| apply_part_indices(item, rest))
+          .collect();
+        Ok(Expr::FunctionCall {
+          name: head.clone(),
+          args: mapped?,
+        })
+      }
+      _ => apply_part_indices(&extracted, rest),
+    }
   } else {
     // Normal index: extract, then continue with remaining indices
     let extracted = extract_part_ast(expr, idx)?;
