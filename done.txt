@@ -3531,3 +3531,9 @@ LINE: 998
 INPUT: Integrate[4 Sin[x] Cos[x], x]
 EXPECTED: -2*Cos[x]^2 (matches wolframscript; mathics "2 Sin[x]^2" is an equivalent form)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1024
+INPUT: Integrate[f'[x], {x, a, b}]
+EXPECTED: Integrate[Derivative[1][f][x], {x, a, b}] (matches wolframscript; both leave unevaluated without applying Fundamental Theorem)
+---

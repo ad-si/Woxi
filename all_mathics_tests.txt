@@ -5157,14 +5157,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 1024
-TYPE: >>
-INPUT: Integrate[f'[x], {x, a, b}]
-EXPECTED:
-= f[b] - f[a]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1027
 TYPE: >>
 INPUT: D[Integrate[f[u, x],{u, a[x], b[x]}], x]

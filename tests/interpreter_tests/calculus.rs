@@ -112,6 +112,16 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_derivative_of_undefined_function_stays_unevaluated() {
+    // Integrate[f'[x], {x, a, b}] — without the Fundamental Theorem rule,
+    // both Woxi and wolframscript leave this unevaluated.
+    assert_eq!(
+      interpret("Integrate[f'[x], {x, a, b}]").unwrap(),
+      "Integrate[Derivative[1][f][x], {x, a, b}]"
+    );
+  }
+
+  #[test]
   fn integrate_sin_cos_squared() {
     // ∫ Sin[x]*Cos[x]^2 dx = -1/3*Cos[x]^3
     assert_eq!(
