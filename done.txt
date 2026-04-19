@@ -3549,3 +3549,9 @@ LINE: 752
 INPUT: Sec[1.]
 EXPECTED: 1.8508157176809255 (matches wolframscript exactly; mathics "1.85082" is display-truncated)
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Csc
+LINE: 665
+INPUT: Csc[1.]
+EXPECTED: 1.1883951057781212 (matches wolframscript; mathics "1.1884" is display-truncated)
+---

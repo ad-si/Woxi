@@ -1243,6 +1243,12 @@ mod trig_sec_csc_cot {
   }
 
   #[test]
+  fn csc_one_point_zero_machine_real() {
+    // Csc[1.] = 1/Sin[1.] ≈ 1.1883951057781212 (matches wolframscript).
+    assert_eq!(interpret("Csc[1.]").unwrap(), "1.1883951057781212");
+  }
+
+  #[test]
   fn sec_pi_third() {
     assert_eq!(interpret("Sec[Pi/3]").unwrap(), "2");
   }

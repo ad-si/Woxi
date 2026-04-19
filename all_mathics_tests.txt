@@ -6465,14 +6465,6 @@ EXPECTED:
 = Pi
 ---
 FILE: mathics/builtin/numbers/trig.py
-CLASS: Csc
-LINE: 665
-TYPE: >>
-INPUT: Csc[1.]
-EXPECTED:
-= 1.1884
----
-FILE: mathics/builtin/numbers/trig.py
 CLASS: Haversine
 LINE: 698
 TYPE: >>
