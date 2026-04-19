@@ -14198,31 +14198,6 @@ EXPECTED:
   mathml[System`OutputForm]: <mtext>x__.</mtext>
   mathml[System`StandardForm]: <mtext>x__.</mtext>
 ---
-FILE: mathics/test/format/format_tests.yaml
-INPUT: a+PrecedenceForm[b+c,10]
-DESCRIPTION: PrecedenceForm
-EXPECTED:
-  text[System`InputForm]: a + (PrecedenceForm[b + c, 10])
-  text[System`OutputForm]: a + (b + c)
-  text[System`StandardForm]: a+(b+c)
-  text[System`TraditionalForm]: a+(b+c)
-  latex[System`OutputForm]: \text{a + (b + c)}
-  latex[System`StandardForm]: a+(b+c)
-  mathml[System`OutputForm]: <mtext>a&nbsp;+&nbsp;(b&nbsp;+&nbsp;c)</mtext>
-  mathml[System`StandardForm]: <mrow>
- <mi>a</mi>
- <mo>+</mo>
- <mrow>
-  <mo>(</mo>
-  <mrow>
-   <mi>b</mi>
-   <mo>+</mo>
-   <mi>c</mi>
-  </mrow>
-  <mo>)</mo>
- </mrow>
-</mrow>
----
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: __DEFAULTS__
 EXPECTED:

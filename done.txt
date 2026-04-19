@@ -5630,3 +5630,8 @@ INPUT: Optional[x__, a+b]
 DESCRIPTION: Optional with two arguments
 EXPECTED: x__:a + b (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: a+PrecedenceForm[b+c,10]
+DESCRIPTION: PrecedenceForm
+EXPECTED: a + PrecedenceForm[b + c, 10] (Woxi and wolframscript byte-identical for InputForm)
+---
