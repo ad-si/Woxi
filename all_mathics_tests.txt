@@ -148,13 +148,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: For
-LINE: 340
-TYPE: >>
-INPUT: n := 1
-EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: For
 LINE: 341
 TYPE: >>
 INPUT: For[i=1, i<=10, i=i+1, n = n * i]

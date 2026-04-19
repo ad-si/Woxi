@@ -5234,3 +5234,10 @@ TYPE: >>
 INPUT: Close[strm];
 EXPECTED: Null (both Woxi and wolframscript print Null with trailing semicolon)
 ---
+FILE: mathics/builtin/procedural.py
+CLASS: For
+LINE: 340
+TYPE: >>
+INPUT: n := 1
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
