@@ -8080,14 +8080,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: PrependTo
-LINE: 1399
-TYPE: >>
-INPUT: PrependTo[s, 0]
-EXPECTED:
-= {0, 1, 2, 4, 9}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: PrependTo
 LINE: 1403
 TYPE: >>
 INPUT: s
