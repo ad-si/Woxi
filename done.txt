@@ -3591,3 +3591,9 @@ LINE: 538
 INPUT: Table[i, {i, Pi, 2 Pi, Pi / 2}]
 EXPECTED: {Pi, (3*Pi)/2, 2*Pi} (matches wolframscript)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: InputForm
+LINE: 71
+INPUT: InputForm[Derivative[1, 0][f][x]]
+EXPECTED: InputForm[Derivative[1, 0][f][x]] (matches wolframscript; both leave wrapper unevaluated)
+---

@@ -10091,14 +10091,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: InputForm
-LINE: 71
-TYPE: >>
-INPUT: InputForm[Derivative[1, 0][f][x]]
-EXPECTED:
-= Derivative[1, 0][f][x]
----
-FILE: mathics/builtin/forms/print.py
-CLASS: InputForm
 LINE: 76
 TYPE: >>
 INPUT: 2+F[x] // InputForm

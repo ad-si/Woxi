@@ -523,6 +523,15 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn derivative_multi_index_inputform() {
+    // InputForm[Derivative[1, 0][f][x]] stays wrapped (matches wolframscript).
+    assert_eq!(
+      interpret("InputForm[Derivative[1, 0][f][x]]").unwrap(),
+      "InputForm[Derivative[1, 0][f][x]]"
+    );
+  }
+
+  #[test]
   fn derivative_multi_index_symbolic() {
     // Derivative[2, 1][h] — mixed partial derivatives of unknown h
     // stays symbolic in curried form.
