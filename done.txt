@@ -3351,3 +3351,9 @@ LINE: 57
 INPUT: ImageQ[Image[{1, 0, 1}]]
 EXPECTED: False (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 216
+INPUT: 1 / 0
+EXPECTED: ComplexInfinity (matches wolframscript; Power::infy warning emitted on both)
+---

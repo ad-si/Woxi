@@ -11183,15 +11183,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 216
-TYPE: >>
-INPUT: 1 / 0
-EXPECTED:
-: Infinite expression 1 / 0 encountered.
-= ComplexInfinity
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 242
 TYPE: >>
 INPUT: 3.1416`3
