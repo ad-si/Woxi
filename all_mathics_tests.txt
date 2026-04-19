@@ -7898,14 +7898,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: StringContainsQ
-LINE: 634
-TYPE: >>
-INPUT: StringContainsQ["mathics", "a" ~~ __ ~~ "m"]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: StringContainsQ
 LINE: 641
 TYPE: >>
 INPUT: StringContainsQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}

@@ -2307,3 +2307,11 @@ INPUT: StringContainsQ["mathics", "m" ~~ __ ~~ "s"]
 EXPECTED:
 = True (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: StringContainsQ
+LINE: 634
+TYPE: >>
+INPUT: StringContainsQ["mathics", "a" ~~ __ ~~ "m"]
+EXPECTED:
+= False (matches wolframscript)
+---
