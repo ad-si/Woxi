@@ -4784,3 +4784,10 @@ TYPE: >>
 INPUT: NullSpace[B] (with B = {{1,2,3},{4,5,6},{7,8,9}})
 EXPECTED: {{1, -2, 1}} (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1170
+TYPE: >>
+INPUT: MatrixForm[A] (A undefined)
+EXPECTED: MatrixForm[A] (matches wolframscript; display wrapper stays unevaluated)
+---
