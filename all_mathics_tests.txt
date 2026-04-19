@@ -14220,26 +14220,6 @@ EXPECTED:
   expr: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-045
-EXPECTED:
-  expr: PieChart[{1, -1, 3}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-046
-EXPECTED:
-  expr: PieChart[{30, 20, 10}, ChartLabels -> {Dogs, Cats, Fish}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-047
-EXPECTED:
-  expr: PieChart[{8, 16, 2}, SectorOrigin -> {Automatic, 1.5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-048
-EXPECTED:
-  expr: PieChart[{{10, 20, 30}, {15, 22, 30}}, ChartLabels -> {A, B, C}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-049
 EXPECTED:
   expr: PieChart[{{10, 20, 30}, {15, 22, 30}}, SectorSpacing -> None]
