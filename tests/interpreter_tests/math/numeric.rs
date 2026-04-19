@@ -316,6 +316,15 @@ mod precision {
   }
 
   #[test]
+  fn dollar_machine_epsilon_value() {
+    // $MachineEpsilon is the smallest x where 1. + x != 1. on f64.
+    assert_eq!(
+      interpret("$MachineEpsilon").unwrap(),
+      "2.220446049250313*^-16"
+    );
+  }
+
+  #[test]
   fn system_word_length() {
     assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
   }

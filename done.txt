@@ -3621,3 +3621,9 @@ LINE: 88
 INPUT: DirectoryQ["ExampleData/MythicalSubdir/"]
 EXPECTED: False (matches wolframscript; nonexistent path — already covered by directory_q_nonexistent test)
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: MachineEpsilon_
+LINE: 628
+INPUT: $MachineEpsilon
+EXPECTED: 2.220446049250313*^-16 (matches wolframscript; mathics "2.22045×10^-16" is display-truncated)
+---
