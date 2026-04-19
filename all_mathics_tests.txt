@@ -7296,14 +7296,6 @@ INPUT: Hold[x] /. OwnValues[x] // ReleaseHold
 EXPECTED:
 = 5
 ---
-FILE: mathics/builtin/directories/directory_names.py
-CLASS: ParentDirectory
-LINE: 292
-TYPE: >>
-INPUT: ParentDirectory[]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/directories/directory_operations.py
 CLASS: CreateDirectory
 LINE: 33

@@ -4679,3 +4679,10 @@ TYPE: >>
 INPUT: Directory[]
 EXPECTED: current working directory string (matches wolframscript exactly — same cwd path)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: ParentDirectory
+LINE: 292
+TYPE: >>
+INPUT: ParentDirectory[]
+EXPECTED: parent of current working directory (implemented ParentDirectory alongside Directory; also accepts ParentDirectory["path"] form; matches wolframscript)
+---

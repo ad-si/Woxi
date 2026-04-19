@@ -480,6 +480,24 @@ pub fn dispatch_io_functions(
     "Directory" if args.is_empty() => {
       return Some(Ok(Expr::String(virtual_current_dir())));
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    "ParentDirectory" if args.is_empty() || args.len() == 1 => {
+      let base = if args.is_empty() {
+        virtual_current_dir()
+      } else if let Expr::String(s) = &args[0] {
+        s.clone()
+      } else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "ParentDirectory".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      let parent = std::path::Path::new(&base)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| base.clone());
+      return Some(Ok(Expr::String(parent)));
+    }
     // DirectoryName["path"] or DirectoryName["path", n]
     "DirectoryName" if args.len() == 1 || args.len() == 2 => {
       let path_str = match &args[0] {

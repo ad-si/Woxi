@@ -2088,7 +2088,7 @@ RegionProduct,Cartesian product of regions,🚫,,10.0,2129
 TrackingFunction,Tracking callback option,🚫,,10.0,2129
 MathieuCharacteristicB,Mathieu characteristic value,🚫,,3.0,2131
 PowerRange,Generate a list of values by successive multiplication,✅,1,10.0,2131
-ParentDirectory,Parent directory path,🚫,,2.0,2132
+ParentDirectory,Parent directory path,✅,none,2.0,2132
 MatrixFunction,Apply function to matrix,🚫,,9.0,2134
 QuantityUnit,Returns the unit of a quantity,✅,pure,9.0,2134
 Delayed,Delayed evaluation wrapper,🚫,,10.0,2138

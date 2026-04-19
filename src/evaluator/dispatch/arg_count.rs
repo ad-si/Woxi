@@ -243,6 +243,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DirichletEta" => Some((1, 1)),
     "DirectedInfinity" => Some((0, 1)),
     "DirectoryName" => Some((1, 2)),
+    "ParentDirectory" => Some((0, 1)),
     "DiscreteAsymptotic" => Some((2, 3)),
     "DiscreteConvolve" => Some((4, 4)),
     "DiscretePlot" => Some((2, usize::MAX)),

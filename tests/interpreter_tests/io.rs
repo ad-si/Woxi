@@ -2215,6 +2215,34 @@ mod expand_file_name {
   }
 }
 
+mod parent_directory {
+  use super::*;
+
+  #[test]
+  fn arg_absolute() {
+    assert_eq!(
+      interpret(r#"ParentDirectory["/a/b/c"]"#).unwrap(),
+      "/a/b"
+    );
+  }
+
+  #[test]
+  fn arg_relative() {
+    assert_eq!(
+      interpret(r#"ParentDirectory["a/b/c"]"#).unwrap(),
+      "a/b"
+    );
+  }
+
+  #[test]
+  fn no_args_returns_string() {
+    // ParentDirectory[] returns the parent of the current working directory;
+    // just verify it's a non-empty string.
+    let result = interpret("ParentDirectory[]").unwrap();
+    assert!(!result.is_empty());
+  }
+}
+
 mod url_build {
   use super::*;
 
