@@ -4805,3 +4805,10 @@ TYPE: >>
 INPUT: FindRoot[Tan[x] + Sin[x] == Pi, {x, 1}]
 EXPECTED: {x -> 1.1491129543142686} (matches wolframscript byte-for-byte; mathics "{I am the result! -> 1.14911}" is a nonsense variable name from a docstring placeholder)
 ---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 426
+TYPE: >>
+INPUT: 500!
+EXPECTED: Large integer (mathics "= ..." matches any output; Woxi and wolframscript return byte-identical 1135-digit value)
+---
