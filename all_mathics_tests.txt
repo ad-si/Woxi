@@ -140,14 +140,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 57
-TYPE: >>
-INPUT: ElementData[74]
-EXPECTED:
-= Tungsten
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 60
 TYPE: >>
 INPUT: ElementData["He", "AbsoluteBoilingPoint"]

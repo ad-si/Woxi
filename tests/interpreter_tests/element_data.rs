@@ -22,6 +22,15 @@ mod element_data_tests {
   }
 
   #[test]
+  fn element_data_tungsten_by_number() {
+    clear_state();
+    assert_eq!(
+      interpret("ElementData[74]").unwrap(),
+      "Entity[Element, Tungsten]"
+    );
+  }
+
+  #[test]
   fn element_data_no_args_returns_all_elements() {
     clear_state();
     let result = interpret("Length[ElementData[]]").unwrap();
