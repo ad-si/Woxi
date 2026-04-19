@@ -5241,3 +5241,10 @@ TYPE: >>
 INPUT: n := 1
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 431
+TYPE: >>
+INPUT: bigFactorial = ToString[500!]; StringTake[bigFactorial, {310, 330}]
+EXPECTED: 787849543848959553753 (Woxi and wolframscript byte-identical; mathics "..." accepts any)
+---

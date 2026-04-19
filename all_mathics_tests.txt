@@ -404,14 +404,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/system.py
 CLASS: MaxLengthIntStringConversion
-LINE: 431
-TYPE: >>
-INPUT: bigFactorial = ToString[500!]; StringTake[bigFactorial, {310, 330}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
-CLASS: MaxLengthIntStringConversion
 LINE: 437
 TYPE: >>
 INPUT: $MaxLengthIntStringConversion = 10
