@@ -539,9 +539,23 @@ fn apply_at_level_recursive(
   min_level: usize,
   max_level: usize,
 ) -> Result<Expr, InterpreterError> {
-  let (items, is_list) = match expr {
-    Expr::List(items) => (items.clone(), true),
-    Expr::FunctionCall { args, .. } => (args.clone(), false),
+  // Normalize BinaryOp / UnaryOp into a FunctionCall so Apply can descend
+  // into Plus/Times/Power and other operators that the parser sometimes
+  // leaves as Expr::BinaryOp rather than FunctionCall.
+  let normalized: Expr = match expr {
+    Expr::BinaryOp { op, left, right } => Expr::FunctionCall {
+      name: binary_op_to_name(*op).to_string(),
+      args: vec![(**left).clone(), (**right).clone()],
+    },
+    Expr::UnaryOp { op, operand } => Expr::FunctionCall {
+      name: unary_op_to_name(*op).to_string(),
+      args: vec![(**operand).clone()],
+    },
+    other => other.clone(),
+  };
+  let (items, is_list, head_name) = match &normalized {
+    Expr::List(items) => (items.clone(), true, None),
+    Expr::FunctionCall { name, args } => (args.clone(), false, Some(name.clone())),
     _ => return Ok(expr.clone()),
   };
 
@@ -568,10 +582,33 @@ fn apply_at_level_recursive(
     apply_func_as_head(func, &new_items)
   } else if is_list {
     Ok(Expr::List(new_items))
-  } else if let Expr::FunctionCall { name, .. } = expr {
-    crate::evaluator::evaluate_function_call_ast(name, &new_items)
+  } else if let Some(name) = head_name {
+    crate::evaluator::evaluate_function_call_ast(&name, &new_items)
   } else {
     Ok(expr.clone())
+  }
+}
+
+fn binary_op_to_name(op: crate::syntax::BinaryOperator) -> &'static str {
+  use crate::syntax::BinaryOperator::*;
+  match op {
+    Plus => "Plus",
+    Minus => "Subtract",
+    Times => "Times",
+    Divide => "Divide",
+    Power => "Power",
+    And => "And",
+    Or => "Or",
+    StringJoin => "StringJoin",
+    Alternatives => "Alternatives",
+  }
+}
+
+fn unary_op_to_name(op: crate::syntax::UnaryOperator) -> &'static str {
+  use crate::syntax::UnaryOperator::*;
+  match op {
+    Minus => "Times",
+    Not => "Not",
   }
 }
 

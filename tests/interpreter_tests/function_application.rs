@@ -186,6 +186,16 @@ mod function_head {
   }
 
   #[test]
+  fn apply_descends_into_binary_op_at_infinity() {
+    // Apply[List, expr, {0, Infinity}] must descend into binary ops like
+    // Power that the parser leaves as Expr::BinaryOp. Matches wolframscript.
+    assert_eq!(
+      interpret("Apply[List, a + b * c ^ e * f[g], {0, Infinity}]").unwrap(),
+      "{a, {b, {c, e}, {g}}}"
+    );
+  }
+
+  #[test]
   fn function_holdall_body() {
     // Function should not evaluate the body prematurely
     assert_eq!(interpret("Function[x, OddQ[x]][3]").unwrap(), "True");

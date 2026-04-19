@@ -5416,3 +5416,10 @@ TYPE: >>
 INPUT: MapIndexed[f, a + b + c * d, {0, 1}]
 EXPECTED: f[f[a, {1}] + f[b, {2}] + f[c*d, {3}], {}] (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: Apply
+LINE: 72
+TYPE: >>
+INPUT: Apply[List, a + b * c ^ e * f[g], {0, Infinity}]
+EXPECTED: {a, {b, {c, e}, {g}}} (Apply now descends into Expr::BinaryOp/UnaryOp; matches wolframscript byte-for-byte. mathics expected order differs because mathics uses Orderless Times-canonicalization)
+---
