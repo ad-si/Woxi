@@ -64,10 +64,7 @@ mod list_threading {
 
   #[test]
   fn unequal_length_lists_times_unevaluated() {
-    assert_eq!(
-      interpret("{1, 2} * {4, 5, 6}").unwrap(),
-      "{1, 2}*{4, 5, 6}"
-    );
+    assert_eq!(interpret("{1, 2} * {4, 5, 6}").unwrap(), "{1, 2}*{4, 5, 6}");
   }
 }
 
@@ -5118,6 +5115,19 @@ mod join_non_list {
     assert_eq!(
       interpret("n = 0; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]").unwrap(),
       "{0, b, 1, d}"
+    );
+  }
+
+  #[test]
+  fn replace_part_out_of_range_returns_original() {
+    // Out-of-range positions are silently ignored, matching wolframscript.
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, 4 -> t]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, -10 -> t]").unwrap(),
+      "{a, b, c}"
     );
   }
 

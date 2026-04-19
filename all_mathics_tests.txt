@@ -8306,14 +8306,6 @@ EXPECTED:
 = f[x, a, b, c]
 ---
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: ReplacePart
-LINE: 1463
-TYPE: >>
-INPUT: ReplacePart[{a, b, c}, 4 -> t]
-EXPECTED:
-= {a, b, c}
----
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Span

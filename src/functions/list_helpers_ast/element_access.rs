@@ -1149,16 +1149,9 @@ fn replace_at_position(
   } else if pos < 0 && -pos <= len {
     (len + pos) as usize
   } else {
-    return Ok(Expr::FunctionCall {
-      name: "ReplacePart".to_string(),
-      args: vec![
-        expr.clone(),
-        Expr::Rule {
-          pattern: Box::new(Expr::Integer(pos)),
-          replacement: Box::new(val.clone()),
-        },
-      ],
-    });
+    // Out-of-range position: silently return the original expression
+    // (matches wolframscript behavior).
+    return Ok(expr.clone());
   };
 
   let mut result = items.to_vec();

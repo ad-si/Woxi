@@ -3988,3 +3988,10 @@ TYPE: >>
 INPUT: DirectoryQ["ExampleData/"]
 EXPECTED: False (matches wolframscript when dir doesn't exist; mathics "True" assumes ExampleData/ is present)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: ReplacePart
+LINE: 1463
+TYPE: >>
+INPUT: ReplacePart[{a, b, c}, 4 -> t]
+EXPECTED: {a, b, c} (changed replace_at_position to silently return original expression on out-of-range positions, matching wolframscript)
+---
