@@ -11846,12 +11846,6 @@ EXPECTED: {{3, 36, 211, 172, 124}, 1}
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 87
-INPUT: RealDigits[123.45, 40]
-EXPECTED: {{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 102
 INPUT: RealDigits[1/197, 260, 5, -6]
 EXPECTED: {{246, 208, 137, 67, 80}, -5}

@@ -1276,6 +1276,16 @@ mod real_digits {
   }
 
   #[test]
+  fn real_in_non_decimal_base_is_padded() {
+    // RealDigits[123.45, 40] should produce ~10 base-40 digits of 123.45,
+    // matching wolframscript byte-for-byte.
+    assert_eq!(
+      interpret("RealDigits[123.45, 40]").unwrap(),
+      "{{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2}"
+    );
+  }
+
+  #[test]
   fn integer_ten() {
     // RealDigits[10] yields digits {1, 0} with exponent 2.
     assert_eq!(interpret("RealDigits[10]").unwrap(), "{{1, 0}, 2}");

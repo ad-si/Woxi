@@ -5001,3 +5001,9 @@ TYPE: >>
 INPUT: Blend[{Red, Blue, Green}, 0.75]
 EXPECTED: RGBColor[0., 0.5, 0.5] (float fast path handles multi-color interpolation too)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 87
+INPUT: RealDigits[123.45, 40]
+EXPECTED: {{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2} (promote Real to exact rational via decimal literal for non-10 bases, pad to ceil(16/log10(base)) digits)
+---

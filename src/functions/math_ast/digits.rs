@@ -884,6 +884,54 @@ fn extract_rational_for_digits(expr: &Expr) -> Option<(i128, i128)> {
   }
 }
 
+/// Convert a decimal-literal Real to an exact rational `(numerator, denominator)`
+/// by parsing its {:?} representation. This preserves the decimal value the
+/// user typed (e.g. 123.45 → (12345, 100)) rather than the binary-floating
+/// approximation, which is what wolframscript's base-conversion digit
+/// functions expect.
+fn real_to_rational(r: f64) -> Option<(i128, i128)> {
+  if !r.is_finite() {
+    return None;
+  }
+  let s = format!("{:?}", r);
+  let sign = if r < 0.0 { -1i128 } else { 1 };
+  let unsigned = s.trim_start_matches('-');
+
+  if let Some(e_idx) = unsigned.find(|c: char| c == 'e' || c == 'E') {
+    let (mant, exp_part) = unsigned.split_at(e_idx);
+    let exp: i32 = exp_part[1..].parse().ok()?;
+    let (n, d) = decimal_to_rational(mant)?;
+    return apply_exponent(n, d, exp).map(|(n, d)| (sign * n, d));
+  }
+  let (n, d) = decimal_to_rational(unsigned)?;
+  Some((sign * n, d))
+}
+
+fn decimal_to_rational(s: &str) -> Option<(i128, i128)> {
+  if let Some(dot_idx) = s.find('.') {
+    let int_part = &s[..dot_idx];
+    let frac_part = &s[dot_idx + 1..];
+    let combined = format!("{}{}", int_part, frac_part);
+    let numer: i128 = combined.parse().ok()?;
+    let denom: i128 = 10i128.checked_pow(frac_part.len() as u32)?;
+    Some((numer, denom))
+  } else {
+    let numer: i128 = s.parse().ok()?;
+    Some((numer, 1))
+  }
+}
+
+fn apply_exponent(n: i128, d: i128, exp: i32) -> Option<(i128, i128)> {
+  if exp >= 0 {
+    let mul = 10i128.checked_pow(exp as u32)?;
+    Some((n.checked_mul(mul)?, d))
+  } else {
+    let mul = 10i128.checked_pow((-exp) as u32)?;
+    Some((n, d.checked_mul(mul)?))
+  }
+}
+
+/// Convert a decimal-literal Real to an exact rational `(numerator, denominator)`
 /// Compute RealDigits for a rational number using long division with cycle detection.
 /// Returns the digit list (with repeating part wrapped in a List) and the exponent.
 fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
@@ -1024,6 +1072,12 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     }
+  } else if matches!(&args[0], Expr::Real(_)) && base != 10 {
+    // For machine-precision Reals in a non-decimal base, produce roughly
+    // as many significant digits as 16 decimal digits would take in the
+    // target base: ceil(16 * log10(10) / log10(base)).
+    let ratio = 16.0_f64 / (base as f64).log10();
+    (ratio.ceil() as usize).max(1)
   } else {
     // Default: use machine-precision (~16 digits)
     16
@@ -1062,11 +1116,28 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(exp)]));
   }
 
+  // For Real inputs with a non-decimal base, promote the Real to an exact
+  // rational via its decimal literal and reuse the rational digit path so
+  // base-40 / base-260 etc. produce the correct digit sequence.
+  let rational_from_real = if base != 10
+    && let Expr::Real(r) = &abs_expr
+  {
+    real_to_rational(r.abs())
+  } else {
+    None
+  };
+
+  // For Reals promoted to rational, force the explicit-num_digits code path
+  // below so the digit list is padded to machine precision (matching
+  // wolframscript's fixed-width output for Real inputs).
+  let treat_as_explicit = rational_from_real.is_some() || explicit_num_digits;
+
   // For rationals, use long division with cycle detection
-  if let Some((numer, denom)) = extract_rational_for_digits(&abs_expr)
+  if let Some((numer, denom)) =
+    rational_from_real.or_else(|| extract_rational_for_digits(&abs_expr))
     && denom != 0
   {
-    if !explicit_num_digits {
+    if !treat_as_explicit {
       let (digit_list, exponent) =
         real_digits_rational_base(numer, denom, base);
       return Ok(Expr::List(vec![
