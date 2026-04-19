@@ -11966,14 +11966,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 978
-TYPE: >>
-INPUT: ToBoxes[m + n]
-EXPECTED:
-= RowBox[{m, +, n}]
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 983
 TYPE: >>
 INPUT: InputForm[%]

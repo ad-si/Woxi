@@ -2931,3 +2931,11 @@ INPUT: d + 1 // MathMLForm
 EXPECTED:
 = MathMLForm[1 + d] (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 978
+TYPE: >>
+INPUT: ToBoxes[m + n]
+EXPECTED:
+= RowBox[{m, +, n}] (matches wolframscript)
+---
