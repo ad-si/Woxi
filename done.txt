@@ -5221,3 +5221,9 @@ LINE: 89
 INPUT: Quiet[DateList[abc]]
 EXPECTED: DateList[abc] (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 568
+INPUT: Graphics[{Disk[{0,0},1]}]
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical -Graphics- placeholder output)
+---
