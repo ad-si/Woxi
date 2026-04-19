@@ -2315,3 +2315,11 @@ INPUT: StringContainsQ["mathics", "a" ~~ __ ~~ "m"]
 EXPECTED:
 = False (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: StringContainsQ
+LINE: 641
+TYPE: >>
+INPUT: StringContainsQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}
+EXPECTED:
+= {True, True, True, False, False, False, False, False, True} (matches wolframscript)
+---
