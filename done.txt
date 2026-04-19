@@ -4945,3 +4945,24 @@ TYPE: >>
 INPUT: x /. HoldPattern[x] -> t
 EXPECTED: t (implemented HoldPattern transparency in ReplaceAll — HoldPattern[p] is stripped during matching)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 301
+TYPE: >>
+INPUT: ClearAttributes[r, ReadProtected]
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
+---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 303
+TYPE: >>
+INPUT: Clear[r]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 311
+TYPE: >>
+INPUT: ClearAll[r]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

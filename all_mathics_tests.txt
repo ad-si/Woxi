@@ -6877,20 +6877,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 301
-TYPE: >>
-INPUT: ClearAttributes[r, ReadProtected]
-EXPECTED: (none)
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
-LINE: 303
-TYPE: >>
-INPUT: Clear[r]
-EXPECTED: (none)
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 304
 TYPE: >>
 INPUT: Definition[r]
@@ -6900,13 +6886,6 @@ EXPECTED:
 . Default[r, 1] = 2
 . 
 . Options[r] = {Opt -> 3}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
-LINE: 311
-TYPE: >>
-INPUT: ClearAll[r]
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
