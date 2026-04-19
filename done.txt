@@ -5084,3 +5084,10 @@ TYPE: >>
 INPUT: Format[x, TeXForm] = "z";
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 852
+TYPE: >>
+INPUT: Format[r[args___]] = "<an r object>";
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
