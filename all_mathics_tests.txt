@@ -9697,13 +9697,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 320
-TYPE: >>
-INPUT: b := a ^ 2
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 322
 TYPE: >>
 INPUT: b

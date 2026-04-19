@@ -5035,3 +5035,10 @@ TYPE: >>
 INPUT: f[x_] := 4 x / (x ^ 2 + 3 x + 5)
 EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 320
+TYPE: >>
+INPUT: b := a ^ 2
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
