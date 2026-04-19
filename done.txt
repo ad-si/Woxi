@@ -4547,3 +4547,10 @@ TYPE: >>
 INPUT: Read[stream, String] (second call after reading "abc123")
 EXPECTED: EndOfFile (matches wolframscript; no more input after first read)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 786
+TYPE: >>
+INPUT: Read[stream, Word] (with stream = StringToStream["abc 123"])
+EXPECTED: abc (matches wolframscript; reads first whitespace-delimited word)
+---

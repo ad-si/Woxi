@@ -2179,14 +2179,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 786
-TYPE: >>
-INPUT: Read[stream, Word]
-EXPECTED:
-= abc
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 788
 TYPE: >>
 INPUT: Read[stream, Word]
