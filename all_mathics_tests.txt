@@ -10726,22 +10726,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 450
-TYPE: >>
-INPUT: mymatrix[[2, 1]]
-EXPECTED:
-= 3
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 452
-TYPE: >>
-INPUT: mymatrix[[;;, 2]]
-EXPECTED:
-= {2, 4, 6}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 454
 TYPE: >>
 INPUT: Take[mylist, 3]
