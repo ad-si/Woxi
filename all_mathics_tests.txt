@@ -15156,13 +15156,6 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: assert_tag_message
 ---
-FILE: mathics/test/builtin/test_system.py
-FUNCTION: test_private_doctests_system
-LINE: 14
-INPUT: Head[$SystemWordLength] == Integer
-EXPECTED: True
-MESSAGE: $SystemWordLength
----
 FILE: mathics/test/builtin/test_testing_expressions.py
 FUNCTION: test_order
 LINE: 180

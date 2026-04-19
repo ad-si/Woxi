@@ -3429,3 +3429,9 @@ LINE: 14
 INPUT: Head[$SessionID] == Integer
 EXPECTED: True (matches wolframscript; already covered by session_id_head_is_integer test)
 ---
+FILE: mathics/test/builtin/test_system.py
+FUNCTION: test_private_doctests_system
+LINE: 14
+INPUT: Head[$SystemWordLength] == Integer
+EXPECTED: True (matches wolframscript)
+---

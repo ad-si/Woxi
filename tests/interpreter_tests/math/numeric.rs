@@ -284,6 +284,14 @@ mod precision {
   }
 
   #[test]
+  fn system_word_length_head_is_integer() {
+    assert_eq!(
+      interpret("Head[$SystemWordLength] == Integer").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn session_id_head_is_integer() {
     assert_eq!(interpret("Head[$SessionID] == Integer").unwrap(), "True");
   }
