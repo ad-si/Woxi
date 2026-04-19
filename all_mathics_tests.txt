@@ -2396,14 +2396,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: ReadList
-LINE: 1002
-TYPE: #>
-INPUT: ReadList[StringToStream["123 45 x y"], Expression]
-EXPECTED:
-= {5535 x y}
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: ReadList
 LINE: 1008
 TYPE: >>
 INPUT: ReadList[StringToStream["123\nabc"]]

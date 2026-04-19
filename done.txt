@@ -4498,3 +4498,10 @@ TYPE: >>
 INPUT: Read[stream, Expression] (with stream = StringToStream["2+2\n2+3"])
 EXPECTED: 4 (matches wolframscript; reads the first expression "2+2" and evaluates — mathics "5" assumes prior read consumed the first expression)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 1002
+TYPE: #>
+INPUT: ReadList[StringToStream["123 45 x y"], Expression]
+EXPECTED: {5535*x*y} (matches wolframscript; reads the whole input as one expression 123 * 45 * x * y = 5535*x*y)
+---
