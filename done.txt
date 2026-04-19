@@ -4644,3 +4644,10 @@ TYPE: >>
 INPUT: Sort[{x_, x_Integer}, PatternsOrderedQ]
 EXPECTED: {x_, x_Integer} (matches wolframscript; PatternsOrderedQ stays unevaluated so Sort returns the list unchanged — mathics "{x_Integer, x_}" assumes a mathics-specific PatternsOrderedQ implementation)
 ---
+FILE: mathics/builtin/statistics/orderstats.py
+CLASS: Sort
+LINE: 351
+TYPE: >>
+INPUT: Sort[{a, b/;t}, PatternsOrderedQ]
+EXPECTED: {a, b /; t} (matches wolframscript; PatternsOrderedQ unevaluated so Sort is a no-op — mathics "{b /; t, a}" reflects a mathics-specific ordering)
+---

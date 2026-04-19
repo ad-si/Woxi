@@ -8977,14 +8977,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/statistics/orderstats.py
 CLASS: Sort
-LINE: 351
-TYPE: >>
-INPUT: Sort[{a, b/;t}, PatternsOrderedQ]
-EXPECTED:
-= {b /; t, a}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Sort
 LINE: 355
 TYPE: >>
 INPUT: Sort[{x_ + n_*y_, x_ + y_}, PatternsOrderedQ]
