@@ -2997,3 +2997,15 @@ LINE: 78
 INPUT: a^4 b^2 + e^3 b
 EXPECTED: a^4*b^2 + b*e^3 (matches wolframscript)
 ---
+FILE: mathics/test/test_context.py
+FUNCTION: test_context1
+LINE: 60
+INPUT: foo[42]
+EXPECTED: foo[42] (matches wolframscript; mathics expected 42 from prior foo definition)
+---
+FILE: mathics/test/test_context.py
+FUNCTION: test_context1
+LINE: 61
+INPUT: bar[]
+EXPECTED: bar[] (matches wolframscript; mathics expected 42 from prior bar definition)
+---
