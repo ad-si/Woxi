@@ -507,6 +507,12 @@ mod accuracy {
   }
 
   #[test]
+  fn integer_ten() {
+    // Any integer has infinite accuracy.
+    assert_eq!(interpret("Accuracy[10]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn symbol() {
     assert_eq!(interpret("Accuracy[A]").unwrap(), "Infinity");
   }

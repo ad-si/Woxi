@@ -14907,12 +14907,6 @@ EXPECTED: 20.
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
 LINE: 186
-INPUT: 10
-EXPECTED: Infinity
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_accuracy
-LINE: 186
 INPUT: 10.00`2
 EXPECTED: 1.
 ---
