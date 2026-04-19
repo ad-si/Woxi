@@ -412,7 +412,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Gudermannian" => Some((1, 1)),
     "HadamardMatrix" => Some((1, 1)),
     "HalfNormalDistribution" => Some((1, 1)),
-    "HammingDistance" => Some((2, 2)),
+    "HammingDistance" => Some((2, 3)),
     "HankelMatrix" => Some((1, 2)),
     "HarmonicMean" => Some((1, 1)),
     "HarmonicNumber" => Some((1, 2)),

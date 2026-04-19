@@ -1179,6 +1179,22 @@ mod hamming_distance {
   fn completely_different() {
     assert_eq!(interpret(r#"HammingDistance["abc", "xyz"]"#).unwrap(), "3");
   }
+
+  #[test]
+  fn ignore_case_option() {
+    // HammingDistance with IgnoreCase -> True treats cases as equal.
+    // Matches wolframscript.
+    assert_eq!(
+      interpret(r#"HammingDistance["TIME", "dime", IgnoreCase -> True]"#)
+        .unwrap(),
+      "1"
+    );
+    // Without IgnoreCase, all four differ (uppercase vs lowercase).
+    assert_eq!(
+      interpret(r#"HammingDistance["TIME", "dime"]"#).unwrap(),
+      "4"
+    );
+  }
 }
 
 mod character_counts {
@@ -3438,7 +3454,8 @@ mod edit_distance_options {
   fn ignore_case_option() {
     // EditDistance with IgnoreCase treats upper/lower as equal (matches wolframscript).
     assert_eq!(
-      interpret(r#"EditDistance["time", "Thyme", IgnoreCase -> True]"#).unwrap(),
+      interpret(r#"EditDistance["time", "Thyme", IgnoreCase -> True]"#)
+        .unwrap(),
       "2"
     );
   }

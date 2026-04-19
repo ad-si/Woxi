@@ -163,7 +163,7 @@ pub fn dispatch_string_functions(
     "StringTakeDrop" if args.len() == 2 => {
       return Some(crate::functions::string_ast::string_take_drop_ast(args));
     }
-    "HammingDistance" if args.len() == 2 => {
+    "HammingDistance" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::hamming_distance_ast(args));
     }
     "CharacterCounts" if args.len() == 1 => {

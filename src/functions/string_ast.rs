@@ -4249,15 +4249,19 @@ pub fn string_take_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![taken, dropped]))
 }
 
-/// HammingDistance[s1, s2] - number of positions where characters differ
+/// HammingDistance[s1, s2] - number of positions where characters differ.
+/// Also accepts an IgnoreCase -> True option.
 pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "HammingDistance expects exactly 2 arguments".into(),
+      "HammingDistance expects 2 or 3 arguments".into(),
     ));
   }
+  let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
   let s1 = expr_to_str(&args[0])?;
   let s2 = expr_to_str(&args[1])?;
+  let s1 = if ignore_case { s1.to_lowercase() } else { s1 };
+  let s2 = if ignore_case { s2.to_lowercase() } else { s2 };
   let chars1: Vec<char> = s1.chars().collect();
   let chars2: Vec<char> = s2.chars().collect();
 

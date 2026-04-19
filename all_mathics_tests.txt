@@ -6535,14 +6535,6 @@ INPUT: CosineDistance[1+2I, 5]
 EXPECTED:
 = 1 - (1 / 5 + 2 I / 5) Sqrt[5]
 ---
-FILE: mathics/builtin/distance/stringdata.py
-CLASS: HammingDistance
-LINE: 245
-TYPE: >>
-INPUT: HammingDistance["TIME", "dime", IgnoreCase -> True]
-EXPECTED:
-= 1
----
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileDate
 LINE: 33
