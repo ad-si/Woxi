@@ -3111,3 +3111,9 @@ LINE: 764
 INPUT: -Sin[x]
 EXPECTED: -Sin[x] (matches wolframscript; mathics test compares to FullForm Times[-1, Sin[x]])
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 765
+INPUT: a[x_] := x^2
+EXPECTED: Null (matches wolframscript; mathics test compares to FullForm SetDelayed[...])
+---

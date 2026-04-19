@@ -12845,12 +12845,6 @@ EXPECTED: Information[a, LongForm -> True] + b
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 765
-INPUT: a[x_] := x^2
-EXPECTED: SetDelayed[a[Pattern[x, Blank[]]], Power[x, 2]]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 775
 INPUT: a?b[c]
 EXPECTED: PatternTest[a, b][c]
