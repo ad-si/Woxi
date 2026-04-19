@@ -7617,14 +7617,6 @@ EXPECTED:
 = {0., 0., 2.22045×10^-16}
 ---
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: MachinePrecision_
-LINE: 654
-TYPE: >>
-INPUT: $MachinePrecision
-EXPECTED:
-= 15.9546
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: MachinePrecision
 LINE: 677
 TYPE: >>

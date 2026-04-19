@@ -258,6 +258,15 @@ mod precision {
   }
 
   #[test]
+  fn dollar_machine_precision_value() {
+    // $MachinePrecision is Log10[2^53] ≈ 15.9546 (matches wolframscript).
+    assert_eq!(
+      interpret("$MachinePrecision").unwrap(),
+      "15.954589770191003"
+    );
+  }
+
+  #[test]
   fn system_word_length() {
     assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
   }
