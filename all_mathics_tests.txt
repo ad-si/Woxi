@@ -10639,14 +10639,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Plus
-LINE: 253
-TYPE: >>
-INPUT: a /. n_. + x_ :> {n, x}
-EXPECTED:
-= {0, a}
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Plus
 LINE: 257
 TYPE: >>
 INPUT: 2 Graphics[{Red,Disk[]}] + 3 Graphics[{Red,Disk[]}]

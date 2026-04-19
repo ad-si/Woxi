@@ -2691,3 +2691,11 @@ INPUT: (1.5 + 1.0 I) ^ (3.5 + 1.5 I)
 EXPECTED:
 = -3.19181629045628 + 0.6456585094161578*I (matches wolframscript)
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Plus
+LINE: 253
+TYPE: >>
+INPUT: a /. n_. + x_ :> {n, x}
+EXPECTED:
+= {0, a} (matches wolframscript)
+---
