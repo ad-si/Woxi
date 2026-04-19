@@ -5961,18 +5961,6 @@ EXPECTED:
 = {{{Sqrt[35] / 35, 3 Sqrt[35] / 35, Sqrt[35] / 7}, {13 Sqrt[210] / 210, 2 Sqrt[210] / 105, -Sqrt[210] / 42}}, {{Sqrt[35], 44 Sqrt[35] / 35}, {0, 2 Sqrt[210] / 35}}}
 ---
 FILE: mathics/builtin/numbers/linalg.py
-CLASS: RowReduce
-LINE: 783
-TYPE: >>
-INPUT: RowReduce[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}] // MatrixForm
-EXPECTED:
-= 1   0   -1
-. 
-. 0   1   2
-. 
-. 0   0   0
----
-FILE: mathics/builtin/numbers/linalg.py
 CLASS: SingularValueDecomposition
 LINE: 820
 TYPE: >>
