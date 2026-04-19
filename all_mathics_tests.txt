@@ -14215,31 +14215,6 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-024
-EXPECTED:
-  expr: ListLogPlot[Table[Fibonacci[n], {n, 10}]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-025
-EXPECTED:
-  expr: ListLogPlot[Table[n!, {n, 10}], Joined -> True]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-026
-EXPECTED:
-  expr: ListPlot[Prime[Range[30]]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-027
-EXPECTED:
-  expr: ListPlot[Table[ElementData[z, "AtomicWeight"], {z, 118}]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-028
-EXPECTED:
-  expr: ListPlot[Table[n ^ 2 / 8, {n, 30}]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-029
 EXPECTED:
   expr: ListPlot[Table[n ^ 2, {n, 10}], Joined->True]
