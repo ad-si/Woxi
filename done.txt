@@ -5590,3 +5590,8 @@ INPUT: a^(g[b]/c)
 DESCRIPTION: SuperscriptBox with a nested expression
 EXPECTED: a^(g[b]/c) (Woxi and wolframscript byte-identical for InputForm)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: 1/(1+1/(1+1/a))
+DESCRIPTION: FractionBox
+EXPECTED: (1 + (1 + a^(-1))^(-1))^(-1) (Woxi and wolframscript byte-identical; mathics text format shows the unsimplified fraction string)
+---
