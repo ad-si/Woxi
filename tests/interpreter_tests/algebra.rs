@@ -60,10 +60,7 @@ mod polynomial_q {
       "True"
     );
     // Not a polynomial: 1/f[a] has negative power of f[a]
-    assert_eq!(
-      interpret("PolynomialQ[1/f[a], f[a]]").unwrap(),
-      "False"
-    );
+    assert_eq!(interpret("PolynomialQ[1/f[a], f[a]]").unwrap(), "False");
   }
 }
 
@@ -510,6 +507,15 @@ mod factor {
     assert_eq!(
       interpret("Factor[x^3 + 3*x^2 + 3*x + 1]").unwrap(),
       "(1 + x)^3"
+    );
+  }
+
+  #[test]
+  fn factor_threads_over_list() {
+    // Factor is Listable — threads over list arguments.
+    assert_eq!(
+      interpret("Factor[{x + x^2, 2 x + 2 y + 2}]").unwrap(),
+      "{x*(1 + x), 2*(1 + x + y)}"
     );
   }
 }

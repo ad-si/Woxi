@@ -3171,3 +3171,9 @@ LINE: 407
 INPUT: Derivative[2, 0, 1, 0][h[g]]
 EXPECTED: Derivative[2, 0, 1, 0][h[g]] (fixed: arg_count extended and multi-index form preserved)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Factor
+LINE: 1385
+INPUT: Factor[{x + x^2, 2 x + 2 y + 2}]
+EXPECTED: {x*(1 + x), 2*(1 + x + y)} (matches wolframscript; Factor threads over list)
+---
