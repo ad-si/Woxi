@@ -1302,14 +1302,6 @@ EXPECTED:
 = {a}
 ---
 FILE: mathics/builtin/assignments/clear.py
-CLASS: Remove
-LINE: 187
-TYPE: >>
-INPUT: Names["Global`a"]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/assignments/clear.py
 CLASS: Unset
 LINE: 229
 TYPE: >>

@@ -5435,3 +5435,10 @@ TYPE: >>
 INPUT: Apply[f, {{{{{a}}}}}, {2, -3}]
 EXPECTED: {{f[f[{a}]]}} (implemented negative-level resolution: -k → positive level Depth-k)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Remove
+LINE: 187
+TYPE: >>
+INPUT: Names["Global`a"]
+EXPECTED: {} (Woxi and wolframscript both return {} when a is not defined)
+---
