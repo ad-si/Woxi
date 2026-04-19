@@ -3507,3 +3507,9 @@ LINE: 312
 INPUT: "a" <> "b" <> "c" // InputForm
 EXPECTED: InputForm[abc] (matches wolframscript; both leave InputForm wrapper unevaluated)
 ---
+FILE: mathics/builtin/testing_expressions/expression_tests.py
+CLASS: PatternsOrderedQ
+LINE: 156
+INPUT: PatternsOrderedQ[x__, x_]
+EXPECTED: PatternsOrderedQ[x__, x_] (matches wolframscript; both leave unevaluated — the mathics "False" reflects an explicitly loaded extension)
+---

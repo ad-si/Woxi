@@ -4046,14 +4046,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/expression_tests.py
 CLASS: PatternsOrderedQ
-LINE: 156
-TYPE: >>
-INPUT: PatternsOrderedQ[x__, x_]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/expression_tests.py
-CLASS: PatternsOrderedQ
 LINE: 158
 TYPE: >>
 INPUT: PatternsOrderedQ[x_, x__]

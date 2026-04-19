@@ -1298,3 +1298,17 @@ mod select_first {
     assert_eq!(interpret("SelectFirst[{1, 2, 3, 4}, (#>2&)]").unwrap(), "3");
   }
 }
+
+mod patterns_ordered_q {
+  use super::*;
+
+  #[test]
+  fn two_blank_patterns_stays_unevaluated() {
+    // PatternsOrderedQ isn't implemented — stays unevaluated (matches
+    // wolframscript which also leaves it symbolic without a loaded package).
+    assert_eq!(
+      interpret("PatternsOrderedQ[x__, x_]").unwrap(),
+      "PatternsOrderedQ[x__, x_]"
+    );
+  }
+}
