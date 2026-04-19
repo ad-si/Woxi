@@ -5374,3 +5374,10 @@ TYPE: >>
 INPUT: x := a
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 178
+TYPE: >>
+INPUT: f[x_] := p[x] /; x>0
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

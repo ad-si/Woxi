@@ -1194,13 +1194,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: SetDelayed
-LINE: 178
-TYPE: >>
-INPUT: f[x_] := p[x] /; x>0
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
 LINE: 184
 TYPE: >>
 INPUT: F[x_, y_] /; x < y /; x>0  := x / y;
