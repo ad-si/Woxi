@@ -5478,3 +5478,15 @@ LINE: 73-76
 INPUT: Sin[x] / Exp[-x^2/2.] / Sqrt[x] / BesselJ[0,x]
 EXPECTED: same as test_compile_code lines 51-55 (Woxi and wolframscript byte-identical for symbolic eval)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 184
+INPUT: Plus
+EXPECTED: Plus (Woxi and wolframscript byte-identical)
+---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 187
+INPUT: Times
+EXPECTED: Times (Woxi and wolframscript byte-identical)
+---

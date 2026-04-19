@@ -13474,18 +13474,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/test_compile.py
 FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 184
-INPUT: Plus
-EXPECTED: with x=lambda x -> y: x + y
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 187
-INPUT: Times
-EXPECTED: with x=lambda x -> y: x * y
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
 LINE: 277
 INPUT: Max
 EXPECTED: with x=max -> check_type=False
