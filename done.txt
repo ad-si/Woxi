@@ -4533,3 +4533,10 @@ TYPE: >>
 INPUT: Read[stream, Word] (with stream = StringToStream["Mathics is cool!"])
 EXPECTED: Mathics (matches wolframscript; reads first word)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 778
+TYPE: >>
+INPUT: Read[stream, String] (with stream = StringToStream["abc123"])
+EXPECTED: abc123 (matches wolframscript; reads the whole line as a string)
+---
