@@ -8269,14 +8269,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/directories/directory_names.py
-CLASS: DirectoryName
-LINE: 31
-TYPE: >>
-INPUT: DirectoryName["a/b/c", 2]
-EXPECTED:
-= a
----
-FILE: mathics/builtin/directories/directory_names.py
 CLASS: DirectoryQ
 LINE: 86
 TYPE: >>

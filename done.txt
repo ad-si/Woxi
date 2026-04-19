@@ -2419,3 +2419,11 @@ INPUT: DirectoryName["a/b/c"]
 EXPECTED:
 = a/b/ (matches wolframscript; mathics expected without trailing slash)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: DirectoryName
+LINE: 31
+TYPE: >>
+INPUT: DirectoryName["a/b/c", 2]
+EXPECTED:
+= a/ (matches wolframscript; mathics expected without trailing slash)
+---
