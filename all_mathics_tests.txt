@@ -10456,14 +10456,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1209
-TYPE: >>
-INPUT: NullSpace[B]
-EXPECTED:
-= {{1, -2, 1}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1211
 TYPE: >>
 INPUT: B . (RandomInteger[100] * %[[1]] + s)
