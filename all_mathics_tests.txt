@@ -13478,12 +13478,6 @@ LINE: 338
 INPUT: F[3.]
 EXPECTED: 3.
 ---
-FILE: mathics/test/test_context.py
-FUNCTION: test_context1
-LINE: 61
-INPUT: bar[]
-EXPECTED: 42
----
 FILE: mathics/test/builtin/test_procedural.py
 FUNCTION: test_history_compound_expression
 LINE: 127
