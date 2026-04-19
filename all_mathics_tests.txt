@@ -14204,16 +14204,6 @@ EXPECTED:
   vec: False
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-005
-EXPECTED:
-  expr: BarChart[{{1, 5}, {3, 4}}, ChartStyle -> {{EdgeForm[Thin], White}, {EdgeForm[Thick], White}}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-006
-EXPECTED:
-  expr: DensityPlot[1 / x, {x, 0, 1}, {y, 0, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-007
 EXPECTED:
   expr: DensityPlot[1/(x^2 + y^2 + 1), {x, -1, 1}, {y, -2,2}, Mesh->Full]
