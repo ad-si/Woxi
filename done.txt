@@ -4415,3 +4415,9 @@ TYPE: >>
 INPUT: Delete[{a, b, c, d}, 5]
 EXPECTED: Delete[{a, b, c, d}, 5] with Delete::partw message (added out-of-range check in delete_ast to emit warning and return unevaluated, matching wolframscript)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[Re[0.5+2.3 I]]
+EXPECTED: MachinePrecision (matches wolframscript; Re of a machine complex is machine-precision)
+---
