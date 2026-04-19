@@ -3981,3 +3981,10 @@ TYPE: >>
 INPUT: FileNameDepth["a/b/c/"]
 EXPECTED: 3 (trailing slash ignored)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: DirectoryQ
+LINE: 86
+TYPE: >>
+INPUT: DirectoryQ["ExampleData/"]
+EXPECTED: False (matches wolframscript when dir doesn't exist; mathics "True" assumes ExampleData/ is present)
+---

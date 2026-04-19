@@ -7759,14 +7759,6 @@ EXPECTED:
 = 5
 ---
 FILE: mathics/builtin/directories/directory_names.py
-CLASS: DirectoryQ
-LINE: 86
-TYPE: >>
-INPUT: DirectoryQ["ExampleData/"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/directories/directory_names.py
 CLASS: ParentDirectory
 LINE: 292
 TYPE: >>
