@@ -3381,3 +3381,9 @@ LINE: 101
 INPUT: RealDigits[1/197, 260, 5]
 EXPECTED: {{1, 83, 38, 71, 69}, 0} (matches wolframscript; base-260 rational digits)
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_expression_numericq
+LINE: 73
+INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
+EXPECTED: (-1 + Cos[1]^2 + Sin[1]^2)^(-1) (matches wolframscript; not auto-simplified to 1/0)
+---

@@ -305,6 +305,16 @@ mod simplify {
   }
 
   #[test]
+  fn pythagorean_identity_not_auto_simplified() {
+    // Sin[1]^2 + Cos[1]^2 - 1 is not collapsed to 0 without Simplify —
+    // the expression remains symbolic with a literal -1 (matches wolframscript).
+    assert_eq!(
+      interpret("1/(Sin[1]^2+Cos[1]^2-1)").unwrap(),
+      "(-1 + Cos[1]^2 + Sin[1]^2)^(-1)"
+    );
+  }
+
+  #[test]
   fn combine_powers() {
     assert_eq!(interpret("Simplify[x*x]").unwrap(), "x^2");
   }

@@ -14180,12 +14180,6 @@ EXPECTED: False
 FILE: mathics/test/test_numericq.py
 FUNCTION: test_expression_numericq
 LINE: 73
-INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_expression_numericq
-LINE: 73
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False
 ---
