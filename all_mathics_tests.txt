@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 704
-TYPE: >>
-INPUT: Sort[{{x, 10}, {y, 2}, {z, 5}}, #1[[2]] < #2[[2]] &]
-EXPECTED:
-= {{y, 2}, {z, 5}, {x, 10}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 708
 TYPE: >>
 INPUT: h @ 3
