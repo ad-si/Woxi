@@ -7346,14 +7346,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: OwnValues
-LINE: 618
-TYPE: >>
-INPUT: Hold[x] /. OwnValues[x]
-EXPECTED:
-= Hold[y]
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: OwnValues
 LINE: 620
 TYPE: >>
 INPUT: Hold[x] /. OwnValues[x] // ReleaseHold

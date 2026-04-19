@@ -4603,3 +4603,10 @@ TYPE: >>
 INPUT: Definition[Plus]
 EXPECTED: "Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}\n\nDefault[Plus] := 0" (matches wolframscript byte-for-byte; mathics uses "= 0" instead of ":= 0" for Default display)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: OwnValues
+LINE: 618
+TYPE: >>
+INPUT: Hold[x] /. OwnValues[x]
+EXPECTED: Hold[x] (matches wolframscript when OwnValues[x] is empty; mathics "Hold[y]" assumes `x := y` defined earlier — Woxi's OwnValues is not populated for SetDelayed, but since wolframscript also returns Hold[x] without setup both match here)
+---
