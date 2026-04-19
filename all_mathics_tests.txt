@@ -13474,12 +13474,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/test_compile.py
 FUNCTION: test_compile_code
-LINE: 54
-INPUT: BesselJ[0,x]
-EXPECTED: with x=0.0 -> 1.0
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_compile_code
 LINE: 55
 INPUT: Exp[BesselJ[0,x]-1.]
 EXPECTED: with x=0.0 -> 1.0
