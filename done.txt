@@ -5595,3 +5595,8 @@ INPUT: 1/(1+1/(1+1/a))
 DESCRIPTION: FractionBox
 EXPECTED: (1 + (1 + a^(-1))^(-1))^(-1) (Woxi and wolframscript byte-identical; mathics text format shows the unsimplified fraction string)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: -1. 10^-6
+DESCRIPTION: very small negative real number (<10^-6)
+EXPECTED: -1.*^-6 (Woxi and wolframscript byte-identical)
+---
