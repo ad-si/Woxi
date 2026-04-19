@@ -11852,14 +11852,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 901
-TYPE: >>
-INPUT: b // TeXForm
-EXPECTED:
-= ...
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 908
 TYPE: >>
 INPUT: b // OutputForm // TeXForm
