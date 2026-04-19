@@ -205,6 +205,16 @@ mod inverse {
       "{{12, -20}, {-15, 30}}"
     );
   }
+
+  #[test]
+  fn inverse_singular_returns_unevaluated() {
+    // Matches wolframscript: a singular matrix emits Inverse::sing and
+    // returns the expression unevaluated, not a hard error.
+    assert_eq!(
+      interpret("Inverse[{{1, 0}, {0, 0}}]").unwrap(),
+      "Inverse[{{1, 0}, {0, 0}}]"
+    );
+  }
 }
 
 mod tr {

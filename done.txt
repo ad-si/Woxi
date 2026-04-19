@@ -4226,3 +4226,10 @@ TYPE: >>
 INPUT: ByteArray["ARkD"]
 EXPECTED: ByteArray[<3>] (matches wolframscript; base64 "ARkD" decodes to 3 bytes)
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: Inverse
+LINE: 304
+TYPE: >>
+INPUT: Inverse[{{1, 0}, {0, 0}}]
+EXPECTED: Inverse[{{1, 0}, {0, 0}}] with Inverse::sing message (changed inverse_ast to emit warning and return unevaluated on singular matrix instead of erroring)
+---

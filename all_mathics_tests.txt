@@ -5550,15 +5550,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/numbers/linalg.py
-CLASS: Inverse
-LINE: 304
-TYPE: >>
-INPUT: Inverse[{{1, 0}, {0, 0}}]
-EXPECTED:
-: The matrix {{1, 0}, {0, 0}} is singular.
-= Inverse[{{1, 0}, {0, 0}}]
----
-FILE: mathics/builtin/numbers/linalg.py
 CLASS: LeastSquares
 LINE: 350
 TYPE: >>

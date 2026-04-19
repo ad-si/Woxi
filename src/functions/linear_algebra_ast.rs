@@ -413,9 +413,15 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let det_is_zero = matches!(&det, Expr::Integer(0))
     || matches!(&det, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(0));
   if det_is_zero {
-    return Err(InterpreterError::EvaluationError(
-      "Inverse: matrix is singular".into(),
+    // Matches wolframscript: emit Inverse::sing and return unevaluated.
+    crate::emit_message(&format!(
+      "Inverse::sing: Matrix {} is singular.",
+      crate::syntax::expr_to_string(&args[0])
     ));
+    return Ok(Expr::FunctionCall {
+      name: "Inverse".to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // Compute cofactor matrix
