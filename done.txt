@@ -4394,3 +4394,10 @@ TYPE: >>
 INPUT: Options[f]
 EXPECTED: {} (matches wolframscript when f has no options set; mathics "{a :> b}" assumes prior SetOptions[f, a :> b])
 ---
+FILE: mathics/builtin/options.py
+CLASS: Options
+LINE: 320
+TYPE: >>
+INPUT: f[x] (with Options[f] = {n -> 2}; f[x_, OptionsPattern[]] := x^OptionValue[n])
+EXPECTED: x^2 (matches wolframscript; OptionsPattern picks up default n->2)
+---
