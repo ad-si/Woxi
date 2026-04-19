@@ -47,7 +47,7 @@ pub fn dispatch_image_functions(
     "ImageType" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_type_ast(args));
     }
-    "ImageData" if args.len() == 1 => {
+    "ImageData" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_data_ast(args));
     }
     "ImageColorSpace" if args.len() == 1 => {

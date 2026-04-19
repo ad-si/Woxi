@@ -93,6 +93,30 @@ mod image_core {
   }
 
   #[test]
+  fn image_data_bit_form() {
+    // ImageData[img, "Bit"] returns integer 0/1 values regardless of the
+    // underlying storage.
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Image[{{0, 1}, {1, 0}, {1, 1}}], \"Bit\"]").unwrap(),
+      "{{0, 1}, {1, 0}, {1, 1}}"
+    );
+  }
+
+  #[test]
+  fn image_data_byte_form() {
+    // ImageData[img, "Byte"] scales floats to 0..255 integers.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Image[{{0.2, 0.4}, {0.9, 0.6}, {0.5, 0.8}}], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{51, 102}, {230, 153}, {128, 204}}"
+    );
+  }
+
+  #[test]
   fn image_q_on_invalid_ragged_nested_list() {
     // Invalid pixel data (ragged nested list) — Image[...] stays unevaluated
     // and ImageQ returns False (matches wolframscript).

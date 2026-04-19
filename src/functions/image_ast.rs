@@ -401,11 +401,19 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ImageData[img] - Extract pixel values as nested List
 pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "ImageData expects exactly 1 argument".into(),
+      "ImageData expects 1 or 2 arguments".into(),
     ));
   }
+  let requested_type: Option<&str> = if args.len() == 2 {
+    match &args[1] {
+      Expr::String(s) => Some(s.as_str()),
+      _ => None,
+    }
+  } else {
+    None
+  };
   match &args[0] {
     Expr::Image {
       width,
@@ -434,9 +442,24 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Convert values to the appropriate precision.
-      // Bit images (from Binarize) return integers 0 and 1.
-      // Real32 images store f64 internally but should output f32-precision values.
+      // - Explicit 2nd-arg "Bit"/"Byte"/"Bit16"/"Real"/"Real32"/"Real64"
+      //   overrides the image's internal type.
+      // - Bit images (from Binarize) return integers 0 and 1.
+      // - Real32 images store f64 internally but output f32-precision values.
       let to_expr = |v: f64| -> Expr {
+        if let Some(t) = requested_type {
+          return match t {
+            "Bit" => Expr::Integer(v.round().clamp(0.0, 1.0) as i128),
+            "Byte" => {
+              Expr::Integer((v * 255.0).round().clamp(0.0, 255.0) as i128)
+            }
+            "Bit16" => {
+              Expr::Integer((v * 65535.0).round().clamp(0.0, 65535.0) as i128)
+            }
+            "Real32" => Expr::Real((v as f32) as f64),
+            _ => Expr::Real(v),
+          };
+        }
         match image_type {
           crate::syntax::ImageType::Bit => Expr::Integer(v.round() as i128),
           crate::syntax::ImageType::Real32 => Expr::Real((v as f32) as f64),

@@ -448,7 +448,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageColorSpace" => Some((1, 1)),
     "ImageCompose" => Some((2, 2)),
     "ImageCrop" => Some((1, 2)),
-    "ImageData" => Some((1, 1)),
+    "ImageData" => Some((1, 2)),
     "ImageDimensions" => Some((1, 1)),
     "ImageAspectRatio" => Some((1, 1)),
     "ImageMultiply" => Some((2, 2)),

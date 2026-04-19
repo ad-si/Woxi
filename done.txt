@@ -5014,3 +5014,10 @@ TYPE: >>
 INPUT: ImageAspectRatio[Image[{{0, 1}, {1, 0}, {1, 1}}]]
 EXPECTED: 3/2 (implemented ImageAspectRatio as reduced height/width rational)
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageData
+LINE: 94
+TYPE: >>
+INPUT: ImageData[Image[{{0, 1}, {1, 0}, {1, 1}}], "Bit"]
+EXPECTED: {{0, 1}, {1, 0}, {1, 1}} (extended ImageData to accept an explicit type argument: "Bit", "Byte", "Bit16", "Real32", "Real64")
+---
