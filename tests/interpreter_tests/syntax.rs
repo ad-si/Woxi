@@ -1277,10 +1277,7 @@ mod condition_pattern_matching {
   fn setdelayed_with_condition_applies_when_true() {
     // f[x_] := p[x] /; x>0 — conditional definition applies for positive x.
     clear_state();
-    assert_eq!(
-      interpret("f[x_] := p[x] /; x>0; f[3]").unwrap(),
-      "p[3]"
-    );
+    assert_eq!(interpret("f[x_] := p[x] /; x>0; f[3]").unwrap(), "p[3]");
   }
 
   #[test]
@@ -3378,6 +3375,22 @@ mod condition_operator {
     assert_eq!(
       interpret("h[x_] := x + 1 /; x > 0 && x < 10; h[15]").unwrap(),
       "h[15]"
+    );
+  }
+
+  #[test]
+  fn chained_conditions_with_fallback() {
+    // Chained /; with later unconditional definition — when the first
+    // condition fails (3 < 2 is false), the fallback applies: y/x = 2/3.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "F[x_, y_] /; x < y /; x>0 := x / y; \
+         F[x_, y_] := y / x; \
+         F[3, 2]"
+      )
+      .unwrap(),
+      "2/3"
     );
   }
 }

@@ -3639,3 +3639,9 @@ LINE: 179
 INPUT: f[x_] := p[x] /; x>0; f[3]
 EXPECTED: p[3] (matches wolframscript; conditional definition applies for positive x)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 188
+INPUT: F[3, 2] (with F[x_,y_]/;x<y/;x>0:=x/y; F[x_,y_]:=y/x)
+EXPECTED: 2/3 (matches wolframscript; first condition x<y fails so fallback applies)
+---
