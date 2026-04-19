@@ -9348,14 +9348,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: LogGamma
-LINE: 372
-TYPE: >>
-INPUT: LogGamma[3]
-EXPECTED:
-= Log[2]
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: LogGamma
 LINE: 376
 TYPE: >>
 INPUT: LogGamma[-2.+3 I]

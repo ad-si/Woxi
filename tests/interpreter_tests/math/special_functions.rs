@@ -3975,6 +3975,12 @@ mod log_gamma {
   }
 
   #[test]
+  fn at_three() {
+    // LogGamma[3] = Log[(3-1)!] = Log[2]
+    assert_eq!(interpret("LogGamma[3]").unwrap(), "Log[2]");
+  }
+
+  #[test]
   fn at_half_numeric() {
     // LogGamma[1/2] = Log[Sqrt[Pi]] ≈ 0.5723649429247001
     let result = interpret("N[LogGamma[1/2]]").unwrap();

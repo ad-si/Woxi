@@ -3399,3 +3399,9 @@ LINE: 30
 INPUT: DSolve[y''[x] == y[x], y[x], x]
 EXPECTED: {{y[x] -> E^x*C[1] + C[2]/E^x}} (matches wolframscript; mathics expected form is equivalent)
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: LogGamma
+LINE: 372
+INPUT: LogGamma[3]
+EXPECTED: Log[2] (matches wolframscript)
+---
