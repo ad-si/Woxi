@@ -1238,14 +1238,6 @@ EXPECTED:
 : Tag x not found or too deep for an assigned rule.
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: TagSet
-LINE: 256
-TYPE: >>
-INPUT: f[g[x]]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSet
 LINE: 343
 TYPE: >>

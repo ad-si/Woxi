@@ -5290,3 +5290,10 @@ TYPE: >>
 INPUT: b=2; a
 EXPECTED: a (Woxi and wolframscript byte-identical when run in isolation; mathics "3" depends on prior SetDelayed setup of a)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: TagSet
+LINE: 256
+TYPE: >>
+INPUT: f[g[x]]
+EXPECTED: f[g[x]] (Woxi and wolframscript byte-identical when run in isolation; mathics "3" depends on prior TagSet)
+---
