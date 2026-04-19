@@ -4212,3 +4212,10 @@ TYPE: >>
 INPUT: Normal[A] (with A = ByteArray[{1, 25, 3}])
 EXPECTED: {1, 25, 3} (matches wolframscript; Normal converts ByteArray back to list)
 ---
+FILE: mathics/builtin/binary/bytearray.py
+CLASS: ByteArray_
+LINE: 35
+TYPE: >>
+INPUT: ToString[A] (with A = ByteArray[{1, 25, 3}])
+EXPECTED: ByteArray[<3>] (matches wolframscript; ToString preserves the ByteArray display form)
+---

@@ -3499,14 +3499,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
-LINE: 35
-TYPE: >>
-INPUT: ToString[A]
-EXPECTED:
-= ByteArray[<3>]
----
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
 LINE: 37
 TYPE: >>
 INPUT: ByteArray["ARkD"]
