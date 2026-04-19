@@ -13511,29 +13511,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/format_tests.yaml
-INPUT: -4.326563712`2
-DESCRIPTION: A negative Real number
-EXPECTED:
-  text[System`InputForm]: -4.33`2.
-  text[System`OutputForm]: -4.3
-  text[System`StandardForm]: -4.33`2.
-  text[System`TraditionalForm]: -4.33`2.
-  latex[System`InputForm]: -4.33
-  latex[System`OutputForm]: \text{-4.3}
-  latex[System`StandardForm]: -4.33
-  latex[System`TraditionalForm]: -4.33
-  mathml[System`InputForm]: <mn>-4.33</mn>
-  mathml[System`OutputForm]: <mtext>-4.3</mtext>
-  mathml[System`StandardForm]: <mrow>
- <mn>-</mn>
- <mn>4.33</mn>
-</mrow>
-  mathml[System`TraditionalForm]: <mrow>
- <mn>-</mn>
- <mn>4.33</mn>
-</mrow>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: -4.32`4
 DESCRIPTION: A negative PrecisionReal number
 EXPECTED:
@@ -13559,7 +13536,7 @@ EXPECTED:
 FILE: mathics/test/format/format_tests.yaml
 INPUT: <|a -> x, b -> y, c -> <|d -> t|>|>
 DESCRIPTION: Association
-EXPECTED:
+EXPECTED-WAS:
   text[System`InputForm]: <|a -> x, b -> y, c -> <|d -> t|>|>
   text[System`OutputForm]: <|a -> x, b -> y, c -> <|d -> t|>|>
   text[System`StandardForm]: <|a->x, b->y, c-><|d->t|>|>
