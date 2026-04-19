@@ -4505,3 +4505,10 @@ TYPE: #>
 INPUT: ReadList[StringToStream["123 45 x y"], Expression]
 EXPECTED: {5535*x*y} (matches wolframscript; reads the whole input as one expression 123 * 45 * x * y = 5535*x*y)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: SetStreamPosition
+LINE: 1176
+TYPE: >>
+INPUT: SetStreamPosition[stream, 8] (with stream = StringToStream["Mathics is cool!"])
+EXPECTED: 8 (matches wolframscript; seeks to offset 8)
+---
