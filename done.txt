@@ -4261,3 +4261,10 @@ TYPE: >>
 INPUT: LoadModule["nomodule"]
 EXPECTED: LoadModule[nomodule] (matches wolframscript; LoadModule is Mathics-specific — wolframscript returns unevaluated)
 ---
+FILE: mathics/builtin/distance/stringdata.py
+CLASS: DamerauLevenshteinDistance
+LINE: 158-178
+TYPE: >>
+INPUT: DamerauLevenshteinDistance["kitten", "kitchen"] (and 6 more variants)
+EXPECTED: 2, 1, 1, 3, 3, 2, 1 respectively (implemented damerau_levenshtein_distance_ast with classic DP: substitution/insertion/deletion/adjacent-transposition; supports string+string, list+list, IgnoreCase option)
+---

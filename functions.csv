@@ -3868,7 +3868,7 @@ ArrayPlot3D,,🚫,,12.2,4006
 BlockchainTokenData,,🚫,,12.0,4006
 CanonicalizePolygon,,,,12.0,4006
 CoifletWavelet,,🚫,,8.0,4006
-DamerauLevenshteinDistance,,,,7.0,4006
+DamerauLevenshteinDistance,"Levenshtein distance allowing one swap of adjacent chars as unit cost",✅,pure,7.0,4006
 DeepSpaceProbeData,,🚫,,10.0,4006
 EscapeRadius,,,,10.0,4006
 FeedbackType,,🚫,,8.0,4006

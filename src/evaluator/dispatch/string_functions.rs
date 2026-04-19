@@ -87,6 +87,11 @@ pub fn dispatch_string_functions(
     "EditDistance" if args.len() == 2 => {
       return Some(crate::functions::string_ast::edit_distance_ast(args));
     }
+    "DamerauLevenshteinDistance" if args.len() == 2 || args.len() == 3 => {
+      return Some(
+        crate::functions::string_ast::damerau_levenshtein_distance_ast(args),
+      );
+    }
     "SequenceAlignment" if args.len() == 2 => {
       return Some(crate::functions::string_ast::sequence_alignment_ast(args));
     }

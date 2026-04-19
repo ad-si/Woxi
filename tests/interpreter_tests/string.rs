@@ -3430,3 +3430,69 @@ mod string_position_alternatives {
     );
   }
 }
+
+mod damerau_levenshtein_distance {
+  use super::*;
+
+  #[test]
+  fn basic_substitution_insertion() {
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["kitten", "kitchen"]"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn deletion() {
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["abc", "ac"]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn adjacent_transposition_is_one() {
+    // DL distinguishes itself from plain Levenshtein by treating a swap of
+    // adjacent characters as cost 1 (Levenshtein would say 2).
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["abc", "acb"]"#).unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn mixed_insertion_transposition() {
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["azbc", "abxyc"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn case_sensitive() {
+    assert_eq!(
+      interpret(r#"DamerauLevenshteinDistance["time", "Thyme"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn ignore_case_option() {
+    assert_eq!(
+      interpret(
+        r#"DamerauLevenshteinDistance["time", "Thyme", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn list_arguments_transposition() {
+    assert_eq!(
+      interpret("DamerauLevenshteinDistance[{1, E, 2, Pi}, {1, E, Pi, 2}]")
+        .unwrap(),
+      "1"
+    );
+  }
+}

@@ -3907,6 +3907,66 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(dp[n][m] as i128))
 }
 
+/// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also
+/// allows a single transposition of two adjacent characters as a unit cost.
+/// Also accepts lists of items (compared by equality).
+pub fn damerau_levenshtein_distance_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "DamerauLevenshteinDistance expects 2 or 3 arguments".into(),
+    ));
+  }
+  let ignore_case = args.len() == 3 && extract_ignore_case(&args[2..]);
+
+  fn to_tokens(
+    expr: &Expr,
+    lower: bool,
+  ) -> Result<Vec<String>, InterpreterError> {
+    match expr {
+      Expr::String(s) => {
+        let s = if lower { s.to_lowercase() } else { s.clone() };
+        Ok(s.chars().map(|c| c.to_string()).collect())
+      }
+      Expr::List(items) => {
+        Ok(items.iter().map(crate::syntax::expr_to_output).collect())
+      }
+      _ => {
+        let s = expr_to_str(expr)?;
+        let s = if lower { s.to_lowercase() } else { s };
+        Ok(s.chars().map(|c| c.to_string()).collect())
+      }
+    }
+  }
+
+  let a = to_tokens(&args[0], ignore_case)?;
+  let b = to_tokens(&args[1], ignore_case)?;
+  let n = a.len();
+  let m = b.len();
+
+  let mut dp = vec![vec![0usize; m + 1]; n + 1];
+  for i in 0..=n {
+    dp[i][0] = i;
+  }
+  for j in 0..=m {
+    dp[0][j] = j;
+  }
+  for i in 1..=n {
+    for j in 1..=m {
+      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+      let mut val = (dp[i - 1][j] + 1)
+        .min(dp[i][j - 1] + 1)
+        .min(dp[i - 1][j - 1] + cost);
+      if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+        val = val.min(dp[i - 2][j - 2] + 1);
+      }
+      dp[i][j] = val;
+    }
+  }
+  Ok(Expr::Integer(dp[n][m] as i128))
+}
+
 /// LongestCommonSubsequence[s1, s2] - longest common (non-contiguous) subsequence
 pub fn longest_common_subsequence_ast(
   args: &[Expr],
