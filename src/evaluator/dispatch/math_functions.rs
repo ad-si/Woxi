@@ -891,6 +891,9 @@ pub fn dispatch_math_functions(
     "RandomReal" => {
       return Some(crate::functions::math_ast::random_real_ast(args));
     }
+    "RandomComplex" => {
+      return Some(crate::functions::math_ast::random_complex_ast(args));
+    }
     "RandomChoice" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_choice_ast(args));
     }

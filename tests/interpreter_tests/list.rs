@@ -2731,6 +2731,44 @@ mod random_real {
   }
 }
 
+mod random_complex {
+  use super::*;
+
+  #[test]
+  fn no_args_is_complex() {
+    // RandomComplex[] should be a complex number a + b*I with a, b in [0, 1)
+    let s = interpret("RandomComplex[]").unwrap();
+    assert!(s.contains("I"));
+  }
+
+  #[test]
+  fn head_is_complex() {
+    assert_eq!(interpret("Head[RandomComplex[]]").unwrap(), "Complex");
+  }
+
+  #[test]
+  fn list_length() {
+    assert_eq!(interpret("Length[RandomComplex[1+I, 5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn matrix_dimensions() {
+    assert_eq!(
+      interpret("Dimensions[RandomComplex[{1+I, 2+2I}, {2, 2}]]").unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn real_range_is_respected() {
+    // With an all-real range RandomComplex[{0, 3}, 5] imaginary parts should be 0
+    assert_eq!(
+      interpret("AllTrue[RandomComplex[{0, 3}, 20], Im[#] == 0 &]").unwrap(),
+      "True"
+    );
+  }
+}
+
 mod random_integer {
   use super::*;
 

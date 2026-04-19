@@ -5545,38 +5545,6 @@ EXPECTED:
 = {b, b, b, b, b, b, b, b, b, b, b, c, b, b, b, b, b, b, b, b}
 ---
 FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomComplex
-LINE: 347
-TYPE: >>
-INPUT: RandomComplex[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomComplex
-LINE: 350
-TYPE: >>
-INPUT: RandomComplex[{1+I, 5+5I}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomComplex
-LINE: 353
-TYPE: >>
-INPUT: RandomComplex[1+I, 5]
-EXPECTED:
-= {..., ..., ..., ..., ...}
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomComplex
-LINE: 356
-TYPE: >>
-INPUT: RandomComplex[{1+I, 2+2I}, {2, 2}]
-EXPECTED:
-= {{..., ...}, {..., ...}}
----
-FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomInteger
 LINE: 466
 TYPE: >>

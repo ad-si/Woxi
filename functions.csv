@@ -1241,7 +1241,7 @@ Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph,✅,1,8.0,1256
 Transparent,,🚫,,7.0,1256
 OutputResponse,,🚫,,8.0,1257
-RandomComplex,,🚫,,6.0,1258
+RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,effectful,6.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
 InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1.0,1260
 Longest,Pattern wrapper for longest matching,✅,1,6.0,1261

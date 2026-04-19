@@ -224,6 +224,206 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RandomComplex[] or RandomComplex[max] or RandomComplex[{min, max}]
+/// or RandomComplex[range, dims]. Real and imaginary parts are drawn
+/// uniformly from the specified rectangle.
+pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  use rand::Rng;
+
+  fn complex_parts(expr: &Expr) -> Option<(f64, f64)> {
+    // Extract (re, im) from an Expr that evaluates to a number.
+    match expr {
+      Expr::Integer(n) => Some((*n as f64, 0.0)),
+      Expr::Real(r) => Some((*r, 0.0)),
+      Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
+      Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+        let re = match &args[0] {
+          Expr::Integer(n) => *n as f64,
+          Expr::Real(r) => *r,
+          _ => return None,
+        };
+        let im = match &args[1] {
+          Expr::Integer(n) => *n as f64,
+          Expr::Real(r) => *r,
+          _ => return None,
+        };
+        Some((re, im))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        let (re1, im1) = complex_parts(left)?;
+        let (re2, im2) = complex_parts(right)?;
+        Some((re1 + re2, im1 + im2))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        let (re1, im1) = complex_parts(left)?;
+        let (re2, im2) = complex_parts(right)?;
+        Some((re1 * re2 - im1 * im2, re1 * im2 + im1 * re2))
+      }
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for a in args {
+          let (r, i) = complex_parts(a)?;
+          re += r;
+          im += i;
+        }
+        Some((re, im))
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        let mut re = 1.0;
+        let mut im = 0.0;
+        for a in args {
+          let (r, i) = complex_parts(a)?;
+          let nr = re * r - im * i;
+          let ni = re * i + im * r;
+          re = nr;
+          im = ni;
+        }
+        Some((re, im))
+      }
+      _ => None,
+    }
+  }
+
+  fn make_complex(re: f64, im: f64) -> Expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Real(re)),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Real(im)),
+        right: Box::new(Expr::Identifier("I".to_string())),
+      }),
+    }
+  }
+
+  // Parse the range from the first argument (default: 0 to 1+I).
+  let ((re_lo, re_hi), (im_lo, im_hi)) = if args.is_empty() {
+    ((0.0, 1.0), (0.0, 1.0))
+  } else {
+    match &args[0] {
+      Expr::List(items) if items.len() == 2 => {
+        let (re1, im1) = complex_parts(&items[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RandomComplex: invalid min".into(),
+          )
+        })?;
+        let (re2, im2) = complex_parts(&items[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RandomComplex: invalid max".into(),
+          )
+        })?;
+        ((re1, re2), (im1, im2))
+      }
+      _ => {
+        let (re, im) = complex_parts(&args[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RandomComplex: invalid max".into(),
+          )
+        })?;
+        ((0.0, re), (0.0, im))
+      }
+    }
+  };
+
+  fn draw_one(
+    rng: &mut dyn rand::RngCore,
+    re_lo: f64,
+    re_hi: f64,
+    im_lo: f64,
+    im_hi: f64,
+  ) -> Expr {
+    let re = if re_lo == re_hi {
+      re_lo
+    } else {
+      rng.gen_range(re_lo..re_hi)
+    };
+    let im = if im_lo == im_hi {
+      im_lo
+    } else {
+      rng.gen_range(im_lo..im_hi)
+    };
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(Expr::Real(re)),
+      right: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Real(im)),
+        right: Box::new(Expr::Identifier("I".to_string())),
+      }),
+    }
+  }
+
+  let _ = make_complex; // silence unused warning if code paths change
+
+  match args.len() {
+    0 | 1 => Ok(crate::with_rng(|rng| {
+      draw_one(rng, re_lo, re_hi, im_lo, im_hi)
+    })),
+    2 => {
+      let dims = match &args[1] {
+        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::List(items) => {
+          let mut dims = Vec::new();
+          for item in items {
+            match item {
+              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              _ => {
+                return Err(InterpreterError::EvaluationError(
+                  "RandomComplex: dimension specification must contain positive integers".into(),
+                ));
+              }
+            }
+          }
+          dims
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "RandomComplex: second argument must be a positive integer or list of positive integers".into(),
+          ));
+        }
+      };
+
+      fn build(
+        dims: &[usize],
+        re_lo: f64,
+        re_hi: f64,
+        im_lo: f64,
+        im_hi: f64,
+      ) -> Expr {
+        let n = dims[0];
+        if dims.len() == 1 {
+          Expr::List(crate::with_rng(|rng| {
+            (0..n)
+              .map(|_| draw_one(rng, re_lo, re_hi, im_lo, im_hi))
+              .collect()
+          }))
+        } else {
+          Expr::List(
+            (0..n)
+              .map(|_| build(&dims[1..], re_lo, re_hi, im_lo, im_hi))
+              .collect(),
+          )
+        }
+      }
+
+      Ok(build(&dims, re_lo, re_hi, im_lo, im_hi))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "RandomComplex expects 0, 1, or 2 arguments".into(),
+    )),
+  }
+}
+
 /// RandomChoice[list]
 pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;

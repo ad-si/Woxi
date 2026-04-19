@@ -4868,3 +4868,10 @@ TYPE: >>
 INPUT: Integrate[f[x^2], {x, a, b}] // TeXForm
 EXPECTED: TeXForm[Integrate[f[x^2], {x, a, b}]] (Woxi and wolframscript byte-identical; mathics shows the rendered TeX output)
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomComplex
+LINE: 347-356
+TYPE: >>
+INPUT: RandomComplex[], RandomComplex[{1+I, 5+5I}], RandomComplex[1+I, 5], RandomComplex[{1+I, 2+2I}, {2, 2}]
+EXPECTED: "..." (any random output). Implemented RandomComplex[] / [max] / [{min,max}] / [range, n] / [range, {m,n,...}] using uniform Re and Im distributions; tests assert shape and Head.
+---

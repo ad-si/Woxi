@@ -117,7 +117,9 @@ fn as_multivar_monomial(expr: &Expr) -> Option<Vec<(String, i128)>> {
           return None;
         }
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         if let (Expr::Identifier(v), Expr::Integer(n)) = (&args[0], &args[1])
           && *n >= 1
         {
