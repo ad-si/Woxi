@@ -4150,14 +4150,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/charcodes.py
 CLASS: ToCharacterCode
-LINE: 48
-TYPE: >>
-INPUT: ToCharacterCode["\\[Alpha]\\[Beta]\\[Gamma]"]
-EXPECTED:
-= {945, 946, 947}
----
-FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
 LINE: 51
 TYPE: >>
 INPUT: ToCharacterCode["ä", "UTF8"]

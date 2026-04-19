@@ -3519,3 +3519,9 @@ LINE: 158
 INPUT: PatternsOrderedQ[x_, x__]
 EXPECTED: PatternsOrderedQ[x_, x__] (matches wolframscript; both leave unevaluated)
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: ToCharacterCode
+LINE: 48
+INPUT: ToCharacterCode["\[Alpha]\[Beta]\[Gamma]"]
+EXPECTED: {945, 946, 947} (matches wolframscript; Greek named chars → Unicode code points)
+---

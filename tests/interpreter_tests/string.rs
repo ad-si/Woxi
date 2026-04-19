@@ -380,6 +380,15 @@ mod to_character_code {
       "{48, 49, 50, 51}"
     );
   }
+
+  #[test]
+  fn greek_named_chars() {
+    // \[Alpha]\[Beta]\[Gamma] → Unicode code points 945, 946, 947.
+    assert_eq!(
+      interpret(r#"ToCharacterCode["\[Alpha]\[Beta]\[Gamma]"]"#).unwrap(),
+      "{945, 946, 947}"
+    );
+  }
 }
 
 mod from_character_code {
