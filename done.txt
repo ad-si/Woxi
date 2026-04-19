@@ -3123,3 +3123,9 @@ LINE: 510
 INPUT: Symbol
 EXPECTED: Symbol (matches wolframscript; mathics test compares to special unicode form a\uf431c)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 511
+INPUT: Symbol
+EXPECTED: Symbol (matches wolframscript; mathics test compares to special unicode form a\uf522c)
+---

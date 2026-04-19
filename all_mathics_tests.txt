@@ -12779,12 +12779,6 @@ EXPECTED: TagSetDelayed[f, f[x_] + f[y_], x + y]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 511
-INPUT: Symbol
-EXPECTED: a\uf522c
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 545
 INPUT: a \\[Cap] b
 EXPECTED: Cap[a,b]
