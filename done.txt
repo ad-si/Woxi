@@ -3453,3 +3453,9 @@ LINE: 232
 INPUT: Precision[0.]
 EXPECTED: MachinePrecision (matches wolframscript)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[2 + 3 I]
+EXPECTED: Infinity (matches wolframscript; Gaussian integer)
+---

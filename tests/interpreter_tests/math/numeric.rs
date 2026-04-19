@@ -277,6 +277,12 @@ mod precision {
   }
 
   #[test]
+  fn gaussian_integer() {
+    // 2 + 3 I — exact Gaussian integer has infinite precision.
+    assert_eq!(interpret("Precision[2 + 3 I]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn arbitrary_precision_literal() {
     // 1.23`10 is a literal with explicit precision of 10 digits.
     assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");
