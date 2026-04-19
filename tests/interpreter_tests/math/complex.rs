@@ -604,6 +604,12 @@ mod im_tests {
     assert_eq!(interpret("E^(I Pi)").unwrap(), "-1");
   }
 
+  #[test]
+  fn e_to_i_pi_over_two() {
+    // E^(I*Pi/2) = I (Euler's identity, quarter turn).
+    assert_eq!(interpret("E^(I Pi/2)").unwrap(), "I");
+  }
+
   // ── Log2 ─────────────────────────────────────────────────
 
   #[test]

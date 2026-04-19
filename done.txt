@@ -3297,3 +3297,9 @@ LINE: 37
 INPUT: Image[{{0, 1}, {1, 0}, {1, 1}}] // ImageDimensions
 EXPECTED: {2, 3} (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_add
+LINE: 44
+INPUT: E^(I Pi/2)
+EXPECTED: I (matches wolframscript; Euler's identity quarter turn)
+---
