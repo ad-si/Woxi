@@ -5643,3 +5643,11 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-002 BarChart[{1, 4, 2}]
 EXPECTED: -Graphics- (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-003 BarChart[{{1, 2, 3}, {2, 3, 4}}, ChartLabels -> {"a", "b", "c"}]
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical)
+---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-004 BarChart[{{1, 2, 3}, {2, 3, 4}}]
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical)
+---
