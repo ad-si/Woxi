@@ -4170,3 +4170,10 @@ TYPE: >>
 INPUT: Rest[mylist] (with mylist = {a, b, c, d})
 EXPECTED: {b, c, d} (matches wolframscript; Rest returns all but the first element)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 300
+TYPE: >>
+INPUT: a ^ 3 (with a = 2)
+EXPECTED: 8 (matches wolframscript; basic Power of a bound variable)
+---

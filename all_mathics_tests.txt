@@ -10640,14 +10640,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 300
-TYPE: >>
-INPUT: a ^ 3
-EXPECTED:
-= 8
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 304
 TYPE: >>
 INPUT: a ^ 3
