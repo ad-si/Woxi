@@ -3567,3 +3567,9 @@ LINE: 209
 INPUT: Eigenvectors[{{2, 0, 0}, {0, -1, 0}, {0, 0, 0}}]
 EXPECTED: {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}} (matches wolframscript; standard basis for a diagonal matrix)
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: Eigenvectors
+LINE: 207
+INPUT: Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]
+EXPECTED: {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}} (matches wolframscript)
+---

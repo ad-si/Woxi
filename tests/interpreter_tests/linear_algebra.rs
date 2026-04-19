@@ -859,6 +859,16 @@ mod eigenvectors {
   }
 
   #[test]
+  fn rank_two_3x3_with_repeated_eigenvalue() {
+    // Two 1-eigenvectors and one 0-eigenvector — wolframscript orders the
+    // 1-eigenvectors as e2, e1 (reverse).
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]").unwrap(),
+      "{{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
   fn identity_2x2() {
     assert_eq!(
       interpret("Eigenvectors[{{1, 0}, {0, 1}}]").unwrap(),
