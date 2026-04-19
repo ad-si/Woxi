@@ -10439,14 +10439,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: InputForm
-LINE: 65
-TYPE: >>
-INPUT: InputForm["A string"]
-EXPECTED:
-= "A string"
----
-FILE: mathics/builtin/forms/print.py
-CLASS: InputForm
 LINE: 68
 TYPE: >>
 INPUT: InputForm[f'[x]]

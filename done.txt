@@ -2627,3 +2627,11 @@ INPUT: SympyForm[Pi^2]
 EXPECTED:
 = SympyForm[Pi^2] (matches wolframscript; pi**2 is a Mathics extension)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: InputForm
+LINE: 65
+TYPE: >>
+INPUT: InputForm["A string"]
+EXPECTED:
+= InputForm[A string] (matches wolframscript; mathics renders as "A string")
+---
