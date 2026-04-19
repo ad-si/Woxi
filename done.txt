@@ -4973,3 +4973,10 @@ TYPE: >>
 INPUT: x := y
 EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: DownValues
+LINE: 368
+TYPE: >>
+INPUT: f[x_Real] := 3
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

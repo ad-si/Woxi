@@ -6913,13 +6913,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: DownValues
-LINE: 368
-TYPE: >>
-INPUT: f[x_Real] := 3
-EXPECTED: (none)
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: DownValues
 LINE: 369
 TYPE: >>
 INPUT: DownValues[f]
