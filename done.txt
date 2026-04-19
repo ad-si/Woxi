@@ -3543,3 +3543,9 @@ LINE: 186
 INPUT: HoldPattern[x + x]
 EXPECTED: HoldPattern[x + x] (matches wolframscript; HoldPattern prevents evaluation)
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Sec
+LINE: 752
+INPUT: Sec[1.]
+EXPECTED: 1.8508157176809255 (matches wolframscript exactly; mathics "1.85082" is display-truncated)
+---

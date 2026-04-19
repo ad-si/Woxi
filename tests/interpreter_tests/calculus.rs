@@ -1237,6 +1237,12 @@ mod trig_sec_csc_cot {
   }
 
   #[test]
+  fn sec_one_point_zero_machine_real() {
+    // Sec[1.] = 1/Cos[1.] ≈ 1.8508157176809255 (matches wolframscript).
+    assert_eq!(interpret("Sec[1.]").unwrap(), "1.8508157176809255");
+  }
+
+  #[test]
   fn sec_pi_third() {
     assert_eq!(interpret("Sec[Pi/3]").unwrap(), "2");
   }
