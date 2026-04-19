@@ -3117,3 +3117,9 @@ LINE: 765
 INPUT: a[x_] := x^2
 EXPECTED: Null (matches wolframscript; mathics test compares to FullForm SetDelayed[...])
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 510
+INPUT: Symbol
+EXPECTED: Symbol (matches wolframscript; mathics test compares to special unicode form a\uf431c)
+---
