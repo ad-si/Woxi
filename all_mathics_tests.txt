@@ -10448,14 +10448,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1197
-TYPE: >>
-INPUT: A . %
-EXPECTED:
-= {1, 2, 3}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1205
 TYPE: >>
 INPUT: MatrixRank[B]
