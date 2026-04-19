@@ -5184,3 +5184,8 @@ LINE: 228
 ACTUAL: (x*x + y) /. {x -> c + y}
 EXPECTED: y + (c + y)^2 (Woxi and wolframscript both return "y + (c + y)^2")
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 242
+ACTUAL: (x + y + y) /. {x -> z, y -> w}
+EXPECTED: 2*w + z (Woxi and wolframscript both simplify y+y to 2w)
+---
