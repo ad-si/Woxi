@@ -5380,14 +5380,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesCoefficient
-LINE: 1856
-TYPE: >>
-INPUT: SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]
-EXPECTED:
-= -1 / 8
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesCoefficient
 LINE: 1862
 TYPE: >>
 INPUT: SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 14/3]

@@ -3231,3 +3231,9 @@ LINE: 1859
 INPUT: SeriesCoefficient[2x, {x, 0, 2}]
 EXPECTED: 0 (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1856
+INPUT: SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]
+EXPECTED: -1/8 (matches wolframscript)
+---

@@ -3174,9 +3174,15 @@ mod series_coefficient {
   #[test]
   fn linear_polynomial_degree_two() {
     // 2x is a polynomial of degree 1; the degree-2 coefficient is 0.
+    assert_eq!(interpret("SeriesCoefficient[2x, {x, 0, 2}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn exp_sin_fourth_coefficient() {
+    // Exp[Sin[x]] = 1 + x + x^2/2 - x^4/8 - ... — degree-4 coefficient is -1/8.
     assert_eq!(
-      interpret("SeriesCoefficient[2x, {x, 0, 2}]").unwrap(),
-      "0"
+      interpret("SeriesCoefficient[Exp[Sin[x]], {x, 0, 4}]").unwrap(),
+      "-1/8"
     );
   }
 }
