@@ -3681,3 +3681,9 @@ LINE: 183
 INPUT: y = 2 x; y++; y
 EXPECTED: 1 + 2*x (matches wolframscript; increment on symbolic value)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: PreIncrement
+LINE: 278
+INPUT: y = x; ++y
+EXPECTED: 1 + x (matches wolframscript; pre-increment on symbolic value)
+---

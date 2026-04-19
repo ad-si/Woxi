@@ -1798,6 +1798,12 @@ mod pre_increment_function {
   }
 
   #[test]
+  fn pre_increment_symbolic_expression() {
+    // y holds `x`; ++y adds 1 to it, yielding `1 + x`.
+    assert_eq!(interpret("y = x; ++y").unwrap(), "1 + x");
+  }
+
+  #[test]
   fn pre_increment_modifies_variable() {
     assert_eq!(interpret("x = 5; ++x; x").unwrap(), "6");
   }

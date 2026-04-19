@@ -1177,14 +1177,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreIncrement
-LINE: 278
-TYPE: >>
-INPUT: y = x; ++y
-EXPECTED:
-= 1 + x
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: PreIncrement
 LINE: 281
 TYPE: >>
 INPUT: y
