@@ -4903,3 +4903,17 @@ TYPE: >>
 INPUT: RandomReal[{1, 5}]
 EXPECTED: "..." (any). Both Woxi and wolframscript return a random real in [1, 5).
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: Random
+LINE: 240
+TYPE: >>
+INPUT: Table[Random[], {4}]
+EXPECTED: "..." (any). Implemented Random[] as legacy wrapper around RandomReal/RandomInteger/RandomComplex.
+---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: Random
+LINE: 244
+TYPE: >>
+INPUT: Table[Random[Integer, {1, 100}], {8}]
+EXPECTED: "..." (any). Random[Integer, {min, max}] routes to RandomInteger.
+---

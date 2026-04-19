@@ -2731,6 +2731,37 @@ mod random_real {
   }
 }
 
+mod legacy_random {
+  use super::*;
+
+  #[test]
+  fn no_args_is_real() {
+    let s = interpret("Random[]").unwrap();
+    let v: f64 = s.parse().unwrap();
+    assert!((0.0..1.0).contains(&v));
+  }
+
+  #[test]
+  fn integer_with_range() {
+    // Random[Integer, {1, 100}] → integer in [1, 100]
+    let s = interpret("Random[Integer, {1, 100}]").unwrap();
+    let v: i128 = s.parse().unwrap();
+    assert!((1..=100).contains(&v));
+  }
+
+  #[test]
+  fn real_with_max() {
+    let s = interpret("Random[Real, 10]").unwrap();
+    let v: f64 = s.parse().unwrap();
+    assert!((0.0..10.0).contains(&v));
+  }
+
+  #[test]
+  fn complex_head() {
+    assert_eq!(interpret("Head[Random[Complex]]").unwrap(), "Complex");
+  }
+}
+
 mod random_complex {
   use super::*;
 

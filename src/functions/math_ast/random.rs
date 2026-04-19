@@ -237,7 +237,9 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) => Some((*n as f64, 0.0)),
       Expr::Real(r) => Some((*r, 0.0)),
       Expr::Identifier(s) if s == "I" => Some((0.0, 1.0)),
-      Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Complex" && args.len() == 2 =>
+      {
         let re = match &args[0] {
           Expr::Integer(n) => *n as f64,
           Expr::Real(r) => *r,
@@ -313,22 +315,16 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[0] {
       Expr::List(items) if items.len() == 2 => {
         let (re1, im1) = complex_parts(&items[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "RandomComplex: invalid min".into(),
-          )
+          InterpreterError::EvaluationError("RandomComplex: invalid min".into())
         })?;
         let (re2, im2) = complex_parts(&items[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "RandomComplex: invalid max".into(),
-          )
+          InterpreterError::EvaluationError("RandomComplex: invalid max".into())
         })?;
         ((re1, re2), (im1, im2))
       }
       _ => {
         let (re, im) = complex_parts(&args[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "RandomComplex: invalid max".into(),
-          )
+          InterpreterError::EvaluationError("RandomComplex: invalid max".into())
         })?;
         ((0.0, re), (0.0, im))
       }
@@ -421,6 +417,37 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => Err(InterpreterError::EvaluationError(
       "RandomComplex expects 0, 1, or 2 arguments".into(),
     )),
+  }
+}
+
+/// Random[] or Random[Real] / Random[Integer] / Random[Complex],
+/// optionally followed by a range argument. This is the legacy wrapper
+/// around RandomReal / RandomInteger / RandomComplex.
+pub fn random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Random[] → RandomReal[]
+  if args.is_empty() {
+    return random_real_ast(&[]);
+  }
+
+  // The first argument is the type; the rest (optional) is the range.
+  let kind = match &args[0] {
+    Expr::Identifier(s) => s.as_str(),
+    _ => {
+      // Random[foo] where foo isn't a type symbol — treat foo as a max arg
+      // to RandomReal for compatibility.
+      return random_real_ast(args);
+    }
+  };
+  let rest: Vec<Expr> = args.iter().skip(1).cloned().collect();
+
+  match kind {
+    "Real" => random_real_ast(&rest),
+    "Integer" => random_integer_ast(&rest),
+    "Complex" => random_complex_ast(&rest),
+    _ => Ok(Expr::FunctionCall {
+      name: "Random".to_string(),
+      args: args.to_vec(),
+    }),
   }
 }
 

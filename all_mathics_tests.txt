@@ -5454,22 +5454,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: Random
-LINE: 240
-TYPE: >>
-INPUT: Table[Random[], {4}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: Random
-LINE: 244
-TYPE: >>
-INPUT: Table[Random[Integer, {1, 100}], {8}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomChoice
 LINE: 300
 TYPE: >>
