@@ -2323,3 +2323,11 @@ INPUT: StringContainsQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Ea
 EXPECTED:
 = {True, True, True, False, False, False, False, False, True} (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: LetterNumber
+LINE: 420
+TYPE: >>
+INPUT: LetterNumber["b"]
+EXPECTED:
+= 2 (matches wolframscript)
+---
