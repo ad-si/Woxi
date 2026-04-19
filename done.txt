@@ -5663,3 +5663,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-007/008/009/011 DensityPlot variants
 EXPECTED: -Graphics- (Woxi and wolframscript byte-identical for 4 DensityPlot tests)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-010 (DensityPlot Blend), doc-012 (DensityPlot Mesh->All), doc-014 (DiscretePlot PrimePi), doc-015 (DiscretePlot Sin/Cos), doc-016 (Histogram), doc-017 (Histogram nested)
+EXPECTED: -Graphics- (all 6 produce identical -Graphics- output in Woxi and wolframscript)
+---
