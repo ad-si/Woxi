@@ -10686,14 +10686,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 419
-TYPE: >>
-INPUT: Length[mylist]
-EXPECTED:
-= 4
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 438
 TYPE: >>
 INPUT: TableForm[mymatrix]

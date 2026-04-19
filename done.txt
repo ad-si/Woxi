@@ -4177,3 +4177,10 @@ TYPE: >>
 INPUT: a ^ 3 (with a = 2)
 EXPECTED: 8 (matches wolframscript; basic Power of a bound variable)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 419
+TYPE: >>
+INPUT: Length[mylist] (with mylist = {a, b, c, d})
+EXPECTED: 4 (matches wolframscript)
+---
