@@ -11031,14 +11031,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 515
-TYPE: >>
-INPUT: (a + b + c)[[2]]
-EXPECTED:
-= b
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 562
 TYPE: >>
 INPUT: FullForm[3 + 4 I]

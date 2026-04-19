@@ -3918,3 +3918,10 @@ TYPE: >>
 INPUT: {1, 2} + {4, 5, 6}
 EXPECTED: {1, 2} + {4, 5, 6} with Thread::tdlen warning (changed binary_ops::thread_binary_op to emit warning and return unevaluated instead of erroring)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 515
+TYPE: >>
+INPUT: (a + b + c)[[2]]
+EXPECTED: b (matches wolframscript; Part[2] on Plus picks the second summand)
+---
