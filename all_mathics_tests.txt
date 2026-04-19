@@ -13474,18 +13474,6 @@ Runner: pytest (invoked via `make pytest`)
 
 FILE: mathics/test/builtin/test_compile.py
 FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 277
-INPUT: Max
-EXPECTED: with x=max -> check_type=False
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
-LINE: 281
-INPUT: Min
-EXPECTED: with x=min -> check_type=False
----
-FILE: mathics/test/builtin/test_compile.py
-FUNCTION: test_builtin_fns_with_symbols_1
 LINE: 462
 INPUT: Less
 EXPECTED: with x=(1 -> 2

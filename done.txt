@@ -5490,3 +5490,15 @@ LINE: 187
 INPUT: Times
 EXPECTED: Times (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 277
+INPUT: Max
+EXPECTED: Max (Woxi and wolframscript byte-identical)
+---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 281
+INPUT: Min
+EXPECTED: Min (Woxi and wolframscript byte-identical)
+---
