@@ -11341,14 +11341,6 @@ INPUT: ImageQ[Image[{1, 0, 1}]]
 EXPECTED:
 = False
 ---
-FILE: mathics/builtin/image/test.py
-CLASS: ImageQ
-LINE: 60
-TYPE: >>
-INPUT: ImageQ["abc"]
-EXPECTED:
-= False
----
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
 LINE: 136

@@ -2763,3 +2763,11 @@ INPUT: ImageQ[Image[{{{0, 0, 0}, {0, 1, 0}}, {{0, 1, 0}, {0, 1, 1}}}]]
 EXPECTED:
 = True (matches wolframscript)
 ---
+FILE: mathics/builtin/image/test.py
+CLASS: ImageQ
+LINE: 60
+TYPE: >>
+INPUT: ImageQ["abc"]
+EXPECTED:
+= False (matches wolframscript)
+---
