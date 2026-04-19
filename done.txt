@@ -2355,3 +2355,11 @@ INPUT: LetterNumber[Characters["Peccary"]]
 EXPECTED:
 = {16, 5, 3, 3, 1, 18, 25} (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: LetterNumber
+LINE: 434
+TYPE: >>
+INPUT: LetterNumber[{"P", "Pe", "P1", "eck"}]
+EXPECTED:
+= {16, {16, 5}, {16, 0}, {5, 3, 11}} (matches wolframscript)
+---

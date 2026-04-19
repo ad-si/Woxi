@@ -7842,14 +7842,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: LetterNumber
-LINE: 434
-TYPE: >>
-INPUT: LetterNumber[{"P", "Pe", "P1", "eck"}]
-EXPECTED:
-= {16, {16, 5}, {16, 0}, {5, 3, 11}}
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: LetterNumber
 LINE: 437
 TYPE: >>
 INPUT: LetterNumber["\[Beta]", "Greek"]
