@@ -305,6 +305,16 @@ mod simplify {
   }
 
   #[test]
+  fn distribute_sign_over_parens() {
+    // `a - (5 + a + 2 b) + 3 a q` — the negated parenthesis is distributed
+    // and like terms collapse, leaving `-5 - 2*b + 3*a*q`.
+    assert_eq!(
+      interpret("a - (5+ a+ 2 b) + 3 a q").unwrap(),
+      "-5 - 2*b + 3*a*q"
+    );
+  }
+
+  #[test]
   fn pythagorean_identity_not_auto_simplified() {
     // Sin[1]^2 + Cos[1]^2 - 1 is not collapsed to 0 without Simplify —
     // the expression remains symbolic with a literal -1 (matches wolframscript).

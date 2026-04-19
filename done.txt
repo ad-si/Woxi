@@ -3723,3 +3723,9 @@ LINE: 9
 INPUT: Sort[{F[2], ByteArray[{2}]}]
 EXPECTED: {ByteArray[<1>], F[2]} (matches wolframscript; canonical sort)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: None
+LINE: 25
+INPUT: a - (5+ a+ 2 b) + 3 a q
+EXPECTED: -5 - 2*b + 3*a*q (matches wolframscript; WMA distributes the sign)
+---

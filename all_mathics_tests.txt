@@ -13611,13 +13611,6 @@ INPUT: Assuming[Or[n>2, n>=3], Integrate[x^n, {x, 0, 1}]]
 EXPECTED: x^(n+1)/(n+1)
 ---
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: None
-LINE: 25
-INPUT: a - (5+ a+ 2 b) + 3 a q
-EXPECTED: -5 + 3 a q - 2 b
-MESSAGE: WMA distribute the sign (-)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_add
 LINE: 43
 INPUT: E^(3+I Pi)
