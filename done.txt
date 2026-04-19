@@ -4672,3 +4672,10 @@ TYPE: >>
 INPUT: $PathnameSeparator
 EXPECTED: "/" on Unix/Mac, "\" on Windows (added $PathnameSeparator system variable using std::path::MAIN_SEPARATOR; matches wolframscript)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: Directory
+LINE: 329
+TYPE: >>
+INPUT: Directory[]
+EXPECTED: current working directory string (matches wolframscript exactly — same cwd path)
+---
