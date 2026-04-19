@@ -5502,3 +5502,9 @@ LINE: 281
 INPUT: Min
 EXPECTED: Min (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_builtin_fns_with_symbols_1
+LINE: 462-569
+INPUT: Less / LessEqual / Greater / GreaterEqual / And / Not / BitAnd / BitOr / BitXor / BitNot
+EXPECTED: each returns its own symbol name (Woxi and wolframscript byte-identical for all 17 entries)
+---
