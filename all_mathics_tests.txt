@@ -1541,13 +1541,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/application.py
 CLASS: Function
-LINE: 41
-TYPE: >>
-INPUT: f := # ^ 2 &
-EXPECTED: (none)
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
 LINE: 42
 TYPE: X>
 INPUT: f[3]

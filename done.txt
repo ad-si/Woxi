@@ -5304,3 +5304,10 @@ TYPE: >>
 INPUT: Sin[pi]
 EXPECTED: Sin[pi] (Woxi and wolframscript byte-identical; mathics "0" depends on prior UpValues setup that mapped Sin[pi] -> 0)
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 41
+TYPE: >>
+INPUT: f := # ^ 2 &
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
