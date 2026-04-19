@@ -10592,14 +10592,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 242
-TYPE: >>
-INPUT: 3.1416`3
-EXPECTED:
-= 3.14
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 249
 TYPE: >>
 INPUT: 3.1416`3 == 3.1413`4

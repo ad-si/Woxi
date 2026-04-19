@@ -4191,3 +4191,10 @@ TYPE: >>
 INPUT: a ^ 3 (after a = 2; a = 4)
 EXPECTED: 64 (matches wolframscript; Set reassignment replaces prior value)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 242
+TYPE: >>
+INPUT: 3.1416`3
+EXPECTED: 3.1416`3. (matches wolframscript; backtick precision notation preserved — mathics "3.14" reflects rounded display rendering)
+---
