@@ -5140,3 +5140,10 @@ TYPE: >>
 INPUT: Format[Dice[d___Integer?(1 <= # <= 6 &)]] := Row[Dice /@ {d}]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1279
+TYPE: >>
+INPUT: DiceSum[Dice[d___]] := Plus @@ {d}
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

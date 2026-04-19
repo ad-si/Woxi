@@ -10162,13 +10162,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1279
-TYPE: >>
-INPUT: DiceSum[Dice[d___]] := Plus @@ {d}
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1281
 TYPE: >>
 INPUT: DiceSum @ Dice[1, 2, 5]
