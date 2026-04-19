@@ -2395,3 +2395,11 @@ INPUT: InputForm[Context[]]
 EXPECTED:
 = InputForm[Global`] (matches wolframscript; mathics renders "Global`")
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 250
+TYPE: >>
+INPUT: r[z, x, y]
+EXPECTED:
+= r[z, x, y] (matches wolframscript; mathics expected prior Orderless + definition)
+---
