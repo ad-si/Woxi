@@ -972,6 +972,18 @@ pub fn dispatch_list_operations(
           return Some(list_helpers_ast::flatten_dims_ast(&args[0], &dim_spec));
         }
       }
+      // Flat level list: Flatten[list, {1, 2, ...}] — merges those levels
+      // into a single level. Equivalent to Flatten[list, {{1, 2, ...}}].
+      if let Expr::List(levels) = &args[1]
+        && !levels.is_empty()
+        && levels.iter().all(|e| expr_to_i128(e).is_some())
+      {
+        let group: Vec<usize> = levels
+          .iter()
+          .filter_map(|e| expr_to_i128(e).map(|n| n as usize))
+          .collect();
+        return Some(list_helpers_ast::flatten_dims_ast(&args[0], &[group]));
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         return Some(list_helpers_ast::flatten_level_ast(&args[0], n));
       }

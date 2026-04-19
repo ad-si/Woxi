@@ -4541,6 +4541,15 @@ mod join_non_list {
   }
 
   #[test]
+  fn flatten_flat_level_list_merges_levels() {
+    // A flat {1, 2} is equivalent to {{1, 2}} — merges levels 1 and 2.
+    assert_eq!(
+      interpret("Flatten[{{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
   fn flatten_dim_spec_ragged_transpose() {
     assert_eq!(
       interpret("Flatten[{{1, 2, 3}, {4}, {6, 7}, {8, 9, 10}}, {{2}, {1}}]")

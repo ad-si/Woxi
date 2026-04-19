@@ -3411,3 +3411,9 @@ LINE: 68
 INPUT: Operate[p, f]
 EXPECTED: f (fixed: Operate on atomic expr returns it unchanged instead of wrapping with p)
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_flatten
+LINE: 32
+INPUT: Flatten[{{1, 2}, {3,4}}, {1, 2}]
+EXPECTED: {1, 2, 3, 4} (implemented: flat level list {1,2} now treated as {{1,2}}, merging those levels)
+---
