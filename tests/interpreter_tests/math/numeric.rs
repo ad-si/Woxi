@@ -248,6 +248,12 @@ mod precision {
   }
 
   #[test]
+  fn integer_zero() {
+    // Precision[0] — exact integer zero has infinite precision.
+    assert_eq!(interpret("Precision[0]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn rational() {
     assert_eq!(interpret("Precision[1/2]").unwrap(), "Infinity");
   }
