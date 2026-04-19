@@ -7964,14 +7964,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 254
-TYPE: >>
-INPUT: r[]
-EXPECTED:
-= {2, 3}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 256
 TYPE: >>
 INPUT: r[5, Opt->7]

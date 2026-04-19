@@ -2403,3 +2403,11 @@ INPUT: r[z, x, y]
 EXPECTED:
 = r[z, x, y] (matches wolframscript; mathics expected prior Orderless + definition)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 254
+TYPE: >>
+INPUT: r[]
+EXPECTED:
+= r[] (matches wolframscript; mathics expected {2, 3} from prior Options definition)
+---
