@@ -8,10 +8,7 @@ mod string_length_arg_errors {
     // Matches wolframscript: StringLength[x] stays unevaluated with a
     // StringLength::string message; it does NOT return the length of the
     // identifier's name.
-    assert_eq!(
-      interpret("StringLength[x]").unwrap(),
-      "StringLength[x]"
-    );
+    assert_eq!(interpret("StringLength[x]").unwrap(), "StringLength[x]");
   }
 
   #[test]
@@ -3198,6 +3195,16 @@ mod string_contains_free_patterns {
     assert_eq!(
       interpret(r#"StringFreeQ["hello", RegularExpression["[0-9]"]]"#).unwrap(),
       "True"
+    );
+  }
+
+  #[test]
+  fn free_q_threads_over_list() {
+    // StringFreeQ threads over a list of strings (matches wolframscript).
+    assert_eq!(
+      interpret(r#"StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]"#)
+        .unwrap(),
+      "{True, True, True, False, False}"
     );
   }
 

@@ -3130,6 +3130,16 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringFreeQ expects exactly 2 arguments".into(),
     ));
   }
+
+  // Thread over a list of strings in the first argument (matches wolframscript).
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|s| string_free_q_ast(&[s.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   let s = expr_to_str(&args[0])?;
 
   // Try regex-based pattern first

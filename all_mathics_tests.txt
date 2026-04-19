@@ -3972,14 +3972,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/string_tests.py
 CLASS: StringFreeQ
-LINE: 121
-TYPE: >>
-INPUT: StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]
-EXPECTED:
-= {True, True, True, False, False}
----
-FILE: mathics/builtin/testing_expressions/string_tests.py
-CLASS: StringFreeQ
 LINE: 125
 TYPE: >>
 INPUT: StringFreeQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}

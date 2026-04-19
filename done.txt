@@ -4002,3 +4002,10 @@ TYPE: >>
 INPUT: StringLength[x]
 EXPECTED: StringLength[x] with StringLength::string message (updated string_length_ast to emit message and return unevaluated on non-string arg instead of coercing identifier to its name)
 ---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: StringFreeQ
+LINE: 121
+TYPE: >>
+INPUT: StringFreeQ[{"g", "a", "laxy", "universe", "sun"}, "u"]
+EXPECTED: {True, True, True, False, False} (added list threading in string_free_q_ast — matches wolframscript)
+---
