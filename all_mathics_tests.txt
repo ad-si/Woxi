@@ -14204,32 +14204,10 @@ EXPECTED:
   vec: False
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-007
-EXPECTED:
-  expr: DensityPlot[1/(x^2 + y^2 + 1), {x, -1, 1}, {y, -2,2}, Mesh->Full]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-008
-EXPECTED:
-  expr: DensityPlot[Sin[x y], {x, -2, 2}, {y, -2, 2}, Mesh->Full]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-009
-EXPECTED:
-  expr: DensityPlot[Sqrt[x * y], {x, -1, 1}, {y, -1, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-010
 EXPECTED:
   expr: DensityPlot[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}, ColorFunction -> (Blend[{Red, Green, Blue}, #]&)]
   skip: pyodide
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-011
-EXPECTED:
-  expr: DensityPlot[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-012

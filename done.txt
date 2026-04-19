@@ -5659,3 +5659,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-006 DensityPlot[1 / x, {x, 0, 1}, {y, 0, 1}]
 EXPECTED: -Graphics- (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-007/008/009/011 DensityPlot variants
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical for 4 DensityPlot tests)
+---
