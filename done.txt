@@ -5262,3 +5262,17 @@ TYPE: #>
 INPUT: Clear[a]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: SubtractFrom
+LINE: 317
+TYPE: #>
+INPUT: Clear[a]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: TimesBy
+LINE: 345
+TYPE: #>
+INPUT: Clear[a]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
