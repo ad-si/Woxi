@@ -9705,13 +9705,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 324
-TYPE: >>
-INPUT: a = 5;
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 326
 TYPE: >>
 INPUT: b
