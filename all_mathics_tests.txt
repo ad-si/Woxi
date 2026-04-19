@@ -7024,13 +7024,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: OwnValues
-LINE: 612
-TYPE: >>
-INPUT: x := y
-EXPECTED: (none)
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: OwnValues
 LINE: 613
 TYPE: >>
 INPUT: OwnValues[x]

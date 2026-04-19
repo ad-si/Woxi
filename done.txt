@@ -4966,3 +4966,10 @@ TYPE: >>
 INPUT: ClearAll[r]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: OwnValues
+LINE: 612
+TYPE: >>
+INPUT: x := y
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
+---
