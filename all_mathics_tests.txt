@@ -7643,14 +7643,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: Precision
-LINE: 756
-TYPE: >>
-INPUT: Precision[1.23`10]
-EXPECTED:
-= 10.
----
-FILE: mathics/builtin/atomic/numbers.py
-CLASS: Precision
 LINE: 765
 TYPE: >>
 INPUT: Precision[{{1, 1.`},{1.`5, 1.`10}}]

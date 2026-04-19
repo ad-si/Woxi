@@ -258,6 +258,12 @@ mod precision {
   }
 
   #[test]
+  fn arbitrary_precision_literal() {
+    // 1.23`10 is a literal with explicit precision of 10 digits.
+    assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");
+  }
+
+  #[test]
   fn dollar_machine_precision_value() {
     // $MachinePrecision is Log10[2^53] ≈ 15.9546 (matches wolframscript).
     assert_eq!(

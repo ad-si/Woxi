@@ -3261,3 +3261,9 @@ LINE: 677
 INPUT: N[MachinePrecision]
 EXPECTED: 15.954589770191003 (matches wolframscript; mathics "15.9546" is display-truncated)
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Precision
+LINE: 756
+INPUT: Precision[1.23`10]
+EXPECTED: 10. (matches wolframscript)
+---
