@@ -2053,6 +2053,42 @@ mod file_name_join {
   }
 }
 
+mod to_file_name {
+  use super::*;
+
+  #[test]
+  fn list_dirs_and_file() {
+    assert_eq!(
+      interpret(r#"ToFileName[{"dir1", "dir2"}, "file"]"#).unwrap(),
+      "dir1/dir2/file"
+    );
+  }
+
+  #[test]
+  fn string_dir_and_file() {
+    assert_eq!(
+      interpret(r#"ToFileName["dir1", "file"]"#).unwrap(),
+      "dir1/file"
+    );
+  }
+
+  #[test]
+  fn list_dirs_only_has_trailing_slash() {
+    assert_eq!(
+      interpret(r#"ToFileName[{"dir1", "dir2", "dir3"}]"#).unwrap(),
+      "dir1/dir2/dir3/"
+    );
+  }
+
+  #[test]
+  fn single_dir_has_trailing_slash() {
+    assert_eq!(
+      interpret(r#"ToFileName["just_a_dir"]"#).unwrap(),
+      "just_a_dir/"
+    );
+  }
+}
+
 mod file_name_split {
   use super::*;
 

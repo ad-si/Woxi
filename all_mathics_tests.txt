@@ -3065,14 +3065,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: ToFileName
-LINE: 1077
-TYPE: >>
-INPUT: ToFileName[{"dir1", "dir2"}, "file"]
-EXPECTED:
-= dir1...dir2...file
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: ToFileName
 LINE: 1080
 TYPE: >>
 INPUT: ToFileName["dir1", "file"]

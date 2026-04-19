@@ -536,6 +536,42 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::String(result)));
     }
+    "ToFileName" if args.len() == 1 || args.len() == 2 => {
+      let sep = std::path::MAIN_SEPARATOR.to_string();
+      let collect_dirs = |expr: &Expr| -> Option<Vec<String>> {
+        match expr {
+          Expr::String(s) => Some(vec![s.clone()]),
+          Expr::List(parts) => {
+            let mut segments = Vec::with_capacity(parts.len());
+            for p in parts {
+              if let Expr::String(s) = p {
+                segments.push(s.clone());
+              } else {
+                return None;
+              }
+            }
+            Some(segments)
+          }
+          _ => None,
+        }
+      };
+      if args.len() == 1 {
+        if let Some(dirs) = collect_dirs(&args[0]) {
+          let joined = dirs.join(&sep);
+          return Some(Ok(Expr::String(format!("{}{}", joined, sep))));
+        }
+      } else if let (Some(dirs), Expr::String(file)) =
+        (collect_dirs(&args[0]), &args[1])
+      {
+        let mut all = dirs;
+        all.push(file.clone());
+        return Some(Ok(Expr::String(all.join(&sep))));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ToFileName".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "FileNameJoin" if args.len() == 1 || args.len() == 2 => {
       // Detect OperatingSystem option from second argument (a Rule).
       let sep: char = if args.len() == 2 {

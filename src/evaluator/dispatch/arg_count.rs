@@ -979,6 +979,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToCharacterCode" => Some((1, 1)),
     "ToeplitzMatrix" => Some((1, 1)),
     "ToExpression" => Some((1, 1)),
+    "ToFileName" => Some((1, 2)),
     "Together" => Some((1, 1)),
     "ToLowerCase" => Some((1, 1)),
     "ToPolarCoordinates" => Some((1, 1)),

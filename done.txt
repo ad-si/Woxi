@@ -3890,3 +3890,10 @@ TYPE: >>
 INPUT: {a, b, c} = {10, 2, 3}
 EXPECTED: {10, 2, 3} (implemented destructuring assignment in set_ast — also supports nested lists; emits Set::shape warning on length mismatch)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: ToFileName
+LINE: 1077
+TYPE: >>
+INPUT: ToFileName[{"dir1", "dir2"}, "file"]
+EXPECTED: dir1/dir2/file (implemented ToFileName alongside FileNameJoin — 1-arg form always appends trailing slash, 2-arg form joins dirs + file)
+---

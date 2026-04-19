@@ -576,6 +576,7 @@ RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,1
 GraphData,,🚫,,6.0,580
 LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6.0,581
 FileNameJoin,Join file path components,✅,pure,7.0,582
+ToFileName,Join directory path components into a file name string,✅,pure,1.0,
 InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4.0,583
 InverseFunction,Represents the inverse of a function,✅,none,2.0,584
 Residue,Computes the residue of an expression at a point,✅,pure,2.0,585
