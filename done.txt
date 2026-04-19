@@ -2523,3 +2523,11 @@ INPUT: AiryBiPrime[0.5]
 EXPECTED:
 = 0.5445725641405924 (matches wolframscript; mathics shows rounded 0.544573)
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselJ
+LINE: 366
+TYPE: >>
+INPUT: D[BesselJ[n, z], z]
+EXPECTED:
+= (BesselJ[-1 + n, z] - BesselJ[1 + n, z])/2 (matches wolframscript)
+---

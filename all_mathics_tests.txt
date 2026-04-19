@@ -9132,14 +9132,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselJ
-LINE: 366
-TYPE: >>
-INPUT: D[BesselJ[n, z], z]
-EXPECTED:
-= -BesselJ[1 + n, z] / 2 + BesselJ[-1 + n, z] / 2
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselJ
 LINE: 376
 TYPE: >>
 INPUT: BesselJ[1/2, x]
