@@ -446,6 +446,16 @@ mod differentiate_plus_times {
       "8*x + 4*(3 + 2*x)"
     );
   }
+
+  #[test]
+  fn d_gradient_form() {
+    // D[expr, {{x, y}}] — gradient form differentiates wrt each variable.
+    // Matches wolframscript.
+    assert_eq!(
+      interpret("D[x^3 * Cos[y], {{x, y}}]").unwrap(),
+      "{3*x^2*Cos[y], -(x^3*Sin[y])}"
+    );
+  }
 }
 
 mod derivative_prime_notation {

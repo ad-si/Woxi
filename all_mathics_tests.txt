@@ -4725,14 +4725,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: D
-LINE: 171
-TYPE: >>
-INPUT: D[x ^ 3 * Cos[y], {{x, y}}]
-EXPECTED:
-= {3 x ^ 2 Cos[y], -x ^ 3 Sin[y]}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
 LINE: 174
 TYPE: >>
 INPUT: D[Sin[x] * Cos[y], {{x,y}, 2}]
