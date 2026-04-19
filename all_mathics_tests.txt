@@ -7658,14 +7658,6 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/list/constructing.py
-CLASS: Normal
-LINE: 185
-TYPE: >>
-INPUT: Normal[%]
-EXPECTED:
-= 1 + x + x ^ 2 / 2 + x ^ 3 / 6 + x ^ 4 / 24 + x ^ 5 / 120
----
-FILE: mathics/builtin/list/constructing.py
 CLASS: Reap
 LINE: 408
 TYPE: >>

@@ -4616,3 +4616,10 @@ LINE: 26
 INPUT: Gudermannian[z]
 EXPECTED: Gudermannian[z] (matches wolframscript; symbolic Gudermannian stays unevaluated — mathics "2 ArcTan[Tanh[z / 2]]" reflects a rewrite rule)
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Normal
+LINE: 185
+TYPE: >>
+INPUT: Normal[%] (with % = Series[Exp[x], {x, 0, 5}])
+EXPECTED: 1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120 (matches wolframscript byte-for-byte)
+---
