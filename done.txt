@@ -3441,3 +3441,9 @@ LINE: 232
 INPUT: Precision[0]
 EXPECTED: Infinity (matches wolframscript; integer zero has infinite precision)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[0.00]
+EXPECTED: MachinePrecision (matches wolframscript; trailing zeros don't change f64)
+---

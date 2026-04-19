@@ -264,6 +264,13 @@ mod precision {
   }
 
   #[test]
+  fn machine_real_zero_with_trailing_zeros() {
+    // 0.00 still has MachinePrecision — the trailing zeros don't change the
+    // underlying f64 representation.
+    assert_eq!(interpret("Precision[0.00]").unwrap(), "MachinePrecision");
+  }
+
+  #[test]
   fn arbitrary_precision_literal() {
     // 1.23`10 is a literal with explicit precision of 10 digits.
     assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");
