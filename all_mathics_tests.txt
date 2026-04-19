@@ -8383,14 +8383,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1105
-TYPE: >>
-INPUT: M[[1, 2]]
-EXPECTED:
-= b
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1120
 TYPE: >>
 INPUT: B[[;;, 2]]

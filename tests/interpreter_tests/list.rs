@@ -1697,6 +1697,15 @@ mod part_extraction {
   }
 
   #[test]
+  fn part_row_and_column_index() {
+    // M = {{a, b, c}, {d, e, f}}; M[[1, 2]] extracts row 1, column 2 → b
+    assert_eq!(
+      interpret("M = {{a, b, c}, {d, e, f}}; M[[1, 2]]").unwrap(),
+      "b"
+    );
+  }
+
+  #[test]
   fn part_row_then_all() {
     // Part[matrix, i, All] returns the whole row
     assert_eq!(

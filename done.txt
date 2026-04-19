@@ -3789,3 +3789,9 @@ LINE: 186
 INPUT: Accuracy[0]
 EXPECTED: Infinity (matches wolframscript)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1105
+INPUT: M[[1, 2]] (with M = {{a,b,c},{d,e,f}})
+EXPECTED: b (matches wolframscript; row 1 column 2)
+---
