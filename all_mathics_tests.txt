@@ -10670,14 +10670,6 @@ EXPECTED:
 = {a, 1}
 ---
 FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 336
-TYPE: >>
-INPUT: (1.5 + 1.0 I) ^ (3.5 + 1.5 I)
-EXPECTED:
-= -3.19182 + 0.645659 I
----
-FILE: mathics/builtin/arithfns/basic.py
 CLASS: Times
 LINE: 544
 TYPE: >>
