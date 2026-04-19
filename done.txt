@@ -2571,3 +2571,11 @@ INPUT: LegendreP[4, x]
 EXPECTED:
 = (3 - 30*x^2 + 35*x^4)/8 (matches wolframscript)
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LaguerreL
+LINE: 141
+TYPE: >>
+INPUT: LaguerreL[8, x]
+EXPECTED:
+= (40320 - 322560*x + 564480*x^2 - 376320*x^3 + 117600*x^4 - 18816*x^5 + 1568*x^6 - 64*x^7 + x^8)/40320 (matches wolframscript)
+---

@@ -9829,14 +9829,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LaguerreL
-LINE: 141
-TYPE: >>
-INPUT: LaguerreL[8, x]
-EXPECTED:
-= 1 - 8 x + 14 x ^ 2 - 28 x ^ 3 / 3 + 35 x ^ 4 / 12 - 7 x ^ 5 / 15 + 7 x ^ 6 / 180 - x ^ 7 / 630 + x ^ 8 / 40320
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LaguerreL
 LINE: 144
 TYPE: >>
 INPUT: LaguerreL[3/2, 1.7]
