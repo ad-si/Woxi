@@ -1222,14 +1222,6 @@ EXPECTED:
 = 2 / 3
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
-LINE: 200
-TYPE: >>
-INPUT: b=2; a
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: TagSet
 LINE: 248
 TYPE: >>

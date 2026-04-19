@@ -5283,3 +5283,10 @@ TYPE: >>
 INPUT: F[x_, y_] := y / x;
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 200
+TYPE: >>
+INPUT: b=2; a
+EXPECTED: a (Woxi and wolframscript byte-identical when run in isolation; mathics "3" depends on prior SetDelayed setup of a)
+---
