@@ -3897,3 +3897,17 @@ TYPE: >>
 INPUT: ToFileName[{"dir1", "dir2"}, "file"]
 EXPECTED: dir1/dir2/file (implemented ToFileName alongside FileNameJoin — 1-arg form always appends trailing slash, 2-arg form joins dirs + file)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: ToFileName
+LINE: 1080
+TYPE: >>
+INPUT: ToFileName["dir1", "file"]
+EXPECTED: dir1/file (matches wolframscript; covered by to_file_name::string_dir_and_file test)
+---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: ToFileName
+LINE: 1083
+TYPE: >>
+INPUT: ToFileName[{"dir1", "dir2", "dir3"}]
+EXPECTED: dir1/dir2/dir3/ (matches wolframscript which has trailing slash; mathics "dir1...dir2...dir3" omits it)
+---

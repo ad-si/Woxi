@@ -3063,22 +3063,6 @@ INPUT: SetDirectory[]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: ToFileName
-LINE: 1080
-TYPE: >>
-INPUT: ToFileName["dir1", "file"]
-EXPECTED:
-= dir1...file
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: ToFileName
-LINE: 1083
-TYPE: >>
-INPUT: ToFileName[{"dir1", "dir2", "dir3"}]
-EXPECTED:
-= dir1...dir2...dir3
----
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: ConverterDumpsExtensionMappings
 LINE: 954
