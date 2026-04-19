@@ -8270,14 +8270,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/directories/directory_names.py
 CLASS: DirectoryName
-LINE: 28
-TYPE: >>
-INPUT: DirectoryName["a/b/c"]
-EXPECTED:
-= a/b
----
-FILE: mathics/builtin/directories/directory_names.py
-CLASS: DirectoryName
 LINE: 31
 TYPE: >>
 INPUT: DirectoryName["a/b/c", 2]

@@ -2411,3 +2411,11 @@ INPUT: r[]
 EXPECTED:
 = r[] (matches wolframscript; mathics expected {2, 3} from prior Options definition)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: DirectoryName
+LINE: 28
+TYPE: >>
+INPUT: DirectoryName["a/b/c"]
+EXPECTED:
+= a/b/ (matches wolframscript; mathics expected without trailing slash)
+---
