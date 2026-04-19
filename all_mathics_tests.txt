@@ -1442,13 +1442,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: NValues
-LINE: 125
-TYPE: >>
-INPUT: NValues[d] = {foo -> bar};
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: NValues
 LINE: 126
 TYPE: >>
 INPUT: NValues[d]

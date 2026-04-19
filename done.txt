@@ -5346,3 +5346,10 @@ TYPE: >>
 INPUT: DownValues[f] =.
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: NValues
+LINE: 125
+TYPE: >>
+INPUT: NValues[d] = {foo -> bar};
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
