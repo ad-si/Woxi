@@ -751,6 +751,15 @@ mod operate {
     // Operate[p, f] — f is atomic, nothing to operate on; return f unchanged.
     assert_eq!(interpret("Operate[p, f]").unwrap(), "f");
   }
+
+  #[test]
+  fn depth_exceeds_nesting_returns_unchanged() {
+    // f[a][b][c] has nesting depth 3; Operate at depth 4 returns it unchanged.
+    assert_eq!(
+      interpret("Operate[p, f[a][b][c], 4]").unwrap(),
+      "f[a][b][c]"
+    );
+  }
 }
 
 mod dimension_mismatch_returns_unevaluated {

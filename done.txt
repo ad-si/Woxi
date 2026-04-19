@@ -3417,3 +3417,9 @@ LINE: 32
 INPUT: Flatten[{{1, 2}, {3,4}}, {1, 2}]
 EXPECTED: {1, 2, 3, 4} (implemented: flat level list {1,2} now treated as {{1,2}}, merging those levels)
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_operate
+LINE: 67
+INPUT: Operate[p, f[a][b][c], 4]
+EXPECTED: f[a][b][c] (matches wolframscript; depth exceeds nesting)
+---
