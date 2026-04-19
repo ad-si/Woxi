@@ -1337,13 +1337,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Clear
-LINE: 53
-TYPE: >>
-INPUT: Clear["Global`*"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Clear
 LINE: 60
 TYPE: >>
 INPUT: Clear[Sin]

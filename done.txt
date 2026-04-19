@@ -4826,3 +4826,10 @@ TYPE: >>
 INPUT: Clear[x]
 EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 53
+TYPE: >>
+INPUT: Clear["Global`*"]
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
+---
