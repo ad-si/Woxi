@@ -5147,3 +5147,10 @@ TYPE: >>
 INPUT: DiceSum[Dice[d___]] := Plus @@ {d}
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Integer_positive
+FORM: StandardForm
+INPUT: MakeBoxes[14]
+EXPECTED: 14 (Woxi and wolframscript agree on integer 14; mathics "14" is the box-wrapped string form)
+---

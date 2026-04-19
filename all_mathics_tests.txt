@@ -16396,13 +16396,6 @@ EXPECTED: InterpretationBox[PaneBox["\"14\""], OutputForm[14], Editable -> False
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Integer_positive
-FORM: StandardForm
-INPUT: MakeBoxes[14]
-EXPECTED: "14"
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Integer_positive
 FORM: TeXForm
 INPUT: MakeBoxes[14//TeXForm]
 EXPECTED: InterpretationBox["\"14\"", TeXForm[14], Editable -> True, AutoDelete-> True]
