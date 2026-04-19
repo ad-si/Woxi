@@ -4184,3 +4184,10 @@ TYPE: >>
 INPUT: Length[mylist] (with mylist = {a, b, c, d})
 EXPECTED: 4 (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 304
+TYPE: >>
+INPUT: a ^ 3 (after a = 2; a = 4)
+EXPECTED: 64 (matches wolframscript; Set reassignment replaces prior value)
+---
