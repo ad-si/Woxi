@@ -4198,3 +4198,10 @@ TYPE: >>
 INPUT: 3.1416`3
 EXPECTED: 3.1416`3. (matches wolframscript; backtick precision notation preserved — mathics "3.14" reflects rounded display rendering)
 ---
+FILE: mathics/builtin/binary/bytearray.py
+CLASS: ByteArray_
+LINE: 29
+TYPE: >>
+INPUT: A=ByteArray[{1, 25, 3}]
+EXPECTED: ByteArray[<3>] (matches wolframscript; ByteArray renders as ByteArray[<length>])
+---
