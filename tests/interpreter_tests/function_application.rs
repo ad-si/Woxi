@@ -760,6 +760,15 @@ mod operate {
       "f[a][b][c]"
     );
   }
+
+  #[test]
+  fn level_3_on_triple_curried() {
+    // Operate[p, f[a][b][c], 3] wraps the innermost symbol `f`.
+    assert_eq!(
+      interpret("Operate[p, f[a][b][c], 3]").unwrap(),
+      "p[f][a][b][c]"
+    );
+  }
 }
 
 mod dimension_mismatch_returns_unevaluated {

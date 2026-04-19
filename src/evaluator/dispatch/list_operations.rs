@@ -1579,6 +1579,17 @@ pub fn dispatch_list_operations(
       // For n == 1 (default): f[a, b] -> p[f][a, b]
       // When depth exceeds the expression's nesting (including atoms at any
       // depth), return the expression unchanged (matches wolframscript).
+      //
+      // Expressions like `f[a][b][c]` can arrive as a FunctionCall whose
+      // `name` field is a literal string "f[a][b]" (the Woxi parser leaves
+      // some deeply-nested calls in this form). Detect that shape and
+      // re-parse the name so the recursion can peel the nesting correctly.
+      fn decode_complex_head(name: &str) -> Option<Expr> {
+        if !name.contains('[') {
+          return None;
+        }
+        crate::syntax::string_to_expr(name).ok()
+      }
       fn wrap_head_at_depth(expr: &Expr, p: &Expr, depth: i128) -> Expr {
         if depth == 0 {
           Expr::FunctionCall {
@@ -1588,11 +1599,9 @@ pub fn dispatch_list_operations(
         } else {
           match expr {
             Expr::FunctionCall { name, args } => {
-              let wrapped_head = wrap_head_at_depth(
-                &Expr::Identifier(name.clone()),
-                p,
-                depth - 1,
-              );
+              let head_expr = decode_complex_head(name)
+                .unwrap_or_else(|| Expr::Identifier(name.clone()));
+              let wrapped_head = wrap_head_at_depth(&head_expr, p, depth - 1);
               Expr::CurriedCall {
                 func: Box::new(wrapped_head),
                 args: args.clone(),

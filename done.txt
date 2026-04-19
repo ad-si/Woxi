@@ -5209,3 +5209,9 @@ LINE: 505
 ACTUAL: (x; y; z)
 EXPECTED: z (Woxi and wolframscript both return "z" from CompoundExpression)
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_operate
+LINE: 66
+INPUT: Operate[p, f[a][b][c], 3]
+EXPECTED: p[f][a][b][c] (decoded complex head names when recursing through nested FunctionCall/CurriedCall)
+---

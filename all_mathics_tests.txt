@@ -10342,12 +10342,6 @@ LINE: 46
 INPUT: Flatten[m, {2, 1}]
 EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
-FILE: mathics/test/test_structure.py
-FUNCTION: test_operate
-LINE: 66
-INPUT: Operate[p, f[a][b][c], 3]
-EXPECTED: p[f][a][b][c]
----
 FILE: mathics/test/eval/test_patterns.py
 FUNCTION: None
 LINE: 44
