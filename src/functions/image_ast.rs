@@ -321,6 +321,45 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// ImageAspectRatio[img] - height/width as an exact rational when possible.
+pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAspectRatio expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Image { width, height, .. } => {
+      let w = *width as i128;
+      let h = *height as i128;
+      if w == 0 {
+        return Ok(Expr::FunctionCall {
+          name: "ImageAspectRatio".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      // Reduce gcd
+      fn gcd(a: i128, b: i128) -> i128 {
+        if b == 0 { a.abs() } else { gcd(b, a % b) }
+      }
+      let g = gcd(h, w);
+      let (num, den) = (h / g, w / g);
+      if den == 1 {
+        Ok(Expr::Integer(num))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(num), Expr::Integer(den)],
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "ImageAspectRatio".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// ImageChannels[img] - Channel count (1/3/4)
 pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

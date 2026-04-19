@@ -897,7 +897,7 @@ fn real_to_rational(r: f64) -> Option<(i128, i128)> {
   let sign = if r < 0.0 { -1i128 } else { 1 };
   let unsigned = s.trim_start_matches('-');
 
-  if let Some(e_idx) = unsigned.find(|c: char| c == 'e' || c == 'E') {
+  if let Some(e_idx) = unsigned.find(['e', 'E']) {
     let (mant, exp_part) = unsigned.split_at(e_idx);
     let exp: i32 = exp_part[1..].parse().ok()?;
     let (n, d) = decimal_to_rational(mant)?;

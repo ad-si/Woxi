@@ -2937,7 +2937,7 @@ Booleans,Domain of booleans,✅,1,4.0,3008
 ClosenessCentrality,Closeness centrality of graph vertices,✅,1,8.0,3008
 CreateDataStructure,,,,12.1,3008
 DivideSides,Divide both sides of an equation by an expression,✅,none,11.3,3008
-ImageAspectRatio,,🚫,,8.0,3008
+ImageAspectRatio,Ratio of image height to width as an exact rational,✅,pure,8.0,3008
 PascalDistribution,Pascal distribution (number of trials until n successes),✅,pure,8.0,3008
 QFactorial,Compute the q-analog of the factorial,✅,pure,7.0,3008
 RegionBinarize,,🚫,,8.0,3008

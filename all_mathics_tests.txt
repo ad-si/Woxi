@@ -9528,14 +9528,6 @@ EXPECTED:
 = 400 / 323
 ---
 FILE: mathics/builtin/image/properties.py
-CLASS: ImageAspectRatio
-LINE: 36
-TYPE: >>
-INPUT: ImageAspectRatio[Image[{{0, 1}, {1, 0}, {1, 1}}]]
-EXPECTED:
-= 3 / 2
----
-FILE: mathics/builtin/image/properties.py
 CLASS: ImageChannels
 LINE: 62
 TYPE: >>

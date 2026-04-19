@@ -450,6 +450,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageCrop" => Some((1, 2)),
     "ImageData" => Some((1, 1)),
     "ImageDimensions" => Some((1, 1)),
+    "ImageAspectRatio" => Some((1, 1)),
     "ImageMultiply" => Some((2, 2)),
     "ImageQ" => Some((1, 1)),
     "ImageReflect" => Some((1, 2)),

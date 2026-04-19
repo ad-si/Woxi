@@ -5007,3 +5007,10 @@ LINE: 87
 INPUT: RealDigits[123.45, 40]
 EXPECTED: {{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2} (promote Real to exact rational via decimal literal for non-10 bases, pad to ceil(16/log10(base)) digits)
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageAspectRatio
+LINE: 36
+TYPE: >>
+INPUT: ImageAspectRatio[Image[{{0, 1}, {1, 0}, {1, 1}}]]
+EXPECTED: 3/2 (implemented ImageAspectRatio as reduced height/width rational)
+---

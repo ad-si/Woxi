@@ -38,6 +38,9 @@ pub fn dispatch_image_functions(
     "ImageDimensions" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_dimensions_ast(args));
     }
+    "ImageAspectRatio" if args.len() == 1 => {
+      return Some(crate::functions::image_ast::image_aspect_ratio_ast(args));
+    }
     "ImageChannels" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_channels_ast(args));
     }

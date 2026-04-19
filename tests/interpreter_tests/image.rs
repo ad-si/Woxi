@@ -74,6 +74,25 @@ mod image_core {
   }
 
   #[test]
+  fn image_aspect_ratio_from_small_matrix() {
+    // 3 rows × 2 cols → {w, h} = {2, 3} → aspect h/w = 3/2.
+    clear_state();
+    assert_eq!(
+      interpret("ImageAspectRatio[Image[{{0, 1}, {1, 0}, {1, 1}}]]").unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn image_aspect_ratio_square() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageAspectRatio[Image[{{0, 1}, {1, 0}}]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
   fn image_q_on_invalid_ragged_nested_list() {
     // Invalid pixel data (ragged nested list) — Image[...] stays unevaluated
     // and ImageQ returns False (matches wolframscript).
