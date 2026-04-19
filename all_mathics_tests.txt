@@ -10631,14 +10631,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Plus
-LINE: 240
-TYPE: >>
-INPUT: a + b + 4.5 + a + b + a + 2 + 1.5 b
-EXPECTED:
-= 6.5 + 3 a + 3.5 b
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Plus
 LINE: 251
 TYPE: >>
 INPUT: DefaultValues[Plus]

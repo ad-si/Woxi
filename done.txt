@@ -2667,3 +2667,11 @@ INPUT: f'[x]
 EXPECTED:
 = Derivative[1][f][x] (matches wolframscript; mathics renders as f'[x])
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Plus
+LINE: 240
+TYPE: >>
+INPUT: a + b + 4.5 + a + b + a + 2 + 1.5 b
+EXPECTED:
+= 6.5 + 3*a + 3.5*b (matches wolframscript)
+---
