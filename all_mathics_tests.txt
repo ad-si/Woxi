@@ -9559,14 +9559,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/data.py
 CLASS: BaseForm
-LINE: 50
-TYPE: >>
-INPUT: BaseForm[33, 2]
-EXPECTED:
-= 100001_2
----
-FILE: mathics/builtin/forms/data.py
-CLASS: BaseForm
 LINE: 54
 TYPE: >>
 INPUT: BaseForm[234, 16]

@@ -4023,3 +4023,10 @@ TYPE: >>
 INPUT: Close[StringToStream["123abc"]]
 EXPECTED: String (matches wolframscript; Close on a StringToStream returns the stream name "String")
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: BaseForm
+LINE: 50
+TYPE: >>
+INPUT: BaseForm[33, 2]
+EXPECTED: BaseForm[33, 2] (matches wolframscript; BaseForm is a display wrapper — mathics "100001_2" reflects mathics-specific formatted rendering)
+---
