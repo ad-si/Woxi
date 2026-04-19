@@ -4665,3 +4665,10 @@ TYPE: >>
 INPUT: $OperatingSystem
 EXPECTED: "MacOSX" / "Unix" / "Windows" (added $OperatingSystem system variable alongside $SystemID; matches wolframscript)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: PathnameSeparator
+LINE: 915
+TYPE: >>
+INPUT: $PathnameSeparator
+EXPECTED: "/" on Unix/Mac, "\" on Windows (added $PathnameSeparator system variable using std::path::MAIN_SEPARATOR; matches wolframscript)
+---

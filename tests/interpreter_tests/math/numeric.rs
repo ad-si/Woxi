@@ -460,6 +460,19 @@ mod precision {
     );
   }
 
+  #[test]
+  fn pathname_separator_head_is_string() {
+    // $PathnameSeparator is "/" on Unix/Mac, "\" on Windows.
+    assert_eq!(
+      interpret("Head[$PathnameSeparator] == String").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringLength[$PathnameSeparator]").unwrap(),
+      "1"
+    );
+  }
+
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   #[test]
   fn system_memory_head_is_integer() {

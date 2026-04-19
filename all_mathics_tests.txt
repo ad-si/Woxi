@@ -2791,14 +2791,6 @@ INPUT: Needs["VectorAnalysis`"]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: PathnameSeparator
-LINE: 915
-TYPE: >>
-INPUT: $PathnameSeparator
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: RenameFile
 LINE: 936
 TYPE: >>
