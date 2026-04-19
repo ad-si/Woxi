@@ -1237,6 +1237,16 @@ mod real_digits {
   }
 
   #[test]
+  fn non_numeric_symbol_stays_unevaluated() {
+    // Bare symbols can't be converted to digits; return unevaluated
+    // (matches wolframscript).
+    assert_eq!(
+      interpret("RealDigits[abc]").unwrap(),
+      "RealDigits[abc]"
+    );
+  }
+
+  #[test]
   fn pi_part_extraction() {
     assert_eq!(
       interpret("RealDigits[Pi, 10, 10][[1]]").unwrap(),

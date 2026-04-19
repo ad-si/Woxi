@@ -1150,7 +1150,16 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(precision);
 
-  let bf = expr_to_bigfloat(&abs_expr, bits, rm, &mut cc)?;
+  let bf = match expr_to_bigfloat(&abs_expr, bits, rm, &mut cc) {
+    Ok(v) => v,
+    Err(_) => {
+      // Non-numeric expression (e.g. bare symbol): return unevaluated.
+      return Ok(Expr::FunctionCall {
+        name: "RealDigits".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
 
   let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf, rm, &mut cc)?;
 
