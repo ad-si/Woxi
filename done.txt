@@ -3675,3 +3675,9 @@ LINE: 172
 INPUT: a  b  DirectedInfinity[-I]
 EXPECTED: a*b*DirectedInfinity[-I] (matches wolframscript)
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: Increment
+LINE: 183
+INPUT: y = 2 x; y++; y
+EXPECTED: 1 + 2*x (matches wolframscript; increment on symbolic value)
+---

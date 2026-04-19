@@ -1744,6 +1744,12 @@ mod increment_function {
   }
 
   #[test]
+  fn increment_symbolic_expression() {
+    // y holds `2 x`; y++ adds 1 to it, yielding `1 + 2*x`.
+    assert_eq!(interpret("y = 2 x; y++; y").unwrap(), "1 + 2*x");
+  }
+
+  #[test]
   fn increment_multiple_times() {
     assert_eq!(interpret("x = 0; x++; x++; x++; x").unwrap(), "3");
   }

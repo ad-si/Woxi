@@ -1108,14 +1108,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: Increment
-LINE: 183
-TYPE: >>
-INPUT: y = 2 x; y++; y
-EXPECTED:
-= 1 + 2 x
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Increment
 LINE: 195
 TYPE: >>
 INPUT: ++++a+++++2 // Hold // FullForm
