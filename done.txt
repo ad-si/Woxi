@@ -5448,3 +5448,9 @@ LINE: 51
 INPUT: Sin[x]
 EXPECTED: Sin[x] (Woxi and wolframscript byte-identical; mathics test asserts compile-time numeric eval, but bare Sin[x] evaluation matches)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_compile_code
+LINE: 53
+INPUT: Sqrt[x]
+EXPECTED: Sqrt[x] (Woxi and wolframscript byte-identical)
+---
