@@ -790,6 +790,23 @@ pub fn evaluate_expr_to_expr_inner(
               }
               Expr::List(items)
             }
+            // AppendTo/PrependTo also work on any FunctionCall head
+            // (matches wolframscript: AppendTo[f[a,b], x] -> f[a,b,x]).
+            Expr::FunctionCall {
+              name: head,
+              args: fn_args,
+            } => {
+              let mut new_args = std::mem::take(fn_args);
+              if name == "AppendTo" {
+                new_args.push(elem);
+              } else {
+                new_args.insert(0, elem);
+              }
+              Expr::FunctionCall {
+                name: head.clone(),
+                args: new_args,
+              }
+            }
             _ => {
               return Err(InterpreterError::EvaluationError(format!(
                 "{}: {} is not a list",

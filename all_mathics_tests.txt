@@ -8088,14 +8088,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: PrependTo
-LINE: 1408
-TYPE: >>
-INPUT: PrependTo[y, x]
-EXPECTED:
-= f[x, a, b, c]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: PrependTo
 LINE: 1410
 TYPE: >>
 INPUT: y

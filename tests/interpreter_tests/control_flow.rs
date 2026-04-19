@@ -351,6 +351,23 @@ mod prepend_to {
       "{1, 2, 3}"
     );
   }
+
+  #[test]
+  fn works_on_function_head() {
+    // AppendTo/PrependTo also work on any FunctionCall head — matches
+    // wolframscript's behavior that they wrap in Prepend/Append regardless
+    // of the head.
+    clear_state();
+    assert_eq!(
+      interpret("y = f[a, b, c]; PrependTo[y, x]").unwrap(),
+      "f[x, a, b, c]"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("y = f[a, b, c]; AppendTo[y, x]").unwrap(),
+      "f[a, b, c, x]"
+    );
+  }
 }
 
 mod check {

@@ -4338,3 +4338,10 @@ TYPE: >>
 INPUT: PrependTo[s, 0] (with s = {1, 2, 4, 9})
 EXPECTED: {0, 1, 2, 4, 9} (matches wolframscript; PrependTo adds to the front)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: PrependTo
+LINE: 1408
+TYPE: >>
+INPUT: PrependTo[y, x] (with y = f[a, b, c])
+EXPECTED: f[x, a, b, c] (extended AppendTo/PrependTo special-case in core_eval to also accept any FunctionCall head, not just List)
+---
