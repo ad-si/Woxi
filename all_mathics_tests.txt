@@ -2263,14 +2263,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 812
-TYPE: >>
-INPUT: Read[stream, Expression]
-EXPECTED:
-= 5
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 814
 TYPE: #>
 INPUT: Close[stream];
