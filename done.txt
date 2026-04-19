@@ -5530,3 +5530,8 @@ INPUT: "Hola!"
 DESCRIPTION: A String (text-form variants)
 EXPECTED: Hola! (Woxi's default output matches mathics text[OutputForm/StandardForm/TraditionalForm])
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: "-7.32"
+DESCRIPTION: A String with a number
+EXPECTED: -7.32 (Woxi's default output matches mathics text[OutputForm/StandardForm/TraditionalForm])
+---
