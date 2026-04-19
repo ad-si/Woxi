@@ -3883,3 +3883,10 @@ TYPE: >>
 INPUT: LoadModule["sys"]
 EXPECTED: LoadModule[sys] (matches wolframscript; LoadModule is Mathics-specific — wolframscript returns unevaluated, mathics "$Failed" reflects mathics-only error path)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 89
+TYPE: >>
+INPUT: {a, b, c} = {10, 2, 3}
+EXPECTED: {10, 2, 3} (implemented destructuring assignment in set_ast — also supports nested lists; emits Set::shape warning on length mismatch)
+---

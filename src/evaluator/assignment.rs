@@ -760,6 +760,31 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
+  // Handle destructuring assignment: {a, b, c} = {1, 2, 3}
+  if let Expr::List(lhs_items) = lhs {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    if let Expr::List(rhs_items) = &rhs_value {
+      if lhs_items.len() == rhs_items.len() {
+        for (l, r) in lhs_items.iter().zip(rhs_items.iter()) {
+          set_ast(l, r)?;
+        }
+      } else {
+        crate::emit_message(&format!(
+          "Set::shape: Lists {} and {} are not the same shape.",
+          expr_to_string(lhs),
+          expr_to_string(&rhs_value)
+        ));
+      }
+    } else {
+      crate::emit_message(&format!(
+        "Set::shape: Lists {} and {} are not the same shape.",
+        expr_to_string(lhs),
+        expr_to_string(&rhs_value)
+      ));
+    }
+    return Ok(rhs_value);
+  }
+
   Err(InterpreterError::EvaluationError(
     "First argument of Set must be an identifier, part extract, or function call".into(),
   ))

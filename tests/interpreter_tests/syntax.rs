@@ -3734,6 +3734,29 @@ mod slot_function {
   fn amp_binds_tighter_than_set_with_function_call_body() {
     assert_eq!(interpret("h = Plus[##] &; h[1, 2, 3, 4]").unwrap(), "10");
   }
+
+  #[test]
+  fn destructuring_assignment() {
+    assert_eq!(
+      interpret("Clear[a, b, c]; {a, b, c} = {10, 2, 3}").unwrap(),
+      "{10, 2, 3}"
+    );
+    assert_eq!(
+      interpret("Clear[a, b, c]; {a, b, c} = {10, 2, 3}; {a, b, c}").unwrap(),
+      "{10, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn destructuring_assignment_nested() {
+    assert_eq!(
+      interpret(
+        "Clear[a, b, c, d]; {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {3}}}; {a, b, c, d}"
+      )
+      .unwrap(),
+      "{1, 2, {c1, c2}, 3}"
+    );
+  }
 }
 
 mod set_delayed {
