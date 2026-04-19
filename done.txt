@@ -2675,3 +2675,11 @@ INPUT: a + b + 4.5 + a + b + a + 2 + 1.5 b
 EXPECTED:
 = 6.5 + 3*a + 3.5*b (matches wolframscript)
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Power
+LINE: 334
+TYPE: >>
+INPUT: (1.5 + 1.0 I) ^ 3.5
+EXPECTED:
+= -3.682940057821915 + 6.951392664028505*I (matches wolframscript)
+---

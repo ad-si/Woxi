@@ -10671,14 +10671,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Power
-LINE: 334
-TYPE: >>
-INPUT: (1.5 + 1.0 I) ^ 3.5
-EXPECTED:
-= -3.68294 + 6.95139 I
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
 LINE: 336
 TYPE: >>
 INPUT: (1.5 + 1.0 I) ^ (3.5 + 1.5 I)
