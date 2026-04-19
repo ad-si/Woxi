@@ -14204,16 +14204,6 @@ EXPECTED:
   vec: False
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-001
-EXPECTED:
-  expr: BarChart[{1, 4, 2}, ChartStyle -> {Red, Green, Blue}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-002
-EXPECTED:
-  expr: BarChart[{1, 4, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-003
 EXPECTED:
   expr: BarChart[{{1, 2, 3}, {2, 3, 4}}, ChartLabels -> {"a", "b", "c"}]

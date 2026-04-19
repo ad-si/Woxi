@@ -5635,3 +5635,11 @@ INPUT: a+PrecedenceForm[b+c,10]
 DESCRIPTION: PrecedenceForm
 EXPECTED: a + PrecedenceForm[b + c, 10] (Woxi and wolframscript byte-identical for InputForm)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-001 BarChart[{1, 4, 2}, ChartStyle -> {Red, Green, Blue}]
+EXPECTED: -Graphics- (Woxi and wolframscript both output -Graphics- placeholder byte-identically)
+---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-002 BarChart[{1, 4, 2}]
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical)
+---
