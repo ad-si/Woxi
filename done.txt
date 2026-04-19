@@ -3489,3 +3489,9 @@ LINE: 385
 INPUT: f'[x] // InputForm
 EXPECTED: InputForm[Derivative[1][f][x]] (matches wolframscript; both leave InputForm wrapper unevaluated)
 ---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 411
+INPUT: 500! //ToString//StringLength
+EXPECTED: 1135 (matches wolframscript; 500! has 1135 decimal digits)
+---

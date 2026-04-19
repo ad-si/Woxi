@@ -1476,6 +1476,15 @@ mod factorial {
   }
 
   #[test]
+  fn factorial_500_string_length() {
+    // 500! has 1135 decimal digits.
+    assert_eq!(
+      interpret("500! // ToString // StringLength").unwrap(),
+      "1135"
+    );
+  }
+
+  #[test]
   fn factorial_symbolic() {
     assert_eq!(interpret("Factorial[n]").unwrap(), "n!");
   }

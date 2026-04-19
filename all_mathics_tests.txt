@@ -470,14 +470,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/system.py
 CLASS: MaxLengthIntStringConversion
-LINE: 411
-TYPE: >>
-INPUT: 500! //ToString//StringLength
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
-CLASS: MaxLengthIntStringConversion
 LINE: 416
 TYPE: >>
 INPUT: $MaxLengthIntStringConversion = 640
