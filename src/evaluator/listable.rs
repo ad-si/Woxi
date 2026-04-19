@@ -105,8 +105,6 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "NonNegative"
       | "StringLength"
       | "MixedFractionParts"
-      | "Precision"
-      | "Accuracy"
       | "SinhIntegral"
       | "CoshIntegral"
       | "FresnelS"

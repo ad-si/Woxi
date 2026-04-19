@@ -381,6 +381,18 @@ mod precision {
   }
 
   #[test]
+  fn precision_list_machine_and_integer() {
+    // Precision on a list returns the minimum precision of its elements —
+    // here one machine real and one exact integer, so MachinePrecision wins.
+    // Previously Precision was marked listable and returned {Infinity,
+    // MachinePrecision}; wolframscript returns the single symbol.
+    assert_eq!(
+      interpret("Precision[{1, 0.}]").unwrap(),
+      "MachinePrecision"
+    );
+  }
+
+  #[test]
   fn system_word_length() {
     assert_eq!(interpret("$SystemWordLength").unwrap(), "64");
   }

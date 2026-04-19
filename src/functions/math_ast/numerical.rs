@@ -1619,23 +1619,47 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::List(items) => {
-      // Precision of a list is the minimum precision of its elements
+      // Precision of a list is the minimum precision of its elements.
+      // If the minimum comes from a machine-real element, return the
+      // symbol MachinePrecision (matches wolframscript).
+      let mp: f64 = 15.954589770191003;
       let mut min_prec: Option<f64> = None;
+      let mut min_is_machine = false;
       for item in items {
         let p = precision_ast(&[item.clone()])?;
         match p {
           Expr::Identifier(ref name) if name == "Infinity" => {}
           Expr::Identifier(ref name) if name == "MachinePrecision" => {
-            let mp = 15.954589770191003; // $MachinePrecision
-            min_prec = Some(min_prec.map_or(mp, |v: f64| v.min(mp)));
+            match min_prec {
+              None => {
+                min_prec = Some(mp);
+                min_is_machine = true;
+              }
+              Some(v) if mp < v => {
+                min_prec = Some(mp);
+                min_is_machine = true;
+              }
+              _ => {}
+            }
           }
-          Expr::Real(f) => {
-            min_prec = Some(min_prec.map_or(f, |v: f64| v.min(f)));
-          }
+          Expr::Real(f) => match min_prec {
+            None => {
+              min_prec = Some(f);
+              min_is_machine = false;
+            }
+            Some(v) if f < v => {
+              min_prec = Some(f);
+              min_is_machine = false;
+            }
+            _ => {}
+          },
           _ => {}
         }
       }
       match min_prec {
+        Some(_) if min_is_machine => {
+          Ok(Expr::Identifier("MachinePrecision".to_string()))
+        }
         Some(p) => Ok(Expr::Real(p)),
         None => Ok(Expr::Identifier("Infinity".to_string())),
       }

@@ -4433,3 +4433,9 @@ LINE: 232
 INPUT: Precision[Re[1+2.3 I]]
 EXPECTED: MachinePrecision (matches wolframscript; Re of Integer+MachineReal*I is machine-precision)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_precision
+LINE: 232
+INPUT: Precision[{1, 0.}]
+EXPECTED: MachinePrecision (removed Precision/Accuracy from Listable attribute list — they should operate on the whole expression. Fixed precision_ast list branch to return MachinePrecision symbol when the minimum comes from a machine-real element)
+---
