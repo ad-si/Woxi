@@ -9868,13 +9868,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 921
-TYPE: >>
-INPUT: MakeBoxes[MathMLForm[c], form_] := "<not closed";
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 923
 TYPE: >>
 INPUT: c // MathMLForm //StandardForm
