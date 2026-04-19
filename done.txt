@@ -4651,3 +4651,10 @@ TYPE: >>
 INPUT: Sort[{a, b/;t}, PatternsOrderedQ]
 EXPECTED: {a, b /; t} (matches wolframscript; PatternsOrderedQ unevaluated so Sort is a no-op — mathics "{b /; t, a}" reflects a mathics-specific ordering)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Streams
+LINE: 1461
+TYPE: >>
+INPUT: Streams["stdout"]
+EXPECTED: {OutputStream[stdout, 1]} (matches wolframscript byte-for-byte)
+---
