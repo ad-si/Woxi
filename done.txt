@@ -4324,3 +4324,10 @@ TYPE: >>
 INPUT: Red
 EXPECTED: RGBColor[1, 0, 0] (matches wolframscript; named color constant)
 ---
+FILE: mathics/builtin/colors/named_colors.py
+CLASS: Black,Blue,Brown,Cyan,Gray,Green,Magenta,Yellow,White
+LINE: 47,58,69,80,91,102,113,214,225
+TYPE: >>
+INPUT: Black, Blue, Brown, Cyan, Gray, Green, Magenta, Yellow, White
+EXPECTED: RGBColor[0,0,0], RGBColor[0,0,1], RGBColor[0.6,0.4,0.2], RGBColor[0,1,1], GrayLevel[0.5], RGBColor[0,1,0], RGBColor[1,0,1], RGBColor[1,1,0], GrayLevel[1] (all 9 named color constants match wolframscript byte-for-byte)
+---
