@@ -5388,3 +5388,10 @@ TYPE: >>
 INPUT: Clear["r"]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Remove
+LINE: 183
+TYPE: >>
+INPUT: a := 2
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
