@@ -14226,56 +14226,6 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-064
-EXPECTED:
-  expr: Plot[AiryBi[x], {x, -10, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-065
-EXPECTED:
-  expr: Plot[AngerJ[1, x], {x, -10, 10}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-066
-EXPECTED:
-  expr: Plot[BesselI[0, x], {x, 0, 5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-067
-EXPECTED:
-  expr: Plot[BesselJ[0, x], {x, 0, 10}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-068
-EXPECTED:
-  expr: Plot[BesselK[0, x], {x, 0, 5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-069
-EXPECTED:
-  expr: Plot[BesselY[0, x], {x, 0, 10}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-070
-EXPECTED:
-  expr: Plot[EllipticE[m], {m, -2, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-071
-EXPECTED:
-  expr: Plot[EllipticK[n], {n, -1, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-072
-EXPECTED:
-  expr: Plot[Erf[x], {x, -2, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-073
-EXPECTED:
-  expr: Plot[Erfc[x], {x, -2, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-074
 EXPECTED:
   expr: Plot[Evaluate[Table[x^y, {y, 1, 5}]], {x, -1.5, 1.5}, AspectRatio -> 1]

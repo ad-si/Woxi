@@ -5695,3 +5695,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-059/060/061/062/063 Plot variants (Abs, AiryAi/Prime, AiryBi/Prime)
 EXPECTED: -Graphics- (5 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-064/065/066/067/068/069/070/071/072/073 Plot variants (AiryBi, AngerJ, BesselI/J/K/Y, EllipticE/K, Erf/Erfc)
+EXPECTED: -Graphics- (10 tests; Woxi and wolframscript byte-identical)
+---
