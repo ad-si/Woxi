@@ -3375,3 +3375,9 @@ LINE: 11
 INPUT: Integrate[Integrate[1,{y,0,E^x}],{x,0,Log[13]}]
 EXPECTED: 12 (matches wolframscript; nested definite integral)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 101
+INPUT: RealDigits[1/197, 260, 5]
+EXPECTED: {{1, 83, 38, 71, 69}, 0} (matches wolframscript; base-260 rational digits)
+---

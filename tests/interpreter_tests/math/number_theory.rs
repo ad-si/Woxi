@@ -1250,6 +1250,15 @@ mod real_digits {
   }
 
   #[test]
+  fn one_over_197_base_260_5_digits() {
+    // First 5 base-260 digits of 1/197 with zero integer exponent.
+    assert_eq!(
+      interpret("RealDigits[1/197, 260, 5]").unwrap(),
+      "{{1, 83, 38, 71, 69}, 0}"
+    );
+  }
+
+  #[test]
   fn pi_part_extraction() {
     assert_eq!(
       interpret("RealDigits[Pi, 10, 10][[1]]").unwrap(),
