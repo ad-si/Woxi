@@ -4590,14 +4590,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: FindRoot
-LINE: 883
-TYPE: >>
-INPUT: FindRoot[Tan[x] + Sin[x] == Pi, {x, 1}]
-EXPECTED:
-= {I am the result! -> 1.14911}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: FindRoot
 LINE: 885
 TYPE: >>
 INPUT: Clear[x]
