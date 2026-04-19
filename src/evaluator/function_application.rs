@@ -584,6 +584,17 @@ pub fn apply_curried_call(
             })
           }
         }
+      } else if name == "Derivative"
+        && func_args.len() > 1
+        && func_args.iter().all(|a| matches!(a, Expr::Integer(_)))
+      {
+        // Multi-index derivative: Derivative[n1, n2, ...][f] — keep as
+        // CurriedCall since the flattened form is ambiguous with
+        // Derivative[n, f, x] (nth derivative of f at x).
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        })
       } else if matches!(
         name.as_str(),
         "Derivative"

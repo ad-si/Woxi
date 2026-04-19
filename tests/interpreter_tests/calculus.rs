@@ -493,6 +493,26 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn derivative_multi_index_symbolic() {
+    // Derivative[2, 1][h] — mixed partial derivatives of unknown h
+    // stays symbolic in curried form.
+    assert_eq!(
+      interpret("Derivative[2, 1][h]").unwrap(),
+      "Derivative[2, 1][h]"
+    );
+  }
+
+  #[test]
+  fn derivative_multi_index_applied_symbolic() {
+    // Derivative[2, 0, 1, 0][h[g]] — applied multi-index derivative stays
+    // symbolic in curried form.
+    assert_eq!(
+      interpret("Derivative[2, 0, 1, 0][h[g]]").unwrap(),
+      "Derivative[2, 0, 1, 0][h[g]]"
+    );
+  }
+
+  #[test]
   fn derivative_builtin_sin_prime() {
     assert_eq!(interpret("Sin'[x]").unwrap(), "Cos[x]");
   }

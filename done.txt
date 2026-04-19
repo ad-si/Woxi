@@ -3159,3 +3159,15 @@ LINE: 73
 INPUT: Length[ElementData[All]]
 EXPECTED: 118 (implemented ElementData[All] to return list of all 118 elements; matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 405
+INPUT: Derivative[2, 1][h]
+EXPECTED: Derivative[2, 1][h] (fixed: multi-index derivative kept as CurriedCall, no longer flattened to Derivative[2, 1, h])
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 407
+INPUT: Derivative[2, 0, 1, 0][h[g]]
+EXPECTED: Derivative[2, 0, 1, 0][h[g]] (fixed: arg_count extended and multi-index form preserved)
+---

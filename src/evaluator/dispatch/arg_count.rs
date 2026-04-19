@@ -225,7 +225,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Denominator" => Some((1, 1)),
     "DensityPlot" => Some((3, usize::MAX)),
     "Depth" => Some((1, 1)),
-    "Derivative" => Some((1, 3)),
+    "Derivative" => Some((1, usize::MAX)),
     "DesignMatrix" => Some((3, 3)),
     "Det" => Some((1, 1)),
     "Diagonal" => Some((1, 2)),

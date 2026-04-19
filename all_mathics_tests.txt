@@ -5014,22 +5014,6 @@ EXPECTED:
 = 2 x
 ---
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 405
-TYPE: >>
-INPUT: Derivative[2, 1][h]
-EXPECTED:
-= Derivative[2, 1][h]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 407
-TYPE: >>
-INPUT: Derivative[2, 0, 1, 0][h[g]]
-EXPECTED:
-= Derivative[2, 0, 1, 0][h[g]]
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: DiscreteLimit
 LINE: 554
 TYPE: >>
