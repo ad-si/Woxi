@@ -3759,3 +3759,9 @@ LINE: 271
 INPUT: Precision[Im[0.5+2.3 I]]
 EXPECTED: MachinePrecision (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_directed_infinity_precedence
+LINE: 135
+INPUT: a  b  DirectedInfinity[I]
+EXPECTED: a*b*DirectedInfinity[I] (duplicate of test_multiply line 153; already covered by implicit_multiply_with_directed_infinity_imaginary test)
+---
