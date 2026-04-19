@@ -2427,3 +2427,11 @@ INPUT: DirectoryName["a/b/c", 2]
 EXPECTED:
 = a/ (matches wolframscript; mathics expected without trailing slash)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameJoin
+LINE: 156
+TYPE: >>
+INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}]
+EXPECTED:
+= dir1/dir2/dir3 (matches wolframscript)
+---

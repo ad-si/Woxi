@@ -8302,14 +8302,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/directories/directory_names.py
 CLASS: FileNameJoin
-LINE: 156
-TYPE: >>
-INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/directories/directory_names.py
-CLASS: FileNameJoin
 LINE: 159
 TYPE: >>
 INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Unix"]
