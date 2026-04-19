@@ -3225,3 +3225,9 @@ LINE: 1097
 INPUT: (a + b + c)[[2]]
 EXPECTED: b (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1859
+INPUT: SeriesCoefficient[2x, {x, 0, 2}]
+EXPECTED: 0 (matches wolframscript)
+---

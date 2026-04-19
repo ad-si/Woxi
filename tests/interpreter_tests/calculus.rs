@@ -3170,6 +3170,15 @@ mod series_coefficient {
       "0"
     );
   }
+
+  #[test]
+  fn linear_polynomial_degree_two() {
+    // 2x is a polynomial of degree 1; the degree-2 coefficient is 0.
+    assert_eq!(
+      interpret("SeriesCoefficient[2x, {x, 0, 2}]").unwrap(),
+      "0"
+    );
+  }
 }
 
 mod exp_to_trig {
