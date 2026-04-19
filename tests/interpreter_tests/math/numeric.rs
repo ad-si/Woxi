@@ -22,6 +22,16 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_machine_precision_backtick_literal() {
+    // Explicit `-precision marker on a high-digit literal still collapses
+    // to machine precision (matches wolframscript).
+    assert_eq!(
+      interpret("N[1.01234567890123456789`]").unwrap(),
+      "1.0123456789012346"
+    );
+  }
+
+  #[test]
   fn n_of_two_ninths_at_machine_precision() {
     // N[2/9] at machine precision gives 16 significant digits.
     assert_eq!(interpret("N[2/9]").unwrap(), "0.2222222222222222");

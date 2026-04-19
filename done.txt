@@ -3729,3 +3729,9 @@ LINE: 25
 INPUT: a - (5+ a+ 2 b) + 3 a q
 EXPECTED: -5 - 2*b + 3*a*q (matches wolframscript; WMA distributes the sign)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 177
+INPUT: N[1.01234567890123456789`]
+EXPECTED: 1.0123456789012346 (matches wolframscript; mathics "1.01235" is display-truncated)
+---
