@@ -5112,3 +5112,10 @@ TYPE: >>
 INPUT: MakeBoxes[MathMLForm[c], form_] := "<not closed";
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 951
+TYPE: >>
+INPUT: Clear[MakeBoxes]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

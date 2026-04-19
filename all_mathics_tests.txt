@@ -9914,13 +9914,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 951
-TYPE: >>
-INPUT: Clear[MakeBoxes]
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 958
 TYPE: >>
 INPUT: MakeBoxes[squared[args___], TraditionalForm] := squared[args] ^ 2
