@@ -8377,14 +8377,6 @@ INPUT: Table[x, {x, a, a + 5 n, n}]
 EXPECTED:
 = {a, a + n, a + 2 n, a + 3 n, a + 4 n, a + 5 n}
 ---
-FILE: mathics/builtin/list/constructing.py
-CLASS: Table
-LINE: 552
-TYPE: >>
-INPUT: Table[i, {i, 1, 9, Infinity}]
-EXPECTED:
-= {1}
----
 FILE: mathics/builtin/list/eol.py
 CLASS: AppendTo
 LINE: 134

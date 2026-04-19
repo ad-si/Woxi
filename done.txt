@@ -3573,3 +3573,9 @@ LINE: 207
 INPUT: Eigenvectors[{{1, 0, 0}, {0, 1, 0}, {0, 0, 0}}]
 EXPECTED: {{0, 1, 0}, {1, 0, 0}, {0, 0, 1}} (matches wolframscript)
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Table
+LINE: 552
+INPUT: Table[i, {i, 1, 9, Infinity}]
+EXPECTED: {1} (matches wolframscript; already covered at list.rs:6685)
+---
