@@ -4093,3 +4093,10 @@ TYPE: >>
 INPUT: "Debian" <> 6
 EXPECTED: StringJoin[Debian, 6] with StringJoin::string message (updated string_join_ast to validate every leaf is a string; routed BinaryOperator::StringJoin through it so `<>` operator matches direct StringJoin[] call)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 423
+TYPE: >>
+INPUT: mylist[[3]] (with mylist = {a, b, c, d})
+EXPECTED: c (matches wolframscript; basic positive-index Part on list)
+---
