@@ -5525,3 +5525,8 @@ INPUT: -4
 DESCRIPTION: An Integer (text-form variants)
 EXPECTED: -4 (Woxi's default text output for the integer matches mathics text[InputForm/OutputForm/StandardForm/TraditionalForm])
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: "Hola!"
+DESCRIPTION: A String (text-form variants)
+EXPECTED: Hola! (Woxi's default output matches mathics text[OutputForm/StandardForm/TraditionalForm])
+---
