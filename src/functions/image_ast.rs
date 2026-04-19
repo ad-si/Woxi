@@ -444,9 +444,18 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Wolfram returns Automatic for ImageColorSpace (matching wolframscript)
       Ok(Expr::Identifier("Automatic".to_string()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageColorSpace: argument is not an Image".into(),
-    )),
+    other => {
+      // Matches wolframscript: emit ImageColorSpace::imginv and return
+      // unevaluated instead of erroring out.
+      crate::emit_message(&format!(
+        "ImageColorSpace::imginv: Expecting an image or graphics instead of {}.",
+        crate::syntax::expr_to_string(other)
+      ));
+      Ok(Expr::FunctionCall {
+        name: "ImageColorSpace".to_string(),
+        args: args.to_vec(),
+      })
+    }
   }
 }
 

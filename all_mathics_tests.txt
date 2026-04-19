@@ -9426,14 +9426,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/image/colors.py
 CLASS: ImageColorSpace
-LINE: 316
-TYPE: >>
-INPUT: ImageColorSpace[img]
-EXPECTED:
-= Grayscale
----
-FILE: mathics/builtin/image/colors.py
-CLASS: ImageColorSpace
 LINE: 320
 TYPE: >>
 INPUT: ImageColorSpace[img]

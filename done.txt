@@ -4714,3 +4714,10 @@ TYPE: >>
 INPUT: $RootDirectory
 EXPECTED: "/" on Unix/Mac, "C:\\" on Windows (added $RootDirectory system variable; matches wolframscript)
 ---
+FILE: mathics/builtin/image/colors.py
+CLASS: ImageColorSpace
+LINE: 316
+TYPE: >>
+INPUT: ImageColorSpace[img]
+EXPECTED: ImageColorSpace[img] with ImageColorSpace::imginv warning (changed image_color_space_ast to emit warning and return unevaluated on non-image instead of erroring)
+---

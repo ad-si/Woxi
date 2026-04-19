@@ -193,6 +193,17 @@ mod image_core {
   }
 
   #[test]
+  fn image_color_space_non_image_returns_unevaluated() {
+    // Matches wolframscript: non-image argument emits ImageColorSpace::imginv
+    // and returns the expression unevaluated (no hard error).
+    clear_state();
+    assert_eq!(
+      interpret("ImageColorSpace[img]").unwrap(),
+      "ImageColorSpace[img]"
+    );
+  }
+
+  #[test]
   fn image_data_roundtrip() {
     clear_state();
     let result = interpret(
