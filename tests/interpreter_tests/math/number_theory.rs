@@ -1538,6 +1538,12 @@ mod factorial2 {
   }
 
   #[test]
+  fn double_factorial_postfix_syntax() {
+    // 5!! is postfix sugar for Factorial2[5].
+    assert_eq!(interpret("5!!").unwrap(), "15");
+  }
+
+  #[test]
   fn double_factorial_even() {
     assert_eq!(interpret("Factorial2[6]").unwrap(), "48");
     assert_eq!(interpret("Factorial2[10]").unwrap(), "3840");

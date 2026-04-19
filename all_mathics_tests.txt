@@ -9160,14 +9160,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial2
-LINE: 202
-TYPE: >>
-INPUT: 5!!
-EXPECTED:
-= 15.
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial2
 LINE: 209
 TYPE: >>
 INPUT: I!! + 1

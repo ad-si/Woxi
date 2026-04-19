@@ -3579,3 +3579,9 @@ LINE: 552
 INPUT: Table[i, {i, 1, 9, Infinity}]
 EXPECTED: {1} (matches wolframscript; already covered at list.rs:6685)
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Factorial2
+LINE: 202
+INPUT: 5!!
+EXPECTED: 15 (matches wolframscript; mathics "15." reflects older non-integer return)
+---
