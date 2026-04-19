@@ -276,6 +276,15 @@ mod element_data_tests {
   }
 
   #[test]
+  fn element_data_meitnerium_melting_point_missing() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ElementData["Meitnerium", "MeltingPoint"]"#).unwrap(),
+      "Missing[NotAvailable]"
+    );
+  }
+
+  #[test]
   fn element_data_electron_config_tantalum() {
     clear_state();
     assert_eq!(

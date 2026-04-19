@@ -8557,14 +8557,6 @@ INPUT: AssociationQ[<|a, b|>]
 EXPECTED:
 = False
 ---
-FILE: mathics/builtin/list/associations.py
-CLASS: Missing
-LINE: 276
-TYPE: >>
-INPUT: ElementData["Meitnerium","MeltingPoint"]
-EXPECTED:
-= Missing[NotAvailable]
----
 FILE: mathics/builtin/list/constructing.py
 CLASS: Normal
 LINE: 185
