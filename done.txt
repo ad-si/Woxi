@@ -5159,3 +5159,8 @@ LINE: 124
 ACTUAL (expression): z+y /. {z->5, y->6}
 EXPECTED: 11 (Woxi and wolframscript both return 11)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 138-141
+ACTUAL: 2 * y / 2 y / y * 2 / y 2
+EXPECTED: 2*y (Woxi and wolframscript both return 2*y for all four equivalent forms; mathics shows "2y" implicit-mul rendering)
+---

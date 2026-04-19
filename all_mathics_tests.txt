@@ -16739,26 +16739,6 @@ Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern ma
 ----------------------------------------------------------------------------------------------------
 
 FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 138
-ACTUAL (expression): 2 * y
-EXPECTED (should equal): 2y
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 139
-ACTUAL (expression): 2 y
-EXPECTED (should equal): 2y
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 140
-ACTUAL (expression): y * 2
-EXPECTED (should equal): 2y
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 141
-ACTUAL (expression): y 2
-EXPECTED (should equal): 2y
----
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
 LINE: 142
 ACTUAL (expression): 4 * a * c
 EXPECTED (should equal): 4a c
