@@ -2961,3 +2961,9 @@ LINE: 33
 INPUT: Sqrt[2]
 EXPECTED: Sqrt[2] (matches wolframscript; mathics test expects $MachinePrecision token rather than evaluation result)
 ---
+FILE: mathics/test/test_evaluators.py
+FUNCTION: test_sameQ
+LINE: 35
+INPUT: Pi
+EXPECTED: Pi (matches wolframscript; mathics test expects $MachinePrecision token)
+---
