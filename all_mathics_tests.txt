@@ -1178,13 +1178,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: SetDelayed
-LINE: 167
-TYPE: >>
-INPUT: x := a
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
 LINE: 168
 TYPE: >>
 INPUT: x

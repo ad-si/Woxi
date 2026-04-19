@@ -5367,3 +5367,10 @@ TYPE: #>
 INPUT: Clear[file]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 167
+TYPE: >>
+INPUT: x := a
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
