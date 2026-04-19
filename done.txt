@@ -4317,3 +4317,10 @@ TYPE: >>
 INPUT: EllipticF[0.3, 0.8]
 EXPECTED: 0.30365239221539364 (matches wolframscript byte-for-byte; mathics "0.303652" is shorter display)
 ---
+FILE: mathics/builtin/colors/named_colors.py
+CLASS: Red
+LINE: 203
+TYPE: >>
+INPUT: Red
+EXPECTED: RGBColor[1, 0, 0] (matches wolframscript; named color constant)
+---

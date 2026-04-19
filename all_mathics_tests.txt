@@ -9308,14 +9308,6 @@ EXPECTED:
 = RGBColor[1, 0, 1]
 ---
 FILE: mathics/builtin/colors/named_colors.py
-CLASS: Red
-LINE: 203
-TYPE: >>
-INPUT: Red
-EXPECTED:
-= RGBColor[1, 0, 0]
----
-FILE: mathics/builtin/colors/named_colors.py
 CLASS: Yellow
 LINE: 214
 TYPE: >>
