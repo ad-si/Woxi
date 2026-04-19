@@ -5154,3 +5154,8 @@ FORM: StandardForm
 INPUT: MakeBoxes[14]
 EXPECTED: 14 (Woxi and wolframscript agree on integer 14; mathics "14" is the box-wrapped string form)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 124
+ACTUAL (expression): z+y /. {z->5, y->6}
+EXPECTED: 11 (Woxi and wolframscript both return 11)
+---
