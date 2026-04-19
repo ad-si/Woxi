@@ -4484,3 +4484,10 @@ TYPE: >>
 INPUT: Read[stream, Number] (with stream = StringToStream["123, 4"])
 EXPECTED: 123 (matches wolframscript; Read[..., Number] reads until first non-numeric separator)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 797
+TYPE: >>
+INPUT: Read[stream, Number] (second call — after 123 consumed, comma separator blocks next number)
+EXPECTED: $Failed (matches wolframscript which emits Read::readn; mathics "4" reflects different separator handling)
+---
