@@ -1755,13 +1755,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Get
-LINE: 350
-TYPE: S>
-INPUT: filename = $TemporaryDirectory <> "/example_file";
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Get
 LINE: 351
 TYPE: S>
 INPUT: Put[x + y, filename]

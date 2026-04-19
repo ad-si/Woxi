@@ -5353,3 +5353,10 @@ TYPE: >>
 INPUT: NValues[d] = {foo -> bar};
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Get
+LINE: 350
+TYPE: S>
+INPUT: filename = $TemporaryDirectory <> "/example_file";
+EXPECTED: Null (both Woxi and wolframscript print Null with trailing semicolon)
+---
