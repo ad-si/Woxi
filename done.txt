@@ -4889,3 +4889,17 @@ TYPE: >>
 INPUT: RandomInteger[]
 EXPECTED: "..." (any). Both Woxi and wolframscript return 0 or 1.
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomReal
+LINE: 543
+TYPE: >>
+INPUT: RandomReal[]
+EXPECTED: "..." (any). Both Woxi and wolframscript return a random real in [0, 1).
+---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomReal
+LINE: 545
+TYPE: >>
+INPUT: RandomReal[{1, 5}]
+EXPECTED: "..." (any). Both Woxi and wolframscript return a random real in [1, 5).
+---
