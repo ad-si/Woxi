@@ -12436,12 +12436,6 @@ EXPECTED: Global`Builtin2\n
 ---
 FILE: mathics/test/test_numericq.py
 FUNCTION: test_atomic_numericq
-LINE: 115
-INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
 LINE: 116
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False

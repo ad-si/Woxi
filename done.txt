@@ -2979,3 +2979,9 @@ LINE: 19
 INPUT: Infinity
 EXPECTED: Infinity (matches wolframscript; mathics test wraps in NumericQ to expect False)
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 115
+INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
+EXPECTED: (-1 + Cos[1]^2 + Sin[1]^2)^(-1) (matches wolframscript; mathics test wraps in NumericQ to expect True)
+---
