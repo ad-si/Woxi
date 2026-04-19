@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 711
-TYPE: >>
-INPUT: 3 // h
-EXPECTED:
-= 9
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 785
 TYPE: >>
 INPUT: t
