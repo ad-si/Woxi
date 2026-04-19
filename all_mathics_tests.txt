@@ -164,14 +164,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 69
-TYPE: >>
-INPUT: ElementData[73, "ElectronConfiguration"]
-EXPECTED:
-= {{2}, {2, 6}, {2, 6, 10}, {2, 6, 10, 14}, {2, 6, 3}, {2}}
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 73
 TYPE: >>
 INPUT: Length[ElementData[All]]

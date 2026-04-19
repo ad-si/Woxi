@@ -3147,3 +3147,9 @@ LINE: 57
 INPUT: ElementData[74]
 EXPECTED: Entity[Element, Tungsten] (matches wolframscript; mathics test expects "Tungsten" from older mathics version)
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 69
+INPUT: ElementData[73, "ElectronConfiguration"]
+EXPECTED: {{2}, {2, 6}, {2, 6, 10}, {2, 6, 10, 14}, {2, 6, 3}, {2}} (matches wolframscript)
+---

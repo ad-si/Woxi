@@ -269,6 +269,15 @@ mod element_data_tests {
   }
 
   #[test]
+  fn element_data_electron_config_tantalum() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ElementData[73, "ElectronConfiguration"]"#).unwrap(),
+      "{{2}, {2, 6}, {2, 6, 10}, {2, 6, 10, 14}, {2, 6, 3}, {2}}"
+    );
+  }
+
+  #[test]
   fn element_data_electron_config_iron() {
     clear_state();
     assert_eq!(
