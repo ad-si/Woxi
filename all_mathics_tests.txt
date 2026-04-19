@@ -13511,15 +13511,6 @@ Tests output formatting across text, LaTeX, and MathML for various Wolfram Langu
 ----------------------------------------------------------------------------------------------------
 
 FILE: mathics/test/format/format_tests.yaml
-INPUT: -1. 10^-5
-DESCRIPTION: small negative real number (>10^-5)
-EXPECTED:
-  text[System`InputForm]: -0.00001
-  text[System`OutputForm]: -0.00001
-  latex[System`InputForm]: -0.00001
-  latex[System`OutputForm]: \text{-0.00001}
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: -1. 10^-6
 DESCRIPTION: very small negative real number (<10^-6)
 EXPECTED:
