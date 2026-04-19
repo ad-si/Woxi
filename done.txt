@@ -2531,3 +2531,11 @@ INPUT: D[BesselJ[n, z], z]
 EXPECTED:
 = (BesselJ[-1 + n, z] - BesselJ[1 + n, z])/2 (matches wolframscript)
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: GatherBy
+LINE: 823
+TYPE: >>
+INPUT: GatherBy[{{1, 2}, {2, 1}, {3, 5}, {5, 1}, {2, 2, 2}}, {Total, Length}]
+EXPECTED:
+= {{{{1, 2}, {2, 1}}}, {{{3, 5}}}, {{{5, 1}}, {{2, 2, 2}}}} (matches wolframscript)
+---
