@@ -5325,3 +5325,10 @@ TYPE: >>
 INPUT: Remove[a]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Unset
+LINE: 232
+TYPE: >>
+INPUT: f[x_] := x ^ 2
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

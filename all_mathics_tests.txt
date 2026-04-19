@@ -1348,13 +1348,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Unset
-LINE: 232
-TYPE: >>
-INPUT: f[x_] := x ^ 2
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Unset
 LINE: 235
 TYPE: >>
 INPUT: f[x_] =.
