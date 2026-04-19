@@ -10114,13 +10114,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1251
-TYPE: >>
-INPUT: Format[Dice[d___Integer?(1 <= # <= 6 &)]] := Row[Dice /@ {d}]
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1253
 TYPE: >>
 INPUT: Dice[1, 6, 4, 4]
