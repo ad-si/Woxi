@@ -11295,14 +11295,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/image/properties.py
 CLASS: ImageType
-LINE: 161
-TYPE: >>
-INPUT: ImageType[Image[{{0, 1}, {1, 0}}]]
-EXPECTED:
-= Real
----
-FILE: mathics/builtin/image/properties.py
-CLASS: ImageType
 LINE: 164
 TYPE: X>
 INPUT: ImageType[Binarize[img]]

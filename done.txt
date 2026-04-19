@@ -2715,3 +2715,11 @@ INPUT: a /. n_. * x_ :> {n, x}
 EXPECTED:
 = {1, a} (matches wolframscript)
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageType
+LINE: 161
+TYPE: >>
+INPUT: ImageType[Image[{{0, 1}, {1, 0}}]]
+EXPECTED:
+= Real32 (matches wolframscript; mathics returns Real)
+---
