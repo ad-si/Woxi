@@ -4812,3 +4812,10 @@ TYPE: >>
 INPUT: 500!
 EXPECTED: Large integer (mathics "= ..." matches any output; Woxi and wolframscript return byte-identical 1135-digit value)
 ---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: Null
+LINE: 220
+TYPE: >>
+INPUT: a:=b
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output, but CLI prints Null in both)
+---
