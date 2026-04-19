@@ -12482,12 +12482,6 @@ LINE: 68
 INPUT: Operate[p, f]
 EXPECTED: f
 ---
-FILE: mathics/test/timings/test_uniform_tables.py
-FUNCTION: None
-LINE: 28
-INPUT: Length[F@@nonuniformTable]
-EXPECTED: 1001
----
 FILE: mathics/test/eval/test_patterns.py
 FUNCTION: None
 LINE: 44
