@@ -5227,3 +5227,10 @@ LINE: 568
 INPUT: Graphics[{Disk[{0,0},1]}]
 EXPECTED: -Graphics- (Woxi and wolframscript byte-identical -Graphics- placeholder output)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: StringToStream
+LINE: 1434
+TYPE: >>
+INPUT: Close[strm];
+EXPECTED: Null (both Woxi and wolframscript print Null with trailing semicolon)
+---

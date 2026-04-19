@@ -2490,13 +2490,6 @@ EXPECTED:
 = InputStream[String, ...]
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: StringToStream
-LINE: 1434
-TYPE: >>
-INPUT: Close[strm];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Streams
 LINE: 1458
 TYPE: >>
