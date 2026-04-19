@@ -2803,3 +2803,11 @@ INPUT: ReplaceAll[{a, b, c}, {___, x__, ___} -> {x}]
 EXPECTED:
 = {a} (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 686
+TYPE: >>
+INPUT: h[3]
+EXPECTED:
+= h[3] (matches wolframscript; mathics expected 9 from prior h[x_]:=x^2 definition)
+---
