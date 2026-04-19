@@ -513,6 +513,12 @@ mod accuracy {
   }
 
   #[test]
+  fn integer_zero() {
+    // Accuracy[0] is Infinity (exact zero integer).
+    assert_eq!(interpret("Accuracy[0]").unwrap(), "Infinity");
+  }
+
+  #[test]
   fn symbol() {
     assert_eq!(interpret("Accuracy[A]").unwrap(), "Infinity");
   }

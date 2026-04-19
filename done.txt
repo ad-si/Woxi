@@ -3783,3 +3783,9 @@ LINE: 186
 INPUT: Accuracy[10]
 EXPECTED: Infinity (matches wolframscript; integer is exact)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: Accuracy[0]
+EXPECTED: Infinity (matches wolframscript)
+---
