@@ -3862,3 +3862,10 @@ TYPE: >>
 INPUT: Switch[p,a,1,b,2]
 EXPECTED: Switch[p, a, 1, b, 2] (matches wolframscript; mathics "| a->p = 1" reflects old mathics behavior where symbols stayed bound)
 ---
+FILE: mathics/builtin/exp_structure/size_and_sig.py
+CLASS: Hash
+LINE: 97
+TYPE: >>
+INPUT: Hash[{a, b, c}, "xyzstr"]
+EXPECTED: Hash[{a, b, c}, xyzstr] (matches wolframscript; mathics docstring "Hash[{a, b, c}, xyzstr, Integer]" wraps unknown-type with default third arg)
+---

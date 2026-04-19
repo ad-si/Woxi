@@ -1319,6 +1319,14 @@ mod hash {
       result
     );
   }
+
+  #[test]
+  fn unknown_type_returns_unevaluated() {
+    assert_eq!(
+      interpret(r#"Hash[{a, b, c}, "xyzstr"]"#).unwrap(),
+      "Hash[{a, b, c}, xyzstr]"
+    );
+  }
 }
 
 mod string_riffle_extended {
