@@ -4819,3 +4819,10 @@ TYPE: >>
 INPUT: a:=b
 EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output, but CLI prints Null in both)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 47
+TYPE: >>
+INPUT: Clear[x]
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
+---
