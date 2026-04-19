@@ -5775,14 +5775,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: RandomPrime
-LINE: 1024
-TYPE: >>
-INPUT: RandomPrime[{14, 17}]
-EXPECTED:
-= 17
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: RandomPrime
 LINE: 1031
 TYPE: >>
 INPUT: RandomPrime[{8,12}, 3]

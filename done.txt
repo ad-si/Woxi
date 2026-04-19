@@ -4233,3 +4233,10 @@ TYPE: >>
 INPUT: Inverse[{{1, 0}, {0, 0}}]
 EXPECTED: Inverse[{{1, 0}, {0, 0}}] with Inverse::sing message (changed inverse_ast to emit warning and return unevaluated on singular matrix instead of erroring)
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: RandomPrime
+LINE: 1024
+TYPE: >>
+INPUT: RandomPrime[{14, 17}]
+EXPECTED: 17 (matches wolframscript; 17 is the only prime in [14, 17] so the "random" pick is deterministic)
+---
