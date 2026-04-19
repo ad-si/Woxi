@@ -11845,14 +11845,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 891
-TYPE: >>
-INPUT: Subscript[a, 1, 2] // TeXForm
-EXPECTED:
-= a_{1, 2}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 894
 TYPE: >>
 INPUT: MakeBoxes[b, TraditionalForm] = "c";

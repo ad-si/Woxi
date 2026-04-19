@@ -2891,3 +2891,11 @@ INPUT: fac[10]
 EXPECTED:
 = fac[10] (matches wolframscript; mathics expected 3628800 from prior fac definition)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 891
+TYPE: >>
+INPUT: Subscript[a, 1, 2] // TeXForm
+EXPECTED:
+= TeXForm[Subscript[a, 1, 2]] (matches wolframscript; mathics renders TeX as a_{1, 2})
+---
