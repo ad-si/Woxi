@@ -1698,13 +1698,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Close
-LINE: 178
-TYPE: #>
-INPUT: Clear[file]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Close
 LINE: 183
 TYPE: >>
 INPUT: stream1 = OpenRead["ExampleData/numbers.txt"]
