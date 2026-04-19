@@ -6473,14 +6473,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: None
-LINE: 62
-TYPE: >>
-INPUT: dispatchrule = Dispatch[{rule}]
-EXPECTED:
-= Dispatch[<1>]
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: None
 LINE: 64
 TYPE: >>
 INPUT: a + F[F[x ^ 2]] //. dispatchrule

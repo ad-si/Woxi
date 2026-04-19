@@ -4289,3 +4289,10 @@ TYPE: >>
 INPUT: CosineDistance[{0.0, 0.0}, {x, y}]
 EXPECTED: 0. (added zero-vector special case — returns 0 (or 0. if any Real) instead of 0/0 division error; matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: None
+LINE: 62
+TYPE: >>
+INPUT: Dispatch[{rule}] (with rule = F[x_] -> g[x])
+EXPECTED: Dispatch[{F[x_] -> g[x]}] (matches wolframscript; Dispatch is an inert wrapper — mathics "Dispatch[<1>]" is a mathics-specific summarized display)
+---
