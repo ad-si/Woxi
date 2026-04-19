@@ -1240,10 +1240,13 @@ mod real_digits {
   fn non_numeric_symbol_stays_unevaluated() {
     // Bare symbols can't be converted to digits; return unevaluated
     // (matches wolframscript).
-    assert_eq!(
-      interpret("RealDigits[abc]").unwrap(),
-      "RealDigits[abc]"
-    );
+    assert_eq!(interpret("RealDigits[abc]").unwrap(), "RealDigits[abc]");
+  }
+
+  #[test]
+  fn integer_ten() {
+    // RealDigits[10] yields digits {1, 0} with exponent 2.
+    assert_eq!(interpret("RealDigits[10]").unwrap(), "{{1, 0}, 2}");
   }
 
   #[test]

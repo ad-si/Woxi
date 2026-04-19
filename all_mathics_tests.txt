@@ -7584,14 +7584,6 @@ EXPECTED:
 = {{1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Indeterminate, Indeterminate}, 3}
 ---
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: RealDigits
-LINE: 382
-TYPE: >>
-INPUT: RealDigits[10]
-EXPECTED:
-= {{1, 0}, 2}
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: MaxPrecision
 LINE: 592
 TYPE: >>
