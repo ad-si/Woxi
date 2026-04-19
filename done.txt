@@ -3039,3 +3039,9 @@ LINE: 28
 INPUT: Length[F@@nonuniformTable]
 EXPECTED: 0 (matches wolframscript; mathics expected 1001 from prior nonuniformTable definition)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 310
+INPUT: 1 + 2 + 3 + 4
+EXPECTED: 10 (matches wolframscript; mathics test compares the parsed FullForm Plus[1, 2, 3, 4])
+---
