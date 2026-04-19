@@ -4756,3 +4756,10 @@ TYPE: >>
 INPUT: Dice[1, 6, 4, 4] (with SetAttributes[Dice, Orderless])
 EXPECTED: Dice[1, 4, 4, 6] (matches wolframscript; Orderless sorts args)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1195
+TYPE: >>
+INPUT: LinearSolve[A, {1, 2, 3}] (with A = {{1,1,0},{1,0,1},{0,1,1}})
+EXPECTED: {0, 1, 2} (matches wolframscript)
+---
