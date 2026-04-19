@@ -3177,3 +3177,9 @@ LINE: 1385
 INPUT: Factor[{x + x^2, 2 x + 2 y + 2}]
 EXPECTED: {x*(1 + x), 2*(1 + x + y)} (matches wolframscript; Factor threads over list)
 ---
+FILE: mathics/test/builtin/numbers/test_hyperbolic.py
+FUNCTION: test_gudermannian
+LINE: 18
+INPUT: Gudermannian[2 Pi I]
+EXPECTED: Gudermannian[(2*I)*Pi] (matches wolframscript; mathics expected 0 is from older mathics version)
+---

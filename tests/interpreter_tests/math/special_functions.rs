@@ -49,6 +49,15 @@ mod gudermannian {
   fn symbolic() {
     assert_eq!(interpret("Gudermannian[z]").unwrap(), "Gudermannian[z]");
   }
+
+  #[test]
+  fn imaginary_multiple_of_pi() {
+    // Gudermannian[2*Pi*I] stays unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("Gudermannian[2 Pi I]").unwrap(),
+      "Gudermannian[(2*I)*Pi]"
+    );
+  }
 }
 
 mod bessel_j {
