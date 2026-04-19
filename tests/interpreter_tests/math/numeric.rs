@@ -283,6 +283,12 @@ mod precision {
   }
 
   #[test]
+  fn machine_real_ten() {
+    // 10. — a machine-real has MachinePrecision.
+    assert_eq!(interpret("Precision[10.]").unwrap(), "MachinePrecision");
+  }
+
+  #[test]
   fn gaussian_integer() {
     // 2 + 3 I — exact Gaussian integer has infinite precision.
     assert_eq!(interpret("Precision[2 + 3 I]").unwrap(), "Infinity");
