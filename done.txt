@@ -4582,3 +4582,10 @@ TYPE: >>
 INPUT: ReadList[StringToStream["123\nabc"]]
 EXPECTED: {123, abc} (matches wolframscript; default type reads tokens, interpreting 123 as Number and abc as Symbol)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 438
+TYPE: >>
+INPUT: TableForm[mymatrix] (with mymatrix = {{1,2},{3,4},{5,6}})
+EXPECTED: TableForm[{{1, 2}, {3, 4}, {5, 6}}] (matches wolframscript; TableForm is a display wrapper — mathics "1   2\n3   4\n5   6" reflects rendered display form)
+---

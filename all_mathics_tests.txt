@@ -10170,18 +10170,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 438
-TYPE: >>
-INPUT: TableForm[mymatrix]
-EXPECTED:
-= 1   2
-. 
-. 3   4
-. 
-. 5   6
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 445
 TYPE: >>
 INPUT: MatrixForm[mymatrix]
