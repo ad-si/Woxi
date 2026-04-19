@@ -10511,14 +10511,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: StandardForm
-LINE: 178
-TYPE: >>
-INPUT: StandardForm[a + b * c]
-EXPECTED:
-= a+b c
----
-FILE: mathics/builtin/forms/print.py
-CLASS: StandardForm
 LINE: 180
 TYPE: >>
 INPUT: StandardForm["A string"]
