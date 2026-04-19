@@ -1312,14 +1312,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
-LINE: 117
-TYPE: >>
-INPUT: A
-EXPECTED:
-= {{1, 5}, {3, 4}}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: Set
 LINE: 119
 TYPE: >>
 INPUT: A[[;;, 2]] = {6, 7}

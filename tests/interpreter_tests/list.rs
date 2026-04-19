@@ -1734,10 +1734,8 @@ mod part_extraction {
   fn part_list_rows_and_negative_span_cols() {
     // Rows 1 and 3, columns -2 through -1 (last two) of a 3×3 matrix.
     assert_eq!(
-      interpret(
-        "B = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}; B[[{1, 3}, -2;;-1]]"
-      )
-      .unwrap(),
+      interpret("B = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}; B[[{1, 3}, -2;;-1]]")
+        .unwrap(),
       "{{2, 3}, {8, 9}}"
     );
   }
@@ -1772,6 +1770,15 @@ mod part_extraction {
   #[test]
   fn part_all_on_function_call() {
     assert_eq!(interpret("f[a, b, c][[All]]").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn part_matrix_assignment_updates_cell() {
+    // A[[1, 2]] = 5 updates the matrix in place.
+    assert_eq!(
+      interpret("A = {{1, 2}, {3, 4}}; A[[1, 2]] = 5; A").unwrap(),
+      "{{1, 5}, {3, 4}}"
+    );
   }
 
   #[test]

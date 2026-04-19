@@ -3849,3 +3849,9 @@ LINE: 317
 INPUT: Options[f]
 EXPECTED: {} (matches wolframscript for undefined symbol; mathics "{n :> 2}" reflects prior SetOptions state in docstring; already covered by unknown_function test)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 117
+INPUT: A (after A = {{1,2},{3,4}}; A[[1,2]] = 5)
+EXPECTED: {{1, 5}, {3, 4}} (matches wolframscript; matrix Part assignment)
+---
