@@ -2363,3 +2363,11 @@ INPUT: LetterNumber[{"P", "Pe", "P1", "eck"}]
 EXPECTED:
 = {16, {16, 5}, {16, 0}, {5, 3, 11}} (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: String_
+LINE: 603
+TYPE: >>
+INPUT: InputForm["abc"]
+EXPECTED:
+= InputForm[abc] (matches wolframscript; mathics shows quoted "abc")
+---

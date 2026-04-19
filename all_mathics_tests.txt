@@ -7849,14 +7849,6 @@ EXPECTED:
 = 2
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: String_
-LINE: 603
-TYPE: >>
-INPUT: InputForm["abc"]
-EXPECTED:
-= "abc"
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: SystemCharacterEncoding
 LINE: 728
 TYPE: >>
