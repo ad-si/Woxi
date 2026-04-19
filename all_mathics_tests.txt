@@ -12435,12 +12435,6 @@ INPUT: ??Builtin2
 EXPECTED: Global`Builtin2\n
 ---
 FILE: mathics/test/test_numericq.py
-FUNCTION: None
-LINE: 19
-INPUT: Infinity
-EXPECTED: False
----
-FILE: mathics/test/test_numericq.py
 FUNCTION: test_atomic_numericq
 LINE: 115
 INPUT: 1/(Sin[1]^2+Cos[1]^2-1)

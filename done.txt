@@ -2973,3 +2973,9 @@ LINE: 14
 INPUT: 3+2 I
 EXPECTED: 3 + 2*I (matches wolframscript; mathics test wraps in NumericQ to expect True)
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: None
+LINE: 19
+INPUT: Infinity
+EXPECTED: Infinity (matches wolframscript; mathics test wraps in NumericQ to expect False)
+---
