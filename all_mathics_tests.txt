@@ -2348,14 +2348,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: ReadList
-LINE: 1008
-TYPE: >>
-INPUT: ReadList[StringToStream["123\nabc"]]
-EXPECTED:
-= {123, abc}
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: ReadList
 LINE: 1010
 TYPE: >>
 INPUT: InputForm[%]

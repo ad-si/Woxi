@@ -4575,3 +4575,10 @@ TYPE: >>
 INPUT: Read[stream, Number] (with empty stream)
 EXPECTED: EndOfFile (matches wolframscript)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: ReadList
+LINE: 1008
+TYPE: >>
+INPUT: ReadList[StringToStream["123\nabc"]]
+EXPECTED: {123, abc} (matches wolframscript; default type reads tokens, interpreting 123 as Number and abc as Symbol)
+---
