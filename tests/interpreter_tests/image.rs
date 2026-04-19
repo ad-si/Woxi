@@ -61,6 +61,19 @@ mod image_core {
   }
 
   #[test]
+  fn image_dimensions_real_matrix_postfix() {
+    clear_state();
+    // 2-column, 3-row real matrix → ImageDimensions {2, 3}.
+    assert_eq!(
+      interpret(
+        "Image[{{0.2, 0.4}, {0.9, 0.6}, {0.3, 0.8}}] // ImageDimensions"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
   fn image_q_on_invalid_ragged_nested_list() {
     // Invalid pixel data (ragged nested list) — Image[...] stays unevaluated
     // and ImageQ returns False (matches wolframscript).

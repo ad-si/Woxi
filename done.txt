@@ -3711,3 +3711,9 @@ LINE: 542
 INPUT: 3+2 I
 EXPECTED: 3 + 2*I (matches wolframscript; Gaussian integer in canonical form)
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 38
+INPUT: Image[{{0.2, 0.4}, {0.9, 0.6}, {0.3, 0.8}}] // ImageDimensions
+EXPECTED: {2, 3} (matches wolframscript; 2-column 3-row real matrix)
+---
