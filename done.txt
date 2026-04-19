@@ -2699,3 +2699,11 @@ INPUT: a /. n_. + x_ :> {n, x}
 EXPECTED:
 = {0, a} (matches wolframscript)
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Power
+LINE: 330
+TYPE: >>
+INPUT: a /. x_ ^ n_. :> {x, n}
+EXPECTED:
+= {a, 1} (matches wolframscript)
+---

@@ -10654,14 +10654,6 @@ EXPECTED:
 = {HoldPattern[Default[Power, 2]] :> 1}
 ---
 FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 330
-TYPE: >>
-INPUT: a /. x_ ^ n_. :> {x, n}
-EXPECTED:
-= {a, 1}
----
-FILE: mathics/builtin/arithfns/basic.py
 CLASS: Times
 LINE: 544
 TYPE: >>
