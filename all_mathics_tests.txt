@@ -11351,14 +11351,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 190
-TYPE: >>
-INPUT: (3 + 2 I) ^ (2.5 - I)
-EXPECTED:
-= 43.663 + 8.28556 I
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 193
 TYPE: >>
 INPUT: Tan[I + 0.5]

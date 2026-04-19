@@ -2779,3 +2779,11 @@ INPUT: (3 + 2 I) ^ 4
 EXPECTED:
 = -119 + 120*I (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 190
+TYPE: >>
+INPUT: (3 + 2 I) ^ (2.5 - I)
+EXPECTED:
+= 43.66300442631469 + 8.285561006275723*I (matches wolframscript)
+---
