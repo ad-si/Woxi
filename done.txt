@@ -3495,3 +3495,9 @@ LINE: 411
 INPUT: 500! //ToString//StringLength
 EXPECTED: 1135 (matches wolframscript; 500! has 1135 decimal digits)
 ---
+FILE: mathics/builtin/tensors.py
+CLASS: TranslationTransform
+LINE: 323
+INPUT: t = TranslationTransform[{x0, y0}]
+EXPECTED: TransformationFunction[{{1, 0, x0}, {0, 1, y0}, {0, 0, 1}}] (matches wolframscript)
+---

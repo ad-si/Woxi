@@ -1483,6 +1483,14 @@ mod translation_transform {
   }
 
   #[test]
+  fn creates_transformation_function_with_symbolic_entries() {
+    assert_eq!(
+      interpret("TranslationTransform[{x0, y0}]").unwrap(),
+      "TransformationFunction[{{1, 0, x0}, {0, 1, y0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
   fn creates_transformation_function_3d() {
     assert_eq!(
       interpret("TranslationTransform[{1, 2, 3}]").unwrap(),
