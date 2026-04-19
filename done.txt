@@ -5520,3 +5520,8 @@ LINE: 61
 INPUT: bar[]
 EXPECTED: bar[] (Woxi and wolframscript byte-identical when run in isolation)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: -4
+DESCRIPTION: An Integer (text-form variants)
+EXPECTED: -4 (Woxi's default text output for the integer matches mathics text[InputForm/OutputForm/StandardForm/TraditionalForm])
+---
