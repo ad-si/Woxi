@@ -3537,3 +3537,9 @@ LINE: 1024
 INPUT: Integrate[f'[x], {x, a, b}]
 EXPECTED: Integrate[Derivative[1][f][x], {x, a, b}] (matches wolframscript; both leave unevaluated without applying Fundamental Theorem)
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: HoldPattern
+LINE: 186
+INPUT: HoldPattern[x + x]
+EXPECTED: HoldPattern[x + x] (matches wolframscript; HoldPattern prevents evaluation)
+---

@@ -1772,10 +1772,7 @@ mod decrement_function {
   #[test]
   fn decrement_real_value_matches_machine_precision() {
     // 1.6 - 1 in IEEE double is 0.6000000000000001 (matches wolframscript).
-    assert_eq!(
-      interpret("a = 1.6; a--; a").unwrap(),
-      "0.6000000000000001"
-    );
+    assert_eq!(interpret("a = 1.6; a--; a").unwrap(), "0.6000000000000001");
   }
 }
 
@@ -4635,6 +4632,15 @@ mod tag_set_delayed {
     );
     // The new definition should be used for evaluation
     assert_eq!(interpret("f[g[3]]").unwrap(), "27");
+  }
+
+  #[test]
+  fn hold_pattern_prevents_plus_evaluation() {
+    // HoldPattern keeps `x + x` from evaluating to `2*x`.
+    assert_eq!(
+      interpret("HoldPattern[x + x]").unwrap(),
+      "HoldPattern[x + x]"
+    );
   }
 }
 

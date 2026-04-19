@@ -6562,14 +6562,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: HoldPattern
-LINE: 186
-TYPE: >>
-INPUT: HoldPattern[x + x]
-EXPECTED:
-= HoldPattern[x + x]
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: HoldPattern
 LINE: 188
 TYPE: >>
 INPUT: x /. HoldPattern[x] -> t
