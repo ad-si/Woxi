@@ -4732,6 +4732,12 @@ mod tag_set_delayed {
       "HoldPattern[x + x]"
     );
   }
+
+  #[test]
+  fn hold_pattern_is_transparent_for_matching() {
+    // ReplaceAll should treat HoldPattern[x] -> t identically to x -> t.
+    assert_eq!(interpret("x /. HoldPattern[x] -> t").unwrap(), "t");
+  }
 }
 
 mod tag_unset {

@@ -5809,14 +5809,6 @@ EXPECTED:
 = Helloworld
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: HoldPattern
-LINE: 188
-TYPE: >>
-INPUT: x /. HoldPattern[x] -> t
-EXPECTED:
-= t
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Longest
 LINE: 241
 TYPE: >>

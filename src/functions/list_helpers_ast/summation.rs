@@ -15,31 +15,34 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // AnglePath[{{x0, y0}, θ0}, steps] form: consume initial position and
   // starting angle from the first argument, then treat the second argument
   // as the step list.
-  let (start_pos, start_angle, items_vec): (Option<Expr>, Option<Expr>, Vec<Expr>) =
-    if args.len() == 2 {
-      let (pos, theta) = parse_initial_spec(&args[0])?;
-      let step_items = match &args[1] {
-        Expr::List(items) => items.clone(),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "AnglePath".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      };
-      (Some(pos), Some(theta), step_items)
-    } else {
-      let step_items = match &args[0] {
-        Expr::List(items) => items.clone(),
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "AnglePath".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      };
-      (None, None, step_items)
+  let (start_pos, start_angle, items_vec): (
+    Option<Expr>,
+    Option<Expr>,
+    Vec<Expr>,
+  ) = if args.len() == 2 {
+    let (pos, theta) = parse_initial_spec(&args[0])?;
+    let step_items = match &args[1] {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AnglePath".to_string(),
+          args: args.to_vec(),
+        });
+      }
     };
+    (Some(pos), Some(theta), step_items)
+  } else {
+    let step_items = match &args[0] {
+      Expr::List(items) => items.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "AnglePath".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    (None, None, step_items)
+  };
   let items = &items_vec;
 
   // Start at origin
@@ -170,19 +173,19 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     // Numeric mode
-    if let Some(Expr::List(pair)) = &start_pos {
-      if pair.len() == 2 {
-        x = expr_to_f64(&pair[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "AnglePath: starting x must be numeric".into(),
-          )
-        })?;
-        y = expr_to_f64(&pair[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "AnglePath: starting y must be numeric".into(),
-          )
-        })?;
-      }
+    if let Some(Expr::List(pair)) = &start_pos
+      && pair.len() == 2
+    {
+      x = expr_to_f64(&pair[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting x must be numeric".into(),
+        )
+      })?;
+      y = expr_to_f64(&pair[1]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "AnglePath: starting y must be numeric".into(),
+        )
+      })?;
     }
     if let Some(theta_expr) = &start_angle {
       angle = expr_to_f64(theta_expr).ok_or_else(|| {

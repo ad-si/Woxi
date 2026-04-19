@@ -1230,6 +1230,19 @@ pub fn try_flat_replace_all(
 /// Apply ReplaceAll operation on AST (expr /. rules)
 /// Uses AST-based structural pattern matching for patterns containing blanks (n_, x_Head, etc.),
 /// falls back to string-based matching for simple patterns.
+/// Unwrap a top-level `HoldPattern[p]` from a pattern expression. HoldPattern
+/// is transparent to matching — it only prevents evaluation of the wrapped
+/// expression when parsing.
+fn strip_hold_pattern(pattern: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = pattern
+    && name == "HoldPattern"
+    && args.len() == 1
+  {
+    return args[0].clone();
+  }
+  pattern.clone()
+}
+
 pub fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
@@ -1244,7 +1257,8 @@ pub fn apply_replace_all_ast(
       pattern,
       replacement,
     } => {
-      let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+      let stripped = strip_hold_pattern(pattern);
+      let (pat_expr, condition) = extract_pattern_and_condition(&stripped);
       if contains_pattern(&pat_expr)
         && let Some(result) = try_ast_pattern_replace(
           expr,
@@ -1282,10 +1296,13 @@ pub fn apply_replace_all_ast(
     pattern,
     replacement,
   } = rules
-    && let Expr::Identifier(pat_sym) = pattern.as_ref()
-    && let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement)
   {
-    return Ok(result);
+    let stripped = strip_hold_pattern(pattern);
+    if let Expr::Identifier(pat_sym) = &stripped
+      && let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement)
+    {
+      return Ok(result);
+    }
   }
 
   // Extract pattern and replacement strings for string-based matching
@@ -1832,6 +1849,15 @@ fn match_pattern_impl(
   expr: &Expr,
   pattern: &Expr,
 ) -> Option<Vec<(String, Expr)>> {
+  // HoldPattern[p] is transparent to pattern matching: it only prevents
+  // evaluation of the wrapped expression when parsed, and the matcher
+  // should treat it as if it were just `p`.
+  if let Expr::FunctionCall { name, args } = pattern
+    && name == "HoldPattern"
+    && args.len() == 1
+  {
+    return match_pattern_impl(expr, &args[0]);
+  }
   match pattern {
     Expr::Pattern { name, head, .. } => {
       // Check head constraint if present
