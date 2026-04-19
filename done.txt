@@ -3513,3 +3513,9 @@ LINE: 156
 INPUT: PatternsOrderedQ[x__, x_]
 EXPECTED: PatternsOrderedQ[x__, x_] (matches wolframscript; both leave unevaluated — the mathics "False" reflects an explicitly loaded extension)
 ---
+FILE: mathics/builtin/testing_expressions/expression_tests.py
+CLASS: PatternsOrderedQ
+LINE: 158
+INPUT: PatternsOrderedQ[x_, x__]
+EXPECTED: PatternsOrderedQ[x_, x__] (matches wolframscript; both leave unevaluated)
+---

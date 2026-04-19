@@ -1311,4 +1311,13 @@ mod patterns_ordered_q {
       "PatternsOrderedQ[x__, x_]"
     );
   }
+
+  #[test]
+  fn blank_then_blank_sequence_stays_unevaluated() {
+    // Same as above with the two patterns in the reverse order.
+    assert_eq!(
+      interpret("PatternsOrderedQ[x_, x__]").unwrap(),
+      "PatternsOrderedQ[x_, x__]"
+    );
+  }
 }
