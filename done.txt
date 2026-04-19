@@ -4058,3 +4058,24 @@ TYPE: >>
 INPUT: BaseForm[x, 2]
 EXPECTED: BaseForm[x, 2] (matches wolframscript; display wrapper stays unevaluated)
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: NumberForm
+LINE: 495
+TYPE: >>
+INPUT: NumberForm[N[Pi], 10]
+EXPECTED: NumberForm[3.141592653589793, 10] (matches wolframscript; display wrapper stays unevaluated)
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: NumberForm
+LINE: 498
+TYPE: >>
+INPUT: NumberForm[N[Pi], {10, 6}]
+EXPECTED: NumberForm[3.141592653589793, {10, 6}] (matches wolframscript; display wrapper stays unevaluated)
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: NumberForm
+LINE: 501
+TYPE: >>
+INPUT: NumberForm[N[Pi]]
+EXPECTED: NumberForm[3.141592653589793] (matches wolframscript; display wrapper stays unevaluated)
+---

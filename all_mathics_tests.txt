@@ -9558,30 +9558,6 @@ EXPECTED:
 = {Missing[abc], 150}
 ---
 FILE: mathics/builtin/forms/data.py
-CLASS: NumberForm
-LINE: 495
-TYPE: >>
-INPUT: NumberForm[N[Pi], 10]
-EXPECTED:
-= 3.141592654
----
-FILE: mathics/builtin/forms/data.py
-CLASS: NumberForm
-LINE: 498
-TYPE: >>
-INPUT: NumberForm[N[Pi], {10, 6}]
-EXPECTED:
-= 3.141593
----
-FILE: mathics/builtin/forms/data.py
-CLASS: NumberForm
-LINE: 501
-TYPE: >>
-INPUT: NumberForm[N[Pi]]
-EXPECTED:
-= 3.14159
----
-FILE: mathics/builtin/forms/data.py
 CLASS: SequenceForm
 LINE: 615
 TYPE: >>
