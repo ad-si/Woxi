@@ -271,6 +271,12 @@ mod precision {
   }
 
   #[test]
+  fn machine_real_zero() {
+    // 0. — a plain machine-real zero has MachinePrecision.
+    assert_eq!(interpret("Precision[0.]").unwrap(), "MachinePrecision");
+  }
+
+  #[test]
   fn arbitrary_precision_literal() {
     // 1.23`10 is a literal with explicit precision of 10 digits.
     assert_eq!(interpret("Precision[1.23`10]").unwrap(), "10.");
