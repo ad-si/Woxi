@@ -3843,3 +3843,9 @@ LINE: 519
 INPUT: (a + b + c)[[0]]
 EXPECTED: Plus (duplicate of eol.py line 1100; already covered by part_of_plus_three_terms_head test)
 ---
+FILE: mathics/builtin/options.py
+CLASS: Options
+LINE: 317
+INPUT: Options[f]
+EXPECTED: {} (matches wolframscript for undefined symbol; mathics "{n :> 2}" reflects prior SetOptions state in docstring; already covered by unknown_function test)
+---

@@ -24,14 +24,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/options.py
 CLASS: Options
-LINE: 317
-TYPE: >>
-INPUT: Options[f]
-EXPECTED:
-= {n :> 2}
----
-FILE: mathics/builtin/options.py
-CLASS: Options
 LINE: 320
 TYPE: >>
 INPUT: f[x]
