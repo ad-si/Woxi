@@ -33,23 +33,39 @@ pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .first()
     .is_some_and(|item| matches!(item, Expr::List(_)));
 
-  // Starting point {0, 0}
-  // Use Integer 0 when all inputs are exact integers, else Real
-  let all_integer = if is_pair_form {
-    items.iter().all(|item| {
+  // Use numeric mode only when every input converts to a float AND at least
+  // one input is an explicit Real. Integer-only inputs stay symbolic so
+  // Cos/Sin are preserved, and any non-numeric input (e.g. `{a, b}`) stays
+  // symbolic so the output can still be produced.
+  let any_real = if is_pair_form {
+    items.iter().any(|item| {
       if let Expr::List(pair) = item {
-        pair.len() == 2
-          && matches!(&pair[0], Expr::Integer(_))
-          && matches!(&pair[1], Expr::Integer(_))
+        pair
+          .iter()
+          .any(|p| matches!(p, Expr::Real(_)))
       } else {
-        matches!(item, Expr::Integer(_))
+        matches!(item, Expr::Real(_))
       }
     })
   } else {
-    items.iter().all(|item| matches!(item, Expr::Integer(_)))
+    items.iter().any(|item| matches!(item, Expr::Real(_)))
   };
+  let all_floatable = if is_pair_form {
+    items.iter().all(|item| {
+      if let Expr::List(pair) = item {
+        pair.len() == 2
+          && matches!(&pair[0], Expr::Integer(_) | Expr::Real(_))
+          && matches!(&pair[1], Expr::Integer(_) | Expr::Real(_))
+      } else {
+        matches!(item, Expr::Integer(_) | Expr::Real(_))
+      }
+    })
+  } else {
+    items.iter().all(|item| matches!(item, Expr::Integer(_) | Expr::Real(_)))
+  };
+  let use_numeric = all_floatable && any_real;
 
-  if all_integer {
+  if !use_numeric {
     // Symbolic mode: keep exact Cos/Sin
     let mut cum_terms_x: Vec<Expr> = Vec::new();
     let mut cum_terms_y: Vec<Expr> = Vec::new();

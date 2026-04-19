@@ -5437,6 +5437,16 @@ mod angle_path {
   }
 
   #[test]
+  fn symbolic_variable_angles() {
+    // Pure symbolic variables must yield Cos/Sin expressions, matching
+    // wolframscript byte-for-byte.
+    assert_eq!(
+      interpret("AnglePath[{a, b}]").unwrap(),
+      "{{0, 0}, {Cos[a], Sin[a]}, {Cos[a] + Cos[a + b], Sin[a] + Sin[a + b]}}"
+    );
+  }
+
+  #[test]
   fn step_angle_pairs() {
     let result =
       interpret("AnglePath[{{1, 0.5}, {2, -0.3}, {0.5, 0.1}}]").unwrap();

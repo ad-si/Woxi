@@ -5754,14 +5754,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: AnglePath
-LINE: 200
-TYPE: >>
-INPUT: AnglePath[{a, b}]
-EXPECTED:
-= {{0, 0}, {Cos[a], Sin[a]}, {Cos[a] + Cos[a + b], Sin[a] + Sin[a + b]}}
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: AnglePath
 LINE: 209
 TYPE: >>
 INPUT: Graphics[Line[AnglePath[RandomReal[{-1, 1}, {100}]]]]
