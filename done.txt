@@ -4924,3 +4924,10 @@ TYPE: >>
 INPUT: AnglePath[{a, b}]
 EXPECTED: {{0, 0}, {Cos[a], Sin[a]}, {Cos[a] + Cos[a + b], Sin[a] + Sin[a + b]}} (Woxi now matches wolframscript byte-for-byte for pure symbolic angle inputs)
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: AnglePath
+LINE: 194
+TYPE: >>
+INPUT: AnglePath[{90 Degree, 90 Degree, 90 Degree, 90 Degree}]
+EXPECTED: {{0, 0}, {0, 1}, {-1, 1}, {-1, 0}, {0, 0}} (Woxi and wolframscript byte-identical)
+---
