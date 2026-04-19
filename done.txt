@@ -2723,3 +2723,11 @@ INPUT: ImageType[Image[{{0, 1}, {1, 0}}]]
 EXPECTED:
 = Real32 (matches wolframscript; mathics returns Real)
 ---
+FILE: mathics/builtin/image/properties.py
+CLASS: ImageDimensions
+LINE: 136
+TYPE: >>
+INPUT: ImageDimensions[RandomImage[1, {50, 70}]]
+EXPECTED:
+= {50, 70} (matches wolframscript)
+---
