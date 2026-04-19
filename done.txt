@@ -4882,3 +4882,10 @@ TYPE: >>
 INPUT: RandomInteger[{1, 5}]
 EXPECTED: "..." (any). Both Woxi and wolframscript return a random integer in [1, 5].
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomInteger
+LINE: 476
+TYPE: >>
+INPUT: RandomInteger[]
+EXPECTED: "..." (any). Both Woxi and wolframscript return 0 or 1.
+---
