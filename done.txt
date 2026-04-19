@@ -2619,3 +2619,11 @@ INPUT: {1, 2, 3} // PythonForm
 EXPECTED:
 = PythonForm[{1, 2, 3}] (matches wolframscript; (1, 2, 3) is a Mathics extension)
 ---
+FILE: mathics/builtin/forms/mathics3.py
+CLASS: SympyForm
+LINE: 70
+TYPE: >>
+INPUT: SympyForm[Pi^2]
+EXPECTED:
+= SympyForm[Pi^2] (matches wolframscript; pi**2 is a Mathics extension)
+---

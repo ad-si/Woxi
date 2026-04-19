@@ -10431,14 +10431,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/mathics3.py
 CLASS: SympyForm
-LINE: 70
-TYPE: >>
-INPUT: SympyForm[Pi^2]
-EXPECTED:
-= pi**2
----
-FILE: mathics/builtin/forms/mathics3.py
-CLASS: SympyForm
 LINE: 72
 TYPE: >>
 INPUT: E^2 + 3E // SympyForm
