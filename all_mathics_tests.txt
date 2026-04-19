@@ -7930,14 +7930,6 @@ EXPECTED:
 = b`
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: Context
-LINE: 194
-TYPE: >>
-INPUT: InputForm[Context[]]
-EXPECTED:
-= "Global`"
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
 LINE: 230
 TYPE: >>

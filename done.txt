@@ -2387,3 +2387,11 @@ INPUT: Context[a]
 EXPECTED:
 = Global` (matches wolframscript)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Context
+LINE: 194
+TYPE: >>
+INPUT: InputForm[Context[]]
+EXPECTED:
+= InputForm[Global`] (matches wolframscript; mathics renders "Global`")
+---
