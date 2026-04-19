@@ -1274,6 +1274,16 @@ mod condition_pattern_matching {
   }
 
   #[test]
+  fn setdelayed_with_condition_applies_when_true() {
+    // f[x_] := p[x] /; x>0 — conditional definition applies for positive x.
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := p[x] /; x>0; f[3]").unwrap(),
+      "p[3]"
+    );
+  }
+
+  #[test]
   fn matchq_with_condition_false() {
     assert_eq!(interpret("MatchQ[2, x_ /; x > 3]").unwrap(), "False");
   }
