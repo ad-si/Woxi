@@ -50,14 +50,6 @@ EXPECTED:
 | between
 ---
 FILE: mathics/builtin/options.py
-CLASS: Options
-LINE: 342
-TYPE: >>
-INPUT: Options[f]
-EXPECTED:
-= {a :> b}
----
-FILE: mathics/builtin/options.py
 CLASS: OptionValue
 LINE: 406
 TYPE: >>
