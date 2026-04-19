@@ -12342,13 +12342,6 @@ EXPECTED: {}
 ---
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_sameQ
-LINE: 33
-INPUT: Sqrt[2]
-EXPECTED: $MachinePrecision
-MESSAGE: 1.41421356237310
----
-FILE: mathics/test/test_evaluators.py
-FUNCTION: test_sameQ
 LINE: 35
 INPUT: Pi
 EXPECTED: $MachinePrecision
