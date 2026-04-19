@@ -2029,6 +2029,28 @@ mod file_name_join {
       "file.txt"
     );
   }
+
+  #[test]
+  fn operating_system_unix() {
+    assert_eq!(
+      interpret(
+        r#"FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Unix"]"#
+      )
+      .unwrap(),
+      "dir1/dir2/dir3"
+    );
+  }
+
+  #[test]
+  fn operating_system_windows() {
+    assert_eq!(
+      interpret(
+        r#"FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Windows"]"#
+      )
+      .unwrap(),
+      r#"dir1\dir2\dir3"#
+    );
+  }
 }
 
 mod file_name_split {

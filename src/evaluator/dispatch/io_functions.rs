@@ -536,7 +536,24 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(Expr::String(result)));
     }
-    "FileNameJoin" if args.len() == 1 => {
+    "FileNameJoin" if args.len() == 1 || args.len() == 2 => {
+      // Detect OperatingSystem option from second argument (a Rule).
+      let sep: char = if args.len() == 2 {
+        let mut s = std::path::MAIN_SEPARATOR;
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+          && matches!(pattern.as_ref(),
+            Expr::Identifier(n) if n == "OperatingSystem")
+          && let Expr::String(os) = replacement.as_ref()
+        {
+          s = if os == "Windows" { '\\' } else { '/' };
+        }
+        s
+      } else {
+        std::path::MAIN_SEPARATOR
+      };
       if let Expr::List(parts) = &args[0] {
         let segments: Vec<String> = parts
           .iter()
@@ -549,11 +566,8 @@ pub fn dispatch_io_functions(
           })
           .collect();
         if segments.len() == parts.len() {
-          let mut path = std::path::PathBuf::new();
-          for seg in &segments {
-            path.push(seg);
-          }
-          return Some(Ok(Expr::String(path.to_string_lossy().into_owned())));
+          let joined = segments.join(&sep.to_string());
+          return Some(Ok(Expr::String(joined)));
         }
       }
       return Some(Ok(Expr::FunctionCall {

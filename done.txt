@@ -3267,3 +3267,15 @@ LINE: 756
 INPUT: Precision[1.23`10]
 EXPECTED: 10. (matches wolframscript)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameJoin
+LINE: 159
+INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Unix"]
+EXPECTED: dir1/dir2/dir3 (implemented: OperatingSystem option honored)
+---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameJoin
+LINE: 162
+INPUT: FileNameJoin[{"dir1", "dir2", "dir3"}, OperatingSystem -> "Windows"]
+EXPECTED: dir1\dir2\dir3 (matches wolframscript; backslash separator for Windows)
+---
