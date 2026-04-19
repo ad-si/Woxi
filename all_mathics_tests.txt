@@ -1205,15 +1205,6 @@ EXPECTED:
 = $Failed
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: LoadModule
-LINE: 38
-TYPE: >>
-INPUT: LoadModule["sys"]
-EXPECTED:
-: Python module "sys" is not a Mathics3 module.
-= $Failed
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
 LINE: 81
 TYPE: >>

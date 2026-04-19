@@ -3876,3 +3876,10 @@ TYPE: >>
 INPUT: a <-> b
 EXPECTED: a <-> b (matches wolframscript; mathics "a ↔ b" uses pretty-printing — Woxi uses ASCII form like wolframscript CLI)
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: LoadModule
+LINE: 38
+TYPE: >>
+INPUT: LoadModule["sys"]
+EXPECTED: LoadModule[sys] (matches wolframscript; LoadModule is Mathics-specific — wolframscript returns unevaluated, mathics "$Failed" reflects mathics-only error path)
+---
