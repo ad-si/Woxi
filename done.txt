@@ -3333,3 +3333,9 @@ LINE: 329
 INPUT: -2/3
 EXPECTED: -2/3 (matches wolframscript)
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: Blend
+LINE: 48
+INPUT: Blend[{Red, Blue}]
+EXPECTED: RGBColor[1/2, 0, 1/2] (matches wolframscript; mathics "0.5, 0., 0.5" reflects older decimal conversion)
+---
