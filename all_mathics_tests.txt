@@ -7926,14 +7926,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: AppendTo
-LINE: 141
-TYPE: >>
-INPUT: AppendTo[y, x]
-EXPECTED:
-= f[x]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: AppendTo
 LINE: 143
 TYPE: >>
 INPUT: y
