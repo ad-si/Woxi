@@ -5625,3 +5625,8 @@ INPUT: -4.32`4
 DESCRIPTION: A negative PrecisionReal number
 EXPECTED: -4.32`4. (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Optional[x__, a+b]
+DESCRIPTION: Optional with two arguments
+EXPECTED: x__:a + b (Woxi and wolframscript byte-identical)
+---
