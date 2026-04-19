@@ -3357,3 +3357,9 @@ LINE: 216
 INPUT: 1 / 0
 EXPECTED: ComplexInfinity (matches wolframscript; Power::infy warning emitted on both)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 255
+INPUT: Precision[3.1413`4]
+EXPECTED: 4. (matches wolframscript)
+---

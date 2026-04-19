@@ -11199,14 +11199,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 255
-TYPE: >>
-INPUT: Precision[3.1413`4]
-EXPECTED:
-= 4.
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 260
 TYPE: >>
 INPUT: Pi == 3.141987654321`3

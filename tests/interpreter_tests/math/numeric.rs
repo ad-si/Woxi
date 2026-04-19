@@ -264,6 +264,12 @@ mod precision {
   }
 
   #[test]
+  fn arbitrary_precision_literal_4_digits() {
+    // 3.1413`4 is a literal with explicit precision of 4 digits.
+    assert_eq!(interpret("Precision[3.1413`4]").unwrap(), "4.");
+  }
+
+  #[test]
   fn dollar_machine_precision_value() {
     // $MachinePrecision is Log10[2^53] ≈ 15.9546 (matches wolframscript).
     assert_eq!(
