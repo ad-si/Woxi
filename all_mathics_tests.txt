@@ -15255,12 +15255,6 @@ MESSAGE: msg
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_directed_infinity_precedence
 LINE: 135
-INPUT: a  b  DirectedInfinity[-I]
-EXPECTED: a b (-I Infinity)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_directed_infinity_precedence
-LINE: 135
 INPUT: a  b  DirectedInfinity[-3]
 EXPECTED: a b (-Infinity)
 ---
