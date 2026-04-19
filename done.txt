@@ -4030,3 +4030,31 @@ TYPE: >>
 INPUT: BaseForm[33, 2]
 EXPECTED: BaseForm[33, 2] (matches wolframscript; BaseForm is a display wrapper — mathics "100001_2" reflects mathics-specific formatted rendering)
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: BaseForm
+LINE: 54
+TYPE: >>
+INPUT: BaseForm[234, 16]
+EXPECTED: BaseForm[234, 16] (matches wolframscript; display wrapper stays unevaluated)
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: BaseForm
+LINE: 58
+TYPE: >>
+INPUT: BaseForm[12.3, 2]
+EXPECTED: BaseForm[12.3, 2] (matches wolframscript; display wrapper stays unevaluated)
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: BaseForm
+LINE: 61
+TYPE: >>
+INPUT: BaseForm[-42, 16]
+EXPECTED: BaseForm[-42, 16] (matches wolframscript; display wrapper stays unevaluated)
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: BaseForm
+LINE: 64
+TYPE: >>
+INPUT: BaseForm[x, 2]
+EXPECTED: BaseForm[x, 2] (matches wolframscript; display wrapper stays unevaluated)
+---

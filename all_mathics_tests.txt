@@ -9558,38 +9558,6 @@ EXPECTED:
 = {Missing[abc], 150}
 ---
 FILE: mathics/builtin/forms/data.py
-CLASS: BaseForm
-LINE: 54
-TYPE: >>
-INPUT: BaseForm[234, 16]
-EXPECTED:
-= ea_16
----
-FILE: mathics/builtin/forms/data.py
-CLASS: BaseForm
-LINE: 58
-TYPE: >>
-INPUT: BaseForm[12.3, 2]
-EXPECTED:
-= 1100.01001100110011001_2
----
-FILE: mathics/builtin/forms/data.py
-CLASS: BaseForm
-LINE: 61
-TYPE: >>
-INPUT: BaseForm[-42, 16]
-EXPECTED:
-= -2a_16
----
-FILE: mathics/builtin/forms/data.py
-CLASS: BaseForm
-LINE: 64
-TYPE: >>
-INPUT: BaseForm[x, 2]
-EXPECTED:
-= x
----
-FILE: mathics/builtin/forms/data.py
 CLASS: NumberForm
 LINE: 495
 TYPE: >>
