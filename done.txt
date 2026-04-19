@@ -2547,3 +2547,11 @@ INPUT: DeleteDuplicates[{3,2,1,2,3,4}, Less]
 EXPECTED:
 = {3, 2, 1} (matches wolframscript)
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: Union
+LINE: 1424
+TYPE: >>
+INPUT: Union[{{a, 1}, {b, 2}}, {{c, 1}, {d, 3}}, SameTest->(SameQ[Last[#1],Last[#2]]&)]
+EXPECTED:
+= {{a, 1}, {b, 2}, {d, 3}} (matches wolframscript; mathics expected slightly different ordering)
+---
