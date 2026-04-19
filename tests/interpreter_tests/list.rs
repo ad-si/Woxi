@@ -1866,6 +1866,12 @@ mod part_binary_op {
   }
 
   #[test]
+  fn part_of_plus_three_terms_head() {
+    // Part 0 of a Plus expression returns the head symbol Plus.
+    assert_eq!(interpret("(a + b + c)[[0]]").unwrap(), "Plus");
+  }
+
+  #[test]
   fn part_of_times() {
     assert_eq!(interpret("(a*b)[[1]]").unwrap(), "a");
     assert_eq!(interpret("(a*b)[[2]]").unwrap(), "b");

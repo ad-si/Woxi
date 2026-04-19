@@ -3213,3 +3213,9 @@ LINE: 276
 INPUT: ElementData["Meitnerium","MeltingPoint"]
 EXPECTED: Missing[NotAvailable] (matches wolframscript)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1100
+INPUT: (a + b + c)[[0]]
+EXPECTED: Plus (matches wolframscript; Part 0 returns head)
+---
