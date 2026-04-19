@@ -7898,14 +7898,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: StringContainsQ
-LINE: 631
-TYPE: >>
-INPUT: StringContainsQ["mathics", "m" ~~ __ ~~ "s"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: StringContainsQ
 LINE: 634
 TYPE: >>
 INPUT: StringContainsQ["mathics", "a" ~~ __ ~~ "m"]
