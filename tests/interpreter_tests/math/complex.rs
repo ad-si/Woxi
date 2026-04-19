@@ -611,6 +611,12 @@ mod im_tests {
   }
 
   #[test]
+  fn gaussian_integer_three_plus_two_i() {
+    // 3 + 2 I is a Gaussian integer in canonical form.
+    assert_eq!(interpret("3+2 I").unwrap(), "3 + 2*I");
+  }
+
+  #[test]
   fn e_to_i_pi_over_two() {
     // E^(I*Pi/2) = I (Euler's identity, quarter turn).
     assert_eq!(interpret("E^(I Pi/2)").unwrap(), "I");

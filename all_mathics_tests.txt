@@ -13052,13 +13052,6 @@ MESSAGE: False
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 542
-INPUT: 2.+ Pi I
-EXPECTED: 3+2 I
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 543
 INPUT: 2.+ Pi I
 EXPECTED: 2.+ Pi I

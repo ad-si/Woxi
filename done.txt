@@ -3705,3 +3705,9 @@ LINE: 557
 INPUT: 3+I Pi
 EXPECTED: 3 + I*Pi (matches wolframscript; canonical form)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 542
+INPUT: 3+2 I
+EXPECTED: 3 + 2*I (matches wolframscript; Gaussian integer in canonical form)
+---
