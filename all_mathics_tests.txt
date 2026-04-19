@@ -1009,14 +1009,6 @@ INPUT: a \[DirectedEdge] b
 EXPECTED:
 = a → b
 ---
-FILE: mathics/builtin/no_meaning/infix_extra.py
-CLASS: UndirectedEdge
-LINE: 69
-TYPE: >>
-INPUT: a <-> b
-EXPECTED:
-= a ↔ b
----
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: AddTo
 LINE: 56

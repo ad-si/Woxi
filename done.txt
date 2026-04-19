@@ -3869,3 +3869,10 @@ TYPE: >>
 INPUT: Hash[{a, b, c}, "xyzstr"]
 EXPECTED: Hash[{a, b, c}, xyzstr] (matches wolframscript; mathics docstring "Hash[{a, b, c}, xyzstr, Integer]" wraps unknown-type with default third arg)
 ---
+FILE: mathics/builtin/no_meaning/infix_extra.py
+CLASS: UndirectedEdge
+LINE: 69
+TYPE: >>
+INPUT: a <-> b
+EXPECTED: a <-> b (matches wolframscript; mathics "a ↔ b" uses pretty-printing — Woxi uses ASCII form like wolframscript CLI)
+---
