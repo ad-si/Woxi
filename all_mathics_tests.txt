@@ -8252,14 +8252,6 @@ INPUT: Hold[x] /. OwnValues[x] // ReleaseHold
 EXPECTED:
 = 5
 ---
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: ValueQ
-LINE: 732
-TYPE: >>
-INPUT: ValueQ[x]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/directories/directory_names.py
 CLASS: DirectoryQ
 LINE: 86

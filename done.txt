@@ -2467,3 +2467,11 @@ INPUT: SymbolName[x] // InputForm
 EXPECTED:
 = InputForm[x] (matches wolframscript; mathics renders as "x")
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: ValueQ
+LINE: 732
+TYPE: >>
+INPUT: ValueQ[x]
+EXPECTED:
+= False (matches wolframscript; mathics expected True from prior x := y assignment)
+---
