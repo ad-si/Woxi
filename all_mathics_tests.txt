@@ -7918,14 +7918,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: AppendTo
-LINE: 134
-TYPE: >>
-INPUT: AppendTo[s, 1]
-EXPECTED:
-= {1}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: AppendTo
 LINE: 136
 TYPE: >>
 INPUT: s

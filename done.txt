@@ -4345,3 +4345,10 @@ TYPE: >>
 INPUT: PrependTo[y, x] (with y = f[a, b, c])
 EXPECTED: f[x, a, b, c] (extended AppendTo/PrependTo special-case in core_eval to also accept any FunctionCall head, not just List)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: AppendTo
+LINE: 134
+TYPE: >>
+INPUT: AppendTo[s, 1] (with s = {})
+EXPECTED: {1} (matches wolframscript; AppendTo to empty list)
+---
