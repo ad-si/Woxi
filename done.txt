@@ -2739,3 +2739,11 @@ INPUT: ImageChannels[Image[{{0, 1}, {1, 0}}]]
 EXPECTED:
 = 1 (matches wolframscript)
 ---
+FILE: mathics/builtin/image/misc.py
+CLASS: RandomImage
+LINE: 120
+TYPE: >>
+INPUT: RandomImage[1, {100, 100}]
+EXPECTED:
+= -Image- (matches wolframscript)
+---

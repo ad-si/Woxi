@@ -11093,14 +11093,6 @@ EXPECTED:
 = -Image-
 ---
 FILE: mathics/builtin/image/misc.py
-CLASS: RandomImage
-LINE: 120
-TYPE: >>
-INPUT: RandomImage[1, {100, 100}]
-EXPECTED:
-= -Image-
----
-FILE: mathics/builtin/image/misc.py
 CLASS: EdgeDetect
 LINE: 181
 TYPE: >>
