@@ -22,6 +22,12 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_of_two_ninths_at_machine_precision() {
+    // N[2/9] at machine precision gives 16 significant digits.
+    assert_eq!(interpret("N[2/9]").unwrap(), "0.2222222222222222");
+  }
+
+  #[test]
   fn n_pi_arbitrary_first_digits() {
     // N[Pi, 50] — check that first 50 significant digits are correct
     let result = interpret("N[Pi, 50]").unwrap();

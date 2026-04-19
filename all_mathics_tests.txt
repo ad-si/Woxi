@@ -12636,13 +12636,6 @@ MESSAGE: False
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
-LINE: 151
-INPUT: N[2/9]
-EXPECTED: .2222222222222222
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
 LINE: 152
 INPUT: N[2/9]
 EXPECTED: .2222222222222222`16
