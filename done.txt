@@ -2555,3 +2555,11 @@ INPUT: Union[{{a, 1}, {b, 2}}, {{c, 1}, {d, 3}}, SameTest->(SameQ[Last[#1],Last[
 EXPECTED:
 = {{a, 1}, {b, 2}, {d, 3}} (matches wolframscript; mathics expected slightly different ordering)
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricPFQ
+LINE: 176
+TYPE: >>
+INPUT: HypergeometricPFQ[{}, {}, z]
+EXPECTED:
+= E^z (matches wolframscript)
+---

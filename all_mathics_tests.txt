@@ -9709,14 +9709,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricPFQ
-LINE: 176
-TYPE: >>
-INPUT: HypergeometricPFQ[{}, {}, z]
-EXPECTED:
-= E ^ z
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricPFQ
 LINE: 178
 TYPE: >>
 INPUT: HypergeometricPFQ[{0}, {b}, z]
