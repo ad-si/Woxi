@@ -6824,14 +6824,6 @@ INPUT: StringCases["aabaaab", Shortest[RegularExpression["a+b"]]]
 EXPECTED:
 = {aab, aaab}
 ---
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Verbatim
-LINE: 717
-TYPE: >>
-INPUT: x /. _->t
-EXPECTED:
-= t
----
 FILE: mathics/builtin/patterns/defaults.py
 CLASS: Optional
 LINE: 44

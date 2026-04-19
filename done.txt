@@ -3285,3 +3285,9 @@ LINE: 711
 INPUT: _ /. Verbatim[_]->t
 EXPECTED: t (matches wolframscript)
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Verbatim
+LINE: 717
+INPUT: x /. _->t
+EXPECTED: t (matches wolframscript; Blank pattern matches any expr)
+---

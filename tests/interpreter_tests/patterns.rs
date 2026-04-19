@@ -103,6 +103,12 @@ mod pattern_matching {
       // `_ /. Verbatim[_]->t` replaces a literal Blank with t.
       assert_eq!(interpret("_ /. Verbatim[_]->t").unwrap(), "t");
     }
+
+    #[test]
+    fn blank_pattern_matches_any_expr_as_rule_lhs() {
+      // `_ -> t` used as a rule matches any expression, so `x /. _->t` → t.
+      assert_eq!(interpret("x /. _->t").unwrap(), "t");
+    }
   }
 
   mod blank_sequence_pattern {
