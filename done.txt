@@ -4380,3 +4380,10 @@ TYPE: >>
 INPUT: End[] (no prior Begin)
 EXPECTED: Global` (matches wolframscript; End with no prior Begin returns Global context — wolframscript also emits End::noctx warning)
 ---
+FILE: mathics/builtin/options.py
+CLASS: Default
+LINE: 107
+TYPE: >>
+INPUT: h[] /. h[___, ___, x_., y_., ___] -> {x, y}
+EXPECTED: h[] (matches wolframscript; pattern doesn't match empty h[] even with Default definitions — mathics docstring "{{3, 5}, {4, 5}}" appears to reflect ReplaceList which returns all matches)
+---

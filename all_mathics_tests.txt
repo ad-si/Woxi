@@ -15,14 +15,6 @@ EXPECTED:
 = {HoldPattern[Default[f]] :> 1}
 ---
 FILE: mathics/builtin/options.py
-CLASS: Default
-LINE: 107
-TYPE: >>
-INPUT: h[] /. h[___, ___, x_., y_., ___] -> {x, y}
-EXPECTED:
-= {{3, 5}, {4, 5}}
----
-FILE: mathics/builtin/options.py
 CLASS: Options
 LINE: 320
 TYPE: >>
