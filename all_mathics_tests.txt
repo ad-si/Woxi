@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 680
-TYPE: >>
-INPUT: ReplaceAll[{a, b, c}, {___, x__, ___} -> {x}]
-EXPECTED:
-= {a}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 686
 TYPE: >>
 INPUT: h[3]

@@ -2795,3 +2795,11 @@ INPUT: f @@ Complex[3, 4]
 EXPECTED:
 = 3 + 4*I (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 680
+TYPE: >>
+INPUT: ReplaceAll[{a, b, c}, {___, x__, ___} -> {x}]
+EXPECTED:
+= {a} (matches wolframscript)
+---
