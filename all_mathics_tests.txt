@@ -14397,29 +14397,6 @@ EXPECTED:
 </msup>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: a^4
-DESCRIPTION: SuperscriptBox
-EXPECTED:
-  text[System`InputForm]: a^4
-  text[System`OutputForm]: a ^ 4
-  text[System`StandardForm]: a^4
-  text[System`TraditionalForm]: a^4
-  latex[System`InputForm]: \text{a${}^{\wedge}$4}
-  latex[System`OutputForm]: \text{a ${}^{\wedge}$ 4}
-  latex[System`StandardForm]: a^4
-  latex[System`TraditionalForm]: a^4
-  mathml[System`InputForm]: <mtext>a^4</mtext>
-  mathml[System`OutputForm]: <mtext>a&nbsp;^&nbsp;4</mtext>
-  mathml[System`StandardForm]: <msup>
- <mi>a</mi>
- <mn>4</mn>
-</msup>
-  mathml[System`TraditionalForm]: <msup>
- <mi>a</mi>
- <mn>4</mn>
-</msup>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Optional[x__]
 DESCRIPTION: Optional with one argument
 EXPECTED:

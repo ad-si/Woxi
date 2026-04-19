@@ -5580,3 +5580,8 @@ INPUT: \[Alpha]
 DESCRIPTION: A greek letter symbol
 EXPECTED: α (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: a^4
+DESCRIPTION: SuperscriptBox
+EXPECTED: a^4 (Woxi and wolframscript byte-identical for InputForm/StandardForm/TraditionalForm)
+---
