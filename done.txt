@@ -2939,3 +2939,11 @@ INPUT: ToBoxes[m + n]
 EXPECTED:
 = RowBox[{m, +, n}] (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1150
+TYPE: >>
+INPUT: Limit[f[x], x -> Infinity]
+EXPECTED:
+= Limit[f[x], x -> Infinity] (matches wolframscript; mathics expected 0 from prior f definition)
+---

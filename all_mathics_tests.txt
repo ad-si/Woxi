@@ -12052,14 +12052,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1150
-TYPE: >>
-INPUT: Limit[f[x], x -> Infinity]
-EXPECTED:
-= 0
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1152
 TYPE: >>
 INPUT: Limit[f[x], x -> -Infinity]
