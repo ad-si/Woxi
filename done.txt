@@ -3387,3 +3387,9 @@ LINE: 73
 INPUT: 1/(Sin[1]^2+Cos[1]^2-1)
 EXPECTED: (-1 + Cos[1]^2 + Sin[1]^2)^(-1) (matches wolframscript; not auto-simplified to 1/0)
 ---
+FILE: mathics/builtin/numbers/diffeqns.py
+CLASS: DSolve
+LINE: 27
+INPUT: DSolve[y''[x] == 0, y[x], x]
+EXPECTED: {{y[x] -> C[1] + x*C[2]}} (matches wolframscript)
+---

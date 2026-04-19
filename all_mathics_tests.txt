@@ -5674,14 +5674,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/diffeqns.py
 CLASS: DSolve
-LINE: 27
-TYPE: >>
-INPUT: DSolve[y''[x] == 0, y[x], x]
-EXPECTED:
-= {{y[x] -> x C[2] + C[1]}}
----
-FILE: mathics/builtin/numbers/diffeqns.py
-CLASS: DSolve
 LINE: 30
 TYPE: >>
 INPUT: DSolve[y''[x] == y[x], y[x], x]
