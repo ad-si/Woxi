@@ -3105,3 +3105,9 @@ LINE: 128
 INPUT: x=.01
 EXPECTED: 0.01 (matches wolframscript; mathics test compares to parsed form 'x = .01')
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 764
+INPUT: -Sin[x]
+EXPECTED: -Sin[x] (matches wolframscript; mathics test compares to FullForm Times[-1, Sin[x]])
+---
