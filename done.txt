@@ -5620,3 +5620,8 @@ INPUT: <|a -> x, b -> y, c -> <|d -> t|>|>
 DESCRIPTION: Association
 EXPECTED: <|a -> x, b -> y, c -> <|d -> t|>|> (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: -4.32`4
+DESCRIPTION: A negative PrecisionReal number
+EXPECTED: -4.32`4. (Woxi and wolframscript byte-identical)
+---
