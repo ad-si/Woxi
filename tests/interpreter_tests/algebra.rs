@@ -299,6 +299,12 @@ mod simplify {
   }
 
   #[test]
+  fn combine_like_terms_implicit_coefficient() {
+    // `x + 2 x` should collapse to `3*x` without needing Simplify.
+    assert_eq!(interpret("x + 2 x").unwrap(), "3*x");
+  }
+
+  #[test]
   fn combine_powers() {
     assert_eq!(interpret("Simplify[x*x]").unwrap(), "x^2");
   }

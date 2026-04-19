@@ -3363,3 +3363,9 @@ LINE: 255
 INPUT: Precision[3.1413`4]
 EXPECTED: 4. (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 291
+INPUT: x + 2 x
+EXPECTED: 3*x (matches wolframscript)
+---
