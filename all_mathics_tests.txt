@@ -10448,14 +10448,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1205
-TYPE: >>
-INPUT: MatrixRank[B]
-EXPECTED:
-= 2
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1207
 TYPE: >>
 INPUT: s = LinearSolve[B, {1, 2, 3}]

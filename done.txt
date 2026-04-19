@@ -4770,3 +4770,10 @@ TYPE: >>
 INPUT: A . {0, 1, 2} (A dot solution verifies LinearSolve result)
 EXPECTED: {1, 2, 3} (matches wolframscript)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1205
+TYPE: >>
+INPUT: MatrixRank[B] (with B = {{1,2,3},{4,5,6},{7,8,9}})
+EXPECTED: 2 (matches wolframscript; third row is linear combination of first two)
+---
