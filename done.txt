@@ -5585,3 +5585,8 @@ INPUT: a^4
 DESCRIPTION: SuperscriptBox
 EXPECTED: a^4 (Woxi and wolframscript byte-identical for InputForm/StandardForm/TraditionalForm)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: a^(g[b]/c)
+DESCRIPTION: SuperscriptBox with a nested expression
+EXPECTED: a^(g[b]/c) (Woxi and wolframscript byte-identical for InputForm)
+---

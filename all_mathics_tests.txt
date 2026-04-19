@@ -14370,33 +14370,6 @@ c   d\newline
 </mtable>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: a^(g[b]/c)
-DESCRIPTION: SuperscriptBox with a nested expression.
-EXPECTED:
-  text[System`InputForm]: a^(g[b]/c)
-  text[System`OutputForm]: a ^ (g[b] / c)
-  text[System`StandardForm]: a^((g[b]) / c)
-  text[System`TraditionalForm]: a^((g(b)) / c)
-  latex[System`InputForm]: \text{a${}^{\wedge}$(g[b]/c)}
-  latex[System`OutputForm]: \text{a ${}^{\wedge}$ (g[b] / c)}
-  latex[System`StandardForm]: a^{\frac{g[b]}{c}}
-  latex[System`TraditionalForm]: a^{\frac{g(b)}{c}}
-  mathml[System`InputForm]: <mtext>a^(g[b]/c)</mtext>
-  mathml[System`OutputForm]: <mtext>a&nbsp;^&nbsp;(g[b]&nbsp;/&nbsp;c)</mtext>
-  mathml[System`TraditionalForm]: <msup>
- <mi>a</mi>
- <mfrac>
-  <mrow>
-   <mi>g</mi>
-   <mo>(</mo>
-   <mi>b</mi>
-   <mo>)</mo>
-  </mrow>
-  <mi>c</mi>
- </mfrac>
-</msup>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Optional[x__]
 DESCRIPTION: Optional with one argument
 EXPECTED:
