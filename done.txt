@@ -2291,3 +2291,11 @@ INPUT: BaseForm[N[Pi], 2]
 EXPECTED:
 = BaseForm[3.141592653589793, 2] (matches wolframscript; mathics displays binary 11.00100100001111110_2)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: StringContainsQ
+LINE: 637
+TYPE: >>
+INPUT: StringContainsQ[{"g", "a", "laxy", "universe", "sun"}, "u"]
+EXPECTED:
+= {False, False, False, True, True} (matches wolframscript)
+---
