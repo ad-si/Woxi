@@ -9924,14 +9924,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/specialfns/zeta.py
-CLASS: PolyLog
-LINE: 82
-TYPE: >>
-INPUT: PolyLog[-7, I] //Chop
-EXPECTED:
-= 136.
----
-FILE: mathics/builtin/specialfns/zeta.py
 CLASS: Zeta
 LINE: 117
 TYPE: >>

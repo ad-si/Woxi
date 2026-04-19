@@ -2579,3 +2579,11 @@ INPUT: LaguerreL[8, x]
 EXPECTED:
 = (40320 - 322560*x + 564480*x^2 - 376320*x^3 + 117600*x^4 - 18816*x^5 + 1568*x^6 - 64*x^7 + x^8)/40320 (matches wolframscript)
 ---
+FILE: mathics/builtin/specialfns/zeta.py
+CLASS: PolyLog
+LINE: 82
+TYPE: >>
+INPUT: PolyLog[-7, I] //Chop
+EXPECTED:
+= 136 (matches wolframscript; mathics shows 136.)
+---
