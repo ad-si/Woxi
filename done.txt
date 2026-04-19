@@ -4303,3 +4303,10 @@ TYPE: >>
 INPUT: EllipticK[0.5]
 EXPECTED: 1.8540746773013717 (matches wolframscript byte-for-byte; mathics "1.85407" is a shorter display)
 ---
+FILE: mathics/builtin/specialfns/elliptic.py
+CLASS: EllipticF
+LINE: 101
+TYPE: >>
+INPUT: EllipticF[0, 0.8]
+EXPECTED: 0. (matches wolframscript; EllipticF is 0 when phi=0)
+---
