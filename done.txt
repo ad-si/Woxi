@@ -5204,3 +5204,8 @@ LINE: 245
 ACTUAL: (x + 2 y z) /. {x->z, y->x, z->y}
 EXPECTED: 2*x*y + z (Woxi and wolframscript byte-identical)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 505
+ACTUAL: (x; y; z)
+EXPECTED: z (Woxi and wolframscript both return "z" from CompoundExpression)
+---
