@@ -7137,16 +7137,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 291
-TYPE: >>
-INPUT: Definition[Plus]
-EXPECTED:
-= Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}
-. 
-. Default[Plus] = 0
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 295
 TYPE: >>
 INPUT: Definition[Level]
