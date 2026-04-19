@@ -10062,13 +10062,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1119
-TYPE: >>
-INPUT: f[x_] := 4 x / (x ^ 2 + 3 x + 5)
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1123
 TYPE: >>
 INPUT: {f'[x], f''[x], f'''[x]} // Together

@@ -5028,3 +5028,10 @@ TYPE: >>
 INPUT: {a, b} = {1, 2};
 EXPECTED: Null (both Woxi and wolframscript print Null; trailing semicolon suppresses output in session mode)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1119
+TYPE: >>
+INPUT: f[x_] := 4 x / (x ^ 2 + 3 x + 5)
+EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
+---
