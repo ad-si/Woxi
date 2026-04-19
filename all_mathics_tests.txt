@@ -11741,14 +11741,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 800
-TYPE: >>
-INPUT: Block[{x = 3}, expr]
-EXPECTED:
-= 12
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 809
 TYPE: >>
 INPUT: Block[{$RecursionLimit = 30}, x = 2 x]

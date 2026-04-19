@@ -2875,3 +2875,11 @@ INPUT: Block[{x = 2}, x * y]
 EXPECTED:
 = 2*y (matches wolframscript; mathics expected 16 from prior y = x^3 binding)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 800
+TYPE: >>
+INPUT: Block[{x = 3}, expr]
+EXPECTED:
+= expr (matches wolframscript; mathics expected 12 from prior expr = x^2 + x binding)
+---
