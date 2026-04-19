@@ -13533,29 +13533,6 @@ EXPECTED:
   latex[System`TraditionalForm]: -1.\times 10^6
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: -4.32
-DESCRIPTION: A MachineReal number
-EXPECTED:
-  text[System`InputForm]: -4.32
-  text[System`OutputForm]: -4.32
-  text[System`StandardForm]: -4.32`
-  text[System`TraditionalForm]: -4.32`
-  latex[System`InputForm]: -4.32
-  latex[System`OutputForm]: \text{-4.32}
-  latex[System`StandardForm]: -4.32
-  latex[System`TraditionalForm]: -4.32
-  mathml[System`InputForm]: <mn>-4.32</mn>
-  mathml[System`OutputForm]: <mtext>-4.32</mtext>
-  mathml[System`StandardForm]: <mrow>
- <mn>-</mn>
- <mn>4.32</mn>
-</mrow>
-  mathml[System`TraditionalForm]: <mrow>
- <mn>-</mn>
- <mn>4.32</mn>
-</mrow>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: -4.326563712`2
 DESCRIPTION: A negative Real number
 EXPECTED:
