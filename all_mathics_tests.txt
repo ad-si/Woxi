@@ -15596,12 +15596,6 @@ EXPECTED: 2.
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_exponential
 LINE: 37
-INPUT: log2=Log[2.]; Chop[E^(log2+I Pi)]
-EXPECTED: -2.
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_exponential
-LINE: 37
 INPUT: log2=.; E^(I Pi/4)
 EXPECTED: E ^ (I / 4 Pi)
 ---

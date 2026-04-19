@@ -620,6 +620,16 @@ mod im_tests {
     );
   }
 
+  #[test]
+  fn chop_negates_real_log_sum_with_i_pi() {
+    // E^(Log[2.] + I Pi) = -2 + 0.I numerically; Chop removes the tiny
+    // imaginary residue, leaving -2.
+    assert_eq!(
+      interpret("log2=Log[2.]; Chop[E^(log2+I Pi)]").unwrap(),
+      "-2."
+    );
+  }
+
   // ── Log2 ─────────────────────────────────────────────────
 
   #[test]

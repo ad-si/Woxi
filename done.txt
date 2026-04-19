@@ -3471,3 +3471,9 @@ LINE: 232
 INPUT: Precision[10.]
 EXPECTED: MachinePrecision (matches wolframscript)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_exponential
+LINE: 37
+INPUT: log2=Log[2.]; Chop[E^(log2+I Pi)]
+EXPECTED: -2. (matches wolframscript; Chop removes tiny imaginary residue)
+---
