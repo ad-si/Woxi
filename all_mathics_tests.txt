@@ -14404,23 +14404,6 @@ EXPECTED:
   mathml[System`TraditionalForm]: <mi>α</mi>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: a
-DESCRIPTION: A Symbol
-EXPECTED:
-  text[System`InputForm]: a
-  text[System`OutputForm]: a
-  text[System`StandardForm]: a
-  text[System`TraditionalForm]: a
-  latex[System`InputForm]: a
-  latex[System`OutputForm]: \text{a}
-  latex[System`StandardForm]: a
-  latex[System`TraditionalForm]: a
-  mathml[System`InputForm]: <mi>a</mi>
-  mathml[System`OutputForm]: <mtext>a</mtext>
-  mathml[System`StandardForm]: <mi>a</mi>
-  mathml[System`TraditionalForm]: <mi>a</mi>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: a^(g[b]/c)
 DESCRIPTION: SuperscriptBox with a nested expression.
 EXPECTED:

@@ -5565,3 +5565,8 @@ INPUT: -4.32
 DESCRIPTION: A MachineReal number
 EXPECTED: -4.32 (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: a
+DESCRIPTION: A Symbol
+EXPECTED: a (Woxi and wolframscript byte-identical)
+---
