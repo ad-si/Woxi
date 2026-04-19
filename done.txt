@@ -4637,3 +4637,10 @@ TYPE: >>
 INPUT: (series // Normal) /. x-> 4 (with series = Series[1 + x^2, {x, 0, 2}])
 EXPECTED: 17 (matches wolframscript; 1 + 4^2 = 17)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: DownValues
+LINE: 380
+TYPE: >>
+INPUT: Sort[{x_, x_Integer}, PatternsOrderedQ]
+EXPECTED: {x_, x_Integer} (matches wolframscript; PatternsOrderedQ stays unevaluated so Sort returns the list unchanged — mathics "{x_Integer, x_}" assumes a mathics-specific PatternsOrderedQ implementation)
+---
