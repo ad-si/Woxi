@@ -203,6 +203,16 @@ mod pattern_matching {
     }
 
     #[test]
+    fn replace_all_bare_blank_sequence_splices() {
+      // With Rule (not RuleDelayed), x__ in f[1,2,3] /. f[x__] -> x results
+      // in a top-level Sequence that displays as its elements concatenated.
+      assert_eq!(
+        interpret("f[1, 2, 3] /. f[x__] -> x").unwrap(),
+        "123"
+      );
+    }
+
+    #[test]
     fn replace_all_blank_sequence_named_sum() {
       assert_eq!(
         interpret("{f[1, 2], f[3, 4, 5]} /. f[x__] :> Plus[x]").unwrap(),

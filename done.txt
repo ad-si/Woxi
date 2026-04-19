@@ -3693,3 +3693,9 @@ LINE: 51
 INPUT: StringReplace["0123 3210", "1" | "2" -> "X"]
 EXPECTED: 0XX3 3XX0 (matches wolframscript; Alternatives pattern)
 ---
+FILE: mathics/builtin/patterns/basic.py
+CLASS: BlankSequence
+LINE: 239
+INPUT: f[1, 2, 3] /. f[x__] -> x
+EXPECTED: 123 (matches wolframscript; Sequence[1,2,3] displays as concatenation; mathics shows FullForm)
+---
