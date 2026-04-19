@@ -2819,3 +2819,11 @@ INPUT: sum[4, 6]
 EXPECTED:
 = sum[4, 6] (matches wolframscript; mathics expected 10 from prior sum definition)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 696
+TYPE: >>
+INPUT: prod[4, 6]
+EXPECTED:
+= prod[4, 6] (matches wolframscript; mathics expected 24 from prior prod definition)
+---

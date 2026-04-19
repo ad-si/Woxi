@@ -11727,14 +11727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 696
-TYPE: >>
-INPUT: prod[4, 6]
-EXPECTED:
-= 24
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 704
 TYPE: >>
 INPUT: Sort[{{x, 10}, {y, 2}, {z, 5}}, #1[[2]] < #2[[2]] &]
