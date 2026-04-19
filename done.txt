@@ -3219,3 +3219,9 @@ LINE: 1100
 INPUT: (a + b + c)[[0]]
 EXPECTED: Plus (matches wolframscript; Part 0 returns head)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1097
+INPUT: (a + b + c)[[2]]
+EXPECTED: b (matches wolframscript)
+---

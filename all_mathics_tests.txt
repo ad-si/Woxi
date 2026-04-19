@@ -8715,14 +8715,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1097
-TYPE: >>
-INPUT: (a + b + c)[[2]]
-EXPECTED:
-= b
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1105
 TYPE: >>
 INPUT: M[[1, 2]]

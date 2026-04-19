@@ -1872,6 +1872,12 @@ mod part_binary_op {
   }
 
   #[test]
+  fn part_of_plus_three_terms_second() {
+    // Part 2 of `a + b + c` (sorted canonically by Plus) is `b`.
+    assert_eq!(interpret("(a + b + c)[[2]]").unwrap(), "b");
+  }
+
+  #[test]
   fn part_of_times() {
     assert_eq!(interpret("(a*b)[[1]]").unwrap(), "a");
     assert_eq!(interpret("(a*b)[[2]]").unwrap(), "b");
