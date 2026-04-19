@@ -5550,7 +5550,17 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       })
     }
   } else {
-    // Blend[{c1, c2, ...}, t] — interpolation along the color list
+    // Blend[{c1, c2, ...}, t] — interpolation along the color list.
+    // If `t` is an inexact Real, fall back to float arithmetic so the
+    // resulting RGBColor components are reals, matching wolframscript.
+    let is_real_t = matches!(&args[1], Expr::Real(_));
+    if is_real_t {
+      let t = match &args[1] {
+        Expr::Real(r) => *r,
+        _ => return None,
+      };
+      return Some(blend_two_float(&rgbs, t, all_graylevel));
+    }
     let (t_num, t_den) = expr_to_rational(&args[1])?;
 
     if n == 2 {
@@ -5585,6 +5595,50 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
         local_t_den,
         all_graylevel,
       )
+    }
+  }
+}
+
+/// Blend colors with a float weight t. Matches wolframscript's behaviour of
+/// returning RGBColor components as reals when `t` is an inexact number.
+fn blend_two_float(
+  rgbs: &[[(i128, i128); 3]],
+  t: f64,
+  as_graylevel: bool,
+) -> Expr {
+  let t = t.clamp(0.0, 1.0);
+  let n = rgbs.len();
+  // Map t in [0, 1] to segments.
+  let (c1, c2, local_t) = if n == 2 {
+    (&rgbs[0], &rgbs[1], t)
+  } else {
+    let segments = (n - 1) as f64;
+    let pos = t * segments;
+    let mut seg_idx = pos.floor() as usize;
+    if seg_idx >= n - 1 {
+      seg_idx = n - 2;
+    }
+    let local = pos - seg_idx as f64;
+    (&rgbs[seg_idx], &rgbs[seg_idx + 1], local)
+  };
+
+  let build_channel = |ch: usize| -> Expr {
+    let (c1n, c1d) = c1[ch];
+    let (c2n, c2d) = c2[ch];
+    let v1 = c1n as f64 / c1d as f64;
+    let v2 = c2n as f64 / c2d as f64;
+    Expr::Real(v1 * (1.0 - local_t) + v2 * local_t)
+  };
+
+  if as_graylevel {
+    Expr::FunctionCall {
+      name: "GrayLevel".to_string(),
+      args: vec![build_channel(0)],
+    }
+  } else {
+    Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: (0..3).map(build_channel).collect(),
     }
   }
 }

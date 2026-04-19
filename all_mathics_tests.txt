@@ -8495,22 +8495,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: Blend
-LINE: 50
-TYPE: >>
-INPUT: Blend[{Red, Blue}, 0.3]
-EXPECTED:
-= RGBColor[0.7, 0., 0.3]
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Blend
-LINE: 52
-TYPE: >>
-INPUT: Blend[{Red, Blue, Green}, 0.75]
-EXPECTED:
-= RGBColor[0., 0.5, 0.5]
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Blend
 LINE: 61
 TYPE: #>
 INPUT: Blend[{Red, Green, Blue}, {1, 0.5}]

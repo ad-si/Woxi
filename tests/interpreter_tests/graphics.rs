@@ -5445,6 +5445,20 @@ mod blend {
   }
 
   #[test]
+  fn blend_with_real_weight_returns_reals() {
+    // When the weight is an inexact Real, the output components must be
+    // reals too, matching wolframscript exactly.
+    assert_eq!(
+      interpret("Blend[{Red, Blue}, 0.3]").unwrap(),
+      "RGBColor[0.7, 0., 0.3]"
+    );
+    assert_eq!(
+      interpret("Blend[{Red, Blue, Green}, 0.75]").unwrap(),
+      "RGBColor[0., 0.5, 0.5]"
+    );
+  }
+
+  #[test]
   fn blend_in_graphics() {
     insta::assert_snapshot!(export_svg(
       "Graphics[{Blend[{Red, Blue}], Disk[]}]"
