@@ -506,6 +506,15 @@ mod infinity_arithmetic {
       "a*b*DirectedInfinity[q]"
     );
   }
+
+  #[test]
+  fn implicit_multiply_with_directed_infinity_negative_imaginary() {
+    // a b DirectedInfinity[-I] stays symbolic.
+    assert_eq!(
+      interpret("a  b  DirectedInfinity[-I]").unwrap(),
+      "a*b*DirectedInfinity[-I]"
+    );
+  }
 }
 
 mod constant_real_arithmetic {
