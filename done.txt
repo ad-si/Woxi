@@ -4100,3 +4100,10 @@ TYPE: >>
 INPUT: mylist[[3]] (with mylist = {a, b, c, d})
 EXPECTED: c (matches wolframscript; basic positive-index Part on list)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 427
+TYPE: >>
+INPUT: mylist[[-3]] (with mylist = {a, b, c, d})
+EXPECTED: b (matches wolframscript; negative-index Part counts from end)
+---

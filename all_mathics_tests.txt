@@ -10702,14 +10702,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 427
-TYPE: >>
-INPUT: mylist[[-3]]
-EXPECTED:
-= b
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 438
 TYPE: >>
 INPUT: TableForm[mymatrix]
