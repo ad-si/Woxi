@@ -3303,3 +3303,15 @@ LINE: 44
 INPUT: E^(I Pi/2)
 EXPECTED: I (matches wolframscript; Euler's identity quarter turn)
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_add
+LINE: 49
+INPUT: E^(.25 I Pi)
+EXPECTED: 0.7071067811865476 + 0.7071067811865475*I (matches wolframscript; mathics "0.707107 + 0.707107 I" is display-truncated)
+---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_exponential
+LINE: 37
+INPUT: E^(.25 I Pi)
+EXPECTED: 0.7071067811865476 + 0.7071067811865475*I (matches wolframscript)
+---

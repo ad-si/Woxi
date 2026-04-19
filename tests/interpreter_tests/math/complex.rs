@@ -610,6 +610,16 @@ mod im_tests {
     assert_eq!(interpret("E^(I Pi/2)").unwrap(), "I");
   }
 
+  #[test]
+  fn e_to_quarter_i_pi_real_exponent() {
+    // With a machine-real exponent (.25), E^(.25 I Pi) evaluates to the
+    // complex machine-real Cos[Pi/4] + I*Sin[Pi/4].
+    assert_eq!(
+      interpret("E^(.25 I Pi)").unwrap(),
+      "0.7071067811865476 + 0.7071067811865475*I"
+    );
+  }
+
   // ── Log2 ─────────────────────────────────────────────────
 
   #[test]

@@ -14045,12 +14045,6 @@ INPUT: log2=.; E^(I Pi/4)
 EXPECTED: E ^ (I / 4 Pi)
 ---
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_add
-LINE: 49
-INPUT: E^(.25 I Pi)
-EXPECTED: 0.707107 + 0.707107 I
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_multiply
 LINE: 153
 INPUT: a  b  DirectedInfinity[I]
@@ -15776,12 +15770,6 @@ FUNCTION: test_exponential
 LINE: 37
 INPUT: log2=.; E^(I Pi/4)
 EXPECTED: E ^ (I / 4 Pi)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_exponential
-LINE: 37
-INPUT: E^(.25 I Pi)
-EXPECTED: 0.707107 + 0.707107 I
 ---
 FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_multiply
