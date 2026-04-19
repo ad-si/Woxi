@@ -4847,3 +4847,10 @@ TYPE: >>
 INPUT: Coefficient[(x + 3 y)^5, x * y^4]
 EXPECTED: 405 (matches wolframscript; implemented multivariate monomial second argument)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: D
+LINE: 161
+TYPE: >>
+INPUT: D[f[x, x], x] // InputForm
+EXPECTED: InputForm[Derivative[0, 1][f][x, x] + Derivative[1, 0][f][x, x]] (Woxi and wolframscript byte-identical)
+---

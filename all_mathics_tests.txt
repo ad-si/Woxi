@@ -4365,14 +4365,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: D
-LINE: 161
-TYPE: >>
-INPUT: D[f[x, x], x] // InputForm
-EXPECTED:
-= Derivative[0, 1][f][x, x] + Derivative[1, 0][f][x, x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
 LINE: 167
 TYPE: >>
 INPUT: D[f[x^2, x, 2y], {x,2}, y] // Expand
