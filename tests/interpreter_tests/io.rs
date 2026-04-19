@@ -2220,18 +2220,12 @@ mod parent_directory {
 
   #[test]
   fn arg_absolute() {
-    assert_eq!(
-      interpret(r#"ParentDirectory["/a/b/c"]"#).unwrap(),
-      "/a/b"
-    );
+    assert_eq!(interpret(r#"ParentDirectory["/a/b/c"]"#).unwrap(), "/a/b");
   }
 
   #[test]
   fn arg_relative() {
-    assert_eq!(
-      interpret(r#"ParentDirectory["a/b/c"]"#).unwrap(),
-      "a/b"
-    );
+    assert_eq!(interpret(r#"ParentDirectory["a/b/c"]"#).unwrap(), "a/b");
   }
 
   #[test]

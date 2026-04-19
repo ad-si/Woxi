@@ -4077,22 +4077,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Coefficient
-LINE: 490
-TYPE: >>
-INPUT: Coefficient[(x + y)^4, (x^2) * (y^2)]
-EXPECTED:
-= 6
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
-LINE: 496
-TYPE: >>
-INPUT: Coefficient[(x + 3 y)^5, x * y^4]
-EXPECTED:
-= 405
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
 LINE: 512
 TYPE: >>
 INPUT: Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]

@@ -4833,3 +4833,17 @@ TYPE: >>
 INPUT: Clear["Global`*"]
 EXPECTED: Null (both Woxi and wolframscript print Null; mathics "(none)" is session-mode no-output)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 490
+TYPE: >>
+INPUT: Coefficient[(x + y)^4, (x^2) * (y^2)]
+EXPECTED: 6 (matches wolframscript; implemented multivariate monomial second argument)
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 496
+TYPE: >>
+INPUT: Coefficient[(x + 3 y)^5, x * y^4]
+EXPECTED: 405 (matches wolframscript; implemented multivariate monomial second argument)
+---

@@ -206,10 +206,7 @@ mod pattern_matching {
     fn replace_all_bare_blank_sequence_splices() {
       // With Rule (not RuleDelayed), x__ in f[1,2,3] /. f[x__] -> x results
       // in a top-level Sequence that displays as its elements concatenated.
-      assert_eq!(
-        interpret("f[1, 2, 3] /. f[x__] -> x").unwrap(),
-        "123"
-      );
+      assert_eq!(interpret("f[1, 2, 3] /. f[x__] -> x").unwrap(), "123");
     }
 
     #[test]

@@ -185,7 +185,10 @@ pub fn apply_part_indices(
           .collect();
         Ok(Expr::List(mapped?))
       }
-      Expr::FunctionCall { name: head, args: fn_args } => {
+      Expr::FunctionCall {
+        name: head,
+        args: fn_args,
+      } => {
         let mapped: Result<Vec<Expr>, InterpreterError> = fn_args
           .iter()
           .map(|item| apply_part_indices(item, rest))

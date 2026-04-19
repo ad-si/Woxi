@@ -2789,10 +2789,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn cosine_distance_zero_vector_integer() {
     // Integer-only zero vector returns exact 0 (matches wolframscript).
-    assert_eq!(
-      interpret("CosineDistance[{0, 0}, {1, 2}]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("CosineDistance[{0, 0}, {1, 2}]").unwrap(), "0");
   }
   #[test]
   fn key_sort_by_basic() {

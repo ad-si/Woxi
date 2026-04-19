@@ -74,12 +74,12 @@ fn replace_subexpr(expr: &Expr, target: &Expr, replacement: &Expr) -> Expr {
   }
   match expr {
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: op.clone(),
+      op: *op,
       left: Box::new(replace_subexpr(left, target, replacement)),
       right: Box::new(replace_subexpr(right, target, replacement)),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: op.clone(),
+      op: *op,
       operand: Box::new(replace_subexpr(operand, target, replacement)),
     },
     Expr::FunctionCall { name, args } => Expr::FunctionCall {

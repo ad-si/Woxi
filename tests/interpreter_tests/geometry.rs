@@ -386,10 +386,8 @@ mod bezier_function {
     // Save the BezierFunction to a variable and evaluate at 0.5 — the
     // midpoint of the control polygon's x-coords (1.5) and interpolated y.
     assert_eq!(
-      interpret(
-        "f = BezierFunction[{{0, 0}, {1, 1}, {2, 0}, {3, 2}}]; f[.5]"
-      )
-      .unwrap(),
+      interpret("f = BezierFunction[{{0, 0}, {1, 1}, {2, 0}, {3, 2}}]; f[.5]")
+        .unwrap(),
       "{1.5, 0.625}"
     );
   }

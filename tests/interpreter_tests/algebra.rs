@@ -167,6 +167,20 @@ mod coefficient {
   }
 
   #[test]
+  fn multivariate_monomial_second_argument() {
+    // Coefficient[expr, x^a * y^b] extracts the coefficient of that
+    // exact monomial across multiple variables.
+    assert_eq!(
+      interpret("Coefficient[(x + y)^4, (x^2) * (y^2)]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("Coefficient[(x + 3 y)^5, x * y^4]").unwrap(),
+      "405"
+    );
+  }
+
+  #[test]
   fn non_polynomial_factor() {
     // x*Cos[x+3] is linear in x; Cos[x+3] is the coefficient
     assert_eq!(

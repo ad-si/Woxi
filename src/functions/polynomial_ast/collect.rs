@@ -60,7 +60,8 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // identifier, collect over the identifier, then substitute back.
       let placeholder = "__collect_target__";
       let placeholder_id = Expr::Identifier(placeholder.to_string());
-      let substituted = substitute_expr_local(&args[0], &args[1], &placeholder_id);
+      let substituted =
+        substitute_expr_local(&args[0], &args[1], &placeholder_id);
       let mut sub_call = vec![substituted, placeholder_id.clone()];
       if let Some(h) = head {
         sub_call.push(h.clone());
@@ -452,7 +453,8 @@ fn build_times_chain(factors: &[Expr]) -> Expr {
 /// Recursively replace every occurrence of `from` with `to` in `expr`,
 /// using structural equality (via pretty-printed form).
 fn substitute_expr_local(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
-  if crate::syntax::expr_to_string(expr) == crate::syntax::expr_to_string(from) {
+  if crate::syntax::expr_to_string(expr) == crate::syntax::expr_to_string(from)
+  {
     return to.clone();
   }
   match expr {

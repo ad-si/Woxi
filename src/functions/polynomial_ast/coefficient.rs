@@ -33,6 +33,15 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return coefficient_ast(&rewritten);
   }
 
+  // Multivariate monomial form: Coefficient[expr, x^a * y^b * ...] →
+  // coefficient of the exact monomial across all listed variables.
+  if args.len() == 2
+    && let Some(var_powers) = as_multivar_monomial(&args[1])
+    && var_powers.len() > 1
+  {
+    return coefficient_of_monomial(&args[0], &var_powers);
+  }
+
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -72,6 +81,117 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(coeff_sum.remove(0))
   } else {
     // Sum all coefficient contributions
+    let mut result = coeff_sum.remove(0);
+    for c in coeff_sum {
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(c),
+      };
+    }
+    Ok(simplify(result))
+  }
+}
+
+/// Decompose a product-of-variable-powers monomial (e.g. `x^2 * y^3 * z`)
+/// into a list of (var, power) pairs. Returns `None` if any factor isn't a
+/// variable or variable^integer. Single vars like `x` count as `x^1`.
+fn as_multivar_monomial(expr: &Expr) -> Option<Vec<(String, i128)>> {
+  let mut factors = Vec::new();
+  collect_product_factors(expr, &mut factors);
+  let mut result = Vec::new();
+  for f in &factors {
+    match f {
+      Expr::Identifier(v) => result.push((v.clone(), 1)),
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let (Expr::Identifier(v), Expr::Integer(n)) =
+          (left.as_ref(), right.as_ref())
+          && *n >= 1
+        {
+          result.push((v.clone(), *n));
+        } else {
+          return None;
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        if let (Expr::Identifier(v), Expr::Integer(n)) = (&args[0], &args[1])
+          && *n >= 1
+        {
+          result.push((v.clone(), *n));
+        } else {
+          return None;
+        }
+      }
+      _ => return None,
+    }
+  }
+  if result.is_empty() {
+    None
+  } else {
+    Some(result)
+  }
+}
+
+fn collect_product_factors(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_product_factors(left, out);
+      collect_product_factors(right, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        collect_product_factors(a, out);
+      }
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Extract the coefficient of a multivariate monomial from a polynomial.
+fn coefficient_of_monomial(
+  expr: &Expr,
+  var_powers: &[(String, i128)],
+) -> Result<Expr, InterpreterError> {
+  let expanded = expand_expr(expr);
+  let terms = collect_additive_terms(&expanded);
+  let mut coeff_sum: Vec<Expr> = Vec::new();
+
+  for term in &terms {
+    // Peel off each requested variable's power from the term.
+    let mut remaining = term.clone();
+    let mut matches_all = true;
+    for (var, want_power) in var_powers {
+      let (p, c) = term_var_power_and_coeff(&remaining, var);
+      if p != *want_power {
+        matches_all = false;
+        break;
+      }
+      remaining = c;
+    }
+    if matches_all {
+      // The remaining factor must be constant w.r.t. all requested vars.
+      let all_constant = var_powers
+        .iter()
+        .all(|(v, _)| is_constant_wrt(&remaining, v));
+      if all_constant {
+        coeff_sum.push(remaining);
+      }
+    }
+  }
+
+  if coeff_sum.is_empty() {
+    Ok(Expr::Integer(0))
+  } else if coeff_sum.len() == 1 {
+    Ok(coeff_sum.remove(0))
+  } else {
     let mut result = coeff_sum.remove(0);
     for c in coeff_sum {
       result = Expr::BinaryOp {

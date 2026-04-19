@@ -1401,13 +1401,13 @@ pub fn dispatch_math_functions(
       // BernsteinBasis[d, n, x] = Binomial[d, n] * x^n * (1-x)^(d-n).
       // Only evaluate when d, n are integers AND x is numeric (matches
       // wolframscript which leaves the symbolic form unevaluated).
-      let is_numeric_x =
-        matches!(&args[2], Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_));
-      if let (Some(d), Some(n), true) = (
-        expr_to_i128(&args[0]),
-        expr_to_i128(&args[1]),
-        is_numeric_x,
-      ) {
+      let is_numeric_x = matches!(
+        &args[2],
+        Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+      );
+      if let (Some(d), Some(n), true) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]), is_numeric_x)
+      {
         if n < 0 || n > d {
           return Some(Ok(match &args[2] {
             Expr::Real(_) => Expr::Real(0.0),
@@ -1421,21 +1421,24 @@ pub fn dispatch_math_functions(
           crate::functions::math_ast::times_ast(&[
             Expr::Integer(-1),
             x.clone(),
-          ]).ok()?,
-        ]).ok()?;
-        let xn = crate::functions::math_ast::power_ast(&[
-          x.clone(),
-          Expr::Integer(n),
-        ]).ok()?;
+          ])
+          .ok()?,
+        ])
+        .ok()?;
+        let xn =
+          crate::functions::math_ast::power_ast(&[x.clone(), Expr::Integer(n)])
+            .ok()?;
         let one_minus_x_dn = crate::functions::math_ast::power_ast(&[
           one_minus_x,
           Expr::Integer(d - n),
-        ]).ok()?;
+        ])
+        .ok()?;
         let result = crate::functions::math_ast::times_ast(&[
           Expr::Integer(coef),
           xn,
           one_minus_x_dn,
-        ]).ok()?;
+        ])
+        .ok()?;
         return Some(Ok(result));
       }
       return Some(Ok(Expr::FunctionCall {
