@@ -14226,32 +14226,6 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-059
-EXPECTED:
-  expr: Plot[3.1, {x, 0, 1}]
-  skip: pyodide
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-060
-EXPECTED:
-  expr: Plot[Abs[x], {x, -4, 4}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-061
-EXPECTED:
-  expr: Plot[AiryAiPrime[x], {x, -10, 10}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-062
-EXPECTED:
-  expr: Plot[AiryAi[x], {x, -10, 10}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-063
-EXPECTED:
-  expr: Plot[AiryBiPrime[x], {x, -10, 2}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-064
 EXPECTED:
   expr: Plot[AiryBi[x], {x, -10, 2}]
