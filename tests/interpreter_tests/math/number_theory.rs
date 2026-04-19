@@ -666,6 +666,38 @@ mod binomial {
   }
 }
 
+mod bernstein_basis {
+  use super::*;
+
+  #[test]
+  fn numeric_half() {
+    // BernsteinBasis[4, 3, 0.5] = Binomial[4,3]*0.5^3*0.5^1 = 4*1/16 = 0.25
+    assert_eq!(interpret("BernsteinBasis[4, 3, 0.5]").unwrap(), "0.25");
+  }
+
+  #[test]
+  fn n_equals_zero() {
+    // BernsteinBasis[4, 0, x] = (1-x)^4 — but we only evaluate numerically.
+    assert_eq!(interpret("BernsteinBasis[4, 0, 0.5]").unwrap(), "0.0625");
+  }
+
+  #[test]
+  fn out_of_range_is_zero() {
+    // n < 0 or n > d → 0 (or 0. for Real x).
+    assert_eq!(interpret("BernsteinBasis[3, 4, 0.5]").unwrap(), "0.");
+    assert_eq!(interpret("BernsteinBasis[3, -1, 2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    // With symbolic x, we leave unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("BernsteinBasis[3, 1, x]").unwrap(),
+      "BernsteinBasis[3, 1, x]"
+    );
+  }
+}
+
 mod multinomial {
   use super::*;
 

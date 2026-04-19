@@ -1992,7 +1992,7 @@ Convergents,List of convergents of a continued fraction representation,✅,none,
 ImageMeasurements,Measure image properties (image processing),🚫,,9.0,2031
 MedianFilter,Apply median filter to data (signal processing),🚫,,7.0,2031
 VertexOutDegree,Out-degree of a vertex in a directed graph,🚫,,8.0,2031
-BernsteinBasis,Bernstein basis polynomial,🚫,,7.0,2034
+BernsteinBasis,Bernstein basis polynomial,✅,pure,7.0,2034
 LegendMargins,Margins around plot legends,🚫,,9.0,2034
 Spectrogram,Time-frequency spectrogram of signal,🚫,,9.0,2034
 DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036

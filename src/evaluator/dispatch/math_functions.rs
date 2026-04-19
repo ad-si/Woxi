@@ -1397,6 +1397,52 @@ pub fn dispatch_math_functions(
     "Binomial" if args.len() == 2 => {
       return Some(crate::functions::math_ast::binomial_ast(args));
     }
+    "BernsteinBasis" if args.len() == 3 => {
+      // BernsteinBasis[d, n, x] = Binomial[d, n] * x^n * (1-x)^(d-n).
+      // Only evaluate when d, n are integers AND x is numeric (matches
+      // wolframscript which leaves the symbolic form unevaluated).
+      let is_numeric_x =
+        matches!(&args[2], Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_));
+      if let (Some(d), Some(n), true) = (
+        expr_to_i128(&args[0]),
+        expr_to_i128(&args[1]),
+        is_numeric_x,
+      ) {
+        if n < 0 || n > d {
+          return Some(Ok(match &args[2] {
+            Expr::Real(_) => Expr::Real(0.0),
+            _ => Expr::Integer(0),
+          }));
+        }
+        let coef = crate::functions::binomial_coeff(d, n);
+        let x = &args[2];
+        let one_minus_x = crate::functions::math_ast::plus_ast(&[
+          Expr::Integer(1),
+          crate::functions::math_ast::times_ast(&[
+            Expr::Integer(-1),
+            x.clone(),
+          ]).ok()?,
+        ]).ok()?;
+        let xn = crate::functions::math_ast::power_ast(&[
+          x.clone(),
+          Expr::Integer(n),
+        ]).ok()?;
+        let one_minus_x_dn = crate::functions::math_ast::power_ast(&[
+          one_minus_x,
+          Expr::Integer(d - n),
+        ]).ok()?;
+        let result = crate::functions::math_ast::times_ast(&[
+          Expr::Integer(coef),
+          xn,
+          one_minus_x_dn,
+        ]).ok()?;
+        return Some(Ok(result));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "BernsteinBasis".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "Multinomial" => {
       return Some(crate::functions::math_ast::multinomial_ast(args));
     }

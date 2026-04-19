@@ -7491,14 +7491,6 @@ EXPECTED:
 = -Graphics-
 ---
 FILE: mathics/builtin/drawing/splines.py
-CLASS: BernsteinBasis
-LINE: 33
-TYPE: >>
-INPUT: BernsteinBasis[4, 3, 0.5]
-EXPECTED:
-= 0.25
----
-FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierFunction
 LINE: 54
 TYPE: >>

@@ -4721,3 +4721,10 @@ TYPE: >>
 INPUT: ImageColorSpace[img]
 EXPECTED: ImageColorSpace[img] with ImageColorSpace::imginv warning (changed image_color_space_ast to emit warning and return unevaluated on non-image instead of erroring)
 ---
+FILE: mathics/builtin/drawing/splines.py
+CLASS: BernsteinBasis
+LINE: 33
+TYPE: >>
+INPUT: BernsteinBasis[4, 3, 0.5]
+EXPECTED: 0.25 (implemented BernsteinBasis[d, n, x] = Binomial[d,n] * x^n * (1-x)^(d-n) for numeric x; out-of-range n returns 0; symbolic x stays unevaluated to match wolframscript)
+---

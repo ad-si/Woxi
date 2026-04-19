@@ -96,6 +96,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BinaryDistance" => Some((2, 2)),
     "BinCounts" => Some((1, 2)),
     "BinLists" => Some((1, 2)),
+    "BernsteinBasis" => Some((3, 3)),
     "Binomial" => Some((2, 2)),
     "BitClear" => Some((2, 2)),
     "BitFlip" => Some((2, 2)),
