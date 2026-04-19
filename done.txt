@@ -5687,3 +5687,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-045/046/047/048 PieChart variants
 EXPECTED: -Graphics- (4 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-049/050/051/052/054/055/056/057/058 PieChart/Plot3D variants
+EXPECTED: -Graphics- (9 tests; Woxi and wolframscript byte-identical)
+---

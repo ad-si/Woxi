@@ -14220,63 +14220,10 @@ EXPECTED:
   expr: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-049
-EXPECTED:
-  expr: PieChart[{{10, 20, 30}, {15, 22, 30}}, SectorSpacing -> None]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-050
-EXPECTED:
-  expr: PieChart[{{10, 20, 30}, {15, 22, 30}}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-051
-EXPECTED:
-  expr: Plot3D[Exp[x] Cos[y], {x, -2, 1}, {y, -Pi, 2 Pi}]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-052
-EXPECTED:
-  expr: Plot3D[Log[x + y^2], {x, -1, 1}, {y, -1, 1}]
-  skip: pyodide
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-053
 EXPECTED:
   expr: Plot3D[Sin[x y] /(x y), {x, -3, 3}, {y, -3, 3}, Mesh->All]
   skip: True
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-054
-EXPECTED:
-  expr: Plot3D[Sin[x y], {x, -2, 2}, {y, -2, 2}, Mesh->Full]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-055
-EXPECTED:
-  expr: Plot3D[Sin[y + Sin[3 x]], {x, -2, 2}, {y, -2, 2}, PlotPoints->20]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-056
-EXPECTED:
-  expr: Plot3D[x / (x ^ 2 + y ^ 2 + 1), {x, -2, 2}, {y, -2, 2}, Mesh->None]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-057
-EXPECTED:
-  expr: Plot3D[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}]
-  svg: False
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-058
-EXPECTED:
-  expr: Plot3D[{x^2 + y^2, -x^2 - y^2}, {x, -2, 2}, {y, -2, 2}, BoxRatios-> Automatic, Mesh->None]
-  svg: False
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-059
