@@ -2443,3 +2443,11 @@ INPUT: FileNameSplit["example/path/file.txt"]
 EXPECTED:
 = {example, path, file.txt} (matches wolframscript)
 ---
+FILE: mathics/builtin/list/associations.py
+CLASS: Association
+LINE: 43
+TYPE: >>
+INPUT: Association[{a -> x^2, b -> y}]
+EXPECTED:
+= <|a -> x^2, b -> y|> (matches wolframscript)
+---

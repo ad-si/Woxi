@@ -8615,14 +8615,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/list/associations.py
 CLASS: Association
-LINE: 43
-TYPE: >>
-INPUT: Association[{a -> x^2, b -> y}]
-EXPECTED:
-= <|a -> x ^ 2, b -> y|>
----
-FILE: mathics/builtin/list/associations.py
-CLASS: Association
 LINE: 47
 TYPE: >>
 INPUT: <|a -> x, b -> y, <|a -> z, d -> t|>|>
