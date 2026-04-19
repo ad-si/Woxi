@@ -4589,3 +4589,10 @@ TYPE: >>
 INPUT: TableForm[mymatrix] (with mymatrix = {{1,2},{3,4},{5,6}})
 EXPECTED: TableForm[{{1, 2}, {3, 4}, {5, 6}}] (matches wolframscript; TableForm is a display wrapper — mathics "1   2\n3   4\n5   6" reflects rendered display form)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 445
+TYPE: >>
+INPUT: MatrixForm[mymatrix] (with mymatrix = {{1,2},{3,4},{5,6}})
+EXPECTED: MatrixForm[{{1, 2}, {3, 4}, {5, 6}}] (matches wolframscript; MatrixForm is a display wrapper — same behavior as TableForm)
+---
