@@ -3795,3 +3795,9 @@ LINE: 1105
 INPUT: M[[1, 2]] (with M = {{a,b,c},{d,e,f}})
 EXPECTED: b (matches wolframscript; row 1 column 2)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1089
+INPUT: A[[3]] (with A = {a, b, c, d})
+EXPECTED: c (matches wolframscript)
+---

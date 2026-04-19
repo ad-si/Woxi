@@ -1706,6 +1706,15 @@ mod part_extraction {
   }
 
   #[test]
+  fn part_single_index_on_named_list() {
+    // A = {a, b, c, d}; A[[3]] extracts the third element.
+    assert_eq!(
+      interpret("A = {a, b, c, d}; A[[3]]").unwrap(),
+      "c"
+    );
+  }
+
+  #[test]
   fn part_row_then_all() {
     // Part[matrix, i, All] returns the whole row
     assert_eq!(
