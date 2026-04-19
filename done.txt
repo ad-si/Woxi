@@ -4861,3 +4861,10 @@ TYPE: >>
 INPUT: D[f[x], x]
 EXPECTED: Derivative[1][f][x] (Woxi and wolframscript byte-identical; mathics "f'[x]" is StandardForm rendering of same expression)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1010
+TYPE: >>
+INPUT: Integrate[f[x^2], {x, a, b}] // TeXForm
+EXPECTED: TeXForm[Integrate[f[x^2], {x, a, b}]] (Woxi and wolframscript byte-identical; mathics shows the rendered TeX output)
+---
