@@ -3291,3 +3291,9 @@ LINE: 717
 INPUT: x /. _->t
 EXPECTED: t (matches wolframscript; Blank pattern matches any expr)
 ---
+FILE: mathics/test/builtin/drawing/test_image.py
+FUNCTION: None
+LINE: 37
+INPUT: Image[{{0, 1}, {1, 0}, {1, 1}}] // ImageDimensions
+EXPECTED: {2, 3} (matches wolframscript)
+---

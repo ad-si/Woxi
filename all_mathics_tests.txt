@@ -13935,12 +13935,6 @@ EXPECTED: {640, 50}
 ---
 FILE: mathics/test/builtin/drawing/test_image.py
 FUNCTION: None
-LINE: 37
-INPUT: Image[{{0, 1}, {1, 0}, {1, 1}}] // ImageDimensions
-EXPECTED: {2, 3}
----
-FILE: mathics/test/builtin/drawing/test_image.py
-FUNCTION: None
 LINE: 38
 INPUT: Image[{{0.2, 0.4}, {0.9, 0.6}, {0.3, 0.8}}] // ImageDimensions
 EXPECTED: {2, 3}

@@ -51,6 +51,16 @@ mod image_core {
   }
 
   #[test]
+  fn image_dimensions_integer_bit_matrix_postfix() {
+    clear_state();
+    // Postfix form via //; 2 columns, 3 rows → {2, 3}.
+    assert_eq!(
+      interpret("Image[{{0, 1}, {1, 0}, {1, 1}}] // ImageDimensions").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
   fn image_dimensions_rgb() {
     clear_state();
     let result = interpret(
