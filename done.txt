@@ -2275,3 +2275,11 @@ INPUT: N[CosineDistance[{7, 9}, {71, 89}]]
 EXPECTED:
 = 0.00007596457213221441 (matches wolframscript; mathics shows rounded 0.0000759646)
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CosineDistance
+LINE: 170
+TYPE: >>
+INPUT: CosineDistance[{x, y}, {1, 0}]
+EXPECTED:
+= 1 - x/Sqrt[Abs[x]^2 + Abs[y]^2] (matches wolframscript)
+---
