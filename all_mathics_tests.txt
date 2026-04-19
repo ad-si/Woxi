@@ -12713,12 +12713,6 @@ EXPECTED: Plus[a]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 80
-INPUT: (a - b) - c
-EXPECTED: Plus[Plus[a, Times[-1, b]], Times[-1, c]]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 87
 INPUT: a==b&
 EXPECTED: Function[Equal[a, b]]
