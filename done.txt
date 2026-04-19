@@ -4512,3 +4512,10 @@ TYPE: >>
 INPUT: SetStreamPosition[stream, 8] (with stream = StringToStream["Mathics is cool!"])
 EXPECTED: 8 (matches wolframscript; seeks to offset 8)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: SetStreamPosition
+LINE: 1179
+TYPE: >>
+INPUT: Read[stream, Word] (after SetStreamPosition[stream, 8] on "Mathics is cool!")
+EXPECTED: is (matches wolframscript; reads word starting at position 8)
+---
