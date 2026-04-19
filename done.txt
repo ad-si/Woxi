@@ -5409,3 +5409,10 @@ TYPE: >>
 INPUT: Format[Dice[n_Integer?(1 <= # <= 6 &)]] := Block[{p = 0.2, r = 0.05}, Graphics[...], ImageSize -> Tiny]]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: MapIndexed
+LINE: 290
+TYPE: >>
+INPUT: MapIndexed[f, a + b + c * d, {0, 1}]
+EXPECTED: f[f[a, {1}] + f[b, {2}] + f[c*d, {3}], {}] (Woxi and wolframscript byte-identical)
+---

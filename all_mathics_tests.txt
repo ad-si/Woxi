@@ -1591,14 +1591,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapIndexed
-LINE: 290
-TYPE: >>
-INPUT: MapIndexed[f, a + b + c * d, {0, 1}]
-EXPECTED:
-= f[f[a, {1}] + f[b, {2}] + f[c d, {3}], {}]
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: MapIndexed
 LINE: 297
 TYPE: >>
 INPUT: MapIndexed[#2 &, listified, {-1}]
