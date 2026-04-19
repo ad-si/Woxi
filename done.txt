@@ -5555,3 +5555,8 @@ INPUT: 1. 10^5
 DESCRIPTION: large positive real number (<10^6)
 EXPECTED: 100000. (Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: 1. 10^-5
+DESCRIPTION: small positive real number (>10^-6)
+EXPECTED: 0.00001 (Woxi and wolframscript byte-identical)
+---
