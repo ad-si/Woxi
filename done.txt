@@ -3069,3 +3069,9 @@ LINE: 80
 INPUT: (a - b) - c
 EXPECTED: a - b - c (matches wolframscript)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 87
+INPUT: a==b&
+EXPECTED: a == b & (matches wolframscript; mathics test compares to FullForm Function[Equal[a, b]])
+---
