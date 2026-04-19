@@ -2883,3 +2883,11 @@ INPUT: Block[{x = 3}, expr]
 EXPECTED:
 = expr (matches wolframscript; mathics expected 12 from prior expr = x^2 + x binding)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 819
+TYPE: >>
+INPUT: fac[10]
+EXPECTED:
+= fac[10] (matches wolframscript; mathics expected 3628800 from prior fac definition)
+---

@@ -11759,14 +11759,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 819
-TYPE: >>
-INPUT: fac[10]
-EXPECTED:
-= 3628800
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 839
 TYPE: >>
 INPUT: Format[x] = "y";
