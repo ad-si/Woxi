@@ -38,6 +38,13 @@ mod element_data_tests {
   }
 
   #[test]
+  fn element_data_all_returns_all_elements() {
+    clear_state();
+    let result = interpret("Length[ElementData[All]]").unwrap();
+    assert_eq!(result, "118");
+  }
+
+  #[test]
   fn element_data_atomic_number() {
     clear_state();
     assert_eq!(

@@ -3153,3 +3153,9 @@ LINE: 69
 INPUT: ElementData[73, "ElectronConfiguration"]
 EXPECTED: {{2}, {2, 6}, {2, 6, 10}, {2, 6, 10, 14}, {2, 6, 3}, {2}} (matches wolframscript)
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 73
+INPUT: Length[ElementData[All]]
+EXPECTED: 118 (implemented ElementData[All] to return list of all 118 elements; matches wolframscript)
+---

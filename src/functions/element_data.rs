@@ -2391,7 +2391,7 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(entities))
     }
     1 => {
-      // ElementData["Properties"] or ElementData[element]
+      // ElementData["Properties"] or ElementData[All] or ElementData[element]
       match &args[0] {
         Expr::String(s) if s == "Properties" => {
           let props: Vec<Expr> = SUPPORTED_PROPERTIES
@@ -2399,6 +2399,19 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|p| Expr::String(p.to_string()))
             .collect();
           Ok(Expr::List(props))
+        }
+        Expr::Identifier(s) if s == "All" => {
+          let entities: Vec<Expr> = ELEMENTS
+            .iter()
+            .map(|elem| Expr::FunctionCall {
+              name: "Entity".to_string(),
+              args: vec![
+                Expr::String("Element".to_string()),
+                Expr::String(elem.standard_name.to_string()),
+              ],
+            })
+            .collect();
+          Ok(Expr::List(entities))
         }
         identifier => {
           // ElementData[element] returns Entity[Element, name]

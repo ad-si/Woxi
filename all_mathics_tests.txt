@@ -164,14 +164,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 73
-TYPE: >>
-INPUT: Length[ElementData[All]]
-EXPECTED:
-= 118
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 77
 TYPE: >>
 INPUT: ElementData["He", "ElectroNegativity"]
