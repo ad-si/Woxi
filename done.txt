@@ -4735,3 +4735,10 @@ TYPE: >>
 INPUT: f[a, 2] (with f[x_, y_:1] := {x, y})
 EXPECTED: {a, 2} (matches wolframscript; Optional default not needed when 2nd arg supplied)
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 50
+TYPE: >>
+INPUT: f[a] (with f[x_, y_:1] := {x, y})
+EXPECTED: {a, 1} (matches wolframscript; Optional default y->1 used when 2nd arg omitted)
+---
