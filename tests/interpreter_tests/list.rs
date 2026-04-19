@@ -51,6 +51,24 @@ mod list_threading {
   fn rational_list_minus_scalar() {
     assert_eq!(interpret("{1/2, 1/3} - 1").unwrap(), "{-1/2, -2/3}");
   }
+
+  #[test]
+  fn unequal_length_lists_plus_unevaluated() {
+    // Lists of unequal length emit Thread::tdlen warning and return
+    // the expression unevaluated (matches wolframscript).
+    assert_eq!(
+      interpret("{1, 2} + {4, 5, 6}").unwrap(),
+      "{1, 2} + {4, 5, 6}"
+    );
+  }
+
+  #[test]
+  fn unequal_length_lists_times_unevaluated() {
+    assert_eq!(
+      interpret("{1, 2} * {4, 5, 6}").unwrap(),
+      "{1, 2}*{4, 5, 6}"
+    );
+  }
 }
 
 mod table_with_list_iterator {

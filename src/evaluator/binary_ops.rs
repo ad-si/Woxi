@@ -135,9 +135,18 @@ pub fn thread_binary_op(
     (Expr::List(left_items), Expr::List(right_items)) => {
       // Both lists - element-wise operation
       if left_items.len() != right_items.len() {
-        return Err(InterpreterError::EvaluationError(
-          "Lists must have the same length for element-wise operations".into(),
+        // Emit Thread::tdlen warning and return the expression unevaluated,
+        // matching wolframscript behavior.
+        let unevaluated = Expr::BinaryOp {
+          op,
+          left: Box::new(left.clone()),
+          right: Box::new(right.clone()),
+        };
+        crate::emit_message(&format!(
+          "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+          crate::syntax::expr_to_string(&unevaluated)
         ));
+        return Ok(unevaluated);
       }
       let results: Result<Vec<Expr>, _> = left_items
         .iter()

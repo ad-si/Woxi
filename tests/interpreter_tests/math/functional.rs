@@ -513,8 +513,12 @@ mod listable {
 
   #[test]
   fn mismatched_lengths_no_thread() {
-    // Mismatched list lengths should not thread — function returns unevaluated
-    assert_eq!(interpret("Sin[{1, 2}] + Sin[{3, 4, 5}]").is_err(), true);
+    // Mismatched list lengths emit Thread::tdlen warning and return unevaluated
+    // (matches wolframscript).
+    assert_eq!(
+      interpret("Sin[{1, 2}] + Sin[{3, 4, 5}]").unwrap(),
+      "{Sin[1], Sin[2]} + {Sin[3], Sin[4], Sin[5]}"
+    );
   }
 
   #[test]
