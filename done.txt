@@ -5679,3 +5679,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-029/030/031/032/033/034/035 ListPlot/ListStepPlot variants
 EXPECTED: -Graphics- (7 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-036/037/038/039/040/041/042/043 LogPlot/NumberLinePlot/ParametricPlot variants
+EXPECTED: -Graphics- (8 tests; Woxi and wolframscript byte-identical)
+---

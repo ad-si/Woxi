@@ -14215,46 +14215,6 @@ EXPECTED:
   skip: True
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-036
-EXPECTED:
-  expr: LogPlot[x^x, {x, 1, 5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-037
-EXPECTED:
-  expr: LogPlot[{10^x, Factorial[x], Subfactorial[x]}, {x, 0, 25}, PlotPoints->26]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-038
-EXPECTED:
-  expr: LogPlot[{x^x, Exp[x], x!}, {x, 1, 5}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-039
-EXPECTED:
-  expr: NumberLinePlot[Prime[Range[10]]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-040
-EXPECTED:
-  expr: NumberLinePlot[Table[x^2, {x, 10}]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-041
-EXPECTED:
-  expr: ParametricPlot[ {LegendreP[7, x], LegendreP[5, x]}, {x, -1, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-042
-EXPECTED:
-  expr: ParametricPlot[{Cos[u] / u, Sin[u] / u}, {u, 0, 50}, PlotRange->0.5]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-043
-EXPECTED:
-  expr: ParametricPlot[{Sin[u], Cos[3 u]}, {u, 0, 2 Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-044
 EXPECTED:
   expr: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
