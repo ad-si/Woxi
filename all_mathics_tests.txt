@@ -9091,14 +9091,6 @@ EXPECTED:
 = 0.688145 + 0.370815 I
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryBiPrime
-LINE: 204
-TYPE: >>
-INPUT: AiryBiPrime[0.5]
-EXPECTED:
-= 0.544573
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryBiZero
 LINE: 233
 TYPE: >>
