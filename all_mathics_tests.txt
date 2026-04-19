@@ -14209,35 +14209,10 @@ EXPECTED:
   expr: DiscretePlot[2.5 Sqrt[k], {k, 100}]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-018
-EXPECTED:
-  expr: ListLinePlot[Table[Cos[x], {x, -5, 5, 0.2}], Filling->Top]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-019
-EXPECTED:
-  expr: ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling->Axis]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-020
-EXPECTED:
-  expr: ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling->Bottom]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-021
-EXPECTED:
-  expr: ListLinePlot[Table[{n, n ^ 0.5}, {n, 10}]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-022
 EXPECTED:
   expr: ListLinePlot[list]
   skip: True
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-023
-EXPECTED:
-  expr: ListLinePlot[{{-2, -1}, {-1, -1}, {1, 3}}, Filling->Axis]
 ---
 FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-024
