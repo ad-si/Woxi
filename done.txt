@@ -4016,3 +4016,10 @@ TYPE: >>
 INPUT: Close["ExampleData/numbers.txt"]
 EXPECTED: Close[ExampleData/numbers.txt] (matches wolframscript when file is not open; mathics "ExampleData/numbers.txt" assumes the stream was previously opened)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 169
+TYPE: >>
+INPUT: Close[StringToStream["123abc"]]
+EXPECTED: String (matches wolframscript; Close on a StringToStream returns the stream name "String")
+---
