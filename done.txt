@@ -3393,3 +3393,9 @@ LINE: 27
 INPUT: DSolve[y''[x] == 0, y[x], x]
 EXPECTED: {{y[x] -> C[1] + x*C[2]}} (matches wolframscript)
 ---
+FILE: mathics/builtin/numbers/diffeqns.py
+CLASS: DSolve
+LINE: 30
+INPUT: DSolve[y''[x] == y[x], y[x], x]
+EXPECTED: {{y[x] -> E^x*C[1] + C[2]/E^x}} (matches wolframscript; mathics expected form is equivalent)
+---

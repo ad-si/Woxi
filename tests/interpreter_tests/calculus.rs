@@ -2096,6 +2096,15 @@ mod dsolve {
   }
 
   #[test]
+  fn exponential_pair_general_solution() {
+    // y''[x] == y[x] has general solution C[1]*E^x + C[2]*E^(-x).
+    assert_eq!(
+      interpret("DSolve[y''[x] == y[x], y[x], x]").unwrap(),
+      "{{y[x] -> E^x*C[1] + C[2]/E^x}}"
+    );
+  }
+
+  #[test]
   fn harmonic_oscillator_with_ic() {
     // y''[x] + y[x] == 0, y[0]==1, y'[0]==0 → y[x] -> Cos[x]
     assert_eq!(
