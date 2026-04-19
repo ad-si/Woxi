@@ -12713,12 +12713,6 @@ EXPECTED: Plus[a]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 108
-INPUT: \\[Degree]
-EXPECTED: Degree
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 114
 INPUT: \\[ExponentialE]
 EXPECTED: \u2147

@@ -3087,3 +3087,9 @@ LINE: 107
 INPUT: \[Pi]
 EXPECTED: Pi (matches wolframscript)
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 108
+INPUT: \[Degree]
+EXPECTED: Degree (matches wolframscript)
+---
