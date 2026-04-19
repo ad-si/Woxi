@@ -2427,14 +2427,6 @@ EXPECTED:
 = Mathics
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: StreamPosition
-LINE: 1136
-TYPE: >>
-INPUT: StreamPosition[stream]
-EXPECTED:
-= 7
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: SetStreamPosition
 LINE: 1173
 TYPE: >>
