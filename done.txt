@@ -5402,3 +5402,10 @@ TYPE: >>
 INPUT: h:= Function[{x}, Hold[1+x], HoldAll]
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1228
+TYPE: >>
+INPUT: Format[Dice[n_Integer?(1 <= # <= 6 &)]] := Block[{p = 0.2, r = 0.05}, Graphics[...], ImageSize -> Tiny]]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---
