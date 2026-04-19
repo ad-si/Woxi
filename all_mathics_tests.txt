@@ -4413,14 +4413,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Coefficient
-LINE: 498
-TYPE: >>
-INPUT: Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]
-EXPECTED:
-= 1 / (-3 + y) + 1 / (-2 + y)
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
 LINE: 512
 TYPE: >>
 INPUT: Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]

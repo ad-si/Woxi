@@ -174,6 +174,16 @@ mod coefficient {
       "Cos[3 + x]"
     );
   }
+
+  #[test]
+  fn rational_expression_coefficient() {
+    // Coefficient[(x+2)/(y-3) + (x+3)/(y-2), x] extracts coefficients of x.
+    // Matches wolframscript.
+    assert_eq!(
+      interpret("Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]").unwrap(),
+      "(-3 + y)^(-1) + (-2 + y)^(-1)"
+    );
+  }
 }
 
 mod expand {
@@ -1555,7 +1565,10 @@ mod solve {
     // Solve[Denominator[f[x]] == 0, x] for f[x] = 4x/(x^2 + 3x + 5).
     // Matches wolframscript; mathics docstring displays as "-3/2 +/- I/2 Sqrt[11]".
     assert_eq!(
-      interpret("f[x_] := 4 x / (x^2 + 3 x + 5); Solve[Denominator[f[x]] == 0, x]").unwrap(),
+      interpret(
+        "f[x_] := 4 x / (x^2 + 3 x + 5); Solve[Denominator[f[x]] == 0, x]"
+      )
+      .unwrap(),
       "{{x -> (-3 - I*Sqrt[11])/2}, {x -> (-3 + I*Sqrt[11])/2}}"
     );
   }

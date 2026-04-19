@@ -3939,3 +3939,10 @@ TYPE: >>
 INPUT: D[x^3 * Cos[y], {{x, y}}]
 EXPECTED: {3*x^2*Cos[y], -(x^3*Sin[y])} (matches wolframscript; gradient form — differentiates wrt each variable in the list)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Coefficient
+LINE: 498
+TYPE: >>
+INPUT: Coefficient[(x + 2)/(y - 3) + (x + 3)/(y - 2), x]
+EXPECTED: (-3 + y)^(-1) + (-2 + y)^(-1) (matches wolframscript; Coefficient extracts x-coefficient from rational expression)
+---
