@@ -3995,3 +3995,10 @@ TYPE: >>
 INPUT: ReplacePart[{a, b, c}, 4 -> t]
 EXPECTED: {a, b, c} (changed replace_at_position to silently return original expression on out-of-range positions, matching wolframscript)
 ---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringLength
+LINE: 357
+TYPE: >>
+INPUT: StringLength[x]
+EXPECTED: StringLength[x] with StringLength::string message (updated string_length_ast to emit message and return unevaluated on non-string arg instead of coercing identifier to its name)
+---

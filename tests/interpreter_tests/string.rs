@@ -1,5 +1,33 @@
 use super::*;
 
+mod string_length_arg_errors {
+  use super::*;
+
+  #[test]
+  fn non_string_identifier_returns_unevaluated() {
+    // Matches wolframscript: StringLength[x] stays unevaluated with a
+    // StringLength::string message; it does NOT return the length of the
+    // identifier's name.
+    assert_eq!(
+      interpret("StringLength[x]").unwrap(),
+      "StringLength[x]"
+    );
+  }
+
+  #[test]
+  fn plain_string_still_works() {
+    assert_eq!(interpret(r#"StringLength["abc"]"#).unwrap(), "3");
+  }
+
+  #[test]
+  fn list_of_strings_threads() {
+    assert_eq!(
+      interpret(r#"StringLength[{"a", "bb", "ccc"}]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
 mod string_join_with_list {
   use super::*;
 

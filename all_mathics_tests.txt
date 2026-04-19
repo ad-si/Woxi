@@ -4052,15 +4052,6 @@ EXPECTED:
 | Hello world!
 ---
 FILE: mathics/builtin/string/operations.py
-CLASS: StringLength
-LINE: 357
-TYPE: >>
-INPUT: StringLength[x]
-EXPECTED:
-: String expected.
-= StringLength[x]
----
-FILE: mathics/builtin/string/operations.py
 CLASS: StringPosition
 LINE: 397
 TYPE: >>

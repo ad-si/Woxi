@@ -52,8 +52,29 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringLength expects exactly 1 argument".into(),
     ));
   }
-  let s = expr_to_str(&args[0])?;
-  Ok(Expr::Integer(s.chars().count() as i128))
+  // StringLength threads over lists of strings.
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|e| string_length_ast(&[e.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+  if let Expr::String(s) = &args[0] {
+    return Ok(Expr::Integer(s.chars().count() as i128));
+  }
+  // Non-string argument: emit message and return unevaluated (matches wolframscript).
+  crate::emit_message(&format!(
+    "StringLength::string: String expected at position 1 in {}.",
+    crate::syntax::expr_to_string(&Expr::FunctionCall {
+      name: "StringLength".to_string(),
+      args: args.to_vec(),
+    })
+  ));
+  Ok(Expr::FunctionCall {
+    name: "StringLength".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// StringTake[s, n] - first n chars; StringTake[s, -n] - last n chars;
