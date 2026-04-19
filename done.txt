@@ -4875,3 +4875,10 @@ TYPE: >>
 INPUT: RandomComplex[], RandomComplex[{1+I, 5+5I}], RandomComplex[1+I, 5], RandomComplex[{1+I, 2+2I}, {2, 2}]
 EXPECTED: "..." (any random output). Implemented RandomComplex[] / [max] / [{min,max}] / [range, n] / [range, {m,n,...}] using uniform Re and Im distributions; tests assert shape and Head.
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomInteger
+LINE: 466
+TYPE: >>
+INPUT: RandomInteger[{1, 5}]
+EXPECTED: "..." (any). Both Woxi and wolframscript return a random integer in [1, 5].
+---

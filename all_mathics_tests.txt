@@ -5546,14 +5546,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: RandomInteger
-LINE: 466
-TYPE: >>
-INPUT: RandomInteger[{1, 5}]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomInteger
 LINE: 469
 TYPE: >>
 INPUT: RandomInteger[100, {2, 3}] // TableForm
