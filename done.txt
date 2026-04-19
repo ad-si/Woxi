@@ -5545,3 +5545,8 @@ INPUT: -1. 10^-5
 DESCRIPTION: small negative real number (>10^-5)
 EXPECTED: -0.00001 (Woxi and wolframscript both output -0.00001 for the equivalent 0 - 1.*10^-5; matches mathics text[InputForm/OutputForm])
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: -1. 10^5
+DESCRIPTION: large negative real number (<10^6)
+EXPECTED: -100000. (Woxi and wolframscript byte-identical for the equivalent 0 - 1.*10^5)
+---
