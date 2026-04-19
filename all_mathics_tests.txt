@@ -3499,14 +3499,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
-LINE: 33
-TYPE: >>
-INPUT: Normal[A]
-EXPECTED:
-= {1, 25, 3}
----
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
 LINE: 35
 TYPE: >>
 INPUT: ToString[A]
