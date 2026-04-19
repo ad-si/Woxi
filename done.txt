@@ -5395,3 +5395,10 @@ TYPE: >>
 INPUT: a := 2
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 85
+TYPE: >>
+INPUT: h:= Function[{x}, Hold[1+x], HoldAll]
+EXPECTED: Null (both Woxi and wolframscript print Null)
+---

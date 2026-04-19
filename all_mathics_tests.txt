@@ -1533,13 +1533,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/application.py
 CLASS: Function
-LINE: 85
-TYPE: >>
-INPUT: h:= Function[{x}, Hold[1+x], HoldAll]
-EXPECTED: (none)
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
 LINE: 86
 TYPE: >>
 INPUT: h[1+1]
