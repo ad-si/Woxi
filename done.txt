@@ -4079,3 +4079,10 @@ TYPE: >>
 INPUT: NumberForm[N[Pi]]
 EXPECTED: NumberForm[3.141592653589793] (matches wolframscript; display wrapper stays unevaluated)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 380
+TYPE: >>
+INPUT: InputForm["Hello world!"]
+EXPECTED: InputForm[Hello world!] (matches wolframscript; display wrapper stays unevaluated — quotes stripped in text display)
+---

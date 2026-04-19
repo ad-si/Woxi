@@ -10694,14 +10694,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 380
-TYPE: >>
-INPUT: InputForm["Hello world!"]
-EXPECTED:
-= "Hello world!"
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 389
 TYPE: >>
 INPUT: "Debian" <> 6
