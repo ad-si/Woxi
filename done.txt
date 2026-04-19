@@ -3615,3 +3615,9 @@ LINE: 55
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3] (matches wolframscript; not comparable, Issue #200)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: DirectoryQ
+LINE: 88
+INPUT: DirectoryQ["ExampleData/MythicalSubdir/"]
+EXPECTED: False (matches wolframscript; nonexistent path — already covered by directory_q_nonexistent test)
+---

@@ -7985,14 +7985,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/directories/directory_names.py
-CLASS: DirectoryQ
-LINE: 88
-TYPE: >>
-INPUT: DirectoryQ["ExampleData/MythicalSubdir/"]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/directories/directory_names.py
 CLASS: FileNameDepth
 LINE: 125
 TYPE: >>
