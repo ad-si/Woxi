@@ -4408,3 +4408,10 @@ TYPE: >>
 INPUT: f[x, n -> 3] (with Options[f] = {n -> 2}; f[x_, OptionsPattern[]] := x^OptionValue[n])
 EXPECTED: x^3 (matches wolframscript; caller-supplied n->3 overrides default n->2)
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Delete
+LINE: 342
+TYPE: >>
+INPUT: Delete[{a, b, c, d}, 5]
+EXPECTED: Delete[{a, b, c, d}, 5] with Delete::partw message (added out-of-range check in delete_ast to emit warning and return unevaluated, matching wolframscript)
+---

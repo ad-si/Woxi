@@ -586,6 +586,20 @@ mod delete {
   }
 
   #[test]
+  fn delete_out_of_range_returns_unevaluated() {
+    // Matches wolframscript: out-of-range position emits Delete::partw and
+    // returns the expression unevaluated rather than silently no-oping.
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, 5]").unwrap(),
+      "Delete[{a, b, c, d}, 5]"
+    );
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, -5]").unwrap(),
+      "Delete[{a, b, c, d}, -5]"
+    );
+  }
+
+  #[test]
   fn delete_multiple() {
     assert_eq!(
       interpret("Delete[{a, b, c, d, e}, {{1}, {3}}]").unwrap(),

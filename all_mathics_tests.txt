@@ -7895,15 +7895,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete
-LINE: 342
-TYPE: >>
-INPUT: Delete[{a, b, c, d}, 5]
-EXPECTED:
-: Part {5} of {a, b, c, d} does not exist.
-= Delete[{a, b, c, d}, 5]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
 LINE: 346
 TYPE: #>
 INPUT: Delete[{a, b, c, d}, {1, 2}]

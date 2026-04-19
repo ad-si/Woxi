@@ -1236,6 +1236,20 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(n) => n,
         None => return Ok(args[0].clone()),
       };
+      // Out-of-range: emit Delete::partw and return unevaluated (matches
+      // wolframscript). Position 0 deletes the head, which is always valid.
+      let len = items.len() as i128;
+      if pos != 0 && (pos > len || pos < -len) {
+        crate::emit_message(&format!(
+          "Delete::partw: Part {{{}}} of {} does not exist.",
+          pos,
+          crate::syntax::expr_to_string(&args[0])
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "Delete".to_string(),
+          args: args.to_vec(),
+        });
+      }
       return delete_at_position_general(items, pos, head_name);
     }
     Expr::List(pos_list) => {
