@@ -9075,14 +9075,6 @@ EXPECTED:
 = 0.157118 - 0.24104 I
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryAiPrime
-LINE: 87
-TYPE: >>
-INPUT: AiryAiPrime[0.5]
-EXPECTED:
-= -0.224911
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryAiZero
 LINE: 116
 TYPE: >>
