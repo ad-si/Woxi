@@ -327,6 +327,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FactorTerms" => Some((1, 2)),
     "FactorTermsList" => Some((1, 2)),
     "Fibonacci" => Some((1, 2)),
+    "FileNameDepth" => Some((1, 1)),
     "FileNameDrop" => Some((1, 2)),
     "FileNameJoin" => Some((1, 2)),
     "FileNames" => Some((0, 3)),

@@ -7767,22 +7767,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/directories/directory_names.py
-CLASS: FileNameDepth
-LINE: 125
-TYPE: >>
-INPUT: FileNameDepth["a/b/c"]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/directories/directory_names.py
-CLASS: FileNameDepth
-LINE: 128
-TYPE: >>
-INPUT: FileNameDepth["a/b/c/"]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/directories/directory_names.py
 CLASS: ParentDirectory
 LINE: 292
 TYPE: >>

@@ -3967,3 +3967,17 @@ TYPE: >>
 INPUT: $MinPrecision
 EXPECTED: 0 (added $MinPrecision system variable defaulting to 0; matches wolframscript)
 ---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameDepth
+LINE: 125
+TYPE: >>
+INPUT: FileNameDepth["a/b/c"]
+EXPECTED: 3 (implemented FileNameDepth alongside FileNameSplit — counts path components; trailing slash ignored, leading slash counts root)
+---
+FILE: mathics/builtin/directories/directory_names.py
+CLASS: FileNameDepth
+LINE: 128
+TYPE: >>
+INPUT: FileNameDepth["a/b/c/"]
+EXPECTED: 3 (trailing slash ignored)
+---

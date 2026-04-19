@@ -631,6 +631,23 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    "FileNameDepth" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        if s.is_empty() {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let count = s
+          .split('/')
+          .enumerate()
+          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
+          .count() as i128;
+        return Some(Ok(Expr::Integer(count)));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileNameDepth".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "ExpandFileName" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
         let expanded = if s.starts_with('~') {

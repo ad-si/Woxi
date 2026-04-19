@@ -2137,6 +2137,40 @@ mod file_name_split {
   }
 }
 
+mod file_name_depth {
+  use super::*;
+
+  #[test]
+  fn relative_path() {
+    assert_eq!(interpret(r#"FileNameDepth["a/b/c"]"#).unwrap(), "3");
+  }
+
+  #[test]
+  fn trailing_slash_ignored() {
+    assert_eq!(interpret(r#"FileNameDepth["a/b/c/"]"#).unwrap(), "3");
+  }
+
+  #[test]
+  fn leading_slash_counts_root() {
+    assert_eq!(interpret(r#"FileNameDepth["/a/b/c"]"#).unwrap(), "4");
+  }
+
+  #[test]
+  fn single_filename() {
+    assert_eq!(interpret(r#"FileNameDepth["abc"]"#).unwrap(), "1");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret(r#"FileNameDepth[""]"#).unwrap(), "0");
+  }
+
+  #[test]
+  fn non_string_arg() {
+    assert_eq!(interpret("FileNameDepth[42]").unwrap(), "FileNameDepth[42]");
+  }
+}
+
 mod expand_file_name {
   use super::*;
 

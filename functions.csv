@@ -3647,7 +3647,7 @@ CircularUnitaryMatrixDistribution,,,,10.3,3755
 ColorDetect,,🚫,,12.0,3755
 CoordinateBoundingBox,,,,10.1,3755
 DateReduction,,,,10.2,3755
-FileNameDepth,,,,7.0,3755
+FileNameDepth,Number of path components in a file name,✅,pure,7.0,3755
 FunctionLayer,,🚫,,12.2,3755
 GeoPositionENU,,🚫,,7.0,3755
 GeometricStep,,,,12.2,3755
