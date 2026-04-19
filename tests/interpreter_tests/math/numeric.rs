@@ -489,6 +489,15 @@ mod precision {
     assert!(!result.ends_with('/') || result == "/");
   }
 
+  #[test]
+  fn initial_directory_head_is_string() {
+    // $InitialDirectory returns the current working directory at startup.
+    assert_eq!(
+      interpret("Head[$InitialDirectory] == String").unwrap(),
+      "True"
+    );
+  }
+
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   #[test]
   fn system_memory_head_is_integer() {

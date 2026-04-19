@@ -4700,3 +4700,10 @@ TYPE: >>
 INPUT: $TemporaryDirectory
 EXPECTED: system temp directory path (added $TemporaryDirectory; uses std::env::temp_dir + fs::canonicalize to match wolframscript's /private/var/... on macOS; strips trailing slash)
 ---
+FILE: mathics/builtin/directories/system_directories.py
+CLASS: InitialDirectory
+LINE: 44
+TYPE: >>
+INPUT: $InitialDirectory
+EXPECTED: current working directory at startup (added $InitialDirectory using std::env::current_dir; matches wolframscript)
+---

@@ -7359,14 +7359,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/directories/system_directories.py
-CLASS: InitialDirectory
-LINE: 44
-TYPE: >>
-INPUT: $InitialDirectory
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/directories/system_directories.py
 CLASS: InstallationDirectory
 LINE: 65
 TYPE: >>
