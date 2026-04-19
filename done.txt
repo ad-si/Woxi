@@ -4980,3 +4980,10 @@ TYPE: >>
 INPUT: f[x_Real] := 3
 EXPECTED: Null (both Woxi and wolframscript print Null)
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: ColorNegate
+LINE: 225
+TYPE: >>
+INPUT: ColorNegate[Yellow] == Blue
+EXPECTED: True (implemented ColorNegate for RGBColor and GrayLevel; preserves integer components so Yellow negates to Blue cleanly)
+---

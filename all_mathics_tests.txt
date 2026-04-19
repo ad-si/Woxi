@@ -8520,14 +8520,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: ColorNegate
-LINE: 225
-TYPE: >>
-INPUT: ColorNegate[Yellow] == Blue
-EXPECTED:
-= True
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: ColorNegate
 LINE: 228
 TYPE: >>
 INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]

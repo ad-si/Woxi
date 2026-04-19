@@ -246,6 +246,27 @@ mod image_processing {
   }
 
   #[test]
+  fn color_negate_yellow_is_blue() {
+    // ColorNegate on a named color inverts its components. Integer
+    // components stay integer so Yellow == Blue compares equal.
+    clear_state();
+    assert_eq!(interpret("ColorNegate[Yellow] == Blue").unwrap(), "True");
+    assert_eq!(
+      interpret("ColorNegate[RGBColor[0.2, 0.3, 0.4]]").unwrap(),
+      "RGBColor[0.8, 0.7, 0.6]"
+    );
+  }
+
+  #[test]
+  fn color_negate_graylevel() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorNegate[GrayLevel[0.25]]").unwrap(),
+      "GrayLevel[0.75]"
+    );
+  }
+
+  #[test]
   fn binarize_default_threshold() {
     clear_state();
     let result =

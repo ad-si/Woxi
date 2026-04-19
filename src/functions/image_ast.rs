@@ -502,6 +502,68 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         image_type: *image_type,
       })
     }
+    Expr::FunctionCall { name, args: cargs } if name == "RGBColor" => {
+      // RGBColor[r, g, b] → RGBColor[1-r, 1-g, 1-b]
+      // RGBColor[r, g, b, a] → RGBColor[1-r, 1-g, 1-b, a]
+      fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
+        match e {
+          Expr::Integer(n) => Ok(Expr::Integer(1 - n)),
+          Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
+          _ => {
+            let v = expr_to_f64(e)?;
+            Ok(Expr::Real(1.0 - v))
+          }
+        }
+      }
+      match cargs.len() {
+        3 => Ok(Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            negate_component(&cargs[0])?,
+            negate_component(&cargs[1])?,
+            negate_component(&cargs[2])?,
+          ],
+        }),
+        4 => Ok(Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            negate_component(&cargs[0])?,
+            negate_component(&cargs[1])?,
+            negate_component(&cargs[2])?,
+            cargs[3].clone(),
+          ],
+        }),
+        _ => Err(InterpreterError::EvaluationError(
+          "ColorNegate: RGBColor must have 3 or 4 arguments".into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: cargs } if name == "GrayLevel" => {
+      // GrayLevel[v] → GrayLevel[1-v], alpha preserved if present
+      fn negate_component(e: &Expr) -> Result<Expr, InterpreterError> {
+        match e {
+          Expr::Integer(n) => Ok(Expr::Integer(1 - n)),
+          Expr::Real(r) => Ok(Expr::Real(1.0 - r)),
+          _ => {
+            let v = expr_to_f64(e)?;
+            Ok(Expr::Real(1.0 - v))
+          }
+        }
+      }
+      match cargs.len() {
+        1 => Ok(Expr::FunctionCall {
+          name: "GrayLevel".to_string(),
+          args: vec![negate_component(&cargs[0])?],
+        }),
+        2 => Ok(Expr::FunctionCall {
+          name: "GrayLevel".to_string(),
+          args: vec![negate_component(&cargs[0])?, cargs[1].clone()],
+        }),
+        _ => Err(InterpreterError::EvaluationError(
+          "ColorNegate: GrayLevel must have 1 or 2 arguments".into(),
+        )),
+      }
+    }
     _ => Err(InterpreterError::EvaluationError(
       "ColorNegate: argument is not an Image".into(),
     )),
