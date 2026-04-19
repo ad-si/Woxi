@@ -5442,3 +5442,9 @@ TYPE: >>
 INPUT: Names["Global`a"]
 EXPECTED: {} (Woxi and wolframscript both return {} when a is not defined)
 ---
+FILE: mathics/test/builtin/test_compile.py
+FUNCTION: test_compile_code
+LINE: 51
+INPUT: Sin[x]
+EXPECTED: Sin[x] (Woxi and wolframscript byte-identical; mathics test asserts compile-time numeric eval, but bare Sin[x] evaluation matches)
+---
