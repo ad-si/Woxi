@@ -3135,3 +3135,9 @@ LINE: 50
 INPUT: A[x_][s[y]]
 EXPECTED: A[x_][s[y]] (matches wolframscript; mathics test expects "s" via upvalues lookup)
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 30
+INPUT: A[]
+EXPECTED: A[] (matches wolframscript; mathics test expects A via downvalues lookup)
+---
