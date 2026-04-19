@@ -8986,14 +8986,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/list/rearrange.py
-CLASS: DeleteDuplicates
-LINE: 590
-TYPE: >>
-INPUT: DeleteDuplicates[{3,2,1,2,3,4}, Less]
-EXPECTED:
-= {3, 2, 1}
----
-FILE: mathics/builtin/list/rearrange.py
 CLASS: Join
 LINE: 871
 TYPE: >>

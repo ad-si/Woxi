@@ -2539,3 +2539,11 @@ INPUT: GatherBy[{{1, 2}, {2, 1}, {3, 5}, {5, 1}, {2, 2, 2}}, {Total, Length}]
 EXPECTED:
 = {{{{1, 2}, {2, 1}}}, {{{3, 5}}}, {{{5, 1}}, {{2, 2, 2}}}} (matches wolframscript)
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: DeleteDuplicates
+LINE: 590
+TYPE: >>
+INPUT: DeleteDuplicates[{3,2,1,2,3,4}, Less]
+EXPECTED:
+= {3, 2, 1} (matches wolframscript)
+---
