@@ -9727,13 +9727,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 470
-TYPE: >>
-INPUT: {a, b} = {1, 2};
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 472
 TYPE: >>
 INPUT: a

@@ -5021,3 +5021,10 @@ TYPE: >>
 INPUT: ImageData[Image[{{0, 1}, {1, 0}, {1, 1}}], "Bit"]
 EXPECTED: {{0, 1}, {1, 0}, {1, 1}} (extended ImageData to accept an explicit type argument: "Bit", "Byte", "Bit16", "Real32", "Real64")
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 470
+TYPE: >>
+INPUT: {a, b} = {1, 2};
+EXPECTED: Null (both Woxi and wolframscript print Null; trailing semicolon suppresses output in session mode)
+---
