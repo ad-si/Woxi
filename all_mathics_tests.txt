@@ -14370,23 +14370,6 @@ c   d\newline
 </mtable>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: \[Alpha]
-DESCRIPTION: A greek letter symbol
-EXPECTED:
-  text[System`InputForm]: α
-  text[System`OutputForm]: α
-  text[System`StandardForm]: α
-  text[System`TraditionalForm]: α
-  latex[System`InputForm]: \alpha
-  latex[System`OutputForm]: \text{$\alpha$}
-  latex[System`StandardForm]: \alpha
-  latex[System`TraditionalForm]: \alpha
-  mathml[System`InputForm]: <mi>α</mi>
-  mathml[System`OutputForm]: <mtext>α</mtext>
-  mathml[System`StandardForm]: <mi>α</mi>
-  mathml[System`TraditionalForm]: <mi>α</mi>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: a^(g[b]/c)
 DESCRIPTION: SuperscriptBox with a nested expression.
 EXPECTED:

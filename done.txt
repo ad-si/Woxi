@@ -5575,3 +5575,8 @@ INPUT: \[Pi]
 DESCRIPTION: Pi
 EXPECTED: Pi (Woxi and wolframscript byte-identical for InputForm/OutputForm)
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: \[Alpha]
+DESCRIPTION: A greek letter symbol
+EXPECTED: α (Woxi and wolframscript byte-identical)
+---
