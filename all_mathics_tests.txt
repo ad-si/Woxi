@@ -10510,14 +10510,6 @@ EXPECTED:
 = -Graphics-
 ---
 FILE: mathics/builtin/forms/print.py
-CLASS: StandardForm
-LINE: 182
-TYPE: >>
-INPUT: f'[x]
-EXPECTED:
-= f'[x]
----
-FILE: mathics/builtin/forms/print.py
 CLASS: TeXForm
 LINE: 226
 TYPE: >>

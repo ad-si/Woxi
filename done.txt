@@ -2659,3 +2659,11 @@ INPUT: StandardForm["A string"]
 EXPECTED:
 = StandardForm[A string] (matches wolframscript)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: StandardForm
+LINE: 182
+TYPE: >>
+INPUT: f'[x]
+EXPECTED:
+= Derivative[1][f][x] (matches wolframscript; mathics renders as f'[x])
+---
