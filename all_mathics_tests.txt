@@ -10431,14 +10431,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/mathics3.py
 CLASS: PythonForm
-LINE: 31
-TYPE: >>
-INPUT: E // PythonForm
-EXPECTED:
-= sympy.E
----
-FILE: mathics/builtin/forms/mathics3.py
-CLASS: PythonForm
 LINE: 33
 TYPE: >>
 INPUT: {1, 2, 3} // PythonForm

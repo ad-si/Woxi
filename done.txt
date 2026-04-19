@@ -2603,3 +2603,11 @@ INPUT: PythonForm[Pi]
 EXPECTED:
 = PythonForm[Pi] (matches wolframscript; Mathics-specific sympy.pi is a Mathics extension)
 ---
+FILE: mathics/builtin/forms/mathics3.py
+CLASS: PythonForm
+LINE: 31
+TYPE: >>
+INPUT: E // PythonForm
+EXPECTED:
+= PythonForm[E] (matches wolframscript; sympy.E is a Mathics extension)
+---
