@@ -12,6 +12,16 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_high_precision_literal_truncates_to_machine() {
+    // A literal Real with more digits than f64 can hold is stored as f64;
+    // N[literal] echoes that machine-precision value (matches wolframscript).
+    assert_eq!(
+      interpret("N[1.01234567890123456789]").unwrap(),
+      "1.0123456789012346"
+    );
+  }
+
+  #[test]
   fn n_pi_arbitrary_first_digits() {
     // N[Pi, 50] — check that first 50 significant digits are correct
     let result = interpret("N[Pi, 50]").unwrap();
@@ -295,10 +305,7 @@ mod precision {
   #[cfg(any(target_os = "macos", target_os = "linux"))]
   #[test]
   fn system_memory_head_is_integer() {
-    assert_eq!(
-      interpret("Head[$SystemMemory] == Integer").unwrap(),
-      "True"
-    );
+    assert_eq!(interpret("Head[$SystemMemory] == Integer").unwrap(), "True");
   }
 
   #[cfg(any(target_os = "macos", target_os = "linux"))]

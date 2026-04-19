@@ -13891,12 +13891,6 @@ EXPECTED: MachinePrecision
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
-LINE: 174
-INPUT: N[1.01234567890123456789]
-EXPECTED: 1.01235
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_n
 LINE: 175
 INPUT: N[1.012345678901234567890123, 5]
 EXPECTED: 1.0123

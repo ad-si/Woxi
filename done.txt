@@ -3201,3 +3201,9 @@ LINE: 80
 INPUT: RealDigits[abc]
 EXPECTED: RealDigits[abc] (fixed: non-numeric symbol returns unevaluated instead of erroring on bigfloat conversion)
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 174
+INPUT: N[1.01234567890123456789]
+EXPECTED: 1.0123456789012346 (matches wolframscript; mathics expected 1.01235 reflects older precision rounding)
+---
