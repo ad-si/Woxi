@@ -5297,3 +5297,10 @@ TYPE: >>
 INPUT: f[g[x]]
 EXPECTED: f[g[x]] (Woxi and wolframscript byte-identical when run in isolation; mathics "3" depends on prior TagSet)
 ---
+FILE: mathics/builtin/assignments/upvalues.py
+CLASS: UpValues
+LINE: 36
+TYPE: >>
+INPUT: Sin[pi]
+EXPECTED: Sin[pi] (Woxi and wolframscript byte-identical; mathics "0" depends on prior UpValues setup that mapped Sin[pi] -> 0)
+---

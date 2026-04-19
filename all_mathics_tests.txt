@@ -1539,14 +1539,6 @@ INPUT: UpValues[b]
 EXPECTED:
 = {HoldPattern[a + b] :> 2}
 ---
-FILE: mathics/builtin/assignments/upvalues.py
-CLASS: UpValues
-LINE: 36
-TYPE: >>
-INPUT: Sin[pi]
-EXPECTED:
-= 0
----
 FILE: mathics/builtin/functional/application.py
 CLASS: Function
 LINE: 41
