@@ -382,6 +382,19 @@ mod bezier_function {
   }
 
   #[test]
+  fn cubic_midpoint_with_saved_binding() {
+    // Save the BezierFunction to a variable and evaluate at 0.5 — the
+    // midpoint of the control polygon's x-coords (1.5) and interpolated y.
+    assert_eq!(
+      interpret(
+        "f = BezierFunction[{{0, 0}, {1, 1}, {2, 0}, {3, 2}}]; f[.5]"
+      )
+      .unwrap(),
+      "{1.5, 0.625}"
+    );
+  }
+
+  #[test]
   fn one_dimensional() {
     assert_eq!(
       interpret("BezierFunction[{{0},{1},{4}}][0.5]").unwrap(),

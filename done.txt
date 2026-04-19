@@ -3627,3 +3627,9 @@ LINE: 628
 INPUT: $MachineEpsilon
 EXPECTED: 2.220446049250313*^-16 (matches wolframscript; mathics "2.22045×10^-16" is display-truncated)
 ---
+FILE: mathics/builtin/drawing/splines.py
+CLASS: BezierFunction
+LINE: 57
+INPUT: f = BezierFunction[{{0, 0}, {1, 1}, {2, 0}, {3, 2}}]; f[.5]
+EXPECTED: {1.5, 0.625} (matches wolframscript)
+---
