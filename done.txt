@@ -4728,3 +4728,10 @@ TYPE: >>
 INPUT: BernsteinBasis[4, 3, 0.5]
 EXPECTED: 0.25 (implemented BernsteinBasis[d, n, x] = Binomial[d,n] * x^n * (1-x)^(d-n) for numeric x; out-of-range n returns 0; symbolic x stays unevaluated to match wolframscript)
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 44
+TYPE: >>
+INPUT: f[a, 2] (with f[x_, y_:1] := {x, y})
+EXPECTED: {a, 2} (matches wolframscript; Optional default not needed when 2nd arg supplied)
+---

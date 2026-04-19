@@ -6160,14 +6160,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/defaults.py
 CLASS: Optional
-LINE: 44
-TYPE: >>
-INPUT: f[a, 2]
-EXPECTED:
-= {a, 2}
----
-FILE: mathics/builtin/patterns/defaults.py
-CLASS: Optional
 LINE: 50
 TYPE: >>
 INPUT: f[a]
