@@ -940,6 +940,21 @@ mod apart {
       "1/(2*(-3 + x)) - (-2 + x)^(-1) + 1/(2*(-1 + x))"
     );
   }
+
+  #[test]
+  fn apart_on_non_rational_is_noop() {
+    // Apart on an expression without a denominator should return it unchanged.
+    assert_eq!(
+      interpret("Apart[Sin[1 / (x ^ 2 - y ^ 2)]]").unwrap(),
+      "Sin[(x^2 - y^2)^(-1)]"
+    );
+  }
+
+  #[test]
+  fn apart_on_equation_is_noop() {
+    // Apart on a non-numeric expression without a denominator returns it unchanged.
+    assert_eq!(interpret("Apart[a == \"A\"]").unwrap(), "a == \"A\"");
+  }
 }
 
 mod switch {

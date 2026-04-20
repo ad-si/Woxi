@@ -28,6 +28,12 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
 
+  // Short-circuit: if the expression has no denominator, Apart is a no-op.
+  let (_num, den_check) = super::together::extract_num_den(&args[0]);
+  if matches!(&den_check, Expr::Integer(1)) {
+    return Ok(args[0].clone());
+  }
+
   let var = if args.len() == 2 {
     match &args[1] {
       Expr::Identifier(name) => name.clone(),
