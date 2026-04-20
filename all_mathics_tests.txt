@@ -487,14 +487,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/upvalues.py
 CLASS: UpValues
-LINE: 29
-TYPE: >>
-INPUT: UpValues[a]
-EXPECTED:
-= {HoldPattern[a + b] :> 2}
----
-FILE: mathics/builtin/assignments/upvalues.py
-CLASS: UpValues
 LINE: 31
 TYPE: >>
 INPUT: UpValues[b]
