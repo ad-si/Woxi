@@ -7412,3 +7412,10 @@ EXPECTED:
 ---
 NOTE: With 'filename' unset, Woxi returns 'FilePrint[filename]' unevaluated — wolframscript (when unset in isolation) behaves similarly. Mathics EXPECTED is the file content after prior Put[...].
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: PutAppend
+LINE: 633
+TYPE: >>
+INPUT: Put[50!, "factorials"]
+EXPECTED: (none)
+---

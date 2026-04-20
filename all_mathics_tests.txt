@@ -725,13 +725,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: PutAppend
-LINE: 633
-TYPE: >>
-INPUT: Put[50!, "factorials"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: PutAppend
 LINE: 634
 TYPE: >>
 INPUT: FilePrint["factorials"]
