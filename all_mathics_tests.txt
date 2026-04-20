@@ -682,13 +682,6 @@ EXPECTED:
 =
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Put
-LINE: 567
-TYPE: S>
-INPUT: DeleteFile[filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: PutAppend
 LINE: 638
 TYPE: >>
