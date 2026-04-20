@@ -7874,3 +7874,11 @@ INPUT: DiscretePlot[2.5 Sqrt[k], {k, 100}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/colors/color_directives.py
+CLASS: CMYKColor
+LINE: 240
+TYPE: >>
+INPUT: Graphics[MapIndexed[{CMYKColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityMatrix[4]], ImageSize->Small]
+EXPECTED:
+= -Graphics-
+---

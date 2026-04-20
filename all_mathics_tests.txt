@@ -6568,14 +6568,6 @@ EXPECTED:
 = 0.0235936 + 0.0014078 I
 ---
 FILE: mathics/builtin/colors/color_directives.py
-CLASS: CMYKColor
-LINE: 240
-TYPE: >>
-INPUT: Graphics[MapIndexed[{CMYKColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityMatrix[4]], ImageSize->Small]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/color_directives.py
 CLASS: ColorDistance
 LINE: 283
 TYPE: >>
