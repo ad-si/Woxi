@@ -10176,12 +10176,6 @@ EXPECTED: $MachinePrecision-Log[10, Abs[.4+2.4 I]]
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_accuracy
 LINE: 186
-INPUT: 2 + 3 I
-EXPECTED: Infinity
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_accuracy
-LINE: 186
 INPUT: F[1.3, Pi, A]
 EXPECTED: 15.8406
 ---

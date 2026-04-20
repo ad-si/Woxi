@@ -8499,3 +8499,9 @@ INPUT: Names["List"]
 EXPECTED:
 = {List}
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_accuracy
+LINE: 186
+INPUT: 2 + 3 I
+EXPECTED: Infinity
+---

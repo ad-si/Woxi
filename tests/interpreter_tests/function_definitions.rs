@@ -542,22 +542,27 @@ mod names {
   fn lists_variables_among_builtins() {
     // User variables appear alongside builtins in the "*" pattern.
     let out = interpret("x = 1; y = 2; Names[\"*\"]").unwrap();
-    assert!(out.contains(" x,") || out.ends_with(", x}") || out.contains("{x,"));
-    assert!(out.contains(" y,") || out.ends_with(", y}") || out.contains("{y,"));
+    assert!(
+      out.contains(" x,") || out.ends_with(", x}") || out.contains("{x,")
+    );
+    assert!(
+      out.contains(" y,") || out.ends_with(", y}") || out.contains("{y,")
+    );
   }
 
   #[test]
   fn lists_user_function_among_builtins() {
     let out = interpret("f[x_] := x^2; Names[\"*\"]").unwrap();
-    assert!(out.contains(" f,") || out.ends_with(", f}") || out.contains("{f,"));
+    assert!(
+      out.contains(" f,") || out.ends_with(", f}") || out.contains("{f,")
+    );
   }
 
   #[test]
   fn pattern_filter_user_vars() {
     // Built-ins starting with `ab` also show up (e.g. Abs), but user-defined
     // symbols with the prefix still appear.
-    let out =
-      interpret("abc = 1; abd = 2; xyz = 3; Names[\"ab*\"]").unwrap();
+    let out = interpret("abc = 1; abd = 2; xyz = 3; Names[\"ab*\"]").unwrap();
     assert!(out.contains("abc"), "expected abc in {out}");
     assert!(out.contains("abd"), "expected abd in {out}");
     assert!(!out.contains("xyz"), "unexpected xyz in {out}");
