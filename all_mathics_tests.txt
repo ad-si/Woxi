@@ -14252,11 +14252,6 @@ EXPECTED:
   {'opts2': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 ', 'opts3': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} ', 'svg': False}
 ---
 FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: barchart
-EXPECTED:
-  {'expr': 'BarChart[{3,5,2,7}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: discreteplot
 EXPECTED:
   {'expr': 'DiscretePlot[n^2,{n,1,10}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}

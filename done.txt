@@ -5739,3 +5739,7 @@ FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-doc-044/051/052/053/054/055/056/058/059/060/061/066/074/077/087/089/090/091/092/094/095/096/097/099/100/102/103/105/109/110/113/116/122/125/128
 EXPECTED: -Graphics- (35 vec-doc-* tests; all duplicates of corresponding doc-* tests already verified Woxi-and-wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/parameters.yaml
+INPUT: barchart BarChart[{3,5,2,7}]
+EXPECTED: -Graphics- (Woxi and wolframscript byte-identical for the bare BarChart expression)
+---
