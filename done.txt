@@ -8307,3 +8307,9 @@ LINE: 62
 INPUT: a + b!
 EXPECTED: Plus[a, Factorial[b]]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 120
+INPUT: \\[ImaginaryI]
+EXPECTED: I
+---
