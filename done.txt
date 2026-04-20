@@ -7762,3 +7762,11 @@ INPUT: FullForm[a:=b]
 EXPECTED:
 = Null
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: LetterCharacter
+LINE: 100
+TYPE: >>
+INPUT: StringMatchQ["\\[Lambda]", LetterCharacter]
+EXPECTED:
+= True
+---

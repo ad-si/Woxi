@@ -2030,14 +2030,6 @@ EXPECTED:
 . abc
 ---
 FILE: mathics/builtin/string/patterns.py
-CLASS: LetterCharacter
-LINE: 100
-TYPE: >>
-INPUT: StringMatchQ["\\[Lambda]", LetterCharacter]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/string/patterns.py
 CLASS: StartOfLine
 LINE: 117
 TYPE: >>
