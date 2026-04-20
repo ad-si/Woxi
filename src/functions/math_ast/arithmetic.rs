@@ -4024,17 +4024,16 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some((inner_base, inner_exp)) = inner {
-      let inner_is_numeric = matches!(
-        inner_exp,
-        Expr::Integer(_) | Expr::Real(_)
-      ) || matches!(
-        inner_exp,
-        Expr::FunctionCall { name, args: ra }
-          if name == "Rational"
-            && ra.len() == 2
-            && matches!(&ra[0], Expr::Integer(_))
-            && matches!(&ra[1], Expr::Integer(_))
-      );
+      let inner_is_numeric =
+        matches!(inner_exp, Expr::Integer(_) | Expr::Real(_))
+          || matches!(
+            inner_exp,
+            Expr::FunctionCall { name, args: ra }
+              if name == "Rational"
+                && ra.len() == 2
+                && matches!(&ra[0], Expr::Integer(_))
+                && matches!(&ra[1], Expr::Integer(_))
+          );
       if inner_is_numeric {
         let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
         return power_two(inner_base, &new_exp);

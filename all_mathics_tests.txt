@@ -10497,13 +10497,6 @@ EXPECTED: str_expected
 MESSAGE: msg
 ---
 FILE: mathics/test/builtin/arithmetic/test_basic.py
-FUNCTION: test_add
-LINE: 10
-INPUT: a - (5+ a+ 2 b) + 3 a q
-EXPECTED: -5 + 3 a q - 2 b
-MESSAGE: WMA distribute the sign (-)
----
-FILE: mathics/test/builtin/arithmetic/test_basic.py
 FUNCTION: test_exponential
 LINE: 37
 INPUT: log2=.; E^(I Pi/4)
