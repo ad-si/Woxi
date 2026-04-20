@@ -6735,3 +6735,11 @@ INPUT: {a, {b}} =.
 EXPECTED:
 = {Null, {Null}}
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: DefaultValues
+LINE: 34
+TYPE: >>
+INPUT: DefaultValues[f]
+EXPECTED:
+= {HoldPattern[Default[f, 1]] :> 4}
+---

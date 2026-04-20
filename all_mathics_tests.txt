@@ -701,14 +701,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
-LINE: 34
-TYPE: >>
-INPUT: DefaultValues[f]
-EXPECTED:
-= {HoldPattern[Default[f, 1]] :> 4}
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: DefaultValues
 LINE: 39
 TYPE: >>
 INPUT: Default[g, 1]
