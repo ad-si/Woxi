@@ -3585,4 +3585,17 @@ mod string_position_anchors {
       "applE banana orangE artichokE"
     );
   }
+
+  // Except[pattern] matches a single non-matching character — used here to
+  // strip everything that isn't a letter.
+  #[test]
+  fn replace_except_letter_character() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["Hello world!", Except[LetterCharacter] -> ""]"#
+      )
+      .unwrap(),
+      "Helloworld"
+    );
+  }
 }

@@ -7985,3 +7985,11 @@ INPUT: FullForm[y_.]
 EXPECTED:
 = Optional[Pattern[y, Blank[]]]
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Except
+LINE: 139
+TYPE: >>
+INPUT: StringReplace["Hello world!", Except[LetterCharacter] -> ""]
+EXPECTED:
+= Helloworld
+---

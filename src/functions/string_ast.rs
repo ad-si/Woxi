@@ -1595,6 +1595,27 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       }
     }
 
+    // Except[pattern] — negate a single-character class. Only meaningful
+    // when the inner pattern translates to a character-class regex like
+    // `[...]` (Except matches exactly one non-matching character).
+    Expr::FunctionCall { name, args }
+      if name == "Except" && args.len() == 1 =>
+    {
+      let inner = string_pattern_to_regex(&args[0])?;
+      // If the inner regex is already a character class, negate it.
+      if let Some(stripped) = inner.strip_prefix('[') {
+        if let Some(body) = stripped.strip_suffix(']') {
+          if let Some(neg_body) = body.strip_prefix('^') {
+            // Double negation — just drop the ^.
+            return Some(format!("[{}]", neg_body));
+          }
+          return Some(format!("[^{}]", body));
+        }
+      }
+      // Otherwise fall back to a regex negative lookahead + any char.
+      Some(format!("(?:(?!{}).)", inner))
+    }
+
     _ => None,
   }
 }
