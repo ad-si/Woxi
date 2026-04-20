@@ -9946,11 +9946,6 @@ FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_basics
 LINE: 427
 INPUT: ToString[NumericArray[{{1,2},{3,4}}]]
-FILE: mathics/test/builtin/test_binary.py
-FUNCTION: test_basics
-LINE: 427
-INPUT: First[NumericArray[{1,2,3}]]
-EXPECTED: 1
 ---
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_basics

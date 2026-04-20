@@ -8288,3 +8288,10 @@ LINE: 427
 INPUT: AtomQ[NumericArray[{1,2}]]
 EXPECTED: True
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: First[NumericArray[{1,2,3}]]
+EXPECTED: 1
+
+---
