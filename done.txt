@@ -8073,3 +8073,11 @@ INPUT: HypergeometricPFQ[{0}, {b}, z]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: Greater
+LINE: 569
+TYPE: >>
+INPUT: a > b > c // FullForm
+EXPECTED:
+= Greater[a, b, c]
+---

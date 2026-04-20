@@ -3516,10 +3516,7 @@ mod hypergeometric_pfq {
   // n >= 1, so the series collapses to 1 regardless of b or z.
   #[test]
   fn zero_in_a_list_is_one() {
-    assert_eq!(
-      interpret("HypergeometricPFQ[{0}, {b}, z]").unwrap(),
-      "1"
-    );
+    assert_eq!(interpret("HypergeometricPFQ[{0}, {b}, z]").unwrap(), "1");
     assert_eq!(
       interpret("HypergeometricPFQ[{0, 2}, {b, c}, z]").unwrap(),
       "1"

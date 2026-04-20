@@ -217,19 +217,21 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       operands,
       operators,
     } => {
-      if operators.len() == 1 {
-        let head = match &operators[0] {
-          ComparisonOp::Equal => "Equal",
-          ComparisonOp::NotEqual => "Unequal",
-          ComparisonOp::Less => "Less",
-          ComparisonOp::LessEqual => "LessEqual",
-          ComparisonOp::Greater => "Greater",
-          ComparisonOp::GreaterEqual => "GreaterEqual",
-          ComparisonOp::SameQ => "SameQ",
-          ComparisonOp::UnsameQ => "UnsameQ",
-        };
+      let op_name = |op: &ComparisonOp| match op {
+        ComparisonOp::Equal => "Equal",
+        ComparisonOp::NotEqual => "Unequal",
+        ComparisonOp::Less => "Less",
+        ComparisonOp::LessEqual => "LessEqual",
+        ComparisonOp::Greater => "Greater",
+        ComparisonOp::GreaterEqual => "GreaterEqual",
+        ComparisonOp::SameQ => "SameQ",
+        ComparisonOp::UnsameQ => "UnsameQ",
+      };
+      let all_same =
+        operators.windows(2).all(|w| w[0] == w[1]) && !operators.is_empty();
+      if all_same {
         ExprForm::Composite {
-          head: head.to_string(),
+          head: op_name(&operators[0]).to_string(),
           children: operands.clone(),
         }
       } else {
@@ -238,17 +240,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         for (i, op) in operands.iter().enumerate() {
           children.push(op.clone());
           if i < operators.len() {
-            let op_name = match &operators[i] {
-              ComparisonOp::Equal => "Equal",
-              ComparisonOp::NotEqual => "Unequal",
-              ComparisonOp::Less => "Less",
-              ComparisonOp::LessEqual => "LessEqual",
-              ComparisonOp::Greater => "Greater",
-              ComparisonOp::GreaterEqual => "GreaterEqual",
-              ComparisonOp::SameQ => "SameQ",
-              ComparisonOp::UnsameQ => "UnsameQ",
-            };
-            children.push(Expr::Identifier(op_name.to_string()));
+            children.push(Expr::Identifier(op_name(&operators[i]).to_string()));
           }
         }
         ExprForm::Composite {

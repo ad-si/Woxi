@@ -1742,14 +1742,6 @@ EXPECTED:
 = g[1] == g[2] && g[2] <= g[3]
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Greater
-LINE: 569
-TYPE: >>
-INPUT: a > b > c // FullForm
-EXPECTED:
-= Greater[a, b, c]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Inequality
 LINE: 609
 TYPE: >>

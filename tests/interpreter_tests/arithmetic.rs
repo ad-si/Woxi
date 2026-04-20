@@ -191,6 +191,24 @@ mod arithmetic {
       assert_eq!(interpret("Head[1 < x <= 10]").unwrap(), "Inequality");
     }
 
+    // FullForm of a uniform comparison chain collapses to the operator head,
+    // matching Wolfram (a > b > c prints as Greater[a, b, c], not Inequality).
+    #[test]
+    fn full_form_uniform_chain_greater() {
+      assert_eq!(
+        interpret("a > b > c // FullForm").unwrap(),
+        "Greater[a, b, c]"
+      );
+    }
+
+    #[test]
+    fn full_form_mixed_chain_stays_inequality() {
+      assert_eq!(
+        interpret("a < b <= c // FullForm").unwrap(),
+        "Inequality[a, Less, b, LessEqual, c]"
+      );
+    }
+
     #[test]
     fn inequality_display_output_form() {
       // Inequality should display as chained comparison, not FullForm
