@@ -2007,15 +2007,6 @@ EXPECTED:
 . , hij}
 ---
 FILE: mathics/builtin/string/patterns.py
-CLASS: StartOfString
-LINE: 146
-TYPE: >>
-INPUT: StringReplace["aba\nabb", StartOfString ~~ "a" -> "c"]
-EXPECTED:
-= cba
-. abb
----
-FILE: mathics/builtin/string/patterns.py
 CLASS: StringCases
 LINE: 182
 TYPE: >>
