@@ -8280,3 +8280,11 @@ LINE: 427
 INPUT: Normal[NumericArray[{{1,2}, {3,4}}]]
 EXPECTED: {{1, 2}, {3, 4}}
 ---
+EXPECTED: <Integer64, 2×2>
+---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: AtomQ[NumericArray[{1,2}]]
+EXPECTED: True
+---

@@ -9946,14 +9946,6 @@ FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_basics
 LINE: 427
 INPUT: ToString[NumericArray[{{1,2},{3,4}}]]
-EXPECTED: <Integer64, 2×2>
----
-FILE: mathics/test/builtin/test_binary.py
-FUNCTION: test_basics
-LINE: 427
-INPUT: AtomQ[NumericArray[{1,2}]]
-EXPECTED: True
----
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_basics
 LINE: 427
