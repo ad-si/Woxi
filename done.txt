@@ -8009,3 +8009,11 @@ INPUT: Replace[x[1], {x[1] -> y, 1 -> 2}, All]
 EXPECTED:
 = x[2]
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: Replace
+LINE: 210
+TYPE: >>
+INPUT: Replace[x[x[y]], x -> z, All]
+EXPECTED:
+= x[x[y]]
+---

@@ -4140,14 +4140,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: Replace
-LINE: 210
-TYPE: >>
-INPUT: Replace[x[x[y]], x -> z, All]
-EXPECTED:
-= x[x[y]]
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: Replace
 LINE: 214
 TYPE: >>
 INPUT: Replace[x[x[y]], x -> z, All, Heads -> True]
