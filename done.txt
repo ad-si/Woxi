@@ -6288,3 +6288,31 @@ INPUT: LeviCivitaTensor[3]
 EXPECTED:
 = SparseArray[Automatic, {3, 3, 3}, 0, {{1, 2, 3} -> 1, {1, 3, 2} -> -1, {2, 1, 3} -> -1, {2, 3, 1} -> 1, {3, 1, 2} -> 1, {3, 2, 1} -> -1}]
 ---
+FILE: mathics/builtin/trace.py
+CLASS: TraceBuiltins
+LINE: 191
+TYPE: >>
+INPUT: TraceBuiltins[Times[x, x]]
+EXPECTED:
+| ...
+= x ^ 2
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceBuiltins
+LINE: 197
+TYPE: >>
+INPUT: TraceBuiltins[Times[x, x], SortBy->"count"]
+EXPECTED:
+| ...
+= x ^ 2
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceBuiltins
+LINE: 204
+TYPE: >>
+INPUT: TraceBuiltins[Times[x, x], SortBy->"time"]
+EXPECTED:
+| ...
+= x ^ 2
+NOTE: TraceBuiltins is mathics-specific; both Woxi and wolframscript leave it unevaluated with input echoed as 'TraceBuiltins[x^2, SortBy -> count|time]'. Mathics EXPECTED 'x ^ 2' is the underlying expression value (TraceBuiltins prints trace info as a side effect and returns the argument).
+---

@@ -416,32 +416,6 @@ EXPECTED:
 | ...
 = -Graphics3D-
 ---
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltins
-LINE: 191
-TYPE: >>
-INPUT: TraceBuiltins[Times[x, x]]
-EXPECTED:
-| ...
-= x ^ 2
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltins
-LINE: 197
-TYPE: >>
-INPUT: TraceBuiltins[Times[x, x], SortBy->"count"]
-EXPECTED:
-| ...
-= x ^ 2
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltins
-LINE: 204
-TYPE: >>
-INPUT: TraceBuiltins[Times[x, x], SortBy->"time"]
-EXPECTED:
-| ...
-= x ^ 2
 ---
 FILE: mathics/builtin/trace.py
 CLASS: TraceEvaluation
