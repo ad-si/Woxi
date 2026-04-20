@@ -6591,3 +6591,13 @@ EXPECTED:
 ---
 NOTE: 'a' returns 'a' in both engines.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 85
+TYPE: >>
+INPUT: OwnValues[a]
+EXPECTED:
+= {HoldPattern[a] :> 3}
+---
+NOTE: 'OwnValues[a]' with unset 'a' returns {} in both Woxi and wolframscript byte-for-byte. Mathics EXPECTED requires prior 'a = 3' context.
+---

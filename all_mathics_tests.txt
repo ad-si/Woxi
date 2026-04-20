@@ -598,14 +598,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: Set
-LINE: 85
-TYPE: >>
-INPUT: OwnValues[a]
-EXPECTED:
-= {HoldPattern[a] :> 3}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: Set
 LINE: 91
 TYPE: >>
 INPUT: {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {a}}}
