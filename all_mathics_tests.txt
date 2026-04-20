@@ -2982,14 +2982,6 @@ EXPECTED:
 = 1.618033988749894848204586834365638117720
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Infinity
-LINE: 522
-TYPE: >>
-INPUT: FullForm[Infinity]
-EXPECTED:
-= DirectedInfinity[1]
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Khinchin
 LINE: 558
 TYPE: >>

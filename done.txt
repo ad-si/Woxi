@@ -8226,3 +8226,11 @@ INPUT: FullForm[ComplexInfinity]
 EXPECTED:
 = DirectedInfinity[]
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Infinity
+LINE: 522
+TYPE: >>
+INPUT: FullForm[Infinity]
+EXPECTED:
+= DirectedInfinity[1]
+---
