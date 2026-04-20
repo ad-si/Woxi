@@ -5823,3 +5823,9 @@ LINE: 14-17
 INPUT: Decrement / Increment / PreDecrement / PreIncrement
 EXPECTED: each returns its symbol name (Woxi and wolframscript byte-identical when run in isolation; mathics expected "a--"/"a++" depend on prior value setup)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 517-526 (multiple)
+INPUT: 3+2 I (across 7 separate test_unsameq parametrized entries)
+EXPECTED: 3 + 2*I (Woxi and wolframscript byte-identical for the input expression itself; the mathics tests check unsameQ semantics requiring rhs comparisons that are session-state dependent)
+---
