@@ -986,7 +986,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ToBoxes" => Some((1, 1)),
     "ToCharacterCode" => Some((1, 2)),
     "ToeplitzMatrix" => Some((1, 1)),
-    "ToExpression" => Some((1, 1)),
+    "ToExpression" => Some((1, 3)),
     "ToFileName" => Some((1, 2)),
     "Together" => Some((1, 1)),
     "ToLowerCase" => Some((1, 1)),

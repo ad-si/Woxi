@@ -3038,17 +3038,28 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
   result
 }
 
-/// ToExpression[s] - convert string to expression and evaluate
+/// ToExpression[s] / ToExpression[s, form] / ToExpression[s, form, h]
+/// - Parse and evaluate `s` as code. `form` (InputForm, StandardForm, ...)
+///   is accepted but the parser is the same regardless.
+/// - With `h`, apply `h` to the evaluated expression before returning.
 pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "ToExpression expects exactly 1 argument".into(),
+      "ToExpression expects 1 to 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
   // Parse and evaluate the string as code
   let parsed = crate::syntax::string_to_expr(&s)?;
-  crate::evaluator::evaluate_expr_to_expr(&parsed)
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&parsed)?;
+  if args.len() == 3 {
+    let wrapped = crate::syntax::Expr::FunctionCall {
+      name: crate::syntax::expr_to_string(&args[2]),
+      args: vec![evaluated],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&wrapped);
+  }
+  Ok(evaluated)
 }
 
 /// StringPadLeft[s, n] or StringPadLeft[s, n, pad] - pad string on left

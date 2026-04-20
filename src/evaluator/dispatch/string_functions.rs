@@ -75,7 +75,7 @@ pub fn dispatch_string_functions(
     "ToString" | "TextString" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::to_string_ast(args));
     }
-    "ToExpression" if args.len() == 1 => {
+    "ToExpression" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::to_expression_ast(args));
     }
     "StringPadLeft" if args.len() >= 2 && args.len() <= 3 => {

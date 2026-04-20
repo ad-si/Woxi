@@ -4668,22 +4668,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: ToExpression
-LINE: 761
-TYPE: >>
-INPUT: ToExpression["{2, 3, 1}", InputForm, Max]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: ToExpression
-LINE: 764
-TYPE: >>
-INPUT: ToExpression["2 3", InputForm]
-EXPECTED:
-= 6
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: ToExpression
 LINE: 769
 TYPE: >>
 INPUT: ToExpression["2\[NewLine]3"]

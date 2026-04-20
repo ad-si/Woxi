@@ -2250,6 +2250,30 @@ mod tex_form {
   }
 }
 
+mod to_expression {
+  use super::*;
+
+  #[test]
+  fn single_arg_parses_and_evaluates() {
+    assert_eq!(interpret("ToExpression[\"2+3\"]").unwrap(), "5");
+  }
+
+  #[test]
+  fn two_args_accepts_form() {
+    // Woxi's parser is form-agnostic, so the form arg is accepted but ignored.
+    assert_eq!(interpret("ToExpression[\"2 3\", InputForm]").unwrap(), "6");
+  }
+
+  #[test]
+  fn three_args_applies_head() {
+    // The third argument is applied to the evaluated expression.
+    assert_eq!(
+      interpret("ToExpression[\"{2, 3, 1}\", InputForm, Max]").unwrap(),
+      "3"
+    );
+  }
+}
+
 mod base_form {
   use super::*;
 
