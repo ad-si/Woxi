@@ -170,6 +170,20 @@ fn quantity_add_picks_smaller_unit_gram_vs_kilogram() {
 }
 
 #[test]
+fn quantity_add_incompatible_units_canonically_ordered() {
+  // Incompatible units stay unevaluated inside Plus, but the operands are
+  // sorted canonically (magnitude first): 3 < 6 ⇒ Seconds precedes Meters.
+  assert_eq!(
+    interpret("Quantity[6, \"meter\"] + Quantity[3, \"second\"]").unwrap(),
+    "Quantity[3, Seconds] + Quantity[6, Meters]"
+  );
+  assert_eq!(
+    interpret("Quantity[3, \"seconds\"] + Quantity[6, \"meters\"]").unwrap(),
+    "Quantity[3, Seconds] + Quantity[6, Meters]"
+  );
+}
+
+#[test]
 fn quantity_add_incompatible_units() {
   // Should return unevaluated (plus an error message on stderr)
   let result =

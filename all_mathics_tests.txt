@@ -147,15 +147,6 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/quantities.py
-CLASS: Quantity
-LINE: 115
-TYPE: >>
-INPUT: Quantity[6, "meter"] + Quantity[3, "second"]
-EXPECTED:
-: second and meter are incompatible units.
-= 3 second + 6 meter
----
-FILE: mathics/builtin/quantities.py
 CLASS: UnitConvert
 LINE: 405
 TYPE: >>

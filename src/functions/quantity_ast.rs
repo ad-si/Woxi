@@ -1987,10 +1987,16 @@ pub fn try_quantity_plus(
         "Quantity::compat: {} and {} are incompatible units.",
         u1_name, u2_name
       ));
-      // Return unevaluated Plus
+      // Return unevaluated Plus with operands sorted canonically (Plus is
+      // Orderless — e.g. Quantity[3, Seconds] should precede
+      // Quantity[6, Meters] because 3 < 6).
+      let mut sorted_args = args.to_vec();
+      sorted_args.sort_by(
+        crate::functions::list_helpers_ast::sorting::canonical_cmp,
+      );
       return Some(Ok(Expr::FunctionCall {
         name: "Plus".to_string(),
-        args: args.to_vec(),
+        args: sorted_args,
       }));
     }
   }
@@ -2025,7 +2031,8 @@ pub fn try_quantity_plus(
       }
     }
   }
-  let (target_mag, target_unit) = is_quantity(quantity_args[target_idx]).unwrap();
+  let (target_mag, target_unit) =
+    is_quantity(quantity_args[target_idx]).unwrap();
   let target_unit_name = unit_name(target_unit);
 
   // All quantities are compatible — convert to target unit and sum magnitudes.
