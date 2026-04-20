@@ -8616,12 +8616,6 @@ EXPECTED: <Integer64, 2×2>
 ---
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_ByteOrdering
-LINE: 434
-INPUT: First[NumericArray[{1,2,3}]]
-EXPECTED: 1
----
-FILE: mathics/test/builtin/test_binary.py
-FUNCTION: test_ByteOrdering
 LINE: 435
 INPUT: First[NumericArray[{{1,2}, {3,4}}]]
 EXPECTED: <Integer64, 2>

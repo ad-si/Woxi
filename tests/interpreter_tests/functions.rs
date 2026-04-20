@@ -920,6 +920,18 @@ mod first_last_extended {
   fn last_of_function_call() {
     assert_eq!(interpret("Last[f[a, b]]").unwrap(), "b");
   }
+
+  // NumericArray / ByteArray wrap a single list payload. First / Last should
+  // index into that inner list rather than into the wrapper's args tuple.
+  #[test]
+  fn first_of_numeric_array_is_first_element() {
+    assert_eq!(interpret("First[NumericArray[{1, 2, 3}]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn last_of_numeric_array_is_last_element() {
+    assert_eq!(interpret("Last[NumericArray[{1, 2, 3}]]").unwrap(), "3");
+  }
 }
 
 mod array_predicates {

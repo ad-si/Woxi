@@ -91,7 +91,21 @@ pub fn first_ast(
         Ok(items[0].clone())
       }
     }
-    Expr::FunctionCall { args, .. } => {
+    Expr::FunctionCall { name, args } => {
+      // NumericArray / ByteArray wrap a single list payload that should be
+      // indexed as if it were the sequence itself.
+      if (name == "NumericArray" || name == "ByteArray")
+        && args.len() == 1
+        && let Expr::List(items) = &args[0]
+      {
+        if items.is_empty() {
+          if let Some(d) = default {
+            return Ok(d.clone());
+          }
+        } else {
+          return Ok(items[0].clone());
+        }
+      }
       if args.is_empty() {
         if let Some(d) = default {
           Ok(d.clone())
@@ -171,7 +185,21 @@ pub fn last_ast(
         Ok(items[items.len() - 1].clone())
       }
     }
-    Expr::FunctionCall { args, .. } => {
+    Expr::FunctionCall { name, args } => {
+      // NumericArray / ByteArray wrap a single list payload that should be
+      // indexed as if it were the sequence itself.
+      if (name == "NumericArray" || name == "ByteArray")
+        && args.len() == 1
+        && let Expr::List(items) = &args[0]
+      {
+        if items.is_empty() {
+          if let Some(d) = default {
+            return Ok(d.clone());
+          }
+        } else {
+          return Ok(items[items.len() - 1].clone());
+        }
+      }
       if args.is_empty() {
         if let Some(d) = default {
           Ok(d.clone())
