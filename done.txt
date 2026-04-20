@@ -6963,3 +6963,11 @@ EXPECTED:
 ---
 NOTE: 'Share[]' returns an Integer in both Woxi (0, no-op) and wolframscript (bytes shared); Head[Share[]] is 'Integer' in both. Mathics EXPECTED '...' wildcard accepts any output.
 ---
+FILE: mathics/builtin/tensors.py
+CLASS: TranslationTransform
+LINE: 332
+TYPE: >>
+INPUT: Show[Graphics[Table[Polygon[TranslationTransform[{Sqrt[3] (i - j/2), 3 j/2}] /@ {{Sqrt[3]/2, -1/2}, {0, 1}, {-Sqrt[3]/2, -1/2}}], {i, 7}, {j, i}]]]
+EXPECTED:
+= -Graphics-
+---
