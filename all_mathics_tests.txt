@@ -694,15 +694,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Unset
-LINE: 229
-TYPE: >>
-INPUT: f[x_] =.
-EXPECTED:
-: Assignment on f for f[x_] not found.
-= $Failed
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Unset
 LINE: 235
 TYPE: >>
 INPUT: f[x_] =.

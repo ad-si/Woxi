@@ -704,9 +704,41 @@ pub fn evaluate_expr_to_expr_inner(
         // Special handling for Unset - x =. (removes definition)
         if name == "Unset" && args.len() == 1 {
           if let Expr::Identifier(var_name) = &args[0] {
-            ENV.with(|e| {
-              e.borrow_mut().remove(var_name);
+            let had_value = ENV.with(|e| e.borrow_mut().remove(var_name));
+            if had_value.is_none() {
+              // No OwnValue was set. Mathematica still returns Null for
+              // 'foo =.' even if foo was never defined, so do the same.
+              return Ok(Expr::Identifier("Null".to_string()));
+            }
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // Pattern-based unset: f[args] =.
+          // Requires a matching DownValue in FUNC_DEFS; otherwise Mathematica
+          // emits an 'Unset::norep' warning and returns $Failed.
+          if let Expr::FunctionCall {
+            name: head,
+            args: lhs_args,
+          } = &args[0]
+          {
+            let had_any = crate::FUNC_DEFS
+              .with(|m| m.borrow().get(head).is_some_and(|defs| !defs.is_empty()));
+            if !had_any {
+              let lhs_str = crate::syntax::expr_to_string(&args[0]);
+              crate::emit_message(&format!(
+                "Unset::norep: Assignment on {} for {} not found.",
+                head, lhs_str
+              ));
+              return Ok(Expr::Identifier("$Failed".to_string()));
+            }
+            // At least one rule exists for this head — Woxi has no per-pattern
+            // removal yet, so clear all of them for now (matches the common
+            // 'f[x_] =. after f[x_] := ...' case where exactly one rule was
+            // defined). Emit no warning, return Null.
+            let _ = lhs_args;
+            crate::FUNC_DEFS.with(|m| {
+              m.borrow_mut().remove(head);
             });
+            return Ok(Expr::Identifier("Null".to_string()));
           }
           return Ok(Expr::Identifier("Null".to_string()));
         }

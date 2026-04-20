@@ -6718,3 +6718,12 @@ EXPECTED:
 ---
 NOTE: 'UpValues[square]' returns '{}' byte-for-byte in both Woxi and wolframscript when square has no UpValues. Mathics EXPECTED requires prior 'square /: area[square[s_]] := s^2'.
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Unset
+LINE: 229
+TYPE: >>
+INPUT: f[x_] =.
+EXPECTED:
+: Assignment on f for f[x_] not found.
+= $Failed
+---

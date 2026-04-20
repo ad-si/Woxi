@@ -2831,6 +2831,36 @@ mod unset_function {
       "{HoldFirst, Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn unset_pattern_without_prior_def_returns_failed() {
+    // Mathematica: 'f[x_] =.' with no prior definition emits an
+    // Unset::norep warning and returns $Failed.
+    clear_state();
+    assert_eq!(interpret("freshUnsetF[x_] =.").unwrap(), "$Failed");
+  }
+
+  #[test]
+  fn unset_pattern_after_set_delayed_returns_null() {
+    clear_state();
+    assert_eq!(
+      interpret("freshUnsetG[x_] := x^2; freshUnsetG[x_] =.").unwrap(),
+      "\0"
+    );
+  }
+
+  #[test]
+  fn unset_pattern_removes_definition() {
+    // After 'f[x_] =.' the downvalue is gone and f[5] stays symbolic.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "freshUnsetH[x_] := x^2; freshUnsetH[x_] =.; freshUnsetH[5]"
+      )
+      .unwrap(),
+      "freshUnsetH[5]"
+    );
+  }
 }
 
 mod repeated_null_function {
