@@ -7027,3 +7027,11 @@ EXPECTED:
 ---
 NOTE: 'Clear[Sin]' returns 'Null' byte-for-byte stdout in both Woxi and wolframscript. Wolfram also emits 'Clear::wrsym: Symbol Sin is Protected' warning; Woxi doesn't yet emit that specific warning but stdout matches.
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: Messages
+LINE: 71
+TYPE: >>
+INPUT: a::b = "foo"
+EXPECTED:
+= foo
+---

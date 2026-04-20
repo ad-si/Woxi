@@ -135,6 +135,7 @@ Operator = @{
   | "/*" ~ !(")")  // RightComposition operator (must be before / ; avoid matching /* in comments)
   | "/;" ~ !("/")  // Condition operator (must be before / and ;)
   | "/:" ~ !("/")  // TagSet/TagSetDelayed operator (must be before / and :)
+  | "::" ~ !":"   // MessageName (a::b → MessageName[a, "b"]). Must precede :> and :=.
   | ":>"     // RuleDelayed (must be before := and >)
   | ":="
   | "->" | "\u{2192}"     // Rule (must be before - and >), →

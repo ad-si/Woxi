@@ -1705,6 +1705,30 @@ mod message_name_function {
       "{HoldFirst, Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn message_name_double_colon_syntax() {
+    // `a::b` parses as MessageName[a, "b"].
+    assert_eq!(interpret("a::b").unwrap(), "MessageName[a, b]");
+  }
+
+  #[test]
+  fn message_name_set_returns_rhs() {
+    clear_state();
+    assert_eq!(
+      interpret("freshMsgA::usage = \"hello\"").unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn message_name_lookup_after_set() {
+    clear_state();
+    assert_eq!(
+      interpret("freshMsgB::tag = \"val\"; freshMsgB::tag").unwrap(),
+      "val"
+    );
+  }
 }
 
 mod plot3d_function {

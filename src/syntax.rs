@@ -3034,7 +3034,8 @@ fn operator_precedence(op: &str) -> u8 {
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
     "^" => 16, // Power
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
-    "@" => 18, // Prefix application (highest)
+    "@" => 18, // Prefix application
+    "::" => 19, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
 }
@@ -3323,6 +3324,19 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "SetDelayed".to_string(),
       args: vec![left.clone(), right.clone()],
     },
+    "::" => {
+      // MessageName[sym, "tag"]. The right-hand side is treated as a string tag:
+      // identifiers become strings, integers become their decimal string form.
+      let tag = match right {
+        Expr::Identifier(name) => Expr::String(name.clone()),
+        Expr::Integer(n) => Expr::String(n.to_string()),
+        other => other.clone(),
+      };
+      Expr::FunctionCall {
+        name: "MessageName".to_string(),
+        args: vec![left.clone(), tag],
+      }
+    }
     "/;" => Expr::FunctionCall {
       name: "Condition".to_string(),
       args: vec![left.clone(), right.clone()],

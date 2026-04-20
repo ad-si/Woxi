@@ -562,14 +562,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: Messages
-LINE: 71
-TYPE: >>
-INPUT: a::b = "foo"
-EXPECTED:
-= foo
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: Messages
 LINE: 73
 TYPE: >>
 INPUT: Messages[a]
