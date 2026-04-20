@@ -8799,3 +8799,17 @@ INPUT: % == DiagonalMatrix[Eigenvalues[A]]
 EXPECTED:
 = True
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 64
+INPUT: MatchQ[x, F[x_.,y_]]
+EXPECTED: False
+MESSAGE: With OneIdentity, and Optional, no default
+---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 73
+INPUT: MatchQ[x, G[x_.,y_]]
+EXPECTED: False
+MESSAGE: Without OneIdentity, and Optional, default
+---
