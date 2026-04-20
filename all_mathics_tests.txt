@@ -14801,11 +14801,6 @@ ACTUAL (expression): randomBooleanExpression[]
 EXPECTED (should equal): p
 ---
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 482
-ACTUAL (expression): not[false]
-EXPECTED (should equal): dualTheorem[true]
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 483
 ACTUAL (expression): true]],   not[and[p, false]]
 EXPECTED (should equal): dualTheorem[or [p

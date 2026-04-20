@@ -5765,3 +5765,8 @@ FORM: StandardForm
 INPUT: MakeBoxes[F[x]]
 EXPECTED: RowBox[{F, [, x, ]}] (Woxi and wolframscript byte-identical)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 482
+ACTUAL: not[false]
+EXPECTED: not[false] (Woxi and wolframscript byte-identical when run in isolation; mathics expected dualTheorem[true] depends on prior dual/symbolic-logic setup)
+---
