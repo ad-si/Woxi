@@ -7942,3 +7942,14 @@ INPUT: StringReplace["aab\nabb", "b" ~~ EndOfString -> "c"]
 EXPECTED:
 = aab
 . abc
+FILE: mathics/builtin/string/patterns.py
+CLASS: StartOfLine
+LINE: 117
+TYPE: >>
+INPUT: StringReplace["aba\nbba\na\nab", StartOfLine ~~ "a" -> "c"]
+EXPECTED:
+= cba
+. bba
+. c
+. cb
+---
