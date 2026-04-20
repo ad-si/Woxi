@@ -1862,15 +1862,6 @@ EXPECTED:
 = abc
 ---
 FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
-LINE: 60
-TYPE: >>
-INPUT: ToCharacterCode[{"ab", x}]
-EXPECTED:
-: String or list of strings expected at position 1 in ToCharacterCode[{ab, x}].
-= ToCharacterCode[{ab, x}]
----
-FILE: mathics/builtin/string/charcodes.py
 CLASS: FromCharacterCode
 LINE: 145
 TYPE: >>

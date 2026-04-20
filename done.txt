@@ -8708,3 +8708,12 @@ INPUT: DefaultValues[Times]
 EXPECTED:
 = {HoldPattern[Default[Times]] :> 1}
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: ToCharacterCode
+LINE: 60
+TYPE: >>
+INPUT: ToCharacterCode[{"ab", x}]
+EXPECTED:
+: String or list of strings expected at position 1 in ToCharacterCode[{ab, x}].
+= ToCharacterCode[{ab, x}]
+---

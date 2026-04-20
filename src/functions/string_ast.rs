@@ -3292,14 +3292,46 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Handle list of strings
+  // Handle list of strings — all elements must be strings (or lists of
+  // strings, handled recursively). Non-string atoms trigger a
+  // ToCharacterCode::strse warning and the call returns unevaluated.
   if let Expr::List(items) = &args[0] {
+    if !items.iter().all(|i| matches!(i, Expr::String(_))) {
+      crate::emit_message(&format!(
+        "ToCharacterCode::strse: A string or list of strings is \
+         expected at position 1 in {}.",
+        crate::syntax::expr_to_string(&Expr::FunctionCall {
+          name: "ToCharacterCode".to_string(),
+          args: args.to_vec(),
+        })
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "ToCharacterCode".to_string(),
+        args: args.to_vec(),
+      });
+    }
     let mut results = Vec::new();
     for item in items {
       let s = expr_to_str(item)?;
       results.push(Expr::List(codes_for(&s)));
     }
     return Ok(Expr::List(results));
+  }
+  // Single-argument form: only accept actual strings; everything else
+  // returns unevaluated with the strse warning.
+  if !matches!(&args[0], Expr::String(_)) {
+    crate::emit_message(&format!(
+      "ToCharacterCode::strse: A string or list of strings is \
+       expected at position 1 in {}.",
+      crate::syntax::expr_to_string(&Expr::FunctionCall {
+        name: "ToCharacterCode".to_string(),
+        args: args.to_vec(),
+      })
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "ToCharacterCode".to_string(),
+      args: args.to_vec(),
+    });
   }
   let s = expr_to_str(&args[0])?;
   Ok(Expr::List(codes_for(&s)))

@@ -482,6 +482,24 @@ mod to_character_code {
       "{228}"
     );
   }
+
+  // A list containing a non-string is a type error — wolframscript emits
+  // ToCharacterCode::strse and returns the call unchanged.
+  #[test]
+  fn mixed_list_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode[{"ab", x}]"#).unwrap(),
+      "ToCharacterCode[{ab, x}]"
+    );
+  }
+
+  #[test]
+  fn non_string_single_arg_stays_unevaluated() {
+    assert_eq!(
+      interpret("ToCharacterCode[42]").unwrap(),
+      "ToCharacterCode[42]"
+    );
+  }
 }
 
 mod from_character_code {
