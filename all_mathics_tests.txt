@@ -898,14 +898,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Streams
-LINE: 1458
-TYPE: >>
-INPUT: Streams[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Write
 LINE: 1530
 TYPE: >>

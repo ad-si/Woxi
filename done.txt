@@ -7588,3 +7588,11 @@ INPUT: strm = StringToStream["abc 123"]
 EXPECTED:
 = InputStream[String, ...]
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Streams
+LINE: 1458
+TYPE: >>
+INPUT: Streams[]
+EXPECTED:
+= ...
+---
