@@ -7307,3 +7307,13 @@ INPUT: ElementData["Properties"]
 EXPECTED:
 = {Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}
 ---
+FILE: mathics/builtin/procedural.py
+CLASS: While
+LINE: 769
+TYPE: >>
+INPUT: a
+EXPECTED:
+= 3
+---
+NOTE: 'a' returns 'a' byte-for-byte in both Woxi and wolframscript when undefined; mathics EXPECTED '3' depends on prior While[...] that sets a=3.
+---

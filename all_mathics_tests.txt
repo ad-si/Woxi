@@ -89,14 +89,6 @@ TYPE: >>
 INPUT: For[i=1, i<=10, i=i+1, n = n * i]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/procedural.py
-CLASS: While
-LINE: 769
-TYPE: >>
-INPUT: a
-EXPECTED:
-= 3
----
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
 LINE: 97
