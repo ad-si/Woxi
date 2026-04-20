@@ -7283,3 +7283,11 @@ INPUT: ElementData["He", "ElectroNegativity"]
 EXPECTED:
 = Missing[NotApplicable]
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 66
+TYPE: >>
+INPUT: ElementData[16, "ElectronConfigurationString"]
+EXPECTED:
+= [Ne] 3s2 3p4
+---

@@ -2346,8 +2346,81 @@ fn get_property(elem: &Element, property: &str) -> Expr {
         .collect();
       Expr::List(shells)
     }
+    "ElectronConfigurationString" => {
+      Expr::String(format_electron_configuration(elem))
+    }
     _ => missing_not_found(),
   }
+}
+
+/// Format an element's electron configuration as a string like
+/// `[Ne] 3s2 3p4`. Uses the largest noble gas whose shells are a prefix of
+/// the element's shells; the remainder becomes explicit `nS<count>` terms.
+fn format_electron_configuration(elem: &Element) -> String {
+  // Noble gases (group 18), ordered by atomic number descending.
+  const NOBLE_GASES: &[(i128, &str)] = &[
+    (118, "Og"),
+    (86, "Rn"),
+    (54, "Xe"),
+    (36, "Kr"),
+    (18, "Ar"),
+    (10, "Ne"),
+    (2, "He"),
+  ];
+
+  let elem_shells = elem.electron_configuration;
+
+  // Find the largest noble gas whose config is a subshell-level prefix of
+  // elem's config. "Subshell prefix" means for each shell of the noble gas,
+  // elem's corresponding shell starts with the same subshell occupancies;
+  // any shell beyond the noble gas's last is considered entirely "remaining".
+  let mut prefix_sym: Option<&str> = None;
+  let mut prefix_ng_shells: &[&[u8]] = &[];
+  for &(z, sym) in NOBLE_GASES {
+    if z >= elem.atomic_number {
+      continue;
+    }
+    let ng_shells = ELEMENTS[(z - 1) as usize].electron_configuration;
+    if ng_shells.len() > elem_shells.len() {
+      continue;
+    }
+    // Each of the noble gas's shells must be a prefix of elem's shell.
+    let is_prefix = (0..ng_shells.len()).all(|i| {
+      let ng = ng_shells[i];
+      let el = elem_shells[i];
+      ng.len() <= el.len() && ng.iter().zip(el.iter()).all(|(a, b)| a == b)
+    });
+    if is_prefix {
+      prefix_sym = Some(sym);
+      prefix_ng_shells = ng_shells;
+      break;
+    }
+  }
+
+  let mut parts: Vec<String> = Vec::new();
+  if let Some(sym) = prefix_sym {
+    parts.push(format!("[{}]", sym));
+  }
+  const SUBSHELL_LETTERS: &[char] = &['s', 'p', 'd', 'f', 'g', 'h', 'i'];
+  for (shell_idx, shell) in elem_shells.iter().enumerate() {
+    let n = shell_idx + 1;
+    let ng_shell_opt = prefix_ng_shells.get(shell_idx).copied();
+    for (sub_idx, &count) in shell.iter().enumerate() {
+      if count == 0 {
+        continue;
+      }
+      // Skip subshells already covered by the noble gas prefix.
+      if let Some(ng) = ng_shell_opt
+        && sub_idx < ng.len()
+        && ng[sub_idx] == count
+      {
+        continue;
+      }
+      let letter = SUBSHELL_LETTERS.get(sub_idx).copied().unwrap_or('?');
+      parts.push(format!("{}{}{}", n, letter, count));
+    }
+  }
+  parts.join(" ")
 }
 
 fn electronegativity_precision(v: f64) -> f64 {

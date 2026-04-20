@@ -332,4 +332,37 @@ mod element_data_tests {
       "Missing[NotApplicable]"
     );
   }
+
+  #[test]
+  fn element_data_electron_config_string_sulfur() {
+    assert_eq!(
+      interpret(r#"ElementData[16, "ElectronConfigurationString"]"#).unwrap(),
+      "[Ne] 3s2 3p4"
+    );
+  }
+
+  #[test]
+  fn element_data_electron_config_string_iron() {
+    assert_eq!(
+      interpret(r#"ElementData["Iron", "ElectronConfigurationString"]"#)
+        .unwrap(),
+      "[Ar] 3d6 4s2"
+    );
+  }
+
+  #[test]
+  fn element_data_electron_config_string_hydrogen() {
+    assert_eq!(
+      interpret(r#"ElementData[1, "ElectronConfigurationString"]"#).unwrap(),
+      "1s1"
+    );
+  }
+
+  #[test]
+  fn element_data_electron_config_string_helium() {
+    assert_eq!(
+      interpret(r#"ElementData["He", "ElectronConfigurationString"]"#).unwrap(),
+      "1s2"
+    );
+  }
 }

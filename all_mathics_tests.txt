@@ -84,14 +84,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 66
-TYPE: >>
-INPUT: ElementData[16, "ElectronConfigurationString"]
-EXPECTED:
-= [Ne] 3s2 3p4
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 81
 TYPE: >>
 INPUT: ElementData["Tc", "SpecificHeat"]
