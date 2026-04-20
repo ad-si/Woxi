@@ -8274,3 +8274,9 @@ LINE: 438
 INPUT: Normal[NumericArray[{{1,2}, {3,4}}]]
 EXPECTED: {{1, 2}, {3, 4}}
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: Normal[NumericArray[{{1,2}, {3,4}}]]
+EXPECTED: {{1, 2}, {3, 4}}
+---
