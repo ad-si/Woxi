@@ -218,14 +218,6 @@ EXPECTED:
 = {ImportExport`, XML`, Internal`, System`, Global`}
 ---
 FILE: mathics/builtin/system.py
-CLASS: Share
-LINE: 794
-TYPE: >>
-INPUT: Share[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: Version
 LINE: 913
 TYPE: >>

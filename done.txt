@@ -6953,3 +6953,13 @@ EXPECTED:
 ---
 NOTE: Mathics EXPECTED '-1' is mathics's fallback when it can't query memory; Woxi and wolframscript both return actual byte counts. TYPE S> is system-dependent.
 ---
+FILE: mathics/builtin/system.py
+CLASS: Share
+LINE: 794
+TYPE: >>
+INPUT: Share[]
+EXPECTED:
+= ...
+---
+NOTE: 'Share[]' returns an Integer in both Woxi (0, no-op) and wolframscript (bytes shared); Head[Share[]] is 'Integer' in both. Mathics EXPECTED '...' wildcard accepts any output.
+---
