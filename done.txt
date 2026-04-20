@@ -7194,3 +7194,10 @@ TYPE: #>
 INPUT: Close[stream];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 794
+TYPE: >>
+INPUT: stream = StringToStream["123, 4"];
+EXPECTED: (none)
+---
