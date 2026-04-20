@@ -7842,3 +7842,11 @@ INPUT: ThreeJSymbol[{1, 2}, {3, 4}, {5, 12}]
 EXPECTED:
 = 0
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Subfactorial
+LINE: 583
+TYPE: >>
+INPUT: LogPlot[{10^x, Factorial[x], Subfactorial[x]}, {x, 0, 25}, PlotPoints->26]
+EXPECTED:
+= -Graphics-
+---
