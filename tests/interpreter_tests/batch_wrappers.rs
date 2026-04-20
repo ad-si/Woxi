@@ -2097,6 +2097,14 @@ mod batch_unevaluated_wrappers_2 {
     );
     let result = interpret("InverseErf[0.9]").unwrap();
     assert!(result.starts_with("1.16308"), "InverseErf[0.9] = {result}");
+    // Real-valued boundaries: 1.0 / -1.0 also yield ±Infinity.
+    assert_eq!(interpret("InverseErf[1.0]").unwrap(), "Infinity");
+    assert_eq!(interpret("InverseErf[-1.0]").unwrap(), "-Infinity");
+    // InverseErfc analogues: 0 / 2 (and their Real forms) → ±Infinity.
+    assert_eq!(interpret("InverseErfc[0]").unwrap(), "Infinity");
+    assert_eq!(interpret("InverseErfc[0.0]").unwrap(), "Infinity");
+    assert_eq!(interpret("InverseErfc[2]").unwrap(), "-Infinity");
+    assert_eq!(interpret("InverseErfc[2.0]").unwrap(), "-Infinity");
   }
   #[test]
   fn smooth_density_histogram() {

@@ -1447,12 +1447,19 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: crate::syntax::UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }),
-    // Numeric evaluation for Real arguments in (-1, 1)
+    // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
         Ok(Expr::Real(
           crate::functions::math_ast::numeric_utils::inverse_erf_f64(*f),
         ))
+      } else if *f == 1.0 {
+        Ok(Expr::Identifier("Infinity".to_string()))
+      } else if *f == -1.0 {
+        Ok(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        })
       } else {
         Ok(Expr::FunctionCall {
           name: "InverseErf".to_string(),
@@ -1486,13 +1493,20 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       op: crate::syntax::UnaryOperator::Minus,
       operand: Box::new(Expr::Identifier("Infinity".to_string())),
     }),
-    // Numeric evaluation for Real arguments in (0, 2)
+    // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > 0.0 && *f < 2.0 {
         // InverseErfc[x] = InverseErf[1 - x]
         Ok(Expr::Real(
           crate::functions::math_ast::numeric_utils::inverse_erf_f64(1.0 - *f),
         ))
+      } else if *f == 0.0 {
+        Ok(Expr::Identifier("Infinity".to_string()))
+      } else if *f == 2.0 {
+        Ok(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        })
       } else {
         Ok(Expr::FunctionCall {
           name: "InverseErfc".to_string(),
