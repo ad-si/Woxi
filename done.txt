@@ -7770,3 +7770,11 @@ INPUT: StringMatchQ["\\[Lambda]", LetterCharacter]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 316
+TYPE: >>
+INPUT: Definition[x]
+EXPECTED:
+= Null
+---

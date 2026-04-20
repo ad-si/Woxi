@@ -5114,14 +5114,6 @@ EXPECTED:
 = Null
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
-LINE: 316
-TYPE: >>
-INPUT: Definition[x]
-EXPECTED:
-= Null
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: DownValues
 LINE: 361
 TYPE: >>
