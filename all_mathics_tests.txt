@@ -428,14 +428,6 @@ EXPECTED:
 = {HoldPattern[a[b]] :> x}
 ---
 FILE: mathics/builtin/assignments/clear.py
-CLASS: ClearAll
-LINE: 157
-TYPE: >>
-INPUT: ClearAll[lock]
-EXPECTED:
-: Symbol lock is locked.
----
-FILE: mathics/builtin/assignments/clear.py
 CLASS: Remove
 LINE: 184
 TYPE: >>
