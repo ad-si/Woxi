@@ -8475,3 +8475,11 @@ INPUT: AssociationQ[<|a, b|>]
 EXPECTED:
 = False
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 908
+TYPE: >>
+INPUT: b // OutputForm // TeXForm
+EXPECTED:
+= \text{b}
+---

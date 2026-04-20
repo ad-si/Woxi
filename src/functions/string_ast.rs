@@ -1854,6 +1854,8 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => crate::syntax::format_real(*f),
     Expr::String(s) => format!("\\text{{{}}}", s),
+    // Raw is the rendered output of OutputForm / 2d boxes — treat as text.
+    Expr::Raw(s) => format!("\\text{{{}}}", s),
     Expr::Identifier(name) | Expr::Constant(name) => tex_identifier(name),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,

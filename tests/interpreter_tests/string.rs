@@ -2248,6 +2248,16 @@ mod tex_form {
       "\\sqrt{a^3}"
     );
   }
+
+  #[test]
+  fn output_form_then_tex_wraps_in_text() {
+    // OutputForm renders its content to a textual form first; TeXForm then
+    // wraps that as \text{…}, matching wolframscript.
+    assert_eq!(
+      interpret("ToString[b // OutputForm // TeXForm]").unwrap(),
+      "\\text{b}"
+    );
+  }
 }
 
 mod to_expression {
