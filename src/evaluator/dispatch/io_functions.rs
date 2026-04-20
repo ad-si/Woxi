@@ -31,6 +31,40 @@ pub fn dispatch_io_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    // Message[sym::tag, args...] — emit a message and return Null. Only matches
+    // when the first argument is a MessageName; other shapes fall through to
+    // stay unevaluated.
+    "Message" if !args.is_empty() => {
+      if let Expr::FunctionCall {
+        name: mn_name,
+        args: mn_args,
+      } = &args[0]
+        && mn_name == "MessageName"
+        && mn_args.len() == 2
+      {
+        let sym_name = match &mn_args[0] {
+          Expr::Identifier(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        let tag = match &mn_args[1] {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        // Evaluate MessageName[sym, tag]. If it resolves to a String, use it
+        // as the text; otherwise treat the text as unset.
+        let resolved = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+        let text = match &resolved {
+          Ok(Expr::String(s)) => s.clone(),
+          _ => "-- Message text not found --".to_string(),
+        };
+        // Match wolframscript: the formatted message is written to stdout
+        // (NOT stderr) with a leading blank line, before the Null return value.
+        println!();
+        println!("{}::{}: {}", sym_name, tag, text);
+        return Some(Ok(Expr::Identifier("Null".to_string())));
+      }
+    }
     // Environment["name"] — return the named environment variable value
     "Environment" if args.len() == 1 => {
       if let Expr::String(var_name) = &args[0] {

@@ -569,14 +569,6 @@ EXPECTED:
 = {HoldPattern[a::b] :> foo}
 ---
 FILE: mathics/builtin/assignments/types.py
-CLASS: Messages
-LINE: 78
-TYPE: >>
-INPUT: Message[a::c]
-EXPECTED:
-: bar
----
-FILE: mathics/builtin/assignments/types.py
 CLASS: NValues
 LINE: 112
 TYPE: >>

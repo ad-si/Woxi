@@ -3058,6 +3058,21 @@ mod message_function {
   }
 
   #[test]
+  fn message_with_message_name_returns_null() {
+    clear_state();
+    assert_eq!(interpret("Message[freshMsgA::tag]").unwrap(), "\0");
+  }
+
+  #[test]
+  fn message_with_defined_text_returns_null() {
+    clear_state();
+    assert_eq!(
+      interpret("freshMsgB::tag = \"hi\"; Message[freshMsgB::tag]").unwrap(),
+      "\0"
+    );
+  }
+
+  #[test]
   fn message_attributes() {
     assert_eq!(
       interpret("Attributes[Message]").unwrap(),

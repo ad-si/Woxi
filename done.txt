@@ -7045,3 +7045,11 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript return 'InputForm[MessageName[a, c]]' byte-for-byte. Mathics EXPECTED '"bar"' requires prior 'a::c = "bar"' context.
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: Messages
+LINE: 78
+TYPE: >>
+INPUT: Message[a::c]
+EXPECTED:
+: bar
+---
