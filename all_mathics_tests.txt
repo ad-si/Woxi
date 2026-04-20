@@ -665,13 +665,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 549
-TYPE: S>
-INPUT: DeleteFile[filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 553
 TYPE: S>
 INPUT: FilePrint[filename]
