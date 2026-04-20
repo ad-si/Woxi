@@ -697,20 +697,39 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  // If some symbolic: keep them with any known value
-  let mut result = remaining;
+  // If some symbolic: the presence of an explicit True or False reduces
+  // the chain to logical conjunction/disjunction over the symbolic terms:
+  // - Equivalent[..., True, ...] = And[symbolic...]
+  // - Equivalent[..., False, ...] = And[Not[symbolic]...]  (symbolic all False)
+  // Without any boolean literal, keep the call symbolic.
   if has_true {
-    result.insert(0, Expr::Identifier("True".to_string()));
+    if remaining.len() == 1 {
+      return Ok(remaining.into_iter().next().unwrap());
+    }
+    return Ok(Expr::FunctionCall {
+      name: "And".to_string(),
+      args: remaining,
+    });
   }
   if has_false {
-    result.insert(0, Expr::Identifier("False".to_string()));
-  }
-  if result.len() == 1 {
-    return Ok(Expr::Identifier("True".to_string()));
+    let negated: Vec<Expr> = remaining
+      .into_iter()
+      .map(|e| Expr::FunctionCall {
+        name: "Not".to_string(),
+        args: vec![e],
+      })
+      .collect();
+    if negated.len() == 1 {
+      return Ok(negated.into_iter().next().unwrap());
+    }
+    return Ok(Expr::FunctionCall {
+      name: "And".to_string(),
+      args: negated,
+    });
   }
   Ok(Expr::FunctionCall {
     name: "Equivalent".to_string(),
-    args: result,
+    args: remaining,
   })
 }
 

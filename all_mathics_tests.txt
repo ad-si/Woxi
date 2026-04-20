@@ -1805,14 +1805,6 @@ INPUT: Equivalent[a, b, c]
 EXPECTED:
 = a \\[Equivalent] b \\[Equivalent] c
 ---
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Equivalent
-LINE: 207
-TYPE: >>
-INPUT: Equivalent[a, b, True, c]
-EXPECTED:
-= a && b && c
----
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: MachineNumberQ
 LINE: 227

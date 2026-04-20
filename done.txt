@@ -8097,3 +8097,11 @@ INPUT: OutputForm[Graphics[Rectangle[]]]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/testing_expressions/logic.py
+CLASS: Equivalent
+LINE: 207
+TYPE: >>
+INPUT: Equivalent[a, b, True, c]
+EXPECTED:
+= a && b && c
+---

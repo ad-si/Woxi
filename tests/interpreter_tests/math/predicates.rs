@@ -588,6 +588,23 @@ mod equivalent_logic {
       "Equivalent[a, b, c]"
     );
   }
+
+  // A True among symbolic terms reduces the equivalence to And: every
+  // remaining term must also be True for the whole to hold.
+  #[test]
+  fn true_with_symbolic_reduces_to_and() {
+    assert_eq!(
+      interpret("Equivalent[a, b, True, c]").unwrap(),
+      "a && b && c"
+    );
+  }
+
+  // A False among symbolic terms reduces to And of the negations: each
+  // remaining term must be False.
+  #[test]
+  fn false_with_symbolic_reduces_to_not() {
+    assert_eq!(interpret("Equivalent[a, False]").unwrap(), "Not[a]");
+  }
 }
 
 mod list_equality {
