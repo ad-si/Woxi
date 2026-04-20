@@ -14510,14 +14510,6 @@ EXPECTED: "3.4`*^10"
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
 EXPRESSION: PrecisionReal, Few Digits
-FORM: StandardForm
-INPUT: MakeBoxes[3.142`3]
-EXPECTED: "3.142`3."
-MESSAGE: StandardForm with PrecisionReal shows all the stored digits, and precision.
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
-EXPRESSION: PrecisionReal, Few Digits
 FORM: OutputForm
 INPUT: MakeBoxes[OutputForm[3.142`3]]
 EXPECTED: InterpretationBox[PaneBox["\"3.14\""], OutputForm[3.14], Editable -> False]
