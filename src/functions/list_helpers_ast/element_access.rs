@@ -49,6 +49,20 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
       )),
       UnaryOperator::Not => Some(("Not".to_string(), vec![*operand.clone()])),
     },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((
+      "Rule".to_string(),
+      vec![*pattern.clone(), *replacement.clone()],
+    )),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some((
+      "RuleDelayed".to_string(),
+      vec![*pattern.clone(), *replacement.clone()],
+    )),
     _ => None,
   }
 }

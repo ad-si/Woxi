@@ -3756,6 +3756,22 @@ mod rest_nonlist {
   fn last_binary_op_power() {
     assert_eq!(interpret("Last[a^b]").unwrap(), "b");
   }
+
+  #[test]
+  fn first_rule() {
+    // First on a Rule returns the LHS (head is Rule, first arg is LHS).
+    assert_eq!(interpret("First[x -> a]").unwrap(), "x");
+  }
+
+  #[test]
+  fn last_rule() {
+    assert_eq!(interpret("Last[x -> a]").unwrap(), "a");
+  }
+
+  #[test]
+  fn first_rule_delayed() {
+    assert_eq!(interpret("First[x :> a]").unwrap(), "x");
+  }
 }
 
 mod level {

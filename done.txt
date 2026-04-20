@@ -8411,3 +8411,11 @@ INPUT: TeXForm[HoldForm[Sqrt[a^3]]]
 EXPECTED:
 = \sqrt{a^3}
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: Split
+LINE: 1269
+TYPE: >>
+INPUT: Split[{x -> a, x -> y, 2 -> a, z -> c, z -> a}, First[#1] === First[#2] &]
+EXPECTED:
+= {{x -> a, x -> y}, {2 -> a}, {z -> c, z -> a}}
+---
