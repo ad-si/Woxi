@@ -7436,3 +7436,10 @@ TYPE: >>
 INPUT: PutAppend[10!, 20!, 30!, "factorials"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Skip
+LINE: 1260
+TYPE: #>
+INPUT: Close[stream];
+EXPECTED: (none)
+---
