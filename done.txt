@@ -7636,3 +7636,12 @@ INPUT: Get[filename]
 EXPECTED:
 = x + y
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 206
+TYPE: >>
+INPUT: Read[stream1]
+EXPECTED:
+: ...
+= $Failed
+---
