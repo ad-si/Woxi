@@ -351,6 +351,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     }
     "$Assumptions" => Some(Expr::Identifier("True".to_string())),
     "$Context" => Some(Expr::String("Global`".to_string())),
+    // $Input is the name of the currently evaluating input source. In
+    // wolframscript's -code mode it's the empty string.
+    "$Input" => Some(Expr::String("".to_string())),
     "$ContextPath" => Some(Expr::List(vec![
       Expr::String("System`".to_string()),
       Expr::String("Global`".to_string()),

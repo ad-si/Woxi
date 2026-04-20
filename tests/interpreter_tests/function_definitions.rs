@@ -493,6 +493,17 @@ mod context {
   }
 
   #[test]
+  fn dollar_input_is_empty_string() {
+    // Matches wolframscript's -code mode: $Input is the empty string.
+    assert_eq!(interpret("$Input").unwrap(), "");
+  }
+
+  #[test]
+  fn dollar_input_head_is_string() {
+    assert_eq!(interpret("Head[$Input]").unwrap(), "String");
+  }
+
+  #[test]
   fn contexts_no_args_returns_system_and_global() {
     assert_eq!(interpret("Contexts[]").unwrap(), "{System`, Global`}");
   }

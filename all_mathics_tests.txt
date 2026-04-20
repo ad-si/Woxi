@@ -550,14 +550,6 @@ EXPECTED:
 = {14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Input_
-LINE: 64
-TYPE: >>
-INPUT: $Input
-EXPECTED:
-= #<--#
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: OpenRead
 LINE: 462
 TYPE: >>
