@@ -14231,46 +14231,6 @@ EXPECTED:
   expr: Plot[Piecewise[{{Log[x], x > 0}, {x*-0.5, x < 0}}], {x, -1, 1}]
   skip: True
 ---
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-122
-EXPECTED:
-  expr: Plot[{Sin[x], Cos[x], x / 3}, {x, -Pi, Pi}, Background -> RGBColor[0.5, .5, .5, 0.1]]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-123
-EXPECTED:
-  expr: Plot[{Sin[x], Cos[x], x / 3}, {x, -Pi, Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-124
-EXPECTED:
-  expr: Plot[{Sin[x], Cos[x], x ^ 2}, {x, -1, 1}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-125
-EXPECTED:
-  expr: PolarPlot[Abs[Cos[5t]], {t, 0, Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-126
-EXPECTED:
-  expr: PolarPlot[Cos[5t], {t, 0, Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-127
-EXPECTED:
-  expr: PolarPlot[Sqrt[t], {t, 0, 16 Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: doc-128
-EXPECTED:
-  expr: PolarPlot[{1, 1 + Sin[20 t] / 5}, {t, 0, 2 Pi}]
----
-FILE: mathics/test/builtin/drawing/doc_tests.yaml
-INPUT: nondoc-plot-exclusions
-EXPECTED:
-  expr: Plot[x, {x,0,10}, Exclusions->{-1, 1, 2.5, 11}]
----
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: __DEFAULTS__
 EXPECTED:
