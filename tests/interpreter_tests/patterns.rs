@@ -1338,3 +1338,49 @@ mod patterns_ordered_q {
     );
   }
 }
+
+mod chained_condition_in_set_delayed {
+  use super::*;
+
+  #[test]
+  fn chained_condition_both_true_matches() {
+    // f[x_] /; a /; b := rhs — both conditions must hold.
+    assert_eq!(
+      interpret("F[x_, y_] /; x < y /; x > 0 := x / y; F[2, 3]").unwrap(),
+      "2/3"
+    );
+  }
+
+  #[test]
+  fn chained_condition_first_fails_no_match() {
+    // x > y fails the first condition.
+    let result =
+      interpret("F[x_, y_] /; x < y /; x > 0 := x / y; F[5, 2]").unwrap();
+    assert!(result.contains("F[5, 2]"));
+  }
+
+  #[test]
+  fn chained_condition_second_fails_no_match() {
+    // x > 0 fails the second condition.
+    let result =
+      interpret("F[x_, y_] /; x < y /; x > 0 := x / y; F[-1, 3]").unwrap();
+    assert!(result.contains("F[-1, 3]"));
+  }
+
+  #[test]
+  fn three_chained_conditions() {
+    // Triple Condition should AND all three.
+    assert_eq!(
+      interpret(
+        "G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3]"
+      )
+      .unwrap(),
+      "9"
+    );
+    let r = interpret(
+      "G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3.5]",
+    )
+    .unwrap();
+    assert!(r.contains("G[3.5]"));
+  }
+}

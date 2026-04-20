@@ -797,38 +797,52 @@ pub fn set_delayed_ast(
   lhs: &Expr,
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Unwrap Condition on LHS: f[x_] /; test := body is parsed as
-  // SetDelayed[Condition[f[x_], test], body]. Extract the pattern and condition.
-  let (lhs, lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
-    && name == "Condition"
-    && args.len() == 2
-  {
-    (&args[0], Some(&args[1]))
-  } else {
-    (lhs, None)
-  };
+  // Unwrap nested Conditions on LHS:
+  //   f[x_] /; a /; b := body → SetDelayed[Condition[Condition[f[x_], a], b], body]
+  // Collect each condition and keep unwrapping until the LHS is no longer a Condition.
+  let mut lhs_stripped = lhs;
+  let mut lhs_conditions: Vec<Expr> = Vec::new();
+  while let Expr::FunctionCall { name, args } = lhs_stripped {
+    if name == "Condition" && args.len() == 2 {
+      lhs_conditions.push(args[1].clone());
+      lhs_stripped = &args[0];
+    } else {
+      break;
+    }
+  }
+  // The conditions appear in reverse order (outermost first), so reverse to
+  // get the left-to-right source order.
+  lhs_conditions.reverse();
+  let lhs = lhs_stripped;
 
-  // Unwrap Condition on RHS: f[x_] := body /; test is parsed as
-  // SetDelayed[f[x_], Condition[body, test]]. Extract the body and condition.
-  let (body, rhs_condition) = if let Expr::FunctionCall { name, args } = body
-    && name == "Condition"
-    && args.len() == 2
-  {
-    (&args[0], Some(&args[1]))
-  } else {
-    (body, None)
-  };
+  // Unwrap nested Conditions on RHS:
+  //   f[x_] := body /; a /; b → SetDelayed[f[x_], Condition[Condition[body, a], b]]
+  let mut body_stripped = body;
+  let mut rhs_conditions: Vec<Expr> = Vec::new();
+  while let Expr::FunctionCall { name, args } = body_stripped {
+    if name == "Condition" && args.len() == 2 {
+      rhs_conditions.push(args[1].clone());
+      body_stripped = &args[0];
+    } else {
+      break;
+    }
+  }
+  rhs_conditions.reverse();
+  let body = body_stripped;
 
-  // Combine LHS and RHS conditions
-  let body_condition = match (lhs_condition, rhs_condition) {
-    (Some(l), Some(r)) => Some(Expr::FunctionCall {
+  // Combine all conditions into a single And[..] expression.
+  let mut all_conditions: Vec<Expr> = Vec::new();
+  all_conditions.extend(lhs_conditions);
+  all_conditions.extend(rhs_conditions);
+  let combined = match all_conditions.len() {
+    0 => None,
+    1 => Some(all_conditions.into_iter().next().unwrap()),
+    _ => Some(Expr::FunctionCall {
       name: "And".to_string(),
-      args: vec![l.clone(), r.clone()],
+      args: all_conditions,
     }),
-    (Some(c), None) | (None, Some(c)) => Some(c.clone()),
-    (None, None) => None,
   };
-  let body_condition = body_condition.as_ref();
+  let body_condition = combined.as_ref();
 
   // Handle Attributes[f] := value — set attributes on symbol f
   if let Expr::FunctionCall {

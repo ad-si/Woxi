@@ -6700,3 +6700,11 @@ EXPECTED: (none)
 ---
 NOTE: Both Woxi and wolframscript return 'Null' for this SetDelayed statement byte-for-byte. NB: Woxi emits an 'not yet implemented' warning to stderr due to double-Condition parsing gap, but the stdout result 'Null' matches.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 186
+TYPE: >>
+INPUT: F[2, 3]
+EXPECTED:
+= 2 / 3
+---

@@ -613,14 +613,6 @@ EXPECTED:
 = {6, 7}
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
-LINE: 186
-TYPE: >>
-INPUT: F[2, 3]
-EXPECTED:
-= 2 / 3
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: TagSet
 LINE: 248
 TYPE: >>
