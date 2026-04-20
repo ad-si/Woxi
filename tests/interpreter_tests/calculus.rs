@@ -702,6 +702,30 @@ mod derivative_prime_notation {
     // Derivative of undefined function stays symbolic
     assert_eq!(interpret("Derivative[1][g]").unwrap(), "Derivative[1][g]");
   }
+
+  // Derivative[0, 0, ..., 0][f][x, ...] is the identity — applying it to an
+  // expression returns the expression unchanged.
+  #[test]
+  fn derivative_all_zero_is_identity() {
+    assert_eq!(
+      interpret("Derivative[0,0,0][a+b+c]").unwrap(),
+      "a + b + c"
+    );
+  }
+
+  #[test]
+  fn derivative_zero_on_symbol_returns_symbol() {
+    assert_eq!(interpret("Derivative[0, 0][f]").unwrap(), "f");
+  }
+
+  // A non-zero component is still preserved — only all-zero vectors collapse.
+  #[test]
+  fn derivative_with_nonzero_stays_symbolic() {
+    assert_eq!(
+      interpret("Derivative[1, 0][f]").unwrap(),
+      "Derivative[1, 0][f]"
+    );
+  }
 }
 
 mod series {

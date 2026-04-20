@@ -1573,10 +1573,7 @@ mod factorial {
   // Not[Factorial[a]] rather than Factorial[Not[a]].
   #[test]
   fn not_binds_looser_than_factorial() {
-    assert_eq!(
-      interpret("!a! // FullForm").unwrap(),
-      "Not[Factorial[a]]"
-    );
+    assert_eq!(interpret("!a! // FullForm").unwrap(), "Not[Factorial[a]]");
   }
 }
 

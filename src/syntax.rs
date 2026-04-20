@@ -2696,10 +2696,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut pending_not_on_last = false;
   // Apply a pending Not to the top of `terms` and clear the flag. Used at
   // every boundary that ends a term block.
-  fn flush_pending_not(
-    pending: &mut bool,
-    terms: &mut Vec<Expr>,
-  ) {
+  fn flush_pending_not(pending: &mut bool, terms: &mut Vec<Expr>) {
     if *pending {
       if let Some(last) = terms.pop() {
         terms.push(Expr::FunctionCall {

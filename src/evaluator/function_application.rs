@@ -597,6 +597,19 @@ pub fn apply_curried_call(
         && func_args.len() > 1
         && func_args.iter().all(|a| matches!(a, Expr::Integer(_)))
       {
+        // If every derivative order is 0, the derivative is the identity:
+        // Derivative[0, 0, ..., 0][f] simplifies to f (or f applied to args,
+        // if this is Derivative[0, ...][f][x, y, ...]).
+        if func_args.iter().all(|a| matches!(a, Expr::Integer(0))) {
+          if args.is_empty() {
+            return Ok(args.first().cloned().unwrap_or_else(|| func.clone()));
+          }
+          if args.len() == 1 {
+            return Ok(args[0].clone());
+          }
+          // Multi-arg: apply the body to the args.
+          return evaluate_function_call_ast("CompoundExpression", args);
+        }
         // Multi-index derivative: Derivative[n1, n2, ...][f] — keep as
         // CurriedCall since the flattened form is ambiguous with
         // Derivative[n, f, x] (nth derivative of f at x).

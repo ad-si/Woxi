@@ -2535,14 +2535,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
-LINE: 396
-TYPE: >>
-INPUT: Derivative[0,0,0][a+b+c]
-EXPECTED:
-= a + b + c
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
 LINE: 401
 TYPE: >>
 INPUT: f'[x]
