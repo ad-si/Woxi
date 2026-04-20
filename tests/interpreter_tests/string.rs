@@ -2284,6 +2284,27 @@ mod tex_form {
   }
 
   #[test]
+  fn definite_integrate_single_char_bound() {
+    // Single-character bounds render without braces (\int_a^b) — matches
+    // wolframscript's TeX convention.
+    assert_eq!(
+      interpret("ToString[Integrate[F[x], {x, a, g[b]}], TeXForm]").unwrap(),
+      "\\int_a^{g(b)} F(x) \\, dx"
+    );
+  }
+
+  #[test]
+  fn definite_integrate_multi_char_bound() {
+    // Multi-character bounds still use braces to disambiguate the
+    // sub-/super-script scope. Multi-letter identifiers also pick up
+    // \text{...} for safety against implicit-product confusion.
+    assert_eq!(
+      interpret("ToString[Integrate[F[x], {x, a1, b2}], TeXForm]").unwrap(),
+      "\\int_{\\text{a1}}^{\\text{b2}} F(x) \\, dx"
+    );
+  }
+
+  #[test]
   fn multi_letter_function_uses_text() {
     // Multi-letter user functions still use \text{} to avoid ambiguity with products.
     assert_eq!(

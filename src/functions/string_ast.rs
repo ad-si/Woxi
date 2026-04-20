@@ -2314,13 +2314,22 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Integrate
     "Integrate" if args.len() == 2 => {
+      // TeX convention: a single-character subscript/superscript needs no
+      // braces (e.g. `\int_a^b` vs `\int_{ab}^{...}`), matching wolframscript.
+      fn brace_if_needed(s: &str) -> String {
+        if s.chars().count() == 1 {
+          s.to_string()
+        } else {
+          format!("{{{}}}", s)
+        }
+      }
       if let Expr::List(bounds) = &args[1]
         && bounds.len() == 3
       {
         return format!(
-          "\\int_{{{}}}^{{{}}} {} \\, d{}",
-          expr_to_tex(&bounds[1]),
-          expr_to_tex(&bounds[2]),
+          "\\int_{}^{} {} \\, d{}",
+          brace_if_needed(&expr_to_tex(&bounds[1])),
+          brace_if_needed(&expr_to_tex(&bounds[2])),
           expr_to_tex(&args[0]),
           expr_to_tex(&bounds[0])
         );

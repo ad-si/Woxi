@@ -7008,8 +7008,10 @@ mod make_boxes_graphics_primitives {
   #[test]
   fn circle_and_line_become_boxes() {
     assert_eq!(
-      interpret("MakeBoxes[Graphics[{Circle[{0, 0}, 2], Line[{{0, 0}, {1, 1}}]}]]")
-        .unwrap(),
+      interpret(
+        "MakeBoxes[Graphics[{Circle[{0, 0}, 2], Line[{{0, 0}, {1, 1}}]}]]"
+      )
+      .unwrap(),
       "GraphicsBox[{CircleBox[{0, 0}, 2], LineBox[{{0, 0}, {1, 1}}]}]"
     );
   }
