@@ -8218,3 +8218,11 @@ INPUT: StringForm["`1` and `2`", n, m]
 EXPECTED:
 = n and m
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: ComplexInfinity
+LINE: 275
+TYPE: >>
+INPUT: FullForm[ComplexInfinity]
+EXPECTED:
+= DirectedInfinity[]
+---

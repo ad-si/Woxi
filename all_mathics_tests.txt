@@ -2948,14 +2948,6 @@ EXPECTED:
 ---
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: ComplexInfinity
-LINE: 275
-TYPE: >>
-INPUT: FullForm[ComplexInfinity]
-EXPECTED:
-= DirectedInfinity[]
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: E
 LINE: 367
 TYPE: >>

@@ -61,6 +61,20 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       ExprForm::Atom(crate::syntax::format_bigfloat(digits, *prec))
     }
     Expr::String(s) => ExprForm::Atom(format!("\"{}\"", s)),
+    // FullForm shows the internal DirectedInfinity[] representation for
+    // the symbolic infinity constants, matching Wolfram.
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      ExprForm::Composite {
+        head: "DirectedInfinity".to_string(),
+        children: vec![],
+      }
+    }
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+      ExprForm::Composite {
+        head: "DirectedInfinity".to_string(),
+        children: vec![Expr::Integer(1)],
+      }
+    }
     Expr::Identifier(s) => ExprForm::Atom(s.clone()),
     Expr::Constant(c) => ExprForm::Atom(c.clone()),
     Expr::Raw(s) => ExprForm::Atom(s.clone()),

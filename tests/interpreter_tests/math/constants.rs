@@ -440,6 +440,24 @@ mod directed_infinity {
   fn no_arg() {
     assert_eq!(interpret("DirectedInfinity[]").unwrap(), "ComplexInfinity");
   }
+
+  // FullForm shows the internal DirectedInfinity[] representation of the
+  // symbolic infinity constants, matching Wolfram.
+  #[test]
+  fn full_form_complex_infinity() {
+    assert_eq!(
+      interpret("FullForm[ComplexInfinity]").unwrap(),
+      "DirectedInfinity[]"
+    );
+  }
+
+  #[test]
+  fn full_form_infinity_is_directed_one() {
+    assert_eq!(
+      interpret("FullForm[Infinity]").unwrap(),
+      "DirectedInfinity[1]"
+    );
+  }
 }
 
 mod infinity_arithmetic {
