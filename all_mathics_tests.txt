@@ -10728,20 +10728,6 @@ EXPECTED: {{1, 2}, {3, 4}}
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
-LINE: 128
-INPUT: A
-EXPECTED: B
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 131
-INPUT: A
-EXPECTED: 1
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
 LINE: 152
 INPUT: N[2/9]
 EXPECTED: .2222222222222222`16
