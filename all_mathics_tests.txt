@@ -2758,14 +2758,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesData
-LINE: 1914
-TYPE: >>
-INPUT: Head[series]
-EXPECTED:
-= SeriesData
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesData
 LINE: 1917
 TYPE: >>
 INPUT: series // FullForm

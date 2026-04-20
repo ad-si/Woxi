@@ -941,6 +941,15 @@ mod series {
       "1 + x + x^2 + x^3 + x^4 + x^5"
     );
   }
+
+  #[test]
+  fn series_head_is_series_data() {
+    // A Series result has head SeriesData, matching wolframscript.
+    assert_eq!(
+      interpret("series = Series[Cosh[x], {x, 0, 2}]; Head[series]").unwrap(),
+      "SeriesData"
+    );
+  }
 }
 
 mod limit {
