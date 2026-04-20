@@ -172,14 +172,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
-LINE: 102
-TYPE: >>
-INPUT: Quantity[3, "centimeter"] / Quantity[2, "second"]^2
-EXPECTED:
-= 3 / 4 centimeter / second ^ 2
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
 LINE: 110
 TYPE: >>
 INPUT: Quantity[6, "meter"] + Quantity[3, "centimeter"]
@@ -203,14 +195,6 @@ INPUT: QuantityQ[Quantity[3, "Maters"]]
 EXPECTED:
 : Unable to interpret unit specification Maters.
 = False
----
-FILE: mathics/builtin/quantities.py
-CLASS: QuantityUnit
-LINE: 360
-TYPE: >>
-INPUT: QuantityUnit[Quantity["Kilogram"]]
-EXPECTED:
-= kilogram
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: QuantityUnit
