@@ -1404,4 +1404,24 @@ mod replace_at_all_levels {
       "x[x[y]]"
     );
   }
+
+  // Heads -> True also walks head symbols at each level so `x` gets replaced
+  // wherever it appears, including as a head.
+  #[test]
+  fn replace_all_with_heads_true() {
+    assert_eq!(
+      interpret("Replace[x[x[y]], x -> z, All, Heads -> True]").unwrap(),
+      "z[z[y]]"
+    );
+  }
+
+  // At exactly level 1, only the outer head (and not the deeper inner head)
+  // is a candidate for replacement — `{1}` is a single-level spec.
+  #[test]
+  fn replace_heads_true_at_level_one_only() {
+    assert_eq!(
+      interpret("Replace[x[x[y]], x -> z, {1}, Heads -> True]").unwrap(),
+      "z[x[y]]"
+    );
+  }
 }

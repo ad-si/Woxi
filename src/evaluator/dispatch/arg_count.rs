@@ -820,7 +820,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ReIm" => Some((1, 1)),
     "ReleaseHold" => Some((1, 1)),
     "RemoveDiacritics" => Some((1, 1)),
-    "Replace" => Some((2, 3)),
+    "Replace" => Some((2, 4)),
     "ReplaceAll" => Some((2, 2)),
     "ReplacePart" => Some((2, 2)),
     "ReplaceRepeated" => Some((2, 2)),

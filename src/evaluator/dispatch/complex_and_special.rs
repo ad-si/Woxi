@@ -991,9 +991,20 @@ pub fn dispatch_complex_and_special(
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }
-    "Replace" if args.len() == 3 => {
+    "Replace" if args.len() == 3 || args.len() == 4 => {
+      // Replace[expr, rules, levelspec] or
+      // Replace[expr, rules, levelspec, Heads -> True]
+      let heads_on = args
+        .get(3)
+        .map(|opt| {
+          matches!(opt,
+            Expr::Rule { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")
+                 && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
+        })
+        .unwrap_or(false);
       return Some(
-        apply_replace_with_level_ast(&args[0], &args[1], &args[2])
+        apply_replace_with_level_ast(&args[0], &args[1], &args[2], heads_on)
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }

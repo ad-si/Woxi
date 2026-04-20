@@ -586,6 +586,7 @@ pub fn apply_replace_with_level_ast(
   expr: &Expr,
   rules: &Expr,
   level_spec: &Expr,
+  heads_on: bool,
 ) -> Result<Expr, InterpreterError> {
   // Parse level spec: n = {0, n}, {n} = exactly level n, {min, max} = range.
   // Negative endpoints are interpreted relative to the depth of the subtree.
@@ -641,7 +642,7 @@ pub fn apply_replace_with_level_ast(
   };
 
   let (result, _depth) =
-    replace_at_depth(expr, rules, 0, min_level, max_level)?;
+    replace_at_depth(expr, rules, 0, min_level, max_level, heads_on)?;
   Ok(result)
 }
 
@@ -655,6 +656,7 @@ fn replace_at_depth(
   pos_level: i64,
   min_level: i64,
   max_level: i64,
+  heads_on: bool,
 ) -> Result<(Expr, i64), InterpreterError> {
   // First recurse into children, tracking the maximum child Depth so we can
   // compute Depth[expr] for negative-level matching.
@@ -663,25 +665,60 @@ fn replace_at_depth(
       let mut mapped = Vec::with_capacity(items.len());
       let mut max_depth: i64 = 0;
       for item in items {
-        let (e, d) =
-          replace_at_depth(item, rules, pos_level + 1, min_level, max_level)?;
+        let (e, d) = replace_at_depth(
+          item,
+          rules,
+          pos_level + 1,
+          min_level,
+          max_level,
+          heads_on,
+        )?;
         max_depth = max_depth.max(d);
         mapped.push(e);
       }
       (Expr::List(mapped), max_depth)
     }
     Expr::FunctionCall { name, args } => {
+      // With Heads -> True, also apply replace to the head symbol. The head
+      // of a function call lives at the same position level as the args
+      // (pos_level + 1 relative to the enclosing expression).
+      let head_level = pos_level + 1;
+      let new_name = if heads_on {
+        let head_expr = Expr::Identifier(name.clone());
+        let head_in_range = if min_level >= 0 {
+          head_level >= min_level
+        } else {
+          head_level >= min_level
+        };
+        if head_in_range && head_level <= max_level {
+          let replaced = apply_replace_ast(&head_expr, rules)?;
+          match &replaced {
+            Expr::Identifier(s) | Expr::Constant(s) => s.clone(),
+            _ => name.clone(),
+          }
+        } else {
+          name.clone()
+        }
+      } else {
+        name.clone()
+      };
       let mut mapped = Vec::with_capacity(args.len());
       let mut max_depth: i64 = 0;
       for item in args {
-        let (e, d) =
-          replace_at_depth(item, rules, pos_level + 1, min_level, max_level)?;
+        let (e, d) = replace_at_depth(
+          item,
+          rules,
+          pos_level + 1,
+          min_level,
+          max_level,
+          heads_on,
+        )?;
         max_depth = max_depth.max(d);
         mapped.push(e);
       }
       (
         Expr::FunctionCall {
-          name: name.clone(),
+          name: new_name,
           args: mapped,
         },
         max_depth,
