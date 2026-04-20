@@ -6033,3 +6033,10 @@ EXPECTED:
 = baz
 NOTE: two-arg OptionValue implemented — emits optnf warning and returns the name; matches wolframscript.
 ---
+FILE: mathics/builtin/options.py
+CLASS: OptionValue
+LINE: 432
+TYPE: #>
+INPUT: Clear[MySetting]
+EXPECTED: (none)
+---

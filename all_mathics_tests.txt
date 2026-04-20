@@ -67,13 +67,6 @@ EXPECTED:
 = {5}
 ---
 FILE: mathics/builtin/options.py
-CLASS: OptionValue
-LINE: 432
-TYPE: #>
-INPUT: Clear[MySetting]
-EXPECTED: (none)
----
-FILE: mathics/builtin/options.py
 CLASS: SetOptions
 LINE: 551
 TYPE: >>
