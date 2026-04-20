@@ -8767,3 +8767,11 @@ INPUT: StringForm["`2` bla `1` blub `` bla `3`", a, b, c]
 EXPECTED:
 = b bla a blub b bla c
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 683
+TYPE: >>
+INPUT: StringForm["`` is Global\`a", a]
+EXPECTED:
+= a is Global`a
+---

@@ -2213,8 +2213,19 @@ mod string_form {
     // `` picks up from the most recently used numbered slot + 1, not from
     // its own independent counter. `1` was the most recent; so `` -> arg 2.
     assert_eq!(
-      interpret("StringForm[\"`2` bla `1` blub `` bla `3`\", a, b, c]").unwrap(),
+      interpret("StringForm[\"`2` bla `1` blub `` bla `3`\", a, b, c]")
+        .unwrap(),
       "b bla a blub b bla c"
+    );
+  }
+
+  #[test]
+  fn escaped_backquote_kept_literal() {
+    // \` inside the template is a literal backslash + backtick sequence;
+    // Woxi/wolframscript keep both bytes verbatim in the output.
+    assert_eq!(
+      interpret(r#"StringForm["`` is Global\`a", a]"#).unwrap(),
+      "a is Global\\`a"
     );
   }
 }
