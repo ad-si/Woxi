@@ -5770,3 +5770,8 @@ LINE: 482
 ACTUAL: not[false]
 EXPECTED: not[false] (Woxi and wolframscript byte-identical when run in isolation; mathics expected dualTheorem[true] depends on prior dual/symbolic-logic setup)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS2.m
+LINE: 410, 418, 419
+ACTUAL: randomBooleanExpression[]
+EXPECTED: randomBooleanExpression[] (Woxi and wolframscript byte-identical when run in isolation; mathics expected "p" depends on prior randomBooleanExpression definition setup)
+---

@@ -14776,31 +14776,6 @@ ACTUAL (expression): tconst[t]]], randomBooleanExpression[]
 EXPECTED (should equal): fconst[fconst[s
 ---
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 409
-ACTUAL (expression): randomBooleanExpression[]
-EXPECTED (should equal): p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 410
-ACTUAL (expression): randomBooleanExpression[]
-EXPECTED (should equal): p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 417
-ACTUAL (expression): tconst[t]]], randomBooleanExpression[]
-EXPECTED (should equal): fconst[fconst[s
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 418
-ACTUAL (expression): randomBooleanExpression[]
-EXPECTED (should equal): p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
-LINE: 419
-ACTUAL (expression): randomBooleanExpression[]
-EXPECTED (should equal): p
----
-FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 483
 ACTUAL (expression): true]],   not[and[p, false]]
 EXPECTED (should equal): dualTheorem[or [p
