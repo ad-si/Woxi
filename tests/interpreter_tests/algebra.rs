@@ -1953,6 +1953,17 @@ mod full_simplify {
       "(a + b)^2 + 2*(a + b)*x + (1 + (c + d)^2)*x^2"
     );
   }
+
+  #[test]
+  fn simplify_conditional_expression_passthrough() {
+    // Simplify[ConditionalExpression[1, a > 0]] leaves the conditional
+    // intact — matches wolframscript. (Mathics returns Undefined, a
+    // different design choice.)
+    assert_eq!(
+      interpret("Simplify[ConditionalExpression[1, a > 0]]").unwrap(),
+      "ConditionalExpression[1, a > 0]"
+    );
+  }
 }
 
 mod simplify_assumptions {

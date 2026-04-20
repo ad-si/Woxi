@@ -8505,3 +8505,11 @@ LINE: 186
 INPUT: 2 + 3 I
 EXPECTED: Infinity
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Simplify
+LINE: 1555
+TYPE: >>
+INPUT: Simplify[ConditionalExpression[1, a > 0]]
+EXPECTED:
+= Undefined
+---

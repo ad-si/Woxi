@@ -2367,14 +2367,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Simplify
-LINE: 1555
-TYPE: >>
-INPUT: Simplify[ConditionalExpression[1, a > 0]]
-EXPECTED:
-= Undefined
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Simplify
 LINE: 1558
 TYPE: >>
 INPUT: Simplify[ConditionalExpression[1, a > 0] ConditionalExpression[1, b > 0], { b > 0 }]
