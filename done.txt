@@ -7473,3 +7473,10 @@ TYPE: S>
 INPUT: DeleteFile[filename]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 544
+TYPE: S>
+INPUT: Put[40!, filename]
+EXPECTED: (none)
+---
