@@ -6356,3 +6356,58 @@ EXPECTED:
 = -Graphics3D-
 NOTE: TraceBuiltins is mathics-specific; both Woxi and wolframscript return 'TraceBuiltins[-Graphics3D-]' unevaluated byte-for-byte.
 ---
+FILE: mathics/builtin/trace.py
+CLASS: TraceEvaluation
+LINE: 401
+TYPE: >>
+INPUT: TraceEvaluation[(x + x)^2]
+EXPECTED:
+| ...
+= ...
+---
+NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript evaluate the inner expression and leave TraceEvaluation unevaluated. Byte-for-byte match.
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceEvaluation
+LINE: 405
+TYPE: >>
+INPUT: TraceEvaluation[(x + x)^2, ShowTimeBySteps->True]
+EXPECTED:
+| ...
+= ...
+---
+NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript return 'TraceEvaluation[4*x^2, ShowTimeBySteps -> True]' unevaluated byte-for-byte.
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceEvaluation
+LINE: 410
+TYPE: >>
+INPUT: TraceEvaluation[BesselK[0, 0]]
+EXPECTED:
+| ...
+= ...
+---
+NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript return 'TraceEvaluation[Infinity]' byte-for-byte (BesselK[0,0] evaluates to Infinity in both).
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceEvaluation
+LINE: 418
+TYPE: >>
+INPUT: TraceEvaluation[BesselK[0, 0], ShowRewrite-> False]
+EXPECTED:
+| ...
+= ...
+---
+NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript return 'TraceEvaluation[Infinity, ShowRewrite -> False]' byte-for-byte.
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceEvaluation
+LINE: 423
+TYPE: >>
+INPUT: TraceEvaluation[BesselK[0, 0], ShowEvaluation-> False]
+EXPECTED:
+| ...
+= ...
+---
+NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript return 'TraceEvaluation[Infinity, ShowEvaluation -> False]' byte-for-byte.
+---

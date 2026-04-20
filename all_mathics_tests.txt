@@ -383,51 +383,6 @@ EXPECTED:
 . 
 . 3   6
 ---
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluation
-LINE: 401
-TYPE: >>
-INPUT: TraceEvaluation[(x + x)^2]
-EXPECTED:
-| ...
-= ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluation
-LINE: 405
-TYPE: >>
-INPUT: TraceEvaluation[(x + x)^2, ShowTimeBySteps->True]
-EXPECTED:
-| ...
-= ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluation
-LINE: 410
-TYPE: >>
-INPUT: TraceEvaluation[BesselK[0, 0]]
-EXPECTED:
-| ...
-= ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluation
-LINE: 418
-TYPE: >>
-INPUT: TraceEvaluation[BesselK[0, 0], ShowRewrite-> False]
-EXPECTED:
-| ...
-= ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluation
-LINE: 423
-TYPE: >>
-INPUT: TraceEvaluation[BesselK[0, 0], ShowEvaluation-> False]
-EXPECTED:
-| ...
-= ...
----
 FILE: mathics/builtin/exp_structure/general.py
 CLASS: Null
 LINE: 216
