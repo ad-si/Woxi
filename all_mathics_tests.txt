@@ -7628,14 +7628,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 871
-TYPE: >>
-INPUT: StringForm["`1` and `2`", n, m]
-EXPECTED:
-= n and m
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 888
 TYPE: >>
 INPUT: Grid[{{a, b}, {c, d}}]

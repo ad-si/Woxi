@@ -8210,3 +8210,11 @@ INPUT: OutputForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
 EXPECTED:
 = Integral of f: Integrate[F[x], x]
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 871
+TYPE: >>
+INPUT: StringForm["`1` and `2`", n, m]
+EXPECTED:
+= n and m
+---
