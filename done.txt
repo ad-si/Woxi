@@ -8025,3 +8025,11 @@ INPUT: Replace[x[x[y]], x -> z, All, Heads -> True]
 EXPECTED:
 = z[z[y]]
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: Replace
+LINE: 218
+TYPE: >>
+INPUT: Replace[x[x[y]], x -> z, {1}, Heads -> True]
+EXPECTED:
+= z[x[y]]
+---
