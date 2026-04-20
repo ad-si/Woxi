@@ -7810,3 +7810,11 @@ INPUT: DiscretePlot[PrimePi[k], {k, 1, 100}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/drawing/plot_listplot.py
+CLASS: DiscretePlot
+LINE: 404
+TYPE: >>
+INPUT: DiscretePlot[{Sin[Pi x/20], Cos[Pi x/20]}, {x, 0, 40}]
+EXPECTED:
+= -Graphics-
+---
