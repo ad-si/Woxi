@@ -1182,6 +1182,18 @@ mod limit {
       "1/2"
     );
   }
+
+  #[test]
+  fn discrete_limit_symbolic_stays_unevaluated() {
+    // DiscreteLimit on a symbolic `f[n]` has no obvious closed form, so both
+    // Woxi and wolframscript leave it unevaluated (mathics returns
+    // f[Infinity] — a mathics-specific simplification we deliberately do
+    // NOT apply).
+    assert_eq!(
+      interpret("DiscreteLimit[f[n], n -> Infinity]").unwrap(),
+      "DiscreteLimit[f[n], n -> Infinity]"
+    );
+  }
 }
 
 mod nintegrate {

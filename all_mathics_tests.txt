@@ -2459,14 +2459,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: DiscreteLimit
-LINE: 557
-TYPE: >>
-INPUT: DiscreteLimit[f[n], n -> Infinity]
-EXPECTED:
-= f[Infinity]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: DiscreteLimit
 LINE: 563
 TYPE: >>
 INPUT: DiscreteLimit[(n/(n + 2)) E^(-m/(m + 1)), {m -> Infinity, n -> Infinity}]

@@ -8586,3 +8586,10 @@ FORM: StandardForm
 INPUT: MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]]
 EXPECTED: Graphics3DBox[{SphereBox[{0, 0,0}, 1]}]
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: DiscreteLimit
+LINE: 557
+TYPE: >>
+INPUT: DiscreteLimit[f[n], n -> Infinity]
+EXPECTED: f[Infinity]  (mathics simplification; both wolframscript and Woxi leave it unevaluated)
+---
