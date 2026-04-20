@@ -523,14 +523,6 @@ INPUT: Clear[Sin]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/clear.py
-CLASS: Clear
-LINE: 72
-TYPE: >>
-INPUT: Attributes[r]
-EXPECTED:
-= {Flat, Orderless}
----
-FILE: mathics/builtin/assignments/clear.py
 CLASS: ClearAll
 LINE: 157
 TYPE: >>

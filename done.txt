@@ -7007,3 +7007,13 @@ INPUT: A[[;;, 2]] = {6, 7}
 EXPECTED:
 = {6, 7}
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 72
+TYPE: >>
+INPUT: Attributes[r]
+EXPECTED:
+= {Flat, Orderless}
+---
+NOTE: 'Attributes[r]' with unset r returns '{}' byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED '{Flat, Orderless}' requires prior 'SetAttributes[r, {Flat, Orderless}]' context.
+---
