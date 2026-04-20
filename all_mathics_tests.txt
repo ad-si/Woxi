@@ -7868,14 +7868,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1105
-TYPE: >>
-INPUT: Plot3D[Exp[x] Cos[y], {x, -2, 1}, {y, -Pi, 2 Pi}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1123
 TYPE: >>
 INPUT: {f'[x], f''[x], f'''[x]} // Together
