@@ -8717,3 +8717,27 @@ EXPECTED:
 : String or list of strings expected at position 1 in ToCharacterCode[{ab, x}].
 = ToCharacterCode[{ab, x}]
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: None
+LINE: 34
+TYPE: >>
+INPUT: a + F[x ^ 2] /. rule
+EXPECTED:
+= a + g[x ^ 2]
+---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: None
+LINE: 40
+TYPE: >>
+INPUT: a + F[F[x ^ 2]] /. rule
+EXPECTED:
+= a + g[F[x ^ 2]]
+---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: None
+LINE: 51
+TYPE: >>
+INPUT: a + F[F[x ^ 2]] //. rule
+EXPECTED:
+= a + g[g[x ^ 2]]
+---

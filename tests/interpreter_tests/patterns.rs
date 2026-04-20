@@ -1003,6 +1003,33 @@ mod replace_all_top_level {
       "1/Sqrt[2]"
     );
   }
+
+  // Stored-rule replacement inside Plus: ReplaceAll (one pass) replaces
+  // only the outer occurrence of F[...]; ReplaceRepeated keeps going until
+  // no more rewrites apply. Matches wolframscript.
+  #[test]
+  fn stored_rule_single_pass_inside_plus() {
+    assert_eq!(
+      interpret("rule = F[x_] -> g[x]; a + F[x ^ 2] /. rule").unwrap(),
+      "a + g[x^2]"
+    );
+  }
+
+  #[test]
+  fn stored_rule_single_pass_on_nested_head() {
+    assert_eq!(
+      interpret("rule = F[x_] -> g[x]; a + F[F[x ^ 2]] /. rule").unwrap(),
+      "a + g[F[x^2]]"
+    );
+  }
+
+  #[test]
+  fn stored_rule_replace_repeated_on_nested_head() {
+    assert_eq!(
+      interpret("rule = F[x_] -> g[x]; a + F[F[x ^ 2]] //. rule").unwrap(),
+      "a + g[g[x^2]]"
+    );
+  }
 }
 
 mod replace_with_levels {
