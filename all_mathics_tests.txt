@@ -259,14 +259,6 @@ TYPE: X>
 INPUT: $ContextPath // InputForm
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/sparse.py
-CLASS: SparseArray
-LINE: 44
-TYPE: >>
-INPUT: M=SparseArray[{{0, a}, {b, 0}}]
-EXPECTED:
-= SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]
----
 FILE: mathics/builtin/system.py
 CLASS: Language
 LINE: 281

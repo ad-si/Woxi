@@ -6134,3 +6134,13 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript emit the full internal SparseArray form ('SparseArray[Automatic, {2,2}, 0, {1, {{0,1,2}, {{2},{1}}}, {1,1}}]'). Mathics EXPECTED shows the high-level rules form.
 ---
+FILE: mathics/builtin/sparse.py
+CLASS: SparseArray
+LINE: 44
+TYPE: >>
+INPUT: M=SparseArray[{{0, a}, {b, 0}}]
+EXPECTED:
+= SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]
+---
+NOTE: both Woxi and wolframscript emit the internal form 'SparseArray[Automatic, {2,2}, 0, {1, {{0,1,2}, {{2},{1}}}, {a,b}}]'. Mathics EXPECTED shows the high-level rules form.
+---
