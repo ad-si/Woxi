@@ -7017,3 +7017,13 @@ EXPECTED:
 ---
 NOTE: 'Attributes[r]' with unset r returns '{}' byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED '{Flat, Orderless}' requires prior 'SetAttributes[r, {Flat, Orderless}]' context.
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 60
+TYPE: >>
+INPUT: Clear[Sin]
+EXPECTED:
+: Symbol Sin is Protected.
+---
+NOTE: 'Clear[Sin]' returns 'Null' byte-for-byte stdout in both Woxi and wolframscript. Wolfram also emits 'Clear::wrsym: Symbol Sin is Protected' warning; Woxi doesn't yet emit that specific warning but stdout matches.
+---
