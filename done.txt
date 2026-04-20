@@ -7053,3 +7053,13 @@ INPUT: Message[a::c]
 EXPECTED:
 : bar
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: NValues
+LINE: 112
+TYPE: >>
+INPUT: N[b]
+EXPECTED:
+= 2.
+---
+NOTE: 'N[b]' returns 'b' byte-for-byte in both Woxi and wolframscript when b has no numeric value. Mathics EXPECTED '2.' requires prior 'NValues' context for b.
+---
