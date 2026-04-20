@@ -5888,3 +5888,129 @@ LINE: 44, 45, 59, 60
 INPUT: 1+x / 1+2*x (across 4 separate test_patterns parametrized entries)
 EXPECTED: 1 + x / 1 + 2*x (Woxi and wolframscript byte-identical for the input expressions; mathics tests check pattern-matching against rule patterns like a_.+b_.*x_)
 ---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: str_expr
+EXPECTED: str_pattern
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1
+EXPECTED: a_.+b_.*x_
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x
+EXPECTED: a_.+b_.*x_
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 2*x
+EXPECTED: a_.+b_.*x_
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1+x
+EXPECTED: a_.+b_.*x_
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1+2*x
+EXPECTED: a_.+b_.*x_
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1
+EXPECTED: x_^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x
+EXPECTED: x_^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x^1
+EXPECTED: x_^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x^2
+EXPECTED: x_^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1
+EXPECTED: x_.^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x
+EXPECTED: x_.^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x^1
+EXPECTED: x_.^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x^2
+EXPECTED: x_.^m_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1
+EXPECTED: a_.+b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x
+EXPECTED: a_.+b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1+x
+EXPECTED: a_.+b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1+2*x
+EXPECTED: a_.+b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 1
+EXPECTED: a_.*b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: x
+EXPECTED: a_.*b_.
+---
+FILE: mathics/test/eval/test_patterns.py
+FUNCTION: test_eval_patterns
+LINE: 37
+INPUT: 2*x
+EXPECTED: a_.*b_.
+---
