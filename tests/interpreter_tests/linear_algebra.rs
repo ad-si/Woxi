@@ -572,6 +572,18 @@ mod eigenvalues {
       "{2, -1, 1}"
     );
   }
+
+  #[test]
+  fn diagonalization_identity() {
+    // With T = Transpose[Eigenvectors[A]], Inverse[T] . A . T should equal
+    // DiagonalMatrix[Eigenvalues[A]] — the textbook diagonalization
+    // identity. Exercises Eigenvalues, Eigenvectors, Transpose, Inverse,
+    // Dot, DiagonalMatrix and their ordering consistency.
+    let expr = "A = {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}; \
+                T = Transpose[Eigenvectors[A]]; \
+                Inverse[T] . A . T == DiagonalMatrix[Eigenvalues[A]]";
+    assert_eq!(interpret(expr).unwrap(), "True");
+  }
 }
 
 mod conjugate_transpose {
