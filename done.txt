@@ -5727,3 +5727,7 @@ FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-contourplot-one-equation-two-branches, vec-complexplot-poles-zeros, vec-densityplot-plotrange, vec-densityplot-plotpoints, vec-logplot-sinx-x
 EXPECTED: -Graphics- (5 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-plot-exclusions, vec-plot-label-x, vec-plot-plotrange-z, vec-plot3d-plotrange-z, vec-plot3d-discontinuous, vec-plot3d-conditional, vec-plot3d-max, vec-plot3d-which, vec-plot3d-stack, vec-polarplot-theataxxx-8
+EXPECTED: -Graphics- (10 tests; Woxi and wolframscript byte-identical)
+---

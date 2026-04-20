@@ -14242,79 +14242,14 @@ EXPECTED:
   expr: ComplexPlot3D[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I}, PlotRange-> {0,4}]
 ---
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-densityplot-infinity
-EXPECTED:
-  expr: DensityPlot[1 / x, {x, 0, 1}, {y, 0, 1}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-densityplot-mesh-full
-EXPECTED:
-  expr: DensityPlot[1/(x^2 + y^2 + 1), {x, -1, 1}, {y, -2,2}, Mesh->Full]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-density-plot-nan
-EXPECTED:
-  expr: DensityPlot[Sqrt[x * y], {x, -1, 1}, {y, -1, 1}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-parametricplot-zeta-sideways
 EXPECTED:
   expr:  ParametricPlot[ {{Abs[Zeta[0.5 + I y]], y}}, {y,0,50}, PlotRange -> {{0, 4}, {0, 50}}, AxesLabel -> {"|zeta(x + i y)|", "y"}, ImageSize->{300,400} ]
 ---
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot-exclusions
-EXPECTED:
-  expr: Plot[x, {x,0,10}, Exclusions->{-1, 1, 2.5, 11}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot-label-x
-EXPECTED:
-  expr: Plot[x, {x,0,1}, AxesLabel -> "x"]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot-plotrange-z
-EXPECTED:
-  expr: Plot3D[(0.6*(Min[1,x^2+(-5y/4+Sqrt[Abs[x]])^2]-1))+1,{x,-1.5,1.5},{y,-1,1.8},PlotRange->{Automatic,Automatic,{0,1}}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-plotrange-z
-EXPECTED:
-  expr: Plot3D[x y, {x, -2, 2}, {y, -1, 1}, PlotRange -> {-1, 1}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-plot3d-two-labels-ratios-viewpoint
 EXPECTED:
   expr:  Plot3D[ {Abs[Exp[Exp[x + I y]]-1], 0}, {x, -3, 3}, {y, -9, 9}, PlotRange -> {-0.5, 1.5}, AxesLabel -> {"x", "y"}, BoxRatios->{1,1,0.75}, ViewPoint->{-0.5, -10, 3} ]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-discontinuous
-EXPECTED:
-  expr: Plot3D[FractionalPart[x y], {x,-2,2}, {y,-2,2}, Axes->False, Boxed->False]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-conditional
-EXPECTED:
-  expr: Plot3D[If[Floor[x^2+y^2]==2, 1, 0], {x,-2,2}, {y,-2,2}, Axes->False, Boxed->False]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-max
-EXPECTED:
-  expr: Plot3D[Max[x,y], {x,-2,2}, {y,-2,2}, Axes->False, Boxed->False]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-which
-EXPECTED:
-  expr: Plot3D[Which[Floor[x^2+y^2]==2, 1, Floor[x+0.5]==0, -1, True, 0], {x,-2,2}, {y,-2,2}, Axes->False, Boxed->False]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-plot3d-stack
-EXPECTED:
-  expr: Plot3D[{1,2,3,4,5,6,7}, {x,0,1},{y,0,1}, BoxRatios->{1,1,1}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-polarplot-theataxxx-8
-EXPECTED:
-  expr: PolarPlot[1+0.5 Cos[3 θ],{θ,0,2 Pi}]
 ---
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-doc-006
