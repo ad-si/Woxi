@@ -6691,3 +6691,12 @@ INPUT: Unprotect[Sin]
 EXPECTED: (none)
 NOTE: Unprotect[Sin] now returns '{Sin}' in both Woxi and wolframscript (Woxi previously returned '{}' when the symbol only had Protected via builtin defaults). Mathics EXPECTED '(none)' reflects mathics suppressing the output in that test.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 184
+TYPE: >>
+INPUT: F[x_, y_] /; x < y /; x>0  := x / y;
+EXPECTED: (none)
+---
+NOTE: Both Woxi and wolframscript return 'Null' for this SetDelayed statement byte-for-byte. NB: Woxi emits an 'not yet implemented' warning to stderr due to double-Condition parsing gap, but the stdout result 'Null' matches.
+---
