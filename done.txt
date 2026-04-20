@@ -8186,3 +8186,11 @@ INPUT: AtomQ[ByteArray[{4, 2}]]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: SequenceForm
+LINE: 615
+TYPE: >>
+INPUT: SequenceForm["[", "x = ", 56, "]"]
+EXPECTED:
+= [x = 56]
+---

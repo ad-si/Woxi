@@ -1316,6 +1316,19 @@ pub fn dispatch_complex_and_special(
       }));
     }
 
+    // SequenceForm[a, b, c, ...] prints the concatenated string forms of
+    // its arguments (strings are printed without surrounding quotes).
+    "SequenceForm" => {
+      let rendered = args
+        .iter()
+        .map(|a| match a {
+          Expr::String(s) => s.clone(),
+          _ => crate::syntax::expr_to_string(a),
+        })
+        .collect::<String>();
+      return Some(Ok(Expr::Raw(rendered)));
+    }
+
     // Default[symbol] - return the default value for a built-in symbol
     "Default" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0]

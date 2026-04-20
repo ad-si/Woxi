@@ -6497,14 +6497,6 @@ EXPECTED:
 = {Missing[abc], 150}
 ---
 FILE: mathics/builtin/forms/data.py
-CLASS: SequenceForm
-LINE: 615
-TYPE: >>
-INPUT: SequenceForm["[", "x = ", 56, "]"]
-EXPECTED:
-= [x = 56]
----
-FILE: mathics/builtin/forms/data.py
 CLASS: StringForm
 LINE: 658
 TYPE: >>

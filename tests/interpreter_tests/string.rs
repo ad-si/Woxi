@@ -2016,6 +2016,30 @@ mod compress {
   }
 }
 
+mod sequence_form {
+  use super::*;
+
+  // SequenceForm concatenates the printed forms of its arguments, showing
+  // strings without quotes and rendering numbers as their input-form text.
+  #[test]
+  fn mixed_strings_and_numbers() {
+    assert_eq!(
+      interpret(r#"SequenceForm["[", "x = ", 56, "]"]"#).unwrap(),
+      "[x = 56]"
+    );
+  }
+
+  #[test]
+  fn only_symbols() {
+    assert_eq!(interpret("SequenceForm[a, b, c]").unwrap(), "abc");
+  }
+
+  #[test]
+  fn only_numbers() {
+    assert_eq!(interpret("SequenceForm[1, 2, 3]").unwrap(), "123");
+  }
+}
+
 mod string_form {
   use super::*;
 
