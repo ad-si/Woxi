@@ -7392,3 +7392,11 @@ EXPECTED:
 ---
 NOTE: 'UpValues[a]' returns '{}' byte-for-byte in both engines when 'a' has no upvalues; mathics EXPECTED '{HoldPattern[a + b] :> 2}' depends on prior 'a + b ^= 2'.
 ---
+FILE: mathics/builtin/assignments/upvalues.py
+CLASS: UpValues
+LINE: 31
+TYPE: >>
+INPUT: UpValues[b]
+EXPECTED:
+= {HoldPattern[a + b] :> 2}
+---
