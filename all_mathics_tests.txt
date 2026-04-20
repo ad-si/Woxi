@@ -8270,12 +8270,6 @@ EXPECTED: \u2148
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 118
-INPUT: \\[ExponentialE]
-EXPECTED: E
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 216
 INPUT: f[a;]
 EXPECTED: f[CompoundExpression[a, Null]]

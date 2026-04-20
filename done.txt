@@ -8319,3 +8319,9 @@ LINE: 119
 INPUT: \\[ImaginaryJ]
 EXPECTED: I
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 118
+INPUT: \\[ExponentialE]
+EXPECTED: E
+---
