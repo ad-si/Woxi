@@ -1443,14 +1443,6 @@ INPUT: A[[2]]
 EXPECTED:
 = 25
 ---
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
-LINE: 45
-TYPE: >>
-INPUT: AtomQ[ByteArray[{4, 2}]]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryRead
 LINE: 375

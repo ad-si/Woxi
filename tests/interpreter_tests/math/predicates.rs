@@ -711,6 +711,19 @@ mod atom_q {
   fn atom_q_expression() {
     assert_eq!(interpret("AtomQ[x + y]").unwrap(), "False");
   }
+
+  // ByteArray is an atomic data type in Wolfram — even though it has a
+  // payload, its structure is opaque to Parts and other list operations.
+  #[test]
+  fn atom_q_byte_array() {
+    assert_eq!(interpret("AtomQ[ByteArray[{4, 2}]]").unwrap(), "True");
+  }
+
+  // NumericArray likewise is atomic despite wrapping a tensor of numbers.
+  #[test]
+  fn atom_q_numeric_array() {
+    assert_eq!(interpret("AtomQ[NumericArray[{1, 2, 3}]]").unwrap(), "True");
+  }
 }
 
 mod xor_single {

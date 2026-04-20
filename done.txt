@@ -8178,3 +8178,11 @@ INPUT: Head[ToBoxes[Graphics3D[{Polygon[]}]]]
 EXPECTED:
 = Graphics3DBox
 ---
+FILE: mathics/builtin/binary/bytearray.py
+CLASS: ByteArray_
+LINE: 45
+TYPE: >>
+INPUT: AtomQ[ByteArray[{4, 2}]]
+EXPECTED:
+= True
+---

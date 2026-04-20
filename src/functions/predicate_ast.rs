@@ -224,7 +224,10 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       | Expr::Constant(_) => true,
       // Rational[n, d] and Complex[re, im] are atoms in Mathematica
       Expr::FunctionCall { name, .. }
-        if name == "Rational" || name == "Complex" =>
+        if name == "Rational"
+          || name == "Complex"
+          || name == "ByteArray"
+          || name == "NumericArray" =>
       {
         true
       }
