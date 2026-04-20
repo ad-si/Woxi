@@ -4976,6 +4976,29 @@ mod upset {
   }
 
   #[test]
+  fn upset_with_binary_op_lhs_returns_rhs() {
+    // 'a + b ^= 2' parses as UpSet[a+b, 2]; the Plus LHS should normalize
+    // to Plus[a, b] and UpSet should return 2.
+    clear_state();
+    assert_eq!(interpret("a + b ^= 2").unwrap(), "2");
+  }
+
+  #[test]
+  fn upset_with_binary_op_lhs_applies_rule() {
+    clear_state();
+    assert_eq!(interpret("a + b ^= 2; a + b").unwrap(), "2");
+  }
+
+  #[test]
+  fn upset_with_binary_op_lhs_stores_upvalue_on_a() {
+    clear_state();
+    assert_eq!(
+      interpret("a + b ^= 2; UpValues[a]").unwrap(),
+      "{HoldPattern[a + b] :> 2}"
+    );
+  }
+
+  #[test]
   fn upset_attributes() {
     assert_eq!(
       interpret("Attributes[UpSet]").unwrap(),

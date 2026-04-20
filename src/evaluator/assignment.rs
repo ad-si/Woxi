@@ -1693,11 +1693,47 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("Null".to_string()))
 }
 
+/// Convert parser-level BinaryOp/UnaryOp/Comparison nodes that may appear on
+/// an UpSet-like LHS (e.g. `a + b ^= rhs`) into the equivalent FunctionCall,
+/// so the UpSet/UpSetDelayed handlers can extract head + args uniformly.
+fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
+  match lhs {
+    Expr::BinaryOp { op, left, right } => {
+      let head = match op {
+        crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus => "Plus",
+        crate::syntax::BinaryOperator::Times
+        | crate::syntax::BinaryOperator::Divide => "Times",
+        crate::syntax::BinaryOperator::Power => "Power",
+        _ => return lhs.clone(),
+      };
+      let right_expr = match op {
+        crate::syntax::BinaryOperator::Minus => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), (**right).clone()],
+        },
+        crate::syntax::BinaryOperator::Divide => Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![(**right).clone(), Expr::Integer(-1)],
+        },
+        _ => (**right).clone(),
+      };
+      Expr::FunctionCall {
+        name: head.to_string(),
+        args: vec![(**left).clone(), right_expr],
+      }
+    }
+    _ => lhs.clone(),
+  }
+}
+
 /// UpSet[lhs, rhs] — automatically assigns upvalues to all symbols in the arguments of lhs.
 /// f[g] ^= 5 stores an upvalue for g such that f[g] evaluates to 5.
 pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
-  // LHS must be a function call
-  let (_, lhs_args) = match lhs {
+  // Normalize parser-level BinaryOp/UnaryOp into FunctionCall so expressions
+  // like `a + b ^= 2` (parsed as Plus[a, b] via BinaryOp) can serve as LHS.
+  let normalized_lhs = normalize_lhs_for_upset(lhs);
+  let (_, lhs_args) = match &normalized_lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
@@ -1707,6 +1743,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       )));
     }
   };
+  let lhs = &normalized_lhs;
 
   // Evaluate the RHS
   let eval_rhs = evaluate_expr_to_expr(rhs)?;
@@ -1743,8 +1780,8 @@ pub fn upset_delayed_ast(
   lhs: &Expr,
   rhs: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // LHS must be a function call
-  let (_, lhs_args) = match lhs {
+  let normalized_lhs = normalize_lhs_for_upset(lhs);
+  let (_, lhs_args) = match &normalized_lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
@@ -1754,6 +1791,7 @@ pub fn upset_delayed_ast(
       )));
     }
   };
+  let lhs = &normalized_lhs;
 
   // Find all tag symbols in the arguments
   let mut tags = Vec::new();

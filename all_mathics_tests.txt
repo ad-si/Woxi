@@ -487,14 +487,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/upvalues.py
 CLASS: UpValues
-LINE: 27
-TYPE: >>
-INPUT: a + b ^= 2
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/assignments/upvalues.py
-CLASS: UpValues
 LINE: 29
 TYPE: >>
 INPUT: UpValues[a]
