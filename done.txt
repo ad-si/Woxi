@@ -7238,3 +7238,13 @@ EXPECTED: (none)
 ---
 NOTE: With 'filename' unset, Woxi and wolframscript both return the unevaluated 'Put[x + y, filename]' byte-for-byte. Mathics EXPECTED '(none)' (silent success) requires a prior 'filename = ...' context.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: InputStream
+LINE: 427
+TYPE: >>
+INPUT: Close[stream]
+EXPECTED:
+= String
+---
+NOTE: With 'stream' unset, Woxi and wolframscript both return 'Close[stream]' unevaluated byte-for-byte. Mathics EXPECTED 'String' requires a prior 'stream = StringToStream[...]' context.
+---

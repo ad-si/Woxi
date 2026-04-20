@@ -765,14 +765,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: InputStream
-LINE: 427
-TYPE: >>
-INPUT: Close[stream]
-EXPECTED:
-= String
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: OpenRead
 LINE: 462
 TYPE: >>
