@@ -1064,14 +1064,6 @@ TYPE: >>
 INPUT: DeleteFile["MathicsSunnyFlowers.jpg"]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: SetDirectory
-LINE: 1028
-TYPE: S>
-INPUT: SetDirectory[]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: ConverterDumpsExtensionMappings
 LINE: 954
