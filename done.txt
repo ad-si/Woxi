@@ -8114,3 +8114,11 @@ INPUT: OutputForm[{"A string", a + b}]
 EXPECTED:
 = {A string, a + b}
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric1F1
+LINE: 62
+TYPE: >>
+INPUT: Hypergeometric1F1[1, 1, {{1, 0}, {0, 1}}]
+EXPECTED:
+= {{E, 1}, {1, E}}
+---

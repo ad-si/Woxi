@@ -373,6 +373,28 @@ mod hypergeometric_1f1 {
     assert!((result - 0.7468241328124272).abs() < 1e-10);
   }
 
+  // 1F1[a, a, z] = E^z — Pochhammer factors cancel, leaving the exponential
+  // series. With a matrix argument, this applies element-wise.
+  #[test]
+  fn same_upper_lower_reduces_to_exp_matrix() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 1, {{1, 0}, {0, 1}}]").unwrap(),
+      "{{E, 1}, {1, E}}"
+    );
+  }
+
+  #[test]
+  fn same_upper_lower_symbolic_z() {
+    assert_eq!(interpret("Hypergeometric1F1[a, a, x]").unwrap(), "E^x");
+  }
+
+  // PFQ with the same multisets of upper/lower parameters also collapses
+  // to E^z — the Pochhammer ratio is identically 1.
+  #[test]
+  fn pfq_matching_params_collapses_to_exp() {
+    assert_eq!(interpret("HypergeometricPFQ[{2}, {2}, 1]").unwrap(), "E");
+  }
+
   #[test]
   fn n_evaluates() {
     let result: f64 = interpret("N[Hypergeometric1F1[1, 2, 1]]")

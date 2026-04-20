@@ -173,6 +173,22 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // When each upper parameter cancels a lower parameter (identical
+  // multisets), (a)_n / (a)_n = 1 and the series reduces to Σ z^n/n! = E^z.
+  if a_list.len() == b_list.len() && !a_list.is_empty() {
+    let key = |e: &Expr| crate::syntax::expr_to_string(e);
+    let mut a_keys: Vec<String> = a_list.iter().map(key).collect();
+    let mut b_keys: Vec<String> = b_list.iter().map(key).collect();
+    a_keys.sort();
+    b_keys.sort();
+    if a_keys == b_keys {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Identifier("E".to_string()), z.clone()],
+      });
+    }
+  }
+
   // Numeric evaluation: all parameters and z must be numeric
   let z_val = match z {
     Expr::Real(x) => Some(*x),
@@ -453,6 +469,18 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1F1[a, b, 0] = 1
   if is_expr_zero(&args[2]) {
     return Ok(Expr::Integer(1));
+  }
+
+  // 1F1[a, a, z] = E^z (the (a)_n factors cancel). Use Exp to trigger the
+  // numeric-path evaluation when z is real and threading over lists.
+  if crate::syntax::expr_to_string(&args[0])
+    == crate::syntax::expr_to_string(&args[1])
+  {
+    let exp_call = Expr::FunctionCall {
+      name: "Exp".to_string(),
+      args: vec![args[2].clone()],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&exp_call);
   }
 
   // Numeric evaluation

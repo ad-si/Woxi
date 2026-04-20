@@ -6049,14 +6049,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: Hypergeometric1F1
-LINE: 62
-TYPE: >>
-INPUT: Hypergeometric1F1[1, 1, {{1, 0}, {0, 1}}]
-EXPECTED:
-= {{E, 1}, {1, E}}
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
 LINE: 65
 TYPE: >>
 INPUT: Hypergeometric1F1[1/2, 1, x]
