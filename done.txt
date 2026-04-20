@@ -8643,3 +8643,11 @@ INPUT: MatchQ[x, G[x_.,y_]]
 EXPECTED: False
 MESSAGE: Without OneIdentity, and Optional, default
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: Eigenvalues
+LINE: 117
+TYPE: >>
+INPUT: Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]
+EXPECTED:
+= {2, -1, 1}
+---

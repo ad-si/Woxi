@@ -1239,6 +1239,9 @@ fn synthetic_div(coeffs: &[i128], root: i128) -> Vec<i128> {
 /// Sort eigenvalues: Wolfram sorts by absolute value descending,
 /// then by value descending for ties.
 fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
+  // Wolfram's Eigenvalues sorts by decreasing magnitude; when the magnitudes
+  // tie (e.g. {1, -1}), the tiebreaker is *ascending* value (so {-1, 1}
+  // follows {2, _}, not {1, _}).
   eigenvalues.sort_by(|a, b| {
     let va = eigenvalue_sort_key(a);
     let vb = eigenvalue_sort_key(b);
@@ -1249,7 +1252,7 @@ fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
     if abs_cmp != std::cmp::Ordering::Equal {
       abs_cmp
     } else {
-      vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
+      va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
     }
   });
 }

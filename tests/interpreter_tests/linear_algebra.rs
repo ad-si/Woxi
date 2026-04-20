@@ -562,6 +562,16 @@ mod eigenvalues {
       "{(3*(5 + Sqrt[33]))/2, (3*(5 - Sqrt[33]))/2, 0}"
     );
   }
+
+  #[test]
+  fn eigenvalues_tiebreak_ascending() {
+    // Eigenvalues with equal magnitude (±1 here) tiebreak ascending —
+    // {2, -1, 1}, not {2, 1, -1}. Matches wolframscript.
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]").unwrap(),
+      "{2, -1, 1}"
+    );
+  }
 }
 
 mod conjugate_transpose {

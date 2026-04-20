@@ -3165,14 +3165,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: Eigenvalues
-LINE: 117
-TYPE: >>
-INPUT: Eigenvalues[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]
-EXPECTED:
-= {2, -1, 1}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: Eigenvalues
 LINE: 121
 TYPE: >>
 INPUT: Eigenvalues[{{Cos[theta],Sin[theta],0},{-Sin[theta],Cos[theta],0},{0,0,1}}] // Sort
