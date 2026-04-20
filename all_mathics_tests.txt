@@ -616,14 +616,6 @@ EXPECTED:
 = x + y
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Get
-LINE: 357
-TYPE: S>
-INPUT: Get[filename]
-EXPECTED:
-= Cos[x] + I Sin[x]
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: OpenRead
 LINE: 462
 TYPE: >>
