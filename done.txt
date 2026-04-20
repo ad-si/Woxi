@@ -7166,3 +7166,10 @@ TYPE: #>
 INPUT: Close[stream];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 65
+TYPE: >>
+INPUT: Clear[Sin]
+EXPECTED: (none)
+---

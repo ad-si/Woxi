@@ -507,13 +507,6 @@ EXPECTED:
 = {HoldPattern[a[b]] :> x}
 ---
 FILE: mathics/builtin/assignments/clear.py
-CLASS: Clear
-LINE: 65
-TYPE: >>
-INPUT: Clear[Sin]
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
 CLASS: ClearAll
 LINE: 157
 TYPE: >>
