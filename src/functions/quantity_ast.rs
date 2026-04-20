@@ -1974,16 +1974,14 @@ pub fn try_quantity_plus(
     return None;
   }
 
-  // Get the target unit from the first quantity
-  let (first_mag, first_unit) = is_quantity(quantity_args[0]).unwrap();
-  let target_unit_name = unit_name(first_unit);
+  // Use the first quantity's unit as a reference for compatibility checks.
+  let (_ref_mag, ref_unit) = is_quantity(quantity_args[0]).unwrap();
 
-  // Check all quantities are compatible
+  // Check all quantities are compatible with the first.
   for q in &quantity_args[1..] {
     let (_m, u) = is_quantity(q).unwrap();
-    if !units_compatible(first_unit, u) {
-      // Incompatible units — print error and return unevaluated
-      let u1_name = crate::syntax::expr_to_string(first_unit);
+    if !units_compatible(ref_unit, u) {
+      let u1_name = crate::syntax::expr_to_string(ref_unit);
       let u2_name = crate::syntax::expr_to_string(u);
       crate::emit_message(&format!(
         "Quantity::compat: {} and {} are incompatible units.",
@@ -1997,17 +1995,56 @@ pub fn try_quantity_plus(
     }
   }
 
-  // All quantities are compatible — convert to first unit and sum magnitudes
-  let first_decomposed = decompose_unit_expr(first_unit);
-  let mut magnitudes: Vec<Expr> = vec![first_mag.clone()];
-  for q in &quantity_args[1..] {
+  // Pick the target unit: match Mathematica by choosing the smallest SI
+  // conversion factor (si_numer / si_denom). For example, meter vs centimeter
+  // → centimeter (cm has 1/100 m, smaller than 1 m). Ties fall back to the
+  // first quantity's unit.
+  let mut target_idx = 0usize;
+  {
+    let mut best_num: Option<i128> = None;
+    let mut best_den: Option<i128> = None;
+    for (i, q) in quantity_args.iter().enumerate() {
+      let (_m, u) = is_quantity(q).unwrap();
+      if let Some(info) = decompose_unit_expr(u) {
+        // Compare (info.si_numer / info.si_denom) with best via cross-multiply.
+        match (best_num, best_den) {
+          (Some(bn), Some(bd)) => {
+            // info < best iff info.si_numer * bd < bn * info.si_denom
+            if info.si_numer * bd < bn * info.si_denom {
+              best_num = Some(info.si_numer);
+              best_den = Some(info.si_denom);
+              target_idx = i;
+            }
+          }
+          _ => {
+            best_num = Some(info.si_numer);
+            best_den = Some(info.si_denom);
+            target_idx = i;
+          }
+        }
+      }
+    }
+  }
+  let (target_mag, target_unit) = is_quantity(quantity_args[target_idx]).unwrap();
+  let target_unit_name = unit_name(target_unit);
+
+  // All quantities are compatible — convert to target unit and sum magnitudes.
+  let target_decomposed = decompose_unit_expr(target_unit);
+  let mut magnitudes: Vec<Expr> = Vec::with_capacity(quantity_args.len());
+  for (i, q) in quantity_args.iter().enumerate() {
+    if i == target_idx {
+      magnitudes.push(target_mag.clone());
+      continue;
+    }
     let (m, u) = is_quantity(q).unwrap();
-    // Try compound unit conversion via decomposition
-    if let (Some(from_info), Some(to_info)) =
-      (&first_decomposed, decompose_unit_expr(u))
+    // Try compound unit conversion via decomposition. Convert source `u`
+    // into `target_unit` by multiplying magnitude by
+    //   (u_si / target_si) = (u_si_numer/u_si_denom) * (target_si_denom/target_si_numer).
+    if let (Some(source_info), Some(target_info)) =
+      (decompose_unit_expr(u), &target_decomposed)
     {
-      let conv_numer = to_info.si_numer * from_info.si_denom;
-      let conv_denom = to_info.si_denom * from_info.si_numer;
+      let conv_numer = source_info.si_numer * target_info.si_denom;
+      let conv_denom = source_info.si_denom * target_info.si_numer;
       if conv_numer == conv_denom {
         magnitudes.push(m.clone());
       } else {
@@ -2040,7 +2077,7 @@ pub fn try_quantity_plus(
     Err(e) => return Some(Err(e)),
   };
 
-  let result = make_quantity(sum_mag, first_unit.clone());
+  let result = make_quantity(sum_mag, target_unit.clone());
 
   if other_args.is_empty() {
     Some(Ok(result))

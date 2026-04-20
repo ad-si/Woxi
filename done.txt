@@ -6886,3 +6886,11 @@ EXPECTED:
 : Unable to interpret unit specification Maters.
 = False
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: Quantity
+LINE: 110
+TYPE: >>
+INPUT: Quantity[6, "meter"] + Quantity[3, "centimeter"]
+EXPECTED:
+= 603 centimeter
+---

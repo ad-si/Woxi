@@ -85,18 +85,20 @@ fn quantity_lowercase_meters() {
 
 #[test]
 fn quantity_lowercase_kilometers() {
+  // Adding km + m picks the smaller unit (meters) to match Mathematica.
   assert_eq!(
     interpret("Quantity[1, \"kilometers\"] + Quantity[500, \"meters\"]")
       .unwrap(),
-    "Quantity[3/2, Kilometers]"
+    "Quantity[1500, Meters]"
   );
 }
 
 #[test]
 fn quantity_lowercase_hours_minutes() {
+  // Adding hours + minutes picks the smaller unit (minutes).
   assert_eq!(
     interpret("Quantity[3, \"hours\"] + Quantity[30, \"minutes\"]").unwrap(),
-    "Quantity[7/2, Hours]"
+    "Quantity[210, Minutes]"
   );
 }
 
@@ -143,6 +145,27 @@ fn quantity_add_compatible_units() {
   assert_eq!(
     interpret("Quantity[3, \"Meters\"] + Quantity[2, \"Kilometers\"]").unwrap(),
     "Quantity[2003, Meters]"
+  );
+}
+
+#[test]
+fn quantity_add_picks_smaller_unit_order_independent() {
+  // Result unit is picked by SI scale, not argument order: meter + cm = cm.
+  assert_eq!(
+    interpret("Quantity[6, \"meter\"] + Quantity[3, \"centimeter\"]").unwrap(),
+    "Quantity[603, Centimeters]"
+  );
+  assert_eq!(
+    interpret("Quantity[3, \"centimeter\"] + Quantity[6, \"meter\"]").unwrap(),
+    "Quantity[603, Centimeters]"
+  );
+}
+
+#[test]
+fn quantity_add_picks_smaller_unit_gram_vs_kilogram() {
+  assert_eq!(
+    interpret("Quantity[1, \"kilogram\"] + Quantity[500, \"gram\"]").unwrap(),
+    "Quantity[1500, Grams]"
   );
 }
 

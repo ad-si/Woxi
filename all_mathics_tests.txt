@@ -148,14 +148,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
-LINE: 110
-TYPE: >>
-INPUT: Quantity[6, "meter"] + Quantity[3, "centimeter"]
-EXPECTED:
-= 603 centimeter
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
 LINE: 115
 TYPE: >>
 INPUT: Quantity[6, "meter"] + Quantity[3, "second"]
