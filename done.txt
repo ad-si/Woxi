@@ -8301,3 +8301,9 @@ LINE: 427
 INPUT: Last[NumericArray[{1,2,3}]]
 EXPECTED: 3
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 62
+INPUT: a + b!
+EXPECTED: Plus[a, Factorial[b]]
+---
