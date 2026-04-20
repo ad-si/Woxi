@@ -6923,3 +6923,33 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript return the actual system RAM in bytes (e.g. 38654705664); byte-for-byte match on the same machine. Mathics EXPECTED '-1' is a fallback when mathics can't determine memory.
 ---
+FILE: mathics/builtin/system.py
+CLASS: VersionNumber
+LINE: 979
+TYPE: S>
+INPUT: MemoryAvailable[]
+EXPECTED:
+= ...
+---
+NOTE: MemoryAvailable[] implemented — macOS uses vm_statistics64 free+inactive+speculative pages; Linux reads /proc/meminfo MemAvailable. Returns a positive byte count matching wolframscript shape. Mathics EXPECTED '...' wildcard accepts any output.
+---
+FILE: mathics/builtin/system.py
+CLASS: VersionNumber
+LINE: 983
+TYPE: S>
+INPUT: $SystemMemory > MemoryAvailable[] > MemoryInUse[]
+EXPECTED:
+= True
+---
+NOTE: With MemoryAvailable now implemented, $SystemMemory > MemoryAvailable[] > MemoryInUse[] evaluates to True in both Woxi and wolframscript.
+---
+FILE: mathics/builtin/system.py
+CLASS: VersionNumber
+LINE: 1008
+TYPE: S>
+INPUT: MemoryAvailable[]
+EXPECTED:
+= -1
+---
+NOTE: Mathics EXPECTED '-1' is mathics's fallback when it can't query memory; Woxi and wolframscript both return actual byte counts. TYPE S> is system-dependent.
+---

@@ -503,6 +503,11 @@ pub fn dispatch_predicate_functions(
       let rss_bytes = crate::functions::memory::memory_in_use();
       return Some(Ok(Expr::Integer(rss_bytes)));
     }
+    // MemoryAvailable[] - estimate of free system memory in bytes
+    "MemoryAvailable" if args.is_empty() => {
+      let bytes = crate::functions::memory::memory_available();
+      return Some(Ok(Expr::Integer(bytes)));
+    }
     // Introspection functions - return {} for symbols without stored definitions
     "Messages" | "OwnValues" | "SubValues" | "NValues" | "FormatValues"
     | "DefaultValues"

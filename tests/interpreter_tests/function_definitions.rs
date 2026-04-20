@@ -437,6 +437,21 @@ mod memory {
       interpret("With[{c = MemoryInUse[]}, MaxMemoryUsed[] >= c]").unwrap();
     assert_eq!(result, "True");
   }
+
+  #[test]
+  fn memory_available_returns_positive_integer() {
+    let result = interpret("MemoryAvailable[]").unwrap();
+    let val: i128 = result.parse().expect("should be an integer");
+    assert!(val > 0, "MemoryAvailable should be positive: {}", val);
+  }
+
+  #[test]
+  fn system_memory_greater_than_memory_available_greater_than_in_use() {
+    assert_eq!(
+      interpret("$SystemMemory > MemoryAvailable[] > MemoryInUse[]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod context {

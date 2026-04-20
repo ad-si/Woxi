@@ -233,30 +233,6 @@ INPUT: $Version
 EXPECTED:
 = Mathics3 ...
 ---
-FILE: mathics/builtin/system.py
-CLASS: VersionNumber
-LINE: 979
-TYPE: S>
-INPUT: MemoryAvailable[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
-CLASS: VersionNumber
-LINE: 983
-TYPE: S>
-INPUT: $SystemMemory > MemoryAvailable[] > MemoryInUse[]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/system.py
-CLASS: VersionNumber
-LINE: 1008
-TYPE: S>
-INPUT: MemoryAvailable[]
-EXPECTED:
-= -1
----
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
 LINE: 189
