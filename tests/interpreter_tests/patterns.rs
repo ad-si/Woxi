@@ -1494,4 +1494,23 @@ mod optional_pattern_without_default {
   fn match_against_atom_without_one_identity() {
     assert_eq!(interpret("MatchQ[x, G[x_.,y_]]").unwrap(), "False");
   }
+
+  // Nested f-headed expressions where the outer call has 2 args. The
+  // head's OneIdentity attribute is irrelevant here: the literal integer
+  // slot 1 binds to `x_:0` and the nested call slot binds to `y_`.
+  #[test]
+  fn match_nested_two_args_f() {
+    assert_eq!(
+      interpret("MatchQ[F[3, F[F[x]]], F[x_:0,y_]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn match_nested_two_args_g() {
+    assert_eq!(
+      interpret("MatchQ[G[3, G[G[x]]], G[x_:0,y_]]").unwrap(),
+      "True"
+    );
+  }
 }

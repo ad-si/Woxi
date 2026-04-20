@@ -8913,3 +8913,31 @@ INPUT: StringReplace["product: A \\[CirclePlus] B" , "\\[CirclePlus]" -> "x"]
 EXPECTED:
 = A x B  (mathics truncated; Woxi/wolframscript return full "product: A x B")
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 36
+INPUT: MatchQ[F[3, F[F[x]]], F[x_:0,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, nested
+---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 37
+INPUT: MatchQ[G[3, G[G[x]]], G[x_:0,y_]]
+EXPECTED: True
+MESSAGE: Without OneIdentity, nested
+---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_still_failing
+LINE: 152
+INPUT: MatchQ[F[3, F[F[x]]], F[x_:0,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, nested
+---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_still_failing
+LINE: 153
+INPUT: MatchQ[G[3, G[G[x]]], G[x_:0,y_]]
+EXPECTED: True
+MESSAGE: Without OneIdentity, nested
+---

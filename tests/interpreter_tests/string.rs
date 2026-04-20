@@ -429,8 +429,10 @@ mod string_replace {
     // \[CirclePlus] is a named character in both the subject and the pattern;
     // wolframscript rewrites the Unicode ⊕ glyph to the literal "x".
     assert_eq!(
-      interpret(r#"StringReplace["product: A \[CirclePlus] B", "\[CirclePlus]" -> "x"]"#)
-        .unwrap(),
+      interpret(
+        r#"StringReplace["product: A \[CirclePlus] B", "\[CirclePlus]" -> "x"]"#
+      )
+      .unwrap(),
       "product: A x B"
     );
   }
