@@ -2133,6 +2133,26 @@ mod take_multi_dim {
   }
 
   #[test]
+  fn take_first_n_rows_and_cols() {
+    // With A = {{a,b,c},{d,e,f}}, Take[A, 2, 2] returns the first 2 rows
+    // and first 2 columns.
+    assert_eq!(
+      interpret("Take[{{a, b, c}, {d, e, f}}, 2, 2]").unwrap(),
+      "{{a, b}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn take_all_rows_single_column() {
+    // `{2}` as the second argument selects exactly column 2 (wrapped in a
+    // 1-element sublist), matching wolframscript.
+    assert_eq!(
+      interpret("Take[{{a, b, c}, {d, e, f}}, All, {2}]").unwrap(),
+      "{{b}, {e}}"
+    );
+  }
+
+  #[test]
   fn take_up_to_within_length() {
     assert_eq!(
       interpret("Take[{1, 2, 3, 4, 5}, UpTo[3]]").unwrap(),

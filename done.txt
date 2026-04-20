@@ -8849,3 +8849,19 @@ INPUT: KroneckerProduct[a, b]
 EXPECTED:
 = {{a11 b11, a11 b12, a12 b11, a12 b12}, {a11 b21, a11 b22, a12 b21, a12 b22}, {a21 b11, a21 b12, a22 b11, a22 b12}, {a21 b21, a21 b22, a22 b21, a22 b22}}
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Take
+LINE: 1685
+TYPE: >>
+INPUT: Take[A, 2, 2]
+EXPECTED:
+= {{a, b}, {d, e}}
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Take
+LINE: 1689
+TYPE: >>
+INPUT: Take[A, All, {2}]
+EXPECTED:
+= {{b}, {e}}
+---

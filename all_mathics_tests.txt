@@ -5224,22 +5224,6 @@ INPUT: ;;3 // FullForm
 EXPECTED:
 = Span[1, 3]
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Take
-LINE: 1685
-TYPE: >>
-INPUT: Take[A, 2, 2]
-EXPECTED:
-= {{a, b}, {d, e}}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Take
-LINE: 1689
-TYPE: >>
-INPUT: Take[A, All, {2}]
-EXPECTED:
-= {{b}, {e}}
----
 FILE: mathics/builtin/list/rearrange.py
 CLASS: PadLeft
 LINE: 931
