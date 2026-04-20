@@ -7858,3 +7858,11 @@ INPUT: Plot[InverseGudermannian[x], {x, -2 Pi, 2 Pi}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: AnglePath
+LINE: 209
+TYPE: >>
+INPUT: Graphics[Line[AnglePath[RandomReal[{-1, 1}, {100}]]]]
+EXPECTED:
+= -Graphics-
+---

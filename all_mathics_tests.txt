@@ -3923,14 +3923,6 @@ EXPECTED:
 = {62, 98, 86, 78, 40}
 ---
 FILE: mathics/builtin/numbers/trig.py
-CLASS: AnglePath
-LINE: 209
-TYPE: >>
-INPUT: Graphics[Line[AnglePath[RandomReal[{-1, 1}, {100}]]]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/numbers/trig.py
 CLASS: ArcCos
 LINE: 357
 TYPE: >>
