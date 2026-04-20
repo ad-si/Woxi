@@ -6144,3 +6144,33 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript emit the internal form 'SparseArray[Automatic, {2,2}, 0, {1, {{0,1,2}, {{2},{1}}}, {a,b}}]'. Mathics EXPECTED shows the high-level rules form.
 ---
+FILE: mathics/builtin/system.py
+CLASS: MathicsVersion
+LINE: 369
+TYPE: >>
+INPUT: MathicsVersion
+EXPECTED:
+= ...
+---
+NOTE: both Woxi and wolframscript leave 'MathicsVersion' unevaluated; it is a mathics-specific symbol. Mathics EXPECTED '...' is a wildcard.
+---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 407
+TYPE: >>
+INPUT: $MaxLengthIntStringConversion
+EXPECTED:
+= ...
+---
+NOTE: both Woxi and wolframscript leave '$MaxLengthIntStringConversion' unevaluated; it is a mathics-specific system symbol.
+---
+FILE: mathics/builtin/system.py
+CLASS: PythonImplementation
+LINE: 595
+TYPE: >>
+INPUT: $PythonImplementation
+EXPECTED:
+= ...
+---
+NOTE: both Woxi and wolframscript leave '$PythonImplementation' unevaluated; it is a mathics-specific system symbol.
+---

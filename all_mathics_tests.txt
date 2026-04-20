@@ -268,22 +268,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: MathicsVersion
-LINE: 369
-TYPE: >>
-INPUT: MathicsVersion
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
-CLASS: MaxLengthIntStringConversion
-LINE: 407
-TYPE: >>
-INPUT: $MaxLengthIntStringConversion
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: MaxLengthIntStringConversion
 LINE: 416
 TYPE: >>
@@ -314,14 +298,6 @@ TYPE: S>
 INPUT: $Packages
 EXPECTED:
 = {ImportExport`, XML`, Internal`, System`, Global`}
----
-FILE: mathics/builtin/system.py
-CLASS: PythonImplementation
-LINE: 595
-TYPE: >>
-INPUT: $PythonImplementation
-EXPECTED:
-= ...
 ---
 FILE: mathics/builtin/system.py
 CLASS: Run
