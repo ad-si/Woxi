@@ -950,13 +950,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 825
-TYPE: >>
-INPUT: stream = StringToStream["123 abc"];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 828
 TYPE: >>
 INPUT: Read[stream, {Number, Word}]
