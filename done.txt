@@ -8403,3 +8403,11 @@ INPUT: ToString[Integrate[f[x],x], TeXForm]
 EXPECTED:
 = \\int f(x) \\, dx
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: TeXForm
+LINE: 226
+TYPE: >>
+INPUT: TeXForm[HoldForm[Sqrt[a^3]]]
+EXPECTED:
+= \sqrt{a^3}
+---

@@ -1842,6 +1842,13 @@ fn resolve_form_wrappers(expr: &Expr) -> Expr {
 /// Convert a Wolfram expression to LaTeX (TeX) notation.
 pub fn expr_to_tex(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
+  // HoldForm[x] is a display wrapper; render its content transparently.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "HoldForm"
+    && args.len() == 1
+  {
+    return expr_to_tex(&args[0]);
+  }
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),

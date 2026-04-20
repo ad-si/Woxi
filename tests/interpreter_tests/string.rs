@@ -2239,6 +2239,15 @@ mod tex_form {
       "\\text{myFunc}(x)"
     );
   }
+
+  #[test]
+  fn hold_form_is_transparent() {
+    // HoldForm is a display wrapper — TeXForm renders its content directly.
+    assert_eq!(
+      interpret("ToString[TeXForm[HoldForm[Sqrt[a^3]]]]").unwrap(),
+      "\\sqrt{a^3}"
+    );
+  }
 }
 
 mod base_form {

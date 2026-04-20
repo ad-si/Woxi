@@ -6600,14 +6600,6 @@ TYPE: >>
 INPUT: OutputForm[f'[x]]
 EXPECTED:
 = f'[x]
-FILE: mathics/builtin/forms/print.py
-CLASS: TeXForm
-LINE: 226
-TYPE: >>
-INPUT: TeXForm[HoldForm[Sqrt[a^3]]]
-EXPECTED:
-= \sqrt{a^3}
----
 FILE: mathics/builtin/forms/variables.py
 CLASS: BoxForms_
 LINE: 32
