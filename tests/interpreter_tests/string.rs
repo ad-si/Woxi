@@ -468,6 +468,21 @@ mod from_character_code {
       "Test"
     );
   }
+
+  // A second CharacterEncoding argument is accepted — for ASCII-compatible
+  // encodings like ISO8859-1, the result is identical to the single-arg form
+  // because the codepoints are already Unicode.
+  #[test]
+  fn with_character_encoding_option() {
+    assert_eq!(
+      interpret(r#"FromCharacterCode[228, "ISO8859-1"]"#).unwrap(),
+      "ä"
+    );
+    assert_eq!(
+      interpret(r#"FromCharacterCode[{228, 246}, "UTF-8"]"#).unwrap(),
+      "äö"
+    );
+  }
 }
 
 mod character_range {

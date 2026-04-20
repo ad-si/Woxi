@@ -109,8 +109,15 @@ pub fn dispatch_string_functions(
     "ToCharacterCode" if args.len() == 1 => {
       return Some(crate::functions::string_ast::to_character_code_ast(args));
     }
-    "FromCharacterCode" if args.len() == 1 => {
-      return Some(crate::functions::string_ast::from_character_code_ast(args));
+    "FromCharacterCode" if args.len() == 1 || args.len() == 2 => {
+      // FromCharacterCode accepts an optional CharacterEncoding string as a
+      // second argument. The codepoints themselves are already Unicode, so
+      // the encoding is informational for ASCII-compatible encodings like
+      // "ISO8859-1" and "UTF-8" — we simply pass through and let the core
+      // routine build the string from codepoints.
+      return Some(crate::functions::string_ast::from_character_code_ast(
+        &args[0..1],
+      ));
     }
     "CharacterRange" if args.len() == 2 => {
       return Some(crate::functions::string_ast::character_range_ast(args));

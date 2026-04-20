@@ -8130,3 +8130,11 @@ INPUT: HypergeometricPFQ[{2}, {2}, 1]
 EXPECTED:
 = E
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: FromCharacterCode
+LINE: 140
+TYPE: >>
+INPUT: FromCharacterCode[228, "ISO8859-1"]
+EXPECTED:
+= ä
+---
