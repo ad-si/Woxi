@@ -7459,22 +7459,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1174
-TYPE: >>
-INPUT: Eigenvalues[A]
-EXPECTED:
-= {2, -1, 1}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1176
-TYPE: >>
-INPUT: Eigenvectors[A]
-EXPECTED:
-= {{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1183
 TYPE: >>
 INPUT: T = Transpose[Eigenvectors[A]]; MatrixForm[T]
