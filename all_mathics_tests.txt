@@ -950,13 +950,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 817
-TYPE: >>
-INPUT: stream = StringToStream["(* ::Package:: *)"];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 825
 TYPE: >>
 INPUT: stream = StringToStream["123 abc"];

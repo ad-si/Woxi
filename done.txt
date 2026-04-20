@@ -7215,3 +7215,10 @@ TYPE: >>
 INPUT: stream = StringToStream["2+2\\n2+3"];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 817
+TYPE: >>
+INPUT: stream = StringToStream["(* ::Package:: *)"];
+EXPECTED: (none)
+---
