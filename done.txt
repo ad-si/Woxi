@@ -7138,3 +7138,10 @@ TYPE: S>
 INPUT: filename = $TemporaryDirectory <> "/fortyfactorial";
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 551
+TYPE: S>
+INPUT: filename = $TemporaryDirectory <> "/fiftyfactorial";
+EXPECTED: (none)
+---

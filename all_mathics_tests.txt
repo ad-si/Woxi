@@ -856,13 +856,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 551
-TYPE: S>
-INPUT: filename = $TemporaryDirectory <> "/fiftyfactorial";
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 552
 TYPE: S>
 INPUT: Put[10!, 20!, 30!, filename]
