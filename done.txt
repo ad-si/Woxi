@@ -7866,3 +7866,11 @@ INPUT: Graphics[Line[AnglePath[RandomReal[{-1, 1}, {100}]]]]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/drawing/plot_listplot.py
+CLASS: DiscretePlot
+LINE: 397
+TYPE: >>
+INPUT: DiscretePlot[2.5 Sqrt[k], {k, 100}]
+EXPECTED:
+= -Graphics-
+---

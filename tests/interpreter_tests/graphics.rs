@@ -5571,6 +5571,13 @@ mod discrete_plot {
     let result = interpret("DiscretePlot[n, {n, 1, 3}]").unwrap();
     assert_eq!(result, "-Graphics-");
   }
+
+  // {var, max} is shorthand for {var, 1, max} in DiscretePlot, matching Table.
+  #[test]
+  fn short_iter_spec() {
+    let result = interpret("DiscretePlot[2.5 Sqrt[k], {k, 100}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
 }
 
 mod log_log_plot {

@@ -461,9 +461,9 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  if iter_spec.len() < 3 || iter_spec.len() > 4 {
+  if iter_spec.len() < 2 || iter_spec.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "DiscretePlot: iteration spec must be {var, min, max} or {var, min, max, step}".into(),
+      "DiscretePlot: iteration spec must be {var, max}, {var, min, max}, or {var, min, max, step}".into(),
     ));
   }
 
@@ -477,18 +477,30 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let n_min_expr = evaluate_expr_to_expr(&iter_spec[1])?;
-  let n_max_expr = evaluate_expr_to_expr(&iter_spec[2])?;
-  let n_min = try_eval_to_f64(&n_min_expr).ok_or_else(|| {
-    InterpreterError::EvaluationError(
-      "DiscretePlot: min must be numeric".into(),
-    )
-  })?;
-  let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
-    InterpreterError::EvaluationError(
-      "DiscretePlot: max must be numeric".into(),
-    )
-  })?;
+  // {var, max} → {var, 1, max}
+  let (n_min, n_max) = if iter_spec.len() == 2 {
+    let n_max_expr = evaluate_expr_to_expr(&iter_spec[1])?;
+    let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DiscretePlot: max must be numeric".into(),
+      )
+    })?;
+    (1.0, n_max)
+  } else {
+    let n_min_expr = evaluate_expr_to_expr(&iter_spec[1])?;
+    let n_max_expr = evaluate_expr_to_expr(&iter_spec[2])?;
+    let n_min = try_eval_to_f64(&n_min_expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DiscretePlot: min must be numeric".into(),
+      )
+    })?;
+    let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DiscretePlot: max must be numeric".into(),
+      )
+    })?;
+    (n_min, n_max)
+  };
 
   let step = if iter_spec.len() == 4 {
     let step_expr = evaluate_expr_to_expr(&iter_spec[3])?;
