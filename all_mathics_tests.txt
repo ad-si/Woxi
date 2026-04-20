@@ -384,40 +384,6 @@ EXPECTED:
 . 3   6
 ---
 FILE: mathics/builtin/trace.py
-CLASS: ClearTrace
-LINE: 99
-TYPE: >>
-INPUT: PrintTrace[]
-EXPECTED:
-| ...
----
-FILE: mathics/builtin/trace.py
-CLASS: PrintTrace
-LINE: 141
-TYPE: >>
-INPUT: PrintTrace[]
-EXPECTED:
-| ...
----
-FILE: mathics/builtin/trace.py
-CLASS: PrintTrace
-LINE: 146
-TYPE: >>
-INPUT: PrintTrace[SortBy -> "time"]
-EXPECTED:
-| ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltins
-LINE: 186
-TYPE: >>
-INPUT: TraceBuiltins[Graphics3D[Tetrahedron[]]]
-EXPECTED:
-| ...
-= -Graphics3D-
----
----
-FILE: mathics/builtin/trace.py
 CLASS: TraceEvaluation
 LINE: 401
 TYPE: >>

@@ -6316,3 +6316,43 @@ EXPECTED:
 = x ^ 2
 NOTE: TraceBuiltins is mathics-specific; both Woxi and wolframscript leave it unevaluated with input echoed as 'TraceBuiltins[x^2, SortBy -> count|time]'. Mathics EXPECTED 'x ^ 2' is the underlying expression value (TraceBuiltins prints trace info as a side effect and returns the argument).
 ---
+FILE: mathics/builtin/trace.py
+CLASS: ClearTrace
+LINE: 99
+TYPE: >>
+INPUT: PrintTrace[]
+EXPECTED:
+| ...
+---
+NOTE: PrintTrace is mathics-specific; both Woxi and wolframscript leave 'PrintTrace[]' unevaluated.
+---
+FILE: mathics/builtin/trace.py
+CLASS: PrintTrace
+LINE: 141
+TYPE: >>
+INPUT: PrintTrace[]
+EXPECTED:
+| ...
+---
+NOTE: duplicate PrintTrace[] test — both Woxi and wolframscript leave it unevaluated.
+---
+FILE: mathics/builtin/trace.py
+CLASS: PrintTrace
+LINE: 146
+TYPE: >>
+INPUT: PrintTrace[SortBy -> "time"]
+EXPECTED:
+| ...
+---
+NOTE: PrintTrace is mathics-specific; both Woxi and wolframscript return 'PrintTrace[SortBy -> time]' unevaluated byte-for-byte.
+---
+FILE: mathics/builtin/trace.py
+CLASS: TraceBuiltins
+LINE: 186
+TYPE: >>
+INPUT: TraceBuiltins[Graphics3D[Tetrahedron[]]]
+EXPECTED:
+| ...
+= -Graphics3D-
+NOTE: TraceBuiltins is mathics-specific; both Woxi and wolframscript return 'TraceBuiltins[-Graphics3D-]' unevaluated byte-for-byte.
+---
