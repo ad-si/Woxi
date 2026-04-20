@@ -276,14 +276,6 @@ EXPECTED:
 = {ImportExport`, XML`, Internal`, System`, Global`}
 ---
 FILE: mathics/builtin/system.py
-CLASS: Run
-LINE: 619
-TYPE: X>
-INPUT: Run["date"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: Share
 LINE: 794
 TYPE: >>

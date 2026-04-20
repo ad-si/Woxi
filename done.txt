@@ -6827,3 +6827,13 @@ TYPE: X>
 INPUT: $InputFileName
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/system.py
+CLASS: Run
+LINE: 619
+TYPE: X>
+INPUT: Run["date"]
+EXPECTED:
+= ...
+---
+NOTE: TYPE X> marks this as an excluded mathics test; EXPECTED '...' accepts any output. Woxi invokes the shell 'date' command and prints a date string followed by the exit code.
+---
