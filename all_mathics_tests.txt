@@ -8616,12 +8616,6 @@ EXPECTED: <Integer64, 2×2>
 ---
 FILE: mathics/test/builtin/test_binary.py
 FUNCTION: test_ByteOrdering
-LINE: 433
-INPUT: AtomQ[NumericArray[{1,2}]]
-EXPECTED: True
----
-FILE: mathics/test/builtin/test_binary.py
-FUNCTION: test_ByteOrdering
 LINE: 434
 INPUT: First[NumericArray[{1,2,3}]]
 EXPECTED: 1

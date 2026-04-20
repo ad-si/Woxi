@@ -8250,3 +8250,9 @@ INPUT: 1 / Overflow[]
 EXPECTED:
 = Underflow[]
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 433
+INPUT: AtomQ[NumericArray[{1,2}]]
+EXPECTED: True
+---
