@@ -5841,3 +5841,9 @@ LINE: 505-515 (multiple)
 INPUT: BesselJ[0, 2] (across 10 separate test_unsameq parametrized entries)
 EXPECTED: BesselJ[0, 2] (Woxi and wolframscript byte-identical for the input expression itself)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 544-556 (multiple)
+INPUT: 3+I Pi (across 13 separate test_unsameq parametrized entries)
+EXPECTED: 3 + I*Pi (Woxi and wolframscript byte-identical for the input expression itself)
+---
