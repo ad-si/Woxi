@@ -950,6 +950,17 @@ mod series {
       "SeriesData"
     );
   }
+
+  #[test]
+  fn series_full_form_structure() {
+    // FullForm of Series[Cosh[x], {x, 0, 2}] reveals the underlying
+    // SeriesData with coefficient list and order bounds.
+    assert_eq!(
+      interpret("series = Series[Cosh[x], {x, 0, 2}]; series // FullForm")
+        .unwrap(),
+      "SeriesData[x, 0, List[1, 0, Rational[1, 2]], 0, 3, 1]"
+    );
+  }
 }
 
 mod limit {

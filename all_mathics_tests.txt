@@ -2758,14 +2758,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesData
-LINE: 1917
-TYPE: >>
-INPUT: series // FullForm
-EXPECTED:
-= SeriesData[x, 0, {1, 0, Rational[1, 2]}, 0, 3, 1]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesData
 LINE: 1923
 TYPE: >>
 INPUT: series + Series[Sinh[x],{x, 0, 3}]
