@@ -534,7 +534,10 @@ pub fn map_indexed_ast(
 /// Detect a Heads -> True option, either as Expr::Rule or Expr::FunctionCall.
 fn is_heads_true_option(e: &Expr) -> bool {
   match e {
-    Expr::Rule { pattern, replacement } => {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
       matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Heads")
         && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True")
     }

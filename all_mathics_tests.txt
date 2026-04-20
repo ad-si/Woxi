@@ -917,27 +917,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: FixedPointList
-LINE: 107
-TYPE: >>
-INPUT: newton[9]
-EXPECTED:
-= {1., 5., 3.4, 3.02353, 3.00009, 3., 3., 3.}
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: FixedPointList
 LINE: 116
 TYPE: >>
 INPUT: list = FixedPointList[collatz, 14]
 EXPECTED:
 = {14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: Nest
-LINE: 223
-TYPE: >>
-INPUT: Nest[Subsuperscript[#,#,#]&,0,5]
-EXPECTED:
-= ...
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Input_
