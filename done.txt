@@ -7159,3 +7159,10 @@ TYPE: #>
 INPUT: Close[stream];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 830
+TYPE: #>
+INPUT: Close[stream];
+EXPECTED: (none)
+---
