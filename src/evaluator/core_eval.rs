@@ -703,6 +703,18 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Special handling for Unset - x =. (removes definition)
         if name == "Unset" && args.len() == 1 {
+          // Thread over lists: '{a, {b}} =.' → {Unset[a], Unset[{b}]}.
+          if let Expr::List(items) = &args[0] {
+            let mut results = Vec::with_capacity(items.len());
+            for it in items {
+              let r = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Unset".to_string(),
+                args: vec![it.clone()],
+              })?;
+              results.push(r);
+            }
+            return Ok(Expr::List(results));
+          }
           if let Expr::Identifier(var_name) = &args[0] {
             let had_value = ENV.with(|e| e.borrow_mut().remove(var_name));
             if had_value.is_none() {
@@ -720,8 +732,9 @@ pub fn evaluate_expr_to_expr_inner(
             args: lhs_args,
           } = &args[0]
           {
-            let had_any = crate::FUNC_DEFS
-              .with(|m| m.borrow().get(head).is_some_and(|defs| !defs.is_empty()));
+            let had_any = crate::FUNC_DEFS.with(|m| {
+              m.borrow().get(head).is_some_and(|defs| !defs.is_empty())
+            });
             if !had_any {
               let lhs_str = crate::syntax::expr_to_string(&args[0]);
               crate::emit_message(&format!(

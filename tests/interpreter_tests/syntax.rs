@@ -2854,11 +2854,25 @@ mod unset_function {
     // After 'f[x_] =.' the downvalue is gone and f[5] stays symbolic.
     clear_state();
     assert_eq!(
-      interpret(
-        "freshUnsetH[x_] := x^2; freshUnsetH[x_] =.; freshUnsetH[5]"
-      )
-      .unwrap(),
+      interpret("freshUnsetH[x_] := x^2; freshUnsetH[x_] =.; freshUnsetH[5]")
+        .unwrap(),
       "freshUnsetH[5]"
+    );
+  }
+
+  #[test]
+  fn unset_threads_over_list() {
+    // '{a, {b}} =.' should thread, returning {Null, {Null}}.
+    clear_state();
+    assert_eq!(interpret("{a, {b}} =.").unwrap(), "{Null, {Null}}");
+  }
+
+  #[test]
+  fn unset_threads_removes_each_ownvalue() {
+    clear_state();
+    assert_eq!(
+      interpret("a = 1; b = 2; {a, {b}} =.; {a, b}").unwrap(),
+      "{a, b}"
     );
   }
 }

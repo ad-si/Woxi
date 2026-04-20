@@ -699,14 +699,6 @@ TYPE: >>
 INPUT: f[x_] =.
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Unset
-LINE: 247
-TYPE: >>
-INPUT: {a, {b}} =.
-EXPECTED:
-= {Null, {Null}}
----
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
 LINE: 34

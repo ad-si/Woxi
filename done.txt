@@ -6727,3 +6727,11 @@ EXPECTED:
 : Assignment on f for f[x_] not found.
 = $Failed
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Unset
+LINE: 247
+TYPE: >>
+INPUT: {a, {b}} =.
+EXPECTED:
+= {Null, {Null}}
+---
