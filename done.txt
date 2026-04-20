@@ -7802,3 +7802,11 @@ INPUT: NumberLinePlot[Prime[Range[10]]]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/drawing/plot_listplot.py
+CLASS: DiscretePlot
+LINE: 393
+TYPE: >>
+INPUT: DiscretePlot[PrimePi[k], {k, 1, 100}]
+EXPECTED:
+= -Graphics-
+---
