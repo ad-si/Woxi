@@ -6837,3 +6837,13 @@ EXPECTED:
 ---
 NOTE: TYPE X> marks this as an excluded mathics test; EXPECTED '...' accepts any output. Woxi invokes the shell 'date' command and prints a date string followed by the exit code.
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 42
+TYPE: X>
+INPUT: f[3]
+EXPECTED:
+= 9
+---
+NOTE: TYPE X> marks excluded mathics test; Woxi returns 'f[3]' unchanged (mathics EXPECTED 9 requires prior 'f = #^2 &').
+---
