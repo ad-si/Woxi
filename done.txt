@@ -8841,3 +8841,11 @@ INPUT: 3+2 I
 EXPECTED: 3+2 I
 MESSAGE: True
 ---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: KroneckerProduct
+LINE: 41
+TYPE: >>
+INPUT: KroneckerProduct[a, b]
+EXPECTED:
+= {{a11 b11, a11 b12, a12 b11, a12 b12}, {a11 b21, a11 b22, a12 b21, a12 b22}, {a21 b11, a21 b12, a22 b11, a22 b12}, {a21 b21, a21 b22, a22 b21, a22 b22}}
+---

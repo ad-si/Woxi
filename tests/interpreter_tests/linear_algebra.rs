@@ -1214,6 +1214,23 @@ mod kronecker_product {
       "{{6}}"
     );
   }
+
+  #[test]
+  fn two_by_two_fully_symbolic() {
+    // Indexed symbols a_ij and b_ij — matches wolframscript byte-for-byte.
+    assert_eq!(
+      interpret(
+        "KroneckerProduct[\
+           {{a11, a12}, {a21, a22}}, {{b11, b12}, {b21, b22}}\
+         ]"
+      )
+      .unwrap(),
+      "{{a11*b11, a11*b12, a12*b11, a12*b12}, \
+        {a11*b21, a11*b22, a12*b21, a12*b22}, \
+        {a21*b11, a21*b12, a22*b11, a22*b12}, \
+        {a21*b21, a21*b22, a22*b21, a22*b22}}"
+    );
+  }
 }
 
 mod find_fit {
