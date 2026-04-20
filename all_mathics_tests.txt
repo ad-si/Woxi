@@ -857,15 +857,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 537
-TYPE: S>
-INPUT: Put[40!, fortyfactorial]
-EXPECTED:
-: fortyfactorial is not string, InputStream[], or OutputStream[]
-= 815915283247897734345611269596115894272000000000 >> fortyfactorial
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 543
 TYPE: S>
 INPUT: filename = $TemporaryDirectory <> "/fortyfactorial";

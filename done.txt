@@ -7073,3 +7073,14 @@ EXPECTED:
 ---
 NOTE: 'Close["ExampleData/numbers.txt"]' with no open stream returns 'Close[ExampleData/numbers.txt]' unevaluated byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED depends on a prior OpenRead on that path.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 537
+TYPE: S>
+INPUT: Put[40!, fortyfactorial]
+EXPECTED:
+: fortyfactorial is not string, InputStream[], or OutputStream[]
+= 815915283247897734345611269596115894272000000000 >> fortyfactorial
+---
+NOTE: Both Woxi and wolframscript return 'Put[815915283247897734345611269596115894272000000000, fortyfactorial]' unevaluated byte-for-byte — fortyfactorial is not a stream. Mathics EXPECTED is its formatted warning + '815...000000 >> fortyfactorial' (the '>>' is the PutAppend/Put shorthand).
+---
