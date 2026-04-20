@@ -5751,3 +5751,10 @@ FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: listplot, liststepplot, numberlineplot, parametricplot, piechart, plot, polarplot, densityplot, plot3d, complexplot, contourplot-1, contourplot-2
 EXPECTED: -Graphics- (12 tests; Woxi and wolframscript byte-identical for the bare expressions)
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Arithmetic
+FORM: StandardForm
+INPUT: MakeBoxes[a-b]
+EXPECTED: RowBox[{a, -, b}] (Woxi and wolframscript byte-identical; mathics test EXPECTED uses quoted strings inside but the raw output matches)
+---

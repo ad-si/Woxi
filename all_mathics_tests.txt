@@ -14288,13 +14288,6 @@ EXPECTED: InterpretationBox[PaneBox["\"a - b\""], OutputForm[a - b], Editable-> 
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Arithmetic
-FORM: StandardForm
-INPUT: MakeBoxes[a-b]
-EXPECTED: RowBox[{"a", "-", "b"}]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Arithmetic
 FORM: TeXForm
 INPUT: MakeBoxes[a-b//TeXForm]
 EXPECTED: InterpretationBox["\"a-b\"", TeXForm[a-b], Editable -> True, AutoDelete-> True]
