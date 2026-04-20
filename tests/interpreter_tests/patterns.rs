@@ -1380,3 +1380,28 @@ mod chained_condition_in_set_delayed {
     assert!(r.contains("G[3.5]"));
   }
 }
+
+mod replace_at_all_levels {
+  use super::*;
+
+  // Replace[expr, rule, All] is equivalent to {0, Infinity}: every level
+  // of the expression is a candidate for replacement, but the head at level
+  // 0 is examined by default.
+  #[test]
+  fn replace_inner_at_all_levels() {
+    assert_eq!(
+      interpret("Replace[x[1], {x[1] -> y, 1 -> 2}, All]").unwrap(),
+      "x[2]"
+    );
+  }
+
+  // `x` used as a head is not replaced by `All` because Heads defaults to
+  // False — the levels are about sub-expressions, not operators.
+  #[test]
+  fn replace_all_does_not_touch_heads() {
+    assert_eq!(
+      interpret("Replace[x[x[y]], x -> z, All]").unwrap(),
+      "x[x[y]]"
+    );
+  }
+}

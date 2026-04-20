@@ -609,6 +609,8 @@ pub fn apply_replace_with_level_ast(
   };
   let (min_level, max_level) = match level_spec {
     Expr::Integer(n) => (0i64, *n as i64),
+    // `All` means every level including the head — equivalent to {0, Infinity}.
+    Expr::Identifier(s) | Expr::Constant(s) if s == "All" => (0i64, i64::MAX),
     Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
       (1i64, i64::MAX)
     }

@@ -8001,3 +8001,11 @@ INPUT: a___Integer... // FullForm
 EXPECTED:
 = RepeatedNull[Pattern[a, BlankNullSequence[Integer]]]
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: Replace
+LINE: 206
+TYPE: >>
+INPUT: Replace[x[1], {x[1] -> y, 1 -> 2}, All]
+EXPECTED:
+= x[2]
+---
