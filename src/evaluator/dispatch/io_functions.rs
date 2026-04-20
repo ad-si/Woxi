@@ -82,10 +82,14 @@ pub fn dispatch_io_functions(
     "SetEnvironment" if args.len() == 1 => {
       fn apply_rule(rule: &Expr) -> Option<bool> {
         let (pat, val) = match rule {
-          Expr::Rule { pattern, replacement }
-          | Expr::RuleDelayed { pattern, replacement } => {
-            (pattern.as_ref(), replacement.as_ref())
+          Expr::Rule {
+            pattern,
+            replacement,
           }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref()),
           _ => return None,
         };
         let var = match pat {

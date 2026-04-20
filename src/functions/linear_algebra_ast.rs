@@ -229,6 +229,25 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // TransformationFunction[M1] . TransformationFunction[M2] →
+  //   TransformationFunction[M1.M2]  (compose affine transforms)
+  let extract_tf = |e: &Expr| -> Option<Expr> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "TransformationFunction"
+      && args.len() == 1
+    {
+      return Some(args[0].clone());
+    }
+    None
+  };
+  if let (Some(ma), Some(mb)) = (extract_tf(&args[0]), extract_tf(&args[1])) {
+    let product = dot_ast(&[ma, mb])?;
+    return Ok(Expr::FunctionCall {
+      name: "TransformationFunction".to_string(),
+      args: vec![product],
+    });
+  }
+
   // Vector . Vector → scalar
   if let (Some(va), Some(vb)) =
     (expr_to_vector(&args[0]), expr_to_vector(&args[1]))

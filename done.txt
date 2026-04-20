@@ -6257,3 +6257,19 @@ EXPECTED:
 = $Failed
 NOTE: SetEnvironment now implemented — accepts rule or list of rules, returns Null on success and $Failed on type error. All 3 tests match wolframscript output byte-for-byte.
 ---
+FILE: mathics/builtin/tensors.py
+CLASS: TransformationFunction
+LINE: 298
+TYPE: >>
+INPUT: RotationTransform[Pi].TranslationTransform[{1, -1}]
+EXPECTED:
+= TransformationFunction[{{-1, 0, -1}, {0, -1, 1}, {0, 0, 1}}]
+---
+FILE: mathics/builtin/tensors.py
+CLASS: TransformationFunction
+LINE: 301
+TYPE: >>
+INPUT: TranslationTransform[{1, -1}].RotationTransform[Pi]
+EXPECTED:
+= TransformationFunction[{{-1, 0, 1}, {0, -1, -1}, {0, 0, 1}}]
+---

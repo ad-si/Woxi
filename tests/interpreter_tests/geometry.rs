@@ -936,3 +936,31 @@ mod scaling_transform {
     );
   }
 }
+
+mod transformation_function_compose {
+  use super::*;
+
+  #[test]
+  fn rotation_then_translation() {
+    assert_eq!(
+      interpret("RotationTransform[Pi] . TranslationTransform[{1, -1}]").unwrap(),
+      "TransformationFunction[{{-1, 0, -1}, {0, -1, 1}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn translation_then_rotation() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, -1}] . RotationTransform[Pi]").unwrap(),
+      "TransformationFunction[{{-1, 0, 1}, {0, -1, -1}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn two_translations_add() {
+    assert_eq!(
+      interpret("TranslationTransform[{a, b}] . TranslationTransform[{c, d}]").unwrap(),
+      "TransformationFunction[{{1, 0, a + c}, {0, 1, b + d}, {0, 0, 1}}]"
+    );
+  }
+}
