@@ -379,4 +379,12 @@ mod element_data_tests {
       "Missing[NotAvailable]"
     );
   }
+
+  #[test]
+  fn element_data_properties_full_list() {
+    assert_eq!(
+      interpret(r#"ElementData["Properties"]"#).unwrap(),
+      "{Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}"
+    );
+  }
 }

@@ -2477,20 +2477,47 @@ fn temp_precision(v: f64) -> f64 {
   }
 }
 
+// Alphabetical list of property names ElementData can be queried with.
+// Matches wolframscript / mathics exactly so `ElementData["Properties"]`
+// returns the canonical property set.
 static SUPPORTED_PROPERTIES: &[&str] = &[
   "Abbreviation",
+  "AbsoluteBoilingPoint",
+  "AbsoluteMeltingPoint",
   "AtomicNumber",
   "AtomicRadius",
   "AtomicWeight",
   "Block",
   "BoilingPoint",
+  "BrinellHardness",
+  "BulkModulus",
+  "CovalentRadius",
+  "CrustAbundance",
+  "Density",
+  "DiscoveryYear",
+  "ElectroNegativity",
+  "ElectronAffinity",
   "ElectronConfiguration",
-  "Electronegativity",
+  "ElectronConfigurationString",
+  "ElectronShellConfiguration",
+  "FusionHeat",
   "Group",
+  "IonizationEnergies",
+  "LiquidDensity",
   "MeltingPoint",
+  "MohsHardness",
   "Name",
   "Period",
+  "PoissonRatio",
+  "Series",
+  "ShearModulus",
+  "SpecificHeat",
   "StandardName",
+  "ThermalConductivity",
+  "VanDerWaalsRadius",
+  "VaporizationHeat",
+  "VickersHardness",
+  "YoungModulus",
 ];
 
 pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

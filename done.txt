@@ -7299,3 +7299,11 @@ INPUT: ElementData["Tc", "SpecificHeat"]
 EXPECTED:
 = Missing[NotAvailable]
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 85
+TYPE: >>
+INPUT: ElementData["Properties"]
+EXPECTED:
+= {Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}
+---

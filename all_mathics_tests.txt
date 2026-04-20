@@ -82,14 +82,6 @@ INPUT: ElementData["Carbon", "IonizationEnergies"]
 EXPECTED:
 = {1086.5, 2352.6, 4620.5, 6222.7, 37831, 47277.}
 ---
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
-LINE: 85
-TYPE: >>
-INPUT: ElementData["Properties"]
-EXPECTED:
-= {Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}
----
 FILE: mathics/builtin/procedural.py
 CLASS: For
 LINE: 341
