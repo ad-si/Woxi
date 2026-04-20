@@ -5711,3 +5711,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115 Plot variants
 EXPECTED: -Graphics- (16 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-116/117/118/119/120/121 multi-Plot variants
+EXPECTED: -Graphics- (6 tests; Woxi and wolframscript byte-identical)
+---
