@@ -8313,3 +8313,9 @@ LINE: 120
 INPUT: \\[ImaginaryI]
 EXPECTED: I
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 119
+INPUT: \\[ImaginaryJ]
+EXPECTED: I
+---
