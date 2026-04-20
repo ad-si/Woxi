@@ -563,13 +563,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: NValues
-LINE: 119
-TYPE: >>
-INPUT: NValues[c] := {N[c] :> 3}
-EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: NValues
 LINE: 126
 TYPE: >>
 INPUT: NValues[d]
