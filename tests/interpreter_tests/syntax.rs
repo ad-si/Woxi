@@ -396,6 +396,42 @@ mod newline_statements {
     // A function definition spanning lines should still work
     assert_eq!(interpret("f[x_] :=\n  x + 1\nf[5]").unwrap(), "6");
   }
+
+  // Newlines inside function-call brackets are ignored by the parser, so
+  // `Sin[ \n 0 ]` parses as `Sin[0]` regardless of where the newlines are.
+  #[test]
+  fn function_call_leading_newline() {
+    assert_eq!(
+      interpret("Hold[Sin[\n0]] // FullForm").unwrap(),
+      "Hold[Sin[0]]"
+    );
+  }
+
+  #[test]
+  fn function_call_multiple_leading_newlines() {
+    assert_eq!(
+      interpret("Hold[Sin[\n\n0]] // FullForm").unwrap(),
+      "Hold[Sin[0]]"
+    );
+  }
+
+  #[test]
+  fn function_call_trailing_newline() {
+    assert_eq!(
+      interpret("Hold[Sin[0\n]] // FullForm").unwrap(),
+      "Hold[Sin[0]]"
+    );
+  }
+
+  // A CompoundExpression separator followed by a newline-separated tail
+  // parses as `CompoundExpression[a, b]` inside the surrounding call.
+  #[test]
+  fn function_call_compound_expression_across_newlines() {
+    assert_eq!(
+      interpret("Hold[f[a;\nb]] // FullForm").unwrap(),
+      "Hold[f[CompoundExpression[a, b]]]"
+    );
+  }
 }
 
 mod full_form {

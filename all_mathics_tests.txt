@@ -8199,42 +8199,6 @@ EXPECTED: PatternTest[a, b][c]
 ---
 FILE: mathics/test/core/parser/test_util.py
 FUNCTION: None
-LINE: 60
-INPUT: Sin[\n0]
-EXPECTED: Sin[0]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 61
-INPUT: Sin[\n\n0]
-EXPECTED: Sin[0]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 92
-INPUT: Sin[\n0]
-EXPECTED: Sin[0]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 93
-INPUT: Sin[0\n]
-EXPECTED: Sin[0]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 94
-INPUT: Sin[\n\n0]
-EXPECTED: Sin[0]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
-LINE: 97
-INPUT: f[a;\nb]
-EXPECTED: f[CompoundExpression[a, b]]
----
-FILE: mathics/test/core/parser/test_util.py
-FUNCTION: None
 LINE: 98
 INPUT: f[a;\nb;\nc;]
 EXPECTED: f[CompoundExpression[a, b, c, Null]]
