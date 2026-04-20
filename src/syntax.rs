@@ -7574,6 +7574,76 @@ fn substitute_slots_expand(exprs: &[Expr], values: &[Expr]) -> Vec<Expr> {
 }
 
 pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
+  substitute_slots_impl(expr, values)
+}
+
+/// Replace every `Slot(0)` / `Slot[0]` inside `expr` with `self_fn`. Used by
+/// anonymous-function application to support `#0` self-reference, enabling
+/// recursive definitions like `If[#1 <= 1, 1, #1 #0[#1-1]] &`.
+pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
+  match expr {
+    Expr::Slot(0) => self_fn.clone(),
+    Expr::Slot(_) | Expr::SlotSequence(_) => expr.clone(),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_slot_zero_with_self(e, self_fn))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
+      if matches!(&args[0], Expr::Integer(0)) {
+        self_fn.clone()
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| substitute_slot_zero_with_self(e, self_fn))
+        .collect(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(substitute_slot_zero_with_self(func, self_fn)),
+      args: args
+        .iter()
+        .map(|e| substitute_slot_zero_with_self(e, self_fn))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_slot_zero_with_self(left, self_fn)),
+      right: Box::new(substitute_slot_zero_with_self(right, self_fn)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_slot_zero_with_self(operand, self_fn)),
+    },
+    Expr::Comparison { operands, operators } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| substitute_slot_zero_with_self(e, self_fn))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|e| substitute_slot_zero_with_self(e, self_fn))
+        .collect(),
+    ),
+    // Don't recurse into nested Function bodies — inner #0 refers to that
+    // inner function, not this one.
+    Expr::Function { .. } | Expr::NamedFunction { .. } => expr.clone(),
+    _ => expr.clone(),
+  }
+}
+
+fn substitute_slots_impl(
+  expr: &Expr,
+  values: &[Expr],
+) -> Expr {
   match expr {
     Expr::Slot(n) => {
       let index = if *n == 0 { 0 } else { n - 1 };

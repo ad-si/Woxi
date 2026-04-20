@@ -858,3 +858,32 @@ mod named_function_arity_check {
     assert_eq!(interpret("Function[{x}, x^2][3]").unwrap(), "9");
   }
 }
+
+mod slot_zero_self_reference {
+  use super::*;
+
+  #[test]
+  fn factorial_via_slot_zero() {
+    // Classic recursive anonymous-function idiom.
+    assert_eq!(
+      interpret("If[#1<=1, 1, #1 #0[#1-1]]& [5]").unwrap(),
+      "120"
+    );
+  }
+
+  #[test]
+  fn factorial_via_slot_zero_larger() {
+    assert_eq!(
+      interpret("If[#1<=1, 1, #1 #0[#1-1]]& [10]").unwrap(),
+      "3628800"
+    );
+  }
+
+  #[test]
+  fn unnumbered_slot_self_reference() {
+    assert_eq!(
+      interpret("If[# <= 1, 1, # #0[#-1]]& [4]").unwrap(),
+      "24"
+    );
+  }
+}

@@ -277,8 +277,15 @@ pub fn apply_function_to_arg(
       evaluate_function_call_ast(name, &[arg.clone()])
     }
     Expr::Function { body } => {
-      // Anonymous function: substitute # with arg and evaluate
-      let substituted = crate::syntax::substitute_slots(body, &[arg.clone()]);
+      // Anonymous function: first substitute #0 with the whole function (to
+      // support recursion like If[#1<=1, 1, #1 #0[#1-1]]&), then substitute
+      // the remaining numeric slots with arg.
+      let self_substituted =
+        crate::syntax::substitute_slot_zero_with_self(body, func);
+      let substituted = crate::syntax::substitute_slots(
+        &self_substituted,
+        &[arg.clone()],
+      );
       evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {
@@ -369,8 +376,12 @@ pub fn apply_curried_call(
       evaluate_function_call_ast(name, args)
     }
     Expr::Function { body } => {
-      // Anonymous function: substitute # with args and evaluate
-      let substituted = crate::syntax::substitute_slots(body, args);
+      // Anonymous function: substitute #0 with the whole function first,
+      // then # with args and evaluate.
+      let self_substituted =
+        crate::syntax::substitute_slot_zero_with_self(body, func);
+      let substituted =
+        crate::syntax::substitute_slots(&self_substituted, args);
       evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {

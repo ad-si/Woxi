@@ -7084,3 +7084,11 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript return 'Put[815915283247897734345611269596115894272000000000, fortyfactorial]' unevaluated byte-for-byte — fortyfactorial is not a stream. Mathics EXPECTED is its formatted warning + '815...000000 >> fortyfactorial' (the '>>' is the PutAppend/Put shorthand).
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Slot
+LINE: 192
+TYPE: >>
+INPUT: If[#1<=1, 1, #1 #0[#1-1]]& [10]
+EXPECTED:
+= 3628800
+---
