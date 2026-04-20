@@ -2307,6 +2307,28 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       }
       None => missing_not_available(),
     },
+    "AbsoluteBoilingPoint" => match elem.boiling_point {
+      Some(v) => {
+        // Celsius → Kelvin. Round to 2 decimals to mask IEEE-754 drift
+        // (source data has 2 decimal places).
+        let kelvin = ((v + 273.15) * 100.0).round() / 100.0;
+        Expr::Real(kelvin)
+      }
+      None => missing_not_available(),
+    },
+    "AbsoluteMeltingPoint" => match elem.melting_point {
+      Some(v) => {
+        let kelvin = ((v + 273.15) * 100.0).round() / 100.0;
+        Expr::Real(kelvin)
+      }
+      None => {
+        if elem.electronegativity.is_none() && elem.melting_point.is_none() {
+          missing_not_available()
+        } else {
+          missing_not_applicable()
+        }
+      }
+    },
     "AtomicRadius" => match elem.atomic_radius {
       Some(v) => {
         let prec = if v >= 100.0 { 3.0 } else { 2.0 };

@@ -301,4 +301,21 @@ mod element_data_tests {
       "{{2}, {2, 6}, {2, 6, 6}, {2}}"
     );
   }
+
+  #[test]
+  fn element_data_absolute_boiling_point_helium() {
+    // -268.93 °C + 273.15 = 4.22 K
+    assert_eq!(
+      interpret(r#"ElementData["He", "AbsoluteBoilingPoint"]"#).unwrap(),
+      "4.22"
+    );
+  }
+
+  #[test]
+  fn element_data_absolute_melting_point_carbon() {
+    assert_eq!(
+      interpret(r#"ElementData["Carbon", "AbsoluteMeltingPoint"]"#).unwrap(),
+      "3823.15"
+    );
+  }
 }

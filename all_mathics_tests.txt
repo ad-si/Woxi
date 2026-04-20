@@ -76,14 +76,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 60
-TYPE: >>
-INPUT: ElementData["He", "AbsoluteBoilingPoint"]
-EXPECTED:
-= 4.22
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 63
 TYPE: >>
 INPUT: ElementData["Carbon", "IonizationEnergies"]

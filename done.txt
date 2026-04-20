@@ -7267,3 +7267,11 @@ EXPECTED: (none)
 ---
 NOTE: With 'filename' unset, Woxi and wolframscript both return 'Put[3628800, 2432902008176640000, 265252859812191058636308480000000, filename]' unevaluated byte-for-byte. Mathics EXPECTED '(none)' requires prior 'filename' binding.
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 60
+TYPE: >>
+INPUT: ElementData["He", "AbsoluteBoilingPoint"]
+EXPECTED:
+= 4.22
+---
