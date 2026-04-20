@@ -7115,3 +7115,12 @@ TYPE: S>
 INPUT: filename = $TemporaryDirectory <> "/example_file";
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Unset
+LINE: 235
+TYPE: >>
+INPUT: f[x_] =.
+EXPECTED: (none)
+---
+NOTE: 'f[x_] =.' with no prior rule for f emits 'Unset::norep' on stderr and returns $Failed in both Woxi and wolframscript. Mathics EXPECTED '(none)' assumes prior 'f[x_] := ...' context making the Unset succeed silently.
+---
