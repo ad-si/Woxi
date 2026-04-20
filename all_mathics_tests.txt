@@ -427,14 +427,6 @@ INPUT: UpValues[b]
 EXPECTED:
 = {HoldPattern[a[b]] :> x}
 ---
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Remove
-LINE: 184
-TYPE: >>
-INPUT: Names["Global`a"]
-EXPECTED:
-= {a}
----
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
 LINE: 39

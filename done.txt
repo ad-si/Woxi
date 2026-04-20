@@ -7364,3 +7364,13 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript return 'Null' byte-for-byte stdout for 'ClearAll[lock]' when lock isn't a locked symbol. Mathics EXPECTED is the warning that fires only when lock has a Locked attribute set.
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Remove
+LINE: 184
+TYPE: >>
+INPUT: Names["Global`a"]
+EXPECTED:
+= {a}
+---
+NOTE: Both Woxi and wolframscript return '{}' byte-for-byte for 'Names["Global`a"]' when 'a' isn't defined; mathics EXPECTED '{a}' requires prior 'a = ...' context.
+---
