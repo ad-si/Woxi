@@ -138,13 +138,6 @@ INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]
 EXPECTED:
 = {{a -> Function[{n}, 5 / 2 - 3 (-1) ^ n / 2]}}
 ---
-FILE: mathics/builtin/scoping.py
-CLASS: ContextPath_
-LINE: 281
-TYPE: X>
-INPUT: $ContextPath // InputForm
-EXPECTED: (none)
----
 FILE: mathics/builtin/system.py
 CLASS: Packages
 LINE: 507

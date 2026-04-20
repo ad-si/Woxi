@@ -7335,3 +7335,12 @@ INPUT: Contexts[]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: ContextPath_
+LINE: 281
+TYPE: X>
+INPUT: $ContextPath // InputForm
+EXPECTED: (none)
+---
+NOTE: TYPE X> excluded mathics test. Woxi leaves 'InputForm[{System`, Global`}]' unevaluated; EXPECTED '(none)' accepts any output.
+---
