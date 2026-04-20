@@ -7344,3 +7344,13 @@ EXPECTED: (none)
 ---
 NOTE: TYPE X> excluded mathics test. Woxi leaves 'InputForm[{System`, Global`}]' unevaluated; EXPECTED '(none)' accepts any output.
 ---
+FILE: mathics/builtin/tensors.py
+CLASS: Outer
+LINE: 215
+TYPE: >>
+INPUT: Map[#[0] &, trigs, {2}]
+EXPECTED:
+= {{0, 1, 0}, {1, 0, 1}, {0, ComplexInfinity, 0}}
+---
+NOTE: With 'trigs' unset, both Woxi and wolframscript return 'trigs' byte-for-byte. Mathics EXPECTED requires prior 'trigs = {{Sin, Cos, ...}, ...}' context.
+---

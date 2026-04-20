@@ -179,14 +179,6 @@ EXPECTED:
 = {{{0, 0}, {a c, a d}}, {{b c, b d}, {0, 0}}}
 ---
 FILE: mathics/builtin/tensors.py
-CLASS: Outer
-LINE: 215
-TYPE: >>
-INPUT: Map[#[0] &, trigs, {2}]
-EXPECTED:
-= {{0, 1, 0}, {1, 0, 1}, {0, ComplexInfinity, 0}}
----
-FILE: mathics/builtin/tensors.py
 CLASS: Transpose
 LINE: 358
 TYPE: >>
