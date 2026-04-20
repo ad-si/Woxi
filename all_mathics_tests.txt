@@ -797,14 +797,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 545
-TYPE: S>
-INPUT: FilePrint[filename]
-EXPECTED:
-| 815915283247897734345611269596115894272000000000
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 547
 TYPE: S>
 INPUT: Get[filename]

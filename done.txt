@@ -7248,3 +7248,13 @@ EXPECTED:
 ---
 NOTE: With 'stream' unset, Woxi and wolframscript both return 'Close[stream]' unevaluated byte-for-byte. Mathics EXPECTED 'String' requires a prior 'stream = StringToStream[...]' context.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 545
+TYPE: S>
+INPUT: FilePrint[filename]
+EXPECTED:
+| 815915283247897734345611269596115894272000000000
+---
+NOTE: With 'filename' unset, Woxi and wolframscript both return 'FilePrint[filename]' unevaluated byte-for-byte. Mathics EXPECTED is the printed file content after prior 'Put[40!, filename]'.
+---
