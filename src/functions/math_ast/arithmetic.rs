@@ -3863,6 +3863,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if exp_is_neg_inf {
       return Ok(Expr::Integer(0));
     }
+    // E^Real → numeric Real (matches Wolfram behavior: a machine-precision
+    // exponent forces numeric evaluation). Does not apply to integer or
+    // symbolic exponents, which stay symbolic (e.g. E^2, E^x).
+    if let Expr::Real(r) = exp {
+      return Ok(Expr::Real(r.exp()));
+    }
   }
 
   // base^Infinity where base is a known positive real > 1 → Infinity
@@ -4245,6 +4251,56 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![cos_val, imag_term],
     });
+  }
+
+  // E^(a + k*I*Pi) → E^a * E^(k*I*Pi), when k*I*Pi appears as a Plus term
+  // and has denominator 1 or 2 (so E^(k*I*Pi) evaluates to ±1 or ±I).
+  // This keeps the non-Pi part symbolic rather than forcing a numeric f64 value
+  // (e.g. E^(3 + I*Pi) → -E^3 instead of ≈ -20.0855 + 2.46e-15 I).
+  // When the exponent contains a Real, skip this split so the numeric complex
+  // Euler path below can fully evaluate (e.g. E^(log2 + I*Pi) → -2.).
+  if matches!(base, Expr::Constant(c) if c == "E") && !contains_real(exp) {
+    let plus_args: Option<Vec<&Expr>> = match exp {
+      Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+        Some(args.iter().collect())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left,
+        right,
+      } => Some(vec![left.as_ref(), right.as_ref()]),
+      _ => None,
+    };
+    if let Some(terms) = plus_args {
+      let mut i_pi_term: Option<&Expr> = None;
+      let mut other_terms: Vec<&Expr> = Vec::new();
+      for t in &terms {
+        if i_pi_term.is_none()
+          && let Some((_, d)) = try_extract_i_pi_rational_multiple(t)
+          && (d == 1 || d == 2)
+        {
+          i_pi_term = Some(*t);
+        } else {
+          other_terms.push(*t);
+        }
+      }
+      if let Some(ipi) = i_pi_term
+        && !other_terms.is_empty()
+      {
+        let rest_exp = if other_terms.len() == 1 {
+          other_terms[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: other_terms.into_iter().cloned().collect(),
+          }
+        };
+        let e_sym = base.clone();
+        let e_rest = power_two(&e_sym, &rest_exp)?;
+        let e_ipi = power_two(&e_sym, ipi)?;
+        return crate::functions::times_ast(&[e_rest, e_ipi]);
+      }
+    }
   }
 
   // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])

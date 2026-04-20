@@ -654,6 +654,32 @@ mod im_tests {
     );
   }
 
+  #[test]
+  fn exp_integer_plus_i_pi_stays_symbolic() {
+    // E^(a + I Pi) should split to E^a * E^(I Pi) = -E^a, staying symbolic
+    // when the non-Pi part doesn't contain a Real.
+    assert_eq!(interpret("E^(3+I Pi)").unwrap(), "-E^3");
+  }
+
+  #[test]
+  fn exp_symbol_plus_i_pi_stays_symbolic() {
+    assert_eq!(interpret("E^(a+I Pi)").unwrap(), "-E^a");
+  }
+
+  #[test]
+  fn exp_symbol_plus_two_i_pi_reduces() {
+    // 2 I Pi has denom 1, E^(2 I Pi) = 1, so the whole thing collapses to E^a.
+    assert_eq!(interpret("E^(a+2 I Pi)").unwrap(), "E^a");
+  }
+
+  #[test]
+  fn exp_real_numeric() {
+    // E^Real forces numeric evaluation; integer and symbolic exponents stay symbolic.
+    assert_eq!(interpret("E^0.5").unwrap(), "1.6487212707001282");
+    assert_eq!(interpret("log2=Log[2.]; E^log2").unwrap(), "2.");
+    assert_eq!(interpret("E^2").unwrap(), "E^2");
+  }
+
   // ── Log2 ─────────────────────────────────────────────────
 
   #[test]

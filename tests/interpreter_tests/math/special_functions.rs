@@ -5926,8 +5926,8 @@ mod gamma_incomplete {
 
   #[test]
   fn gamma_1_numeric() {
-    // Gamma[1, 1.0] should simplify to E^(-1.0)
-    assert_eq!(interpret("Gamma[1, 1.]").unwrap(), "E^-1.");
+    // Gamma[1, x] = E^(-x); with a machine-Real argument it evaluates numerically.
+    assert_eq!(interpret("Gamma[1, 1.]").unwrap(), "0.36787944117144233");
   }
 }
 
