@@ -582,14 +582,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: AddTo
-LINE: 56
-TYPE: >>
-INPUT: a += 2
-EXPECTED:
-= 12
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: AddTo
 LINE: 58
 TYPE: >>
 INPUT: a
@@ -611,14 +603,6 @@ TYPE: >>
 INPUT: a--; a
 EXPECTED:
 = {0, 2, 4}
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: DivideBy
-LINE: 141
-TYPE: >>
-INPUT: a /= 2
-EXPECTED:
-= 5
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: DivideBy
@@ -653,7 +637,6 @@ EXPECTED:
 = Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
-FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreDecrement
 LINE: 226
 TYPE: >>
@@ -684,24 +667,12 @@ TYPE: >>
 INPUT: a
 EXPECTED:
 = 3
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreIncrement
 LINE: 281
 TYPE: >>
 INPUT: y
 EXPECTED:
-= 1 + x
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: SubtractFrom
-LINE: 312
-TYPE: >>
-INPUT: a -= 2
-EXPECTED:
-= 8
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: SubtractFrom
@@ -710,14 +681,6 @@ TYPE: >>
 INPUT: a
 EXPECTED:
 = 8
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: TimesBy
-LINE: 340
-TYPE: >>
-INPUT: a *= 2
-EXPECTED:
-= 20
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: TimesBy

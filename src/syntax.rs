@@ -4689,6 +4689,18 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "UpSetDelayed" && args.len() == 2 {
         return format!("{} ^:= {}", fmt(&args[0]), fmt(&args[1]));
       }
+      if name == "AddTo" && args.len() == 2 {
+        return format!("{} += {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "SubtractFrom" && args.len() == 2 {
+        return format!("{} -= {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "TimesBy" && args.len() == 2 {
+        return format!("{} *= {}", fmt(&args[0]), fmt(&args[1]));
+      }
+      if name == "DivideBy" && args.len() == 2 {
+        return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
+      }
       if name == "Condition" && args.len() == 2 {
         // When the LHS is Plus (BinaryOp or FunctionCall), parenthesize
         // the last Pattern-like argument to avoid visual ambiguity:
@@ -6723,6 +6735,40 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       format!(
         "{} ^:= {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "AddTo" && args.len() == 2 => {
+      format!(
+        "{} += {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "SubtractFrom" && args.len() == 2 =>
+    {
+      format!(
+        "{} -= {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TimesBy" && args.len() == 2 =>
+    {
+      format!(
+        "{} *= {}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DivideBy" && args.len() == 2 =>
+    {
+      format!(
+        "{} /= {}",
         expr_to_input_form(&args[0]),
         expr_to_input_form(&args[1])
       )

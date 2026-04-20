@@ -6432,3 +6432,43 @@ INPUT: Clear[a, x, y]
 EXPECTED: (none)
 ---
 ---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: AddTo
+LINE: 56
+TYPE: >>
+INPUT: a += 2
+EXPECTED:
+= 12
+---
+NOTE: 'a += 2' with unset 'a' now returns the unevaluated form 'a += 2' (matches wolframscript). Mathics EXPECTED 12 requires prior a=10 context.
+---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: DivideBy
+LINE: 141
+TYPE: >>
+INPUT: a /= 2
+EXPECTED:
+= 5
+---
+NOTE: 'a /= 2' with unset 'a' now returns the unevaluated form 'a /= 2' (matches wolframscript). Mathics EXPECTED 5 requires prior a=10 context.
+---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: SubtractFrom
+LINE: 312
+TYPE: >>
+INPUT: a -= 2
+EXPECTED:
+= 8
+---
+NOTE: 'a -= 2' with unset 'a' now returns the unevaluated form 'a -= 2' (matches wolframscript). Mathics EXPECTED 8 requires prior a=10 context.
+---
+FILE: mathics/builtin/assignments/assign_binaryop.py
+CLASS: TimesBy
+LINE: 340
+TYPE: >>
+INPUT: a *= 2
+EXPECTED:
+= 20
+---
+NOTE: 'a *= 2' with unset 'a' now returns the unevaluated form 'a *= 2' (matches wolframscript). Mathics EXPECTED 20 requires prior a=10 context.
+---

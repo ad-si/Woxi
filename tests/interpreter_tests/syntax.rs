@@ -2531,6 +2531,13 @@ mod add_to_function {
       "freshAddVar"
     );
   }
+
+  #[test]
+  fn add_to_uninitialized_returns_unevaluated() {
+    // Matches Mathematica: `a += 2` with unset `a` keeps the AddTo form.
+    clear_state();
+    assert_eq!(interpret("freshAddToA += 2").unwrap(), "freshAddToA += 2");
+  }
 }
 
 mod subtract_from_function {
@@ -2551,6 +2558,12 @@ mod subtract_from_function {
       interpret("SubtractFrom[freshSubVar, 2]; freshSubVar").unwrap(),
       "freshSubVar"
     );
+  }
+
+  #[test]
+  fn subtract_from_uninitialized_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("freshSubA -= 2").unwrap(), "freshSubA -= 2");
   }
 }
 
@@ -2573,6 +2586,12 @@ mod times_by_function {
       "freshTimVar"
     );
   }
+
+  #[test]
+  fn times_by_uninitialized_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("freshTimA *= 3").unwrap(), "freshTimA *= 3");
+  }
 }
 
 mod divide_by_function {
@@ -2593,6 +2612,12 @@ mod divide_by_function {
       interpret("DivideBy[freshDivVar, 2]; freshDivVar").unwrap(),
       "freshDivVar"
     );
+  }
+
+  #[test]
+  fn divide_by_uninitialized_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("freshDivA /= 2").unwrap(), "freshDivA /= 2");
   }
 }
 

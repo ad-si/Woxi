@@ -732,7 +732,11 @@ pub fn evaluate_expr_to_expr_inner(
                   "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
                   name, var_name
                 ));
-                return Ok(Expr::Identifier(var_name.clone()));
+                // Match Mathematica: leave the whole call unevaluated.
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: args.clone(),
+                });
               }
             };
             let rhs = evaluate_expr_to_expr(&args[1])?;
