@@ -2689,6 +2689,27 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
   let mut leading_not = false;
+  // Tracks a pending Not prefix that should wrap the *final* form of the
+  // current term — i.e. after all suffixes (!, !!, \[Transpose], ..) have
+  // been applied. This makes "!a!" parse as Not[Factorial[a]] rather than
+  // Factorial[Not[a]].
+  let mut pending_not_on_last = false;
+  // Apply a pending Not to the top of `terms` and clear the flag. Used at
+  // every boundary that ends a term block.
+  fn flush_pending_not(
+    pending: &mut bool,
+    terms: &mut Vec<Expr>,
+  ) {
+    if *pending {
+      if let Some(last) = terms.pop() {
+        terms.push(Expr::FunctionCall {
+          name: "Not".to_string(),
+          args: vec![last],
+        });
+      }
+      *pending = false;
+    }
+  }
 
   for item in inner {
     match item.as_rule() {
@@ -2704,22 +2725,26 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         leading_minus = true;
       }
       Rule::LeadingNot => {
-        // !expr becomes Not[expr]
+        // !expr becomes Not[expr]. Deferred until after suffixes so that
+        // !a! → Not[Factorial[a]] rather than Factorial[Not[a]].
         leading_not = true;
       }
       Rule::Operator | Rule::ConditionOp => {
+        flush_pending_not(&mut pending_not_on_last, &mut terms);
         operators.push(item.as_str().trim().to_string());
       }
       Rule::UnsetSuffix => {
         // f[x] =. → Unset[f[x]]: push "=." as an operator with a dummy
         // right operand so the precedence-climbing algorithm can handle it
         // like any other operator (at assignment precedence level 2).
+        flush_pending_not(&mut pending_not_on_last, &mut terms);
         operators.push("=.".to_string());
         terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
       }
       Rule::TildeInfix => {
         // a ~f~ b → f[a, b]: encode as "~funcName~" operator string
         // The inner pair is either BaseFunctionCall or Identifier
+        flush_pending_not(&mut pending_not_on_last, &mut terms);
         let inner = item.into_inner().next().unwrap();
         let func_expr = pair_to_expr(inner);
         // Store as "~<encoded>~" for make_binary_op to handle
@@ -2782,18 +2807,18 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           leading_minus = false;
         }
         let expr = pair_to_expr(item);
+        terms.push(expr);
         if leading_not {
-          terms.push(Expr::FunctionCall {
-            name: "Not".to_string(),
-            args: vec![expr],
-          });
+          // Defer the Not wrapping until any postfix suffixes have been
+          // applied so that operators like `!` bind tighter than the prefix
+          // Not, matching Wolfram precedence.
+          pending_not_on_last = true;
           leading_not = false;
-        } else {
-          terms.push(expr);
         }
       }
     }
   }
+  flush_pending_not(&mut pending_not_on_last, &mut terms);
 
   let mut result = if terms.len() == 1 {
     terms.remove(0)

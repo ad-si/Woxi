@@ -1568,6 +1568,16 @@ mod factorial {
     let val: f64 = result.parse().unwrap();
     assert!((val - 1.772453850905516).abs() < 1e-12);
   }
+
+  // Prefix Not binds looser than postfix Factorial, so `!a!` must parse as
+  // Not[Factorial[a]] rather than Factorial[Not[a]].
+  #[test]
+  fn not_binds_looser_than_factorial() {
+    assert_eq!(
+      interpret("!a! // FullForm").unwrap(),
+      "Not[Factorial[a]]"
+    );
+  }
 }
 
 mod factorial2 {

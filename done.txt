@@ -8033,3 +8033,11 @@ INPUT: Replace[x[x[y]], x -> z, {1}, Heads -> True]
 EXPECTED:
 = z[x[y]]
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Factorial
+LINE: 178
+TYPE: >>
+INPUT: !a! // FullForm
+EXPECTED:
+= Not[Factorial[a]]
+---

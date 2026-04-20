@@ -5999,14 +5999,6 @@ EXPECTED:
 = 0.0427943 - 0.00461565 I
 ---
 FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial
-LINE: 178
-TYPE: >>
-INPUT: !a! // FullForm
-EXPECTED:
-= Not[Factorial[a]]
----
-FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial2
 LINE: 209
 TYPE: >>
