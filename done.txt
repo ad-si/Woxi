@@ -5707,3 +5707,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-091/093/094/095/096/097/098/099 Plot variants (LucasL, PolyLog, ProductLog, Sin variants)
 EXPECTED: -Graphics- (8 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/doc_tests.yaml
+INPUT: doc-100/101/102/103/104/105/106/107/108/109/110/111/112/113/114/115 Plot variants
+EXPECTED: -Graphics- (16 tests; Woxi and wolframscript byte-identical)
+---
