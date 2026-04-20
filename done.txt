@@ -7612,3 +7612,11 @@ INPUT: OpenAppend[]
 EXPECTED:
 = OutputStream[...]
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: InputStream
+LINE: 425
+TYPE: >>
+INPUT: stream = StringToStream["Mathics is cool!"]
+EXPECTED:
+= ...
+---

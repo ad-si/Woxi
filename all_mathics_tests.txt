@@ -624,14 +624,6 @@ EXPECTED:
 = Cos[x] + I Sin[x]
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: InputStream
-LINE: 425
-TYPE: >>
-INPUT: stream = StringToStream["Mathics is cool!"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: OpenRead
 LINE: 462
 TYPE: >>
