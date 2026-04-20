@@ -5787,3 +5787,10 @@ FORM: StandardForm
 INPUT: MakeBoxes[x]
 EXPECTED: x (Woxi and wolframscript byte-identical; mathics expected "x" is the box-string form)
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Numbers
+EXPRESSION: PrecisionReal, Many Digits
+FORM: StandardForm
+INPUT: MakeBoxes[1.4`20]
+EXPECTED: 1.4`20. (Woxi and wolframscript byte-identical)
+---

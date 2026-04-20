@@ -14525,14 +14525,6 @@ MESSAGE: OutputForm trims digits up to precision.
 ---
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Numbers
-EXPRESSION: PrecisionReal, Many Digits
-FORM: StandardForm
-INPUT: MakeBoxes[1.4`20]
-EXPECTED: "1.4`20."
-MESSAGE: In Mathics3, precision is always an integer number.
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Numbers
 EXPRESSION: PrecisionReal, Many Accuracy
 FORM: StandardForm
 INPUT: MakeBoxes[1.5``20]
