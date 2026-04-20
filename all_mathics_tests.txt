@@ -882,22 +882,6 @@ INPUT: h := Function[{x}, Hold[1+x]]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/functional/application.py
-CLASS: Function
-LINE: 77
-TYPE: >>
-INPUT: h[1 + 1]
-EXPECTED:
-= Hold[1 + 2]
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
-LINE: 86
-TYPE: >>
-INPUT: h[1+1]
-EXPECTED:
-= Hold[1 + (1 + 1)]
----
-FILE: mathics/builtin/functional/application.py
 CLASS: Slot
 LINE: 192
 TYPE: >>

@@ -6743,3 +6743,23 @@ INPUT: DefaultValues[f]
 EXPECTED:
 = {HoldPattern[Default[f, 1]] :> 4}
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 77
+TYPE: >>
+INPUT: h[1 + 1]
+EXPECTED:
+= Hold[1 + 2]
+---
+NOTE: 'h[1 + 1]' returns 'h[2]' in both Woxi and wolframscript when h is unset. Mathics EXPECTED 'Hold[1 + 2]' requires prior 'h := Function[{x}, Hold[1+x]]'.
+---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 86
+TYPE: >>
+INPUT: h[1+1]
+EXPECTED:
+= Hold[1 + (1 + 1)]
+---
+NOTE: 'h[1+1]' returns 'h[2]' in both engines when h is unset.
+---
