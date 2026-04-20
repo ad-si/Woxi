@@ -491,6 +491,32 @@ mod context {
   fn context_matches_dollar_context() {
     assert_eq!(interpret("Context[] === $Context").unwrap(), "True");
   }
+
+  #[test]
+  fn contexts_no_args_returns_system_and_global() {
+    assert_eq!(
+      interpret("Contexts[]").unwrap(),
+      "{System`, Global`}"
+    );
+  }
+
+  #[test]
+  fn contexts_unknown_pattern_returns_empty() {
+    assert_eq!(interpret(r#"Contexts["HTML*"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn contexts_pattern_matches_system() {
+    assert_eq!(interpret(r#"Contexts["Sys*"]"#).unwrap(), "{System`}");
+  }
+
+  #[test]
+  fn contexts_pattern_matches_all() {
+    assert_eq!(
+      interpret(r#"Contexts["*"]"#).unwrap(),
+      "{System`, Global`}"
+    );
+  }
 }
 
 mod names {

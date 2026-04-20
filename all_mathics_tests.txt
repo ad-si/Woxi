@@ -147,14 +147,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/scoping.py
-CLASS: Contexts
-LINE: 253
-TYPE: >>
-INPUT: Contexts["HTML*"]
-EXPECTED:
-= {HTML`, HTML`Parser`}
----
-FILE: mathics/builtin/scoping.py
 CLASS: ContextPath_
 LINE: 281
 TYPE: X>

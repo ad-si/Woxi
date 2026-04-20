@@ -3308,7 +3308,7 @@ Permanent,,,,10.2,3389
 PlaneCurveData,,🚫,,10.0,3389
 WaveletBestBasis,,🚫,,8.0,3389
 WeakStationarity,,,,9.0,3389
-Contexts,,,,2.0,3402
+Contexts,"Lists known contexts; optional string pattern with * wildcards filters the result",✅,pure,2.0,3402
 CoordinateBoundingBoxArray,,,,10.1,3402
 CopyDirectory,,,,2.0,3402
 CreateChannel,,🚫,,11.0,3402

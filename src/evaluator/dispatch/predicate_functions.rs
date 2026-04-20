@@ -691,6 +691,71 @@ pub fn dispatch_predicate_functions(
       // User-defined symbols are in Global` context
       return Some(Ok(Expr::String("Global`".to_string())));
     }
+    // Contexts[] — list known contexts; Contexts["pattern*"] — filter by
+    // glob pattern. Woxi only tracks System` and Global` contexts; any other
+    // pattern matches none.
+    "Contexts" if args.is_empty() => {
+      return Some(Ok(Expr::List(vec![
+        Expr::String("System`".to_string()),
+        Expr::String("Global`".to_string()),
+      ])));
+    }
+    "Contexts" if args.len() == 1 => {
+      let pattern = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Contexts".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      // Convert glob (* wildcards) to a simple matcher.
+      let glob_match = |name: &str| -> bool {
+        // Split the pattern on '*' and check each literal part appears in
+        // order, anchored to start/end unless the pattern begins/ends with '*'.
+        let parts: Vec<&str> = pattern.split('*').collect();
+        let mut pos = 0usize;
+        for (i, part) in parts.iter().enumerate() {
+          if part.is_empty() {
+            continue;
+          }
+          if i == 0 {
+            // Must start with this prefix.
+            if !name[pos..].starts_with(part) {
+              return false;
+            }
+            pos += part.len();
+          } else if i == parts.len() - 1 {
+            // Last part must match the remaining end unless pattern ends in '*'.
+            if pattern.ends_with('*') {
+              if name[pos..].find(part).is_none() {
+                return false;
+              }
+            } else if !name[pos..].ends_with(part) {
+              return false;
+            }
+          } else {
+            match name[pos..].find(part) {
+              Some(idx) => pos += idx + part.len(),
+              None => return false,
+            }
+          }
+        }
+        if !pattern.contains('*') {
+          name == pattern
+        } else {
+          true
+        }
+      };
+      let all = ["System`", "Global`"];
+      let matches: Vec<Expr> = all
+        .iter()
+        .filter(|n| glob_match(n))
+        .map(|n| Expr::String(n.to_string()))
+        .collect();
+      return Some(Ok(Expr::List(matches)));
+    }
     // Options[f] - return stored options for function f
     // Options[f, opt] - return specific option for function f
     "Options" if args.len() == 1 || args.len() == 2 => {
