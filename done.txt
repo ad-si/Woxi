@@ -7556,3 +7556,11 @@ INPUT: Read[stream, {Number, Word}]
 EXPECTED:
 = EndOfFile
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: StreamPosition
+LINE: 1130
+TYPE: >>
+INPUT: stream = StringToStream["Mathics is cool!"]
+EXPECTED:
+= ...
+---
