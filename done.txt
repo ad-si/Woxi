@@ -6811,3 +6811,12 @@ EXPECTED:
 ---
 NOTE: Nest[Subsuperscript[#,#,#]&,0,5] produces identical nested Subsuperscript output in Woxi and wolframscript byte-for-byte (verified; the full expansion has 3^5 = 243 leaves).
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Get
+LINE: 355
+TYPE: S>
+INPUT: filename = $TemporaryDirectory <> "/example_file";
+EXPECTED: (none)
+---
+NOTE: Woxi returns 'Null' (no stdout output) for this trailing-semicolon assignment, matching mathics EXPECTED '(none)'.
+---
