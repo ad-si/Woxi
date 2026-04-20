@@ -6913,3 +6913,13 @@ EXPECTED:
 ---
 NOTE: 'MemoryInUse[]' returns a positive integer in both Woxi and wolframscript (exact value varies). Mathics EXPECTED '...' wildcard accepts any output.
 ---
+FILE: mathics/builtin/system.py
+CLASS: VersionNumber
+LINE: 1030
+TYPE: S>
+INPUT: $SystemMemory
+EXPECTED:
+= -1
+---
+NOTE: Both Woxi and wolframscript return the actual system RAM in bytes (e.g. 38654705664); byte-for-byte match on the same machine. Mathics EXPECTED '-1' is a fallback when mathics can't determine memory.
+---
