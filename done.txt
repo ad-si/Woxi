@@ -7662,3 +7662,23 @@ INPUT: Read[stream1]
 EXPECTED:
 = 8205.79
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 183
+TYPE: >>
+INPUT: stream1 = OpenRead["ExampleData/numbers.txt"]
+EXPECTED:
+= InputStream[ExampleData/numbers.txt, ...]
+---
+NOTE: Both Woxi and wolframscript return '$Failed' byte-for-byte when the file path doesn't exist; mathics EXPECTED 'InputStream[...]' requires that ExampleData/numbers.txt be resolvable in the session CWD.
+---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 186
+TYPE: >>
+INPUT: stream2 = OpenRead["ExampleData/numbers.txt"]
+EXPECTED:
+= InputStream[ExampleData/numbers.txt, ...]
+---
+NOTE: Same — both engines return '$Failed' for missing file.
+---
