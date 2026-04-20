@@ -6014,3 +6014,22 @@ LINE: 37
 INPUT: 2*x
 EXPECTED: a_.*b_.
 ---
+FILE: mathics/builtin/options.py
+CLASS: OptionValue
+LINE: 406
+TYPE: >>
+INPUT: OptionValue[MySetting, "bar"]
+EXPECTED:
+= 6
+NOTE: requires prior 'Options[MySetting] = {"bar" -> 6}'; with that, both Woxi and wolframscript return 6. Two-arg OptionValue implemented.
+---
+FILE: mathics/builtin/options.py
+CLASS: OptionValue
+LINE: 410
+TYPE: >>
+INPUT: OptionValue[MySetting, "baz"]
+EXPECTED:
+: Option name baz not found in defaults for MySetting.
+= baz
+NOTE: two-arg OptionValue implemented — emits optnf warning and returns the name; matches wolframscript.
+---

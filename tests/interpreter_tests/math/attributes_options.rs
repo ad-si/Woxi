@@ -449,4 +449,36 @@ mod option_value {
       "42"
     );
   }
+
+  #[test]
+  fn option_value_two_arg_from_options() {
+    assert_eq!(
+      interpret(
+        "Options[MySetting] = {\"bar\" -> 6}; OptionValue[MySetting, \"bar\"]"
+      )
+      .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn option_value_two_arg_not_found_returns_name_string() {
+    assert_eq!(
+      interpret("OptionValue[MySetting, \"baz\"]").unwrap(),
+      "baz"
+    );
+  }
+
+  #[test]
+  fn option_value_two_arg_not_found_returns_name_symbol() {
+    assert_eq!(interpret("OptionValue[MySetting, bar]").unwrap(), "bar");
+  }
+
+  #[test]
+  fn option_value_three_arg_from_explicit_opts() {
+    assert_eq!(
+      interpret("OptionValue[MySetting, {\"bar\" -> 9}, \"bar\"]").unwrap(),
+      "9"
+    );
+  }
 }

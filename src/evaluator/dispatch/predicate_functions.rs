@@ -768,6 +768,94 @@ pub fn dispatch_predicate_functions(
         }
       }
     }
+    // OptionValue[f, name] - look up option value from Options[f]
+    // OptionValue[f, opts, name] - look up from explicit opts list, falling back to Options[f]
+    "OptionValue" if args.len() == 2 || args.len() == 3 => {
+      let func_arg = match evaluate_expr_to_expr(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let func_name = match &func_arg {
+        Expr::Identifier(name) => Some(name.clone()),
+        _ => None,
+      };
+      // Collect extra opts if 3-arg form
+      let extra_opts: Vec<Expr> = if args.len() == 3 {
+        let ev = match evaluate_expr_to_expr(&args[1]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        if let Expr::List(items) = &ev {
+          items.clone()
+        } else {
+          vec![ev]
+        }
+      } else {
+        Vec::new()
+      };
+      // The name argument
+      let name_idx = args.len() - 1;
+      let name_arg = match evaluate_expr_to_expr(&args[name_idx]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      // Resolve lookup key as string
+      let (lookup_key, _is_string) = match &name_arg {
+        Expr::Identifier(n) => (n.clone(), false),
+        Expr::String(s) => (s.clone(), true),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "OptionValue".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      // Helper: match rule key against lookup_key
+      let matches_key = |pattern: &Expr| -> bool {
+        match pattern {
+          Expr::Identifier(n) => *n == lookup_key,
+          Expr::String(s) => *s == lookup_key,
+          _ => false,
+        }
+      };
+      let find_value = |rules: &[Expr]| -> Option<Expr> {
+        for rule in rules {
+          match rule {
+            Expr::Rule { pattern, replacement }
+            | Expr::RuleDelayed { pattern, replacement } => {
+              if matches_key(pattern.as_ref()) {
+                return Some((**replacement).clone());
+              }
+            }
+            _ => {}
+          }
+        }
+        None
+      };
+      // Search order: extra_opts first, then Options[f]
+      if let Some(v) = find_value(&extra_opts) {
+        return Some(Ok(v));
+      }
+      if let Some(fname) = &func_name {
+        let stored =
+          crate::FUNC_OPTIONS.with(|m| m.borrow().get(fname).cloned());
+        if let Some(rules) = stored {
+          if let Some(v) = find_value(&rules) {
+            return Some(Ok(v));
+          }
+        }
+      }
+      // Not found: emit optnf warning (to stderr via eprintln), return name as-is
+      let fname_display = match &func_name {
+        Some(n) => n.clone(),
+        None => crate::syntax::expr_to_string(&func_arg),
+      };
+      eprintln!(
+        "OptionValue::optnf: Option name {} not found in defaults for {}.",
+        lookup_key, fname_display
+      );
+      return Some(Ok(name_arg));
+    }
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {
       return Some(crate::functions::predicate_ast::construct_ast(args));

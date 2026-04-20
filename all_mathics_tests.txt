@@ -35,23 +35,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/options.py
 CLASS: OptionValue
-LINE: 406
-TYPE: >>
-INPUT: OptionValue[MySetting, "bar"]
-EXPECTED:
-= 6
----
-FILE: mathics/builtin/options.py
-CLASS: OptionValue
-LINE: 410
-TYPE: >>
-INPUT: OptionValue[MySetting, "baz"]
-EXPECTED:
-: Option name baz not found in defaults for MySetting.
-= baz
----
-FILE: mathics/builtin/options.py
-CLASS: OptionValue
 LINE: 415
 TYPE: >>
 INPUT: f[a->3] /. f[OptionsPattern[{}]] -> {OptionValue[a]}
