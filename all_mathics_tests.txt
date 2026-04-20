@@ -1967,18 +1967,6 @@ INPUT: StringSplit["  abc    123  ", WhitespaceCharacter]
 EXPECTED:
 = {, , abc, , , , 123, , }
 ---
-FILE: mathics/builtin/string/patterns.py
-CLASS: EndOfLine
-LINE: 49
-TYPE: >>
-INPUT: StringReplace["aba\nbba\na\nab", "a" ~~ EndOfLine -> "c"]
-EXPECTED:
-= abc
-. bbc
-. c
-. ab
----
-FILE: mathics/builtin/string/patterns.py
 CLASS: EndOfLine
 LINE: 55
 TYPE: >>

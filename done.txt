@@ -7914,3 +7914,15 @@ INPUT: StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"
 EXPECTED:
 = applE banana orangE artichokE
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: EndOfLine
+LINE: 49
+TYPE: >>
+INPUT: StringReplace["aba\nbba\na\nab", "a" ~~ EndOfLine -> "c"]
+EXPECTED:
+= abc
+. bbc
+. c
+. ab
+---
+FILE: mathics/builtin/string/patterns.py
