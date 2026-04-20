@@ -384,13 +384,6 @@ EXPECTED:
 . 3   6
 ---
 FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 390
-TYPE: #>
-INPUT: Clear[matrix, matrix3D, square]
-EXPECTED: (none)
----
-FILE: mathics/builtin/tensors.py
 CLASS: LeviCivitaTensor
 LINE: 448
 TYPE: >>

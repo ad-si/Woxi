@@ -943,7 +943,8 @@ mod transformation_function_compose {
   #[test]
   fn rotation_then_translation() {
     assert_eq!(
-      interpret("RotationTransform[Pi] . TranslationTransform[{1, -1}]").unwrap(),
+      interpret("RotationTransform[Pi] . TranslationTransform[{1, -1}]")
+        .unwrap(),
       "TransformationFunction[{{-1, 0, -1}, {0, -1, 1}, {0, 0, 1}}]"
     );
   }
@@ -951,7 +952,8 @@ mod transformation_function_compose {
   #[test]
   fn translation_then_rotation() {
     assert_eq!(
-      interpret("TranslationTransform[{1, -1}] . RotationTransform[Pi]").unwrap(),
+      interpret("TranslationTransform[{1, -1}] . RotationTransform[Pi]")
+        .unwrap(),
       "TransformationFunction[{{-1, 0, 1}, {0, -1, -1}, {0, 0, 1}}]"
     );
   }
@@ -959,7 +961,8 @@ mod transformation_function_compose {
   #[test]
   fn two_translations_add() {
     assert_eq!(
-      interpret("TranslationTransform[{a, b}] . TranslationTransform[{c, d}]").unwrap(),
+      interpret("TranslationTransform[{a, b}] . TranslationTransform[{c, d}]")
+        .unwrap(),
       "TransformationFunction[{{1, 0, a + c}, {0, 1, b + d}, {0, 0, 1}}]"
     );
   }
