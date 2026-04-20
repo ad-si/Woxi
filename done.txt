@@ -6763,3 +6763,23 @@ EXPECTED:
 ---
 NOTE: 'h[1+1]' returns 'h[2]' in both engines when h is unset.
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: MapAt
+LINE: 246
+TYPE: >>
+INPUT: MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]
+EXPECTED:
+= {a -> 1, b -> f[2], c -> 3, d -> 4}
+---
+NOTE: both Woxi and wolframscript return '<|a -> 1, b -> f[2], c -> 3, d -> 4|>' byte-for-byte. Mathics EXPECTED shows list-form '{a -> 1, ...}'.
+---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: MapAt
+LINE: 250
+TYPE: >>
+INPUT: MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, -2]
+EXPECTED:
+= {a -> 1, b -> 2, c -> f[3], d -> 4}
+---
+NOTE: both Woxi and wolframscript return '<|a -> 1, b -> 2, c -> f[3], d -> 4|>' byte-for-byte.
+---

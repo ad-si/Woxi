@@ -342,6 +342,25 @@ pub fn map_at_ast(
   list: &Expr,
   pos_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Association: <|k1 -> v1, ...|> supports integer-position MapAt that
+  // transforms the value at position n (1-based; negative counts from end).
+  if let Expr::Association(pairs) = list
+    && let Some(n) = expr_to_i128(pos_spec)
+  {
+    let len = pairs.len() as i128;
+    let idx = if n < 0 { (len + n) as usize } else { (n - 1) as usize };
+    if idx >= pairs.len() {
+      return Ok(Expr::FunctionCall {
+        name: "MapAt".to_string(),
+        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+      });
+    }
+    let mut new_pairs = pairs.clone();
+    let new_value = apply_func_ast(func, &new_pairs[idx].1)?;
+    new_pairs[idx].1 = new_value;
+    return Ok(Expr::Association(new_pairs));
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {

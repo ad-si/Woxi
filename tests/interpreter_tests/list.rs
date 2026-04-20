@@ -1064,6 +1064,36 @@ mod map_at {
       "{a, b, f[c], f[d], f[e]}"
     );
   }
+
+  #[test]
+  fn map_at_association_positive_index() {
+    assert_eq!(
+      interpret(
+        r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]"#
+      )
+      .unwrap(),
+      "<|a -> 1, b -> f[2], c -> 3, d -> 4|>"
+    );
+  }
+
+  #[test]
+  fn map_at_association_negative_index() {
+    assert_eq!(
+      interpret(
+        r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, -2]"#
+      )
+      .unwrap(),
+      "<|a -> 1, b -> 2, c -> f[3], d -> 4|>"
+    );
+  }
+
+  #[test]
+  fn map_at_association_index_out_of_range_stays_symbolic() {
+    assert_eq!(
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2|>, 3]"#).unwrap(),
+      "MapAt[f, <|a -> 1, b -> 2|>, 3]"
+    );
+  }
 }
 
 mod sort_by {
