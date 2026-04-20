@@ -7682,3 +7682,11 @@ EXPECTED:
 ---
 NOTE: Same — both engines return '$Failed' for missing file.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 172
+TYPE: >>
+INPUT: file=Close[OpenWrite[]]
+EXPECTED:
+= ...
+---
