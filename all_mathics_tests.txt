@@ -570,14 +570,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: Messages
-LINE: 76
-TYPE: >>
-INPUT: a::c // InputForm
-EXPECTED:
-= "bar"
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: Messages
 LINE: 78
 TYPE: >>
 INPUT: Message[a::c]

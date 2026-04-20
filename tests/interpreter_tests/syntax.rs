@@ -1715,10 +1715,7 @@ mod message_name_function {
   #[test]
   fn message_name_set_returns_rhs() {
     clear_state();
-    assert_eq!(
-      interpret("freshMsgA::usage = \"hello\"").unwrap(),
-      "hello"
-    );
+    assert_eq!(interpret("freshMsgA::usage = \"hello\"").unwrap(), "hello");
   }
 
   #[test]

@@ -3034,7 +3034,7 @@ fn operator_precedence(op: &str) -> u8 {
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
     "^" => 16, // Power
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
-    "@" => 18, // Prefix application
+    "@" => 18,  // Prefix application
     "::" => 19, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
