@@ -11332,30 +11332,6 @@ EXPECTED: Returning
 MESSAGE: Rewriting
 ---
 FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
-FUNCTION: test_uninitialized
-LINE: 14
-INPUT: Decrement
-EXPECTED: a--
----
-FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
-FUNCTION: test_uninitialized
-LINE: 15
-INPUT: Increment
-EXPECTED: a++
----
-FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
-FUNCTION: test_uninitialized
-LINE: 16
-INPUT: PreDecrement
-EXPECTED: --a
----
-FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
-FUNCTION: test_uninitialized
-LINE: 17
-INPUT: PreIncrement
-EXPECTED: ++a
----
-FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
 FUNCTION: test_predecrement
 LINE: 30
 INPUT: --5

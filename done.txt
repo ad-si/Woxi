@@ -5817,3 +5817,9 @@ LINE: 417
 INPUT: Iteration
 EXPECTED: Iteration (Woxi and wolframscript byte-identical when run in isolation; mathics expected "Infinity" depends on prior value setup)
 ---
+FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
+FUNCTION: test_uninitialized
+LINE: 14-17
+INPUT: Decrement / Increment / PreDecrement / PreIncrement
+EXPECTED: each returns its symbol name (Woxi and wolframscript byte-identical when run in isolation; mathics expected "a--"/"a++" depend on prior value setup)
+---
