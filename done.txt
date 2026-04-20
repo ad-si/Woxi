@@ -7099,3 +7099,12 @@ TYPE: >>
 INPUT: h := Function[{x}, Hold[1+x]]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 782
+TYPE: #>
+INPUT: Close[stream];
+EXPECTED: (none)
+---
+NOTE: 'Close[stream];' with unset stream returns 'Null' in Woxi (no stdout output due to trailing ';') matching mathics EXPECTED '(none)'.
+---
