@@ -8295,3 +8295,9 @@ INPUT: First[NumericArray[{1,2,3}]]
 EXPECTED: 1
 
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_basics
+LINE: 427
+INPUT: Last[NumericArray[{1,2,3}]]
+EXPECTED: 3
+---
