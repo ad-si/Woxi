@@ -11561,23 +11561,9 @@ MESSAGE: In Mathics3, precision is always an integer number.
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Graphics
 EXPRESSION: Disk
-FORM: StandardForm
-INPUT: MakeBoxes[Graphics[{Disk[{0,0}, 1]}]]
-EXPECTED: GraphicsBox[{DiskBox[{0, 0}, 1]}]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Graphics
-EXPRESSION: Disk
 FORM: OutputForm
 INPUT: MakeBoxes[Graphics[{Disk[{0,0}, 1]}]//OutputForm]
 EXPECTED: InterpretationBox[PaneBox["\"-Graphics-\""], OutputForm[Graphics[{Disk[{0, 0}, 1]}]], Editable -> False]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Graphics
-EXPRESSION: Sphere
-FORM: StandardForm
-INPUT: MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]]
-EXPECTED: Graphics3DBox[{SphereBox[{0, 0,0}, 1]}]
 ---
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Graphics

@@ -1682,6 +1682,53 @@ fn box_with_paren_if_needed(expr: &Expr) -> Expr {
   }
 }
 
+/// Convert graphics primitives to their box equivalents, recursing into
+/// Lists and inner Graphics/Graphics3D expressions. Leaves non-primitive
+/// expressions (numbers, symbols, options, colors) untouched. Used only
+/// when building a GraphicsBox/Graphics3DBox from a Graphics expression.
+fn to_graphics_boxes(expr: &Expr) -> Expr {
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(to_graphics_boxes).collect())
+    }
+    Expr::FunctionCall { name, args } => {
+      const PRIMITIVES: &[&str] = &[
+        "Arrow",
+        "Arrowheads",
+        "BezierCurve",
+        "Circle",
+        "Cone",
+        "Cuboid",
+        "Cylinder",
+        "Disk",
+        "FilledCurve",
+        "Line",
+        "Parallelepiped",
+        "Point",
+        "Polygon",
+        "Polyhedron",
+        "Rectangle",
+        "RegularPolygon",
+        "Sphere",
+        "Tetrahedron",
+        "Text",
+        "Tube",
+      ];
+      if PRIMITIVES.contains(&name.as_str()) {
+        return Expr::FunctionCall {
+          name: format!("{}Box", name),
+          args: args.to_vec(),
+        };
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(to_graphics_boxes).collect(),
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
@@ -2183,6 +2230,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     // Graphics[...] / Graphics3D[...] get dedicated box wrappers matching
     // Wolfram: Head[ToBoxes[Graphics[...]]] → GraphicsBox. Handles both the
     // unevaluated FunctionCall and the evaluated Expr::Graphics variants.
+    // Graphics primitives like Disk/Sphere get converted to box heads too.
     Expr::FunctionCall { name, args }
       if name == "Graphics" || name == "Graphics3D" =>
     {
@@ -2193,7 +2241,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       };
       Expr::FunctionCall {
         name: box_head.to_string(),
-        args: args.to_vec(),
+        args: args.iter().map(to_graphics_boxes).collect(),
       }
     }
     Expr::Graphics { is_3d, .. } => {

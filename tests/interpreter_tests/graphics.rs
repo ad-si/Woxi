@@ -6982,3 +6982,35 @@ fn histogram_hover_tooltips() {
     "Histogram tooltips should contain bin range and count"
   );
 }
+
+mod make_boxes_graphics_primitives {
+  use super::*;
+
+  // MakeBoxes[Graphics[...]] rewrites the Graphics head to GraphicsBox AND
+  // maps each primitive (Disk, Sphere, Line, ...) to its Box equivalent,
+  // matching wolframscript.
+  #[test]
+  fn disk_becomes_disk_box() {
+    assert_eq!(
+      interpret("MakeBoxes[Graphics[{Disk[{0,0}, 1]}]]").unwrap(),
+      "GraphicsBox[{DiskBox[{0, 0}, 1]}]"
+    );
+  }
+
+  #[test]
+  fn sphere_becomes_sphere_box() {
+    assert_eq!(
+      interpret("MakeBoxes[Graphics3D[{Sphere[{0,0,0}, 1]}]]").unwrap(),
+      "Graphics3DBox[{SphereBox[{0, 0, 0}, 1]}]"
+    );
+  }
+
+  #[test]
+  fn circle_and_line_become_boxes() {
+    assert_eq!(
+      interpret("MakeBoxes[Graphics[{Circle[{0, 0}, 2], Line[{{0, 0}, {1, 1}}]}]]")
+        .unwrap(),
+      "GraphicsBox[{CircleBox[{0, 0}, 2], LineBox[{{0, 0}, {1, 1}}]}]"
+    );
+  }
+}
