@@ -2191,14 +2191,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientList
-LINE: 904
-TYPE: >>
-INPUT: CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]
-EXPECTED:
-= {2 / (-3 + y), 1 / (-3 + y) + 1 / (-2 + y)}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
 LINE: 909
 TYPE: >>
 INPUT: CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]

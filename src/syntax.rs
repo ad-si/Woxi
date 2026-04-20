@@ -4720,14 +4720,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "Factorial" && args.len() == 1 {
         let arg_str = fmt(&args[0]);
         let needs_parens = match &args[0] {
-          Expr::BinaryOp { op, .. } => !matches!(
-            op,
-            BinaryOperator::Power
-          ),
-          Expr::UnaryOp { op: UnaryOperator::Minus, .. } => true,
+          Expr::BinaryOp { op, .. } => !matches!(op, BinaryOperator::Power),
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            ..
+          } => true,
           Expr::FunctionCall { name: n, args: a } => {
-            (n == "Plus" || n == "Times" || n == "Minus")
-              && a.len() >= 2
+            (n == "Plus" || n == "Times" || n == "Minus") && a.len() >= 2
           }
           _ => false,
         };

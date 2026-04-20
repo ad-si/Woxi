@@ -355,6 +355,17 @@ mod coefficient_list {
       "{1, 3, 3, 1}"
     );
   }
+
+  #[test]
+  fn rational_coefficients_in_other_variable() {
+    // Matches wolframscript: coefficient of x^0 is 2/(y-3), coefficient of
+    // x^1 is 1/(y-3) + 1/(y-2). Rendered with ^(-1) because Woxi's default
+    // output uses that form for simple reciprocals of Plus expressions.
+    assert_eq!(
+      interpret("CoefficientList[(x + 2)/(y - 3) + x/(y - 2), x]").unwrap(),
+      "{2/(-3 + y), (-3 + y)^(-1) + (-2 + y)^(-1)}"
+    );
+  }
 }
 
 mod polynomial_q_1arg {
