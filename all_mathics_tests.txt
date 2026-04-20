@@ -14820,28 +14820,3 @@ LINE: 640
 ACTUAL (expression): q, q], p
 EXPECTED (should equal): eqv[eqv[p
 ---
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 820
-ACTUAL (expression): p
-EXPECTED (should equal): eqv[not[q]
----
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 851
-ACTUAL (expression): p
-EXPECTED (should equal): eqv[not[q]
----
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 1139
-ACTUAL (expression): p
-EXPECTED (should equal): neqv[q
----
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 1589
-ACTUAL (expression): p
-EXPECTED (should equal): eqv[not[q]
----
-FILE: examples/symbolic_logic/gries_schneider/GS3.m
-LINE: 1740
-ACTUAL (expression): p
-EXPECTED (should equal): neqv[q
----
