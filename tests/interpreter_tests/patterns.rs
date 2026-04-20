@@ -1371,16 +1371,12 @@ mod chained_condition_in_set_delayed {
   fn three_chained_conditions() {
     // Triple Condition should AND all three.
     assert_eq!(
-      interpret(
-        "G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3]"
-      )
-      .unwrap(),
+      interpret("G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3]")
+        .unwrap(),
       "9"
     );
-    let r = interpret(
-      "G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3.5]",
-    )
-    .unwrap();
+    let r = interpret("G[x_] /; x > 0 /; x < 10 /; IntegerQ[x] := x^2; G[3.5]")
+      .unwrap();
     assert!(r.contains("G[3.5]"));
   }
 }

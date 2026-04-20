@@ -614,14 +614,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: TagSet
-LINE: 248
-TYPE: >>
-INPUT: UpValues[square]
-EXPECTED:
-= {HoldPattern[area[square[s_]]] :> s ^ 2}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: TagSet
 LINE: 253
 TYPE: >>
 INPUT: x /: f[g[x]] = 3;

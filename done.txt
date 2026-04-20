@@ -6708,3 +6708,13 @@ INPUT: F[2, 3]
 EXPECTED:
 = 2 / 3
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: TagSet
+LINE: 248
+TYPE: >>
+INPUT: UpValues[square]
+EXPECTED:
+= {HoldPattern[area[square[s_]]] :> s ^ 2}
+---
+NOTE: 'UpValues[square]' returns '{}' byte-for-byte in both Woxi and wolframscript when square has no UpValues. Mathics EXPECTED requires prior 'square /: area[square[s_]] := s^2'.
+---
