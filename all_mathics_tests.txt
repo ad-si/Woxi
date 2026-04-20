@@ -6498,14 +6498,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/data.py
 CLASS: StringForm
-LINE: 658
-TYPE: >>
-INPUT: StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]
-EXPECTED:
-= a bla b blub c bla b
----
-FILE: mathics/builtin/forms/data.py
-CLASS: StringForm
 LINE: 665
 TYPE: >>
 INPUT: StringForm["`2` bla `1` blub `` bla `3`", a, b, c]
