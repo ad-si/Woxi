@@ -8370,8 +8370,50 @@ impl TextBox {
   }
 }
 
+/// Render `Derivative[n][f][args]` / `Derivative[n][f]` as prime-shorthand
+/// (`f'[args]`, `f'''[args]`, `f^(4)[args]`, `f'`, ...). Returns None if the
+/// expression isn't in the expected derivative-application shape.
+///
+/// Woxi stores the applied derivative as a single flattened FunctionCall:
+///   Derivative[1][f][x]  →  FunctionCall{name: "Derivative", args: [1, f, x]}
+///   Derivative[1][f]     →  FunctionCall{name: "Derivative", args: [1, f]}
+/// (see the `name == "Derivative"` branch in expr_to_output further up.)
+fn derivative_shorthand(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Derivative" || args.len() < 2 {
+    return None;
+  }
+  let Expr::Integer(n) = args[0] else {
+    return None;
+  };
+  if n < 1 {
+    return None;
+  }
+  // args[1] must be the function symbol (Identifier). args[2..] are call args.
+  if !matches!(&args[1], Expr::Identifier(_)) {
+    return None;
+  }
+  let func = expr_to_string(&args[1]);
+  let primes = if n <= 3 {
+    "'".repeat(n as usize)
+  } else {
+    format!("^({})", n)
+  };
+  if args.len() == 2 {
+    return Some(format!("{}{}", func, primes));
+  }
+  let call_args: Vec<String> = args[2..].iter().map(expr_to_string).collect();
+  Some(format!("{}{}[{}]", func, primes, call_args.join(", ")))
+}
+
 /// Convert an expression to a 2D TextBox for OutputForm rendering.
 fn expr_to_textbox(expr: &Expr) -> TextBox {
+  // Derivative[n][f][args] → f'[args], f''[args], ... in OutputForm.
+  if let Some(short) = derivative_shorthand(expr) {
+    return TextBox::atom(&short);
+  }
   match expr {
     Expr::Integer(n) => TextBox::atom(&n.to_string()),
     Expr::BigInteger(n) => TextBox::atom(&n.to_string()),

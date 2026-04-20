@@ -731,6 +731,39 @@ mod derivative_prime_notation {
       "Derivative[1, 0][f]"
     );
   }
+
+  #[test]
+  fn output_form_renders_derivative_as_prime() {
+    // OutputForm[f'[x]] should render as `f'[x]` (prime notation), matching
+    // wolframscript. Default output keeps Derivative[1][f][x].
+    assert_eq!(
+      interpret("ToString[OutputForm[f'[x]]]").unwrap(),
+      "f'[x]"
+    );
+  }
+
+  #[test]
+  fn output_form_renders_higher_derivative_as_primes() {
+    assert_eq!(
+      interpret("ToString[OutputForm[Derivative[3][g][y]]]").unwrap(),
+      "g'''[y]"
+    );
+  }
+
+  #[test]
+  fn output_form_renders_fourth_derivative_as_superscript() {
+    // n >= 4 uses f^(n)[args] notation.
+    assert_eq!(
+      interpret("ToString[OutputForm[Derivative[4][f][x]]]").unwrap(),
+      "f^(4)[x]"
+    );
+  }
+
+  #[test]
+  fn output_form_unapplied_derivative() {
+    // Derivative[1][f] without arguments renders as f'.
+    assert_eq!(interpret("ToString[OutputForm[Derivative[1][f]]]").unwrap(), "f'");
+  }
 }
 
 mod series {

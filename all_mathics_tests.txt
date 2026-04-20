@@ -6553,13 +6553,6 @@ INPUT: MathMLForm[\\[Mu]]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/forms/print.py
-CLASS: OutputForm
-LINE: 147
-TYPE: >>
-INPUT: OutputForm[f'[x]]
-EXPECTED:
-= f'[x]
 FILE: mathics/builtin/forms/variables.py
 CLASS: BoxForms_
 LINE: 32

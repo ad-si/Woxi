@@ -8483,3 +8483,11 @@ INPUT: b // OutputForm // TeXForm
 EXPECTED:
 = \text{b}
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: OutputForm
+LINE: 147
+TYPE: >>
+INPUT: OutputForm[f'[x]]
+EXPECTED:
+= f'[x]
+---
