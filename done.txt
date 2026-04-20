@@ -8676,3 +8676,11 @@ EXPECTED:
 : Heads Plus and Times are expected to be the same.
 = Join[a + b, c d]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Apart
+LINE: 387
+TYPE: >>
+INPUT: Sin[1 / (x ^ 2 - y ^ 2)] // Apart
+EXPECTED:
+= Sin[1 / (x ^ 2 - y ^ 2)]
+---

@@ -2107,14 +2107,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Apart
-LINE: 387
-TYPE: >>
-INPUT: Sin[1 / (x ^ 2 - y ^ 2)] // Apart
-EXPECTED:
-= Sin[1 / (x ^ 2 - y ^ 2)]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Apart
 LINE: 390
 TYPE: >>
 INPUT: a == "A" // Apart // InputForm
