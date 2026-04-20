@@ -2067,14 +2067,6 @@ INPUT: StringCases["abba", {"a" -> 10, "b" -> 20}, 2]
 EXPECTED:
 = {10, 20}
 ---
-FILE: mathics/builtin/string/patterns.py
-CLASS: WordBoundary
-LINE: 291
-TYPE: >>
-INPUT: StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"]
-EXPECTED:
-= applE banana orangE artichokE
----
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox
 LINE: 192

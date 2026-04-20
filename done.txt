@@ -7906,3 +7906,11 @@ INPUT: StringMatchQ[#, StartOfString ~~ "a" ~~ __] &/@ {"apple", "banana", "arti
 EXPECTED:
 = {True, False, True}
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: WordBoundary
+LINE: 291
+TYPE: >>
+INPUT: StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"]
+EXPECTED:
+= applE banana orangE artichokE
+---
