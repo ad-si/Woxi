@@ -190,14 +190,6 @@ EXPECTED:
 . 
 . 3   6
 ---
-FILE: mathics/builtin/exp_structure/general.py
-CLASS: Null
-LINE: 216
-TYPE: >>
-INPUT: FullForm[a:=b]
-EXPECTED:
-= Null
----
 FILE: mathics/builtin/exp_structure/size_and_sig.py
 CLASS: Hash
 LINE: 82

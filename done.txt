@@ -7754,3 +7754,11 @@ TYPE: >>
 INPUT: Close[strm];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: Null
+LINE: 216
+TYPE: >>
+INPUT: FullForm[a:=b]
+EXPECTED:
+= Null
+---
