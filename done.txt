@@ -5731,3 +5731,7 @@ FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-plot-exclusions, vec-plot-label-x, vec-plot-plotrange-z, vec-plot3d-plotrange-z, vec-plot3d-discontinuous, vec-plot3d-conditional, vec-plot3d-max, vec-plot3d-which, vec-plot3d-stack, vec-polarplot-theataxxx-8
 EXPECTED: -Graphics- (10 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-plot3d-two-labels-ratios-viewpoint, vec-doc-006/008/009/010/012/036/037/038/041/042/043 (DensityPlot/LogPlot/ParametricPlot variants)
+EXPECTED: -Graphics- (12 tests; Woxi and wolframscript byte-identical)
+---
