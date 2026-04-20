@@ -350,10 +350,7 @@ mod wigner_symbols {
   // SixJSymbol returns 0 when any triangle inequality fails.
   #[test]
   fn six_j_triangle_fails() {
-    assert_eq!(
-      interpret("SixJSymbol[{1, 2, 3}, {4, 5, 12}]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("SixJSymbol[{1, 2, 3}, {4, 5, 12}]").unwrap(), "0");
   }
 
   // For the degenerate valid case the symbol is returned unchanged —

@@ -1421,14 +1421,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: ThreeJSymbol
-LINE: 243
-TYPE: >>
-INPUT: ThreeJSymbol[{2, 0}, {6, 0}, {4, 1}]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: ThreeJSymbol
 LINE: 247
 TYPE: >>
 INPUT: ThreeJSymbol[{6, 0}, {4, 0}, {2, 0}] == Sqrt[5 / 143]

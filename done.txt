@@ -7826,3 +7826,11 @@ INPUT: SixJSymbol[{1, 2, 3}, {4, 5, 12}]
 EXPECTED:
 = 0
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: ThreeJSymbol
+LINE: 243
+TYPE: >>
+INPUT: ThreeJSymbol[{2, 0}, {6, 0}, {4, 1}]
+EXPECTED:
+= 0
+---
