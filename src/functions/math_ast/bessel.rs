@@ -48,6 +48,55 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // Closed-form rules at ±1/2: BesselJ[±1/2, z] = Sqrt[2/(Pi z)] * {Sin,Cos}[z].
+  if let Some((n_num, n_den)) =
+    crate::functions::math_ast::expr_to_rational(n_expr)
+    && n_den == 2
+  {
+    use crate::syntax::Expr::*;
+    let trig = match n_num {
+      1 => Some("Sin"),
+      -1 => Some("Cos"),
+      _ => None,
+    };
+    if let Some(t) = trig {
+      // Build Sqrt[2] {Trig}[z] / (Sqrt[z] Sqrt[Pi])
+      let expr = FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Integer(2)],
+          },
+          FunctionCall {
+            name: t.to_string(),
+            args: vec![z_expr.clone()],
+          },
+          FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  FunctionCall {
+                    name: "Sqrt".to_string(),
+                    args: vec![z_expr.clone()],
+                  },
+                  FunctionCall {
+                    name: "Sqrt".to_string(),
+                    args: vec![Identifier("Pi".to_string())],
+                  },
+                ],
+              },
+              Integer(-1),
+            ],
+          },
+        ],
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&expr);
+    }
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "BesselJ".to_string(),

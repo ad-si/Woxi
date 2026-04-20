@@ -113,6 +113,25 @@ mod bessel_j {
     let result: f64 = interpret("N[BesselJ[0, 5]]").unwrap().parse().unwrap();
     assert!((result - (-0.17759677131433846)).abs() < 1e-10);
   }
+
+  // Closed-form rules for half-integer orders:
+  // BesselJ[1/2, z]  = Sqrt[2/(Pi z)] Sin[z]
+  // BesselJ[-1/2, z] = Sqrt[2/(Pi z)] Cos[z]
+  #[test]
+  fn half_order_sin_closed_form() {
+    assert_eq!(
+      interpret("BesselJ[1/2, x]").unwrap(),
+      "(Sqrt[2]*Sin[x])/(Sqrt[Pi]*Sqrt[x])"
+    );
+  }
+
+  #[test]
+  fn negative_half_order_cos_closed_form() {
+    assert_eq!(
+      interpret("BesselJ[-1/2, x]").unwrap(),
+      "(Sqrt[2]*Cos[x])/(Sqrt[Pi]*Sqrt[x])"
+    );
+  }
 }
 
 mod bessel_i {
