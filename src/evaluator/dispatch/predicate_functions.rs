@@ -729,7 +729,7 @@ pub fn dispatch_predicate_functions(
           } else if i == parts.len() - 1 {
             // Last part must match the remaining end unless pattern ends in '*'.
             if pattern.ends_with('*') {
-              if name[pos..].find(part).is_none() {
+              if !name[pos..].contains(part) {
                 return false;
               }
             } else if !name[pos..].ends_with(part) {

@@ -494,10 +494,7 @@ mod context {
 
   #[test]
   fn contexts_no_args_returns_system_and_global() {
-    assert_eq!(
-      interpret("Contexts[]").unwrap(),
-      "{System`, Global`}"
-    );
+    assert_eq!(interpret("Contexts[]").unwrap(), "{System`, Global`}");
   }
 
   #[test]
@@ -512,10 +509,7 @@ mod context {
 
   #[test]
   fn contexts_pattern_matches_all() {
-    assert_eq!(
-      interpret(r#"Contexts["*"]"#).unwrap(),
-      "{System`, Global`}"
-    );
+    assert_eq!(interpret(r#"Contexts["*"]"#).unwrap(), "{System`, Global`}");
   }
 }
 

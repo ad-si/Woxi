@@ -7327,3 +7327,11 @@ EXPECTED:
 ---
 NOTE: Contexts implemented — Contexts[] returns {System`, Global`}; Contexts[pattern] supports * glob wildcards. Neither Woxi nor wolframscript pre-loads the HTML context, so Contexts["HTML*"] returns {} in both engines byte-for-byte; mathics EXPECTED '{HTML`, HTML`Parser`}' requires loading the HTML package.
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: Contexts
+LINE: 249
+TYPE: >>
+INPUT: Contexts[]
+EXPECTED:
+= ...
+---
