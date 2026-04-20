@@ -4374,6 +4374,16 @@ mod join_non_list {
   }
 
   #[test]
+  fn join_mismatched_heads_stays_unevaluated() {
+    // Different heads (Plus vs Times) can't be joined — wolframscript emits
+    // Join::heads and returns the original call unchanged.
+    assert_eq!(
+      interpret("Join[a + b, c * d]").unwrap(),
+      "Join[a + b, c*d]"
+    );
+  }
+
+  #[test]
   fn most_non_list_head() {
     assert_eq!(interpret("Most[a + b + c]").unwrap(), "a + b");
   }

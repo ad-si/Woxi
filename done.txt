@@ -8667,3 +8667,12 @@ INPUT: Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]
 EXPECTED:
 = {{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: Join
+LINE: 871
+TYPE: >>
+INPUT: Join[a + b, c * d]
+EXPECTED:
+: Heads Plus and Times are expected to be the same.
+= Join[a + b, c d]
+---

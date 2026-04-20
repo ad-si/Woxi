@@ -5290,15 +5290,6 @@ EXPECTED:
 = {{b}, {e}}
 ---
 FILE: mathics/builtin/list/rearrange.py
-CLASS: Join
-LINE: 871
-TYPE: >>
-INPUT: Join[a + b, c * d]
-EXPECTED:
-: Heads Plus and Times are expected to be the same.
-= Join[a + b, c d]
----
-FILE: mathics/builtin/list/rearrange.py
 CLASS: PadLeft
 LINE: 931
 TYPE: >>
