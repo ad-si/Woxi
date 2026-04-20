@@ -8360,3 +8360,31 @@ LINE: 37
 INPUT: log2=Log[2.]; E^log2
 EXPECTED: 2.
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_directed_infinity_precedence
+LINE: 230
+INPUT: (a^(1/2))^3.
+EXPECTED: a ^ 1.5
+MESSAGE: Power associativity rational, real
+---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_directed_infinity_precedence
+LINE: 231
+INPUT: (a^(.3))^3.
+EXPECTED: a ^ 0.9
+MESSAGE: Power associativity for real powers
+---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_power
+LINE: 186
+INPUT: (a^(1/2))^3.
+EXPECTED: a ^ 1.5
+MESSAGE: Power associativity rational, real
+---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_power
+LINE: 186
+INPUT: (a^(.3))^3.
+EXPECTED: a ^ 0.9
+MESSAGE: Power associativity for real powers
+---

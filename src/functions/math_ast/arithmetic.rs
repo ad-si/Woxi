@@ -4005,6 +4005,43 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // (base^inner_exp)^outer_exp where outer is a machine Real and inner is
+  // any numeric value (Integer, Rational, Real). Matches Wolfram: a real
+  // outer exponent makes the power associativity rule safe because the
+  // result is pinned to a single branch of the complex power.
+  if let Expr::Real(_) = exp {
+    let inner = match base {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args: fargs }
+        if name == "Power" && fargs.len() == 2 =>
+      {
+        Some((&fargs[0], &fargs[1]))
+      }
+      _ => None,
+    };
+    if let Some((inner_base, inner_exp)) = inner {
+      let inner_is_numeric = matches!(
+        inner_exp,
+        Expr::Integer(_) | Expr::Real(_)
+      ) || matches!(
+        inner_exp,
+        Expr::FunctionCall { name, args: ra }
+          if name == "Rational"
+            && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(_))
+            && matches!(&ra[1], Expr::Integer(_))
+      );
+      if inner_is_numeric {
+        let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
+        return power_two(inner_base, &new_exp);
+      }
+    }
+  }
+
   // (Power[-1, Rational[p,q]])^n → simplify (-1)^(p*n/q)
   // Handles both FunctionCall and BinaryOp representations of Power
   if let Expr::Integer(n) = exp {
@@ -4261,7 +4298,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // Euler path below can fully evaluate (e.g. E^(log2 + I*Pi) → -2.).
   if matches!(base, Expr::Constant(c) if c == "E") && !contains_real(exp) {
     let plus_args: Option<Vec<&Expr>> = match exp {
-      Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Plus" && args.len() >= 2 =>
+      {
         Some(args.iter().collect())
       }
       Expr::BinaryOp {

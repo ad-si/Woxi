@@ -1501,6 +1501,24 @@ mod power_of_power {
   fn power_of_power_numeric_base() {
     assert_eq!(interpret("(2^3)^2").unwrap(), "64");
   }
+
+  #[test]
+  fn power_of_rational_raised_to_real() {
+    // (a^(1/2))^3. → a^1.5 — real outer exponent combines with numeric inner.
+    assert_eq!(interpret("(a^(1/2))^3.").unwrap(), "a^1.5");
+  }
+
+  #[test]
+  fn power_of_real_raised_to_real() {
+    // (a^0.3)^3. → a^0.9 (float imprecision expected, matches wolframscript).
+    assert_eq!(interpret("(a^(.3))^3.").unwrap(), "a^0.8999999999999999");
+  }
+
+  #[test]
+  fn power_of_integer_raised_to_real() {
+    // (a^2)^3. → a^6. — real outer exponent still combines cleanly.
+    assert_eq!(interpret("(a^2)^3.").unwrap(), "a^6.");
+  }
 }
 
 mod power_combining {
