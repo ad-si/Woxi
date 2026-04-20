@@ -7654,3 +7654,11 @@ EXPECTED:
 : ...
 = $Failed
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 194
+TYPE: >>
+INPUT: Read[stream1]
+EXPECTED:
+= 8205.79
+---
