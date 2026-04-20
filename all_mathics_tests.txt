@@ -7779,14 +7779,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1082
-TYPE: >>
-INPUT: Head[ToBoxes[Graphics3D[{Polygon[]}]]]
-EXPECTED:
-= Graphics3DBox
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1123
 TYPE: >>
 INPUT: {f'[x], f''[x], f'''[x]} // Together
