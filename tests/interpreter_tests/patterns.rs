@@ -557,6 +557,16 @@ mod pattern_matching {
     }
 
     #[test]
+    fn chained_replace_all_left_associative() {
+      // (x + 2y) /. {x -> y} /. {y -> x} parses as
+      // ((x + 2y) /. {x -> y}) /. {y -> x} = (3 y) /. {y -> x} = 3 x.
+      assert_eq!(
+        interpret("(x + 2y) /. {x -> y} /. {y -> x}").unwrap(),
+        "3*x"
+      );
+    }
+
+    #[test]
     fn fizzbuzz_style_rules() {
       // Test the FizzBuzz pattern
       assert_eq!(

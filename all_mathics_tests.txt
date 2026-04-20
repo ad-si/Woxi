@@ -14712,11 +14712,6 @@ Format: expect[expected_result, expression_to_evaluate]
 Exercises from "A Logical Approach to Discrete Math" — stress-tests pattern matching
 ----------------------------------------------------------------------------------------------------
 
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 162
-ACTUAL (expression): (x + 2y) /. {x -> y} /. {y -> x}
-EXPECTED (should equal): 3x
----
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 353
 ACTUAL (expression): q],                   dual[or[p, q]]

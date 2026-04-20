@@ -5806,3 +5806,8 @@ LINE: 184
 ACTUAL: (x = Q)/.{b->5}
 EXPECTED: Q (Woxi and wolframscript byte-identical when run in isolation; mathics expected formula depends on prior Q definition)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 162
+ACTUAL: (x + 2y) /. {x -> y} /. {y -> x}
+EXPECTED: 3*x (changed grammar to allow chained ReplaceAll/ReplaceRepeated suffixes; matches wolframscript)
+---

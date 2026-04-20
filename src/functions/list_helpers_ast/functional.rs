@@ -508,7 +508,7 @@ pub fn apply_at_level_ast(
   let depth = expr_depth(expr);
   let resolve = |n: i128| -> usize {
     if n < 0 {
-      let k = (-n) as i128;
+      let k = -n;
       let pos = depth as i128 - k;
       if pos < 0 { 0 } else { pos as usize }
     } else {
