@@ -5719,3 +5719,7 @@ FILE: mathics/test/builtin/drawing/doc_tests.yaml
 INPUT: doc-122/123/124/125/126/127/128 + nondoc-plot-exclusions Plot/PolarPlot variants
 EXPECTED: -Graphics- (8 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-contourplot-* variants (expr-x, waves, explicit-contours, n-contours, equals-constant, two-equations)
+EXPECTED: -Graphics- (6 tests; Woxi and wolframscript byte-identical)
+---

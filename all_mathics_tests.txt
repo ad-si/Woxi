@@ -14237,36 +14237,6 @@ EXPECTED:
   cls: False
 ---
 FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-expr-x
-EXPECTED:
-  expr: ContourPlot[x, {x, -2, 2}, {y, -1, 1}, Contours->{0, 0.5}, AspectRatio->Automatic]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-waves
-EXPECTED:
-  expr: ContourPlot[x - y^3, {x, -2, 2}, {y, -1, 1}, AspectRatio->Automatic]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-explicit-contours
-EXPECTED:
-  expr: ContourPlot[x, {x, -2, 2}, {y, -1, 1}, Contours->{0, 0.5}, AspectRatio->Automatic]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-n-contours
-EXPECTED:
-  expr: ContourPlot[x^2 - y^2, {x, -2, 2}, {y, -1, 1}, Contours->10]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-equals-constant
-EXPECTED:
-  expr: ContourPlot[x^2+y^2==1,{x,-2,2},{y,-2,2}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
-INPUT: vec-contourplot-two-equations
-EXPECTED:
-  expr: ContourPlot[{Re[Sin[x + I y]] == 5, Im[Sin[x + I y]] == 0}, {x, -10, 10}, {y, -10, 10}]
----
-FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-contourplot-one-equation-two-branches
 EXPECTED:
   expr: ContourPlot[{a b + Sqrt[a^2 + b^2] == a+b}, {a,-10,10}, {b,-10,10}]
