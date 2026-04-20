@@ -2280,7 +2280,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     },
     "Period" => Expr::Integer(elem.period),
     "Block" => Expr::String(elem.block.to_string()),
-    "Electronegativity" => match elem.electronegativity {
+    "Electronegativity" | "ElectroNegativity" => match elem.electronegativity {
       Some(v) => {
         let prec = electronegativity_precision(v);
         make_bigfloat(v, prec)

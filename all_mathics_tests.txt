@@ -92,14 +92,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 77
-TYPE: >>
-INPUT: ElementData["He", "ElectroNegativity"]
-EXPECTED:
-= Missing[NotApplicable]
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 81
 TYPE: >>
 INPUT: ElementData["Tc", "SpecificHeat"]

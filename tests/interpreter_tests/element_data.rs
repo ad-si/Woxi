@@ -318,4 +318,18 @@ mod element_data_tests {
       "3823.15"
     );
   }
+
+  #[test]
+  fn element_data_electronegativity_camelcase_alias() {
+    // Both "Electronegativity" (lowercase n) and "ElectroNegativity"
+    // (capital N) map to the same property.
+    assert_eq!(
+      interpret(r#"ElementData["He", "ElectroNegativity"]"#).unwrap(),
+      "Missing[NotApplicable]"
+    );
+    assert_eq!(
+      interpret(r#"ElementData["He", "Electronegativity"]"#).unwrap(),
+      "Missing[NotApplicable]"
+    );
+  }
 }

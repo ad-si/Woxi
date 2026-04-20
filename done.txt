@@ -7275,3 +7275,11 @@ INPUT: ElementData["He", "AbsoluteBoilingPoint"]
 EXPECTED:
 = 4.22
 ---
+FILE: mathics/builtin/physchemdata.py
+CLASS: ElementData
+LINE: 77
+TYPE: >>
+INPUT: ElementData["He", "ElectroNegativity"]
+EXPECTED:
+= Missing[NotApplicable]
+---
