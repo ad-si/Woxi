@@ -6184,3 +6184,23 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript return the 26-letter Latin alphabet for Alphabet[] regardless of $Language (wolframscript CLI mode); mathics EXPECTED is '...' wildcard.
 ---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 416
+TYPE: >>
+INPUT: $MaxLengthIntStringConversion = 640
+EXPECTED: (none)
+---
+NOTE: wolframscript assigns the OwnValue (returns 640); Woxi does the same. The symbol is mathics-specific so neither engine enforces the bound.
+---
+FILE: mathics/builtin/system.py
+CLASS: MaxLengthIntStringConversion
+LINE: 437
+TYPE: >>
+INPUT: $MaxLengthIntStringConversion = 10
+EXPECTED:
+: 10 is not 0 or an Integer value greater than 640.
+= ...
+---
+NOTE: wolframscript assigns the OwnValue (returns 10); Woxi does the same. Mathics emits its own bound-check warning which neither Woxi nor wolframscript emits.
+---

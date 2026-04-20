@@ -260,22 +260,6 @@ INPUT: $ContextPath // InputForm
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/system.py
-CLASS: MaxLengthIntStringConversion
-LINE: 416
-TYPE: >>
-INPUT: $MaxLengthIntStringConversion = 640
-EXPECTED: (none)
----
-FILE: mathics/builtin/system.py
-CLASS: MaxLengthIntStringConversion
-LINE: 437
-TYPE: >>
-INPUT: $MaxLengthIntStringConversion = 10
-EXPECTED:
-: 10 is not 0 or an Integer value greater than 640.
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: MemoryInUse
 LINE: 485
 TYPE: >>
