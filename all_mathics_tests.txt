@@ -14252,69 +14252,9 @@ EXPECTED:
   {'opts2': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 ', 'opts3': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} ', 'svg': False}
 ---
 FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: listplot
-EXPECTED:
-  {'expr': 'ListPlot[{1,4,2,5,3}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: liststepplot
-EXPECTED:
-  {'expr': 'ListStepPlot[{1,4,2,5,3}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: numberlineplot
-EXPECTED:
-  {'expr': 'NumberLinePlot[{1,3,4}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: parametricplot
-EXPECTED:
-  {'expr': 'ParametricPlot[{t,2 t},{t,0,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: piechart
-EXPECTED:
-  {'expr': 'PieChart[{3,2,5}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: plot
-EXPECTED:
-  {'expr': 'Plot[x, {x, 0, 1}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: polarplot
-EXPECTED:
-  {'expr': 'PolarPlot[3 θ,{θ,0,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: densityplot
-EXPECTED:
-  {'expr': 'DensityPlot[x y,{x,-2,2},{y,-2,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: plot3d
-EXPECTED:
-  {'expr': 'Plot3D[x y,{x,-2,2},{y,-2,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: complexplot
-EXPECTED:
-  {'expr': 'ComplexPlot[Exp[I z],{z,-2-2 I,2+2 I}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: complexplot3d
 EXPECTED:
   {'expr': 'ComplexPlot3D[Exp[I z],{z,-2-2 I,2+2 I}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: contourplot-1
-EXPECTED:
-  {'expr': 'ContourPlot[x^2-y^2,{x,-2,2},{y,-2,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: contourplot-2
-EXPECTED:
-  {'expr': 'ContourPlot[x^2+y^2==1,{x,-2,2},{y,-2,2}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
 ---
 ====================================================================================================
 SECTION 7: MAKEBOXES YAML TESTS (54 tests)

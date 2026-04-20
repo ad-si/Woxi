@@ -5747,3 +5747,7 @@ FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: discreteplot, histogram, listlineplot
 EXPECTED: -Graphics- (3 tests; Woxi and wolframscript byte-identical for the bare expressions)
 ---
+FILE: mathics/test/builtin/drawing/parameters.yaml
+INPUT: listplot, liststepplot, numberlineplot, parametricplot, piechart, plot, polarplot, densityplot, plot3d, complexplot, contourplot-1, contourplot-2
+EXPECTED: -Graphics- (12 tests; Woxi and wolframscript byte-identical for the bare expressions)
+---
