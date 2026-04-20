@@ -5883,3 +5883,8 @@ LINE: 7
 INPUT: g[2]==g[3] / g[2]!=g[3]
 EXPECTED: g[2] == g[3] / g[2] != g[3] (Woxi and wolframscript byte-identical: not-comparable expressions stay symbolic, Issue #200)
 ---
+FILE: mathics/test/eval/test_patterns.py
+LINE: 44, 45, 59, 60
+INPUT: 1+x / 1+2*x (across 4 separate test_patterns parametrized entries)
+EXPECTED: 1 + x / 1 + 2*x (Woxi and wolframscript byte-identical for the input expressions; mathics tests check pattern-matching against rule patterns like a_.+b_.*x_)
+---
