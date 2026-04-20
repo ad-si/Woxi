@@ -2383,10 +2383,17 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let im = expr_to_tex(&args[1]);
       format!("{}+{} i", re, im)
     }
-    // Default: render as text function name with parenthesized args
+    // Default: render as function name with parenthesized args. Single-letter
+    // names render bare (matches wolframscript: f[x] -> f(x)); multi-letter
+    // names use \text{} to distinguish them from implicit products.
     _ => {
       let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
-      format!("\\text{{{}}}({})", name, args_tex.join(","))
+      let head = if name.chars().count() == 1 {
+        name.to_string()
+      } else {
+        format!("\\text{{{}}}", name)
+      };
+      format!("{}({})", head, args_tex.join(","))
     }
   }
 }

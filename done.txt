@@ -8395,3 +8395,11 @@ INPUT: a - (5+ a+ 2 b) + 3 a q
 EXPECTED: -5 + 3 a q - 2 b
 MESSAGE: WMA distribute the sign (-)
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: ToString
+LINE: 878
+TYPE: >>
+INPUT: ToString[Integrate[f[x],x], TeXForm]
+EXPECTED:
+= \\int f(x) \\, dx
+---

@@ -2215,6 +2215,30 @@ mod tex_form {
     // Wolfram uses simple bar notation for Abs
     assert_eq!(interpret("ToString[Abs[x], TeXForm]").unwrap(), "| x|");
   }
+
+  #[test]
+  fn single_letter_function_call_bare() {
+    // Single-letter user functions render bare (not wrapped in \text{}),
+    // matching wolframscript: ToString[f[x], TeXForm] = f(x).
+    assert_eq!(interpret("ToString[f[x], TeXForm]").unwrap(), "f(x)");
+  }
+
+  #[test]
+  fn integrate_of_user_function() {
+    assert_eq!(
+      interpret("ToString[Integrate[f[x],x], TeXForm]").unwrap(),
+      "\\int f(x) \\, dx"
+    );
+  }
+
+  #[test]
+  fn multi_letter_function_uses_text() {
+    // Multi-letter user functions still use \text{} to avoid ambiguity with products.
+    assert_eq!(
+      interpret("ToString[myFunc[x], TeXForm]").unwrap(),
+      "\\text{myFunc}(x)"
+    );
+  }
 }
 
 mod base_form {
