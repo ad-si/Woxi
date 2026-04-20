@@ -1764,6 +1764,24 @@ mod increment_function {
   fn increment_multiple_times() {
     assert_eq!(interpret("x = 0; x++; x++; x++; x").unwrap(), "3");
   }
+
+  #[test]
+  fn postfix_increment_unset_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("freshIncA++").unwrap(), "freshIncA++");
+  }
+
+  #[test]
+  fn prefix_increment_unset_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("++freshPreIncA").unwrap(), "++freshPreIncA");
+  }
+
+  #[test]
+  fn postfix_decrement_unset_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("freshDecA--").unwrap(), "freshDecA--");
+  }
 }
 
 mod decrement_function {

@@ -643,7 +643,19 @@ pub fn evaluate_expr_to_expr_inner(
               Some(StoredValue::Raw(s)) => {
                 crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
               }
-              _ => Expr::Integer(0),
+              _ => {
+                // Match Mathematica: unset variable → emit rvalue warning
+                // and leave the Increment/Decrement/PreIncrement/PreDecrement
+                // call unevaluated.
+                crate::emit_message(&format!(
+                  "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+                  name, var_name
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: args.clone(),
+                });
+              }
             };
             let delta = if name == "Increment" || name == "PreIncrement" {
               Expr::Integer(1)

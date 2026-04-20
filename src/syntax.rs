@@ -4701,6 +4701,18 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "DivideBy" && args.len() == 2 {
         return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
       }
+      if name == "Increment" && args.len() == 1 {
+        return format!("{}++", fmt(&args[0]));
+      }
+      if name == "Decrement" && args.len() == 1 {
+        return format!("{}--", fmt(&args[0]));
+      }
+      if name == "PreIncrement" && args.len() == 1 {
+        return format!("++{}", fmt(&args[0]));
+      }
+      if name == "PreDecrement" && args.len() == 1 {
+        return format!("--{}", fmt(&args[0]));
+      }
       if name == "Condition" && args.len() == 2 {
         // When the LHS is Plus (BinaryOp or FunctionCall), parenthesize
         // the last Pattern-like argument to avoid visual ambiguity:
@@ -6772,6 +6784,26 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(&args[0]),
         expr_to_input_form(&args[1])
       )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Increment" && args.len() == 1 =>
+    {
+      format!("{}++", expr_to_input_form(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Decrement" && args.len() == 1 =>
+    {
+      format!("{}--", expr_to_input_form(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "PreIncrement" && args.len() == 1 =>
+    {
+      format!("++{}", expr_to_input_form(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "PreDecrement" && args.len() == 1 =>
+    {
+      format!("--{}", expr_to_input_form(&args[0]))
     }
     // Quantity: InputForm quotes string unit names
     Expr::FunctionCall { name, args }
