@@ -10833,13 +10833,6 @@ MESSAGE: True
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 441
-INPUT: Infinity
-EXPECTED: 2 + 3*a
-MESSAGE: Infinity == 2 + 3 a
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 447
 INPUT: Sqrt[I] Infinity
 EXPECTED: -Infinity
