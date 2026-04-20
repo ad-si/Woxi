@@ -7572,3 +7572,11 @@ INPUT: stream = StringToStream["Mathics is cool!"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: OutputStream
+LINE: 1412
+TYPE: >>
+INPUT: Streams[]
+EXPECTED:
+= ...
+---
