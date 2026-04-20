@@ -557,7 +557,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LessEqualThan" => Some((1, 1)),
     "LessThan" => Some((1, 1)),
     "LetterCounts" => Some((1, 1)),
-    "LetterNumber" => Some((1, 1)),
+    "LetterNumber" => Some((1, 2)),
     "LetterQ" => Some((1, 1)),
     "Level" => Some((2, 3)),
     "LevelQ" => Some((1, 1)),

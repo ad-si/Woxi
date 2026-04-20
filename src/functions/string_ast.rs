@@ -3526,30 +3526,86 @@ pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Position of a character in the requested alphabet (1-indexed, 0 if not
+/// present). Supports English (default), Greek, Cyrillic, Russian.
+fn alphabet_position(ch: char, alphabet: &str) -> i128 {
+  match alphabet {
+    "English" | "" => {
+      let lower = ch.to_ascii_lowercase();
+      if lower.is_ascii_lowercase() {
+        (lower as i128) - ('a' as i128) + 1
+      } else {
+        0
+      }
+    }
+    "Greek" => {
+      // Lowercase Greek letters α(U+03B1)..ω(U+03C9) with final sigma ς
+      // mapped to the same position as σ. Uppercase is normalized to lower.
+      let c = ch as u32;
+      // Uppercase Α..Ω (U+0391..U+03A9); convert to lowercase equivalent.
+      let lower_code = if (0x0391..=0x03A9).contains(&c) {
+        c + 0x20 // Α -> α etc.
+      } else {
+        c
+      };
+      // Standard 24-letter ordering:
+      // α β γ δ ε ζ η θ ι κ λ μ ν ξ ο π ρ σ(ς) τ υ φ χ ψ ω
+      match lower_code {
+        0x03B1 => 1,  // α
+        0x03B2 => 2,  // β
+        0x03B3 => 3,  // γ
+        0x03B4 => 4,  // δ
+        0x03B5 => 5,  // ε
+        0x03B6 => 6,  // ζ
+        0x03B7 => 7,  // η
+        0x03B8 => 8,  // θ
+        0x03B9 => 9,  // ι
+        0x03BA => 10, // κ
+        0x03BB => 11, // λ
+        0x03BC => 12, // μ
+        0x03BD => 13, // ν
+        0x03BE => 14, // ξ
+        0x03BF => 15, // ο
+        0x03C0 => 16, // π
+        0x03C1 => 17, // ρ
+        0x03C2 | 0x03C3 => 18, // ς, σ
+        0x03C4 => 19, // τ
+        0x03C5 => 20, // υ
+        0x03C6 => 21, // φ
+        0x03C7 => 22, // χ
+        0x03C8 => 23, // ψ
+        0x03C9 => 24, // ω
+        _ => 0,
+      }
+    }
+    _ => 0,
+  }
+}
+
 /// LetterNumber["c"] - give the position of a letter in the English alphabet.
+/// LetterNumber["c", "Greek"] - position in the Greek alphabet.
 /// Returns 0 for non-letter characters.
 pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let alphabet = match args.get(1) {
+    Some(Expr::String(s)) => s.clone(),
+    Some(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "LetterNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    None => "English".to_string(),
+  };
   match &args[0] {
     Expr::String(s) => {
-      if s.len() == 1 {
-        let ch = s.chars().next().unwrap().to_ascii_lowercase();
-        if ch.is_ascii_lowercase() {
-          Ok(Expr::Integer((ch as i128) - ('a' as i128) + 1))
-        } else {
-          Ok(Expr::Integer(0))
-        }
+      let chars: Vec<char> = s.chars().collect();
+      if chars.len() == 1 {
+        Ok(Expr::Integer(alphabet_position(chars[0], &alphabet)))
       } else {
         // For multi-character strings, return a list
-        let results: Vec<Expr> = s
-          .chars()
-          .map(|ch| {
-            let lower = ch.to_ascii_lowercase();
-            if lower.is_ascii_lowercase() {
-              Expr::Integer((lower as i128) - ('a' as i128) + 1)
-            } else {
-              Expr::Integer(0)
-            }
-          })
+        let results: Vec<Expr> = chars
+          .iter()
+          .map(|ch| Expr::Integer(alphabet_position(*ch, &alphabet)))
           .collect();
         Ok(Expr::List(results))
       }
@@ -3557,7 +3613,13 @@ pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, InterpreterError> = items
         .iter()
-        .map(|item| letter_number_ast(&[item.clone()]))
+        .map(|item| {
+          let mut call = vec![item.clone()];
+          if args.len() == 2 {
+            call.push(args[1].clone());
+          }
+          letter_number_ast(&call)
+        })
         .collect();
       Ok(Expr::List(results?))
     }

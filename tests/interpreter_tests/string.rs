@@ -753,6 +753,39 @@ mod letter_number {
       "{1, 26}"
     );
   }
+
+  #[test]
+  fn greek_beta() {
+    // \[Beta] is the Greek lowercase beta (β). Its position is 2.
+    assert_eq!(
+      interpret("LetterNumber[\"\\[Beta]\", \"Greek\"]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn greek_alpha_omega() {
+    assert_eq!(interpret("LetterNumber[\"α\", \"Greek\"]").unwrap(), "1");
+    assert_eq!(interpret("LetterNumber[\"ω\", \"Greek\"]").unwrap(), "24");
+  }
+
+  #[test]
+  fn greek_final_sigma_same_as_sigma() {
+    // Both ς (final sigma) and σ (sigma) map to position 18.
+    assert_eq!(interpret("LetterNumber[\"σ\", \"Greek\"]").unwrap(), "18");
+    assert_eq!(interpret("LetterNumber[\"ς\", \"Greek\"]").unwrap(), "18");
+  }
+
+  #[test]
+  fn greek_uppercase_normalizes() {
+    assert_eq!(interpret("LetterNumber[\"Β\", \"Greek\"]").unwrap(), "2");
+    assert_eq!(interpret("LetterNumber[\"Ω\", \"Greek\"]").unwrap(), "24");
+  }
+
+  #[test]
+  fn greek_non_letter_returns_zero() {
+    assert_eq!(interpret("LetterNumber[\"a\", \"Greek\"]").unwrap(), "0");
+  }
 }
 
 mod operator_form {

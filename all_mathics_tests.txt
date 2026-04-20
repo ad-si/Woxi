@@ -4619,14 +4619,6 @@ EXPECTED:
 = 4
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: LetterNumber
-LINE: 437
-TYPE: >>
-INPUT: LetterNumber["\[Beta]", "Greek"]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: SystemCharacterEncoding
 LINE: 728
 TYPE: >>

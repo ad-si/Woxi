@@ -131,7 +131,7 @@ pub fn dispatch_string_functions(
     "FromLetterNumber" if args.len() == 1 => {
       return Some(crate::functions::string_ast::from_letter_number_ast(args));
     }
-    "LetterNumber" if args.len() == 1 => {
+    "LetterNumber" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::letter_number_ast(args));
     }
     "LetterQ" if args.len() == 1 => {
