@@ -470,9 +470,15 @@ pub fn dispatch_evaluation_control(
         return Some(evaluate_expr_to_expr(&args[3]));
       }
     }
-    // Stack[] - return the current evaluation stack as a list of strings
+    // Stack[] - return the current evaluation stack as a list of strings.
+    // Exclude the outermost entry (which is the 'Stack' call itself) so that
+    // a top-level 'Stack[]' returns the empty list, matching wolframscript.
     "Stack" if args.is_empty() => {
-      let stack = crate::get_eval_stack();
+      let mut stack = crate::get_eval_stack();
+      // Remove the trailing "Stack" entry pushed for this call itself.
+      if stack.last().is_some_and(|s| s == "Stack") {
+        stack.pop();
+      }
       let items: Vec<Expr> = stack.into_iter().map(Expr::String).collect();
       return Some(Ok(Expr::List(items)));
     }

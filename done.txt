@@ -7731,3 +7731,11 @@ TYPE: >>
 INPUT: $ImportFormats
 EXPECTED:
 = {...CSV,...JSON,...Text...}
+FILE: mathics/builtin/symbolic_history/stack.py
+CLASS: Stack
+LINE: 28
+TYPE: >>
+INPUT: Stack[]
+EXPECTED:
+= {}
+---

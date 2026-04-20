@@ -2133,16 +2133,18 @@ mod high_level_functions_tests {
     #[test]
     fn test_stack_at_top_level() {
       clear_state();
-      // At top level, Stack[] shows only Stack itself
-      assert_eq!(interpret("Stack[]").unwrap(), "{Stack}");
+      // At top level, Stack[] returns {} (the Stack entry itself is stripped
+      // to match wolframscript).
+      assert_eq!(interpret("Stack[]").unwrap(), "{}");
     }
 
     #[test]
     fn test_stack_in_nested_calls() {
       clear_state();
+      // The trailing 'Stack' entry is stripped; caller chain remains.
       assert_eq!(
         interpret("f[] := Stack[]; g[] := f[]; g[]").unwrap(),
-        "{g, f, Stack}"
+        "{g, f}"
       );
     }
 
@@ -2167,9 +2169,10 @@ mod high_level_functions_tests {
     #[test]
     fn test_stack_empty_after_successful_eval() {
       clear_state();
-      // After successful evaluation, Stack[] is clean
+      // After successful evaluation, Stack[] is empty (the outer Stack
+      // entry is stripped).
       assert_eq!(interpret("f[x_] := x + 1; f[5]").unwrap(), "6");
-      assert_eq!(interpret("Stack[]").unwrap(), "{Stack}");
+      assert_eq!(interpret("Stack[]").unwrap(), "{}");
     }
   }
 
