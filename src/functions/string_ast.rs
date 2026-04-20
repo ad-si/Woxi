@@ -3013,14 +3013,19 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
   let mut i = 0;
-  let mut seq_index = 0; // sequential placeholder counter
+  // Last slot consumed by any placeholder (`` or `n`). The next `` picks
+  // up at last_index + 1. Starts at 0 so the first `` pulls arg 1.
+  let mut last_index: i64 = 0;
 
   while i < len {
     if chars[i] == '`' {
       // Check for `` (sequential placeholder)
       if i + 1 < len && chars[i + 1] == '`' {
-        if seq_index < values.len() {
-          result.push_str(&crate::syntax::expr_to_output(&values[seq_index]));
+        let idx = last_index + 1;
+        if idx >= 1 && (idx as usize) <= values.len() {
+          result.push_str(&crate::syntax::expr_to_output(
+            &values[(idx - 1) as usize],
+          ));
         } else {
           // Out of range — keep the `` literal and warn.
           result.push('`');
@@ -3028,12 +3033,12 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
           crate::emit_message(&format!(
             "StringForm::sfr: Item {} requested in \"{}\" out of \
              range; {} items available.",
-            seq_index + 1,
+            idx,
             template,
             values.len()
           ));
         }
-        seq_index += 1;
+        last_index = idx;
         i += 2;
         continue;
       }
@@ -3070,6 +3075,9 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
             values.len()
           ));
         }
+        // Numbered placeholders also update last_index so the next `` is
+        // relative to the most recent numbered reference.
+        last_index = signed;
         i = end + 1;
         continue;
       }

@@ -2191,10 +2191,7 @@ mod string_form {
   // (instead of silently blanking it). Matches wolframscript/mathics.
   #[test]
   fn out_of_range_positive_index_kept_literal() {
-    assert_eq!(
-      interpret("StringForm[\"`2` bla\", a]").unwrap(),
-      "`2` bla"
-    );
+    assert_eq!(interpret("StringForm[\"`2` bla\", a]").unwrap(), "`2` bla");
   }
 
   #[test]
@@ -2209,6 +2206,16 @@ mod string_form {
   fn out_of_range_sequential_placeholder_kept_literal() {
     // `` with no argument to pull from: keep the two backticks literal.
     assert_eq!(interpret("StringForm[\"x=``\"]").unwrap(), "x=``");
+  }
+
+  #[test]
+  fn sequential_placeholder_resumes_from_last_numbered() {
+    // `` picks up from the most recently used numbered slot + 1, not from
+    // its own independent counter. `1` was the most recent; so `` -> arg 2.
+    assert_eq!(
+      interpret("StringForm[\"`2` bla `1` blub `` bla `3`\", a, b, c]").unwrap(),
+      "b bla a blub b bla c"
+    );
   }
 }
 

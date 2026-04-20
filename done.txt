@@ -8759,3 +8759,11 @@ EXPECTED:
 : Item 2 requested in "`2` bla" out of range; 1 items available.
 = `2` bla
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 665
+TYPE: >>
+INPUT: StringForm["`2` bla `1` blub `` bla `3`", a, b, c]
+EXPECTED:
+= b bla a blub b bla c
+---
