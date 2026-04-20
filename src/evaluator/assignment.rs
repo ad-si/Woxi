@@ -532,10 +532,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(rhs_value);
     }
 
-    return Err(InterpreterError::EvaluationError(format!(
-      "Variable {} not found",
+    // Matching wolframscript: if the target has no value at all, emit a
+    // 'Set::noval' warning and return the RHS (the assignment is a no-op).
+    crate::emit_message(&format!(
+      "Set::noval: Symbol {} in part assignment does not have an immediate value.",
       var_name
-    )));
+    ));
+    return Ok(rhs_value);
   }
 
   // Handle simple identifier assignment: x = value

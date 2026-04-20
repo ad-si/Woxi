@@ -6991,3 +6991,19 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript return 'Null' stdout (the trailing ';' suppresses output). Wolframscript also emits a 'TagSet::tagpos' warning that Woxi doesn't yet emit; the stdout byte-for-byte match is what matters for the mathics test.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 115
+TYPE: >>
+INPUT: A[[1, 2]] = 5
+EXPECTED:
+= 5
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 119
+TYPE: >>
+INPUT: A[[;;, 2]] = {6, 7}
+EXPECTED:
+= {6, 7}
+---

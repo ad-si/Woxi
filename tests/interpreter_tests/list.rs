@@ -1861,6 +1861,23 @@ mod part_extraction {
   }
 
   #[test]
+  fn part_assignment_on_undefined_symbol_returns_rhs() {
+    // Matches Mathematica: Part assignment on a symbol with no immediate
+    // value emits a 'Set::noval' warning and returns the RHS unchanged.
+    clear_state();
+    assert_eq!(interpret("freshPartUndefA[[1, 2]] = 5").unwrap(), "5");
+  }
+
+  #[test]
+  fn part_assignment_on_undefined_symbol_list_rhs() {
+    clear_state();
+    assert_eq!(
+      interpret("freshPartUndefB[[;;, 2]] = {6, 7}").unwrap(),
+      "{6, 7}"
+    );
+  }
+
+  #[test]
   fn part_all_with_variable() {
     assert_eq!(
       interpret("x = {{1, 2}, {3, 4}}; x[[All, 1]]").unwrap(),
