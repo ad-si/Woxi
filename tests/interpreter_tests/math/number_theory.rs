@@ -1532,6 +1532,24 @@ mod factorial {
   }
 
   #[test]
+  fn factorial_of_plus_parenthesizes() {
+    // `n!` binds only to the immediately preceding atom, so when Factorial's
+    // argument is a Plus/Times the whole expression needs parentheses.
+    assert_eq!(interpret("(a + b)!").unwrap(), "(a + b)!");
+    assert_eq!(interpret("(-1 + z)!").unwrap(), "(-1 + z)!");
+  }
+
+  #[test]
+  fn factorial_of_times_parenthesizes() {
+    assert_eq!(interpret("(a * b)!").unwrap(), "(a*b)!");
+  }
+
+  #[test]
+  fn factorial_of_unary_minus_parenthesizes() {
+    assert_eq!(interpret("(-a)!").unwrap(), "(-a)!");
+  }
+
+  #[test]
   fn factorial_negative_integers() {
     // Factorial of negative integers is ComplexInfinity
     assert_eq!(interpret("Factorial[-1]").unwrap(), "ComplexInfinity");

@@ -4714,9 +4714,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("<|{}|>", parts.join(", "));
       }
-      // Special case: Factorial[n] displays as n!
+      // Special case: Factorial[n] displays as n!, or (expr)! when the
+      // argument is a Plus/Times or other operator-level expression so the
+      // `!` suffix binds to the whole expression.
       if name == "Factorial" && args.len() == 1 {
-        return format!("{}!", fmt(&args[0]));
+        let arg_str = fmt(&args[0]);
+        let needs_parens = match &args[0] {
+          Expr::BinaryOp { op, .. } => !matches!(
+            op,
+            BinaryOperator::Power
+          ),
+          Expr::UnaryOp { op: UnaryOperator::Minus, .. } => true,
+          Expr::FunctionCall { name: n, args: a } => {
+            (n == "Plus" || n == "Times" || n == "Minus")
+              && a.len() >= 2
+          }
+          _ => false,
+        };
+        if needs_parens {
+          return format!("({})!", arg_str);
+        }
+        return format!("{}!", arg_str);
       }
       if name == "Rule" && args.len() == 2 {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
