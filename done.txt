@@ -7977,3 +7977,11 @@ INPUT: FullForm[3 + 4 I]
 EXPECTED:
 = Complex[3, 4]
 ---
+FILE: mathics/builtin/patterns/defaults.py
+CLASS: Optional
+LINE: 70
+TYPE: >>
+INPUT: FullForm[y_.]
+EXPECTED:
+= Optional[Pattern[y, Blank[]]]
+---

@@ -4076,14 +4076,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/defaults.py
 CLASS: Optional
-LINE: 70
-TYPE: >>
-INPUT: FullForm[y_.]
-EXPECTED:
-= Optional[Pattern[y, Blank[]]]
----
-FILE: mathics/builtin/patterns/defaults.py
-CLASS: Optional
 LINE: 81
 TYPE: >>
 INPUT: g[a]
