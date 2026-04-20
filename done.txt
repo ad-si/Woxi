@@ -7882,3 +7882,11 @@ INPUT: Graphics[MapIndexed[{CMYKColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityM
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/colors/color_directives.py
+CLASS: RGBColor
+LINE: 691
+TYPE: >>
+INPUT: Graphics[MapIndexed[{RGBColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityMatrix[3]], ImageSize->Small]
+EXPECTED:
+= -Graphics-
+---

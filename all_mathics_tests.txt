@@ -6591,14 +6591,6 @@ INPUT: RGBColor[0, 1, 0] // ToBoxes
 EXPECTED:
 = StyleBox[GraphicsBox[...], ...]
 ---
-FILE: mathics/builtin/colors/color_directives.py
-CLASS: RGBColor
-LINE: 691
-TYPE: >>
-INPUT: Graphics[MapIndexed[{RGBColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityMatrix[3]], ImageSize->Small]
-EXPECTED:
-= -Graphics-
----
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: Blend
 LINE: 61
