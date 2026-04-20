@@ -5723,3 +5723,7 @@ FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-contourplot-* variants (expr-x, waves, explicit-contours, n-contours, equals-constant, two-equations)
 EXPECTED: -Graphics- (6 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-contourplot-one-equation-two-branches, vec-complexplot-poles-zeros, vec-densityplot-plotrange, vec-densityplot-plotpoints, vec-logplot-sinx-x
+EXPECTED: -Graphics- (5 tests; Woxi and wolframscript byte-identical)
+---
