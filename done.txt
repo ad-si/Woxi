@@ -6820,3 +6820,10 @@ EXPECTED: (none)
 ---
 NOTE: Woxi returns 'Null' (no stdout output) for this trailing-semicolon assignment, matching mathics EXPECTED '(none)'.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: InputFileName_
+LINE: 402
+TYPE: X>
+INPUT: $InputFileName
+EXPECTED: (none)
+---

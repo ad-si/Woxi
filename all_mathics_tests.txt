@@ -1027,13 +1027,6 @@ INPUT: DeleteFile[filename]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: InputFileName_
-LINE: 402
-TYPE: X>
-INPUT: $InputFileName
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: InputStream
 LINE: 425
 TYPE: >>
