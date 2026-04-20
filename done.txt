@@ -5758,3 +5758,10 @@ FORM: StandardForm
 INPUT: MakeBoxes[a-b]
 EXPECTED: RowBox[{a, -, b}] (Woxi and wolframscript byte-identical; mathics test EXPECTED uses quoted strings inside but the raw output matches)
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Expression
+FORM: StandardForm
+INPUT: MakeBoxes[F[x]]
+EXPECTED: RowBox[{F, [, x, ]}] (Woxi and wolframscript byte-identical)
+---

@@ -14330,13 +14330,6 @@ EXPECTED: InterpretationBox[PaneBox["\"F[x]\""], OutputForm[F[x]], Editable ->Fa
 FILE: mathics/test/format/makeboxes_tests.yaml
 GROUP: Basic Forms
 EXPRESSION: Expression
-FORM: StandardForm
-INPUT: MakeBoxes[F[x]]
-EXPECTED: RowBox[{"F", "[", "x", "]"}]
----
-FILE: mathics/test/format/makeboxes_tests.yaml
-GROUP: Basic Forms
-EXPRESSION: Expression
 FORM: TeXForm
 INPUT: MakeBoxes[F[x]//TeXForm]
 EXPECTED: InterpretationBox["\"F(x)\"", TeXForm[F[x]], Editable -> True, AutoDelete-> True]
