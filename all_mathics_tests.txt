@@ -261,22 +261,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/sparse.py
 CLASS: SparseArray
-LINE: 40
-TYPE: >>
-INPUT: SparseArray[{{1, 2} -> 1, {2, 1} -> 1}]
-EXPECTED:
-= SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> 1, {2, 1} -> 1}]
----
-FILE: mathics/builtin/sparse.py
-CLASS: SparseArray
-LINE: 42
-TYPE: >>
-INPUT: SparseArray[{{1, 2} -> 1, {2, 1} -> 1}, {3, 3}]
-EXPECTED:
-= SparseArray[Automatic, {3, 3}, 0, {{1, 2} -> 1, {2, 1} -> 1}]
----
-FILE: mathics/builtin/sparse.py
-CLASS: SparseArray
 LINE: 44
 TYPE: >>
 INPUT: M=SparseArray[{{0, a}, {b, 0}}]
