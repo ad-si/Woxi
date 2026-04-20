@@ -323,6 +323,17 @@ mod protect_unprotect {
   }
 
   #[test]
+  fn unprotect_builtin_protected_symbol_returns_list() {
+    // Sin has Protected via builtin attributes; Unprotect should report it.
+    assert_eq!(interpret("Unprotect[Sin]").unwrap(), "{Sin}");
+  }
+
+  #[test]
+  fn unprotect_multiple_builtins_returns_all() {
+    assert_eq!(interpret("Unprotect[Cos, Tan]").unwrap(), "{Cos, Tan}");
+  }
+
+  #[test]
   fn protected_via_attributes_assignment() {
     clear_state();
     assert_eq!(

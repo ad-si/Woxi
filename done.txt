@@ -6683,3 +6683,11 @@ EXPECTED:
 ---
 NOTE: 9 passing follow-up tests where 'a'/'d'/'x'/'A'/'B' return themselves unchanged byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED values assume prior context sets these symbols.
 ---
+FILE: mathics/builtin/assignments/clear.py
+CLASS: Clear
+LINE: 64
+TYPE: >>
+INPUT: Unprotect[Sin]
+EXPECTED: (none)
+NOTE: Unprotect[Sin] now returns '{Sin}' in both Woxi and wolframscript (Woxi previously returned '{}' when the symbol only had Protected via builtin defaults). Mathics EXPECTED '(none)' reflects mathics suppressing the output in that test.
+---

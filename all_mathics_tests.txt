@@ -683,12 +683,6 @@ INPUT: Clear[Sin]
 EXPECTED:
 : Symbol Sin is Protected.
 ---
-FILE: mathics/builtin/assignments/clear.py
-CLASS: Clear
-LINE: 64
-TYPE: >>
-INPUT: Unprotect[Sin]
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: Clear

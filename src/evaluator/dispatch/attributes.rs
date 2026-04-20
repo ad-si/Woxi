@@ -153,7 +153,9 @@ pub fn dispatch_attributes(
             ));
             continue;
           }
-          let was_protected = crate::FUNC_ATTRS.with(|m| {
+          // A symbol counts as Protected if either its builtin default
+          // attributes or its user-stored attributes contain "Protected".
+          let was_user_protected = crate::FUNC_ATTRS.with(|m| {
             let mut attrs = m.borrow_mut();
             if let Some(entry) = attrs.get_mut(sym) {
               let before_len = entry.len();
@@ -163,7 +165,9 @@ pub fn dispatch_attributes(
               false
             }
           });
-          if was_protected {
+          let was_builtin_protected =
+            get_builtin_attributes(sym).contains(&"Protected");
+          if was_user_protected || was_builtin_protected {
             unprotected_syms.push(Expr::String(sym.clone()));
           }
         }
