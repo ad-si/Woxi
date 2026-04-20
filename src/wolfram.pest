@@ -489,8 +489,12 @@ HasSemicolon = _{ (
 )* ~ ";" ~ !";" }
 ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSpanSep ~ SpanExpr | Expression }
 
-AssociationItem = { ConditionExpr ~ ("->" | "\u{2192}") ~ ConditionExpr }
-Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
+AssociationItem = { ConditionExpr ~ ("->" | "\u{2192}" | ":>") ~ ConditionExpr }
+// Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
+// as Association[a, b] and AssociationQ returns False.
+AssociationNonRuleItem = { Expression }
+AssociationElement     = _{ AssociationItem | AssociationNonRuleItem }
+Association     = { "<|" ~ ( AssociationElement ~ ("," ~ AssociationElement)* )? ~ "|>" }
 // AssociationExtended handles bracket access on association literals:
 //   <|...|>["key"]      — key lookup (CurriedCall)
 //   <|...|>[["key"]]    — Part extraction

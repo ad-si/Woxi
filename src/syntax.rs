@@ -2074,17 +2074,46 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::Association => {
-      let items: Vec<(Expr, Expr)> = pair
-        .into_inner()
-        .filter(|p| p.as_rule() == Rule::AssociationItem)
-        .map(|item| {
-          let mut inner = item.into_inner();
-          let key = pair_to_expr(inner.next().unwrap());
-          let val = pair_to_expr(inner.next().unwrap());
-          (key, val)
-        })
-        .collect();
-      Expr::Association(items)
+      // Association literal: <|item, item, ...|>.
+      // If every item is a Rule (AssociationItem), produce Expr::Association.
+      // Otherwise fall back to a FunctionCall so AssociationQ can return False
+      // for malformed inputs like <|a, b|>.
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let all_rules = inner_pairs
+        .iter()
+        .all(|p| p.as_rule() == Rule::AssociationItem);
+      if all_rules {
+        let items: Vec<(Expr, Expr)> = inner_pairs
+          .into_iter()
+          .map(|item| {
+            let mut inner = item.into_inner();
+            let key = pair_to_expr(inner.next().unwrap());
+            let val = pair_to_expr(inner.next().unwrap());
+            (key, val)
+          })
+          .collect();
+        Expr::Association(items)
+      } else {
+        let args: Vec<Expr> = inner_pairs
+          .into_iter()
+          .map(|p| match p.as_rule() {
+            Rule::AssociationItem => {
+              let mut inner = p.into_inner();
+              let key = pair_to_expr(inner.next().unwrap());
+              let val = pair_to_expr(inner.next().unwrap());
+              Expr::Rule {
+                pattern: Box::new(key),
+                replacement: Box::new(val),
+              }
+            }
+            _ => pair_to_expr(p.into_inner().next().unwrap()),
+          })
+          .collect();
+        Expr::FunctionCall {
+          name: "Association".to_string(),
+          args,
+        }
+      }
     }
     Rule::AssociationItem => {
       let mut inner = pair.into_inner();

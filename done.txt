@@ -8459,3 +8459,19 @@ LINE: 7
 INPUT: Infinity
 EXPECTED: False
 ---
+FILE: mathics/builtin/list/associations.py
+CLASS: AssociationQ
+LINE: 141
+TYPE: >>
+INPUT: AssociationQ[<|a -> 1, b :> 2|>]
+EXPECTED:
+= True
+---
+FILE: mathics/builtin/list/associations.py
+CLASS: AssociationQ
+LINE: 144
+TYPE: >>
+INPUT: AssociationQ[<|a, b|>]
+EXPECTED:
+= False
+---

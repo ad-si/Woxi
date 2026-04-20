@@ -829,6 +829,22 @@ mod association_list_operations {
   }
 
   #[test]
+  fn association_literal_accepts_rule_delayed() {
+    // `:>` is valid inside <|...|>; AssociationQ recognizes it as an association.
+    assert_eq!(
+      interpret("AssociationQ[<|a -> 1, b :> 2|>]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn association_literal_non_rule_items_parse() {
+    // <|a, b|> parses as Association[a, b] (bare-symbol args, not rules);
+    // AssociationQ returns False because it isn't a well-formed association.
+    assert_eq!(interpret("AssociationQ[<|a, b|>]").unwrap(), "False");
+  }
+
+  #[test]
   fn take_from_association() {
     assert_eq!(
       interpret("Take[<|a -> 1, b -> 2, c -> 3|>, 2]").unwrap(),

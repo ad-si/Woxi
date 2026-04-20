@@ -5154,22 +5154,6 @@ INPUT: <|a -> x, b -> y, <|a -> z, d -> t|>|>
 EXPECTED:
 = <|a -> z, b -> y, d -> t|>
 ---
-FILE: mathics/builtin/list/associations.py
-CLASS: AssociationQ
-LINE: 141
-TYPE: >>
-INPUT: AssociationQ[<|a -> 1, b :> 2|>]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/list/associations.py
-CLASS: AssociationQ
-LINE: 144
-TYPE: >>
-INPUT: AssociationQ[<|a, b|>]
-EXPECTED:
-= False
----
 FILE: mathics/builtin/list/constructing.py
 CLASS: Reap
 LINE: 408
