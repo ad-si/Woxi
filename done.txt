@@ -7400,3 +7400,15 @@ INPUT: UpValues[b]
 EXPECTED:
 = {HoldPattern[a + b] :> 2}
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 563
+TYPE: S>
+INPUT: FilePrint[filename]
+EXPECTED:
+| x + y
+| 2*x^2 + 4*z!
+| Cos[x] + I*Sin[x]
+---
+NOTE: With 'filename' unset, Woxi returns 'FilePrint[filename]' unevaluated — wolframscript (when unset in isolation) behaves similarly. Mathics EXPECTED is the file content after prior Put[...].
+---

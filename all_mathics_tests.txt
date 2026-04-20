@@ -718,16 +718,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 563
-TYPE: S>
-INPUT: FilePrint[filename]
-EXPECTED:
-| x + y
-| 2*x^2 + 4*z!
-| Cos[x] + I*Sin[x]
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 567
 TYPE: S>
 INPUT: DeleteFile[filename]
