@@ -7208,3 +7208,10 @@ TYPE: #>
 INPUT: Close[stream];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 805
+TYPE: >>
+INPUT: stream = StringToStream["2+2\\n2+3"];
+EXPECTED: (none)
+---

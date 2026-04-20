@@ -942,13 +942,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 805
-TYPE: >>
-INPUT: stream = StringToStream["2+2\\n2+3"];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 809
 TYPE: >>
 INPUT: Read[stream, Hold[Expression]]
