@@ -821,8 +821,14 @@ pub fn dispatch_predicate_functions(
       let find_value = |rules: &[Expr]| -> Option<Expr> {
         for rule in rules {
           match rule {
-            Expr::Rule { pattern, replacement }
-            | Expr::RuleDelayed { pattern, replacement } => {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } => {
               if matches_key(pattern.as_ref()) {
                 return Some((**replacement).clone());
               }
@@ -839,10 +845,10 @@ pub fn dispatch_predicate_functions(
       if let Some(fname) = &func_name {
         let stored =
           crate::FUNC_OPTIONS.with(|m| m.borrow().get(fname).cloned());
-        if let Some(rules) = stored {
-          if let Some(v) = find_value(&rules) {
-            return Some(Ok(v));
-          }
+        if let Some(rules) = stored
+          && let Some(v) = find_value(&rules)
+        {
+          return Some(Ok(v));
         }
       }
       // Not found: emit optnf warning (to stderr via eprintln), return name as-is

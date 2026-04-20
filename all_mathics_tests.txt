@@ -163,14 +163,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
-LINE: 91
-TYPE: >>
-INPUT: Quantity[2, 3/2]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
 LINE: 97
 TYPE: >>
 INPUT: QuantityQ[Quantity[2, Second]]

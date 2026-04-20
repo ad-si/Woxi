@@ -1762,3 +1762,23 @@ fn quantity_distribution_variance_exponential() {
     "Quantity[1/4, Seconds^2]"
   );
 }
+
+#[test]
+fn quantity_with_integer_unit_multiplies() {
+  assert_eq!(interpret("Quantity[2, 3]").unwrap(), "6");
+}
+
+#[test]
+fn quantity_with_rational_unit_multiplies() {
+  assert_eq!(interpret("Quantity[2, 3/2]").unwrap(), "3");
+}
+
+#[test]
+fn quantity_with_real_unit_multiplies() {
+  assert_eq!(interpret("Quantity[2, 1.5]").unwrap(), "3.");
+}
+
+#[test]
+fn quantity_with_unit_one_keeps_magnitude() {
+  assert_eq!(interpret("Quantity[3/2, 1]").unwrap(), "3/2");
+}

@@ -463,10 +463,7 @@ mod option_value {
 
   #[test]
   fn option_value_two_arg_not_found_returns_name_string() {
-    assert_eq!(
-      interpret("OptionValue[MySetting, \"baz\"]").unwrap(),
-      "baz"
-    );
+    assert_eq!(interpret("OptionValue[MySetting, \"baz\"]").unwrap(), "baz");
   }
 
   #[test]

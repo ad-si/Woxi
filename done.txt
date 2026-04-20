@@ -6050,3 +6050,11 @@ EXPECTED:
 ---
 NOTE: Woxi and wolframscript text output both show 'Quantity[1, Kilograms]'; mathics EXPECTED '1 kilogram' is the interactive TraditionalForm rendering.
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: Quantity
+LINE: 91
+TYPE: >>
+INPUT: Quantity[2, 3/2]
+EXPECTED:
+= 3
+---

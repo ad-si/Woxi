@@ -1452,6 +1452,16 @@ fn normalize_unit(mut unit: Expr) -> Expr {
   }
 }
 
+fn is_pure_number(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(_, _)
+  ) || matches!(
+    expr,
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+  )
+}
+
 fn make_quantity(magnitude: Expr, unit: Expr) -> Expr {
   let unit = normalize_unit(unit);
   Expr::FunctionCall {
@@ -1564,6 +1574,15 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let magnitude = args[0].clone();
       let unit = args[1].clone();
+      // When the unit is a pure number (Integer, Real, or Rational), Quantity[m, n]
+      // reduces to the product m*n to match Mathematica's behavior.
+      if is_pure_number(&unit) {
+        let product = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![magnitude, unit],
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&product);
+      }
       Ok(make_quantity(magnitude, unit))
     }
     _ => Err(InterpreterError::EvaluationError(
