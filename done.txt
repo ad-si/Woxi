@@ -8684,3 +8684,27 @@ INPUT: Sin[1 / (x ^ 2 - y ^ 2)] // Apart
 EXPECTED:
 = Sin[1 / (x ^ 2 - y ^ 2)]
 ---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Plus
+LINE: 251
+TYPE: >>
+INPUT: DefaultValues[Plus]
+EXPECTED:
+= {HoldPattern[Default[Plus]] :> 0}
+---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Power
+LINE: 328
+TYPE: >>
+INPUT: DefaultValues[Power]
+EXPECTED:
+= {HoldPattern[Default[Power, 2]] :> 1}
+---
+FILE: mathics/builtin/arithfns/basic.py
+CLASS: Times
+LINE: 544
+TYPE: >>
+INPUT: DefaultValues[Times]
+EXPECTED:
+= {HoldPattern[Default[Times]] :> 1}
+---

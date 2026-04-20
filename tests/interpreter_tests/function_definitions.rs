@@ -332,6 +332,46 @@ mod down_values {
   }
 }
 
+mod default_values {
+  use super::*;
+
+  // DefaultValues exposes the built-in identity elements that
+  // Optional/OneIdentity patterns fall back to. Only Plus/Times/Power
+  // have them in Wolfram; everything else returns {}.
+
+  #[test]
+  fn plus_default_is_zero() {
+    assert_eq!(
+      interpret("DefaultValues[Plus]").unwrap(),
+      "{HoldPattern[Default[Plus]] :> 0}"
+    );
+  }
+
+  #[test]
+  fn times_default_is_one() {
+    assert_eq!(
+      interpret("DefaultValues[Times]").unwrap(),
+      "{HoldPattern[Default[Times]] :> 1}"
+    );
+  }
+
+  #[test]
+  fn power_second_slot_default_is_one() {
+    // Default[Power, 2] = 1 (only the exponent has a default; the base
+    // does not).
+    assert_eq!(
+      interpret("DefaultValues[Power]").unwrap(),
+      "{HoldPattern[Default[Power, 2]] :> 1}"
+    );
+  }
+
+  #[test]
+  fn other_symbols_have_no_defaults() {
+    assert_eq!(interpret("DefaultValues[Sin]").unwrap(), "{}");
+    assert_eq!(interpret("DefaultValues[myFunc]").unwrap(), "{}");
+  }
+}
+
 mod compile {
   use super::*;
 

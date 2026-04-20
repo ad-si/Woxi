@@ -6542,35 +6542,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Plus
-LINE: 251
-TYPE: >>
-INPUT: DefaultValues[Plus]
-EXPECTED:
-= {HoldPattern[Default[Plus]] :> 0}
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Plus
 LINE: 257
 TYPE: >>
 INPUT: 2 Graphics[{Red,Disk[]}] + 3 Graphics[{Red,Disk[]}]
 EXPECTED:
 = 5 -Graphics-
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 328
-TYPE: >>
-INPUT: DefaultValues[Power]
-EXPECTED:
-= {HoldPattern[Default[Power, 2]] :> 1}
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Times
-LINE: 544
-TYPE: >>
-INPUT: DefaultValues[Times]
-EXPECTED:
-= {HoldPattern[Default[Times]] :> 1}
 ---
 FILE: mathics/builtin/image/basic.py
 CLASS: Blur

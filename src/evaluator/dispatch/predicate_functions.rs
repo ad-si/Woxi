@@ -510,9 +510,42 @@ pub fn dispatch_predicate_functions(
     }
     // Introspection functions - return {} for symbols without stored definitions
     "Messages" | "OwnValues" | "SubValues" | "NValues" | "FormatValues"
-    | "DefaultValues"
       if args.len() == 1 =>
     {
+      return Some(Ok(Expr::List(vec![])));
+    }
+    // DefaultValues exposes the built-in identity elements used by
+    // Optional/OneIdentity pattern matching: Plus → 0, Times → 1, and
+    // Power's second slot → 1. Anything else with no stored definition
+    // returns {}.
+    "DefaultValues" if args.len() == 1 => {
+      let rule = |pat: Expr, val: Expr| Expr::RuleDelayed {
+        pattern: Box::new(Expr::FunctionCall {
+          name: "HoldPattern".to_string(),
+          args: vec![pat],
+        }),
+        replacement: Box::new(val),
+      };
+      let default_of = |sym: &str, extra: Vec<Expr>| {
+        let mut default_args = vec![Expr::Identifier(sym.to_string())];
+        default_args.extend(extra);
+        Expr::FunctionCall {
+          name: "Default".to_string(),
+          args: default_args,
+        }
+      };
+      if let Expr::Identifier(sym) = &args[0] {
+        let values: Vec<Expr> = match sym.as_str() {
+          "Plus" => vec![rule(default_of("Plus", vec![]), Expr::Integer(0))],
+          "Times" => vec![rule(default_of("Times", vec![]), Expr::Integer(1))],
+          "Power" => vec![rule(
+            default_of("Power", vec![Expr::Integer(2)]),
+            Expr::Integer(1),
+          )],
+          _ => vec![],
+        };
+        return Some(Ok(Expr::List(values)));
+      }
       return Some(Ok(Expr::List(vec![])));
     }
     "DownValues" if args.len() == 1 => {
