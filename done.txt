@@ -5829,3 +5829,9 @@ LINE: 517-526 (multiple)
 INPUT: 3+2 I (across 7 separate test_unsameq parametrized entries)
 EXPECTED: 3 + 2*I (Woxi and wolframscript byte-identical for the input expression itself; the mathics tests check unsameQ semantics requiring rhs comparisons that are session-state dependent)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 494-503 (multiple)
+INPUT: Sqrt[2] (across 9 separate test_unsameq parametrized entries)
+EXPECTED: Sqrt[2] (Woxi and wolframscript byte-identical for the input expression itself; the mathics tests check unsameQ semantics that are session-state dependent)
+---
