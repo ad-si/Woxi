@@ -6411,3 +6411,24 @@ EXPECTED:
 ---
 NOTE: TraceEvaluation is mathics-specific; both Woxi and wolframscript return 'TraceEvaluation[Infinity, ShowEvaluation -> False]' byte-for-byte.
 ---
+CLASS: Increment
+LINE: 202
+TYPE: #>
+INPUT: Clear[a, x, y]
+EXPECTED: (none)
+---
+---
+CLASS: PreIncrement
+LINE: 276
+TYPE: #>
+INPUT: Clear[x, y]
+EXPECTED: (none)
+---
+---
+CLASS: PreIncrement
+LINE: 290
+TYPE: #>
+INPUT: Clear[a, x, y]
+EXPECTED: (none)
+---
+---

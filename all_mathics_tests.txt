@@ -653,12 +653,6 @@ EXPECTED:
 = Hold[Plus[PreIncrement[PreIncrement[Increment[Increment[a]]]], 2]]
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Increment
-LINE: 202
-TYPE: #>
-INPUT: Clear[a, x, y]
-EXPECTED: (none)
----
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreDecrement
 LINE: 226
@@ -692,12 +686,6 @@ EXPECTED:
 = 3
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: PreIncrement
-LINE: 276
-TYPE: #>
-INPUT: Clear[x, y]
-EXPECTED: (none)
----
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: PreIncrement
 LINE: 281
@@ -707,12 +695,6 @@ EXPECTED:
 = 1 + x
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: PreIncrement
-LINE: 290
-TYPE: #>
-INPUT: Clear[a, x, y]
-EXPECTED: (none)
----
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: SubtractFrom
 LINE: 312
