@@ -8057,3 +8057,11 @@ INPUT: Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]
 EXPECTED:
 = {List, b, Pi}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: D
+LINE: 180
+TYPE: >>
+INPUT: D[2x, 2x]
+EXPECTED:
+= 0
+---

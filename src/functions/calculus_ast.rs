@@ -121,6 +121,32 @@ fn differentiate_wrt_expr(
   expr: &Expr,
   var_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // A variable specifier like `2x` (Times with a numeric coefficient) is not
+  // a valid symbol to differentiate against — Wolfram returns 0 in this case
+  // rather than naively treating the whole product as one variable.
+  let is_numeric = |e: &Expr| -> bool {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(
+        e,
+        Expr::FunctionCall { name, .. } if name == "Rational"
+      )
+  };
+  let is_bad_product = |e: &Expr| -> bool {
+    match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => is_numeric(left) || is_numeric(right),
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().any(|a| is_numeric(a))
+      }
+      _ => false,
+    }
+  };
+  if is_bad_product(var_expr) {
+    return Ok(Expr::Integer(0));
+  }
   // If the expression is structurally equal to the variable, derivative is 1
   if crate::syntax::expr_to_string(expr)
     == crate::syntax::expr_to_string(var_expr)

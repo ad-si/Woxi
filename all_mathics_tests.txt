@@ -2494,14 +2494,6 @@ EXPECTED:
 = {{-Cos[y] Sin[x], -Cos[x] Sin[y]}, {-Cos[x] Sin[y], -Cos[y] Sin[x]}}
 ---
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 180
-TYPE: >>
-INPUT: D[2x, 2x]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
 LINE: 383
 TYPE: >>

@@ -456,6 +456,14 @@ mod differentiate_plus_times {
       "{3*x^2*Cos[y], -(x^3*Sin[y])}"
     );
   }
+
+  // D[expr, var] requires var to be a symbol. A compound term like 2x
+  // (Times with a numeric coefficient) is not a valid variable — Wolfram
+  // returns 0 rather than computing d(2x)/d(2x) = 1.
+  #[test]
+  fn derivative_wrt_numeric_times_is_zero() {
+    assert_eq!(interpret("D[2x, 2x]").unwrap(), "0");
+  }
 }
 
 mod derivative_prime_notation {
