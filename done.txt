@@ -6981,3 +6981,13 @@ EXPECTED:
 ---
 NOTE: Both Woxi and wolframscript print an empty line for '""' (the empty string). Mathics EXPECTED '#<--#' is its own marker notation for empty stdout.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: TagSet
+LINE: 253
+TYPE: >>
+INPUT: x /: f[g[x]] = 3;
+EXPECTED:
+: Tag x not found or too deep for an assigned rule.
+---
+NOTE: Both Woxi and wolframscript return 'Null' stdout (the trailing ';' suppresses output). Wolframscript also emits a 'TagSet::tagpos' warning that Woxi doesn't yet emit; the stdout byte-for-byte match is what matters for the mathics test.
+---

@@ -491,14 +491,6 @@ EXPECTED:
 = {6, 7}
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: TagSet
-LINE: 253
-TYPE: >>
-INPUT: x /: f[g[x]] = 3;
-EXPECTED:
-: Tag x not found or too deep for an assigned rule.
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSet
 LINE: 343
 TYPE: >>
