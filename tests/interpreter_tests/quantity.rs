@@ -1782,3 +1782,19 @@ fn quantity_with_real_unit_multiplies() {
 fn quantity_with_unit_one_keeps_magnitude() {
   assert_eq!(interpret("Quantity[3/2, 1]").unwrap(), "3/2");
 }
+
+#[test]
+fn quantity_unit_threads_over_list_from_quantity() {
+  assert_eq!(
+    interpret(r#"QuantityUnit[Quantity[{10,20}, "Meters"]]"#).unwrap(),
+    "{Meters, Meters}"
+  );
+}
+
+#[test]
+fn quantity_unit_threads_over_list_of_quantities() {
+  assert_eq!(
+    interpret(r#"QuantityUnit[{Quantity[1, "m"], Quantity[2, "s"]}]"#).unwrap(),
+    "{Meters, Seconds}"
+  );
+}

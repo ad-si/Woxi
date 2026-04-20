@@ -1455,7 +1455,10 @@ fn normalize_unit(mut unit: Expr) -> Expr {
 fn is_pure_number(expr: &Expr) -> bool {
   matches!(
     expr,
-    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(_, _)
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::BigFloat(_, _)
   ) || matches!(
     expr,
     Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
@@ -1657,6 +1660,14 @@ pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "QuantityUnit expects exactly 1 argument".into(),
     ));
+  }
+  // Thread over lists (Listable): QuantityUnit[{q1, q2, ...}]
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| quantity_unit_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
   }
   if let Some((_mag, unit)) = is_quantity(&args[0]) {
     Ok(unit_idents_to_strings(unit))

@@ -6078,3 +6078,13 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript print 'Kilograms'; mathics EXPECTED 'kilogram' is the TraditionalForm rendering.
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: QuantityUnit
+LINE: 366
+TYPE: >>
+INPUT: QuantityUnit[Quantity[{10,20}, "Meters"]]
+EXPECTED:
+= {meter, meter}
+---
+NOTE: QuantityUnit now threads over lists (Listable). Both Woxi and wolframscript return {Meters, Meters}; mathics EXPECTED is TraditionalForm.
+---

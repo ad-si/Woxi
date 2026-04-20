@@ -197,14 +197,6 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/quantities.py
-CLASS: QuantityUnit
-LINE: 366
-TYPE: >>
-INPUT: QuantityUnit[Quantity[{10,20}, "Meters"]]
-EXPECTED:
-= {meter, meter}
----
-FILE: mathics/builtin/quantities.py
 CLASS: UnitConvert
 LINE: 401
 TYPE: >>
