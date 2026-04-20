@@ -1055,13 +1055,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Write
-LINE: 1535
-TYPE: >>
-INPUT: Close[stream];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Write
 LINE: 1536
 TYPE: >>
 INPUT: stream = OpenRead[%];
