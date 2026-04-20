@@ -7419,3 +7419,13 @@ TYPE: >>
 INPUT: Put[50!, "factorials"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: PutAppend
+LINE: 634
+TYPE: >>
+INPUT: FilePrint["factorials"]
+EXPECTED:
+| 30414093201713378043612608166064768844377641568960512000000000000
+---
+NOTE: Stateful mathics session test — given a prior 'Put[50!, "factorials"]', 'FilePrint["factorials"]' emits the 50! line in both Woxi and wolframscript (verified: Woxi reads the file from disk and prints contents).
+---
