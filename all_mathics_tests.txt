@@ -909,13 +909,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 561
-TYPE: S>
-INPUT: filename = $TemporaryDirectory <> "/example_file";
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 562
 TYPE: S>
 INPUT: Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]

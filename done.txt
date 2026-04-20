@@ -7108,3 +7108,10 @@ EXPECTED: (none)
 ---
 NOTE: 'Close[stream];' with unset stream returns 'Null' in Woxi (no stdout output due to trailing ';') matching mathics EXPECTED '(none)'.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 561
+TYPE: S>
+INPUT: filename = $TemporaryDirectory <> "/example_file";
+EXPECTED: (none)
+---
