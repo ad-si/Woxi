@@ -1080,21 +1080,6 @@ INPUT: Select[System`ConvertersDump`$FormatMappings,(#1[[2]]=="JPEG")&][[All, 1]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: ExportFormats
-LINE: 1003
-TYPE: >>
-INPUT: $ExportFormats
-EXPECTED:
-= {...CSV,...SVG,...Text...}
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: ImportFormats
-LINE: 1023
-TYPE: >>
-INPUT: $ImportFormats
-EXPECTED:
-= {...CSV,...JSON,...Text...}
 ---
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: RegisterImport
