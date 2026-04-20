@@ -6040,3 +6040,13 @@ TYPE: #>
 INPUT: Clear[MySetting]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: Quantity
+LINE: 79
+TYPE: >>
+INPUT: Quantity["Kilogram"]
+EXPECTED:
+= 1 kilogram
+---
+NOTE: Woxi and wolframscript text output both show 'Quantity[1, Kilograms]'; mathics EXPECTED '1 kilogram' is the interactive TraditionalForm rendering.
+---

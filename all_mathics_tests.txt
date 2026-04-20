@@ -163,14 +163,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
-LINE: 79
-TYPE: >>
-INPUT: Quantity["Kilogram"]
-EXPECTED:
-= 1 kilogram
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
 LINE: 91
 TYPE: >>
 INPUT: Quantity[2, 3/2]
