@@ -304,6 +304,27 @@ mod e_constant {
   }
 
   #[test]
+  fn numeric_q_integer_literal() {
+    assert_eq!(interpret("NumericQ[2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_rational() {
+    assert_eq!(interpret("NumericQ[2/9]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_complex_integer() {
+    assert_eq!(interpret("NumericQ[3+2 I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_infinity_is_false() {
+    // NumericQ[Infinity] is False in Wolfram — Infinity isn't a number.
+    assert_eq!(interpret("NumericQ[Infinity]").unwrap(), "False");
+  }
+
+  #[test]
   fn numeric_q_downvalue_true() {
     clear_state();
     assert_eq!(

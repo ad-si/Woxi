@@ -9282,30 +9282,6 @@ EXPECTED: F[b, 2 *9 ^ (-1)]
 MESSAGE: N[b,_]=1.2`3
 ---
 FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
-LINE: 7
-INPUT: 2
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
-LINE: 7
-INPUT: 3+2 I
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
-LINE: 7
-INPUT: 2/9
-EXPECTED: True
----
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
-LINE: 7
-INPUT: Infinity
-EXPECTED: False
----
-FILE: mathics/test/test_numericq.py
 FUNCTION: test_expression_numericq
 LINE: 73
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]

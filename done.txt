@@ -8435,3 +8435,27 @@ INPUT: ToExpression["2 3", InputForm]
 EXPECTED:
 = 6
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 7
+INPUT: 2
+EXPECTED: True
+---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 7
+INPUT: 3+2 I
+EXPECTED: True
+---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 7
+INPUT: 2/9
+EXPECTED: True
+---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 7
+INPUT: Infinity
+EXPECTED: False
+---
