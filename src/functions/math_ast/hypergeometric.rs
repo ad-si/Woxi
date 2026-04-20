@@ -159,6 +159,12 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
+  // If any upper parameter is exactly 0, (0)_n = 0 for n >= 1, so the series
+  // collapses to its n = 0 term which is 1.
+  if a_list.iter().any(|a| matches!(a, Expr::Integer(0))) {
+    return Ok(Expr::Integer(1));
+  }
+
   // HypergeometricPFQ[{}, {}, z] = E^z
   if a_list.is_empty() && b_list.is_empty() {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {

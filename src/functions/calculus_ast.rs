@@ -139,7 +139,7 @@ fn differentiate_wrt_expr(
         right,
       } => is_numeric(left) || is_numeric(right),
       Expr::FunctionCall { name, args } if name == "Times" => {
-        args.iter().any(|a| is_numeric(a))
+        args.iter().any(&is_numeric)
       }
       _ => false,
     }

@@ -3511,6 +3511,20 @@ mod hypergeometric_pfq {
       "1.5451774444795623"
     );
   }
+
+  // If any upper parameter is exactly 0, the Pochhammer (0)_n is 0 for all
+  // n >= 1, so the series collapses to 1 regardless of b or z.
+  #[test]
+  fn zero_in_a_list_is_one() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{0}, {b}, z]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{0, 2}, {b, c}, z]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod riemann_r {

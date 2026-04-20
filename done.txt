@@ -8065,3 +8065,11 @@ INPUT: D[2x, 2x]
 EXPECTED:
 = 0
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricPFQ
+LINE: 178
+TYPE: >>
+INPUT: HypergeometricPFQ[{0}, {b}, z]
+EXPECTED:
+= 1
+---
