@@ -5780,3 +5780,10 @@ LINE: 820, 851, 1139, 1589, 1740
 ACTUAL: p
 EXPECTED: p (Woxi and wolframscript byte-identical when run in isolation; mathics expected eqv/neqv depend on prior symbolic-logic setup)
 ---
+FILE: mathics/test/format/makeboxes_tests.yaml
+GROUP: Basic Forms
+EXPRESSION: Symbol
+FORM: StandardForm
+INPUT: MakeBoxes[x]
+EXPECTED: x (Woxi and wolframscript byte-identical; mathics expected "x" is the box-string form)
+---
