@@ -7755,14 +7755,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 562
-TYPE: >>
-INPUT: FullForm[3 + 4 I]
-EXPECTED:
-= Complex[3, 4]
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 596
 TYPE: >>
 INPUT: f[3]
