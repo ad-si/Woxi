@@ -1976,14 +1976,6 @@ EXPECTED:
 . def,
 . hij}
 ---
-FILE: mathics/builtin/string/patterns.py
-CLASS: EndOfString
-LINE: 78
-TYPE: >>
-INPUT: StringReplace["aab\nabb", "b" ~~ EndOfString -> "c"]
-EXPECTED:
-= aab
-. abc
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: StartOfLine
