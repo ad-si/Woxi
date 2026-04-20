@@ -924,6 +924,29 @@ mod eigenvectors {
   fn symbolic_variable() {
     assert_eq!(interpret("Eigenvectors[x]").unwrap(), "Eigenvectors[x]");
   }
+
+  #[test]
+  fn cyclic_3x3_eigenvectors() {
+    // Matches wolframscript: the eigenvector ordering follows the
+    // Eigenvalues order {2, -1, 1}.
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]").unwrap(),
+      "{{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}"
+    );
+  }
+}
+
+mod eigensystem {
+  use super::*;
+
+  #[test]
+  fn cyclic_3x3() {
+    // Eigensystem returns {eigenvalues, eigenvectors} in aligned order.
+    assert_eq!(
+      interpret("Eigensystem[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]").unwrap(),
+      "{{2, -1, 1}, {{1, 1, 1}, {1, -2, 1}, {-1, 0, 1}}}"
+    );
+  }
 }
 
 mod signature {
