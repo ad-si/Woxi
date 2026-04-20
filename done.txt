@@ -6971,3 +6971,13 @@ INPUT: Show[Graphics[Table[Polygon[TranslationTransform[{Sqrt[3] (i - j/2), 3 j/
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/exp_structure/general.py
+CLASS: Null
+LINE: 222
+TYPE: >>
+INPUT: ""
+EXPECTED:
+= #<--#
+---
+NOTE: Both Woxi and wolframscript print an empty line for '""' (the empty string). Mathics EXPECTED '#<--#' is its own marker notation for empty stdout.
+---
