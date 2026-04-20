@@ -419,6 +419,11 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    "MapIndexed" if args.len() == 4 => {
+      return Some(list_helpers_ast::map_indexed_with_level_heads_ast(
+        &args[0], &args[1], &args[2], &args[3],
+      ));
+    }
     "Tally" if args.len() == 1 => {
       return Some(list_helpers_ast::tally_ast(&args[0]));
     }

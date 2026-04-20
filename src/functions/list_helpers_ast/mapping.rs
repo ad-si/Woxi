@@ -348,7 +348,11 @@ pub fn map_at_ast(
     && let Some(n) = expr_to_i128(pos_spec)
   {
     let len = pairs.len() as i128;
-    let idx = if n < 0 { (len + n) as usize } else { (n - 1) as usize };
+    let idx = if n < 0 {
+      (len + n) as usize
+    } else {
+      (n - 1) as usize
+    };
     if idx >= pairs.len() {
       return Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
@@ -527,13 +531,35 @@ pub fn map_indexed_ast(
   Ok(Expr::List(results))
 }
 
+/// Detect a Heads -> True option, either as Expr::Rule or Expr::FunctionCall.
+fn is_heads_true_option(e: &Expr) -> bool {
+  match e {
+    Expr::Rule { pattern, replacement } => {
+      matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Heads")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True")
+    }
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      matches!(&args[0], Expr::Identifier(s) if s == "Heads")
+        && matches!(&args[1], Expr::Identifier(v) if v == "True")
+    }
+    _ => false,
+  }
+}
+
 /// MapIndexed with level spec: MapIndexed[f, expr, levelspec]
 /// Applies f to elements at the specified level, passing {position indices} as second arg.
+/// Also accepts a bare 'Heads -> True' as the 3rd argument, in which case the
+/// default level {1} is used but the head is included with index 0 appended.
+/// As a 4th argument, 'Heads -> True' combines with the levelspec.
 pub fn map_indexed_with_level_ast(
   func: &Expr,
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // 'Heads -> True' as the 3rd arg ⇒ default level {1}, with heads.
+  if is_heads_true_option(level_spec) {
+    return map_indexed_at_depth_heads(func, expr, 0, 1, 1, &[]);
+  }
   // Parse level spec: {n} = exactly level n
   let (min_level, max_level) = match level_spec {
     Expr::Integer(n) => (1i64, *n as i64),
@@ -561,6 +587,62 @@ pub fn map_indexed_with_level_ast(
   };
 
   map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
+}
+
+/// MapIndexed[f, expr, levelspec, Heads -> True].
+pub fn map_indexed_with_level_heads_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+  heads_opt: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if !is_heads_true_option(heads_opt) {
+    return Ok(Expr::FunctionCall {
+      name: "MapIndexed".to_string(),
+      args: vec![
+        func.clone(),
+        expr.clone(),
+        level_spec.clone(),
+        heads_opt.clone(),
+      ],
+    });
+  }
+  // Parse level spec the same way as the 3-arg form.
+  let (min_level, max_level) = match level_spec {
+    Expr::Integer(n) => (1i64, *n as i64),
+    Expr::List(items) if items.len() == 1 => {
+      if let Some(n) = expr_to_i128(&items[0]) {
+        (n as i64, n as i64)
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "MapIndexed".to_string(),
+          args: vec![
+            func.clone(),
+            expr.clone(),
+            level_spec.clone(),
+            heads_opt.clone(),
+          ],
+        });
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
+      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
+      (min, max)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MapIndexed".to_string(),
+        args: vec![
+          func.clone(),
+          expr.clone(),
+          level_spec.clone(),
+          heads_opt.clone(),
+        ],
+      });
+    }
+  };
+  map_indexed_at_depth_heads(func, expr, 0, min_level, max_level, &[])
 }
 
 /// Recursively apply MapIndexed at specified depth levels, tracking position indices.
@@ -617,6 +699,100 @@ fn map_indexed_at_depth(
     }
   } else {
     // Atom — apply if at the right level
+    if current_depth >= min_level && current_depth <= max_level {
+      let index =
+        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
+      apply_func_to_two_args(func, expr, &index)
+    } else {
+      Ok(expr.clone())
+    }
+  }
+}
+
+/// MapIndexed variant that also applies f to heads, with index position 0 appended.
+/// Each compound node first has its head rewritten as f[head, {position..., 0}]
+/// (if within the level range), then its children are recursed with their own
+/// position suffixes. The resulting head is the transformed head expression itself
+/// (Mathematica style: f[List, {0}] becomes the head of the outer list).
+fn map_indexed_at_depth_heads(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+  position: &[i128],
+) -> Result<Expr, InterpreterError> {
+  let (children, head_name_opt): (Option<&[Expr]>, Option<String>) = match expr
+  {
+    Expr::List(items) => (Some(items.as_slice()), Some("List".to_string())),
+    Expr::FunctionCall { name, args } => {
+      (Some(args.as_slice()), Some(name.clone()))
+    }
+    _ => (None, None),
+  };
+
+  if let (Some(items), Some(head_name)) = (children, head_name_opt) {
+    // Recurse into children first (bottom-up).
+    let mapped: Result<Vec<Expr>, _> = items
+      .iter()
+      .enumerate()
+      .map(|(i, item)| {
+        let mut child_pos = position.to_vec();
+        child_pos.push((i + 1) as i128);
+        map_indexed_at_depth_heads(
+          func,
+          item,
+          current_depth + 1,
+          min_level,
+          max_level,
+          &child_pos,
+        )
+      })
+      .collect();
+    let mapped = mapped?;
+
+    // Transform the head at the current position with index 0 appended.
+    // Heads count as level current_depth+1 (one step deeper than the node),
+    // matching Mathematica's Heads->True convention.
+    let head_expr = {
+      let head_atom = Expr::Identifier(head_name.clone());
+      let mut head_pos = position.to_vec();
+      head_pos.push(0);
+      let head_index =
+        Expr::List(head_pos.iter().map(|&i| Expr::Integer(i)).collect());
+      let head_depth = current_depth + 1;
+      if head_depth >= min_level && head_depth <= max_level {
+        apply_func_to_two_args(func, &head_atom, &head_index)?
+      } else {
+        head_atom
+      }
+    };
+
+    // Re-wrap children using the transformed head as a head expression.
+    // If the head is still the original symbol, use List / FunctionCall directly;
+    // otherwise produce a CurriedCall so output renders as 'f[List,{0}][...]'.
+    let inner_expr = match &head_expr {
+      Expr::Identifier(n) if *n == "List" => Expr::List(mapped),
+      Expr::Identifier(n) => Expr::FunctionCall {
+        name: n.clone(),
+        args: mapped,
+      },
+      _ => Expr::CurriedCall {
+        func: Box::new(head_expr.clone()),
+        args: mapped,
+      },
+    };
+
+    // Apply f at this level to the wrapped expression if the level matches.
+    if current_depth >= min_level && current_depth <= max_level {
+      let index =
+        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
+      apply_func_to_two_args(func, &inner_expr, &index)
+    } else {
+      Ok(inner_expr)
+    }
+  } else {
+    // Atom: apply f if current depth is in range; heads don't apply to atoms.
     if current_depth >= min_level && current_depth <= max_level {
       let index =
         Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());

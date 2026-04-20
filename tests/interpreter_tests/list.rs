@@ -476,6 +476,30 @@ mod map_indexed {
       "{f[{a, b}, {1}], f[{c, d}, {2}]}"
     );
   }
+
+  #[test]
+  fn heads_true_basic() {
+    assert_eq!(
+      interpret("MapIndexed[f, {a, b, c}, Heads->True]").unwrap(),
+      "f[List, {0}][f[a, {1}], f[b, {2}], f[c, {3}]]"
+    );
+  }
+
+  #[test]
+  fn heads_true_nested_level_one() {
+    assert_eq!(
+      interpret("MapIndexed[f, {a, {b, c}}, Heads->True]").unwrap(),
+      "f[List, {0}][f[a, {1}], f[{b, c}, {2}]]"
+    );
+  }
+
+  #[test]
+  fn heads_true_with_level_spec() {
+    assert_eq!(
+      interpret("MapIndexed[f, {a, b}, {1}, Heads -> True]").unwrap(),
+      "f[List, {0}][f[a, {1}], f[b, {2}]]"
+    );
+  }
 }
 
 mod tensor_product {
@@ -1068,10 +1092,8 @@ mod map_at {
   #[test]
   fn map_at_association_positive_index() {
     assert_eq!(
-      interpret(
-        r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]"#
-      )
-      .unwrap(),
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]"#)
+        .unwrap(),
       "<|a -> 1, b -> f[2], c -> 3, d -> 4|>"
     );
   }
@@ -1079,10 +1101,8 @@ mod map_at {
   #[test]
   fn map_at_association_negative_index() {
     assert_eq!(
-      interpret(
-        r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, -2]"#
-      )
-      .unwrap(),
+      interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, -2]"#)
+        .unwrap(),
       "<|a -> 1, b -> 2, c -> f[3], d -> 4|>"
     );
   }

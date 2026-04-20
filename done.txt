@@ -6783,3 +6783,11 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript return '<|a -> 1, b -> 2, c -> f[3], d -> 4|>' byte-for-byte.
 ---
+FILE: mathics/builtin/functional/apply_fns_to_lists.py
+CLASS: MapIndexed
+LINE: 286
+TYPE: >>
+INPUT: MapIndexed[f, {a, b, c}, Heads->True]
+EXPECTED:
+= f[List, {0}][f[a, {1}], f[b, {2}], f[c, {3}]]
+---
