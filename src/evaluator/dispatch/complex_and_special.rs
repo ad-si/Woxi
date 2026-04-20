@@ -991,6 +991,41 @@ pub fn dispatch_complex_and_special(
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }
+    // ReplaceList[expr, rules] / ReplaceList[expr, rules, n]
+    // Minimal impl: returns {result} if the first rule matches at the top
+    // level, {} otherwise. Does NOT enumerate all possible matches as
+    // Mathematica does (which is a much larger feature).
+    "ReplaceList" if args.len() == 2 || args.len() == 3 => {
+      let n_arg = args.get(2).cloned();
+      let max_matches: Option<i128> = match &n_arg {
+        Some(Expr::Integer(n)) => Some(*n),
+        Some(Expr::Identifier(s)) if s == "Infinity" => None,
+        None => None,
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "ReplaceList".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      if max_matches == Some(0) {
+        return Some(Ok(Expr::List(vec![])));
+      }
+      let result = match apply_replace_ast(&args[0], &args[1])
+        .and_then(|r| evaluate_expr_to_expr(&r))
+      {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+      };
+      // `apply_replace_ast` returns the original expr unchanged when no
+      // top-level match fires, so compare strings to detect a match.
+      let before = crate::syntax::expr_to_string(&args[0]);
+      let after = crate::syntax::expr_to_string(&result);
+      if before == after {
+        return Some(Ok(Expr::List(vec![])));
+      }
+      return Some(Ok(Expr::List(vec![result])));
+    }
     "Replace" if args.len() == 3 || args.len() == 4 => {
       // Replace[expr, rules, levelspec] or
       // Replace[expr, rules, levelspec, Heads -> True]

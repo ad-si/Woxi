@@ -8513,3 +8513,19 @@ INPUT: Simplify[ConditionalExpression[1, a > 0]]
 EXPECTED:
 = Undefined
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceList
+LINE: 339
+TYPE: >>
+INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]
+EXPECTED:
+= {}
+---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceList
+LINE: 342
+TYPE: >>
+INPUT: ReplaceList[a, b->x]
+EXPECTED:
+= {}
+---

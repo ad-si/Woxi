@@ -1200,7 +1200,7 @@ LowerTriangularize,Zero out elements above a diagonal,✅,pure,7.0,1212
 BitAnd,Returns the bitwise AND of integers,✅,pure,4.0,1213
 ImageCompose,Overlays one image on another,✅,pure,7.0,1214
 Order,Returns the canonical ordering of two expressions,✅,pure,1.0,1216
-ReplaceList,,🚫,,3.0,1216
+ReplaceList,Returns a list of replacements matching the rule (minimal impl: {result} when the rule matches at the top level; {} otherwise),✅,pure,3.0,1216
 SixJSymbol,Wigner 6-j symbol,✅,pure,2.0,1217
 LinearLayer,,🚫,,11.0,1218
 CellMargins,,🚫,,3.0,1219

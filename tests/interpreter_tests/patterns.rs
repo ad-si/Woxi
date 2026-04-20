@@ -1425,3 +1425,28 @@ mod replace_at_all_levels {
     );
   }
 }
+
+// Minimal ReplaceList implementation — returns `{result}` when the first
+// rule fires at the top level and `{}` otherwise. Does not yet enumerate
+// all possible pattern matchings the way Mathematica does.
+mod replace_list {
+  use super::*;
+
+  #[test]
+  fn no_match_returns_empty() {
+    assert_eq!(interpret("ReplaceList[a, b -> x]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn max_zero_returns_empty() {
+    assert_eq!(
+      interpret("ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 0]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn simple_top_level_match() {
+    assert_eq!(interpret("ReplaceList[5, x_ -> x*2]").unwrap(), "{10}");
+  }
+}
