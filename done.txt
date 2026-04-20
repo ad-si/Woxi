@@ -7092,3 +7092,10 @@ INPUT: If[#1<=1, 1, #1 #0[#1-1]]& [10]
 EXPECTED:
 = 3628800
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 76
+TYPE: >>
+INPUT: h := Function[{x}, Hold[1+x]]
+EXPECTED: (none)
+---

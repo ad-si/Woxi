@@ -7620,7 +7620,10 @@ pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
       op: *op,
       operand: Box::new(substitute_slot_zero_with_self(operand, self_fn)),
     },
-    Expr::Comparison { operands, operators } => Expr::Comparison {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
       operands: operands
         .iter()
         .map(|e| substitute_slot_zero_with_self(e, self_fn))
@@ -7640,10 +7643,7 @@ pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
   }
 }
 
-fn substitute_slots_impl(
-  expr: &Expr,
-  values: &[Expr],
-) -> Expr {
+fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
   match expr {
     Expr::Slot(n) => {
       let index = if *n == 0 { 0 } else { n - 1 };

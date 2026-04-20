@@ -282,10 +282,8 @@ pub fn apply_function_to_arg(
       // the remaining numeric slots with arg.
       let self_substituted =
         crate::syntax::substitute_slot_zero_with_self(body, func);
-      let substituted = crate::syntax::substitute_slots(
-        &self_substituted,
-        &[arg.clone()],
-      );
+      let substituted =
+        crate::syntax::substitute_slots(&self_substituted, &[arg.clone()]);
       evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {

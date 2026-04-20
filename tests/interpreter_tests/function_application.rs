@@ -865,10 +865,7 @@ mod slot_zero_self_reference {
   #[test]
   fn factorial_via_slot_zero() {
     // Classic recursive anonymous-function idiom.
-    assert_eq!(
-      interpret("If[#1<=1, 1, #1 #0[#1-1]]& [5]").unwrap(),
-      "120"
-    );
+    assert_eq!(interpret("If[#1<=1, 1, #1 #0[#1-1]]& [5]").unwrap(), "120");
   }
 
   #[test]
@@ -881,9 +878,6 @@ mod slot_zero_self_reference {
 
   #[test]
   fn unnumbered_slot_self_reference() {
-    assert_eq!(
-      interpret("If[# <= 1, 1, # #0[#-1]]& [4]").unwrap(),
-      "24"
-    );
+    assert_eq!(interpret("If[# <= 1, 1, # #0[#-1]]& [4]").unwrap(), "24");
   }
 }
