@@ -561,7 +561,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LetterQ" => Some((1, 1)),
     "Level" => Some((2, 3)),
     "LevelQ" => Some((1, 1)),
-    "LeviCivitaTensor" => Some((2, 2)),
+    "LeviCivitaTensor" => Some((1, 2)),
     "Likelihood" => Some((2, 2)),
     "LinearModelFit" => Some((3, 3)),
     "LinearRecurrence" => Some((3, 3)),

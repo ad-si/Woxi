@@ -2363,6 +2363,68 @@ fn permutation_sign(perm: &[usize]) -> i128 {
   if inversions % 2 == 0 { 1 } else { -1 }
 }
 
+/// LeviCivitaTensor[n] - produces a SparseArray containing only the
+/// non-zero (permutation) entries of the d-dimensional Levi-Civita symbol.
+pub fn levi_civita_tensor_sparse_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 1 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LeviCivitaTensor".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Generate all permutations of {1..n} in lexicographic order and emit
+  // a rule for each with the permutation sign as the value.
+  let mut perm: Vec<usize> = (1..=n).collect();
+  let mut rules: Vec<Expr> = Vec::new();
+  loop {
+    // Convert perm to 0-based for sign calculation.
+    let zero_based: Vec<usize> = perm.iter().map(|&x| x - 1).collect();
+    let sign = permutation_sign(&zero_based);
+    let key = Expr::List(
+      perm
+        .iter()
+        .map(|&i| Expr::Integer(i as i128))
+        .collect::<Vec<_>>(),
+    );
+    rules.push(Expr::Rule {
+      pattern: Box::new(key),
+      replacement: Box::new(Expr::Integer(sign)),
+    });
+    // Next permutation (Knuth's algorithm L).
+    if n < 2 {
+      break;
+    }
+    let mut i = n - 1;
+    while i > 0 && perm[i - 1] >= perm[i] {
+      i -= 1;
+    }
+    if i == 0 {
+      break;
+    }
+    let mut j = n - 1;
+    while perm[j] <= perm[i - 1] {
+      j -= 1;
+    }
+    perm.swap(i - 1, j);
+    perm[i..].reverse();
+  }
+
+  // Delegate to SparseArray[rules, {n, n, ..., n}] to get the same internal
+  // representation that wolframscript emits.
+  let dims = Expr::List(vec![Expr::Integer(n as i128); n]);
+  let sparse_call = Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![Expr::List(rules), dims],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sparse_call)
+}
+
 /// LeviCivitaTensor[n, List] - produces an n-dimensional tensor with the Levi-Civita symbol values.
 pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(&args[0]) {

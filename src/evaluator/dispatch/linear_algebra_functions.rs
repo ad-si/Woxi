@@ -196,10 +196,24 @@ pub fn dispatch_linear_algebra_functions(
         }
       }
     }
+    "LeviCivitaTensor" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::levi_civita_tensor_sparse_ast(
+          args,
+        ),
+      );
+    }
     "LeviCivitaTensor" if args.len() == 2 => {
       if matches!(&args[1], Expr::Identifier(h) if h == "List") {
         return Some(
           crate::functions::linear_algebra_ast::levi_civita_tensor_ast(
+            &args[..1],
+          ),
+        );
+      }
+      if matches!(&args[1], Expr::Identifier(h) if h == "SparseArray") {
+        return Some(
+          crate::functions::linear_algebra_ast::levi_civita_tensor_sparse_ast(
             &args[..1],
           ),
         );

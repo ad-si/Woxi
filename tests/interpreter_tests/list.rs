@@ -4468,6 +4468,30 @@ mod join_non_list {
   }
 
   #[test]
+  fn levi_civita_tensor_sparse_2() {
+    assert_eq!(
+      interpret("LeviCivitaTensor[2]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {1, -1}}]"
+    );
+  }
+
+  #[test]
+  fn levi_civita_tensor_sparse_3() {
+    assert_eq!(
+      interpret("LeviCivitaTensor[3]").unwrap(),
+      "SparseArray[Automatic, {3, 3, 3}, 0, {1, {{0, 2, 4, 6}, {{2, 3}, {3, 2}, {1, 3}, {3, 1}, {1, 2}, {2, 1}}}, {1, -1, -1, 1, 1, -1}}]"
+    );
+  }
+
+  #[test]
+  fn levi_civita_tensor_normalize_matches_list() {
+    assert_eq!(
+      interpret("Normal[LeviCivitaTensor[3]]").unwrap(),
+      interpret("LeviCivitaTensor[3, List]").unwrap()
+    );
+  }
+
+  #[test]
   fn count_at_level() {
     assert_eq!(
       interpret("Count[{{a, a}, {a, a, a}, a}, a, {2}]").unwrap(),
