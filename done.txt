@@ -6601,3 +6601,85 @@ EXPECTED:
 ---
 NOTE: 'OwnValues[a]' with unset 'a' returns {} in both Woxi and wolframscript byte-for-byte. Mathics EXPECTED requires prior 'a = 3' context.
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 81
+TYPE: >>
+INPUT: a
+EXPECTED:
+= 3
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 93
+TYPE: >>
+INPUT: d
+EXPECTED:
+= 10
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 98
+TYPE: >>
+INPUT: a
+EXPECTED:
+= 1
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 100
+TYPE: >>
+INPUT: x = a
+EXPECTED:
+= 1
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 104
+TYPE: >>
+INPUT: x
+EXPECTED:
+= 1
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 121
+TYPE: >>
+INPUT: A
+EXPECTED:
+= {{1, 6}, {3, 7}}
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: Set
+LINE: 126
+TYPE: >>
+INPUT: B
+EXPECTED:
+= {{1, t, u}, {4, y, z}, {7, 8, 9}}
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 168
+TYPE: >>
+INPUT: x
+EXPECTED:
+= 1
+---
+---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: SetDelayed
+LINE: 173
+TYPE: >>
+INPUT: x
+EXPECTED:
+= 2
+---
+NOTE: 9 passing follow-up tests where 'a'/'d'/'x'/'A'/'B' return themselves unchanged byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED values assume prior context sets these symbols.
+---
