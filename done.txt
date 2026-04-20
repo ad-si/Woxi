@@ -7258,3 +7258,12 @@ EXPECTED:
 ---
 NOTE: With 'filename' unset, Woxi and wolframscript both return 'FilePrint[filename]' unevaluated byte-for-byte. Mathics EXPECTED is the printed file content after prior 'Put[40!, filename]'.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 552
+TYPE: S>
+INPUT: Put[10!, 20!, 30!, filename]
+EXPECTED: (none)
+---
+NOTE: With 'filename' unset, Woxi and wolframscript both return 'Put[3628800, 2432902008176640000, 265252859812191058636308480000000, filename]' unevaluated byte-for-byte. Mathics EXPECTED '(none)' requires prior 'filename' binding.
+---

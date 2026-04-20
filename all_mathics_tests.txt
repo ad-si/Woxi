@@ -812,13 +812,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Put
-LINE: 552
-TYPE: S>
-INPUT: Put[10!, 20!, 30!, filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Put
 LINE: 553
 TYPE: S>
 INPUT: FilePrint[filename]
