@@ -896,9 +896,6 @@ mod sub_value_assignments {
   #[test]
   fn set_delayed_deep_sub_value_returns_null() {
     clear_state();
-    assert_eq!(
-      interpret("freshSubB[a][b][c] := whatever").unwrap(),
-      "\0"
-    );
+    assert_eq!(interpret("freshSubB[a][b][c] := whatever").unwrap(), "\0");
   }
 }

@@ -7187,3 +7187,10 @@ TYPE: >>
 INPUT: f[2][x_] := x ^ 2
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 792
+TYPE: #>
+INPUT: Close[stream];
+EXPECTED: (none)
+---
