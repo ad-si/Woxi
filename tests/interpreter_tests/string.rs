@@ -2657,6 +2657,24 @@ mod to_boxes {
       "SubsuperscriptBox"
     );
   }
+
+  // Graphics / Graphics3D get dedicated box wrappers, so Head[ToBoxes[...]]
+  // returns the specific *Box head rather than the generic RowBox.
+  #[test]
+  fn graphics_box_head() {
+    assert_eq!(
+      interpret("Head[ToBoxes[Graphics[{Circle[]}]]]").unwrap(),
+      "GraphicsBox"
+    );
+  }
+
+  #[test]
+  fn graphics3d_box_head() {
+    assert_eq!(
+      interpret("Head[ToBoxes[Graphics3D[{Polygon[]}]]]").unwrap(),
+      "Graphics3DBox"
+    );
+  }
 }
 
 mod make_boxes {

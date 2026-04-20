@@ -8162,3 +8162,11 @@ INPUT: ToCharacterCode["ä", "ISO8859-1"]
 EXPECTED:
 = {228}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1057
+TYPE: >>
+INPUT: Head[ToBoxes[Graphics[{Circle[]}]]]
+EXPECTED:
+= GraphicsBox
+---

@@ -2132,6 +2132,33 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       };
       Expr::String(text)
     }
+    // Graphics[...] / Graphics3D[...] get dedicated box wrappers matching
+    // Wolfram: Head[ToBoxes[Graphics[...]]] → GraphicsBox. Handles both the
+    // unevaluated FunctionCall and the evaluated Expr::Graphics variants.
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      let box_head = if name == "Graphics" {
+        "GraphicsBox"
+      } else {
+        "Graphics3DBox"
+      };
+      Expr::FunctionCall {
+        name: box_head.to_string(),
+        args: args.to_vec(),
+      }
+    }
+    Expr::Graphics { is_3d, .. } => {
+      let box_head = if *is_3d {
+        "Graphics3DBox"
+      } else {
+        "GraphicsBox"
+      };
+      Expr::FunctionCall {
+        name: box_head.to_string(),
+        args: vec![],
+      }
+    }
     // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();
