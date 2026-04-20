@@ -8629,3 +8629,17 @@ LINE: 97
 INPUT: f[a;\nb]
 EXPECTED: f[CompoundExpression[a, b]]
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_still_failing
+LINE: 180
+INPUT: MatchQ[x, F[x_.,y_]]
+EXPECTED: False
+MESSAGE: With OneIdentity, and Optional, no default
+---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_still_failing
+LINE: 189
+INPUT: MatchQ[x, G[x_.,y_]]
+EXPECTED: False
+MESSAGE: Without OneIdentity, and Optional, default
+---

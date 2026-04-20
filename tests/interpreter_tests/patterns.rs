@@ -1450,3 +1450,21 @@ mod replace_list {
     assert_eq!(interpret("ReplaceList[5, x_ -> x*2]").unwrap(), "{10}");
   }
 }
+
+// Optional-pattern (x_.) matching without a Default[...] rule. Without a
+// default value (and without OneIdentity on the head), matching a plain
+// atom against the two-slot pattern always fails — same behaviour in Woxi
+// and wolframscript.
+mod optional_pattern_without_default {
+  use super::*;
+
+  #[test]
+  fn match_against_atom_with_one_identity() {
+    assert_eq!(interpret("MatchQ[x, F[x_.,y_]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn match_against_atom_without_one_identity() {
+    assert_eq!(interpret("MatchQ[x, G[x_.,y_]]").unwrap(), "False");
+  }
+}
