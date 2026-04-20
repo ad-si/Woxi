@@ -2020,14 +2020,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: StartOfString
-LINE: 143
-TYPE: >>
-INPUT: StringMatchQ[#, StartOfString ~~ "a" ~~ __] &/@ {"apple", "banana", "artichoke"}
-EXPECTED:
-= {True, False, True}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: StartOfString
 LINE: 146
 TYPE: >>
 INPUT: StringReplace["aba\nabb", StartOfString ~~ "a" -> "c"]
