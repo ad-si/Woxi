@@ -805,6 +805,30 @@ mod association_list_operations {
   }
 
   #[test]
+  fn association_splices_nested_associations() {
+    // Inner Association arguments have their pairs spliced into the outer one,
+    // matching Wolfram: Association[a -> 1, Association[b -> 2]] -> <|a -> 1, b -> 2|>.
+    assert_eq!(
+      interpret("Association[a -> 1, Association[b -> 2, c -> 3], d -> 4]")
+        .unwrap(),
+      "<|a -> 1, b -> 2, c -> 3, d -> 4|>"
+    );
+  }
+
+  #[test]
+  fn association_with_nested_value_preserves_inner() {
+    // A nested association as a rule's *value* is preserved as a value
+    // (not spliced).
+    assert_eq!(
+      interpret(
+        "Association[a -> x, b -> y, c -> Association[d -> t, Association[e -> u]]]"
+      )
+      .unwrap(),
+      "<|a -> x, b -> y, c -> <|d -> t, e -> u|>|>"
+    );
+  }
+
+  #[test]
   fn take_from_association() {
     assert_eq!(
       interpret("Take[<|a -> 1, b -> 2, c -> 3|>, 2]").unwrap(),

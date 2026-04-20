@@ -146,7 +146,9 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Association(pairs));
   }
 
-  // Association[a -> 1, b -> 2] - direct rule arguments
+  // Association[a -> 1, b -> 2] - direct rule arguments. Nested associations
+  // splice their pairs into the outer one (matches Wolfram:
+  // Association[a -> 1, Association[b -> 2]] → <|a -> 1, b -> 2|>).
   let mut pairs = Vec::new();
   for arg in args {
     match arg {
@@ -159,6 +161,11 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
         replacement,
       } => {
         assoc_insert_dedup(&mut pairs, *pattern.clone(), *replacement.clone());
+      }
+      Expr::Association(inner_pairs) => {
+        for (k, v) in inner_pairs {
+          assoc_insert_dedup(&mut pairs, k.clone(), v.clone());
+        }
       }
       _ => {
         return Ok(Expr::FunctionCall {
