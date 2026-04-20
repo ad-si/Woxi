@@ -5835,3 +5835,9 @@ LINE: 494-503 (multiple)
 INPUT: Sqrt[2] (across 9 separate test_unsameq parametrized entries)
 EXPECTED: Sqrt[2] (Woxi and wolframscript byte-identical for the input expression itself; the mathics tests check unsameQ semantics that are session-state dependent)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 505-515 (multiple)
+INPUT: BesselJ[0, 2] (across 10 separate test_unsameq parametrized entries)
+EXPECTED: BesselJ[0, 2] (Woxi and wolframscript byte-identical for the input expression itself)
+---
