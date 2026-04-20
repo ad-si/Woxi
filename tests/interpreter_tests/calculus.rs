@@ -707,10 +707,7 @@ mod derivative_prime_notation {
   // expression returns the expression unchanged.
   #[test]
   fn derivative_all_zero_is_identity() {
-    assert_eq!(
-      interpret("Derivative[0,0,0][a+b+c]").unwrap(),
-      "a + b + c"
-    );
+    assert_eq!(interpret("Derivative[0,0,0][a+b+c]").unwrap(), "a + b + c");
   }
 
   #[test]

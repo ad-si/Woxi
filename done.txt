@@ -8049,3 +8049,11 @@ INPUT: Derivative[0,0,0][a+b+c]
 EXPECTED:
 = a + b + c
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Cases
+LINE: 194
+TYPE: >>
+INPUT: Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]
+EXPECTED:
+= {List, b, Pi}
+---

@@ -168,8 +168,42 @@ pub fn cases_ast(
   list: &Expr,
   pattern: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  cases_impl(list, pattern, false)
+}
+
+/// Cases with the `Heads -> True` option. The head of the expression is
+/// treated as an additional level-1 candidate for matching.
+pub fn cases_heads_ast(
+  list: &Expr,
+  pattern: &Expr,
+) -> Result<Expr, InterpreterError> {
+  cases_impl(list, pattern, true)
+}
+
+fn cases_impl(
+  list: &Expr,
+  pattern: &Expr,
+  include_head: bool,
+) -> Result<Expr, InterpreterError> {
+  // Build the list of level-1 candidates. With `Heads -> True`, the head
+  // symbol is prepended.
+  let (items, head_candidate): (&[Expr], Option<Expr>) = match list {
+    Expr::List(items) => (
+      items.as_slice(),
+      if include_head {
+        Some(Expr::Identifier("List".to_string()))
+      } else {
+        None
+      },
+    ),
+    Expr::FunctionCall { name, args } => (
+      args.as_slice(),
+      if include_head {
+        Some(Expr::Identifier(name.clone()))
+      } else {
+        None
+      },
+    ),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Cases".to_string(),
@@ -182,9 +216,11 @@ pub fn cases_ast(
   let (match_pat, replacement) = extract_rule_parts(pattern);
 
   let mut kept = Vec::new();
-  for item in items {
+
+  let try_match = |item: &Expr,
+                   kept: &mut Vec<Expr>|
+   -> Result<(), InterpreterError> {
     if let Some(repl) = replacement {
-      // Rule/RuleDelayed form: match against LHS, return RHS with bindings
       if let Some(bindings) =
         crate::evaluator::pattern_matching::match_pattern(item, match_pat)
       {
@@ -195,10 +231,16 @@ pub fn cases_ast(
     } else if crate::evaluator::pattern_matching::match_pattern(item, pattern)
       .is_some()
     {
-      // Use bindings-tracking matcher so repeated pattern variables
-      // (e.g. {a_, a_}) require consistent bindings.
       kept.push(item.clone());
     }
+    Ok(())
+  };
+
+  if let Some(head) = &head_candidate {
+    try_match(head, &mut kept)?;
+  }
+  for item in items {
+    try_match(item, &mut kept)?;
   }
 
   Ok(Expr::List(kept))

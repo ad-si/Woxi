@@ -6542,6 +6542,25 @@ mod cases_count_level_spec {
     );
   }
 
+  // Cases[expr, pattern, Heads -> True] includes the head symbol in the
+  // candidate pool.
+  #[test]
+  fn cases_heads_option_default_level() {
+    assert_eq!(
+      interpret(r"Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]").unwrap(),
+      "{List, b, Pi}"
+    );
+  }
+
+  // Without the option, Heads defaults to False and the head is excluded.
+  #[test]
+  fn cases_heads_default_excludes_head() {
+    assert_eq!(
+      interpret(r"Cases[{b, 6, \[Pi]}, _Symbol]").unwrap(),
+      "{b, Pi}"
+    );
+  }
+
   #[test]
   fn cases_exact_level() {
     assert_eq!(
