@@ -6121,14 +6121,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricPFQ
-LINE: 155
-TYPE: >>
-INPUT: HypergeometricPFQ[{2}, {2}, 1]
-EXPECTED:
-= E
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricPFQ
 LINE: 159
 TYPE: >>
 INPUT: HypergeometricPFQ[{3}, {2}, 1]

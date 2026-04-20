@@ -8122,3 +8122,11 @@ INPUT: Hypergeometric1F1[1, 1, {{1, 0}, {0, 1}}]
 EXPECTED:
 = {{E, 1}, {1, E}}
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricPFQ
+LINE: 155
+TYPE: >>
+INPUT: HypergeometricPFQ[{2}, {2}, 1]
+EXPECTED:
+= E
+---
