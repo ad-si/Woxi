@@ -3245,7 +3245,7 @@ DiscreteMaxLimit,,,,11.2,3326
 FromUnixTime,,,,10.1,3326
 GenerateAsymmetricKeyPair,,🚫,,10.1,3326
 RepeatingElement,,,,10.1,3326
-SetEnvironment,,,,9.0,3326
+SetEnvironment,"Sets or unsets an environment variable (rule {name -> value} or list of rules; None unsets)",✅,io,9.0,3326
 SinghMaddalaDistribution,,,,8.0,3326
 VertexInComponent,,,,8.0,3326
 CDFWavelet,,🚫,,8.0,3344

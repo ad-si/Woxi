@@ -552,6 +552,51 @@ mod precision {
   }
 
   #[test]
+  fn set_environment_rule_returns_null() {
+    interpret("SetEnvironment[\"WOXI_TEST_SET_ENV_VAR_A\" -> \"alpha\"]")
+      .unwrap();
+    assert_eq!(
+      interpret("Environment[\"WOXI_TEST_SET_ENV_VAR_A\"]").unwrap(),
+      "alpha"
+    );
+  }
+
+  #[test]
+  fn set_environment_none_unsets_var() {
+    interpret("SetEnvironment[\"WOXI_TEST_SET_ENV_VAR_B\" -> \"beta\"]")
+      .unwrap();
+    interpret("SetEnvironment[\"WOXI_TEST_SET_ENV_VAR_B\" -> None]").unwrap();
+    assert_eq!(
+      interpret("Environment[\"WOXI_TEST_SET_ENV_VAR_B\"]").unwrap(),
+      "$Failed"
+    );
+  }
+
+  #[test]
+  fn set_environment_list_of_rules_returns_null() {
+    interpret(
+      "SetEnvironment[{\"WOXI_TEST_SET_ENV_VAR_C\" -> \"c1\", \"WOXI_TEST_SET_ENV_VAR_D\" -> \"d1\"}]"
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("Environment[\"WOXI_TEST_SET_ENV_VAR_C\"]").unwrap(),
+      "c1"
+    );
+    assert_eq!(
+      interpret("Environment[\"WOXI_TEST_SET_ENV_VAR_D\"]").unwrap(),
+      "d1"
+    );
+  }
+
+  #[test]
+  fn set_environment_non_string_value_returns_failed() {
+    assert_eq!(
+      interpret("SetEnvironment[\"WOXI_TEST_SET_ENV_VAR_E\" -> 5]").unwrap(),
+      "$Failed"
+    );
+  }
+
+  #[test]
   fn version_number() {
     // $VersionNumber should return the git-describe output of the Woxi repo
     // (e.g. "v0.1.0-1234-gabcdef" or similar). Just check it's non-empty.

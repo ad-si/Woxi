@@ -284,30 +284,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/system.py
-CLASS: SetEnvironment
-LINE: 702
-TYPE: S>
-INPUT: SetEnvironment["FOO" -> "bar"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/system.py
-CLASS: SetEnvironment
-LINE: 709
-TYPE: S>
-INPUT: SetEnvironment[{"FOO" -> "baz", "A" -> "B"}]
-EXPECTED: (none)
----
-FILE: mathics/builtin/system.py
-CLASS: SetEnvironment
-LINE: 717
-TYPE: S>
-INPUT: SetEnvironment["FOO" -> 5]
-EXPECTED:
-: 5 must be a string or None.
-= $Failed
----
----
-FILE: mathics/builtin/system.py
 CLASS: Share
 LINE: 794
 TYPE: >>

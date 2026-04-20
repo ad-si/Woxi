@@ -6233,3 +6233,27 @@ EXPECTED:
 = FOO -> baz
 NOTE: In isolation, both Woxi and wolframscript return 'FOO -> None'. Mathics EXPECTED follows from prior SetEnvironment state.
 ---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 702
+TYPE: S>
+INPUT: SetEnvironment["FOO" -> "bar"]
+EXPECTED: (none)
+---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 709
+TYPE: S>
+INPUT: SetEnvironment[{"FOO" -> "baz", "A" -> "B"}]
+EXPECTED: (none)
+---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 717
+TYPE: S>
+INPUT: SetEnvironment["FOO" -> 5]
+EXPECTED:
+: 5 must be a string or None.
+= $Failed
+NOTE: SetEnvironment now implemented — accepts rule or list of rules, returns Null on success and $Failed on type error. All 3 tests match wolframscript output byte-for-byte.
+---

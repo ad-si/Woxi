@@ -75,6 +75,61 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    // SetEnvironment["name" -> "value"]   — set an environment variable
+    // SetEnvironment["name" -> None]      — unset an environment variable
+    // SetEnvironment[{rule1, rule2, ...}] — apply multiple rules
+    // Returns Null on success, $Failed if any value is not a string or None.
+    "SetEnvironment" if args.len() == 1 => {
+      fn apply_rule(rule: &Expr) -> Option<bool> {
+        let (pat, val) = match rule {
+          Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement } => {
+            (pattern.as_ref(), replacement.as_ref())
+          }
+          _ => return None,
+        };
+        let var = match pat {
+          Expr::String(s) => s.clone(),
+          _ => return Some(false),
+        };
+        match val {
+          Expr::String(v) => {
+            // SAFETY: Woxi is single-threaded in the REPL / CLI path.
+            unsafe { std::env::set_var(&var, v) };
+            Some(true)
+          }
+          Expr::Identifier(name) if name == "None" => {
+            unsafe { std::env::remove_var(&var) };
+            Some(true)
+          }
+          _ => {
+            eprintln!(
+              "SetEnvironment::setraw: {} must be a string or None.",
+              crate::syntax::expr_to_string(val)
+            );
+            Some(false)
+          }
+        }
+      }
+      let ok = match &args[0] {
+        Expr::List(rules) => {
+          let mut all_ok = true;
+          for r in rules {
+            match apply_rule(r) {
+              Some(true) => {}
+              _ => all_ok = false,
+            }
+          }
+          all_ok
+        }
+        other => matches!(apply_rule(other), Some(true)),
+      };
+      return Some(Ok(if ok {
+        Expr::Identifier("Null".to_string())
+      } else {
+        Expr::Identifier("$Failed".to_string())
+      }));
+    }
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
       return Some(Ok(Expr::List(vec![
