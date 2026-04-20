@@ -7794,3 +7794,11 @@ INPUT: LogPlot[{x^x, Exp[x], x!}, {x, 1, 5}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/drawing/plot_listplot.py
+CLASS: NumberLinePlot
+LINE: 332
+TYPE: >>
+INPUT: NumberLinePlot[Prime[Range[10]]]
+EXPECTED:
+= -Graphics-
+---

@@ -5390,14 +5390,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/drawing/plot_listplot.py
 CLASS: NumberLinePlot
-LINE: 332
-TYPE: >>
-INPUT: NumberLinePlot[Prime[Range[10]]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: NumberLinePlot
 LINE: 336
 TYPE: >>
 INPUT: NumberLinePlot[Table[x^2, {x, 10}]]
