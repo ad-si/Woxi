@@ -1747,10 +1747,95 @@ fn has_bare_identifier_units(e: &Expr) -> bool {
   }
 }
 
+/// Build an SI base-unit expression from a dimension exponent map.
+/// E.g. {Mass: 1} → "Kilograms"; {Length: 1, Time: -2} → "Meters/Seconds^2".
+fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
+  use Dimension::*;
+  let base_name = |d: Dimension| -> &'static str {
+    match d {
+      Length => "Meters",
+      Mass => "Kilograms",
+      Time => "Seconds",
+      ElectricCurrent => "Amperes",
+      Volume => "Liters",
+    }
+  };
+  // Collect positive and negative exponents
+  let mut positives: Vec<(Dimension, i64)> = Vec::new();
+  let mut negatives: Vec<(Dimension, i64)> = Vec::new();
+  for (&d, &e) in dimensions.iter() {
+    if e > 0 {
+      positives.push((d, e));
+    } else if e < 0 {
+      negatives.push((d, -e));
+    }
+  }
+  let build_product = |entries: &[(Dimension, i64)]| -> Option<Expr> {
+    if entries.is_empty() {
+      return None;
+    }
+    let mut terms: Vec<Expr> = entries
+      .iter()
+      .map(|(d, e)| {
+        let base = Expr::Identifier(base_name(*d).to_string());
+        if *e == 1 {
+          base
+        } else {
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![base, Expr::Integer(*e as i128)],
+          }
+        }
+      })
+      .collect();
+    if terms.len() == 1 {
+      terms.pop()
+    } else {
+      Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: terms,
+      })
+    }
+  };
+  let numer = build_product(&positives);
+  let denom = build_product(&negatives);
+  match (numer, denom) {
+    (Some(n), None) => n,
+    (None, Some(d)) => Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![d, Expr::Integer(-1)],
+    },
+    (Some(n), Some(d)) => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        n,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![d, Expr::Integer(-1)],
+        },
+      ],
+    },
+    (None, None) => Expr::Integer(1),
+  }
+}
+
 pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // 1-arg form: UnitConvert[quantity] → convert to base SI units
+  if args.len() == 1 {
+    if let Some((_mag, unit)) = is_quantity(&args[0]) {
+      if let Some(from) = decompose_unit_expr(unit) {
+        let target = si_base_unit_expr(&from.dimensions);
+        return unit_convert_ast(&[args[0].clone(), target]);
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "UnitConvert".to_string(),
+      args: args.to_vec(),
+    });
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "UnitConvert expects exactly 2 arguments".into(),
+      "UnitConvert expects 1 or 2 arguments".into(),
     ));
   }
   if let Some((mag, unit)) = is_quantity(&args[0]) {

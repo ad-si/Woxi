@@ -1798,3 +1798,35 @@ fn quantity_unit_threads_over_list_of_quantities() {
     "{Meters, Seconds}"
   );
 }
+
+#[test]
+fn unit_convert_one_arg_miles_to_meters() {
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[5.2, "miles"]]"#).unwrap(),
+    "Quantity[8368.588800000001, Meters]"
+  );
+}
+
+#[test]
+fn unit_convert_one_arg_hour_to_seconds() {
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[1, "hour"]]"#).unwrap(),
+    "Quantity[3600, Seconds]"
+  );
+}
+
+#[test]
+fn unit_convert_one_arg_centimeters_to_meters() {
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[100, "centimeter"]]"#).unwrap(),
+    "Quantity[1, Meters]"
+  );
+}
+
+#[test]
+fn unit_convert_one_arg_grams_to_kilograms() {
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[1000, "gram"]]"#).unwrap(),
+    "Quantity[1, Kilograms]"
+  );
+}

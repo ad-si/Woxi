@@ -6088,3 +6088,13 @@ EXPECTED:
 ---
 NOTE: QuantityUnit now threads over lists (Listable). Both Woxi and wolframscript return {Meters, Meters}; mathics EXPECTED is TraditionalForm.
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: UnitConvert
+LINE: 401
+TYPE: >>
+INPUT: UnitConvert[Quantity[5.2, "miles"], "kilometers"]
+EXPECTED:
+= 8.36859 kilometer
+---
+NOTE: both Woxi and wolframscript return 'Quantity[8.368588800000001, Kilometers]'; mathics EXPECTED is TraditionalForm.
+---

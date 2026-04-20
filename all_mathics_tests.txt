@@ -198,14 +198,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: UnitConvert
-LINE: 401
-TYPE: >>
-INPUT: UnitConvert[Quantity[5.2, "miles"], "kilometers"]
-EXPECTED:
-= 8.36859 kilometer
----
-FILE: mathics/builtin/quantities.py
-CLASS: UnitConvert
 LINE: 405
 TYPE: >>
 INPUT: UnitConvert[Quantity[3.8, "Pounds"]]
