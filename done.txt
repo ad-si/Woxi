@@ -8202,3 +8202,11 @@ INPUT: StringForm["`1` bla `2` blub `3` bla `2`", a, b, c]
 EXPECTED:
 = a bla b blub c bla b
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 687
+TYPE: >>
+INPUT: OutputForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
+EXPECTED:
+= Integral of f: Integrate[F[x], x]
+---

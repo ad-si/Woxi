@@ -6541,14 +6541,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/data.py
 CLASS: StringForm
-LINE: 687
-TYPE: >>
-INPUT: OutputForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
-EXPECTED:
-= Integral of f: Integrate[F[x], x]
----
-FILE: mathics/builtin/forms/data.py
-CLASS: StringForm
 LINE: 690
 TYPE: >>
 INPUT: StandardForm[StringForm["Integral of f: ``", Integrate[F[x],x]]]
