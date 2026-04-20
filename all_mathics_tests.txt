@@ -999,13 +999,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 814
-TYPE: #>
-INPUT: Close[stream];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 817
 TYPE: >>
 INPUT: stream = StringToStream["(* ::Package:: *)"];

@@ -7145,3 +7145,10 @@ TYPE: S>
 INPUT: filename = $TemporaryDirectory <> "/fiftyfactorial";
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 814
+TYPE: #>
+INPUT: Close[stream];
+EXPECTED: (none)
+---
