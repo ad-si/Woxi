@@ -8325,3 +8325,9 @@ LINE: 118
 INPUT: \\[ExponentialE]
 EXPECTED: E
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 629
+INPUT: a < b <= c
+EXPECTED: Inequality[a, Less, b, LessEqual, c]
+---

@@ -8336,12 +8336,6 @@ EXPECTED: DoubleLeftTee[x1, x2]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 629
-INPUT: a < b <= c
-EXPECTED: Inequality[a, Less, b, LessEqual, c]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 640
 INPUT: a + ?? b
 EXPECTED: a + Information[b, LongForm -> True]
