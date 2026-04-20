@@ -8897,3 +8897,11 @@ INPUT: series // FullForm
 EXPECTED:
 = SeriesData[x, 0, {1, 0, Rational[1, 2]}, 0, 3, 1]
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesData
+LINE: 1911
+TYPE: >>
+INPUT: series = Series[Cosh[x],{x,0,2}]
+EXPECTED:
+= 1 + x ^ 2 / 2 + O[x] ^ 3  (mathics prettied; Woxi/wolframscript print SeriesData raw form)
+---

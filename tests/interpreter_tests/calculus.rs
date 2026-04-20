@@ -961,6 +961,17 @@ mod series {
       "SeriesData[x, 0, List[1, 0, Rational[1, 2]], 0, 3, 1]"
     );
   }
+
+  #[test]
+  fn series_cosh_raw_output() {
+    // Default output of Series uses the raw SeriesData form —
+    // matches wolframscript; mathics renders it prettied as
+    // 1 + x^2/2 + O[x]^3 instead.
+    assert_eq!(
+      interpret("Series[Cosh[x], {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]"
+    );
+  }
 }
 
 mod limit {
