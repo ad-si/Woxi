@@ -1871,14 +1871,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/charcodes.py
 CLASS: ToCharacterCode
-LINE: 51
-TYPE: >>
-INPUT: ToCharacterCode["ä", "UTF8"]
-EXPECTED:
-= {195, 164}
----
-FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
 LINE: 54
 TYPE: >>
 INPUT: ToCharacterCode["ä", "ISO8859-1"]

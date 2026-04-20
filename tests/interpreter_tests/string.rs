@@ -443,6 +443,26 @@ mod to_character_code {
       "{945, 946, 947}"
     );
   }
+
+  // With an explicit "UTF8" encoding, multi-byte characters are returned
+  // as their underlying byte sequence (two bytes for ä).
+  #[test]
+  fn utf8_encoding_returns_bytes() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["ä", "UTF8"]"#).unwrap(),
+      "{195, 164}"
+    );
+  }
+
+  // With an ASCII-compatible single-byte encoding like ISO8859-1, the
+  // codepoint itself fits and is returned directly.
+  #[test]
+  fn iso8859_1_encoding_single_byte() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode["ä", "ISO8859-1"]"#).unwrap(),
+      "{228}"
+    );
+  }
 }
 
 mod from_character_code {

@@ -3224,25 +3224,49 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ToCharacterCode[s] - converts a string to a list of character codes
 pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "ToCharacterCode expects exactly 1 argument".into(),
+      "ToCharacterCode expects 1 or 2 arguments".into(),
     ));
   }
+
+  // Encoding selector: "UTF8" / "UTF-8" returns the byte sequence for each
+  // character; any ASCII-compatible encoding like "ISO8859-1" returns the
+  // codepoints directly.
+  let encoding = args.get(1).map(|e| match e {
+    Expr::String(s) => s.clone(),
+    _ => crate::syntax::expr_to_string(e),
+  });
+  let is_utf8 = encoding
+    .as_deref()
+    .map(|e| {
+      let e = e.replace('-', "").to_ascii_lowercase();
+      e == "utf8"
+    })
+    .unwrap_or(false);
+
+  let codes_for = |s: &str| -> Vec<Expr> {
+    if is_utf8 {
+      s.as_bytes()
+        .iter()
+        .map(|b| Expr::Integer(*b as i128))
+        .collect()
+    } else {
+      s.chars().map(|c| Expr::Integer(c as i128)).collect()
+    }
+  };
+
   // Handle list of strings
   if let Expr::List(items) = &args[0] {
     let mut results = Vec::new();
     for item in items {
       let s = expr_to_str(item)?;
-      let codes: Vec<Expr> =
-        s.chars().map(|c| Expr::Integer(c as i128)).collect();
-      results.push(Expr::List(codes));
+      results.push(Expr::List(codes_for(&s)));
     }
     return Ok(Expr::List(results));
   }
   let s = expr_to_str(&args[0])?;
-  let codes: Vec<Expr> = s.chars().map(|c| Expr::Integer(c as i128)).collect();
-  Ok(Expr::List(codes))
+  Ok(Expr::List(codes_for(&s)))
 }
 
 /// FromCharacterCode[n] or FromCharacterCode[{n1, n2, ...}] - converts character codes to a string

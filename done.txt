@@ -8146,3 +8146,11 @@ INPUT: ContainsOnly[{a, 1.0}, {1, a, b}, {SameTest -> Equal}]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/string/charcodes.py
+CLASS: ToCharacterCode
+LINE: 51
+TYPE: >>
+INPUT: ToCharacterCode["ä", "UTF8"]
+EXPECTED:
+= {195, 164}
+---

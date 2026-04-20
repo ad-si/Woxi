@@ -1339,8 +1339,14 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return None,
     };
     for r in rules {
-      if let Expr::Rule { pattern, replacement }
-      | Expr::RuleDelayed { pattern, replacement } = r
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } = r
         && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest")
       {
         return Some((**replacement).clone());

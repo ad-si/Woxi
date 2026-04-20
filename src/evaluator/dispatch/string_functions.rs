@@ -106,7 +106,7 @@ pub fn dispatch_string_functions(
     "StringFreeQ" if args.len() == 2 => {
       return Some(crate::functions::string_ast::string_free_q_ast(args));
     }
-    "ToCharacterCode" if args.len() == 1 => {
+    "ToCharacterCode" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::to_character_code_ast(args));
     }
     "FromCharacterCode" if args.len() == 1 || args.len() == 2 => {
