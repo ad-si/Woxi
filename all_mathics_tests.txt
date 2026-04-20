@@ -4899,14 +4899,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Names
-LINE: 555
-TYPE: >>
-INPUT: Names["List"]
-EXPECTED:
-= {List}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Names
 LINE: 559
 TYPE: >>
 INPUT: Names["List*"]

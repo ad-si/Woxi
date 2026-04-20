@@ -736,10 +736,7 @@ mod derivative_prime_notation {
   fn output_form_renders_derivative_as_prime() {
     // OutputForm[f'[x]] should render as `f'[x]` (prime notation), matching
     // wolframscript. Default output keeps Derivative[1][f][x].
-    assert_eq!(
-      interpret("ToString[OutputForm[f'[x]]]").unwrap(),
-      "f'[x]"
-    );
+    assert_eq!(interpret("ToString[OutputForm[f'[x]]]").unwrap(), "f'[x]");
   }
 
   #[test]
@@ -762,7 +759,10 @@ mod derivative_prime_notation {
   #[test]
   fn output_form_unapplied_derivative() {
     // Derivative[1][f] without arguments renders as f'.
-    assert_eq!(interpret("ToString[OutputForm[Derivative[1][f]]]").unwrap(), "f'");
+    assert_eq!(
+      interpret("ToString[OutputForm[Derivative[1][f]]]").unwrap(),
+      "f'"
+    );
   }
 }
 

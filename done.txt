@@ -8491,3 +8491,11 @@ INPUT: OutputForm[f'[x]]
 EXPECTED:
 = f'[x]
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Names
+LINE: 555
+TYPE: >>
+INPUT: Names["List"]
+EXPECTED:
+= {List}
+---

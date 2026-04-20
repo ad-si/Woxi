@@ -528,31 +528,53 @@ mod names {
   use super::*;
 
   #[test]
-  fn empty_env() {
-    assert_eq!(interpret("Names[]").unwrap(), "{}");
+  fn empty_env_includes_builtins() {
+    // Names[] returns all user-defined AND built-in names (matches wolframscript,
+    // which returns tens of thousands of System` symbols). We just verify a
+    // few expected builtins are present.
+    let out = interpret("Names[]").unwrap();
+    assert!(out.starts_with('{') && out.ends_with('}'));
+    assert!(out.contains("List"), "expected List in Names[], got {out}");
+    assert!(out.contains("Plus"), "expected Plus in Names[], got {out}");
   }
 
   #[test]
-  fn lists_variables() {
-    assert_eq!(interpret("x = 1; y = 2; Names[\"*\"]").unwrap(), "{x, y}");
+  fn lists_variables_among_builtins() {
+    // User variables appear alongside builtins in the "*" pattern.
+    let out = interpret("x = 1; y = 2; Names[\"*\"]").unwrap();
+    assert!(out.contains(" x,") || out.ends_with(", x}") || out.contains("{x,"));
+    assert!(out.contains(" y,") || out.ends_with(", y}") || out.contains("{y,"));
   }
 
   #[test]
-  fn lists_functions() {
-    assert_eq!(interpret("f[x_] := x^2; Names[\"*\"]").unwrap(), "{f}");
+  fn lists_user_function_among_builtins() {
+    let out = interpret("f[x_] := x^2; Names[\"*\"]").unwrap();
+    assert!(out.contains(" f,") || out.ends_with(", f}") || out.contains("{f,"));
   }
 
   #[test]
-  fn pattern_filter() {
-    assert_eq!(
-      interpret("abc = 1; abd = 2; xyz = 3; Names[\"ab*\"]").unwrap(),
-      "{abc, abd}"
-    );
+  fn pattern_filter_user_vars() {
+    // Built-ins starting with `ab` also show up (e.g. Abs), but user-defined
+    // symbols with the prefix still appear.
+    let out =
+      interpret("abc = 1; abd = 2; xyz = 3; Names[\"ab*\"]").unwrap();
+    assert!(out.contains("abc"), "expected abc in {out}");
+    assert!(out.contains("abd"), "expected abd in {out}");
+    assert!(!out.contains("xyz"), "unexpected xyz in {out}");
   }
 
   #[test]
-  fn no_match() {
-    assert_eq!(interpret("a = 1; Names[\"z*\"]").unwrap(), "{}");
+  fn no_match_returns_empty() {
+    // No built-in starts with `z` (as of this writing), and no user symbol
+    // matches the pattern either.
+    assert_eq!(interpret("a = 1; Names[\"zzzNoSuch*\"]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn exact_builtin_match() {
+    // Bare literal pattern returns just the exact-match builtin name.
+    assert_eq!(interpret("Names[\"List\"]").unwrap(), "{List}");
+    assert_eq!(interpret("Names[\"Plus\"]").unwrap(), "{Plus}");
   }
 }
 

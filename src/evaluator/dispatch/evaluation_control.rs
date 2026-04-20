@@ -409,19 +409,30 @@ pub fn dispatch_evaluation_control(
       }));
     }
     "Names" if args.len() <= 1 => {
-      let all_names = crate::get_defined_names();
+      // Include both user-defined names and built-in function names
+      // (from functions.csv) so patterns like "List*" match builtins.
+      let mut all_names: Vec<String> = crate::get_defined_names();
+      for b in crate::evaluator::get_builtin_function_names() {
+        if !all_names.iter().any(|n| n == b) {
+          all_names.push(b.to_string());
+        }
+      }
+      all_names.sort();
       if args.is_empty() {
         let items: Vec<Expr> =
           all_names.into_iter().map(Expr::String).collect();
         return Some(Ok(Expr::List(items)));
       }
       if let Expr::String(pattern) = &args[0] {
+        // Wolfram name patterns: `*` matches any run of characters (0+);
+        // `@` matches one or more lowercase letters (so `List@` matches
+        // `Listable`, `Listen`, but not `List` itself).
         let regex_pattern = format!(
           "^{}$",
           pattern
             .replace('.', "\\.")
             .replace('*', ".*")
-            .replace('@', "[a-z0-9]*")
+            .replace('@', "[a-z]+")
         );
         let re = regex::Regex::new(&regex_pattern);
         if let Ok(re) = re {
