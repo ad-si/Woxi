@@ -1150,6 +1150,24 @@ pub fn set_delayed_ast(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // SubValue form: f[a][b] := rhs (also deeper nestings like f[a][b][c])
+  // Mathematica stores these under SubValues[f] and they fire when exactly
+  // f[a][b] is evaluated. Woxi doesn't fully implement SubValues yet, but
+  // at minimum return Null so the assignment looks like a no-op rather than
+  // echoing the unevaluated form, matching wolframscript's surface behaviour.
+  if let Expr::CurriedCall { func, .. } = lhs {
+    let mut inner = func.as_ref();
+    loop {
+      match inner {
+        Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+        Expr::FunctionCall { .. } => {
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
+        _ => break,
+      }
+    }
+  }
+
   // Fallback: return symbolic form
   Ok(Expr::FunctionCall {
     name: "SetDelayed".to_string(),

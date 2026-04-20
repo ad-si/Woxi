@@ -881,3 +881,24 @@ mod slot_zero_self_reference {
     assert_eq!(interpret("If[# <= 1, 1, # #0[#-1]]& [4]").unwrap(), "24");
   }
 }
+
+mod sub_value_assignments {
+  use super::*;
+
+  #[test]
+  fn set_delayed_sub_value_returns_null() {
+    // f[1][x_] := x is a SubValue assignment; return Null so the CLI shows
+    // no output (matches wolframscript's surface behaviour).
+    clear_state();
+    assert_eq!(interpret("freshSubA[1][x_] := x").unwrap(), "\0");
+  }
+
+  #[test]
+  fn set_delayed_deep_sub_value_returns_null() {
+    clear_state();
+    assert_eq!(
+      interpret("freshSubB[a][b][c] := whatever").unwrap(),
+      "\0"
+    );
+  }
+}

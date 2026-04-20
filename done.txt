@@ -7173,3 +7173,17 @@ TYPE: >>
 INPUT: Clear[Sin]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: SubValues
+LINE: 153
+TYPE: >>
+INPUT: f[1][x_] := x
+EXPECTED: (none)
+---
+FILE: mathics/builtin/assignments/types.py
+CLASS: SubValues
+LINE: 154
+TYPE: >>
+INPUT: f[2][x_] := x ^ 2
+EXPECTED: (none)
+---
