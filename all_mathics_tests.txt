@@ -259,22 +259,6 @@ TYPE: X>
 INPUT: $ContextPath // InputForm
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/scoping.py
-CLASS: Unique
-LINE: 552
-TYPE: >>
-INPUT: Unique[]
-EXPECTED:
-= $...
----
-FILE: mathics/builtin/scoping.py
-CLASS: Unique
-LINE: 556
-TYPE: >>
-INPUT: Unique["x"]
-EXPECTED:
-= x...
----
 FILE: mathics/builtin/sparse.py
 CLASS: SparseArray
 LINE: 40

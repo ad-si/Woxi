@@ -1822,11 +1822,11 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
 pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1-arg form: UnitConvert[quantity] → convert to base SI units
   if args.len() == 1 {
-    if let Some((_mag, unit)) = is_quantity(&args[0]) {
-      if let Some(from) = decompose_unit_expr(unit) {
-        let target = si_base_unit_expr(&from.dimensions);
-        return unit_convert_ast(&[args[0].clone(), target]);
-      }
+    if let Some((_mag, unit)) = is_quantity(&args[0])
+      && let Some(from) = decompose_unit_expr(unit)
+    {
+      let target = si_base_unit_expr(&from.dimensions);
+      return unit_convert_ast(&[args[0].clone(), target]);
     }
     return Ok(Expr::FunctionCall {
       name: "UnitConvert".to_string(),

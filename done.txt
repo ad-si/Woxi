@@ -6098,3 +6098,21 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript return 'Quantity[8.368588800000001, Kilometers]'; mathics EXPECTED is TraditionalForm.
 ---
+FILE: mathics/builtin/scoping.py
+CLASS: Unique
+LINE: 552
+TYPE: >>
+INPUT: Unique[]
+EXPECTED:
+= $...
+---
+FILE: mathics/builtin/scoping.py
+CLASS: Unique
+LINE: 556
+TYPE: >>
+INPUT: Unique["x"]
+EXPECTED:
+= x...
+---
+NOTE: mathics EXPECTED uses pattern '$...' / 'x...' (any symbol with that prefix). Woxi returns '' / 'x1' and wolframscript returns '' / 'x11' — both match the pattern. Counter initial values differ between engines.
+---
