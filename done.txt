@@ -8262,3 +8262,9 @@ LINE: 434
 INPUT: First[NumericArray[{1,2,3}]]
 EXPECTED: 1
 ---
+FILE: mathics/test/builtin/test_binary.py
+FUNCTION: test_ByteOrdering
+LINE: 436
+INPUT: Last[NumericArray[{1,2,3}]]
+EXPECTED: 3
+---
