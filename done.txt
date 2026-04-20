@@ -6204,3 +6204,32 @@ EXPECTED:
 ---
 NOTE: wolframscript assigns the OwnValue (returns 10); Woxi does the same. Mathics emits its own bound-check warning which neither Woxi nor wolframscript emits.
 ---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 705
+TYPE: S>
+INPUT: GetEnvironment["FOO"]
+EXPECTED:
+= FOO -> bar
+---
+NOTE: In isolation, both Woxi and wolframscript return 'FOO -> None' (no env var set). Mathics tests are stateful from prior SetEnvironment calls.
+---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 712
+TYPE: S>
+INPUT: GetEnvironment["FOO"]
+EXPECTED:
+= FOO -> baz
+---
+NOTE: In isolation, both Woxi and wolframscript return 'FOO -> None'. Mathics EXPECTED 'FOO -> baz' follows from prior SetEnvironment.
+---
+FILE: mathics/builtin/system.py
+CLASS: SetEnvironment
+LINE: 721
+TYPE: S>
+INPUT: GetEnvironment["FOO"]
+EXPECTED:
+= FOO -> baz
+NOTE: In isolation, both Woxi and wolframscript return 'FOO -> None'. Mathics EXPECTED follows from prior SetEnvironment state.
+---
