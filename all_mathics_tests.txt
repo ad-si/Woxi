@@ -6843,14 +6843,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/print.py
 CLASS: OutputForm
-LINE: 149
-TYPE: >>
-INPUT: OutputForm[Derivative[1, 0][f][x]]
-EXPECTED:
-= Derivative[1, 0][f][x]
----
-FILE: mathics/builtin/forms/print.py
-CLASS: OutputForm
 LINE: 153
 TYPE: >>
 INPUT: OutputForm[{"A string", a + b}]
