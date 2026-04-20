@@ -7747,3 +7747,10 @@ INPUT: Trace[1 + 2]
 EXPECTED:
 = {1 + 2, 3}
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryRead
+LINE: 379
+TYPE: >>
+INPUT: Close[strm];
+EXPECTED: (none)
+---

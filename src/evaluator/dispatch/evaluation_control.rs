@@ -475,11 +475,10 @@ pub fn dispatch_evaluation_control(
     // This is enough for the top-level mathics test Trace[1 + 2] → {1 + 2, 3}.
     "Trace" if args.len() == 1 => {
       let original = args[0].clone();
-      let evaluated =
-        match crate::evaluator::evaluate_expr_to_expr(&original) {
-          Ok(v) => v,
-          Err(e) => return Some(Err(e)),
-        };
+      let evaluated = match crate::evaluator::evaluate_expr_to_expr(&original) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
       // Compare via printed form since Expr doesn't implement PartialEq.
       let orig_str = crate::syntax::expr_to_string(&original);
       let eval_str = crate::syntax::expr_to_string(&evaluated);
