@@ -6382,3 +6382,139 @@ const FINITE_GROUP_COUNT_TABLE: &[u64] = &[
   12,
   1,
 ];
+
+/// Return 2*j as i128 if `expr` is a non-negative integer or half-integer,
+/// else None. Supports `Rational[n, 2]` and `Integer`.
+fn two_half_int(expr: &Expr) -> Option<i128> {
+  match expr_to_rational(expr) {
+    Some((n, 1)) => Some(n.checked_mul(2)?),
+    Some((n, 2)) => Some(n),
+    _ => None,
+  }
+}
+
+/// ThreeJSymbol[{j1, m1}, {j2, m2}, {j3, m3}]
+///
+/// Currently implements only the degenerate cases that evaluate to 0:
+/// - m1 + m2 + m3 ≠ 0
+/// - |m_i| > j_i for any i
+/// - |j1 - j2| > j3 or j3 > j1 + j2 (triangle inequality)
+///
+/// For all other (valid) cases the call is returned unchanged.
+pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ThreeJSymbol expects exactly 3 arguments".into(),
+    ));
+  }
+  let unchanged = || Expr::FunctionCall {
+    name: "ThreeJSymbol".to_string(),
+    args: args.to_vec(),
+  };
+  let mut two_j = [0i128; 3];
+  let mut two_m = [0i128; 3];
+  for (i, arg) in args.iter().enumerate() {
+    let Expr::List(items) = arg else {
+      return Ok(unchanged());
+    };
+    if items.len() != 2 {
+      return Ok(unchanged());
+    }
+    let (Some(j2), Some(m2)) =
+      (two_half_int(&items[0]), two_half_int_signed(&items[1]))
+    else {
+      return Ok(unchanged());
+    };
+    if j2 < 0 {
+      return Ok(unchanged());
+    }
+    two_j[i] = j2;
+    two_m[i] = m2;
+  }
+  // m1 + m2 + m3 must be 0
+  if two_m[0] + two_m[1] + two_m[2] != 0 {
+    return Ok(Expr::Integer(0));
+  }
+  // |m_i| <= j_i
+  for i in 0..3 {
+    if two_m[i].abs() > two_j[i] {
+      return Ok(Expr::Integer(0));
+    }
+    // j_i - m_i must be an integer, i.e. 2j_i and 2m_i have the same parity
+    if (two_j[i] - two_m[i]).rem_euclid(2) != 0 {
+      return Ok(Expr::Integer(0));
+    }
+  }
+  // Triangle inequality: |j1 - j2| <= j3 <= j1 + j2
+  let (j1, j2, j3) = (two_j[0], two_j[1], two_j[2]);
+  if j3 < (j1 - j2).abs() || j3 > j1 + j2 {
+    return Ok(Expr::Integer(0));
+  }
+  // j1 + j2 + j3 must be an integer (i.e. 2(j1+j2+j3) even)
+  if (j1 + j2 + j3).rem_euclid(2) != 0 {
+    return Ok(Expr::Integer(0));
+  }
+  Ok(unchanged())
+}
+
+/// SixJSymbol[{j1, j2, j3}, {j4, j5, j6}]
+///
+/// Currently implements only the degenerate cases that evaluate to 0:
+/// any of the four triangle inequalities fail. For valid cases the call is
+/// returned unchanged.
+pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SixJSymbol expects exactly 2 arguments".into(),
+    ));
+  }
+  let unchanged = || Expr::FunctionCall {
+    name: "SixJSymbol".to_string(),
+    args: args.to_vec(),
+  };
+  let mut two_j = [0i128; 6];
+  for (group, arg) in args.iter().enumerate() {
+    let Expr::List(items) = arg else {
+      return Ok(unchanged());
+    };
+    if items.len() != 3 {
+      return Ok(unchanged());
+    }
+    for (k, item) in items.iter().enumerate() {
+      let Some(v) = two_half_int(item) else {
+        return Ok(unchanged());
+      };
+      if v < 0 {
+        return Ok(unchanged());
+      }
+      two_j[group * 3 + k] = v;
+    }
+  }
+  // Four triangle conditions: (j1,j2,j3), (j1,j5,j6), (j4,j2,j6), (j4,j5,j3)
+  let [j1, j2, j3, j4, j5, j6] = two_j;
+  let triangles = [(j1, j2, j3), (j1, j5, j6), (j4, j2, j6), (j4, j5, j3)];
+  for (a, b, c) in triangles {
+    if c < (a - b).abs() || c > a + b || (a + b + c).rem_euclid(2) != 0 {
+      return Ok(Expr::Integer(0));
+    }
+  }
+  Ok(unchanged())
+}
+
+/// Like `two_half_int` but preserves sign — used for the m projections in
+/// ThreeJSymbol, which may be negative.
+fn two_half_int_signed(expr: &Expr) -> Option<i128> {
+  // UnaryOp::Minus wrapping an integer/rational.
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    return two_half_int_signed(operand).map(|v| -v);
+  }
+  match expr_to_rational(expr) {
+    Some((n, 1)) => n.checked_mul(2),
+    Some((n, 2)) => Some(n),
+    _ => None,
+  }
+}

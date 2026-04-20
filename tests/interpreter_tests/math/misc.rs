@@ -326,6 +326,47 @@ mod pauli_matrix {
   }
 }
 
+mod wigner_symbols {
+  use super::*;
+
+  // ThreeJSymbol returns 0 when m1 + m2 + m3 ≠ 0.
+  #[test]
+  fn three_j_nonzero_m_sum() {
+    assert_eq!(
+      interpret("ThreeJSymbol[{2, 0}, {6, 0}, {4, 1}]").unwrap(),
+      "0"
+    );
+  }
+
+  // ThreeJSymbol returns 0 when |m_i| > j_i for any i.
+  #[test]
+  fn three_j_m_exceeds_j() {
+    assert_eq!(
+      interpret("ThreeJSymbol[{1, 2}, {3, 4}, {5, 12}]").unwrap(),
+      "0"
+    );
+  }
+
+  // SixJSymbol returns 0 when any triangle inequality fails.
+  #[test]
+  fn six_j_triangle_fails() {
+    assert_eq!(
+      interpret("SixJSymbol[{1, 2, 3}, {4, 5, 12}]").unwrap(),
+      "0"
+    );
+  }
+
+  // For the degenerate valid case the symbol is returned unchanged —
+  // we haven't implemented the general Wigner 3-j formula yet.
+  #[test]
+  fn three_j_valid_returns_unchanged() {
+    assert_eq!(
+      interpret("ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]").unwrap(),
+      "ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]"
+    );
+  }
+}
+
 mod curl {
   use super::*;
 

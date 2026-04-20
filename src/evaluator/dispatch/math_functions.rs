@@ -1584,6 +1584,12 @@ pub fn dispatch_math_functions(
     "PauliMatrix" if args.len() == 1 => {
       return Some(crate::functions::math_ast::pauli_matrix_ast(args));
     }
+    "ThreeJSymbol" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::three_j_symbol_ast(args));
+    }
+    "SixJSymbol" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::six_j_symbol_ast(args));
+    }
     "CatalanNumber" if args.len() == 1 => {
       return Some(crate::functions::math_ast::catalan_number_ast(args));
     }

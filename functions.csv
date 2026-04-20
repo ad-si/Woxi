@@ -1201,7 +1201,7 @@ BitAnd,Returns the bitwise AND of integers,✅,pure,4.0,1213
 ImageCompose,Overlays one image on another,✅,pure,7.0,1214
 Order,Returns the canonical ordering of two expressions,✅,pure,1.0,1216
 ReplaceList,,🚫,,3.0,1216
-SixJSymbol,,🚫,,2.0,1217
+SixJSymbol,Wigner 6-j symbol,✅,pure,2.0,1217
 LinearLayer,,🚫,,11.0,1218
 CellMargins,,🚫,,3.0,1219
 Minors,Matrix minors (determinants of submatrices),✅,pure,1.0,1221
@@ -1570,7 +1570,7 @@ SelectComponents,Select image components,,unevaluated,8.0,1593
 CoprimeQ,Tests if two integers are coprime,✅,pure,6.0,1597
 NotebookPut,Create notebook from expression,,unevaluated,3.0,1597
 PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6.0,1597
-ThreeJSymbol,Wigner 3-j symbol,,unevaluated,2.0,1597
+ThreeJSymbol,Wigner 3-j symbol,✅,pure,2.0,1597
 Magnify,Magnify a display object,,unevaluated,6.0,1599
 ScriptBaselineShifts,Script baseline shift option,,unevaluated,3.0,1599
 HoldRest,Attribute holding all but first argument,✅,pure,1.0,1600

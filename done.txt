@@ -7818,3 +7818,11 @@ INPUT: DiscretePlot[{Sin[Pi x/20], Cos[Pi x/20]}, {x, 0, 40}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: SixJSymbol
+LINE: 171
+TYPE: >>
+INPUT: SixJSymbol[{1, 2, 3}, {4, 5, 12}]
+EXPECTED:
+= 0
+---

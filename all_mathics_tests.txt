@@ -1404,14 +1404,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: SixJSymbol
-LINE: 171
-TYPE: >>
-INPUT: SixJSymbol[{1, 2, 3}, {4, 5, 12}]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: ThreeJSymbol
 LINE: 235
 TYPE: >>
