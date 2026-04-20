@@ -538,6 +538,18 @@ mod im_tests {
     );
   }
 
+  // Reciprocals swap Underflow[] and Overflow[] to match Wolfram's semantics:
+  // 1 / Underflow[] is infinite, 1 / Overflow[] is indistinguishable from 0.
+  #[test]
+  fn reciprocal_underflow_is_overflow() {
+    assert_eq!(interpret("1 / Underflow[]").unwrap(), "Overflow[]");
+  }
+
+  #[test]
+  fn reciprocal_overflow_is_underflow() {
+    assert_eq!(interpret("1 / Overflow[]").unwrap(), "Underflow[]");
+  }
+
   // ── Exp ──────────────────────────────────────────────────
 
   #[test]

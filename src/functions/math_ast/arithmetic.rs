@@ -3699,6 +3699,27 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // Reciprocals of Underflow[] / Overflow[] swap to the other:
+  //   1 / Underflow[] -> Overflow[]
+  //   1 / Overflow[]  -> Underflow[]
+  if matches!(exp, Expr::Integer(-1))
+    && let Expr::FunctionCall { name, args: inner } = base
+    && inner.is_empty()
+  {
+    if name == "Underflow" {
+      return Ok(Expr::FunctionCall {
+        name: "Overflow".to_string(),
+        args: vec![],
+      });
+    }
+    if name == "Overflow" {
+      return Ok(Expr::FunctionCall {
+        name: "Underflow".to_string(),
+        args: vec![],
+      });
+    }
+  }
+
   // E^Log[x] -> x (inverse function identity)
   if (matches!(base, Expr::Identifier(s) if s == "E")
     || matches!(base, Expr::Constant(s) if s == "E"))

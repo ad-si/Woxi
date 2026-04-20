@@ -8234,3 +8234,11 @@ INPUT: FullForm[Infinity]
 EXPECTED:
 = DirectedInfinity[1]
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: Overflow
+LINE: 589
+TYPE: >>
+INPUT: 1 / Underflow[]
+EXPECTED:
+= Overflow[]
+---

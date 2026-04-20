@@ -3008,14 +3008,6 @@ EXPECTED:
 = {22026.5, 2.68812×10^43, Overflow[]}
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Overflow
-LINE: 589
-TYPE: >>
-INPUT: 1 / Underflow[]
-EXPECTED:
-= Overflow[]
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: MaxMachineNumber
 LINE: 613
 TYPE: >>
