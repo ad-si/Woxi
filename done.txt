@@ -6847,3 +6847,33 @@ EXPECTED:
 ---
 NOTE: TYPE X> marks excluded mathics test; Woxi returns 'f[3]' unchanged (mathics EXPECTED 9 requires prior 'f = #^2 &').
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: KnownUnitQ
+LINE: 49
+TYPE: >>
+INPUT: KnownUnitQ["Feet"]
+EXPECTED:
+= True
+---
+NOTE: KnownUnitQ implemented — accepts canonical-plural unit strings, 1, and products/divisions/powers thereof. 'KnownUnitQ["Feet"]' returns 'True' byte-for-byte in both Woxi and wolframscript.
+---
+FILE: mathics/builtin/quantities.py
+CLASS: KnownUnitQ
+LINE: 52
+TYPE: >>
+INPUT: KnownUnitQ["Foo"]
+EXPECTED:
+= False
+---
+NOTE: KnownUnitQ["Foo"] returns 'False' byte-for-byte in both engines.
+---
+FILE: mathics/builtin/quantities.py
+CLASS: KnownUnitQ
+LINE: 55
+TYPE: >>
+INPUT: KnownUnitQ["meter"^2/"second"]
+EXPECTED:
+= True
+---
+NOTE: KnownUnitQ["meter"^2/"second"] returns 'False' byte-for-byte in both Woxi and wolframscript — lowercase unit names aren't recognised. Mathics EXPECTED 'True' reflects mathics's more lenient lowercase-aliasing logic.
+---

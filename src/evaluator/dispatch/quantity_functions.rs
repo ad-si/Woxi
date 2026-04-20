@@ -23,6 +23,9 @@ pub fn dispatch_quantity_functions(
     "CompatibleUnitQ" => {
       return Some(crate::functions::quantity_ast::compatible_unit_q_ast(args));
     }
+    "KnownUnitQ" if args.len() == 1 => {
+      return Some(crate::functions::quantity_ast::known_unit_q_ast(args));
+    }
     "UnitConvert" => {
       return Some(crate::functions::quantity_ast::unit_convert_ast(args));
     }

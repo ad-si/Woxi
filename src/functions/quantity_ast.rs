@@ -1695,6 +1695,53 @@ pub fn quantity_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── CompatibleUnitQ ────────────────────────────────────────────────────────
 
+/// Recursive helper: returns true iff `unit` is a recognised Wolfram unit
+/// specification. Accepts the dimensionless constant `1`, canonical-plural
+/// string unit names ("Feet", "Meters", ...), and products / divisions /
+/// integer powers of such strings. Rejects everything else — including
+/// symbols, numeric literals other than 1, singular forms ("Foot"), and
+/// lowercase aliases ("meter") — matching wolframscript's behaviour.
+fn known_unit_q_recursive(unit: &Expr) -> bool {
+  match unit {
+    Expr::Integer(n) => *n == 1,
+    Expr::String(s) => get_unit_info(s).is_some(),
+    Expr::BinaryOp { op, left, right } => match op {
+      crate::syntax::BinaryOperator::Times
+      | crate::syntax::BinaryOperator::Divide => {
+        known_unit_q_recursive(left) && known_unit_q_recursive(right)
+      }
+      crate::syntax::BinaryOperator::Power => {
+        known_unit_q_recursive(left)
+          && matches!(right.as_ref(), Expr::Integer(_))
+      }
+      _ => false,
+    },
+    Expr::FunctionCall { name, args } => {
+      if (name == "Times" || name == "Divide") && !args.is_empty() {
+        args.iter().all(known_unit_q_recursive)
+      } else if name == "Power" && args.len() == 2 {
+        known_unit_q_recursive(&args[0])
+          && matches!(&args[1], Expr::Integer(_))
+      } else {
+        false
+      }
+    }
+    _ => false,
+  }
+}
+
+pub fn known_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KnownUnitQ expects exactly 1 argument".into(),
+    ));
+  }
+  let ok = known_unit_q_recursive(&args[0]);
+  Ok(Expr::Identifier(
+    if ok { "True" } else { "False" }.to_string(),
+  ))
+}
+
 pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(

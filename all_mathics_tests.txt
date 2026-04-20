@@ -138,30 +138,6 @@ EXPECTED:
 = 3
 ---
 FILE: mathics/builtin/quantities.py
-CLASS: KnownUnitQ
-LINE: 49
-TYPE: >>
-INPUT: KnownUnitQ["Feet"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/quantities.py
-CLASS: KnownUnitQ
-LINE: 52
-TYPE: >>
-INPUT: KnownUnitQ["Foo"]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/quantities.py
-CLASS: KnownUnitQ
-LINE: 55
-TYPE: >>
-INPUT: KnownUnitQ["meter"^2/"second"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/quantities.py
 CLASS: Quantity
 LINE: 97
 TYPE: >>

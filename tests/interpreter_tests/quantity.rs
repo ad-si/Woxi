@@ -1830,3 +1830,52 @@ fn unit_convert_one_arg_grams_to_kilograms() {
     "Quantity[1, Kilograms]"
   );
 }
+
+#[test]
+fn known_unit_q_canonical_plural_true() {
+  assert_eq!(interpret(r#"KnownUnitQ["Feet"]"#).unwrap(), "True");
+  assert_eq!(interpret(r#"KnownUnitQ["Meters"]"#).unwrap(), "True");
+  assert_eq!(interpret(r#"KnownUnitQ["Kilograms"]"#).unwrap(), "True");
+}
+
+#[test]
+fn known_unit_q_singular_false() {
+  // Wolframscript treats singular forms as unknown.
+  assert_eq!(interpret(r#"KnownUnitQ["Foot"]"#).unwrap(), "False");
+  assert_eq!(interpret(r#"KnownUnitQ["Meter"]"#).unwrap(), "False");
+}
+
+#[test]
+fn known_unit_q_unknown_string_false() {
+  assert_eq!(interpret(r#"KnownUnitQ["Foo"]"#).unwrap(), "False");
+}
+
+#[test]
+fn known_unit_q_compound_true() {
+  assert_eq!(
+    interpret(r#"KnownUnitQ["Meters"/"Seconds"^2]"#).unwrap(),
+    "True"
+  );
+  assert_eq!(
+    interpret(r#"KnownUnitQ["Meters"*"Seconds"]"#).unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn known_unit_q_compound_lowercase_false() {
+  // Lowercase names don't count in Wolfram (mathics is more lenient).
+  assert_eq!(interpret(r#"KnownUnitQ["meter"^2/"second"]"#).unwrap(), "False");
+}
+
+#[test]
+fn known_unit_q_dimensionless_one() {
+  assert_eq!(interpret("KnownUnitQ[1]").unwrap(), "True");
+}
+
+#[test]
+fn known_unit_q_other_numbers_false() {
+  assert_eq!(interpret("KnownUnitQ[2]").unwrap(), "False");
+  assert_eq!(interpret("KnownUnitQ[3.14]").unwrap(), "False");
+  assert_eq!(interpret("KnownUnitQ[1/2]").unwrap(), "False");
+}

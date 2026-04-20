@@ -4217,7 +4217,7 @@ GeoGroup,,🚫,,10.0,4356
 HeatTemperatureCondition,,,,12.2,4356
 InputAssumptions,,🚫,,8.0,4356
 ItemAspectRatio,,,,6.0,4356
-KnownUnitQ,,,,9.0,4356
+KnownUnitQ,"Tests whether an expression is a recognised unit specification",✅,pure,9.0,4356
 LeftVector,,,,3.0,4356
 LinearSolveFunction,,,,5.0,4356
 LossFunction,,,,11.3,4356
