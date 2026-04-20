@@ -423,6 +423,17 @@ mod string_replace {
       "theCatSat"
     );
   }
+
+  #[test]
+  fn named_character_in_pattern_and_target() {
+    // \[CirclePlus] is a named character in both the subject and the pattern;
+    // wolframscript rewrites the Unicode ⊕ glyph to the literal "x".
+    assert_eq!(
+      interpret(r#"StringReplace["product: A \[CirclePlus] B", "\[CirclePlus]" -> "x"]"#)
+        .unwrap(),
+      "product: A x B"
+    );
+  }
 }
 
 mod to_character_code {

@@ -1887,14 +1887,6 @@ EXPECTED:
 ---
 ---
 FILE: mathics/builtin/string/operations.py
-CLASS: StringReplace
-LINE: 549
-TYPE: #>
-INPUT: StringReplace["product: A \\[CirclePlus] B" , "\\[CirclePlus]" -> "x"]
-EXPECTED:
-= A x B
----
-FILE: mathics/builtin/string/operations.py
 CLASS: StringSplit
 LINE: 727
 TYPE: >>

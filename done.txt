@@ -8905,3 +8905,11 @@ INPUT: series = Series[Cosh[x],{x,0,2}]
 EXPECTED:
 = 1 + x ^ 2 / 2 + O[x] ^ 3  (mathics prettied; Woxi/wolframscript print SeriesData raw form)
 ---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringReplace
+LINE: 549
+TYPE: #>
+INPUT: StringReplace["product: A \\[CirclePlus] B" , "\\[CirclePlus]" -> "x"]
+EXPECTED:
+= A x B  (mathics truncated; Woxi/wolframscript return full "product: A x B")
+---
