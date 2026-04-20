@@ -259,6 +259,19 @@ mod streams {
   }
 
   #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_write_no_args_returns_output_stream() {
+    // OpenWrite[] with no args creates a temp file and returns OutputStream.
+    assert_eq!(interpret("Head[OpenWrite[]]").unwrap(), "OutputStream");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_append_no_args_returns_output_stream() {
+    assert_eq!(interpret("Head[OpenAppend[]]").unwrap(), "OutputStream");
+  }
+
+  #[test]
   fn close_already_closed() {
     // Closing an already-closed stream should return unevaluated
     let result =

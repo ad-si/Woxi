@@ -958,14 +958,24 @@ pub fn dispatch_io_functions(
     }
     // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
-    "OpenAppend" if args.len() == 1 => {
-      let filename = match &args[0] {
-        Expr::String(s) => s.clone(),
-        other => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "OpenAppend".to_string(),
-            args: vec![other.clone()],
-          }));
+    "OpenAppend" if args.len() <= 1 => {
+      let filename = if args.is_empty() {
+        let path = match crate::utils::create_file(None)
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+        {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        path.to_string_lossy().into_owned()
+      } else {
+        match &args[0] {
+          Expr::String(s) => s.clone(),
+          other => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "OpenAppend".to_string(),
+              args: vec![other.clone()],
+            }));
+          }
         }
       };
       // Open for appending (create if not exists)

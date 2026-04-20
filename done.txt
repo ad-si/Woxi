@@ -7596,3 +7596,19 @@ INPUT: Streams[]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: OpenWrite
+LINE: 483
+TYPE: >>
+INPUT: OpenWrite[]
+EXPECTED:
+= OutputStream[...]
+---
+FILE: mathics/builtin/files_io/files.py
+CLASS: OpenAppend
+LINE: 504
+TYPE: >>
+INPUT: OpenAppend[]
+EXPECTED:
+= OutputStream[...]
+---

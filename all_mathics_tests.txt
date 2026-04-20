@@ -640,22 +640,6 @@ EXPECTED:
 = InputStream[...]
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: OpenWrite
-LINE: 483
-TYPE: >>
-INPUT: OpenWrite[]
-EXPECTED:
-= OutputStream[...]
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: OpenAppend
-LINE: 504
-TYPE: >>
-INPUT: OpenAppend[]
-EXPECTED:
-= OutputStream[...]
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: Put
 LINE: 547
 TYPE: S>
