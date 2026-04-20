@@ -608,14 +608,6 @@ EXPECTED:
 = $Failed
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Get
-LINE: 352
-TYPE: S>
-INPUT: Get[filename]
-EXPECTED:
-= x + y
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: OpenRead
 LINE: 462
 TYPE: >>

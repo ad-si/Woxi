@@ -7628,3 +7628,11 @@ INPUT: Get[filename]
 EXPECTED:
 = Cos[x] + I Sin[x]
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Get
+LINE: 352
+TYPE: S>
+INPUT: Get[filename]
+EXPECTED:
+= x + y
+---
