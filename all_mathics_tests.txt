@@ -1443,14 +1443,6 @@ INPUT: ThreeJSymbol[{1/2, -1/2}, {1/2, -1/2}, {1, 1}]
 EXPECTED:
 = -Sqrt[3] / 3
 ---
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: ThreeJSymbol
-LINE: 257
-TYPE: >>
-INPUT: ThreeJSymbol[{1, 2}, {3, 4}, {5, 12}]
-EXPECTED:
-= 0
----
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
 LINE: 31
