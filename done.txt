@@ -7698,3 +7698,13 @@ INPUT: $Input
 EXPECTED:
 = #<--#
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: ResetDirectory
+LINE: 997
+TYPE: >>
+INPUT: ResetDirectory[]
+EXPECTED:
+= ...
+---
+NOTE: With a prior SetDirectory on the stack, Woxi's ResetDirectory[] restores the previous path and returns it as a string, matching mathics EXPECTED '...' wildcard. (An isolated ResetDirectory[] with empty stack errors in both engines.)
+---
