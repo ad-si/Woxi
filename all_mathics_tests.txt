@@ -14252,21 +14252,6 @@ EXPECTED:
   {'opts2': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 ', 'opts3': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10, BoxRatios -> {1, 2, 3} ', 'svg': False}
 ---
 FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: discreteplot
-EXPECTED:
-  {'expr': 'DiscretePlot[n^2,{n,1,10}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: histogram
-EXPECTED:
-  {'expr': 'Histogram[{1,1,1,5,5,7,8,8,8}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
-INPUT: listlineplot
-EXPECTED:
-  {'expr': 'ListLinePlot[{1,4,2,5,3}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}
----
-FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: listplot
 EXPECTED:
   {'expr': 'ListPlot[{1,4,2,5,3}]', 'opts': ' AspectRatio -> 2, Axes -> False, Frame -> False, Mesh -> Full, PlotPoints -> 10 '}

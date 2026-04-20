@@ -5743,3 +5743,7 @@ FILE: mathics/test/builtin/drawing/parameters.yaml
 INPUT: barchart BarChart[{3,5,2,7}]
 EXPECTED: -Graphics- (Woxi and wolframscript byte-identical for the bare BarChart expression)
 ---
+FILE: mathics/test/builtin/drawing/parameters.yaml
+INPUT: discreteplot, histogram, listlineplot
+EXPECTED: -Graphics- (3 tests; Woxi and wolframscript byte-identical for the bare expressions)
+---
