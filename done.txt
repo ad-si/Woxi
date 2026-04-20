@@ -7645,3 +7645,12 @@ EXPECTED:
 : ...
 = $Failed
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 199
+TYPE: >>
+INPUT: Read[stream2]
+EXPECTED:
+: ...
+= $Failed
+---
