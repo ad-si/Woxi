@@ -2186,6 +2186,30 @@ mod string_form {
       "1 plus 2 is 3"
     );
   }
+
+  // Out-of-range indexed placeholders keep the `n` literal in the output
+  // (instead of silently blanking it). Matches wolframscript/mathics.
+  #[test]
+  fn out_of_range_positive_index_kept_literal() {
+    assert_eq!(
+      interpret("StringForm[\"`2` bla\", a]").unwrap(),
+      "`2` bla"
+    );
+  }
+
+  #[test]
+  fn out_of_range_negative_index_kept_literal() {
+    assert_eq!(
+      interpret("StringForm[\"`-1` bla\", a]").unwrap(),
+      "`-1` bla"
+    );
+  }
+
+  #[test]
+  fn out_of_range_sequential_placeholder_kept_literal() {
+    // `` with no argument to pull from: keep the two backticks literal.
+    assert_eq!(interpret("StringForm[\"x=``\"]").unwrap(), "x=``");
+  }
 }
 
 mod tex_form {

@@ -8741,3 +8741,21 @@ INPUT: a + F[F[x ^ 2]] //. rule
 EXPECTED:
 = a + g[g[x ^ 2]]
 ---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 669
+TYPE: >>
+INPUT: StringForm["`-1` bla", a]
+EXPECTED:
+: Item -1 requested in "`-1` bla" out of range; 1 items available.
+= `-1` bla
+---
+FILE: mathics/builtin/forms/data.py
+CLASS: StringForm
+LINE: 673
+TYPE: >>
+INPUT: StringForm["`2` bla", a]
+EXPECTED:
+: Item 2 requested in "`2` bla" out of range; 1 items available.
+= `2` bla
+---

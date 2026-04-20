@@ -3006,6 +3006,8 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// Format a StringForm expression by substituting placeholders.
 /// `template` is the format string, `values` are the arguments to substitute.
 /// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
+/// Out-of-range indices leave the placeholder literal in the output and
+/// emit a StringForm::sfr warning, matching wolframscript.
 pub fn format_string_form(template: &str, values: &[Expr]) -> String {
   let mut result = String::new();
   let chars: Vec<char> = template.chars().collect();
@@ -3019,25 +3021,54 @@ pub fn format_string_form(template: &str, values: &[Expr]) -> String {
       if i + 1 < len && chars[i + 1] == '`' {
         if seq_index < values.len() {
           result.push_str(&crate::syntax::expr_to_output(&values[seq_index]));
+        } else {
+          // Out of range — keep the `` literal and warn.
+          result.push('`');
+          result.push('`');
+          crate::emit_message(&format!(
+            "StringForm::sfr: Item {} requested in \"{}\" out of \
+             range; {} items available.",
+            seq_index + 1,
+            template,
+            values.len()
+          ));
         }
         seq_index += 1;
         i += 2;
         continue;
       }
-      // Check for `n` (indexed placeholder)
-      let start = i + 1;
-      let mut end = start;
+      // Check for `n` or `-n` (indexed placeholder; negative indices are
+      // always out-of-range and emit StringForm::sfr).
+      let num_start = i + 1;
+      let mut end = num_start;
+      if end < len && chars[end] == '-' {
+        end += 1;
+      }
+      let digits_start = end;
       while end < len && chars[end].is_ascii_digit() {
         end += 1;
       }
-      if end > start && end < len && chars[end] == '`' {
-        let idx: usize = chars[start..end]
+      if end > digits_start && end < len && chars[end] == '`' {
+        let signed: i64 = chars[num_start..end]
           .iter()
           .collect::<String>()
           .parse()
           .unwrap_or(0);
-        if idx >= 1 && idx <= values.len() {
+        if signed >= 1 && (signed as usize) <= values.len() {
+          let idx = signed as usize;
           result.push_str(&crate::syntax::expr_to_output(&values[idx - 1]));
+        } else {
+          // Out of range — keep the `n` placeholder literal and warn.
+          result.push('`');
+          result.extend(chars[num_start..end].iter());
+          result.push('`');
+          crate::emit_message(&format!(
+            "StringForm::sfr: Item {} requested in \"{}\" out of \
+             range; {} items available.",
+            signed,
+            template,
+            values.len()
+          ));
         }
         i = end + 1;
         continue;
