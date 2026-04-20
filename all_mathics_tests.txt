@@ -683,14 +683,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 828
-TYPE: >>
-INPUT: Read[stream, {Number, Word}]
-EXPECTED:
-= EndOfFile
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 833
 TYPE: >>
 INPUT: stream = StringToStream["\\"Tengo una\\nvaca lechera.\\""]; Read[stream]

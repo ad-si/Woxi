@@ -7548,3 +7548,11 @@ EXPECTED:
 NOTE: With 'stream' unset in isolation, Woxi returns 'Read[stream, Hold[Expression]]' unevaluated — same as wolframscript. Mathics EXPECTED 'Hold[2 + 2]' requires a prior 'stream = StringToStream["2+2
 2+3"]' and Woxi's Read with a Hold[Expression] spec currently evaluates the expression instead of holding it.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Read
+LINE: 828
+TYPE: >>
+INPUT: Read[stream, {Number, Word}]
+EXPECTED:
+= EndOfFile
+---
