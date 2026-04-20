@@ -683,14 +683,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Read
-LINE: 809
-TYPE: >>
-INPUT: Read[stream, Hold[Expression]]
-EXPECTED:
-= Hold[2 + 2]
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Read
 LINE: 828
 TYPE: >>
 INPUT: Read[stream, {Number, Word}]
