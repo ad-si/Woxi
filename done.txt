@@ -5735,3 +5735,7 @@ FILE: mathics/test/builtin/drawing/vec_tests.yaml
 INPUT: vec-plot3d-two-labels-ratios-viewpoint, vec-doc-006/008/009/010/012/036/037/038/041/042/043 (DensityPlot/LogPlot/ParametricPlot variants)
 EXPECTED: -Graphics- (12 tests; Woxi and wolframscript byte-identical)
 ---
+FILE: mathics/test/builtin/drawing/vec_tests.yaml
+INPUT: vec-doc-044/051/052/053/054/055/056/058/059/060/061/066/074/077/087/089/090/091/092/094/095/096/097/099/100/102/103/105/109/110/113/116/122/125/128
+EXPECTED: -Graphics- (35 vec-doc-* tests; all duplicates of corresponding doc-* tests already verified Woxi-and-wolframscript byte-identical)
+---
