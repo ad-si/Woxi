@@ -365,4 +365,18 @@ mod element_data_tests {
       "1s2"
     );
   }
+
+  #[test]
+  fn element_data_recognised_property_without_data_returns_not_available() {
+    // SpecificHeat, Density, IonizationEnergies, etc. are recognised by name
+    // but not tabulated — return Missing[NotAvailable] rather than NotFound.
+    assert_eq!(
+      interpret(r#"ElementData["Tc", "SpecificHeat"]"#).unwrap(),
+      "Missing[NotAvailable]"
+    );
+    assert_eq!(
+      interpret(r#"ElementData["Carbon", "IonizationEnergies"]"#).unwrap(),
+      "Missing[NotAvailable]"
+    );
+  }
 }

@@ -84,14 +84,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
-LINE: 81
-TYPE: >>
-INPUT: ElementData["Tc", "SpecificHeat"]
-EXPECTED:
-= Missing[NotAvailable]
----
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
 LINE: 85
 TYPE: >>
 INPUT: ElementData["Properties"]

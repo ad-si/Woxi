@@ -2349,6 +2349,30 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     "ElectronConfigurationString" => {
       Expr::String(format_electron_configuration(elem))
     }
+    // Properties we recognise by name but don't yet have tabulated data for —
+    // mirror Mathematica's behaviour of returning Missing[NotAvailable] so
+    // callers can distinguish "unknown datum" from "unrecognised property".
+    "SpecificHeat"
+    | "BrinellHardness"
+    | "BulkModulus"
+    | "CovalentRadius"
+    | "CrustAbundance"
+    | "Density"
+    | "DiscoveryYear"
+    | "ElectronAffinity"
+    | "ElectronShellConfiguration"
+    | "FusionHeat"
+    | "IonizationEnergies"
+    | "LiquidDensity"
+    | "MohsHardness"
+    | "PoissonRatio"
+    | "Series"
+    | "ShearModulus"
+    | "ThermalConductivity"
+    | "VanDerWaalsRadius"
+    | "VaporizationHeat"
+    | "VickersHardness"
+    | "YoungModulus" => missing_not_available(),
     _ => missing_not_found(),
   }
 }
