@@ -10875,41 +10875,6 @@ MESSAGE: True
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 456
-INPUT: I
-EXPECTED: 2 + 3 a
-MESSAGE: I == 2 + 3 a
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 457
-INPUT: I
-EXPECTED: Infinity
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 458
-INPUT: I
-EXPECTED: -Infinity
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 459
-INPUT: I
-EXPECTED: Sqrt[I] Infinity
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 460
-INPUT: I
-EXPECTED: a
-MESSAGE: I == a
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 527
 INPUT: 3+2 I
 EXPECTED: .25

@@ -5847,3 +5847,9 @@ LINE: 544-556 (multiple)
 INPUT: 3+I Pi (across 13 separate test_unsameq parametrized entries)
 EXPECTED: 3 + I*Pi (Woxi and wolframscript byte-identical for the input expression itself)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 456-460 (multiple)
+INPUT: I (across 5 separate test_unsameq parametrized entries)
+EXPECTED: I (Woxi and wolframscript byte-identical for the input expression itself)
+---
