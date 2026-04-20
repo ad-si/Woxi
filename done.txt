@@ -7850,3 +7850,11 @@ INPUT: LogPlot[{10^x, Factorial[x], Subfactorial[x]}, {x, 0, 25}, PlotPoints->26
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/numbers/hyperbolic.py
+CLASS: InverseGudermannian
+LINE: 423
+TYPE: >>
+INPUT: Plot[InverseGudermannian[x], {x, -2 Pi, 2 Pi}]
+EXPECTED:
+= -Graphics-
+---

@@ -3359,14 +3359,6 @@ INPUT: InverseGudermannian[-.5] ==  -InverseGudermannian[.5]
 EXPECTED:
 = True
 ---
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: InverseGudermannian
-LINE: 423
-TYPE: >>
-INPUT: Plot[InverseGudermannian[x], {x, -2 Pi, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
 FILE: mathics/builtin/numbers/integer.py
 CLASS: DigitCount
 LINE: 134
