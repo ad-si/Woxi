@@ -728,13 +728,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Get
-LINE: 351
-TYPE: S>
-INPUT: Put[x + y, filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Get
 LINE: 352
 TYPE: S>
 INPUT: Get[filename]

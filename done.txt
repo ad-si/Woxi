@@ -7229,3 +7229,12 @@ TYPE: >>
 INPUT: stream = StringToStream["123 abc"];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Get
+LINE: 351
+TYPE: S>
+INPUT: Put[x + y, filename]
+EXPECTED: (none)
+---
+NOTE: With 'filename' unset, Woxi and wolframscript both return the unevaluated 'Put[x + y, filename]' byte-for-byte. Mathics EXPECTED '(none)' (silent success) requires a prior 'filename = ...' context.
+---
