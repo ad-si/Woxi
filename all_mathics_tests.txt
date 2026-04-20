@@ -624,13 +624,6 @@ EXPECTED:
 = Cos[x] + I Sin[x]
 ---
 FILE: mathics/builtin/files_io/files.py
-CLASS: Get
-LINE: 359
-TYPE: S>
-INPUT: DeleteFile[filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
 CLASS: InputStream
 LINE: 425
 TYPE: >>
