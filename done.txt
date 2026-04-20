@@ -8873,3 +8873,11 @@ INPUT: Drop[A, {2, 3}, {2, 3}]
 EXPECTED:
 = {{11, 14}, {41, 44}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: RootSum
+LINE: 1742
+TYPE: >>
+INPUT: RootSum[1+#+#^2+#^3+#^4 &, Log[x + #] &]
+EXPECTED:
+= RootSum[1 + #1 ^ 2 + #1 ^ 3 + #1 ^ 4 + #1&, Log[x + #1]&]
+---

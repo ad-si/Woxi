@@ -4211,6 +4211,21 @@ mod root {
   }
 }
 
+mod root_sum {
+  use super::*;
+
+  // RootSum is not implemented; the call stays symbolic. Woxi's output
+  // matches wolframscript byte-for-byte, including the formatting of
+  // nested pure functions.
+  #[test]
+  fn irreducible_cyclotomic_stays_symbolic() {
+    assert_eq!(
+      interpret("RootSum[1+#+#^2+#^3+#^4 &, Log[x + #] &]").unwrap(),
+      "RootSum[1 + #1 + #1^2 + #1^3 + #1^4 & , Log[x + #1] & ]"
+    );
+  }
+}
+
 mod polynomial_mod {
   use super::*;
 

@@ -2671,14 +2671,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: RootSum
-LINE: 1742
-TYPE: >>
-INPUT: RootSum[1+#+#^2+#^3+#^4 &, Log[x + #] &]
-EXPECTED:
-= RootSum[1 + #1 ^ 2 + #1 ^ 3 + #1 ^ 4 + #1&, Log[x + #1]&]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: RootSum
 LINE: 1744
 TYPE: >>
 INPUT: %//Normal
