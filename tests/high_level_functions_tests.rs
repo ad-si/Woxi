@@ -2126,6 +2126,26 @@ mod high_level_functions_tests {
     }
   }
 
+  mod trace_tests {
+    use super::*;
+
+    #[test]
+    fn trace_of_simple_arithmetic() {
+      assert_eq!(interpret("Trace[1 + 2]").unwrap(), "{1 + 2, 3}");
+    }
+
+    #[test]
+    fn trace_of_times() {
+      assert_eq!(interpret("Trace[3 * 4]").unwrap(), "{3*4, 12}");
+    }
+
+    #[test]
+    fn trace_of_idempotent_expr_returns_singleton() {
+      // When evaluation doesn't change the expression, Trace returns just {expr}.
+      assert_eq!(interpret("Trace[x]").unwrap(), "{x}");
+    }
+  }
+
   mod stack_tests {
     use super::*;
     use woxi::clear_state;

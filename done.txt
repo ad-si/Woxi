@@ -7739,3 +7739,11 @@ INPUT: Stack[]
 EXPECTED:
 = {}
 ---
+FILE: mathics/builtin/symbolic_history/stack.py
+CLASS: Trace
+LINE: 51
+TYPE: >>
+INPUT: Trace[1 + 2]
+EXPECTED:
+= {1 + 2, 3}
+---

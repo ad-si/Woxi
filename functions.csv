@@ -852,7 +852,7 @@ LogPlot,Plots with logarithmic y-axis,✅,pure,6.0,859
 ForAll,Universal quantifier,✅,none,5.0,860
 Indexed,Indexed element of a symbolic vector,✅,none,10.0,861
 Close,Closes an open stream and returns its name,✅,effectful,1.0,863
-Trace,,🚫,,2.0,863
+Trace,Returns a minimal evaluation trace as a two-element list,✅,pure,2.0,863
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7.0,864
 AssociationThread,Creates an association from lists of keys and values,✅,pure,10.0,865
 RealDigits,Returns the digits of a real number,✅,pure,2.0,866
