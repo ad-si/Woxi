@@ -438,6 +438,15 @@ mod drop_extended {
       "{b, c, e, f}"
     );
   }
+
+  #[test]
+  fn drop_2d_range_rows_and_columns() {
+    // Drop rows 2..3 and columns 2..3 from a 4x4 matrix, leaving the four
+    // corners {{11, 14}, {41, 44}}. Matches wolframscript.
+    let expr = "Drop[{{11,12,13,14},{21,22,23,24},\
+                      {31,32,33,34},{41,42,43,44}}, {2, 3}, {2, 3}]";
+    assert_eq!(interpret(expr).unwrap(), "{{11, 14}, {41, 44}}");
+  }
 }
 
 mod partition_extended {

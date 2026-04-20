@@ -5081,14 +5081,6 @@ EXPECTED:
 = Delete[{a, b, c, d}, {1, 2}]
 ---
 FILE: mathics/builtin/list/eol.py
-CLASS: Drop
-LINE: 570
-TYPE: >>
-INPUT: Drop[A, {2, 3}, {2, 3}]
-EXPECTED:
-= {{11, 14}, {41, 44}}
----
-FILE: mathics/builtin/list/eol.py
 CLASS: FirstPosition
 LINE: 788
 TYPE: >>
