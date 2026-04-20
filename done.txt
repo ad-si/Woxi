@@ -7890,3 +7890,11 @@ INPUT: Graphics[MapIndexed[{RGBColor @@ #1, Disk[2*#2 ~Join~ {0}]} &, IdentityMa
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: EndOfString
+LINE: 75
+TYPE: >>
+INPUT: StringMatchQ[#, __ ~~ "e" ~~ EndOfString] &/@ {"apple", "banana", "artichoke"}
+EXPECTED:
+= {True, False, True}
+---

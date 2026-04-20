@@ -1990,14 +1990,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: EndOfString
-LINE: 75
-TYPE: >>
-INPUT: StringMatchQ[#, __ ~~ "e" ~~ EndOfString] &/@ {"apple", "banana", "artichoke"}
-EXPECTED:
-= {True, False, True}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: EndOfString
 LINE: 78
 TYPE: >>
 INPUT: StringReplace["aab\nabb", "b" ~~ EndOfString -> "c"]

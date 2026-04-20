@@ -3535,3 +3535,54 @@ mod damerau_levenshtein_distance {
     );
   }
 }
+
+mod string_position_anchors {
+  use super::*;
+
+  // EndOfString anchors a match to the end of the input string.
+  #[test]
+  fn match_end_of_string() {
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[#, __ ~~ "e" ~~ EndOfString] &/@ {"apple", "banana", "artichoke"}"#
+      )
+      .unwrap(),
+      "{True, False, True}"
+    );
+  }
+
+  // StartOfString anchors a match to the beginning of the input string.
+  #[test]
+  fn match_start_of_string() {
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[#, StartOfString ~~ "a" ~~ __] &/@ {"apple", "banana", "artichoke"}"#
+      )
+      .unwrap(),
+      "{True, False, True}"
+    );
+  }
+
+  // StartOfLine anchors to the start of each line in multiline input. The
+  // anchor must inspect the original string, not a positional slice — otherwise
+  // every position after a line break would spuriously match.
+  #[test]
+  fn replace_start_of_line_does_not_match_middle() {
+    assert_eq!(
+      interpret(r#"StringReplace["abab", StartOfLine ~~ "a" -> "X"]"#).unwrap(),
+      "Xbab"
+    );
+  }
+
+  // WordBoundary (\b) matches between a word and non-word character.
+  #[test]
+  fn replace_with_word_boundary() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"]"#
+      )
+      .unwrap(),
+      "applE banana orangE artichokE"
+    );
+  }
+}

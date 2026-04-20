@@ -944,8 +944,11 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
           ReplaceRule::Regex { regex, replacement } => {
-            if let Some(m) = regex.find(&s[i..])
-              && m.start() == 0
+            // Use find_at on the full string so anchors like ^ and \b can
+            // inspect surrounding characters. Require the match to start
+            // exactly at position i.
+            if let Some(m) = regex.find_at(s, i)
+              && m.start() == i
               && !m.as_str().is_empty()
             {
               result.push_str(replacement);
@@ -959,9 +962,9 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             regex,
             replacement_expr,
           } => {
-            if let Some(caps) = regex.captures(&s[i..])
+            if let Some(caps) = regex.captures_at(s, i)
               && let Some(m) = caps.get(0)
-              && m.start() == 0
+              && m.start() == i
               && !m.as_str().is_empty()
             {
               // Substitute named captures into the replacement expr
@@ -1476,6 +1479,14 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       "_" => Some(".".to_string()), // Blank: any single character
       "__" => Some(".+".to_string()), // BlankSequence: one or more characters
       "___" => Some(".*".to_string()), // BlankNullSequence: zero or more characters
+      // Position anchors — StringMatchQ already anchors at both ends, so these
+      // collapse to empty matches there, but inside patterns used with
+      // StringCases/StringReplace they bind to regex anchors.
+      "StartOfString" => Some("\\A".to_string()),
+      "EndOfString" => Some("\\z".to_string()),
+      "StartOfLine" => Some("(?m:^)".to_string()),
+      "EndOfLine" => Some("(?m:$)".to_string()),
+      "WordBoundary" => Some("\\b".to_string()),
       _ => None,
     },
 
