@@ -6738,14 +6738,6 @@ EXPECTED:
 = {A string, a + b}
 ---
 FILE: mathics/builtin/forms/print.py
-CLASS: OutputForm
-LINE: 157
-TYPE: >>
-INPUT: OutputForm[Graphics[Rectangle[]]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/forms/print.py
 CLASS: TeXForm
 LINE: 226
 TYPE: >>

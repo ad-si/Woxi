@@ -8089,3 +8089,11 @@ INPUT: Plot3D[Exp[x] Cos[y], {x, -2, 1}, {y, -Pi, 2 Pi}]
 EXPECTED:
 = -Graphics3D-
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: OutputForm
+LINE: 157
+TYPE: >>
+INPUT: OutputForm[Graphics[Rectangle[]]]
+EXPECTED:
+= -Graphics-
+---

@@ -1018,6 +1018,17 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(Expr::Raw(rendered)));
     }
     "OutputForm" if args.len() == 1 => {
+      // Graphics/Graphics3D bodies haven't been converted to Expr::Graphics
+      // yet at dispatch time (that happens post-evaluation in lib.rs), so
+      // render them to their "-Graphics-" abbreviation here explicitly.
+      if let Expr::FunctionCall { name: inner, .. } = &args[0] {
+        if inner == "Graphics" {
+          return Some(Ok(Expr::Raw("-Graphics-".to_string())));
+        }
+        if inner == "Graphics3D" {
+          return Some(Ok(Expr::Raw("-Graphics3D-".to_string())));
+        }
+      }
       let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
       return Some(Ok(Expr::Raw(rendered)));
     }

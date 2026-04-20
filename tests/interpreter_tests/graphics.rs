@@ -3589,6 +3589,17 @@ mod graphics_list {
     );
     // OutputForm is the display form, so it renders directly
     assert_eq!(interpret("OutputForm[42]").unwrap(), "42");
+
+    // OutputForm of a Graphics/Graphics3D expression renders the short
+    // abbreviation rather than the underlying function call.
+    assert_eq!(
+      interpret("OutputForm[Graphics[Rectangle[]]]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("OutputForm[Graphics3D[{}]]").unwrap(),
+      "-Graphics3D-"
+    );
   }
 
   #[test]
