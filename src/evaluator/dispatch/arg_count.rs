@@ -712,6 +712,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PauliMatrix" => Some((1, 1)),
     "ThreeJSymbol" => Some((3, 3)),
     "SixJSymbol" => Some((2, 2)),
+    "ClebschGordan" => Some((3, 3)),
     "PDF" => Some((1, 2)),
     "PeakDetect" => Some((1, 2)),
     "PearsonChiSquareTest" => Some((1, 3)),

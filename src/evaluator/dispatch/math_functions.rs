@@ -1590,6 +1590,9 @@ pub fn dispatch_math_functions(
     "SixJSymbol" if args.len() == 2 => {
       return Some(crate::functions::math_ast::six_j_symbol_ast(args));
     }
+    "ClebschGordan" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::clebsch_gordan_ast(args));
+    }
     "CatalanNumber" if args.len() == 1 => {
       return Some(crate::functions::math_ast::catalan_number_ast(args));
     }

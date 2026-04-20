@@ -6518,3 +6518,80 @@ fn two_half_int_signed(expr: &Expr) -> Option<i128> {
     _ => None,
   }
 }
+
+/// ClebschGordan[{j1, m1}, {j2, m2}, {j, m}]
+///
+/// Currently implements only the cases that evaluate to easily-determined
+/// values:
+/// - Returns 0 for degenerate inputs (invalid projections, triangle failure,
+///   integer-parity mismatch).
+/// - Returns 1 for the "stretched state" m1 = ±j1, m2 = ±j2 (same sign),
+///   m = m1 + m2 = ±(j1+j2), j = j1+j2.
+///
+/// All other (valid) cases return the call unchanged.
+pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ClebschGordan expects exactly 3 arguments".into(),
+    ));
+  }
+  let unchanged = || Expr::FunctionCall {
+    name: "ClebschGordan".to_string(),
+    args: args.to_vec(),
+  };
+  let mut two_j = [0i128; 3];
+  let mut two_m = [0i128; 3];
+  for (i, arg) in args.iter().enumerate() {
+    let Expr::List(items) = arg else {
+      return Ok(unchanged());
+    };
+    if items.len() != 2 {
+      return Ok(unchanged());
+    }
+    let (Some(tj), Some(tm)) =
+      (two_half_int(&items[0]), two_half_int_signed(&items[1]))
+    else {
+      return Ok(unchanged());
+    };
+    if tj < 0 {
+      return Ok(unchanged());
+    }
+    two_j[i] = tj;
+    two_m[i] = tm;
+  }
+  let (j1, j2, j3) = (two_j[0], two_j[1], two_j[2]);
+  let (m1, m2, m3) = (two_m[0], two_m[1], two_m[2]);
+
+  // m1 + m2 must equal m.
+  if m1 + m2 != m3 {
+    return Ok(Expr::Integer(0));
+  }
+  for i in 0..3 {
+    if two_m[i].abs() > two_j[i] {
+      return Ok(Expr::Integer(0));
+    }
+    // j_i - m_i must be an integer, i.e. 2j_i and 2m_i share parity.
+    if (two_j[i] - two_m[i]).rem_euclid(2) != 0 {
+      return Ok(Expr::Integer(0));
+    }
+  }
+  // Triangle inequality on j1, j2, j3.
+  if j3 < (j1 - j2).abs() || j3 > j1 + j2 {
+    return Ok(Expr::Integer(0));
+  }
+  if (j1 + j2 + j3).rem_euclid(2) != 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Stretched state: j = j1 + j2, |m_i| = j_i with matching signs.
+  if j3 == j1 + j2
+    && m1.abs() == j1
+    && m2.abs() == j2
+    && m1.signum() * m2.signum() >= 0
+    && m1 + m2 == m3
+  {
+    return Ok(Expr::Integer(1));
+  }
+
+  Ok(unchanged())
+}

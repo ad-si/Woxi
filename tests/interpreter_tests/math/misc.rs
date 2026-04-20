@@ -362,6 +362,33 @@ mod wigner_symbols {
       "ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]"
     );
   }
+
+  // ClebschGordan of the "stretched state" (max |m| aligned with max j)
+  // is exactly 1.
+  #[test]
+  fn clebsch_gordan_stretched_negative() {
+    assert_eq!(
+      interpret("ClebschGordan[{1/2, -1/2}, {1/2, -1/2}, {1, -1}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn clebsch_gordan_stretched_positive() {
+    assert_eq!(
+      interpret("ClebschGordan[{1/2, 1/2}, {1/2, 1/2}, {1, 1}]").unwrap(),
+      "1"
+    );
+  }
+
+  // ClebschGordan is zero when m1 + m2 ≠ m.
+  #[test]
+  fn clebsch_gordan_m_mismatch() {
+    assert_eq!(
+      interpret("ClebschGordan[{1/2, 1/2}, {1/2, 1/2}, {0, 0}]").unwrap(),
+      "0"
+    );
+  }
 }
 
 mod curl {

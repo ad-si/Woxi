@@ -7961,3 +7961,11 @@ INPUT: OutputForm[Derivative[1, 0][f][x]]
 EXPECTED:
 = Derivative[1, 0][f][x]
 ---
+FILE: mathics/builtin/quantum_mechanics/angular.py
+CLASS: ClebschGordan
+LINE: 51
+TYPE: >>
+INPUT: ClebschGordan[{1/2, -1/2}, {1/2, -1/2}, {1, -1}]
+EXPECTED:
+= 1
+---
