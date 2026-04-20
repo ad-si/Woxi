@@ -7063,3 +7063,13 @@ EXPECTED:
 ---
 NOTE: 'N[b]' returns 'b' byte-for-byte in both Woxi and wolframscript when b has no numeric value. Mathics EXPECTED '2.' requires prior 'NValues' context for b.
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Close
+LINE: 203
+TYPE: >>
+INPUT: Close["ExampleData/numbers.txt"]
+EXPECTED:
+= ExampleData/numbers.txt
+---
+NOTE: 'Close["ExampleData/numbers.txt"]' with no open stream returns 'Close[ExampleData/numbers.txt]' unevaluated byte-for-byte in both Woxi and wolframscript. Mathics EXPECTED depends on a prior OpenRead on that path.
+---
