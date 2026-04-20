@@ -7778,3 +7778,11 @@ INPUT: Definition[x]
 EXPECTED:
 = Null
 ---
+FILE: mathics/builtin/drawing/plot_plot.py
+CLASS: LogPlot
+LINE: 136
+TYPE: >>
+INPUT: LogPlot[x^x, {x, 1, 5}]
+EXPECTED:
+= -Graphics-
+---
