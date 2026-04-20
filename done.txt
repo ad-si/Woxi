@@ -5853,3 +5853,9 @@ LINE: 456-460 (multiple)
 INPUT: I (across 5 separate test_unsameq parametrized entries)
 EXPECTED: I (Woxi and wolframscript byte-identical for the input expression itself)
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 443-445 (multiple)
+INPUT: -Infinity (across 3 separate test_unsameq parametrized entries)
+EXPECTED: -Infinity (Woxi and wolframscript byte-identical)
+---
