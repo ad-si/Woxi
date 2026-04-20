@@ -2969,6 +2969,12 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } if name == "Association" => {
       Expr::List(args.clone())
     }
+    // NumericArray / ByteArray unwrap to their underlying list payload.
+    Expr::FunctionCall { name, args }
+      if (name == "NumericArray" || name == "ByteArray") && args.len() == 1 =>
+    {
+      normal_convert_associations(&args[0])
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(normal_convert_associations).collect(),

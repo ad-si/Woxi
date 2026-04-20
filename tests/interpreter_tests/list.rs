@@ -4579,6 +4579,20 @@ mod join_non_list {
     );
   }
 
+  // Normal unwraps NumericArray / ByteArray to their underlying list.
+  #[test]
+  fn normal_of_numeric_array_unwraps_payload() {
+    assert_eq!(
+      interpret("Normal[NumericArray[{{1, 2}, {3, 4}}]]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn normal_of_byte_array_unwraps_payload() {
+    assert_eq!(interpret("Normal[ByteArray[{4, 2}]]").unwrap(), "{4, 2}");
+  }
+
   #[test]
   fn count_at_level() {
     assert_eq!(
