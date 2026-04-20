@@ -12255,69 +12255,6 @@ MESSAGE: False
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_sameq
 LINE: 125
-INPUT: 1
-EXPECTED: A
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1
-EXPECTED: 1.
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1.
-EXPECTED: 1
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 2./9.
-EXPECTED: 2/9
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 2/9
-EXPECTED: 2./9.
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1
-EXPECTED: 1.`3
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1.`3
-EXPECTED: 1
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1.
-EXPECTED: 1.`3
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: 1.`3
-EXPECTED: 1.
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
 INPUT: 2./9.
 EXPECTED: .2222222222222222`16
 MESSAGE: True
