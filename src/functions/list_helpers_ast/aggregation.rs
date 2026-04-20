@@ -402,6 +402,9 @@ fn take_expr_to_f64(expr: &Expr) -> Option<f64> {
 }
 
 /// AST-based TakeLargest: take n largest elements.
+///
+/// Non-numeric elements (like `Missing[...]`) are silently dropped,
+/// matching Wolfram's default ExcludedForms -> {_Missing} behavior.
 pub fn take_largest_ast(
   list: &Expr,
   n: i128,
@@ -416,24 +419,20 @@ pub fn take_largest_ast(
     }
   };
 
-  if n as usize > items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeLargest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
-    });
-  }
-
-  // Extract numeric values with indices
+  // Extract numeric values, skipping non-numeric entries.
   let mut keyed: Vec<(f64, Expr)> = Vec::new();
   for item in items {
     if let Some(v) = take_expr_to_f64(item) {
       keyed.push((v, item.clone()));
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "TakeLargest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
-      });
     }
+  }
+
+  // Only fail if we'd need more numeric values than the list contains.
+  if n as usize > keyed.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeLargest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
   }
 
   keyed
@@ -446,6 +445,9 @@ pub fn take_largest_ast(
 }
 
 /// AST-based TakeSmallest: take n smallest elements.
+///
+/// Non-numeric elements (like `Missing[...]`) are silently dropped,
+/// matching Wolfram's default ExcludedForms -> {_Missing} behavior.
 pub fn take_smallest_ast(
   list: &Expr,
   n: i128,
@@ -460,24 +462,19 @@ pub fn take_smallest_ast(
     }
   };
 
-  if n as usize > items.len() {
-    return Ok(Expr::FunctionCall {
-      name: "TakeSmallest".to_string(),
-      args: vec![list.clone(), Expr::Integer(n)],
-    });
-  }
-
-  // Extract numeric values with indices
+  // Extract numeric values, skipping non-numeric entries.
   let mut keyed: Vec<(f64, Expr)> = Vec::new();
   for item in items {
     if let Some(v) = take_expr_to_f64(item) {
       keyed.push((v, item.clone()));
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "TakeSmallest".to_string(),
-        args: vec![list.clone(), Expr::Integer(n)],
-      });
     }
+  }
+
+  if n as usize > keyed.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeSmallest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
   }
 
   keyed

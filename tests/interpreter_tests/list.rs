@@ -6819,6 +6819,17 @@ mod take_largest {
   fn empty_list_zero() {
     assert_eq!(interpret("TakeLargest[{}, 0]").unwrap(), "{}");
   }
+
+  #[test]
+  fn missing_values_excluded() {
+    // Default behaviour (mirrors Wolfram's ExcludedForms -> {_Missing}):
+    // Missing[...] entries are skipped, so the result is drawn only from
+    // the numeric portion of the list.
+    assert_eq!(
+      interpret("TakeLargest[{-8, 150, Missing[abc]}, 2]").unwrap(),
+      "{150, -8}"
+    );
+  }
 }
 
 mod take_smallest {
