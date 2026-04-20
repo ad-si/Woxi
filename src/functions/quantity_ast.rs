@@ -1687,7 +1687,14 @@ pub fn quantity_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "QuantityQ expects exactly 1 argument".into(),
     ));
   }
-  let result = is_quantity(&args[0]).is_some();
+  // Must be a Quantity[magnitude, unit] with a unit specification that
+  // KnownUnitQ would accept (matching wolframscript's stricter behaviour —
+  // Quantity[3, "Maters"] fails because "Maters" is unknown, even though
+  // the head is Quantity).
+  let result = match is_quantity(&args[0]) {
+    Some((_mag, unit)) => known_unit_q_recursive(unit),
+    None => false,
+  };
   Ok(Expr::Identifier(
     if result { "True" } else { "False" }.to_string(),
   ))
@@ -1720,8 +1727,7 @@ fn known_unit_q_recursive(unit: &Expr) -> bool {
       if (name == "Times" || name == "Divide") && !args.is_empty() {
         args.iter().all(known_unit_q_recursive)
       } else if name == "Power" && args.len() == 2 {
-        known_unit_q_recursive(&args[0])
-          && matches!(&args[1], Expr::Integer(_))
+        known_unit_q_recursive(&args[0]) && matches!(&args[1], Expr::Integer(_))
       } else {
         false
       }

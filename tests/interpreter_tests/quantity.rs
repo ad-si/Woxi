@@ -271,6 +271,24 @@ fn quantity_q_false() {
   assert_eq!(interpret("QuantityQ[5]").unwrap(), "False");
 }
 
+#[test]
+fn quantity_q_unknown_unit_false() {
+  // 'Maters' isn't a known unit, so Quantity[3, "Maters"] fails QuantityQ —
+  // matching wolframscript's stricter behaviour.
+  assert_eq!(
+    interpret(r#"QuantityQ[Quantity[3, "Maters"]]"#).unwrap(),
+    "False"
+  );
+}
+
+#[test]
+fn quantity_q_compound_known_unit_true() {
+  assert_eq!(
+    interpret(r#"QuantityQ[Quantity[3, "Meters"/"Seconds"]]"#).unwrap(),
+    "True"
+  );
+}
+
 // ─── CompatibleUnitQ ────────────────────────────────────────────────────────
 
 #[test]
@@ -1865,7 +1883,10 @@ fn known_unit_q_compound_true() {
 #[test]
 fn known_unit_q_compound_lowercase_false() {
   // Lowercase names don't count in Wolfram (mathics is more lenient).
-  assert_eq!(interpret(r#"KnownUnitQ["meter"^2/"second"]"#).unwrap(), "False");
+  assert_eq!(
+    interpret(r#"KnownUnitQ["meter"^2/"second"]"#).unwrap(),
+    "False"
+  );
 }
 
 #[test]

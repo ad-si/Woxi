@@ -164,15 +164,6 @@ EXPECTED:
 = 3 second + 6 meter
 ---
 FILE: mathics/builtin/quantities.py
-CLASS: QuantityQ
-LINE: 324
-TYPE: >>
-INPUT: QuantityQ[Quantity[3, "Maters"]]
-EXPECTED:
-: Unable to interpret unit specification Maters.
-= False
----
-FILE: mathics/builtin/quantities.py
 CLASS: UnitConvert
 LINE: 405
 TYPE: >>

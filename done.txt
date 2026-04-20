@@ -6877,3 +6877,12 @@ EXPECTED:
 ---
 NOTE: KnownUnitQ["meter"^2/"second"] returns 'False' byte-for-byte in both Woxi and wolframscript — lowercase unit names aren't recognised. Mathics EXPECTED 'True' reflects mathics's more lenient lowercase-aliasing logic.
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: QuantityQ
+LINE: 324
+TYPE: >>
+INPUT: QuantityQ[Quantity[3, "Maters"]]
+EXPECTED:
+: Unable to interpret unit specification Maters.
+= False
+---
