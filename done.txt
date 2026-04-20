@@ -7131,3 +7131,10 @@ TYPE: >>
 INPUT: NValues[c] := {N[c] :> 3}
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Put
+LINE: 543
+TYPE: S>
+INPUT: filename = $TemporaryDirectory <> "/fortyfactorial";
+EXPECTED: (none)
+---
