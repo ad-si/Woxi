@@ -1911,26 +1911,6 @@ INPUT: StringSplit["  abc    123  ", WhitespaceCharacter]
 EXPECTED:
 = {, , abc, , , , 123, , }
 ---
-CLASS: EndOfLine
-LINE: 55
-TYPE: >>
-INPUT: StringSplit["abc\ndef\nhij", EndOfLine]
-EXPECTED:
-= {abc,
-. def,
-. hij}
----
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: StartOfLine
-LINE: 123
-TYPE: >>
-INPUT: StringSplit["abc\ndef\nhij", StartOfLine]
-EXPECTED:
-= {abc
-. , def
-. , hij}
----
 FILE: mathics/builtin/string/patterns.py
 CLASS: StringCases
 LINE: 182

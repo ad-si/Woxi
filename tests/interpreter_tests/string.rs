@@ -320,6 +320,25 @@ mod string_split_regex {
       "{ago, and, our, Four, forth, score, seven, years, brought, fathers}"
     );
   }
+
+  // StartOfLine and EndOfLine are zero-width anchors — splitting by them
+  // produces segments that start / end with a newline depending on which
+  // side of the anchor the newline falls on.
+  #[test]
+  fn split_by_end_of_line() {
+    assert_eq!(
+      interpret("StringSplit[\"abc\\ndef\\nhij\", EndOfLine]").unwrap(),
+      "{abc, \ndef, \nhij}"
+    );
+  }
+
+  #[test]
+  fn split_by_start_of_line() {
+    assert_eq!(
+      interpret("StringSplit[\"abc\\ndef\\nhij\", StartOfLine]").unwrap(),
+      "{abc\n, def\n, hij}"
+    );
+  }
 }
 
 mod string_replace {
