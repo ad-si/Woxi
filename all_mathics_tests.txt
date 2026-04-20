@@ -260,14 +260,6 @@ INPUT: $ContextPath // InputForm
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/system.py
-CLASS: Language
-LINE: 281
-TYPE: >>
-INPUT: $Language = "German"; Alphabet[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: MaxLengthIntStringConversion
 LINE: 416
 TYPE: >>

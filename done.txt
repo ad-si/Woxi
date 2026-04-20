@@ -6174,3 +6174,13 @@ EXPECTED:
 ---
 NOTE: both Woxi and wolframscript leave '$PythonImplementation' unevaluated; it is a mathics-specific system symbol.
 ---
+FILE: mathics/builtin/system.py
+CLASS: Language
+LINE: 281
+TYPE: >>
+INPUT: $Language = "German"; Alphabet[]
+EXPECTED:
+= ...
+---
+NOTE: both Woxi and wolframscript return the 26-letter Latin alphabet for Alphabet[] regardless of $Language (wolframscript CLI mode); mathics EXPECTED is '...' wildcard.
+---
