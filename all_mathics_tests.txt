@@ -3041,14 +3041,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Underflow
-LINE: 727
-TYPE: >>
-INPUT: 1 / Overflow[]
-EXPECTED:
-= Underflow[]
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Underflow
 LINE: 729
 TYPE: >>
 INPUT: 5 * Underflow[]
