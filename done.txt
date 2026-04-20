@@ -5811,3 +5811,9 @@ LINE: 162
 ACTUAL: (x + 2y) /. {x -> y} /. {y -> x}
 EXPECTED: 3*x (changed grammar to allow chained ReplaceAll/ReplaceRepeated suffixes; matches wolframscript)
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_process_assign_other
+LINE: 417
+INPUT: Iteration
+EXPECTED: Iteration (Woxi and wolframscript byte-identical when run in isolation; mathics expected "Infinity" depends on prior value setup)
+---

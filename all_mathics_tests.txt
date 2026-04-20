@@ -11374,12 +11374,6 @@ INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}
 EXPECTED: {{1.}, {G[x]}}
 ---
 FILE: mathics/test/builtin/assignments/test_assignment.py
-FUNCTION: test_process_assign_other
-LINE: 417
-INPUT: Iteration
-EXPECTED: Infinity
----
-FILE: mathics/test/builtin/assignments/test_assignment.py
 FUNCTION: test_upset
 LINE: 21
 INPUT: a ^= 3
