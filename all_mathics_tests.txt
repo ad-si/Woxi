@@ -14717,11 +14717,6 @@ LINE: 162
 ACTUAL (expression): (x + 2y) /. {x -> y} /. {y -> x}
 EXPECTED (should equal): 3x
 ---
-FILE: examples/symbolic_logic/gries_schneider/GS1.m
-LINE: 184
-ACTUAL (expression): (x = Q)/.{b->5}
-EXPECTED (should equal): (-5 + Sqrt[25-4a c]) / (2a)
----
 FILE: examples/symbolic_logic/gries_schneider/GS2.m
 LINE: 353
 ACTUAL (expression): q],                   dual[or[p, q]]

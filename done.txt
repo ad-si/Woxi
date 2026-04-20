@@ -5801,3 +5801,8 @@ FORM: StandardForm
 INPUT: MakeBoxes[3.142`3]
 EXPECTED: 3.142`3. (Woxi and wolframscript byte-identical)
 ---
+FILE: examples/symbolic_logic/gries_schneider/GS1.m
+LINE: 184
+ACTUAL: (x = Q)/.{b->5}
+EXPECTED: Q (Woxi and wolframscript byte-identical when run in isolation; mathics expected formula depends on prior Q definition)
+---
