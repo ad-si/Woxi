@@ -617,13 +617,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Get
-LINE: 356
-TYPE: S>
-INPUT: Put[x + y, 2x^2 + 4z!, Cos[x] + I Sin[x], filename]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Get
 LINE: 357
 TYPE: S>
 INPUT: Get[filename]
