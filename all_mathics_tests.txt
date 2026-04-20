@@ -4028,14 +4028,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: RepeatedNull
-LINE: 665
-TYPE: >>
-INPUT: a___Integer... // FullForm
-EXPECTED:
-= RepeatedNull[Pattern[a, BlankNullSequence[Integer]]]
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: RepeatedNull
 LINE: 667
 TYPE: >>
 INPUT: f[x] /. f[x, 0...] -> t

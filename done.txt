@@ -7993,3 +7993,11 @@ INPUT: StringReplace["Hello world!", Except[LetterCharacter] -> ""]
 EXPECTED:
 = Helloworld
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: RepeatedNull
+LINE: 665
+TYPE: >>
+INPUT: a___Integer... // FullForm
+EXPECTED:
+= RepeatedNull[Pattern[a, BlankNullSequence[Integer]]]
+---
