@@ -12218,20 +12218,6 @@ EXPECTED: str_expected
 MESSAGE: assert_fail_message
 ---
 FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]==g[3]
-EXPECTED: g[2] == g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]!=g[3]
-EXPECTED: g[2] != g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_sameq
 LINE: 125
 INPUT: str_lhs
