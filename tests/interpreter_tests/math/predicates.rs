@@ -566,6 +566,29 @@ mod same_q_unsame_q {
   fn unsame_q_single() {
     assert_eq!(interpret("UnsameQ[a]").unwrap(), "True");
   }
+
+  // SameQ on a complex integer versus various unrelated values: always
+  // False, since SameQ compares structure not value. Only the identical
+  // pair returns True.
+  #[test]
+  fn same_q_complex_integer_vs_real() {
+    assert_eq!(interpret("SameQ[3 + 2 I, .25]").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_complex_integer_vs_sqrt() {
+    assert_eq!(interpret("SameQ[3 + 2 I, Sqrt[2]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_complex_integer_vs_bessel() {
+    assert_eq!(interpret("SameQ[3 + 2 I, BesselJ[0, 2]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_complex_integer_equal_self() {
+    assert_eq!(interpret("SameQ[3 + 2 I, 3 + 2 I]").unwrap(), "True");
+  }
 }
 
 mod equivalent_logic {

@@ -8328,34 +8328,6 @@ MESSAGE: True
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 527
-INPUT: 3+2 I
-EXPECTED: .25
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 528
-INPUT: 3+2 I
-EXPECTED: Sqrt[2]
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 529
-INPUT: 3+2 I
-EXPECTED: BesselJ[0, 2]
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 530
-INPUT: 3+2 I
-EXPECTED: 3+2 I
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 531
 INPUT: 2.+ Pi I
 EXPECTED: Infinity
