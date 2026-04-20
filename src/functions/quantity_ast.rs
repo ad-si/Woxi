@@ -1991,9 +1991,8 @@ pub fn try_quantity_plus(
       // Orderless — e.g. Quantity[3, Seconds] should precede
       // Quantity[6, Meters] because 3 < 6).
       let mut sorted_args = args.to_vec();
-      sorted_args.sort_by(
-        crate::functions::list_helpers_ast::sorting::canonical_cmp,
-      );
+      sorted_args
+        .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
       return Some(Ok(Expr::FunctionCall {
         name: "Plus".to_string(),
         args: sorted_args,

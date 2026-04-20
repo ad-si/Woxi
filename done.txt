@@ -6903,3 +6903,13 @@ EXPECTED:
 : second and meter are incompatible units.
 = 3 second + 6 meter
 ---
+FILE: mathics/builtin/system.py
+CLASS: MemoryInUse
+LINE: 485
+TYPE: >>
+INPUT: MemoryInUse[]
+EXPECTED:
+= ...
+---
+NOTE: 'MemoryInUse[]' returns a positive integer in both Woxi and wolframscript (exact value varies). Mathics EXPECTED '...' wildcard accepts any output.
+---

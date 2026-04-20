@@ -210,14 +210,6 @@ INPUT: $ContextPath // InputForm
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/system.py
-CLASS: MemoryInUse
-LINE: 485
-TYPE: >>
-INPUT: MemoryInUse[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/system.py
 CLASS: Packages
 LINE: 507
 TYPE: S>
