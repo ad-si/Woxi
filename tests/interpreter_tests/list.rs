@@ -3617,6 +3617,27 @@ mod contains_only {
       "False"
     );
   }
+
+  // With SameTest -> Equal, numeric equality replaces structural identity,
+  // so 1.0 is "contained" in a set holding 1.
+  #[test]
+  fn contains_only_with_same_test_equal() {
+    assert_eq!(
+      interpret("ContainsOnly[{a, 1.0}, {1, a, b}, {SameTest -> Equal}]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // Without SameTest, 1.0 and 1 aren't structurally equal, so the call is
+  // False.
+  #[test]
+  fn contains_only_without_same_test() {
+    assert_eq!(
+      interpret("ContainsOnly[{a, 1.0}, {1, a, b}]").unwrap(),
+      "False"
+    );
+  }
 }
 
 mod length_while {

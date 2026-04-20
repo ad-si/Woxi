@@ -506,7 +506,7 @@ pub fn dispatch_list_operations(
     "ComposeList" if args.len() == 2 => {
       return Some(list_helpers_ast::compose_list_ast(args));
     }
-    "ContainsOnly" if args.len() == 2 => {
+    "ContainsOnly" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::contains_only_ast(args));
     }
     "Pick" if args.len() == 2 || args.len() == 3 => {

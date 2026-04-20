@@ -5485,14 +5485,6 @@ INPUT: Take[A, All, {2}]
 EXPECTED:
 = {{b}, {e}}
 ---
-FILE: mathics/builtin/list/predicates.py
-CLASS: ContainsOnly
-LINE: 35
-TYPE: >>
-INPUT: ContainsOnly[{a, 1.0}, {1, a, b}, {SameTest -> Equal}]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/list/rearrange.py
 CLASS: Join
 LINE: 871

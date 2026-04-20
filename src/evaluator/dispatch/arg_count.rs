@@ -172,7 +172,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ContainsAll" => Some((1, 2)),
     "ContainsAny" => Some((1, 2)),
     "ContainsNone" => Some((1, 2)),
-    "ContainsOnly" => Some((2, 2)),
+    "ContainsOnly" => Some((2, 3)),
     "Context" => Some((0, 1)),
     "ContinuedFraction" => Some((1, 2)),
     "ContinuedFractionK" => Some((2, 2)),

@@ -1306,9 +1306,9 @@ fn delete_at_level_range(
 
 /// ContainsOnly[list, elems] - True if every element of list is in elems
 pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "ContainsOnly expects exactly 2 arguments".into(),
+      "ContainsOnly expects 2 or 3 arguments".into(),
     ));
   }
   let list = match &args[0] {
@@ -1329,6 +1329,56 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Extract optional SameTest option from the 3rd argument. Accepts either
+  // {SameTest -> f} or a plain Rule SameTest -> f.
+  let same_test: Option<Expr> = args.get(2).and_then(|opt| {
+    let rules: Vec<&Expr> = match opt {
+      Expr::List(items) => items.iter().collect(),
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => vec![opt],
+      _ => return None,
+    };
+    for r in rules {
+      if let Expr::Rule { pattern, replacement }
+      | Expr::RuleDelayed { pattern, replacement } = r
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest")
+      {
+        return Some((**replacement).clone());
+      }
+    }
+    None
+  });
+
+  if let Some(test) = same_test {
+    // With a SameTest, each list element must match at least one elem via
+    // test[item, elem] evaluating to True.
+    for item in list {
+      let mut found = false;
+      for elem in elems {
+        let call = Expr::FunctionCall {
+          name: crate::syntax::expr_to_string(&test),
+          args: vec![item.clone(), elem.clone()],
+        };
+        // Try treating `test` as a callable expression (e.g. Equal).
+        let applied = match &test {
+          Expr::Identifier(name) => Expr::FunctionCall {
+            name: name.clone(),
+            args: vec![item.clone(), elem.clone()],
+          },
+          _ => call,
+        };
+        let result = crate::evaluator::evaluate_expr_to_expr(&applied)?;
+        if matches!(&result, Expr::Identifier(s) if s == "True") {
+          found = true;
+          break;
+        }
+      }
+      if !found {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+    return Ok(Expr::Identifier("True".to_string()));
+  }
 
   use std::collections::HashSet;
   let allowed: HashSet<String> =
