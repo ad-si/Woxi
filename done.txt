@@ -7786,3 +7786,11 @@ INPUT: LogPlot[x^x, {x, 1, 5}]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/drawing/plot_plot.py
+CLASS: LogPlot
+LINE: 139
+TYPE: >>
+INPUT: LogPlot[{x^x, Exp[x], x!}, {x, 1, 5}]
+EXPECTED:
+= -Graphics-
+---

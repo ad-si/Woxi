@@ -5427,14 +5427,6 @@ INPUT: DiscretePlot[{Sin[Pi x/20], Cos[Pi x/20]}, {x, 0, 40}]
 EXPECTED:
 = -Graphics-
 ---
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: LogPlot
-LINE: 139
-TYPE: >>
-INPUT: LogPlot[{x^x, Exp[x], x!}, {x, 1, 5}]
-EXPECTED:
-= -Graphics-
----
 FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierFunction
 LINE: 54
