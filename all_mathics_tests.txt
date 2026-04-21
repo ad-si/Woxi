@@ -1964,13 +1964,6 @@ EXPECTED:
 ---
 ---
 FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Cross
-LINE: 50
-TYPE: #>
-INPUT: Clear[v1, v2];
-EXPECTED: (none)
----
-FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Curl
 LINE: 107
 TYPE: >>
