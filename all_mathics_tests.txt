@@ -4250,14 +4250,6 @@ EXPECTED:
 = Sqrt[2] Sin[x] / (Sqrt[x] Sqrt[Pi])
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselJ
-LINE: 380
-TYPE: >>
-INPUT: Integrate[Cos[3 Sin[w]], {w, 0, Pi}]
-EXPECTED:
-= Pi BesselJ[0, 3]
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselK
 LINE: 411
 TYPE: >>

@@ -504,21 +504,106 @@ fn try_definite_integral(
 
   // Fresnel C/S: ∫_0^z Cos[Pi var^2 / 2] d var = FresnelC[z]
   //              ∫_0^z Sin[Pi var^2 / 2] d var = FresnelS[z]
-  if matches!(lo, Expr::Integer(0)) {
-    if let Expr::FunctionCall { name, args } = integrand
-      && (name == "Cos" || name == "Sin")
-      && args.len() == 1
-      && is_pi_x_squared_over_two(&args[0], var)
-    {
-      let head = if name == "Cos" { "FresnelC" } else { "FresnelS" };
-      return Some(Expr::FunctionCall {
-        name: head.to_string(),
-        args: vec![hi.clone()],
-      });
-    }
+  if matches!(lo, Expr::Integer(0))
+    && let Expr::FunctionCall { name, args } = integrand
+    && (name == "Cos" || name == "Sin")
+    && args.len() == 1
+    && is_pi_x_squared_over_two(&args[0], var)
+  {
+    let head = if name == "Cos" {
+      "FresnelC"
+    } else {
+      "FresnelS"
+    };
+    return Some(Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![hi.clone()],
+    });
+  }
+
+  // Bessel integral representation:
+  //   ∫_0^Pi Cos[n · Sin[var]] d var = Pi · BesselJ[0, n]
+  // for any `n` independent of `var`.
+  if matches!(lo, Expr::Integer(0))
+    && is_pi(hi)
+    && let Expr::FunctionCall { name: cos_name, args: cos_args } = integrand
+    && cos_name == "Cos"
+    && cos_args.len() == 1
+    && let Some(n) = extract_coefficient_of_sin_var(&cos_args[0], var)
+    && !expr_depends_on_var(&n, var)
+  {
+    let bessel = Expr::FunctionCall {
+      name: "BesselJ".to_string(),
+      args: vec![Expr::Integer(0), n],
+    };
+    return Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Constant("Pi".to_string())),
+      right: Box::new(bessel),
+    });
   }
 
   None
+}
+
+fn is_pi(e: &Expr) -> bool {
+  matches!(e, Expr::Constant(c) if c == "Pi")
+}
+
+/// Match `Sin[var]` (coefficient 1) or `n * Sin[var]` for some `n`. Returns
+/// the `n` coefficient on success.
+fn extract_coefficient_of_sin_var(expr: &Expr, var: &str) -> Option<Expr> {
+  let is_sin_var = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Sin"
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(n) if n == var)
+    }
+    _ => false,
+  };
+  if is_sin_var(expr) {
+    return Some(Expr::Integer(1));
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut found = false;
+      let mut other: Vec<Expr> = Vec::new();
+      for a in args {
+        if is_sin_var(a) {
+          found = true;
+        } else {
+          other.push(a.clone());
+        }
+      }
+      if !found {
+        return None;
+      }
+      match other.len() {
+        0 => Some(Expr::Integer(1)),
+        1 => Some(other.pop().unwrap()),
+        _ => Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: other,
+        }),
+      }
+    }
+    _ => None,
+  }
+}
+
+fn expr_depends_on_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == var,
+    Expr::BinaryOp { left, right, .. } => {
+      expr_depends_on_var(left, var) || expr_depends_on_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => expr_depends_on_var(operand, var),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| expr_depends_on_var(a, var))
+    }
+    Expr::List(items) => items.iter().any(|a| expr_depends_on_var(a, var)),
+    _ => false,
+  }
 }
 
 /// Match `Pi * var^2 / 2` in any canonical-times ordering.
@@ -547,7 +632,9 @@ fn is_pi_x_squared_over_two(expr: &Expr, var: &str) -> bool {
         matches!(left.as_ref(), Expr::Identifier(n) if n == var)
           && matches!(right.as_ref(), Expr::Integer(2))
       }
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         matches!(&args[0], Expr::Identifier(n) if n == var)
           && matches!(&args[1], Expr::Integer(2))
       }

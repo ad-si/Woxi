@@ -2275,6 +2275,17 @@ mod fresnel_s {
     );
   }
 
+  // Bessel integral representation:
+  //   ∫_0^π Cos[n · Sin[w]] dw = π · BesselJ[0, n]
+  // Regression for mathics specialfns/bessel.py:380.
+  #[test]
+  fn definite_integral_cos_n_sin_gives_bessel_j() {
+    assert_eq!(
+      interpret("Integrate[Cos[3 Sin[w]], {w, 0, Pi}]").unwrap(),
+      "Pi*BesselJ[0, 3]"
+    );
+  }
+
   #[test]
   fn numeric_half() {
     let result: f64 = interpret("FresnelS[0.5]").unwrap().parse().unwrap();

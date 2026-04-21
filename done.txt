@@ -11166,3 +11166,11 @@ INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
 EXPECTED:
 = {{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}
 ---
+FILE: mathics/builtin/specialfns/bessel.py
+CLASS: BesselJ
+LINE: 380
+TYPE: >>
+INPUT: Integrate[Cos[3 Sin[w]], {w, 0, Pi}]
+EXPECTED:
+= Pi BesselJ[0, 3]
+---
