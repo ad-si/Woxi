@@ -1336,6 +1336,18 @@ mod real_digits {
   }
 
   #[test]
+  fn real_digits_beyond_machine_precision_are_indeterminate() {
+    // A machine-precision Real carries ~16 decimal digits; anything past that
+    // is unknowable and must be reported as Indeterminate. Regression for
+    // mathics atomic/numbers.py:375.
+    assert_eq!(
+      interpret("RealDigits[123.45, 10, 18]").unwrap(),
+      "{{1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Indeterminate, \
+       Indeterminate}, 3}"
+    );
+  }
+
+  #[test]
   fn integer_ten() {
     // RealDigits[10] yields digits {1, 0} with exponent 2.
     assert_eq!(interpret("RealDigits[10]").unwrap(), "{{1, 0}, 2}");

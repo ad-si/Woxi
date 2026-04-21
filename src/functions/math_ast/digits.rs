@@ -1334,17 +1334,31 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Generate fractional digits until we have enough
-      while digits.len() < num_digits {
+      // Machine-precision cap: a Real input carries only ~16 significant
+      // decimal digits of information. Any digit beyond that is unknowable
+      // and wolframscript marks it `Indeterminate`.
+      let precision_cap = if rational_from_real.is_some() {
+        Some(16usize)
+      } else {
+        None
+      };
+      let max_known = precision_cap.unwrap_or(num_digits).min(num_digits);
+
+      // Generate up to `max_known` known digits.
+      while digits.len() < max_known {
         remainder *= base;
         let digit = remainder / d;
         remainder %= d;
         digits.push(digit);
       }
-      digits.truncate(num_digits);
+      digits.truncate(max_known);
 
-      let digit_exprs: Vec<Expr> =
+      let mut digit_exprs: Vec<Expr> =
         digits.iter().map(|&dig| Expr::Integer(dig)).collect();
+      // Pad beyond machine precision with Indeterminate.
+      while digit_exprs.len() < num_digits {
+        digit_exprs.push(Expr::Identifier("Indeterminate".to_string()));
+      }
       return Ok(Expr::List(vec![
         Expr::List(digit_exprs),
         Expr::Integer(exponent),
