@@ -5109,14 +5109,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: HermiteH
-LINE: 93
-TYPE: >>
-INPUT: HermiteH[3, 1 + I]
-EXPECTED:
-= -28 + 4 I
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: HermiteH
 LINE: 96
 TYPE: >>
 INPUT: HermiteH[4.2, 2]

@@ -2664,6 +2664,14 @@ mod hermite_h {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("HermiteH[n, x]").unwrap(), "HermiteH[n, x]");
   }
+
+  #[test]
+  fn complex_argument_is_expanded() {
+    // Regression: `HermiteH[3, 1 + I]` used to stay as
+    // `-12 (1 + I) + 8 (1 + I)^3`; numeric complex arguments are now
+    // expanded to `-28 + 4 I` matching wolframscript.
+    assert_eq!(interpret("HermiteH[3, 1 + I]").unwrap(), "-28 + 4*I");
+  }
 }
 
 mod airy_ai {

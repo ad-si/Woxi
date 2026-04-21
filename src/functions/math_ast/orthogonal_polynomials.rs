@@ -1888,6 +1888,13 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(hermite_eval_f64(n, *f))),
     _ => {
       if let Some(expr) = hermite_polynomial_symbolic(n, &args[1]) {
+        // For purely numeric x (Integer/Real/Complex combinations), expand
+        // the polynomial so `HermiteH[3, 1 + I]` collapses to `-28 + 4 I`
+        // rather than staying as `-12 (1 + I) + 8 (1 + I)^3`. Symbolic x
+        // keeps the polynomial form unchanged.
+        if is_fully_numeric_arg(&args[1]) {
+          return crate::evaluator::evaluate_function_call_ast("Expand", &[expr]);
+        }
         Ok(expr)
       } else {
         Ok(Expr::FunctionCall {
@@ -1896,6 +1903,33 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
+  }
+}
+
+/// Returns true if `e` is built entirely from numeric atoms (Integer, Real,
+/// BigInteger, BigFloat, the imaginary unit `I`, and Rational/Complex) and
+/// numeric combinators (Plus, Times, Power, UnaryMinus, BinaryOp math).
+fn is_fully_numeric_arg(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::Identifier(s) => s == "I",
+    Expr::Constant(_) => true,
+    Expr::UnaryOp { operand, .. } => is_fully_numeric_arg(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      is_fully_numeric_arg(left) && is_fully_numeric_arg(right)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Complex" | "Rational"
+      ) =>
+    {
+      args.iter().all(is_fully_numeric_arg)
+    }
+    _ => false,
   }
 }
 
