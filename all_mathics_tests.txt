@@ -2218,14 +2218,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 1021
-TYPE: >>
-INPUT: Integrate[ArcSin[x / 3], x]
-EXPECTED:
-= x ArcSin[x / 3] + Sqrt[9 - x ^ 2]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1029
 TYPE: >>
 INPUT: N[Integrate[Sin[Exp[-x^2 /2 ]],{x,1,2}]]

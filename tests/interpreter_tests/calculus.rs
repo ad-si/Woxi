@@ -84,6 +84,51 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_arcsin_linear_reciprocal_integer() {
+    // ∫ ArcSin[x/3] dx = Sqrt[9 - x^2] + x*ArcSin[x/3]
+    // Coefficient a = 1/q: `q^2` moves into the Sqrt as the constant term.
+    assert_eq!(
+      interpret("Integrate[ArcSin[x/3], x]").unwrap(),
+      "Sqrt[9 - x^2] + x*ArcSin[x/3]"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcSin[x/5], x]").unwrap(),
+      "Sqrt[25 - x^2] + x*ArcSin[x/5]"
+    );
+  }
+
+  #[test]
+  fn integrate_arcsin_linear_integer() {
+    // ∫ ArcSin[n x] dx = Sqrt[1 - n^2 x^2]/n + x*ArcSin[n x]
+    assert_eq!(
+      interpret("Integrate[ArcSin[2*x], x]").unwrap(),
+      "Sqrt[1 - 4*x^2]/2 + x*ArcSin[2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcSin[3*x], x]").unwrap(),
+      "Sqrt[1 - 9*x^2]/3 + x*ArcSin[3*x]"
+    );
+  }
+
+  #[test]
+  fn integrate_arcsin_linear_rational() {
+    // ∫ ArcSin[(p/q) x] dx = Sqrt[q^2 - p^2 x^2]/p + x*ArcSin[(p/q) x]
+    assert_eq!(
+      interpret("Integrate[ArcSin[2*x/3], x]").unwrap(),
+      "Sqrt[9 - 4*x^2]/2 + x*ArcSin[(2*x)/3]"
+    );
+  }
+
+  #[test]
+  fn integrate_arccos_linear_reciprocal_integer() {
+    // ∫ ArcCos[x/3] dx = -Sqrt[9 - x^2] + x*ArcCos[x/3]
+    assert_eq!(
+      interpret("Integrate[ArcCos[x/3], x]").unwrap(),
+      "-Sqrt[9 - x^2] + x*ArcCos[x/3]"
+    );
+  }
+
+  #[test]
   fn integrate_sin_linear_arg() {
     // ∫ sin(2x) dx = -1/2*cos(2x)
     assert_eq!(

@@ -2865,6 +2865,105 @@ fn try_match_linear_arg(expr: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// Decompose a rational-valued constant expression into `(p, q)` with `q > 0`
+/// in lowest terms. Returns `None` for anything that isn't `Integer(n)` or
+/// `Rational[p, q]` (already reduced by construction).
+fn decompose_rational_coeff(coeff: &Expr) -> Option<(i128, i128)> {
+  match coeff {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
+        && *q > 0
+      {
+        return Some((*p, *q));
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Build the antiderivative of `ArcSin[a*var]` (or `ArcCos[a*var]`) where
+/// `a = p/q` is rational, expressed in the form used by Mathematica's
+/// `Integrate`:
+///
+///     ∫ ArcSin[a x] dx  =  x*ArcSin[a x] + Sqrt[q^2 - p^2 x^2] / p
+///     ∫ ArcCos[a x] dx  =  x*ArcCos[a x] - Sqrt[q^2 - p^2 x^2] / p
+///
+/// Requires `p != 0`. For `a = 1/q`, this collapses nicely to
+/// `Sqrt[q^2 - x^2]`. For `a = p` (integer), it yields
+/// `Sqrt[1 - p^2 x^2] / p`.
+fn arcsin_arccos_linear_antideriv(
+  fname: &str,
+  args: &[Expr],
+  var: &str,
+  p: i128,
+  q: i128,
+) -> Option<Expr> {
+  if p == 0 {
+    return None;
+  }
+  let x = Expr::Identifier(var.to_string());
+  let x_sq = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: Box::new(x.clone()),
+    right: Box::new(Expr::Integer(2)),
+  };
+  // Sqrt argument: q^2 - p^2 * x^2 (with p^2 elided when p^2 == 1).
+  let p_sq = p.checked_mul(p)?;
+  let q_sq = q.checked_mul(q)?;
+  let scaled_x_sq = if p_sq == 1 {
+    x_sq
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(p_sq)),
+      right: Box::new(x_sq),
+    }
+  };
+  let sqrt_arg = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(Expr::Integer(q_sq)),
+    right: Box::new(scaled_x_sq),
+  };
+  let sqrt_expr = crate::functions::math_ast::make_sqrt(sqrt_arg);
+  let sqrt_over_p = if p == 1 {
+    sqrt_expr
+  } else if p == -1 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(sqrt_expr),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(sqrt_expr),
+      right: Box::new(Expr::Integer(p)),
+    }
+  };
+  let inverse_trig = Expr::FunctionCall {
+    name: fname.to_string(),
+    args: args.to_vec(),
+  };
+  let x_times_atrig = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Identifier(var.to_string())),
+    right: Box::new(inverse_trig),
+  };
+  let join_op = if fname == "ArcCos" {
+    crate::syntax::BinaryOperator::Minus
+  } else {
+    crate::syntax::BinaryOperator::Plus
+  };
+  Some(Expr::BinaryOp {
+    op: join_op,
+    left: Box::new(x_times_atrig),
+    right: Box::new(sqrt_over_p),
+  })
+}
+
 /// Extract the coefficient of `var` from a linear expression `a*var + b`.
 /// Returns `Some(a)` if the expression is linear in `var`, `None` otherwise.
 /// Works by differentiating the expression: if d/dx(expr) is constant w.r.t. var,
@@ -5168,73 +5267,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
-        // Inverse trig antiderivatives (only handled when the argument is
-        // the integration variable itself — a linear-argument
-        // generalization would require threading the coefficient through
-        // the Sqrt[…] and Log[…] pieces).
-        "ArcSin" if args.len() == 1 => {
-          if let Expr::Identifier(name) = &args[0]
-            && name == var
-          {
-            let x = Expr::Identifier(var.to_string());
-            let x_sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            };
-            let one_minus = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(x_sq),
-            };
-            let sqrt_term = make_sqrt(one_minus);
-            // x ArcSin[x] + Sqrt[1 - x^2]
-            return Some(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus,
-              left: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
-                left: Box::new(x),
-                right: Box::new(Expr::FunctionCall {
-                  name: "ArcSin".to_string(),
-                  args: args.clone(),
-                }),
-              }),
-              right: Box::new(sqrt_term),
-            });
-          }
-          None
-        }
-        "ArcCos" if args.len() == 1 => {
-          if let Expr::Identifier(name) = &args[0]
-            && name == var
-          {
-            let x = Expr::Identifier(var.to_string());
-            let x_sq = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Power,
-              left: Box::new(x.clone()),
-              right: Box::new(Expr::Integer(2)),
-            };
-            let one_minus = Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(x_sq),
-            };
-            let sqrt_term = make_sqrt(one_minus);
-            // x ArcCos[x] - Sqrt[1 - x^2]
-            return Some(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
-              left: Box::new(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Times,
-                left: Box::new(x),
-                right: Box::new(Expr::FunctionCall {
-                  name: "ArcCos".to_string(),
-                  args: args.clone(),
-                }),
-              }),
-              right: Box::new(sqrt_term),
-            });
-          }
-          None
+        // Inverse trig antiderivatives for rational-linear arguments
+        // `a*var` (no additive constant). Matches Mathematica's chosen
+        // normalization where `q^2` and `p^2 x^2` live inside the Sqrt.
+        "ArcSin" | "ArcCos" if args.len() == 1 => {
+          let coeff = try_match_linear_arg(&args[0], var)?;
+          let (p, q) = decompose_rational_coeff(&coeff)?;
+          return arcsin_arccos_linear_antideriv(name, args, var, p, q);
         }
         "ArcTan" if args.len() == 1 => {
           if let Expr::Identifier(name) = &args[0]

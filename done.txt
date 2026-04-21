@@ -11270,3 +11270,11 @@ INPUT: D[Integrate[f[u, x],{u, a[x], b[x]}], x]
 EXPECTED:
 = Integrate[Derivative[0, 1][f][u, x], {u, a[x], b[x]}] + f[b[x], x] b'[x] - f[a[x], x] a'[x]
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1021
+TYPE: >>
+INPUT: Integrate[ArcSin[x / 3], x]
+EXPECTED:
+= x ArcSin[x / 3] + Sqrt[9 - x ^ 2]
+---
