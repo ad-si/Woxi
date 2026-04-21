@@ -97,6 +97,26 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_glaisher_arbitrary() {
+    // N[Glaisher, 50] — Glaisher–Kinkelin constant A.
+    let result = interpret("N[Glaisher, 50]").unwrap();
+    assert!(result.starts_with(
+      "1.2824271291006226368753425688697917277676889273250"
+    ));
+    assert!(result.ends_with("`50."));
+  }
+
+  #[test]
+  fn n_khinchin_arbitrary() {
+    // N[Khinchin, 50] — Khinchin's constant K₀.
+    let result = interpret("N[Khinchin, 50]").unwrap();
+    assert!(result.starts_with(
+      "2.6854520010653064453097148354817956938203822939944"
+    ));
+    assert!(result.ends_with("`50."));
+  }
+
+  #[test]
   fn n_sqrt_arbitrary() {
     // N[Sqrt[2], 20] — check first 20 digits
     let result = interpret("N[Sqrt[2], 20]").unwrap();

@@ -468,6 +468,12 @@ pub fn expr_to_bigfloat(
     Expr::Identifier(name) if name == "Catalan" => {
       Ok(compute_catalan(bits, rm, cc))
     }
+    Expr::Identifier(name) if name == "Glaisher" => {
+      Ok(compute_glaisher(bits, rm, cc))
+    }
+    Expr::Identifier(name) if name == "Khinchin" => {
+      Ok(compute_khinchin(bits, rm, cc))
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
@@ -3276,6 +3282,30 @@ fn compute_catalan(
   // High-precision string for Catalan's constant G (OEIS A006752, ~105 digits)
   let catalan_str = "0.91596559417721901505460351493238411077414937428167213426649811962176301977625476947935651292611510624857";
   BigFloat::parse(catalan_str, astro_float::Radix::Dec, bits, rm, cc)
+}
+
+fn compute_glaisher(
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // Glaisher–Kinkelin constant A (OEIS A074962, ~105 digits).
+  let glaisher_str = "1.28242712910062263687534256886979172776768892732500119206374002174040630883966455201507550549353290381";
+  BigFloat::parse(glaisher_str, astro_float::Radix::Dec, bits, rm, cc)
+}
+
+fn compute_khinchin(
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // Khinchin's constant K_0 (OEIS A002210, ~105 digits).
+  let khinchin_str = "2.68545200106530644530971483548179569382038229399446295305115234555721885953715200280114117493184769799";
+  BigFloat::parse(khinchin_str, astro_float::Radix::Dec, bits, rm, cc)
 }
 
 /// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.

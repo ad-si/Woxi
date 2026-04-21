@@ -2508,22 +2508,6 @@ EXPECTED:
 = 2.7182818284590452353602874713526624977572470937000
 ---
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Glaisher
-LINE: 423
-TYPE: >>
-INPUT: N[Glaisher, 50]
-EXPECTED:
-= 1.2824271291006226368753425688697917277676889273250
----
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Khinchin
-LINE: 558
-TYPE: >>
-INPUT: N[Khinchin, 50]
-EXPECTED:
-= 2.6854520010653064453097148354817956938203822939945
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Overflow
