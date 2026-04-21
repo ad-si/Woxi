@@ -302,9 +302,24 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check if all args are numeric
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
   if nums.iter().all(|n| n.is_some()) {
+    // `Equal` compares machine-precision Reals up to the last ~7 bits (the
+    // f64 "guard" bits wolframscript ignores). Promote to exact comparison
+    // only if no operand is a Real; otherwise two values that differ by at
+    // most `2^-46 · max(|a|, |b|)` are considered equal.
+    let any_real = args.iter().any(|a| {
+      matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+        || matches!(a, Expr::UnaryOp { operand, .. }
+          if matches!(operand.as_ref(), Expr::Real(_)))
+    });
     let first = nums[0].unwrap();
     for n in nums.iter().skip(1) {
-      if n.unwrap() != first {
+      let v = n.unwrap();
+      if any_real {
+        let tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
+        if (first - v).abs() > tol && first != v {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      } else if v != first {
         return Ok(Expr::Identifier("False".to_string()));
       }
     }

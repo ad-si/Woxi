@@ -691,6 +691,27 @@ mod equal_edge_cases {
     assert_eq!(interpret("n[1] + 2 == 3").unwrap(), "2 + n[1] == 3");
   }
 
+  // Machine-precision Reals: Equal ignores the last ~7 bits of f64 mantissa,
+  // matching wolframscript. Values within 2^-46 relative distance compare
+  // True; SameQ stays strict.
+  #[test]
+  fn equal_tolerates_machine_real_rounding() {
+    assert_eq!(
+      interpret("Pochhammer[1, 3.001] == Pochhammer[2, 2.001]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("1.0 == 1.00000000000001").unwrap(), "True");
+    assert_eq!(interpret("1.0 == 1.0000001").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_stays_strict_for_machine_reals() {
+    assert_eq!(
+      interpret("SameQ[6.007542293946962, 6.007542293946958]").unwrap(),
+      "False"
+    );
+  }
+
   #[test]
   fn equal_of_non_comparable_function_calls_stays_symbolic() {
     // g[2] == g[3] — no assumption that g is injective; stays symbolic.

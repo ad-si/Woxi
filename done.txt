@@ -11062,3 +11062,11 @@ INPUT: MatchQ[x, F[F[x2_:0,y_],x1_:0]]
 EXPECTED: True
 MESSAGE: With OneIdentity, pattern nested
 ---
+FILE: mathics/builtin/specialfns/gamma.py
+CLASS: Pochhammer
+LINE: 444
+TYPE: >>
+INPUT: Pochhammer[1, 3.001] == Pochhammer[2, 2.001]
+EXPECTED:
+= True
+---
