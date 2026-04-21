@@ -10180,3 +10180,9 @@ LINE: 10
 INPUT: DEBUGMAKEBOXES
 EXPECTED: 0
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 11
+INPUT: DEBUGRULESPAT
+EXPECTED: 0
+---

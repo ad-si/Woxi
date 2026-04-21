@@ -6991,12 +6991,6 @@ EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: None
-LINE: 11
-INPUT: DEBUGRULESPAT
-EXPECTED: 0
----
-FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: None
 LINE: 32
 INPUT: MatchQ[F[x], F[x_:0,y_]]
 EXPECTED: True
