@@ -9402,3 +9402,11 @@ INPUT: fib[5]
 EXPECTED:
 = 5
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileExistsQ
+LINE: 494
+TYPE: >>
+INPUT: FileExistsQ["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= True
+---

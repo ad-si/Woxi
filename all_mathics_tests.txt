@@ -907,14 +907,6 @@ EXPECTED:
 = 142286
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FileExistsQ
-LINE: 494
-TYPE: >>
-INPUT: FileExistsQ["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileInformation
 LINE: 563
 TYPE: >>
