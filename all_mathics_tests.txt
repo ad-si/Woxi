@@ -3778,14 +3778,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: DispatchAtom
-LINE: 114
-TYPE: >>
-INPUT: dispatchrules = Dispatch[rules]
-EXPECTED:
-= Dispatch[<3>]
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: DispatchAtom
 LINE: 116
 TYPE: >>
 INPUT: F[2] /. dispatchrules

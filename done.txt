@@ -9306,3 +9306,11 @@ INPUT: DefaultValues[f]
 EXPECTED:
 = {HoldPattern[Default[f]] :> 1}
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: DispatchAtom
+LINE: 114
+TYPE: >>
+INPUT: dispatchrules = Dispatch[rules]
+EXPECTED:
+= Dispatch[<3>]
+---

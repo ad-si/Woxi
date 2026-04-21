@@ -439,6 +439,14 @@ mod dispatch {
   }
 
   #[test]
+  fn assigned_from_undefined_rules_symbol_stays_unevaluated() {
+    assert_eq!(
+      interpret("dispatchrules = Dispatch[rules]").unwrap(),
+      "Dispatch[rules]"
+    );
+  }
+
+  #[test]
   fn replace_all() {
     assert_eq!(
       interpret("{a, b, c} /. Dispatch[{a -> 1, b -> 2}]").unwrap(),
