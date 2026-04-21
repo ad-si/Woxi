@@ -2546,13 +2546,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
-LINE: 2304
-TYPE: >>
-INPUT: Clear[x]
-EXPECTED: (none)
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
 LINE: 2311
 TYPE: >>
 INPUT: sol = Solve[eqs, {x, y}] // Simplify

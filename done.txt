@@ -9948,3 +9948,10 @@ TYPE: #>
 INPUT: Clear[v];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Solve
+LINE: 2304
+TYPE: >>
+INPUT: Clear[x]
+EXPECTED: (none)
+---
