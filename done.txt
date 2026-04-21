@@ -8941,3 +8941,11 @@ INPUT: MatchQ[G[3, G[G[x]]], G[x_:0,y_]]
 EXPECTED: True
 MESSAGE: Without OneIdentity, nested
 ---
+FILE: mathics/builtin/list/associations.py
+CLASS: Association
+LINE: 47
+TYPE: >>
+INPUT: <|a -> x, b -> y, <|a -> z, d -> t|>|>
+EXPECTED:
+= <|a -> z, b -> y, d -> t|>
+---

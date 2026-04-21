@@ -75,6 +75,14 @@ mod association_ast {
       "<|a -> 4, b -> 9|>"
     );
   }
+
+  #[test]
+  fn nested_association_flattens_and_later_key_overrides() {
+    assert_eq!(
+      interpret("<|a -> x, b -> y, <|a -> z, d -> t|>|>").unwrap(),
+      "<|a -> z, b -> y, d -> t|>"
+    );
+  }
 }
 
 mod association_part_assignment {
