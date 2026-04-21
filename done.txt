@@ -10300,3 +10300,10 @@ INPUT: ToExpression[A] + 4
 EXPECTED:
 = 8
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation_as_in_cli
+LINE: 46
+TYPE: session_evaluate
+INPUT: Out[1]
+EXPECTED: (assertion - see source)
+---
