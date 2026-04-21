@@ -9713,3 +9713,11 @@ INPUT: UpValues[b]
 EXPECTED:
 = {HoldPattern[a[b]] :> x}
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: UpSetDelayed
+LINE: 388
+TYPE: >>
+INPUT: a[b]
+EXPECTED:
+= 2
+---

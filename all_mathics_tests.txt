@@ -363,14 +363,6 @@ INPUT: {a, b, {c, {d}}} = {1, 2, {{c1, c2}, {a}}}
 EXPECTED:
 = {1, 2, {{c1, c2}, {10}}}
 ---
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSetDelayed
-LINE: 388
-TYPE: >>
-INPUT: a[b]
-EXPECTED:
-= 2
----
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
 LINE: 39
