@@ -6759,15 +6759,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 965
-TYPE: X>
-INPUT: squared[1, 2] // TeXForm
-EXPECTED:
-: Power[squared[1, 2], 2] is not a valid box structure.
-=
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 973
 TYPE: #>
 INPUT: squared[1, 2] // TeXForm
