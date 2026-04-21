@@ -6460,13 +6460,6 @@ EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: test_one_identity_still_failing
-LINE: 150
-INPUT: MatchQ[F[F[F[x]]], F[x_:0,y_]]
-EXPECTED: True
-MESSAGE: With OneIdentity, nested
----
-FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: test_one_identity_still_failing
 LINE: 151
 INPUT: MatchQ[G[G[G[x]]], G[x_:0,y_]]
 EXPECTED: True
