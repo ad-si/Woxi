@@ -9537,3 +9537,11 @@ INPUT: Dice[1]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1248
+TYPE: >>
+INPUT: Dice[]
+EXPECTED:
+= -Graphics-
+---
