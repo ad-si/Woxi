@@ -10186,3 +10186,9 @@ LINE: 11
 INPUT: DEBUGRULESPAT
 EXPECTED: 0
 ---
+FILE: mathics/test/test_help.py
+FUNCTION: test_long_description
+LINE: 37
+INPUT: ??Builtin1
+EXPECTED: Global`Builtin1\n
+---
