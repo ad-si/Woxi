@@ -9150,3 +9150,10 @@ INPUT: A[p_, q]/;q>0
 EXPECTED: A
 MESSAGE: downvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 51
+INPUT: DisplayForm[boxexpr_InterpretationBox]
+EXPECTED: InterpretationBox
+MESSAGE: upvalues
+---

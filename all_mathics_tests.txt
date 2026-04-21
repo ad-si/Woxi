@@ -7704,13 +7704,6 @@ MESSAGE: upvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 51
-INPUT: DisplayForm[boxexpr_InterpretationBox]
-EXPECTED: InterpretationBox
-MESSAGE: upvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 58
 INPUT: N[A[s_]]
 EXPECTED: A

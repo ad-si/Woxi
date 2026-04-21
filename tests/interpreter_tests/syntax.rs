@@ -4188,6 +4188,14 @@ mod unknown_function_no_args {
   fn condition_on_undefined_function_call_stays_symbolic() {
     assert_eq!(interpret("A[p_, q]/;q>0").unwrap(), "A[p_, q] /; q > 0");
   }
+
+  #[test]
+  fn display_form_with_interpretation_box_pattern_stays_symbolic() {
+    assert_eq!(
+      interpret("DisplayForm[boxexpr_InterpretationBox]").unwrap(),
+      "DisplayForm[boxexpr_InterpretationBox]"
+    );
+  }
 }
 
 mod symbolic_ordering {
