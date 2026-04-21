@@ -465,6 +465,9 @@ pub fn expr_to_bigfloat(
     Expr::Identifier(name) if name == "EulerGamma" => {
       Ok(compute_euler_gamma(bits, rm, cc))
     }
+    Expr::Identifier(name) if name == "Catalan" => {
+      Ok(compute_catalan(bits, rm, cc))
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
@@ -3261,6 +3264,18 @@ fn compute_euler_gamma(
   // High-precision string for Euler-Mascheroni constant (105 digits)
   let gamma_str = "0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495";
   BigFloat::parse(gamma_str, astro_float::Radix::Dec, bits, rm, cc)
+}
+
+fn compute_catalan(
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // High-precision string for Catalan's constant G (OEIS A006752, ~105 digits)
+  let catalan_str = "0.91596559417721901505460351493238411077414937428167213426649811962176301977625476947935651292611510624857";
+  BigFloat::parse(catalan_str, astro_float::Radix::Dec, bits, rm, cc)
 }
 
 /// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.

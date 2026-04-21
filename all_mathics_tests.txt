@@ -2498,14 +2498,6 @@ EXPECTED:
 = {{x -> -1, z -> -I}, {x -> -1, z -> I}, {x -> 1, z -> -I}, {x -> 1, z -> I}}
 ---
 ---
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Catalan
-LINE: 233
-TYPE: >>
-INPUT: N[Catalan, 20]
-EXPECTED:
-= 0.91596559417721901505
----
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: E

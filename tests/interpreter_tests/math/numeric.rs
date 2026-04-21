@@ -89,6 +89,14 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_catalan_arbitrary() {
+    // N[Catalan, 20] — Catalan's constant G at arbitrary precision.
+    let result = interpret("N[Catalan, 20]").unwrap();
+    assert!(result.starts_with("0.91596559417721901505"));
+    assert!(result.ends_with("`20."));
+  }
+
+  #[test]
   fn n_sqrt_arbitrary() {
     // N[Sqrt[2], 20] — check first 20 digits
     let result = interpret("N[Sqrt[2], 20]").unwrap();
