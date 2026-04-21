@@ -9983,3 +9983,10 @@ INPUT: MatchQ[x, F[F[x2_:0,y_],x1_:0]]
 EXPECTED: True
 MESSAGE: With OneIdentity, pattern nested
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity
+LINE: 19
+INPUT: MatchQ[x, F[x_.,y_]]
+EXPECTED: False
+MESSAGE: With OneIdentity, and Optional, no default
+---
