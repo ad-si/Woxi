@@ -870,47 +870,6 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rule => vec![extract_rule(rule)?],
   };
 
-  // Substitute named captures into an expression, replacing pattern variable
-  // identifiers with matched string values.
-  fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
-    match expr {
-      Expr::Identifier(name) => {
-        // Check if this identifier matches a named capture group
-        if let Some(m) = captures.name(name) {
-          Expr::String(m.as_str().to_string())
-        } else {
-          expr.clone()
-        }
-      }
-      Expr::FunctionCall { name, args } => {
-        let new_args: Vec<Expr> = args
-          .iter()
-          .map(|a| substitute_captures(a, captures))
-          .collect();
-        Expr::FunctionCall {
-          name: name.clone(),
-          args: new_args,
-        }
-      }
-      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-        op: *op,
-        left: Box::new(substitute_captures(left, captures)),
-        right: Box::new(substitute_captures(right, captures)),
-      },
-      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-        op: *op,
-        operand: Box::new(substitute_captures(operand, captures)),
-      },
-      Expr::List(items) => Expr::List(
-        items
-          .iter()
-          .map(|a| substitute_captures(a, captures))
-          .collect(),
-      ),
-      _ => expr.clone(),
-    }
-  }
-
   // Scan-based replacement: scan left-to-right, at each position try each rule
   fn scan_replace(
     s: &str,
@@ -1447,6 +1406,46 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Substitute named captures into an expression, replacing pattern variable
+/// identifiers with matched string values.
+fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
+  match expr {
+    Expr::Identifier(name) => {
+      if let Some(m) = captures.name(name) {
+        Expr::String(m.as_str().to_string())
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|a| substitute_captures(a, captures))
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_captures(left, captures)),
+      right: Box::new(substitute_captures(right, captures)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_captures(operand, captures)),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_captures(a, captures))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
@@ -1640,6 +1639,47 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     usize::MAX
   };
 
+  // Rule or list of rules: at each position, try each rule's LHS pattern;
+  // on a match, emit the (capture-substituted) RHS and advance past it.
+  if let Some(rules) = extract_cases_rules(&args[1]) {
+    let mut compiled: Vec<(regex::Regex, Expr)> = Vec::with_capacity(rules.len());
+    for (pat, rhs) in &rules {
+      let re = regex::Regex::new(pat).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {}",
+          e
+        ))
+      })?;
+      compiled.push((re, rhs.clone()));
+    }
+
+    let mut result: Vec<Expr> = Vec::new();
+    let mut i = 0;
+    while i < s.len() && result.len() < max_count {
+      let mut matched = false;
+      for (re, rhs) in &compiled {
+        if let Some(caps) = re.captures_at(&s, i)
+          && let Some(m) = caps.get(0)
+          && m.start() == i
+          && !m.as_str().is_empty()
+        {
+          let substituted = substitute_captures(rhs, &caps);
+          let evaluated =
+            crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          result.push(evaluated);
+          i += m.len();
+          matched = true;
+          break;
+        }
+      }
+      if !matched {
+        let ch = s[i..].chars().next().unwrap();
+        i += ch.len_utf8();
+      }
+    }
+    return Ok(Expr::List(result));
+  }
+
   // Try pattern-based matching first
   if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
     let re = regex::Regex::new(&regex_str).map_err(|e| {
@@ -1670,6 +1710,43 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(matches))
+}
+
+/// Extract a list of (pattern_regex, replacement_expr) from a rule or list of rules.
+/// Returns None if the expression is not a rule or rule list, or if any pattern
+/// cannot be converted to a regex.
+fn extract_cases_rules(expr: &Expr) -> Option<Vec<(String, Expr)>> {
+  fn one(e: &Expr) -> Option<(String, Expr)> {
+    let (pat, rep) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => return None,
+    };
+    let regex_str = string_pattern_to_regex(pat)?;
+    Some((regex_str, rep.clone()))
+  }
+  match expr {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![one(expr)?]),
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|i| {
+          matches!(i, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      let mut v = Vec::with_capacity(items.len());
+      for it in items {
+        v.push(one(it)?);
+      }
+      Some(v)
+    }
+    _ => None,
+  }
 }
 
 /// ToString[expr] - convert expression to string

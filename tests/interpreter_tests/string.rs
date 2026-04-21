@@ -1160,6 +1160,40 @@ mod string_patterns {
   }
 
   #[test]
+  fn string_cases_rule() {
+    assert_eq!(
+      interpret(r#"StringCases["abc", "a" -> 1]"#).unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn string_cases_rule_list_with_max() {
+    assert_eq!(
+      interpret(r#"StringCases["abba", {"a" -> 10, "b" -> 20}, 2]"#).unwrap(),
+      "{10, 20}"
+    );
+  }
+
+  #[test]
+  fn string_cases_rule_list_all_matches() {
+    assert_eq!(
+      interpret(r#"StringCases["abba", {"a" -> 10, "b" -> 20}]"#).unwrap(),
+      "{10, 20, 20, 10}"
+    );
+  }
+
+  #[test]
+  fn string_cases_rule_list_longest_non_overlapping() {
+    // When rules are tried in order, the first matching rule wins at each
+    // position and the scan advances past the matched text.
+    assert_eq!(
+      interpret(r#"StringCases["aabb", {"aa" -> 100, "bb" -> 200}]"#).unwrap(),
+      "{100, 200}"
+    );
+  }
+
+  #[test]
   fn string_cases_regular_expression() {
     assert_eq!(
       interpret(r#"StringCases["cat bat mat", RegularExpression["[a-z]at"]]"#)
@@ -3566,10 +3600,8 @@ mod string_contains_free_patterns {
       "True"
     );
     assert_eq!(
-      interpret(
-        r#"StringFreeQ[{"abc", "ABC"}, "a", IgnoreCase -> True]"#
-      )
-      .unwrap(),
+      interpret(r#"StringFreeQ[{"abc", "ABC"}, "a", IgnoreCase -> True]"#)
+        .unwrap(),
       "{False, False}"
     );
   }

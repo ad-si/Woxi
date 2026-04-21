@@ -1734,14 +1734,6 @@ INPUT: StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_
 EXPECTED:
 = {abc}
 ---
-FILE: mathics/builtin/string/patterns.py
-CLASS: StringCases
-LINE: 194
-TYPE: >>
-INPUT: StringCases["abba", {"a" -> 10, "b" -> 20}, 2]
-EXPECTED:
-= {10, 20}
----
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox
 LINE: 192

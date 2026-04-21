@@ -10434,3 +10434,11 @@ INPUT: StringFreeQ["Mathics", "MA" , IgnoreCase -> True]
 EXPECTED:
 = False
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: StringCases
+LINE: 194
+TYPE: >>
+INPUT: StringCases["abba", {"a" -> 10, "b" -> 20}, 2]
+EXPECTED:
+= {10, 20}
+---
