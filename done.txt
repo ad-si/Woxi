@@ -9200,3 +9200,9 @@ LINE: 466
 INPUT: f /: f[x_] + f[y_] := x + y
 EXPECTED: TagSetDelayed[f, f[x_] + f[y_], x + y]
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 217
+INPUT: 2 + 3 I
+EXPECTED: Infinity
+---
