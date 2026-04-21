@@ -10168,3 +10168,15 @@ LINE: 27
 INPUT: MATHML_STRICT
 EXPECTED: 1
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: None
+LINE: 10
+INPUT: DEBUGMAKEBOXES
+EXPECTED: 0
+---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: None
+LINE: 10
+INPUT: DEBUGMAKEBOXES
+EXPECTED: 0
+---

@@ -6989,12 +6989,6 @@ LINE: 99
 INPUT: f[a;\nb;\nc;\n]
 EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
-FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: None
-LINE: 10
-INPUT: DEBUGMAKEBOXES
-EXPECTED: 0
----
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: None
 LINE: 11
@@ -9672,12 +9666,6 @@ FUNCTION: None
 LINE: 22
 INPUT: testcase
 EXPECTED: expected
----
-FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: None
-LINE: 10
-INPUT: DEBUGMAKEBOXES
-EXPECTED: 0
 ---
 FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: None
