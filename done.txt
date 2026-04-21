@@ -9170,3 +9170,15 @@ LINE: 114
 INPUT: \\[ExponentialE]
 EXPECTED: \u2147
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 115
+INPUT: \\[ImaginaryJ]
+EXPECTED: \u2149
+---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 116
+INPUT: \\[ImaginaryI]
+EXPECTED: \u2148
+---

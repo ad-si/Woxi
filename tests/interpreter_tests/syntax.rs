@@ -4206,6 +4206,16 @@ mod unknown_function_no_args {
   fn exponential_e_named_char_evaluates_to_e() {
     assert_eq!(interpret("\\[ExponentialE]").unwrap(), "E");
   }
+
+  #[test]
+  fn imaginary_j_named_char_evaluates_to_i() {
+    assert_eq!(interpret("\\[ImaginaryJ]").unwrap(), "I");
+  }
+
+  #[test]
+  fn imaginary_i_named_char_evaluates_to_i() {
+    assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");
+  }
 }
 
 mod symbolic_ordering {
