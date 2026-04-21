@@ -178,12 +178,123 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     match max_power(&expanded, var) {
       Some(r) => Ok(r.to_expr()),
-      None => Ok(Expr::FunctionCall {
-        name: "Exponent".to_string(),
-        args: args.to_vec(),
-      }),
+      None => {
+        // Symbolic fallback: collect per-term exponents, retaining symbolic
+        // ones as Expr; then build a Max[...] over all distinct values.
+        if let Some(exprs) = collect_term_powers(&expanded, var) {
+          return Ok(build_max_expr(exprs));
+        }
+        Ok(Expr::FunctionCall {
+          name: "Exponent".to_string(),
+          args: args.to_vec(),
+        })
+      }
     }
   }
+}
+
+/// Collect the (possibly symbolic) power of `var` in each additive term of
+/// `expr`. Returns `None` if any term has an unrecognizable form.
+fn collect_term_powers(expr: &Expr, var: &str) -> Option<Vec<Expr>> {
+  let terms = super::coefficient::collect_additive_terms(expr);
+  let mut result = Vec::with_capacity(terms.len());
+  for t in &terms {
+    result.push(term_power_of(t, var)?);
+  }
+  Some(result)
+}
+
+/// Power of `var` in a single multiplicative term. Supports symbolic
+/// exponents like `x^(1+n)` — returns the exponent expression unchanged
+/// when it can't be reduced to a rational.
+fn term_power_of(term: &Expr, var: &str) -> Option<Expr> {
+  if is_constant_wrt(term, var) {
+    return Some(Expr::Integer(0));
+  }
+  match term {
+    Expr::Identifier(n) if n == var => Some(Expr::Integer(1)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if is_constant_wrt(left, var) {
+        Some(Expr::Integer(0))
+      } else if is_constant_wrt(right, var)
+        && matches!(left.as_ref(), Expr::Identifier(n) if n == var)
+      {
+        Some((**right).clone())
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if is_constant_wrt(&args[0], var) {
+        Some(Expr::Integer(0))
+      } else if is_constant_wrt(&args[1], var)
+        && matches!(&args[0], Expr::Identifier(n) if n == var)
+      {
+        Some(args[1].clone())
+      } else {
+        None
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = term_power_of(left, var)?;
+      let r = term_power_of(right, var)?;
+      Some(add_exponents(l, r))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut acc = Expr::Integer(0);
+      for a in args {
+        let p = term_power_of(a, var)?;
+        acc = add_exponents(acc, p);
+      }
+      Some(acc)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => term_power_of(operand, var),
+    _ => None,
+  }
+}
+
+fn add_exponents(a: Expr, b: Expr) -> Expr {
+  if matches!(&a, Expr::Integer(0)) {
+    return b;
+  }
+  if matches!(&b, Expr::Integer(0)) {
+    return a;
+  }
+  // Defer to the evaluator so numeric exponents collapse.
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), b.clone()],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
+}
+
+fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
+  // Drop duplicates (by structural string) and Integer(0) (since any other
+  // term is at least 0).
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  exprs.retain(|e| {
+    let key = crate::syntax::expr_to_string(e);
+    seen.insert(key)
+  });
+  // Defer to Max's own evaluator: it will pick the max when all entries are
+  // comparable numerically, and stay as `Max[…]` otherwise.
+  let call = Expr::FunctionCall {
+    name: "Max".to_string(),
+    args: exprs,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
 }
 
 /// Find the maximum power of `var` in `expr`.  Returns None for non-polynomial forms.

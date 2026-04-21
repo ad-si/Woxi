@@ -119,6 +119,17 @@ mod exponent {
       "{-4*x}"
     );
   }
+
+  // Symbolic exponents should produce a Max[...] expression rather than
+  // staying unevaluated. Regression for mathics algebra.py:1320.
+  #[test]
+  fn symbolic_exponent_yields_max() {
+    assert_eq!(
+      interpret("Exponent[x^(n + 1) + Sqrt[x] + 1, x]").unwrap(),
+      "Max[1/2, 1 + n]"
+    );
+    assert_eq!(interpret("Exponent[x^n + x^2, x]").unwrap(), "Max[2, n]");
+  }
 }
 
 mod coefficient {

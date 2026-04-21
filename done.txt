@@ -11246,3 +11246,11 @@ INPUT: Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]
 EXPECTED:
 = (2 + x) ^ 3 + (3 + x) ^ 2
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: Exponent
+LINE: 1320
+TYPE: >>
+INPUT: Exponent[x^(n + 1) + Sqrt[x] + 1, x]
+EXPECTED:
+= Max[1 / 2, 1 + n]
+---
