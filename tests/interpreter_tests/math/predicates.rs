@@ -711,6 +711,31 @@ mod equal_edge_cases {
       "3*n[1] + 5*n[2] == 10"
     );
   }
+
+  // ── Mixed-operator comparison chains split into pairwise `&&` ──────
+  #[test]
+  fn mixed_eq_neq_splits() {
+    // `a == b != c` → `a == b && b != c` (matches wolframscript).
+    assert_eq!(
+      interpret("g[1] == g[2] != g[3]").unwrap(),
+      "g[1] == g[2] && g[2] != g[3]"
+    );
+  }
+
+  #[test]
+  fn mixed_less_greater_splits() {
+    assert_eq!(interpret("a < b > c").unwrap(), "a < b && b > c");
+  }
+
+  #[test]
+  fn homogeneous_equal_chain_stays_whole() {
+    assert_eq!(interpret("a == b == c").unwrap(), "a == b == c");
+  }
+
+  #[test]
+  fn homogeneous_less_chain_stays_whole() {
+    assert_eq!(interpret("a < b < c").unwrap(), "a < b < c");
+  }
 }
 
 mod unsame_q_multi {

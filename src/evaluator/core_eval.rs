@@ -1471,6 +1471,27 @@ pub fn evaluate_expr_to_expr_inner(
         .map(evaluate_expr_to_expr)
         .collect::<Result<_, _>>()?;
 
+      // Mixed-operator chains (e.g. `a == b != c`, `a < b > c`) split into
+      // pairwise `a op1 b && b op2 c && …` per wolframscript. Homogeneous
+      // chains stay intact so downstream code can keep the `Comparison`
+      // node and decide numerically.
+      if operators.len() >= 2
+        && !all_same_comparison_family(operators)
+      {
+        let mut terms: Vec<Expr> = Vec::with_capacity(operators.len());
+        for i in 0..operators.len() {
+          terms.push(Expr::Comparison {
+            operands: vec![values[i].clone(), values[i + 1].clone()],
+            operators: vec![operators[i].clone()],
+          });
+        }
+        let and_expr = Expr::FunctionCall {
+          name: "And".to_string(),
+          args: terms,
+        };
+        return evaluate_expr_to_expr(&and_expr);
+      }
+
       // Evaluate comparison chain
       // Use try_eval_to_f64_with_infinity for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], Infinity, etc.)
       use crate::functions::math_ast::try_eval_to_f64_with_infinity as try_eval_to_f64;
@@ -1884,6 +1905,35 @@ pub fn evaluate_expr_to_expr_inner(
       apply_curried_call(&evaluated_func, &evaluated_args)
     }
   }
+}
+
+/// Groups of comparison operators that stay as a single chain when mixed
+/// within their own group: Equal/SameQ/Unequal/UnsameQ in one bucket,
+/// directional inequalities (`<`, `<=`, `>`, `>=`) in another. A chain
+/// whose ops span buckets (or mixes Equal-vs-Unequal, Less-vs-Greater)
+/// must split into pairwise `&&` just like wolframscript does.
+fn all_same_comparison_family(ops: &[ComparisonOp]) -> bool {
+  let first = &ops[0];
+  ops.iter().all(|op| same_comparison_family(first, op))
+}
+
+fn same_comparison_family(a: &ComparisonOp, b: &ComparisonOp) -> bool {
+  use ComparisonOp::*;
+  matches!(
+    (a, b),
+    (Equal, Equal)
+      | (SameQ, SameQ)
+      | (NotEqual, NotEqual)
+      | (UnsameQ, UnsameQ)
+      | (Less, Less)
+      | (LessEqual, LessEqual)
+      | (Greater, Greater)
+      | (GreaterEqual, GreaterEqual)
+      | (Less, LessEqual)
+      | (LessEqual, Less)
+      | (Greater, GreaterEqual)
+      | (GreaterEqual, Greater)
+  )
 }
 
 /// Check if an expression contains free symbols (unbound identifiers).
