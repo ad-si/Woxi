@@ -9894,3 +9894,11 @@ INPUT: b // TeXForm
 EXPECTED:
 = ...
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 923
+TYPE: >>
+INPUT: c // MathMLForm //StandardForm
+EXPECTED:
+= <not closed
+---
