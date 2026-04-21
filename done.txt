@@ -10627,3 +10627,11 @@ INPUT: InverseGudermannian[-.5] ==  -InverseGudermannian[.5]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearSolve
+LINE: 486
+TYPE: >>
+INPUT: LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {1, 1, 1}]
+EXPECTED:
+= {-1, 1, 0}
+---

@@ -2514,11 +2514,17 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     aug.push(row);
   }
 
-  // Forward elimination with partial pivoting
+  // Forward elimination with partial pivoting. Track which columns were
+  // used as pivots (the rest become free variables in the singular case).
+  let mut pivot_col_of_row: Vec<Option<usize>> = vec![None; n];
+  let mut next_row = 0usize;
   for col in 0..n {
-    // Find pivot: first non-zero entry in column
+    if next_row >= n {
+      break;
+    }
+    // Find a non-zero pivot at or below next_row in column `col`.
     let mut pivot_row = None;
-    for row in col..n {
+    for row in next_row..n {
       if !is_zero_expr(&aug[row][col]) {
         pivot_row = Some(row);
         break;
@@ -2526,42 +2532,56 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let pivot_row = match pivot_row {
       Some(r) => r,
-      None => {
-        return Err(InterpreterError::EvaluationError(
-          "LinearSolve: matrix is singular".into(),
-        ));
-      }
+      None => continue, // free column
     };
 
-    // Swap rows if needed
-    if pivot_row != col {
-      aug.swap(col, pivot_row);
+    if pivot_row != next_row {
+      aug.swap(next_row, pivot_row);
     }
+    pivot_col_of_row[next_row] = Some(col);
 
-    // Eliminate below pivot
-    let pivot = aug[col][col].clone();
-    for row in (col + 1)..n {
+    // Eliminate below the pivot.
+    let pivot = aug[next_row][col].clone();
+    for row in (next_row + 1)..n {
+      if is_zero_expr(&aug[row][col]) {
+        continue;
+      }
       let factor = eval_divide(&aug[row][col], &pivot);
       aug[row][col] = Expr::Integer(0);
       for j in (col + 1)..=n {
-        let prod = eval_mul(&factor, &aug[col][j]);
+        let prod = eval_mul(&factor, &aug[next_row][j]);
         aug[row][j] = eval_sub(&aug[row][j], &prod);
-        // Simplify intermediate results
         aug[row][j] = simplify_expr(&aug[row][j]);
       }
     }
+    next_row += 1;
   }
 
-  // Back substitution
+  // Consistency check: any fully-zero row in A must have zero b.
+  for row in 0..n {
+    if pivot_col_of_row[row].is_none() && !is_zero_expr(&aug[row][n]) {
+      return Err(InterpreterError::EvaluationError(
+        "LinearSolve: matrix is singular".into(),
+      ));
+    }
+  }
+
+  // Back substitution. Free columns (no pivot in any row) are set to 0,
+  // giving a particular solution — matches wolframscript for singular
+  // but consistent systems.
   let mut x = vec![Expr::Integer(0); n];
   for i in (0..n).rev() {
+    let pivot_col = match pivot_col_of_row[i] {
+      Some(c) => c,
+      None => continue, // all-zero row, x values downstream already set
+    };
     let mut sum = aug[i][n].clone();
-    for j in (i + 1)..n {
+    for j in (pivot_col + 1)..n {
       let prod = eval_mul(&aug[i][j], &x[j]);
       sum = eval_sub(&sum, &prod);
     }
-    x[i] = eval_divide(&sum, &aug[i][i]);
-    x[i] = simplify_expr(&x[i]);
+    x[pivot_col] = eval_divide(&sum, &aug[i][pivot_col]);
+    x[pivot_col] = simplify_expr(&x[pivot_col]);
   }
 
   Ok(Expr::List(x))

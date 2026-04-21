@@ -863,6 +863,22 @@ mod linear_solve {
       "{{-2/3, -4/3, 1}, {-2/3, 11/3, -2}, {1, -2, 1}}"
     );
   }
+
+  #[test]
+  fn singular_consistent_returns_particular_solution() {
+    // Regression: LinearSolve used to reject every singular matrix. For a
+    // singular-but-consistent system it should return one particular
+    // solution with free variables set to 0, matching wolframscript.
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {1, 1, 1}]")
+        .unwrap(),
+      "{-1, 1, 0}"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 6}}, {2, 6}]").unwrap(),
+      "{2, 0}"
+    );
+  }
 }
 
 mod eigenvectors {

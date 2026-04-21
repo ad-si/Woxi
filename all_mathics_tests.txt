@@ -2824,14 +2824,6 @@ EXPECTED:
 = {-0.142857, 0.214286, -0.0714286}
 ---
 FILE: mathics/builtin/numbers/linalg.py
-CLASS: LinearSolve
-LINE: 486
-TYPE: >>
-INPUT: LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {1, 1, 1}]
-EXPECTED:
-= {-1, 1, 0}
----
-FILE: mathics/builtin/numbers/linalg.py
 CLASS: MatrixExp
 LINE: 552
 TYPE: >>
