@@ -10707,3 +10707,11 @@ INPUT: Hypergeometric1F1[2, 1, x]
 EXPECTED:
 = (1 + x) E ^ x
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LegendreP
+LINE: 180
+TYPE: >>
+INPUT: LegendreP[5/2, 1.5]
+EXPECTED:
+= 4.17762
+---

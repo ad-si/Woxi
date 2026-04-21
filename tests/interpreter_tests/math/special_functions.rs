@@ -1028,6 +1028,25 @@ mod legendre_p {
     assert_eq!(interpret("LegendreP[3, 0]").unwrap(), "0");
   }
 
+  // Half-integer / real degree uses the hypergeometric closed form
+  //   P_ν(x) = Hypergeometric2F1[-ν, ν + 1, 1, (1 - x) / 2]
+  // and matches wolframscript bit-for-bit.
+  #[test]
+  fn half_integer_degree_rational() {
+    assert_eq!(
+      interpret("LegendreP[5/2, 1.5]").unwrap(),
+      "4.177619138927457"
+    );
+  }
+
+  #[test]
+  fn half_integer_degree_inside_unit_interval() {
+    assert_eq!(
+      interpret("LegendreP[3/2, 0.7]").unwrap(),
+      "0.47591713809060504"
+    );
+  }
+
   #[test]
   fn at_one() {
     assert_eq!(interpret("LegendreP[2, 1]").unwrap(), "1");

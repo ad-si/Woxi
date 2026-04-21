@@ -90,6 +90,25 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
+      // Non-integer numeric degree: evaluate via
+      //   P_ν(x) = Hypergeometric2F1[-ν, ν+1, 1, (1-x)/2]
+      // when both ν and x are convertible to f64 and at least one is Real.
+      if let (Some(nu), Some(xf)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+      {
+        let any_real = matches!(&args[0], Expr::Real(_))
+          || matches!(&args[1], Expr::Real(_));
+        if any_real {
+          let z = (1.0 - xf) / 2.0;
+          let value = crate::functions::math_ast::hypergeometric2f1(
+            -nu,
+            nu + 1.0,
+            1.0,
+            z,
+          );
+          return Ok(Expr::Real(value));
+        }
+      }
       return Ok(Expr::FunctionCall {
         name: "LegendreP".to_string(),
         args: args.to_vec(),
@@ -1893,7 +1912,10 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // rather than staying as `-12 (1 + I) + 8 (1 + I)^3`. Symbolic x
         // keeps the polynomial form unchanged.
         if is_fully_numeric_arg(&args[1]) {
-          return crate::evaluator::evaluate_function_call_ast("Expand", &[expr]);
+          return crate::evaluator::evaluate_function_call_ast(
+            "Expand",
+            &[expr],
+          );
         }
         Ok(expr)
       } else {

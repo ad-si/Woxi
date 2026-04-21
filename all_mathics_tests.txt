@@ -4997,14 +4997,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LegendreP
-LINE: 180
-TYPE: >>
-INPUT: LegendreP[5/2, 1.5]
-EXPECTED:
-= 4.17762
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LegendreP
 LINE: 183
 TYPE: >>
 INPUT: LegendreP[1.75, 1.4, 0.53]
