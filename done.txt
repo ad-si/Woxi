@@ -9769,3 +9769,11 @@ EXPECTED:
 . 
 . 1   1    1
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1207
+TYPE: >>
+INPUT: s = LinearSolve[B, {1, 2, 3}]
+EXPECTED:
+= {-1 / 3, 2 / 3, 0}
+---
