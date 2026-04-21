@@ -10092,3 +10092,11 @@ INPUT: B
 EXPECTED:
 = {t, t, {7, 12, 13}}
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1155
+TYPE: >>
+INPUT: F
+EXPECTED:
+= {{{1, 2, 3}, {2, t, 6}, {3, t, 9}}, {{2, 4, 6}, {4, t, 12}, {6, t, 18}}, {{3, 6, 9}, {6, t, 18}, {9, t, 27}}}
+---
