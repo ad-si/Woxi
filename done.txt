@@ -10376,3 +10376,10 @@ LINE: 21
 INPUT: testcase
 EXPECTED: expected
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_basic_forms
+LINE: 36
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+---
