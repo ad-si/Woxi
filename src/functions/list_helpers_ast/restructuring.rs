@@ -396,12 +396,41 @@ pub fn flatten_dims_ast(
     }
   }
 
-  let max_level = dim_spec
+  // Depth of the input (how many nested List heads there are). Must be at
+  // least the highest level mentioned in `dim_spec`.
+  fn depth(expr: &Expr) -> usize {
+    match expr {
+      Expr::List(items) => {
+        1 + items.iter().map(depth).max().unwrap_or(0)
+      }
+      _ => 0,
+    }
+  }
+  let expr_depth = depth(list);
+  let spec_max = dim_spec
     .iter()
     .flat_map(|g| g.iter())
     .copied()
     .max()
     .unwrap_or(1);
+  let max_level = expr_depth.max(spec_max).max(1);
+
+  // Append any levels in 1..=max_level that `dim_spec` doesn't mention as
+  // singleton groups at the end, so `Flatten[list, {{2}}]` behaves like
+  // `Flatten[list, {{2}, {1}, {3}, …}]` (matches wolframscript).
+  let mut effective_spec: Vec<Vec<usize>> =
+    dim_spec.iter().cloned().collect();
+  let mut mentioned: std::collections::HashSet<usize> = effective_spec
+    .iter()
+    .flat_map(|g| g.iter().copied())
+    .collect();
+  for level in 1..=max_level {
+    if !mentioned.contains(&level) {
+      effective_spec.push(vec![level]);
+      mentioned.insert(level);
+    }
+  }
+  let dim_spec: &[Vec<usize>] = &effective_spec;
 
   // Get max sizes at each level
   let mut max_dims = Vec::new();

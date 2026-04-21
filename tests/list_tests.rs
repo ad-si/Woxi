@@ -249,6 +249,21 @@ mod list_tests {
   }
 
   #[test]
+  fn flatten_single_level_spec_preserves_others() {
+    // Flatten[m, {{2}}] for 3D m: unmentioned old levels 1 and 3 are
+    // appended as singleton groups, so the result is equivalent to
+    // Flatten[m, {{2}, {1}, {3}}]. Regression for mathics
+    // test_structure.py:37.
+    assert_eq!(
+      interpret(
+        "m = {{{1, 2}, {3}}, {{4}, {5, 6}}}; Flatten[m, {{2}}]"
+      )
+      .unwrap(),
+      "{{{1, 2}, {4}}, {{3}, {5, 6}}}"
+    );
+  }
+
+  #[test]
   fn flatten_with_custom_head() {
     // Flatten[f[g[a, b], g[c, d]], Infinity, g] splices g children into f
     assert_eq!(

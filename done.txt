@@ -10834,3 +10834,9 @@ LINE: 116
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False
 ---
+FILE: mathics/test/test_structure.py
+FUNCTION: test_flatten
+LINE: 37
+INPUT: Flatten[m, {{2}}]
+EXPECTED: {{{1, 2}, {4}}, {{3}, {5, 6}}}
+---

@@ -6279,12 +6279,6 @@ MESSAGE: N[b,_]=1.2`3
 ---
 FILE: mathics/test/test_structure.py
 FUNCTION: test_flatten
-LINE: 37
-INPUT: Flatten[m, {{2}}]
-EXPECTED: {{{1, 2}, {4}}, {{3}, {5, 6}}}
----
-FILE: mathics/test/test_structure.py
-FUNCTION: test_flatten
 LINE: 38
 INPUT: Flatten[m, {{2}, {1}}]
 EXPECTED: {{{1, 2}, {4}}, {{3}, {5, 6}}}
