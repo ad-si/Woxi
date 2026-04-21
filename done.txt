@@ -9870,3 +9870,10 @@ TYPE: >>
 INPUT: MakeBoxes[{items___}, TraditionalForm] := RowBox[{"[", Sequence @@ Riffle[MakeBoxes /@ {items}, " "], "]"}]
 EXPECTED: (none)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 968
+TYPE: >>
+INPUT: MakeBoxes[squared[args___], TraditionalForm] := SuperscriptBox[RowBox[{MakeBoxes[squared], "[", RowBox[Riffle[MakeBoxes[#]& /@ {args}, ","]], "]"}], 2]
+EXPECTED: (none)
+---
