@@ -9065,3 +9065,11 @@ EXPECTED:
   text[System`InputForm]: Graphics[{Text[a^b, {0, 0}]}]
   text[System`OutputForm]: -Graphics-
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Series
+LINE: 1796
+TYPE: >>
+INPUT: Series[Exp[x-y], {x, 0, 2}, {y, 0, 2}]
+EXPECTED:
+= 1 - y + y ^ 2 / 2 + O[y] ^ 3 + (1 - y + y ^ 2 / 2 + O[y] ^ 3) x + (1 / 2 - y / 2 + y ^ 2 / 4 + O[y] ^ 3) x ^ 2 + O[x] ^ 3
+---

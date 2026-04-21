@@ -790,6 +790,14 @@ mod series {
   }
 
   #[test]
+  fn series_exp_two_vars_nested_series_data() {
+    assert_eq!(
+      interpret("Series[Exp[x-y], {x, 0, 2}, {y, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {SeriesData[y, 0, {1, -1, 1/2}, 0, 3, 1], SeriesData[y, 0, {1, -1, 1/2}, 0, 3, 1], SeriesData[y, 0, {1/2, -1/2, 1/4}, 0, 3, 1]}, 0, 3, 1]"
+    );
+  }
+
+  #[test]
   fn series_exp_order4() {
     assert_eq!(
       interpret("Series[Exp[x], {x, 0, 4}]").unwrap(),
