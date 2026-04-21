@@ -8303,12 +8303,6 @@ EXPECTED: False
 FILE: mathics/test/timings/test_uniform_tables.py
 FUNCTION: test_evaluate_benchmark
 LINE: 20
-INPUT: MatchQ[nonuniformTable,{__Real}]
-EXPECTED: System`False
----
-FILE: mathics/test/timings/test_uniform_tables.py
-FUNCTION: test_evaluate_benchmark
-LINE: 20
 INPUT: Length[F@@nonuniformTable]
 EXPECTED: 1001
 ---

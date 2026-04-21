@@ -9607,3 +9607,9 @@ LINE: 20
 INPUT: Plus@@uniformTable
 EXPECTED: 2.075674547634748
 ---
+FILE: mathics/test/timings/test_uniform_tables.py
+FUNCTION: test_evaluate_benchmark
+LINE: 20
+INPUT: MatchQ[nonuniformTable,{__Real}]
+EXPECTED: System`False
+---
