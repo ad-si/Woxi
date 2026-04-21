@@ -2551,6 +2551,31 @@ mod beta_fn {
     let result: f64 = interpret("N[Beta[2, 3]]").unwrap().parse().unwrap();
     assert!((result - 0.08333333333333333).abs() < 1e-10);
   }
+
+  // ── Incomplete Beta: Beta[z, a, b] ───────────────────────────────────
+  #[test]
+  fn incomplete_real_z_integer_b() {
+    // 12 * Beta[1., 2, 3] == 1.  (the Mathics `Beta` doctest).
+    assert_eq!(interpret("12 * Beta[1., 2, 3]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn incomplete_rational_z_integer_b() {
+    // Closed-form expansion for integer b with exact z preserves rationals:
+    // Beta[1/2, 2, 3] = integral_0^{1/2} t (1-t)^2 dt = 11/192.
+    assert_eq!(interpret("Beta[1/2, 2, 3]").unwrap(), "11/192");
+  }
+
+  #[test]
+  fn incomplete_symbolic_z_stays_held() {
+    assert_eq!(interpret("Beta[z, 2, 3]").unwrap(), "Beta[z, 2, 3]");
+  }
+
+  #[test]
+  fn incomplete_z_one_reduces_to_complete() {
+    // Beta[1, a, b] = Beta[a, b].
+    assert_eq!(interpret("Beta[1, 2, 3]").unwrap(), "1/12");
+  }
 }
 
 mod log_integral {

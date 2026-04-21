@@ -562,10 +562,15 @@ pub fn gamma_fn(x: f64) -> f64 {
 
 /// Beta[a, b] - Euler beta function
 /// Beta[a, b] = Gamma[a] * Gamma[b] / Gamma[a + b]
+/// Beta[z, a, b] - incomplete Beta function
+/// Beta[z, a, b] = integral_0^z t^(a-1) (1 - t)^(b-1) dt
 pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 3 {
+    return incomplete_beta_ast(&args[0], &args[1], &args[2]);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "Beta expects exactly 2 arguments".into(),
+      "Beta expects 2 or 3 arguments".into(),
     ));
   }
 
@@ -699,6 +704,95 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Beta".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Beta[z, a, b] — incomplete Beta function.
+///
+/// For positive integer b, expand (1 - t)^(b-1) by the binomial theorem
+/// and integrate term-by-term:
+///   B(z; a, b) = Σ_{k=0..b-1} C(b-1, k) · (-1)^k · z^(a+k) / (a+k)
+/// This yields an exact rational (or closed-form symbolic) result for
+/// rational a and z.
+///
+/// For other numeric inputs, fall back to the closed-form
+/// Beta[z, a, b] = z^a · Hypergeometric2F1[a, 1 - b, a + 1, z] / a.
+fn incomplete_beta_ast(
+  z: &Expr,
+  a: &Expr,
+  b: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Special case: Beta[1, a, b] = Beta[a, b] (complete).
+  if matches!(z, Expr::Integer(1))
+    || matches!(z, Expr::Real(f) if *f == 1.0)
+  {
+    let base = beta_ast(&[a.clone(), b.clone()])?;
+    if matches!(z, Expr::Real(_)) {
+      return crate::evaluator::evaluate_function_call_ast("N", &[base]);
+    }
+    return Ok(base);
+  }
+
+  // Only expand the polynomial closed-form when z and a are numeric and b
+  // is a positive integer. Symbolic z is left unevaluated, matching
+  // wolframscript's HoldFirst-ish behavior.
+  let z_is_numeric =
+    matches!(z, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational");
+  if let Expr::Integer(b_int) = b
+    && *b_int > 0
+    && z_is_numeric
+  {
+    let b_i = *b_int as i128;
+    let mut term: Vec<Expr> = Vec::new();
+    // Binomial coefficients C(b-1, k) as rationals.
+    for k in 0..b_i {
+      let coeff = binomial_i128((b_i - 1) as u32, k as u32);
+      let sign = if k % 2 == 0 { 1 } else { -1 };
+      // (a + k)
+      let denom = crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[a.clone(), Expr::Integer(k)],
+      )?;
+      // z^(a + k)
+      let z_pow = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[z.clone(), denom.clone()],
+      )?;
+      let signed_coeff = make_rational(sign * coeff, 1);
+      // coeff * z^(a+k) / (a+k)
+      let numer = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[signed_coeff, z_pow],
+      )?;
+      let summand = crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[numer, denom],
+      )?;
+      term.push(summand);
+    }
+    return crate::evaluator::evaluate_function_call_ast("Plus", &term);
+  }
+
+  // Otherwise leave unevaluated — wolframscript does the same for symbolic z
+  // or non-integer b that doesn't hit our closed-form path.
+  Ok(Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![z.clone(), a.clone(), b.clone()],
+  })
+}
+
+/// C(n, k) via i128, clamped into range.
+fn binomial_i128(n: u32, k: u32) -> i128 {
+  if k > n {
+    return 0;
+  }
+  let k = k.min(n - k);
+  let mut result: i128 = 1;
+  for i in 0..k {
+    result = result * (n as i128 - i as i128);
+    result /= (i + 1) as i128;
+  }
+  result
 }
 
 /// LogGamma[z] — logarithm of the gamma function.

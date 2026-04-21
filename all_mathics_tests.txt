@@ -4819,14 +4819,6 @@ EXPECTED:
 = -0.0327837 + 1.54964 I
 ---
 FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Beta
-LINE: 71
-TYPE: >>
-INPUT: 12* Beta[1., 2, 3]
-EXPECTED:
-= 1.
----
-FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial
 LINE: 168
 TYPE: >>

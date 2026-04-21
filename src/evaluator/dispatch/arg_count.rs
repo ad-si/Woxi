@@ -88,7 +88,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BesselJZero" => Some((2, 2)),
     "BesselK" => Some((2, 2)),
     "BesselY" => Some((2, 2)),
-    "Beta" => Some((2, 2)),
+    "Beta" => Some((2, 3)),
     "BetaRegularized" => Some((3, 3)),
     "BetaDistribution" => Some((2, 2)),
     "Between" => Some((1, 2)),

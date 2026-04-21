@@ -822,7 +822,7 @@ pub fn dispatch_math_functions(
     "LaguerreL" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::laguerre_l_ast(args));
     }
-    "Beta" if args.len() == 2 => {
+    "Beta" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::beta_ast(args));
     }
     "LogIntegral" if args.len() == 1 => {
