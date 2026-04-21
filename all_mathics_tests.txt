@@ -9987,13 +9987,6 @@ EXPECTED: (assertion - see source)
 ---
 FILE: mathics/test/test_session.py
 FUNCTION: test_session_evaluation
-LINE: 22
-TYPE: session_evaluate
-INPUT: 1/0
-EXPECTED: (assertion - see source)
----
-FILE: mathics/test/test_session.py
-FUNCTION: test_session_evaluation
 LINE: 28
 TYPE: session_evaluate
 INPUT: F[x]

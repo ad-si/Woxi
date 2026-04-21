@@ -8996,3 +8996,10 @@ INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]
 EXPECTED:
 = {{a -> Function[{n}, 5 / 2 - 3 (-1) ^ n / 2]}}
 ---
+FILE: mathics/test/test_session.py
+FUNCTION: test_session_evaluation
+LINE: 22
+TYPE: session_evaluate
+INPUT: 1/0
+EXPECTED: (assertion - see source)
+---
