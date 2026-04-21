@@ -1513,4 +1513,22 @@ mod optional_pattern_without_default {
       "True"
     );
   }
+
+  // Trailing `y_:3` slots should take their default when the expression
+  // has fewer arguments than the pattern — matches wolframscript.
+  #[test]
+  fn optional_default_fills_missing_trailing_arg() {
+    assert_eq!(
+      interpret("f[a] /. f[x_, y_:3] -> {x, y}").unwrap(),
+      "{a, 3}"
+    );
+  }
+
+  #[test]
+  fn optional_default_respects_provided_trailing_arg() {
+    assert_eq!(
+      interpret("f[a, b] /. f[x_, y_:3] -> {x, y}").unwrap(),
+      "{a, b}"
+    );
+  }
 }

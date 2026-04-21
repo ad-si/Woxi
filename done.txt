@@ -10651,3 +10651,11 @@ INPUT: Integrate[ArcCos[x], {x, -1, 1}]
 EXPECTED:
 = Pi
 ---
+FILE: mathics/builtin/patterns/__init__.py
+CLASS: None
+LINE: 33
+TYPE: >>
+INPUT: f[a] /. f[x_, y_:3] -> {x, y}
+EXPECTED:
+= {a, 3}
+---

@@ -2167,6 +2167,51 @@ fn match_pattern_impl(
           match_args_with_sequences(expr_args, pat_args)
         } else {
           if pat_args.len() != expr_args.len() {
+            // Allow trailing PatternOptional slots to take their defaults
+            // when the expression has fewer args than the pattern.
+            // Example: f[a] matches f[x_, y_:3] with y = 3.
+            if pat_args.len() > expr_args.len() {
+              let extra = pat_args.len() - expr_args.len();
+              let start = pat_args.len() - extra;
+              let trailing_all_optional = pat_args[start..]
+                .iter()
+                .all(|p| matches!(p, Expr::PatternOptional { .. }));
+              if trailing_all_optional {
+                let mut bindings: Vec<(String, Expr)> = Vec::new();
+                let mut matched = true;
+                for (p, e) in pat_args[..start].iter().zip(expr_args.iter()) {
+                  push_match_context(&bindings);
+                  let result = match_pattern(e, p);
+                  pop_match_context();
+                  if let Some(b) = result {
+                    if !merge_bindings(&mut bindings, b) {
+                      matched = false;
+                      break;
+                    }
+                  } else {
+                    matched = false;
+                    break;
+                  }
+                }
+                if matched {
+                  for p in &pat_args[start..] {
+                    if let Expr::PatternOptional { name, default, .. } = p {
+                      let def = match default {
+                        Some(d) => Some(*d.clone()),
+                        None => crate::evaluator::dispatch::builtin_default_value_at_position(pat_name, 0)
+                          .or_else(|| crate::evaluator::dispatch::builtin_default_value(pat_name)),
+                      };
+                      if let Some(d) = def
+                        && !name.is_empty()
+                      {
+                        bindings.push((name.clone(), d));
+                      }
+                    }
+                  }
+                  return Some(bindings);
+                }
+              }
+            }
             return None;
           }
           // For Orderless functions (Times, Plus), try all permutations

@@ -3205,14 +3205,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
-LINE: 33
-TYPE: >>
-INPUT: f[a] /. f[x_, y_:3] -> {x, y}
-EXPECTED:
-= {a, 3}
----
-FILE: mathics/builtin/patterns/__init__.py
-CLASS: None
 LINE: 37
 TYPE: >>
 INPUT: f[y, a->3] /. f[x_, OptionsPattern[{a->2, b->5}]] -> {x, OptionValue[a], OptionValue[b]}
