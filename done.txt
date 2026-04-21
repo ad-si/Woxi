@@ -9101,3 +9101,10 @@ INPUT: A[p_, q]
 EXPECTED: A
 MESSAGE: downvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 41
+INPUT: A[x][t]
+EXPECTED: A
+MESSAGE: subvalues
+---
