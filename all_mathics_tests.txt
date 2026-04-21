@@ -4618,13 +4618,6 @@ TYPE: >>
 INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: NumberLinePlot
-LINE: 336
-TYPE: >>
-INPUT: NumberLinePlot[Table[x^2, {x, 10}]]
-EXPECTED: (none)
----
 FILE: mathics/builtin/list/constructing.py
 CLASS: Reap
 LINE: 408

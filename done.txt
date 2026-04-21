@@ -9666,3 +9666,10 @@ INPUT: g[1, 2, 3]
 EXPECTED:
 = 36
 ---
+FILE: mathics/builtin/drawing/plot_listplot.py
+CLASS: NumberLinePlot
+LINE: 336
+TYPE: >>
+INPUT: NumberLinePlot[Table[x^2, {x, 10}]]
+EXPECTED: (none)
+---
