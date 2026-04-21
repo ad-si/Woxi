@@ -9220,3 +9220,10 @@ INPUT: A
 EXPECTED: 1
 MESSAGE: False
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_sameq
+LINE: 125
+INPUT: 2./9.
+EXPECTED: .2222222222222222`16
+MESSAGE: True
+---

@@ -1730,6 +1730,11 @@ mod division_flattening {
   }
 
   #[test]
+  fn real_division_two_by_nine() {
+    assert_eq!(interpret("2./9.").unwrap(), "0.2222222222222222");
+  }
+
+  #[test]
   fn division_by_one_simplifies() {
     assert_eq!(interpret("x/1").unwrap(), "x");
     assert_eq!(interpret("Log[x]/1").unwrap(), "Log[x]");
