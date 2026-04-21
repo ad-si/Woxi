@@ -9681,3 +9681,11 @@ INPUT: FileNames["*.m", "formats"]//Length
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileNames
+LINE: 646
+TYPE: >>
+INPUT: FileNames["*.m", "formats", 3]//Length
+EXPECTED:
+= ...
+---
