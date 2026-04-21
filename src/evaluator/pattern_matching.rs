@@ -1366,15 +1366,21 @@ pub fn apply_replace_all_ast(
       replacement,
     } => (expr_to_string(pattern), expr_to_string(replacement)),
     Expr::List(items) if !items.is_empty() => {
-      // Check if this is a list of rule-lists: {{x->1}, {x->2}}
-      // In Wolfram, expr /. {{r1}, {r2}} applies each sub-list independently
-      // and returns a list of results: {expr/.{r1}, expr/.{r2}}
-      let is_list_of_rule_lists = items.iter().all(|item| {
-        matches!(item, Expr::List(sub) if sub.iter().all(|r|
-          matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-        ))
-      });
-      if is_list_of_rule_lists {
+      // If the list is a "tree of rule sets" (every element is either a Rule
+      // or a List that itself is a tree of rule sets), recurse: `expr /. {r1,
+      // r2}` becomes `{expr /. r1, expr /. r2}`. A *flat* rule list is a
+      // single rule set, not a tree — so only recurse when at least one
+      // element is a List.
+      fn is_rule_tree(e: &Expr) -> bool {
+        match e {
+          Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+          Expr::List(inner) => inner.iter().all(is_rule_tree),
+          _ => false,
+        }
+      }
+      let any_list_child =
+        items.iter().any(|item| matches!(item, Expr::List(_)));
+      if any_list_child && items.iter().all(is_rule_tree) {
         let results: Result<Vec<Expr>, _> = items
           .iter()
           .map(|sub_rules| apply_replace_all_ast(expr, sub_rules))

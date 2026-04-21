@@ -3357,14 +3357,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceAll
-LINE: 279
-TYPE: >>
-INPUT: {a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}
-EXPECTED:
-= {{{x, y}, {w, z}}, {u, v}}
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceAll
 LINE: 281
 TYPE: >>
 INPUT: {a, b} /. {{{a->x, b->y}, a->w, b->z}, {a->u, b->v}}

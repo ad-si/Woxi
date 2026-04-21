@@ -1404,6 +1404,28 @@ mod replace_all_conditional_multi_rules {
       "{{1, b}, {c, 4}}"
     );
   }
+
+  // Regression: `expr /. rules-tree` should recurse into *every* level of
+  // List in the rules argument, not just when each top-level element is a
+  // flat rule list. Matches wolframscript's tree-of-rule-lists semantics.
+  #[test]
+  fn nested_rule_tree_three_levels() {
+    assert_eq!(
+      interpret(
+        "{a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}"
+      )
+      .unwrap(),
+      "{{{x, y}, {w, z}}, {u, v}}"
+    );
+  }
+
+  #[test]
+  fn nested_rule_tree_two_levels() {
+    assert_eq!(
+      interpret("{a, b} /. {{a->x, b->y}, {a->w, b->z}}").unwrap(),
+      "{{x, y}, {w, z}}"
+    );
+  }
 }
 
 mod replace_all_variable_rhs {
