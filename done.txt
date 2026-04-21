@@ -9658,3 +9658,11 @@ INPUT: f[a+b+c]
 EXPECTED:
 = a + b + d
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 635
+TYPE: >>
+INPUT: g[1, 2, 3]
+EXPECTED:
+= 36
+---

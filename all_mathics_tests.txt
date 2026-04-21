@@ -6802,14 +6802,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 635
-TYPE: >>
-INPUT: g[1, 2, 3]
-EXPECTED:
-= 36
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 677
 TYPE: >>
 INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
