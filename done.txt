@@ -10507,3 +10507,11 @@ EXPECTED:
 : String expected.
 = U <> 2
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Table
+LINE: 548
+TYPE: >>
+INPUT: Table[x, {x, a, a + 5 n, n}]
+EXPECTED:
+= {a, a + n, a + 2 n, a + 3 n, a + 4 n, a + 5 n}
+---

@@ -181,6 +181,49 @@ pub fn table_ast(
           return Ok(Expr::List(results));
         }
 
+        // Symbolic path: if (max - min) / step simplifies to a non-negative
+        // EXACT integer count, iterate symbolically as min, min+step, …,
+        // min+n*step. Handles cases like Table[x, {x, a, a+5n, n}] where the
+        // bounds are symbolic but the iteration count is well-defined.
+        // Accept only Expr::Integer so Real arithmetic (e.g. 10/0.2 → 50.)
+        // keeps using the existing f64 accumulation path, preserving
+        // snapshot-sensitive rounding behavior.
+        let diff = crate::evaluator::evaluate_function_call_ast(
+          "Subtract",
+          &[max_expr.clone(), min_expr.clone()],
+        )?;
+        let ratio = crate::evaluator::evaluate_function_call_ast(
+          "Divide",
+          &[diff, step_expr.clone()],
+        )?;
+        if let Expr::Integer(n) = ratio
+          && n >= 0
+          && n <= 1_000_000
+        {
+          let mut results = Vec::with_capacity((n + 1) as usize);
+          for k in 0..=n {
+            let current = if k == 0 {
+              min_expr.clone()
+            } else {
+              let k_step = crate::evaluator::evaluate_function_call_ast(
+                "Times",
+                &[Expr::Integer(k), step_expr.clone()],
+              )?;
+              crate::evaluator::evaluate_function_call_ast(
+                "Plus",
+                &[min_expr.clone(), k_step],
+              )?
+            };
+            let substituted =
+              crate::syntax::substitute_variable(body, &var_name, &current);
+            let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+            if !is_nothing(&val) {
+              results.push(val);
+            }
+          }
+          return Ok(Expr::List(results));
+        }
+
         // Fallback: numeric iteration for symbolic numeric bounds/step (e.g. Pi/4).
         crate::functions::math_ast::try_eval_to_f64(&min_expr).ok_or_else(
           || {

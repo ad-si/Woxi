@@ -140,6 +140,17 @@ mod table_with_step {
       "{0, Pi/4, Pi/2, (3*Pi)/4, Pi, (5*Pi)/4, (3*Pi)/2, (7*Pi)/4}"
     );
   }
+
+  #[test]
+  fn table_fully_symbolic_bounds_and_step() {
+    // Regression: Table[x, {x, a, a + 5 n, n}] used to error because the
+    // iterator bounds weren't numeric. (max - min) / step = 5, so we
+    // iterate 6 times producing a, a+n, a+2n, …, a+5n.
+    assert_eq!(
+      interpret("Table[x, {x, a, a + 5 n, n}]").unwrap(),
+      "{a, a + n, a + 2*n, a + 3*n, a + 4*n, a + 5*n}"
+    );
+  }
 }
 
 mod union_sorting {
