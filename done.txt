@@ -10498,3 +10498,12 @@ INPUT: IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: ToString
+LINE: 873
+TYPE: >>
+INPUT: "U" <> 2
+EXPECTED:
+: String expected.
+= U <> 2
+---

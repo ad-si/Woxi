@@ -40,6 +40,22 @@ mod string_join_arg_errors {
   }
 
   #[test]
+  fn non_string_operand_message_points_at_bad_arg() {
+    // Regression: the StringJoin::string warning must name the 1-based
+    // position of the first non-string argument and render the call in
+    // infix form — matching wolframscript's `position 2 in U<>2`.
+    let _ = interpret(r#""U" <> 2"#).unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "StringJoin::string: String expected at position 2 in U<>2."
+      )),
+      "expected infix `U<>2` message, got {:?}",
+      msgs
+    );
+  }
+
+  #[test]
   fn plain_string_chain_still_works() {
     assert_eq!(interpret(r#""a" <> "b" <> "c""#).unwrap(), "abc");
   }
@@ -1176,7 +1192,8 @@ mod string_patterns {
   #[test]
   fn string_cases_longest_blank_sequence() {
     assert_eq!(
-      interpret(r#"StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]"#).unwrap(),
+      interpret(r#"StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]"#)
+        .unwrap(),
       "{aabaaab}"
     );
   }

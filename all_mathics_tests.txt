@@ -4022,15 +4022,6 @@ EXPECTED:
 = Log[x]
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: ToString
-LINE: 873
-TYPE: >>
-INPUT: "U" <> 2
-EXPECTED:
-: String expected.
-= U <> 2
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: Whitespace
 LINE: 959
 TYPE: >>

@@ -289,30 +289,51 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Validate: every leaf must be a string; lists of strings are flattened.
-  // On any non-string leaf, emit a StringJoin::string message and return
-  // unevaluated (matches wolframscript).
-  fn validate(expr: &Expr, has_non_string: &mut bool) {
+  // On any non-string leaf, emit a StringJoin::string message pointing at the
+  // first offending leaf's 1-based position and return unevaluated (matches
+  // wolframscript).
+  fn first_non_string(expr: &Expr, pos: &mut usize) -> Option<usize> {
     match expr {
-      Expr::String(_) => {}
+      Expr::String(_) => {
+        *pos += 1;
+        None
+      }
       Expr::List(items) => {
         for item in items {
-          validate(item, has_non_string);
+          if let Some(p) = first_non_string(item, pos) {
+            return Some(p);
+          }
         }
+        None
       }
-      _ => *has_non_string = true,
+      _ => {
+        *pos += 1;
+        Some(*pos)
+      }
     }
   }
-  let mut has_non_string = false;
+  let mut cursor = 0usize;
+  let mut bad_pos: Option<usize> = None;
   for arg in args {
-    validate(arg, &mut has_non_string);
+    if let Some(p) = first_non_string(arg, &mut cursor) {
+      bad_pos = Some(p);
+      break;
+    }
   }
-  if has_non_string {
-    crate::emit_message(&format!(
-      "StringJoin::string: String expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&Expr::FunctionCall {
-        name: "StringJoin".to_string(),
-        args: args.to_vec(),
+  if let Some(pos) = bad_pos {
+    // Format as infix: args joined by `<>`, dropping the enclosing quotes of
+    // each string argument — so StringJoin["U", 2] renders as `U<>2`.
+    let infix = args
+      .iter()
+      .map(|a| match a {
+        Expr::String(s) => s.clone(),
+        _ => crate::syntax::expr_to_string(a),
       })
+      .collect::<Vec<_>>()
+      .join("<>");
+    crate::emit_message(&format!(
+      "StringJoin::string: String expected at position {} in {}.",
+      pos, infix
     ));
     return Ok(Expr::FunctionCall {
       name: "StringJoin".to_string(),
