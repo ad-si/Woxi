@@ -9545,3 +9545,11 @@ INPUT: Dice[]
 EXPECTED:
 = -Graphics-
 ---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: NotListQ
+LINE: 238
+TYPE: >>
+INPUT: MyD[Sin[2 x], x]
+EXPECTED:
+= 2 Cos[2 x]
+---
