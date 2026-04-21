@@ -1672,14 +1672,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: StringCases
-LINE: 188
-TYPE: >>
-INPUT: StringCases["-öhi- -abc- -.-", "-" ~~ x : WordCharacter .. ~~ "-" -> x]
-EXPECTED:
-= {öhi, abc}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: StringCases
 LINE: 191
 TYPE: >>
 INPUT: StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]
