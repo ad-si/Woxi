@@ -6277,12 +6277,6 @@ INPUT: F[b, 2/9]
 EXPECTED: F[b, 2 *9 ^ (-1)]
 MESSAGE: N[b,_]=1.2`3
 ---
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_atomic_numericq
-LINE: 116
-INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
-EXPECTED: False
----
 FILE: mathics/test/test_structure.py
 FUNCTION: test_flatten
 LINE: 37

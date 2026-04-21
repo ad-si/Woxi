@@ -391,6 +391,17 @@ mod simplify {
   }
 
   #[test]
+  fn pythagorean_induced_singularity() {
+    // Simplify[1/(Sin[1]^2 + Cos[1]^2 - 1)] cancels to 1/0 → ComplexInfinity.
+    // Regression for mathics test_structure.py:37 (test_numericq) ensuring
+    // Simplify collapses exposed `0^(-1)` rather than leaving it raw.
+    assert_eq!(
+      interpret("Simplify[1/(Sin[1]^2 + Cos[1]^2 - 1)]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
   fn combine_like_denominator_fractions() {
     assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
   }

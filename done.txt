@@ -10828,3 +10828,9 @@ INPUT: HypergeometricPFQ[{3}, {2}, 1.]
 EXPECTED:
 = 4.07742
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_atomic_numericq
+LINE: 116
+INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
+EXPECTED: False
+---

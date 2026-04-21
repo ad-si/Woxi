@@ -3288,7 +3288,57 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Single argument: consult $Assumptions from the environment (e.g. set by
   // Assuming[...]) and apply refinement if any are active.
   let simplified = simplify_expr_with_together(&args[0]);
-  Ok(apply_active_assumptions(&simplified))
+  let assumed = apply_active_assumptions(&simplified);
+  // If simplification exposed a singularity like `0^(-1)` (e.g. after
+  // cancelling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
+  // `ComplexInfinity`. Limited to this pattern to avoid re-canonicalizing
+  // other Plus/Times orderings the simplifier has already settled on.
+  if contains_zero_negative_power(&assumed) {
+    return crate::evaluator::evaluate_expr_to_expr(&assumed).or(Ok(assumed));
+  }
+  Ok(assumed)
+}
+
+fn contains_zero_negative_power(expr: &Expr) -> bool {
+  fn is_zero(e: &Expr) -> bool {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+  }
+  fn is_negative(e: &Expr) -> bool {
+    matches!(e, Expr::Integer(n) if *n < 0)
+      || matches!(e, Expr::Real(f) if *f < 0.0)
+      || matches!(
+        e,
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          ..
+        }
+      )
+  }
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      (is_zero(left) && is_negative(right))
+        || contains_zero_negative_power(left)
+        || contains_zero_negative_power(right)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (is_zero(&args[0]) && is_negative(&args[1]))
+        || args.iter().any(contains_zero_negative_power)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_zero_negative_power(left)
+        || contains_zero_negative_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_zero_negative_power(operand),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_zero_negative_power)
+    }
+    Expr::List(items) => items.iter().any(contains_zero_negative_power),
+    _ => false,
+  }
 }
 
 /// Run `simplify_expr` and also try `together_expr`, both at the top level and
