@@ -3758,14 +3758,6 @@ EXPECTED:
 = 0.
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: Alphabet
-LINE: 239
-TYPE: >>
-INPUT: Alphabet["Russian"] == Alphabet["Cyrillic"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: CharacterEncoding
 LINE: 289
 TYPE: >>

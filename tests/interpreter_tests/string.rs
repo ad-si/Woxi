@@ -753,10 +753,17 @@ mod alphabet {
   }
 
   #[test]
-  fn russian_equals_cyrillic() {
+  fn russian_differs_from_cyrillic() {
+    // wolframscript's Cyrillic list is a superset of Russian's (covers
+    // Ukrainian, Serbian, …). Regression for mathics atomic/strings.py:239,
+    // whose "EXPECTED: True" does not match wolframscript.
     assert_eq!(
       interpret("Alphabet[\"Russian\"] == Alphabet[\"Cyrillic\"]").unwrap(),
-      "True"
+      "False"
+    );
+    assert_eq!(
+      interpret("Length[Alphabet[\"Cyrillic\"]]").unwrap(),
+      "49"
     );
   }
 }

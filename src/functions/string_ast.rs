@@ -3744,18 +3744,26 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let letters: Vec<Expr> = match lang {
-    None
-    | Some("English")
-    | Some("French")
-    | Some("German")
-    | Some("Italian")
-    | Some("Dutch")
-    | Some("Portuguese")
-    | Some("Latin") => ascii,
+    None | Some("English") | Some("French") | Some("German")
+    | Some("Italian") | Some("Dutch") | Some("Portuguese") | Some("Latin") => {
+      ascii
+    }
     Some("Spanish") => chars_to_list("abcdefghijklmnñopqrstuvwxyz"),
-    Some("Russian") | Some("Cyrillic") => {
+    Some("Russian") => {
       chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
     }
+    // Pan-Cyrillic: superset covering several national alphabets (Russian,
+    // Ukrainian, Serbian, …) including combined graphemes like з́ and с́.
+    // Matches wolframscript's list, so Alphabet["Russian"] ≠ Alphabet["Cyrillic"].
+    Some("Cyrillic") => [
+      "а", "б", "в", "г", "ґ", "д", "ђ", "ѓ", "е", "ё", "є", "ж", "з", "з́",
+      "ѕ", "и", "і", "ї", "й", "ј", "к", "л", "љ", "м", "н", "њ", "о", "п",
+      "р", "с", "с́", "т", "ћ", "ќ", "у", "ў", "ф", "х", "ц", "ч", "џ", "ш",
+      "щ", "ъ", "ы", "ь", "э", "ю", "я",
+    ]
+    .iter()
+    .map(|s| Expr::String((*s).to_string()))
+    .collect(),
     Some("Greek") => chars_to_list("αβγδεζηθικλμνξοπρστυφχψω"),
     Some(_) => {
       return Ok(Expr::FunctionCall {

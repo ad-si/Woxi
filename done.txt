@@ -10787,3 +10787,11 @@ INPUT: Alphabet["German"]
 EXPECTED:
 = {a, ä, b, c, d, e, f, g, h, i, j, k, l, m, n, o, ö, p, q, r, s, ß, t, u, ü, v, w, x, y, z}
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: Alphabet
+LINE: 239
+TYPE: >>
+INPUT: Alphabet["Russian"] == Alphabet["Cyrillic"]
+EXPECTED:
+= True
+---
