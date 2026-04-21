@@ -278,8 +278,20 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // SeriesData input: reduce via `Normal` first so the ordinary polynomial
+  // path can extract the coefficients and trim trailing zeros.
+  let normalized = match &args[0] {
+    Expr::FunctionCall { name, .. } if name == "SeriesData" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Normal",
+        &[args[0].clone()],
+      )?
+    }
+    _ => args[0].clone(),
+  };
+
   // Expand and combine the expression first
-  let expanded = expand_and_combine(&args[0]);
+  let expanded = expand_and_combine(&normalized);
 
   // Find the degree
   let degree = match max_power_int(&expanded, var) {
@@ -292,11 +304,13 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Extract coefficient for each power from 0 to degree
+  // Extract coefficient for each power from 0 to degree. Use `normalized`
+  // (rather than the raw `args[0]`) so SeriesData inputs see the expanded
+  // polynomial form instead of the opaque SeriesData head.
   let mut coeffs = Vec::new();
   for power in 0..=degree {
     let coeff = coefficient_ast(&[
-      args[0].clone(),
+      normalized.clone(),
       args[1].clone(),
       Expr::Integer(power),
     ])?;

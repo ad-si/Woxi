@@ -11284,3 +11284,19 @@ LINE: 70
 INPUT: RealDigits[Pi, 260, 5]
 EXPECTED: {{3, 36, 211, 172, 124}, 1}
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: CoefficientList
+LINE: 913
+TYPE: >>
+INPUT: CoefficientList[Series[Log[1-x], {x, 0, 9}], x]
+EXPECTED:
+= {0, -1, -1 / 2, -1 / 3, -1 / 4, -1 / 5, -1 / 6, -1 / 7, -1 / 8, -1 / 9}
+---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: CoefficientList
+LINE: 915
+TYPE: >>
+INPUT: CoefficientList[Series[2x, {x, 0, 9}], x]
+EXPECTED:
+= {0, 2}
+---

@@ -366,6 +366,21 @@ mod coefficient_list {
       "{2/(-3 + y), (-3 + y)^(-1) + (-2 + y)^(-1)}"
     );
   }
+
+  #[test]
+  fn series_data_input_is_normalized() {
+    // Regression for mathics algebra.py:909 — CoefficientList applied to a
+    // SeriesData must reduce it to the underlying polynomial first and then
+    // trim trailing zeros, matching wolframscript.
+    assert_eq!(
+      interpret("CoefficientList[Series[2x, {x, 0, 9}], x]").unwrap(),
+      "{0, 2}"
+    );
+    assert_eq!(
+      interpret("CoefficientList[Series[Log[1-x], {x, 0, 9}], x]").unwrap(),
+      "{0, -1, -1/2, -1/3, -1/4, -1/5, -1/6, -1/7, -1/8, -1/9}"
+    );
+  }
 }
 
 mod polynomial_q_1arg {
