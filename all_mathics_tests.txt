@@ -9178,13 +9178,6 @@ FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_sameq
 LINE: 125
 INPUT: N[2/9]
-EXPECTED: .2222222222222222
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: N[2/9]
 EXPECTED: .2222222222222222`16
 MESSAGE: True
 ---
