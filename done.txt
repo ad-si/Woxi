@@ -10156,3 +10156,15 @@ INPUT: N[r]
 EXPECTED:
 = 3.5
 ---
+FILE: mathics/test/format/test_format.py
+FUNCTION: None
+LINE: 27
+INPUT: MATHML_STRICT
+EXPECTED: 1
+---
+FILE: mathics/test/format/test_format.py
+FUNCTION: None
+LINE: 27
+INPUT: MATHML_STRICT
+EXPECTED: 1
+---

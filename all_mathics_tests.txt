@@ -6989,12 +6989,6 @@ LINE: 99
 INPUT: f[a;\nb;\nc;\n]
 EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
-FILE: mathics/test/format/test_format.py
-FUNCTION: None
-LINE: 27
-INPUT: MATHML_STRICT
-EXPECTED: 1
----
 FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: None
 LINE: 10
@@ -9659,12 +9653,6 @@ Source: test/format/test_*.py
 Runner: pytest
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/format/test_format.py
-FUNCTION: None
-LINE: 27
-INPUT: MATHML_STRICT
-EXPECTED: 1
----
 FILE: mathics/test/format/test_format.py
 FUNCTION: None
 LINE: 50
