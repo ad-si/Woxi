@@ -9589,3 +9589,9 @@ INPUT: MatchQ[x, F[F[x2_:0,y_],x1_:0]]
 EXPECTED: True
 MESSAGE: With OneIdentity, pattern nested
 ---
+FILE: mathics/test/timings/test_uniform_tables.py
+FUNCTION: test_evaluate_benchmark
+LINE: 20
+INPUT: Plus@@nonuniformTable
+EXPECTED: 2.075674547634748
+---
