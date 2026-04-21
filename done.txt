@@ -10284,3 +10284,11 @@ INPUT: $RandomState = $RandomState;
 EXPECTED:
 : It is not possible to change the random state.
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Derivative
+LINE: 401
+TYPE: >>
+INPUT: f'[x]
+EXPECTED:
+= 2 x
+---

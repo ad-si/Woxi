@@ -2188,14 +2188,6 @@ EXPECTED:
 = 0&
 ---
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 401
-TYPE: >>
-INPUT: f'[x]
-EXPECTED:
-= 2 x
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: DiscreteLimit
 LINE: 554
 TYPE: >>
