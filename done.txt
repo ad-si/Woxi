@@ -10300,3 +10300,11 @@ INPUT: ToExpression[A] + 4
 EXPECTED:
 = 8
 ---
+FILE: mathics/builtin/box/layout.py
+CLASS: InterpretationBox
+LINE: 266
+TYPE: >>
+INPUT: DisplayForm[A]
+EXPECTED:
+= Four
+---
