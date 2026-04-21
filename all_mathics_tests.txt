@@ -6866,14 +6866,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 316
-TYPE: >>
-INPUT: b
-EXPECTED:
-= 4
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 322
 TYPE: >>
 INPUT: b

@@ -4242,6 +4242,11 @@ mod unknown_function_no_args {
   fn undefined_function_called_with_real_stays_symbolic() {
     assert_eq!(interpret("F[3.]").unwrap(), "F[3.]");
   }
+
+  #[test]
+  fn bare_undefined_symbol_stays_itself() {
+    assert_eq!(interpret("b").unwrap(), "b");
+  }
 }
 
 mod symbolic_ordering {
