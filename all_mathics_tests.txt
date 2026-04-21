@@ -7837,13 +7837,6 @@ LINE: 135
 INPUT: ToString[%]
 EXPECTED: Null
 ---
-FILE: mathics/test/builtin/test_trace.py
-FUNCTION: test_TraceEvaluation
-LINE: 36
-INPUT: Evaluating
-EXPECTED: Returning
-MESSAGE: Rewriting
----
 FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
 FUNCTION: test_predecrement
 LINE: 30

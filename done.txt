@@ -9561,3 +9561,10 @@ INPUT: MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]
 EXPECTED:
 =
 ---
+FILE: mathics/test/builtin/test_trace.py
+FUNCTION: test_TraceEvaluation
+LINE: 36
+INPUT: Evaluating
+EXPECTED: Returning
+MESSAGE: Rewriting
+---
