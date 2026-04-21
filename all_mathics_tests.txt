@@ -8586,13 +8586,6 @@ INPUT: N[A[s_]]
 EXPECTED: A
 MESSAGE: upvalues
 ---
-FILE: mathics/test/core/test_keycomparable.py
-FUNCTION: test_element_ordering_lt
-LINE: 162
-INPUT: atom1
-EXPECTED: atom2
-MESSAGE: assert_msg
----
 FILE: mathics/test/core/convert/test_sympy.py
 FUNCTION: test_from_to_sympy_change
 LINE: 68
