@@ -4528,14 +4528,6 @@ EXPECTED:
 = 3
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: DownValues
-LINE: 391
-TYPE: >>
-INPUT: fib[5]
-EXPECTED:
-= 5
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: FormatValues
 LINE: 423
 TYPE: >>

@@ -9394,3 +9394,11 @@ INPUT: g[2]
 EXPECTED:
 = 4
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: DownValues
+LINE: 391
+TYPE: >>
+INPUT: fib[5]
+EXPECTED:
+= 5
+---
