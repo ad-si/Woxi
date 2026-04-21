@@ -1827,13 +1827,6 @@ INPUT: Curl[v[x, y], {x, y}]
 EXPECTED:
 = 0
 ---
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Curl
-LINE: 114
-TYPE: #>
-INPUT: Clear[v];
-EXPECTED: (none)
----
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Norm

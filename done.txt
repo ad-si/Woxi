@@ -9941,3 +9941,10 @@ TYPE: >>
 INPUT: $CharacterEncoding = None;
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/vectors/math_ops.py
+CLASS: Curl
+LINE: 114
+TYPE: #>
+INPUT: Clear[v];
+EXPECTED: (none)
+---
