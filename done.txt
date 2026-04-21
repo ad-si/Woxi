@@ -11041,3 +11041,10 @@ LINE: 16
 INPUT: ArcCos[-I Infinity]
 EXPECTED: I Infinity
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_stil_failing
+LINE: 135
+INPUT: MatchQ[F[F[F[x]]], F[x_:0,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, nested
+---
