@@ -184,6 +184,15 @@ mod string_split_single_arg {
   }
 
   #[test]
+  fn split_by_whitespace_character_keeps_empty_runs() {
+    assert_eq!(
+      interpret("StringSplit[\"  abc    123  \", WhitespaceCharacter]")
+        .unwrap(),
+      "{abc, , , , 123}"
+    );
+  }
+
+  #[test]
   fn map_string_reverse_over_split() {
     assert_eq!(
       interpret(

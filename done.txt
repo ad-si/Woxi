@@ -9003,3 +9003,11 @@ TYPE: session_evaluate
 INPUT: 1/0
 EXPECTED: (assertion - see source)
 ---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringSplit
+LINE: 727
+TYPE: >>
+INPUT: StringSplit["  abc    123  ", WhitespaceCharacter]
+EXPECTED:
+= {, , abc, , , , 123, , }
+---
