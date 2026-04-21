@@ -10864,3 +10864,9 @@ LINE: 46
 INPUT: Flatten[m, {2, 1}]
 EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 57
+INPUT: a * + b
+EXPECTED: Times[a, Plus[b]]
+---

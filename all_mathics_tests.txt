@@ -6376,12 +6376,6 @@ EXPECTED: (f')'
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 57
-INPUT: a * + b
-EXPECTED: Times[a, Plus[b]]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 65
 INPUT: + + a
 EXPECTED: Plus[a]
