@@ -3554,14 +3554,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: OptionsPattern
-LINE: 280
-TYPE: >>
-INPUT: e = f[x, n:>a]
-EXPECTED:
-= x ^ a
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: OptionsPattern
 LINE: 283
 TYPE: >>
 INPUT: e

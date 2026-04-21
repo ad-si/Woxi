@@ -9466,3 +9466,11 @@ INPUT: f[x]
 EXPECTED:
 = x ^ 2
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: OptionsPattern
+LINE: 280
+TYPE: >>
+INPUT: e = f[x, n:>a]
+EXPECTED:
+= x ^ a
+---
