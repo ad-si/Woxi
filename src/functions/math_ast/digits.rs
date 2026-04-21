@@ -1195,6 +1195,141 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(digits))
 }
 
+/// Extract digits of a positive BigFloat in an arbitrary integer `base >= 2`,
+/// returning `(digits, exponent)` where:
+/// - `digits[0]` is the most-significant digit.
+/// - `exponent` is the number of digits left of the radix point (Wolfram's
+///   `RealDigits` convention), so `Pi` in base 260 gives exponent `1` and
+///   `0.05` in base 10 gives exponent `-1`.
+///
+/// Produces exactly `num_digits` digits.
+pub fn bigfloat_to_digits_base(
+  bf: &astro_float::BigFloat,
+  base: i128,
+  num_digits: usize,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(Vec<i128>, i64), InterpreterError> {
+  use astro_float::BigFloat;
+  if bf.is_zero() {
+    return Ok((vec![0; num_digits.max(1)], 0));
+  }
+  if base < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RealDigits: base must be >= 2".into(),
+    ));
+  }
+  let base_bf = BigFloat::from_i128(base, bits);
+  let one = BigFloat::from_i128(1, bits);
+  let mut x = bf.clone();
+  // Normalize into [1, base) by dividing/multiplying by base.
+  let mut shift: i64 = 0;
+  while x.cmp(&base_bf).map(|v| v >= 0).unwrap_or(false) {
+    x = x.div(&base_bf, bits, rm);
+    shift += 1;
+  }
+  while x.cmp(&one).map(|v| v < 0).unwrap_or(false) {
+    x = x.mul(&base_bf, bits, rm);
+    shift -= 1;
+  }
+  // Wolfram's exponent = shift + 1: after normalization x ∈ [1, base),
+  // so the most-significant digit sits at position `shift`, and there are
+  // `shift + 1` digits strictly to the left of the radix point.
+  let exponent = shift + 1;
+
+  // Extract `num_digits` base-`base` digits by repeated floor-and-shift.
+  let mut digits: Vec<i128> = Vec::with_capacity(num_digits);
+  for _ in 0..num_digits {
+    let int_part = x.floor();
+    let digit = bigfloat_small_int_to_i128(&int_part, rm, cc)?;
+    digits.push(digit);
+    // x = (x - digit) * base
+    let digit_bf = BigFloat::from_i128(digit, bits);
+    x = x.sub(&digit_bf, bits, rm);
+    x = x.mul(&base_bf, bits, rm);
+  }
+  Ok((digits, exponent))
+}
+
+/// Convert a small non-negative BigFloat (representing an integer that fits in
+/// i128) to i128 via decimal formatting. Used for extracting single digits in
+/// arbitrary-base `RealDigits`.
+fn bigfloat_small_int_to_i128(
+  bf: &astro_float::BigFloat,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<i128, InterpreterError> {
+  if bf.is_zero() {
+    return Ok(0);
+  }
+  let s = bf.format(astro_float::Radix::Dec, rm, cc).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "RealDigits: format error: {:?}",
+      e
+    ))
+  })?;
+  // astro-float `format` returns mantissa-style strings such as "3.14e1" or
+  // "0.0". For a value that is already an exact integer we get a string like
+  // "3.0e0" or "3e0". Strip any fractional part (it should be zero because
+  // the caller passed `floor(x)`) and parse the implicit integer.
+  let lower = s.to_ascii_lowercase();
+  let (mantissa_str, exp_part): (&str, i64) = if let Some(idx) = lower.find('e')
+  {
+    let (m, e) = s.split_at(idx);
+    let e_trim = &e[1..];
+    let exp: i64 = e_trim.parse().map_err(|_| {
+      InterpreterError::EvaluationError(format!(
+        "RealDigits: failed to parse exponent in {}",
+        s
+      ))
+    })?;
+    (m, exp)
+  } else {
+    (s.as_str(), 0)
+  };
+  let mantissa_str = mantissa_str.trim_start_matches('+');
+  let (sign, body) = if let Some(rest) = mantissa_str.strip_prefix('-') {
+    (-1i128, rest)
+  } else {
+    (1i128, mantissa_str)
+  };
+  let (int_str, frac_str) = match body.find('.') {
+    Some(i) => (&body[..i], &body[i + 1..]),
+    None => (body, ""),
+  };
+  // Combine integer and fractional parts without the decimal point, tracking
+  // how the `.` shifted the exponent.
+  let digits_str: String =
+    int_str.chars().chain(frac_str.chars()).collect();
+  let frac_len = frac_str.len() as i64;
+  let effective_exp = exp_part - frac_len;
+  let base_int: i128 = digits_str.parse().map_err(|_| {
+    InterpreterError::EvaluationError(format!(
+      "RealDigits: failed to parse digits in {}",
+      s
+    ))
+  })?;
+  let mut value = base_int;
+  if effective_exp > 0 {
+    for _ in 0..effective_exp {
+      value = value
+        .checked_mul(10)
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "RealDigits: digit value overflow".into(),
+          )
+        })?;
+    }
+  } else if effective_exp < 0 {
+    for _ in 0..(-effective_exp) {
+      // floor(x) was passed in, so this should divide cleanly.
+      value /= 10;
+    }
+  }
+  Ok(sign * value)
+}
+
 /// Extract decimal digits and exponent from a BigFloat.
 /// Returns (digit_chars, decimal_exponent) where digit_chars are ASCII digit bytes
 /// and decimal_exponent is the number of integer digits (position of decimal point).
@@ -1624,6 +1759,57 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Non-decimal bases route through the arbitrary-base digit extractor.
+  if base != 10 {
+    // We need enough raw digits to cover both leading zeros skipped by
+    // `start_pos` (when < MSD) and the requested count. The normalization
+    // loop also benefits from a slightly larger precision window.
+    let extract_count = num_digits + leading_skip.unwrap_or(0) + 4;
+    let (raw, base_exp) = bigfloat_to_digits_base(
+      &bf, base, extract_count, bits, rm, &mut cc,
+    )?;
+    let mut digits = raw;
+    if let Some(p) = start_pos {
+      // digit k (0-indexed) sits at position `base_exp - 1 - k`. Skip
+      // forward to start at position `p`, or pad with zeros if `p` is
+      // above the MSD.
+      let skip = base_exp as i128 - 1 - p;
+      if skip > 0 {
+        let sk = skip as usize;
+        if sk >= digits.len() {
+          digits.clear();
+        } else {
+          digits.drain(..sk);
+        }
+      } else if skip < 0 {
+        let pad = (-skip) as usize;
+        let mut padded = vec![0i128; pad];
+        padded.extend(digits);
+        digits = padded;
+      }
+      while digits.len() < num_digits {
+        digits.push(0);
+      }
+      digits.truncate(num_digits);
+      let digit_exprs: Vec<Expr> =
+        digits.iter().map(|&d| Expr::Integer(d)).collect();
+      return Ok(Expr::List(vec![
+        Expr::List(digit_exprs),
+        Expr::Integer(p + 1),
+      ]));
+    }
+    while digits.len() < num_digits {
+      digits.push(0);
+    }
+    digits.truncate(num_digits);
+    let digit_exprs: Vec<Expr> =
+      digits.iter().map(|&d| Expr::Integer(d)).collect();
+    return Ok(Expr::List(vec![
+      Expr::List(digit_exprs),
+      Expr::Integer(base_exp as i128),
+    ]));
+  }
 
   let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf, rm, &mut cc)?;
 

@@ -11278,3 +11278,9 @@ INPUT: Integrate[ArcSin[x / 3], x]
 EXPECTED:
 = x ArcSin[x / 3] + Sqrt[9 - x ^ 2]
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_realdigits
+LINE: 70
+INPUT: RealDigits[Pi, 260, 5]
+EXPECTED: {{3, 36, 211, 172, 124}, 1}
+---

@@ -1289,6 +1289,28 @@ mod real_digits {
   }
 
   #[test]
+  fn pi_base_260_5_digits() {
+    // Regression for mathics test_realdigits (atomic/test_numbers.py:70).
+    // Non-decimal base on Pi must route through the arbitrary-base path.
+    assert_eq!(
+      interpret("RealDigits[Pi, 260, 5]").unwrap(),
+      "{{3, 36, 211, 172, 124}, 1}"
+    );
+  }
+
+  #[test]
+  fn pi_base_2_and_16() {
+    assert_eq!(
+      interpret("RealDigits[Pi, 2, 10]").unwrap(),
+      "{{1, 1, 0, 0, 1, 0, 0, 1, 0, 0}, 2}"
+    );
+    assert_eq!(
+      interpret("RealDigits[Pi, 16, 8]").unwrap(),
+      "{{3, 2, 4, 3, 15, 6, 10, 8}, 1}"
+    );
+  }
+
+  #[test]
   fn non_numeric_symbol_stays_unevaluated() {
     // Bare symbols can't be converted to digits; return unevaluated
     // (matches wolframscript).

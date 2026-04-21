@@ -6542,12 +6542,6 @@ EXPECTED: 5/6 Pi
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 70
-INPUT: RealDigits[Pi, 260, 5]
-EXPECTED: {{3, 36, 211, 172, 124}, 1}
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 102
 INPUT: RealDigits[1/197, 260, 5, -6]
 EXPECTED: {{246, 208, 137, 67, 80}, -5}
