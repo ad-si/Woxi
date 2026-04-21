@@ -10820,3 +10820,11 @@ INPUT: HypergeometricPFQ[{3}, {2}, 1] // N
 EXPECTED:
 = 4.07742
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: HypergeometricPFQ
+LINE: 166
+TYPE: >>
+INPUT: HypergeometricPFQ[{3}, {2}, 1.]
+EXPECTED:
+= 4.07742
+---
