@@ -7309,13 +7309,6 @@ EXPECTED: str_expected
 MESSAGE: msg
 ---
 FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: test_one_identity_stil_failing
-LINE: 135
-INPUT: MatchQ[x, F[F[x2_:0,y_],x1_:0]]
-EXPECTED: True
-MESSAGE: With OneIdentity, pattern nested
----
-FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: test_Attributes_wrong_args
 LINE: 209
 INPUT: str_expr
