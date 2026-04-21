@@ -4216,6 +4216,11 @@ mod unknown_function_no_args {
   fn imaginary_i_named_char_evaluates_to_i() {
     assert_eq!(interpret("\\[ImaginaryI]").unwrap(), "I");
   }
+
+  #[test]
+  fn function_with_trailing_semicolon_evaluates_to_null_arg() {
+    assert_eq!(interpret("f[a;]").unwrap(), "f[Null]");
+  }
 }
 
 mod symbolic_ordering {

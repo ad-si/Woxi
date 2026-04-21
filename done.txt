@@ -9182,3 +9182,9 @@ LINE: 116
 INPUT: \\[ImaginaryI]
 EXPECTED: \u2148
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 216
+INPUT: f[a;]
+EXPECTED: f[CompoundExpression[a, Null]]
+---

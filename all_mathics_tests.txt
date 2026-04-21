@@ -7722,12 +7722,6 @@ EXPECTED: Plus[a]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 216
-INPUT: f[a;]
-EXPECTED: f[CompoundExpression[a, Null]]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 275
 INPUT: x \\[Function] y
 EXPECTED: Function[x, y]
