@@ -9521,3 +9521,11 @@ INPUT: atom1
 EXPECTED: atom2
 MESSAGE: assert_msg
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1259
+TYPE: >>
+INPUT: Dice[1, 6, 4, 4] // InputForm
+EXPECTED:
+= Dice[1, 4, 4, 6]
+---
