@@ -4659,14 +4659,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
-LINE: 93
-TYPE: >>
-INPUT: pts = {{0, 0}, {1, 1}, {2, -1}, {3, 0}};
-EXPECTED:
-=
----
-FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierCurve
 LINE: 104
 TYPE: >>
 INPUT: pts = {{0, 0}, {1, 1}, {2, -1}, {3, 0}, {5, 2}, {6, -1}, {7, 3}};
