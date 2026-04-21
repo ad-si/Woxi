@@ -9234,3 +9234,9 @@ INPUT: N[2/9]
 EXPECTED: .2222222222222222
 MESSAGE: True
 ---
+FILE: mathics/test/test_evaluation.py
+FUNCTION: test_eval_atom_upvalues
+LINE: 338
+INPUT: F[3.]
+EXPECTED: 3.
+---

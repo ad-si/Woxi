@@ -4237,6 +4237,11 @@ mod unknown_function_no_args {
       "a + b"
     );
   }
+
+  #[test]
+  fn undefined_function_called_with_real_stays_symbolic() {
+    assert_eq!(interpret("F[3.]").unwrap(), "F[3.]");
+  }
 }
 
 mod symbolic_ordering {
