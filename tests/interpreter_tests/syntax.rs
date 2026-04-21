@@ -4141,6 +4141,15 @@ mod denominator {
   }
 }
 
+mod unknown_function_no_args {
+  use super::*;
+
+  #[test]
+  fn undefined_symbol_called_with_no_args_stays_symbolic() {
+    assert_eq!(interpret("A[]").unwrap(), "A[]");
+  }
+}
+
 mod symbolic_ordering {
   use super::*;
 

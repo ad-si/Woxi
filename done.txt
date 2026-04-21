@@ -9087,3 +9087,10 @@ LINE: 229
 INPUT: Integer
 EXPECTED: MachineReal
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: test_get_tag_position
+LINE: 12
+INPUT: A[]
+EXPECTED: A
+MESSAGE: downvalues
+---
