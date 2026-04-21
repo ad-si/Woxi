@@ -1511,6 +1511,23 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
+      // Non-negative integer n has the polynomial formula; everything else
+      // (rational / Real / symbolic n) uses the identity
+      //   LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x].
+      // Only forward the rewrite when both n and x are numeric (so the
+      // Hypergeometric1F1 path returns a Real); otherwise stay unevaluated.
+      let neg_n = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), args[0].clone()],
+      };
+      let rewrite = Expr::FunctionCall {
+        name: "Hypergeometric1F1".to_string(),
+        args: vec![neg_n, Expr::Integer(1), args[1].clone()],
+      };
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewrite)?;
+      if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _)) {
+        return Ok(evaluated);
+      }
       return Ok(Expr::FunctionCall {
         name: "LaguerreL".to_string(),
         args: args.to_vec(),

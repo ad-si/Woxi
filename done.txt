@@ -11222,3 +11222,11 @@ INPUT: ContinuedFraction[(1 + 2 Sqrt[3])/5]
 EXPECTED:
 = {0, 1, {8, 3, 34, 3}}
 ---
+FILE: mathics/builtin/specialfns/orthogonal.py
+CLASS: LaguerreL
+LINE: 144
+TYPE: >>
+INPUT: LaguerreL[3/2, 1.7]
+EXPECTED:
+= -0.947134
+---

@@ -2581,6 +2581,17 @@ mod laguerre_l {
     assert_eq!(interpret("LaguerreL[3, 1/2]").unwrap(), "-7/48");
   }
 
+  // Non-integer (rational) n routes through the
+  // `LaguerreL[n, x] = Hypergeometric1F1[-n, 1, x]` identity.
+  // Regression for mathics specialfns/orthogonal.py:144.
+  #[test]
+  fn rational_n_numeric() {
+    assert_eq!(
+      interpret("LaguerreL[3/2, 1.7]").unwrap(),
+      "-0.9471339972534181"
+    );
+  }
+
   #[test]
   fn numeric_real() {
     let result: f64 = interpret("LaguerreL[5, 0.3]").unwrap().parse().unwrap();

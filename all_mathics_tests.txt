@@ -4731,14 +4731,6 @@ EXPECTED:
 = 1410.02 + 5797.3 I
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LaguerreL
-LINE: 144
-TYPE: >>
-INPUT: LaguerreL[3/2, 1.7]
-EXPECTED:
-= -0.947134
----
-FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LegendreP
 LINE: 183
 TYPE: >>
