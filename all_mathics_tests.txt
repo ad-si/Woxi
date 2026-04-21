@@ -1693,14 +1693,6 @@ INPUT: .2222222`6 === .222`3
 EXPECTED:
 = False
 ---
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: NotListQ
-LINE: 233
-TYPE: >>
-INPUT: MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]
-EXPECTED:
-=
----
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Equivalent
 LINE: 204

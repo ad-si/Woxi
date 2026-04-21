@@ -9553,3 +9553,11 @@ INPUT: MyD[Sin[2 x], x]
 EXPECTED:
 = 2 Cos[2 x]
 ---
+FILE: mathics/builtin/testing_expressions/list_oriented.py
+CLASS: NotListQ
+LINE: 233
+TYPE: >>
+INPUT: MyD[Sin[f_],x_?NotListQ] := D[f,x]*Cos[f]
+EXPECTED:
+=
+---
