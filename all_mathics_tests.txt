@@ -3720,14 +3720,6 @@ INPUT: x : _+y_ : d // FullForm
 EXPECTED:
 = Pattern[x, Plus[Blank[], Optional[Pattern[y, Blank[]], d]]]
 ---
-FILE: mathics/builtin/patterns/restrictions.py
-CLASS: Condition
-LINE: 47
-TYPE: >>
-INPUT: f[3]
-EXPECTED:
-= p[3]
----
 FILE: mathics/builtin/patterns/rules.py
 CLASS: None
 LINE: 64

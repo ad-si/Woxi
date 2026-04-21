@@ -9370,3 +9370,11 @@ INPUT: DownValues[f]
 EXPECTED:
 = {HoldPattern[f[x_]] :> x ^ 2}
 ---
+FILE: mathics/builtin/patterns/restrictions.py
+CLASS: Condition
+LINE: 47
+TYPE: >>
+INPUT: f[3]
+EXPECTED:
+= p[3]
+---
