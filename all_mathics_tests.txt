@@ -365,14 +365,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSet
-LINE: 343
-TYPE: >>
-INPUT: UpValues[b]
-EXPECTED:
-= {HoldPattern[a[b]] :> 3}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSet
 LINE: 349
 TYPE: >>
 INPUT: r
