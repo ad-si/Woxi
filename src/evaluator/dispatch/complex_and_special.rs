@@ -1017,30 +1017,28 @@ pub fn dispatch_complex_and_special(
           pattern,
           replacement,
         } = &args[1]
+        && let Expr::List(pat_elems) = pattern.as_ref()
+        && let Some(all_bindings) =
+          enumerate_list_sequence_matches(expr_elems, pat_elems)
       {
-        if let Expr::List(pat_elems) = pattern.as_ref()
-          && let Some(all_bindings) =
-            enumerate_list_sequence_matches(expr_elems, pat_elems)
-        {
-          let mut results: Vec<Expr> = Vec::new();
-          for bindings in all_bindings {
-            let mut rhs = replacement.as_ref().clone();
-            for (name, value) in bindings {
-              rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
-            }
-            let evaluated = match evaluate_expr_to_expr(&rhs) {
-              Ok(r) => r,
-              Err(e) => return Some(Err(e)),
-            };
-            results.push(evaluated);
-            if let Some(n) = max_matches
-              && results.len() as i128 >= n
-            {
-              break;
-            }
+        let mut results: Vec<Expr> = Vec::new();
+        for bindings in all_bindings {
+          let mut rhs = replacement.as_ref().clone();
+          for (name, value) in bindings {
+            rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
           }
-          return Some(Ok(Expr::List(results)));
+          let evaluated = match evaluate_expr_to_expr(&rhs) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+          };
+          results.push(evaluated);
+          if let Some(n) = max_matches
+            && results.len() as i128 >= n
+          {
+            break;
+          }
         }
+        return Some(Ok(Expr::List(results)));
       }
       let result = match apply_replace_ast(&args[0], &args[1])
         .and_then(|r| evaluate_expr_to_expr(&r))
@@ -1431,7 +1429,9 @@ fn enumerate_list_sequence_matches(
   let mut slots: Vec<Slot> = Vec::with_capacity(pattern_elems.len());
   for p in pattern_elems {
     let (name, min): (&str, usize) = match p {
-      Expr::Pattern { name, blank_type, .. } => {
+      Expr::Pattern {
+        name, blank_type, ..
+      } => {
         let min = match blank_type {
           2 => 1usize,
           3 => 0,
@@ -1439,39 +1439,36 @@ fn enumerate_list_sequence_matches(
         };
         (name.as_str(), min)
       }
-      Expr::FunctionCall { name: fname, args: fargs }
-        if fname == "Pattern" && fargs.len() == 2 =>
-      {
+      Expr::FunctionCall {
+        name: fname,
+        args: fargs,
+      } if fname == "Pattern" && fargs.len() == 2 => {
         let name = if let Expr::Identifier(s) = &fargs[0] {
           s.as_str()
         } else {
           ""
         };
         let min = match &fargs[1] {
-          Expr::FunctionCall { name: bname, args: bargs }
-            if bargs.is_empty() && bname == "BlankSequence" =>
-          {
-            1usize
-          }
-          Expr::FunctionCall { name: bname, args: bargs }
-            if bargs.is_empty() && bname == "BlankNullSequence" =>
-          {
-            0
-          }
+          Expr::FunctionCall {
+            name: bname,
+            args: bargs,
+          } if bargs.is_empty() && bname == "BlankSequence" => 1usize,
+          Expr::FunctionCall {
+            name: bname,
+            args: bargs,
+          } if bargs.is_empty() && bname == "BlankNullSequence" => 0,
           _ => return None,
         };
         (name, min)
       }
-      Expr::FunctionCall { name: bname, args: bargs }
-        if bargs.is_empty() && bname == "BlankSequence" =>
-      {
-        ("", 1)
-      }
-      Expr::FunctionCall { name: bname, args: bargs }
-        if bargs.is_empty() && bname == "BlankNullSequence" =>
-      {
-        ("", 0)
-      }
+      Expr::FunctionCall {
+        name: bname,
+        args: bargs,
+      } if bargs.is_empty() && bname == "BlankSequence" => ("", 1),
+      Expr::FunctionCall {
+        name: bname,
+        args: bargs,
+      } if bargs.is_empty() && bname == "BlankNullSequence" => ("", 0),
       _ => return None,
     };
     slots.push(Slot { name, min });

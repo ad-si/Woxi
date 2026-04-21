@@ -190,11 +190,7 @@ pub fn partition_multi_dim_ast(
     Some(chunks)
   }
 
-  fn recurse(
-    list: &Expr,
-    sizes: &[usize],
-    offsets: &[usize],
-  ) -> Option<Expr> {
+  fn recurse(list: &Expr, sizes: &[usize], offsets: &[usize]) -> Option<Expr> {
     if sizes.is_empty() {
       return Some(list.clone());
     }

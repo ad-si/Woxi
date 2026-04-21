@@ -676,8 +676,7 @@ fn extract_quadratic_irrational(
           Expr::FunctionCall { name, args: rargs }
             if name == "Rational" && rargs.len() == 2 =>
           {
-            if let (Expr::Integer(n), Expr::Integer(d)) =
-              (&rargs[0], &rargs[1])
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
             {
               scale_n = scale_n.checked_mul(*n)?;
               scale_d = scale_d.checked_mul(*d)?;
@@ -736,7 +735,9 @@ fn extract_quadratic_irrational(
         left,
         right,
       } => (left.as_ref(), right.as_ref()),
-      Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
         (&args[0], &args[1])
       }
       _ => return None,
@@ -994,9 +995,7 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pre_exprs: Vec<Expr> = pre.into_iter().map(Expr::Integer).collect();
     let mut result: Vec<Expr> = pre_exprs;
     if !period.is_empty() {
-      result.push(Expr::List(
-        period.into_iter().map(Expr::Integer).collect(),
-      ));
+      result.push(Expr::List(period.into_iter().map(Expr::Integer).collect()));
     }
     return Ok(Expr::List(result));
   }

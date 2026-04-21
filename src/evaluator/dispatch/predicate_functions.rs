@@ -119,10 +119,7 @@ pub fn dispatch_predicate_functions(
               let mut terms: Vec<Expr> = Vec::new();
               for (i, n) in names.iter().enumerate() {
                 terms.push(Expr::Comparison {
-                  operands: vec![
-                    operands[i].clone(),
-                    operands[i + 1].clone(),
-                  ],
+                  operands: vec![operands[i].clone(), operands[i + 1].clone()],
                   operators: vec![op_for(n).unwrap()],
                 });
               }

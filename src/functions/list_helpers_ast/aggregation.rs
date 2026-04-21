@@ -467,9 +467,9 @@ pub fn take_largest_excluded_ast(
   let filtered: Vec<Expr> = items
     .iter()
     .filter(|it| {
-      !excluded_forms
-        .iter()
-        .any(|p| crate::evaluator::pattern_matching::match_pattern(it, p).is_some())
+      !excluded_forms.iter().any(|p| {
+        crate::evaluator::pattern_matching::match_pattern(it, p).is_some()
+      })
     })
     .cloned()
     .collect();
@@ -506,9 +506,9 @@ pub fn take_smallest_excluded_ast(
   let filtered: Vec<Expr> = items
     .iter()
     .filter(|it| {
-      !excluded_forms
-        .iter()
-        .any(|p| crate::evaluator::pattern_matching::match_pattern(it, p).is_some())
+      !excluded_forms.iter().any(|p| {
+        crate::evaluator::pattern_matching::match_pattern(it, p).is_some()
+      })
     })
     .cloned()
     .collect();

@@ -722,9 +722,7 @@ fn incomplete_beta_ast(
   b: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Special case: Beta[1, a, b] = Beta[a, b] (complete).
-  if matches!(z, Expr::Integer(1))
-    || matches!(z, Expr::Real(f) if *f == 1.0)
-  {
+  if matches!(z, Expr::Integer(1)) || matches!(z, Expr::Real(f) if *f == 1.0) {
     let base = beta_ast(&[a.clone(), b.clone()])?;
     if matches!(z, Expr::Real(_)) {
       return crate::evaluator::evaluate_function_call_ast("N", &[base]);
@@ -742,7 +740,7 @@ fn incomplete_beta_ast(
     && *b_int > 0
     && z_is_numeric
   {
-    let b_i = *b_int as i128;
+    let b_i = *b_int;
     let mut term: Vec<Expr> = Vec::new();
     // Binomial coefficients C(b-1, k) as rationals.
     for k in 0..b_i {
@@ -789,7 +787,7 @@ fn binomial_i128(n: u32, k: u32) -> i128 {
   let k = k.min(n - k);
   let mut result: i128 = 1;
   for i in 0..k {
-    result = result * (n as i128 - i as i128);
+    result *= n as i128 - i as i128;
     result /= (i + 1) as i128;
   }
   result

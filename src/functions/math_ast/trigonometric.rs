@@ -1950,7 +1950,8 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// with an optional leading `-` or a `Times[-1, …]` wrapper). Returns
 /// `Some(+1)` for `I·Infinity`, `Some(-1)` for `-I·Infinity`, else `None`.
 fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
-  let is_infinity = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Infinity");
+  let is_infinity =
+    |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Infinity");
   let is_i = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "I");
   let match_pair = |a: &Expr, b: &Expr| -> bool {
     (is_i(a) && is_infinity(b)) || (is_infinity(a) && is_i(b))

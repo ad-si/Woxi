@@ -485,7 +485,8 @@ mod partition_extended {
   #[test]
   fn partition_matrix_2x2_default_stride() {
     assert_eq!(
-      interpret("Partition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {2, 2}]").unwrap(),
+      interpret("Partition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {2, 2}]")
+        .unwrap(),
       "{{{{1, 2}, {4, 5}}}}"
     );
   }

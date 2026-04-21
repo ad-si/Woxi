@@ -255,10 +255,8 @@ mod list_tests {
     // Flatten[m, {{2}, {1}, {3}}]. Regression for mathics
     // test_structure.py:37.
     assert_eq!(
-      interpret(
-        "m = {{{1, 2}, {3}}, {{4}, {5, 6}}}; Flatten[m, {{2}}]"
-      )
-      .unwrap(),
+      interpret("m = {{{1, 2}, {3}}, {{4}, {5, 6}}}; Flatten[m, {{2}}]")
+        .unwrap(),
       "{{{1, 2}, {4}}, {{3}, {5, 6}}}"
     );
   }

@@ -3329,8 +3329,7 @@ fn contains_zero_negative_power(expr: &Expr) -> bool {
         || args.iter().any(contains_zero_negative_power)
     }
     Expr::BinaryOp { left, right, .. } => {
-      contains_zero_negative_power(left)
-        || contains_zero_negative_power(right)
+      contains_zero_negative_power(left) || contains_zero_negative_power(right)
     }
     Expr::UnaryOp { operand, .. } => contains_zero_negative_power(operand),
     Expr::FunctionCall { args, .. } => {

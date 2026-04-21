@@ -11262,3 +11262,11 @@ INPUT: Partition[{{11, 12, 13}, {21, 22, 23}, {31, 32, 33}}, {2, 2}, 1]
 EXPECTED:
 = {{{{11, 12}, {21, 22}}, {{12, 13}, {22, 23}}}, {{{21, 22}, {31, 32}}, {{22, 23}, {32, 33}}}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1027
+TYPE: >>
+INPUT: D[Integrate[f[u, x],{u, a[x], b[x]}], x]
+EXPECTED:
+= Integrate[Derivative[0, 1][f][u, x], {u, a[x], b[x]}] + f[b[x], x] b'[x] - f[a[x], x] a'[x]
+---

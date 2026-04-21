@@ -197,8 +197,7 @@ pub fn table_ast(
           &[diff, step_expr.clone()],
         )?;
         if let Expr::Integer(n) = ratio
-          && n >= 0
-          && n <= 1_000_000
+          && (0..=1_000_000).contains(&n)
         {
           let mut results = Vec::with_capacity((n + 1) as usize);
           for k in 0..=n {

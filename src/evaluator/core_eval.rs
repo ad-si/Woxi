@@ -1511,15 +1511,12 @@ pub fn evaluate_expr_to_expr_inner(
               // Machine-precision Reals are compared up to the last ~7 bits
               // (matches wolframscript, which treats the f64 guard bits as
               // "insignificant"). Exact-vs-exact comparisons stay strict.
-              let involves_real = matches!(
-                left,
-                Expr::Real(_) | Expr::BigFloat(_, _)
-              ) || matches!(
-                right,
-                Expr::Real(_) | Expr::BigFloat(_, _)
-              ) || matches!(left, Expr::UnaryOp { operand, .. }
+              let involves_real =
+                matches!(left, Expr::Real(_) | Expr::BigFloat(_, _))
+                  || matches!(right, Expr::Real(_) | Expr::BigFloat(_, _))
+                  || matches!(left, Expr::UnaryOp { operand, .. }
                 if matches!(operand.as_ref(), Expr::Real(_)))
-                || matches!(right, Expr::UnaryOp { operand, .. }
+                  || matches!(right, Expr::UnaryOp { operand, .. }
                   if matches!(operand.as_ref(), Expr::Real(_)));
               if involves_real {
                 let tol = f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);

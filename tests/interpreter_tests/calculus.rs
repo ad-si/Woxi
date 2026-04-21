@@ -62,10 +62,7 @@ mod integrate_with_sum {
   #[test]
   fn integrate_arccos_definite_pi() {
     // ∫_{-1}^{1} ArcCos[x] dx = Pi
-    assert_eq!(
-      interpret("Integrate[ArcCos[x], {x, -1, 1}]").unwrap(),
-      "Pi"
-    );
+    assert_eq!(interpret("Integrate[ArcCos[x], {x, -1, 1}]").unwrap(), "Pi");
   }
 
   #[test]
@@ -4715,5 +4712,31 @@ mod difference_quotient {
   #[test]
   fn constant() {
     assert_eq!(interpret("DifferenceQuotient[5, {x, h}]").unwrap(), "0");
+  }
+}
+
+mod differentiate_integrate_leibniz {
+  use woxi::interpret;
+
+  // Full Leibniz rule: the integrand depends on `x` through both the
+  // bound variable `u` and `x` directly. Result must include the inner
+  // partial-derivative integral.
+  #[test]
+  fn integrand_depends_on_x_and_variable_bounds() {
+    assert_eq!(
+      interpret("D[Integrate[f[u, x], {u, a[x], b[x]}], x]").unwrap(),
+      "Integrate[Derivative[0, 1][f][u, x], {u, a[x], b[x]}] - \
+        f[a[x], x]*Derivative[1][a][x] + f[b[x], x]*Derivative[1][b][x]"
+    );
+  }
+
+  // Integrand independent of `x`: only the boundary terms should appear,
+  // so no `Integrate[...]` term is emitted.
+  #[test]
+  fn integrand_independent_of_x_with_variable_bounds() {
+    assert_eq!(
+      interpret("D[Integrate[f[u], {u, a[x], b[x]}], x]").unwrap(),
+      "-(f[a[x]]*Derivative[1][a][x]) + f[b[x]]*Derivative[1][b][x]"
+    );
   }
 }

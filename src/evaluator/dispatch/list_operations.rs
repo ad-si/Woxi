@@ -637,17 +637,19 @@ pub fn dispatch_list_operations(
       // partitions each dimension in turn with block sizes `n_i` and a
       // uniform offset `d`.
       if let Expr::List(ns) = &args[1]
-        && let Some(sizes) = ns.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
+        && let Some(sizes) =
+          ns.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
         && sizes.iter().all(|&s| s > 0)
       {
         let offsets: Option<Vec<i128>> = if args.len() >= 3 {
           match &args[2] {
             Expr::Integer(n) => Some(vec![*n; sizes.len()]),
             Expr::List(ds) => {
-              let ds: Option<Vec<i128>> =
-                ds.iter().map(expr_to_i128).collect();
+              let ds: Option<Vec<i128>> = ds.iter().map(expr_to_i128).collect();
               match ds {
-                Some(v) if v.len() == sizes.len() && v.iter().all(|&x| x > 0) => {
+                Some(v)
+                  if v.len() == sizes.len() && v.iter().all(|&x| x > 0) =>
+                {
                   Some(v)
                 }
                 _ => None,

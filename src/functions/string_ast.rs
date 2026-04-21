@@ -3749,9 +3749,7 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ascii
     }
     Some("Spanish") => chars_to_list("abcdefghijklmnñopqrstuvwxyz"),
-    Some("Russian") => {
-      chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
-    }
+    Some("Russian") => chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя"),
     // Pan-Cyrillic: superset covering several national alphabets (Russian,
     // Ukrainian, Serbian, …) including combined graphemes like з́ and с́.
     // Matches wolframscript's list, so Alphabet["Russian"] ≠ Alphabet["Cyrillic"].

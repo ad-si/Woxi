@@ -2226,14 +2226,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
-LINE: 1027
-TYPE: >>
-INPUT: D[Integrate[f[u, x],{u, a[x], b[x]}], x]
-EXPECTED:
-= Integrate[Derivative[0, 1][f][u, x], {u, a[x], b[x]}] + f[b[x], x] b'[x] - f[a[x], x] a'[x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Integrate
 LINE: 1029
 TYPE: >>
 INPUT: N[Integrate[Sin[Exp[-x^2 /2 ]],{x,1,2}]]

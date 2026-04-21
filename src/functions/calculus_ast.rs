@@ -526,7 +526,10 @@ fn try_definite_integral(
   // for any `n` independent of `var`.
   if matches!(lo, Expr::Integer(0))
     && is_pi(hi)
-    && let Expr::FunctionCall { name: cos_name, args: cos_args } = integrand
+    && let Expr::FunctionCall {
+      name: cos_name,
+      args: cos_args,
+    } = integrand
     && cos_name == "Cos"
     && cos_args.len() == 1
     && let Some(n) = extract_coefficient_of_sin_var(&cos_args[0], var)
@@ -1945,9 +1948,10 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if let Expr::List(spec) = &args[1]
             && spec.len() == 3
           {
-            // D[Integrate[f[t], {t, a(x), b(x)}], x]
-            // = f[b(x)] * b'(x) - f[a(x)] * a'(x)
-            // (Plus the partial derivative term, which vanishes if f doesn't contain x directly)
+            // D[Integrate[f[t, x], {t, a(x), b(x)}], x]
+            //   = Integrate[∂f/∂x, {t, a(x), b(x)}]
+            //     + f[b(x), x] * b'(x)
+            //     - f[a(x), x] * a'(x)
             let integrand = &args[0];
             let int_var = &spec[0];
             let lo = &spec[1];
@@ -1973,7 +1977,24 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               integrand.clone()
             };
 
-            let mut terms = Vec::new();
+            let mut terms: Vec<Expr> = Vec::new();
+
+            // Inside-integral term: Integrate[∂f/∂x, {t, a(x), b(x)}].
+            // Only include when the integrand actually depends on `var`,
+            // since otherwise the partial is identically 0.
+            if !is_constant_wrt(integrand, var) {
+              let inner_deriv = differentiate(integrand, var)?;
+              if !matches!(inner_deriv, Expr::Integer(0)) {
+                terms.push(Expr::FunctionCall {
+                  name: "Integrate".to_string(),
+                  args: vec![
+                    inner_deriv,
+                    Expr::List(vec![int_var.clone(), lo.clone(), hi.clone()]),
+                  ],
+                });
+              }
+            }
+
             // f[b(x)] * b'(x) term
             if !matches!(db, Expr::Integer(0)) {
               let term = if matches!(db, Expr::Integer(1)) {
@@ -2009,11 +2030,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             } else if terms.len() == 1 {
               Ok(simplify(terms.remove(0)))
             } else {
-              Ok(simplify(Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Plus,
-                left: Box::new(terms[0].clone()),
-                right: Box::new(terms[1].clone()),
-              }))
+              let mut result = terms[0].clone();
+              for t in terms.iter().skip(1) {
+                result = Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Plus,
+                  left: Box::new(result),
+                  right: Box::new(t.clone()),
+                };
+              }
+              Ok(simplify(result))
             }
           } else {
             // Indefinite integral: return unevaluated
