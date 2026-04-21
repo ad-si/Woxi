@@ -3674,6 +3674,14 @@ mod matrix_form {
       "MatrixForm[{{a[1, 1], a[1, 2], a[1, 3]}, {a[2, 1], a[2, 2], a[2, 3]}, {a[3, 1], a[3, 2], a[3, 3]}, {a[4, 1], a[4, 2], a[4, 3]}}]"
     );
   }
+
+  #[test]
+  fn matrix_form_2x2_symbols() {
+    assert_eq!(
+      interpret("MatrixForm[{{a,b},{c,d}}]").unwrap(),
+      "MatrixForm[{{a, b}, {c, d}}]"
+    );
+  }
 }
 
 mod out_function {
