@@ -798,6 +798,14 @@ mod series {
   }
 
   #[test]
+  fn series_exp_sin_order5() {
+    assert_eq!(
+      interpret("Series[Exp[Sin[x]], {x, 0, 5}]").unwrap(),
+      "SeriesData[x, 0, {1, 1, 1/2, 0, -1/8, -1/15}, 0, 6, 1]"
+    );
+  }
+
+  #[test]
   fn series_exp_order4() {
     assert_eq!(
       interpret("Series[Exp[x], {x, 0, 4}]").unwrap(),

@@ -9073,3 +9073,11 @@ INPUT: Series[Exp[x-y], {x, 0, 2}, {y, 0, 2}]
 EXPECTED:
 = 1 - y + y ^ 2 / 2 + O[y] ^ 3 + (1 - y + y ^ 2 / 2 + O[y] ^ 3) x + (1 / 2 - y / 2 + y ^ 2 / 4 + O[y] ^ 3) x ^ 2 + O[x] ^ 3
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1848
+TYPE: >>
+INPUT: Series[Exp[Sin[x]], {x, 0, 5}]
+EXPECTED:
+= 1 + x + x ^ 2 / 2 - x ^ 4 / 8 - x ^ 5 / 15 + O[x] ^ 6
+---

@@ -2661,14 +2661,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesCoefficient
-LINE: 1848
-TYPE: >>
-INPUT: Series[Exp[Sin[x]], {x, 0, 5}]
-EXPECTED:
-= 1 + x + x ^ 2 / 2 - x ^ 4 / 8 - x ^ 5 / 15 + O[x] ^ 6
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: SeriesCoefficient
 LINE: 1852
 TYPE: >>
 INPUT: SeriesCoefficient[%, 4]
