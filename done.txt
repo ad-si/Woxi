@@ -11158,3 +11158,11 @@ INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]
 EXPECTED:
 = {{a}, {a, b}, {a, b, c}}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 677
+TYPE: >>
+INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
+EXPECTED:
+= {{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}
+---

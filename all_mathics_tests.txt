@@ -5918,14 +5918,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 677
-TYPE: >>
-INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
-EXPECTED:
-= {{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 809
 TYPE: >>
 INPUT: Block[{$RecursionLimit = 30}, x = 2 x]
