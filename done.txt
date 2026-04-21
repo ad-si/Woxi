@@ -10226,3 +10226,11 @@ INPUT: m["BasisFunctions"]
 EXPECTED:
 = {1, x}
 ---
+FILE: mathics/builtin/file_operations/file_utilities.py
+CLASS: FindList
+LINE: 33
+TYPE: >>
+INPUT: Length[stream]
+EXPECTED:
+= 7
+---

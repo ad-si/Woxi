@@ -3845,14 +3845,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/file_operations/file_utilities.py
 CLASS: FindList
-LINE: 33
-TYPE: >>
-INPUT: Length[stream]
-EXPECTED:
-= 7
----
-FILE: mathics/builtin/file_operations/file_utilities.py
-CLASS: FindList
 LINE: 36
 TYPE: >>
 INPUT: FindList["ExampleData/EinsteinSzilLetter.txt", "uranium", 1]
