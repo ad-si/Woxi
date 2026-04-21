@@ -9737,3 +9737,11 @@ INPUT: f[3.]
 EXPECTED:
 = 3
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Series
+LINE: 1785
+TYPE: >>
+INPUT: series /. x->4
+EXPECTED:
+= 1 + 4 ^ 2 + O[4] ^ 3
+---
