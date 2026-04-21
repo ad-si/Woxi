@@ -10367,29 +10367,6 @@ EXPECTED:
 </mrow>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: Subscript[a, 4]
-DESCRIPTION: SubscriptBox
-EXPECTED:
-  text[System`InputForm]: Subscript[a, 4]
-  text[System`OutputForm]: Subscript[a, 4]
-  text[System`StandardForm]: ['Subscript[a, 4]', 'BoxError']
-  text[System`TraditionalForm]: ['Subscript[a, 4]', 'BoxError']
-  latex[System`InputForm]: \text{Subscript[a, 4]}
-  latex[System`OutputForm]: \text{Subscript[a, 4]}
-  latex[System`StandardForm]: a_4
-  latex[System`TraditionalForm]: a_4
-  mathml[System`InputForm]: ['<mtext>Subscript[a,&nbsp;4]</mtext>', 'Fragile!']
-  mathml[System`OutputForm]: ['<mtext>Subscript[a,&nbsp;4]</mtext>', 'Fragile!']
-  mathml[System`StandardForm]: <msub>
- <mi>a</mi>
- <mn>4</mn>
-</msub>
-  mathml[System`TraditionalForm]: <msub>
- <mi>a</mi>
- <mn>4</mn>
-</msub>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Subsuperscript[a, p, q]
 DESCRIPTION: SubsuperscriptBox
 EXPECTED:

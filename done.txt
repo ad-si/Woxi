@@ -9031,3 +9031,10 @@ DESCRIPTION: SqrtBox
 EXPECTED:
   text[System`InputForm]: Sqrt[1/(1 + 1/(1 + 1/a))]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Subscript[a, 4]
+DESCRIPTION: SubscriptBox
+EXPECTED:
+  text[System`InputForm]: Subscript[a, 4]
+  text[System`OutputForm]: Subscript[a, 4]
+---
