@@ -3646,14 +3646,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/distance/numeric.py
 CLASS: CosineDistance
-LINE: 166
-TYPE: >>
-INPUT: CosineDistance[{1, 0}, {x, y}]
-EXPECTED:
-= 1 - Conjugate[x] / Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2]
----
-FILE: mathics/builtin/distance/numeric.py
-CLASS: CosineDistance
 LINE: 174
 TYPE: >>
 INPUT: CosineDistance[{a, b, c}, {x, y, z}]

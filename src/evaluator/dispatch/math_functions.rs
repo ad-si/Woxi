@@ -2423,7 +2423,7 @@ pub fn dispatch_math_functions(
       }
     }
     "CosineDistance" if args.len() == 2 => {
-      // CosineDistance[u, v] = 1 - (u.v) / (Norm[u] * Norm[v])
+      // CosineDistance[u, v] = 1 - (u . Conjugate[v]) / (Norm[u] * Norm[v])
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
         && a.len() == b.len()
         && !a.is_empty()
@@ -2446,9 +2446,13 @@ pub fn dispatch_math_functions(
             Expr::Integer(0)
           }));
         }
+        let conj_b = Expr::FunctionCall {
+          name: "Conjugate".to_string(),
+          args: vec![args[1].clone()],
+        };
         let dot = Expr::FunctionCall {
           name: "Dot".to_string(),
-          args: vec![args[0].clone(), args[1].clone()],
+          args: vec![args[0].clone(), conj_b],
         };
         let norm_a = Expr::FunctionCall {
           name: "Norm".to_string(),

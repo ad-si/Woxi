@@ -1895,10 +1895,7 @@ mod batch_unevaluated_wrappers_2 {
   fn haversine_real_matches_wolframscript() {
     // Regression: computing via Sin[x/2]^2 gives the same f64 value as
     // wolframscript; the older (1 - Cos[x])/2 formula was one ULP off.
-    assert_eq!(
-      interpret("Haversine[1.5]").unwrap(),
-      "0.4646313991661485"
-    );
+    assert_eq!(interpret("Haversine[1.5]").unwrap(), "0.4646313991661485");
   }
   #[test]
   fn inverse_haversine_zero() {
@@ -2812,6 +2809,17 @@ mod batch_unevaluated_wrappers_2 {
   fn cosine_distance_zero_vector_integer() {
     // Integer-only zero vector returns exact 0 (matches wolframscript).
     assert_eq!(interpret("CosineDistance[{0, 0}, {1, 2}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn cosine_distance_symbolic_uses_conjugate() {
+    // Regression: CosineDistance uses the Hermitian inner product, so the
+    // second vector must be conjugated. Before this fix woxi returned
+    // `1 - x/Sqrt[...]` instead of `1 - Conjugate[x]/Sqrt[...]`.
+    assert_eq!(
+      interpret("CosineDistance[{1, 0}, {x, y}]").unwrap(),
+      "1 - Conjugate[x]/Sqrt[Abs[x]^2 + Abs[y]^2]"
+    );
   }
   #[test]
   fn key_sort_by_basic() {

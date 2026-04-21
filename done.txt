@@ -10482,3 +10482,11 @@ INPUT: Replace[{x_ -> x + 1}][10]
 EXPECTED:
 = 11
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CosineDistance
+LINE: 166
+TYPE: >>
+INPUT: CosineDistance[{1, 0}, {x, y}]
+EXPECTED:
+= 1 - Conjugate[x] / Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2]
+---
