@@ -9045,3 +9045,9 @@ EXPECTED:
   text[System`InputForm]: Subsuperscript[a, p, q]
   text[System`OutputForm]: Subsuperscript[a, p, q]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: TableForm[{{a,b},{c,d}}]
+DESCRIPTION: GridBox in a table
+EXPECTED:
+  text[System`InputForm]: TableForm[{{a, b}, {c, d}}]
+---
