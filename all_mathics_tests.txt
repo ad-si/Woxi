@@ -7323,13 +7323,6 @@ MESSAGE: msg
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: test_one_identity_stil_failing
 LINE: 135
-INPUT: MatchQ[F[x], F[x_:0,y_]]
-EXPECTED: True
-MESSAGE: With OneIdentity, and Default
----
-FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: test_one_identity_stil_failing
-LINE: 135
 INPUT: MatchQ[G[x], G[x_:0,y_]]
 EXPECTED: True
 MESSAGE: Without OneIdentity, and Default
