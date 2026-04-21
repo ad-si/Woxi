@@ -97,6 +97,14 @@ fn extract_span_from_items(
   };
 
   if (step > 0 && start > end) || (step < 0 && start < end) {
+    // Reverse-direction span. wolframscript treats the adjacent case
+    // (`end == start - step`) as an empty result — so `{a,b,c}[[-1;;-2]]`
+    // and `{…}[[3;;2]]` produce `{}`, and `Plus[a,b,c,d][[-1;;-2]]`
+    // folds to `0`. Any wider inversion (e.g. `5;;2`) is an error.
+    if (step > 0 && end == start - 1) || (step < 0 && end == start + 1) {
+      let empty = rebuild(Vec::new());
+      return crate::evaluator::evaluate_expr_to_expr(&empty);
+    }
     part_take_warn(expr, start_raw, end_raw);
     return Ok(part_take_unevaluated(expr, index));
   }

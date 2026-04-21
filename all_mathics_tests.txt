@@ -4236,14 +4236,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1134
-TYPE: >>
-INPUT: (a+b+c+d)[[-1;;-2]]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1141
 TYPE: >>
 INPUT: B[[;;, 2]] = {10, 11, 12}

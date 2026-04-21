@@ -3493,10 +3493,8 @@ mod first_position {
   #[test]
   fn inside_plus_expression() {
     assert_eq!(
-      interpret(
-        "FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]"
-      )
-      .unwrap(),
+      interpret("FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]")
+        .unwrap(),
       "{1, 2}"
     );
   }
@@ -4392,6 +4390,29 @@ mod part_span {
       interpret("Range[10][[1 ;; ;; 2]]").unwrap(),
       "{1, 3, 5, 7, 9}"
     );
+  }
+
+  // ── Adjacent-reverse empty span  —  wolframscript semantics ────────
+  #[test]
+  fn part_adjacent_reverse_span_returns_empty_list() {
+    // `{a, b, c, d, e}[[-1;;-2]]` normalizes to `5;;4` — end == start - 1 —
+    // which wolframscript treats as an empty result.
+    assert_eq!(
+      interpret("{a, b, c, d, e}[[-1;;-2]]").unwrap(),
+      "{}"
+    );
+    assert_eq!(interpret("{a, b, c, d, e}[[4;;3]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn part_adjacent_reverse_span_folds_empty_plus_to_zero() {
+    // `Plus[a, b, c, d][[-1;;-2]]` returns `Plus[]`, which folds to `0`.
+    assert_eq!(interpret("(a+b+c+d)[[-1;;-2]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn part_adjacent_reverse_span_folds_empty_times_to_one() {
+    assert_eq!(interpret("(a*b*c)[[-1;;-2]]").unwrap(), "1");
   }
 }
 
