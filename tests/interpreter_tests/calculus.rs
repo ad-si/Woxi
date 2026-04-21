@@ -1253,6 +1253,16 @@ mod limit {
       "DiscreteLimit[f[n], n -> Infinity]"
     );
   }
+
+  #[test]
+  fn discrete_limit_rational_at_infinity() {
+    // For rational sequences where Limit succeeds, DiscreteLimit returns
+    // the same value (matches wolframscript).
+    assert_eq!(
+      interpret("DiscreteLimit[n/(n + 1), n -> Infinity]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod nintegrate {

@@ -10579,3 +10579,11 @@ INPUT: Inequality[a, Greater, b, LessEqual, c]
 EXPECTED:
 = a > b && b <= c
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: DiscreteLimit
+LINE: 554
+TYPE: >>
+INPUT: DiscreteLimit[n/(n + 1), n -> Infinity]
+EXPECTED:
+= 1
+---

@@ -242,6 +242,44 @@ pub fn dispatch_calculus_functions(
     "Limit" if (2..=3).contains(&args.len()) => {
       return Some(crate::functions::calculus_ast::limit_ast(args));
     }
+    // DiscreteLimit[expr, n -> val] / DiscreteLimit[expr, {m -> ..., n -> ...}]
+    // For smooth rational sequences this matches the continuous Limit;
+    // delegate to Limit, and for a list of substitutions apply them
+    // outside-in (matches wolframscript's iterated-limit semantics for
+    // simple rational expressions).
+    "DiscreteLimit" if args.len() == 2 => {
+      let inner = &args[1];
+      let subs: Vec<Expr> = match inner {
+        Expr::List(items) => items.clone(),
+        _ => vec![inner.clone()],
+      };
+      let mut current = args[0].clone();
+      let mut all_resolved = true;
+      for sub in subs.into_iter().rev() {
+        let next = match crate::functions::calculus_ast::limit_ast(&[
+          current.clone(),
+          sub.clone(),
+        ]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        // If Limit didn't simplify (still a Limit[...] wrapper), keep the
+        // original DiscreteLimit unevaluated rather than replacing it with
+        // a spurious Limit[] form.
+        if matches!(&next, Expr::FunctionCall { name, .. } if name == "Limit") {
+          all_resolved = false;
+          break;
+        }
+        current = next;
+      }
+      if all_resolved {
+        return Some(Ok(current));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "DiscreteLimit".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "MaxLimit" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::max_limit_ast(args));
     }
