@@ -11001,3 +11001,10 @@ INPUT: MatchQ[F[F[F[x]]], F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, nested
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity
+LINE: 19
+INPUT: MatchQ[G[G[G[x]]], G[x_:0,y_]]
+EXPECTED: True
+MESSAGE: Without OneIdentity, nested
+---
