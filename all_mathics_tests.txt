@@ -4530,14 +4530,6 @@ EXPECTED:
 = 0.157299
 ---
 FILE: mathics/builtin/specialfns/erf.py
-CLASS: FresnelC
-LINE: 114
-TYPE: >>
-INPUT: Integrate[Cos[x^2 Pi/2], {x, 0, z}]
-EXPECTED:
-= FresnelC[z]
----
-FILE: mathics/builtin/specialfns/erf.py
 CLASS: FresnelS
 LINE: 145
 TYPE: >>

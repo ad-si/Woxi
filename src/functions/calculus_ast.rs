@@ -502,7 +502,97 @@ fn try_definite_integral(
     });
   }
 
+  // Fresnel C/S: ∫_0^z Cos[Pi var^2 / 2] d var = FresnelC[z]
+  //              ∫_0^z Sin[Pi var^2 / 2] d var = FresnelS[z]
+  if matches!(lo, Expr::Integer(0)) {
+    if let Expr::FunctionCall { name, args } = integrand
+      && (name == "Cos" || name == "Sin")
+      && args.len() == 1
+      && is_pi_x_squared_over_two(&args[0], var)
+    {
+      let head = if name == "Cos" { "FresnelC" } else { "FresnelS" };
+      return Some(Expr::FunctionCall {
+        name: head.to_string(),
+        args: vec![hi.clone()],
+      });
+    }
+  }
+
   None
+}
+
+/// Match `Pi * var^2 / 2` in any canonical-times ordering.
+fn is_pi_x_squared_over_two(expr: &Expr, var: &str) -> bool {
+  // Normalize: we're looking for Times[Pi, Power[var, 2], Rational[1, 2]]
+  // or equivalent Divide forms.
+  fn is_half(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2
+           && matches!(&args[0], Expr::Integer(1))
+           && matches!(&args[1], Expr::Integer(2))
+    )
+  }
+  fn is_pi(e: &Expr) -> bool {
+    matches!(e, Expr::Constant(c) if c == "Pi")
+  }
+  fn is_var_squared(e: &Expr, var: &str) -> bool {
+    match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        matches!(left.as_ref(), Expr::Identifier(n) if n == var)
+          && matches!(right.as_ref(), Expr::Integer(2))
+      }
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        matches!(&args[0], Expr::Identifier(n) if n == var)
+          && matches!(&args[1], Expr::Integer(2))
+      }
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Expect exactly three factors: Pi, var^2, 1/2 in any order.
+      if args.len() != 3 {
+        return false;
+      }
+      let mut have_pi = false;
+      let mut have_sq = false;
+      let mut have_half = false;
+      for a in args {
+        if is_pi(a) {
+          have_pi = true;
+        } else if is_var_squared(a, var) {
+          have_sq = true;
+        } else if is_half(a) {
+          have_half = true;
+        } else {
+          return false;
+        }
+      }
+      have_pi && have_sq && have_half
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      // (Pi * var^2) / 2
+      matches!(right.as_ref(), Expr::Integer(2))
+        && matches!(
+          left.as_ref(),
+          Expr::FunctionCall { name, args }
+            if name == "Times" && args.len() == 2
+               && ((is_pi(&args[0]) && is_var_squared(&args[1], var))
+                   || (is_pi(&args[1]) && is_var_squared(&args[0], var)))
+        )
+    }
+    _ => false,
+  }
 }
 
 /// Try to match an expression as E^(-a*x^2) where a is a positive constant.

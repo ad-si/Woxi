@@ -2257,6 +2257,24 @@ mod fresnel_s {
     assert!((result - 0.34341567836369946).abs() < 1e-10);
   }
 
+  // Definite integrals `∫₀ᶻ Cos[π x²/2] dx = FresnelC[z]` and the Sin form.
+  // Regression for mathics specialfns/erf.py:114.
+  #[test]
+  fn definite_integral_to_fresnel_c() {
+    assert_eq!(
+      interpret("Integrate[Cos[x^2 Pi/2], {x, 0, z}]").unwrap(),
+      "FresnelC[z]"
+    );
+  }
+
+  #[test]
+  fn definite_integral_to_fresnel_s() {
+    assert_eq!(
+      interpret("Integrate[Sin[x^2 Pi/2], {x, 0, z}]").unwrap(),
+      "FresnelS[z]"
+    );
+  }
+
   #[test]
   fn numeric_half() {
     let result: f64 = interpret("FresnelS[0.5]").unwrap().parse().unwrap();
