@@ -6744,12 +6744,6 @@ MESSAGE: N[b,_]=1.2`3
 ---
 FILE: mathics/test/test_help.py
 FUNCTION: test_short_description
-LINE: 28
-INPUT: ?Builtin1
-EXPECTED: Global`Builtin1\n
----
-FILE: mathics/test/test_help.py
-FUNCTION: test_short_description
 LINE: 31
 INPUT: ?Builtin2
 EXPECTED: Global`Builtin2\n
