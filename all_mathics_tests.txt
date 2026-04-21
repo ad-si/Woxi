@@ -7090,12 +7090,6 @@ INPUT: F[b, 2/9]
 EXPECTED: F[b, 2 *9 ^ (-1)]
 MESSAGE: N[b,_]=1.2`3
 ---
-FILE: mathics/test/test_numericq.py
-FUNCTION: test_expression_numericq
-LINE: 73
-INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
-EXPECTED: False
----
 FILE: mathics/test/eval/makeboxes/test_number_form.py
 FUNCTION: test_string_conversion_limited_size
 LINE: 84

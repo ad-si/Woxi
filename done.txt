@@ -10974,3 +10974,9 @@ LINE: 181
 INPUT: N[1.01234567890123456789`, 2] // Precision
 EXPECTED: MachinePrecision
 ---
+FILE: mathics/test/test_numericq.py
+FUNCTION: test_expression_numericq
+LINE: 73
+INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
+EXPECTED: False
+---
