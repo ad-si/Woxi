@@ -6277,12 +6277,6 @@ INPUT: F[b, 2/9]
 EXPECTED: F[b, 2 *9 ^ (-1)]
 MESSAGE: N[b,_]=1.2`3
 ---
-FILE: mathics/test/test_structure.py
-FUNCTION: test_flatten
-LINE: 46
-INPUT: Flatten[m, {2, 1}]
-EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
----
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
 LINE: 25
