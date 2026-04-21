@@ -462,6 +462,9 @@ pub fn expr_to_bigfloat(
       let two = BigFloat::from_i32(2, bits);
       Ok(numer.div(&two, bits, rm))
     }
+    Expr::Identifier(name) if name == "EulerGamma" => {
+      Ok(compute_euler_gamma(bits, rm, cc))
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,

@@ -10587,3 +10587,11 @@ INPUT: DiscreteLimit[n/(n + 1), n -> Infinity]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: EulerGamma
+LINE: 397
+TYPE: >>
+INPUT: N[EulerGamma, 40]
+EXPECTED:
+= 0.5772156649015328606065120900824024310422
+---

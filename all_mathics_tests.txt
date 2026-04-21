@@ -2517,14 +2517,6 @@ EXPECTED:
 ---
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: EulerGamma
-LINE: 397
-TYPE: >>
-INPUT: N[EulerGamma, 40]
-EXPECTED:
-= 0.5772156649015328606065120900824024310422
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Glaisher
 LINE: 423
 TYPE: >>

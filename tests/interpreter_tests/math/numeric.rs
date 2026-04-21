@@ -76,10 +76,15 @@ mod n_arbitrary_precision {
   fn n_golden_ratio_arbitrary() {
     // N[GoldenRatio, 40] — (1 + Sqrt[5]) / 2 evaluated at arbitrary precision.
     let result = interpret("N[GoldenRatio, 40]").unwrap();
-    assert!(
-      result
-        .starts_with("1.618033988749894848204586834365638117720")
-    );
+    assert!(result.starts_with("1.618033988749894848204586834365638117720"));
+    assert!(result.ends_with("`40."));
+  }
+
+  #[test]
+  fn n_euler_gamma_arbitrary() {
+    // N[EulerGamma, 40] — Euler–Mascheroni constant at arbitrary precision.
+    let result = interpret("N[EulerGamma, 40]").unwrap();
+    assert!(result.starts_with("0.577215664901532860606512090082402431042"));
     assert!(result.ends_with("`40."));
   }
 
