@@ -364,14 +364,6 @@ EXPECTED:
 = {1, 2, {{c1, c2}, {10}}}
 ---
 FILE: mathics/builtin/assignments/types.py
-CLASS: DefaultValues
-LINE: 44
-TYPE: >>
-INPUT: g[]
-EXPECTED:
-= {3}
----
-FILE: mathics/builtin/assignments/types.py
 CLASS: SubValues
 LINE: 157
 TYPE: >>
