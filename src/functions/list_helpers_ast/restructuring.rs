@@ -168,6 +168,120 @@ pub fn partition_ast(
   Ok(Expr::List(results))
 }
 
+/// Multi-dimensional Partition: `Partition[tensor, {n_1, …, n_k}, {d_1, …, d_k}]`.
+/// Returns a nested list where each of the `k` dimensions of the input
+/// tensor is blocked with size `n_i` and offset `d_i`.
+pub fn partition_multi_dim_ast(
+  expr: &Expr,
+  sizes: &[i128],
+  offsets: &[i128],
+) -> Result<Expr, InterpreterError> {
+  fn partition_one_dim(list: &Expr, n: usize, d: usize) -> Option<Vec<Expr>> {
+    let items = match list {
+      Expr::List(v) => v,
+      _ => return None,
+    };
+    let mut chunks: Vec<Expr> = Vec::new();
+    let mut i = 0;
+    while i + n <= items.len() {
+      chunks.push(Expr::List(items[i..i + n].to_vec()));
+      i += d;
+    }
+    Some(chunks)
+  }
+
+  fn recurse(
+    list: &Expr,
+    sizes: &[usize],
+    offsets: &[usize],
+  ) -> Option<Expr> {
+    if sizes.is_empty() {
+      return Some(list.clone());
+    }
+    let outer = partition_one_dim(list, sizes[0], offsets[0])?;
+    let rest_sizes = &sizes[1..];
+    let rest_offsets = &offsets[1..];
+    if rest_sizes.is_empty() {
+      return Some(Expr::List(outer));
+    }
+    // Each outer chunk is a List whose elements we must partition along the
+    // remaining axes and then transpose so the next-axis partitioning
+    // happens at the right level.
+    let mut recurred: Vec<Vec<Expr>> = Vec::new();
+    for chunk in &outer {
+      // chunk is `Expr::List(rows)`; we want to partition each row's
+      // deeper dimensions, then reassemble.
+      let rows = match chunk {
+        Expr::List(v) => v,
+        _ => return None,
+      };
+      let per_row: Option<Vec<Expr>> = rows
+        .iter()
+        .map(|r| recurse(r, rest_sizes, rest_offsets))
+        .collect();
+      let per_row = per_row?;
+      recurred.push(per_row);
+    }
+    // `recurred` is indexed [outer_block][row_within_block] and each entry
+    // is the tensor of sub-partitions from recurse. We need to transpose to
+    // group by the next-axis block position.
+    // Each per_row[row_within_block] is a List of `n_2`-sized blocks along
+    // dim 2, then further partitioned below. We treat each per_row as the
+    // inner partition for that "row slot", then assemble outer-axis-first.
+    //
+    // For the 2-dim case, per_row[r] = List of column-blocks. We want
+    // outer[i] = (i-th block) = List of column-blocks, where each column
+    // block itself is List of rows (size n_1). Essentially pivot so columns
+    // vary in the inner axis.
+    //
+    // The simplest reconstruction: for each outer block, build a List of
+    // items where the k-th item is taken from per_row[*][k].
+    let mut result_outer: Vec<Expr> = Vec::new();
+    for per_row in &recurred {
+      // Number of inner blocks per row (uniform). Assume well-formed input.
+      let inner_count = match per_row.first() {
+        Some(Expr::List(v)) => v.len(),
+        _ => return None,
+      };
+      let mut inner_blocks: Vec<Expr> = Vec::with_capacity(inner_count);
+      for k in 0..inner_count {
+        let mut gathered: Vec<Expr> = Vec::with_capacity(per_row.len());
+        for row in per_row {
+          if let Expr::List(items) = row
+            && let Some(item) = items.get(k)
+          {
+            gathered.push(item.clone());
+          } else {
+            return None;
+          }
+        }
+        inner_blocks.push(Expr::List(gathered));
+      }
+      result_outer.push(Expr::List(inner_blocks));
+    }
+    Some(Expr::List(result_outer))
+  }
+
+  let sizes_u: Vec<usize> = sizes.iter().map(|&x| x as usize).collect();
+  let offsets_u: Vec<usize> = offsets.iter().map(|&x| x as usize).collect();
+  match recurse(expr, &sizes_u, &offsets_u) {
+    Some(r) => Ok(r),
+    None => {
+      let mut call_args = vec![expr.clone()];
+      call_args.push(Expr::List(
+        sizes.iter().map(|&x| Expr::Integer(x)).collect(),
+      ));
+      call_args.push(Expr::List(
+        offsets.iter().map(|&x| Expr::Integer(x)).collect(),
+      ));
+      Ok(Expr::FunctionCall {
+        name: "Partition".to_string(),
+        args: call_args,
+      })
+    }
+  }
+}
+
 /// AST-based Flatten: flatten nested lists.
 pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
@@ -400,9 +514,7 @@ pub fn flatten_dims_ast(
   // least the highest level mentioned in `dim_spec`.
   fn depth(expr: &Expr) -> usize {
     match expr {
-      Expr::List(items) => {
-        1 + items.iter().map(depth).max().unwrap_or(0)
-      }
+      Expr::List(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
       _ => 0,
     }
   }
@@ -418,8 +530,7 @@ pub fn flatten_dims_ast(
   // Append any levels in 1..=max_level that `dim_spec` doesn't mention as
   // singleton groups at the end, so `Flatten[list, {{2}}]` behaves like
   // `Flatten[list, {{2}, {1}, {3}, …}]` (matches wolframscript).
-  let mut effective_spec: Vec<Vec<usize>> =
-    dim_spec.iter().cloned().collect();
+  let mut effective_spec: Vec<Vec<usize>> = dim_spec.to_vec();
   let mut mentioned: std::collections::HashSet<usize> = effective_spec
     .iter()
     .flat_map(|g| g.iter().copied())

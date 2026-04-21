@@ -633,6 +633,37 @@ pub fn dispatch_list_operations(
           &args[0], n, d, align, pad,
         ));
       }
+      // Multi-dimensional form: Partition[tensor, {n1, n2, ...}, d]
+      // partitions each dimension in turn with block sizes `n_i` and a
+      // uniform offset `d`.
+      if let Expr::List(ns) = &args[1]
+        && let Some(sizes) = ns.iter().map(expr_to_i128).collect::<Option<Vec<_>>>()
+        && sizes.iter().all(|&s| s > 0)
+      {
+        let offsets: Option<Vec<i128>> = if args.len() >= 3 {
+          match &args[2] {
+            Expr::Integer(n) => Some(vec![*n; sizes.len()]),
+            Expr::List(ds) => {
+              let ds: Option<Vec<i128>> =
+                ds.iter().map(expr_to_i128).collect();
+              match ds {
+                Some(v) if v.len() == sizes.len() && v.iter().all(|&x| x > 0) => {
+                  Some(v)
+                }
+                _ => None,
+              }
+            }
+            _ => None,
+          }
+        } else {
+          Some(sizes.clone())
+        };
+        if let Some(offsets) = offsets {
+          return Some(list_helpers_ast::partition_multi_dim_ast(
+            &args[0], &sizes, &offsets,
+          ));
+        }
+      }
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::permutations_ast(args));

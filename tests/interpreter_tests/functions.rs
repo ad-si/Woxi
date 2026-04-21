@@ -467,6 +467,28 @@ mod partition_extended {
       "{{a, b}, {b, c}, {c, d}, {d, e}}"
     );
   }
+
+  // Multi-dimensional Partition[tensor, {n1, n2}, d]. Regression for
+  // mathics rearrange.py:1001.
+  #[test]
+  fn partition_matrix_2x2_stride_1() {
+    assert_eq!(
+      interpret(
+        "Partition[{{11, 12, 13}, {21, 22, 23}, {31, 32, 33}}, {2, 2}, 1]"
+      )
+      .unwrap(),
+      "{{{{11, 12}, {21, 22}}, {{12, 13}, {22, 23}}}, {{{21, 22}, {31, 32}}, \
+       {{22, 23}, {32, 33}}}}"
+    );
+  }
+
+  #[test]
+  fn partition_matrix_2x2_default_stride() {
+    assert_eq!(
+      interpret("Partition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {2, 2}]").unwrap(),
+      "{{{{1, 2}, {4, 5}}}}"
+    );
+  }
 }
 
 mod downsample {

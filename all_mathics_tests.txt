@@ -4086,14 +4086,6 @@ EXPECTED:
 = {{x, x}, {x, 1}, {x, x}, {x, x}, {x, x}}
 ---
 FILE: mathics/builtin/list/rearrange.py
-CLASS: Partition
-LINE: 1001
-TYPE: >>
-INPUT: Partition[{{11, 12, 13}, {21, 22, 23}, {31, 32, 33}}, {2, 2}, 1]
-EXPECTED:
-= {{{{11, 12}, {21, 22}}, {{12, 13}, {22, 23}}}, {{{21, 22}, {31, 32}}, {{22, 23}, {32, 33}}}}
----
-FILE: mathics/builtin/list/rearrange.py
 CLASS: Union
 LINE: 1427
 TYPE: >>
