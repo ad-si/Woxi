@@ -4966,6 +4966,113 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        // Inverse trig antiderivatives (only handled when the argument is
+        // the integration variable itself — a linear-argument
+        // generalization would require threading the coefficient through
+        // the Sqrt[…] and Log[…] pieces).
+        "ArcSin" if args.len() == 1 => {
+          if let Expr::Identifier(name) = &args[0]
+            && name == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let x_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let one_minus = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(x_sq),
+            };
+            let sqrt_term = make_sqrt(one_minus);
+            // x ArcSin[x] + Sqrt[1 - x^2]
+            return Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(x),
+                right: Box::new(Expr::FunctionCall {
+                  name: "ArcSin".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+              right: Box::new(sqrt_term),
+            });
+          }
+          None
+        }
+        "ArcCos" if args.len() == 1 => {
+          if let Expr::Identifier(name) = &args[0]
+            && name == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let x_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let one_minus = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(x_sq),
+            };
+            let sqrt_term = make_sqrt(one_minus);
+            // x ArcCos[x] - Sqrt[1 - x^2]
+            return Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(x),
+                right: Box::new(Expr::FunctionCall {
+                  name: "ArcCos".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+              right: Box::new(sqrt_term),
+            });
+          }
+          None
+        }
+        "ArcTan" if args.len() == 1 => {
+          if let Expr::Identifier(name) = &args[0]
+            && name == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            let x_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let one_plus = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(x_sq),
+            };
+            let log_term = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![one_plus],
+            };
+            // x ArcTan[x] - Log[1 + x^2] / 2
+            return Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(x),
+                right: Box::new(Expr::FunctionCall {
+                  name: "ArcTan".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(log_term),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            });
+          }
+          None
+        }
         "Cos" if args.len() == 1 => {
           // ∫ cos(a*x) dx = sin(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {

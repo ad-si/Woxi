@@ -51,6 +51,42 @@ mod integrate_with_sum {
   }
 
   #[test]
+  fn integrate_arccos_indefinite() {
+    // ∫ ArcCos[x] dx = x ArcCos[x] - Sqrt[1 - x^2]
+    assert_eq!(
+      interpret("Integrate[ArcCos[x], x]").unwrap(),
+      "-Sqrt[1 - x^2] + x*ArcCos[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_arccos_definite_pi() {
+    // ∫_{-1}^{1} ArcCos[x] dx = Pi
+    assert_eq!(
+      interpret("Integrate[ArcCos[x], {x, -1, 1}]").unwrap(),
+      "Pi"
+    );
+  }
+
+  #[test]
+  fn integrate_arcsin_indefinite() {
+    // ∫ ArcSin[x] dx = x ArcSin[x] + Sqrt[1 - x^2]
+    assert_eq!(
+      interpret("Integrate[ArcSin[x], x]").unwrap(),
+      "Sqrt[1 - x^2] + x*ArcSin[x]"
+    );
+  }
+
+  #[test]
+  fn integrate_arctan_indefinite() {
+    // ∫ ArcTan[x] dx = x ArcTan[x] - Log[1 + x^2] / 2
+    assert_eq!(
+      interpret("Integrate[ArcTan[x], x]").unwrap(),
+      "x*ArcTan[x] - Log[1 + x^2]/2"
+    );
+  }
+
+  #[test]
   fn integrate_sin_linear_arg() {
     // ∫ sin(2x) dx = -1/2*cos(2x)
     assert_eq!(

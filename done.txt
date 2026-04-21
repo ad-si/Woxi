@@ -10643,3 +10643,11 @@ INPUT: ContinuedFraction[Sqrt[70]]
 EXPECTED:
 = {8, {2, 1, 2, 1, 2, 16}}
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: ArcCos
+LINE: 357
+TYPE: >>
+INPUT: Integrate[ArcCos[x], {x, -1, 1}]
+EXPECTED:
+= Pi
+---
