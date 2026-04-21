@@ -9934,3 +9934,10 @@ INPUT: FactorTermsList[f]
 EXPECTED:
 = {-3, -1 + a - 2 a x - a y + 2 x + y - 2 x y + 2 a x y}
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: CharacterEncoding
+LINE: 302
+TYPE: >>
+INPUT: $CharacterEncoding = None;
+EXPECTED: (none)
+---

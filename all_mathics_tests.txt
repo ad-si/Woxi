@@ -4139,13 +4139,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: CharacterEncoding
-LINE: 302
-TYPE: >>
-INPUT: $CharacterEncoding = None;
-EXPECTED: (none)
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: CharacterEncoding
 LINE: 303
 TYPE: >>
 INPUT: $SystemCharacterEncoding == $CharacterEncoding
