@@ -1446,6 +1446,48 @@ fn substitute_captures(expr: &Expr, captures: &regex::Captures) -> Expr {
   }
 }
 
+/// Append `?` to every greedy quantifier in `regex` so repetition matches
+/// the shortest substring. Skips quantifiers that are already lazy, and
+/// leaves a standalone `?` (optional) untouched.
+fn make_non_greedy(regex: &str) -> String {
+  let bytes = regex.as_bytes();
+  let mut out = String::with_capacity(bytes.len() + 4);
+  let mut i = 0;
+  while i < bytes.len() {
+    let b = bytes[i];
+    out.push(b as char);
+    let next = bytes.get(i + 1).copied();
+    let make_lazy = match b {
+      b'+' | b'*' => next != Some(b'?'),
+      b'}' => {
+        // Only quantifier `{..}` (not a literal brace) should be lazy.
+        // Determine if we're closing a quantifier by scanning backward to
+        // the matching `{` and ensuring the content is digits/commas.
+        let mut j = i;
+        let mut found_open = false;
+        while j > 0 {
+          j -= 1;
+          let c = bytes[j];
+          if c == b'{' {
+            found_open = true;
+            break;
+          }
+          if !(c.is_ascii_digit() || c == b',') {
+            break;
+          }
+        }
+        found_open && next != Some(b'?')
+      }
+      _ => false,
+    };
+    if make_lazy {
+      out.push('?');
+    }
+    i += 1;
+  }
+  out
+}
+
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
@@ -1594,6 +1636,21 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       }
     }
 
+    // Shortest[pat] — match the shortest substring (non-greedy).
+    Expr::FunctionCall { name, args }
+      if name == "Shortest" && args.len() == 1 =>
+    {
+      let inner = string_pattern_to_regex(&args[0])?;
+      Some(make_non_greedy(&inner))
+    }
+
+    // Longest[pat] — default greedy match; equivalent to pat itself.
+    Expr::FunctionCall { name, args }
+      if name == "Longest" && args.len() == 1 =>
+    {
+      string_pattern_to_regex(&args[0])
+    }
+
     // Except[pattern] — negate a single-character class. Only meaningful
     // when the inner pattern translates to a character-class regex like
     // `[...]` (Except matches exactly one non-matching character).
@@ -1642,7 +1699,8 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Rule or list of rules: at each position, try each rule's LHS pattern;
   // on a match, emit the (capture-substituted) RHS and advance past it.
   if let Some(rules) = extract_cases_rules(&args[1]) {
-    let mut compiled: Vec<(regex::Regex, Expr)> = Vec::with_capacity(rules.len());
+    let mut compiled: Vec<(regex::Regex, Expr)> =
+      Vec::with_capacity(rules.len());
     for (pat, rhs) in &rules {
       let re = regex::Regex::new(pat).map_err(|e| {
         InterpreterError::EvaluationError(format!(

@@ -10466,3 +10466,11 @@ INPUT: Haversine[1.5]
 EXPECTED:
 = 0.464631
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Shortest
+LINE: 688
+TYPE: >>
+INPUT: StringCases["aabaaab", Shortest["a" ~~ __ ~~ "b"]]
+EXPECTED:
+= {aab, aaab}
+---

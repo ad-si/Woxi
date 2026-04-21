@@ -1161,9 +1161,46 @@ mod string_patterns {
 
   #[test]
   fn string_cases_rule() {
+    assert_eq!(interpret(r#"StringCases["abc", "a" -> 1]"#).unwrap(), "{1}");
+  }
+
+  #[test]
+  fn string_cases_shortest_blank_sequence() {
     assert_eq!(
-      interpret(r#"StringCases["abc", "a" -> 1]"#).unwrap(),
-      "{1}"
+      interpret(r#"StringCases["aabaaab", Shortest["a" ~~ __ ~~ "b"]]"#)
+        .unwrap(),
+      "{aab, aaab}"
+    );
+  }
+
+  #[test]
+  fn string_cases_longest_blank_sequence() {
+    assert_eq!(
+      interpret(r#"StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]"#).unwrap(),
+      "{aabaaab}"
+    );
+  }
+
+  #[test]
+  fn string_cases_shortest_regex_quantifier() {
+    // Shortest applied to a regex `+` quantifier makes it non-greedy.
+    assert_eq!(
+      interpret(
+        r#"StringCases["aabaaab", Shortest[RegularExpression["a+b"]]]"#
+      )
+      .unwrap(),
+      "{aab, aaab}"
+    );
+  }
+
+  #[test]
+  fn string_cases_shortest_named_capture() {
+    assert_eq!(
+      interpret(
+        r#"StringCases["-abc- def -uvw- xyz", Shortest["-" ~~ x__ ~~ "-"] -> x]"#
+      )
+      .unwrap(),
+      "{abc, uvw}"
     );
   }
 
