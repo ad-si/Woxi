@@ -2849,14 +2849,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: LinearModelFit
-LINE: 399
-TYPE: >>
-INPUT: m["BasisFunctions"]
-EXPECTED:
-= {1, x}
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: LinearModelFit
 LINE: 402
 TYPE: >>
 INPUT: m["BestFit"]

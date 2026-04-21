@@ -10218,3 +10218,11 @@ INPUT: MatrixRank[A]
 EXPECTED:
 = 3
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: LinearModelFit
+LINE: 399
+TYPE: >>
+INPUT: m["BasisFunctions"]
+EXPECTED:
+= {1, x}
+---
