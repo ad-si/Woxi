@@ -1426,13 +1426,6 @@ fn apply_exponent(n: i128, d: i128, exp: i32) -> Option<(i128, i128)> {
   }
 }
 
-/// Convert a decimal-literal Real to an exact rational `(numerator, denominator)`
-/// Compute RealDigits for a rational number using long division with cycle detection.
-/// Returns the digit list (with repeating part wrapped in a List) and the exponent.
-fn real_digits_rational(numer: i128, denom: i128) -> (Vec<Expr>, i128) {
-  real_digits_rational_base(numer, denom, 10)
-}
-
 /// Compute RealDigits for a rational number in an arbitrary base.
 fn real_digits_rational_base(
   numer: i128,

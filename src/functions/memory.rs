@@ -92,6 +92,7 @@ pub fn memory_available() -> i128 {
       (std::mem::size_of::<libc::vm_statistics64>()
         / std::mem::size_of::<libc::integer_t>())
         as libc::mach_msg_type_number_t;
+    #[allow(deprecated)]
     let host = unsafe { libc::mach_host_self() };
     let kr = unsafe {
       libc::host_statistics64(
