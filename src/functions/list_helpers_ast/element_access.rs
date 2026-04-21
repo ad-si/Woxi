@@ -1321,7 +1321,20 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             };
             result = delete_at_position_general(cur_items, pos[0], head_name)?;
           } else {
-            result = delete_at_deep_position(&result, pos)?;
+            match delete_at_deep_position(&result, pos)? {
+              Ok(v) => result = v,
+              Err(fail) => {
+                crate::emit_message(&format!(
+                  "Delete::partw: Part {} of {} does not exist.",
+                  fail.index,
+                  crate::syntax::expr_to_string(&fail.subject)
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: "Delete".to_string(),
+                  args: args.to_vec(),
+                });
+              }
+            }
           }
         }
         return Ok(result);
@@ -1332,7 +1345,20 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if pos.len() == 1 {
             return delete_at_position_general(items, pos[0], head_name);
           } else {
-            return delete_at_deep_position(&args[0], &pos);
+            match delete_at_deep_position(&args[0], &pos)? {
+              Ok(v) => return Ok(v),
+              Err(fail) => {
+                crate::emit_message(&format!(
+                  "Delete::partw: Part {} of {} does not exist.",
+                  fail.index,
+                  crate::syntax::expr_to_string(&fail.subject)
+                ));
+                return Ok(Expr::FunctionCall {
+                  name: "Delete".to_string(),
+                  args: args.to_vec(),
+                });
+              }
+            }
           }
         }
       }
@@ -1381,19 +1407,31 @@ fn delete_at_position_general(
   Ok(wrap(result))
 }
 
-/// Delete element at a deep multi-part position {i, j, ...}
+/// Delete element at a deep multi-part position {i, j, ...}.
+/// On an out-of-range or atom-descent failure, returns the failing index
+/// together with the sub-expression it could not index into (for
+/// wolframscript-matching error messages).
+pub(crate) struct DeepDeleteFailure {
+  pub(crate) index: i128,
+  pub(crate) subject: Expr,
+}
+
 fn delete_at_deep_position(
   expr: &Expr,
   pos: &[i128],
-) -> Result<Expr, InterpreterError> {
+) -> Result<Result<Expr, DeepDeleteFailure>, InterpreterError> {
   if pos.is_empty() {
-    return Ok(expr.clone());
+    return Ok(Ok(expr.clone()));
   }
-  // Extract the current level's items + wrapping (List or FunctionCall[head]).
   let (items, head): (Vec<Expr>, Option<String>) = match expr {
     Expr::List(items) => (items.clone(), None),
     Expr::FunctionCall { name, args } => (args.clone(), Some(name.clone())),
-    _ => return Ok(expr.clone()),
+    _ => {
+      return Ok(Err(DeepDeleteFailure {
+        index: pos[0],
+        subject: expr.clone(),
+      }));
+    }
   };
 
   // Position 0 at this level → delete the head. Mathematica folds an
@@ -1405,22 +1443,25 @@ fn delete_at_deep_position(
       args: items,
     };
     if pos.len() == 1 {
-      return Ok(unheaded);
+      return Ok(Ok(unheaded));
     }
-    // Further indexing past a removed head doesn't make sense for this
-    // simple positional API; leave the expression alone.
-    return Ok(expr.clone());
+    return Ok(Err(DeepDeleteFailure {
+      index: pos[1],
+      subject: unheaded,
+    }));
   }
 
   let len = items.len() as i128;
-  let idx = if pos[0] > 0 {
+  let idx = if pos[0] > 0 && pos[0] <= len {
     (pos[0] - 1) as usize
-  } else {
+  } else if pos[0] < 0 && (-pos[0]) <= len {
     (len + pos[0]) as usize
+  } else {
+    return Ok(Err(DeepDeleteFailure {
+      index: pos[0],
+      subject: expr.clone(),
+    }));
   };
-  if idx >= items.len() {
-    return Ok(expr.clone());
-  }
 
   let rebuild = |new_items: Vec<Expr>| -> Expr {
     match &head {
@@ -1435,11 +1476,16 @@ fn delete_at_deep_position(
   if pos.len() == 1 {
     let mut result = items;
     result.remove(idx);
-    Ok(rebuild(result))
+    Ok(Ok(rebuild(result)))
   } else {
-    let mut result = items.clone();
-    result[idx] = delete_at_deep_position(&items[idx], &pos[1..])?;
-    Ok(rebuild(result))
+    match delete_at_deep_position(&items[idx], &pos[1..])? {
+      Ok(sub) => {
+        let mut result = items.clone();
+        result[idx] = sub;
+        Ok(Ok(rebuild(result)))
+      }
+      Err(fail) => Ok(Err(fail)),
+    }
   }
 }
 

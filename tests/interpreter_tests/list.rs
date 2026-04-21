@@ -4052,6 +4052,17 @@ mod delete_deep {
     );
   }
 
+  #[test]
+  fn delete_deep_position_into_atom_errors() {
+    // {1, 2} descends into element `a`, which has no parts. wolframscript
+    // emits Delete::partw and returns the expression unevaluated.
+    // Regression for mathics list/eol.py:346.
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, {1, 2}]").unwrap(),
+      "Delete[{a, b, c, d}, {1, 2}]"
+    );
+  }
+
   // Regression: `{3, 0}` deletes the head of the 3rd element. Removing a
   // head leaves a Sequence that the outer FunctionCall flattens, so
   // `Delete[f[a, b, u + v, c], {3, 0}]` → `f[a, b, u, v, c]`, matching
@@ -6955,10 +6966,8 @@ mod take_largest {
     // ExcludedForms -> {} keeps every element; canonical descending
     // order places Missing[...] above numbers.
     assert_eq!(
-      interpret(
-        "TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]"
-      )
-      .unwrap(),
+      interpret("TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]")
+        .unwrap(),
       "{Missing[abc], 150}"
     );
   }
