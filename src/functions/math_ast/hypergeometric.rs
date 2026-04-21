@@ -525,7 +525,8 @@ fn is_half(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      matches!(&args[0], Expr::Integer(1)) && matches!(&args[1], Expr::Integer(2))
+      matches!(&args[0], Expr::Integer(1))
+        && matches!(&args[1], Expr::Integer(2))
     }
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
@@ -583,6 +584,41 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
       &[exp_part, bessel],
+    );
+  }
+
+  // Identity: 1F1[1, 1/2, z] = 1 + E^z · √π · √z · Erf[√z].
+  // Skip for machine-precision numeric z; the series/numeric path below
+  // produces a plain Real there, matching wolframscript.
+  if matches!(&args[0], Expr::Integer(1))
+    && is_half(&args[1])
+    && !matches!(&args[2], Expr::Real(_) | Expr::BigFloat(_, _))
+  {
+    let z = &args[2];
+    let exp_z = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Constant("E".to_string())),
+      right: Box::new(z.clone()),
+    };
+    let sqrt_pi = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::Constant("Pi".to_string())],
+    };
+    let sqrt_z = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![z.clone()],
+    };
+    let erf = Expr::FunctionCall {
+      name: "Erf".to_string(),
+      args: vec![sqrt_z.clone()],
+    };
+    let product = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[exp_z, sqrt_pi, sqrt_z, erf],
+    )?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[Expr::Integer(1), product],
     );
   }
 

@@ -3688,6 +3688,16 @@ mod hypergeometric_pfq {
   }
 
   #[test]
+  fn one_f_one_one_half_erf_identity() {
+    // 1F1[1, 1/2, z] = 1 + E^z · √π · √z · Erf[√z]. Regression for mathics
+    // specialfns/hypergeom.py:83.
+    assert_eq!(
+      interpret("Hypergeometric1F1[1, 1/2, x]").unwrap(),
+      "1 + E^x*Sqrt[Pi]*Sqrt[x]*Erf[Sqrt[x]]"
+    );
+  }
+
+  #[test]
   fn rational_params() {
     assert_eq!(
       interpret("N[HypergeometricPFQ[{1/2}, {3/2}, -1]]").unwrap(),

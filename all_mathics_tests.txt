@@ -4667,14 +4667,6 @@ EXPECTED:
 = -3 / 500000000000000000000000000000 + 149999999970000000003 E ^ 10000000000 / 500000000000000000000000000000
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
-LINE: 83
-TYPE: >>
-INPUT: Hypergeometric1F1[1, 1/2, x]
-EXPECTED:
-= -Sqrt[x] (-E ^ (-x) / Sqrt[x] - Sqrt[Pi] Erf[Sqrt[x]]) E ^ x
----
-FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: Hypergeometric2F1
 LINE: 116
 TYPE: >>
