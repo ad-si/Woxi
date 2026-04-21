@@ -2475,10 +2475,6 @@ FILE: mathics/builtin/numbers/constants.py
 CLASS: MinMachineNumber
 LINE: 640
 TYPE: >>
-INPUT: MachinePrecision -Log[10., $MinMachineNumber]==Accuracy[0`]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Pi
 LINE: 673

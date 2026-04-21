@@ -11230,3 +11230,11 @@ INPUT: LaguerreL[3/2, 1.7]
 EXPECTED:
 = -0.947134
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: MachinePrecision_
+LINE: ??
+TYPE: >>
+INPUT: MachinePrecision -Log[10., $MinMachineNumber]==Accuracy[0`]
+EXPECTED:
+= True
+---
