@@ -297,8 +297,7 @@ mod integer_length {
     // collapsing 10^40, 10^41, ... to lossy Reals so IntegerLength couldn't
     // evaluate them.
     assert_eq!(
-      interpret("IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]")
-        .unwrap(),
+      interpret("IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]").unwrap(),
       "True"
     );
   }
@@ -1303,6 +1302,17 @@ mod real_digits {
     assert_eq!(
       interpret("RealDigits[123.45, 40]").unwrap(),
       "{{3, 3, 18, 0, 0, 0, 0, 0, 0, 0}, 2}"
+    );
+  }
+
+  #[test]
+  fn real_base_10_uses_decimal_literal() {
+    // RealDigits[123.55555] must reflect the decimal the user typed and pad
+    // with zeros, not expose the f64 rounding tail (…5,4,9,9,9,…). Regression
+    // for mathics atomic/numbers.py:359.
+    assert_eq!(
+      interpret("RealDigits[123.55555]").unwrap(),
+      "{{1, 2, 3, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0}, 3}"
     );
   }
 

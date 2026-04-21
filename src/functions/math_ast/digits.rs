@@ -630,10 +630,8 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
       left,
       right,
     } => {
-      if let (
-        Expr::Integer(d),
-        Expr::FunctionCall { name: rn, args: ra },
-      ) = (left.as_ref(), right.as_ref())
+      if let (Expr::Integer(d), Expr::FunctionCall { name: rn, args: ra }) =
+        (left.as_ref(), right.as_ref())
         && rn == "Rational"
         && ra.len() == 2
         && matches!(ra[0], Expr::Integer(1))
@@ -1246,12 +1244,12 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(exp)]));
   }
 
-  // For Real inputs with a non-decimal base, promote the Real to an exact
-  // rational via its decimal literal and reuse the rational digit path so
-  // base-40 / base-260 etc. produce the correct digit sequence.
-  let rational_from_real = if base != 10
-    && let Expr::Real(r) = &abs_expr
-  {
+  // For Real inputs, promote the Real to an exact rational via its decimal
+  // literal and reuse the rational digit path. This preserves the digits the
+  // user typed (e.g. 123.55555 → 1,2,3,5,5,5,5,5,0,…) rather than exposing
+  // the f64 rounding tail (…5,4,9,9,9,…) that the astro-float path produces
+  // from the raw bit pattern.
+  let rational_from_real = if let Expr::Real(r) = &abs_expr {
     real_to_rational(r.abs())
   } else {
     None
