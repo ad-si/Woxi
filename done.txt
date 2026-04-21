@@ -10036,3 +10036,11 @@ INPUT: OwnValues[x]
 EXPECTED:
 = {HoldPattern[x] :> y}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 322
+TYPE: >>
+INPUT: b
+EXPECTED:
+= 9
+---
