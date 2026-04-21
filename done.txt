@@ -10349,3 +10349,10 @@ INPUT: N[2/9]
 EXPECTED: .2222`3
 MESSAGE: True
 ---
+FILE: mathics/test/test_constrmatrix.py
+FUNCTION: test_diagonal_matrix
+LINE: 6
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: fail_msg
+---

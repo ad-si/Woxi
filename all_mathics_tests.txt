@@ -7548,13 +7548,6 @@ Source: test/**/*.py — @pytest.mark.parametrize decorated test functions
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/test_constrmatrix.py
-FUNCTION: test_diagonal_matrix
-LINE: 6
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: fail_msg
----
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_eval_N
 LINE: 29
