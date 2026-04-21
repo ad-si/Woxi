@@ -9108,3 +9108,10 @@ INPUT: A[x][t]
 EXPECTED: A
 MESSAGE: subvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 45
+INPUT: S[x_, A]
+EXPECTED: A
+MESSAGE: upvalues
+---

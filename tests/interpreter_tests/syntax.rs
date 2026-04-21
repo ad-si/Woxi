@@ -4158,6 +4158,11 @@ mod unknown_function_no_args {
   fn undefined_curried_subvalue_call_stays_symbolic() {
     assert_eq!(interpret("A[x][t]").unwrap(), "A[x][t]");
   }
+
+  #[test]
+  fn undefined_symbol_with_blank_arg_and_symbol_tag_stays_symbolic() {
+    assert_eq!(interpret("S[x_, A]").unwrap(), "S[x_, A]");
+  }
 }
 
 mod symbolic_ordering {
