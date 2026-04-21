@@ -9705,3 +9705,11 @@ INPUT: ExpandFileName["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: UpSetDelayed
+LINE: 390
+TYPE: >>
+INPUT: UpValues[b]
+EXPECTED:
+= {HoldPattern[a[b]] :> x}
+---

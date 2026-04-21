@@ -371,14 +371,6 @@ INPUT: a[b]
 EXPECTED:
 = 2
 ---
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSetDelayed
-LINE: 390
-TYPE: >>
-INPUT: UpValues[b]
-EXPECTED:
-= {HoldPattern[a[b]] :> x}
----
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
 LINE: 39
