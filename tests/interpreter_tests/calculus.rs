@@ -2936,6 +2936,14 @@ mod findroot_symbolic_start {
       result
     );
   }
+
+  #[test]
+  fn findroot_sin_x_equals_x_at_origin() {
+    assert_eq!(
+      interpret("FindRoot[Sin[x] == x, {x, 0}]").unwrap(),
+      "{x -> 0.}"
+    );
+  }
 }
 
 mod laplace_transform {

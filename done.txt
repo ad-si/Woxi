@@ -8979,3 +8979,12 @@ EXPECTED:
   text[System`StandardForm]: -Graphics-
   text[System`TraditionalForm]: -Graphics-
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 902
+TYPE: >>
+INPUT: FindRoot[Sin[x] == x, {x, 0}]
+EXPECTED:
+: Encountered a singular derivative at the point x = 0..
+= ...
+---
