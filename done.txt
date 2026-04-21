@@ -9833,3 +9833,11 @@ INPUT: {MemberQ[$PrintForms, MyBoxForm], MemberQ[$OutputForms, MyBoxForm]}
 EXPECTED:
 = {True, True}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 849
+TYPE: >>
+INPUT: x // TeXForm
+EXPECTED:
+= \text{z}
+---
