@@ -458,6 +458,35 @@ pub fn hypergeometric_2f1_regularized_ast(
   Ok(result)
 }
 
+/// Returns Binomial[n, k] / k! as a reduced (numerator, denominator) pair.
+fn binomial_over_factorial(n: u32, k: u32) -> (i128, i128) {
+  // Binomial[n, k] = n! / (k! * (n-k)!), so Binomial[n, k] / k! has
+  // numerator n! / (n-k)! and denominator k!·k!.
+  let mut num: i128 = 1;
+  for i in 0..k {
+    num *= (n - i) as i128;
+  }
+  let mut den: i128 = 1;
+  for i in 1..=k {
+    den *= i as i128;
+  }
+  // Also divide by k! again (k!·k! total)
+  let kfact: i128 = (1..=k).map(|i| i as i128).product::<i128>().max(1);
+  den *= kfact;
+  let g = gcd_i128(num.abs(), den.abs());
+  (num / g, den / g)
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a, b);
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a.max(1)
+}
+
 /// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
@@ -481,6 +510,55 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![args[2].clone()],
     };
     return crate::evaluator::evaluate_expr_to_expr(&exp_call);
+  }
+
+  // Closed form for 1F1[positive integer a, 1, z]:
+  //   E^z * Σ_{k=0}^{a-1} Binomial[a-1, k] z^k / k!
+  // (Kummer's transformation plus the Laguerre identity 1F1[-n, 1, z] = L_n(z)
+  // — folding the Laguerre polynomial back into its explicit form.)
+  if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1])
+    && *a >= 1
+    && *b == 1
+    && *a <= 20
+  {
+    let n = (*a - 1) as u32;
+    let z = &args[2];
+    let mut terms: Vec<Expr> = Vec::with_capacity((n + 1) as usize);
+    for k in 0..=n {
+      let coeff = binomial_over_factorial(n, k);
+      let z_pow = if k == 0 {
+        Expr::Integer(1)
+      } else if k == 1 {
+        z.clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![z.clone(), Expr::Integer(k as i128)],
+        }
+      };
+      let term = match coeff {
+        (1, 1) => z_pow,
+        (num, 1) => crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[Expr::Integer(num), z_pow],
+        )?,
+        (num, den) => {
+          let rat = crate::functions::math_ast::make_rational_pub(num, den);
+          crate::evaluator::evaluate_function_call_ast("Times", &[rat, z_pow])?
+        }
+      };
+      terms.push(term);
+    }
+    let polynomial =
+      crate::evaluator::evaluate_function_call_ast("Plus", &terms)?;
+    let exp_part = crate::evaluator::evaluate_function_call_ast(
+      "Exp",
+      &[z.clone()],
+    )?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[exp_part, polynomial],
+    );
   }
 
   // Numeric evaluation

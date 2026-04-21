@@ -432,6 +432,32 @@ mod hypergeometric_1f1 {
     assert_eq!(interpret("Hypergeometric1F1[a, a, x]").unwrap(), "E^x");
   }
 
+  // Closed-form expansion for `1F1[positive integer a, 1, z]` via the
+  // Laguerre/Kummer identity — matches wolframscript.
+  #[test]
+  fn closed_form_a_eq_2_b_eq_1() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[2, 1, x]").unwrap(),
+      "E^x*(1 + x)"
+    );
+  }
+
+  #[test]
+  fn closed_form_a_eq_3_b_eq_1() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[3, 1, x]").unwrap(),
+      "E^x*(1 + 2*x + x^2/2)"
+    );
+  }
+
+  #[test]
+  fn closed_form_a_eq_4_b_eq_1() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[4, 1, x]").unwrap(),
+      "E^x*(1 + 3*x + (3*x^2)/2 + x^3/6)"
+    );
+  }
+
   // PFQ with the same multisets of upper/lower parameters also collapses
   // to E^z — the Pochhammer ratio is identically 1.
   #[test]
