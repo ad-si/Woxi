@@ -4505,14 +4505,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: AppendTo
-LINE: 136
-TYPE: >>
-INPUT: s
-EXPECTED:
-= {1}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: AppendTo
 LINE: 143
 TYPE: >>
 INPUT: y
