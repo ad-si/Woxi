@@ -9247,3 +9247,10 @@ TYPE: >>
 INPUT: Clear[x]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Table
+LINE: 531
+TYPE: #>
+INPUT: Clear[n]
+EXPECTED: (none)
+---
