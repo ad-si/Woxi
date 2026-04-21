@@ -453,6 +453,15 @@ pub fn expr_to_bigfloat(
         name
       ))),
     },
+    Expr::Identifier(name) if name == "GoldenRatio" => {
+      // GoldenRatio = (1 + Sqrt[5]) / 2
+      let five = BigFloat::from_i32(5, bits);
+      let sqrt5 = five.sqrt(bits, rm);
+      let one = BigFloat::from_i32(1, bits);
+      let numer = one.add(&sqrt5, bits, rm);
+      let two = BigFloat::from_i32(2, bits);
+      Ok(numer.div(&two, bits, rm))
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,

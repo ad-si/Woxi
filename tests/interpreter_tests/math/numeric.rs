@@ -73,6 +73,17 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_golden_ratio_arbitrary() {
+    // N[GoldenRatio, 40] — (1 + Sqrt[5]) / 2 evaluated at arbitrary precision.
+    let result = interpret("N[GoldenRatio, 40]").unwrap();
+    assert!(
+      result
+        .starts_with("1.618033988749894848204586834365638117720")
+    );
+    assert!(result.ends_with("`40."));
+  }
+
+  #[test]
   fn n_sqrt_arbitrary() {
     // N[Sqrt[2], 20] — check first 20 digits
     let result = interpret("N[Sqrt[2], 20]").unwrap();

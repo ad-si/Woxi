@@ -2558,14 +2558,6 @@ EXPECTED:
 ---
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: GoldenRatio
-LINE: 449
-TYPE: >>
-INPUT: N[GoldenRatio, 40]
-EXPECTED:
-= 1.618033988749894848204586834365638117720
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Khinchin
 LINE: 558
 TYPE: >>

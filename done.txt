@@ -10442,3 +10442,11 @@ INPUT: StringCases["abba", {"a" -> 10, "b" -> 20}, 2]
 EXPECTED:
 = {10, 20}
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: GoldenRatio
+LINE: 449
+TYPE: >>
+INPUT: N[GoldenRatio, 40]
+EXPECTED:
+= 1.618033988749894848204586834365638117720
+---
