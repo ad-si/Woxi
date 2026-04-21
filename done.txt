@@ -10474,3 +10474,11 @@ INPUT: StringCases["aabaaab", Shortest["a" ~~ __ ~~ "b"]]
 EXPECTED:
 = {aab, aaab}
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: Replace
+LINE: 222
+TYPE: >>
+INPUT: Replace[{x_ -> x + 1}][10]
+EXPECTED:
+= 11
+---

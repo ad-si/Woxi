@@ -2726,6 +2726,22 @@ mod replace {
   }
 
   #[test]
+  fn operator_form() {
+    // Replace[rules][expr] is the curried form — expr goes first when
+    // flattened (unlike Map/Apply, where the list comes first).
+    assert_eq!(interpret("Replace[{x_ -> x + 1}][10]").unwrap(), "11");
+    assert_eq!(interpret("Replace[{x_ -> x^2}][y]").unwrap(), "y^2");
+  }
+
+  #[test]
+  fn operator_form_replace_all() {
+    assert_eq!(
+      interpret("ReplaceAll[{x -> 1, y -> 2}][x + y]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
   fn with_rule_list() {
     assert_eq!(interpret("Replace[x, {x -> 2}]").unwrap(), "2");
   }

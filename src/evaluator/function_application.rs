@@ -634,6 +634,15 @@ pub fn apply_curried_call(
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
+      } else if matches!(name.as_str(), "Replace" | "ReplaceAll" | "ReplaceRepeated")
+        && args.len() == 1
+      {
+        // Curried replacement: Replace[rules][expr] = Replace[expr, rules].
+        // The expr argument comes FIRST in the uncurried form — the opposite
+        // of Map/Apply-style operator forms.
+        let mut new_args = args.to_vec();
+        new_args.extend(func_args.iter().cloned());
+        evaluate_function_call_ast(name, &new_args)
       } else {
         // Unknown/symbolic curried call: preserve the CurriedCall form
         // e.g. f[g][x] stays as f[g][x], not f[g, x]
