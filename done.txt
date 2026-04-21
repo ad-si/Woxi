@@ -9626,3 +9626,11 @@ TYPE: >>
 INPUT: Dice[a___] + Dice[b___] ^:= Dice[Sequence @@ {a, b}]
 EXPECTED: (none)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1281
+TYPE: >>
+INPUT: DiceSum @ Dice[1, 2, 5]
+EXPECTED:
+= 8
+---

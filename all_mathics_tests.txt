@@ -7117,14 +7117,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1281
-TYPE: >>
-INPUT: DiceSum @ Dice[1, 2, 5]
-EXPECTED:
-= 8
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1289
 TYPE: >>
 INPUT: Table[{Dice[Sequence @@ d], DiceSum @ Dice[Sequence @@ d]}, {d, {{1, 2}, {2, 2}, {2, 6}}}] // TableForm
