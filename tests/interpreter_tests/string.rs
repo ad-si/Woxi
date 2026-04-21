@@ -731,6 +731,34 @@ mod alphabet {
   fn length() {
     assert_eq!(interpret("Length[Alphabet[]]").unwrap(), "26");
   }
+
+  #[test]
+  fn german_is_plain_latin() {
+    // wolframscript's Alphabet["German"] returns the plain 26-letter alphabet
+    // (no ä/ö/ü/ß). Regression for mathics atomic/strings.py:235.
+    assert_eq!(
+      interpret("Alphabet[\"German\"]").unwrap(),
+      "{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, \
+       x, y, z}"
+    );
+  }
+
+  #[test]
+  fn spanish_has_enye() {
+    assert_eq!(
+      interpret("Alphabet[\"Spanish\"]").unwrap(),
+      "{a, b, c, d, e, f, g, h, i, j, k, l, m, n, ñ, o, p, q, r, s, t, u, v, \
+       w, x, y, z}"
+    );
+  }
+
+  #[test]
+  fn russian_equals_cyrillic() {
+    assert_eq!(
+      interpret("Alphabet[\"Russian\"] == Alphabet[\"Cyrillic\"]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod from_letter_number {

@@ -125,7 +125,7 @@ pub fn dispatch_string_functions(
     "IntegerString" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::integer_string_ast(args));
     }
-    "Alphabet" if args.is_empty() => {
+    "Alphabet" if args.len() <= 1 => {
       return Some(crate::functions::string_ast::alphabet_ast(args));
     }
     "FromLetterNumber" if args.len() == 1 => {

@@ -3722,16 +3722,48 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Alphabet ──────────────────────────────────────────────────────
 
-/// Alphabet[] - Returns the list of lowercase English letters
+/// Alphabet[] / Alphabet[language] - Returns the list of lowercase letters
+/// for the named language, defaulting to English.
 pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if !args.is_empty() {
-    return Ok(Expr::FunctionCall {
-      name: "Alphabet".to_string(),
-      args: args.to_vec(),
-    });
-  }
-  let letters: Vec<Expr> =
+  let lang: Option<&str> = match args.first() {
+    None => None,
+    Some(Expr::String(s)) => Some(s.as_str()),
+    Some(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "Alphabet".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let ascii: Vec<Expr> =
     ('a'..='z').map(|c| Expr::String(c.to_string())).collect();
+
+  let chars_to_list = |s: &str| -> Vec<Expr> {
+    s.chars().map(|c| Expr::String(c.to_string())).collect()
+  };
+
+  let letters: Vec<Expr> = match lang {
+    None
+    | Some("English")
+    | Some("French")
+    | Some("German")
+    | Some("Italian")
+    | Some("Dutch")
+    | Some("Portuguese")
+    | Some("Latin") => ascii,
+    Some("Spanish") => chars_to_list("abcdefghijklmnñopqrstuvwxyz"),
+    Some("Russian") | Some("Cyrillic") => {
+      chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя")
+    }
+    Some("Greek") => chars_to_list("αβγδεζηθικλμνξοπρστυφχψω"),
+    Some(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "Alphabet".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
   Ok(Expr::List(letters))
 }
 
