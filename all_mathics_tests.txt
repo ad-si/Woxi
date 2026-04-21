@@ -4617,14 +4617,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: OwnValues
-LINE: 613
-TYPE: >>
-INPUT: OwnValues[x]
-EXPECTED:
-= {HoldPattern[x] :> y}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: OwnValues
 LINE: 616
 TYPE: >>
 INPUT: OwnValues[x]

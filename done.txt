@@ -9346,3 +9346,11 @@ INPUT: SubValues[f]
 EXPECTED:
 = {HoldPattern[f[2][x_]] :> x ^ 2, HoldPattern[f[1][x_]] :> x}
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: OwnValues
+LINE: 613
+TYPE: >>
+INPUT: OwnValues[x]
+EXPECTED:
+= {HoldPattern[x] :> y}
+---

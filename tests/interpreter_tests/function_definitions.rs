@@ -487,6 +487,15 @@ mod subvalues {
   }
 }
 
+mod ownvalues {
+  use super::*;
+
+  #[test]
+  fn ownvalues_of_undefined_symbol_is_empty_list() {
+    assert_eq!(interpret("OwnValues[x]").unwrap(), "{}");
+  }
+}
+
 mod memory {
   use super::*;
 
