@@ -9962,3 +9962,10 @@ TYPE: >>
 INPUT: m = LinearModelFit[{{{1, 4}, {1, 5}, {1, 7}}, {1, 2, 3}}];
 EXPECTED: (none)
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity_still_failing
+LINE: 146
+INPUT: MatchQ[x, F[x_:0,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, and Default
+---
