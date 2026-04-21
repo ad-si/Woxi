@@ -9856,3 +9856,10 @@ TYPE: >>
 INPUT: MakeBoxes[TeXForm[b], form_] = "d";
 EXPECTED: (none)
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 932
+TYPE: >>
+INPUT: Format[d, MathMLForm] = "<not closed";
+EXPECTED: (none)
+---
