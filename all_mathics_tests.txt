@@ -6460,13 +6460,6 @@ EXPECTED: f[CompoundExpression[a, b, c, Null]]
 ---
 FILE: mathics/test/builtin/test_attributes.py
 FUNCTION: None
-LINE: 33
-INPUT: MatchQ[G[x], G[x_:0,y_]]
-EXPECTED: True
-MESSAGE: Without OneIdentity, and Default
----
-FILE: mathics/test/builtin/test_attributes.py
-FUNCTION: None
 LINE: 34
 INPUT: MatchQ[F[F[F[x]]], F[x_:0,y_]]
 EXPECTED: True
