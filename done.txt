@@ -9188,3 +9188,9 @@ LINE: 216
 INPUT: f[a;]
 EXPECTED: f[CompoundExpression[a, Null]]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 640
+INPUT: a + ?? b
+EXPECTED: a + Information[b, LongForm -> True]
+---

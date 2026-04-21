@@ -7782,12 +7782,6 @@ EXPECTED: DoubleLeftTee[x1, x2]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 640
-INPUT: a + ?? b
-EXPECTED: a + Information[b, LongForm -> True]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 641
 INPUT: ??a + b
 EXPECTED: Information[a, LongForm -> True] + b

@@ -4221,6 +4221,14 @@ mod unknown_function_no_args {
   fn function_with_trailing_semicolon_evaluates_to_null_arg() {
     assert_eq!(interpret("f[a;]").unwrap(), "f[Null]");
   }
+
+  #[test]
+  fn double_question_on_undefined_symbol_yields_missing_unknown_symbol() {
+    assert_eq!(
+      interpret("a + ?? b").unwrap(),
+      "a + Missing[UnknownSymbol, b]"
+    );
+  }
 }
 
 mod symbolic_ordering {
