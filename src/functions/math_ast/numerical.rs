@@ -290,6 +290,12 @@ pub fn n_eval_arbitrary(
     return Ok(Expr::List(results?));
   }
 
+  // Machine-precision Reals already live at MachinePrecision and cannot be
+  // promoted by N — wolframscript returns the Real unchanged.
+  if let Expr::Real(_) = expr {
+    return Ok(expr.clone());
+  }
+
   use astro_float::{Consts, RoundingMode};
 
   let mut cc = Consts::new().map_err(|e| {
