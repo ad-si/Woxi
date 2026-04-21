@@ -9745,3 +9745,15 @@ INPUT: series /. x->4
 EXPECTED:
 = 1 + 4 ^ 2 + O[4] ^ 3
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1189
+TYPE: >>
+INPUT: Inverse[T] . A . T // MatrixForm
+EXPECTED:
+= 2   0    0
+. 
+. 0   -1   0
+. 
+. 0   0    1
+---

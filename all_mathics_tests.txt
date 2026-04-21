@@ -6935,18 +6935,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1189
-TYPE: >>
-INPUT: Inverse[T] . A . T // MatrixForm
-EXPECTED:
-= 2   0    0
-. 
-. 0   -1   0
-. 
-. 0   0    1
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1207
 TYPE: >>
 INPUT: s = LinearSolve[B, {1, 2, 3}]
