@@ -9129,3 +9129,10 @@ INPUT: _A[]
 EXPECTED: A
 MESSAGE: subvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 29
+INPUT: _A
+EXPECTED: A
+MESSAGE: downvalues
+---

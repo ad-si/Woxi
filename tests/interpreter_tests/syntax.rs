@@ -4173,6 +4173,11 @@ mod unknown_function_no_args {
   fn typed_blank_called_with_no_args_stays_symbolic() {
     assert_eq!(interpret("_A[]").unwrap(), "_A[]");
   }
+
+  #[test]
+  fn typed_blank_stays_symbolic() {
+    assert_eq!(interpret("_A").unwrap(), "_A");
+  }
 }
 
 mod symbolic_ordering {

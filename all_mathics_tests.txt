@@ -7641,13 +7641,6 @@ MESSAGE: ownvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 29
-INPUT: _A
-EXPECTED: A
-MESSAGE: downvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 31
 INPUT: _A
 EXPECTED: A
