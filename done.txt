@@ -10870,3 +10870,10 @@ LINE: 57
 INPUT: a * + b
 EXPECTED: Times[a, Plus[b]]
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 32
+INPUT: MatchQ[F[x], F[x_:0,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, and Default
+---

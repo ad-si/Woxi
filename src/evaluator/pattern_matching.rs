@@ -1901,6 +1901,79 @@ pub fn match_pattern(
   })
 }
 
+/// Try every way of choosing `missing` positions from `opt_positions` to
+/// skip (take default value for); align the remaining pattern positions to
+/// the expression args in order. Returns bindings on first successful match.
+#[allow(clippy::too_many_arguments)]
+fn try_skip_optional_subsets(
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+  opt_positions: &[usize],
+  missing: usize,
+  start: usize,
+  skip_buf: &mut Vec<usize>,
+  pat_name: &str,
+) -> Option<Vec<(String, Expr)>> {
+  if skip_buf.len() == missing {
+    let skip: std::collections::HashSet<usize> =
+      skip_buf.iter().copied().collect();
+    let mut bindings: Vec<(String, Expr)> = Vec::new();
+    let mut expr_iter = expr_args.iter();
+    for (i, p) in pat_args.iter().enumerate() {
+      if skip.contains(&i) {
+        if let Expr::PatternOptional { name, default, .. } = p {
+          let def = match default {
+            Some(d) => Some(*d.clone()),
+            None => {
+              crate::evaluator::dispatch::builtin_default_value_at_position(
+                pat_name, i,
+              )
+              .or_else(|| {
+                crate::evaluator::dispatch::builtin_default_value(pat_name)
+              })
+            }
+          };
+          if let Some(d) = def
+            && !name.is_empty()
+          {
+            bindings.push((name.clone(), d));
+          }
+        }
+        continue;
+      }
+      let e = expr_iter.next()?;
+      push_match_context(&bindings);
+      let result = match_pattern(e, p);
+      pop_match_context();
+      match result {
+        Some(b) => {
+          if !merge_bindings(&mut bindings, b) {
+            return None;
+          }
+        }
+        None => return None,
+      }
+    }
+    return Some(bindings);
+  }
+  for (k, &pos) in opt_positions.iter().enumerate().skip(start) {
+    skip_buf.push(pos);
+    if let Some(b) = try_skip_optional_subsets(
+      pat_args,
+      expr_args,
+      opt_positions,
+      missing,
+      k + 1,
+      skip_buf,
+      pat_name,
+    ) {
+      return Some(b);
+    }
+    skip_buf.pop();
+  }
+  None
+}
+
 fn match_pattern_impl(
   expr: &Expr,
   pattern: &Expr,
@@ -2184,48 +2257,30 @@ fn match_pattern_impl(
           match_args_with_sequences(expr_args, pat_args)
         } else {
           if pat_args.len() != expr_args.len() {
-            // Allow trailing PatternOptional slots to take their defaults
-            // when the expression has fewer args than the pattern.
-            // Example: f[a] matches f[x_, y_:3] with y = 3.
+            // Allow any subset of PatternOptional slots to take their
+            // defaults when the expression has fewer args than the pattern.
+            // Example: F[x] matches F[x_:0, y_] with x = 0 (default) and
+            // y = x, or f[a] matches f[x_, y_:3] with y = 3.
             if pat_args.len() > expr_args.len() {
-              let extra = pat_args.len() - expr_args.len();
-              let start = pat_args.len() - extra;
-              let trailing_all_optional = pat_args[start..]
+              let missing = pat_args.len() - expr_args.len();
+              let opt_positions: Vec<usize> = pat_args
                 .iter()
-                .all(|p| matches!(p, Expr::PatternOptional { .. }));
-              if trailing_all_optional {
-                let mut bindings: Vec<(String, Expr)> = Vec::new();
-                let mut matched = true;
-                for (p, e) in pat_args[..start].iter().zip(expr_args.iter()) {
-                  push_match_context(&bindings);
-                  let result = match_pattern(e, p);
-                  pop_match_context();
-                  if let Some(b) = result {
-                    if !merge_bindings(&mut bindings, b) {
-                      matched = false;
-                      break;
-                    }
-                  } else {
-                    matched = false;
-                    break;
-                  }
-                }
-                if matched {
-                  for p in &pat_args[start..] {
-                    if let Expr::PatternOptional { name, default, .. } = p {
-                      let def = match default {
-                        Some(d) => Some(*d.clone()),
-                        None => crate::evaluator::dispatch::builtin_default_value_at_position(pat_name, 0)
-                          .or_else(|| crate::evaluator::dispatch::builtin_default_value(pat_name)),
-                      };
-                      if let Some(d) = def
-                        && !name.is_empty()
-                      {
-                        bindings.push((name.clone(), d));
-                      }
-                    }
-                  }
-                  return Some(bindings);
+                .enumerate()
+                .filter(|(_, p)| matches!(p, Expr::PatternOptional { .. }))
+                .map(|(i, _)| i)
+                .collect();
+              if opt_positions.len() >= missing {
+                let mut skip_buf: Vec<usize> = Vec::with_capacity(missing);
+                if let Some(b) = try_skip_optional_subsets(
+                  pat_args,
+                  expr_args,
+                  &opt_positions,
+                  missing,
+                  0,
+                  &mut skip_buf,
+                  pat_name,
+                ) {
+                  return Some(b);
                 }
               }
             }

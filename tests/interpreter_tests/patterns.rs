@@ -1532,6 +1532,15 @@ mod optional_pattern_without_default {
     );
   }
 
+  // Leading `x_:0` slot should also take its default when the expression
+  // has fewer arguments than the pattern. Regression for mathics
+  // test_attributes.py:32.
+  #[test]
+  fn optional_default_fills_missing_leading_arg() {
+    assert_eq!(interpret("MatchQ[F[x], F[x_:0, y_]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[G[x], G[x_:0, y_]]").unwrap(), "True");
+  }
+
   // Regression: `f[x, 0...]` is `f[x, RepeatedNull[0]]`. The rule
   // `f[x, 0...] -> t` contains a `RepeatedNull` sequence pattern but no
   // Expr::Pattern node — `contains_pattern` used to return `false`,
