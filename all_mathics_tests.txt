@@ -3150,14 +3150,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/numbers/randomnumbers.py
-CLASS: RandomState
-LINE: 628
-TYPE: >>
-INPUT: $RandomState = $RandomState;
-EXPECTED:
-: It is not possible to change the random state.
----
-FILE: mathics/builtin/numbers/randomnumbers.py
 CLASS: SeedRandom
 LINE: 660
 TYPE: >>

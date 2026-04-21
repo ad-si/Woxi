@@ -10276,3 +10276,11 @@ TYPE: #>
 INPUT: Clear[x]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/numbers/randomnumbers.py
+CLASS: RandomState
+LINE: 628
+TYPE: >>
+INPUT: $RandomState = $RandomState;
+EXPECTED:
+: It is not possible to change the random state.
+---
