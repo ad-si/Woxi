@@ -11126,3 +11126,11 @@ INPUT: Hypergeometric1F1[1/2, 1, x]
 EXPECTED:
 = BesselI[0, x / 2] E ^ (x / 2)
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric1F1
+LINE: 77
+TYPE: >>
+INPUT: Hypergeometric1F1[1/2, 1, x]
+EXPECTED:
+= BesselI[0, x / 2] E ^ (x / 2)
+---
