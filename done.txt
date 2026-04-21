@@ -11174,3 +11174,11 @@ INPUT: Integrate[Cos[3 Sin[w]], {w, 0, Pi}]
 EXPECTED:
 = Pi BesselJ[0, 3]
 ---
+FILE: mathics/builtin/string/patterns.py
+CLASS: StringCases
+LINE: 182
+TYPE: >>
+INPUT: StringCases["axbaxxb", Shortest["a" ~~ x__ ~~ "b"]]
+EXPECTED:
+= {axb, axxb}
+---
