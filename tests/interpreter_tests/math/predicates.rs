@@ -736,6 +736,34 @@ mod equal_edge_cases {
   fn homogeneous_less_chain_stays_whole() {
     assert_eq!(interpret("a < b < c").unwrap(), "a < b < c");
   }
+
+  #[test]
+  fn equal_mixed_with_less_keeps_inequality() {
+    // `a == b <= c` stays as a chain (Equal + Less-direction, no Unequal
+    // and no opposite direction) — matches wolframscript's
+    // `Inequality[a, Equal, b, LessEqual, c]` semantic.
+    assert_eq!(interpret("a == b <= c").unwrap(), "a == b <= c");
+  }
+
+  #[test]
+  fn inequality_fn_splits_opposite_directions() {
+    // `Inequality[a, Greater, b, LessEqual, c]` splits into pairwise `&&`
+    // because the chain mixes a Greater-direction op with a Less-direction op.
+    assert_eq!(
+      interpret("Inequality[a, Greater, b, LessEqual, c]").unwrap(),
+      "a > b && b <= c"
+    );
+  }
+
+  #[test]
+  fn inequality_fn_same_direction_stays_head() {
+    // Same-direction Less/LessEqual — keep as Inequality head so
+    // ToString[..., InputForm] can still print it as Inequality[...].
+    assert_eq!(
+      interpret("Inequality[0, LessEqual, x, LessEqual, 1]").unwrap(),
+      "0 <= x <= 1"
+    );
+  }
 }
 
 mod unsame_q_multi {

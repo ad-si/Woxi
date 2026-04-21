@@ -1582,14 +1582,6 @@ EXPECTED:
 = a < b && b <= c
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Inequality
-LINE: 611
-TYPE: >>
-INPUT: Inequality[a, Greater, b, LessEqual, c]
-EXPECTED:
-= a > b && b <= c
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: SameQ
 LINE: 805
 TYPE: >>

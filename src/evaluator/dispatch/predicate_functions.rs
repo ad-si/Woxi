@@ -1,6 +1,28 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Mirror of the same-family rule in core_eval's Comparison handler, but
+/// for Inequality's string operator names. Returns true iff the chain
+/// should be split into pairwise `&&`.
+fn should_split_inequality(names: &[&str]) -> bool {
+  // Homogeneous → never split.
+  if names.iter().skip(1).all(|n| *n == names[0]) {
+    return false;
+  }
+  let mut has_unequal = false;
+  let mut has_less = false;
+  let mut has_greater = false;
+  for n in names {
+    match *n {
+      "Unequal" | "NotEqual" | "UnsameQ" => has_unequal = true,
+      "Less" | "LessEqual" => has_less = true,
+      "Greater" | "GreaterEqual" => has_greater = true,
+      _ => {}
+    }
+  }
+  has_unequal || (has_less && has_greater)
+}
+
 pub fn dispatch_predicate_functions(
   name: &str,
   args: &[Expr],
@@ -54,6 +76,62 @@ pub fn dispatch_predicate_functions(
         return Some(Ok(Expr::Identifier(
           if result { "True" } else { "False" }.to_string(),
         )));
+      }
+      // For mixed-direction chains (e.g. `Greater` with `LessEqual`, or
+      // any NotEqual mixed in), split into pairwise `&&` — wolframscript's
+      // behavior. Preserves the `Inequality[…]` head in all other cases so
+      // `ToString[Inequality[0, LessEqual, x, LessEqual, 1], InputForm]`
+      // still renders the head form.
+      if args.len() >= 5 && args.len() % 2 == 1 {
+        use crate::syntax::ComparisonOp;
+        let op_names: Vec<Option<&str>> = args
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| i % 2 == 1)
+          .map(|(_, a)| match a {
+            Expr::Identifier(s) => Some(s.as_str()),
+            _ => None,
+          })
+          .collect();
+        if op_names.iter().all(|o| o.is_some()) {
+          let names: Vec<&str> = op_names.into_iter().flatten().collect();
+          if should_split_inequality(&names) {
+            let operands: Vec<Expr> = args
+              .iter()
+              .enumerate()
+              .filter(|(i, _)| i % 2 == 0)
+              .map(|(_, a)| a.clone())
+              .collect();
+            let op_for = |s: &str| -> Option<ComparisonOp> {
+              match s {
+                "Equal" => Some(ComparisonOp::Equal),
+                "Unequal" | "NotEqual" => Some(ComparisonOp::NotEqual),
+                "Less" => Some(ComparisonOp::Less),
+                "LessEqual" => Some(ComparisonOp::LessEqual),
+                "Greater" => Some(ComparisonOp::Greater),
+                "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+                "SameQ" => Some(ComparisonOp::SameQ),
+                "UnsameQ" => Some(ComparisonOp::UnsameQ),
+                _ => None,
+              }
+            };
+            if names.iter().all(|n| op_for(n).is_some()) {
+              let mut terms: Vec<Expr> = Vec::new();
+              for (i, n) in names.iter().enumerate() {
+                terms.push(Expr::Comparison {
+                  operands: vec![
+                    operands[i].clone(),
+                    operands[i + 1].clone(),
+                  ],
+                  operators: vec![op_for(n).unwrap()],
+                });
+              }
+              return Some(crate::evaluator::evaluate_function_call_ast(
+                "And", &terms,
+              ));
+            }
+          }
+        }
       }
     }
     "NumberQ" if args.len() == 1 => {

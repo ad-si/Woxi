@@ -1475,14 +1475,12 @@ pub fn evaluate_expr_to_expr_inner(
       // pairwise `a op1 b && b op2 c && …` per wolframscript. Homogeneous
       // chains stay intact so downstream code can keep the `Comparison`
       // node and decide numerically.
-      if operators.len() >= 2
-        && !all_same_comparison_family(operators)
-      {
+      if operators.len() >= 2 && !all_same_comparison_family(operators) {
         let mut terms: Vec<Expr> = Vec::with_capacity(operators.len());
         for i in 0..operators.len() {
           terms.push(Expr::Comparison {
             operands: vec![values[i].clone(), values[i + 1].clone()],
-            operators: vec![operators[i].clone()],
+            operators: vec![operators[i]],
           });
         }
         let and_expr = Expr::FunctionCall {
@@ -1907,33 +1905,39 @@ pub fn evaluate_expr_to_expr_inner(
   }
 }
 
-/// Groups of comparison operators that stay as a single chain when mixed
-/// within their own group: Equal/SameQ/Unequal/UnsameQ in one bucket,
-/// directional inequalities (`<`, `<=`, `>`, `>=`) in another. A chain
-/// whose ops span buckets (or mixes Equal-vs-Unequal, Less-vs-Greater)
-/// must split into pairwise `&&` just like wolframscript does.
+/// Determines whether a comparison chain should stay as a single node or
+/// split into pairwise `&&`. wolframscript's rules:
+///   - Homogeneous operators → keep chain.
+///   - Presence of any NotEqual/UnsameQ in a mixed chain → split.
+///   - Mixing a Less-direction op (`<`, `<=`) with a Greater-direction op
+///     (`>`, `>=`) → split (pairwise makes the directionality explicit).
+///   - Otherwise (Equal/SameQ mixed with one direction of inequalities,
+///     or only Less-direction / only Greater-direction ops) → keep as a
+///     single chain.  These print either as `a == b == c` or `Inequality[…]`.
 fn all_same_comparison_family(ops: &[ComparisonOp]) -> bool {
-  let first = &ops[0];
-  ops.iter().all(|op| same_comparison_family(first, op))
-}
-
-fn same_comparison_family(a: &ComparisonOp, b: &ComparisonOp) -> bool {
   use ComparisonOp::*;
-  matches!(
-    (a, b),
-    (Equal, Equal)
-      | (SameQ, SameQ)
-      | (NotEqual, NotEqual)
-      | (UnsameQ, UnsameQ)
-      | (Less, Less)
-      | (LessEqual, LessEqual)
-      | (Greater, Greater)
-      | (GreaterEqual, GreaterEqual)
-      | (Less, LessEqual)
-      | (LessEqual, Less)
-      | (Greater, GreaterEqual)
-      | (GreaterEqual, Greater)
-  )
+  let mixed = ops.iter().skip(1).any(|op| op != &ops[0]);
+  if !mixed {
+    return true;
+  }
+  let mut has_unequal = false;
+  let mut has_less = false;
+  let mut has_greater = false;
+  for op in ops {
+    match op {
+      NotEqual | UnsameQ => has_unequal = true,
+      Less | LessEqual => has_less = true,
+      Greater | GreaterEqual => has_greater = true,
+      Equal | SameQ => {}
+    }
+  }
+  if has_unequal {
+    return false;
+  }
+  if has_less && has_greater {
+    return false;
+  }
+  true
 }
 
 /// Check if an expression contains free symbols (unbound identifiers).
