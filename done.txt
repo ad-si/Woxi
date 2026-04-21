@@ -10292,3 +10292,11 @@ INPUT: f'[x]
 EXPECTED:
 = 2 x
 ---
+FILE: mathics/builtin/box/layout.py
+CLASS: InterpretationBox
+LINE: 268
+TYPE: >>
+INPUT: ToExpression[A] + 4
+EXPECTED:
+= 8
+---
