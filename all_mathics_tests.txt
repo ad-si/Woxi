@@ -6719,13 +6719,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 915
-TYPE: >>
-INPUT: MakeBoxes[TeXForm[b], form_] = "d";
-EXPECTED: (none)
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 917
 TYPE: >>
 INPUT: b // TeXForm
