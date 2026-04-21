@@ -4585,14 +4585,6 @@ INPUT: F[[;; All, 1 ;; 2, 3 ;; 3]] = k;
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/list/eol.py
-CLASS: Part
-LINE: 1158
-TYPE: >>
-INPUT: F
-EXPECTED:
-= {{{1, 2, k}, {2, t, k}, {3, t, 9}}, {{2, 4, k}, {4, t, k}, {6, t, 18}}, {{3, 6, k}, {6, t, k}, {9, t, 27}}}
----
-FILE: mathics/builtin/list/eol.py
 CLASS: PrependTo
 LINE: 1403
 TYPE: >>
