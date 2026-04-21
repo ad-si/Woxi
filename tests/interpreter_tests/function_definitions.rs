@@ -460,6 +460,15 @@ mod dispatch {
   }
 }
 
+mod messages {
+  use super::*;
+
+  #[test]
+  fn messages_of_undefined_symbol_is_empty_list() {
+    assert_eq!(interpret("Messages[a]").unwrap(), "{}");
+  }
+}
+
 mod memory {
   use super::*;
 

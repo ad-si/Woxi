@@ -9322,3 +9322,11 @@ INPUT: UpValues[b]
 EXPECTED:
 = {HoldPattern[a[b]] :> 3}
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: Messages
+LINE: 73
+TYPE: >>
+INPUT: Messages[a]
+EXPECTED:
+= {HoldPattern[a::b] :> foo}
+---
