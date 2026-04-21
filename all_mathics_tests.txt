@@ -7611,12 +7611,6 @@ LINE: 46
 INPUT: Flatten[m, {2, 1}]
 EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
-FILE: mathics/test/core/test_atoms.py
-FUNCTION: test_object_dissimilarity
-LINE: 229
-INPUT: Integer
-EXPECTED: MachineReal
----
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
 LINE: 24

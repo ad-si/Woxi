@@ -9081,3 +9081,9 @@ INPUT: Series[Exp[Sin[x]], {x, 0, 5}]
 EXPECTED:
 = 1 + x + x ^ 2 / 2 - x ^ 4 / 8 - x ^ 5 / 15 + O[x] ^ 6
 ---
+FILE: mathics/test/core/test_atoms.py
+FUNCTION: test_object_dissimilarity
+LINE: 229
+INPUT: Integer
+EXPECTED: MachineReal
+---
