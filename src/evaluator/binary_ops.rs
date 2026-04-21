@@ -109,19 +109,10 @@ pub fn thread_binary_op(
         crate::functions::math_ast::divide_two(l, r)
       }
       BinaryOperator::Power => {
-        if let (Some(a), Some(b)) = (ln, rn) {
-          if any_real {
-            Ok(Expr::Real(a.powf(b)))
-          } else {
-            Ok(num_to_expr(a.powf(b)))
-          }
-        } else {
-          Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          })
-        }
+        // Delegate to power_two so Integer^Integer uses exact BigInt
+        // arithmetic (e.g. 10^40 stays an exact integer rather than
+        // collapsing to a lossy Real via f64::powf).
+        crate::functions::math_ast::power_two(l, r)
       }
       _ => Ok(Expr::BinaryOp {
         op,

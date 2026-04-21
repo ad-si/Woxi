@@ -3836,14 +3836,6 @@ EXPECTED:
 = 5.
 ---
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: IntegerLength
-LINE: 239
-TYPE: >>
-INPUT: IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: RealDigits
 LINE: 359
 TYPE: >>

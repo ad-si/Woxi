@@ -290,6 +290,18 @@ mod integer_length {
     assert_eq!(interpret("IntegerLength[-10^1000]").unwrap(), "1001");
     assert_eq!(interpret("IntegerLength[10^100]").unwrap(), "101");
   }
+
+  #[test]
+  fn integer_length_mapped_over_big_powers() {
+    // Regression: `10 ^ Range[100]` used to thread Power via f64::powf,
+    // collapsing 10^40, 10^41, ... to lossy Reals so IntegerLength couldn't
+    // evaluate them.
+    assert_eq!(
+      interpret("IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]")
+        .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod integer_reverse {

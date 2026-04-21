@@ -10490,3 +10490,11 @@ INPUT: CosineDistance[{1, 0}, {x, y}]
 EXPECTED:
 = 1 - Conjugate[x] / Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2]
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: IntegerLength
+LINE: 239
+TYPE: >>
+INPUT: IntegerLength /@ (10 ^ Range[100]) == Range[2, 101]
+EXPECTED:
+= True
+---
