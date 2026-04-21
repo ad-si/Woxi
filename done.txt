@@ -10356,3 +10356,10 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: fail_msg
 ---
+FILE: mathics/test/core/convert/test_to_regex.py
+FUNCTION: test_to_regex
+LINE: 8
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+---

@@ -7854,13 +7854,6 @@ INPUT: expr
 EXPECTED: result
 MESSAGE: msg
 ---
-FILE: mathics/test/core/convert/test_to_regex.py
-FUNCTION: test_to_regex
-LINE: 8
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
 FILE: mathics/test/format/test_format.py
 FUNCTION: test_format_private_doctests
 LINE: 219
