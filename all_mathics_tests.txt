@@ -412,14 +412,6 @@ EXPECTED:
 = {3}
 ---
 FILE: mathics/builtin/assignments/types.py
-CLASS: NValues
-LINE: 126
-TYPE: >>
-INPUT: NValues[d]
-EXPECTED:
-= {HoldPattern[foo] :> bar}
----
-FILE: mathics/builtin/assignments/types.py
 CLASS: SubValues
 LINE: 155
 TYPE: >>

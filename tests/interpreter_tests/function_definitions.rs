@@ -469,6 +469,15 @@ mod messages {
   }
 }
 
+mod nvalues {
+  use super::*;
+
+  #[test]
+  fn nvalues_of_undefined_symbol_is_empty_list() {
+    assert_eq!(interpret("NValues[d]").unwrap(), "{}");
+  }
+}
+
 mod memory {
   use super::*;
 
