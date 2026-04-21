@@ -10004,3 +10004,11 @@ INPUT: MatchQ[x, F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Default
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: DefaultValues
+LINE: 39
+TYPE: >>
+INPUT: Default[g, 1]
+EXPECTED:
+= 3
+---
