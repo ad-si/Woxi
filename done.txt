@@ -9886,3 +9886,11 @@ EXPECTED:
 : Power[squared[1, 2], 2] is not a valid box structure.
 =
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 917
+TYPE: >>
+INPUT: b // TeXForm
+EXPECTED:
+= ...
+---
