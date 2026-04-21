@@ -4229,6 +4229,14 @@ mod unknown_function_no_args {
       "a + Missing[UnknownSymbol, b]"
     );
   }
+
+  #[test]
+  fn tag_set_delayed_installs_upvalue_and_applies() {
+    assert_eq!(
+      interpret("f /: f[x_] + f[y_] := x + y; f[a] + f[b]").unwrap(),
+      "a + b"
+    );
+  }
 }
 
 mod symbolic_ordering {

@@ -9194,3 +9194,9 @@ LINE: 640
 INPUT: a + ?? b
 EXPECTED: a + Information[b, LongForm -> True]
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 466
+INPUT: f /: f[x_] + f[y_] := x + y
+EXPECTED: TagSetDelayed[f, f[x_] + f[y_], x + y]
+---

@@ -7740,12 +7740,6 @@ EXPECTED: Span[Span[a, b], c]
 ---
 FILE: mathics/test/core/parser/test_parser.py
 FUNCTION: None
-LINE: 466
-INPUT: f /: f[x_] + f[y_] := x + y
-EXPECTED: TagSetDelayed[f, f[x_] + f[y_], x + y]
----
-FILE: mathics/test/core/parser/test_parser.py
-FUNCTION: None
 LINE: 545
 INPUT: a \\[Cap] b
 EXPECTED: Cap[a,b]
