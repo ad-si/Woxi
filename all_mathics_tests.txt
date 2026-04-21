@@ -4529,14 +4529,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: DownValues
-LINE: 375
-TYPE: >>
-INPUT: f[a]
-EXPECTED:
-= a ^ 2
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: DownValues
 LINE: 386
 TYPE: >>
 INPUT: g[2]

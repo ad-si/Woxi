@@ -9378,3 +9378,11 @@ INPUT: f[3]
 EXPECTED:
 = p[3]
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: DownValues
+LINE: 375
+TYPE: >>
+INPUT: f[a]
+EXPECTED:
+= a ^ 2
+---
