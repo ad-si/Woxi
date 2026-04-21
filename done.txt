@@ -9619,3 +9619,10 @@ LINE: 20
 INPUT: Length[F@@nonuniformTable]
 EXPECTED: 1001
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1262
+TYPE: >>
+INPUT: Dice[a___] + Dice[b___] ^:= Dice[Sequence @@ {a, b}]
+EXPECTED: (none)
+---
