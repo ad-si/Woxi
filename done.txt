@@ -10060,3 +10060,11 @@ INPUT: b
 EXPECTED:
 = 2
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 841
+TYPE: >>
+INPUT: x
+EXPECTED:
+= y
+---
