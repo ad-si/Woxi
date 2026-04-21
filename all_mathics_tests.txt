@@ -4224,14 +4224,6 @@ EXPECTED:
 = {Null, {f[1, {b}]}}
 ---
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
-LINE: 325
-TYPE: >>
-INPUT: Delete[f[a, b, u + v, c], {3, 0}]
-EXPECTED:
-= f[a, b, u, v, c]
----
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete

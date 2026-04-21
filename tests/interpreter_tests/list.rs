@@ -4030,6 +4030,25 @@ mod delete_deep {
       "{b, d}"
     );
   }
+
+  // Regression: `{3, 0}` deletes the head of the 3rd element. Removing a
+  // head leaves a Sequence that the outer FunctionCall flattens, so
+  // `Delete[f[a, b, u + v, c], {3, 0}]` → `f[a, b, u, v, c]`, matching
+  // wolframscript.
+  #[test]
+  fn delete_nested_head_splices_into_parent() {
+    assert_eq!(
+      interpret("Delete[f[a, b, u + v, c], {3, 0}]").unwrap(),
+      "f[a, b, u, v, c]"
+    );
+  }
+
+  #[test]
+  fn delete_head_at_top_level_returns_sequence() {
+    // Top-level head deletion of f[a,b,c] produces a Sequence that
+    // renders as its spliced args — same as wolframscript's display.
+    assert_eq!(interpret("Delete[f[a, b, c], 0]").unwrap(), "abc");
+  }
 }
 
 mod extract_multi {

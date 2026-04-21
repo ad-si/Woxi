@@ -10675,3 +10675,11 @@ INPUT: {a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}
 EXPECTED:
 = {{{x, y}, {w, z}}, {u, v}}
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Delete
+LINE: 325
+TYPE: >>
+INPUT: Delete[f[a, b, u + v, c], {3, 0}]
+EXPECTED:
+= f[a, b, u, v, c]
+---

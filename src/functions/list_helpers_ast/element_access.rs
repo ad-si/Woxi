@@ -1389,28 +1389,85 @@ fn delete_at_deep_position(
   if pos.is_empty() {
     return Ok(expr.clone());
   }
-  if let Expr::List(items) = expr {
-    let len = items.len() as i128;
-    let idx = if pos[0] > 0 {
-      (pos[0] - 1) as usize
-    } else if pos[0] < 0 {
-      (len + pos[0]) as usize
-    } else {
-      return Ok(expr.clone());
+  // Extract the current level's items + wrapping (List or FunctionCall[head]).
+  let (items, head): (Vec<Expr>, Option<String>) = match expr {
+    Expr::List(items) => (items.clone(), None),
+    Expr::FunctionCall { name, args } => (args.clone(), Some(name.clone())),
+    _ => return Ok(expr.clone()),
+  };
+
+  // Position 0 at this level → delete the head. Mathematica folds an
+  // "unheaded" argument list into the parent by turning it into a
+  // Sequence so the outer head absorbs it.
+  if pos[0] == 0 {
+    let unheaded = Expr::FunctionCall {
+      name: "Sequence".to_string(),
+      args: items,
     };
-    if idx >= items.len() {
-      return Ok(expr.clone());
-    }
     if pos.len() == 1 {
-      let mut result = items.to_vec();
-      result.remove(idx);
-      Ok(Expr::List(result))
-    } else {
-      let mut result = items.to_vec();
-      result[idx] = delete_at_deep_position(&items[idx], &pos[1..])?;
-      Ok(Expr::List(result))
+      return Ok(unheaded);
     }
+    // Further indexing past a removed head doesn't make sense for this
+    // simple positional API; leave the expression alone.
+    return Ok(expr.clone());
+  }
+
+  let len = items.len() as i128;
+  let idx = if pos[0] > 0 {
+    (pos[0] - 1) as usize
   } else {
-    Ok(expr.clone())
+    (len + pos[0]) as usize
+  };
+  if idx >= items.len() {
+    return Ok(expr.clone());
+  }
+
+  let rebuild = |new_items: Vec<Expr>| -> Expr {
+    match &head {
+      Some(h) => flatten_sequences(Expr::FunctionCall {
+        name: h.clone(),
+        args: new_items,
+      }),
+      None => flatten_sequences(Expr::List(new_items)),
+    }
+  };
+
+  if pos.len() == 1 {
+    let mut result = items;
+    result.remove(idx);
+    Ok(rebuild(result))
+  } else {
+    let mut result = items.clone();
+    result[idx] = delete_at_deep_position(&items[idx], &pos[1..])?;
+    Ok(rebuild(result))
+  }
+}
+
+/// Splice any top-level `Sequence[...]` args into their parent — matches
+/// Mathematica's post-evaluation Sequence-flattening rule.
+fn flatten_sequences(expr: Expr) -> Expr {
+  let splice = |items: &[Expr]| -> Vec<Expr> {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      if let Expr::FunctionCall {
+        name: inner_name,
+        args: inner_args,
+      } = item
+        && inner_name == "Sequence"
+      {
+        out.extend(inner_args.iter().cloned());
+      } else {
+        out.push(item.clone());
+      }
+    }
+    out
+  };
+  match &expr {
+    Expr::List(items) => Expr::List(splice(items)),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: splice(args),
+    },
+    _ => expr,
   }
 }
