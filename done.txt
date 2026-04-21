@@ -11118,3 +11118,11 @@ INPUT: Integrate[Sin[x^2 Pi/2], {x, 0, z}]
 EXPECTED:
 = FresnelS[z]
 ---
+FILE: mathics/builtin/specialfns/hypergeom.py
+CLASS: Hypergeometric1F1
+LINE: 65
+TYPE: >>
+INPUT: Hypergeometric1F1[1/2, 1, x]
+EXPECTED:
+= BesselI[0, x / 2] E ^ (x / 2)
+---

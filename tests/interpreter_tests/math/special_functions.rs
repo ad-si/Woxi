@@ -3678,6 +3678,16 @@ mod hypergeometric_pfq {
   }
 
   #[test]
+  fn one_f_one_half_one_bessel_identity() {
+    // 1F1[1/2, 1, z] = E^(z/2) * BesselI[0, z/2]. Regression for mathics
+    // specialfns/hypergeom.py:65.
+    assert_eq!(
+      interpret("Hypergeometric1F1[1/2, 1, x]").unwrap(),
+      "E^(x/2)*BesselI[0, x/2]"
+    );
+  }
+
+  #[test]
   fn rational_params() {
     assert_eq!(
       interpret("N[HypergeometricPFQ[{1/2}, {3/2}, -1]]").unwrap(),

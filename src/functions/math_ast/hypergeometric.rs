@@ -520,6 +520,25 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
 }
 
 /// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
+fn is_half(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Integer(1)) && matches!(&args[1], Expr::Integer(2))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(1))
+        && matches!(right.as_ref(), Expr::Integer(2))
+    }
+    _ => false,
+  }
+}
+
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -542,6 +561,29 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: vec![args[2].clone()],
     };
     return crate::evaluator::evaluate_expr_to_expr(&exp_call);
+  }
+
+  // Kummer identity: 1F1[1/2, 1, z] = E^(z/2) * BesselI[0, z/2].
+  if is_half(&args[0]) && matches!(&args[1], Expr::Integer(1)) {
+    let z = &args[2];
+    let half_z = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(z.clone()),
+      right: Box::new(Expr::Integer(2)),
+    };
+    let exp_part = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(Expr::Constant("E".to_string())),
+      right: Box::new(half_z.clone()),
+    };
+    let bessel = Expr::FunctionCall {
+      name: "BesselI".to_string(),
+      args: vec![Expr::Integer(0), half_z],
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[exp_part, bessel],
+    );
   }
 
   // Closed form for 1F1[positive integer a, 1, z]:
