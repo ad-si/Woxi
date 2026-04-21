@@ -1355,14 +1355,6 @@ INPUT: ThreeJSymbol[{1/2, -1/2}, {1/2, -1/2}, {1, 1}]
 EXPECTED:
 = -Sqrt[3] / 3
 ---
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
-LINE: 31
-TYPE: >>
-INPUT: A[[2]]
-EXPECTED:
-= 25
----
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryRead
 LINE: 375

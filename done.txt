@@ -9642,3 +9642,11 @@ INPUT: Dice[1, 6, 4, 4]
 EXPECTED:
 = -Graphics--Graphics--Graphics--Graphics-
 ---
+FILE: mathics/builtin/binary/bytearray.py
+CLASS: ByteArray_
+LINE: 31
+TYPE: >>
+INPUT: A[[2]]
+EXPECTED:
+= 25
+---
