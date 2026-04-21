@@ -189,6 +189,17 @@ mod coefficient {
     );
   }
 
+  // `Coefficient[expr, var, 0]` where expr doesn't mention var should
+  // return expr unchanged — wolframscript preserves the user's form, so we
+  // skip the pre-expand step. Regression for mathics algebra.py:1316.
+  #[test]
+  fn degree_zero_in_unmentioned_variable_preserves_form() {
+    assert_eq!(
+      interpret("Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]").unwrap(),
+      "(2 + x)^3 + (3 + x)^2"
+    );
+  }
+
   #[test]
   fn rational_expression_coefficient() {
     // Coefficient[(x+2)/(y-3) + (x+3)/(y-2), x] extracts coefficients of x.

@@ -1796,14 +1796,6 @@ EXPECTED:
 = a == "A"
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: Coefficient
-LINE: 512
-TYPE: >>
-INPUT: Coefficient[(x + 2)^3 + (x + 3)^2, y, 0]
-EXPECTED:
-= (2 + x) ^ 3 + (3 + x) ^ 2
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: CoefficientArrays
 LINE: 794
 TYPE: >>

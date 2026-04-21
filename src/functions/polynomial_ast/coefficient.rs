@@ -13,6 +13,24 @@ use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 /// - Coefficient[expr, var]      → coefficient of var^1
 /// - Coefficient[expr, var, n]   → coefficient of var^n
 /// - Coefficient[expr, x^n]      → coefficient of x^n (monomial form)
+fn expr_contains_identifier(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_identifier(left, name)
+        || expr_contains_identifier(right, name)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_identifier(operand, name),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| expr_contains_identifier(a, name))
+    }
+    Expr::List(items) => {
+      items.iter().any(|a| expr_contains_identifier(a, name))
+    }
+    _ => false,
+  }
+}
+
 pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -63,6 +81,14 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     1
   };
+
+  // Fast path for `Coefficient[expr, var, 0]` when expr doesn't mention
+  // var: the whole expression is the coefficient of var^0, and Expanding
+  // would needlessly change the user's canonical form (matches
+  // wolframscript).
+  if power == 0 && !expr_contains_identifier(&args[0], var) {
+    return Ok(args[0].clone());
+  }
 
   // First expand, then extract coefficient
   let expanded = expand_expr(&args[0]);
