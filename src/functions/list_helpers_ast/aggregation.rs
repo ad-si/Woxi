@@ -444,6 +444,88 @@ pub fn take_largest_ast(
   Ok(Expr::List(result))
 }
 
+/// AST-based TakeLargest with explicit ExcludedForms option.
+///
+/// Items matching any pattern in `excluded_forms` are filtered out
+/// before sorting. Remaining items are sorted in canonical descending
+/// order (the reverse of `Sort`), then the first `n` are returned.
+pub fn take_largest_excluded_ast(
+  list: &Expr,
+  n: i128,
+  excluded_forms: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeLargest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  let filtered: Vec<Expr> = items
+    .iter()
+    .filter(|it| {
+      !excluded_forms
+        .iter()
+        .any(|p| crate::evaluator::pattern_matching::match_pattern(it, p).is_some())
+    })
+    .cloned()
+    .collect();
+
+  if n as usize > filtered.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeLargest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
+  }
+
+  let mut sorted = filtered;
+  sorted.sort_by(|a, b| super::sorting::canonical_cmp(b, a));
+  sorted.truncate(n as usize);
+  Ok(Expr::List(sorted))
+}
+
+/// AST-based TakeSmallest with explicit ExcludedForms option.
+pub fn take_smallest_excluded_ast(
+  list: &Expr,
+  n: i128,
+  excluded_forms: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeSmallest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  let filtered: Vec<Expr> = items
+    .iter()
+    .filter(|it| {
+      !excluded_forms
+        .iter()
+        .any(|p| crate::evaluator::pattern_matching::match_pattern(it, p).is_some())
+    })
+    .cloned()
+    .collect();
+
+  if n as usize > filtered.len() {
+    return Ok(Expr::FunctionCall {
+      name: "TakeSmallest".to_string(),
+      args: vec![list.clone(), Expr::Integer(n)],
+    });
+  }
+
+  let mut sorted = filtered;
+  sorted.sort_by(super::sorting::canonical_cmp);
+  sorted.truncate(n as usize);
+  Ok(Expr::List(sorted))
+}
+
 /// AST-based TakeSmallest: take n smallest elements.
 ///
 /// Non-numeric elements (like `Missing[...]`) are silently dropped,

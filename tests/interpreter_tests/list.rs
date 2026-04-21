@@ -4397,10 +4397,7 @@ mod part_span {
   fn part_adjacent_reverse_span_returns_empty_list() {
     // `{a, b, c, d, e}[[-1;;-2]]` normalizes to `5;;4` — end == start - 1 —
     // which wolframscript treats as an empty result.
-    assert_eq!(
-      interpret("{a, b, c, d, e}[[-1;;-2]]").unwrap(),
-      "{}"
-    );
+    assert_eq!(interpret("{a, b, c, d, e}[[-1;;-2]]").unwrap(), "{}");
     assert_eq!(interpret("{a, b, c, d, e}[[4;;3]]").unwrap(), "{}");
   }
 
@@ -6949,6 +6946,43 @@ mod take_largest {
     // the numeric portion of the list.
     assert_eq!(
       interpret("TakeLargest[{-8, 150, Missing[abc]}, 2]").unwrap(),
+      "{150, -8}"
+    );
+  }
+
+  #[test]
+  fn excluded_forms_empty_includes_missing() {
+    // ExcludedForms -> {} keeps every element; canonical descending
+    // order places Missing[...] above numbers.
+    assert_eq!(
+      interpret(
+        "TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]"
+      )
+      .unwrap(),
+      "{Missing[abc], 150}"
+    );
+  }
+
+  #[test]
+  fn excluded_forms_multiple_missing() {
+    assert_eq!(
+      interpret(
+        "TakeLargest[{-8, 150, Missing[abc], Missing[foo]}, 3, \
+         ExcludedForms -> {}]"
+      )
+      .unwrap(),
+      "{Missing[foo], Missing[abc], 150}"
+    );
+  }
+
+  #[test]
+  fn excluded_forms_explicit_missing_pattern() {
+    assert_eq!(
+      interpret(
+        "TakeLargest[{-8, 150, Missing[abc]}, 2, \
+         ExcludedForms -> {_Missing}]"
+      )
+      .unwrap(),
       "{150, -8}"
     );
   }

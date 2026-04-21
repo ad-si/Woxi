@@ -5236,14 +5236,6 @@ INPUT: Sort[{x_ + n_*y_, x_ + y_}, PatternsOrderedQ]
 EXPECTED:
 = {x_ + n_ y_, x_ + y_}
 ---
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: TakeLargest
-LINE: 416
-TYPE: >>
-INPUT: TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]
-EXPECTED:
-= {Missing[abc], 150}
----
 FILE: mathics/builtin/forms/data.py
 CLASS: StringForm
 LINE: 678

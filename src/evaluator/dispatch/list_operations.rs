@@ -42,6 +42,29 @@ fn has_sequence_pattern(expr: &Expr) -> bool {
   }
 }
 
+/// Parse `ExcludedForms -> {pat1, pat2, ...}` into the list of patterns.
+/// Returns `None` if the argument is not an `ExcludedForms` rule.
+fn parse_excluded_forms(arg: &Expr) -> Option<Vec<Expr>> {
+  let (lhs, rhs) = match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  match lhs {
+    Expr::Identifier(s) if s == "ExcludedForms" => {}
+    _ => return None,
+  }
+  match rhs {
+    Expr::List(items) => Some(items.clone()),
+    other => Some(vec![other.clone()]),
+  }
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -1649,9 +1672,27 @@ pub fn dispatch_list_operations(
         return Some(list_helpers_ast::take_largest_ast(&args[0], n));
       }
     }
+    "TakeLargest" if args.len() == 3 => {
+      if let Some(n) = expr_to_i128(&args[1])
+        && let Some(forms) = parse_excluded_forms(&args[2])
+      {
+        return Some(list_helpers_ast::take_largest_excluded_ast(
+          &args[0], n, &forms,
+        ));
+      }
+    }
     "TakeSmallest" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         return Some(list_helpers_ast::take_smallest_ast(&args[0], n));
+      }
+    }
+    "TakeSmallest" if args.len() == 3 => {
+      if let Some(n) = expr_to_i128(&args[1])
+        && let Some(forms) = parse_excluded_forms(&args[2])
+      {
+        return Some(list_helpers_ast::take_smallest_excluded_ast(
+          &args[0], n, &forms,
+        ));
       }
     }
     "MinimalBy" if args.len() == 2 || args.len() == 3 => {
