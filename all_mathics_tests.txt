@@ -5882,14 +5882,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/forms/variables.py
-CLASS: BoxForms_
-LINE: 93
-TYPE: >>
-INPUT: {MemberQ[$PrintForms, MyBoxForm], MemberQ[$OutputForms, MyBoxForm]}
-EXPECTED:
-= {True, True}
----
-FILE: mathics/builtin/forms/variables.py
 CLASS: OutputForms_
 LINE: 120
 TYPE: >>

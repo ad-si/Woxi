@@ -9825,3 +9825,11 @@ INPUT: MyBoxForm[F[3]]
 EXPECTED:
 = F(3)
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: BoxForms_
+LINE: 93
+TYPE: >>
+INPUT: {MemberQ[$PrintForms, MyBoxForm], MemberQ[$OutputForms, MyBoxForm]}
+EXPECTED:
+= {True, True}
+---
