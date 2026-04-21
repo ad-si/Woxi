@@ -576,6 +576,16 @@ mod same_q_unsame_q {
   }
 
   #[test]
+  fn same_q_distinct_symbols() {
+    assert_eq!(interpret("A === B").unwrap(), "False");
+  }
+
+  #[test]
+  fn same_q_symbol_vs_integer() {
+    assert_eq!(interpret("A === 1").unwrap(), "False");
+  }
+
+  #[test]
   fn same_q_complex_integer_vs_sqrt() {
     assert_eq!(interpret("SameQ[3 + 2 I, Sqrt[2]]").unwrap(), "False");
   }
