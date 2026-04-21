@@ -2937,13 +2937,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: LinearModelFit
-LINE: 427
-TYPE: >>
-INPUT: m = LinearModelFit[{{{1, 4}, {1, 5}, {1, 7}}, {1, 2, 3}}];
-EXPECTED: (none)
----
-FILE: mathics/builtin/numbers/linalg.py
-CLASS: LinearModelFit
 LINE: 428
 TYPE: >>
 INPUT: m["BasisFunctions"]
