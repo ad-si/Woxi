@@ -9568,3 +9568,10 @@ INPUT: Evaluating
 EXPECTED: Returning
 MESSAGE: Rewriting
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: None
+LINE: 72
+INPUT: MatchQ[x, F[x_.,y_]]
+EXPECTED: True
+MESSAGE: With OneIdentity, and Optional, default
+---
