@@ -2001,13 +2001,6 @@ EXPECTED:
 . 
 . -3   -4   0   0
 ---
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: KroneckerProduct
-LINE: 57
-TYPE: #>
-INPUT: Clear[a, b];
-EXPECTED: (none)
----
 ---
 FILE: mathics/builtin/vectors/vector_space_operations.py
 CLASS: Projection

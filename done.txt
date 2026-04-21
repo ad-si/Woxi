@@ -9268,3 +9268,10 @@ TYPE: #>
 INPUT: Clear[v1, v2];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/vectors/vector_space_operations.py
+CLASS: KroneckerProduct
+LINE: 57
+TYPE: #>
+INPUT: Clear[a, b];
+EXPECTED: (none)
+---
