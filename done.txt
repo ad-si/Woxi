@@ -9634,3 +9634,11 @@ INPUT: DiceSum @ Dice[1, 2, 5]
 EXPECTED:
 = 8
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1253
+TYPE: >>
+INPUT: Dice[1, 6, 4, 4]
+EXPECTED:
+= -Graphics--Graphics--Graphics--Graphics-
+---

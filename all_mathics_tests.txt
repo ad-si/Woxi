@@ -7084,14 +7084,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1253
-TYPE: >>
-INPUT: Dice[1, 6, 4, 4]
-EXPECTED:
-= -Graphics--Graphics--Graphics--Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1269
 TYPE: >>
 INPUT: Dice[a___] + Dice[b___] := Dice[Sequence @@ {a, b}]
