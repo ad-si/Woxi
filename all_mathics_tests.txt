@@ -6882,14 +6882,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 472
-TYPE: >>
-INPUT: a
-EXPECTED:
-= 1
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 474
 TYPE: >>
 INPUT: b

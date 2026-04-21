@@ -9426,3 +9426,11 @@ INPUT: b
 EXPECTED:
 = 4
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 472
+TYPE: >>
+INPUT: a
+EXPECTED:
+= 1
+---
