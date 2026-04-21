@@ -7655,13 +7655,6 @@ MESSAGE: downvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 32
-INPUT: A[p_, q]
-EXPECTED: A
-MESSAGE: downvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 33
 INPUT: s:A[p_, q]
 EXPECTED: A

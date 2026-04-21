@@ -4148,6 +4148,11 @@ mod unknown_function_no_args {
   fn undefined_symbol_called_with_no_args_stays_symbolic() {
     assert_eq!(interpret("A[]").unwrap(), "A[]");
   }
+
+  #[test]
+  fn undefined_symbol_with_blank_and_symbol_args_stays_symbolic() {
+    assert_eq!(interpret("A[p_, q]").unwrap(), "A[p_, q]");
+  }
 }
 
 mod symbolic_ordering {
