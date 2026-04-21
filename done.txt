@@ -10052,3 +10052,11 @@ INPUT: b
 EXPECTED:
 = 25
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 474
+TYPE: >>
+INPUT: b
+EXPECTED:
+= 2
+---

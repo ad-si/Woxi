@@ -6543,14 +6543,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 474
-TYPE: >>
-INPUT: b
-EXPECTED:
-= 2
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 507
 TYPE: >>
 INPUT: FullForm[{1, 2, 3}]
