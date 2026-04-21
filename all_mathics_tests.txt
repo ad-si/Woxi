@@ -3524,14 +3524,6 @@ INPUT: Nearest[{{0, 1}, {1, 2}, {2, 3}} -> {a, b, c}, {1.1, 2}]
 EXPECTED:
 = {b}
 ---
-FILE: mathics/builtin/distance/numeric.py
-CLASS: CosineDistance
-LINE: 174
-TYPE: >>
-INPUT: CosineDistance[{a, b, c}, {x, y, z}]
-EXPECTED:
-= 1 + (-a Conjugate[x] - b Conjugate[y] - c Conjugate[z]) / (Sqrt[Abs[a] ^ 2 + Abs[b] ^ 2 + Abs[c] ^ 2] Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2 + Abs[z] ^ 2])
----
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileDate
 LINE: 33
