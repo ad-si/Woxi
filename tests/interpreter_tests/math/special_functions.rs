@@ -3641,6 +3641,25 @@ mod hypergeometric_pfq {
   }
 
   #[test]
+  fn one_f_one_b_plus_one_closed_form() {
+    // 1F1[b+1, b, z] = ((b + z) / b) * E^z. Regression for mathics
+    // specialfns/hypergeom.py:159 — z=1 should yield the symbolic 3E/2,
+    // not Infinity, since 1F1 has infinite convergence radius.
+    assert_eq!(
+      interpret("HypergeometricPFQ[{3}, {2}, 1]").unwrap(),
+      "(3*E)/2"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{2}, {1}, z]").unwrap(),
+      "E^z*(1 + z)"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{4}, {3}, z]").unwrap(),
+      "(E^z*(3 + z))/3"
+    );
+  }
+
+  #[test]
   fn rational_params() {
     assert_eq!(
       interpret("N[HypergeometricPFQ[{1/2}, {3/2}, -1]]").unwrap(),

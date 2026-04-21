@@ -189,6 +189,35 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Closed form: 1F1[b+1, b, z] = ((b + z) / b) * E^z for positive integer b.
+  if a_list.len() == 1
+    && b_list.len() == 1
+    && let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&a_list[0], &b_list[0])
+    && *b_i >= 1
+    && *a_i == *b_i + 1
+  {
+    let b_int = *b_i;
+    let plus = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(b_int), z.clone()],
+    };
+    let ratio = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(plus),
+      right: Box::new(Expr::Integer(b_int)),
+    };
+    let exp_z = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()],
+    };
+    let prod = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(ratio),
+      right: Box::new(exp_z),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&prod);
+  }
+
   // Numeric evaluation: all parameters and z must be numeric
   let z_val = match z {
     Expr::Real(x) => Some(*x),
@@ -239,11 +268,14 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if let (Some(a_vals), Some(b_vals)) = (a_vals, b_vals) {
-    // Check convergence at |z|=1: for p <= q+1, need sum(b) - sum(a) > 0
-    if z_val.abs() >= 1.0 && a_vals.len() <= b_vals.len() + 1 {
+    // Convergence at the boundary |z|=1 is a concern only for p = q+1
+    // (the 2F1-like balanced case): the series converges there iff
+    // Re(Σb − Σa) > 0. For p ≤ q the series has infinite convergence radius,
+    // so values at |z|=1 are finite (e.g. HypergeometricPFQ[{3},{2},1] = 3e/2).
+    if z_val.abs() == 1.0 && a_vals.len() == b_vals.len() + 1 {
       let sum_a: f64 = a_vals.iter().sum();
       let sum_b: f64 = b_vals.iter().sum();
-      if z_val.abs() == 1.0 && sum_b - sum_a <= 0.0 {
+      if sum_b - sum_a <= 0.0 {
         return Ok(Expr::Identifier("Infinity".to_string()));
       }
     }
@@ -551,10 +583,8 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let polynomial =
       crate::evaluator::evaluate_function_call_ast("Plus", &terms)?;
-    let exp_part = crate::evaluator::evaluate_function_call_ast(
-      "Exp",
-      &[z.clone()],
-    )?;
+    let exp_part =
+      crate::evaluator::evaluate_function_call_ast("Exp", &[z.clone()])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
       &[exp_part, polynomial],
