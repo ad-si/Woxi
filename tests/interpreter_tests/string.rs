@@ -106,6 +106,14 @@ mod string_join_with_list {
   }
 
   #[test]
+  fn string_join_hello_world_with_nested_list_and_tail() {
+    assert_eq!(
+      interpret(r#"StringJoin[{"Hello", " ", {"world"}}, "!"]"#).unwrap(),
+      "Hello world!"
+    );
+  }
+
+  #[test]
   fn string_join_in_rule_rhs() {
     // StringJoin (<>) must parse correctly in the RHS of Rule inside a list
     assert_eq!(

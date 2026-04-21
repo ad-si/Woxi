@@ -1862,14 +1862,6 @@ EXPECTED:
 = {100, 101, 102}
 ---
 FILE: mathics/builtin/string/operations.py
-CLASS: StringJoin
-LINE: 318
-TYPE: >>
-INPUT: Print[StringJoin[{"Hello", " ", {"world"}}, "!"]]
-EXPECTED:
-| Hello world!
----
-FILE: mathics/builtin/string/operations.py
 CLASS: StringPosition
 LINE: 397
 TYPE: >>

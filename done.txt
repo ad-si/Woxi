@@ -9011,3 +9011,11 @@ INPUT: StringSplit["  abc    123  ", WhitespaceCharacter]
 EXPECTED:
 = {, , abc, , , , 123, , }
 ---
+FILE: mathics/builtin/string/operations.py
+CLASS: StringJoin
+LINE: 318
+TYPE: >>
+INPUT: Print[StringJoin[{"Hello", " ", {"world"}}, "!"]]
+EXPECTED:
+| Hello world!
+---
