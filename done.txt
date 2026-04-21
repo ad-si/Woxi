@@ -9442,3 +9442,11 @@ INPUT: r
 EXPECTED:
 = custom
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: OptionsPattern
+LINE: 276
+TYPE: >>
+INPUT: f[x, n->3]
+EXPECTED:
+= x ^ 3
+---
