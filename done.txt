@@ -10132,3 +10132,11 @@ INPUT: y
 EXPECTED:
 = f[x]
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: PrependTo
+LINE: 1410
+TYPE: >>
+INPUT: y
+EXPECTED:
+= f[x, a, b, c]
+---

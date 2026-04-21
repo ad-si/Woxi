@@ -4568,14 +4568,6 @@ TYPE: >>
 INPUT: F[[;; All, 1 ;; 2, 3 ;; 3]] = k;
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: PrependTo
-LINE: 1410
-TYPE: >>
-INPUT: y
-EXPECTED:
-= f[x, a, b, c]
----
 ---
 ---
 FILE: mathics/builtin/list/eol.py
