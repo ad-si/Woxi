@@ -1,5 +1,17 @@
 use super::*;
 
+mod integrate_symbolic_bounds {
+  use super::*;
+
+  #[test]
+  fn unknown_integrand_with_symbolic_bounds_stays_unevaluated() {
+    assert_eq!(
+      interpret("Integrate[F[x], {x, a, g[b]}]").unwrap(),
+      "Integrate[F[x], {x, a, g[b]}]"
+    );
+  }
+}
+
 mod integrate_with_sum {
   use super::*;
 
