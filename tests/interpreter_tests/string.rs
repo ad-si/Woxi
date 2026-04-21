@@ -3552,6 +3552,29 @@ mod string_contains_free_patterns {
   }
 
   #[test]
+  fn free_q_ignore_case() {
+    assert_eq!(
+      interpret(r#"StringFreeQ["Mathics", "MA", IgnoreCase -> True]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(r#"StringFreeQ["Mathics", "MA"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringFreeQ["Mathics", "XX", IgnoreCase -> True]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringFreeQ[{"abc", "ABC"}, "a", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "{False, False}"
+    );
+  }
+
+  #[test]
   fn split_digit_pattern() {
     assert_eq!(
       interpret(r#"StringSplit["abc123def456", DigitCharacter..]"#).unwrap(),

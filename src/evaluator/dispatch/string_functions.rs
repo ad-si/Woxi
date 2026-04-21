@@ -103,7 +103,7 @@ pub fn dispatch_string_functions(
     "StringCount" if args.len() == 2 => {
       return Some(crate::functions::string_ast::string_count_ast(args));
     }
-    "StringFreeQ" if args.len() == 2 => {
+    "StringFreeQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_free_q_ast(args));
     }
     "ToCharacterCode" if args.len() == 1 || args.len() == 2 => {

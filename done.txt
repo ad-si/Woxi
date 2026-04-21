@@ -10426,3 +10426,11 @@ INPUT: EulerPhi[40!]
 EXPECTED:
 = 121343746763281707274905415180804423680000000000
 ---
+FILE: mathics/builtin/testing_expressions/string_tests.py
+CLASS: StringFreeQ
+LINE: 118
+TYPE: >>
+INPUT: StringFreeQ["Mathics", "MA" , IgnoreCase -> True]
+EXPECTED:
+= False
+---

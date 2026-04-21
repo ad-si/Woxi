@@ -1663,14 +1663,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/string_tests.py
 CLASS: StringFreeQ
-LINE: 118
-TYPE: >>
-INPUT: StringFreeQ["Mathics", "MA" , IgnoreCase -> True]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/string_tests.py
-CLASS: StringFreeQ
 LINE: 125
 TYPE: >>
 INPUT: StringFreeQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}

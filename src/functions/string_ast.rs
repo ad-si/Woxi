@@ -3263,10 +3263,11 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StringFreeQ[s, sub] - check if string does NOT contain substring or pattern
+/// StringFreeQ[s, sub, IgnoreCase -> True] - case-insensitive
 pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringFreeQ expects exactly 2 arguments".into(),
+      "StringFreeQ expects 2 or 3 arguments".into(),
     ));
   }
 
@@ -3274,16 +3275,26 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|s| string_free_q_ast(&[s.clone(), args[1].clone()]))
+      .map(|s| {
+        let mut call = vec![s.clone()];
+        call.extend(args[1..].iter().cloned());
+        string_free_q_ast(&call)
+      })
       .collect();
     return Ok(Expr::List(results?));
   }
 
   let s = expr_to_str(&args[0])?;
+  let ignore_case = has_ignore_case_option(args);
 
   // Try regex-based pattern first
   if let Some(regex_pat) = string_pattern_to_regex(&args[1]) {
-    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+    let full_pat = if ignore_case {
+      format!("(?i){}", regex_pat)
+    } else {
+      regex_pat
+    };
+    let re = regex::Regex::new(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {}", e))
     })?;
     return Ok(Expr::Identifier(
@@ -3292,8 +3303,13 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let sub = expr_to_str(&args[1])?;
+  let contains = if ignore_case {
+    s.to_lowercase().contains(&sub.to_lowercase())
+  } else {
+    s.contains(&sub)
+  };
   Ok(Expr::Identifier(
-    if s.contains(&sub) { "False" } else { "True" }.to_string(),
+    if contains { "False" } else { "True" }.to_string(),
   ))
 }
 

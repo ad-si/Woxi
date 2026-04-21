@@ -916,7 +916,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "StringDelete" => Some((2, 2)),
     "StringDrop" => Some((2, 2)),
     "StringEndsQ" => Some((2, 3)),
-    "StringFreeQ" => Some((2, 2)),
+    "StringFreeQ" => Some((2, 3)),
     "StringInsert" => Some((3, 3)),
     "StringLength" => Some((1, 1)),
     "StringMatchQ" => Some((2, 3)),
