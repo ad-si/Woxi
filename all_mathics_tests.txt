@@ -130,14 +130,6 @@ INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1}, a, n]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/recurrence.py
-CLASS: RSolve
-LINE: 51
-TYPE: >>
-INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]
-EXPECTED:
-= {{a -> Function[{n}, 5 / 2 - 3 (-1) ^ n / 2]}}
----
 FILE: mathics/builtin/system.py
 CLASS: Packages
 LINE: 507

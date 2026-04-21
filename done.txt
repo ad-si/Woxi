@@ -8988,3 +8988,11 @@ EXPECTED:
 : Encountered a singular derivative at the point x = 0..
 = ...
 ---
+FILE: mathics/builtin/recurrence.py
+CLASS: RSolve
+LINE: 51
+TYPE: >>
+INPUT: RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]
+EXPECTED:
+= {{a -> Function[{n}, 5 / 2 - 3 (-1) ^ n / 2]}}
+---
