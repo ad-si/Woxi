@@ -4513,14 +4513,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: DownValues
-LINE: 361
-TYPE: >>
-INPUT: DownValues[f]
-EXPECTED:
-= {HoldPattern[f[x_]] :> x ^ 2}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: DownValues
 LINE: 369
 TYPE: >>
 INPUT: DownValues[f]
