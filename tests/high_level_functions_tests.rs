@@ -504,6 +504,38 @@ mod high_level_functions_tests {
         "{2, 1, 2, 1, 1, 4, 1, 1, 6, 1, 1, 8, 1, 1, 10, 1, 1, 12, 1, 1, 14, 1, 1, 16, 1, 1, 18, 1, 1, 20, 1, 1, 22, 1, 1, 24, 1, 1, 26, 1}"
       );
     }
+
+    #[test]
+    fn test_sqrt_70_periodic() {
+      // ContinuedFraction[Sqrt[70]] should expose the periodic
+      // expansion: {8, {2, 1, 2, 1, 2, 16}}.
+      assert_eq!(
+        interpret("ContinuedFraction[Sqrt[70]]").unwrap(),
+        "{8, {2, 1, 2, 1, 2, 16}}"
+      );
+    }
+
+    #[test]
+    fn test_sqrt_2_periodic() {
+      assert_eq!(
+        interpret("ContinuedFraction[Sqrt[2]]").unwrap(),
+        "{1, {2}}"
+      );
+    }
+
+    #[test]
+    fn test_sqrt_3_periodic() {
+      assert_eq!(
+        interpret("ContinuedFraction[Sqrt[3]]").unwrap(),
+        "{1, {1, 2}}"
+      );
+    }
+
+    #[test]
+    fn test_sqrt_of_perfect_square() {
+      // Perfect-square input resolves to the Integer case via Sqrt.
+      assert_eq!(interpret("ContinuedFraction[Sqrt[25]]").unwrap(), "{5}");
+    }
   }
 
   mod from_continued_fraction_tests {

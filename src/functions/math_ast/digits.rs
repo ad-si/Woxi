@@ -602,6 +602,116 @@ pub fn try_constant_as_big_rational(
   }
 }
 
+/// Extract the integer D from a Sqrt[D] expression. Handles both the
+/// `Sqrt[D]` FunctionCall shape and the canonicalized
+/// `Power[D, Rational[1, 2]]` shape (BinaryOp or FunctionCall).
+fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      if let Expr::Integer(d) = &args[0] {
+        return Some(*d);
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let (Expr::Integer(d), Expr::FunctionCall { name: rn, args: ra }) =
+        (&args[0], &args[1])
+        && rn == "Rational"
+        && ra.len() == 2
+        && matches!(ra[0], Expr::Integer(1))
+        && matches!(ra[1], Expr::Integer(2))
+      {
+        return Some(*d);
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let (
+        Expr::Integer(d),
+        Expr::FunctionCall { name: rn, args: ra },
+      ) = (left.as_ref(), right.as_ref())
+        && rn == "Rational"
+        && ra.len() == 2
+        && matches!(ra[0], Expr::Integer(1))
+        && matches!(ra[1], Expr::Integer(2))
+      {
+        return Some(*d);
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Continued-fraction expansion of √D for a positive non-square integer D.
+/// Returns `Some((a0, period))` where period is empty when D is a perfect
+/// square. Returns None if D is non-positive.
+fn continued_fraction_of_sqrt(d: i128) -> Option<(i128, Vec<i128>)> {
+  if d <= 0 {
+    return None;
+  }
+  // a0 = floor(sqrt(D))
+  let a0 = integer_sqrt(d);
+  if a0 * a0 == d {
+    return Some((a0, Vec::new()));
+  }
+
+  // Standard algorithm: m_{n+1} = d_n·a_n − m_n;
+  //                    d_{n+1} = (D − m_{n+1}²) / d_n;
+  //                    a_{n+1} = floor((a_0 + m_{n+1}) / d_{n+1}).
+  // The period ends when (m, d) first repeats — equivalently when
+  // a_n == 2·a_0 (a known property of √D continued fractions).
+  let mut period: Vec<i128> = Vec::new();
+  let mut m: i128 = 0;
+  let mut den: i128 = 1;
+  let mut a: i128 = a0;
+  for _ in 0..10_000 {
+    let m_next = den * a - m;
+    let d_next = (d - m_next * m_next) / den;
+    if d_next == 0 {
+      return None;
+    }
+    let a_next = (a0 + m_next) / d_next;
+    period.push(a_next);
+    m = m_next;
+    den = d_next;
+    a = a_next;
+    if den == 1 && a == 2 * a0 {
+      return Some((a0, period));
+    }
+  }
+  None
+}
+
+/// Integer square root via binary search — exact on i128 inputs.
+fn integer_sqrt(n: i128) -> i128 {
+  if n < 0 {
+    return 0;
+  }
+  if n < 2 {
+    return n;
+  }
+  let mut lo: i128 = 0;
+  let mut hi: i128 = (n as u128).isqrt() as i128;
+  // Ensure hi*hi >= n
+  while hi * hi < n {
+    hi += 1;
+  }
+  while lo < hi {
+    let mid = (lo + hi + 1) / 2;
+    if mid * mid <= n {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  lo
+}
+
 /// ContinuedFraction[x] - exact continued fraction for rational numbers
 /// ContinuedFraction[x, n] - first n terms for real numbers
 pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -638,6 +748,26 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {}
+  }
+
+  // ContinuedFraction[Sqrt[D]] — periodic CF for non-square positive integers.
+  // Note: Sqrt[n] is canonicalized internally to Power[n, Rational[1, 2]], so
+  // this matcher reaches for the Power shape.
+  let sqrt_arg: Option<i128> = if args.len() == 1 {
+    extract_sqrt_integer(&args[0])
+  } else {
+    None
+  };
+  if let Some(d) = sqrt_arg
+    && d > 0
+    && let Some((a0, period)) = continued_fraction_of_sqrt(d)
+  {
+    if period.is_empty() {
+      return Ok(Expr::List(vec![Expr::Integer(a0)]));
+    }
+    let period_list =
+      Expr::List(period.into_iter().map(Expr::Integer).collect());
+    return Ok(Expr::List(vec![Expr::Integer(a0), period_list]));
   }
 
   // For expressions with n terms

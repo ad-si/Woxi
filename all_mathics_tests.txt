@@ -2888,14 +2888,6 @@ EXPECTED:
 = {0, 1, {8, 3, 34, 3}}
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: ContinuedFraction
-LINE: 62
-TYPE: >>
-INPUT: ContinuedFraction[Sqrt[70]]
-EXPECTED:
-= {8, {2, 1, 2, 1, 2, 16}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: FactorInteger
 LINE: 298
 TYPE: >>
