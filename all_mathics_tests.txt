@@ -4850,14 +4850,6 @@ EXPECTED:
 =
 ---
 FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierFunction
-LINE: 59
-TYPE: #>
-INPUT: Clear[f];
-EXPECTED:
-=
----
-FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
 LINE: 93
 TYPE: >>
