@@ -320,6 +320,7 @@ pub fn apply_function_to_arg(
           | "StringStartsQ"
           | "StringEndsQ"
           | "StringContainsQ"
+          | "StringFreeQ"
           | "StringMatchQ"
           | "StringReplace"
           | "StringCases"
@@ -523,6 +524,7 @@ pub fn apply_curried_call(
           | "StringStartsQ"
           | "StringEndsQ"
           | "StringContainsQ"
+          | "StringFreeQ"
           | "StringMatchQ"
           | "StringReplace"
           | "StringCases"
@@ -634,8 +636,10 @@ pub fn apply_curried_call(
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
-      } else if matches!(name.as_str(), "Replace" | "ReplaceAll" | "ReplaceRepeated")
-        && args.len() == 1
+      } else if matches!(
+        name.as_str(),
+        "Replace" | "ReplaceAll" | "ReplaceRepeated"
+      ) && args.len() == 1
       {
         // Curried replacement: Replace[rules][expr] = Replace[expr, rules].
         // The expr argument comes FIRST in the uncurried form — the opposite

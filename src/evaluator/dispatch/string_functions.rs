@@ -103,6 +103,14 @@ pub fn dispatch_string_functions(
     "StringCount" if args.len() == 2 => {
       return Some(crate::functions::string_ast::string_count_ast(args));
     }
+    "StringFreeQ" if args.len() == 1 => {
+      // Operator form: StringFreeQ[pattern] is a curried predicate that will
+      // be applied to a string via the outer call (see function_application.rs).
+      return Some(Ok(Expr::FunctionCall {
+        name: "StringFreeQ".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "StringFreeQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::string_free_q_ast(args));
     }

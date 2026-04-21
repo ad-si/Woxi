@@ -761,10 +761,7 @@ mod alphabet {
       interpret("Alphabet[\"Russian\"] == Alphabet[\"Cyrillic\"]").unwrap(),
       "False"
     );
-    assert_eq!(
-      interpret("Length[Alphabet[\"Cyrillic\"]]").unwrap(),
-      "49"
-    );
+    assert_eq!(interpret("Length[Alphabet[\"Cyrillic\"]]").unwrap(), "49");
   }
 }
 
@@ -3692,6 +3689,20 @@ mod string_contains_free_patterns {
       interpret(r#"StringFreeQ[{"abc", "ABC"}, "a", IgnoreCase -> True]"#)
         .unwrap(),
       "{False, False}"
+    );
+  }
+
+  // Operator form: `StringFreeQ[pattern]` maps over strings, each time
+  // evaluating `StringFreeQ[string, pattern]`. Regression for mathics
+  // atomic/strings.py:1651.
+  #[test]
+  fn operator_form_maps_over_strings() {
+    assert_eq!(
+      interpret(
+        r#"StringFreeQ["e" ~~ ___ ~~ "u"] /@ {"The Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"}"#
+      )
+      .unwrap(),
+      "{False, False, False, True, True, True, True, True, False}"
     );
   }
 
