@@ -9434,3 +9434,11 @@ INPUT: a
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/assignments/assignment.py
+CLASS: UpSet
+LINE: 349
+TYPE: >>
+INPUT: r
+EXPECTED:
+= custom
+---

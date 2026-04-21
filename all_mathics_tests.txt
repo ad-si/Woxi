@@ -364,14 +364,6 @@ EXPECTED:
 = {1, 2, {{c1, c2}, {10}}}
 ---
 FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSet
-LINE: 349
-TYPE: >>
-INPUT: r
-EXPECTED:
-= custom
----
-FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSetDelayed
 LINE: 388
 TYPE: >>
