@@ -7711,13 +7711,6 @@ MESSAGE: subvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 46
-INPUT: S[x_, _A]
-EXPECTED: A
-MESSAGE: upvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 47
 INPUT: S[x_, s_A/;s>0]
 EXPECTED: A

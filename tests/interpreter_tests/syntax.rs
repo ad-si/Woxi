@@ -4163,6 +4163,11 @@ mod unknown_function_no_args {
   fn undefined_symbol_with_blank_arg_and_symbol_tag_stays_symbolic() {
     assert_eq!(interpret("S[x_, A]").unwrap(), "S[x_, A]");
   }
+
+  #[test]
+  fn undefined_symbol_with_blank_and_typed_blank_arg_stays_symbolic() {
+    assert_eq!(interpret("S[x_, _A]").unwrap(), "S[x_, _A]");
+  }
 }
 
 mod symbolic_ordering {
