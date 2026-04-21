@@ -10731,3 +10731,11 @@ INPUT: InverseHaversine[1 + 2.5 I]
 EXPECTED:
 = 1.76459 + 2.33097 I
 ---
+FILE: mathics/builtin/distance/numeric.py
+CLASS: CosineDistance
+LINE: 180
+TYPE: >>
+INPUT: CosineDistance[1+2I, 5]
+EXPECTED:
+= 1 - (1 / 5 + 2 I / 5) Sqrt[5]
+---

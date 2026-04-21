@@ -2822,6 +2822,28 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn cosine_distance_scalar_complex() {
+    // CosineDistance for numeric scalars uses (u/|u|)·(Conj(v)/|v|) so that
+    // common integer factors cancel — matches wolframscript's canonical form
+    // (regression for mathics distance/numeric.py:180).
+    assert_eq!(
+      interpret("CosineDistance[1 + 2 I, 5]").unwrap(),
+      "1 - (1 + 2*I)/Sqrt[5]"
+    );
+  }
+  #[test]
+  fn cosine_distance_scalar_zero() {
+    assert_eq!(interpret("CosineDistance[0, 5]").unwrap(), "0");
+  }
+  #[test]
+  fn cosine_distance_scalar_symbolic_unevaluated() {
+    // Pure-symbolic scalar pairs stay unevaluated, matching wolframscript.
+    assert_eq!(
+      interpret("CosineDistance[a, b]").unwrap(),
+      "CosineDistance[a, b]"
+    );
+  }
+  #[test]
   fn key_sort_by_basic() {
     assert_eq!(
       interpret(

@@ -1116,27 +1116,15 @@ pub fn dispatch_math_functions(
           .mul(&a_bf, bits, rm)
           .add(&b_bf.mul(&b_bf, bits, rm), bits, rm)
           .sqrt(bits, rm);
-        let c_bf = r
-          .add(&a_bf, bits, rm)
-          .div(&two, bits, rm)
-          .sqrt(bits, rm);
-        let d_abs = r
-          .sub(&a_bf, bits, rm)
-          .div(&two, bits, rm)
-          .sqrt(bits, rm);
+        let c_bf = r.add(&a_bf, bits, rm).div(&two, bits, rm).sqrt(bits, rm);
+        let d_abs = r.sub(&a_bf, bits, rm).div(&two, bits, rm).sqrt(bits, rm);
         let d_bf = if b >= 0.0 { d_abs } else { d_abs.neg() };
         // α = (|w+1| + |w−1|)/2, β = (|w+1| − |w−1|)/2
         let cp1 = c_bf.add(&one, bits, rm);
         let cm1 = c_bf.sub(&one, bits, rm);
         let d_sq = d_bf.mul(&d_bf, bits, rm);
-        let rp1 = cp1
-          .mul(&cp1, bits, rm)
-          .add(&d_sq, bits, rm)
-          .sqrt(bits, rm);
-        let rm1 = cm1
-          .mul(&cm1, bits, rm)
-          .add(&d_sq, bits, rm)
-          .sqrt(bits, rm);
+        let rp1 = cp1.mul(&cp1, bits, rm).add(&d_sq, bits, rm).sqrt(bits, rm);
+        let rm1 = cm1.mul(&cm1, bits, rm).add(&d_sq, bits, rm).sqrt(bits, rm);
         let alpha = rp1.add(&rm1, bits, rm).div(&two, bits, rm);
         let beta = rp1.sub(&rm1, bits, rm).div(&two, bits, rm);
         // arcsin(β): β ∈ [-1, 1].
@@ -1150,11 +1138,7 @@ pub fn dispatch_math_functions(
         } else {
           asin_im_bf.neg()
         };
-        fn bf_to_f64(
-          bf: &BigFloat,
-          rm: RoundingMode,
-          cc: &mut Consts,
-        ) -> f64 {
+        fn bf_to_f64(bf: &BigFloat, rm: RoundingMode, cc: &mut Consts) -> f64 {
           match bf.format(astro_float::Radix::Dec, rm, cc) {
             Ok(s) => {
               // Format: "-.123e3" style — f64 parser accepts scientific notation
@@ -1171,10 +1155,8 @@ pub fn dispatch_math_functions(
             Err(_) => 0.0,
           }
         }
-        let two_re =
-          bf_to_f64(&asin_re_bf.mul(&two, bits, rm), rm, &mut cc);
-        let two_im =
-          bf_to_f64(&asin_im_bf.mul(&two, bits, rm), rm, &mut cc);
+        let two_re = bf_to_f64(&asin_re_bf.mul(&two, bits, rm), rm, &mut cc);
+        let two_im = bf_to_f64(&asin_im_bf.mul(&two, bits, rm), rm, &mut cc);
         return Some(crate::evaluator::evaluate_function_call_ast(
           "Complex",
           &[Expr::Real(two_re), Expr::Real(two_im)],
@@ -2537,6 +2519,87 @@ pub fn dispatch_math_functions(
     }
     "CosineDistance" if args.len() == 2 => {
       // CosineDistance[u, v] = 1 - (u . Conjugate[v]) / (Norm[u] * Norm[v])
+      // Scalar form: CosineDistance[x, y] = 1 - (x * Conjugate[y]) / (|x| * |y|).
+      let is_scalar = |e: &Expr| !matches!(e, Expr::List(_));
+      // Treat the scalar form only when at least one argument is a number
+      // (Integer/Real/BigInt/BigFloat, possibly combined with I via Plus/Times).
+      // Pure-symbolic pairs like CosineDistance[a, b] stay unevaluated
+      // (matching wolframscript).
+      fn is_zero_scalar(e: &Expr) -> bool {
+        matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
+      }
+      fn has_numeric_atom(e: &Expr) -> bool {
+        match e {
+          Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::BigInteger(_)
+          | Expr::BigFloat(_, _) => true,
+          Expr::FunctionCall { name, args }
+            if name == "Rational" || name == "Complex" =>
+          {
+            args.iter().any(has_numeric_atom)
+          }
+          Expr::BinaryOp { left, right, .. } => {
+            has_numeric_atom(left) || has_numeric_atom(right)
+          }
+          Expr::UnaryOp { operand, .. } => has_numeric_atom(operand),
+          _ => false,
+        }
+      }
+      if is_scalar(&args[0])
+        && is_scalar(&args[1])
+        && (has_numeric_atom(&args[0]) || has_numeric_atom(&args[1]))
+      {
+        if is_zero_scalar(&args[0]) || is_zero_scalar(&args[1]) {
+          let any_real = matches!(&args[0], Expr::Real(_))
+            || matches!(&args[1], Expr::Real(_));
+          return Some(Ok(if any_real {
+            Expr::Real(0.0)
+          } else {
+            Expr::Integer(0)
+          }));
+        }
+        // Factor the division as (u / |u|) * (Conj(v) / |v|) so that common
+        // integer factors cancel before they can accumulate in a single
+        // numerator (matches wolframscript's canonical output).
+        let abs_u = Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![args[0].clone()],
+        };
+        let abs_v = Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![args[1].clone()],
+        };
+        let conj_v = Expr::FunctionCall {
+          name: "Conjugate".to_string(),
+          args: vec![args[1].clone()],
+        };
+        let u_over_abs_u = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(args[0].clone()),
+          right: Box::new(abs_u),
+        };
+        let conj_v_over_abs_v = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(conj_v),
+          right: Box::new(abs_v),
+        };
+        let ratio = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(u_over_abs_u),
+          right: Box::new(conj_v_over_abs_v),
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(ratio),
+          }),
+        };
+        return Some(evaluate_expr_to_expr(&result));
+      }
       if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
         && a.len() == b.len()
         && !a.is_empty()
