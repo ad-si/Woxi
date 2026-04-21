@@ -4658,14 +4658,6 @@ INPUT: NumberLinePlot[Table[x^2, {x, 10}]]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierFunction
-LINE: 54
-TYPE: >>
-INPUT: f = BezierFunction[{{0, 0}, {1, 1}, {2, 0}, {3, 2}}];
-EXPECTED:
-=
----
-FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
 LINE: 93
 TYPE: >>
