@@ -9841,3 +9841,11 @@ INPUT: x // TeXForm
 EXPECTED:
 = \text{z}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 854
+TYPE: >>
+INPUT: r[1, 2, 3]
+EXPECTED:
+= <an r object>
+---

@@ -6701,14 +6701,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 854
-TYPE: >>
-INPUT: r[1, 2, 3]
-EXPECTED:
-= <an r object>
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 869
 TYPE: >>
 INPUT: r[1, 2, 3]
