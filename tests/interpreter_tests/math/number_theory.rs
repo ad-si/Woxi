@@ -225,6 +225,15 @@ mod euler_phi {
       "{1, 1, 2, 2, 4}"
     );
   }
+
+  #[test]
+  fn big_integer_argument() {
+    // EulerPhi[40!] exceeds i128 and requires BigInt arithmetic.
+    assert_eq!(
+      interpret("EulerPhi[40!]").unwrap(),
+      "121343746763281707274905415180804423680000000000"
+    );
+  }
 }
 
 mod integer_exponent {

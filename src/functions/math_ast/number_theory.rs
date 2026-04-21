@@ -2379,36 +2379,85 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match expr_to_i128(&args[0]) {
-    Some(0) => return Ok(Expr::Integer(0)),
-    Some(n) => n.unsigned_abs(),
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "EulerPhi".to_string(),
-        args: args.to_vec(),
-      });
+  if let Some(n) = expr_to_i128(&args[0]) {
+    if n == 0 {
+      return Ok(Expr::Integer(0));
+    }
+    let mut num = n.unsigned_abs();
+    let mut result = num;
+    let mut p: u128 = 2;
+    while p * p <= num {
+      if num % p == 0 {
+        while num % p == 0 {
+          num /= p;
+        }
+        result -= result / p;
+      }
+      p += 1;
+    }
+    if num > 1 {
+      result -= result / num;
+    }
+    return Ok(Expr::Integer(result as i128));
+  }
+
+  if let Expr::BigInteger(n) = &args[0] {
+    return euler_phi_bigint(n).map(bigint_to_expr);
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "EulerPhi".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Euler's totient function for a BigInt by factoring and applying
+/// φ(n) = ∏ pᵢ^(eᵢ-1) (pᵢ - 1).
+pub fn euler_phi_bigint(n: &BigInt) -> Result<BigInt, InterpreterError> {
+  use num_traits::{One, Zero};
+  if n.is_zero() {
+    return Ok(BigInt::zero());
+  }
+  let n_abs = n.abs();
+  if n_abs == BigInt::one() {
+    return Ok(BigInt::one());
+  }
+  let factors_expr = factor_integer_bigint(&n_abs)?;
+  let factors = match &factors_expr {
+    Expr::List(v) => v,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "EulerPhi: unexpected factorization result".into(),
+      ));
     }
   };
-
-  let mut num = n;
-  let mut result = n;
-
-  let mut p: u128 = 2;
-  while p * p <= num {
-    if num % p == 0 {
-      while num % p == 0 {
-        num /= p;
-      }
-      result -= result / p;
+  let mut result = BigInt::one();
+  for f in factors {
+    let Expr::List(pair) = f else { continue };
+    if pair.len() != 2 {
+      continue;
     }
-    p += 1;
+    let Some(p) = expr_to_bigint(&pair[0]) else {
+      continue;
+    };
+    if p == BigInt::from(-1) {
+      continue;
+    }
+    let Some(e) = expr_to_i128(&pair[1]) else {
+      continue;
+    };
+    if e < 1 {
+      continue;
+    }
+    let p_minus_one = &p - BigInt::one();
+    let p_pow = if e == 1 {
+      BigInt::one()
+    } else {
+      p.pow((e - 1) as u32)
+    };
+    result = result * p_pow * p_minus_one;
   }
-
-  if num > 1 {
-    result -= result / num;
-  }
-
-  Ok(Expr::Integer(result as i128))
+  Ok(result)
 }
 
 /// Compute Euler's totient function for a positive integer.

@@ -10418,3 +10418,11 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: msg
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: EulerPhi
+LINE: 256
+TYPE: >>
+INPUT: EulerPhi[40!]
+EXPECTED:
+= 121343746763281707274905415180804423680000000000
+---
