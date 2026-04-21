@@ -10020,3 +10020,11 @@ INPUT: g[]
 EXPECTED:
 = {3}
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: DownValues
+LINE: 369
+TYPE: >>
+INPUT: DownValues[f]
+EXPECTED:
+= {HoldPattern[f[x_Real]] :> 3, HoldPattern[f[x_Integer]] :> 2, HoldPattern[f[x_]] :> x ^ 2}
+---
