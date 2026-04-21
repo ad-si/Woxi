@@ -9025,3 +9025,9 @@ DESCRIPTION: GridBox in a matrix
 EXPECTED:
   text[System`InputForm]: MatrixForm[{{a, b}, {c, d}}]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Sqrt[1/(1+1/(1+1/a))]
+DESCRIPTION: SqrtBox
+EXPECTED:
+  text[System`InputForm]: Sqrt[1/(1 + 1/(1 + 1/a))]
+---

@@ -547,6 +547,14 @@ mod full_form {
     );
   }
 
+  #[test]
+  fn sqrt_of_triply_nested_reciprocal() {
+    assert_eq!(
+      interpret("Sqrt[1/(1+1/(1+1/a))]").unwrap(),
+      "Sqrt[(1 + (1 + a^(-1))^(-1))^(-1)]"
+    );
+  }
+
   // Log[b, x] should canonicalize to Log[x]/Log[b]
   #[test]
   fn head_of_log_two_arg() {

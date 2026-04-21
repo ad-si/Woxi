@@ -10367,23 +10367,6 @@ EXPECTED:
 </mrow>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: Sqrt[1/(1+1/(1+1/a))]
-DESCRIPTION: SqrtBox
-EXPECTED:
-  text[System`InputForm]: Sqrt[1/(1 + 1/(1 + 1/a))]
-  text[System`OutputForm]: Sqrt[1 / (1 + 1 / (1 + 1 / a))]
-  text[System`StandardForm]: Sqrt[1 / (1+1 / (1+1 / a))]
-  text[System`TraditionalForm]: Sqrt[1 / (1+1 / (1+1 / a))]
-  latex[System`InputForm]: \text{Sqrt[1/(1 + 1/(1 + 1/a))]}
-  latex[System`OutputForm]: \text{Sqrt[1 / (1 + 1 / (1 + 1 / a))]}
-  latex[System`StandardForm]: \sqrt{\frac{1}{1+\frac{1}{1+\frac{1}{a}}}}
-  latex[System`TraditionalForm]: \sqrt{\frac{1}{1+\frac{1}{1+\frac{1}{a}}}}
-  mathml[System`InputForm]: ['<mtext>Sqrt[1/(1&nbsp;+&nbsp;1/(1&nbsp;+&nbsp;1/a))]</mtext>', 'Fragile!']
-  mathml[System`OutputForm]: ['<mtext>Sqrt[1&nbsp;/&nbsp;(1&nbsp;+&nbsp;1&nbsp;/&nbsp;(1&nbsp;+&nbsp;1&nbsp;/&nbsp;a))]</mtext>', 'Fragile!']
-  mathml[System`StandardForm]: ['<msqrt>\n <mfrac>\n  <mn>1</mn>\n  <mrow>\n   <mn>1</mn>\n   <mo>+</mo>\n   <mfrac>\n    <mn>1</mn>\n    <mrow>\n     <mn>1</mn>\n     <mo>+</mo>\n     <mfrac>\n      <mn>1</mn>\n      <mi>a</mi>\n     </mfrac>\n    </mrow>\n   </mfrac>\n  </mrow>\n </mfrac>\n</msqrt>', 'Fragile!']
-  mathml[System`TraditionalForm]: ['<msqrt>\n <mfrac>\n  <mn>1</mn>\n  <mrow>\n   <mn>1</mn>\n   <mo>+</mo>\n   <mfrac>\n    <mn>1</mn>\n    <mrow>\n     <mn>1</mn>\n     <mo>+</mo>\n     <mfrac>\n      <mn>1</mn>\n      <mi>a</mi>\n     </mfrac>\n    </mrow>\n   </mfrac>\n  </mrow>\n </mfrac>\n</msqrt>', 'Fragile!']
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Subscript[a, 4]
 DESCRIPTION: SubscriptBox
 EXPECTED:
