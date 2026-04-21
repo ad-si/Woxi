@@ -3187,14 +3187,6 @@ INPUT: Haversine[0.5 + 2I]
 EXPECTED:
 = -1.15082 + 0.869405 I
 ---
-FILE: mathics/builtin/numbers/trig.py
-CLASS: InverseHaversine
-LINE: 723
-TYPE: >>
-INPUT: InverseHaversine[1 + 2.5 I]
-EXPECTED:
-= 1.76459 + 2.33097 I
----
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
 LINE: 17

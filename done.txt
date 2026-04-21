@@ -10723,3 +10723,11 @@ INPUT: TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]
 EXPECTED:
 = {Missing[abc], 150}
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: InverseHaversine
+LINE: 723
+TYPE: >>
+INPUT: InverseHaversine[1 + 2.5 I]
+EXPECTED:
+= 1.76459 + 2.33097 I
+---

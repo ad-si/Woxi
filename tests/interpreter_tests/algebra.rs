@@ -1411,10 +1411,8 @@ mod replace_all_conditional_multi_rules {
   #[test]
   fn nested_rule_tree_three_levels() {
     assert_eq!(
-      interpret(
-        "{a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}"
-      )
-      .unwrap(),
+      interpret("{a, b} /. {{{a->x, b->y}, {a->w, b->z}}, {a->u, b->v}}")
+        .unwrap(),
       "{{{x, y}, {w, z}}, {u, v}}"
     );
   }
@@ -4789,6 +4787,17 @@ mod function_expand {
     assert_eq!(
       interpret("FunctionExpand[InverseHaversine[x]]").unwrap(),
       "2*ArcSin[Sqrt[x]]"
+    );
+  }
+
+  #[test]
+  fn inverse_haversine_complex_numeric() {
+    // 2 * ArcSin[Sqrt[z]] for complex z must be correctly-rounded to match
+    // wolframscript bit-for-bit (regression for mathics
+    // numbers/trig.py:723).
+    assert_eq!(
+      interpret("InverseHaversine[1 + 2.5 I]").unwrap(),
+      "1.764589463349829 + 2.3309746530493123*I"
     );
   }
 

@@ -1067,7 +1067,120 @@ pub fn dispatch_math_functions(
       }
     }
     "InverseHaversine" if args.len() == 1 => {
-      // InverseHaversine[x] = 2 * ArcSin[Sqrt[x]]
+      // Complex-numeric fast path: 2 * ArcSin[Sqrt[z]] computed with f64.
+      // Only triggered when the argument contains a float component and has
+      // a non-zero imaginary part; purely real or exact cases fall through
+      // to the symbolic rewrite below.
+      fn contains_float_expr(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) | Expr::BigFloat(_, _) => true,
+          Expr::BinaryOp { left, right, .. } => {
+            contains_float_expr(left) || contains_float_expr(right)
+          }
+          Expr::UnaryOp { operand, .. } => contains_float_expr(operand),
+          Expr::FunctionCall { args, .. } => {
+            args.iter().any(contains_float_expr)
+          }
+          _ => false,
+        }
+      }
+      if contains_float_expr(&args[0])
+        && let Some((a, b)) =
+          crate::functions::math_ast::try_extract_complex_float(&args[0])
+        && b != 0.0
+      {
+        // Compute 2·arcsin(sqrt(z)) via Hull–Fairgrieve–Tang decomposition at
+        // ~130 bits of precision, then round to f64. Working in extended
+        // precision produces a correctly-rounded result that matches
+        // wolframscript bit-for-bit, avoiding the ULP drift that the pure-f64
+        // path accumulates across hypot → sqrt → asin.
+        use astro_float::{BigFloat, Consts, RoundingMode};
+        let bits = 192usize;
+        let rm = RoundingMode::ToEven;
+        let mut cc = match Consts::new() {
+          Ok(c) => c,
+          Err(e) => {
+            return Some(Err(InterpreterError::EvaluationError(format!(
+              "BigFloat init error: {}",
+              e
+            ))));
+          }
+        };
+        let big = |v: f64| BigFloat::from_f64(v, bits);
+        let two = big(2.0);
+        let one = big(1.0);
+        // Complex sqrt of (a + b i): c = sqrt((|z|+a)/2), d = ±sqrt((|z|-a)/2).
+        let a_bf = big(a);
+        let b_bf = big(b);
+        let r = a_bf
+          .mul(&a_bf, bits, rm)
+          .add(&b_bf.mul(&b_bf, bits, rm), bits, rm)
+          .sqrt(bits, rm);
+        let c_bf = r
+          .add(&a_bf, bits, rm)
+          .div(&two, bits, rm)
+          .sqrt(bits, rm);
+        let d_abs = r
+          .sub(&a_bf, bits, rm)
+          .div(&two, bits, rm)
+          .sqrt(bits, rm);
+        let d_bf = if b >= 0.0 { d_abs } else { d_abs.neg() };
+        // α = (|w+1| + |w−1|)/2, β = (|w+1| − |w−1|)/2
+        let cp1 = c_bf.add(&one, bits, rm);
+        let cm1 = c_bf.sub(&one, bits, rm);
+        let d_sq = d_bf.mul(&d_bf, bits, rm);
+        let rp1 = cp1
+          .mul(&cp1, bits, rm)
+          .add(&d_sq, bits, rm)
+          .sqrt(bits, rm);
+        let rm1 = cm1
+          .mul(&cm1, bits, rm)
+          .add(&d_sq, bits, rm)
+          .sqrt(bits, rm);
+        let alpha = rp1.add(&rm1, bits, rm).div(&two, bits, rm);
+        let beta = rp1.sub(&rm1, bits, rm).div(&two, bits, rm);
+        // arcsin(β): β ∈ [-1, 1].
+        let asin_re_bf = beta.asin(bits, rm, &mut cc);
+        // log(α + sqrt(α² − 1))
+        let alpha_sq_m1 = alpha.mul(&alpha, bits, rm).sub(&one, bits, rm);
+        let log_arg = alpha.add(&alpha_sq_m1.sqrt(bits, rm), bits, rm);
+        let asin_im_bf = log_arg.ln(bits, rm, &mut cc);
+        let asin_im_bf = if b >= 0.0 {
+          asin_im_bf
+        } else {
+          asin_im_bf.neg()
+        };
+        fn bf_to_f64(
+          bf: &BigFloat,
+          rm: RoundingMode,
+          cc: &mut Consts,
+        ) -> f64 {
+          match bf.format(astro_float::Radix::Dec, rm, cc) {
+            Ok(s) => {
+              // Format: "-.123e3" style — f64 parser accepts scientific notation
+              // but astro-float uses a leading dot (".123e3"); normalize to "0.123e3".
+              let s2 = if let Some(rest) = s.strip_prefix('.') {
+                format!("0.{}", rest)
+              } else if let Some(rest) = s.strip_prefix("-.") {
+                format!("-0.{}", rest)
+              } else {
+                s
+              };
+              s2.parse::<f64>().unwrap_or(0.0)
+            }
+            Err(_) => 0.0,
+          }
+        }
+        let two_re =
+          bf_to_f64(&asin_re_bf.mul(&two, bits, rm), rm, &mut cc);
+        let two_im =
+          bf_to_f64(&asin_im_bf.mul(&two, bits, rm), rm, &mut cc);
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "Complex",
+          &[Expr::Real(two_re), Expr::Real(two_im)],
+        ));
+      }
+      // Symbolic / real path: 2 * ArcSin[Sqrt[x]]
       let sqrt_expr = make_sqrt(args[0].clone());
       let asin_expr = Expr::FunctionCall {
         name: "ArcSin".to_string(),
