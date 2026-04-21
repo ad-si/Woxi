@@ -10321,3 +10321,10 @@ INPUT: N[2/9]
 EXPECTED: .222`3
 MESSAGE: False
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 157
+INPUT: N[2/9]
+EXPECTED: .2222`3
+MESSAGE: True
+---
