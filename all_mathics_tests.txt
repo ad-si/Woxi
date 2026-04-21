@@ -2960,14 +2960,6 @@ EXPECTED:
 = {{5.16266, 3.02952}, {3.02952, 8.19218}}
 ---
 FILE: mathics/builtin/numbers/linalg.py
-CLASS: NullSpace
-LINE: 676
-TYPE: >>
-INPUT: MatrixRank[A]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/numbers/linalg.py
 CLASS: PseudoInverse
 LINE: 715
 TYPE: >>

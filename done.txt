@@ -10210,3 +10210,11 @@ LINE: 31
 INPUT: ?Builtin2
 EXPECTED: Global`Builtin2\n
 ---
+FILE: mathics/builtin/numbers/linalg.py
+CLASS: NullSpace
+LINE: 676
+TYPE: >>
+INPUT: MatrixRank[A]
+EXPECTED:
+= 3
+---
