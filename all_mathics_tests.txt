@@ -875,14 +875,6 @@ EXPECTED:
 = ...
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: ExpandFileName
-LINE: 371
-TYPE: >>
-INPUT: ExpandFileName["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileByteCount
 LINE: 448
 TYPE: >>

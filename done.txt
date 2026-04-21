@@ -9697,3 +9697,11 @@ INPUT: FileNames["*.m", "formats", Infinity]//Length
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: ExpandFileName
+LINE: 371
+TYPE: >>
+INPUT: ExpandFileName["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= ...
+---
