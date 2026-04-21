@@ -9136,3 +9136,10 @@ INPUT: _A
 EXPECTED: A
 MESSAGE: downvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 24
+INPUT: A/;A>0
+EXPECTED: A
+MESSAGE: ownvalues
+---

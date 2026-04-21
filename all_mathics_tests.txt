@@ -7613,13 +7613,6 @@ EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 24
-INPUT: A/;A>0
-EXPECTED: A
-MESSAGE: ownvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 25
 INPUT: s:(A/;A>0)
 EXPECTED: A

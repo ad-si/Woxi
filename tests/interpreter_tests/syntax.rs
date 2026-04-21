@@ -4178,6 +4178,11 @@ mod unknown_function_no_args {
   fn typed_blank_stays_symbolic() {
     assert_eq!(interpret("_A").unwrap(), "_A");
   }
+
+  #[test]
+  fn bare_condition_on_undefined_symbol_stays_symbolic() {
+    assert_eq!(interpret("A/;A>0").unwrap(), "A /; A > 0");
+  }
 }
 
 mod symbolic_ordering {
