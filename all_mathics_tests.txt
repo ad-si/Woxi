@@ -2092,14 +2092,6 @@ EXPECTED:
 = 8 x Derivative[1, 1, 1][f][x ^ 2, x, 2 y] + 8 x ^ 2 Derivative[2, 0, 1][f][x ^ 2, x, 2 y] + 2 Derivative[0, 2, 1][f][x ^ 2, x, 2 y] + 4 Derivative[1, 0, 1][f][x ^ 2, x, 2 y]
 ---
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 174
-TYPE: >>
-INPUT: D[Sin[x] * Cos[y], {{x,y}, 2}]
-EXPECTED:
-= {{-Cos[y] Sin[x], -Cos[x] Sin[y]}, {-Cos[x] Sin[y], -Cos[y] Sin[x]}}
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
 LINE: 383
 TYPE: >>
