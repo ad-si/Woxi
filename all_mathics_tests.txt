@@ -7082,14 +7082,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1230
-TYPE: >>
-INPUT: Dice[1]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1243
 TYPE: #>
 INPUT: Definition[Dice]

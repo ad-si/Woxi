@@ -9529,3 +9529,11 @@ INPUT: Dice[1, 6, 4, 4] // InputForm
 EXPECTED:
 = Dice[1, 4, 4, 6]
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 1230
+TYPE: >>
+INPUT: Dice[1]
+EXPECTED:
+= -Graphics-
+---
