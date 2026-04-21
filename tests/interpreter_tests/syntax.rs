@@ -4168,6 +4168,11 @@ mod unknown_function_no_args {
   fn undefined_symbol_with_blank_and_typed_blank_arg_stays_symbolic() {
     assert_eq!(interpret("S[x_, _A]").unwrap(), "S[x_, _A]");
   }
+
+  #[test]
+  fn typed_blank_called_with_no_args_stays_symbolic() {
+    assert_eq!(interpret("_A[]").unwrap(), "_A[]");
+  }
 }
 
 mod symbolic_ordering {

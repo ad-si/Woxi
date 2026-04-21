@@ -7690,13 +7690,6 @@ MESSAGE: nvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 40
-INPUT: _A[]
-EXPECTED: A
-MESSAGE: subvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 42
 INPUT: (s:A[x])[t]
 EXPECTED: A
