@@ -9143,3 +9143,10 @@ INPUT: A/;A>0
 EXPECTED: A
 MESSAGE: ownvalues
 ---
+FILE: mathics/test/core/test_definitions.py
+FUNCTION: None
+LINE: 34
+INPUT: A[p_, q]/;q>0
+EXPECTED: A
+MESSAGE: downvalues
+---

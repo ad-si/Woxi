@@ -4183,6 +4183,11 @@ mod unknown_function_no_args {
   fn bare_condition_on_undefined_symbol_stays_symbolic() {
     assert_eq!(interpret("A/;A>0").unwrap(), "A /; A > 0");
   }
+
+  #[test]
+  fn condition_on_undefined_function_call_stays_symbolic() {
+    assert_eq!(interpret("A[p_, q]/;q>0").unwrap(), "A[p_, q] /; q > 0");
+  }
 }
 
 mod symbolic_ordering {

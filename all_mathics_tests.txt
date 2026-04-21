@@ -7648,13 +7648,6 @@ MESSAGE: downvalues
 ---
 FILE: mathics/test/core/test_definitions.py
 FUNCTION: None
-LINE: 34
-INPUT: A[p_, q]/;q>0
-EXPECTED: A
-MESSAGE: downvalues
----
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
 LINE: 35
 INPUT: (s:A[p_, q])/;q>0
 EXPECTED: A
