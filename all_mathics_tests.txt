@@ -3577,14 +3577,6 @@ EXPECTED:
 = x ^ 5
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: OptionsPattern
-LINE: 287
-TYPE: >>
-INPUT: f[x, {{{n->4}}}]
-EXPECTED:
-= x ^ 4
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
 LINE: 403
 TYPE: >>

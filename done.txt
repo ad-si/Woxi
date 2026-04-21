@@ -9450,3 +9450,11 @@ INPUT: f[x, n->3]
 EXPECTED:
 = x ^ 3
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: OptionsPattern
+LINE: 287
+TYPE: >>
+INPUT: f[x, {{{n->4}}}]
+EXPECTED:
+= x ^ 4
+---
