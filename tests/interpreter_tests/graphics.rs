@@ -40,6 +40,14 @@ mod graphics {
     fn empty_graphics_text_output() {
       assert_eq!(interpret("Graphics[{}]").unwrap(), "-Graphics-");
     }
+
+    #[test]
+    fn graphics_with_text_primitive_text_output() {
+      assert_eq!(
+        interpret("Graphics[{Text[a^b,{0,0}]}]").unwrap(),
+        "-Graphics-"
+      );
+    }
   }
 
   mod primitives {

@@ -9058,3 +9058,10 @@ EXPECTED:
   text[System`InputForm]: Integrate[F[x], {x, a, g[b]}]
   text[System`OutputForm]: Integrate[F[x], {x, a, g[b]}]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Graphics[{Text[a^b,{0,0}]}]
+DESCRIPTION: Nontrivial Graphics - Fragile!
+EXPECTED:
+  text[System`InputForm]: Graphics[{Text[a^b, {0, 0}]}]
+  text[System`OutputForm]: -Graphics-
+---

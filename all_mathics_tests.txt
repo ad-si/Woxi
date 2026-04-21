@@ -10122,40 +10122,6 @@ EXPECTED:
 </mrow>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: Graphics[{Text[a^b,{0,0}]}]
-DESCRIPTION: Nontrivial Graphics - Fragile!
-EXPECTED:
-  text[System`InputForm]: Graphics[{Text[a^b, {0, 0}]}]
-  text[System`OutputForm]: -Graphics-
-  text[System`StandardForm]: -Graphics-
-  text[System`TraditionalForm]: -Graphics-
-  latex[System`InputForm]: \text{Graphics[\{Text[a${}^{\wedge}$b, \{0, 0\}]\}]}
-  latex[System`OutputForm]: \text{-Graphics-}
-  latex[System`StandardForm]: 
-\begin{asy}
-usepackage("amsmath");
-size(4.9cm, 5.8333cm);
-
-// InsetBox
-label("$a^b$", (147.0,175.0), align=SW, rgb(0, 0, 0)+fontsize(3));
-
-clip(box((136.5,162.5), (157.5,187.5)));
-
-\end{asy}
-
-  latex[System`TraditionalForm]: 
-\begin{asy}
-usepackage("amsmath");
-size(4.9cm, 5.8333cm);
-
-// InsetBox
-label("$a^b$", (147.0,175.0), align=SW, rgb(0, 0, 0)+fontsize(3));
-
-clip(box((136.5,162.5), (157.5,187.5)));
-
-\end{asy}
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Grid[{{"Spanish", "Hola!"},{"Portuguese", "Olà!"},{"English", "Hi!"}}]
 DESCRIPTION: Strings in a GridBox
 EXPECTED:
