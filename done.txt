@@ -10383,3 +10383,10 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: fail_msg
 ---
+FILE: mathics/test/format/test_makeboxes.py
+FUNCTION: test_makeboxes_real
+LINE: 52
+INPUT: str_expr
+EXPECTED: str_expected
+MESSAGE: msg
+---
