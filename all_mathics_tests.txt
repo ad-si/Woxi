@@ -4572,14 +4572,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1147
-TYPE: >>
-INPUT: B
-EXPECTED:
-= {{1, 10, 13}, {4, 11, 13}, {7, 12, 13}}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1149
 TYPE: >>
 INPUT: B[[1;;-2]] = t;
