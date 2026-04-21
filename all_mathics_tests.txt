@@ -389,14 +389,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: DefaultValues
-LINE: 42
-TYPE: >>
-INPUT: g[a]
-EXPECTED:
-= {a}
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: DefaultValues
 LINE: 44
 TYPE: >>
 INPUT: g[]

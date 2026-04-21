@@ -9482,3 +9482,11 @@ INPUT: e
 EXPECTED:
 = x ^ 5
 ---
+FILE: mathics/builtin/assignments/types.py
+CLASS: DefaultValues
+LINE: 42
+TYPE: >>
+INPUT: g[a]
+EXPECTED:
+= {a}
+---
