@@ -9575,3 +9575,10 @@ INPUT: MatchQ[x, F[x_.,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Optional, default
 ---
+FILE: mathics/test/builtin/test_attributes.py
+FUNCTION: test_one_identity
+LINE: 19
+INPUT: MatchQ[x, G[x_.,y_]]
+EXPECTED: False
+MESSAGE: Without OneIdentity, and Optional, default
+---
