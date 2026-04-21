@@ -9275,3 +9275,10 @@ TYPE: #>
 INPUT: Clear[a, b];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Series
+LINE: 1793
+TYPE: >>
+INPUT: Clear[series];
+EXPECTED: (none)
+---

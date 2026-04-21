@@ -2632,13 +2632,6 @@ EXPECTED:
 = 1 + 4 ^ 2 + O[4] ^ 3
 ---
 FILE: mathics/builtin/numbers/calculus.py
-CLASS: Series
-LINE: 1793
-TYPE: >>
-INPUT: Clear[series];
-EXPECTED: (none)
----
-FILE: mathics/builtin/numbers/calculus.py
 CLASS: SeriesCoefficient
 LINE: 1852
 TYPE: >>
