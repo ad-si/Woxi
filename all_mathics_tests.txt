@@ -4235,14 +4235,6 @@ EXPECTED:
 = Delete[{a, b, c, d}, {1, 2}]
 ---
 FILE: mathics/builtin/list/eol.py
-CLASS: FirstPosition
-LINE: 788
-TYPE: >>
-INPUT: FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]
-EXPECTED:
-= {1, 2}
----
-FILE: mathics/builtin/list/eol.py
 CLASS: Part
 LINE: 1134
 TYPE: >>

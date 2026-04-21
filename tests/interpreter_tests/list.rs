@@ -3486,6 +3486,29 @@ mod first_position {
       "Missing[NotFound]"
     );
   }
+
+  // Regression: the old matcher only recursed into `Expr::List`, so it
+  // couldn't find `x^2` inside `1 + x^2` (a `Plus` expression). Recurse
+  // into FunctionCall args and BinaryOp operands as well.
+  #[test]
+  fn inside_plus_expression() {
+    assert_eq!(
+      interpret(
+        "FirstPosition[{1 + x^2, 5, x^4, a + (1 + x^2)^2}, x^2]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn inside_function_call() {
+    // Looks inside `f[..., y, ...]` to locate `y` at position {1, 2}.
+    assert_eq!(
+      interpret("FirstPosition[{f[x, y, z], g[a]}, y]").unwrap(),
+      "{1, 2}"
+    );
+  }
 }
 
 mod ranked {

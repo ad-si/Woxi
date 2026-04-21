@@ -1042,14 +1042,48 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Some(path.clone());
     }
-    if let Expr::List(items) = expr {
-      for (i, item) in items.iter().enumerate() {
-        path.push((i + 1) as i128);
-        if let Some(result) = find_first(item, pattern, path) {
+    // Recurse into every structurally composite expression — List args,
+    // FunctionCall args, BinaryOp operands, UnaryOp operand — so patterns
+    // like `x^2` can be found inside `1 + x^2` (a Plus) at position {1, 2}.
+    match expr {
+      Expr::List(items) => {
+        for (i, item) in items.iter().enumerate() {
+          path.push((i + 1) as i128);
+          if let Some(result) = find_first(item, pattern, path) {
+            return Some(result);
+          }
+          path.pop();
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for (i, item) in args.iter().enumerate() {
+          path.push((i + 1) as i128);
+          if let Some(result) = find_first(item, pattern, path) {
+            return Some(result);
+          }
+          path.pop();
+        }
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        path.push(1);
+        if let Some(result) = find_first(left, pattern, path) {
+          return Some(result);
+        }
+        path.pop();
+        path.push(2);
+        if let Some(result) = find_first(right, pattern, path) {
           return Some(result);
         }
         path.pop();
       }
+      Expr::UnaryOp { operand, .. } => {
+        path.push(1);
+        if let Some(result) = find_first(operand, pattern, path) {
+          return Some(result);
+        }
+        path.pop();
+      }
+      _ => {}
     }
     None
   }
