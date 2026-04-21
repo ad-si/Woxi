@@ -10619,3 +10619,11 @@ INPUT: N[Khinchin, 50]
 EXPECTED:
 = 2.6854520010653064453097148354817956938203822939945
 ---
+FILE: mathics/builtin/numbers/hyperbolic.py
+CLASS: InverseGudermannian
+LINE: 417
+TYPE: >>
+INPUT: InverseGudermannian[-.5] ==  -InverseGudermannian[.5]
+EXPECTED:
+= True
+---

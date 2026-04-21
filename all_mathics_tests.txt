@@ -2703,14 +2703,6 @@ INPUT: ComplexExpand[Re[2 z^3 - z + 1], z]
 EXPECTED:
 = 1 - Re[z] + 2 Re[z] ^ 3 - 6 Im[z] ^ 2 Re[z]
 ---
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: InverseGudermannian
-LINE: 417
-TYPE: >>
-INPUT: InverseGudermannian[-.5] ==  -InverseGudermannian[.5]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/numbers/integer.py
 CLASS: DigitCount
 LINE: 134

@@ -3114,8 +3114,14 @@ pub fn inverse_gudermannian_ast(
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) if *f == 0.0 => return Ok(Expr::Real(0.0)),
     Expr::Real(f) => {
-      // InverseGudermannian[x] = 2 * atanh(tan(x/2))
-      let result = 2.0 * (f / 2.0).tan().atanh();
+      // InverseGudermannian[x] = 2 * atanh(tan(x/2)).
+      // f64 atanh is not exactly odd around 0, so the direct formula
+      // yields slightly different bit patterns for +x and -x. Force
+      // odd-symmetric output by always computing on the absolute value
+      // and re-applying the sign.
+      let abs_f = f.abs();
+      let pos = 2.0 * (abs_f / 2.0).tan().atanh();
+      let result = if *f < 0.0 { -pos } else { pos };
       return Ok(Expr::Real(result));
     }
     _ => {}

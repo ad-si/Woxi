@@ -60,6 +60,31 @@ mod gudermannian {
   }
 }
 
+mod inverse_gudermannian {
+  use super::*;
+
+  #[test]
+  fn odd_symmetry_on_real_argument() {
+    // Regression: f64 atanh is not bit-exactly odd, so the raw formula
+    // 2 * atanh(tan(x/2)) yielded different last-bit values for +x and -x,
+    // making `InverseGudermannian[-.5] == -InverseGudermannian[.5]` False.
+    assert_eq!(
+      interpret("InverseGudermannian[-.5] == -InverseGudermannian[.5]")
+        .unwrap(),
+      "True"
+    );
+    // And the individual values should be exact negatives of one another.
+    assert_eq!(
+      interpret("InverseGudermannian[0.5]").unwrap(),
+      "0.5222381032784403"
+    );
+    assert_eq!(
+      interpret("InverseGudermannian[-0.5]").unwrap(),
+      "-0.5222381032784403"
+    );
+  }
+}
+
 mod bessel_j {
   use super::*;
 
