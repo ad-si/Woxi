@@ -10148,3 +10148,11 @@ INPUT: r[5, Opt->7]
 EXPECTED:
 = {5, 7}
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 252
+TYPE: >>
+INPUT: N[r]
+EXPECTED:
+= 3.5
+---

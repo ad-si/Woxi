@@ -4208,14 +4208,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 252
-TYPE: >>
-INPUT: N[r]
-EXPECTED:
-= 3.5
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 260
 TYPE: >>
 INPUT: Definition[r]
