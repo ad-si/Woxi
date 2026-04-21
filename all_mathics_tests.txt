@@ -8300,12 +8300,6 @@ LINE: 73
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False
 ---
-FILE: mathics/test/timings/test_uniform_tables.py
-FUNCTION: test_evaluate_benchmark
-LINE: 20
-INPUT: Length[F@@nonuniformTable]
-EXPECTED: 1001
----
 FILE: mathics/test/eval/makeboxes/test_number_form.py
 FUNCTION: test_string_conversion_limited_size
 LINE: 84
