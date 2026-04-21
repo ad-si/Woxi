@@ -11035,3 +11035,9 @@ LINE: 15
 INPUT: ArcCos[I Infinity]
 EXPECTED: -I Infinity
 ---
+FILE: mathics/test/builtin/numbers/test_trig.py
+FUNCTION: test_ArcCos
+LINE: 16
+INPUT: ArcCos[-I Infinity]
+EXPECTED: I Infinity
+---
