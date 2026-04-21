@@ -1476,6 +1476,24 @@ mod replace_list {
   fn simple_top_level_match() {
     assert_eq!(interpret("ReplaceList[5, x_ -> x*2]").unwrap(), "{10}");
   }
+
+  // Enumerate every way `{___, x__, ___}` can split a list. Regression for
+  // mathics patterns/rules.py:334.
+  #[test]
+  fn enumerates_all_contiguous_subsequences() {
+    assert_eq!(
+      interpret("ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]").unwrap(),
+      "{{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}"
+    );
+  }
+
+  #[test]
+  fn honors_n_limit() {
+    assert_eq!(
+      interpret("ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]").unwrap(),
+      "{{a}, {a, b}, {a, b, c}}"
+    );
+  }
 }
 
 // Optional-pattern (x_.) matching without a Default[...] rule. Without a

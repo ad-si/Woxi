@@ -3334,14 +3334,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceList
-LINE: 334
-TYPE: >>
-INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
-EXPECTED:
-= {{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceList
 LINE: 337
 TYPE: >>
 INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}, 3]

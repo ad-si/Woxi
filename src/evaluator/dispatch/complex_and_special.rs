@@ -992,9 +992,9 @@ pub fn dispatch_complex_and_special(
       );
     }
     // ReplaceList[expr, rules] / ReplaceList[expr, rules, n]
-    // Minimal impl: returns {result} if the first rule matches at the top
-    // level, {} otherwise. Does NOT enumerate all possible matches as
-    // Mathematica does (which is a much larger feature).
+    // Enumerates all distinct bindings that match a list-shaped sequence rule
+    // like `{___, x__, ___} -> {x}`. Falls back to the single-match path for
+    // other rule shapes.
     "ReplaceList" if args.len() == 2 || args.len() == 3 => {
       let n_arg = args.get(2).cloned();
       let max_matches: Option<i128> = match &n_arg {
@@ -1010,6 +1010,37 @@ pub fn dispatch_complex_and_special(
       };
       if max_matches == Some(0) {
         return Some(Ok(Expr::List(vec![])));
+      }
+      // Try the list-sequence enumerator first.
+      if let Expr::List(expr_elems) = &args[0]
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+      {
+        if let Expr::List(pat_elems) = pattern.as_ref()
+          && let Some(all_bindings) =
+            enumerate_list_sequence_matches(expr_elems, pat_elems)
+        {
+          let mut results: Vec<Expr> = Vec::new();
+          for bindings in all_bindings {
+            let mut rhs = replacement.as_ref().clone();
+            for (name, value) in bindings {
+              rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
+            }
+            let evaluated = match evaluate_expr_to_expr(&rhs) {
+              Ok(r) => r,
+              Err(e) => return Some(Err(e)),
+            };
+            results.push(evaluated);
+            if let Some(n) = max_matches
+              && results.len() as i128 >= n
+            {
+              break;
+            }
+          }
+          return Some(Ok(Expr::List(results)));
+        }
       }
       let result = match apply_replace_ast(&args[0], &args[1])
         .and_then(|r| evaluate_expr_to_expr(&r))
@@ -1381,6 +1412,134 @@ pub fn dispatch_complex_and_special(
     _ => {}
   }
   None
+}
+
+/// Enumerate all ways a list of sequence-pattern slots can match a list of
+/// expression elements. Each pattern slot is a `Pattern[name, BlankSequence]`
+/// or `Pattern[name, BlankNullSequence]` (possibly with an empty name).
+/// Returns `None` if the pattern structure isn't recognised.
+fn enumerate_list_sequence_matches(
+  expr_elems: &[Expr],
+  pattern_elems: &[Expr],
+) -> Option<Vec<Vec<(String, Expr)>>> {
+  // Parse each pattern slot into (name, min_count, max_count_unbounded).
+  struct Slot<'a> {
+    name: &'a str,
+    min: usize,
+    // `None` means unbounded — consume the rest.
+  }
+  let mut slots: Vec<Slot> = Vec::with_capacity(pattern_elems.len());
+  for p in pattern_elems {
+    let (name, min): (&str, usize) = match p {
+      Expr::Pattern { name, blank_type, .. } => {
+        let min = match blank_type {
+          2 => 1usize,
+          3 => 0,
+          _ => return None,
+        };
+        (name.as_str(), min)
+      }
+      Expr::FunctionCall { name: fname, args: fargs }
+        if fname == "Pattern" && fargs.len() == 2 =>
+      {
+        let name = if let Expr::Identifier(s) = &fargs[0] {
+          s.as_str()
+        } else {
+          ""
+        };
+        let min = match &fargs[1] {
+          Expr::FunctionCall { name: bname, args: bargs }
+            if bargs.is_empty() && bname == "BlankSequence" =>
+          {
+            1usize
+          }
+          Expr::FunctionCall { name: bname, args: bargs }
+            if bargs.is_empty() && bname == "BlankNullSequence" =>
+          {
+            0
+          }
+          _ => return None,
+        };
+        (name, min)
+      }
+      Expr::FunctionCall { name: bname, args: bargs }
+        if bargs.is_empty() && bname == "BlankSequence" =>
+      {
+        ("", 1)
+      }
+      Expr::FunctionCall { name: bname, args: bargs }
+        if bargs.is_empty() && bname == "BlankNullSequence" =>
+      {
+        ("", 0)
+      }
+      _ => return None,
+    };
+    slots.push(Slot { name, min });
+  }
+
+  // Brute-force enumeration: each slot with min=m takes >= m elements.
+  let n = expr_elems.len();
+  let k = slots.len();
+  if k == 0 {
+    return if n == 0 {
+      Some(vec![vec![]])
+    } else {
+      Some(vec![])
+    };
+  }
+  // Total minimum; verify feasibility.
+  let total_min: usize = slots.iter().map(|s| s.min).sum();
+  if total_min > n {
+    return Some(vec![]);
+  }
+  // Enumerate all compositions of (n − total_min) into k non-negative parts,
+  // where slot i gets `extras[i] + slots[i].min` elements.
+  let slack = n - total_min;
+  let mut results: Vec<Vec<(String, Expr)>> = Vec::new();
+  let mut extras = vec![0usize; k];
+  fn recurse(
+    idx: usize,
+    remaining: usize,
+    extras: &mut Vec<usize>,
+    slots: &[Slot<'_>],
+    expr_elems: &[Expr],
+    results: &mut Vec<Vec<(String, Expr)>>,
+  ) {
+    if idx + 1 == slots.len() {
+      extras[idx] = remaining;
+      // Build this binding set.
+      let mut pos = 0;
+      let mut bindings: Vec<(String, Expr)> = Vec::new();
+      for (i, slot) in slots.iter().enumerate() {
+        let len = slot.min + extras[i];
+        let slice = &expr_elems[pos..pos + len];
+        pos += len;
+        if !slot.name.is_empty() {
+          // Bind to a Sequence so substitute_variable can splice/wrap
+          // appropriately. Single elements stay atomic.
+          let value = if len == 1 {
+            slice[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Sequence".to_string(),
+              args: slice.to_vec(),
+            }
+          };
+          bindings.push((slot.name.to_string(), value));
+        }
+      }
+      results.push(bindings);
+      extras[idx] = 0;
+      return;
+    }
+    for e in 0..=remaining {
+      extras[idx] = e;
+      recurse(idx + 1, remaining - e, extras, slots, expr_elems, results);
+    }
+    extras[idx] = 0;
+  }
+  recurse(0, slack, &mut extras, &slots, expr_elems, &mut results);
+  Some(results)
 }
 
 /// Format Information output for a built-in symbol.

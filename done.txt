@@ -11142,3 +11142,11 @@ INPUT: Hypergeometric1F1[1, 1/2, x]
 EXPECTED:
 = -Sqrt[x] (-E ^ (-x) / Sqrt[x] - Sqrt[Pi] Erf[Sqrt[x]]) E ^ x
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceList
+LINE: 334
+TYPE: >>
+INPUT: ReplaceList[{a, b, c}, {___, x__, ___} -> {x}]
+EXPECTED:
+= {{a}, {a, b}, {a, b, c}, {b}, {b, c}, {c}}
+---
