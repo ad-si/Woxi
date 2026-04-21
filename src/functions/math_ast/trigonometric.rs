@@ -1946,6 +1946,46 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ArcCos[x] - Inverse cosine (symbolic)
+/// Detect an expression of the form `±I·Infinity` (in either factor order,
+/// with an optional leading `-` or a `Times[-1, …]` wrapper). Returns
+/// `Some(+1)` for `I·Infinity`, `Some(-1)` for `-I·Infinity`, else `None`.
+fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
+  let is_infinity = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Infinity");
+  let is_i = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "I");
+  let match_pair = |a: &Expr, b: &Expr| -> bool {
+    (is_i(a) && is_infinity(b)) || (is_infinity(a) && is_i(b))
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if match_pair(left, right) => Some(1),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => imaginary_infinity_sign(operand).map(|s| -s),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut sign: i8 = 1;
+      let mut has_i = false;
+      let mut has_inf = false;
+      for a in args {
+        if is_i(a) {
+          has_i = true;
+        } else if is_infinity(a) {
+          has_inf = true;
+        } else if matches!(a, Expr::Integer(-1)) {
+          sign = -sign;
+        } else {
+          return None;
+        }
+      }
+      if has_i && has_inf { Some(sign) } else { None }
+    }
+    _ => None,
+  }
+}
+
 pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1969,6 +2009,25 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {}
+  }
+  // ArcCos[±I * Infinity] → DirectedInfinity[∓I]
+  // (As z → ±I·∞, ArcSin[z] → ±I·∞, and ArcCos = π/2 − ArcSin diverges
+  // with the opposite imaginary sign.)
+  if let Some(sign) = imaginary_infinity_sign(&args[0]) {
+    let direction = if sign > 0 {
+      // Negate I: Times[-1, I]
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(Expr::Identifier("I".to_string())),
+      }
+    } else {
+      Expr::Identifier("I".to_string())
+    };
+    return Ok(Expr::FunctionCall {
+      name: "DirectedInfinity".to_string(),
+      args: vec![direction],
+    });
   }
   // Check for special rational/irrational values via numeric comparison
   if let Some(v) = try_eval_to_f64(&args[0])

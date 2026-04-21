@@ -11029,3 +11029,9 @@ INPUT: MatchQ[G[x], G[x_:0,y_]]
 EXPECTED: True
 MESSAGE: Without OneIdentity, and Default
 ---
+FILE: mathics/test/builtin/numbers/test_trig.py
+FUNCTION: test_ArcCos
+LINE: 15
+INPUT: ArcCos[I Infinity]
+EXPECTED: -I Infinity
+---

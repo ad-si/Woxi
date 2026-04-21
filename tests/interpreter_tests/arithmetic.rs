@@ -2195,6 +2195,24 @@ mod expand_threading {
     assert_eq!(interpret("ArcCos[Sqrt[3]/2]").unwrap(), "Pi/6");
   }
 
+  // ArcCos[±I·Infinity] → DirectedInfinity[∓I] (matches wolframscript).
+  // Regression for mathics test_trig.py:15.
+  #[test]
+  fn arccos_imaginary_infinity_positive() {
+    assert_eq!(
+      interpret("ArcCos[I Infinity]").unwrap(),
+      "DirectedInfinity[-I]"
+    );
+  }
+
+  #[test]
+  fn arccos_imaginary_infinity_negative() {
+    assert_eq!(
+      interpret("ArcCos[-I Infinity]").unwrap(),
+      "DirectedInfinity[I]"
+    );
+  }
+
   #[test]
   fn arcsin_half() {
     assert_eq!(interpret("ArcSin[1/2]").unwrap(), "Pi/6");
