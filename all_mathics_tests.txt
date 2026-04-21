@@ -7854,12 +7854,6 @@ INPUT: expr
 EXPECTED: result
 MESSAGE: msg
 ---
-FILE: mathics/test/format/test_latex.py
-FUNCTION: test_expressions
-LINE: 21
-INPUT: testcase
-EXPECTED: expected
----
 FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: test_makeboxes_basic_forms
 LINE: 36

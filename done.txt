@@ -10370,3 +10370,9 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: msg
 ---
+FILE: mathics/test/format/test_latex.py
+FUNCTION: test_expressions
+LINE: 21
+INPUT: testcase
+EXPECTED: expected
+---
