@@ -9240,3 +9240,10 @@ LINE: 338
 INPUT: F[3.]
 EXPECTED: 3.
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: FindRoot
+LINE: 885
+TYPE: >>
+INPUT: Clear[x]
+EXPECTED: (none)
+---
