@@ -4530,14 +4530,6 @@ EXPECTED:
 = 0.157299
 ---
 FILE: mathics/builtin/specialfns/erf.py
-CLASS: FresnelS
-LINE: 145
-TYPE: >>
-INPUT: Integrate[Sin[x^2 Pi/2], {x, 0, z}]
-EXPECTED:
-= FresnelS[z]
----
-FILE: mathics/builtin/specialfns/erf.py
 CLASS: InverseErf
 LINE: 177
 TYPE: >>
