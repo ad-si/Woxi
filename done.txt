@@ -9410,3 +9410,11 @@ INPUT: FileExistsQ["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: FormatValues
+LINE: 423
+TYPE: >>
+INPUT: FormatValues[F]  //InputForm
+EXPECTED:
+= {HoldPattern[Format[F[x_], OutputForm]] :> Subscript[x, F]}
+---

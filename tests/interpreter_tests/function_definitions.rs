@@ -503,6 +503,14 @@ mod formatvalues {
   fn formatvalues_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("FormatValues[F]").unwrap(), "{}");
   }
+
+  #[test]
+  fn formatvalues_of_undefined_symbol_inputform_wraps_empty_list() {
+    assert_eq!(
+      interpret("FormatValues[F]  //InputForm").unwrap(),
+      "InputForm[{}]"
+    );
+  }
 }
 
 mod memory {
