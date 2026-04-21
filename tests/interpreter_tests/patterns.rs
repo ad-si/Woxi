@@ -1531,4 +1531,26 @@ mod optional_pattern_without_default {
       "{a, b}"
     );
   }
+
+  // Regression: `f[x, 0...]` is `f[x, RepeatedNull[0]]`. The rule
+  // `f[x, 0...] -> t` contains a `RepeatedNull` sequence pattern but no
+  // Expr::Pattern node — `contains_pattern` used to return `false`,
+  // routing `/. ` through literal string matching instead of structural
+  // matching, so `f[x]` kept unchanged even though MatchQ was True.
+  #[test]
+  fn replace_with_trailing_repeated_null_empty() {
+    assert_eq!(interpret("f[x] /. f[x, 0...] -> t").unwrap(), "t");
+  }
+
+  #[test]
+  fn replace_with_trailing_repeated_null_filled() {
+    assert_eq!(interpret("f[x, 0] /. f[x, 0...] -> t").unwrap(), "t");
+    assert_eq!(interpret("f[x, 0, 0] /. f[x, 0...] -> t").unwrap(), "t");
+  }
+
+  #[test]
+  fn replace_with_trailing_repeated_null_no_match() {
+    // Element pattern `0` doesn't match `1`, so replacement doesn't fire.
+    assert_eq!(interpret("f[x, 1] /. f[x, 0...] -> t").unwrap(), "f[x, 1]");
+  }
 }

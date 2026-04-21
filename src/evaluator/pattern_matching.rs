@@ -235,6 +235,17 @@ pub fn contains_pattern(expr: &Expr) -> bool {
       ..
     } => true,
     Expr::FunctionCall { name, .. } if name == "Alternatives" => true,
+    // Sequence patterns count too — Repeated[p] / RepeatedNull[p] /
+    // BlankSequence[] / BlankNullSequence[] let the pattern consume a
+    // variable number of args without themselves being Expr::Pattern.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Repeated" | "RepeatedNull" | "BlankSequence" | "BlankNullSequence"
+      ) =>
+    {
+      true
+    }
     Expr::BinaryOp { left, right, .. } => {
       contains_pattern(left) || contains_pattern(right)
     }

@@ -3292,14 +3292,6 @@ EXPECTED:
 = Sequence[0, 0, 0]
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: RepeatedNull
-LINE: 667
-TYPE: >>
-INPUT: f[x] /. f[x, 0...] -> t
-EXPECTED:
-= t
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Shortest
 LINE: 691
 TYPE: >>
