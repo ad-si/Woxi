@@ -6992,13 +6992,6 @@ EXPECTED: <Integer64, 2>
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
-LINE: 152
-INPUT: N[2/9]
-EXPECTED: .2222222222222222`16
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
 LINE: 155
 INPUT: N[2/9]
 EXPECTED: .222`3
