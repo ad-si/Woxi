@@ -3516,14 +3516,6 @@ INPUT: Nearest[{Blue -> "blue", White -> "white", Red -> "red", Green -> "green"
 EXPECTED:
 = {{red}, {white}}
 ---
-FILE: mathics/builtin/distance/clusters.py
-CLASS: Nearest
-LINE: 405
-TYPE: >>
-INPUT: Nearest[{{0, 1}, {1, 2}, {2, 3}} -> {a, b, c}, {1.1, 2}]
-EXPECTED:
-= {b}
----
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileDate
 LINE: 33

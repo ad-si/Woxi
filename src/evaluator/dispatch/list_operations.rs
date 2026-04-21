@@ -3164,11 +3164,58 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
 }
 
+/// Distance between two expressions. Falls back to absolute scalar difference
+/// and, for equal-length numeric lists, the Euclidean norm.
+fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
+  match (a, b) {
+    (Expr::List(va), Expr::List(vb)) if va.len() == vb.len() => {
+      let mut sum = 0.0;
+      for (x, y) in va.iter().zip(vb.iter()) {
+        let dx = expr_to_f64(x)? - expr_to_f64(y)?;
+        sum += dx * dx;
+      }
+      Some(sum.sqrt())
+    }
+    _ => {
+      let av = expr_to_f64(a)?;
+      let bv = expr_to_f64(b)?;
+      Some((av - bv).abs())
+    }
+  }
+}
+
 /// Nearest[list, x] - find elements of list nearest to x
 /// Nearest[list, x, n] - find n nearest elements
+/// Nearest[points -> values, x] - return the labels whose points are closest
 fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let items = match &args[0] {
-    Expr::List(items) => items,
+  // Rule form: Nearest[points -> labels, target]. Distances are measured on
+  // the `points` list, but the result is drawn from the matching `labels`.
+  let (items_owned, labels): (Vec<Expr>, Option<Vec<Expr>>) = match &args[0] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let pts = match pattern.as_ref() {
+        Expr::List(v) => v.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Nearest".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let lbls = match replacement.as_ref() {
+        Expr::List(v) if v.len() == pts.len() => v.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Nearest".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (pts, Some(lbls))
+    }
+    Expr::List(v) => (v.clone(), None),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Nearest".to_string(),
@@ -3176,6 +3223,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+  let items = &items_owned;
 
   if items.is_empty() {
     return Ok(Expr::List(vec![]));
@@ -3225,18 +3273,11 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Some(1), None) // default is just the single closest (and ties)
   };
 
-  // Compute distance for each element
-  let target_f = expr_to_f64(target);
+  // Compute distance for each element (scalar or equal-length vector)
   let mut distances: Vec<(usize, f64)> = items
     .iter()
     .enumerate()
-    .filter_map(|(i, item)| {
-      let item_f = expr_to_f64(item);
-      match (target_f, item_f) {
-        (Some(t), Some(v)) => Some((i, (v - t).abs())),
-        _ => None,
-      }
-    })
+    .filter_map(|(i, item)| nearest_distance(item, target).map(|d| (i, d)))
     .collect();
 
   if distances.is_empty() {
@@ -3259,6 +3300,13 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => distances.iter().collect(),
   };
 
+  let pick = |i: usize| -> Expr {
+    match &labels {
+      Some(l) => l[i].clone(),
+      None => items[i].clone(),
+    }
+  };
+
   match (args.len() >= 3, n) {
     // Bare 2-arg Nearest: return the tied-for-closest group.
     (false, _) => {
@@ -3266,24 +3314,20 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result: Vec<Expr> = filtered
         .iter()
         .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
-        .map(|(i, _)| items[*i].clone())
+        .map(|(i, _)| pick(*i))
         .collect();
       Ok(Expr::List(result))
     }
     // Count limit provided (possibly together with a radius).
     (true, Some(k)) => {
-      let result: Vec<Expr> = filtered
-        .iter()
-        .take(k)
-        .map(|(i, _)| items[*i].clone())
-        .collect();
+      let result: Vec<Expr> =
+        filtered.iter().take(k).map(|(i, _)| pick(*i)).collect();
       Ok(Expr::List(result))
     }
     // `All` (possibly together with a radius): keep everything that passed
     // the radius filter.
     (true, None) => {
-      let result: Vec<Expr> =
-        filtered.iter().map(|(i, _)| items[*i].clone()).collect();
+      let result: Vec<Expr> = filtered.iter().map(|(i, _)| pick(*i)).collect();
       Ok(Expr::List(result))
     }
   }

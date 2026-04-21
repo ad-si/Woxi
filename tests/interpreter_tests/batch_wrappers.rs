@@ -2844,6 +2844,23 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn nearest_vector_euclidean() {
+    assert_eq!(
+      interpret("Nearest[{{0, 1}, {1, 2}, {2, 3}}, {1.1, 2}]").unwrap(),
+      "{{1, 2}}"
+    );
+  }
+  #[test]
+  fn nearest_rule_returns_labels() {
+    // Rule form: distances measured on the points list, result is drawn from
+    // the corresponding labels (regression for mathics distance/clusters.py:405).
+    assert_eq!(
+      interpret("Nearest[{{0, 1}, {1, 2}, {2, 3}} -> {a, b, c}, {1.1, 2}]")
+        .unwrap(),
+      "{b}"
+    );
+  }
+  #[test]
   fn key_sort_by_basic() {
     assert_eq!(
       interpret(

@@ -10747,3 +10747,11 @@ INPUT: CosineDistance[{a, b, c}, {x, y, z}]
 EXPECTED:
 = 1 + (-a Conjugate[x] - b Conjugate[y] - c Conjugate[z]) / (Sqrt[Abs[a] ^ 2 + Abs[b] ^ 2 + Abs[c] ^ 2] Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2 + Abs[z] ^ 2])
 ---
+FILE: mathics/builtin/distance/clusters.py
+CLASS: Nearest
+LINE: 405
+TYPE: >>
+INPUT: Nearest[{{0, 1}, {1, 2}, {2, 3}} -> {a, b, c}, {1.1, 2}]
+EXPECTED:
+= {b}
+---
