@@ -1300,8 +1300,7 @@ fn bigfloat_small_int_to_i128(
   };
   // Combine integer and fractional parts without the decimal point, tracking
   // how the `.` shifted the exponent.
-  let digits_str: String =
-    int_str.chars().chain(frac_str.chars()).collect();
+  let digits_str: String = int_str.chars().chain(frac_str.chars()).collect();
   let frac_len = frac_str.len() as i64;
   let effective_exp = exp_part - frac_len;
   let base_int: i128 = digits_str.parse().map_err(|_| {
@@ -1313,13 +1312,11 @@ fn bigfloat_small_int_to_i128(
   let mut value = base_int;
   if effective_exp > 0 {
     for _ in 0..effective_exp {
-      value = value
-        .checked_mul(10)
-        .ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "RealDigits: digit value overflow".into(),
-          )
-        })?;
+      value = value.checked_mul(10).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "RealDigits: digit value overflow".into(),
+        )
+      })?;
     }
   } else if effective_exp < 0 {
     for _ in 0..(-effective_exp) {
@@ -1759,9 +1756,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `start_pos` (when < MSD) and the requested count. The normalization
     // loop also benefits from a slightly larger precision window.
     let extract_count = num_digits + leading_skip.unwrap_or(0) + 4;
-    let (raw, base_exp) = bigfloat_to_digits_base(
-      &bf, base, extract_count, bits, rm, &mut cc,
-    )?;
+    let (raw, base_exp) =
+      bigfloat_to_digits_base(&bf, base, extract_count, bits, rm, &mut cc)?;
     let mut digits = raw;
     if let Some(p) = start_pos {
       // digit k (0-indexed) sits at position `base_exp - 1 - k`. Skip

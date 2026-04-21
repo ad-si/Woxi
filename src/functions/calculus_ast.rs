@@ -5273,7 +5273,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "ArcSin" | "ArcCos" if args.len() == 1 => {
           let coeff = try_match_linear_arg(&args[0], var)?;
           let (p, q) = decompose_rational_coeff(&coeff)?;
-          return arcsin_arccos_linear_antideriv(name, args, var, p, q);
+          arcsin_arccos_linear_antideriv(name, args, var, p, q)
         }
         "ArcTan" if args.len() == 1 => {
           if let Expr::Identifier(name) = &args[0]
