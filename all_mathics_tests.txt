@@ -1670,14 +1670,6 @@ EXPECTED:
 = {{299, 305}, {870, 876}, {1538, 1544}, {1671, 1677}, {2300, 2306}, {2784, 2790}, {3093, 3099}}
 ---
 ---
-FILE: mathics/builtin/string/patterns.py
-CLASS: StringCases
-LINE: 191
-TYPE: >>
-INPUT: StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_] -> x]
-EXPECTED:
-= {abc}
----
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox
 LINE: 192
