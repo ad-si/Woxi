@@ -9298,3 +9298,11 @@ INPUT: f[]
 EXPECTED:
 = 1
 ---
+FILE: mathics/builtin/options.py
+CLASS: Default
+LINE: 101
+TYPE: >>
+INPUT: DefaultValues[f]
+EXPECTED:
+= {HoldPattern[Default[f]] :> 1}
+---
