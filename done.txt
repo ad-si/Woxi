@@ -10944,3 +10944,9 @@ LINE: 170
 INPUT: Precision[N[1.5, 30]]
 EXPECTED: MachinePrecision
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 172
+INPUT: Precision[N[1.5, 5]]
+EXPECTED: MachinePrecision
+---
