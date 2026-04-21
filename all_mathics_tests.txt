@@ -3553,14 +3553,6 @@ EXPECTED:
 = {aab, aaab}
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: OptionsPattern
-LINE: 283
-TYPE: >>
-INPUT: e
-EXPECTED:
-= x ^ 5
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
 LINE: 403
 TYPE: >>
