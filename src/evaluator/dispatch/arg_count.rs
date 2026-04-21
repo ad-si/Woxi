@@ -805,7 +805,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ReadList" => Some((1, 3)),
     "ReadString" => Some((1, 1)),
     "RealAbs" => Some((1, 1)),
-    "RealDigits" => Some((1, 3)),
+    "RealDigits" => Some((1, 4)),
     "RealSign" => Some((1, 1)),
     "RealValuedNumberQ" => Some((1, 1)),
     "Reap" => Some((1, 2)),

@@ -1165,11 +1165,25 @@ fn real_digits_rational_base(
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
 /// Returns {digit_list, exponent}.
 pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 3 {
+  if args.is_empty() || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "RealDigits expects 1 to 3 arguments".into(),
+      "RealDigits expects 1 to 4 arguments".into(),
     ));
   }
+  // Optional 4th argument: the position of the most-significant returned digit
+  // (as the exponent of `base`, so Pi at position −3 means the 10^−3 place).
+  let start_pos: Option<i128> = if args.len() == 4 {
+    match expr_to_i128(&args[3]) {
+      Some(n) => Some(n),
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "RealDigits: starting position must be an integer".into(),
+        ));
+      }
+    }
+  } else {
+    None
+  };
 
   let base: i128 = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
@@ -1338,9 +1352,14 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Compute with extra precision to avoid rounding errors in the last digits
-  let extra = 10;
-  let precision = num_digits + extra;
+  // Compute with extra precision to avoid rounding errors in the last digits.
+  // When a start position is given we also need enough precision to reach it.
+  let leading_skip = start_pos.map(|p| {
+    // We need digits from the MSD down to position p - num_digits + 1. A pure
+    // upper bound here is fine; it will be resliced below.
+    (num_digits as i128 + 16).max(-(p) + num_digits as i128 + 16) as usize
+  });
+  let precision = num_digits + leading_skip.unwrap_or(0) + 10;
 
   use astro_float::{Consts, RoundingMode};
   let mut cc = Consts::new().map_err(|e| {
@@ -1364,12 +1383,42 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // raw_digits are the significant digits, decimal_exp is the exponent
   // (number of digits before the decimal point).
-  // We need exactly num_digits digits.
   let mut digits: Vec<i128> = raw_digits
     .iter()
     .filter(|b| b.is_ascii_digit())
     .map(|b| (*b - b'0') as i128)
     .collect();
+
+  if let Some(p) = start_pos {
+    // Skip leading digits so that the first returned digit is at position `p`.
+    // digit k (0-indexed) is at position (decimal_exp as i128) - 1 - k,
+    // so to start at position p we skip (decimal_exp - 1 - p) digits.
+    let skip = (decimal_exp as i128) - 1 - p;
+    if skip > 0 {
+      let sk = skip as usize;
+      if sk >= digits.len() {
+        digits.clear();
+      } else {
+        digits.drain(..sk);
+      }
+    } else if skip < 0 {
+      // Requested start is above the most significant digit: pad with zeros.
+      let pad = (-skip) as usize;
+      let mut padded = vec![0i128; pad];
+      padded.extend(digits);
+      digits = padded;
+    }
+    while digits.len() < num_digits {
+      digits.push(0);
+    }
+    digits.truncate(num_digits);
+    let digit_exprs: Vec<Expr> =
+      digits.iter().map(|&d| Expr::Integer(d)).collect();
+    return Ok(Expr::List(vec![
+      Expr::List(digit_exprs),
+      Expr::Integer(p + 1),
+    ]));
+  }
 
   // Pad with zeros if we don't have enough digits
   while digits.len() < num_digits {

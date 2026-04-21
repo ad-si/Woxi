@@ -1290,7 +1290,7 @@ pub fn dispatch_math_functions(
     "NumberDigit" if args.len() == 2 => {
       return Some(crate::functions::math_ast::number_digit_ast(args));
     }
-    "RealDigits" if !args.is_empty() && args.len() <= 3 => {
+    "RealDigits" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::real_digits_ast(args));
     }
     "FromDigits" if !args.is_empty() && args.len() <= 2 => {

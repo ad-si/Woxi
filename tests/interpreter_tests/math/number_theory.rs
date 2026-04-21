@@ -1317,6 +1317,25 @@ mod real_digits {
   }
 
   #[test]
+  fn four_argument_start_position() {
+    // RealDigits[Pi, 10, 11, -3] returns 11 digits starting at the 10^-3
+    // place. Regression for mathics atomic/numbers.py:371.
+    assert_eq!(
+      interpret("RealDigits[Pi, 10, 11, -3]").unwrap(),
+      "{{1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7}, -2}"
+    );
+  }
+
+  #[test]
+  fn four_argument_deep_position() {
+    // The 500th decimal digit of Pi is 2.
+    assert_eq!(
+      interpret("RealDigits[Pi, 10, 1, -500]").unwrap(),
+      "{{2}, -499}"
+    );
+  }
+
+  #[test]
   fn integer_ten() {
     // RealDigits[10] yields digits {1, 0} with exponent 2.
     assert_eq!(interpret("RealDigits[10]").unwrap(), "{{1, 0}, 2}");
