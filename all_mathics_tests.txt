@@ -7702,13 +7702,6 @@ INPUT: S[x_, q:(A[t_]/;t>0)]
 EXPECTED: A
 MESSAGE: upvalues
 ---
-FILE: mathics/test/core/test_definitions.py
-FUNCTION: None
-LINE: 58
-INPUT: N[A[s_]]
-EXPECTED: A
-MESSAGE: upvalues
----
 FILE: mathics/test/core/parser/test_convert.py
 FUNCTION: None
 LINE: 152

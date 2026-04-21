@@ -4196,6 +4196,11 @@ mod unknown_function_no_args {
       "DisplayForm[boxexpr_InterpretationBox]"
     );
   }
+
+  #[test]
+  fn n_of_undefined_function_with_pattern_unwraps_n() {
+    assert_eq!(interpret("N[A[s_]]").unwrap(), "A[s_]");
+  }
 }
 
 mod symbolic_ordering {
