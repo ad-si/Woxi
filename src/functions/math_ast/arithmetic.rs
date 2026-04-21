@@ -2651,14 +2651,22 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if has_bigint {
     use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
     let mut big_product = BigInt::from(1);
     let mut all_int = true;
+    let mut real_product: f64 = 1.0;
+    let mut has_real = false;
     let mut symbolic_args: Vec<Expr> = Vec::new();
 
     for arg in args {
       match arg {
         Expr::Integer(n) => big_product *= BigInt::from(*n),
         Expr::BigInteger(n) => big_product *= n,
+        Expr::Real(f) => {
+          real_product *= *f;
+          has_real = true;
+          all_int = false;
+        }
         _ => {
           all_int = false;
           symbolic_args.push(arg.clone());
@@ -2673,6 +2681,24 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // 0 * anything = 0
     if big_product == BigInt::from(0) {
       return Ok(Expr::Integer(0));
+    }
+
+    // If any Real factor is present, collapse BigInt × Real to a single Real
+    // (matches wolframscript: 2.5 * 10^20 → 2.5*^20, a single Real).
+    if has_real {
+      let big_f = big_product.to_f64().unwrap_or(f64::INFINITY);
+      let numeric = Expr::Real(big_f * real_product);
+      if symbolic_args.is_empty() {
+        return Ok(numeric);
+      }
+      symbolic_args = combine_like_bases(symbolic_args)?;
+      sort_symbolic_factors(&mut symbolic_args);
+      let mut final_args: Vec<Expr> = vec![numeric];
+      final_args.extend(symbolic_args);
+      return Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: final_args,
+      });
     }
 
     symbolic_args = combine_like_bases(symbolic_args)?;

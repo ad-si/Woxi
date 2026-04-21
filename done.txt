@@ -10450,3 +10450,11 @@ INPUT: N[GoldenRatio, 40]
 EXPECTED:
 = 1.618033988749894848204586834365638117720
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: MantissaExponent
+LINE: 601
+TYPE: >>
+INPUT: MantissaExponent[2.5*10^20]
+EXPECTED:
+= {0.25, 21}
+---

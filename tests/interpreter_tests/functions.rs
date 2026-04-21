@@ -815,6 +815,17 @@ mod mantissa_exponent {
   fn negative_real() {
     assert_eq!(interpret("MantissaExponent[-42.5]").unwrap(), "{-0.425, 2}");
   }
+
+  #[test]
+  fn real_times_large_integer_power() {
+    // Regression: `2.5 * 10^20` used to stay as an unevaluated Times node
+    // because 10^20 exceeded the machine-integer threshold, leaving
+    // MantissaExponent unable to see a single Real argument.
+    assert_eq!(
+      interpret("MantissaExponent[2.5*10^20]").unwrap(),
+      "{0.25, 21}"
+    );
+  }
 }
 
 mod reverse_extended {
