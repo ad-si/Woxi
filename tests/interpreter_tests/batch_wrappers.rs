@@ -1887,6 +1887,20 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("Haversine[Pi/2]").unwrap(), "1/2");
   }
   #[test]
+  fn haversine_symbolic_stays_held() {
+    // wolframscript keeps Haversine[x] held; only FunctionExpand rewrites it.
+    assert_eq!(interpret("Haversine[x]").unwrap(), "Haversine[x]");
+  }
+  #[test]
+  fn haversine_real_matches_wolframscript() {
+    // Regression: computing via Sin[x/2]^2 gives the same f64 value as
+    // wolframscript; the older (1 - Cos[x])/2 formula was one ULP off.
+    assert_eq!(
+      interpret("Haversine[1.5]").unwrap(),
+      "0.4646313991661485"
+    );
+  }
+  #[test]
   fn inverse_haversine_zero() {
     assert_eq!(interpret("InverseHaversine[0]").unwrap(), "0");
   }

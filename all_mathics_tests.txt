@@ -3269,14 +3269,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: Haversine
-LINE: 698
-TYPE: >>
-INPUT: Haversine[1.5]
-EXPECTED:
-= 0.464631
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Haversine
 LINE: 701
 TYPE: >>
 INPUT: Haversine[0.5 + 2I]

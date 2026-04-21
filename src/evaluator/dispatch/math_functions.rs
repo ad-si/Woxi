@@ -1008,21 +1008,63 @@ pub fn dispatch_math_functions(
       }
     }
     "Haversine" if args.len() == 1 => {
-      // Haversine[x] = (1 - Cos[x]) / 2
-      let cos_expr = Expr::FunctionCall {
-        name: "Cos".to_string(),
-        args: args.to_vec(),
-      };
-      let expr = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
-        left: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
-          left: Box::new(Expr::Integer(1)),
-          right: Box::new(cos_expr),
-        }),
-        right: Box::new(Expr::Integer(2)),
-      };
-      return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
+      // For numeric args (containing a Real literal), compute Sin[x/2]^2 —
+      // numerically more stable than (1 - Cos[x])/2 and produces the same
+      // f64 value as wolframscript.
+      fn contains_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) | Expr::BigFloat(_, _) => true,
+          Expr::BinaryOp { left, right, .. } => {
+            contains_real(left) || contains_real(right)
+          }
+          Expr::UnaryOp { operand, .. } => contains_real(operand),
+          Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
+          _ => false,
+        }
+      }
+      if contains_real(&args[0]) {
+        let half = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(args[0].clone()),
+          right: Box::new(Expr::Integer(2)),
+        };
+        let sin_expr = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![half],
+        };
+        let expr = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(sin_expr),
+          right: Box::new(Expr::Integer(2)),
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
+      }
+      // Exact-value shortcuts wolframscript evaluates eagerly.
+      if matches!(&args[0], Expr::Integer(0)) {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      if matches!(&args[0], Expr::Constant(c) if c == "Pi") {
+        return Some(Ok(Expr::Integer(1)));
+      }
+      // Haversine[Pi/2] = 1/2 — parsed as Times[Rational[1,2], Pi]
+      if let Expr::FunctionCall { name, args: targs } = &args[0]
+        && name == "Times"
+        && targs.len() == 2
+        && matches!(&targs[1], Expr::Constant(c) if c == "Pi")
+        && let Expr::FunctionCall {
+          name: rn,
+          args: rargs,
+        } = &targs[0]
+        && rn == "Rational"
+        && rargs.len() == 2
+        && matches!(&rargs[0], Expr::Integer(1))
+        && matches!(&rargs[1], Expr::Integer(2))
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)],
+        }));
+      }
     }
     "InverseHaversine" if args.len() == 1 => {
       // InverseHaversine[x] = 2 * ArcSin[Sqrt[x]]

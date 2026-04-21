@@ -10458,3 +10458,11 @@ INPUT: MantissaExponent[2.5*10^20]
 EXPECTED:
 = {0.25, 21}
 ---
+FILE: mathics/builtin/numbers/trig.py
+CLASS: Haversine
+LINE: 698
+TYPE: >>
+INPUT: Haversine[1.5]
+EXPECTED:
+= 0.464631
+---
