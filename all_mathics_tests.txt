@@ -2816,14 +2816,6 @@ EXPECTED:
 = {{-3, 2, 0}, {2, -1, 0}, {1, -2, 1}}
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: ContinuedFraction
-LINE: 59
-TYPE: >>
-INPUT: ContinuedFraction[(1 + 2 Sqrt[3])/5]
-EXPECTED:
-= {0, 1, {8, 3, 34, 3}}
----
-FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: FactorInteger
 LINE: 298
 TYPE: >>

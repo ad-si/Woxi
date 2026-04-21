@@ -11214,3 +11214,11 @@ INPUT: TeXForm[TableForm[{{a,b},{c,d}}]]
 EXPECTED:
 = \begin{array}{cc} a & b\\ c & d\end{array}
 ---
+FILE: mathics/builtin/numbers/numbertheory.py
+CLASS: ContinuedFraction
+LINE: 59
+TYPE: >>
+INPUT: ContinuedFraction[(1 + 2 Sqrt[3])/5]
+EXPECTED:
+= {0, 1, {8, 3, 34, 3}}
+---

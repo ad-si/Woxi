@@ -645,6 +645,220 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
   }
 }
 
+/// Extract a quadratic-irrational expression of the form `(p + q · √d) / r`
+/// where `p`, `q`, `r` are integers and `d` is a positive integer (not a
+/// perfect square — caller verifies). Returns `None` if the input doesn't
+/// match.
+fn extract_quadratic_irrational(
+  expr: &Expr,
+) -> Option<(i128, i128, i128, i128)> {
+  // Peel off outer scale: (scale_num/scale_den) · inner, collecting the
+  // overall Rational coefficient and whatever Plus-sum remains.
+  let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(r) = right.as_ref() {
+        (left.as_ref().clone(), 1, *r)
+      } else {
+        (expr.clone(), 1, 1)
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut scale_n: i128 = 1;
+      let mut scale_d: i128 = 1;
+      let mut remaining: Vec<Expr> = Vec::new();
+      for a in args {
+        match a {
+          Expr::Integer(n) => scale_n = scale_n.checked_mul(*n)?,
+          Expr::FunctionCall { name, args: rargs }
+            if name == "Rational" && rargs.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) =
+              (&rargs[0], &rargs[1])
+            {
+              scale_n = scale_n.checked_mul(*n)?;
+              scale_d = scale_d.checked_mul(*d)?;
+            } else {
+              return None;
+            }
+          }
+          _ => remaining.push(a.clone()),
+        }
+      }
+      let inner = match remaining.len() {
+        0 => return None,
+        1 => remaining.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: remaining,
+        },
+      };
+      (inner, scale_n, scale_d)
+    }
+    _ => (expr.clone(), 1, 1),
+  };
+  let inner = &inner_owned;
+  // Inner: expect Plus[int, (q·Sqrt[d])] or just Sqrt[d] or k·Sqrt[d]
+  let mut p: i128 = 0;
+  let mut q: i128 = 0;
+  let mut d: i128 = 0;
+  let terms: Vec<&Expr> = match inner {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    _ => vec![inner],
+  };
+  for t in &terms {
+    if let Expr::Integer(n) = t {
+      p = p.checked_add(*n)?;
+      continue;
+    }
+    if let Some(dd) = extract_sqrt_integer(t) {
+      q = q.checked_add(1)?;
+      if d != 0 && d != dd {
+        return None;
+      }
+      d = dd;
+      continue;
+    }
+    // k * Sqrt[d] — canonically as Times[k, Sqrt[d]].
+    let (coeff, sqrt_expr) = match t {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    let k = match coeff {
+      Expr::Integer(n) => *n,
+      _ => return None,
+    };
+    let dd = extract_sqrt_integer(sqrt_expr)?;
+    q = q.checked_add(k)?;
+    if d != 0 && d != dd {
+      return None;
+    }
+    d = dd;
+  }
+  if q == 0 || d == 0 {
+    return None;
+  }
+  // Compose with the outer scale: (scale_num/scale_den) · (p + q√d)
+  //   = (scale_num·p + scale_num·q·√d) / scale_den.
+  let final_p = p.checked_mul(scale_num)?;
+  let final_q = q.checked_mul(scale_num)?;
+  let final_r = scale_den;
+  Some((final_p, final_q, d, final_r))
+}
+
+fn is_perfect_square(d: i128) -> bool {
+  if d < 0 {
+    return false;
+  }
+  let s = integer_sqrt(d);
+  s * s == d
+}
+
+/// Continued-fraction expansion of a quadratic irrational `(p + q·√d) / r`
+/// where `d` is a positive non-square integer. Returns
+/// `Some((non_periodic_prefix, period))`.
+fn continued_fraction_of_quadratic(
+  p: i128,
+  q: i128,
+  d: i128,
+  r: i128,
+) -> Option<(Vec<i128>, Vec<i128>)> {
+  // Normalize to the form `(P + √N) / Q` with `Q | (N − P²)`.
+  // Starting from `(p + q √d) / r`: set P = p · sign(r), Q = |r|,
+  // N = q² · d, then if `Q ∤ (N − P²)` multiply P and Q by |Q| (and N by Q²)
+  // until divisibility holds.
+  let sign = if r < 0 { -1i128 } else { 1 };
+  let mut big_p: i128 = p.checked_mul(sign)?;
+  // Merge the sign of q by absorbing it into the root: we rely on q·√d
+  // appearing with the sign carried into q. When q < 0, we need to adjust:
+  // (p + q √d) / r with q < 0 is the same as (p - |q| √d)/r — but CF of a
+  // negative-Sqrt combination is harder to handle uniformly. Bail if q < 0.
+  if q <= 0 {
+    return None;
+  }
+  let mut big_n: i128 = q.checked_mul(q)?.checked_mul(d)?;
+  let mut big_q: i128 = r.checked_mul(sign)?;
+  if big_q <= 0 {
+    return None;
+  }
+  // Ensure Q divides (N − P²); multiply through by |Q| if not.
+  for _ in 0..4 {
+    let diff = big_n.checked_sub(big_p.checked_mul(big_p)?)?;
+    if diff.rem_euclid(big_q) == 0 {
+      break;
+    }
+    // Scale P ← P · Q, N ← N · Q², Q ← Q · |Q|.
+    let new_p = big_p.checked_mul(big_q)?;
+    let q_sq = big_q.checked_mul(big_q)?;
+    let new_n = big_n.checked_mul(q_sq)?;
+    let new_q = big_q.checked_mul(big_q)?;
+    big_p = new_p;
+    big_n = new_n;
+    big_q = new_q;
+  }
+
+  // Iterate: a_k = floor((P + √N) / Q); M = P − a·Q;
+  //          P' = −M; Q' = (N − M²) / Q.
+  let sqrt_n_floor = integer_sqrt(big_n);
+  let mut seen: std::collections::HashMap<(i128, i128), usize> =
+    std::collections::HashMap::new();
+  let mut terms: Vec<i128> = Vec::new();
+  let mut p_k = big_p;
+  let mut q_k = big_q;
+  for step in 0..1000 {
+    if let Some(&start) = seen.get(&(p_k, q_k)) {
+      // wolframscript always keeps at least one term in the non-periodic
+      // prefix (ContinuedFraction[GoldenRatio] == {1, {1}}, not {{1}}).
+      // When the CF is purely periodic, pull the first period term into the
+      // prefix and keep a copy at the start of the period — it's the same
+      // value, just presented as "prefix + cycle".
+      if start == 0 && !terms.is_empty() {
+        let pre = vec![terms[0]];
+        let mut period: Vec<i128> = terms[1..].to_vec();
+        period.push(terms[0]);
+        return Some((pre, period));
+      }
+      let pre = terms[..start].to_vec();
+      let period = terms[start..].to_vec();
+      return Some((pre, period));
+    }
+    seen.insert((p_k, q_k), step);
+    // a = floor((P + sqrt(N)) / Q). Since Q > 0, use integer floor:
+    // a = floor((P + sqrt_N_floor) / Q) when P + sqrt_N_floor > 0,
+    // but we also need to handle the case where sqrt(N) is not integer and
+    // the approximation rounds down. Using `sqrt_n_floor` works as a
+    // lower bound for sqrt(N); division floor then yields the correct a.
+    let num = p_k + sqrt_n_floor;
+    let a = num.div_euclid(q_k);
+    terms.push(a);
+    let m = p_k - a * q_k;
+    let new_q = (big_n - m * m) / q_k;
+    if new_q == 0 {
+      return None;
+    }
+    p_k = -m;
+    q_k = new_q;
+  }
+  None
+}
+
 /// Continued-fraction expansion of √D for a positive non-square integer D.
 /// Returns `Some((a0, period))` where period is empty when D is a perfect
 /// square. Returns None if D is non-positive.
@@ -766,6 +980,25 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let period_list =
       Expr::List(period.into_iter().map(Expr::Integer).collect());
     return Ok(Expr::List(vec![Expr::Integer(a0), period_list]));
+  }
+
+  // ContinuedFraction[(p + q √d) / r] — periodic CF for quadratic irrationals.
+  if args.len() == 1
+    && let Some((p, q, d, r)) = extract_quadratic_irrational(&args[0])
+    && d > 0
+    && q != 0
+    && r != 0
+    && !is_perfect_square(d)
+    && let Some((pre, period)) = continued_fraction_of_quadratic(p, q, d, r)
+  {
+    let pre_exprs: Vec<Expr> = pre.into_iter().map(Expr::Integer).collect();
+    let mut result: Vec<Expr> = pre_exprs;
+    if !period.is_empty() {
+      result.push(Expr::List(
+        period.into_iter().map(Expr::Integer).collect(),
+      ));
+    }
+    return Ok(Expr::List(result));
   }
 
   // For expressions with n terms

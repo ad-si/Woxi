@@ -517,10 +517,7 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_sqrt_2_periodic() {
-      assert_eq!(
-        interpret("ContinuedFraction[Sqrt[2]]").unwrap(),
-        "{1, {2}}"
-      );
+      assert_eq!(interpret("ContinuedFraction[Sqrt[2]]").unwrap(), "{1, {2}}");
     }
 
     #[test]
@@ -528,6 +525,26 @@ mod high_level_functions_tests {
       assert_eq!(
         interpret("ContinuedFraction[Sqrt[3]]").unwrap(),
         "{1, {1, 2}}"
+      );
+    }
+
+    #[test]
+    fn test_quadratic_irrational() {
+      // ContinuedFraction[(p + q·√d)/r] picks up the periodic expansion.
+      // Regression for mathics numbers/integer.py:?? (ContinuedFraction
+      // docs).
+      assert_eq!(
+        interpret("ContinuedFraction[(1 + 2 Sqrt[3])/5]").unwrap(),
+        "{0, 1, {8, 3, 34, 3}}"
+      );
+      // Purely periodic: golden ratio needs a prefix term.
+      assert_eq!(
+        interpret("ContinuedFraction[(1 + Sqrt[5])/2]").unwrap(),
+        "{1, {1}}"
+      );
+      assert_eq!(
+        interpret("ContinuedFraction[(-1 + Sqrt[5])/2]").unwrap(),
+        "{0, {1}}"
       );
     }
 
