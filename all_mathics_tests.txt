@@ -4503,14 +4503,6 @@ INPUT: Table[x, {x, a, a + 5 n, n}]
 EXPECTED:
 = {a, a + n, a + 2 n, a + 3 n, a + 4 n, a + 5 n}
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: AppendTo
-LINE: 143
-TYPE: >>
-INPUT: y
-EXPECTED:
-= f[x]
----
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete

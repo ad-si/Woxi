@@ -10124,3 +10124,11 @@ INPUT: s
 EXPECTED:
 = {0, 1, 2, 4, 9}
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: AppendTo
+LINE: 143
+TYPE: >>
+INPUT: y
+EXPECTED:
+= f[x]
+---
