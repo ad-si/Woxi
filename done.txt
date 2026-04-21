@@ -9164,3 +9164,9 @@ INPUT: N[A[s_]]
 EXPECTED: A
 MESSAGE: upvalues
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 114
+INPUT: \\[ExponentialE]
+EXPECTED: \u2147
+---

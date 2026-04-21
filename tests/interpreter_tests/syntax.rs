@@ -4201,6 +4201,11 @@ mod unknown_function_no_args {
   fn n_of_undefined_function_with_pattern_unwraps_n() {
     assert_eq!(interpret("N[A[s_]]").unwrap(), "A[s_]");
   }
+
+  #[test]
+  fn exponential_e_named_char_evaluates_to_e() {
+    assert_eq!(interpret("\\[ExponentialE]").unwrap(), "E");
+  }
 }
 
 mod symbolic_ordering {
