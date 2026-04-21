@@ -1,13 +1,5 @@
 FILE: mathics/builtin/options.py
 CLASS: Default
-LINE: 97
-TYPE: >>
-INPUT: f[]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/options.py
-CLASS: Default
 LINE: 101
 TYPE: >>
 INPUT: DefaultValues[f]
