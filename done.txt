@@ -9926,3 +9926,11 @@ INPUT: f = 3 (-1 + 2 x) (-1 + y) (1 - a)
 EXPECTED:
 = 3 (-1 + 2 x) (-1 + y) (1 - a)
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: FactorTermsList
+LINE: 1443
+TYPE: >>
+INPUT: FactorTermsList[f]
+EXPECTED:
+= {-3, -1 + a - 2 a x - a y + 2 x + y - 2 x y + 2 a x y}
+---
