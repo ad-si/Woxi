@@ -9254,3 +9254,10 @@ TYPE: #>
 INPUT: Clear[n]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/drawing/splines.py
+CLASS: BezierCurve
+LINE: 113
+TYPE: #>
+INPUT: Clear[pts];
+EXPECTED: (none)
+---
