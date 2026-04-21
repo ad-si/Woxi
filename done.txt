@@ -9038,3 +9038,10 @@ EXPECTED:
   text[System`InputForm]: Subscript[a, 4]
   text[System`OutputForm]: Subscript[a, 4]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Subsuperscript[a, p, q]
+DESCRIPTION: SubsuperscriptBox
+EXPECTED:
+  text[System`InputForm]: Subsuperscript[a, p, q]
+  text[System`OutputForm]: Subsuperscript[a, p, q]
+---

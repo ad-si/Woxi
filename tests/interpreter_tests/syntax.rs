@@ -3752,6 +3752,14 @@ mod subscript_function {
       "Subscript[x, 1]"
     );
   }
+
+  #[test]
+  fn subsuperscript_stays_symbolic() {
+    assert_eq!(
+      interpret("Subsuperscript[a, p, q]").unwrap(),
+      "Subsuperscript[a, p, q]"
+    );
+  }
 }
 
 mod automatic_symbol {

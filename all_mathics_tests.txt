@@ -10367,31 +10367,6 @@ EXPECTED:
 </mrow>
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: Subsuperscript[a, p, q]
-DESCRIPTION: SubsuperscriptBox
-EXPECTED:
-  text[System`InputForm]: Subsuperscript[a, p, q]
-  text[System`OutputForm]: Subsuperscript[a, p, q]
-  text[System`StandardForm]: Subsuperscript[a, p, q]
-  text[System`TraditionalForm]: Subsuperscript[a, p, q]
-  latex[System`InputForm]: \text{Subsuperscript[a, p, q]}
-  latex[System`OutputForm]: \text{Subsuperscript[a, p, q]}
-  latex[System`StandardForm]: a_p^q
-  latex[System`TraditionalForm]: a_p^q
-  mathml[System`InputForm]: <mtext>Subsuperscript[a,&nbsp;p,&nbsp;q]</mtext>
-  mathml[System`OutputForm]: <mtext>Subsuperscript[a,&nbsp;p,&nbsp;q]</mtext>
-  mathml[System`StandardForm]: <msubsup>
- <mi>a</mi>
- <mi>p</mi>
- <mi>q</mi>
-</msubsup>
-  mathml[System`TraditionalForm]: <msubsup>
- <mi>a</mi>
- <mi>p</mi>
- <mi>q</mi>
-</msubsup>
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: TableForm[{Graphics[{Text[a^b,{0,0}]}], Graphics[{Text[a^b,{0,0}]}]}]
 DESCRIPTION: A table of graphics - Fragile!
 EXPECTED:
