@@ -6754,12 +6754,6 @@ LINE: 31
 INPUT: ?Builtin2
 EXPECTED: Global`Builtin2\n
 ---
-FILE: mathics/test/test_help.py
-FUNCTION: test_long_description
-LINE: 40
-INPUT: ??Builtin2
-EXPECTED: Global`Builtin2\n
----
 FILE: mathics/test/test_numericq.py
 FUNCTION: test_atomic_numericq
 LINE: 116

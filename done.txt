@@ -10192,3 +10192,9 @@ LINE: 37
 INPUT: ??Builtin1
 EXPECTED: Global`Builtin1\n
 ---
+FILE: mathics/test/test_help.py
+FUNCTION: test_long_description
+LINE: 40
+INPUT: ??Builtin2
+EXPECTED: Global`Builtin2\n
+---
