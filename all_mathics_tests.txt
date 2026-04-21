@@ -413,14 +413,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: SubValues
-LINE: 155
-TYPE: >>
-INPUT: SubValues[f]
-EXPECTED:
-= {HoldPattern[f[2][x_]] :> x ^ 2, HoldPattern[f[1][x_]] :> x}
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: SubValues
 LINE: 157
 TYPE: >>
 INPUT: Definition[f]

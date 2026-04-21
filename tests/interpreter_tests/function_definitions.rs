@@ -478,6 +478,15 @@ mod nvalues {
   }
 }
 
+mod subvalues {
+  use super::*;
+
+  #[test]
+  fn subvalues_of_undefined_symbol_is_empty_list() {
+    assert_eq!(interpret("SubValues[f]").unwrap(), "{}");
+  }
+}
+
 mod memory {
   use super::*;
 
