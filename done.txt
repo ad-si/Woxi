@@ -9777,3 +9777,11 @@ INPUT: s = LinearSolve[B, {1, 2, 3}]
 EXPECTED:
 = {-1 / 3, 2 / 3, 0}
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: InputForm
+LINE: 88
+TYPE: >>
+INPUT: Foo[x] // InputForm
+EXPECTED:
+= Bar
+---

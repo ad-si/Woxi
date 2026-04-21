@@ -5826,14 +5826,6 @@ EXPECTED:
 = exp(2) + 3*E
 ---
 FILE: mathics/builtin/forms/print.py
-CLASS: InputForm
-LINE: 88
-TYPE: >>
-INPUT: Foo[x] // InputForm
-EXPECTED:
-= Bar
----
-FILE: mathics/builtin/forms/print.py
 CLASS: MathMLForm
 LINE: 114
 TYPE: >>
