@@ -5867,14 +5867,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/variables.py
 CLASS: BoxForms_
-LINE: 73
-TYPE: >>
-INPUT: MyBoxForm[F[3]]
-EXPECTED:
-= F(3)
----
-FILE: mathics/builtin/forms/variables.py
-CLASS: BoxForms_
 LINE: 84
 TYPE: >>
 INPUT: MyBoxForm[F[3]]
