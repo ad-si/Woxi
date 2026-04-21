@@ -35,6 +35,11 @@ mod graphics {
     fn empty_list_content() {
       insta::assert_snapshot!(export_svg("Graphics[{}]"));
     }
+
+    #[test]
+    fn empty_graphics_text_output() {
+      assert_eq!(interpret("Graphics[{}]").unwrap(), "-Graphics-");
+    }
   }
 
   mod primitives {

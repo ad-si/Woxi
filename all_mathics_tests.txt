@@ -10196,36 +10196,6 @@ clip(box((136.5,162.5), (157.5,187.5)));
 \end{asy}
 ---
 FILE: mathics/test/format/format_tests.yaml
-INPUT: Graphics[{}]
-DESCRIPTION: GraphicsBox - Fragile!
-EXPECTED:
-  text[System`InputForm]: Graphics[{}]
-  text[System`OutputForm]: -Graphics-
-  text[System`StandardForm]: -Graphics-
-  text[System`TraditionalForm]: -Graphics-
-  latex[System`InputForm]: \text{Graphics[\{\}]}
-  latex[System`OutputForm]: \text{-Graphics-}
-  latex[System`StandardForm]: 
-\begin{asy}
-usepackage("amsmath");
-size(5.8333cm, 5.8333cm);
-
-
-clip(box((-1,-1), (1,1)));
-
-\end{asy}
-
-  latex[System`TraditionalForm]: 
-\begin{asy}
-usepackage("amsmath");
-size(5.8333cm, 5.8333cm);
-
-
-clip(box((-1,-1), (1,1)));
-
-\end{asy}
----
-FILE: mathics/test/format/format_tests.yaml
 INPUT: Grid[{{"Spanish", "Hola!"},{"Portuguese", "Olà!"},{"English", "Hi!"}}]
 DESCRIPTION: Strings in a GridBox
 EXPECTED:

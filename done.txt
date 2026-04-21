@@ -8970,3 +8970,12 @@ EXPECTED:
   text[System`InputForm]: <|a -> x, b -> y, c -> <|d -> t, e -> u|>|>
   text[System`OutputForm]: <|a -> x, b -> y, c -> <|d -> t, e -> u|>|>
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Graphics[{}]
+DESCRIPTION: GraphicsBox - Fragile!
+EXPECTED:
+  text[System`InputForm]: Graphics[{}]
+  text[System`OutputForm]: -Graphics-
+  text[System`StandardForm]: -Graphics-
+  text[System`TraditionalForm]: -Graphics-
+---
