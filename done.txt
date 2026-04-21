@@ -10269,3 +10269,10 @@ INPUT: MatchQ[x, F[x_.,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Optional, default
 ---
+FILE: mathics/builtin/atomic/atomic.py
+CLASS: AtomQ
+LINE: 54
+TYPE: #>
+INPUT: Clear[x]
+EXPECTED: (none)
+---

@@ -3875,13 +3875,6 @@ INPUT: FileNameDrop[path]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/atomic/atomic.py
-CLASS: AtomQ
-LINE: 54
-TYPE: #>
-INPUT: Clear[x]
-EXPECTED: (none)
----
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: Accuracy
 LINE: 87
