@@ -526,7 +526,10 @@ TagSetDelayed = { Identifier ~ "/:" ~ BaseFunctionCall ~ ":=" ~ ExpressionNoImpl
 TagSet = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=" ~ !("." | "=" | "!") ~ ExpressionNoImplicit }
 TagUnset = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=." }
 
-Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | Expression }
+Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | TopLevelSpan | Expression }
+// Top-level Span: allows bare `;;` / `a;;b` / `;;4` / `a;;b;;c` as a
+// statement, with optional postfix applications (e.g. `1;;4 // FullForm`).
+TopLevelSpan = { &HasSpanSep ~ SpanExpr ~ ("//" ~ PostfixFunction)* }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 StatementSeparator = _{ (";" ~ !";")?  }

@@ -1101,6 +1101,27 @@ mod map_at {
   }
 
   #[test]
+  fn top_level_span_bare() {
+    // Regression: bare `;;` used to fail parsing at the statement level.
+    assert_eq!(interpret(";; // FullForm").unwrap(), "Span[1, All]");
+  }
+
+  #[test]
+  fn top_level_span_with_step() {
+    assert_eq!(interpret("1;;4;;2 // FullForm").unwrap(), "Span[1, 4, 2]");
+  }
+
+  #[test]
+  fn top_level_span_negative_end() {
+    assert_eq!(interpret("2;;-2 // FullForm").unwrap(), "Span[2, -2]");
+  }
+
+  #[test]
+  fn top_level_span_from_start() {
+    assert_eq!(interpret(";;3 // FullForm").unwrap(), "Span[1, 3]");
+  }
+
+  #[test]
   fn map_at_association_positive_index() {
     assert_eq!(
       interpret(r#"MapAt[f, <|"a" -> 1, "b" -> 2, "c" -> 3, "d" -> 4|>, 2]"#)

@@ -10515,3 +10515,35 @@ INPUT: Table[x, {x, a, a + 5 n, n}]
 EXPECTED:
 = {a, a + n, a + 2 n, a + 3 n, a + 4 n, a + 5 n}
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Span
+LINE: 1645
+TYPE: >>
+INPUT: ;; // FullForm
+EXPECTED:
+= Span[1, All]
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Span
+LINE: 1647
+TYPE: >>
+INPUT: 1;;4;;2 // FullForm
+EXPECTED:
+= Span[1, 4, 2]
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Span
+LINE: 1649
+TYPE: >>
+INPUT: 2;;-2 // FullForm
+EXPECTED:
+= Span[2, -2]
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Span
+LINE: 1651
+TYPE: >>
+INPUT: ;;3 // FullForm
+EXPECTED:
+= Span[1, 3]
+---

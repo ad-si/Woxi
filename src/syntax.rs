@@ -2587,6 +2587,30 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
       result
     }
+    Rule::TopLevelSpan => {
+      // Wrap the inner SpanExpr, then apply any trailing `// f` postfix
+      // applications left-to-right using the same Expr::Postfix node the
+      // main PostfixApplication rule produces.
+      //
+      // The inner SpanExpr's trailing Expression may itself have consumed
+      // `// f` applications — e.g. `a;;b;;c // f` parses as
+      // `Span[a, b, c // f]` because Expression's `//` postfix is greedy.
+      // Wolfram semantics bind `//` looser than `;;`, so hoist any
+      // postfix chain on the last Span arg up to the outer level.
+      let mut inner = pair.into_inner();
+      let mut expr = pair_to_expr(inner.next().unwrap());
+      expr = hoist_last_arg_postfix(expr);
+      for child in inner {
+        if child.as_rule() == Rule::PostfixFunction {
+          let func = parse_postfix_function(child);
+          expr = Expr::Postfix {
+            expr: Box::new(expr),
+            func: Box::new(func),
+          };
+        }
+      }
+      expr
+    }
     Rule::PostfixBase => {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)
@@ -2618,6 +2642,36 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::Raw(pair.as_str().to_string())
     }
   }
+}
+
+/// For a `Span[args…]` whose last arg is `Expr::Postfix { expr, func }`,
+/// walk the trailing Postfix chain outward: the Span keeps only the base
+/// expression, and each Postfix wraps the whole Span.
+/// This makes `a;;b // f` parse as `f[Span[a, b]]`, matching wolframscript's
+/// precedence where `//` binds looser than `;;`.
+fn hoist_last_arg_postfix(expr: Expr) -> Expr {
+  let (name, args) = match &expr {
+    Expr::FunctionCall { name, args } if name == "Span" && !args.is_empty() => {
+      (name.clone(), args.clone())
+    }
+    _ => return expr,
+  };
+  let mut args = args;
+  let mut postfix_chain: Vec<Expr> = Vec::new();
+  let last_idx = args.len() - 1;
+  while let Expr::Postfix { expr: inner, func } = &args[last_idx] {
+    postfix_chain.push((**func).clone());
+    let new_last = (**inner).clone();
+    args[last_idx] = new_last;
+  }
+  let mut result = Expr::FunctionCall { name, args };
+  for func in postfix_chain.into_iter().rev() {
+    result = Expr::Postfix {
+      expr: Box::new(result),
+      func: Box::new(func),
+    };
+  }
+  result
 }
 
 /// Parse a PostfixFunction pair into an Expr, wrapping in Function if & is present.

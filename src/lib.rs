@@ -1053,7 +1053,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let mut expr_asts: Vec<syntax::Expr> = Vec::new();
   for node in program.into_inner() {
     match node.as_rule() {
-      Rule::Expression => {
+      Rule::Expression | Rule::TopLevelSpan => {
         let expr = syntax::pair_to_expr(node);
         expr_asts.push(expr.clone());
         stmts.push(ProgramStmt::Expr(expr));
@@ -2660,7 +2660,7 @@ pub fn interpret_to_expr(
   }
 
   for node in program.into_inner() {
-    if node.as_rule() == Rule::Expression {
+    if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
       let expr = syntax::pair_to_expr(node);
       return evaluator::evaluate_expr_to_expr(&expr);
     }
