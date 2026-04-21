@@ -9785,3 +9785,11 @@ INPUT: Foo[x] // InputForm
 EXPECTED:
 = Bar
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: PrintForms_
+LINE: 172
+TYPE: >>
+INPUT: MemberQ[$PrintForms, MyForm]
+EXPECTED:
+= True
+---
