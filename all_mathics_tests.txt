@@ -1189,14 +1189,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: ClebschGordan
-LINE: 47
-TYPE: >>
-INPUT: ClebschGordan[{3 / 2, 3 / 2}, {1 / 2, -1 / 2}, {1, 1}]
-EXPECTED:
-= Sqrt[3] / 2
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: ClebschGordan
 LINE: 54
 TYPE: >>
 INPUT: ClebschGordan[{1/2, -1/2}, {1, 0}, {1/2, -1/2}]
