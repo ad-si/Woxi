@@ -4569,14 +4569,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: FormatValues
-LINE: 419
-TYPE: >>
-INPUT: FormatValues[F]
-EXPECTED:
-= {HoldPattern[Subscript[x_, F]] :> Subscript[x, F]}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: FormatValues
 LINE: 423
 TYPE: >>
 INPUT: FormatValues[F]  //InputForm

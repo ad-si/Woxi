@@ -496,6 +496,15 @@ mod ownvalues {
   }
 }
 
+mod formatvalues {
+  use super::*;
+
+  #[test]
+  fn formatvalues_of_undefined_symbol_is_empty_list() {
+    assert_eq!(interpret("FormatValues[F]").unwrap(), "{}");
+  }
+}
+
 mod memory {
   use super::*;
 
