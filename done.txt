@@ -8963,3 +8963,10 @@ EXPECTED:
 . 
 . a[4, 1]   a[4, 2]   a[4, 3]
 ---
+FILE: mathics/test/format/format_tests.yaml
+INPUT: Association[a -> x, b -> y, c -> Association[d -> t, Association[e -> u]]]
+DESCRIPTION: Nested Association
+EXPECTED:
+  text[System`InputForm]: <|a -> x, b -> y, c -> <|d -> t, e -> u|>|>
+  text[System`OutputForm]: <|a -> x, b -> y, c -> <|d -> t, e -> u|>|>
+---

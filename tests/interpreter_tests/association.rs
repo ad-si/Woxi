@@ -83,6 +83,17 @@ mod association_ast {
       "<|a -> z, b -> y, d -> t|>"
     );
   }
+
+  #[test]
+  fn association_rule_to_nested_association_keeps_as_value() {
+    assert_eq!(
+      interpret(
+        "Association[a -> x, b -> y, c -> Association[d -> t, Association[e -> u]]]"
+      )
+      .unwrap(),
+      "<|a -> x, b -> y, c -> <|d -> t, e -> u|>|>"
+    );
+  }
 }
 
 mod association_part_assignment {
