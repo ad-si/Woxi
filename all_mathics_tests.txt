@@ -3723,14 +3723,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceRepeated
-LINE: 422
-TYPE: >>
-INPUT: f[a+b+c]
-EXPECTED:
-= a + b + d
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceRepeated
 LINE: 428
 TYPE: >>
 INPUT: Log[a * (b * c) ^ d ^ e * f] //. logrules

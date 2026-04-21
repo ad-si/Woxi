@@ -9650,3 +9650,11 @@ INPUT: A[[2]]
 EXPECTED:
 = 25
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceRepeated
+LINE: 422
+TYPE: >>
+INPUT: f[a+b+c]
+EXPECTED:
+= a + b + d
+---
