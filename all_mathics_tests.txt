@@ -7855,13 +7855,6 @@ EXPECTED: result
 MESSAGE: msg
 ---
 FILE: mathics/test/format/test_makeboxes.py
-FUNCTION: test_makeboxes_precedence
-LINE: 70
-INPUT: str_expr
-EXPECTED: str_expected
-MESSAGE: msg
----
-FILE: mathics/test/format/test_makeboxes.py
 FUNCTION: test_makeboxes_graphics
 LINE: 87
 INPUT: str_expr
