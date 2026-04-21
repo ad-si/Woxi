@@ -11206,3 +11206,11 @@ INPUT: StringCases["abc-abc xyz-uvw", Shortest[x : WordCharacter .. ~~ "-" ~~ x_
 EXPECTED:
 = {abc}
 ---
+FILE: mathics/builtin/box/layout.py
+CLASS: GridBox
+LINE: 200
+TYPE: #>
+INPUT: TeXForm[TableForm[{{a,b},{c,d}}]]
+EXPECTED:
+= \begin{array}{cc} a & b\\ c & d\end{array}
+---

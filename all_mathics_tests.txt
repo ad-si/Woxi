@@ -1689,14 +1689,6 @@ EXPECTED:
 = \begin{array}{ll} a & \text{bc}\\ d & e\end{array}
 ---
 FILE: mathics/builtin/box/layout.py
-CLASS: GridBox
-LINE: 200
-TYPE: #>
-INPUT: TeXForm[TableForm[{{a,b},{c,d}}]]
-EXPECTED:
-= \begin{array}{cc} a & b\\ c & d\end{array}
----
-FILE: mathics/builtin/box/layout.py
 CLASS: InterpretationBox
 LINE: 266
 TYPE: >>
