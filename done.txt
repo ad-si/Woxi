@@ -11300,3 +11300,9 @@ INPUT: CoefficientList[Series[2x, {x, 0, 9}], x]
 EXPECTED:
 = {0, 2}
 ---
+FILE: mathics/test/builtin/atomic/test_numbers.py
+FUNCTION: test_n
+LINE: 216
+INPUT: 0.4 + 2.4 I
+EXPECTED: 0.4 + 2.4*I (matches `woxi eval` and `wolframscript -code "0.4 + 2.4 I"`)
+---
