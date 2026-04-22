@@ -1115,28 +1115,17 @@ impl WoxiStudio {
               self.cell_editors[idx].output_stale = true;
             }
           } else {
-            // No selection: toggle comment on the current line
-            let lines: Vec<&str> = snap.lines().collect();
-            let line = lines[cursor.line];
-            let trimmed = line.trim();
-            let leading_ws: &str =
-              &line[..line.len() - line.trim_start().len()];
-
+            // No selection: toggle comment on the current line.
+            // `str::lines()` drops a trailing empty line, so the cursor can
+            // legitimately be on a line past the end of `lines`. Treat any
+            // such position as an empty line rather than panicking.
+            let mut lines: Vec<String> =
+              snap.lines().map(|s| s.to_string()).collect();
+            while lines.len() <= cursor.line {
+              lines.push(String::new());
+            }
             let (new_line, col_shift) =
-              if trimmed.starts_with("(*") && trimmed.ends_with("*)") {
-                // Uncomment
-                let inner = trimmed.strip_prefix("(*").unwrap_or(trimmed);
-                let inner = inner.strip_prefix(' ').unwrap_or(inner);
-                let inner = inner.strip_suffix("*)").unwrap_or(inner);
-                let inner = inner.strip_suffix(' ').unwrap_or(inner);
-                let removed = line.len() as isize
-                  - leading_ws.len() as isize
-                  - inner.len() as isize;
-                (format!("{leading_ws}{inner}"), -removed)
-              } else {
-                // Comment
-                (format!("{leading_ws}(* {trimmed} *)"), 3isize)
-              };
+              toggle_line_comment(&lines[cursor.line]);
 
             let new_text: String = lines
               .iter()
@@ -2728,6 +2717,26 @@ fn preserve_trailing_newline(original: &str, new_text: String) -> String {
     new_text + "\n"
   } else {
     new_text
+  }
+}
+
+/// Toggle `(* ... *)` commenting on a single line, preserving leading
+/// whitespace. Returns `(new_line, col_shift)` — `col_shift` is the
+/// signed column adjustment to apply to a caret that was on this line.
+fn toggle_line_comment(line: &str) -> (String, isize) {
+  let trimmed = line.trim();
+  let leading_ws = &line[..line.len() - line.trim_start().len()];
+  if trimmed.starts_with("(*") && trimmed.ends_with("*)") {
+    let inner = trimmed.strip_prefix("(*").unwrap_or(trimmed);
+    let inner = inner.strip_prefix(' ').unwrap_or(inner);
+    let inner = inner.strip_suffix("*)").unwrap_or(inner);
+    let inner = inner.strip_suffix(' ').unwrap_or(inner);
+    let removed = line.len() as isize
+      - leading_ws.len() as isize
+      - inner.len() as isize;
+    (format!("{leading_ws}{inner}"), -removed)
+  } else {
+    (format!("{leading_ws}(* {trimmed} *)"), 3isize)
   }
 }
 
@@ -4341,5 +4350,43 @@ mod tests {
     let states = &[(CellStyle::Item, true), (CellStyle::Text, false)];
     let hidden = compute_hidden_cells_from_states(states);
     assert_eq!(hidden, vec![false, false]);
+  }
+
+  #[test]
+  fn toggle_line_comment_wraps_plain_line() {
+    let (new_line, shift) = toggle_line_comment("foo");
+    assert_eq!(new_line, "(* foo *)");
+    assert_eq!(shift, 3);
+  }
+
+  #[test]
+  fn toggle_line_comment_unwraps_commented_line() {
+    let (new_line, shift) = toggle_line_comment("(* foo *)");
+    assert_eq!(new_line, "foo");
+    // 6 characters removed: "(* " (3) + " *)" (3).
+    assert_eq!(shift, -6);
+  }
+
+  #[test]
+  fn toggle_line_comment_preserves_leading_whitespace() {
+    let (new_line, shift) = toggle_line_comment("  foo");
+    assert_eq!(new_line, "  (* foo *)");
+    assert_eq!(shift, 3);
+  }
+
+  #[test]
+  fn toggle_line_comment_on_empty_line_does_not_panic() {
+    // Regression: toggling a comment on an empty line used to index past
+    // the end of `snap.lines()` and crash woxi-studio.
+    let (new_line, shift) = toggle_line_comment("");
+    assert_eq!(new_line, "(*  *)");
+    assert_eq!(shift, 3);
+  }
+
+  #[test]
+  fn toggle_line_comment_on_whitespace_only_line() {
+    let (new_line, shift) = toggle_line_comment("   ");
+    assert_eq!(new_line, "   (*  *)");
+    assert_eq!(shift, 3);
   }
 }
