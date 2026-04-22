@@ -122,8 +122,8 @@ fn differentiate_wrt_expr(
   var_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // A variable specifier like `2x` (Times with a numeric coefficient) is not
-  // a valid symbol to differentiate against — Wolfram returns 0 in this case
-  // rather than naively treating the whole product as one variable.
+  // a valid symbol to differentiate against — Wolfram emits `D::ivar` and
+  // returns the call unevaluated.
   let is_numeric = |e: &Expr| -> bool {
     matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
       || matches!(
@@ -145,7 +145,14 @@ fn differentiate_wrt_expr(
     }
   };
   if is_bad_product(var_expr) {
-    return Ok(Expr::Integer(0));
+    crate::emit_message(&format!(
+      "D::ivar: {} is not a valid variable.",
+      crate::syntax::expr_to_message_form(var_expr)
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "D".to_string(),
+      args: vec![expr.clone(), var_expr.clone()],
+    });
   }
   // If the expression is structurally equal to the variable, derivative is 1
   if crate::syntax::expr_to_string(expr)

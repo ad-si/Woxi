@@ -596,6 +596,11 @@ function main() {
     "ArgMax[x, y]",
     // FindArgMin: Woxi gives exact -1.5, Wolfram introduces FP noise -1.5000000000000004
     "FindArgMin[x^2 + 3*x + 2, x]",
+    // Higher-order Derivative[n][pure-fn]: Woxi simplifies the nested Times
+    // produced by repeated differentiation (6*#1 & vs Wolfram's 3*(2*#1) &),
+    // but both represent the same pure function.
+    "Derivative[2][#^3&]",
+    "Derivative[3][#^3&]",
     // Last-ULP floating-point differences: Woxi is closer to the true value
     // (verified against 25-digit Wolfram precision) but f64 rounds differently
     "AiryAiPrime[1.0]",

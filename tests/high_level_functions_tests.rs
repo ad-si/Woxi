@@ -2180,6 +2180,7 @@ mod high_level_functions_tests {
 
     #[test]
     fn trace_of_simple_arithmetic() {
+      // Trace wraps each step in HoldForm; OutputForm renders it transparently.
       assert_eq!(interpret("Trace[1 + 2]").unwrap(), "{1 + 2, 3}");
     }
 
@@ -2189,9 +2190,10 @@ mod high_level_functions_tests {
     }
 
     #[test]
-    fn trace_of_idempotent_expr_returns_singleton() {
-      // When evaluation doesn't change the expression, Trace returns just {expr}.
-      assert_eq!(interpret("Trace[x]").unwrap(), "{x}");
+    fn trace_of_idempotent_expr_returns_empty_list() {
+      // When evaluation doesn't change the expression, Trace returns {},
+      // matching wolframscript.
+      assert_eq!(interpret("Trace[x]").unwrap(), "{}");
     }
   }
 

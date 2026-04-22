@@ -3687,6 +3687,26 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
   }
 }
 
+/// True iff `exp` is a numeric constant whose absolute value is strictly
+/// less than 1. Used to decide whether `(a^p)^q` with Real `q` may combine
+/// exponents under Wolfram's branch-safety rule.
+fn inner_exp_abs_lt_one(exp: &Expr) -> bool {
+  match exp {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => f.abs() < 1.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        *q != 0 && p.abs() < q.abs()
+      } else {
+        false
+      }
+    }
+    _ => false,
+  }
+}
+
 /// Power[a, b] - Exponentiation with list threading
 pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -4031,10 +4051,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // (base^inner_exp)^outer_exp where outer is a machine Real and inner is
-  // any numeric value (Integer, Rational, Real). Matches Wolfram: a real
-  // outer exponent makes the power associativity rule safe because the
-  // result is pinned to a single branch of the complex power.
+  // (base^inner_exp)^outer_exp where outer is a machine Real and the inner
+  // exponent is numeric with absolute value strictly less than 1. Wolfram
+  // only combines exponents under these conditions so the result stays on
+  // the principal branch of the complex power; inner exponents with |p| ≥ 1
+  // are left as-is (e.g. `(a^2)^3.` stays `(a^2)^3.`).
   if let Expr::Real(_) = exp {
     let inner = match base {
       Expr::BinaryOp {
@@ -4049,21 +4070,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
       _ => None,
     };
-    if let Some((inner_base, inner_exp)) = inner {
-      let inner_is_numeric =
-        matches!(inner_exp, Expr::Integer(_) | Expr::Real(_))
-          || matches!(
-            inner_exp,
-            Expr::FunctionCall { name, args: ra }
-              if name == "Rational"
-                && ra.len() == 2
-                && matches!(&ra[0], Expr::Integer(_))
-                && matches!(&ra[1], Expr::Integer(_))
-          );
-      if inner_is_numeric {
-        let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
-        return power_two(inner_base, &new_exp);
-      }
+    if let Some((inner_base, inner_exp)) = inner
+      && inner_exp_abs_lt_one(inner_exp)
+    {
+      let new_exp = times_ast(&[inner_exp.clone(), exp.clone()])?;
+      return power_two(inner_base, &new_exp);
     }
   }
 

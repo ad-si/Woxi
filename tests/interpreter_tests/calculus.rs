@@ -547,12 +547,12 @@ mod differentiate_plus_times {
     );
   }
 
-  // D[expr, var] requires var to be a symbol. A compound term like 2x
+  // D[expr, var] requires var to be a symbol. A compound term like `2x`
   // (Times with a numeric coefficient) is not a valid variable — Wolfram
-  // returns 0 rather than computing d(2x)/d(2x) = 1.
+  // emits `D::ivar` and returns the call unevaluated.
   #[test]
-  fn derivative_wrt_numeric_times_is_zero() {
-    assert_eq!(interpret("D[2x, 2x]").unwrap(), "0");
+  fn derivative_wrt_numeric_times_is_unevaluated() {
+    assert_eq!(interpret("D[2x, 2x]").unwrap(), "D[2*x, 2*x]");
   }
 }
 

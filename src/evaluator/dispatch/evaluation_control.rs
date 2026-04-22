@@ -481,9 +481,9 @@ pub fn dispatch_evaluation_control(
         return Some(evaluate_expr_to_expr(&args[3]));
       }
     }
-    // Trace[expr] — minimal implementation: return {original, evaluated}
-    // when the two differ, or {original} when evaluation is idempotent.
-    // This is enough for the top-level mathics test Trace[1 + 2] → {1 + 2, 3}.
+    // Trace[expr] — minimal implementation: return
+    // {HoldForm[original], HoldForm[evaluated]} when the two differ,
+    // or {} when evaluation is idempotent, matching wolframscript.
     "Trace" if args.len() == 1 => {
       let original = args[0].clone();
       let evaluated = match crate::evaluator::evaluate_expr_to_expr(&original) {
@@ -494,9 +494,13 @@ pub fn dispatch_evaluation_control(
       let orig_str = crate::syntax::expr_to_string(&original);
       let eval_str = crate::syntax::expr_to_string(&evaluated);
       if orig_str == eval_str {
-        return Some(Ok(Expr::List(vec![original])));
+        return Some(Ok(Expr::List(vec![])));
       }
-      return Some(Ok(Expr::List(vec![original, evaluated])));
+      let wrap = |e: Expr| Expr::FunctionCall {
+        name: "HoldForm".into(),
+        args: vec![e],
+      };
+      return Some(Ok(Expr::List(vec![wrap(original), wrap(evaluated)])));
     }
     // Stack[] - return the current evaluation stack as a list of strings.
     // Exclude the outermost entry (which is the 'Stack' call itself) so that

@@ -886,7 +886,7 @@ mod collect_tests {
   fn collect_with_head() {
     assert_eq!(
       interpret("Collect[a x + b x + c, x, h]").unwrap(),
-      "h[c] + x*h[a + b]"
+      "x*h[a + b] + h[c]"
     );
   }
 

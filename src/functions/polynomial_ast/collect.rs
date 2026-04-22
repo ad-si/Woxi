@@ -172,8 +172,22 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if result_terms.is_empty() {
     Ok(Expr::Integer(0))
+  } else if head.is_some() {
+    // Head-wrapped coefficients need Wolfram's canonical Plus ordering
+    // (descending powers of the collect variable) rather than the ascending
+    // "constant first" order used when the coefficient is a bare Plus.
+    Ok(plus_ast_canonical(result_terms))
   } else {
     Ok(build_sum(result_terms))
+  }
+}
+
+/// Run `terms` through the Plus evaluator to obtain canonical Plus ordering,
+/// falling back to a plain Plus chain if evaluation fails.
+fn plus_ast_canonical(terms: Vec<Expr>) -> Expr {
+  match crate::functions::math_ast::plus_ast(&terms) {
+    Ok(e) => e,
+    Err(_) => build_sum(terms),
   }
 }
 

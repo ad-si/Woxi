@@ -1516,8 +1516,9 @@ mod power_of_power {
 
   #[test]
   fn power_of_integer_raised_to_real() {
-    // (a^2)^3. → a^6. — real outer exponent still combines cleanly.
-    assert_eq!(interpret("(a^2)^3.").unwrap(), "a^6.");
+    // (a^2)^3. stays unevaluated: Wolfram only combines exponents through a
+    // Real outer when the inner exponent satisfies |p| < 1 (branch safety).
+    assert_eq!(interpret("(a^2)^3.").unwrap(), "(a^2)^3.");
   }
 }
 
