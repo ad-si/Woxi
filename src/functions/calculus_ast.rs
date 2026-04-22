@@ -2889,8 +2889,10 @@ fn decompose_rational_coeff(coeff: &Expr) -> Option<(i128, i128)> {
 /// `a = p/q` is rational, expressed in the form used by Mathematica's
 /// `Integrate`:
 ///
-///     ∫ ArcSin[a x] dx  =  x*ArcSin[a x] + Sqrt[q^2 - p^2 x^2] / p
-///     ∫ ArcCos[a x] dx  =  x*ArcCos[a x] - Sqrt[q^2 - p^2 x^2] / p
+/// ```text
+/// ∫ ArcSin[a x] dx  =  x*ArcSin[a x] + Sqrt[q^2 - p^2 x^2] / p
+/// ∫ ArcCos[a x] dx  =  x*ArcCos[a x] - Sqrt[q^2 - p^2 x^2] / p
+/// ```
 ///
 /// Requires `p != 0`. For `a = 1/q`, this collapses nicely to
 /// `Sqrt[q^2 - x^2]`. For `a = p` (integer), it yields
