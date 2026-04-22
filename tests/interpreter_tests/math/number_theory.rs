@@ -702,10 +702,17 @@ mod bernstein_basis {
   }
 
   #[test]
-  fn out_of_range_is_zero() {
-    // n < 0 or n > d → 0 (or 0. for Real x).
-    assert_eq!(interpret("BernsteinBasis[3, 4, 0.5]").unwrap(), "0.");
-    assert_eq!(interpret("BernsteinBasis[3, -1, 2]").unwrap(), "0");
+  fn out_of_range_stays_unevaluated() {
+    // n < 0 or n > d → Wolfram emits a message and keeps the expression
+    // unevaluated.
+    assert_eq!(
+      interpret("BernsteinBasis[3, 4, 0.5]").unwrap(),
+      "BernsteinBasis[3, 4, 0.5]"
+    );
+    assert_eq!(
+      interpret("BernsteinBasis[3, -1, 2]").unwrap(),
+      "BernsteinBasis[3, -1, 2]"
+    );
   }
 
   #[test]

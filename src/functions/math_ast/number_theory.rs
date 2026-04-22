@@ -389,6 +389,8 @@ pub fn subfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Handle float args that are whole numbers (e.g., 6.0 → 6)
+  // Track whether the input was a float so we return a float result.
+  let is_float_input = matches!(&args[0], Expr::Real(_));
   let n_opt = expr_to_i128(&args[0]).or_else(|| {
     if let Expr::Real(f) = &args[0]
       && f.fract() == 0.0
@@ -406,21 +408,31 @@ pub fn subfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec(),
       });
     }
-    if n == 0 {
-      return Ok(Expr::Integer(1));
+    let result = if n == 0 {
+      Expr::Integer(1)
+    } else if n == 1 {
+      Expr::Integer(0)
+    } else {
+      // Use recurrence: !n = (n-1) * (!(n-1) + !(n-2))
+      let mut prev2 = BigInt::from(1); // !0 = 1
+      let mut prev1 = BigInt::from(0); // !1 = 0
+      for i in 2..=n {
+        let current = BigInt::from(i - 1) * (&prev1 + &prev2);
+        prev2 = prev1;
+        prev1 = current;
+      }
+      bigint_to_expr(prev1)
+    };
+    if is_float_input {
+      // Convert integer result to Real for float inputs (matches Wolfram).
+      let f = match &result {
+        Expr::Integer(i) => *i as f64,
+        _ => return Ok(result),
+      };
+      Ok(Expr::Real(f))
+    } else {
+      Ok(result)
     }
-    // Use recurrence: !n = (n-1) * (!(n-1) + !(n-2))
-    let mut prev2 = BigInt::from(1); // !0 = 1
-    let mut prev1 = BigInt::from(0); // !1 = 0
-    if n == 1 {
-      return Ok(Expr::Integer(0));
-    }
-    for i in 2..=n {
-      let current = BigInt::from(i - 1) * (&prev1 + &prev2);
-      prev2 = prev1;
-      prev1 = current;
-    }
-    Ok(bigint_to_expr(prev1))
   } else {
     Ok(Expr::FunctionCall {
       name: "Subfactorial".to_string(),

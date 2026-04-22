@@ -4361,6 +4361,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
       if let Some(ipi) = i_pi_term
         && !other_terms.is_empty()
+        // Only split when the remaining terms are fully numeric (matches
+        // Wolfram): e.g. E^(2+I*Pi)→-E^2 but E^(a+I*Pi) stays unevaluated.
+        && other_terms.iter().all(|t| is_numeric_constant(t))
       {
         let rest_exp = if other_terms.len() == 1 {
           other_terms[0].clone()

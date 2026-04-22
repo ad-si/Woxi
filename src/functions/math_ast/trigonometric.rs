@@ -1288,50 +1288,9 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }),
       }
     }
-    // Erfc[-x] = 2 - Erfc[x]
-    Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand,
-    } => {
-      let erfc_pos = Expr::FunctionCall {
-        name: "Erfc".to_string(),
-        args: vec![*operand.clone()],
-      };
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(erfc_pos),
-      })
-    }
-    // Erfc[Times[-1, x]] = 2 - Erfc[x]
-    Expr::FunctionCall { name, args: fargs }
-      if name == "Times"
-        && fargs.len() == 2
-        && matches!(&fargs[0], Expr::Integer(-1)) =>
-    {
-      let erfc_pos = Expr::FunctionCall {
-        name: "Erfc".to_string(),
-        args: vec![fargs[1].clone()],
-      };
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(erfc_pos),
-      })
-    }
-    // Erfc[-n] for negative integer
-    Expr::Integer(n) if *n < 0 => {
-      let erfc_pos = Expr::FunctionCall {
-        name: "Erfc".to_string(),
-        args: vec![Expr::Integer(-*n)],
-      };
-      crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(Expr::Integer(2)),
-        right: Box::new(erfc_pos),
-      })
-    }
     // Numeric evaluation for Real arguments
+    // (Wolfram keeps Erfc[-x] and Erfc[-n] unevaluated — no symbolic
+    // 2 - Erfc[x] rewrite.)
     Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
     // Otherwise symbolic
     _ => Ok(Expr::FunctionCall {

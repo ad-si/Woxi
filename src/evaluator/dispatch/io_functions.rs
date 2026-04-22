@@ -58,10 +58,12 @@ pub fn dispatch_io_functions(
           Ok(Expr::String(s)) => s.clone(),
           _ => "-- Message text not found --".to_string(),
         };
-        // Match wolframscript: the formatted message is written to stdout
-        // (NOT stderr) with a leading blank line, before the Null return value.
-        println!();
-        println!("{}::{}: {}", sym_name, tag, text);
+        // Wolfram writes messages to $Messages (conceptually a side-channel,
+        // separate from the expression's return value). We emit to stderr so
+        // they don't interfere with callers that capture stdout (e.g.
+        // ToString[Message[...]] → "Null").
+        eprintln!();
+        eprintln!("{}::{}: {}", sym_name, tag, text);
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }

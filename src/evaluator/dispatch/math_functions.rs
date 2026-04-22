@@ -1551,10 +1551,28 @@ pub fn dispatch_math_functions(
       if let (Some(d), Some(n), true) =
         (expr_to_i128(&args[0]), expr_to_i128(&args[1]), is_numeric_x)
       {
-        if n < 0 || n > d {
-          return Some(Ok(match &args[2] {
-            Expr::Real(_) => Expr::Real(0.0),
-            _ => Expr::Integer(0),
+        // Wolfram emits a message and keeps the expression unevaluated for
+        // out-of-range n (matches BernsteinBasis::invidx2 / intnm).
+        if n < 0 {
+          crate::emit_message(&format!(
+            "BernsteinBasis::intnm: Non-negative machine-sized integer expected at position 2 in BernsteinBasis[{}, {}, {}].",
+            crate::syntax::expr_to_string(&args[0]),
+            crate::syntax::expr_to_string(&args[1]),
+            crate::syntax::expr_to_string(&args[2]),
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "BernsteinBasis".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+        if n > d {
+          crate::emit_message(&format!(
+            "BernsteinBasis::invidx2: Index {} should be a machine-sized integer between 0 and {}.",
+            n, d,
+          ));
+          return Some(Ok(Expr::FunctionCall {
+            name: "BernsteinBasis".to_string(),
+            args: args.to_vec(),
           }));
         }
         let coef = crate::functions::binomial_coeff(d, n);

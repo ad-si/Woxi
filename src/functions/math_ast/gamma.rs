@@ -359,15 +359,9 @@ fn gamma_incomplete_upper(
     });
   }
 
-  // Special case: Gamma[0, z] = ExpIntegralE[1, z]
-  if matches!(a, Expr::Integer(0)) {
-    return Ok(Expr::FunctionCall {
-      name: "ExpIntegralE".to_string(),
-      args: vec![Expr::Integer(1), z.clone()],
-    });
-  }
-
   // Numeric evaluation: both args are real numbers
+  // (Wolfram keeps symbolic Gamma[0, z] and Gamma[n, z] (n >= 2) unevaluated.
+  // We only simplify Gamma[1, z] and numeric cases.)
   if let (Some(a_val), Some(z_val)) = (try_eval_to_f64(a), try_eval_to_f64(z))
     && z_val >= 0.0
   {
@@ -377,9 +371,11 @@ fn gamma_incomplete_upper(
     }
   }
 
-  // For positive integer a: Gamma[n, z] = (n-1)! * E^(-z) * Sum[z^k/k!, {k, 0, n-1}]
+  // For positive integer a with numeric z: Gamma[n, z] = (n-1)! * E^(-z) * Sum[z^k/k!, {k, 0, n-1}]
+  // Only apply for numeric z (Wolfram keeps symbolic Gamma[n, x] unevaluated).
   if let Some(n) = expr_to_i128(a)
     && n > 0
+    && try_eval_to_f64(z).is_some()
   {
     let n = n as usize;
     // Build the sum: sum_{k=0}^{n-1} z^k / k!

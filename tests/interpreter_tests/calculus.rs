@@ -1647,7 +1647,8 @@ mod erf {
 
   #[test]
   fn erfc_negative_arg() {
-    assert_eq!(interpret("Erfc[-x] / 2").unwrap(), "(2 - Erfc[x])/2");
+    // Wolfram keeps Erfc[-x] unevaluated (no symbolic 2 - Erfc[x] rewrite).
+    assert_eq!(interpret("Erfc[-x] / 2").unwrap(), "Erfc[-x]/2");
   }
 
   #[test]

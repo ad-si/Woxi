@@ -19,18 +19,13 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
-  // PolyLog[s, 1] = Zeta[s] for s with Re(s) > 1 or symbolic s
-  // (For integer s <= 1, the specialized handlers below deal with poles)
-  if matches!(z_expr, Expr::Integer(1)) {
-    // Only apply for symbolic s or integer s >= 2
-    let is_small_int = matches!(s_expr, Expr::Integer(n) if *n <= 1);
-    if !is_small_int {
-      let zeta_expr = Expr::FunctionCall {
-        name: "Zeta".to_string(),
-        args: vec![s_expr.clone()],
-      };
-      return crate::evaluator::evaluate_expr_to_expr(&zeta_expr);
-    }
+  // PolyLog[s, 1] for integer s >= 2: return Zeta[s].
+  // For symbolic s, Wolfram keeps PolyLog[s, 1] unevaluated — we match that.
+  if matches!(z_expr, Expr::Integer(1))
+    && let Expr::Integer(n) = s_expr
+    && *n >= 2
+  {
+    return zeta_ast(&[Expr::Integer(*n)]);
   }
 
   match s_expr {
