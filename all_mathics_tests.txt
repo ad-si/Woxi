@@ -6078,13 +6078,6 @@ EXPECTED: <Integer64, 2>
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
-LINE: 158
-INPUT: N[2/9, 4]
-EXPECTED: .222
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
 LINE: 159
 INPUT: N[2/9, 4]
 EXPECTED: .2222
@@ -6117,13 +6110,6 @@ LINE: 163
 INPUT: N[2/9, 4]
 EXPECTED: .22222`3
 MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 164
-INPUT: N[2/9, 4]
-EXPECTED: .222`5
-MESSAGE: False
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members

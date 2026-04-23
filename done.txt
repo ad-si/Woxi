@@ -11622,3 +11622,17 @@ INPUT: f[3]
 EXPECTED:
 = 9
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 158
+INPUT: N[2/9, 4]
+EXPECTED: .222
+MESSAGE: False
+---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_compare_many_members
+LINE: 164
+INPUT: N[2/9, 4]
+EXPECTED: .222`5
+MESSAGE: False
+---
