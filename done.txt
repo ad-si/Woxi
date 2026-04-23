@@ -11588,3 +11588,10 @@ INPUT: 2.+ Pi I
 EXPECTED: 2.+ Pi I
 MESSAGE: True
 ---
+FILE: mathics/builtin/testing_expressions/equality_inequality.py
+CLASS: SameQ
+LINE: 812
+INPUT: .2222222`6 === .222`3
+EXPECTED:
+= False
+---

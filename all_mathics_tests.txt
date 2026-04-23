@@ -1580,14 +1580,6 @@ INPUT: .2222222`6 === .2222`3
 EXPECTED:
 = True
 ---
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: SameQ
-LINE: 812
-TYPE: >>
-INPUT: .2222222`6 === .222`3
-EXPECTED:
-= False
----
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Equivalent
 LINE: 204
