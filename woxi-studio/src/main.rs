@@ -2731,9 +2731,8 @@ fn toggle_line_comment(line: &str) -> (String, isize) {
     let inner = inner.strip_prefix(' ').unwrap_or(inner);
     let inner = inner.strip_suffix("*)").unwrap_or(inner);
     let inner = inner.strip_suffix(' ').unwrap_or(inner);
-    let removed = line.len() as isize
-      - leading_ws.len() as isize
-      - inner.len() as isize;
+    let removed =
+      line.len() as isize - leading_ws.len() as isize - inner.len() as isize;
     (format!("{leading_ws}{inner}"), -removed)
   } else {
     (format!("{leading_ws}(* {trimmed} *)"), 3isize)
