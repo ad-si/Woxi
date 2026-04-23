@@ -4978,6 +4978,34 @@ mod tag_set_delayed {
   }
 
   #[test]
+  fn tag_set_does_not_populate_downvalues() {
+    // `Real /: F[x_Real] := x` attaches an upvalue to `Real`, not a
+    // downvalue on `F`. `DownValues[F]` must stay empty even though Woxi
+    // also stores the rule in FUNC_DEFS[F] for dispatch. Regression for
+    // mathics test_evaluation.py:333.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn tag_set_still_dispatches() {
+    // The upvalue should still fire when F[3.5] is evaluated — the
+    // FUNC_DEFS entry is there for dispatch even though DownValues hides
+    // it.
+    clear_state();
+    assert_eq!(
+      interpret("Unprotect[Real]; Real/:F[x_Real]:=x; F[3.5]").unwrap(),
+      "3.5"
+    );
+  }
+
+  #[test]
   fn upvalue_literal_symbol_plus() {
     // x /: x + y_ := f[y] — x is a literal symbol, y_ is a pattern
     clear_state();

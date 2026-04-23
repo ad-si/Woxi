@@ -630,8 +630,31 @@ pub fn dispatch_predicate_functions(
         if func_defs.is_empty() {
           return Some(Ok(Expr::List(vec![])));
         }
+        // TagSet/TagSetDelayed definitions are also stored in FUNC_DEFS so
+        // the usual dispatch picks them up, but they belong to UpValues,
+        // not DownValues of the outer head. Collect (params, heads) pairs
+        // for every UPVALUES entry whose outer_func matches this symbol,
+        // then filter those entries out below.
+        let upvalue_keys: std::collections::HashSet<(
+          Vec<String>,
+          Vec<Option<String>>,
+        )> = crate::UPVALUES.with(|m| {
+          let defs = m.borrow();
+          let mut keys = std::collections::HashSet::new();
+          for entries in defs.values() {
+            for (outer, params, _, _, heads, _, _, _) in entries {
+              if outer == sym {
+                keys.insert((params.clone(), heads.clone()));
+              }
+            }
+          }
+          keys
+        });
         let rules: Vec<Expr> = func_defs
           .iter()
+          .filter(|(params, _, _, heads, _, _)| {
+            !upvalue_keys.contains(&(params.clone(), heads.clone()))
+          })
           .map(|(params, conds, _defaults, heads, blank_types, body)| {
             let pattern_args: Vec<Expr> = params
               .iter()
@@ -1223,8 +1246,8 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
     // Traversal functions that default Heads -> False — matches
     // wolframscript's built-in defaults so `Options[Level]`,
     // `Definition[Level]`, etc. report `{Heads -> False}` instead of `{}`.
-    "Level" | "Map" | "Cases" | "Count" | "MapIndexed" | "Scan"
-    | "FreeQ" | "MemberQ" | "DeleteCases" | "Replace" => {
+    "Level" | "Map" | "Cases" | "Count" | "MapIndexed" | "Scan" | "FreeQ"
+    | "MemberQ" | "DeleteCases" | "Replace" => {
       vec![make_rule("Heads", id("False"))]
     }
     // Same shape, but Position defaults Heads -> True.

@@ -5815,12 +5815,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/test_evaluation.py
-FUNCTION: test_eval_atom_upvalues
-LINE: 333
-INPUT: Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]
-EXPECTED: {}
----
 FILE: mathics/test/test_evaluators.py
 FUNCTION: test_sameQ
 LINE: 36

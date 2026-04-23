@@ -11608,3 +11608,9 @@ LINE: 33
 INPUT: UpValues[h]
 EXPECTED: {HoldPattern[f[g, a + b, h]] :> 2}
 ---
+FILE: mathics/test/test_evaluation.py
+FUNCTION: test_eval_atom_upvalues
+LINE: 333
+INPUT: Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]
+EXPECTED: {}
+---
