@@ -11482,3 +11482,11 @@ INPUT: Definition[r]
 EXPECTED:
 = Null
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: Whitespace
+LINE: 959
+TYPE: >>
+INPUT: StringReplace[" this has leading and trailing whitespace \n ", (StartOfString ~~ Whitespace) | (Whitespace ~~ EndOfString) -> ""] <> " removed" // FullForm
+EXPECTED:
+= "this has leading and trailing whitespace removed"
+---
