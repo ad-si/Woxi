@@ -1957,6 +1957,23 @@ mod pre_decrement_function {
   }
 
   #[test]
+  fn pre_decrement_numeric_literal_unevaluated() {
+    // `--5` parses as PreDecrement[5] (matching wolframscript). Since 5 isn't
+    // an assignable variable, it stays unevaluated and emits an rvalue
+    // message. Regression for mathics assign_binaryop.py:30.
+    assert_eq!(interpret("--5").unwrap(), "--5");
+    assert_eq!(interpret("++5").unwrap(), "++5");
+  }
+
+  #[test]
+  fn leading_minus_still_works_with_space() {
+    // A leading `-` followed by whitespace and then a signed literal should
+    // still parse as unary minus applied to the literal — i.e. not eaten by
+    // the PreDecrement lookahead.
+    assert_eq!(interpret("- -5").unwrap(), "5");
+  }
+
+  #[test]
   fn pre_increment_part() {
     assert_eq!(interpret("pos = {1, 2}; ++pos[[1]]").unwrap(), "2");
     assert_eq!(interpret("pos = {10, 20}; ++pos[[2]]").unwrap(), "21");

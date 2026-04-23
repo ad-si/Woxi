@@ -700,6 +700,19 @@ pub fn evaluate_expr_to_expr_inner(
             }
             return Ok(current_val);
           }
+          // Target is a non-assignable literal (number, string, expression).
+          // Match wolframscript: emit an rvalue message and leave the call
+          // unevaluated — e.g. `--5` → "PreDecrement::rvalue: 5 is not a
+          // variable...".
+          crate::emit_message(&format!(
+            "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
+            name,
+            crate::syntax::expr_to_string(&args[0])
+          ));
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: args.clone(),
+          });
         }
         // Special handling for Unset - x =. (removes definition)
         if name == "Unset" && args.len() == 1 {

@@ -11347,3 +11347,9 @@ INPUT: Integrate[1, {x, Infinity, 0}]
 EXPECTED:
 = Integrate[1, {x, Infinity, 0}]
 ---
+FILE: mathics/test/builtin/assignments/test_assign_binaryop.py
+FUNCTION: test_predecrement
+LINE: 30
+INPUT: --5
+EXPECTED: --5
+---

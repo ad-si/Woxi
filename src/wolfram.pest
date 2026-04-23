@@ -163,8 +163,10 @@ Decrement = { (PartExtract | Identifier) ~ "--" }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
-PreIncrement = { "++" ~ (PartExtract | Identifier) }
-PreDecrement = { "--" ~ (PartExtract | Identifier) }
+// Numeric literals are accepted too (wolframscript parses --5 as
+// PreDecrement[5] and then errors at evaluation time — matching that).
+PreIncrement = { "++" ~ (PartExtract | Identifier | NumericValue) }
+PreDecrement = { "--" ~ (PartExtract | Identifier | NumericValue) }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
@@ -220,7 +222,11 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // LeadingMinus marks a leading "-" in an expression: -x, -f[x], -(a+b), etc.
 // Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
 // Handled in parse_expression as a synthetic 0 - expr with proper precedence
-LeadingMinus = { "-" ~ !ASCII_DIGIT }
+// `-` is NOT a leading unary minus when it's immediately followed by another
+// `-` (which is PreDecrement) or a digit (which forms a signed literal).
+// Atomic: the `!"-"` lookahead must see the next raw character; we don't want
+// whitespace to hide an intervening `-`.
+LeadingMinus = @{ "-" ~ !ASCII_DIGIT ~ !"-" }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.
