@@ -50,14 +50,6 @@ INPUT: f[a->5] /. f[OptionsPattern[{}]] -> {OptionValue[Symbol["a"]]}
 EXPECTED:
 = {5}
 ---
-FILE: mathics/builtin/options.py
-CLASS: SetOptions
-LINE: 551
-TYPE: >>
-INPUT: SetOptions[Plot]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/physchemdata.py
 CLASS: ElementData
 LINE: 63

@@ -11459,3 +11459,11 @@ EXPECTED:
 . 
 . Options[Level] = {Heads -> False}
 ---
+FILE: mathics/builtin/options.py
+CLASS: SetOptions
+LINE: 551
+TYPE: >>
+INPUT: SetOptions[Plot]
+EXPECTED:
+= ...
+---
