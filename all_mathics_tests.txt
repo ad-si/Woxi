@@ -5632,14 +5632,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 599
-TYPE: >>
-INPUT: f[a]
-EXPECTED:
-= a ^ 2
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 809
 TYPE: >>
 INPUT: Block[{$RecursionLimit = 30}, x = 2 x]

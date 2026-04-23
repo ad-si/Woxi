@@ -11636,3 +11636,11 @@ INPUT: N[2/9, 4]
 EXPECTED: .222`5
 MESSAGE: False
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 599
+TYPE: >>
+INPUT: f[a]
+EXPECTED:
+= a ^ 2
+---
