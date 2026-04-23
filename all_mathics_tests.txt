@@ -1844,14 +1844,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: ExpandAll
-LINE: 1229
-TYPE: >>
-INPUT: ExpandAll[(a + b) ^ 2 / (c + d)^2]
-EXPECTED:
-= a ^ 2 / (c ^ 2 + 2 c d + d ^ 2) + 2 a b / (c ^ 2 + 2 c d + d ^ 2) + b ^ 2 / (c ^ 2 + 2 c d + d ^ 2)
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: ExpandAll
 LINE: 1233
 TYPE: >>
 INPUT: ExpandAll[(a + Sin[x (1 + y)])^2]

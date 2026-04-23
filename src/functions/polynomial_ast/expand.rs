@@ -930,6 +930,23 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
     Expr::BinaryOp { op, left, right } => {
       let left_exp = expand_all_recursive(left);
       let right_exp = expand_all_recursive(right);
+      // Power[sum, -|n|] with n >= 2: ExpandAll expands denominators too,
+      // so expand sum^|n| and wrap in Power[..., -1]. Regular Expand does
+      // not do this; it's specifically an ExpandAll feature.
+      if matches!(op, BinaryOperator::Power)
+        && matches!(&right_exp, Expr::Integer(n) if *n <= -2)
+        && is_sum(&left_exp)
+      {
+        let pos_exp = match &right_exp {
+          Expr::Integer(n) => -n,
+          _ => unreachable!(),
+        };
+        let expanded = expand_power(&left_exp, pos_exp);
+        return Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![expanded, Expr::Integer(-1)],
+        };
+      }
       // After recursively expanding sub-expressions, expand at this level
       expand_and_combine(&Expr::BinaryOp {
         op: *op,
@@ -968,6 +985,25 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
         args.iter().map(expand_all_recursive).collect();
       // After expanding sub-expressions, expand at this level for Plus/Times/Power
       match name.as_str() {
+        // Power[sum, -|n|] with n >= 1: ExpandAll expands denominators too,
+        // so expand sum^|n| and wrap the result in Power[..., -1]. The
+        // regular Expand never does this. Needed for ExpandAll output like
+        // `(a+b)^2 / (c+d)^2` → `a^2/(c^2+2cd+d^2) + …`.
+        "Power"
+          if expanded_args.len() == 2
+            && matches!(&expanded_args[1], Expr::Integer(n) if *n <= -2)
+            && is_sum(&expanded_args[0]) =>
+        {
+          let pos_exp = match &expanded_args[1] {
+            Expr::Integer(n) => -n,
+            _ => unreachable!(),
+          };
+          let expanded = expand_power(&expanded_args[0], pos_exp);
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![expanded, Expr::Integer(-1)],
+          }
+        }
         "Plus" | "Times" | "Power" => expand_and_combine(&Expr::FunctionCall {
           name: name.clone(),
           args: expanded_args,
@@ -1258,7 +1294,6 @@ fn expand_denominator_via_split(expr: &Expr) -> Expr {
     right: Box::new(expanded_den),
   }
 }
-
 
 fn is_negative_integer(expr: &Expr) -> bool {
   match expr {

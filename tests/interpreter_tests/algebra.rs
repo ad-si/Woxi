@@ -827,6 +827,17 @@ mod expand_all {
       "x + 2*x^2 + x^3"
     );
   }
+
+  #[test]
+  fn expand_all_expands_denominator() {
+    // ExpandAll expands both the numerator and the denominator. Regression
+    // for mathics algebra.py:1229.
+    assert_eq!(
+      interpret("ExpandAll[(a + b) ^ 2 / (c + d)^2]").unwrap(),
+      "a^2/(c^2 + 2*c*d + d^2) + (2*a*b)/(c^2 + 2*c*d + d^2) \
+       + b^2/(c^2 + 2*c*d + d^2)"
+    );
+  }
 }
 
 mod collect_tests {
