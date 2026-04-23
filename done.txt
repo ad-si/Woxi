@@ -11353,3 +11353,15 @@ LINE: 30
 INPUT: --5
 EXPECTED: --5
 ---
+FILE: mathics/test/test_control.py
+FUNCTION: test_full_form
+LINE: 107
+INPUT: FullForm[Hold[a ; ; c]]
+EXPECTED: Hold[CompoundExpression[a, Null, c]]
+---
+FILE: mathics/test/test_control.py
+FUNCTION: test_full_form
+LINE: 108
+INPUT: FullForm[Hold[a ; ;]]
+EXPECTED: Hold[CompoundExpression[a, Null, Null]]
+---

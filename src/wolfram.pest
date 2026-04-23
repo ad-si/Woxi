@@ -264,7 +264,11 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 // Uses single alternative to avoid parsing Expression twice for non-compound inputs.
-CompoundExpression = { Expression ~ (";" ~ !";" ~ Expression?)+ }
+// Allows consecutive `;` separators with empty expressions between them,
+// matching Wolfram's `a ; ; c` → `CompoundExpression[a, Null, c]`. The
+// inner `!(&SpanSep)` prevents `;;` (Span) from being mis-parsed as two
+// CompoundExpression separators; Span is handled at the Expression level.
+CompoundExpression = { Expression ~ (";" ~ !(&SpanSep) ~ Expression?)+ }
 
 // DerivativePrime: one or more ' characters after a function name (e.g. f', f'', f''')
 // Transforms f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
@@ -488,7 +492,7 @@ HasSpanSep = _{ (
 )* ~ SpanSep }
 // Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
 // Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
-HasSemicolon = _{ (
+HasSemicolon = @{ (
     ";;" ~ !(";" | "=")         // skip ;; span separators
   | "<|" ~ NestedContent ~ "|>"
   | "{" ~ NestedContent ~ "}"

@@ -2004,14 +2004,73 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       parse_expression(pair)
     }
     Rule::CompoundExpression => {
-      let trailing_semi = pair.as_str().trim_end().ends_with(';');
-      let mut exprs: Vec<Expr> = pair
-        .into_inner()
-        .filter(|p| p.as_str() != ";")
-        .map(pair_to_expr)
-        .collect();
-      // A trailing ; means the result is Null (CompoundExpression[..., Null])
-      if trailing_semi {
+      // Use each child Expression's span position to detect `;` separators
+      // that have no Expression between them (Wolfram: `a ; ; c` →
+      // CompoundExpression[a, Null, c]). Pest doesn't emit pairs for literal
+      // `;` tokens, so we reconstruct the positions of omitted Expressions
+      // by scanning the source string for top-level `;`s between children.
+      let src = pair.as_str();
+      let src_start = pair.as_span().start();
+      let children: Vec<_> = pair.clone().into_inner().collect();
+      let mut exprs: Vec<Expr> = Vec::new();
+      // Count the number of top-level `;` separators between `lo` and `hi`
+      // (absolute offsets into the original input). `;;` is treated as a
+      // Span separator and counted as zero semicolons.
+      let count_separators = |lo: usize, hi: usize| -> usize {
+        let local_lo = lo.saturating_sub(src_start);
+        let local_hi = hi.saturating_sub(src_start);
+        let slice = &src[local_lo.min(src.len())..local_hi.min(src.len())];
+        let bytes = slice.as_bytes();
+        let mut depth: i32 = 0;
+        let mut i = 0;
+        let mut count = 0usize;
+        while i < bytes.len() {
+          let c = bytes[i];
+          match c {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b'"' => {
+              // Skip string literal
+              i += 1;
+              while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                  i += 1;
+                }
+                i += 1;
+              }
+            }
+            b';' if depth == 0 => {
+              // Skip `;;` (Span) — it's two chars, not two separators.
+              if i + 1 < bytes.len() && bytes[i + 1] == b';' {
+                i += 1;
+              } else {
+                count += 1;
+              }
+            }
+            _ => {}
+          }
+          i += 1;
+        }
+        count
+      };
+      let mut prev_end = src_start;
+      for (idx, child) in children.iter().enumerate() {
+        let span = child.as_span();
+        if idx > 0 {
+          // Missing expressions between the previous child and this one:
+          // count separators minus 1 (one separator connects two expressions).
+          let seps = count_separators(prev_end, span.start());
+          for _ in 1..seps {
+            exprs.push(Expr::Identifier("Null".to_string()));
+          }
+        }
+        exprs.push(pair_to_expr(child.clone()));
+        prev_end = span.end();
+      }
+      // Trailing separators after the last child → each is a Null.
+      let end_offset = src_start + src.len();
+      let trailing = count_separators(prev_end, end_offset);
+      for _ in 0..trailing {
         exprs.push(Expr::Identifier("Null".to_string()));
       }
       if exprs.len() == 1 {

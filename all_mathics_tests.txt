@@ -5920,18 +5920,6 @@ Source: test/**/*.py — check_evaluation(input, expected) and (input, expected,
 Runner: pytest (invoked via `make pytest`)
 ----------------------------------------------------------------------------------------------------
 
-FILE: mathics/test/test_control.py
-FUNCTION: test_full_form
-LINE: 107
-INPUT: FullForm[Hold[a ; ; c]]
-EXPECTED: Hold[CompoundExpression[a, Null, c]]
----
-FILE: mathics/test/test_control.py
-FUNCTION: test_full_form
-LINE: 108
-INPUT: FullForm[Hold[a ; ;]]
-EXPECTED: Hold[CompoundExpression[a, Null, Null]]
----
 FILE: mathics/test/test_evaluation.py
 FUNCTION: test_eval_atom_upvalues
 LINE: 333

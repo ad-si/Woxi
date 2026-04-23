@@ -136,6 +136,25 @@ mod trailing_semicolon {
   }
 
   #[test]
+  fn consecutive_semicolons_insert_nulls() {
+    // `a ; ; c` is CompoundExpression[a, Null, c] in Wolfram — an omitted
+    // expression between two `;` separators is Null. Regression for
+    // mathics test_control.py:107.
+    assert_eq!(
+      interpret("FullForm[Hold[a ; ; c]]").unwrap(),
+      "Hold[CompoundExpression[a, Null, c]]"
+    );
+    assert_eq!(
+      interpret("FullForm[Hold[a ; ;]]").unwrap(),
+      "Hold[CompoundExpression[a, Null, Null]]"
+    );
+    assert_eq!(
+      interpret("FullForm[Hold[a ; ; ; b]]").unwrap(),
+      "Hold[CompoundExpression[a, Null, Null, b]]"
+    );
+  }
+
+  #[test]
   fn null_symbol_uses_sentinel() {
     // The Null symbol should use the "\0" sentinel so visual contexts
     // (Studio, JupyterLite) can suppress it without confusing it
