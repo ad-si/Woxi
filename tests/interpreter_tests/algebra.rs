@@ -3361,6 +3361,17 @@ mod expand_denominator {
   }
 
   #[test]
+  fn multi_factor_denominator() {
+    // A denominator that's a product of two sums must be fully distributed,
+    // not expanded factor-by-factor. Regression for mathics algebra.py:1288
+    // (ExpandDenominator[(a+b)^2 / ((c+d)^2 (e+f))]).
+    assert_eq!(
+      interpret("ExpandDenominator[(a + b)^2 / ((c + d)^2 (e + f))]").unwrap(),
+      "(a + b)^2/(c^2*e + 2*c*d*e + d^2*e + c^2*f + 2*c*d*f + d^2*f)"
+    );
+  }
+
+  #[test]
   fn attributes() {
     assert_eq!(
       interpret("Attributes[ExpandDenominator]").unwrap(),

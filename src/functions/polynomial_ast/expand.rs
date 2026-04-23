@@ -1192,28 +1192,16 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       }
     }
 
-    // a * b^(-n) : expand b^n and keep the negative power
+    // Times: split into numerator/denominator, expand the combined
+    // denominator, and rebuild — so that multi-factor denominators like
+    // `(c+d)^2 * (e+f)` fully distribute, matching wolframscript.
     Expr::BinaryOp {
       op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      let left_result = expand_denominator_in_product(left);
-      let right_result = expand_denominator_in_product(right);
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(left_result),
-        right: Box::new(right_result),
-      }
-    }
+      ..
+    } => expand_denominator_via_split(expr),
 
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      let new_args: Vec<Expr> =
-        args.iter().map(expand_denominator_in_product).collect();
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_args,
-      }
+    Expr::FunctionCall { name, .. } if name == "Times" => {
+      expand_denominator_via_split(expr)
     }
 
     // base^(-n) where n > 0: expand base^n, then take reciprocal
@@ -1256,54 +1244,21 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
   }
 }
 
-/// Expand denominators in a factor of a product.
-fn expand_denominator_in_product(factor: &Expr) -> Expr {
-  match factor {
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base,
-      right: exp,
-    } if is_negative_integer(exp) => {
-      let pos_exp = negate_expr(exp);
-      let expanded = expand_and_combine(&Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: base.clone(),
-        right: Box::new(pos_exp),
-      });
-      // The expansion absorbs the positive exponent, so always use -1
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)],
-      }
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Power"
-        && args.len() == 2
-        && is_negative_integer(&args[1]) =>
-    {
-      let pos_exp = negate_expr(&args[1]);
-      let expanded = expand_and_combine(&Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![args[0].clone(), pos_exp],
-      });
-      // The expansion absorbs the positive exponent, so always use -1
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![expanded, Expr::Integer(-1)],
-      }
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(expand_denominator_in_product(left)),
-      right: Box::new(expand_denominator_in_product(right)),
-    },
-    _ => factor.clone(),
+/// Extract the denominator of a product (via num/den splitting) and expand
+/// it fully. The numerator is kept unchanged.
+fn expand_denominator_via_split(expr: &Expr) -> Expr {
+  let (num, den) = super::together::extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    return expr.clone();
+  }
+  let expanded_den = expand_and_combine(&den);
+  Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num),
+    right: Box::new(expanded_den),
   }
 }
+
 
 fn is_negative_integer(expr: &Expr) -> bool {
   match expr {
