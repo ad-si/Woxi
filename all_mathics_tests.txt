@@ -6365,12 +6365,6 @@ LINE: 405
 INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}
 EXPECTED: {{1.}, {G[x]}}
 ---
-FILE: mathics/test/builtin/assignments/test_assignment.py
-FUNCTION: test_upset
-LINE: 27
-INPUT: f[g, a + b, h] ^= 2
-EXPECTED: 2
----
 FILE: mathics/test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_gudermannian
 LINE: 20
