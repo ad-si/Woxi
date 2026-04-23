@@ -11496,3 +11496,11 @@ LINE: 641
 INPUT: ??a + b
 EXPECTED: Information[a, LongForm -> True] + b
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Names
+LINE: 563
+TYPE: >>
+INPUT: Names["List@"]
+EXPECTED:
+= {Listable}
+---

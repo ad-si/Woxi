@@ -3687,14 +3687,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Names
-LINE: 563
-TYPE: >>
-INPUT: Names["List@"]
-EXPECTED:
-= {Listable}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Names
 LINE: 567
 TYPE: >>
 INPUT: Names["Global`*"]
