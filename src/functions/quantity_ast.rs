@@ -1417,37 +1417,9 @@ fn normalize_unit(mut unit: Expr) -> Expr {
         args: args.into_iter().map(normalize_unit).collect(),
       }
     }
-    Expr::Identifier(s) => {
-      let s = s.clone();
-      if let Some(compound) = format_expand_compound_unit(&s) {
-        return compound;
-      }
-      // Known unit name: convert Identifier to String for proper InputForm quoting
-      if get_unit_info(&s).is_some() {
-        return Expr::String(canonical_unit_name(&s).to_string());
-      }
-      // Try abbreviation expansion
-      if let Some(expanded) = resolve_unit_abbreviation(&s) {
-        return normalize_unit(expanded);
-      }
-      // Try CamelCase "Per" decomposition for identifiers too
-      if let Some(expanded) = resolve_per_unit(&s) {
-        return normalize_unit(expanded);
-      }
-      // Try singular → plural normalization
-      let plural = normalize_singular_to_plural(&s);
-      if let Some(compound) = format_expand_compound_unit(&plural) {
-        return compound;
-      }
-      if get_unit_info(&plural).is_some() {
-        return Expr::String(canonical_unit_name(&plural).to_string());
-      }
-      // Try lowercase → canonical (e.g. "days" → "Days")
-      if let Some(canonical) = resolve_lowercase_unit(&s) {
-        return Expr::String(canonical_unit_name(&canonical).to_string());
-      }
-      unit
-    }
+    // Bare identifiers are not valid unit specifications in Wolfram. Leave
+    // them unchanged — QuantityQ will report False for them.
+    Expr::Identifier(_) => unit,
     _ => unit,
   }
 }

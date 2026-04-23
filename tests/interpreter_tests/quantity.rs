@@ -326,6 +326,31 @@ fn quantity_q_compound_known_unit_true() {
   );
 }
 
+#[test]
+fn quantity_q_bare_identifier_unit_false() {
+  // Bare symbols (not strings) are not valid unit specifications in Wolfram —
+  // Quantity[2, Second] stays unevaluated and QuantityQ returns False.
+  assert_eq!(interpret("QuantityQ[Quantity[2, Second]]").unwrap(), "False");
+  assert_eq!(
+    interpret("QuantityQ[Quantity[2, Seconds]]").unwrap(),
+    "False"
+  );
+  assert_eq!(interpret("QuantityQ[Quantity[2, Meters]]").unwrap(), "False");
+}
+
+#[test]
+fn quantity_bare_identifier_unit_preserved() {
+  // Bare identifiers should be preserved as-is, not coerced to canonical strings.
+  assert_eq!(
+    interpret("Quantity[2, Second]").unwrap(),
+    "Quantity[2, Second]"
+  );
+  assert_eq!(
+    interpret("Quantity[2, Meters]").unwrap(),
+    "Quantity[2, Meters]"
+  );
+}
+
 // ─── CompatibleUnitQ ────────────────────────────────────────────────────────
 
 #[test]

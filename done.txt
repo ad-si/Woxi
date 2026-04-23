@@ -11306,3 +11306,12 @@ LINE: 216
 INPUT: 0.4 + 2.4 I
 EXPECTED: 0.4 + 2.4*I (matches `woxi eval` and `wolframscript -code "0.4 + 2.4 I"`)
 ---
+FILE: mathics/builtin/quantities.py
+CLASS: Quantity
+LINE: 97
+TYPE: >>
+INPUT: QuantityQ[Quantity[2, Second]]
+EXPECTED:
+: Unable to interpret unit specification Second.
+= False
+---

@@ -74,15 +74,6 @@ INPUT: For[i=1, i<=10, i=i+1, n = n * i]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/quantities.py
-CLASS: Quantity
-LINE: 97
-TYPE: >>
-INPUT: QuantityQ[Quantity[2, Second]]
-EXPECTED:
-: Unable to interpret unit specification Second.
-= False
----
-FILE: mathics/builtin/quantities.py
 CLASS: UnitConvert
 LINE: 405
 TYPE: >>
