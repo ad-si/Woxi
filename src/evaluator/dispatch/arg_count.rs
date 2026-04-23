@@ -303,7 +303,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ExactNumberQ" => Some((1, 1)),
     "Exp" => Some((1, 1)),
     "Expand" => Some((1, 2)),
-    "ExpandAll" => Some((1, 1)),
+    "ExpandAll" => Some((1, 2)),
     "ExpandDenominator" => Some((1, 1)),
     "ExpandFileName" => Some((1, 1)),
     "ExpandNumerator" => Some((1, 1)),

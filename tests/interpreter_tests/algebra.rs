@@ -838,6 +838,18 @@ mod expand_all {
        + b^2/(c^2 + 2*c*d + d^2)"
     );
   }
+
+  #[test]
+  fn expand_all_with_modulus_reduces_denominator() {
+    // ExpandAll now accepts a Modulus option (like Expand) and applies the
+    // reduction to coefficients in both numerator and denominator
+    // subexpressions. Here `3*x^2*y` and `3*x*y^2` drop out of `(x+y)^3`
+    // mod 3, leaving just `x^3 + y^3`.
+    assert_eq!(
+      interpret("ExpandAll[(1 + a) ^ 6 / (x + y)^3, Modulus -> 3]").unwrap(),
+      "(2*a^3)/(x^3 + y^3) + a^6/(x^3 + y^3) + (x^3 + y^3)^(-1)"
+    );
+  }
 }
 
 mod collect_tests {

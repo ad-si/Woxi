@@ -258,7 +258,7 @@ pub fn dispatch_polynomial_functions(
     "Tuples" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::list_helpers_ast::tuples_ast(args));
     }
-    "ExpandAll" if args.len() == 1 => {
+    "ExpandAll" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::expand_all_ast(args));
     }
     "ExpandNumerator" if args.len() == 1 => {

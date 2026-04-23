@@ -124,7 +124,9 @@ fn extract_modulus_option(opt: &Expr) -> Option<i128> {
 }
 
 /// Reduce all integer coefficients in an expression modulo m,
-/// dropping terms where coefficient becomes 0
+/// dropping terms where coefficient becomes 0. Recurses into Times and Power
+/// arguments so `Modulus -> m` also applies to denominator coefficients
+/// (e.g. `ExpandAll[(1+a)^6 / (x+y)^3, Modulus->3]`).
 fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
   match expr {
     Expr::Integer(n) => {
@@ -160,6 +162,52 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       }
       build_mod_sum(reduced)
     }
+    // Times: recurse into each factor so nested Plus subexpressions
+    // (e.g. `(x+y)^3` in a denominator) also get mod-reduced. Collapse to
+    // 0 if any factor reduces to 0.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = reduce_coefficients_mod(left, m);
+      let r = reduce_coefficients_mod(right, m);
+      if is_zero_expr(&l) || is_zero_expr(&r) {
+        return Expr::Integer(0);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(l),
+        right: Box::new(r),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let reduced: Vec<Expr> =
+        args.iter().map(|a| reduce_coefficients_mod(a, m)).collect();
+      if reduced.iter().any(is_zero_expr) {
+        return Expr::Integer(0);
+      }
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: reduced,
+      }
+    }
+    // Power: only reduce the base (the exponent is a structural integer).
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(reduce_coefficients_mod(left, m)),
+      right: right.clone(),
+    },
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![reduce_coefficients_mod(&args[0], m), args[1].clone()],
+      }
+    }
     _ => reduce_term_mod(expr, m),
   }
 }
@@ -171,7 +219,7 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
       let r = n.rem_euclid(m);
       Expr::Integer(r)
     }
-    // c * rest → (c mod m) * rest
+    // c * rest → (c mod m) * (rest with mod reduction applied recursively).
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -182,17 +230,30 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
         if r == 0 {
           return Expr::Integer(0);
         }
+        let right_reduced = reduce_coefficients_mod(right, m);
+        if is_zero_expr(&right_reduced) {
+          return Expr::Integer(0);
+        }
         if r == 1 {
-          return *right.clone();
+          return right_reduced;
         }
         return Expr::BinaryOp {
           op: BinaryOperator::Times,
           left: Box::new(Expr::Integer(r)),
-          right: right.clone(),
+          right: Box::new(right_reduced),
         };
       }
-      // Check Times function form
-      term.clone()
+      // Non-Integer leading factor: just recurse into both sides.
+      let l = reduce_coefficients_mod(left, m);
+      let r = reduce_coefficients_mod(right, m);
+      if is_zero_expr(&l) || is_zero_expr(&r) {
+        return Expr::Integer(0);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(l),
+        right: Box::new(r),
+      }
     }
     Expr::FunctionCall { name, args }
       if name == "Times" && !args.is_empty() =>
@@ -202,9 +263,14 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
         if r == 0 {
           return Expr::Integer(0);
         }
-        let mut new_args = args.clone();
+        let mut new_args: Vec<Expr> = args[1..]
+          .iter()
+          .map(|a| reduce_coefficients_mod(a, m))
+          .collect();
+        if new_args.iter().any(is_zero_expr) {
+          return Expr::Integer(0);
+        }
         if r == 1 {
-          new_args.remove(0);
           if new_args.len() == 1 {
             return new_args.into_iter().next().unwrap();
           }
@@ -213,22 +279,33 @@ fn reduce_term_mod(term: &Expr, m: i128) -> Expr {
             args: new_args,
           };
         }
-        new_args[0] = Expr::Integer(r);
+        new_args.insert(0, Expr::Integer(r));
         return Expr::FunctionCall {
           name: "Times".to_string(),
           args: new_args,
         };
       }
-      term.clone()
+      // Non-Integer leading factor: recurse into each arg.
+      let reduced: Vec<Expr> =
+        args.iter().map(|a| reduce_coefficients_mod(a, m)).collect();
+      if reduced.iter().any(is_zero_expr) {
+        return Expr::Integer(0);
+      }
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: reduced,
+      }
     }
-    // For Plus inside a term, recurse
+    // Plus or Power (which can contain integer coefficients in a subtree)
+    // → defer to the recursive mod reducer.
     Expr::BinaryOp {
-      op: BinaryOperator::Plus,
+      op: BinaryOperator::Plus | BinaryOperator::Power,
       ..
     } => reduce_coefficients_mod(term, m),
-    Expr::FunctionCall { name, .. } if name == "Plus" => {
+    Expr::FunctionCall { name, .. } if name == "Plus" || name == "Power" => {
       reduce_coefficients_mod(term, m)
     }
+    // Atoms and other expression kinds → return unchanged.
     _ => term.clone(),
   }
 }
@@ -908,13 +985,25 @@ pub fn build_product(factors: Vec<Expr>) -> Expr {
 // ─── ExpandAll ──────────────────────────────────────────────────────
 
 /// ExpandAll[expr] - Recursively expands all subexpressions
+/// ExpandAll[expr, Modulus -> n] - Expands and reduces integer coefficients
+/// modulo n, like Expand's Modulus option.
 pub fn expand_all_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "ExpandAll expects exactly 1 argument".into(),
+      "ExpandAll expects 1 or 2 arguments".into(),
     ));
   }
-  Ok(expand_all_recursive(&args[0]))
+  let modulus = if args.len() == 2 {
+    extract_modulus_option(&args[1])
+  } else {
+    None
+  };
+  let expanded = expand_all_recursive(&args[0]);
+  if let Some(m) = modulus {
+    Ok(reduce_coefficients_mod(&expanded, m))
+  } else {
+    Ok(expanded)
+  }
 }
 
 /// Recursively expand all subexpressions, then expand at the top level
