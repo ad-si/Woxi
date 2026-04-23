@@ -443,14 +443,34 @@ pub fn dispatch_complex_and_special(
           lines.push(format!("{} = {}", sym, val_str));
         }
 
-        // 3. Show DownValues (function definitions)
+        // 3. Show DownValues (function definitions). Filter out entries
+        // that were stored via TagSet/TagSetDelayed — those belong in
+        // UpValues, not DownValues, even though Woxi stores them in
+        // FUNC_DEFS too so ordinary dispatch can find them.
+        let upvalue_keys: std::collections::HashSet<(
+          Vec<String>,
+          Vec<Option<String>>,
+        )> = crate::UPVALUES.with(|m| {
+          let defs = m.borrow();
+          let mut keys = std::collections::HashSet::new();
+          for entries in defs.values() {
+            for (outer, params, _, _, heads, _, _, _) in entries {
+              if outer == sym {
+                keys.insert((params.clone(), heads.clone()));
+              }
+            }
+          }
+          keys
+        });
         let down_values = crate::FUNC_DEFS.with(|m| {
           let defs = m.borrow();
           defs.get(sym).cloned()
         });
         if let Some(overloads) = down_values {
           for (params, conds, _defaults, heads, _blank_types, body) in
-            &overloads
+            overloads.iter().filter(|(params, _, _, heads, _, _)| {
+              !upvalue_keys.contains(&(params.clone(), heads.clone()))
+            })
           {
             // Check if this is a specific-value definition (SameQ conditions)
             let has_sameq_conds = conds.iter().any(|c| {
@@ -511,6 +531,23 @@ pub fn dispatch_complex_and_special(
                 expr_to_string(body)
               ));
             }
+          }
+        }
+
+        // 3b. Show UpValues (rules attached via Real /: F[x_Real] := x etc.)
+        let up_values = crate::UPVALUES.with(|m| {
+          let defs = m.borrow();
+          defs.get(sym).cloned()
+        });
+        if let Some(entries) = up_values {
+          for (_outer, _params, _conds, _defaults, _heads, _body, orig_lhs, orig_body) in
+            &entries
+          {
+            lines.push(format!(
+              "{} ^:= {}",
+              expr_to_string(orig_lhs),
+              expr_to_string(orig_body)
+            ));
           }
         }
 

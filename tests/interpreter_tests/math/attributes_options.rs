@@ -314,27 +314,15 @@ mod options {
   fn builtin_level_heads_false() {
     // Functions that traverse expressions default Heads -> False. Regression
     // for mathics symbols.py:295 (Definition[Level] test).
-    assert_eq!(
-      interpret("Options[Level]").unwrap(),
-      "{Heads -> False}"
-    );
-    assert_eq!(
-      interpret("Options[Map]").unwrap(),
-      "{Heads -> False}"
-    );
-    assert_eq!(
-      interpret("Options[Cases]").unwrap(),
-      "{Heads -> False}"
-    );
+    assert_eq!(interpret("Options[Level]").unwrap(), "{Heads -> False}");
+    assert_eq!(interpret("Options[Map]").unwrap(), "{Heads -> False}");
+    assert_eq!(interpret("Options[Cases]").unwrap(), "{Heads -> False}");
   }
 
   #[test]
   fn builtin_position_heads_true() {
     // Position defaults Heads -> True, not False.
-    assert_eq!(
-      interpret("Options[Position]").unwrap(),
-      "{Heads -> True}"
-    );
+    assert_eq!(interpret("Options[Position]").unwrap(), "{Heads -> True}");
   }
 
   #[test]
@@ -345,6 +333,18 @@ mod options {
     assert_eq!(
       interpret("Definition[Level]").unwrap(),
       "Attributes[Level] = {Protected}\n \nOptions[Level] = {Heads -> False}"
+    );
+  }
+
+  #[test]
+  fn definition_includes_upvalues() {
+    // Definition[f] must include any UpValues attached to f (rules
+    // installed via `... /: expr[f] := ...` or `expr[f] ^:= ...`), not
+    // misclassify them as DownValues.
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := x^2; g[f] ^:= 2; Definition[f]").unwrap(),
+      "f[x_] := x^2\n \ng[f] ^:= 2"
     );
   }
 }
