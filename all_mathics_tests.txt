@@ -6367,12 +6367,6 @@ EXPECTED: {{1.}, {G[x]}}
 ---
 FILE: mathics/test/builtin/assignments/test_assignment.py
 FUNCTION: test_upset
-LINE: 21
-INPUT: a ^= 3
-EXPECTED: a ^= 3
----
-FILE: mathics/test/builtin/assignments/test_assignment.py
-FUNCTION: test_upset
 LINE: 27
 INPUT: f[g, a + b, h] ^= 2
 EXPECTED: 2

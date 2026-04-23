@@ -81,10 +81,10 @@ fn collect_pattern_vars_inner(
   vars: &mut Vec<(String, Option<String>, bool)>,
 ) {
   match expr {
-    Expr::Pattern { name, head, .. } => {
-      if !vars.iter().any(|(n, _, _)| n == name) {
-        vars.push((name.clone(), head.clone(), false));
-      }
+    Expr::Pattern { name, head, .. }
+      if !vars.iter().any(|(n, _, _)| n == name) =>
+    {
+      vars.push((name.clone(), head.clone(), false));
     }
     Expr::PatternOptional {
       name,
@@ -1736,11 +1736,18 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let (_, lhs_args) = match &normalized_lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
     _ => {
-      return Err(InterpreterError::EvaluationError(format!(
-        "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}",
+      // Atomic LHS (e.g. `a ^= 3`): wolframscript emits UpSet::normal and
+      // leaves the call unevaluated. Match that behaviour rather than
+      // aborting with an InterpreterError.
+      crate::emit_message(&format!(
+        "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}.",
         crate::syntax::expr_to_string(lhs),
         crate::syntax::expr_to_string(rhs)
-      )));
+      ));
+      return Ok(Expr::FunctionCall {
+        name: "UpSet".to_string(),
+        args: vec![lhs.clone(), rhs.clone()],
+      });
     }
   };
   let lhs = &normalized_lhs;

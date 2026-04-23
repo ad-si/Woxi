@@ -5217,6 +5217,16 @@ mod upset {
       "{HoldFirst, Protected, SequenceHold}"
     );
   }
+
+  #[test]
+  fn upset_atomic_lhs_stays_unevaluated() {
+    // `a ^= 3` (atomic LHS) should emit UpSet::normal and return the
+    // unevaluated `UpSet[a, 3]`, matching wolframscript. Previously Woxi
+    // raised an InterpreterError. Regression for mathics
+    // test_assignment.py:21.
+    clear_state();
+    assert_eq!(interpret("a ^= 3").unwrap(), "a ^= 3");
+  }
 }
 
 mod upset_delayed {

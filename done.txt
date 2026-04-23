@@ -11405,3 +11405,9 @@ INPUT: ExpandAll[(a + b) ^ 2 / (c + d)^2]
 EXPECTED:
 = a ^ 2 / (c ^ 2 + 2 c d + d ^ 2) + 2 a b / (c ^ 2 + 2 c d + d ^ 2) + b ^ 2 / (c ^ 2 + 2 c d + d ^ 2)
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_upset
+LINE: 21
+INPUT: a ^= 3
+EXPECTED: a ^= 3
+---
