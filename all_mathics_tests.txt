@@ -6199,12 +6199,6 @@ INPUT: ToString[%]
 EXPECTED: Null
 ---
 FILE: mathics/test/builtin/assignments/test_assignment.py
-FUNCTION: test_upset
-LINE: 33
-INPUT: UpValues[h]
-EXPECTED: {HoldPattern[f[g, a + b, h]] :> 2}
----
-FILE: mathics/test/builtin/assignments/test_assignment.py
 FUNCTION: test_assign_list
 LINE: 405
 INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}

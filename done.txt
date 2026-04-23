@@ -11602,3 +11602,9 @@ INPUT: -2/3-I//FullForm
 EXPECTED: Complex[Rational[-2, 3], -1]
 MESSAGE: Adding a rational
 ---
+FILE: mathics/test/builtin/assignments/test_assignment.py
+FUNCTION: test_upset
+LINE: 33
+INPUT: UpValues[h]
+EXPECTED: {HoldPattern[f[g, a + b, h]] :> 2}
+---
