@@ -1632,7 +1632,16 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::Real(_) => Ok(Expr::Identifier("MachinePrecision".to_string())),
-    Expr::BigFloat(_, prec) => Ok(Expr::Real(*prec)),
+    Expr::BigFloat(digits, prec) => {
+      // A literal zero BigFloat (e.g. `0.`20`, `0.00`2`) reports
+      // MachinePrecision in Wolfram — there's no precision to speak of when
+      // all significant digits are zero.
+      if digits.parse::<f64>().is_ok_and(|f| f == 0.0) {
+        Ok(Expr::Identifier("MachinePrecision".to_string()))
+      } else {
+        Ok(Expr::Real(*prec))
+      }
+    }
     Expr::Identifier(name)
       if name == "Infinity" || name == "ComplexInfinity" =>
     {

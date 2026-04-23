@@ -7364,18 +7364,6 @@ EXPECTED: str_expected
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_precision
 LINE: 232
-INPUT: 0.00`2
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
-INPUT: 0.00`20
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
 INPUT: 0.``2
 EXPECTED: 0.
 ---
@@ -7384,18 +7372,6 @@ FUNCTION: test_precision
 LINE: 232
 INPUT: 0.``20
 EXPECTED: 0.
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
-INPUT: -0.`2
-EXPECTED: MachinePrecision
----
-FILE: mathics/test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
-INPUT: -0.`20
-EXPECTED: MachinePrecision
 ---
 FILE: mathics/test/builtin/atomic/test_numbers.py
 FUNCTION: test_precision

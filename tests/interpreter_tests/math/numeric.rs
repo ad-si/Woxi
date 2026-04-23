@@ -358,6 +358,27 @@ mod precision {
   }
 
   #[test]
+  fn precision_real_literal_zero_is_machine_precision() {
+    // A BigFloat zero (e.g. `0.`20`, `0.00`2`, `-0.`20`) reports
+    // MachinePrecision in Wolfram — the specified precision is irrelevant
+    // when every significant digit is zero. Regression for mathics
+    // test_numbers.py:232.
+    assert_eq!(interpret("Precision[0.`20]").unwrap(), "MachinePrecision");
+    assert_eq!(interpret("Precision[0.00`2]").unwrap(), "MachinePrecision");
+    assert_eq!(interpret("Precision[0.00`20]").unwrap(), "MachinePrecision");
+    assert_eq!(interpret("Precision[-0.`2]").unwrap(), "MachinePrecision");
+    assert_eq!(interpret("Precision[-0.`20]").unwrap(), "MachinePrecision");
+  }
+
+  #[test]
+  fn precision_nonzero_big_float_uses_specified_precision() {
+    // Regression guard: only zero BigFloats degrade to MachinePrecision;
+    // a nonzero literal with a precision suffix still uses it.
+    assert_eq!(interpret("Precision[10.00`2]").unwrap(), "2.");
+    assert_eq!(interpret("Precision[10.00`20]").unwrap(), "20.");
+  }
+
+  #[test]
   fn gaussian_integer() {
     // 2 + 3 I — exact Gaussian integer has infinite precision.
     assert_eq!(interpret("Precision[2 + 3 I]").unwrap(), "Infinity");
