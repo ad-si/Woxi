@@ -11365,3 +11365,19 @@ LINE: 108
 INPUT: FullForm[Hold[a ; ;]]
 EXPECTED: Hold[CompoundExpression[a, Null, Null]]
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Longest
+LINE: 241
+TYPE: >>
+INPUT: StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]
+EXPECTED:
+= {aabaaab}
+---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Longest
+LINE: 244
+TYPE: >>
+INPUT: StringCases["aabaaab", Longest[RegularExpression["a+b"]]]
+EXPECTED:
+= {aab, aaab}
+---

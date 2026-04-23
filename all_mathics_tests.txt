@@ -3039,22 +3039,6 @@ EXPECTED:
 = {y, 3, 5}
 ---
 FILE: mathics/builtin/patterns/composite.py
-CLASS: Longest
-LINE: 241
-TYPE: >>
-INPUT: StringCases["aabaaab", Longest["a" ~~ __ ~~ "b"]]
-EXPECTED:
-= {aabaaab}
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Longest
-LINE: 244
-TYPE: >>
-INPUT: StringCases["aabaaab", Longest[RegularExpression["a+b"]]]
-EXPECTED:
-= {aab, aaab}
----
-FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
 LINE: 403
 TYPE: >>
