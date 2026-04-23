@@ -1819,22 +1819,6 @@ EXPECTED:
 = {Sin[z] ^ 3, {3 Sin[z] ^ 2, 3 Sin[z] ^ 2}, {{3 Sin[z], 6 Sin[z]}, {0, 3 Sin[z]}}, {{{1, 3}, {0, 3}}, {{0, 0}, {0, 1}}}}
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
-LINE: 909
-TYPE: >>
-INPUT: CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]
-EXPECTED:
-= {{5, d, 0, b}, {c, 0, 0, 0}, {a, 0, 0, 0}}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: CoefficientList
-LINE: 911
-TYPE: >>
-INPUT: CoefficientList[(x - 2 y + 3 z)^3, {x, y, z}]
-EXPECTED:
-= {{{0, 0, 0, 27}, {0, 0, -54, 0}, {0, 36, 0, 0}, {-8, 0, 0, 0}}, {{0, 0, 27, 0}, {0, -36, 0, 0}, {12, 0, 0, 0}, {0, 0, 0, 0}}, {{0, 9, 0, 0}, {-6, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, {{1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Collect
 LINE: 1045
 TYPE: >>

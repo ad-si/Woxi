@@ -381,6 +381,30 @@ mod coefficient_list {
       "{0, -1, -1/2, -1/3, -1/4, -1/5, -1/6, -1/7, -1/8, -1/9}"
     );
   }
+
+  #[test]
+  fn multivariate_two_vars() {
+    // CoefficientList[poly, {x, y}] produces a rectangular matrix m where
+    // m[[i, j]] is the coefficient of x^(i-1) y^(j-1). Regression for
+    // mathics algebra.py:CoefficientList.
+    assert_eq!(
+      interpret("CoefficientList[a x^2 + b y^3 + c x + d y + 5, {x, y}]")
+        .unwrap(),
+      "{{5, d, 0, b}, {c, 0, 0, 0}, {a, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn multivariate_three_vars() {
+    // 3-variable case produces a 3-dimensional rectangular array.
+    assert_eq!(
+      interpret("CoefficientList[(x - 2 y + 3 z)^3, {x, y, z}]").unwrap(),
+      "{{{0, 0, 0, 27}, {0, 0, -54, 0}, {0, 36, 0, 0}, {-8, 0, 0, 0}}, \
+       {{0, 0, 27, 0}, {0, -36, 0, 0}, {12, 0, 0, 0}, {0, 0, 0, 0}}, \
+       {{0, 9, 0, 0}, {-6, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, \
+       {{1, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}"
+    );
+  }
 }
 
 mod polynomial_q_1arg {

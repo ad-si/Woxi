@@ -92,7 +92,6 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "StirlingS1"
       | "StirlingS2"
       | "HarmonicNumber"
-      | "CoefficientList"
       | "ContinuedFraction"
       | "Boole"
       | "BitLength"

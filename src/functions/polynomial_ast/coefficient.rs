@@ -261,22 +261,59 @@ fn as_var_power(expr: &Expr) -> Option<(String, i128)> {
   }
 }
 
+/// Build a nested list of zeros with the given shape.
+/// For an empty shape, returns a single Expr::Integer(0) (a scalar).
+fn zero_array(shape: &[i128]) -> Expr {
+  if shape.is_empty() {
+    Expr::Integer(0)
+  } else {
+    let inner = zero_array(&shape[1..]);
+    Expr::List(vec![inner; shape[0] as usize])
+  }
+}
+
+/// Recursively extract coefficients for a sequence of variables, producing a
+/// rectangular nested list with shape (d1+1, d2+1, …, dn+1). Powers past the
+/// actual degree in a slice pad with zeros of the correct sub-shape.
+fn coefficient_list_multi(
+  poly: &Expr,
+  vars: &[&str],
+  shape: &[i128],
+) -> Result<Expr, InterpreterError> {
+  if vars.is_empty() {
+    return Ok(poly.clone());
+  }
+  let mut items = Vec::with_capacity(shape[0] as usize);
+  for power in 0..shape[0] {
+    let coeff = coefficient_ast(&[
+      poly.clone(),
+      Expr::Identifier(vars[0].to_string()),
+      Expr::Integer(power),
+    ])?;
+    let simplified = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+    let sub = if vars.len() == 1 {
+      simplified
+    } else if matches!(&simplified, Expr::Integer(n) if *n == 0) {
+      // Slice is identically zero in the remaining variables: fill with
+      // zeros of the correct shape instead of recursing.
+      zero_array(&shape[1..])
+    } else {
+      coefficient_list_multi(&simplified, &vars[1..], &shape[1..])?
+    };
+    items.push(sub);
+  }
+  Ok(Expr::List(items))
+}
+
 /// CoefficientList[poly, var] - list of coefficients from power 0 to degree.
+/// CoefficientList[poly, {x1, x2, …}] - rectangular nested list of coefficients
+/// indexed by (x1^p1, x2^p2, …).
 pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "CoefficientList expects 2 arguments".into(),
     ));
   }
-  let var = match &args[1] {
-    Expr::Identifier(name) => name.as_str(),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CoefficientList".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
 
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
   // path can extract the coefficients and trim trailing zeros.
@@ -288,6 +325,46 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?
     }
     _ => args[0].clone(),
+  };
+
+  // Multivariate form: CoefficientList[poly, {x1, x2, …}]
+  if let Expr::List(var_items) = &args[1] {
+    let mut var_names: Vec<&str> = Vec::with_capacity(var_items.len());
+    for item in var_items {
+      match item {
+        Expr::Identifier(name) => var_names.push(name.as_str()),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "CoefficientList".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    let expanded = expand_and_combine(&normalized);
+    let mut shape: Vec<i128> = Vec::with_capacity(var_names.len());
+    for v in &var_names {
+      match max_power_int(&expanded, v) {
+        Some(d) => shape.push(d + 1),
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "CoefficientList".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    return coefficient_list_multi(&expanded, &var_names, &shape);
+  }
+
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CoefficientList".to_string(),
+        args: args.to_vec(),
+      });
+    }
   };
 
   // Expand and combine the expression first
