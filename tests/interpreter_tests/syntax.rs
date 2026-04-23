@@ -3111,10 +3111,22 @@ mod information_function {
   fn double_question_mark_parses() {
     clear_state();
     let result = interpret("??Sin").unwrap();
-    // ??symbol parses as Information[symbol, "Full"] which includes attributes
+    // ??symbol parses as Information[symbol, LongForm -> True] which
+    // includes attributes
     assert!(result.contains("Attributes"));
     assert!(result.contains("FullName -> System`Sin"));
     assert!(result.contains("True]"));
+  }
+
+  #[test]
+  fn double_question_mark_parses_as_long_form_rule() {
+    // `??a + b` → `Information[a, LongForm -> True] + b` — matching
+    // Wolfram's parse (mathics test_parser.py:641).
+    clear_state();
+    assert_eq!(
+      interpret("Hold[??a + b]").unwrap(),
+      "Hold[Information[a, LongForm -> True] + b]"
+    );
   }
 
   #[test]

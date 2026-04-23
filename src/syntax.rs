@@ -1464,22 +1464,22 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::FullInformationQuery => {
+      // ??symbol → Information[symbol, LongForm -> True], matching Wolfram's
+      // parse (mathics test_parser.py:641).
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
+      let long_form_rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("LongForm".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      };
       if symbol_name.contains('*') {
         Expr::FunctionCall {
           name: "Information".to_string(),
-          args: vec![
-            Expr::String(symbol_name),
-            Expr::String("Full".to_string()),
-          ],
+          args: vec![Expr::String(symbol_name), long_form_rule],
         }
       } else {
         Expr::FunctionCall {
           name: "Information".to_string(),
-          args: vec![
-            Expr::Identifier(symbol_name),
-            Expr::String("Full".to_string()),
-          ],
+          args: vec![Expr::Identifier(symbol_name), long_form_rule],
         }
       }
     }

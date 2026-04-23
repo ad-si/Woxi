@@ -11490,3 +11490,9 @@ INPUT: StringReplace[" this has leading and trailing whitespace \n ", (StartOfSt
 EXPECTED:
 = "this has leading and trailing whitespace removed"
 ---
+FILE: mathics/test/core/parser/test_parser.py
+FUNCTION: None
+LINE: 641
+INPUT: ??a + b
+EXPECTED: Information[a, LongForm -> True] + b
+---

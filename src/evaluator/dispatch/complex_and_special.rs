@@ -288,12 +288,18 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(args[0].clone()));
     }
 
-    // Information[symbol] or Information[symbol, "Full"]
+    // Information[symbol] or Information[symbol, LongForm -> True]
     // ?symbol parses as Information[symbol]
-    // ??symbol parses as Information[symbol, "Full"]
+    // ??symbol parses as Information[symbol, LongForm -> True]
+    // Legacy "Full" string form is still accepted for backward compatibility.
     "Information" if args.len() == 1 || args.len() == 2 => {
-      let is_full =
-        args.len() == 2 && matches!(&args[1], Expr::String(s) if s == "Full");
+      let is_full = args.len() == 2
+        && (matches!(&args[1], Expr::String(s) if s == "Full")
+          || matches!(&args[1],
+            Expr::Rule { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "LongForm")
+                && matches!(replacement.as_ref(),
+                  Expr::Identifier(v) if v == "True")));
 
       if let Expr::Identifier(sym) = &args[0] {
         // Check if this is a built-in function (in functions.csv)
@@ -533,13 +539,8 @@ pub fn dispatch_complex_and_special(
           crate::evaluator::dispatch::predicate_functions::builtin_default_options(sym)
         });
         if !opts.is_empty() {
-          let opts_str: Vec<String> =
-            opts.iter().map(expr_to_string).collect();
-          lines.push(format!(
-            "Options[{}] = {{{}}}",
-            sym,
-            opts_str.join(", ")
-          ));
+          let opts_str: Vec<String> = opts.iter().map(expr_to_string).collect();
+          lines.push(format!("Options[{}] = {{{}}}", sym, opts_str.join(", ")));
         }
 
         if lines.is_empty() {
