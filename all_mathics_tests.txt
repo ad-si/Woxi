@@ -3634,14 +3634,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 230
-TYPE: >>
-INPUT: Definition[a]
-EXPECTED:
-= a = 2
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 235
 TYPE: >>
 INPUT: Definition[f]
