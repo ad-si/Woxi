@@ -417,6 +417,15 @@ mod attributes_assignment {
   }
 
   #[test]
+  fn set_attributes_via_set_delayed_returns_null() {
+    // `Attributes[f] := {...}` is SetDelayed; its direct result should be
+    // Null (no visible output), not the RHS — matching wolframscript.
+    // Regression for mathics symbols.py:241.
+    clear_state();
+    assert_eq!(interpret("Attributes[r] := {Orderless}").unwrap(), "\0");
+  }
+
+  #[test]
   fn set_attributes_with_symbol() {
     clear_state();
     assert_eq!(

@@ -11467,3 +11467,10 @@ INPUT: SetOptions[Plot]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 241
+TYPE: >>
+INPUT: Attributes[r] := {Orderless}
+EXPECTED: (none)
+---

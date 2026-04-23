@@ -858,7 +858,13 @@ pub fn set_delayed_ast(
   {
     // SetDelayed still evaluates the RHS for Attributes
     let rhs_value = evaluate_expr_to_expr(body)?;
-    return set_attributes_from_value(sym_name, &rhs_value);
+    let result = set_attributes_from_value(sym_name, &rhs_value)?;
+    // On success, SetDelayed returns Null (no visible output) — matching
+    // wolframscript. Error paths (`$Failed`) are preserved as-is.
+    if matches!(&result, Expr::Identifier(s) if s == "$Failed") {
+      return Ok(result);
+    }
+    return Ok(Expr::Identifier("Null".to_string()));
   }
 
   if let Expr::FunctionCall {
