@@ -11449,3 +11449,13 @@ INPUT: Definition[a]
 EXPECTED:
 = a = 2
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 295
+TYPE: >>
+INPUT: Definition[Level]
+EXPECTED:
+= Attributes[Level] = {Protected}
+. 
+. Options[Level] = {Heads -> False}
+---

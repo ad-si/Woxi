@@ -1006,10 +1006,8 @@ pub fn dispatch_predicate_functions(
             | Expr::RuleDelayed {
               pattern,
               replacement,
-            } => {
-              if matches_key(pattern.as_ref()) {
-                return Some((**replacement).clone());
-              }
+            } if matches_key(pattern.as_ref()) => {
+              return Some((**replacement).clone());
             }
             _ => {}
           }
@@ -1138,7 +1136,7 @@ fn make_rule_delayed(name: &str, value: Expr) -> Expr {
 }
 
 /// Return built-in default options for known functions.
-fn builtin_default_options(func_name: &str) -> Vec<Expr> {
+pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
   let id = |s: &str| Expr::Identifier(s.to_string());
   let real = |f: f64| Expr::Real(f);
   let list = |v: Vec<Expr>| Expr::List(v);
@@ -1222,6 +1220,15 @@ fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("TicksStyle", list(vec![])),
       make_rule("WorkingPrecision", id("MachinePrecision")),
     ],
+    // Traversal functions that default Heads -> False — matches
+    // wolframscript's built-in defaults so `Options[Level]`,
+    // `Definition[Level]`, etc. report `{Heads -> False}` instead of `{}`.
+    "Level" | "Map" | "Cases" | "Count" | "MapIndexed" | "Scan"
+    | "FreeQ" | "MemberQ" | "DeleteCases" | "Replace" => {
+      vec![make_rule("Heads", id("False"))]
+    }
+    // Same shape, but Position defaults Heads -> True.
+    "Position" => vec![make_rule("Heads", id("True"))],
     _ => vec![],
   }
 }

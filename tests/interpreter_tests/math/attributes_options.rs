@@ -309,6 +309,44 @@ mod options {
   fn builtin_plot_option_not_found() {
     assert_eq!(interpret("Options[Plot, NonExistentOption]").unwrap(), "{}");
   }
+
+  #[test]
+  fn builtin_level_heads_false() {
+    // Functions that traverse expressions default Heads -> False. Regression
+    // for mathics symbols.py:295 (Definition[Level] test).
+    assert_eq!(
+      interpret("Options[Level]").unwrap(),
+      "{Heads -> False}"
+    );
+    assert_eq!(
+      interpret("Options[Map]").unwrap(),
+      "{Heads -> False}"
+    );
+    assert_eq!(
+      interpret("Options[Cases]").unwrap(),
+      "{Heads -> False}"
+    );
+  }
+
+  #[test]
+  fn builtin_position_heads_true() {
+    // Position defaults Heads -> True, not False.
+    assert_eq!(
+      interpret("Options[Position]").unwrap(),
+      "{Heads -> True}"
+    );
+  }
+
+  #[test]
+  fn definition_includes_options() {
+    // Definition[Level] must include both attributes and options, matching
+    // wolframscript's default-options output. Regression for mathics
+    // symbols.py:295.
+    assert_eq!(
+      interpret("Definition[Level]").unwrap(),
+      "Attributes[Level] = {Protected}\n \nOptions[Level] = {Heads -> False}"
+    );
+  }
 }
 
 mod options_pattern {

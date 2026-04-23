@@ -526,6 +526,22 @@ pub fn dispatch_complex_and_special(
           lines.push(format!("Default[{}] := {}", sym, def_str));
         }
 
+        // Show Options if the symbol has any (user-stored or built-in).
+        let stored_opts =
+          crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+        let opts = stored_opts.unwrap_or_else(|| {
+          crate::evaluator::dispatch::predicate_functions::builtin_default_options(sym)
+        });
+        if !opts.is_empty() {
+          let opts_str: Vec<String> =
+            opts.iter().map(expr_to_string).collect();
+          lines.push(format!(
+            "Options[{}] = {{{}}}",
+            sym,
+            opts_str.join(", ")
+          ));
+        }
+
         if lines.is_empty() {
           // Undefined symbol - return Null
           return Some(Ok(Expr::Identifier("Null".to_string())));

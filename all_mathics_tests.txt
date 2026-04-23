@@ -3690,16 +3690,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/symbols.py
 CLASS: Definition
-LINE: 295
-TYPE: >>
-INPUT: Definition[Level]
-EXPECTED:
-= Attributes[Level] = {Protected}
-. 
-. Options[Level] = {Heads -> False}
----
-FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
 LINE: 304
 TYPE: >>
 INPUT: Definition[r]
