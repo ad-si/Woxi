@@ -24,6 +24,22 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
 
+  // Thread over Comparison / Equal / Inequality: factor each operand.
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = &args[0]
+  {
+    let factored: Result<Vec<Expr>, InterpreterError> = operands
+      .iter()
+      .map(|o| factor_ast(&[o.clone()]))
+      .collect();
+    return Ok(Expr::Comparison {
+      operands: factored?,
+      operators: operators.clone(),
+    });
+  }
+
   // Handle rational expressions: factor numerator and denominator separately.
   // This matches Wolfram's behavior where Factor[p/q] = Factor[p]/Factor[q].
   {

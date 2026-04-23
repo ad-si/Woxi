@@ -601,6 +601,16 @@ mod factor {
       "{x*(1 + x), 2*(1 + x + y)}"
     );
   }
+
+  #[test]
+  fn factor_threads_over_equation() {
+    // Factor on an equation factors each side separately, matching
+    // wolframscript. Regression for mathics algebra.py:1393.
+    assert_eq!(
+      interpret("x^2 - x == 0 // Factor").unwrap(),
+      "(-1 + x)*x == 0"
+    );
+  }
 }
 
 mod factor_multivariate {

@@ -1908,14 +1908,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Factor
-LINE: 1393
-TYPE: >>
-INPUT: x^2 - x == 0 // Factor
-EXPECTED:
-= x (-1 + x) == 0
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Factor
 LINE: 1397
 TYPE: >>
 INPUT: a == "A" // Factor // InputForm
