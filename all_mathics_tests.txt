@@ -3686,14 +3686,6 @@ EXPECTED:
 . Options[r] = {Opt -> 3}
 ---
 FILE: mathics/builtin/atomic/symbols.py
-CLASS: Definition
-LINE: 312
-TYPE: >>
-INPUT: Definition[r]
-EXPECTED:
-= Null
----
-FILE: mathics/builtin/atomic/symbols.py
 CLASS: Names
 LINE: 559
 TYPE: >>

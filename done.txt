@@ -11474,3 +11474,11 @@ TYPE: >>
 INPUT: Attributes[r] := {Orderless}
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Definition
+LINE: 312
+TYPE: >>
+INPUT: Definition[r]
+EXPECTED:
+= Null
+---
