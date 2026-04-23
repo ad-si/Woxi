@@ -11614,3 +11614,11 @@ LINE: 333
 INPUT: Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]
 EXPECTED: {}
 ---
+FILE: mathics/doc/documentation/1-Manual.mdoc
+CLASS: mdoc
+LINE: 596
+TYPE: >>
+INPUT: f[3]
+EXPECTED:
+= 9
+---

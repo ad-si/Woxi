@@ -5632,14 +5632,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 596
-TYPE: >>
-INPUT: f[3]
-EXPECTED:
-= 9
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 599
 TYPE: >>
 INPUT: f[a]
