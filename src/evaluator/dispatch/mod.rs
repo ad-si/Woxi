@@ -1381,6 +1381,7 @@ pub fn evaluate_function_call_ast_inner(
     | "UpTo"
     | "LetterCharacter"
     | "Longest"
+    | "Shortest"
     | "GenerateConditions"
     | "OverTilde"
     | "AngleBracket"
@@ -3924,7 +3925,7 @@ pub fn evaluate_function_call_ast_inner(
 
     // Build polynomial expression
     let mut terms: Vec<((i32, i32), i128)> = poly.into_iter().collect();
-    terms.sort_by(|a, b| a.0.cmp(&b.0));
+    terms.sort_by_key(|a| a.0);
 
     if terms.is_empty() {
       return Ok(Expr::Function {

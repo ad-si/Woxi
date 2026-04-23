@@ -11381,3 +11381,11 @@ INPUT: StringCases["aabaaab", Longest[RegularExpression["a+b"]]]
 EXPECTED:
 = {aab, aaab}
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Shortest
+LINE: 691
+TYPE: >>
+INPUT: StringCases["aabaaab", Shortest[RegularExpression["a+b"]]]
+EXPECTED:
+= {aab, aaab}
+---

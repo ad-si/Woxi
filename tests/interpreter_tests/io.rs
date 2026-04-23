@@ -648,6 +648,22 @@ mod unimplemented_warnings {
   }
 
   #[test]
+  fn shortest_is_symbolic_no_warning() {
+    // Shortest is a symbolic pattern wrapper; it's meaningful inside
+    // StringCases/StringReplace/etc. but at the top level it should stay
+    // unevaluated without emitting the "not yet implemented" warning.
+    clear_state();
+    let result =
+      interpret_with_stdout(r#"Shortest[RegularExpression["a+b"]]"#).unwrap();
+    assert_eq!(result.result, "Shortest[RegularExpression[a+b]]");
+    assert!(
+      result.warnings.is_empty(),
+      "Expected no warnings but got: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
   fn implemented_function_no_warning() {
     clear_state();
     let result = interpret_with_stdout("Map[f, {1, 2}]").unwrap();

@@ -3102,14 +3102,6 @@ INPUT: f[x, 0, 0, 0] /. f[x, s:0..] -> s
 EXPECTED:
 = Sequence[0, 0, 0]
 ---
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Shortest
-LINE: 691
-TYPE: >>
-INPUT: StringCases["aabaaab", Shortest[RegularExpression["a+b"]]]
-EXPECTED:
-= {aab, aaab}
----
 FILE: mathics/builtin/patterns/defaults.py
 CLASS: Optional
 LINE: 60
