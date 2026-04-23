@@ -6170,20 +6170,6 @@ MESSAGE: True
 ---
 FILE: mathics/test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 447
-INPUT: Sqrt[I] Infinity
-EXPECTED: -Infinity
-MESSAGE: False
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 448
-INPUT: Sqrt[I] Infinity
-EXPECTED: Sqrt[I] Infinity
-MESSAGE: True
----
-FILE: mathics/test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 531
 INPUT: 2.+ Pi I
 EXPECTED: Infinity

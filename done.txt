@@ -11504,3 +11504,17 @@ INPUT: Names["List@"]
 EXPECTED:
 = {Listable}
 ---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 447
+INPUT: Sqrt[I] Infinity
+EXPECTED: -Infinity
+MESSAGE: False
+---
+FILE: mathics/test/builtin/test_comparison.py
+FUNCTION: test_unsameq
+LINE: 448
+INPUT: Sqrt[I] Infinity
+EXPECTED: Sqrt[I] Infinity
+MESSAGE: True
+---
