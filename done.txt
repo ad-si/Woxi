@@ -11595,3 +11595,10 @@ INPUT: .2222222`6 === .222`3
 EXPECTED:
 = False
 ---
+FILE: mathics/test/builtin/arithmetic/test_basic.py
+FUNCTION: test_complex
+LINE: 289
+INPUT: -2/3-I//FullForm
+EXPECTED: Complex[Rational[-2, 3], -1]
+MESSAGE: Adding a rational
+---
