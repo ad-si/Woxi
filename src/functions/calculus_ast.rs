@@ -346,9 +346,23 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         left: Box::new(at_hi),
         right: Box::new(at_lo),
       });
-      return Ok(
-        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
-      );
+      let result =
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result);
+      // Divergent improper integral: if at least one bound is infinite and
+      // the evaluated difference is non-finite (±Infinity, ComplexInfinity,
+      // Indeterminate), treat the integral as divergent and return it
+      // unevaluated — matching wolframscript's Integrate::idiv behaviour.
+      let has_infinite_bound = is_infinity(lo)
+        || is_negative_infinity(lo)
+        || is_infinity(hi)
+        || is_negative_infinity(hi);
+      if has_infinite_bound && is_nonfinite_result(&result) {
+        return Ok(Expr::FunctionCall {
+          name: "Integrate".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      return Ok(result);
     }
 
     // Return unevaluated
@@ -444,6 +458,18 @@ fn try_horner_if_poly(expr: &Expr) -> Expr {
 /// Check if an expression represents Infinity
 fn is_infinity(expr: &Expr) -> bool {
   matches!(expr, Expr::Identifier(name) if name == "Infinity")
+}
+
+/// Check if an expression represents a non-finite value — ±Infinity,
+/// ComplexInfinity, DirectedInfinity[...], or Indeterminate.
+fn is_nonfinite_result(expr: &Expr) -> bool {
+  if is_infinity(expr) || is_negative_infinity(expr) {
+    return true;
+  }
+  matches!(expr, Expr::Identifier(name)
+    if name == "ComplexInfinity" || name == "Indeterminate")
+    || matches!(expr, Expr::FunctionCall { name, .. }
+      if name == "DirectedInfinity")
 }
 
 /// Check if an expression represents -Infinity (via UnaryOp::Minus or Times[-1, Infinity])
@@ -4329,14 +4355,11 @@ fn liate_priority(expr: &Expr, var: &str) -> i32 {
       op: crate::syntax::BinaryOperator::Power,
       left,
       right,
-    } => {
-      // Any constant^(var-dependent) is exponential (E^x, e^x, 2^x, etc.)
-      if is_constant_wrt(left, var) && !is_constant_wrt(right, var) {
-        1
-      } else {
-        3
-      }
     }
+      // Any constant^(var-dependent) is exponential (E^x, e^x, 2^x, etc.)
+      if is_constant_wrt(left, var) && !is_constant_wrt(right, var) => {
+        1
+      }
     _ => 3,
   }
 }

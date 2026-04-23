@@ -11339,3 +11339,11 @@ INPUT: x^2 - x == 0 // Factor
 EXPECTED:
 = x (-1 + x) == 0
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1006
+TYPE: >>
+INPUT: Integrate[1, {x, Infinity, 0}]
+EXPECTED:
+= Integrate[1, {x, Infinity, 0}]
+---

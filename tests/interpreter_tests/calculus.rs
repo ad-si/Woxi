@@ -334,6 +334,25 @@ mod definite_integrals {
   }
 
   #[test]
+  fn divergent_integral_returns_unevaluated() {
+    // Improper integrals that diverge at an infinite bound stay unevaluated,
+    // matching wolframscript's Integrate::idiv behaviour. Regression for
+    // mathics calculus.py:1006.
+    assert_eq!(
+      interpret("Integrate[1, {x, Infinity, 0}]").unwrap(),
+      "Integrate[1, {x, Infinity, 0}]"
+    );
+    assert_eq!(
+      interpret("Integrate[x, {x, 0, Infinity}]").unwrap(),
+      "Integrate[x, {x, 0, Infinity}]"
+    );
+    assert_eq!(
+      interpret("Integrate[x^2, {x, 0, Infinity}]").unwrap(),
+      "Integrate[x^2, {x, 0, Infinity}]"
+    );
+  }
+
+  #[test]
   fn definite_integral_polynomial() {
     // ∫_0^1 x^2 dx = 1/3
     assert_eq!(interpret("Integrate[x^2, {x, 0, 1}]").unwrap(), "1/3");
