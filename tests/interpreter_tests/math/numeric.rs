@@ -615,6 +615,13 @@ mod precision {
     assert_eq!(interpret("StringLength[$PathnameSeparator]").unwrap(), "1");
   }
 
+  // $CharacterEncoding defaults to "UTF8", matching wolframscript on a
+  // modern terminal. Regression for the mathics doctest of CharacterEncoding.
+  #[test]
+  fn character_encoding_default_is_utf8() {
+    assert_eq!(interpret("$CharacterEncoding").unwrap(), "UTF8");
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).

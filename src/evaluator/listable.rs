@@ -275,6 +275,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$PathnameSeparator" => {
       Some(Expr::String(std::path::MAIN_SEPARATOR.to_string()))
     }
+    // Default to "UTF8" like wolframscript on any modern terminal. The
+    // user can override by `Set`-ing it; the assignment path bypasses
+    // this fallback.
+    "$CharacterEncoding" => Some(Expr::String("UTF8".to_string())),
     #[cfg(not(target_arch = "wasm32"))]
     "$HomeDirectory" => std::env::var("HOME")
       .or_else(|_| std::env::var("USERPROFILE"))
