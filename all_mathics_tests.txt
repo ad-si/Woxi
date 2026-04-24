@@ -3776,17 +3776,6 @@ TYPE: >>
 INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/list/constructing.py
-CLASS: Reap
-LINE: 416
-TYPE: >>
-INPUT: Reap[Reap[Sow[a, x]; Sow[b, 1], _Symbol, Print["Inner: ", #1]&];, _, f]
-EXPECTED:
-| Inner: x
-= {Null, {f[1, {b}]}}
----
----
----
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
 LINE: 1141

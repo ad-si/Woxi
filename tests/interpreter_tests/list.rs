@@ -2779,6 +2779,21 @@ mod reap_sow {
        {f[x, {2, 2, 2, 3}]}}}"
     );
   }
+
+  // Sows whose tag does not match the inner Reap's pattern must bubble up
+  // to the enclosing Reap scope. Here `Sow[b, 1]` has Integer tag `1`
+  // which does not match `_Symbol`, so it propagates and is collected by
+  // the outer `Reap[..., _, f]` as `f[1, {b}]`.
+  #[test]
+  fn nested_reap_propagates_unmatched_sows() {
+    assert_eq!(
+      interpret(
+        "Reap[Reap[Sow[a, x]; Sow[b, 1], _Symbol, Print[\"Inner: \", #1]&];, _, f]"
+      )
+      .unwrap(),
+      "{Null, {f[1, {b}]}}"
+    );
+  }
 }
 
 mod ordered_q {

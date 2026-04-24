@@ -1002,15 +1002,20 @@ pub fn dispatch_complex_and_special(
 
         // Build per-pattern groups: for each pattern, find all matching
         // tags (in order of first sow), and for each unique tag collect
-        // its sowed values.
+        // its sowed values. Sows whose tags do not match any of the given
+        // patterns are propagated to the enclosing Reap scope (if any),
+        // matching Wolfram's behaviour.
+        let mut matched_indices: std::collections::HashSet<usize> =
+          std::collections::HashSet::new();
         let mut result_groups: Vec<Expr> = Vec::new();
         for patt in &patterns {
           let mut tag_order: Vec<Expr> = Vec::new();
           let mut tag_groups: Vec<Vec<Expr>> = Vec::new();
-          for (val, tag) in &sowed {
+          for (i, (val, tag)) in sowed.iter().enumerate() {
             if !tag_matches_pattern(tag, patt) {
               continue;
             }
+            matched_indices.insert(i);
             if let Some(idx) = tag_order
               .iter()
               .position(|t| expr_to_string(t) == expr_to_string(tag))
@@ -1053,6 +1058,23 @@ pub fn dispatch_complex_and_special(
             // entries directly (flattened — no extra wrapping).
             result_groups.extend(per_pattern);
           }
+        }
+        // Forward unmatched sows to the enclosing Reap scope (if any) so
+        // nested Reap[..., patt] expressions propagate sows that did not
+        // match the inner pattern upward.
+        let unmatched: Vec<(Expr, Expr)> = sowed
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| !matched_indices.contains(i))
+          .map(|(_, pair)| pair.clone())
+          .collect();
+        if !unmatched.is_empty() {
+          crate::SOW_STACK.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            if let Some(parent) = stack.last_mut() {
+              parent.extend(unmatched);
+            }
+          });
         }
         return Some(Ok(Expr::List(vec![result, Expr::List(result_groups)])));
       }
@@ -1580,8 +1602,7 @@ fn tag_matches_pattern(tag: &Expr, patt: &Expr) -> bool {
   if crate::evaluator::pattern_matching::contains_pattern(patt) {
     crate::evaluator::pattern_matching::match_pattern(tag, patt).is_some()
   } else {
-    crate::syntax::expr_to_string(tag)
-      == crate::syntax::expr_to_string(patt)
+    crate::syntax::expr_to_string(tag) == crate::syntax::expr_to_string(patt)
   }
 }
 
