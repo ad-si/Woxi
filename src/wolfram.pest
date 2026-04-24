@@ -320,7 +320,7 @@ Term = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | FullInformationQuery
   | InformationQuery
@@ -344,7 +344,7 @@ SimpleTerm = _{
   | FunctionCall
   | DerivativeIdentifier
   | NamedCharIdentifier
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | Identifier
   | SlotSequence
   | SlotCall
@@ -372,7 +372,7 @@ TermNoImplicit = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | NamedCharIdentifier
   | Identifier
@@ -430,6 +430,12 @@ PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // Note: Wolfram uses both "x_:val" and "x_ : val" syntax. The colon must NOT be ":=" (SetDelayed)
 PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ Term }
 PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ Term }
+// PatternOptionalNamedBlank: `a:_:b` — an alternative form of `a_:b`
+// where the name binding and the blank are separated by a colon. Wolfram
+// parses both forms identically (`Optional[Pattern[a, Blank[]], b]`).
+// Must be tried before `PatternSimple`/`ColonSequence` so the full triple
+// `name : _ : default` is captured as one pattern.
+PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~ !("_" | "?") ~ Identifier? ~ ":" ~ !("=" | ">") ~ Term }
 // PatternOptionalDefault: x_. or _. (Optional pattern with system-determined default)
 // The dot must not be followed by a digit (decimal) or another dot (.. or ...)
 // Note: x_Head. and _Head. are NOT valid in Wolfram Language (syntax error)
@@ -438,7 +444,7 @@ PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." 
 PatternBlanks = _{ "___" | "__" | "_" }
 PatternWithHead = { PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
 PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
-Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // The LHS is a ConditionExpr (expression that stops before -> and :>) with an optional /; condition.
@@ -527,7 +533,7 @@ BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 // Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
 // greedy parsing of subsequent statements as part of the function body)
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)

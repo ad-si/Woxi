@@ -2297,6 +2297,28 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         default: Some(Box::new(default)),
       }
     }
+    Rule::PatternOptionalNamedBlank => {
+      // PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~
+      //                               Identifier? ~ ":" ~ Term }
+      // Equivalent to `name_Head:default` / `name_:default`. `Term` is a
+      // silent rule, so the inner iterator contains `PatternName`,
+      // optionally the head `Identifier`, and then the substituted
+      // default (also often an `Identifier`). Disambiguate by collecting
+      // everything and deciding based on count.
+      let children: Vec<_> = pair.into_inner().collect();
+      let name = children[0].as_str().to_string();
+      let (head, default_pair) = match children.len() {
+        2 => (None, children[1].clone()),
+        // 3: PatternName, head Identifier, default (from Term)
+        _ => (Some(children[1].as_str().to_string()), children[2].clone()),
+      };
+      let default = pair_to_expr(default_pair);
+      Expr::PatternOptional {
+        name,
+        head,
+        default: Some(Box::new(default)),
+      }
+    }
     Rule::PatternOptionalDefaultSimple => {
       // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
       let mut inner = pair.into_inner();

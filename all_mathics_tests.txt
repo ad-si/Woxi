@@ -2952,27 +2952,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Pattern
-LINE: 417
-TYPE: >>
-INPUT: f[a] /. f[a:_:b] -> {a, b}
-EXPECTED:
-= {a, b}
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Pattern
 LINE: 420
 TYPE: >>
 INPUT: FullForm[a:b:c:d:e]
 EXPECTED:
 = Optional[Pattern[a, b], Optional[Pattern[c, d], e]]
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Pattern
-LINE: 423
-TYPE: >>
-INPUT: f[] /. f[a:_:b] -> {a, b}
-EXPECTED:
-= {b, b}
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Repeated

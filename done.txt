@@ -11861,3 +11861,19 @@ INPUT: SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 17/3]
 EXPECTED:
 = Indeterminate
 ---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Pattern
+LINE: 417
+TYPE: >>
+INPUT: f[a] /. f[a:_:b] -> {a, b}
+EXPECTED:
+= {a, b}
+---
+FILE: mathics/builtin/patterns/composite.py
+CLASS: Pattern
+LINE: 423
+TYPE: >>
+INPUT: f[] /. f[a:_:b] -> {a, b}
+EXPECTED:
+= {b, b}
+---

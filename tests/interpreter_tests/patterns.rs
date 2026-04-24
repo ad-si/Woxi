@@ -1666,4 +1666,20 @@ mod optional_pattern_without_default {
     // Element pattern `0` doesn't match `1`, so replacement doesn't fire.
     assert_eq!(interpret("f[x, 1] /. f[x, 0...] -> t").unwrap(), "f[x, 1]");
   }
+
+  // `a:_:b` is the explicit-colon form of `a_:b` — an Optional pattern
+  // binding `a` to Blank[], with default `b`. Regression for mathics
+  // patterns/composite.py Pattern examples.
+  #[test]
+  fn optional_named_blank_colon_syntax_match() {
+    assert_eq!(
+      interpret("f[a] /. f[a:_:b] -> {a, b}").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn optional_named_blank_colon_syntax_default() {
+    assert_eq!(interpret("f[] /. f[a:_:b] -> {a, b}").unwrap(), "{b, b}");
+  }
 }
