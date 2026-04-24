@@ -4532,23 +4532,33 @@ pub fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // DeleteFile[path] — delete a file
-  if name == "DeleteFile"
-    && args.len() == 1
-    && let Expr::String(path) = &args[0]
-  {
-    match std::fs::remove_file(path) {
-      Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
-      Err(e) => {
-        crate::emit_message(&format!(
-          "DeleteFile::nffil: File not found during DeleteFile[{}]. {}",
-          path, e
-        ));
-        return Ok(Expr::FunctionCall {
-          name: "$Failed".to_string(),
-          args: vec![],
-        });
+  // DeleteFile[path] or DeleteFile[{path1, path2, …}] — delete files.
+  // wolframscript emits `DeleteFile::fdnfnd: Directory or file "<name>"
+  // not found.` on the first missing entry and returns the `$Failed`
+  // symbol (not `$Failed[]`).
+  if name == "DeleteFile" && args.len() == 1 {
+    let paths: Option<Vec<String>> = match &args[0] {
+      Expr::String(s) => Some(vec![s.clone()]),
+      Expr::List(items) => items
+        .iter()
+        .map(|it| match it {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    };
+    if let Some(paths) = paths {
+      for path in &paths {
+        if std::fs::remove_file(path).is_err() {
+          crate::emit_message(&format!(
+            "DeleteFile::fdnfnd: Directory or file \"{}\" not found.",
+            path
+          ));
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
       }
+      return Ok(Expr::Identifier("Null".to_string()));
     }
   }
 

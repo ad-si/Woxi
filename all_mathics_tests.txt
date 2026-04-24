@@ -748,13 +748,6 @@ INPUT: DeleteFile["MathicsSunflowers.jpg"]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: DeleteFile
-LINE: 274
-TYPE: >>
-INPUT: DeleteFile[{"MathicsSunflowers1.jpg", "MathicsSunflowers2.jpg"}]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileByteCount
 LINE: 448
 TYPE: >>

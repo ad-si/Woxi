@@ -384,6 +384,37 @@ mod close_error {
   }
 }
 
+mod delete_file {
+  use super::*;
+
+  // Missing files trigger `DeleteFile::fdnfnd` and return the `$Failed`
+  // symbol — NOT `$Failed[]` (which was the old, incorrect format).
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed_symbol() {
+    let result = interpret_with_stdout(r#"DeleteFile["missing.jpg"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "DeleteFile::fdnfnd: Directory or file \"missing.jpg\" not found."
+      )),
+      "expected fdnfnd warning, got {:?}",
+      result.warnings
+    );
+  }
+
+  // A list argument deletes each file in turn; the first missing one
+  // aborts with `$Failed`.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn list_of_missing_returns_failed() {
+    assert_eq!(
+      interpret(r#"DeleteFile[{"a.jpg", "b.jpg"}]"#).unwrap(),
+      "$Failed"
+    );
+  }
+}
+
 mod run {
   use super::*;
 
