@@ -11757,3 +11757,19 @@ INPUT: Function[y, Function[x, y^x]][x][y]
 EXPECTED:
 = x ^ y
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Precision
+LINE: 765
+TYPE: >>
+INPUT: Precision[{{1, 1.`},{1.`5, 1.`10}}]
+EXPECTED:
+= 5.
+---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: Precision
+LINE: 771
+TYPE: >>
+INPUT: (Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`
+EXPECTED:
+= True
+---

@@ -424,6 +424,32 @@ mod precision {
     assert_eq!(interpret("Precision[3.1413`4]").unwrap(), "4.");
   }
 
+  // Precision of a nested list is the minimum across all numeric leaves.
+  // Integers contribute Infinity, MachineReal contributes MachinePrecision,
+  // and BigFloat contributes its literal precision. For
+  // `{{1, 1.`}, {1.`5, 1.`10}}`, the minimum is 5. Regression for the
+  // mathics numbers.py doctest `Precision[{{1, 1.`},{1.`5, 1.`10}}] == 5.`.
+  #[test]
+  fn precision_nested_list_minimum() {
+    assert_eq!(
+      interpret("Precision[{{1, 1.`},{1.`5, 1.`10}}]").unwrap(),
+      "5."
+    );
+  }
+
+  // Identity `Accuracy[z] == Precision[z] + Log[z]` at z = 37.`
+  // — a MachinePrecision check that the two precision measures differ by
+  // Log10 of the magnitude. Matches the mathics numbers.py Precision
+  // doctest.
+  #[test]
+  fn accuracy_precision_log_identity_on_machine_real() {
+    assert_eq!(
+      interpret("(Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`")
+        .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn dollar_machine_precision_value() {
     // $MachinePrecision is Log10[2^53] ≈ 15.9546 (matches wolframscript).
