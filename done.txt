@@ -12387,3 +12387,11 @@ TYPE: >>
 INPUT: DeleteDirectory[dir]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/directories/directory_operations.py
+CLASS: CreateDirectory
+LINE: 33
+TYPE: >>
+INPUT: dir = CreateDirectory[]
+EXPECTED:
+= ...
+---

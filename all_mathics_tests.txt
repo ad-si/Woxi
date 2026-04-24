@@ -3138,14 +3138,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/directories/directory_operations.py
 CLASS: CreateDirectory
-LINE: 33
-TYPE: >>
-INPUT: dir = CreateDirectory[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/directories/directory_operations.py
-CLASS: CreateDirectory
 LINE: 35
 TYPE: #>
 INPUT: DirectoryQ[dir]
