@@ -279,6 +279,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // user can override by `Set`-ing it; the assignment path bypasses
     // this fallback.
     "$CharacterEncoding" => Some(Expr::String("UTF8".to_string())),
+    // `$SystemCharacterEncoding` uses the IANA form with a dash
+    // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
+    "$SystemCharacterEncoding" => Some(Expr::String("UTF-8".to_string())),
     #[cfg(not(target_arch = "wasm32"))]
     "$HomeDirectory" => std::env::var("HOME")
       .or_else(|_| std::env::var("USERPROFILE"))

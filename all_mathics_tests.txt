@@ -3361,14 +3361,6 @@ EXPECTED:
 = 4
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: SystemCharacterEncoding
-LINE: 728
-TYPE: >>
-INPUT: $SystemCharacterEncoding
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: ToExpression
 LINE: 775
 TYPE: >>

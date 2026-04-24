@@ -622,6 +622,12 @@ mod precision {
     assert_eq!(interpret("$CharacterEncoding").unwrap(), "UTF8");
   }
 
+  // `$SystemCharacterEncoding` uses the IANA spelling "UTF-8", not "UTF8".
+  #[test]
+  fn system_character_encoding_default_is_utf_dash_8() {
+    assert_eq!(interpret("$SystemCharacterEncoding").unwrap(), "UTF-8");
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).
