@@ -1310,6 +1310,45 @@ mod free_q {
   }
 }
 
+mod flat_partition_match {
+  use super::*;
+
+  #[test]
+  fn plus_two_pattern_vars_against_three_term_sum() {
+    assert_eq!(
+      interpret("a + b + c /. x_ + y_ -> {x, y}").unwrap(),
+      "{a, b + c}"
+    );
+  }
+
+  #[test]
+  fn replace_at_top_level_with_flat_pattern() {
+    assert_eq!(
+      interpret("Replace[a + b + c, x_ + y_ -> {x, y}]").unwrap(),
+      "{a, b + c}"
+    );
+  }
+
+  #[test]
+  fn flat_match_constrained_by_shared_pattern_var() {
+    // g[x_+y_, x_] forces x=a (from second arg), so x_+y_ must match
+    // a+b+c with x=a and y=b+c.
+    assert_eq!(
+      interpret("g[a+b+c, a] /. g[x_+y_, x_] -> {x, y}").unwrap(),
+      "{a, b + c}"
+    );
+  }
+
+  #[test]
+  fn times_flat_partition() {
+    // Times is also Flat+Orderless — same split semantics.
+    assert_eq!(
+      interpret("Times[a, b, c] /. Times[x_, y_] -> {x, y}").unwrap(),
+      "{a, b*c}"
+    );
+  }
+}
+
 mod select_first {
   use super::*;
 

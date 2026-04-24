@@ -762,6 +762,186 @@ fn replace_at_depth(
   Ok((result, depth))
 }
 
+/// Generate all ways to partition `n` elements into `k` non-empty contiguous
+/// groups as a list of group sizes (each at least 1, summing to n).
+fn contiguous_partition_sizes(n: usize, k: usize) -> Vec<Vec<usize>> {
+  if k == 0 {
+    return if n == 0 { vec![vec![]] } else { vec![] };
+  }
+  if k == 1 {
+    return if n >= 1 { vec![vec![n]] } else { vec![] };
+  }
+  let mut result = Vec::new();
+  for first in 1..=(n - (k - 1)) {
+    for mut rest in contiguous_partition_sizes(n - first, k - 1) {
+      rest.insert(0, first);
+      result.push(rest);
+    }
+  }
+  result
+}
+
+/// Generate all set partitions of indices 0..n into k non-empty groups,
+/// preserving group identity (groups are ordered, elements within a group
+/// preserve original order).
+fn set_partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
+  if k == 0 {
+    return if n == 0 { vec![vec![]] } else { vec![] };
+  }
+  if n < k {
+    return vec![];
+  }
+  if k == 1 {
+    return vec![vec![(0..n).collect()]];
+  }
+  let mut result = Vec::new();
+  let mut groups: Vec<Vec<usize>> = (0..k).map(|_| Vec::new()).collect();
+  fn helper(
+    i: usize,
+    n: usize,
+    k: usize,
+    groups: &mut Vec<Vec<usize>>,
+    result: &mut Vec<Vec<Vec<usize>>>,
+  ) {
+    if i == n {
+      if groups.iter().all(|g| !g.is_empty()) {
+        result.push(groups.clone());
+      }
+      return;
+    }
+    // Iterate groups in reverse to prefer placing elements in later (new)
+    // groups first. This yields partitions with smaller leading groups
+    // first — Wolfram's convention for Plus[x_, y_] matching Plus[a,b,c]
+    // which prefers x=a, y=Plus[b,c] over x=Plus[a,b], y=c.
+    let first_empty = groups.iter().position(|gr| gr.is_empty());
+    for g in (0..k).rev() {
+      // Symmetry-breaking: only place in group g if all earlier groups
+      // are non-empty OR group g is the first empty group.
+      if let Some(fe) = first_empty {
+        if g > fe {
+          continue;
+        }
+      }
+      groups[g].push(i);
+      helper(i + 1, n, k, groups, result);
+      groups[g].pop();
+    }
+  }
+  helper(0, n, k, &mut groups, &mut result);
+  result
+}
+
+/// Try to match a Flat pattern against an expression where the pattern has
+/// fewer args than the expression. Partitions expr_args into pat_args.len()
+/// non-empty groups. Groups of size 1 are passed through (OneIdentity), larger
+/// groups are wrapped in the Flat function.
+pub fn try_flat_partition_match(
+  pat_name: &str,
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+) -> Option<Vec<(String, Expr)>> {
+  let has_orderless =
+    crate::evaluator::listable::is_builtin_orderless(pat_name)
+      || crate::FUNC_ATTRS.with(|m| {
+        m.borrow()
+          .get(pat_name)
+          .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
+      });
+  let n = expr_args.len();
+  let k = pat_args.len();
+  if has_orderless {
+    let partitions = set_partitions(n, k);
+    for partition in partitions {
+      // Try aligning each group to each pattern position (permutations of
+      // partition order) — since partition groups are already a set
+      // partition, also permute them.
+      let group_count = partition.len();
+      let perms = permutations_of_range(group_count);
+      for perm in perms {
+        let ordered: Vec<&Vec<usize>> =
+          perm.iter().map(|&i| &partition[i]).collect();
+        if let Some(b) =
+          try_align_groups(pat_name, pat_args, expr_args, &ordered)
+        {
+          return Some(b);
+        }
+      }
+    }
+  } else {
+    let sizes_list = contiguous_partition_sizes(n, k);
+    for sizes in sizes_list {
+      let mut groups: Vec<Vec<usize>> = Vec::with_capacity(k);
+      let mut cursor = 0;
+      for &sz in &sizes {
+        groups.push((cursor..cursor + sz).collect());
+        cursor += sz;
+      }
+      let ordered: Vec<&Vec<usize>> = groups.iter().collect();
+      if let Some(b) =
+        try_align_groups(pat_name, pat_args, expr_args, &ordered)
+      {
+        return Some(b);
+      }
+    }
+  }
+  None
+}
+
+fn permutations_of_range(n: usize) -> Vec<Vec<usize>> {
+  let items: Vec<usize> = (0..n).collect();
+  fn perm(items: &[usize]) -> Vec<Vec<usize>> {
+    if items.len() <= 1 {
+      return vec![items.to_vec()];
+    }
+    let mut result = Vec::new();
+    for i in 0..items.len() {
+      let rest: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|&(j, _)| j != i)
+        .map(|(_, &x)| x)
+        .collect();
+      for mut p in perm(&rest) {
+        p.insert(0, items[i]);
+        result.push(p);
+      }
+    }
+    result
+  }
+  perm(&items)
+}
+
+fn try_align_groups(
+  pat_name: &str,
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+  groups: &[&Vec<usize>],
+) -> Option<Vec<(String, Expr)>> {
+  let mut bindings: Vec<(String, Expr)> = Vec::new();
+  for (pi, group) in groups.iter().enumerate() {
+    let eff = if group.len() == 1 {
+      expr_args[group[0]].clone()
+    } else {
+      Expr::FunctionCall {
+        name: pat_name.to_string(),
+        args: group.iter().map(|&i| expr_args[i].clone()).collect(),
+      }
+    };
+    push_match_context(&bindings);
+    let r = match_pattern(&eff, &pat_args[pi]);
+    pop_match_context();
+    match r {
+      Some(b) => {
+        if !merge_bindings(&mut bindings, b) {
+          return None;
+        }
+      }
+      None => return None,
+    }
+  }
+  Some(bindings)
+}
+
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
 /// when wrapped in a function call. Returns the matched indices and bindings.
 pub fn find_orderless_subset_match(
@@ -2282,6 +2462,28 @@ fn match_pattern_impl(
                 ) {
                   return Some(b);
                 }
+              }
+            }
+            // Flat pattern matching: when the function is Flat and the pattern
+            // has fewer args than the expression, partition expr_args into
+            // pat_args.len() non-empty groups; a group of size 1 stays as the
+            // element (OneIdentity), a group of size > 1 is wrapped in the
+            // Flat function. For Orderless, try all set partitions and group
+            // permutations; for Flat-only, try contiguous partitions.
+            if pat_args.len() < expr_args.len() && !pat_args.is_empty() {
+              let has_flat = crate::evaluator::listable::is_builtin_flat(
+                pat_name,
+              ) || crate::FUNC_ATTRS.with(|m| {
+                m.borrow()
+                  .get(pat_name)
+                  .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+              });
+              if has_flat
+                && let Some(b) = try_flat_partition_match(
+                  pat_name, pat_args, expr_args,
+                )
+              {
+                return Some(b);
               }
             }
             return None;

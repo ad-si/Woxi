@@ -3096,14 +3096,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceAll
-LINE: 271
-TYPE: >>
-INPUT: g[a+b+c,a]/.g[x_+y_,x_]->{x,y}
-EXPECTED:
-= {a, b + c}
----
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceAll
 LINE: 281
 TYPE: >>
 INPUT: {a, b} /. {{{a->x, b->y}, a->w, b->z}, {a->u, b->v}}
