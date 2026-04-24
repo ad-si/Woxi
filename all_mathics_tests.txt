@@ -576,14 +576,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Find
-LINE: 1325
-TYPE: >>
-INPUT: Find[stream, "uranium"]
-EXPECTED:
-= in manuscript, leads me to expect that the element uranium may be turned into
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Find
 LINE: 1327
 TYPE: >>
 INPUT: Find[stream, "uranium"]

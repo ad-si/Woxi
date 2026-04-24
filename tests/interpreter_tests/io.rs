@@ -409,6 +409,27 @@ mod rename_file {
   }
 }
 
+mod find_stream {
+  use super::*;
+
+  // `Find[sym, "text"]` emits `Find::stream` and returns $Failed,
+  // matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn non_stream_emits_stream_message() {
+    let result =
+      interpret_with_stdout(r#"Find[stream, "uranium"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "Find::stream: stream is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
+      )),
+      "expected Find::stream warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod delete_directory {
   use super::*;
 

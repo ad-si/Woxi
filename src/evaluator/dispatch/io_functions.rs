@@ -528,11 +528,36 @@ pub fn dispatch_io_functions(
       // Find[stream_or_file, "text"] - find first line containing text
       let filename = match &args[0] {
         Expr::String(s) => s.clone(),
+        // Accept InputStream[…] / OutputStream[…] — resolve to the
+        // backing file path.
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            crate::STREAM_REGISTRY.with(|reg| {
+              let registry = reg.borrow();
+              registry.get(&(*id as usize)).and_then(|s| match &s.kind {
+                crate::StreamKind::FileStream(path) => Some(path.clone()),
+                _ => None,
+              })
+            }).unwrap_or_default()
+          } else {
+            String::new()
+          }
+        }
         _ => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Find".to_string(),
-            args: args.to_vec(),
-          }));
+          // wolframscript emits `Find::stream` and returns $Failed on a
+          // non-stream / non-string argument.
+          let arg_str = crate::syntax::expr_to_string(&args[0]);
+          crate::emit_message(&format!(
+            "Find::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
+            arg_str
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       };
       let search = match &args[1] {
