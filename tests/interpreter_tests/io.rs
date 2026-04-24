@@ -312,6 +312,18 @@ mod streams {
         .unwrap();
     assert_eq!(result, "\0");
   }
+
+  // `WriteString["stdout", …]` and `"stderr"` route to the process's
+  // standard streams, matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_stdout_returns_null() {
+    // The text goes to stdout via print!, which interpret()'s usual
+    // return-value path doesn't capture — but the call should still
+    // succeed and return the "\0" marker used for Null in test output.
+    let result = interpret(r#"WriteString["stdout", "Hola"]"#).unwrap();
+    assert_eq!(result, "\0");
+  }
 }
 
 mod run {

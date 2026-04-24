@@ -12115,3 +12115,10 @@ TYPE: >>
 INPUT: B[[1;;-2]] = t;
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: WriteString
+LINE: 1600
+TYPE: >>
+INPUT: WriteString["stdout", "Hola"]
+EXPECTED: (none)
+---

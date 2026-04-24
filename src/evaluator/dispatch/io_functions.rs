@@ -1365,6 +1365,27 @@ pub fn dispatch_io_functions(
     #[cfg(not(target_arch = "wasm32"))]
     "WriteString" if args.len() >= 2 => {
       let stream = &args[0];
+      // Special-case the standard stream names so `WriteString["stdout", …]`
+      // writes to the process's stdout, matching wolframscript.
+      if let Expr::String(name) = stream
+        && (name == "stdout" || name == "stderr")
+      {
+        use std::io::Write;
+        for arg in &args[1..] {
+          let text = match arg {
+            Expr::String(s) => s.clone(),
+            other => crate::syntax::expr_to_string(other),
+          };
+          if name == "stdout" {
+            print!("{}", text);
+            let _ = std::io::stdout().flush();
+          } else {
+            eprint!("{}", text);
+            let _ = std::io::stderr().flush();
+          }
+        }
+        return Some(Ok(Expr::Identifier("Null".to_string())));
+      }
       // Extract stream info
       let file_path = match stream {
         Expr::FunctionCall {
@@ -1759,8 +1780,8 @@ pub fn dispatch_io_functions(
     // SetDirectory/ResetDirectory. Fresh sessions report `{}`.
     #[cfg(not(target_arch = "wasm32"))]
     "DirectoryStack" if args.is_empty() => {
-      let stack =
-        DIRECTORY_STACK.with(|s| s.borrow().iter().cloned().collect::<Vec<_>>());
+      let stack = DIRECTORY_STACK
+        .with(|s| s.borrow().iter().cloned().collect::<Vec<_>>());
       return Some(Ok(Expr::List(
         stack.into_iter().map(Expr::String).collect(),
       )));

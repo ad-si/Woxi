@@ -725,13 +725,6 @@ TYPE: >>
 INPUT: DeleteFile[pathname];
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/files_io/files.py
-CLASS: WriteString
-LINE: 1600
-TYPE: >>
-INPUT: WriteString["stdout", "Hola"]
-EXPECTED: (none)
----
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: AbsoluteFileName
 LINE: 52
