@@ -5329,6 +5329,38 @@ mod named_colors {
     assert_eq!(interpret("Lighter[Blue]").unwrap(), "RGBColor[1/3, 1/3, 1]");
   }
 
+  // When the input color or the amount is inexact (contains a Real), Wolfram
+  // returns inexact RGB components. `Orange = RGBColor[1, 0.5, 0]` has a
+  // Real component, so `Lighter[Orange, 1/4]` must return all Reals.
+  // Regression for the mathics ColorOperations doctest
+  // `Lighter[Orange, 1/4] == RGBColor[1., 0.625, 0.25]`.
+  #[test]
+  fn lighter_orange_forces_real_components() {
+    assert_eq!(
+      interpret("Lighter[Orange, 1/4]").unwrap(),
+      "RGBColor[1., 0.625, 0.25]"
+    );
+  }
+
+  // A Real amount alone (with an Integer/Rational-only color) is also
+  // inexact and should produce Real components.
+  #[test]
+  fn lighter_real_amount_forces_real_components() {
+    assert_eq!(
+      interpret("Lighter[RGBColor[0, 0, 0], 0.5]").unwrap(),
+      "RGBColor[0.5, 0.5, 0.5]"
+    );
+  }
+
+  // When both the color and the amount are exact, the result stays exact.
+  #[test]
+  fn lighter_exact_inputs_stay_exact() {
+    assert_eq!(
+      interpret("Lighter[RGBColor[0, 0, 0], 1/2]").unwrap(),
+      "RGBColor[1/2, 1/2, 1/2]"
+    );
+  }
+
   #[test]
   fn named_color_in_list() {
     assert_eq!(

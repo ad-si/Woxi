@@ -11773,3 +11773,11 @@ INPUT: (Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: Lighter
+LINE: 477
+TYPE: >>
+INPUT: Lighter[Orange, 1/4]
+EXPECTED:
+= RGBColor[1., 0.625, 0.25]
+---

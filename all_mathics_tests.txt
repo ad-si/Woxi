@@ -4594,14 +4594,6 @@ INPUT: DominantColors[img, ColorCoverage -> 0.15]
 EXPECTED:
 = {RGBColor[0.00784314, 0.00784314, 0.0156863]}
 ---
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Lighter
-LINE: 477
-TYPE: >>
-INPUT: Lighter[Orange, 1/4]
-EXPECTED:
-= RGBColor[1., 0.625, 0.25]
----
 FILE: mathics/builtin/colors/named_colors.py
 CLASS: _ColorObject
 LINE: 27

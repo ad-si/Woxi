@@ -5466,6 +5466,21 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
     (1, 3)
   };
 
+  // Wolfram: if the color or the amount is inexact (any Real component),
+  // the result is inexact (all Reals). Matches the doctest
+  // `Lighter[Orange, 1/4]` ⇒ `RGBColor[1., 0.625, 0.25]`.
+  let has_real_component = if let Expr::FunctionCall { name, args: rgb_args } =
+    &args[0]
+    && (name == "RGBColor" || name == "GrayLevel")
+  {
+    rgb_args.iter().any(|a| matches!(a, Expr::Real(_)))
+  } else {
+    false
+  };
+  let amount_is_real =
+    args.len() >= 2 && matches!(&args[1], Expr::Real(_));
+  let force_real = has_real_component || amount_is_real;
+
   let mut result_rgb = [Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
   for (i, (c_num, c_den)) in rgb.iter().enumerate() {
     if is_darker {
@@ -5474,7 +5489,11 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       let factor_den = amt_den;
       let new_num = c_num * factor_num;
       let new_den = c_den * factor_den;
-      result_rgb[i] = rational_to_expr(new_num, new_den);
+      result_rgb[i] = if force_real {
+        Expr::Real((new_num as f64) / (new_den as f64))
+      } else {
+        rational_to_expr(new_num, new_den)
+      };
     } else {
       // Lighter: c + amount * (1 - c)
       // = c + amount - amount*c
@@ -5483,7 +5502,11 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       // = (c_num*(amt_den-amt_num) + c_den*amt_num) / (c_den * amt_den)
       let new_num = c_num * (amt_den - amt_num) + c_den * amt_num;
       let new_den = c_den * amt_den;
-      result_rgb[i] = rational_to_expr(new_num, new_den);
+      result_rgb[i] = if force_real {
+        Expr::Real((new_num as f64) / (new_den as f64))
+      } else {
+        rational_to_expr(new_num, new_den)
+      };
     }
   }
 
