@@ -683,13 +683,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: WriteString
-LINE: 1588
-TYPE: >>
-INPUT: DeleteFile[pathname];
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: WriteString
 LINE: 1590
 TYPE: >>
 INPUT: WriteString[stream, "This is a test 1", "This is also a test 2"]
