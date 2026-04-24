@@ -3112,14 +3112,6 @@ EXPECTED:
 = {{{a}, {a, b}}, {t}}
 ---
 FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceList
-LINE: 350
-TYPE: >>
-INPUT: ReplaceList[a + b + c, x_ + y_ -> {x, y}]
-EXPECTED:
-= {{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}
----
-FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceRepeated
 LINE: 428
 TYPE: >>

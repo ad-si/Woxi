@@ -540,8 +540,16 @@ pub fn dispatch_complex_and_special(
           defs.get(sym).cloned()
         });
         if let Some(entries) = up_values {
-          for (_outer, _params, _conds, _defaults, _heads, _body, orig_lhs, orig_body) in
-            &entries
+          for (
+            _outer,
+            _params,
+            _conds,
+            _defaults,
+            _heads,
+            _body,
+            orig_lhs,
+            orig_body,
+          ) in &entries
           {
             lines.push(format!(
               "{} ^:= {}",
@@ -1093,6 +1101,59 @@ pub fn dispatch_complex_and_special(
           }
         }
         return Some(Ok(Expr::List(results)));
+      }
+      // Flat partition enumerator: e.g. ReplaceList[a+b+c, x_+y_ -> {x,y}]
+      // enumerates all Flat partitions of the expression args into
+      // pat_args.len() non-empty groups.
+      if let Expr::FunctionCall {
+        name: expr_head,
+        args: expr_fargs,
+      } = &args[0]
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && let Expr::FunctionCall {
+          name: pat_head,
+          args: pat_fargs,
+        } = pattern.as_ref()
+        && expr_head == pat_head
+        && !pat_fargs.is_empty()
+        && pat_fargs.len() <= expr_fargs.len()
+      {
+        let has_flat =
+          crate::evaluator::listable::is_builtin_flat(expr_head)
+            || crate::FUNC_ATTRS.with(|m| {
+              m.borrow()
+                .get(expr_head.as_str())
+                .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+            });
+        if has_flat {
+          let all_bindings =
+            crate::evaluator::pattern_matching::enumerate_flat_partition_matches(
+              expr_head, pat_fargs, expr_fargs,
+            );
+          if !all_bindings.is_empty() {
+            let mut results: Vec<Expr> = Vec::new();
+            for bindings in all_bindings {
+              let mut rhs = replacement.as_ref().clone();
+              for (name, value) in bindings {
+                rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
+              }
+              let evaluated = match evaluate_expr_to_expr(&rhs) {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+              };
+              results.push(evaluated);
+              if let Some(n) = max_matches
+                && results.len() as i128 >= n
+              {
+                break;
+              }
+            }
+            return Some(Ok(Expr::List(results)));
+          }
+        }
       }
       let result = match apply_replace_ast(&args[0], &args[1])
         .and_then(|r| evaluate_expr_to_expr(&r))

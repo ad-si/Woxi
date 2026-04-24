@@ -817,10 +817,10 @@ fn set_partitions(n: usize, k: usize) -> Vec<Vec<Vec<usize>>> {
     for g in (0..k).rev() {
       // Symmetry-breaking: only place in group g if all earlier groups
       // are non-empty OR group g is the first empty group.
-      if let Some(fe) = first_empty {
-        if g > fe {
-          continue;
-        }
+      if let Some(fe) = first_empty
+        && g > fe
+      {
+        continue;
       }
       groups[g].push(i);
       helper(i + 1, n, k, groups, result);
@@ -877,8 +877,7 @@ pub fn try_flat_partition_match(
         cursor += sz;
       }
       let ordered: Vec<&Vec<usize>> = groups.iter().collect();
-      if let Some(b) =
-        try_align_groups(pat_name, pat_args, expr_args, &ordered)
+      if let Some(b) = try_align_groups(pat_name, pat_args, expr_args, &ordered)
       {
         return Some(b);
       }
@@ -940,6 +939,92 @@ fn try_align_groups(
     }
   }
   Some(bindings)
+}
+
+/// Enumerate all Flat partition matches for `ReplaceList`. Tries every way
+/// to partition `expr_args` into `pat_args.len()` non-empty groups (a group
+/// of size 1 is passed through; larger groups are wrapped in the Flat head).
+/// Emits bindings in Wolfram's canonical order: size tuples in lex order,
+/// and within each size tuple, groups enumerated by combinations in lex order.
+pub fn enumerate_flat_partition_matches(
+  pat_name: &str,
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+) -> Vec<Vec<(String, Expr)>> {
+  let n = expr_args.len();
+  let k = pat_args.len();
+  let mut out: Vec<Vec<(String, Expr)>> = Vec::new();
+  if k == 0 || n < k {
+    return out;
+  }
+  // Iterate size tuples in lex order, then for each, enumerate
+  // ordered index partitions and try the match.
+  for sizes in size_tuples_lex(n, k) {
+    let indices: Vec<usize> = (0..n).collect();
+    enumerate_partitions_with_sizes(
+      &indices,
+      &sizes,
+      0,
+      &mut Vec::new(),
+      &mut |groups: &[Vec<usize>]| {
+        let refs: Vec<&Vec<usize>> = groups.iter().collect();
+        if let Some(b) =
+          try_align_groups(pat_name, pat_args, expr_args, &refs)
+        {
+          out.push(b);
+        }
+      },
+    );
+  }
+  out
+}
+
+/// All size tuples (s_1, ..., s_k) with s_i >= 1 summing to n, in lex order.
+fn size_tuples_lex(n: usize, k: usize) -> Vec<Vec<usize>> {
+  if k == 0 {
+    return if n == 0 { vec![vec![]] } else { vec![] };
+  }
+  if k == 1 {
+    return if n >= 1 { vec![vec![n]] } else { vec![] };
+  }
+  let mut result = Vec::new();
+  let max_first = n - (k - 1);
+  for first in 1..=max_first {
+    for mut rest in size_tuples_lex(n - first, k - 1) {
+      rest.insert(0, first);
+      result.push(rest);
+    }
+  }
+  result
+}
+
+fn enumerate_partitions_with_sizes(
+  remaining: &[usize],
+  sizes: &[usize],
+  depth: usize,
+  groups: &mut Vec<Vec<usize>>,
+  visit: &mut impl FnMut(&[Vec<usize>]),
+) {
+  if depth == sizes.len() {
+    if remaining.is_empty() {
+      visit(groups);
+    }
+    return;
+  }
+  let s = sizes[depth];
+  let combos = combinations(remaining, s);
+  for combo in combos {
+    let combo_set: std::collections::HashSet<usize> =
+      combo.iter().copied().collect();
+    let rest: Vec<usize> = remaining
+      .iter()
+      .copied()
+      .filter(|i| !combo_set.contains(i))
+      .collect();
+    groups.push(combo);
+    enumerate_partitions_with_sizes(&rest, sizes, depth + 1, groups, visit);
+    groups.pop();
+  }
 }
 
 /// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
@@ -2471,17 +2556,16 @@ fn match_pattern_impl(
             // Flat function. For Orderless, try all set partitions and group
             // permutations; for Flat-only, try contiguous partitions.
             if pat_args.len() < expr_args.len() && !pat_args.is_empty() {
-              let has_flat = crate::evaluator::listable::is_builtin_flat(
-                pat_name,
-              ) || crate::FUNC_ATTRS.with(|m| {
-                m.borrow()
-                  .get(pat_name)
-                  .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-              });
+              let has_flat =
+                crate::evaluator::listable::is_builtin_flat(pat_name)
+                  || crate::FUNC_ATTRS.with(|m| {
+                    m.borrow()
+                      .get(pat_name)
+                      .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+                  });
               if has_flat
-                && let Some(b) = try_flat_partition_match(
-                  pat_name, pat_args, expr_args,
-                )
+                && let Some(b) =
+                  try_flat_partition_match(pat_name, pat_args, expr_args)
               {
                 return Some(b);
               }

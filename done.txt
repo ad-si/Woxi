@@ -11676,3 +11676,11 @@ INPUT: g[a+b+c,a]/.g[x_+y_,x_]->{x,y}
 EXPECTED:
 = {a, b + c}
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: ReplaceList
+LINE: 350
+TYPE: >>
+INPUT: ReplaceList[a + b + c, x_ + y_ -> {x, y}]
+EXPECTED:
+= {{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}
+---

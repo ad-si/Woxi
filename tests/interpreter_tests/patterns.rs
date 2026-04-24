@@ -1533,6 +1533,33 @@ mod replace_list {
       "{{a}, {a, b}, {a, b, c}}"
     );
   }
+
+  // Flat partition enumeration for Plus/Times: every way of splitting the
+  // args into k non-empty groups is emitted in Wolfram's canonical order
+  // (size tuples lex, then combinations lex within each group).
+  #[test]
+  fn flat_plus_two_pattern_vars_three_terms() {
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ -> {x, y}]").unwrap(),
+      "{{a, b + c}, {b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}"
+    );
+  }
+
+  #[test]
+  fn flat_plus_two_pattern_vars_two_terms() {
+    assert_eq!(
+      interpret("ReplaceList[a + b, x_ + y_ -> {x, y}]").unwrap(),
+      "{{a, b}, {b, a}}"
+    );
+  }
+
+  #[test]
+  fn flat_plus_n_limits_enumeration() {
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ -> {x, y}, 2]").unwrap(),
+      "{{a, b + c}, {b, a + c}}"
+    );
+  }
 }
 
 // Optional-pattern (x_.) matching without a Default[...] rule. Without a
