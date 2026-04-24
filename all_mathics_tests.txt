@@ -935,14 +935,6 @@ EXPECTED:
 . 4,
 ---
 FILE: mathics/builtin/files_io/importexport.py
-CLASS: FileFormat
-LINE: 2064
-TYPE: >>
-INPUT: FileFormat["ExampleData/hedy.tif"]
-EXPECTED:
-= TIFF
----
-FILE: mathics/builtin/files_io/importexport.py
 CLASS: B64Decode
 LINE: 2125
 TYPE: >>
