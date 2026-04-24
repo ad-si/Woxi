@@ -11660,3 +11660,11 @@ INPUT: F[2] /. dispatchrules
 EXPECTED:
 = 4
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: None
+LINE: 64
+TYPE: >>
+INPUT: a + F[F[x ^ 2]] //. dispatchrule
+EXPECTED:
+= a + g[g[x ^ 2]]
+---

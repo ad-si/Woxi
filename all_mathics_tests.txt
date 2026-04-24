@@ -3095,14 +3095,6 @@ EXPECTED:
 = Pattern[x, Plus[Blank[], Optional[Pattern[y, Blank[]], d]]]
 ---
 FILE: mathics/builtin/patterns/rules.py
-CLASS: None
-LINE: 64
-TYPE: >>
-INPUT: a + F[F[x ^ 2]] //. dispatchrule
-EXPECTED:
-= a + g[g[x ^ 2]]
----
-FILE: mathics/builtin/patterns/rules.py
 CLASS: ReplaceAll
 LINE: 271
 TYPE: >>
