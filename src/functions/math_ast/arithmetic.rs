@@ -4786,6 +4786,25 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
+      // Small positive integer exponent on a complex float: compute by
+      // repeated multiplication for better precision than the log/exp
+      // path below. (a+bI)^2 this way loses no ULPs, whereas
+      // exp(2 log(z)) can drift by one.
+      if let Expr::Integer(n) = exp
+        && (2..=16).contains(n)
+        && let Some((a, b)) = try_extract_complex_float(base)
+        && b != 0.0
+        && contains_real(base)
+      {
+        let (mut re, mut im) = (a, b);
+        for _ in 1..*n {
+          let new_re = re * a - im * b;
+          let new_im = re * b + im * a;
+          re = new_re;
+          im = new_im;
+        }
+        return Ok(build_complex_float_expr(re, im));
+      }
       // Try complex float evaluation: z^w = exp(w * log(z))
       // Only apply when at least one operand contains an actual Real (float),
       // to avoid prematurely converting exact symbolic forms like E^(I*Pi/3).
