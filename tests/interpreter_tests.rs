@@ -356,5 +356,6 @@ mod interpreter_tests {
   mod styling;
   mod syntax;
   mod tabular;
+  mod test_cases;
   mod turing_machine;
 }
