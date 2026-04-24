@@ -3495,15 +3495,6 @@ TYPE: >>
 INPUT: B[[1;;-2]] = t;
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
-LINE: 1157
-TYPE: >>
-INPUT: F[[;; All, 1 ;; 2, 3 ;; 3]] = k;
-EXPECTED: (none)
----
----
----
 FILE: mathics/builtin/list/rearrange.py
 CLASS: Union
 LINE: 1427

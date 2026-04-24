@@ -504,10 +504,12 @@ pub fn get_eval_stack() -> Vec<String> {
 }
 
 /// Format the evaluation stack as a human-readable stack trace string.
-/// Returns None if the stack is empty.
+/// Returns None if the stack is shallow — for single-frame errors the
+/// function name is already in the message, so the extra trace just
+/// diverges from wolframscript's output.
 fn format_stack_trace() -> Option<String> {
   let stack = get_eval_stack();
-  if stack.is_empty() {
+  if stack.len() <= 1 {
     return None;
   }
   let mut trace = String::from("  during evaluation of:");

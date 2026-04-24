@@ -12101,3 +12101,10 @@ INPUT: $Version
 EXPECTED:
 = Mathics3 ...
 ---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1157
+TYPE: >>
+INPUT: F[[;; All, 1 ;; 2, 3 ;; 3]] = k;
+EXPECTED: (none)
+---
