@@ -1604,12 +1604,53 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Compute FractionalPart of a rational `n/d` (assumes positive `d`),
+/// truncating toward zero — matches Wolfram's `FractionalPart`.
+/// Returns (num, den) with |num| < den.
+fn rational_fractional_part(n: i128, d: i128) -> (i128, i128) {
+  let d = d.abs().max(1);
+  let n = if d == 0 { n } else { n };
+  // Truncate n/d toward zero.
+  let trunc = n / d;
+  let frac = n - trunc * d;
+  (frac, d)
+}
+
 /// FractionalPart[x] - Fractional part: x - IntegerPart[x]
 pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "FractionalPart expects exactly 1 argument".into(),
     ));
+  }
+  // Exact complex rational: apply FractionalPart to real and imag parts
+  // separately (FractionalPart truncates toward zero).
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+    && in_ != 0
+  {
+    let re_frac = rational_fractional_part(rn, rd);
+    let im_frac = rational_fractional_part(in_, id);
+    let build = |n: i128, d: i128| -> Expr {
+      if n == 0 {
+        Expr::Integer(0)
+      } else {
+        make_rational(n, d)
+      }
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[
+        build(re_frac.0, re_frac.1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            build(im_frac.0, im_frac.1),
+            Expr::Identifier("I".to_string()),
+          ],
+        },
+      ],
+    );
   }
   match &args[0] {
     Expr::Integer(_) => Ok(Expr::Integer(0)),
