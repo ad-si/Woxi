@@ -1408,6 +1408,36 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
+      // Exact arbitrary-precision path: if both args are Integer or
+      // BigInteger, compute floor division without falling back to f64
+      // (which loses precision for numbers that don't fit in 53 bits).
+      use num_bigint::BigInt;
+      use num_traits::Zero;
+      let as_bigint = |e: &Expr| -> Option<BigInt> {
+        match e {
+          Expr::Integer(n) => Some(BigInt::from(*n)),
+          Expr::BigInteger(n) => Some(n.clone()),
+          _ => None,
+        }
+      };
+      if let (Some(a), Some(b)) = (as_bigint(&args[0]), as_bigint(&args[1])) {
+        if b.is_zero() {
+          return Err(InterpreterError::EvaluationError(
+            "Quotient: division by zero".into(),
+          ));
+        }
+        // Floor division: when the sign of the dividend differs from the
+        // divisor and there is a non-zero remainder, round the truncated
+        // quotient toward -infinity.
+        let (mut q, r) = (&a / &b, &a % &b);
+        if !r.is_zero() && ((a.sign() != num_bigint::Sign::NoSign
+          && b.sign() != num_bigint::Sign::NoSign)
+          && (a.sign() != b.sign()))
+        {
+          q -= 1;
+        }
+        return Ok(crate::functions::math_ast::bigint_to_expr(q));
+      }
       if let (Some(a), Some(b)) =
         (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
       {
