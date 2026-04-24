@@ -1303,13 +1303,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryWrite
-LINE: 547
-TYPE: >>
-INPUT: Close[strm];
-EXPECTED: (none)
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryWrite
 LINE: 548
 TYPE: >>
 INPUT: strm = OpenRead[%, BinaryFormat -> True]
