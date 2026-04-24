@@ -12284,3 +12284,11 @@ INPUT: FileHash["ExampleData/sunflowers.jpg", "Adler32"]
 EXPECTED:
 = 1607049478
 ---
+FILE: mathics/builtin/file_operations/file_properties.py
+CLASS: FileHash
+LINE: 146
+TYPE: >>
+INPUT: FileHash["ExampleData/sunflowers.jpg", "SHA256"]
+EXPECTED:
+= 111619807552579450300684600241129773909359865098672286468229443390003894913065
+---
