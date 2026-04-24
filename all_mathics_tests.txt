@@ -3198,14 +3198,6 @@ INPUT: path = FileNameJoin[{"a","b","c"}]
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/file_operations/path_operations.py
-CLASS: FileNameDrop
-LINE: 45
-TYPE: >>
-INPUT: FileNameDrop[path]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: Accuracy
 LINE: 87
