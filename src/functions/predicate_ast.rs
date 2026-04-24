@@ -1351,6 +1351,11 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { args, .. } => {
         1 + args.iter().map(calc_depth).max().unwrap_or(0)
       }
+      // Depth counts positive-index parts only; the head (part 0) is
+      // ignored, so only the arguments contribute.
+      Expr::CurriedCall { args, .. } => {
+        1 + args.iter().map(calc_depth).max().unwrap_or(0)
+      }
       Expr::Association(items) => {
         1 + items
           .iter()
