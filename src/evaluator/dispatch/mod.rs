@@ -4583,9 +4583,20 @@ pub fn evaluate_function_call_ast_inner(
     match std::fs::rename(source, dest) {
       Ok(()) => return Ok(Expr::String(dest.clone())),
       Err(_e) => {
+        // wolframscript reports the absolute path; resolve relative
+        // paths against the current working directory so the message
+        // matches exactly.
+        let path = std::path::Path::new(source);
+        let abs = if path.is_absolute() {
+          source.clone()
+        } else {
+          std::env::current_dir()
+            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
+            .unwrap_or_else(|_| source.clone())
+        };
         crate::emit_message(&format!(
           "RenameFile::fdnfnd: Directory or file \"{}\" not found.",
-          source
+          abs
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }

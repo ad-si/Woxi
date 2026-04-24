@@ -384,6 +384,31 @@ mod close_error {
   }
 }
 
+mod rename_file {
+  use super::*;
+
+  // Missing source: emit `RenameFile::fdnfnd` with the absolute path
+  // and return $Failed.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_source_returns_failed() {
+    let result = interpret_with_stdout(
+      r#"RenameFile["MathicsSunflowers.jpg", "MathicsSunnyFlowers.jpg"]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("RenameFile::fdnfnd: Directory or file ")
+          && w.contains("MathicsSunflowers.jpg")),
+      "expected RenameFile::fdnfnd warning with absolute path, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod file_format {
   use super::*;
 

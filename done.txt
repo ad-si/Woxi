@@ -12364,3 +12364,11 @@ INPUT: FileFormat["ExampleData/hedy.tif"]
 EXPECTED:
 = TIFF
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: RenameFile
+LINE: 938
+TYPE: >>
+INPUT: RenameFile["MathicsSunflowers.jpg", "MathicsSunnyFlowers.jpg"]
+EXPECTED:
+= MathicsSunnyFlowers.jpg
+---
