@@ -55,6 +55,20 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
+      // Special case for functions that stay symbolic when called
+      // directly with a Real but have a numeric value triggered by N[].
+      if args.len() == 1 && let Some(n) = expr_to_i128(&args[0]) {
+        if name == "AiryAiZero"
+          && let Some(r) = crate::functions::math_ast::airy_ai_zero_n_eval(n)
+        {
+          return Ok(r);
+        }
+        if name == "AiryBiZero"
+          && let Some(r) = crate::functions::math_ast::airy_bi_zero_n_eval(n)
+        {
+          return Ok(r);
+        }
+      }
       // Otherwise, recursively apply N to arguments and re-evaluate
       let new_args: Result<Vec<Expr>, _> = args.iter().map(n_eval).collect();
       let new_args = new_args?;

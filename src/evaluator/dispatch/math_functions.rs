@@ -576,6 +576,12 @@ pub fn dispatch_math_functions(
     "AiryBiPrime" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_bi_prime_ast(args));
     }
+    "AiryAiZero" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::airy_ai_zero_ast(args));
+    }
+    "AiryBiZero" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::airy_bi_zero_ast(args));
+    }
     "Hypergeometric0F1" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hypergeometric_0f1_ast(args));
     }

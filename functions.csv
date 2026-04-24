@@ -3584,7 +3584,7 @@ TimeSeriesMapThread,,🚫,,10.0,3678
 TransferFunctionZeros,,🚫,,8.0,3678
 UnequalTo,Operator form of Unequal,✅,none,10.4,3678
 WakebyDistribution,,,,8.0,3678
-AiryAiZero,,,,6.0,3697
+AiryAiZero,n-th real zero of the Airy function Ai,✅,pure,6.0,3697
 AudioFade,,🚫,,11.0,3697
 BirnbaumSaundersDistribution,,,,8.0,3697
 BorelTannerDistribution,,,,8.0,3697
@@ -4558,7 +4558,7 @@ VerifyDigitalSignature,,🚫,,12.0,4707
 WebAudioSearch,,🚫,,12.0,4707
 WikidataSearch,,🚫,,12.1,4707
 AiryBiPrime,Derivative of Airy function Bi,✅,pure,2.0,4747
-AiryBiZero,,,,6.0,4747
+AiryBiZero,n-th real zero of the Airy function Bi,✅,pure,6.0,4747
 AssociationFormat,,,,10.0,4747
 CircularSymplecticMatrixDistribution,,,,10.3,4747
 DateOverlapsQ,,,,11.1,4747

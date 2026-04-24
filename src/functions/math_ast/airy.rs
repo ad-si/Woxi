@@ -195,7 +195,7 @@ pub fn airy_ai_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Ai'(x) using power series and asymptotic expansion
 /// Ai'(x) = c1 * f'(x) - c2 * g'(x)
-fn airy_ai_prime(x: f64) -> f64 {
+pub fn airy_ai_prime(x: f64) -> f64 {
   let c1 = 0.3550280538878172; // Ai(0)
   let c2 = 0.2588194037928068; // -Ai'(0)
 
@@ -304,7 +304,7 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute Bi'(x) using the same series as Ai' but with different sign
 /// Bi'(x) = sqrt(3) * (c1 * f'(x) + c2 * g'(x))
-fn airy_bi_prime(x: f64) -> f64 {
+pub fn airy_bi_prime(x: f64) -> f64 {
   let c1 = 0.3550280538878172;
   let c2 = 0.2588194037928068;
   let sqrt3 = 3.0_f64.sqrt();
@@ -397,4 +397,100 @@ fn airy_build_value(
     right: Box::new(denom),
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Compute the n-th real zero of AiryAi using Newton's method on the
+/// asymptotic starting point a_n ≈ -t^(2/3)(1 + 5/(48 t^2) - ...),
+/// t = 3π(4n-1)/8. Returns an exact-symbolic `AiryAiZero[n]` wrapper
+/// when `n` is a plain integer; N[] (or a Real argument) triggers the
+/// numeric evaluation.
+fn airy_ai_zero_f64(n: i128) -> f64 {
+  let t = 3.0 * std::f64::consts::PI * (4.0 * n as f64 - 1.0) / 8.0;
+  let t2 = t * t;
+  let correction =
+    1.0 + 5.0 / (48.0 * t2) - 5.0 / (36.0 * t2 * t2);
+  let mut x = -t.powf(2.0 / 3.0) * correction;
+  // Polish with Newton's method on Ai: x_{k+1} = x - Ai(x)/Ai'(x).
+  for _ in 0..40 {
+    let f = airy_ai(x);
+    let fp = airy_ai_prime(x);
+    if fp == 0.0 {
+      break;
+    }
+    let dx = f / fp;
+    x -= dx;
+    if dx.abs() < 1e-15 * x.abs().max(1.0) {
+      break;
+    }
+  }
+  x
+}
+
+/// Same as airy_ai_zero_f64 but for AiryBi. Starting point:
+/// a_n ≈ -t^(2/3)(1 + ...), t = 3π(4n-3)/8.
+fn airy_bi_zero_f64(n: i128) -> f64 {
+  let t = 3.0 * std::f64::consts::PI * (4.0 * n as f64 - 3.0) / 8.0;
+  let t2 = t * t;
+  let correction =
+    1.0 - 7.0 / (48.0 * t2) + 35.0 / (288.0 * t2 * t2);
+  let mut x = -t.powf(2.0 / 3.0) * correction;
+  for _ in 0..40 {
+    let f = airy_bi(x);
+    let fp = airy_bi_prime(x);
+    if fp == 0.0 {
+      break;
+    }
+    let dx = f / fp;
+    x -= dx;
+    if dx.abs() < 1e-15 * x.abs().max(1.0) {
+      break;
+    }
+  }
+  x
+}
+
+/// AiryAiZero[n] - n-th real zero of AiryAi. Stays symbolic; numeric
+/// evaluation is only triggered through N[] (see `airy_ai_zero_n_eval`).
+pub fn airy_ai_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AiryAiZero expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "AiryAiZero".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// AiryBiZero[n] - n-th real zero of AiryBi. Stays symbolic until N[].
+pub fn airy_bi_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AiryBiZero expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(Expr::FunctionCall {
+    name: "AiryBiZero".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Numeric evaluation of AiryAiZero[n] for use by N[]. Accepts a
+/// positive integer `n` and returns the zero as an `Expr::Real`.
+pub fn airy_ai_zero_n_eval(n: i128) -> Option<Expr> {
+  if n >= 1 {
+    Some(Expr::Real(airy_ai_zero_f64(n)))
+  } else {
+    None
+  }
+}
+
+/// Numeric evaluation of AiryBiZero[n] for use by N[].
+pub fn airy_bi_zero_n_eval(n: i128) -> Option<Expr> {
+  if n >= 1 {
+    Some(Expr::Real(airy_bi_zero_f64(n)))
+  } else {
+    None
+  }
 }
