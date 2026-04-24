@@ -96,6 +96,15 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(keys))
     }
     Expr::List(_) => Ok(keys_recursive(&args[0])),
+    // Keys[k -> v] = k, Keys[k :> v] = k
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      Ok(pattern.as_ref().clone())
+    }
+    Expr::FunctionCall { name, args: rargs }
+      if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
+    {
+      Ok(rargs[0].clone())
+    }
     _ => Err(InterpreterError::EvaluationError(
       "Keys expects an association".into(),
     )),
@@ -115,6 +124,15 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(values))
     }
     Expr::List(_) => Ok(values_recursive(&args[0])),
+    Expr::Rule { replacement, .. }
+    | Expr::RuleDelayed { replacement, .. } => {
+      Ok(replacement.as_ref().clone())
+    }
+    Expr::FunctionCall { name, args: rargs }
+      if (name == "Rule" || name == "RuleDelayed") && rargs.len() == 2 =>
+    {
+      Ok(rargs[1].clone())
+    }
     _ => Err(InterpreterError::EvaluationError(
       "Values expects an association".into(),
     )),
