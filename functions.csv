@@ -1978,7 +1978,7 @@ SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 FieldHint,Input field hint text option (GUI),🚫,,8.0,2015
 Molecule,Chemical molecule representation (chemistry),🚫,,12.0,2015
 ShowCellBracket,Notebook cell bracket display option (GUI),🚫,,3.0,2015
-FileByteCount,Count bytes in file (file I/O),🚫,,2.0,2018
+FileByteCount,Count bytes in file (file I/O),✅,,2.0,2018
 NegativeBinomialDistribution,Discrete distribution for number of failures before n successes,✅,none,6.0,2018
 RandomWord,Generate random words (requires dictionary),🚫,,10.3,2018
 NMaxValue,Numerical maximum value optimization (numerical optimization),✅,,7.0,2020

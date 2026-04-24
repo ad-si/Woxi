@@ -384,6 +384,31 @@ mod close_error {
   }
 }
 
+mod file_byte_count {
+  use super::*;
+
+  // Missing files emit `fdnfnd` and return $Failed, matching
+  // wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed() {
+    assert_eq!(
+      interpret(r#"FileByteCount["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      "$Failed"
+    );
+  }
+
+  // An existing file returns a positive Integer byte count — verify via
+  // the repo's own README.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn existing_file_returns_positive_integer() {
+    let out = interpret(r#"FileByteCount["readme.md"]"#).unwrap();
+    let n: i64 = out.parse().expect("numeric byte count");
+    assert!(n > 0);
+  }
+}
+
 mod delete_file {
   use super::*;
 

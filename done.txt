@@ -12252,3 +12252,11 @@ INPUT: MathMLForm[\\[Mu]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: FileByteCount
+LINE: 448
+TYPE: >>
+INPUT: FileByteCount["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= 142286
+---

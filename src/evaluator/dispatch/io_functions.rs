@@ -1792,6 +1792,29 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // FileByteCount["name"] — size in bytes, or emit `fdnfnd` and
+    // return `$Failed` when the file is missing.
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileByteCount" if args.len() == 1 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FileByteCount".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      match std::fs::metadata(name) {
+        Ok(meta) if meta.is_file() => {
+          return Some(Ok(Expr::Integer(meta.len() as i128)));
+        }
+        _ => {
+          crate::emit_message(&format!(
+            "FileByteCount::fdnfnd: Directory or file \"{}\" not found.",
+            name
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
+      }
+    }
     // AbsoluteFileName["name"] — return the absolute path if the file
     // exists, otherwise emit `AbsoluteFileName::fdnfnd` and return
     // `$Failed` (matching wolframscript).
