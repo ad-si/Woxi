@@ -708,6 +708,16 @@ mod precision {
     assert_eq!(interpret("Head[$BaseDirectory] == String").unwrap(), "True");
   }
 
+  // `$InstallationDirectory` reports the directory containing the Woxi
+  // executable — analogous to wolframscript's Wolfram installation path.
+  #[test]
+  fn installation_directory_head_is_string() {
+    assert_eq!(
+      interpret("Head[$InstallationDirectory] == String").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn temporary_directory_head_is_string() {
     // $TemporaryDirectory is canonicalized and has no trailing slash —

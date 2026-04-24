@@ -3443,14 +3443,6 @@ INPUT: Quiet[DeleteDirectory[dir]]
 EXPECTED:
 = $Failed
 ---
-FILE: mathics/builtin/directories/system_directories.py
-CLASS: InstallationDirectory
-LINE: 65
-TYPE: >>
-INPUT: $InstallationDirectory
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/directories/user_directories.py
 CLASS: Path
 LINE: 24

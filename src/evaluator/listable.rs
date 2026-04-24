@@ -469,7 +469,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       } else {
         ".Wolfram"
       };
-      Some(Expr::String(format!("{}/{}", home.trim_end_matches('/'), sub)))
+      Some(Expr::String(format!(
+        "{}/{}",
+        home.trim_end_matches('/'),
+        sub
+      )))
     }
     // System-wide Wolfram config directory.
     #[cfg(not(target_arch = "wasm32"))]
@@ -483,6 +487,16 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       };
       Some(Expr::String(root.to_string()))
     }
+    // `$InstallationDirectory` points at where Wolfram is installed.
+    // Report the parent directory of the current Woxi binary so the value
+    // is always a real directory — exact path depends on how Woxi was
+    // built and installed, just like wolframscript's depends on the
+    // Wolfram installation.
+    #[cfg(not(target_arch = "wasm32"))]
+    "$InstallationDirectory" => std::env::current_exe()
+      .ok()
+      .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
+      .map(|p| Expr::String(p.to_string_lossy().into_owned())),
     "$RootDirectory" => {
       // Filesystem root: "/" on Unix/Mac, "C:\" (or similar) on Windows.
       let root = if cfg!(target_os = "windows") {
