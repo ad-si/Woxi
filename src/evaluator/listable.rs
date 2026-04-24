@@ -607,6 +607,13 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       Expr::String("System`".to_string()),
       Expr::String("Global`".to_string()),
     ])),
+    // Woxi only tracks the System` and Global` contexts; wolframscript lists
+    // many kernel packages here, but MemberQ[$Packages, "System`"] is the
+    // main observable use.
+    "$Packages" => Some(Expr::List(vec![
+      Expr::String("System`".to_string()),
+      Expr::String("Global`".to_string()),
+    ])),
     "$ImportFormats" => Some(Expr::List(
       ["BMP", "CSV", "GIF", "JPEG", "JSON", "PNG", "Text", "TIFF"]
         .iter()
