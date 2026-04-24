@@ -11997,3 +11997,11 @@ INPUT: $BoxForms
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/testing_expressions/logic.py
+CLASS: Equivalent
+LINE: 204
+TYPE: >>
+INPUT: Equivalent[a, b, c]
+EXPECTED:
+= a \\[Equivalent] b \\[Equivalent] c
+---

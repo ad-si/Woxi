@@ -5207,6 +5207,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           .collect();
         return parts.join(" && ");
       }
+      // Equivalent[a, b, …] renders as `a ⧦ b ⧦ c` (U+29E6), matching
+      // wolframscript's default display of logical equivalence.
+      if name == "Equivalent" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{29e6} ");
+      }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
       if name == "Alternatives" && args.len() >= 2 {
         let parts: Vec<String> = args

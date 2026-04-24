@@ -616,9 +616,10 @@ mod equivalent_logic {
 
   #[test]
   fn symbolic() {
+    // Wolfram renders Equivalent with the U+29E6 infix operator.
     assert_eq!(
       interpret("Equivalent[a, b, c]").unwrap(),
-      "Equivalent[a, b, c]"
+      "a \u{29e6} b \u{29e6} c"
     );
   }
 
