@@ -497,6 +497,43 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       .ok()
       .and_then(|p| p.parent().map(|pp| pp.to_path_buf()))
       .map(|p| Expr::String(p.to_string_lossy().into_owned())),
+    // `$Path` — the package search path. Modeled after wolframscript's
+    // list but rooted at Woxi's directories since we don't ship the full
+    // Wolfram layout.
+    #[cfg(not(target_arch = "wasm32"))]
+    "$Path" => {
+      let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+      let user_sub = if cfg!(target_os = "macos") {
+        "Library/Wolfram"
+      } else if cfg!(target_os = "windows") {
+        "AppData\\Roaming\\Wolfram"
+      } else {
+        ".Wolfram"
+      };
+      let base_root = if cfg!(target_os = "macos") {
+        "/Library/Wolfram"
+      } else if cfg!(target_os = "windows") {
+        "C:\\ProgramData\\Wolfram"
+      } else {
+        "/usr/share/Wolfram"
+      };
+      let user_base = format!("{}/{}", home.trim_end_matches('/'), user_sub);
+      let mut entries: Vec<String> = vec![
+        format!("{}/Kernel", user_base),
+        format!("{}/Autoload", user_base),
+        format!("{}/Applications", user_base),
+        format!("{}/Kernel", base_root),
+        format!("{}/Autoload", base_root),
+        format!("{}/Applications", base_root),
+        ".".to_string(),
+      ];
+      if !home.is_empty() {
+        entries.push(home);
+      }
+      Some(Expr::List(entries.into_iter().map(Expr::String).collect()))
+    }
     "$RootDirectory" => {
       // Filesystem root: "/" on Unix/Mac, "C:\" (or similar) on Windows.
       let root = if cfg!(target_os = "windows") {

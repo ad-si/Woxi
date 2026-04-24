@@ -3443,14 +3443,6 @@ INPUT: Quiet[DeleteDirectory[dir]]
 EXPECTED:
 = $Failed
 ---
-FILE: mathics/builtin/directories/user_directories.py
-CLASS: Path
-LINE: 24
-TYPE: >>
-INPUT: $Path
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: MaxRecursion
 LINE: 243

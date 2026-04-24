@@ -718,6 +718,19 @@ mod precision {
     );
   }
 
+  // `$Path` is the package search list; head must be List, and every
+  // entry must be a string.
+  #[test]
+  fn dollar_path_is_list_of_strings() {
+    assert_eq!(interpret("Head[$Path] == List").unwrap(), "True");
+    assert_eq!(
+      interpret("AllTrue[$Path, Head[#] == String &]").unwrap(),
+      "True"
+    );
+    // Current-directory "." is always present.
+    assert_eq!(interpret("MemberQ[$Path, \".\"]").unwrap(), "True");
+  }
+
   #[test]
   fn temporary_directory_head_is_string() {
     // $TemporaryDirectory is canonicalized and has no trailing slash —

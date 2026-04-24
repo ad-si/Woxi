@@ -12085,3 +12085,11 @@ INPUT: $InstallationDirectory
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/directories/user_directories.py
+CLASS: Path
+LINE: 24
+TYPE: >>
+INPUT: $Path
+EXPECTED:
+= ...
+---
