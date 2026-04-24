@@ -12380,3 +12380,10 @@ INPUT: CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]
 EXPECTED:
 = MathicsSunflowers.jpg
 ---
+FILE: mathics/builtin/directories/directory_operations.py
+CLASS: DeleteDirectory
+LINE: 96
+TYPE: >>
+INPUT: DeleteDirectory[dir]
+EXPECTED: (none)
+---

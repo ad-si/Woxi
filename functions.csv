@@ -2259,7 +2259,7 @@ SemanticInterpretation,natural language processing,🚫,None,10.0,2305
 ShowCellLabel,notebook UI option,🚫,None,3.0,2305
 WordSeparators,text processing option,🚫,None,2.0,2305
 ClockGauge,dynamic gauge display,🚫,None,9.0,2311
-DeleteDirectory,file system operation,🚫,None,2.0,2311
+DeleteDirectory,file system operation,✅,None,2.0,2311
 FunctionPeriod,symbolic period analysis (complex),🚫,None,10.0,2311
 MathieuCPrime,Mathieu function derivative (special function),🚫,None,3.0,2311
 PartialCorrelationFunction,time series,🚫,None,9.0,2311

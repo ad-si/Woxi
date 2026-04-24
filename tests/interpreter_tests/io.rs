@@ -409,6 +409,26 @@ mod rename_file {
   }
 }
 
+mod delete_directory {
+  use super::*;
+
+  // Non-string argument emits `DeleteDirectory::strs` and returns
+  // unevaluated, matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn symbolic_arg_emits_strs() {
+    let result = interpret_with_stdout(r#"DeleteDirectory[dir]"#).unwrap();
+    assert_eq!(result.result, "DeleteDirectory[dir]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[dir]."
+      )),
+      "expected strs warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod copy_file_missing_source {
   use super::*;
 

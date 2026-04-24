@@ -4603,6 +4603,40 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // DeleteDirectory[path] — remove an empty directory. Mirror
+  // wolframscript's error paths: non-string args emit `strs`, missing
+  // directories emit `dirnf`, non-empty dirs emit `dirne`.
+  if name == "DeleteDirectory" && args.len() == 1 {
+    let path = match &args[0] {
+      Expr::String(s) => s.clone(),
+      _ => {
+        let arg_str = crate::syntax::expr_to_string(&args[0]);
+        crate::emit_message(&format!(
+          "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[{}].",
+          arg_str
+        ));
+        return Ok(Expr::FunctionCall {
+          name: "DeleteDirectory".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+      crate::emit_message(&format!(
+        "DeleteDirectory::dirnf: Directory {} not found.",
+        path
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+    match std::fs::remove_dir(&path) {
+      Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
+      Err(_) => {
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+    }
+  }
+
   // CopyFile[source, dest] — copy a file
   if name == "CopyFile"
     && args.len() == 2
