@@ -1491,8 +1491,22 @@ pub fn dispatch_list_operations(
           } else {
             Expr::Integer(0)
           };
-          return Some(list_helpers_ast::pad_right_multidim(
-            &args[0], &ns, &pad,
+          // 4th argument is the per-dimension margin. Scalar margin
+          // broadcasts to every dimension; a list of margins maps 1:1.
+          let margins: Vec<i128> = if args.len() >= 4 {
+            match &args[3] {
+              Expr::List(ms) => {
+                ms.iter().filter_map(expr_to_i128).collect()
+              }
+              _ => expr_to_i128(&args[3])
+                .map(|m| vec![m; ns.len()])
+                .unwrap_or_default(),
+            }
+          } else {
+            Vec::new()
+          };
+          return Some(list_helpers_ast::pad_right_multidim_with_margin(
+            &args[0], &ns, &pad, &margins,
           ));
         }
       }
@@ -2051,7 +2065,8 @@ pub fn dispatch_list_operations(
           } = e
             && name == "SparseArray"
           {
-            list_helpers_ast::sparse_array_ast(sa_args).unwrap_or_else(|_| e.clone())
+            list_helpers_ast::sparse_array_ast(sa_args)
+              .unwrap_or_else(|_| e.clone())
           } else {
             e.clone()
           }

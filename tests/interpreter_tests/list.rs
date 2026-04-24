@@ -5123,6 +5123,26 @@ mod join_non_list {
     );
   }
 
+  // 4-arg PadRight with a per-dimension margin `m`: the source is placed
+  // at offset `m` in each dimension, with gaps filled by the pad shape.
+  // Verified against wolframscript. Regression for the mathics
+  // list/rearrange.py PadRight doctest.
+  #[test]
+  fn pad_right_multidim_scalar_margin() {
+    assert_eq!(
+      interpret("PadRight[{{1, 2, 3}}, {5, 2}, x, 1]").unwrap(),
+      "{{x, x}, {x, 1}, {x, x}, {x, x}, {x, x}}"
+    );
+  }
+
+  #[test]
+  fn pad_right_multidim_list_margin() {
+    assert_eq!(
+      interpret("PadRight[{{1, 2, 3}}, {5, 2}, x, {1, 0}]").unwrap(),
+      "{{x, x}, {1, 2}, {x, x}, {x, x}, {x, x}}"
+    );
+  }
+
   #[test]
   fn string_position_with_limit() {
     assert_eq!(

@@ -11821,3 +11821,11 @@ INPUT: g[#] & [h[#]] & [5]
 EXPECTED:
 = g[h[5]]
 ---
+FILE: mathics/builtin/list/rearrange.py
+CLASS: PadRight
+LINE: 969
+TYPE: >>
+INPUT: PadRight[{{1, 2, 3}}, {5, 2}, x, 1]
+EXPECTED:
+= {{x, x}, {x, 1}, {x, x}, {x, x}, {x, x}}
+---

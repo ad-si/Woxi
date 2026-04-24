@@ -1253,11 +1253,31 @@ pub fn pad_right_multidim(
   ns: &[i128],
   pad: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  pad_right_multidim_with_margin(list, ns, pad, &[])
+}
+
+/// Multidimensional PadRight with a per-dimension margin (shift) vector.
+/// An empty `margins` slice means the caller didn't supply a 4th argument,
+/// so each dimension's margin defaults to 0. Matches Wolfram's semantics
+/// for `PadRight[list, {n1, n2, ...}, pad, m]` — the same `m` applies to
+/// every dimension.
+pub fn pad_right_multidim_with_margin(
+  list: &Expr,
+  ns: &[i128],
+  pad: &Expr,
+  margins: &[i128],
+) -> Result<Expr, InterpreterError> {
   if ns.is_empty() {
     return Ok(list.clone());
   }
   let n = ns[0];
   let rest = &ns[1..];
+  let margin = margins.first().copied().unwrap_or(0);
+  let inner_margins = if margins.len() <= 1 {
+    margins
+  } else {
+    &margins[1..]
+  };
 
   let items: Vec<Expr> = match list {
     Expr::List(items) => items.clone(),
@@ -1266,7 +1286,12 @@ pub fn pad_right_multidim(
 
   let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
   for item in &items {
-    padded_children.push(pad_right_multidim(item, rest, pad)?);
+    padded_children.push(pad_right_multidim_with_margin(
+      item,
+      rest,
+      pad,
+      inner_margins,
+    )?);
   }
 
   let len = padded_children.len() as i128;
@@ -1274,14 +1299,32 @@ pub fn pad_right_multidim(
   if n <= 0 {
     return Ok(Expr::List(vec![]));
   }
-  if len >= n {
-    return Ok(Expr::List(padded_children[..n as usize].to_vec()));
+
+  if margin == 0 {
+    if len >= n {
+      return Ok(Expr::List(padded_children[..n as usize].to_vec()));
+    }
+    let filler = build_pad_shape(pad, rest);
+    let needed = (n - len) as usize;
+    padded_children.extend(vec![filler; needed]);
+    return Ok(Expr::List(padded_children));
   }
 
+  // Non-zero margin: position the source children at index `margin`
+  // (0-indexed) in the output. Entries outside [0, n) are dropped; gaps
+  // before and after the source are filled with the pad-shape.
+  let list_start = margin;
+  let list_end = list_start + len;
   let filler = build_pad_shape(pad, rest);
-  let needed = (n - len) as usize;
-  padded_children.extend(vec![filler; needed]);
-  Ok(Expr::List(padded_children))
+  let mut result = Vec::with_capacity(n as usize);
+  for i in 0..n {
+    if i >= list_start && i < list_end {
+      result.push(padded_children[(i - list_start) as usize].clone());
+    } else {
+      result.push(filler.clone());
+    }
+  }
+  Ok(Expr::List(result))
 }
 
 /// AST-based PadLeft: pad list on the left to length n.
