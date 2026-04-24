@@ -11644,3 +11644,11 @@ INPUT: f[a]
 EXPECTED:
 = a ^ 2
 ---
+FILE: mathics/builtin/patterns/rules.py
+CLASS: DispatchAtom
+LINE: 112
+TYPE: >>
+INPUT: F[2] /. rules
+EXPECTED:
+= 4
+---
