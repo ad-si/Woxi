@@ -834,8 +834,9 @@ pub fn conjugate_transpose_ast(
   Ok(Expr::List(result))
 }
 
-/// Projection[u, v] - project vector u onto vector v
-/// Formula: (u.v / v.v) * v
+/// Projection[u, v] - project vector u onto vector v.
+/// Formula uses conjugate inner product (matches Wolfram):
+///   (Conjugate[v].u / Conjugate[v].v) * v
 pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -865,18 +866,24 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Projection: vectors have incompatible lengths".into(),
     ));
   }
-  // Compute u.v
-  let mut uv = Expr::Integer(0);
-  for (a, b) in u.iter().zip(v.iter()) {
-    uv = eval_add(&uv, &eval_mul(a, b));
+  let conj_v: Vec<Expr> = v
+    .iter()
+    .map(|vi| {
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Conjugate".to_string(),
+        args: vec![vi.clone()],
+      })
+    })
+    .collect::<Result<_, _>>()?;
+  let mut cvu = Expr::Integer(0);
+  for (cv, ui) in conj_v.iter().zip(u.iter()) {
+    cvu = eval_add(&cvu, &eval_mul(cv, ui));
   }
-  // Compute v.v
-  let mut vv = Expr::Integer(0);
-  for b in v.iter() {
-    vv = eval_add(&vv, &eval_mul(b, b));
+  let mut cvv = Expr::Integer(0);
+  for (cv, vi) in conj_v.iter().zip(v.iter()) {
+    cvv = eval_add(&cvv, &eval_mul(cv, vi));
   }
-  // Compute (u.v / v.v) * v
-  let scalar = eval_divide(&uv, &vv);
+  let scalar = eval_divide(&cvu, &cvv);
   let result: Vec<Expr> = v.iter().map(|vi| eval_mul(&scalar, vi)).collect();
   Ok(Expr::List(result))
 }

@@ -496,6 +496,25 @@ mod projection {
       "{8/5, 16/5}"
     );
   }
+
+  // Projection uses the conjugate inner product, so for complex vectors
+  // the formula is `(Conjugate[v].u / Conjugate[v].v) * v`. Regression
+  // for mathics doctest `Projection[{3 + I, 2, 2 - I}, {2, 4, 5 I}]`.
+  #[test]
+  fn projection_complex_vectors() {
+    assert_eq!(
+      interpret("Projection[{3 + I, 2, 2 - I}, {2, 4, 5 I}]").unwrap(),
+      "{2/5 - (16*I)/45, 4/5 - (32*I)/45, 8/9 + I}"
+    );
+  }
+
+  #[test]
+  fn projection_onto_complex_vector() {
+    assert_eq!(
+      interpret("Projection[{1, 2}, {1 + I, 2}]").unwrap(),
+      "{1 + (2*I)/3, 5/3 - I/3}"
+    );
+  }
 }
 
 mod eigenvalues {

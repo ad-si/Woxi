@@ -1692,14 +1692,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/vectors/vector_space_operations.py
 CLASS: Projection
-LINE: 120
-TYPE: >>
-INPUT: Projection[{3 + I, 2, 2 - I}, {2, 4, 5 I}]
-EXPECTED:
-= {2 / 5 - 16 I / 45, 4 / 5 - 32 I / 45, 8 / 9 + I}
----
-FILE: mathics/builtin/vectors/vector_space_operations.py
-CLASS: Projection
 LINE: 129
 TYPE: >>
 INPUT: Abs[VectorAngle[Projection[u, v], v]] < 0. + 10^-7
