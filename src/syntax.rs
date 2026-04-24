@@ -3315,6 +3315,11 @@ fn build_expr_with_precedence(
       || op_str == "="
       || op_str == ":="
       || op_str == "/:"
+      || op_str == "@@"
+      || op_str == "@@@"
+      || op_str == "/@"
+      || op_str == "@*"
+      || op_str == "/*"
     {
       prec
     } else {
