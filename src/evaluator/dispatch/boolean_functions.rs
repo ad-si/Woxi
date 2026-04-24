@@ -15,13 +15,13 @@ pub fn dispatch_boolean_functions(
     "Not" if args.len() == 1 => {
       return Some(crate::functions::boolean_ast::not_ast(args));
     }
-    "Xor" if !args.is_empty() => {
+    "Xor" => {
       return Some(crate::functions::boolean_ast::xor_ast(args));
     }
     "Xnor" => {
       return Some(crate::functions::boolean_ast::xnor_ast(args));
     }
-    "Equivalent" if args.len() >= 2 => {
+    "Equivalent" => {
       return Some(crate::functions::boolean_ast::equivalent_ast(args));
     }
     "TautologyQ" if args.len() == 1 => {
@@ -74,10 +74,10 @@ pub fn dispatch_boolean_functions(
     "Implies" if args.len() == 2 => {
       return Some(crate::functions::boolean_ast::implies_ast(args));
     }
-    "Nand" if args.len() >= 2 => {
+    "Nand" => {
       return Some(crate::functions::boolean_ast::nand_ast(args));
     }
-    "Nor" if args.len() >= 2 => {
+    "Nor" => {
       return Some(crate::functions::boolean_ast::nor_ast(args));
     }
     "LogicalExpand" if args.len() == 1 => {

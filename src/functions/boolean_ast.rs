@@ -82,10 +82,9 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Xor[expr1, expr2, ...] - Logical XOR
 pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Xor[] = False (empty XOR is the identity element)
   if args.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Xor expects at least 1 argument".into(),
-    ));
+    return Ok(Expr::Identifier("False".to_string()));
   }
   // Single argument: Xor[x] => x
   if args.len() == 1 {
@@ -625,10 +624,14 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Nand[expr1, expr2, ...] - Logical NAND (Not And)
 pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Nand expects at least 2 arguments".into(),
-    ));
+  // Nand[] = Not[And[]] = Not[True] = False
+  if args.is_empty() {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+  // Nand[a] = Not[a]
+  if args.len() == 1 {
+    let evaluated = evaluate_expr_to_expr(&args[0])?;
+    return not_ast(&[evaluated]);
   }
 
   let mut remaining = Vec::new();
@@ -654,10 +657,14 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Nor[expr1, expr2, ...] - Logical NOR (Not Or)
 pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Nor expects at least 2 arguments".into(),
-    ));
+  // Nor[] = Not[Or[]] = Not[False] = True
+  if args.is_empty() {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  // Nor[a] = Not[a]
+  if args.len() == 1 {
+    let evaluated = evaluate_expr_to_expr(&args[0])?;
+    return not_ast(&[evaluated]);
   }
 
   let mut remaining = Vec::new();
@@ -683,10 +690,9 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Equivalent[expr1, expr2, ...] - True if all args have the same truth value
 pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Equivalent[] and Equivalent[a] are vacuously True.
   if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Equivalent expects at least 2 arguments".into(),
-    ));
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   let mut has_true = false;
