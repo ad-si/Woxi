@@ -282,6 +282,29 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // `$SystemCharacterEncoding` uses the IANA form with a dash
     // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
     "$SystemCharacterEncoding" => Some(Expr::String("UTF-8".to_string())),
+    // Fixed list of available print forms, in wolframscript's exact
+    // order — InputForm/OutputForm first, then the specialised ones, then
+    // StandardForm/TraditionalForm last.
+    "$PrintForms" => {
+      let forms = [
+        "InputForm",
+        "OutputForm",
+        "TextForm",
+        "CForm",
+        "FortranForm",
+        "ScriptForm",
+        "MathMLForm",
+        "TeXForm",
+        "StandardForm",
+        "TraditionalForm",
+      ];
+      Some(Expr::List(
+        forms
+          .iter()
+          .map(|s| Expr::Identifier((*s).to_string()))
+          .collect(),
+      ))
+    }
     // Fixed list of supported encodings, in wolframscript's exact order.
     // This is a registry-style list, not an alphabetical sort — EUC-JP
     // precedes EUC, ISO8859-10 precedes ISO8859-1, etc.

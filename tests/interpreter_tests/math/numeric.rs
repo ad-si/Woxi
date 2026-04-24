@@ -648,6 +648,15 @@ mod precision {
     );
   }
 
+  // `$PrintForms` lists the output-form symbols in wolframscript's order.
+  #[test]
+  fn print_forms_matches_wolframscript() {
+    assert_eq!(
+      interpret("$PrintForms").unwrap(),
+      "{InputForm, OutputForm, TextForm, CForm, FortranForm, ScriptForm, MathMLForm, TeXForm, StandardForm, TraditionalForm}"
+    );
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).

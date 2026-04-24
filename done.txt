@@ -11957,3 +11957,11 @@ INPUT: $CharacterEncodings[[;;9]]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: PrintForms_
+LINE: 161
+TYPE: >>
+INPUT: $PrintForms
+EXPECTED:
+= ...
+---

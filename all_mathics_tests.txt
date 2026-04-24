@@ -4579,14 +4579,6 @@ INPUT: $OutputForms
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/forms/variables.py
-CLASS: PrintForms_
-LINE: 161
-TYPE: >>
-INPUT: $PrintForms
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Divide
 LINE: 124
