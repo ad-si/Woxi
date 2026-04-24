@@ -126,6 +126,20 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_machine_precision_arbitrary() {
+    // N[MachinePrecision, 30] — MachinePrecision = Log10[2^53] ≈ 15.9545…
+    // Regression for the mathics atomic/numbers.py MachinePrecision doctest
+    // and for the `N[MachinePrecision, _]` path more broadly.
+    let result = interpret("N[MachinePrecision, 30]").unwrap();
+    assert!(
+      result.starts_with("15.9545897701910033463281614203"),
+      "Got: {}",
+      result
+    );
+    assert!(result.ends_with("`30."));
+  }
+
+  #[test]
   fn n_sqrt_arbitrary() {
     // N[Sqrt[2], 20] — check first 20 digits
     let result = interpret("N[Sqrt[2], 20]").unwrap();
@@ -444,8 +458,7 @@ mod precision {
   #[test]
   fn accuracy_precision_log_identity_on_machine_real() {
     assert_eq!(
-      interpret("(Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`")
-        .unwrap(),
+      interpret("(Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`").unwrap(),
       "True"
     );
   }

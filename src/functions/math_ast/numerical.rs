@@ -480,6 +480,18 @@ pub fn expr_to_bigfloat(
     Expr::Identifier(name) if name == "Khinchin" => {
       Ok(compute_khinchin(bits, rm, cc))
     }
+    // MachinePrecision = Log10[2^53] = 53 * Log10[2].
+    // `N[MachinePrecision, 30]` should yield the arbitrary-precision
+    // decimal expansion `15.9545897701910033463281614204`.
+    Expr::Identifier(name) if name == "MachinePrecision" => {
+      let two = BigFloat::from_i32(2, bits);
+      let ten = BigFloat::from_i32(10, bits);
+      let log2 = two.ln(bits, rm, cc);
+      let log10 = ten.ln(bits, rm, cc);
+      let log10_2 = log2.div(&log10, bits, rm);
+      let fifty_three = BigFloat::from_i32(53, bits);
+      Ok(fifty_three.mul(&log10_2, bits, rm))
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
