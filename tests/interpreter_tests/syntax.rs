@@ -1613,9 +1613,11 @@ mod pattern_test_function {
 
   #[test]
   fn pattern_test_with_head_display() {
+    // wolframscript wraps the pattern in parens when it carries a name
+    // or head constraint: `(n_Integer)?NonNegative`.
     assert_eq!(
       interpret("Hold[n_Integer?NonNegative]").unwrap(),
-      "Hold[n_Integer?NonNegative]"
+      "Hold[(n_Integer)?NonNegative]"
     );
   }
 
@@ -4985,10 +4987,7 @@ mod tag_set_delayed {
     // mathics test_evaluation.py:333.
     clear_state();
     assert_eq!(
-      interpret(
-        "Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]"
-      )
-      .unwrap(),
+      interpret("Unprotect[Real]; Real/:F[x_Real]:=x; DownValues[F]").unwrap(),
       "{}"
     );
   }

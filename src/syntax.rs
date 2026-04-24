@@ -6695,12 +6695,23 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       let blanks = "_".repeat(*blank_type as usize);
       let head_str = head.as_deref().unwrap_or("");
       let test_str = format_expr(test, ExprForm::Input);
-      // If test is a simple identifier, use x_Head?Test form; otherwise wrap in parens
-      let needs_parens = !matches!(test.as_ref(), Expr::Identifier(_));
-      if needs_parens {
-        format!("{}{}{}?({})", name, blanks, head_str, test_str)
+      let pattern_str = format!("{}{}{}", name, blanks, head_str);
+      // Bare `_` / `__` / `___` (no name, no head) is the only shape
+      // wolframscript writes without parentheses: `_?test`. Anything
+      // that carries a name or head — `x_?test`, `_Integer?test` — is
+      // wrapped, matching wolframscript's InputForm.
+      let needs_parens = !name.is_empty() || !head_str.is_empty();
+      if !matches!(test.as_ref(), Expr::Identifier(_)) {
+        // Non-atomic test needs parens around the test too.
+        if needs_parens {
+          format!("({})?({})", pattern_str, test_str)
+        } else {
+          format!("{}?({})", pattern_str, test_str)
+        }
+      } else if needs_parens {
+        format!("({})?{}", pattern_str, test_str)
       } else {
-        format!("{}{}{}?{}", name, blanks, head_str, test_str)
+        format!("{}?{}", pattern_str, test_str)
       }
     }
     Expr::Constant(s) => s.clone(),
