@@ -4609,9 +4609,18 @@ pub fn evaluate_function_call_ast_inner(
     && let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1])
   {
     if !std::path::Path::new(source).exists() {
+      // Match wolframscript's message, which reports the absolute path.
+      let path = std::path::Path::new(source);
+      let abs = if path.is_absolute() {
+        source.clone()
+      } else {
+        std::env::current_dir()
+          .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
+          .unwrap_or_else(|_| source.clone())
+      };
       crate::emit_message(&format!(
         "CopyFile::fdnfnd: Directory or file \"{}\" not found.",
-        source
+        abs
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }

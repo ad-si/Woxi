@@ -12372,3 +12372,11 @@ INPUT: RenameFile["MathicsSunflowers.jpg", "MathicsSunnyFlowers.jpg"]
 EXPECTED:
 = MathicsSunnyFlowers.jpg
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: RenameFile
+LINE: 936
+TYPE: >>
+INPUT: CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]
+EXPECTED:
+= MathicsSunflowers.jpg
+---

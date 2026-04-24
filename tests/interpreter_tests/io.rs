@@ -409,6 +409,33 @@ mod rename_file {
   }
 }
 
+mod copy_file_missing_source {
+  use super::*;
+
+  // Missing source: `CopyFile::fdnfnd` with the absolute path, return
+  // $Failed. (Placed in a separate module from the existing copy_file
+  // tests to avoid churning those.)
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn message_uses_absolute_path() {
+    let result = interpret_with_stdout(
+      r#"CopyFile["ExampleData/sunflowers.jpg", "MathicsSunflowers.jpg"]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("CopyFile::fdnfnd: Directory or file ")
+          && w.contains("ExampleData/sunflowers.jpg")
+          && w.starts_with("CopyFile::fdnfnd: Directory or file \"/")),
+      "expected absolute-path fdnfnd warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod file_format {
   use super::*;
 
