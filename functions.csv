@@ -1131,14 +1131,14 @@ CellTags,,🚫,,3.0,1142
 FractionBox,Low-level box construct for fraction display,✅,pure,3.0,1143
 Magnification,,🚫,,3.0,1145
 Refresh,,🚫,,6.0,1145
-KelvinBer,,🚫,,6.0,1146
+KelvinBer,Kelvin ber function (real part of BesselJ on a rotated argument),✅,pure,6.0,1146
 NetTrain,,🚫,,11.0,1147
 SinIntegral,Sine integral Si(z),✅,pure,2.0,1148
 DiscretizeGraphics,,🚫,,10.0,1149
 GroebnerBasis,,🚫,,2.0,1150
 LegendMarkerSize,,🚫,,9.0,1151
 Subsuperscript,,🚫,,3.0,1152
-KelvinBei,,🚫,,6.0,1153
+KelvinBei,Kelvin bei function (imaginary part of BesselJ on a rotated argument),✅,pure,6.0,1153
 CubeRoot,Returns the real-valued cube root,✅,pure,9.0,1154
 ContinuousAction,,🚫,,6.0,1155
 Overlay,,🚫,,8.0,1156

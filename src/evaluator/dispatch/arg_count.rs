@@ -526,6 +526,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KeyDrop" => Some((2, 2)),
     "KeyDropFrom" => Some((2, 2)),
     "KeyExistsQ" => Some((2, 2)),
+    "KelvinBei" => Some((1, 2)),
+    "KelvinBer" => Some((1, 2)),
     "KeyMap" => Some((2, 2)),
     "KeyMemberQ" => Some((2, 2)),
     "Keys" => Some((1, 1)),

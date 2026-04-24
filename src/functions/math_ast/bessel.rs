@@ -732,3 +732,79 @@ pub fn spherical_hankel_h2_ast(
     args,
   )
 }
+
+// ─── Kelvin functions ─────────────────────────────────────────────────
+// Defined via BesselJ on a rotated argument:
+//   ber(x) + I·bei(x) = BesselJ[0, x·e^(3 Pi I/4)]
+//   ker(x) + I·kei(x) = e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)]
+// The real-valued series for ber and bei are used directly.
+
+/// Real-valued `ber(x)` via its power series.
+fn ber_series(x: f64) -> f64 {
+  let u = (x * 0.5) * (x * 0.5);
+  let mut term = 1.0; // k=0 term
+  let mut sum = term;
+  for k in 1..200usize {
+    let k2 = (2 * k) as f64;
+    term *= -u * u / ((k2 - 1.0) * k2 * (k2 - 1.0) * k2);
+    sum += term;
+    if term.abs() < 1e-18 * sum.abs().max(1.0) {
+      break;
+    }
+  }
+  sum
+}
+
+/// Real-valued `bei(x)` via its power series.
+fn bei_series(x: f64) -> f64 {
+  let u = (x * 0.5) * (x * 0.5);
+  let mut term = u; // k=0 term = (x/2)^2
+  let mut sum = term;
+  for k in 1..200usize {
+    let k2 = (2 * k) as f64;
+    term *= -u * u / (k2 * (k2 + 1.0) * k2 * (k2 + 1.0));
+    sum += term;
+    if term.abs() < 1e-18 * sum.abs().max(1.0) {
+      break;
+    }
+  }
+  sum
+}
+
+/// KelvinBer[x] - real part of BesselJ[0, x·e^(3πI/4)].
+pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KelvinBer expects 1 argument".into(),
+    ));
+  }
+  if let Some(x) = match &args[0] {
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  } {
+    return Ok(Expr::Real(ber_series(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "KelvinBer".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// KelvinBei[x] - imaginary part of BesselJ[0, x·e^(3πI/4)].
+pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KelvinBei expects 1 argument".into(),
+    ));
+  }
+  if let Some(x) = match &args[0] {
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  } {
+    return Ok(Expr::Real(bei_series(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "KelvinBei".to_string(),
+    args: args.to_vec(),
+  })
+}
