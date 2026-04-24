@@ -968,8 +968,7 @@ pub fn enumerate_flat_partition_matches(
       &mut Vec::new(),
       &mut |groups: &[Vec<usize>]| {
         let refs: Vec<&Vec<usize>> = groups.iter().collect();
-        if let Some(b) =
-          try_align_groups(pat_name, pat_args, expr_args, &refs)
+        if let Some(b) = try_align_groups(pat_name, pat_args, expr_args, &refs)
         {
           out.push(b);
         }
@@ -2717,9 +2716,26 @@ fn match_pattern_impl(
         }
         Some(bindings)
       } else {
-        // Expression is not the same BinaryOp; try OneIdentity matching
+        // Expression is not the same BinaryOp — it may be a FunctionCall
+        // with the same head (e.g. Plus[a,b,c] vs BinaryOp{Plus, x_, y_}).
+        // Convert BinaryOp pattern to a FunctionCall pattern and retry so
+        // Flat partition matching and other FunctionCall-specific logic
+        // (Orderless permutation, sequence patterns, etc.) applies.
         let func_name = binary_op_to_func_name(pat_op);
         if !func_name.is_empty() {
+          if let Expr::FunctionCall {
+            name: expr_name, ..
+          } = expr
+            && expr_name == func_name
+          {
+            let pat_as_call = Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![(**pat_left).clone(), (**pat_right).clone()],
+            };
+            if let Some(b) = match_pattern(expr, &pat_as_call) {
+              return Some(b);
+            }
+          }
           try_one_identity_match(
             expr,
             func_name,

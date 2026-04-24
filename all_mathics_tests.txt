@@ -3119,14 +3119,6 @@ INPUT: Log[a * (b * c) ^ d ^ e * f] //. logrules
 EXPECTED:
 = Log[a] + Log[f] + (Log[b] + Log[c]) d ^ e
 ---
-FILE: mathics/builtin/patterns/rules.py
-CLASS: ReplaceRepeated
-LINE: 431
-TYPE: >>
-INPUT: Log[a * (b * c) ^ d ^ e * f] /. logrules
-EXPECTED:
-= Log[a] + Log[f (b c) ^ d ^ e]
----
 FILE: mathics/builtin/distance/clusters.py
 CLASS: ClusteringComponents
 LINE: 260

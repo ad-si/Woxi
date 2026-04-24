@@ -1347,6 +1347,26 @@ mod flat_partition_match {
       "{a, b*c}"
     );
   }
+
+  // When `x_ + y_` is parsed from operator form, the pattern is stored as a
+  // BinaryOp, but the expression it tries to match (e.g. `a+b+c`) is a
+  // FunctionCall. The pattern matcher must bridge those representations so
+  // Flat partition matching applies through RuleDelayed too.
+  #[test]
+  fn rule_delayed_flat_partition_plus() {
+    assert_eq!(
+      interpret("a + b + c /. x_ + y_ :> f[x, y]").unwrap(),
+      "f[a, b + c]"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_flat_partition_times_inside_log() {
+    assert_eq!(
+      interpret("Log[a*b*c] /. Log[x_ * y_] :> Log[x] + Log[y]").unwrap(),
+      "Log[a] + Log[b*c]"
+    );
+  }
 }
 
 mod select_first {
