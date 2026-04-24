@@ -2578,6 +2578,42 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
 
+  // Underflow[] / Overflow[] absorb non-zero numeric factors (Wolfram
+  // keeps them symbolic when multiplied by symbols). 0 * Underflow[] = 0.
+  let is_underflow = |a: &Expr| {
+    matches!(a, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty())
+  };
+  let is_overflow = |a: &Expr| {
+    matches!(a, Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
+  };
+  if flat_args.iter().any(|a| is_underflow(a) || is_overflow(a)) {
+    let has_zero = flat_args.iter().any(|a| matches!(a, Expr::Integer(0)));
+    if has_zero {
+      return Ok(Expr::Integer(0));
+    }
+    let all_numeric_or_flag = flat_args.iter().all(|a| {
+      is_underflow(a)
+        || is_overflow(a)
+        || matches!(
+          a,
+          Expr::Integer(_)
+            | Expr::Real(_)
+            | Expr::BigInteger(_)
+            | Expr::BigFloat(_, _)
+        )
+        || matches!(a, Expr::FunctionCall { name, args: ra }
+          if name == "Rational" && ra.len() == 2)
+    });
+    if all_numeric_or_flag {
+      let tag =
+        if flat_args.iter().any(&is_overflow) { "Overflow" } else { "Underflow" };
+      return Ok(Expr::FunctionCall {
+        name: tag.to_string(),
+        args: vec![],
+      });
+    }
+  }
+
   let args = &flat_args;
 
   // Try complex multiplication: if all args can be extracted as exact complex
