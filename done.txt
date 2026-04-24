@@ -12005,3 +12005,11 @@ INPUT: Equivalent[a, b, c]
 EXPECTED:
 = a \\[Equivalent] b \\[Equivalent] c
 ---
+FILE: mathics/builtin/file_operations/path_operations.py
+CLASS: FileNameDrop
+LINE: 40
+TYPE: >>
+INPUT: FileNameDrop[path, -1]
+EXPECTED:
+= ...
+---
