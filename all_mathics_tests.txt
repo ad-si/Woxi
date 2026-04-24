@@ -3289,14 +3289,6 @@ EXPECTED:
 = 0.
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: CharacterEncoding
-LINE: 295
-TYPE: >>
-INPUT: $CharacterEncoding = "ASCII"; a -> b
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: InterpretedBox
 LINE: 389
 TYPE: >>

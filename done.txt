@@ -12045,3 +12045,11 @@ INPUT: $CharacterEncoding = "UTF-8"; a -> b
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: CharacterEncoding
+LINE: 295
+TYPE: >>
+INPUT: $CharacterEncoding = "ASCII"; a -> b
+EXPECTED:
+= ...
+---
