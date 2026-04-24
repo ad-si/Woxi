@@ -1503,6 +1503,15 @@ pub fn evaluate_expr_to_expr_inner(
         return evaluate_expr_to_expr(&and_expr);
       }
 
+      // UnsameQ with 3+ operands is NOT transitive: it requires ALL pairs
+      // to be distinct, not just adjacent ones. Delegate to unsame_q_ast,
+      // which implements the correct all-pairs check.
+      if operators.len() >= 2
+        && operators.iter().all(|op| *op == ComparisonOp::UnsameQ)
+      {
+        return crate::functions::boolean_ast::unsame_q_ast(&values);
+      }
+
       // Evaluate comparison chain
       // Use try_eval_to_f64_with_infinity for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], Infinity, etc.)
       use crate::functions::math_ast::try_eval_to_f64_with_infinity as try_eval_to_f64;
