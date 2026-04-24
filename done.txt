@@ -11893,3 +11893,11 @@ INPUT: UnitConvert[Quantity[3.8, "Pounds"]]
 EXPECTED:
 = 1.72365 kilogram
 ---
+FILE: mathics/builtin/colors/color_operations.py
+CLASS: Lighter
+LINE: 477
+TYPE: >>
+INPUT: Lighter[Orange, 1/4]
+EXPECTED:
+= RGBColor[1., 0.625, 0.25]
+---
