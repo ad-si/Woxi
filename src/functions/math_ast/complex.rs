@@ -434,7 +434,7 @@ pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Heuristic: is `e` a strictly positive real value? Used to strip
 /// positive-real scaling factors inside Arg[z * positive_real] = Arg[z].
-fn is_strictly_positive_real(e: &Expr) -> bool {
+pub fn is_strictly_positive_real(e: &Expr) -> bool {
   match e {
     Expr::Integer(n) => *n > 0,
     Expr::BigInteger(n) => {

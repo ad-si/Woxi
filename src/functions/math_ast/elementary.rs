@@ -38,6 +38,10 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Abs expects exactly 1 argument".into(),
     ));
   }
+  // Abs[Undefined] = Undefined
+  if matches!(&args[0], Expr::Identifier(s) if s == "Undefined") {
+    return Ok(Expr::Identifier("Undefined".to_string()));
+  }
   // Handle any expression containing Infinity → Infinity
   if contains_infinity(&args[0]) {
     return Ok(Expr::Identifier("Infinity".to_string()));
@@ -47,6 +51,18 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => return Ok(Expr::Integer(n.abs())),
     Expr::Real(f) => return Ok(Expr::Real(f.abs())),
     _ => {}
+  }
+  // Abs[known positive real] = x (symbolic, no numeric conversion):
+  // Pi, E, GoldenRatio, Sqrt[n>0], positive^anything, etc.
+  if crate::functions::math_ast::complex::is_strictly_positive_real(&args[0]) {
+    return Ok(args[0].clone());
+  }
+  // Abs[Conjugate[x]] = Abs[x]
+  if let Expr::FunctionCall { name, args: cargs } = &args[0]
+    && name == "Conjugate"
+    && cargs.len() == 1
+  {
+    return abs_ast(&[cargs[0].clone()]);
   }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {

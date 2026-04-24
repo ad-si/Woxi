@@ -5,7 +5,7 @@
 mod airy;
 mod arithmetic;
 mod bessel;
-mod complex;
+pub mod complex;
 mod digits;
 mod distributions;
 mod elementary;
