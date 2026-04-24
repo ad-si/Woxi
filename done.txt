@@ -11805,3 +11805,11 @@ INPUT: DigitCount[Floor[Pi * 10^100]]
 EXPECTED:
 = {8, 12, 12, 10, 8, 9, 8, 12, 14, 8}
 ---
+FILE: mathics/builtin/tensors.py
+CLASS: Outer
+LINE: 197
+TYPE: >>
+INPUT: Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]
+EXPECTED:
+= {{{{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}, {{f[a, 0], f[a, c]}, {f[a, d], f[a, 0]}}}, {{{f[b, 0], f[b, c]}, {f[b, d], f[b, 0]}}, {{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}}}
+---

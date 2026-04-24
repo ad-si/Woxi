@@ -409,6 +409,36 @@ mod outer_extended {
     );
   }
 
+  // SparseArray arguments are expanded to Normal (dense nested list) form
+  // before Outer runs, matching Wolfram's behaviour on mixed
+  // `Outer[f, SparseArray[...], SparseArray[...]]` / `Outer[f,
+  // SparseArray[...], {c, d}]` inputs.
+  #[test]
+  fn sparse_array_pair() {
+    assert_eq!(
+      interpret(
+        "Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], \
+         SparseArray[{{1, 2} -> c, {2, 1} -> d}]]"
+      )
+      .unwrap(),
+      "{{{{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}, \
+       {{f[a, 0], f[a, c]}, {f[a, d], f[a, 0]}}}, \
+       {{{f[b, 0], f[b, c]}, {f[b, d], f[b, 0]}}, \
+       {{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}}}"
+    );
+  }
+
+  #[test]
+  fn sparse_array_with_list() {
+    assert_eq!(
+      interpret(
+        "Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]"
+      )
+      .unwrap(),
+      "{{{0, 0}, {a*c, a*d}}, {{b*c, b*d}, {0, 0}}}"
+    );
+  }
+
   #[test]
   fn level_spec_per_list() {
     // Per-list level specs: descend 1 level in first, 1 level in second.

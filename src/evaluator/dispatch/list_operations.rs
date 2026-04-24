@@ -2021,7 +2021,7 @@ pub fn dispatch_list_operations(
       if num_lists == 0 {
         num_level_args = 0; // all args are lists (integers can be list elements)
       }
-      let (lists, level_args) = if num_level_args > 0 {
+      let (lists_in, level_args) = if num_level_args > 0 {
         (&rest[..num_lists], &rest[num_lists..])
       } else {
         (rest, &rest[0..0])
@@ -2039,8 +2039,29 @@ pub fn dispatch_list_operations(
         })
         .collect();
 
+      // Convert any SparseArray argument to its Normal (dense-list) form so
+      // Outer can treat it as a regular nested list. Wolfram handles the
+      // mixed case `Outer[Times, SparseArray[...], {c, d}]` the same way.
+      let lists_owned: Vec<Expr> = lists_in
+        .iter()
+        .map(|e| {
+          if let Expr::FunctionCall {
+            name,
+            args: sa_args,
+          } = e
+            && name == "SparseArray"
+          {
+            list_helpers_ast::sparse_array_ast(sa_args).unwrap_or_else(|_| e.clone())
+          } else {
+            e.clone()
+          }
+        })
+        .collect();
+
       return Some(list_helpers_ast::outer_ast_with_levels(
-        &args[0], lists, &levels,
+        &args[0],
+        &lists_owned,
+        &levels,
       ));
     }
     "TensorProduct" if args.len() >= 2 => {
