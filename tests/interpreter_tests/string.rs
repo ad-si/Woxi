@@ -2570,10 +2570,7 @@ mod to_expression {
   // evaluated in order and the last result is returned.
   #[test]
   fn named_newline_splits_statements() {
-    assert_eq!(
-      interpret("ToExpression[\"2\\[NewLine]3\"]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("ToExpression[\"2\\[NewLine]3\"]").unwrap(), "3");
   }
 
   #[test]

@@ -793,7 +793,11 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// exceeds what i128 can represent. `approx` is the f64 approximation used
 /// only to pick a target precision. Returns an `Expr::BigInteger` on
 /// success, or `None` if BigFloat evaluation of the input fails.
-fn floor_via_bigfloat(expr: &Expr, approx: f64, is_floor: bool) -> Option<Expr> {
+fn floor_via_bigfloat(
+  expr: &Expr,
+  approx: f64,
+  is_floor: bool,
+) -> Option<Expr> {
   use astro_float::{Consts, RoundingMode};
   if !approx.is_finite() {
     return None;
@@ -805,12 +809,14 @@ fn floor_via_bigfloat(expr: &Expr, approx: f64, is_floor: bool) -> Option<Expr> 
   let bits = crate::functions::math_ast::numerical::nominal_bits(precision);
   let mut cc = Consts::new().ok()?;
   let rm = RoundingMode::ToEven;
-  let bf =
-    crate::functions::math_ast::numerical::expr_to_bigfloat(expr, bits, rm, &mut cc)
-      .ok()?;
-  let decimal =
-    crate::functions::math_ast::numerical::bigfloat_to_string(&bf, None, rm, &mut cc)
-      .ok()?;
+  let bf = crate::functions::math_ast::numerical::expr_to_bigfloat(
+    expr, bits, rm, &mut cc,
+  )
+  .ok()?;
+  let decimal = crate::functions::math_ast::numerical::bigfloat_to_string(
+    &bf, None, rm, &mut cc,
+  )
+  .ok()?;
   // decimal looks like "[-]DIGITS.FRAC" (or just "[-]DIGITS.").
   let (sign, rest) = if let Some(s) = decimal.strip_prefix('-') {
     ("-", s)
@@ -871,7 +877,7 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(result) = floor_via_bigfloat(&args[0], n, true) {
       return Ok(result);
     }
-    return Ok(Expr::Integer(n.floor() as i128));
+    Ok(Expr::Integer(n.floor() as i128))
   } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
     if im == 0.0 {
       Ok(Expr::Integer(re.floor() as i128))
@@ -920,7 +926,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(result) = floor_via_bigfloat(&args[0], n, false) {
       return Ok(result);
     }
-    return Ok(Expr::Integer(n.ceil() as i128));
+    Ok(Expr::Integer(n.ceil() as i128))
   } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
     if im == 0.0 {
       Ok(Expr::Integer(re.ceil() as i128))

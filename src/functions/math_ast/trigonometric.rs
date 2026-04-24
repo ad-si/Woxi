@@ -1885,10 +1885,8 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         right: Box::new(Expr::Constant("Pi".to_string())),
       });
     }
-    Expr::Real(f) => {
-      if (-1.0..=1.0).contains(f) {
-        return Ok(Expr::Real(f.asin()));
-      }
+    Expr::Real(f) if (-1.0..=1.0).contains(f) => {
+      return Ok(Expr::Real(f.asin()));
     }
     _ => {}
   }
@@ -1963,10 +1961,8 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     Expr::Integer(-1) => return Ok(Expr::Constant("Pi".to_string())),
-    Expr::Real(f) => {
-      if (-1.0..=1.0).contains(f) {
-        return Ok(Expr::Real(f.acos()));
-      }
+    Expr::Real(f) if (-1.0..=1.0).contains(f) => {
+      return Ok(Expr::Real(f.acos()));
     }
     _ => {}
   }

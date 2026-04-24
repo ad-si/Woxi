@@ -146,71 +146,69 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
     Expr::Comparison {
       operands,
       operators,
-    } => {
-      if operands.len() == 2 && operators.len() == 1 {
-        let op = &operators[0];
-        let left = &operands[0];
-        let right = &operands[1];
+    } if operands.len() == 2 && operators.len() == 1 => {
+      let op = &operators[0];
+      let left = &operands[0];
+      let right = &operands[1];
 
-        // x > c where c >= 0 → positive (strictly)
-        if matches!(op, crate::syntax::ComparisonOp::Greater)
-          && let Expr::Identifier(name) = left
-          && is_nonnegative_constant(right)
-        {
+      // x > c where c >= 0 → positive (strictly)
+      if matches!(op, crate::syntax::ComparisonOp::Greater)
+        && let Expr::Identifier(name) = left
+        && is_nonnegative_constant(right)
+      {
+        info.positive_vars.push(name.clone());
+      }
+      // x >= c where c > 0 → positive; where c == 0 → nonnegative
+      if matches!(op, crate::syntax::ComparisonOp::GreaterEqual)
+        && let Expr::Identifier(name) = left
+        && is_nonnegative_constant(right)
+      {
+        if is_positive_constant(right) {
           info.positive_vars.push(name.clone());
+        } else {
+          info.nonnegative_vars.push(name.clone());
         }
-        // x >= c where c > 0 → positive; where c == 0 → nonnegative
-        if matches!(op, crate::syntax::ComparisonOp::GreaterEqual)
-          && let Expr::Identifier(name) = left
-          && is_nonnegative_constant(right)
-        {
-          if is_positive_constant(right) {
-            info.positive_vars.push(name.clone());
-          } else {
-            info.nonnegative_vars.push(name.clone());
-          }
-        }
+      }
 
-        // c < x where c >= 0 → positive
-        if matches!(op, crate::syntax::ComparisonOp::Less)
-          && let Expr::Identifier(name) = right
-          && is_nonnegative_constant(left)
-        {
+      // c < x where c >= 0 → positive
+      if matches!(op, crate::syntax::ComparisonOp::Less)
+        && let Expr::Identifier(name) = right
+        && is_nonnegative_constant(left)
+      {
+        info.positive_vars.push(name.clone());
+      }
+      // c <= x where c > 0 → positive; where c == 0 → nonnegative
+      if matches!(op, crate::syntax::ComparisonOp::LessEqual)
+        && let Expr::Identifier(name) = right
+        && is_nonnegative_constant(left)
+      {
+        if is_positive_constant(left) {
           info.positive_vars.push(name.clone());
+        } else {
+          info.nonnegative_vars.push(name.clone());
         }
-        // c <= x where c > 0 → positive; where c == 0 → nonnegative
-        if matches!(op, crate::syntax::ComparisonOp::LessEqual)
-          && let Expr::Identifier(name) = right
-          && is_nonnegative_constant(left)
-        {
-          if is_positive_constant(left) {
-            info.positive_vars.push(name.clone());
-          } else {
-            info.nonnegative_vars.push(name.clone());
-          }
-        }
+      }
 
-        // x < c, x <= c where c <= 0 → negative
-        if matches!(
-          op,
-          crate::syntax::ComparisonOp::Less
-            | crate::syntax::ComparisonOp::LessEqual
-        ) && let Expr::Identifier(name) = left
-          && is_nonpositive_constant(right)
-        {
-          info.negative_vars.push(name.clone());
-        }
+      // x < c, x <= c where c <= 0 → negative
+      if matches!(
+        op,
+        crate::syntax::ComparisonOp::Less
+          | crate::syntax::ComparisonOp::LessEqual
+      ) && let Expr::Identifier(name) = left
+        && is_nonpositive_constant(right)
+      {
+        info.negative_vars.push(name.clone());
+      }
 
-        // c > x, c >= x where c <= 0 → negative
-        if matches!(
-          op,
-          crate::syntax::ComparisonOp::Greater
-            | crate::syntax::ComparisonOp::GreaterEqual
-        ) && let Expr::Identifier(name) = right
-          && is_nonpositive_constant(left)
-        {
-          info.negative_vars.push(name.clone());
-        }
+      // c > x, c >= x where c <= 0 → negative
+      if matches!(
+        op,
+        crate::syntax::ComparisonOp::Greater
+          | crate::syntax::ComparisonOp::GreaterEqual
+      ) && let Expr::Identifier(name) = right
+        && is_nonpositive_constant(left)
+      {
+        info.negative_vars.push(name.clone());
       }
     }
     // Element[x, domain] or Element[Alternatives[a, b, ...], domain]
@@ -221,10 +219,8 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
       if let Expr::Identifier(domain) = &args[1] {
         for var_name in vars {
           match domain.as_str() {
-            "Reals" => {
-              if !info.real_vars.contains(&var_name) {
-                info.real_vars.push(var_name);
-              }
+            "Reals" if !info.real_vars.contains(&var_name) => {
+              info.real_vars.push(var_name);
             }
             "Integers" | "Primes" => {
               if !info.integer_vars.contains(&var_name) {
@@ -234,10 +230,10 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
                 info.real_vars.push(var_name);
               }
             }
-            "Rationals" | "Algebraics" => {
-              if !info.real_vars.contains(&var_name) {
-                info.real_vars.push(var_name);
-              }
+            "Rationals" | "Algebraics"
+              if !info.real_vars.contains(&var_name) =>
+            {
+              info.real_vars.push(var_name);
             }
             "PositiveReals" | "PositiveIntegers" | "PositiveRationals" => {
               info.positive_vars.push(var_name.clone());
@@ -433,15 +429,15 @@ fn check_comparison_under_assumption(
     // Check if we can determine the sign of the LHS expression
     if matches!(right, Expr::Integer(0)) {
       match op {
-        crate::syntax::ComparisonOp::Greater => {
-          if is_provably_positive_under_assumptions(left, info) {
-            return Some(true);
-          }
+        crate::syntax::ComparisonOp::Greater
+          if is_provably_positive_under_assumptions(left, info) =>
+        {
+          return Some(true);
         }
-        crate::syntax::ComparisonOp::GreaterEqual => {
-          if is_provably_nonneg_under_assumptions(left, info) {
-            return Some(true);
-          }
+        crate::syntax::ComparisonOp::GreaterEqual
+          if is_provably_nonneg_under_assumptions(left, info) =>
+        {
+          return Some(true);
         }
         _ => {}
       }
@@ -1923,15 +1919,11 @@ fn refine_element(
 ) -> Option<Expr> {
   if let Expr::Identifier(dom) = domain {
     match dom.as_str() {
-      "Reals" => {
-        if is_known_real(expr, info) {
-          return Some(Expr::Identifier("True".to_string()));
-        }
+      "Reals" if is_known_real(expr, info) => {
+        return Some(Expr::Identifier("True".to_string()));
       }
-      "Integers" => {
-        if is_known_integer(expr, info) {
-          return Some(Expr::Identifier("True".to_string()));
-        }
+      "Integers" if is_known_integer(expr, info) => {
+        return Some(Expr::Identifier("True".to_string()));
       }
       _ => {}
     }
@@ -2820,11 +2812,11 @@ fn is_provably_nonnegative_under_constraints(
       match &simplified {
         Expr::Integer(n) if *n >= 0 => return true,
         Expr::FunctionCall { name, args }
-          if name == "Rational" && args.len() == 2 =>
+          if name == "Rational"
+            && args.len() == 2
+            && is_nonnegative_constant(&simplified) =>
         {
-          if is_nonnegative_constant(&simplified) {
-            return true;
-          }
+          return true;
         }
         _ => {}
       }

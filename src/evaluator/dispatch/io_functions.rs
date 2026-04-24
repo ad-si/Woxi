@@ -538,13 +538,15 @@ pub fn dispatch_io_functions(
           && stream_args.len() == 2 =>
         {
           if let Expr::Integer(id) = &stream_args[1] {
-            crate::STREAM_REGISTRY.with(|reg| {
-              let registry = reg.borrow();
-              registry.get(&(*id as usize)).and_then(|s| match &s.kind {
-                crate::StreamKind::FileStream(path) => Some(path.clone()),
-                _ => None,
+            crate::STREAM_REGISTRY
+              .with(|reg| {
+                let registry = reg.borrow();
+                registry.get(&(*id as usize)).and_then(|s| match &s.kind {
+                  crate::StreamKind::FileStream(path) => Some(path.clone()),
+                  _ => None,
+                })
               })
-            }).unwrap_or_default()
+              .unwrap_or_default()
           } else {
             String::new()
           }

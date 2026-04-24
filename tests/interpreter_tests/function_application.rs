@@ -201,10 +201,7 @@ mod function_head {
   // `g[h[5]]`.
   #[test]
   fn anonymous_function_chained_application() {
-    assert_eq!(
-      interpret("g[#] & [h[#]] & [5]").unwrap(),
-      "g[h[5]]"
-    );
+    assert_eq!(interpret("g[#] & [h[#]] & [5]").unwrap(), "g[h[5]]");
   }
 
   #[test]

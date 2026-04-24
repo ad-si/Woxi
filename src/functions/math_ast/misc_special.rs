@@ -115,22 +115,20 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     // ProductLog[x.] for float
-    Expr::Real(f) => {
-      if *f >= -1.0 / std::f64::consts::E {
-        // Use iterative approximation (Halley's method)
-        let x = *f;
-        let mut w = if x < 1.0 { x } else { x.ln() };
-        for _ in 0..50 {
-          let ew = w.exp();
-          let wew = w * ew;
-          let delta = wew - x;
-          if delta.abs() < 1e-15 {
-            break;
-          }
-          w -= delta / (ew * (w + 1.0) - (w + 2.0) * delta / (2.0 * (w + 1.0)));
+    Expr::Real(f) if *f >= -1.0 / std::f64::consts::E => {
+      // Use iterative approximation (Halley's method)
+      let x = *f;
+      let mut w = if x < 1.0 { x } else { x.ln() };
+      for _ in 0..50 {
+        let ew = w.exp();
+        let wew = w * ew;
+        let delta = wew - x;
+        if delta.abs() < 1e-15 {
+          break;
         }
-        return Ok(Expr::Real(w));
+        w -= delta / (ew * (w + 1.0) - (w + 2.0) * delta / (2.0 * (w + 1.0)));
       }
+      return Ok(Expr::Real(w));
     }
     _ => {}
   }

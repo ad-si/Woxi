@@ -146,13 +146,7 @@ pub fn even_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use num_traits::Zero;
       (n % num_bigint::BigInt::from(2)).is_zero()
     }
-    Expr::Real(f) => {
-      if f.fract() == 0.0 {
-        (*f as i64) % 2 == 0
-      } else {
-        return Ok(bool_expr(false));
-      }
-    }
+    Expr::Real(f) if f.fract() == 0.0 => (*f as i64) % 2 == 0,
     _ => return Ok(bool_expr(false)),
   };
   Ok(bool_expr(is_even))
@@ -171,13 +165,7 @@ pub fn odd_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use num_traits::Zero;
       !(n % num_bigint::BigInt::from(2)).is_zero()
     }
-    Expr::Real(f) => {
-      if f.fract() == 0.0 {
-        (*f as i64) % 2 != 0
-      } else {
-        return Ok(bool_expr(false));
-      }
-    }
+    Expr::Real(f) if f.fract() == 0.0 => (*f as i64) % 2 != 0,
     _ => return Ok(bool_expr(false)),
   };
   Ok(bool_expr(is_odd))
@@ -573,13 +561,7 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = match &args[0] {
     Expr::Integer(n) => n.abs(),
-    Expr::Real(f) => {
-      if f.fract() == 0.0 && *f > 0.0 {
-        *f as i128
-      } else {
-        return Ok(bool_expr(false));
-      }
-    }
+    Expr::Real(f) if f.fract() == 0.0 && *f > 0.0 => *f as i128,
     _ => return Ok(bool_expr(false)),
   };
 

@@ -573,13 +573,12 @@ pub fn collect_free_vars_sa(
   result: &mut std::collections::BTreeSet<String>,
 ) {
   match expr {
-    Expr::Identifier(s) => {
+    Expr::Identifier(s)
       if !excluded.contains(s)
         && !is_builtin_constant_sa(s)
-        && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false)
-      {
-        result.insert(s.clone());
-      }
+        && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) =>
+    {
+      result.insert(s.clone());
     }
     Expr::List(items) => {
       for item in items {

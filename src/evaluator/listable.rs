@@ -235,10 +235,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // "14.3.0 for Mac OS X ARM (64-bit) (...)". Woxi has no notion of
     // such a string; surface the git version with a "Woxi " prefix so
     // the value is at least a populated String.
-    "$Version" => Some(Expr::String(format!(
-      "Woxi {}",
-      env!("WOXI_GIT_VERSION")
-    ))),
+    "$Version" => {
+      Some(Expr::String(format!("Woxi {}", env!("WOXI_GIT_VERSION"))))
+    }
     "$CommandLine" => {
       Some(Expr::List(std::env::args().map(Expr::String).collect()))
     }

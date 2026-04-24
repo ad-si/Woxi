@@ -3760,18 +3760,12 @@ mod factor_terms_list {
   // integers (regression for mathics Factor doctest).
   #[test]
   fn two_arg_symbol_independent_of_var() {
-    assert_eq!(
-      interpret("FactorTermsList[f, x]").unwrap(),
-      "{1, f, 1}"
-    );
+    assert_eq!(interpret("FactorTermsList[f, x]").unwrap(), "{1, f, 1}");
   }
 
   #[test]
   fn two_arg_scaled_symbol_independent_of_var() {
-    assert_eq!(
-      interpret("FactorTermsList[3*f, x]").unwrap(),
-      "{3, f, 1}"
-    );
+    assert_eq!(interpret("FactorTermsList[3*f, x]").unwrap(), "{3, f, 1}");
   }
 
   #[test]

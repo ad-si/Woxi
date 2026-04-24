@@ -417,8 +417,7 @@ mod find_stream {
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn non_stream_emits_stream_message() {
-    let result =
-      interpret_with_stdout(r#"Find[stream, "uranium"]"#).unwrap();
+    let result = interpret_with_stdout(r#"Find[stream, "uranium"]"#).unwrap();
     assert_eq!(result.result, "$Failed");
     assert!(
       result.warnings.iter().any(|w| w.contains(

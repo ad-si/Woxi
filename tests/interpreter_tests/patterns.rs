@@ -1672,10 +1672,7 @@ mod optional_pattern_without_default {
   // patterns/composite.py Pattern examples.
   #[test]
   fn optional_named_blank_colon_syntax_match() {
-    assert_eq!(
-      interpret("f[a] /. f[a:_:b] -> {a, b}").unwrap(),
-      "{a, b}"
-    );
+    assert_eq!(interpret("f[a] /. f[a:_:b] -> {a, b}").unwrap(), "{a, b}");
   }
 
   #[test]

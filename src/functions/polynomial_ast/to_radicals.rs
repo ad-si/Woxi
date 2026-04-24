@@ -542,19 +542,17 @@ fn nth_root_of_unity(
 
   // cos(num*pi/den) + i*sin(num*pi/den)
   // Common exact values:
-  match (num % (2 * den), den) {
-    _ => {
-      // General case: use cos + i*sin form which Wolfram can simplify
-      let angle = if den == 1 {
-        mk_times(mk_int(num), Expr::Identifier("Pi".to_string()))
-      } else {
-        mk_times(mk_ratio(num, den), Expr::Identifier("Pi".to_string()))
-      };
-      Some(mk_plus(vec![
-        mk_call("Cos", vec![angle.clone()]),
-        mk_times(i_val.clone(), mk_call("Sin", vec![angle])),
-      ]))
-    }
+  {
+    // General case: use cos + i*sin form which Wolfram can simplify
+    let angle = if den == 1 {
+      mk_times(mk_int(num), Expr::Identifier("Pi".to_string()))
+    } else {
+      mk_times(mk_ratio(num, den), Expr::Identifier("Pi".to_string()))
+    };
+    Some(mk_plus(vec![
+      mk_call("Cos", vec![angle.clone()]),
+      mk_times(i_val.clone(), mk_call("Sin", vec![angle])),
+    ]))
   }
 }
 

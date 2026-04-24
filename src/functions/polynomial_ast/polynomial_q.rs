@@ -164,14 +164,14 @@ pub fn collect_poly_vars(
       collect_poly_vars(right, vars);
     }
     Expr::UnaryOp { operand, .. } => collect_poly_vars(operand, vars),
-    Expr::FunctionCall { name, args } => {
-      if name == "Plus" || name == "Times" || name == "Power" {
-        for a in args {
-          collect_poly_vars(a, vars);
-        }
+    Expr::FunctionCall { name, args }
+      if (name == "Plus" || name == "Times" || name == "Power") =>
+    {
+      for a in args {
+        collect_poly_vars(a, vars);
       }
-      // For other functions like Sin[x], don't collect x as a polynomial variable
     }
+    // For other functions like Sin[x], don't collect x as a polynomial variable
     _ => {}
   }
 }

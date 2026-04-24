@@ -3833,9 +3833,9 @@ fn minimize_try_ilp(
         .collect();
       match sense {
         0 => equalities.push((coeffs, rhs)), // ==
-        1 => {
+        1
           // coeffs · x >= rhs
-          if nonzero.len() == 1 {
+          if nonzero.len() == 1 => {
             let i = nonzero[0];
             let bound = rhs / coeffs[i];
             if coeffs[i] > 0.0 {
@@ -3851,14 +3851,13 @@ fn minimize_try_ilp(
               }
             }
           }
-        }
-        -1 => {
+        -1
           // coeffs · x <= rhs  (sense -1 means LessEqual)
           // This means: lhs - rhs <= 0, so lhs <= rhs
           // From the extraction: diff = lhs - rhs, coeffs · x + constant >= 0 for sense 1
           // For sense -1: diff = lhs - rhs, coeffs · x + constant <= 0
           // i.e., sum(coeffs[i] * x[i]) <= -constant = rhs
-          if nonzero.len() == 1 {
+          if nonzero.len() == 1 => {
             let i = nonzero[0];
             if coeffs[i] > 0.0 {
               // x_i <= rhs / coeffs[i]
@@ -3874,7 +3873,6 @@ fn minimize_try_ilp(
               }
             }
           }
-        }
         _ => {}
       }
     } else {

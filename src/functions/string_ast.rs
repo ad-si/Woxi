@@ -3273,8 +3273,8 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Falls back to `string_to_expr` + evaluate for inputs the parser treats as
 /// a single expression.
 fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
-  use crate::syntax::pair_to_expr;
   use crate::Rule;
+  use crate::syntax::pair_to_expr;
   let normalized = if src.contains('\r') {
     src.replace("\r\n", "\n").replace('\r', "\n")
   } else {
@@ -3283,20 +3283,19 @@ fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
   // Insert `;` at top-level newline boundaries so the grammar treats
   // lines as distinct statements instead of implicit multiplication.
   let preprocessed = crate::insert_statement_separators(normalized.trim());
-  if let Ok(mut pairs) = crate::parse(&preprocessed) {
-    if let Some(program) = pairs.next() {
-      if program.as_rule() == Rule::Program {
-        let mut last: Option<Expr> = None;
-        for node in program.into_inner() {
-          if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
-            let expr = pair_to_expr(node);
-            last = Some(crate::evaluator::evaluate_expr_to_expr(&expr)?);
-          }
-        }
-        if let Some(v) = last {
-          return Ok(v);
-        }
+  if let Ok(mut pairs) = crate::parse(&preprocessed)
+    && let Some(program) = pairs.next()
+    && program.as_rule() == Rule::Program
+  {
+    let mut last: Option<Expr> = None;
+    for node in program.into_inner() {
+      if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
+        let expr = pair_to_expr(node);
+        last = Some(crate::evaluator::evaluate_expr_to_expr(&expr)?);
       }
+    }
+    if let Some(v) = last {
+      return Ok(v);
     }
   }
   // Fallback path for inputs the program grammar rejected.

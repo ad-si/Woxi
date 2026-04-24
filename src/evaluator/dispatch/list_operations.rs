@@ -1440,9 +1440,7 @@ pub fn dispatch_list_operations(
           // maps 1:1 per dimension.
           let margins: Vec<i128> = if args.len() >= 4 {
             match &args[3] {
-              Expr::List(ms) => {
-                ms.iter().filter_map(expr_to_i128).collect()
-              }
+              Expr::List(ms) => ms.iter().filter_map(expr_to_i128).collect(),
               _ => expr_to_i128(&args[3])
                 .map(|m| vec![m; ns.len()])
                 .unwrap_or_default(),

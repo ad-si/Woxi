@@ -311,7 +311,8 @@ pub fn dispatch_calculus_functions(
         && sd_name == "SeriesData"
         && sd_args.len() >= 6
         && let Expr::List(coeffs) = &sd_args[2]
-        && let Some(nmin) = crate::functions::math_ast::expr_to_i128(&sd_args[3])
+        && let Some(nmin) =
+          crate::functions::math_ast::expr_to_i128(&sd_args[3])
         && let Some(den) = crate::functions::math_ast::expr_to_i128(&sd_args[5])
         && den > 0
       {
