@@ -3399,14 +3399,6 @@ EXPECTED:
 = 5.
 ---
 FILE: mathics/builtin/atomic/numbers.py
-CLASS: RealDigits
-LINE: 367
-TYPE: >>
-INPUT: RealDigits[Pi, 10, 1, -500]
-EXPECTED:
-= {{2}, -499}
----
-FILE: mathics/builtin/atomic/numbers.py
 CLASS: MaxPrecision
 LINE: 597
 TYPE: >>

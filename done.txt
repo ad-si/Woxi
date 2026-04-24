@@ -11733,3 +11733,11 @@ INPUT: Function[{y}, f[x, y]] /. x->y
 EXPECTED:
 = Function[{y}, f[y, y]]
 ---
+FILE: mathics/builtin/atomic/numbers.py
+CLASS: RealDigits
+LINE: 367
+TYPE: >>
+INPUT: RealDigits[Pi, 10, 1, -500]
+EXPECTED:
+= {{2}, -499}
+---
