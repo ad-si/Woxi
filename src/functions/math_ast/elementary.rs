@@ -1052,6 +1052,19 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let eval_a = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
     let eval_x = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
 
+    // Complex step: Round[x, a] = a * Round[x/a]
+    if is_complex_number(&eval_a) || is_complex_number(&eval_x) {
+      let quotient = crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[eval_x.clone(), eval_a.clone()],
+      )?;
+      let rounded = round_ast(&[quotient])?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[eval_a, rounded],
+      );
+    }
+
     // Check if a is a Rational (n/d)
     if let Expr::FunctionCall { name, args: rargs } = &eval_a
       && name == "Rational"
@@ -1109,6 +1122,44 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec(),
     });
   }
+  // Complex[re, im]: round real and imaginary parts separately
+  if let Expr::FunctionCall { name, args: cargs } = &args[0]
+    && name == "Complex"
+    && cargs.len() == 2
+  {
+    let re = round_ast(&[cargs[0].clone()])?;
+    let im = round_ast(&[cargs[1].clone()])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[
+        re,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![im, Expr::Identifier("I".to_string())],
+        },
+      ],
+    );
+  }
+  // Exact complex in Plus/Times form: extract and round parts separately
+  if let Some(((rn, rd), (in_, id))) =
+    crate::functions::math_ast::try_extract_complex_exact(&args[0])
+    && in_ != 0
+  {
+    let re_rat = make_rational_pub(rn, rd);
+    let im_rat = make_rational_pub(in_, id);
+    let re_rounded = round_ast(&[re_rat])?;
+    let im_rounded = round_ast(&[im_rat])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[
+        re_rounded,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![im_rounded, Expr::Identifier("I".to_string())],
+        },
+      ],
+    );
+  }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     let rounded = bankers_round(n);
     Ok(Expr::Integer(rounded as i128))
@@ -1118,6 +1169,23 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec(),
     })
   }
+}
+
+/// Returns true if `expr` is a complex number with a non-zero imaginary part.
+/// Handles Complex[re, im], Plus[re, Times[im, I]], I, etc.
+fn is_complex_number(expr: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Complex"
+    && args.len() == 2
+  {
+    return !matches!(&args[1], Expr::Integer(0));
+  }
+  if let Some(((_, _), (in_, _))) =
+    crate::functions::math_ast::try_extract_complex_exact(expr)
+  {
+    return in_ != 0;
+  }
+  false
 }
 
 /// Mod[m, n] - Modulus, or Mod[m, n, d] with offset
