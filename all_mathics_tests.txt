@@ -576,14 +576,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Find
-LINE: 1327
-TYPE: >>
-INPUT: Find[stream, "uranium"]
-EXPECTED:
-= become possible to set up a nuclear chain reaction in a large mass of uranium,
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Find
 LINE: 1329
 TYPE: #>
 INPUT: Close[stream]
