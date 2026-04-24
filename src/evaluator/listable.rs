@@ -282,6 +282,90 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // `$SystemCharacterEncoding` uses the IANA form with a dash
     // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
     "$SystemCharacterEncoding" => Some(Expr::String("UTF-8".to_string())),
+    // Fixed list of supported encodings, in wolframscript's exact order.
+    // This is a registry-style list, not an alphabetical sort — EUC-JP
+    // precedes EUC, ISO8859-10 precedes ISO8859-1, etc.
+    "$CharacterEncodings" => {
+      let encodings = [
+        "AdobeStandard",
+        "ASCII",
+        "CP936",
+        "CP949",
+        "CP950",
+        "EUC-JP",
+        "EUC",
+        "IBM-850",
+        "ISO8859-10",
+        "ISO8859-11",
+        "ISO8859-13",
+        "ISO8859-14",
+        "ISO8859-15",
+        "ISO8859-16",
+        "ISO8859-1",
+        "ISO8859-2",
+        "ISO8859-3",
+        "ISO8859-4",
+        "ISO8859-5",
+        "ISO8859-6",
+        "ISO8859-7",
+        "ISO8859-8",
+        "ISO8859-9",
+        "ISOLatin1",
+        "ISOLatin2",
+        "ISOLatin3",
+        "ISOLatin4",
+        "ISOLatinCyrillic",
+        "Klingon",
+        "koi8-r",
+        "MacintoshArabic",
+        "MacintoshChineseSimplified",
+        "MacintoshChineseTraditional",
+        "MacintoshCroatian",
+        "MacintoshCyrillic",
+        "MacintoshGreek",
+        "MacintoshHebrew",
+        "MacintoshIcelandic",
+        "MacintoshKorean",
+        "MacintoshNonCyrillicSlavic",
+        "MacintoshRomanian",
+        "MacintoshRoman",
+        "MacintoshRomanPDFExport",
+        "MacintoshThai",
+        "MacintoshTurkish",
+        "MacintoshUkrainian",
+        "Math1",
+        "Math2",
+        "Math3",
+        "Math4",
+        "Math5",
+        "Mathematica1",
+        "Mathematica2",
+        "Mathematica3",
+        "Mathematica4",
+        "Mathematica5",
+        "Mathematica6",
+        "Mathematica7",
+        "PrintableASCII",
+        "ShiftJIS",
+        "Symbol",
+        "UTF-8",
+        "UTF8",
+        "WindowsANSI",
+        "WindowsBaltic",
+        "WindowsCyrillic",
+        "WindowsEastEurope",
+        "WindowsGreek",
+        "WindowsThai",
+        "WindowsTurkish",
+        "ZapfDingbats",
+      ];
+      Some(Expr::List(
+        encodings
+          .iter()
+          .map(|s| Expr::String((*s).to_string()))
+          .collect(),
+      ))
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "$HomeDirectory" => std::env::var("HOME")
       .or_else(|_| std::env::var("USERPROFILE"))

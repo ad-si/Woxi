@@ -638,6 +638,16 @@ mod precision {
     );
   }
 
+  // `$CharacterEncodings` returns the fixed registry-ordered list; the
+  // first nine entries are as in wolframscript (not alphabetical).
+  #[test]
+  fn character_encodings_first_nine() {
+    assert_eq!(
+      interpret("$CharacterEncodings[[;;9]]").unwrap(),
+      "{AdobeStandard, ASCII, CP936, CP949, CP950, EUC-JP, EUC, IBM-850, ISO8859-10}"
+    );
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).

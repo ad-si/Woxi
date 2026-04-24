@@ -11949,3 +11949,11 @@ INPUT: $SystemCharacterEncoding == $CharacterEncoding
 EXPECTED:
 = True
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: CharacterEncodings
+LINE: 344
+TYPE: >>
+INPUT: $CharacterEncodings[[;;9]]
+EXPECTED:
+= ...
+---
