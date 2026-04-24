@@ -11789,3 +11789,11 @@ INPUT: Integrate[-Infinity, {x, 0, Infinity}]
 EXPECTED:
 = -Infinity
 ---
+FILE: mathics/builtin/directories/directory_operations.py
+CLASS: DeleteDirectory
+LINE: 97
+TYPE: >>
+INPUT: DirectoryQ[dir]
+EXPECTED:
+= False
+---

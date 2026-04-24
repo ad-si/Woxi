@@ -3621,14 +3621,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/directories/directory_operations.py
 CLASS: DeleteDirectory
-LINE: 97
-TYPE: >>
-INPUT: DirectoryQ[dir]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/directories/directory_operations.py
-CLASS: DeleteDirectory
 LINE: 99
 TYPE: #>
 INPUT: Quiet[DeleteDirectory[dir]]
