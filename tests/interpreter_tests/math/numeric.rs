@@ -676,6 +676,16 @@ mod precision {
     );
   }
 
+  // Unsetting `$BoxForms` falls back to the default list (the system
+  // variable lookup still triggers).
+  #[test]
+  fn box_forms_unset_restores_default() {
+    assert_eq!(
+      interpret("$BoxForms=.; $BoxForms").unwrap(),
+      "{StandardForm, TraditionalForm}"
+    );
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).

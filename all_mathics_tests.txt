@@ -4555,14 +4555,6 @@ INPUT: MyBoxForm[F[3]]
 EXPECTED:
 = F<ooo>
 ---
-FILE: mathics/builtin/forms/variables.py
-CLASS: BoxForms_
-LINE: 89
-TYPE: >>
-INPUT: $BoxForms=.; $BoxForms
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Divide
 LINE: 124
