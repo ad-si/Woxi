@@ -11909,3 +11909,11 @@ INPUT: FactorTermsList[f, x]
 EXPECTED:
 = {-3, 1 - a - y + a y, -1 + 2 x}
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: DirectoryStack
+LINE: 350
+TYPE: >>
+INPUT: DirectoryStack[]
+EXPECTED:
+= ...
+---

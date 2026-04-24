@@ -1755,6 +1755,16 @@ pub fn dispatch_io_functions(
         }
       }
     }
+    // DirectoryStack[] — return the directory stack maintained by
+    // SetDirectory/ResetDirectory. Fresh sessions report `{}`.
+    #[cfg(not(target_arch = "wasm32"))]
+    "DirectoryStack" if args.is_empty() => {
+      let stack =
+        DIRECTORY_STACK.with(|s| s.borrow().iter().cloned().collect::<Vec<_>>());
+      return Some(Ok(Expr::List(
+        stack.into_iter().map(Expr::String).collect(),
+      )));
+    }
     // FileNameDrop["path", n] — drop n path components
     "FileNameDrop" if !args.is_empty() && args.len() <= 2 => {
       if let Expr::String(path) = &args[0] {

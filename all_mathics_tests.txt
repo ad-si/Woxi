@@ -778,14 +778,6 @@ INPUT: DeleteFile[{"MathicsSunflowers1.jpg", "MathicsSunflowers2.jpg"}]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: DirectoryStack
-LINE: 350
-TYPE: >>
-INPUT: DirectoryStack[]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FileByteCount
 LINE: 448
 TYPE: >>

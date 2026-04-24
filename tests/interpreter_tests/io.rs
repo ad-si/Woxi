@@ -2918,6 +2918,16 @@ mod set_directory {
   }
 }
 
+mod directory_stack {
+  use super::*;
+
+  // Fresh session has an empty stack, matching wolframscript.
+  #[test]
+  fn empty_by_default() {
+    assert_eq!(interpret("DirectoryStack[]").unwrap(), "{}");
+  }
+}
+
 mod read_line {
   use super::*;
 
