@@ -2793,6 +2793,23 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// True if `expr` contains a Real or BigFloat anywhere — used to gate
+/// numeric evaluation of otherwise-exact symbolic inputs.
+fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::List(items) => items.iter().any(contains_inexact_real),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_inexact_real)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    _ => false,
+  }
+}
+
 /// ArcTanh[x] - Inverse hyperbolic tangent
 pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2811,6 +2828,36 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
     _ => {}
+  }
+  // Complex float input: ArcTanh[x + I y] with careful precision.
+  //   Re = (1/4) * log1p(4*x / ((1-x)^2 + y^2))
+  //   Im = (1/2) * atan2(2*y, (1-x)*(1+x) - y^2)
+  // The log1p form avoids catastrophic cancellation near z = 0.
+  // Only fire for inexact inputs — wolframscript keeps purely exact
+  // arguments like ArcTanh[2 + I] symbolic.
+  if contains_inexact_real(&args[0])
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let one_minus_re_sq = (1.0 - re) * (1.0 - re);
+    let denom = one_minus_re_sq + im * im;
+    let result_re = 0.25 * (4.0 * re / denom).ln_1p();
+    let result_im =
+      0.5 * (2.0 * im).atan2((1.0 - re) * (1.0 + re) - im * im);
+    return Ok(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(result_re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Real(result_im),
+            Expr::Identifier("I".to_string()),
+          ],
+        },
+      ],
+    });
   }
   Ok(Expr::FunctionCall {
     name: "ArcTanh".to_string(),
@@ -3201,10 +3248,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::Real(result_im),
-            Expr::Identifier("I".to_string()),
-          ],
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
         },
       ],
     });
