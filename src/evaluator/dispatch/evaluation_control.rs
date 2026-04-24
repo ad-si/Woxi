@@ -434,12 +434,25 @@ pub fn dispatch_evaluation_control(
         return Some(Ok(Expr::List(items)));
       }
       if let Expr::String(pattern) = &args[0] {
+        // Strip a leading `Global`` context — Woxi stores user symbols
+        // without a context prefix, so `Global`foo` refers to the same
+        // symbol as `foo`. `System`` context narrows to built-ins.
+        let (effective_pattern, scope) =
+          if let Some(rest) = pattern.strip_prefix("Global`") {
+            (rest.to_string(), Some("Global"))
+          } else if let Some(rest) = pattern.strip_prefix("System`") {
+            (rest.to_string(), Some("System"))
+          } else {
+            (pattern.clone(), None)
+          };
+        let user_names: std::collections::HashSet<String> =
+          crate::get_defined_names().into_iter().collect();
         // Wolfram name patterns: `*` matches any run of characters (0+);
         // `@` matches one or more lowercase letters (so `List@` matches
         // `Listable`, `Listen`, but not `List` itself).
         let regex_pattern = format!(
           "^{}$",
-          pattern
+          effective_pattern
             .replace('.', "\\.")
             .replace('*', ".*")
             .replace('@', "[a-z]+")
@@ -449,6 +462,12 @@ pub fn dispatch_evaluation_control(
           let items: Vec<Expr> = all_names
             .into_iter()
             .filter(|n| re.is_match(n))
+            .filter(|n| match scope {
+              None => true,
+              Some("Global") => user_names.contains(n),
+              Some("System") => !user_names.contains(n),
+              _ => true,
+            })
             .map(Expr::String)
             .collect();
           return Some(Ok(Expr::List(items)));

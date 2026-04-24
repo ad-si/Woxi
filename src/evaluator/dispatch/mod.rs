@@ -1220,9 +1220,22 @@ pub fn evaluate_function_call_ast_inner(
     || name == "BeginPackage"
     || name == "Off"
     || name == "On"
-    || name == "Remove"
     || name == "ClearAttributes"
   {
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+  // Remove[syms...] - fully remove the named symbols (drop env, defs,
+  // attrs, options). Unlike Clear, a Removed symbol is gone from Names.
+  if name == "Remove" {
+    for arg in args {
+      if let Expr::Identifier(sym) = arg {
+        crate::ENV.with(|e| e.borrow_mut().remove(sym));
+        crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
+        crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
+      }
+    }
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
