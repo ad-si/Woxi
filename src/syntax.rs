@@ -3791,7 +3791,10 @@ fn format_real_scientific(f: f64) -> String {
   // then inflates the precision count and produces far more digits than
   // needed. Rust's `{:e}` already uses the shortest unambiguous mantissa.
   let sci_short = format!("{:e}", abs);
-  let mantissa_short = sci_short.split_once('e').map(|(m, _)| m).unwrap_or(&sci_short);
+  let mantissa_short = sci_short
+    .split_once('e')
+    .map(|(m, _)| m)
+    .unwrap_or(&sci_short);
   let mut sig = 0usize;
   let mut started = false;
   for ch in mantissa_short.chars() {
@@ -8043,6 +8046,57 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
   }
 }
 
+/// Collect every identifier that appears as `Expr::Identifier(name)` inside
+/// `expr`, without attending to scoping. Used for capture-avoiding
+/// substitution: before substituting `value` into a body that binds a
+/// parameter P, we need to know whether P appears as a name somewhere in
+/// `value` — if so, the binding must first be alpha-renamed.
+fn collect_identifier_names(expr: &Expr, out: &mut std::collections::HashSet<String>) {
+  match expr {
+    Expr::Identifier(name) => {
+      out.insert(name.clone());
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_identifier_names(a, out);
+      }
+    }
+    Expr::List(items) | Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_identifier_names(it, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_identifier_names(left, out);
+      collect_identifier_names(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_identifier_names(operand, out),
+    Expr::Function { body } => collect_identifier_names(body, out),
+    Expr::NamedFunction { body, .. } => collect_identifier_names(body, out),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      collect_identifier_names(pattern, out);
+      collect_identifier_names(replacement, out);
+    }
+    Expr::Comparison { operands, .. } => {
+      for op in operands {
+        collect_identifier_names(op, out);
+      }
+    }
+    Expr::Part { expr: e, index } => {
+      collect_identifier_names(e, out);
+      collect_identifier_names(index, out);
+    }
+    _ => {}
+  }
+}
+
 /// Substitute a variable name with a value in an expression.
 pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
   match expr {
@@ -8171,9 +8225,32 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
           bracketed: *bracketed,
         }
       } else {
+        // Capture-avoiding substitution: if any of this Function's params
+        // appears as an identifier in `value`, naive substitution would
+        // capture the new occurrence. Rename each such param to a fresh
+        // name (with a `$` suffix) before substituting, matching Wolfram's
+        // alpha-renaming behaviour: `Function[{x}, Function[{y}, f[x,y]]][y]`
+        // ⇒ `Function[{y$}, f[y, y$]]`, not `Function[{y}, f[y, y]]`.
+        let mut value_names = std::collections::HashSet::new();
+        collect_identifier_names(value, &mut value_names);
+        let mut new_params = Vec::with_capacity(params.len());
+        let mut new_body = (**body).clone();
+        for param in params {
+          if value_names.contains(param) {
+            let fresh = format!("{}$", param);
+            new_body = substitute_variable(
+              &new_body,
+              param,
+              &Expr::Identifier(fresh.clone()),
+            );
+            new_params.push(fresh);
+          } else {
+            new_params.push(param.clone());
+          }
+        }
         Expr::NamedFunction {
-          params: params.clone(),
-          body: Box::new(substitute_variable(body, var_name, value)),
+          params: new_params,
+          body: Box::new(substitute_variable(&new_body, var_name, value)),
           bracketed: *bracketed,
         }
       }
@@ -8236,6 +8313,76 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
         .collect(),
     ),
     Expr::FunctionCall { name, args } => {
+      // Capture-avoiding substitution into an unevaluated
+      // `Function[{params}, body]` FunctionCall. Function has HoldAll, so
+      // substituting into an outer body before the inner Function is
+      // evaluated leaves its binding as a FunctionCall. Without special
+      // handling, `Function[{x}, Function[{y}, f[x,y]]][y]` would substitute
+      // x→y in the body and capture the new y reference — producing
+      // `Function[{y}, f[y,y]]` instead of Wolfram's `Function[{y$}, f[y, y$]]`.
+      if name == "Function"
+        && args.len() == 2
+        && !bindings.is_empty()
+      {
+        let (params_arg, body_arg) = (&args[0], &args[1]);
+        let param_names: Option<Vec<String>> = match params_arg {
+          Expr::Identifier(n) => Some(vec![n.clone()]),
+          Expr::List(items) => items
+            .iter()
+            .map(|it| {
+              if let Expr::Identifier(n) = it {
+                Some(n.clone())
+              } else {
+                None
+              }
+            })
+            .collect::<Option<Vec<_>>>(),
+          _ => None,
+        };
+        if let Some(params) = param_names {
+          // Drop shadowed bindings.
+          let filtered: Vec<(&str, &Expr)> = bindings
+            .iter()
+            .filter(|&&(var_name, _)| !params.contains(&var_name.to_string()))
+            .copied()
+            .collect();
+          if filtered.is_empty() {
+            return expr.clone();
+          }
+          let mut value_names = std::collections::HashSet::new();
+          for (_, value) in &filtered {
+            collect_identifier_names(value, &mut value_names);
+          }
+          let mut new_params = Vec::with_capacity(params.len());
+          let mut new_body = body_arg.clone();
+          for p in &params {
+            if value_names.contains(p) {
+              let fresh = format!("{}$", p);
+              new_body = substitute_variable(
+                &new_body,
+                p,
+                &Expr::Identifier(fresh.clone()),
+              );
+              new_params.push(fresh);
+            } else {
+              new_params.push(p.clone());
+            }
+          }
+          let substituted_body = substitute_variables(&new_body, &filtered);
+          let new_params_arg = if matches!(params_arg, Expr::List(_)) {
+            Expr::List(
+              new_params.into_iter().map(Expr::Identifier).collect(),
+            )
+          } else {
+            // Bare identifier form; must still be a list of 1 after rename.
+            Expr::Identifier(new_params.into_iter().next().unwrap_or_default())
+          };
+          return Expr::FunctionCall {
+            name: "Function".to_string(),
+            args: vec![new_params_arg, substituted_body],
+          };
+        }
+      }
       let new_args: Vec<Expr> = args
         .iter()
         .map(|e| substitute_variables(e, bindings))
@@ -8353,9 +8500,34 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       if filtered.is_empty() {
         expr.clone()
       } else {
+        // Capture-avoiding substitution: if any of this Function's params
+        // appears as an identifier in one of the incoming binding values,
+        // rename the param to a fresh `name$` first so the new reference
+        // isn't captured. Matches Wolfram's alpha-renaming:
+        // `Function[{x}, Function[{y}, f[x,y]]][y]` ⇒
+        // `Function[{y$}, f[y, y$]]`.
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in &filtered {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let mut new_params = Vec::with_capacity(params.len());
+        let mut new_body = (**body).clone();
+        for param in params {
+          if value_names.contains(param) {
+            let fresh = format!("{}$", param);
+            new_body = substitute_variable(
+              &new_body,
+              param,
+              &Expr::Identifier(fresh.clone()),
+            );
+            new_params.push(fresh);
+          } else {
+            new_params.push(param.clone());
+          }
+        }
         Expr::NamedFunction {
-          params: params.clone(),
-          body: Box::new(substitute_variables(body, &filtered)),
+          params: new_params,
+          body: Box::new(substitute_variables(&new_body, &filtered)),
           bracketed: *bracketed,
         }
       }

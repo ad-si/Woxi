@@ -358,22 +358,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/application.py
 CLASS: Function
-LINE: 54
-TYPE: >>
-INPUT: Function[{x}, Function[{y}, f[x, y]]][y]
-EXPECTED:
-= Function[{y$}, f[y, y$]]
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
-LINE: 58
-TYPE: >>
-INPUT: Function[y, Function[x, y^x]][x][y]
-EXPECTED:
-= x ^ y
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
 LINE: 64
 TYPE: >>
 INPUT: g[#] & [h[#]] & [5]

@@ -171,6 +171,29 @@ mod function_head {
     );
   }
 
+  // Function application does capture-avoiding substitution: when the
+  // argument contains an identifier that clashes with an inner Function's
+  // bound parameter, the inner parameter is alpha-renamed. Matches
+  // Wolfram's convention of appending `$` to the name.
+  #[test]
+  fn function_application_alpha_renames_captured_params() {
+    assert_eq!(
+      interpret("Function[{x}, Function[{y}, f[x, y]]][y]").unwrap(),
+      "Function[{y$}, f[y, y$]]"
+    );
+  }
+
+  // Two-stage application with the same name in inner and outer scopes
+  // — the inner param (bare) gets renamed on the first step so the second
+  // step doesn't see capture. Result is `x^y`, not `y^y`.
+  #[test]
+  fn function_double_application_resolves_hygiene() {
+    assert_eq!(
+      interpret("Function[y, Function[x, y^x]][x][y]").unwrap(),
+      "x^y"
+    );
+  }
+
   #[test]
   fn function_assigned_to_variable() {
     clear_state();
