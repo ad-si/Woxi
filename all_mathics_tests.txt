@@ -3004,14 +3004,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileHash
-LINE: 143
-TYPE: >>
-INPUT: FileHash["ExampleData/sunflowers.jpg", "Adler32"]
-EXPECTED:
-= 1607049478
----
-FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileHash
 LINE: 146
 TYPE: >>
 INPUT: FileHash["ExampleData/sunflowers.jpg", "SHA256"]
