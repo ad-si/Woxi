@@ -5329,21 +5329,21 @@ mod named_colors {
     assert_eq!(interpret("Lighter[Blue]").unwrap(), "RGBColor[1/3, 1/3, 1]");
   }
 
-  // When the input color or the amount is inexact (contains a Real), Wolfram
-  // returns inexact RGB components. `Orange = RGBColor[1, 0.5, 0]` has a
-  // Real component, so `Lighter[Orange, 1/4]` must return all Reals.
-  // Regression for the mathics ColorOperations doctest
-  // `Lighter[Orange, 1/4] == RGBColor[1., 0.625, 0.25]`.
+  // Per-component Real contagion: a component is Real iff the
+  // corresponding input channel was Real or the amount is Real.
+  // `Orange = RGBColor[1, 0.5, 0]` — only the middle channel was Real,
+  // so only the middle output is Real; integer 1 stays 1 and integer 0
+  // combined with rational amount 1/4 stays 1/4. Matches wolframscript's
+  // `Lighter[Orange, 1/4] == RGBColor[1, 0.625, 1/4]`.
   #[test]
-  fn lighter_orange_forces_real_components() {
+  fn lighter_orange_per_component_contagion() {
     assert_eq!(
       interpret("Lighter[Orange, 1/4]").unwrap(),
-      "RGBColor[1., 0.625, 0.25]"
+      "RGBColor[1, 0.625, 1/4]"
     );
   }
 
-  // A Real amount alone (with an Integer/Rational-only color) is also
-  // inexact and should produce Real components.
+  // A Real amount propagates to every channel, so all channels become Real.
   #[test]
   fn lighter_real_amount_forces_real_components() {
     assert_eq!(

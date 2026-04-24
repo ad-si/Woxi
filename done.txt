@@ -11773,14 +11773,6 @@ INPUT: (Accuracy[z] == Precision[z] + Log[z])/.z-> 37.`
 EXPECTED:
 = True
 ---
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Lighter
-LINE: 477
-TYPE: >>
-INPUT: Lighter[Orange, 1/4]
-EXPECTED:
-= RGBColor[1., 0.625, 0.25]
----
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Integrate
 LINE: 1001
@@ -11805,11 +11797,19 @@ INPUT: DigitCount[Floor[Pi * 10^100]]
 EXPECTED:
 = {8, 12, 12, 10, 8, 9, 8, 12, 14, 8}
 ---
-FILE: mathics/builtin/tensors.py
-CLASS: Outer
-LINE: 197
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1141
 TYPE: >>
-INPUT: Outer[f, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]
+INPUT: B[[;;, 2]] = {10, 11, 12}
 EXPECTED:
-= {{{{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}, {{f[a, 0], f[a, c]}, {f[a, d], f[a, 0]}}}, {{{f[b, 0], f[b, c]}, {f[b, d], f[b, 0]}}, {{f[0, 0], f[0, c]}, {f[0, d], f[0, 0]}}}}
+= {10, 11, 12}
+---
+FILE: mathics/builtin/list/eol.py
+CLASS: Part
+LINE: 1145
+TYPE: >>
+INPUT: B[[;;, 3]] = 13
+EXPECTED:
+= 13
 ---

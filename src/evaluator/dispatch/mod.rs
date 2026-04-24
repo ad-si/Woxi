@@ -5466,23 +5466,38 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
     (1, 3)
   };
 
-  // Wolfram: if the color or the amount is inexact (any Real component),
-  // the result is inexact (all Reals). Matches the doctest
-  // `Lighter[Orange, 1/4]` ⇒ `RGBColor[1., 0.625, 0.25]`.
-  let has_real_component = if let Expr::FunctionCall { name, args: rgb_args } =
-    &args[0]
+  // Per-component Real contagion (matches wolframscript): a component is
+  // Real iff the corresponding input channel was Real or the amount is
+  // Real. `Lighter[Orange, 1/4]` with `Orange = RGBColor[1, 0.5, 0]`
+  // yields `RGBColor[1, 0.625, 1/4]` — only the middle channel participates
+  // in Real contagion because only `0.5` was Real.
+  let component_is_real: Vec<bool> = if let Expr::FunctionCall {
+    name,
+    args: rgb_args,
+  } = &args[0]
     && (name == "RGBColor" || name == "GrayLevel")
   {
-    rgb_args.iter().any(|a| matches!(a, Expr::Real(_)))
+    // GrayLevel broadcasts: its single component controls all three outputs.
+    if name == "GrayLevel" {
+      let real = matches!(rgb_args.first(), Some(Expr::Real(_)));
+      vec![real; 3]
+    } else {
+      rgb_args
+        .iter()
+        .take(3)
+        .map(|a| matches!(a, Expr::Real(_)))
+        .chain(std::iter::repeat(false))
+        .take(3)
+        .collect()
+    }
   } else {
-    false
+    vec![false; 3]
   };
-  let amount_is_real =
-    args.len() >= 2 && matches!(&args[1], Expr::Real(_));
-  let force_real = has_real_component || amount_is_real;
+  let amount_is_real = args.len() >= 2 && matches!(&args[1], Expr::Real(_));
 
   let mut result_rgb = [Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
   for (i, (c_num, c_den)) in rgb.iter().enumerate() {
+    let force_real = component_is_real[i] || amount_is_real;
     if is_darker {
       // Darker: c * (1 - amount) = c * (den - num) / den
       let factor_num = amt_den - amt_num;
