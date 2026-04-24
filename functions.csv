@@ -3885,6 +3885,7 @@ MardiaSkewnessTest,,,,8.0,4006
 MessageList,,,,2.0,4006
 NeedlemanWunschSimilarity,,,,7.0,4006
 PaulWavelet,,🚫,,8.0,4006
+Precedence,Returns the parsing precedence of a symbol or expression,✅,pure,1.0,4005
 PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1.0,4006
 RandomPointConfiguration,,,,12.2,4006
 SiegelTukeyTest,,,,8.0,4006

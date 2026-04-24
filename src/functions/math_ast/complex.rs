@@ -451,7 +451,10 @@ fn is_strictly_positive_real(e: &Expr) -> bool {
       )
     }
     Expr::Identifier(s) | Expr::Constant(s) => {
-      matches!(s.as_str(), "Pi" | "E" | "GoldenRatio" | "EulerGamma" | "Catalan")
+      matches!(
+        s.as_str(),
+        "Pi" | "E" | "GoldenRatio" | "EulerGamma" | "Catalan"
+      )
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       is_strictly_positive_real(&args[0])
@@ -490,7 +493,10 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Arg[Times[positive_real, z, ...]] = Arg[Times[z, ...]]
   // Strip strictly-positive real factors (they don't affect the argument).
-  if let Expr::FunctionCall { name, args: factors } = &args[0]
+  if let Expr::FunctionCall {
+    name,
+    args: factors,
+  } = &args[0]
     && name == "Times"
     && factors.iter().any(is_strictly_positive_real)
     && !factors.iter().all(is_strictly_positive_real)

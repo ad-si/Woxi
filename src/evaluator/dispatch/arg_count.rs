@@ -758,6 +758,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PowerMod" => Some((3, 3)),
     "PowerModList" => Some((3, 3)),
     "PowerRange" => Some((2, 3)),
+    "Precedence" => Some((1, 1)),
     "Precision" => Some((1, 1)),
     "Prepend" => Some((2, 2)),
     "Prime" => Some((1, 1)),

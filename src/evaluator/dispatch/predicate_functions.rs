@@ -255,6 +255,9 @@ pub fn dispatch_predicate_functions(
     "Precision" if args.len() == 1 => {
       return Some(crate::functions::math_ast::precision_ast(args));
     }
+    "Precedence" if args.len() == 1 => {
+      return Some(Ok(Expr::Real(precedence_value(&args[0]))));
+    }
     "Accuracy" if args.len() == 1 => {
       return Some(crate::functions::math_ast::accuracy_ast(args));
     }
@@ -1147,6 +1150,78 @@ fn make_rule(name: &str, value: Expr) -> Expr {
   Expr::Rule {
     pattern: Box::new(Expr::Identifier(name.to_string())),
     replacement: Box::new(value),
+  }
+}
+
+/// Precedence of a symbol or expression — matches Wolfram's `Precedence`.
+/// Returns the parsing precedence: built-in operators get specific values,
+/// unknown symbols default to 670., non-symbol expressions get 1000.
+fn precedence_value(expr: &Expr) -> f64 {
+  let name = match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => s.as_str(),
+    Expr::FunctionCall { name, args } if args.is_empty() => name.as_str(),
+    _ => return 1000.0,
+  };
+  match name {
+    "CompoundExpression" => 10.0,
+    "Put" | "PutAppend" => 30.0,
+    "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" | "TagSet"
+    | "TagSetDelayed" | "TagUnset" | "Unset" => 40.0,
+    "Because" => 50.0,
+    "Therefore" => 60.0,
+    "Postfix" => 70.0,
+    "Colon" => 80.0,
+    "Function" => 90.0,
+    "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => 100.0,
+    "ReplaceAll" | "ReplaceRepeated" => 110.0,
+    "Rule" | "RuleDelayed" => 120.0,
+    "StringExpression" => 135.0,
+    "Condition" => 140.0,
+    "Pattern" => 150.0,
+    "Alternatives" => 160.0,
+    "Implies" => 200.0,
+    "Equivalent" => 205.0,
+    "Or" | "Nor" | "Xor" | "Nand" | "And" => 215.0,
+    "Not" => 230.0,
+    "Equal" | "Unequal" | "SameQ" | "UnsameQ" | "Less" | "Greater"
+    | "LessEqual" | "GreaterEqual" | "Inequality" => 290.0,
+    "Span" => 305.0,
+    "Plus" | "Subtract" => 310.0,
+    "PlusMinus" => 315.0,
+    "Sum" | "Limit" => 320.0,
+    "Integrate" => 325.0,
+    "Product" => 380.0,
+    "Union" => 390.0,
+    "Intersection" => 395.0,
+    "Times" | "Divide" => 400.0,
+    "Cross" => 410.0,
+    "CenterDot" => 420.0,
+    "CircleTimes" => 430.0,
+    "SmallCircle" => 440.0,
+    "Backslash" => 460.0,
+    "Diamond" => 470.0,
+    "Wedge" => 480.0,
+    "Dot" => 490.0,
+    "NonCommutativeMultiply" => 510.0,
+    "Minus" => 480.0,
+    "D" => 550.0,
+    "Power" => 590.0,
+    "Apply" => 620.0,
+    "Map" | "MapAll" => 620.0,
+    "Factorial" | "Factorial2" => 610.0,
+    "Conjugate" | "Transpose" => 625.0,
+    "Repeated" | "RepeatedNull" => 635.0,
+    "RightComposition" => 648.0,
+    "Composition" => 650.0,
+    "Prefix" => 640.0,
+    "StringJoin" => 600.0,
+    "MessageName" => 740.0,
+    "Blank" | "BlankSequence" | "BlankNullSequence" => 730.0,
+    "Increment" | "Decrement" | "PreIncrement" | "PreDecrement" => 660.0,
+    "Optional" => 680.0,
+    "PatternTest" => 680.0,
+    // Unknown symbols default to 670
+    _ => 670.0,
   }
 }
 
