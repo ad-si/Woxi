@@ -1334,11 +1334,14 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::Real | Rule::UnsignedReal => {
       let s = pair.as_str();
-      // Handle Wolfram's *^ scientific notation (e.g. 2.7*^7 = 2.7e7)
+      // Handle Wolfram's *^ scientific notation (e.g. 2.7*^7 = 2.7e7).
+      // Parse as a single f64 from the canonical `1.09e12` form rather than
+      // computing `mantissa * 10^exp` — the latter re-rounds (e.g.
+      // `1.09 * 1e12` → 1090000000000.0001, while `"1.09e12".parse()` gives
+      // the exact nearest f64, 1090000000000.0).
       if let Some(idx) = s.find("*^") {
-        let mantissa: f64 = s[..idx].parse().unwrap_or(0.0);
-        let exponent: i32 = s[idx + 2..].parse().unwrap_or(0);
-        Expr::Real(mantissa * 10_f64.powi(exponent))
+        let with_e = format!("{}e{}", &s[..idx], &s[idx + 2..]);
+        Expr::Real(with_e.parse().unwrap_or(0.0))
       } else {
         Expr::Real(s.parse().unwrap_or(0.0))
       }

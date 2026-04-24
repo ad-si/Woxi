@@ -947,6 +947,19 @@ mod exact_value_returns {
     assert_eq!(interpret("1.*^3").unwrap(), "1000.");
   }
 
+  // Parsing `1.09*^12` as `mantissa * 10^exp` in f64 introduces rounding
+  // (1.09 * 1e12 = 1090000000000.0001). Parsing the full literal as
+  // `1.09e12` in one step yields the exact nearest f64, matching
+  // wolframscript's display `1.09*^12`.
+  #[test]
+  fn scientific_literal_is_exact_to_nearest_f64() {
+    assert_eq!(interpret("1.09*^12").unwrap(), "1.09*^12");
+    assert_eq!(
+      interpret("Complex[1.09*^12, 3.]").unwrap(),
+      "1.09*^12 + 3.*I"
+    );
+  }
+
   #[test]
   fn scientific_notation_arithmetic() {
     // Arithmetic with *^ notation should work
