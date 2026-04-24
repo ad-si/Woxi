@@ -12223,3 +12223,10 @@ TYPE: >>
 INPUT: DeleteFile[Close[strm]];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/files.py
+CLASS: Write
+LINE: 1539
+TYPE: >>
+INPUT: DeleteFile[Close[stream]];
+EXPECTED: (none)
+---
