@@ -4380,14 +4380,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/statistics/orderstats.py
 CLASS: Sort
-LINE: 347
-TYPE: >>
-INPUT: Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]
-EXPECTED:
-= {item_symbol, item_ ? test, item_, items___, OptionsPattern[]}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Sort
 LINE: 355
 TYPE: >>
 INPUT: Sort[{x_ + n_*y_, x_ + y_}, PatternsOrderedQ]

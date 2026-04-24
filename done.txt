@@ -12053,3 +12053,11 @@ INPUT: $CharacterEncoding = "ASCII"; a -> b
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/statistics/orderstats.py
+CLASS: Sort
+LINE: 347
+TYPE: >>
+INPUT: Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, PatternsOrderedQ]
+EXPECTED:
+= {item_symbol, item_ ? test, item_, items___, OptionsPattern[]}
+---
