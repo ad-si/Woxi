@@ -2095,6 +2095,11 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcTan expects exactly 1 argument".into(),
     ));
   }
+  // ArcTan[ComplexInfinity] = Indeterminate; ArcTan[Indeterminate] = Indeterminate
+  if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity" || s == "Indeterminate")
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   // ArcTan[-x] → -ArcTan[x] (odd function)
   // Only apply for symbolic (non-numeric) arguments.
   if !matches!(
