@@ -12029,3 +12029,11 @@ INPUT: path = FileNameJoin[{"a","b","c"}]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/atomic/symbols.py
+CLASS: Names
+LINE: 559
+TYPE: >>
+INPUT: Names["List*"]
+EXPECTED:
+= {List, ListLinePlot, ListLogPlot, ListPlot, ListQ, ListStepPlot, Listable}
+---

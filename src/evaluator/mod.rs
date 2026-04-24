@@ -84,6 +84,14 @@ pub fn get_builtin_function_names() -> Vec<&'static str> {
   names
 }
 
+/// Get every Wolfram Language function name that appears in
+/// `functions.csv` — whether or not Woxi has implemented it.
+pub fn known_wolfram_function_names() -> Vec<&'static str> {
+  let mut names: Vec<&str> = KNOWN_WOLFRAM_FUNCTIONS.iter().copied().collect();
+  names.sort();
+  names
+}
+
 pub(crate) mod assignment;
 mod attributes;
 mod binary_ops;

@@ -682,6 +682,24 @@ mod names {
     assert_eq!(interpret("Names[\"List\"]").unwrap(), "{List}");
     assert_eq!(interpret("Names[\"Plus\"]").unwrap(), "{Plus}");
   }
+
+  // wolframscript sorts Names[...] case-insensitively, so `Listable`
+  // goes between `List` and `ListAnimate`, not at the end after
+  // `ListVectorPlot`. Regression for the mathics `Names["List*"]`
+  // doctest.
+  #[test]
+  fn list_star_case_insensitive_sort() {
+    let out = interpret("Names[\"List*\"]").unwrap();
+    let idx_list = out.find("List,").expect("has List");
+    let idx_listable = out.find("Listable").expect("has Listable");
+    let idx_list_animate = out.find("ListAnimate").expect("has ListAnimate");
+    let idx_list_vector =
+      out.find("ListVectorPlot").expect("has ListVectorPlot");
+    // case-insensitive order: List < Listable < ListAnimate
+    assert!(idx_list < idx_listable);
+    assert!(idx_listable < idx_list_animate);
+    assert!(idx_list_animate < idx_list_vector);
+  }
 }
 
 mod quit {

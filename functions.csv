@@ -4076,7 +4076,10 @@ HarmonicMeanFilter,,,,7.0,4204
 InnerPolygon,,,,12.0,4204
 InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1.0,4204
 LeftTeeArrow,,,,3.0,4204
+ListFitPlot,,,,14.0,4204
+ListFitPlot3D,,,,14.0,4204
 ListFormat,,,,10.0,4204
+Listen,,,,8.0,4204
 MeanGraphDistance,,,,9.0,4204
 NextDate,,,,11.1,4204
 PacletDirectoryLoad,,🚫,,12.1,4204
@@ -5742,6 +5745,7 @@ LineIntegrate,,,,13.3,
 LinearizingTransformationData,,🚫,,10.0,
 ListLinePlot3D,,🚫,,12.3,
 ListPickerBox,,,,6.0,
+ListPickerBoxBackground,,,,9.0,
 ListPickerBoxOptions,,🚫,,9.0,
 ListStreamPlot3D,,🚫,,12.3,
 ListVectorDisplacementPlot,,🚫,,13.0,

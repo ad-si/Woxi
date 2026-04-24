@@ -417,7 +417,17 @@ pub fn dispatch_evaluation_control(
           all_names.push(b.to_string());
         }
       }
-      all_names.sort();
+      // Also include names that exist in the CSV but lack a description
+      // (e.g. `ListAnimate`, `ListDeconvolve`) — they're valid built-in
+      // symbols that Wolfram lists, even if we haven't implemented them.
+      for b in crate::evaluator::known_wolfram_function_names() {
+        if !all_names.iter().any(|n| n == b) {
+          all_names.push(b.to_string());
+        }
+      }
+      // Match wolframscript's case-insensitive alphabetical sort so
+      // `Listable` sorts between `List` and `ListAnimate`, not last.
+      all_names.sort_by_key(|n| n.to_lowercase());
       if args.is_empty() {
         let items: Vec<Expr> =
           all_names.into_iter().map(Expr::String).collect();
