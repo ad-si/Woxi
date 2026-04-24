@@ -12146,3 +12146,10 @@ INPUT: ImportString[str, "Lines"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryReadList
+LINE: 486
+TYPE: >>
+INPUT: Close[strm];
+EXPECTED: (none)
+---

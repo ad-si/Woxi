@@ -365,6 +365,25 @@ mod absolute_file_name {
   }
 }
 
+mod close_error {
+  use super::*;
+
+  // `Close[symbol]` for a non-stream value emits `Close::stream` and
+  // returns unevaluated, matching wolframscript.
+  #[test]
+  fn non_stream_emits_stream_message() {
+    let result = interpret_with_stdout(r#"Close[strm]"#).unwrap();
+    assert_eq!(result.result, "Close[strm]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "Close::stream: strm is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
+      )),
+      "expected Close::stream warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod run {
   use super::*;
 
@@ -2869,9 +2888,8 @@ mod import_string {
       interpret_with_stdout(r#"ImportString[str, "Lines"]"#).unwrap();
     assert_eq!(result.result, "ImportString[str, Lines]");
     assert!(
-      result.warnings.iter().any(|w| w.contains(
-        "ImportString::string: First argument str is not a string."
-      )),
+      result.warnings.iter().any(|w| w
+        .contains("ImportString::string: First argument str is not a string.")),
       "expected ImportString::string warning, got {:?}",
       result.warnings
     );

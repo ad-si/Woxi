@@ -1264,13 +1264,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/binary/io.py
 CLASS: BinaryReadList
-LINE: 486
-TYPE: >>
-INPUT: Close[strm];
-EXPECTED: (none)
----
-FILE: mathics/builtin/binary/io.py
-CLASS: BinaryReadList
 LINE: 487
 TYPE: >>
 INPUT: strm = OpenRead[%, BinaryFormat -> True]

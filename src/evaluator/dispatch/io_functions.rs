@@ -1066,6 +1066,12 @@ pub fn dispatch_io_functions(
           }));
         }
         _ => {
+          // Anything else is a type error — match wolframscript's message.
+          let arg_str = crate::syntax::expr_to_string(&args[0]);
+          crate::emit_message(&format!(
+            "Close::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
+            arg_str
+          ));
           return Some(Ok(Expr::FunctionCall {
             name: "Close".to_string(),
             args: args.to_vec(),
