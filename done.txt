@@ -11700,3 +11700,19 @@ INPUT: ToExpression["2\[NewLine]3"]
 EXPECTED:
 = 3
 ---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Reap
+LINE: 408
+TYPE: >>
+INPUT: Reap[Sow[2, {x, x, x}]; Sow[3, x]; Sow[4, y]; Sow[4, 1], {_Symbol, _Integer, x}, f]
+EXPECTED:
+= {4, {{f[x, {2, 2, 2, 3}], f[y, {4}]}, {f[1, {4}]}, {f[x, {2, 2, 2, 3}]}}}
+---
+FILE: mathics/builtin/list/constructing.py
+CLASS: Reap
+LINE: 412
+TYPE: >>
+INPUT: Reap[Sow[Null, {a, a, b, d, c, a}], _, # &][[2]]
+EXPECTED:
+= {a, b, d, c}
+---

@@ -926,22 +926,26 @@ pub fn dispatch_complex_and_special(
 
     // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
     "Sow" if args.len() == 1 || args.len() == 2 => {
-      let tag = if args.len() == 2 {
-        args[1].clone()
-      } else {
-        Expr::Identifier("None".to_string())
+      // Sow[val, {tag1, tag2, ...}] emits one (val, tag_i) pair per tag;
+      // with a single tag or 1-arg form, emits one pair.
+      let tags: Vec<Expr> = match args.get(1) {
+        Some(Expr::List(items)) => items.clone(),
+        Some(t) => vec![t.clone()],
+        None => vec![Expr::Identifier("None".to_string())],
       };
       crate::SOW_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         if let Some(last) = stack.last_mut() {
-          last.push((args[0].clone(), tag));
+          for tag in &tags {
+            last.push((args[0].clone(), tag.clone()));
+          }
         }
       });
       return Some(Ok(args[0].clone()));
     }
 
     // Reap[expr] or Reap[expr, pattern] - evaluates expr, collecting all Sow'd values
-    "Reap" if args.len() == 1 || args.len() == 2 => {
+    "Reap" if (1..=3).contains(&args.len()) => {
       // Push a new collection
       crate::SOW_STACK.with(|stack| {
         stack.borrow_mut().push(Vec::new());
@@ -977,7 +981,7 @@ pub fn dispatch_complex_and_special(
           tag_groups.into_iter().map(Expr::List).collect();
         return Some(Ok(Expr::List(vec![result, Expr::List(groups)])));
       } else {
-        // Reap[expr, patt] or Reap[expr, {patt1, patt2, ...}]
+        // Reap[expr, patt] / Reap[expr, {patt1, ...}] / Reap[expr, patt, f]
         let patt_arg = match evaluate_expr_to_expr(&args[1]) {
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
@@ -987,29 +991,67 @@ pub fn dispatch_complex_and_special(
           _ => vec![patt_arg.clone()],
         };
         let is_list_form = matches!(&patt_arg, Expr::List(_));
+        let wrap_fn: Option<Expr> = if args.len() == 3 {
+          match evaluate_expr_to_expr(&args[2]) {
+            Ok(f) => Some(f),
+            Err(e) => return Some(Err(e)),
+          }
+        } else {
+          None
+        };
 
+        // Build per-pattern groups: for each pattern, find all matching
+        // tags (in order of first sow), and for each unique tag collect
+        // its sowed values.
         let mut result_groups: Vec<Expr> = Vec::new();
         for patt in &patterns {
-          // Collect all sowed values whose tag matches the pattern
-          let mut matched: Vec<Expr> = Vec::new();
-          let is_blank = matches!(patt, Expr::Pattern { .. });
+          let mut tag_order: Vec<Expr> = Vec::new();
+          let mut tag_groups: Vec<Vec<Expr>> = Vec::new();
           for (val, tag) in &sowed {
-            if is_blank || expr_to_string(tag) == expr_to_string(patt) {
-              matched.push(val.clone());
+            if !tag_matches_pattern(tag, patt) {
+              continue;
+            }
+            if let Some(idx) = tag_order
+              .iter()
+              .position(|t| expr_to_string(t) == expr_to_string(tag))
+            {
+              tag_groups[idx].push(val.clone());
+            } else {
+              tag_order.push(tag.clone());
+              tag_groups.push(vec![val.clone()]);
             }
           }
+          // Build the group list for this pattern.
+          let per_pattern: Vec<Expr> = tag_order
+            .into_iter()
+            .zip(tag_groups)
+            .map(|(tag, vals)| {
+              let vals_list = Expr::List(vals);
+              if let Some(f) = &wrap_fn {
+                // Apply f[tag, {values}] — handles named heads, anonymous
+                // functions (Function[body]), and NamedFunction forms.
+                crate::evaluator::function_application::apply_curried_call(
+                  f,
+                  &[tag, vals_list],
+                )
+                .unwrap_or(Expr::FunctionCall {
+                  name: "List".to_string(),
+                  args: vec![],
+                })
+              } else {
+                vals_list
+              }
+            })
+            .collect();
+
           if is_list_form {
-            // {patt1, patt2, ...} form: each pattern gets a list wrapping
-            if matched.is_empty() {
-              result_groups.push(Expr::List(vec![]));
-            } else {
-              result_groups.push(Expr::List(vec![Expr::List(matched)]));
-            }
+            // {patt1, patt2, ...} form: each pattern contributes a list,
+            // even if empty.
+            result_groups.push(Expr::List(per_pattern));
           } else {
-            // single pattern form: just the matched list
-            if !matched.is_empty() {
-              result_groups.push(Expr::List(matched));
-            }
+            // Single-pattern form: the result groups are the per-tag
+            // entries directly (flattened — no extra wrapping).
+            result_groups.extend(per_pattern);
           }
         }
         return Some(Ok(Expr::List(vec![result, Expr::List(result_groups)])));
@@ -1121,13 +1163,12 @@ pub fn dispatch_complex_and_special(
         && !pat_fargs.is_empty()
         && pat_fargs.len() <= expr_fargs.len()
       {
-        let has_flat =
-          crate::evaluator::listable::is_builtin_flat(expr_head)
-            || crate::FUNC_ATTRS.with(|m| {
-              m.borrow()
-                .get(expr_head.as_str())
-                .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
-            });
+        let has_flat = crate::evaluator::listable::is_builtin_flat(expr_head)
+          || crate::FUNC_ATTRS.with(|m| {
+            m.borrow()
+              .get(expr_head.as_str())
+              .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+          });
         if has_flat {
           let all_bindings =
             crate::evaluator::pattern_matching::enumerate_flat_partition_matches(
@@ -1531,6 +1572,19 @@ pub fn dispatch_complex_and_special(
 /// expression elements. Each pattern slot is a `Pattern[name, BlankSequence]`
 /// or `Pattern[name, BlankNullSequence]` (possibly with an empty name).
 /// Returns `None` if the pattern structure isn't recognised.
+/// Reap tag matching: a bare `_`-style pattern matches any tag via the
+/// pattern matcher; any other expression compares structurally against the
+/// tag. Keeps the behaviour consistent with Wolfram's `Reap[expr, form]`,
+/// where `form` is a symbol or a pattern like `_Symbol`, `_Integer`, etc.
+fn tag_matches_pattern(tag: &Expr, patt: &Expr) -> bool {
+  if crate::evaluator::pattern_matching::contains_pattern(patt) {
+    crate::evaluator::pattern_matching::match_pattern(tag, patt).is_some()
+  } else {
+    crate::syntax::expr_to_string(tag)
+      == crate::syntax::expr_to_string(patt)
+  }
+}
+
 fn enumerate_list_sequence_matches(
   expr_elems: &[Expr],
   pattern_elems: &[Expr],

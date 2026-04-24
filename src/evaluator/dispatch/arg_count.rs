@@ -808,7 +808,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "RealDigits" => Some((1, 4)),
     "RealSign" => Some((1, 1)),
     "RealValuedNumberQ" => Some((1, 1)),
-    "Reap" => Some((1, 2)),
+    "Reap" => Some((1, 3)),
     "RecurrenceTable" => Some((3, 3)),
     "Reduce" => Some((2, 3)),
     "Refine" => Some((1, 2)),

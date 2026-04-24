@@ -2748,6 +2748,37 @@ mod reap_sow {
       "{1, {{}}}"
     );
   }
+
+  // Sow[val, {tag1, tag2, ...}] sows val once per tag.
+  #[test]
+  fn sow_with_tag_list_emits_one_entry_per_tag() {
+    assert_eq!(
+      interpret("Reap[Sow[1, {a, b, a}]]").unwrap(),
+      "{1, {{1, 1}, {1}}}"
+    );
+  }
+
+  // Reap[expr, patt, f] applies f[tag, {vals}] to each unique matched tag.
+  #[test]
+  fn reap_three_arg_applies_wrapper_function() {
+    assert_eq!(
+      interpret("Reap[Sow[Null, {a, a, b, d, c, a}], _, # &][[2]]").unwrap(),
+      "{a, b, d, c}"
+    );
+  }
+
+  #[test]
+  fn reap_three_arg_with_pattern_list() {
+    assert_eq!(
+      interpret(
+        "Reap[Sow[2, {x, x, x}]; Sow[3, x]; Sow[4, y]; Sow[4, 1], \
+         {_Symbol, _Integer, x}, f]"
+      )
+      .unwrap(),
+      "{4, {{f[x, {2, 2, 2, 3}], f[y, {4}]}, {f[1, {4}]}, \
+       {f[x, {2, 2, 2, 3}]}}}"
+    );
+  }
 }
 
 mod ordered_q {
