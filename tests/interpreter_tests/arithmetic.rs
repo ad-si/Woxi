@@ -1995,6 +1995,16 @@ mod expand_threading {
     assert_eq!(interpret("Factorial2[-7]").unwrap(), "-1/15");
   }
 
+  // Factorial2 should render with the `!!` suffix (not as `Factorial2[x]`),
+  // matching wolframscript. Parentheses wrap Plus/Times operands so the
+  // suffix binds to the whole expression.
+  #[test]
+  fn factorial2_renders_with_double_bang_suffix() {
+    assert_eq!(interpret("Factorial2[x]").unwrap(), "x!!");
+    assert_eq!(interpret("I!! + 1").unwrap(), "1 + I!!");
+    assert_eq!(interpret("(a + b)!!").unwrap(), "(a + b)!!");
+  }
+
   #[test]
   fn cases_except_two_arg() {
     assert_eq!(

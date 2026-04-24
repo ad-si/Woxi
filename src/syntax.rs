@@ -4908,7 +4908,8 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // Special case: Factorial[n] displays as n!, or (expr)! when the
       // argument is a Plus/Times or other operator-level expression so the
       // `!` suffix binds to the whole expression.
-      if name == "Factorial" && args.len() == 1 {
+      if (name == "Factorial" || name == "Factorial2") && args.len() == 1 {
+        let suffix = if name == "Factorial2" { "!!" } else { "!" };
         let arg_str = fmt(&args[0]);
         let needs_parens = match &args[0] {
           Expr::BinaryOp { op, .. } => !matches!(op, BinaryOperator::Power),
@@ -4922,9 +4923,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           _ => false,
         };
         if needs_parens {
-          return format!("({})!", arg_str);
+          return format!("({}){}", arg_str, suffix);
         }
-        return format!("{}!", arg_str);
+        return format!("{}{}", arg_str, suffix);
       }
       if name == "Rule" && args.len() == 2 {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
