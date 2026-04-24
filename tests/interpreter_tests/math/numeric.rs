@@ -507,6 +507,18 @@ mod precision {
     );
   }
 
+  // Product of the two machine bounds rounds to ~4, but the f64 result is
+  // `3.9999999999999996` (1 ULP below 4). Woxi and wolframscript agree here;
+  // mathics displays the rounded `4.` instead. Regression for the mathics
+  // doctest of MaxMachineNumber.
+  #[test]
+  fn max_times_min_machine_number() {
+    assert_eq!(
+      interpret("$MaxMachineNumber * $MinMachineNumber").unwrap(),
+      "3.9999999999999996"
+    );
+  }
+
   #[test]
   fn dollar_min_precision_value() {
     // $MinPrecision defaults to 0 (matches wolframscript).

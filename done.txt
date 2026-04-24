@@ -11917,3 +11917,11 @@ INPUT: DirectoryStack[]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/numbers/constants.py
+CLASS: MaxMachineNumber
+LINE: 613
+TYPE: >>
+INPUT: $MaxMachineNumber * $MinMachineNumber
+EXPECTED:
+= 4.
+---

@@ -2247,14 +2247,6 @@ EXPECTED:
 = {22026.5, 2.68812×10^43, Overflow[]}
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: MaxMachineNumber
-LINE: 613
-TYPE: >>
-INPUT: $MaxMachineNumber * $MinMachineNumber
-EXPECTED:
-= 4.
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: MinMachineNumber
 LINE: 640
 TYPE: >>
