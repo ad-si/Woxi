@@ -2760,6 +2760,10 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if (den_pole_k || den_pole_nk) && !num_pole {
           return Ok(Expr::Integer(0));
         }
+        // Only the numerator has a pole → ComplexInfinity.
+        if num_pole && !den_pole_k && !den_pole_nk {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
         // Binomial[n, k] = Gamma[n+1] / (Gamma[k+1] * Gamma[n-k+1])
         // Use log-gamma for better precision
         fn lgamma(x: f64) -> f64 {
