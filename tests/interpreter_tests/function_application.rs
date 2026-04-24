@@ -194,6 +194,26 @@ mod function_head {
     );
   }
 
+  // Chained `& [...]` anonymous-function calls: `g[#] & [h[#]] & [5]`
+  // parses as `((g[#] &)[h[#]] &)[5]`. The grammar previously allowed
+  // only one anonymous-function suffix per Expression, so the outer
+  // `& [5]` triggered a parse error. Matches wolframscript output
+  // `g[h[5]]`.
+  #[test]
+  fn anonymous_function_chained_application() {
+    assert_eq!(
+      interpret("g[#] & [h[#]] & [5]").unwrap(),
+      "g[h[5]]"
+    );
+  }
+
+  #[test]
+  fn anonymous_function_chained_constant_ignores_inner_slot() {
+    // `(f &)[x]` returns `f` regardless of the slot argument, and wrapping
+    // that in another `& [y]` still returns `f`.
+    assert_eq!(interpret("f & [x] & [y]").unwrap(), "f");
+  }
+
   #[test]
   fn function_assigned_to_variable() {
     clear_state();

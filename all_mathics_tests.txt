@@ -356,14 +356,6 @@ EXPECTED:
 . 
 . f[1][x_] = x
 ---
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
-LINE: 64
-TYPE: >>
-INPUT: g[#] & [h[#]] & [5]
-EXPECTED:
-= g[h[5]]
----
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapIndexed
 LINE: 297

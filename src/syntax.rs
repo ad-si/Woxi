@@ -3132,6 +3132,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
       // Parse continuation as operator-term pairs
       post_terms.push(result);
+      let mut pending_anon_chains: Vec<Vec<Vec<Expr>>> = Vec::new();
       let mut iter = post_pairs.into_iter();
       while let Some(op_pair) = iter.next() {
         if op_pair.as_rule() == Rule::Operator {
@@ -3167,11 +3168,35 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
               post_terms.push(pair_to_expr(next_pair));
             }
           }
+        } else if op_pair.as_rule() == Rule::AnonymousFunctionSuffix {
+          // A second `&` after the first: wrap the accumulated infix chain
+          // built so far (including any infix continuation) in a Function
+          // and apply its BracketArgs. Matches Wolfram's `f & [x] & [y]`
+          // ≡ `((f &)[x] &)[y]`.
+          let bracket_args: Vec<Vec<Expr>> = op_pair
+            .into_inner()
+            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+            .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+            .collect();
+          pending_anon_chains.push(bracket_args);
         }
       }
 
       // Build expression tree with precedence
       result = build_binary_tree(post_terms, post_ops);
+
+      // Apply any additional `& [...]` chains that followed the first one.
+      for bracket_args in pending_anon_chains {
+        result = Expr::Function {
+          body: Box::new(result),
+        };
+        for args in bracket_args {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+      }
 
       // Apply post-& postfix functions
       for func_pair in post_postfix {
@@ -8051,7 +8076,10 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
 /// substitution: before substituting `value` into a body that binds a
 /// parameter P, we need to know whether P appears as a name somewhere in
 /// `value` — if so, the binding must first be alpha-renamed.
-fn collect_identifier_names(expr: &Expr, out: &mut std::collections::HashSet<String>) {
+fn collect_identifier_names(
+  expr: &Expr,
+  out: &mut std::collections::HashSet<String>,
+) {
   match expr {
     Expr::Identifier(name) => {
       out.insert(name.clone());
@@ -8320,10 +8348,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
       // handling, `Function[{x}, Function[{y}, f[x,y]]][y]` would substitute
       // x→y in the body and capture the new y reference — producing
       // `Function[{y}, f[y,y]]` instead of Wolfram's `Function[{y$}, f[y, y$]]`.
-      if name == "Function"
-        && args.len() == 2
-        && !bindings.is_empty()
-      {
+      if name == "Function" && args.len() == 2 && !bindings.is_empty() {
         let (params_arg, body_arg) = (&args[0], &args[1]);
         let param_names: Option<Vec<String>> = match params_arg {
           Expr::Identifier(n) => Some(vec![n.clone()]),
@@ -8370,9 +8395,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
           }
           let substituted_body = substitute_variables(&new_body, &filtered);
           let new_params_arg = if matches!(params_arg, Expr::List(_)) {
-            Expr::List(
-              new_params.into_iter().map(Expr::Identifier).collect(),
-            )
+            Expr::List(new_params.into_iter().map(Expr::Identifier).collect())
           } else {
             // Bare identifier form; must still be a list of 1 after rename.
             Expr::Identifier(new_params.into_iter().next().unwrap_or_default())

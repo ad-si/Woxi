@@ -11813,3 +11813,11 @@ INPUT: B[[;;, 3]] = 13
 EXPECTED:
 = 13
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 64
+TYPE: >>
+INPUT: g[#] & [h[#]] & [5]
+EXPECTED:
+= g[h[5]]
+---
