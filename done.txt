@@ -11973,3 +11973,11 @@ INPUT: $OutputForms
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: BoxForms_
+LINE: 32
+TYPE: >>
+INPUT: $BoxForms
+EXPECTED:
+= ...
+---

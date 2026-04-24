@@ -4533,14 +4533,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/forms/variables.py
 CLASS: BoxForms_
-LINE: 32
-TYPE: >>
-INPUT: $BoxForms
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/forms/variables.py
-CLASS: BoxForms_
 LINE: 47
 TYPE: >>
 INPUT: $BoxForms
