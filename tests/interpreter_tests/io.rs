@@ -384,6 +384,29 @@ mod close_error {
   }
 }
 
+mod file_date {
+  use super::*;
+
+  // Missing files emit `fdnfnd` and leave FileDate[…] unevaluated,
+  // matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_emits_fdnfnd() {
+    let result =
+      interpret_with_stdout(r#"FileDate["ExampleData/sunflowers.jpg"]"#)
+        .unwrap();
+    assert_eq!(result.result, "FileDate[ExampleData/sunflowers.jpg]");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FileDate::fdnfnd")),
+      "expected fdnfnd warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod file_hash {
   use super::*;
 

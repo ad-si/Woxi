@@ -1792,6 +1792,29 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // FileDate["name"] / FileDate["name", "type"] — file timestamps.
+    // Woxi doesn't implement the date lookup yet; for missing files it
+    // still reproduces wolframscript's error path (`fdnfnd` message
+    // and an unevaluated FileDate[…] result).
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileDate" if args.len() == 1 || args.len() == 2 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FileDate".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      if !std::path::Path::new(name).exists() {
+        crate::emit_message(&format!(
+          "FileDate::fdnfnd: Directory or file \"{}\" not found.",
+          name
+        ));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileDate".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // FileHash["name"] / FileHash["name", "Algorithm"] — return the
     // hash as an Integer. Missing files emit `FileHash::noopen` and
     // return `$Failed`, matching wolframscript.
@@ -1815,10 +1838,7 @@ pub fn dispatch_io_functions(
             .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
             .unwrap_or_else(|_| name.clone())
         };
-        crate::emit_message(&format!(
-          "FileHash::noopen: Cannot open {}.",
-          abs
-        ));
+        crate::emit_message(&format!("FileHash::noopen: Cannot open {}.", abs));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
       return Some(Ok(Expr::FunctionCall {

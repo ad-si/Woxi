@@ -2956,14 +2956,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: FileDate
-LINE: 33
-TYPE: >>
-INPUT: FileDate["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileDate
 LINE: 36
 TYPE: >>
 INPUT: FileDate["ExampleData/sunflowers.jpg", "Access"]

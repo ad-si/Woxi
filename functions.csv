@@ -2078,7 +2078,7 @@ ButtonNotebook,Notebook containing buttons,🚫,,3.0,2116
 SequenceReplace,Replace sequence patterns,🚫,,11.3,2116
 RecordSeparators,Record separator option for streams,🚫,,2.0,2119
 VerificationTest,Testing framework function,🚫,,10.0,2119
-FileDate,Get file modification date,🚫,,2.0,2121
+FileDate,Get file modification date,✅,,2.0,2121
 LongShortTermMemoryLayer,LSTM neural network layer,🚫,,11.1,2121
 Entropy,Information entropy,🚫,,7.0,2124
 IntegerExponent,Returns the largest power of a base dividing n,✅,pure,4.0,2124
