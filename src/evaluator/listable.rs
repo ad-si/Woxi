@@ -193,8 +193,11 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$IterationLimit" => Some(Expr::Integer(4096)),
     "$MachinePrecision" => Some(Expr::Real(15.954589770191003)),
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
-    "$MaxMachineNumber" => Some(Expr::Real(1.7976931348623157e308)),
-    "$MinMachineNumber" => Some(Expr::Real(5e-324)),
+    "$MaxMachineNumber" => Some(Expr::Real(f64::MAX)),
+    // Wolfram's $MinMachineNumber is the smallest normalized double
+    // (2^-1022), not the smallest subnormal — so their product rounds
+    // cleanly to ~4.
+    "$MinMachineNumber" => Some(Expr::Real(f64::MIN_POSITIVE)),
     "$MaxPrecision" => Some(Expr::Identifier("Infinity".to_string())),
     "$MinPrecision" => Some(Expr::Integer(0)),
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),

@@ -448,6 +448,26 @@ mod precision {
     assert_eq!(interpret("$MaxPrecision").unwrap(), "Infinity");
   }
 
+  // $MinMachineNumber is Wolfram's smallest *normalized* positive machine
+  // number (2^-1022), not the smallest subnormal. Regression for the
+  // mathics doctest in numbers/constants.py for $MaxMachineNumber.
+  #[test]
+  fn dollar_min_machine_number_value() {
+    assert_eq!(
+      interpret("$MinMachineNumber").unwrap(),
+      "2.2250738585072014*^-308"
+    );
+  }
+
+  #[test]
+  fn dollar_max_machine_number_value() {
+    // $MaxMachineNumber is f64::MAX ≈ 1.7977*^308.
+    assert_eq!(
+      interpret("$MaxMachineNumber").unwrap(),
+      "1.7976931348623157*^308"
+    );
+  }
+
   #[test]
   fn dollar_min_precision_value() {
     // $MinPrecision defaults to 0 (matches wolframscript).

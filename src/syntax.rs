@@ -3785,11 +3785,16 @@ fn format_real_scientific(f: f64) -> String {
   let abs = f.abs();
   let sign = if negative { "-" } else { "" };
 
-  // Count significant digits from the shortest round-trip representation
-  let shortest = format!("{}", abs);
+  // Count significant digits from the shortest scientific-notation
+  // round-trip representation. Using `{}` would emit the full integer
+  // expansion for very large values (e.g. f64::MAX has 309 digits), which
+  // then inflates the precision count and produces far more digits than
+  // needed. Rust's `{:e}` already uses the shortest unambiguous mantissa.
+  let sci_short = format!("{:e}", abs);
+  let mantissa_short = sci_short.split_once('e').map(|(m, _)| m).unwrap_or(&sci_short);
   let mut sig = 0usize;
   let mut started = false;
-  for ch in shortest.chars() {
+  for ch in mantissa_short.chars() {
     if ch == '.' || ch == '-' {
       continue;
     }
