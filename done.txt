@@ -12174,3 +12174,10 @@ TYPE: >>
 INPUT: DeleteFile["MathicsSunnyFlowers.jpg"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/filesystem.py
+CLASS: DeleteFile
+LINE: 270
+TYPE: >>
+INPUT: DeleteFile["MathicsSunflowers.jpg"]
+EXPECTED: (none)
+---
