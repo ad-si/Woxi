@@ -906,13 +906,6 @@ EXPECTED:
 | rapbqrguvffgevat
 ---
 FILE: mathics/builtin/files_io/importexport.py
-CLASS: RegisterExport
-LINE: 1206
-TYPE: >>
-INPUT: DeleteFile["sample.txt"]
-EXPECTED: (none)
----
-FILE: mathics/builtin/files_io/importexport.py
 CLASS: Import
 LINE: 1334
 TYPE: >>
