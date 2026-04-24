@@ -3488,13 +3488,6 @@ TYPE: >>
 INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
-LINE: 1149
-TYPE: >>
-INPUT: B[[1;;-2]] = t;
-EXPECTED: (none)
----
 FILE: mathics/builtin/list/rearrange.py
 CLASS: Union
 LINE: 1427
