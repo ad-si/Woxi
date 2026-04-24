@@ -5483,9 +5483,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           // Special case: if Infinity is among the factors, wolframscript
           // merges the -1 into it and prints `-Infinity` inline, e.g.
           // Times[-1, a, b, Infinity] → "a*b*-Infinity" (not "-(a*b*Infinity)").
-          let infinity_pos = args[1..].iter().position(|a| {
-            matches!(a, Expr::Identifier(s) if s == "Infinity")
-          });
+          let infinity_pos = args[1..]
+            .iter()
+            .position(|a| matches!(a, Expr::Identifier(s) if s == "Infinity"));
           if let Some(idx) = infinity_pos {
             let abs_pos = idx + 1; // position inside `args`
             let mut merged: Vec<Expr> = Vec::with_capacity(args.len() - 1);

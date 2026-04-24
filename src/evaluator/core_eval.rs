@@ -18,9 +18,7 @@ fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     Expr::Identifier(n) => {
       n != self_name && ENV.with(|e| e.borrow().contains_key(n))
     }
-    Expr::List(items) => {
-      items.iter().any(|a| needs_reevaluation(a, self_name))
-    }
+    Expr::List(items) => items.iter().any(|a| needs_reevaluation(a, self_name)),
     Expr::FunctionCall { args, .. } => {
       args.iter().any(|a| needs_reevaluation(a, self_name))
     }
@@ -28,9 +26,7 @@ fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
       needs_reevaluation(left, self_name)
         || needs_reevaluation(right, self_name)
     }
-    Expr::UnaryOp { operand, .. } => {
-      needs_reevaluation(operand, self_name)
-    }
+    Expr::UnaryOp { operand, .. } => needs_reevaluation(operand, self_name),
     Expr::CurriedCall { func, args } => {
       needs_reevaluation(func, self_name)
         || args.iter().any(|a| needs_reevaluation(a, self_name))
@@ -388,8 +384,8 @@ pub fn evaluate_expr_to_expr_inner(
             if !needs_reevaluation(&e, name) {
               return Ok(e);
             }
-            let already = SYMBOLS_BEING_EVALUATED
-              .with(|s| s.borrow().contains(name));
+            let already =
+              SYMBOLS_BEING_EVALUATED.with(|s| s.borrow().contains(name));
             if already {
               return Ok(e);
             }

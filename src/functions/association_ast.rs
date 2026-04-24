@@ -124,8 +124,7 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(values))
     }
     Expr::List(_) => Ok(values_recursive(&args[0])),
-    Expr::Rule { replacement, .. }
-    | Expr::RuleDelayed { replacement, .. } => {
+    Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. } => {
       Ok(replacement.as_ref().clone())
     }
     Expr::FunctionCall { name, args: rargs }

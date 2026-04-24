@@ -1001,10 +1001,7 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
         Expr::Integer(re_num),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::Integer(im_num),
-            Expr::Identifier("I".to_string()),
-          ],
+          args: vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())],
         },
       ],
     }

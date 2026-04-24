@@ -2799,9 +2799,7 @@ fn contains_inexact_real(expr: &Expr) -> bool {
   match expr {
     Expr::Real(_) | Expr::BigFloat(_, _) => true,
     Expr::List(items) => items.iter().any(contains_inexact_real),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(contains_inexact_real)
-    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
     Expr::BinaryOp { left, right, .. } => {
       contains_inexact_real(left) || contains_inexact_real(right)
     }
@@ -2843,18 +2841,14 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let one_minus_re_sq = (1.0 - re) * (1.0 - re);
     let denom = one_minus_re_sq + im * im;
     let result_re = 0.25 * (4.0 * re / denom).ln_1p();
-    let result_im =
-      0.5 * (2.0 * im).atan2((1.0 - re) * (1.0 + re) - im * im);
+    let result_im = 0.5 * (2.0 * im).atan2((1.0 - re) * (1.0 + re) - im * im);
     return Ok(Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(result_re),
         Expr::FunctionCall {
           name: "Times".to_string(),
-          args: vec![
-            Expr::Real(result_im),
-            Expr::Identifier("I".to_string()),
-          ],
+          args: vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
         },
       ],
     });
