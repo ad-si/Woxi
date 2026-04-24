@@ -1597,14 +1597,8 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(_) => Ok(Expr::Integer(0)),
-    Expr::Real(f) => {
-      let frac = *f - f.trunc();
-      if frac == 0.0 {
-        Ok(Expr::Integer(0))
-      } else {
-        Ok(Expr::Real(frac))
-      }
-    }
+    // Preserve Real type: FractionalPart[3.0] = 0. (not 0)
+    Expr::Real(f) => Ok(Expr::Real(*f - f.trunc())),
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {

@@ -55,6 +55,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Floor"
       | "Ceiling"
       | "Round"
+      | "IntegerPart"
+      | "FractionalPart"
       | "Sqrt"
       | "Surd"
       | "Factorial"
