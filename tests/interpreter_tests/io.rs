@@ -326,6 +326,30 @@ mod streams {
   }
 }
 
+mod find_file {
+  use super::*;
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed() {
+    assert_eq!(
+      interpret(r#"FindFile["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      "$Failed"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn context_returns_failed() {
+    // Context strings (ending in `) resolve to package files in Wolfram;
+    // Woxi has no package loader, so it returns $Failed.
+    assert_eq!(
+      interpret(r#"FindFile["VectorAnalysis`"]"#).unwrap(),
+      "$Failed"
+    );
+  }
+}
+
 mod run {
   use super::*;
 

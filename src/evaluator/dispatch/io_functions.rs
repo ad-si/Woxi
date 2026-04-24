@@ -1786,6 +1786,27 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // FindFile["name"] — return the absolute path if the file exists,
+    // else `$Failed`. Context strings like "VectorAnalysis`" are also
+    // accepted but always fail (no package loader).
+    #[cfg(not(target_arch = "wasm32"))]
+    "FindFile" if args.len() == 1 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FindFile".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      // Context names end with a backtick and can't be resolved to a file
+      // on disk. Match wolframscript's `$Failed` return.
+      if name.contains('`') {
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
+      return Some(Ok(match std::fs::canonicalize(name) {
+        Ok(p) => Expr::String(p.to_string_lossy().into_owned()),
+        Err(_) => Expr::Identifier("$Failed".to_string()),
+      }));
+    }
     // FileNameDrop["path", n] — drop n path components
     "FileNameDrop" if !args.is_empty() && args.len() <= 2 => {
       if let Expr::String(path) = &args[0] {

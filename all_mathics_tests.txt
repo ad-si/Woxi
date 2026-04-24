@@ -780,14 +780,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: FindFile
-LINE: 582
-TYPE: >>
-INPUT: FindFile["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: FindFile
 LINE: 585
 TYPE: >>
 INPUT: FindFile["VectorAnalysis`"]

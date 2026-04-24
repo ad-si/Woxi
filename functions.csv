@@ -1734,7 +1734,7 @@ TakeList,Take successive sublists of given lengths,✅,computation,11.2,1762
 ExportForm,Export form wrapper,,unevaluated,10.0,1763
 ParallelSubmit,Submit parallel task,,unevaluated,7.0,1764
 Application,Application wrapper,,unevaluated,12.2,1766
-FindFile,Find file,,unevaluated,7.0,1766
+FindFile,Find file,✅,unevaluated,7.0,1766
 DistanceTransform,Distance transform,,unevaluated,7.0,1768
 DialogInput,Dialog input,,unevaluated,6.0,1770
 TimelinePlot,Timeline plot,,unevaluated,10.1,1770
