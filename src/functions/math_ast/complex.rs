@@ -965,12 +965,71 @@ pub fn find_rational_smallest_denom(x: f64, tolerance: f64) -> (i64, i64) {
 
 // ─── Numerator / Denominator ───────────────────────────────────────
 
+/// Combine an exact complex rational expression (e.g. `3/7 + I/11`) into
+/// `(numerator_expr, denominator_integer)`, where the numerator is an
+/// integer (or `Complex[re, im]` with integer parts) and the denominator
+/// is the LCM of the part denominators. Returns None if the expression
+/// isn't a pure exact complex rational.
+fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
+  let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
+  let g_r = gcd(rn.abs(), rd.abs().max(1));
+  let (rn, rd) = if rd < 0 {
+    (-rn / g_r, -rd / g_r)
+  } else {
+    (rn / g_r, rd / g_r)
+  };
+  let g_i = gcd(in_.abs(), id.abs().max(1));
+  let (in_, id) = if id < 0 {
+    (-in_ / g_i, -id / g_i)
+  } else {
+    (in_ / g_i, id / g_i)
+  };
+  if rd == 0 || id == 0 {
+    return None;
+  }
+  let lcm_d = (rd / gcd(rd, id)) * id;
+  let re_num = rn * (lcm_d / rd);
+  let im_num = in_ * (lcm_d / id);
+  let num_expr = if im_num == 0 {
+    Expr::Integer(re_num)
+  } else {
+    // Build re + im*I so Woxi's Plus/Times simplification formats it as
+    // `33 + 7*I` instead of `Complex[33, 7]`.
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(re_num),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(im_num),
+            Expr::Identifier("I".to_string()),
+          ],
+        },
+      ],
+    }
+  };
+  let num_evaluated =
+    crate::evaluator::evaluate_expr_to_expr(&num_expr).ok()?;
+  Some((num_evaluated, Expr::Integer(lcm_d)))
+}
+
 /// Numerator[x] - Returns the numerator of a rational expression
 pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Numerator expects exactly 1 argument".into(),
     ));
+  }
+  // Exact complex rational: combine to common denominator and return the
+  // integer (or Complex integer) numerator, e.g. 3/7 + I/11 → 33 + 7 I.
+  // Only matches pure Plus of rationals/I — a single Rational is handled
+  // below, and non-rational Plus falls through.
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "Plus"
+    && let Some((num, _den)) = exact_complex_rational_numden(&args[0])
+  {
+    return Ok(num);
   }
   match &args[0] {
     // Numerator[Rational[a, b]] → a
@@ -1033,6 +1092,13 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Denominator expects exactly 1 argument".into(),
     ));
+  }
+  // Pure exact complex rational: 3/7 + I/11 → Denominator 77 (LCM).
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "Plus"
+    && let Some((_num, den)) = exact_complex_rational_numden(&args[0])
+  {
+    return Ok(den);
   }
   match &args[0] {
     // Denominator[Rational[a, b]] → b
