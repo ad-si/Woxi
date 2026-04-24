@@ -802,13 +802,6 @@ INPUT: RenameFile["MathicsSunflowers.jpg", "MathicsSunnyFlowers.jpg"]
 EXPECTED:
 = MathicsSunnyFlowers.jpg
 ---
-FILE: mathics/builtin/files_io/filesystem.py
-CLASS: RenameFile
-LINE: 940
-TYPE: >>
-INPUT: DeleteFile["MathicsSunnyFlowers.jpg"]
-EXPECTED: (none)
----
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: ConverterDumpsExtensionMappings
 LINE: 954
