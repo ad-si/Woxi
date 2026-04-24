@@ -5480,6 +5480,47 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
+          // Special case: if Infinity is among the factors, wolframscript
+          // merges the -1 into it and prints `-Infinity` inline, e.g.
+          // Times[-1, a, b, Infinity] → "a*b*-Infinity" (not "-(a*b*Infinity)").
+          let infinity_pos = args[1..].iter().position(|a| {
+            matches!(a, Expr::Identifier(s) if s == "Infinity")
+          });
+          if let Some(idx) = infinity_pos {
+            let abs_pos = idx + 1; // position inside `args`
+            let mut merged: Vec<Expr> = Vec::with_capacity(args.len() - 1);
+            for (i, a) in args.iter().enumerate() {
+              if i == 0 || i == abs_pos {
+                continue;
+              }
+              merged.push(a.clone());
+            }
+            let rest_str = merged
+              .iter()
+              .map(|a| {
+                let s = fmt(a);
+                if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                  || matches!(
+                    a,
+                    Expr::BinaryOp {
+                      op: BinaryOperator::Plus | BinaryOperator::Minus,
+                      ..
+                    }
+                  )
+                {
+                  format!("({})", s)
+                } else {
+                  s
+                }
+              })
+              .collect::<Vec<_>>()
+              .join("*");
+            return if merged.is_empty() {
+              "-Infinity".to_string()
+            } else {
+              format!("{}*-Infinity", rest_str)
+            };
+          }
           // If the rest is a single Power[symbolic_base, negative_int], use -base^(-n)
           // notation instead of -(1/base^n), matching wolframscript output
           let is_single_symbolic_neg_power =
