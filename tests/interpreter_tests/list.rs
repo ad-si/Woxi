@@ -5111,6 +5111,19 @@ mod join_non_list {
     );
   }
 
+  // 4-arg PadLeft with per-dimension margin `m`. Source is positioned so
+  // its last element ends at index `n - 1 - m` in each dimension; entries
+  // that fall outside `[0, n)` are dropped and gaps are filled with the
+  // pad shape. Regression for the mathics list/rearrange.py PadLeft
+  // doctest and verified against wolframscript.
+  #[test]
+  fn pad_left_multidim_scalar_margin() {
+    assert_eq!(
+      interpret("PadLeft[{{1, 2, 3}}, {5, 2}, x, 1]").unwrap(),
+      "{{x, x}, {x, x}, {x, x}, {3, x}, {x, x}}"
+    );
+  }
+
   #[test]
   fn pad_right_multidim() {
     assert_eq!(

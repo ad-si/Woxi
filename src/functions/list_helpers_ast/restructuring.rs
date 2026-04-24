@@ -1213,11 +1213,31 @@ pub fn pad_left_multidim(
   ns: &[i128],
   pad: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  pad_left_multidim_with_margin(list, ns, pad, &[])
+}
+
+/// Multidimensional PadLeft with a per-dimension margin (shift from the
+/// right/bottom edge). `PadLeft[list, {n1, ...}, pad, m]` positions the
+/// source so its last element on each axis ends at index `n - 1 - m`.
+/// Entries outside `[0, n)` are dropped; gaps before and after the
+/// source are filled with the pad-shape.
+pub fn pad_left_multidim_with_margin(
+  list: &Expr,
+  ns: &[i128],
+  pad: &Expr,
+  margins: &[i128],
+) -> Result<Expr, InterpreterError> {
   if ns.is_empty() {
     return Ok(list.clone());
   }
   let n = ns[0];
   let rest = &ns[1..];
+  let margin = margins.first().copied().unwrap_or(0);
+  let inner_margins = if margins.len() <= 1 {
+    margins
+  } else {
+    &margins[1..]
+  };
 
   let items: Vec<Expr> = match list {
     Expr::List(items) => items.clone(),
@@ -1226,7 +1246,12 @@ pub fn pad_left_multidim(
 
   let mut padded_children: Vec<Expr> = Vec::with_capacity(items.len());
   for item in &items {
-    padded_children.push(pad_left_multidim(item, rest, pad)?);
+    padded_children.push(pad_left_multidim_with_margin(
+      item,
+      rest,
+      pad,
+      inner_margins,
+    )?);
   }
 
   let len = padded_children.len() as i128;
@@ -1234,16 +1259,34 @@ pub fn pad_left_multidim(
   if n <= 0 {
     return Ok(Expr::List(vec![]));
   }
-  if len >= n {
-    // Truncate from the left (mirror single-dim PadLeft behavior).
-    let skip = (len - n) as usize;
-    return Ok(Expr::List(padded_children[skip..].to_vec()));
+
+  if margin == 0 {
+    if len >= n {
+      // Truncate from the left (mirror single-dim PadLeft behavior).
+      let skip = (len - n) as usize;
+      return Ok(Expr::List(padded_children[skip..].to_vec()));
+    }
+    let filler = build_pad_shape(pad, rest);
+    let needed = (n - len) as usize;
+    let mut result: Vec<Expr> = vec![filler; needed];
+    result.extend(padded_children);
+    return Ok(Expr::List(result));
   }
 
+  // Non-zero margin: position the source so the last element ends at
+  // index `n - 1 - margin`, i.e. `list_start = n - len - margin`. Entries
+  // outside [0, n) are dropped and every gap is filled with the pad shape.
+  let list_start = n - len - margin;
+  let list_end = list_start + len;
   let filler = build_pad_shape(pad, rest);
-  let needed = (n - len) as usize;
-  let mut result: Vec<Expr> = vec![filler; needed];
-  result.extend(padded_children);
+  let mut result = Vec::with_capacity(n as usize);
+  for i in 0..n {
+    if i >= list_start && i < list_end {
+      result.push(padded_children[(i - list_start) as usize].clone());
+    } else {
+      result.push(filler.clone());
+    }
+  }
   Ok(Expr::List(result))
 }
 

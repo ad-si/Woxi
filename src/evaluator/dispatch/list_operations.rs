@@ -1426,7 +1426,7 @@ pub fn dispatch_list_operations(
       }
     }
     "PadLeft" if args.len() >= 2 => {
-      // Multi-dim form: PadLeft[list, {n1, n2, ...}, pad?]
+      // Multi-dim form: PadLeft[list, {n1, n2, ...}, pad?, margin?]
       if let Expr::List(dim_items) = &args[1] {
         let ns_opt: Option<Vec<i128>> =
           dim_items.iter().map(expr_to_i128).collect();
@@ -1436,8 +1436,22 @@ pub fn dispatch_list_operations(
           } else {
             Expr::Integer(0)
           };
-          return Some(list_helpers_ast::pad_left_multidim(
-            &args[0], &ns, &pad,
+          // 4th-argument margin: scalar broadcasts to every dim, list
+          // maps 1:1 per dimension.
+          let margins: Vec<i128> = if args.len() >= 4 {
+            match &args[3] {
+              Expr::List(ms) => {
+                ms.iter().filter_map(expr_to_i128).collect()
+              }
+              _ => expr_to_i128(&args[3])
+                .map(|m| vec![m; ns.len()])
+                .unwrap_or_default(),
+            }
+          } else {
+            Vec::new()
+          };
+          return Some(list_helpers_ast::pad_left_multidim_with_margin(
+            &args[0], &ns, &pad, &margins,
           ));
         }
       }
@@ -1495,9 +1509,7 @@ pub fn dispatch_list_operations(
           // broadcasts to every dimension; a list of margins maps 1:1.
           let margins: Vec<i128> = if args.len() >= 4 {
             match &args[3] {
-              Expr::List(ms) => {
-                ms.iter().filter_map(expr_to_i128).collect()
-              }
+              Expr::List(ms) => ms.iter().filter_map(expr_to_i128).collect(),
               _ => expr_to_i128(&args[3])
                 .map(|m| vec![m; ns.len()])
                 .unwrap_or_default(),
