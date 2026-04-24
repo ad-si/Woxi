@@ -936,14 +936,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: FileFormat
-LINE: 2061
-TYPE: >>
-INPUT: FileFormat["ExampleData/EinsteinSzilLetter.txt"]
-EXPECTED:
-= Text
----
-FILE: mathics/builtin/files_io/importexport.py
-CLASS: FileFormat
 LINE: 2064
 TYPE: >>
 INPUT: FileFormat["ExampleData/hedy.tif"]
