@@ -12138,3 +12138,11 @@ INPUT: AbsoluteFileName["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: ImportString
+LINE: 1625
+TYPE: >>
+INPUT: ImportString[str, "Lines"]
+EXPECTED:
+= ...
+---

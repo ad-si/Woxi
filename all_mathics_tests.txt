@@ -976,10 +976,6 @@ FILE: mathics/builtin/files_io/importexport.py
 CLASS: ImportString
 LINE: 1621
 TYPE: >>
-INPUT: ImportString[str, "Lines"]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/files_io/importexport.py
 CLASS: ExportString
 LINE: 1878

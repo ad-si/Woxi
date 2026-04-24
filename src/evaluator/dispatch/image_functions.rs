@@ -362,6 +362,12 @@ pub fn dispatch_image_functions(
       let content = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
+          // wolframscript emits an error when the first argument isn't a
+          // string — match that message format.
+          crate::emit_message(&format!(
+            "ImportString::string: First argument {} is not a string.",
+            crate::syntax::expr_to_string(&args[0])
+          ));
           return Some(Ok(Expr::FunctionCall {
             name: "ImportString".to_string(),
             args: args.to_vec(),

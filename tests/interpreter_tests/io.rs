@@ -2860,6 +2860,22 @@ mod import_string {
       "ImportString[a,b\n1,2, CSV, Data]"
     );
   }
+
+  // Non-string first argument triggers `ImportString::string`, matching
+  // wolframscript.
+  #[test]
+  fn import_string_non_string_emits_message() {
+    let result =
+      interpret_with_stdout(r#"ImportString[str, "Lines"]"#).unwrap();
+    assert_eq!(result.result, "ImportString[str, Lines]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "ImportString::string: First argument str is not a string."
+      )),
+      "expected ImportString::string warning, got {:?}",
+      result.warnings
+    );
+  }
 }
 
 mod file_names {
