@@ -12181,3 +12181,10 @@ TYPE: >>
 INPUT: DeleteFile["MathicsSunflowers.jpg"]
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: RegisterExport
+LINE: 1194
+TYPE: >>
+INPUT: DeleteFile["sample.txt"]
+EXPECTED: (none)
+---
