@@ -373,6 +373,25 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       i -= 2;
     }
     Ok(bigint_to_expr(result))
+  } else if let Expr::Real(x) = &args[0] {
+    // Real argument: evaluate via the analytic continuation used by
+    // Wolfram. For all real x:
+    //   x!! = 2^(x/2 + (1 - Cos[π x])/4) * Gamma[x/2 + 1]
+    //         / π^((1 - Cos[π x])/4)
+    // This reduces to the integer recurrence when x is a non-negative
+    // integer and coincides with wolframscript on non-integer reals.
+    let shift = (1.0 - (std::f64::consts::PI * x).cos()) / 4.0;
+    let pow2 = 2.0f64.powf(x / 2.0 + shift);
+    let gamma = super::gamma_fn(x / 2.0 + 1.0);
+    let pi_pow = std::f64::consts::PI.powf(shift);
+    let result = pow2 * gamma / pi_pow;
+    if result.is_nan() || result.is_infinite() {
+      return Ok(Expr::FunctionCall {
+        name: "Factorial2".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    Ok(Expr::Real(result))
   } else {
     Ok(Expr::FunctionCall {
       name: "Factorial2".to_string(),

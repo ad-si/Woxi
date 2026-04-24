@@ -2005,6 +2005,23 @@ mod expand_threading {
     assert_eq!(interpret("(a + b)!!").unwrap(), "(a + b)!!");
   }
 
+  // Real-valued Factorial2 uses the analytic continuation
+  // `x!! = 2^(x/2 + (1 - Cos[Pi x])/4) Gamma[x/2 + 1] / Pi^((1 - Cos[Pi x])/4)`
+  // so non-integer inputs now evaluate numerically instead of staying symbolic.
+  #[test]
+  fn factorial2_real_non_integer() {
+    // 3.14!! ≈ 3.3477, to 6 significant figures.
+    let s = interpret("Factorial2[3.14]").unwrap();
+    assert!(s.starts_with("3.347742585544"), "got {}", s);
+  }
+
+  #[test]
+  fn factorial2_real_integer() {
+    // 3.0!! should evaluate, even if subject to 1-ULP error.
+    let s = interpret("Factorial2[3.0]").unwrap();
+    assert!(s.starts_with("3.0"), "got {}", s);
+  }
+
   #[test]
   fn cases_except_two_arg() {
     assert_eq!(
