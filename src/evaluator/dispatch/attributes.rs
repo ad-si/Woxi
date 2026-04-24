@@ -176,42 +176,60 @@ pub fn dispatch_attributes(
     }
     "Clear" => {
       for arg in args {
-        if let Expr::Identifier(sym) = arg {
-          ENV.with(|e| e.borrow_mut().remove(sym));
-          crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        match arg {
+          Expr::Identifier(sym) => {
+            ENV.with(|e| e.borrow_mut().remove(sym));
+            crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+          }
+          Expr::String(pattern) => {
+            for sym in matching_user_symbols(pattern) {
+              ENV.with(|e| e.borrow_mut().remove(&sym));
+              crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(&sym));
+            }
+          }
+          _ => {}
         }
       }
       return Some(Ok(Expr::Identifier("Null".to_string())));
     }
     "ClearAll" => {
+      let clear_one = |sym: &str| {
+        ENV.with(|e| e.borrow_mut().remove(sym));
+        crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+        let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
+        if let Some(up_defs) = up_defs {
+          for (
+            outer_func,
+            params,
+            _conds,
+            _defaults,
+            _heads,
+            body,
+            _orig_lhs,
+            _orig_body,
+          ) in &up_defs
+          {
+            let body_str = expr_to_string(body);
+            crate::FUNC_DEFS.with(|m| {
+              if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
+                entry.retain(|(p, _, _, _, _, b)| {
+                  !(p == params && expr_to_string(b) == body_str)
+                });
+              }
+            });
+          }
+        }
+      };
       for arg in args {
-        if let Expr::Identifier(sym) = arg {
-          ENV.with(|e| e.borrow_mut().remove(sym));
-          crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
-          crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
-          let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
-          if let Some(up_defs) = up_defs {
-            for (
-              outer_func,
-              params,
-              _conds,
-              _defaults,
-              _heads,
-              body,
-              _orig_lhs,
-              _orig_body,
-            ) in &up_defs
-            {
-              let body_str = expr_to_string(body);
-              crate::FUNC_DEFS.with(|m| {
-                if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
-                  entry.retain(|(p, _, _, _, _, b)| {
-                    !(p == params && expr_to_string(b) == body_str)
-                  });
-                }
-              });
+        match arg {
+          Expr::Identifier(sym) => clear_one(sym),
+          Expr::String(pattern) => {
+            for sym in matching_user_symbols(pattern) {
+              clear_one(&sym);
             }
           }
+          _ => {}
         }
       }
       return Some(Ok(Expr::Identifier("Null".to_string())));
@@ -219,4 +237,33 @@ pub fn dispatch_attributes(
     _ => {}
   }
   None
+}
+
+/// Resolve a Wolfram-style symbol pattern (e.g. `"Global`*"`, `"x*"`,
+/// `"Global`x"`) to the matching user-defined symbols tracked by Woxi.
+/// Woxi stores user symbols without a context prefix, so `Global`x` and
+/// `x` refer to the same symbol here.
+fn matching_user_symbols(pattern: &str) -> Vec<String> {
+  let simple_pattern = pattern.strip_prefix("Global`").unwrap_or(pattern);
+  // Pre-compute the user-defined symbol list once so we don't borrow
+  // ENV/FUNC_DEFS while they are being mutated by the caller.
+  let names = crate::get_defined_names();
+  if !simple_pattern.contains('*') && !simple_pattern.contains('@') {
+    return if names.iter().any(|n| n == simple_pattern) {
+      vec![simple_pattern.to_string()]
+    } else {
+      Vec::new()
+    };
+  }
+  let regex_pattern = format!(
+    "^{}$",
+    simple_pattern
+      .replace('.', "\\.")
+      .replace('*', ".*")
+      .replace('@', "[a-z]+")
+  );
+  match regex::Regex::new(&regex_pattern) {
+    Ok(re) => names.into_iter().filter(|n| re.is_match(n)).collect(),
+    Err(_) => Vec::new(),
+  }
 }
