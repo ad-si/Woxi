@@ -1,6 +1,44 @@
 #[allow(unused_imports)]
 use super::*;
 
+thread_local! {
+  /// Symbols currently being looked up — prevents infinite recursion when
+  /// a stored OwnValue references the same symbol (e.g. `s = {a, s}`).
+  static SYMBOLS_BEING_EVALUATED:
+    std::cell::RefCell<std::collections::HashSet<String>> =
+      std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Does `expr` mention any Identifier (other than `self_name`) whose
+/// current stored OwnValue might produce a different result on
+/// re-evaluation? Used to skip wasteful re-evaluation of stored values
+/// that are already at fixpoint.
+fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => {
+      n != self_name && ENV.with(|e| e.borrow().contains_key(n))
+    }
+    Expr::List(items) => {
+      items.iter().any(|a| needs_reevaluation(a, self_name))
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| needs_reevaluation(a, self_name))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      needs_reevaluation(left, self_name)
+        || needs_reevaluation(right, self_name)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      needs_reevaluation(operand, self_name)
+    }
+    Expr::CurriedCall { func, args } => {
+      needs_reevaluation(func, self_name)
+        || args.iter().any(|a| needs_reevaluation(a, self_name))
+    }
+    _ => false,
+  }
+}
+
 /// Check if a function has a specific Hold attribute (built-in or user-defined).
 fn has_hold_attribute(name: &str, attr: &str) -> bool {
   get_builtin_attributes(name).contains(&attr)
@@ -336,7 +374,31 @@ pub fn evaluate_expr_to_expr_inner(
       // Look up in environment
       if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
         match stored {
-          StoredValue::ExprVal(e) => Ok(e),
+          // Re-evaluate the stored value so that later changes to free
+          // symbols propagate, matching Wolfram's OwnValues semantics
+          // (`z = 1 + x; x = 2; z` returns 3). Only re-evaluate when the
+          // stored expression mentions a free Identifier that itself has
+          // a stored value — otherwise the stored value is already at
+          // fixpoint and re-evaluating is wasted work (plus risks
+          // quadratic blowup for growing lists like `k = {k, 1}`).
+          StoredValue::ExprVal(e) => {
+            if matches!(&e, Expr::Identifier(s) if s == name) {
+              return Ok(e);
+            }
+            if !needs_reevaluation(&e, name) {
+              return Ok(e);
+            }
+            let already = SYMBOLS_BEING_EVALUATED
+              .with(|s| s.borrow().contains(name));
+            if already {
+              return Ok(e);
+            }
+            SYMBOLS_BEING_EVALUATED
+              .with(|s| s.borrow_mut().insert(name.clone()));
+            let result = evaluate_expr_to_expr(&e);
+            SYMBOLS_BEING_EVALUATED.with(|s| s.borrow_mut().remove(name));
+            result
+          }
           StoredValue::Raw(val) => {
             // Parse the stored value back to Expr
             string_to_expr(&val)
