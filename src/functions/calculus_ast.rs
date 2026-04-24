@@ -292,6 +292,48 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let lo = &items[1];
     let hi = &items[2];
 
+    // Constant integrand with an infinite value: the general result is
+    // sign(c)·Infinity whenever the integration interval is non-empty. The
+    // antiderivative-then-substitute path fails here because `c·0` on an
+    // infinite `c` evaluates to Indeterminate. Handle the signed-Infinity
+    // case directly. A non-empty range is any range where lo and hi aren't
+    // structurally identical (compared via their printed form).
+    if is_constant_wrt(&args[0], &var_name) {
+      use crate::syntax::{UnaryOperator, expr_to_string};
+      let lo_ne_hi = expr_to_string(lo) != expr_to_string(hi);
+      // -Infinity must be returned through the evaluator so it gets
+      // canonicalised to the same form `DirectedInfinity[-1]` / unary-minus
+      // that the REPL displays as `-Infinity`.
+      let return_neg_infinity = || -> Result<Expr, InterpreterError> {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        })
+      };
+      match &args[0] {
+        Expr::Identifier(s) if s == "Infinity" && lo_ne_hi => {
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        }
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity")
+          && lo_ne_hi =>
+        {
+          return return_neg_infinity();
+        }
+        Expr::FunctionCall { name, args: da }
+          if name == "DirectedInfinity"
+            && da.len() == 1
+            && matches!(&da[0], Expr::Integer(-1))
+            && lo_ne_hi =>
+        {
+          return return_neg_infinity();
+        }
+        _ => {}
+      }
+    }
+
     // Try known definite integrals first
     if let Some(result) = try_definite_integral(&args[0], &var_name, lo, hi) {
       return Ok(result);

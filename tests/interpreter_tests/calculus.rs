@@ -12,6 +12,49 @@ mod integrate_symbolic_bounds {
   }
 }
 
+// Integrating a signed-Infinity constant over a non-empty range returns
+// that same signed Infinity. The antiderivative-then-substitute path ran
+// into `(-Infinity) * 0 == Indeterminate` at the lower bound; these cases
+// now short-circuit before substitution.
+mod integrate_infinite_constant {
+  use super::*;
+
+  #[test]
+  fn neg_infinity_over_0_to_infinity_is_neg_infinity() {
+    assert_eq!(
+      interpret("Integrate[-Infinity, {x, 0, Infinity}]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  #[test]
+  fn pos_infinity_over_finite_range_is_infinity() {
+    assert_eq!(
+      interpret("Integrate[Infinity, {x, 0, 1}]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn neg_infinity_over_finite_range_is_neg_infinity() {
+    assert_eq!(
+      interpret("Integrate[-Infinity, {x, 0, 1}]").unwrap(),
+      "-Infinity"
+    );
+  }
+
+  // Empty range (lo == hi) leaves the integral as Indeterminate because
+  // the general short-circuit doesn't fire — the value of the integrand
+  // never factors into a definite answer.
+  #[test]
+  fn neg_infinity_over_empty_range_is_indeterminate() {
+    assert_eq!(
+      interpret("Integrate[-Infinity, {x, 0, 0}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
 mod integrate_with_sum {
   use super::*;
 

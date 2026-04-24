@@ -11781,3 +11781,11 @@ INPUT: Lighter[Orange, 1/4]
 EXPECTED:
 = RGBColor[1., 0.625, 0.25]
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: Integrate
+LINE: 1001
+TYPE: >>
+INPUT: Integrate[-Infinity, {x, 0, Infinity}]
+EXPECTED:
+= -Infinity
+---
