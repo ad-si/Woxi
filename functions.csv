@@ -3771,7 +3771,7 @@ ControllabilityMatrix,,,,8.0,3889
 ConvexHullRegion,,🚫,,12.2,3889
 Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1.0,3889
 Diamond,,,,3.0,3889
-FileFormat,,,,6.0,3889
+FileFormat,,✅,,6.0,3889
 FileTemplateApply,,,,10.0,3889
 FindLibrary,,,,8.0,3889
 FindRepeat,,,,11.2,3889

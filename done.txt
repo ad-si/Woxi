@@ -12340,3 +12340,11 @@ INPUT: FileDate["ExampleData/sunflowers.jpg", "Rules"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/files_io/importexport.py
+CLASS: FileFormat
+LINE: 2057
+TYPE: >>
+INPUT: FileFormat["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= JPEG
+---

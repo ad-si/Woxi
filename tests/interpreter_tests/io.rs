@@ -384,6 +384,28 @@ mod close_error {
   }
 }
 
+mod file_format {
+  use super::*;
+
+  // Missing files emit `FileFormat::nffil` and return $Failed,
+  // matching wolframscript.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed() {
+    let result =
+      interpret_with_stdout(r#"FileFormat["ExampleData/sunflowers.jpg"]"#)
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(
+        "FileFormat::nffil: File not found during FileFormat[ExampleData/sunflowers.jpg]."
+      )),
+      "expected nffil warning, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod file_date {
   use super::*;
 

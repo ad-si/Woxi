@@ -1792,6 +1792,29 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // FileFormat["name"] — return the format string for a file, or
+    // emit `FileFormat::nffil` and `$Failed` when missing. Actual
+    // format detection isn't implemented yet.
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileFormat" if args.len() == 1 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FileFormat".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      if !std::path::Path::new(name).exists() {
+        crate::emit_message(&format!(
+          "FileFormat::nffil: File not found during FileFormat[{}].",
+          name
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileFormat".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // FileDate["name"] / FileDate["name", "type"] — file timestamps.
     // Woxi doesn't implement the date lookup yet; for missing files it
     // still reproduces wolframscript's error path (`fdnfnd` message
