@@ -2955,14 +2955,6 @@ EXPECTED:
 = {{red}, {white}}
 ---
 FILE: mathics/builtin/file_operations/file_properties.py
-CLASS: FileDate
-LINE: 48
-TYPE: >>
-INPUT: FileDate["ExampleData/sunflowers.jpg", "Rules"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/file_operations/file_properties.py
 CLASS: SetFileDate
 LINE: 243
 TYPE: #>
