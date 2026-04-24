@@ -789,6 +789,63 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Compute Floor or Ceiling via arbitrary-precision BigFloat when the value
+/// exceeds what i128 can represent. `approx` is the f64 approximation used
+/// only to pick a target precision. Returns an `Expr::BigInteger` on
+/// success, or `None` if BigFloat evaluation of the input fails.
+fn floor_via_bigfloat(expr: &Expr, approx: f64, is_floor: bool) -> Option<Expr> {
+  use astro_float::{Consts, RoundingMode};
+  if !approx.is_finite() {
+    return None;
+  }
+  // Target precision: at least as many decimal digits as the integer part,
+  // plus a safety margin.
+  let mag_digits = approx.abs().log10().ceil() as i64;
+  let precision = (mag_digits.max(20) as usize) + 10;
+  let bits = crate::functions::math_ast::numerical::nominal_bits(precision);
+  let mut cc = Consts::new().ok()?;
+  let rm = RoundingMode::ToEven;
+  let bf =
+    crate::functions::math_ast::numerical::expr_to_bigfloat(expr, bits, rm, &mut cc)
+      .ok()?;
+  let decimal =
+    crate::functions::math_ast::numerical::bigfloat_to_string(&bf, None, rm, &mut cc)
+      .ok()?;
+  // decimal looks like "[-]DIGITS.FRAC" (or just "[-]DIGITS.").
+  let (sign, rest) = if let Some(s) = decimal.strip_prefix('-') {
+    ("-", s)
+  } else {
+    ("", decimal.as_str())
+  };
+  let dot_pos = rest.find('.')?;
+  let int_part = &rest[..dot_pos];
+  let frac_part = &rest[dot_pos + 1..];
+  // Parse the integer part as a BigInt.
+  let int_str = format!("{}{}", sign, int_part);
+  let int_bi = int_str.parse::<num_bigint::BigInt>().ok()?;
+  // For Floor on a negative number with a non-zero fractional part, subtract 1.
+  // For Ceiling on a positive number with a non-zero fractional part, add 1.
+  let has_frac = !frac_part.chars().all(|c| c == '0');
+  use num_bigint::BigInt;
+  let adjusted = if is_floor {
+    if sign == "-" && has_frac {
+      int_bi - BigInt::from(1)
+    } else {
+      int_bi
+    }
+  } else if sign != "-" && has_frac {
+    int_bi + BigInt::from(1)
+  } else {
+    int_bi
+  };
+  // Downshift to Integer if it fits i128.
+  if let Ok(small) = adjusted.to_string().parse::<i128>() {
+    Some(Expr::Integer(small))
+  } else {
+    Some(Expr::BigInteger(adjusted))
+  }
+}
+
 /// Floor[x] - Floor function
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -800,7 +857,21 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return floor_ceil_two_arg(&args[0], &args[1], true);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    Ok(Expr::Integer(n.floor() as i128))
+    // i128 fits ~38 decimal digits; beyond that, `.floor() as i128` saturates
+    // at i128::MAX, mis-computing Floor for large symbolic products like
+    // `Pi * 10^100`. Fall through to the arbitrary-precision path.
+    // f64 has ~15-16 digits of integer precision, so any magnitude beyond
+    // that needs BigFloat to preserve the integer part exactly.
+    if n.is_finite() && n.abs() < 1e15 {
+      return Ok(Expr::Integer(n.floor() as i128));
+    }
+    // BigFloat fallback: compute the expression to enough precision to
+    // resolve the integer part exactly, then parse the leading digits as
+    // a BigInt.
+    if let Some(result) = floor_via_bigfloat(&args[0], n, true) {
+      return Ok(result);
+    }
+    return Ok(Expr::Integer(n.floor() as i128));
   } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
     if im == 0.0 {
       Ok(Expr::Integer(re.floor() as i128))
@@ -841,7 +912,15 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return floor_ceil_two_arg(&args[0], &args[1], false);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    Ok(Expr::Integer(n.ceil() as i128))
+    // f64 has ~15-16 digits of integer precision, so any magnitude beyond
+    // that needs BigFloat to preserve the integer part exactly.
+    if n.is_finite() && n.abs() < 1e15 {
+      return Ok(Expr::Integer(n.ceil() as i128));
+    }
+    if let Some(result) = floor_via_bigfloat(&args[0], n, false) {
+      return Ok(result);
+    }
+    return Ok(Expr::Integer(n.ceil() as i128));
   } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
     if im == 0.0 {
       Ok(Expr::Integer(re.ceil() as i128))

@@ -11797,3 +11797,11 @@ INPUT: DirectoryQ[dir]
 EXPECTED:
 = False
 ---
+FILE: mathics/builtin/numbers/integer.py
+CLASS: DigitCount
+LINE: 134
+TYPE: >>
+INPUT: DigitCount[Floor[Pi * 10^100]]
+EXPECTED:
+= {8, 12, 12, 10, 8, 9, 8, 12, 14, 8}
+---

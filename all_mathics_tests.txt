@@ -2482,14 +2482,6 @@ INPUT: ComplexExpand[Re[2 z^3 - z + 1], z]
 EXPECTED:
 = 1 - Re[z] + 2 Re[z] ^ 3 - 6 Im[z] ^ 2 Re[z]
 ---
-FILE: mathics/builtin/numbers/integer.py
-CLASS: DigitCount
-LINE: 134
-TYPE: >>
-INPUT: DigitCount[Floor[Pi * 10^100]]
-EXPECTED:
-= {8, 12, 12, 10, 8, 9, 8, 12, 14, 8}
----
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: Eigenvalues
 LINE: 121

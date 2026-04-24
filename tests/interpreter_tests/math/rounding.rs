@@ -145,6 +145,38 @@ mod floor {
     assert_eq!(interpret("Floor[x]").unwrap(), "Floor[x]");
   }
 
+  // `Floor[Pi * 10^20]` must produce the 21-digit integer exactly. Using
+  // f64 only preserves ~16 integer digits, so the last digits would drift;
+  // Woxi falls back to an arbitrary-precision BigFloat path for values
+  // beyond 1e15.
+  #[test]
+  fn pi_times_10_pow_20() {
+    assert_eq!(
+      interpret("Floor[Pi * 10^20]").unwrap(),
+      "314159265358979323846"
+    );
+  }
+
+  // Regression for mathics numbers/linalg.py `DigitCount[Floor[Pi *
+  // 10^100]]`: the i128 saturation at 2^127-1 used to give a 39-digit
+  // integer; we now get the true 101-digit integer via BigFloat.
+  #[test]
+  fn pi_times_10_pow_100_full_digits() {
+    assert_eq!(
+      interpret("DigitCount[Floor[Pi * 10^100]]").unwrap(),
+      "{8, 12, 12, 10, 8, 9, 8, 12, 14, 8}"
+    );
+  }
+
+  // Negative arbitrary-precision case: Floor rounds toward -Infinity.
+  #[test]
+  fn neg_pi_times_10_pow_20() {
+    assert_eq!(
+      interpret("Floor[-Pi * 10^20]").unwrap(),
+      "-314159265358979323847"
+    );
+  }
+
   #[test]
   fn rational() {
     assert_eq!(interpret("Floor[7/3]").unwrap(), "2");
