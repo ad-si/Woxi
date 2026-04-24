@@ -350,6 +350,21 @@ mod find_file {
   }
 }
 
+mod absolute_file_name {
+  use super::*;
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed() {
+    // Missing files emit AbsoluteFileName::fdnfnd and return $Failed,
+    // matching wolframscript.
+    assert_eq!(
+      interpret(r#"AbsoluteFileName["ExampleData/sunflowers.jpg"]"#).unwrap(),
+      "$Failed"
+    );
+  }
+}
+
 mod run {
   use super::*;
 

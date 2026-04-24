@@ -726,14 +726,6 @@ INPUT: DeleteFile[pathname];
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/files_io/filesystem.py
-CLASS: AbsoluteFileName
-LINE: 52
-TYPE: >>
-INPUT: AbsoluteFileName["ExampleData/sunflowers.jpg"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/files_io/filesystem.py
 CLASS: CopyFile
 LINE: 143
 TYPE: X>

@@ -1786,6 +1786,30 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // AbsoluteFileName["name"] — return the absolute path if the file
+    // exists, otherwise emit `AbsoluteFileName::fdnfnd` and return
+    // `$Failed` (matching wolframscript).
+    #[cfg(not(target_arch = "wasm32"))]
+    "AbsoluteFileName" if args.len() == 1 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "AbsoluteFileName".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      match std::fs::canonicalize(name) {
+        Ok(p) => {
+          return Some(Ok(Expr::String(p.to_string_lossy().into_owned())));
+        }
+        Err(_) => {
+          crate::emit_message(&format!(
+            "AbsoluteFileName::fdnfnd: Directory or file \"{}\" not found.",
+            name
+          ));
+          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        }
+      }
+    }
     // FindFile["name"] — return the absolute path if the file exists,
     // else `$Failed`. Context strings like "VectorAnalysis`" are also
     // accepted but always fail (no package loader).
