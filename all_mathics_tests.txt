@@ -584,14 +584,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Find
-LINE: 1333
-TYPE: >>
-INPUT: Find[stream, {"energy", "power"} ]
-EXPECTED:
-= a new and important source of energy in the immediate future. Certain aspects
----
-FILE: mathics/builtin/files_io/files.py
-CLASS: Find
 LINE: 1335
 TYPE: >>
 INPUT: Find[stream, {"energy", "power"} ]
