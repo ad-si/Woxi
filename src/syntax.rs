@@ -528,6 +528,13 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "RightFloor" => Some("\u{230B}"),
     "LeftDoubleBracket" => Some("\u{27E6}"),
     "RightDoubleBracket" => Some("\u{27E7}"),
+    // Whitespace control characters (Wolfram treats these as the raw chars)
+    "NewLine" => Some("\n"),
+    "IndentingNewLine" => Some("\n"),
+    "CarriageReturn" => Some("\r"),
+    "LineSeparator" => Some("\u{2028}"),
+    "ParagraphSeparator" => Some("\u{2029}"),
+    "Tab" => Some("\t"),
     // Miscellaneous
     "Null" => Some(""),
     "InvisibleSpace" => Some("\u{200B}"),

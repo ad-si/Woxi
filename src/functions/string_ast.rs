@@ -3255,9 +3255,9 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  // Parse and evaluate the string as code
-  let parsed = crate::syntax::string_to_expr(&s)?;
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&parsed)?;
+  // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
+  // in order and returns the last result, matching Wolfram semantics.
+  let evaluated = parse_and_evaluate_program(&s)?;
   if args.len() == 3 {
     let wrapped = crate::syntax::Expr::FunctionCall {
       name: crate::syntax::expr_to_string(&args[2]),
@@ -3266,6 +3266,42 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
   }
   Ok(evaluated)
+}
+
+/// Parse `src` as a Wolfram program and evaluate every top-level
+/// Expression/TopLevelSpan statement in order, returning the last result.
+/// Falls back to `string_to_expr` + evaluate for inputs the parser treats as
+/// a single expression.
+fn parse_and_evaluate_program(src: &str) -> Result<Expr, InterpreterError> {
+  use crate::syntax::pair_to_expr;
+  use crate::Rule;
+  let normalized = if src.contains('\r') {
+    src.replace("\r\n", "\n").replace('\r', "\n")
+  } else {
+    src.to_string()
+  };
+  // Insert `;` at top-level newline boundaries so the grammar treats
+  // lines as distinct statements instead of implicit multiplication.
+  let preprocessed = crate::insert_statement_separators(normalized.trim());
+  if let Ok(mut pairs) = crate::parse(&preprocessed) {
+    if let Some(program) = pairs.next() {
+      if program.as_rule() == Rule::Program {
+        let mut last: Option<Expr> = None;
+        for node in program.into_inner() {
+          if matches!(node.as_rule(), Rule::Expression | Rule::TopLevelSpan) {
+            let expr = pair_to_expr(node);
+            last = Some(crate::evaluator::evaluate_expr_to_expr(&expr)?);
+          }
+        }
+        if let Some(v) = last {
+          return Ok(v);
+        }
+      }
+    }
+  }
+  // Fallback path for inputs the program grammar rejected.
+  let parsed = crate::syntax::string_to_expr(&normalized)?;
+  crate::evaluator::evaluate_expr_to_expr(&parsed)
 }
 
 /// StringPadLeft[s, n] or StringPadLeft[s, n, pad] - pad string on left

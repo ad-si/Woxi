@@ -3530,14 +3530,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/atomic/strings.py
 CLASS: ToExpression
-LINE: 769
-TYPE: >>
-INPUT: ToExpression["2\[NewLine]3"]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/atomic/strings.py
-CLASS: ToExpression
 LINE: 775
 TYPE: >>
 INPUT: ToExpression["log(x)", TraditionalForm]

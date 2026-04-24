@@ -2565,6 +2565,21 @@ mod to_expression {
       "3"
     );
   }
+
+  // Multi-statement input — each line or `;`-separated statement is
+  // evaluated in order and the last result is returned.
+  #[test]
+  fn named_newline_splits_statements() {
+    assert_eq!(
+      interpret("ToExpression[\"2\\[NewLine]3\"]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn compound_expression_returns_last() {
+    assert_eq!(interpret("ToExpression[\"2; 3\"]").unwrap(), "3");
+  }
 }
 
 mod base_form {

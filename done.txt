@@ -11692,3 +11692,11 @@ INPUT: Log[a * (b * c) ^ d ^ e * f] /. logrules
 EXPECTED:
 = Log[a] + Log[f (b c) ^ d ^ e]
 ---
+FILE: mathics/builtin/atomic/strings.py
+CLASS: ToExpression
+LINE: 769
+TYPE: >>
+INPUT: ToExpression["2\[NewLine]3"]
+EXPECTED:
+= 3
+---
