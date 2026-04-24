@@ -11965,3 +11965,11 @@ INPUT: $PrintForms
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/forms/variables.py
+CLASS: OutputForms_
+LINE: 120
+TYPE: >>
+INPUT: $OutputForms
+EXPECTED:
+= ...
+---

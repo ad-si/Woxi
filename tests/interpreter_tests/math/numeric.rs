@@ -657,6 +657,25 @@ mod precision {
     );
   }
 
+  // `$OutputForms` is a superset of `$PrintForms` that adds Short,
+  // MatrixForm, BaseForm, etc.
+  #[test]
+  fn output_forms_matches_wolframscript() {
+    assert_eq!(
+      interpret("$OutputForms").unwrap(),
+      "{InputForm, OutputForm, TextForm, CForm, Short, Shallow, MatrixForm, TableForm, TreeForm, FullForm, NumberForm, EngineeringForm, ScientificForm, QuantityForm, DecimalForm, PercentForm, PaddedForm, AccountingForm, BaseForm, DisplayForm, StyleForm, FortranForm, ScriptForm, MathMLForm, TeXForm, StandardForm, TraditionalForm}"
+    );
+  }
+
+  // `$BoxForms` defaults to `{StandardForm, TraditionalForm}`.
+  #[test]
+  fn box_forms_default() {
+    assert_eq!(
+      interpret("$BoxForms").unwrap(),
+      "{StandardForm, TraditionalForm}"
+    );
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).

@@ -305,6 +305,50 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
           .collect(),
       ))
     }
+    // Fixed list of output forms (superset of $PrintForms that adds
+    // Short/Shallow/MatrixForm/…). Matches wolframscript's order.
+    "$OutputForms" => {
+      let forms = [
+        "InputForm",
+        "OutputForm",
+        "TextForm",
+        "CForm",
+        "Short",
+        "Shallow",
+        "MatrixForm",
+        "TableForm",
+        "TreeForm",
+        "FullForm",
+        "NumberForm",
+        "EngineeringForm",
+        "ScientificForm",
+        "QuantityForm",
+        "DecimalForm",
+        "PercentForm",
+        "PaddedForm",
+        "AccountingForm",
+        "BaseForm",
+        "DisplayForm",
+        "StyleForm",
+        "FortranForm",
+        "ScriptForm",
+        "MathMLForm",
+        "TeXForm",
+        "StandardForm",
+        "TraditionalForm",
+      ];
+      Some(Expr::List(
+        forms
+          .iter()
+          .map(|s| Expr::Identifier((*s).to_string()))
+          .collect(),
+      ))
+    }
+    // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.
+    "$BoxForms" => Some(Expr::List(vec![
+      Expr::Identifier("StandardForm".to_string()),
+      Expr::Identifier("TraditionalForm".to_string()),
+    ])),
     // Fixed list of supported encodings, in wolframscript's exact order.
     // This is a registry-style list, not an alphabetical sort — EUC-JP
     // precedes EUC, ISO8859-10 precedes ISO8859-1, etc.
