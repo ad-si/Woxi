@@ -628,6 +628,16 @@ mod precision {
     assert_eq!(interpret("$SystemCharacterEncoding").unwrap(), "UTF-8");
   }
 
+  // The two encoding variables differ by the dash; they are NOT equal in
+  // wolframscript (or Woxi). Mathics wrongly expects True here.
+  #[test]
+  fn system_vs_user_character_encoding_differ() {
+    assert_eq!(
+      interpret("$SystemCharacterEncoding == $CharacterEncoding").unwrap(),
+      "False"
+    );
+  }
+
   #[test]
   fn home_directory_head_is_string() {
     // $HomeDirectory reads $HOME (or $USERPROFILE on Windows).
