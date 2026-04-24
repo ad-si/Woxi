@@ -29,6 +29,37 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "LeastSquares" if args.len() == 2 => {
+      // LeastSquares[A, b] = Inverse[Transpose[A] . A] . Transpose[A] . b
+      // when A has full column rank. Delegate to existing Transpose, Dot,
+      // and Inverse so the result is exact for rational matrices. Keep
+      // symbolic inputs unevaluated.
+      let is_matrix = matches!(&args[0], Expr::List(rows)
+        if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))));
+      let is_vector = matches!(&args[1], Expr::List(_));
+      if is_matrix && is_vector {
+        use crate::evaluator::evaluate_function_call_ast as eval;
+        let a = args[0].clone();
+        let b = args[1].clone();
+        let at = match eval("Transpose", &[a.clone()]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        let ata = match eval("Dot", &[at.clone(), a.clone()]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        let atb = match eval("Dot", &[at, b]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        let inv_ata = match eval("Inverse", &[ata]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        return Some(eval("Dot", &[inv_ata, atb]));
+      }
+    }
     "Tr" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::tr_ast(args));
     }

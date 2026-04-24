@@ -1851,7 +1851,7 @@ InverseZTransform,Inverse Z-transform,,unevaluated,4.0,1880
 Notebooks,List open notebooks,,unevaluated,3.0,1883
 ZTransform,Z-transform,,unevaluated,4.0,1883
 FeatureTypes,Feature types option,,unevaluated,10.1,1885
-LeastSquares,Least squares solution,,unevaluated,6.0,1885
+LeastSquares,Least squares solution,✅,pure,6.0,1885
 CovarianceFunction,Covariance function,,unevaluated,9.0,1887
 XYZColor,XYZ color specification,,unevaluated,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889

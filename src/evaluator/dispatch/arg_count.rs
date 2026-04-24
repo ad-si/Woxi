@@ -547,6 +547,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LatticeReduce" => Some((1, 1)),
     "LeafCount" => Some((1, 1)),
     "LeapYearQ" => Some((1, 1)),
+    "LeastSquares" => Some((2, 2)),
     "LegendreP" => Some((2, 3)),
     "LegendreQ" => Some((2, 3)),
     "Length" => Some((1, 1)),
