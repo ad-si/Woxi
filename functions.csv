@@ -3060,7 +3060,7 @@ CellEventActions,,🚫,,6.0,3134
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
 DayMatchQ,,,,9.0,3134
 ExponentialFamily,,,,7.0,3134
-FileHash,,,,6.0,3134
+FileHash,,✅,,6.0,3134
 HararyGraph,,,,8.0,3134
 InitializationCell,,🚫,,3.0,3134
 NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10.0,3134

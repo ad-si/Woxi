@@ -12260,3 +12260,11 @@ INPUT: FileByteCount["ExampleData/sunflowers.jpg"]
 EXPECTED:
 = 142286
 ---
+FILE: mathics/builtin/file_operations/file_properties.py
+CLASS: FileHash
+LINE: 137
+TYPE: >>
+INPUT: FileHash["ExampleData/sunflowers.jpg"]
+EXPECTED:
+= 109937059621979839952736809235486742106
+---

@@ -384,6 +384,31 @@ mod close_error {
   }
 }
 
+mod file_hash {
+  use super::*;
+
+  // Missing file: emit `FileHash::noopen` with an absolute path and
+  // return $Failed. Actual hashing isn't supported yet, so existing
+  // files still return an unevaluated FileHash[…].
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_file_returns_failed() {
+    let result =
+      interpret_with_stdout(r#"FileHash["ExampleData/sunflowers.jpg"]"#)
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FileHash::noopen: Cannot open")
+          && w.contains("ExampleData/sunflowers.jpg")),
+      "expected FileHash::noopen warning with absolute path, got {:?}",
+      result.warnings
+    );
+  }
+}
+
 mod file_byte_count {
   use super::*;
 

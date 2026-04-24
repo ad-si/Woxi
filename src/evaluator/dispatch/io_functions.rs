@@ -1792,6 +1792,40 @@ pub fn dispatch_io_functions(
         stack.into_iter().map(Expr::String).collect(),
       )));
     }
+    // FileHash["name"] / FileHash["name", "Algorithm"] — return the
+    // hash as an Integer. Missing files emit `FileHash::noopen` and
+    // return `$Failed`, matching wolframscript.
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileHash" if args.len() == 1 || args.len() == 2 => {
+      let Expr::String(name) = &args[0] else {
+        return Some(Ok(Expr::FunctionCall {
+          name: "FileHash".to_string(),
+          args: args.to_vec(),
+        }));
+      };
+      // Only emit the matching error message — actual hashing isn't
+      // supported yet. wolframscript reports the absolute path, so
+      // resolve relative paths against the current working directory.
+      let path = std::path::Path::new(name);
+      if !path.exists() {
+        let abs = if path.is_absolute() {
+          name.clone()
+        } else {
+          std::env::current_dir()
+            .map(|cwd| cwd.join(path).to_string_lossy().into_owned())
+            .unwrap_or_else(|_| name.clone())
+        };
+        crate::emit_message(&format!(
+          "FileHash::noopen: Cannot open {}.",
+          abs
+        ));
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileHash".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // FileByteCount["name"] — size in bytes, or emit `fdnfnd` and
     // return `$Failed` when the file is missing.
     #[cfg(not(target_arch = "wasm32"))]
