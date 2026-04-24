@@ -12061,3 +12061,11 @@ INPUT: Sort[{items___, item_, OptionsPattern[], item_symbol, item_?test}, Patter
 EXPECTED:
 = {item_symbol, item_ ? test, item_, items___, OptionsPattern[]}
 ---
+FILE: mathics/builtin/directories/user_directories.py
+CLASS: UserBaseDirectory
+LINE: 67
+TYPE: >>
+INPUT: $UserBaseDirectory
+EXPECTED:
+= ...
+---

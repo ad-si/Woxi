@@ -454,6 +454,35 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$InitialDirectory" => std::env::current_dir()
       .ok()
       .map(|p| Expr::String(p.to_string_lossy().into_owned())),
+    // Per-user Wolfram config directory. Mirrors wolframscript which
+    // returns `$HOME/Library/Wolfram` on macOS and `$HOME/.Wolfram` on
+    // other Unix-likes.
+    #[cfg(not(target_arch = "wasm32"))]
+    "$UserBaseDirectory" => {
+      let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+      let sub = if cfg!(target_os = "macos") {
+        "Library/Wolfram"
+      } else if cfg!(target_os = "windows") {
+        "AppData\\Roaming\\Wolfram"
+      } else {
+        ".Wolfram"
+      };
+      Some(Expr::String(format!("{}/{}", home.trim_end_matches('/'), sub)))
+    }
+    // System-wide Wolfram config directory.
+    #[cfg(not(target_arch = "wasm32"))]
+    "$BaseDirectory" => {
+      let root = if cfg!(target_os = "macos") {
+        "/Library/Wolfram"
+      } else if cfg!(target_os = "windows") {
+        "C:\\ProgramData\\Wolfram"
+      } else {
+        "/usr/share/Wolfram"
+      };
+      Some(Expr::String(root.to_string()))
+    }
     "$RootDirectory" => {
       // Filesystem root: "/" on Unix/Mac, "C:\" (or similar) on Windows.
       let root = if cfg!(target_os = "windows") {

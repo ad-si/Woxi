@@ -3467,14 +3467,6 @@ INPUT: $Path
 EXPECTED:
 = ...
 ---
-FILE: mathics/builtin/directories/user_directories.py
-CLASS: UserBaseDirectory
-LINE: 67
-TYPE: >>
-INPUT: $UserBaseDirectory
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: MaxRecursion
 LINE: 243

@@ -692,6 +692,22 @@ mod precision {
     assert_eq!(interpret("Head[$HomeDirectory] == String").unwrap(), "True");
   }
 
+  // `$UserBaseDirectory` and `$BaseDirectory` return string paths that
+  // match wolframscript's platform-specific defaults (Library/Wolfram on
+  // macOS, .Wolfram on other Unix-likes).
+  #[test]
+  fn user_base_directory_head_is_string() {
+    assert_eq!(
+      interpret("Head[$UserBaseDirectory] == String").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn base_directory_head_is_string() {
+    assert_eq!(interpret("Head[$BaseDirectory] == String").unwrap(), "True");
+  }
+
   #[test]
   fn temporary_directory_head_is_string() {
     // $TemporaryDirectory is canonicalized and has no trailing slash —
