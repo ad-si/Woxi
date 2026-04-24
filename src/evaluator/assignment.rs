@@ -1739,7 +1739,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Normalize parser-level BinaryOp/UnaryOp into FunctionCall so expressions
   // like `a + b ^= 2` (parsed as Plus[a, b] via BinaryOp) can serve as LHS.
   let normalized_lhs = normalize_lhs_for_upset(lhs);
-  let (_, lhs_args) = match &normalized_lhs {
+  let (lhs_head, lhs_args) = match &normalized_lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
     _ => {
       // Atomic LHS (e.g. `a ^= 3`): wolframscript emits UpSet::normal and
@@ -1760,6 +1760,13 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
   // Evaluate the RHS
   let eval_rhs = evaluate_expr_to_expr(rhs)?;
+
+  // `Format[sym] ^= value` goes to FormatValues, not UpValues, in
+  // Wolfram. Woxi doesn't implement FormatValues yet, but we still
+  // skip UPVALUES storage so UpValues[sym] stays empty.
+  if lhs_head == "Format" {
+    return Ok(eval_rhs);
+  }
 
   // Find all tag symbols in the arguments
   let mut tags = Vec::new();
