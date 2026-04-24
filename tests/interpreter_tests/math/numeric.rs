@@ -731,6 +731,16 @@ mod precision {
     assert_eq!(interpret("MemberQ[$Path, \".\"]").unwrap(), "True");
   }
 
+  // `$Version` is a string banner. Woxi returns `"Woxi <git-version>"`.
+  #[test]
+  fn dollar_version_is_string() {
+    assert_eq!(interpret("Head[$Version] == String").unwrap(), "True");
+    assert_eq!(
+      interpret("StringStartsQ[$Version, \"Woxi \"]").unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn temporary_directory_head_is_string() {
     // $TemporaryDirectory is canonicalized and has no trailing slash —

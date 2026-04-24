@@ -12093,3 +12093,11 @@ INPUT: $Path
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/system.py
+CLASS: Version
+LINE: 913
+TYPE: >>
+INPUT: $Version
+EXPECTED:
+= Mathics3 ...
+---

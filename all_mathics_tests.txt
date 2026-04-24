@@ -97,14 +97,6 @@ INPUT: $Packages
 EXPECTED:
 = {ImportExport`, XML`, Internal`, System`, Global`}
 ---
-FILE: mathics/builtin/system.py
-CLASS: Version
-LINE: 913
-TYPE: >>
-INPUT: $Version
-EXPECTED:
-= Mathics3 ...
----
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
 LINE: 189
