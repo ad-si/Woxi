@@ -2748,6 +2748,17 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => crate::functions::math_ast::try_eval_to_f64(&args[1]),
       };
       if let (Some(n), Some(k)) = (n_f64, k_f64) {
+        // Poles of Gamma in numerator/denominator: a Gamma at a
+        // non-positive integer is ComplexInfinity. If the denominator is
+        // infinite (and the numerator is not), Binomial is 0.
+        let is_nonpos_integer =
+          |x: f64| x <= 0.0 && (x.fract() == 0.0 || (x - x.round()).abs() < 1e-12);
+        let num_pole = is_nonpos_integer(n + 1.0);
+        let den_pole_k = is_nonpos_integer(k + 1.0);
+        let den_pole_nk = is_nonpos_integer(n - k + 1.0);
+        if (den_pole_k || den_pole_nk) && !num_pole {
+          return Ok(Expr::Integer(0));
+        }
         // Binomial[n, k] = Gamma[n+1] / (Gamma[k+1] * Gamma[n-k+1])
         // Use log-gamma for better precision
         fn lgamma(x: f64) -> f64 {
