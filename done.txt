@@ -12244,3 +12244,11 @@ TYPE: >>
 INPUT: DeleteFile[pathname];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/forms/print.py
+CLASS: MathMLForm
+LINE: 118
+TYPE: >>
+INPUT: MathMLForm[\\[Mu]]
+EXPECTED:
+= ...
+---
