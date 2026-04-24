@@ -1313,12 +1313,19 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::prime_nu_ast(args));
     }
     "MantissaExponent" if args.len() == 1 || args.len() == 2 => {
-      // Parse base (default 10)
+      // Parse base (default 10). If a second argument is supplied but is
+      // non-numeric (e.g. a symbol), wolframscript keeps the call
+      // unevaluated rather than silently treating the base as 10.
       let base: f64 = if args.len() == 2 {
         match &args[1] {
           Expr::Integer(b) => *b as f64,
           Expr::Real(b) => *b,
-          _ => 10.0,
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "MantissaExponent".to_string(),
+              args: args.to_vec(),
+            }));
+          }
         }
       } else {
         10.0
