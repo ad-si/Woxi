@@ -4560,6 +4560,18 @@ pub fn evaluate_function_call_ast_inner(
       }
       return Ok(Expr::Identifier("Null".to_string()));
     }
+    // Non-string / non-list-of-strings argument: emit the
+    // wolframscript-style type-error message and leave the call
+    // unevaluated.
+    let arg_str = crate::syntax::expr_to_string(&args[0]);
+    crate::emit_message(&format!(
+      "DeleteFile::strs: A string or nonempty list of strings is expected at position 1 in DeleteFile[{}].",
+      arg_str
+    ));
+    return Ok(Expr::FunctionCall {
+      name: "DeleteFile".to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // RenameFile[source, dest] — rename/move a file

@@ -504,19 +504,11 @@ pub fn get_eval_stack() -> Vec<String> {
 }
 
 /// Format the evaluation stack as a human-readable stack trace string.
-/// Returns None if the stack is shallow — for single-frame errors the
-/// function name is already in the message, so the extra trace just
-/// diverges from wolframscript's output.
+/// Always returns None now — the trace was Woxi-specific debug info that
+/// diverged from wolframscript's output. Keeping the helper so callers
+/// don't need to change.
 fn format_stack_trace() -> Option<String> {
-  let stack = get_eval_stack();
-  if stack.len() <= 1 {
-    return None;
-  }
-  let mut trace = String::from("  during evaluation of:");
-  for (i, name) in stack.iter().rev().enumerate() {
-    trace.push_str(&format!("\n    {:>3}. {}", i + 1, name));
-  }
-  Some(trace)
+  None
 }
 
 /// Emit a Wolfram-style message (e.g. "Power::infy: Infinite expression 1/0 encountered.").
