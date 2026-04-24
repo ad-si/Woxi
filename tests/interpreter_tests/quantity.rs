@@ -330,12 +330,18 @@ fn quantity_q_compound_known_unit_true() {
 fn quantity_q_bare_identifier_unit_false() {
   // Bare symbols (not strings) are not valid unit specifications in Wolfram —
   // Quantity[2, Second] stays unevaluated and QuantityQ returns False.
-  assert_eq!(interpret("QuantityQ[Quantity[2, Second]]").unwrap(), "False");
+  assert_eq!(
+    interpret("QuantityQ[Quantity[2, Second]]").unwrap(),
+    "False"
+  );
   assert_eq!(
     interpret("QuantityQ[Quantity[2, Seconds]]").unwrap(),
     "False"
   );
-  assert_eq!(interpret("QuantityQ[Quantity[2, Meters]]").unwrap(), "False");
+  assert_eq!(
+    interpret("QuantityQ[Quantity[2, Meters]]").unwrap(),
+    "False"
+  );
 }
 
 #[test]
@@ -463,6 +469,17 @@ fn unit_convert_pounds_to_kg() {
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Pounds\"], \"Kilograms\"]").unwrap(),
     "Quantity[45359237/100000000, Kilograms]"
+  );
+}
+
+// Regression: the magnitude-scaling used to compute `(f * numer) / denom`,
+// which introduced a ULP-sized error (1.7236510059999999 instead of
+// 1.723651006). Collapsing `numer/denom` to f64 first matches wolframscript.
+#[test]
+fn unit_convert_real_pounds_rounding() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[3.8, \"Pounds\"]]").unwrap(),
+    "Quantity[1.723651006, Kilograms]"
   );
 }
 

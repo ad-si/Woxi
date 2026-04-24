@@ -65,14 +65,6 @@ TYPE: >>
 INPUT: For[i=1, i<=10, i=i+1, n = n * i]
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/quantities.py
-CLASS: UnitConvert
-LINE: 405
-TYPE: >>
-INPUT: UnitConvert[Quantity[3.8, "Pounds"]]
-EXPECTED:
-= 1.72365 kilogram
----
 FILE: mathics/builtin/recurrence.py
 CLASS: RSolve
 LINE: 36

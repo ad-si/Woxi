@@ -1501,7 +1501,10 @@ fn multiply_magnitude_by_rational(
         Ok(crate::functions::math_ast::make_rational_pub(rn, rd))
       }
     }
-    Expr::Real(f) => Ok(Expr::Real(f * (numer as f64) / (denom as f64))),
+    // Collapse the rational scale to a f64 first so the multiplication
+    // rounds once, matching wolframscript (e.g. 3.8 Pounds → 1.723651006 kg,
+    // not 1.7236510059999999).
+    Expr::Real(f) => Ok(Expr::Real(f * ((numer as f64) / (denom as f64)))),
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
