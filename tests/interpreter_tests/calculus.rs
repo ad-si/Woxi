@@ -3566,6 +3566,55 @@ mod series_coefficient {
       "-1/8"
     );
   }
+
+  // SeriesCoefficient[SeriesData[...], q] — query a SeriesData directly
+  // with an integer or rational exponent. `q * den` indexes into the
+  // stored coefficient list after subtracting nmin. Regression for the
+  // mathics calculus.py SeriesCoefficient doctests.
+  #[test]
+  fn seriesdata_rational_exponent_in_range() {
+    // Table[i^2, {i, 10}] = {1, 4, 9, ..., 100}. 14/3 * 3 = 14; idx =
+    // 14 - 7 = 7; coeffs[7] = 64.
+    assert_eq!(
+      interpret(
+        "SeriesCoefficient[\
+         SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], \
+         14/3]"
+      )
+      .unwrap(),
+      "64"
+    );
+  }
+
+  #[test]
+  fn seriesdata_rational_exponent_below_range() {
+    // 6/3 * 3 = 6 < nmin (7), so the series has no term there.
+    assert_eq!(
+      interpret(
+        "SeriesCoefficient[\
+         SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], \
+         6/3]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn seriesdata_rational_exponent_beyond_tracked_range() {
+    // 17/3 * 3 = 17; idx = 17 - 7 = 10, but coeffs only has 10 entries
+    // (indices 0..9). The coefficient is past the tracked range so we
+    // don't know it → Indeterminate, not 0.
+    assert_eq!(
+      interpret(
+        "SeriesCoefficient[\
+         SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], \
+         17/3]"
+      )
+      .unwrap(),
+      "Indeterminate"
+    );
+  }
 }
 
 mod exp_to_trig {

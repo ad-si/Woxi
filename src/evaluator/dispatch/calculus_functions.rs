@@ -296,6 +296,55 @@ pub fn dispatch_calculus_functions(
       return Some(crate::functions::calculus_ast::discrete_convolve_ast(args));
     }
     "SeriesCoefficient" if args.len() == 2 => {
+      // SeriesCoefficient[SeriesData[x, x0, coeffs, nmin, nmax, den], q]
+      // — query a SeriesData directly. `q` may be an Integer or a
+      // `Rational[p, r]`; the target index into `coeffs` is
+      // `q * den - nmin`. If that isn't an integer (q's numerator·den
+      // isn't divisible by q's denominator) the series has no term at
+      // that exponent → 0. If the index falls below nmin the series
+      // starts later → 0. If the index is at/beyond the tracked range
+      // (`coeffs.len()`) we don't know the coefficient → Indeterminate.
+      if let Expr::FunctionCall {
+        name: sd_name,
+        args: sd_args,
+      } = &args[0]
+        && sd_name == "SeriesData"
+        && sd_args.len() >= 6
+        && let Expr::List(coeffs) = &sd_args[2]
+        && let Some(nmin) = crate::functions::math_ast::expr_to_i128(&sd_args[3])
+        && let Some(den) = crate::functions::math_ast::expr_to_i128(&sd_args[5])
+        && den > 0
+      {
+        // Normalise q to (num, denom) with denom > 0.
+        let (q_num, q_den): (i128, i128) = match &args[1] {
+          Expr::Integer(n) => (*n, 1),
+          Expr::FunctionCall { name: rn, args: ra }
+            if rn == "Rational" && ra.len() == 2 =>
+          {
+            match (&ra[0], &ra[1]) {
+              (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => (*n, *d),
+              _ => return None,
+            }
+          }
+          _ => return None,
+        };
+        // target_n = q * den = (q_num * den) / q_den must be integer.
+        let scaled = q_num * den;
+        if scaled % q_den != 0 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let target_n = scaled / q_den;
+        let idx = target_n - nmin;
+        if idx < 0 {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        let idx_u = idx as usize;
+        if idx_u < coeffs.len() {
+          return Some(Ok(coeffs[idx_u].clone()));
+        } else {
+          return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+        }
+      }
       // SeriesCoefficient[f, {x, x0, n}]
       if let Expr::List(spec) = &args[1]
         && spec.len() == 3
@@ -2246,10 +2295,10 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
       ComparisonOp::GreaterEqual
       | ComparisonOp::Greater
       | ComparisonOp::LessEqual
-      | ComparisonOp::Less => {
+      | ComparisonOp::Less
         // Try to solve for x: isolate x by solving lhs - rhs == 0
         // then adjust the inequality
-        if contains_variable(lhs, var) && !contains_variable(rhs, var) {
+        if contains_variable(lhs, var) && !contains_variable(rhs, var) => {
           // Try to solve lhs = value for x
           let eq = Expr::Comparison {
             operands: vec![lhs.clone(), rhs.clone()],
@@ -2290,7 +2339,6 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
             }
           }
         }
-      }
       _ => {}
     }
   }

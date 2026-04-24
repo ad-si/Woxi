@@ -11837,3 +11837,27 @@ INPUT: PadLeft[{{1, 2, 3}}, {5, 2}, x, 1]
 EXPECTED:
 = {{x, x}, {x, x}, {x, x}, {3, x}, {x, x}}
 ---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1862
+TYPE: >>
+INPUT: SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 14/3]
+EXPECTED:
+= 64
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1864
+TYPE: >>
+INPUT: SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 6/3]
+EXPECTED:
+= 0
+---
+FILE: mathics/builtin/numbers/calculus.py
+CLASS: SeriesCoefficient
+LINE: 1866
+TYPE: >>
+INPUT: SeriesCoefficient[SeriesData[x, c, Table[i^2, {i, 10}], 7, 17, 3], 17/3]
+EXPECTED:
+= Indeterminate
+---
