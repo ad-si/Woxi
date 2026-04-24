@@ -3178,6 +3178,37 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  // Complex float input: 1 / (1 + exp(-z)) using complex arithmetic.
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    // exp(-z) = exp(-re) * (cos(-im) + I*sin(-im))
+    let exp_neg_re = (-re).exp();
+    let (neg_im_sin, neg_im_cos) = (-im).sin_cos();
+    let ex_re = exp_neg_re * neg_im_cos;
+    let ex_im = exp_neg_re * neg_im_sin;
+    // 1 + exp(-z)
+    let denom_re = 1.0 + ex_re;
+    let denom_im = ex_im;
+    // 1 / (denom_re + I*denom_im) = (denom_re - I*denom_im) / (denom_re^2 + denom_im^2)
+    let mag2 = denom_re * denom_re + denom_im * denom_im;
+    let result_re = denom_re / mag2;
+    let result_im = -denom_im / mag2;
+    return Ok(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(result_re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Real(result_im),
+            Expr::Identifier("I".to_string()),
+          ],
+        },
+      ],
+    });
+  }
   Ok(Expr::FunctionCall {
     name: "LogisticSigmoid".to_string(),
     args: args.to_vec(),
