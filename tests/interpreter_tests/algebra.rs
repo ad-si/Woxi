@@ -3754,6 +3754,31 @@ mod factor_terms_list {
       "{Protected}"
     );
   }
+
+  // Two-arg form always returns a 3-element list {numeric_content,
+  // non-var-part, var-part}, even when the polynomial coefficients aren't
+  // integers (regression for mathics Factor doctest).
+  #[test]
+  fn two_arg_symbol_independent_of_var() {
+    assert_eq!(
+      interpret("FactorTermsList[f, x]").unwrap(),
+      "{1, f, 1}"
+    );
+  }
+
+  #[test]
+  fn two_arg_scaled_symbol_independent_of_var() {
+    assert_eq!(
+      interpret("FactorTermsList[3*f, x]").unwrap(),
+      "{3, f, 1}"
+    );
+  }
+
+  #[test]
+  fn two_arg_var_independent_pure_number() {
+    // Pure numeric inputs still collapse to the 2-element form.
+    assert_eq!(interpret("FactorTermsList[4, x]").unwrap(), "{4, 1}");
+  }
 }
 
 mod refine {

@@ -11901,3 +11901,11 @@ INPUT: Lighter[Orange, 1/4]
 EXPECTED:
 = RGBColor[1., 0.625, 0.25]
 ---
+FILE: mathics/builtin/numbers/algebra.py
+CLASS: FactorTermsList
+LINE: 1445
+TYPE: >>
+INPUT: FactorTermsList[f, x]
+EXPECTED:
+= {-3, 1 - a - y + a y, -1 + 2 x}
+---

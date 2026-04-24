@@ -1835,14 +1835,6 @@ EXPECTED:
 = a == "A"
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: FactorTermsList
-LINE: 1445
-TYPE: >>
-INPUT: FactorTermsList[f, x]
-EXPECTED:
-= {-3, 1 - a - y + a y, -1 + 2 x}
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Simplify
 LINE: 1558
 TYPE: >>

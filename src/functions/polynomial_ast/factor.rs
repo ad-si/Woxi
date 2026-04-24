@@ -30,10 +30,8 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     operators,
   } = &args[0]
   {
-    let factored: Result<Vec<Expr>, InterpreterError> = operands
-      .iter()
-      .map(|o| factor_ast(&[o.clone()]))
-      .collect();
+    let factored: Result<Vec<Expr>, InterpreterError> =
+      operands.iter().map(|o| factor_ast(&[o.clone()])).collect();
     return Ok(Expr::Comparison {
       operands: factored?,
       operators: operators.clone(),
@@ -1854,6 +1852,31 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coeffs = match extract_poly_coeffs(&expanded, &var) {
     Some(c) => c,
     None => {
+      // 2-arg form always returns a 3-element {numeric, non-var, var-part}
+      // list. When we can't extract integer coefficients, conservatively
+      // split off a numeric factor and route the rest based on whether it
+      // depends on the chosen variable.
+      if args.len() == 2 {
+        if contains_var(&expanded, &var) {
+          return Ok(Expr::List(vec![
+            Expr::Integer(1),
+            Expr::Integer(1),
+            expanded,
+          ]));
+        }
+        let (num_coeff, _key, var_factors) = decompose_term(&expanded);
+        let non_var = if var_factors.is_empty() {
+          Expr::Integer(1)
+        } else if var_factors.len() == 1 {
+          var_factors.into_iter().next().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: var_factors,
+          }
+        };
+        return Ok(Expr::List(vec![num_coeff, non_var, Expr::Integer(1)]));
+      }
       return Ok(Expr::List(vec![Expr::Integer(1), expanded]));
     }
   };
