@@ -3190,14 +3190,6 @@ INPUT: FindList["ExampleData/EinsteinSzilLetter.txt", "uranium", 1]
 EXPECTED:
 = {in manuscript, leads me to expect that the element uranium may be turned into}
 ---
-FILE: mathics/builtin/file_operations/path_operations.py
-CLASS: FileNameDrop
-LINE: 37
-TYPE: >>
-INPUT: path = FileNameJoin[{"a","b","c"}]
-EXPECTED:
-= ...
----
 FILE: mathics/builtin/atomic/numbers.py
 CLASS: Accuracy
 LINE: 87

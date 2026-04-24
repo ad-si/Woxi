@@ -12021,3 +12021,11 @@ INPUT: FileNameDrop[path]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/file_operations/path_operations.py
+CLASS: FileNameDrop
+LINE: 37
+TYPE: >>
+INPUT: path = FileNameJoin[{"a","b","c"}]
+EXPECTED:
+= ...
+---
