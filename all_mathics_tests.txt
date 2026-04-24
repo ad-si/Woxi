@@ -704,13 +704,6 @@ INPUT: FilePrint[%]
 EXPECTED:
 | This is a test 1This is also a test 2
 ---
-FILE: mathics/builtin/files_io/files.py
-CLASS: WriteString
-LINE: 1596
-TYPE: >>
-INPUT: DeleteFile[pathname];
-EXPECTED: (none)
----
 FILE: mathics/builtin/files_io/filesystem.py
 CLASS: CopyFile
 LINE: 143
