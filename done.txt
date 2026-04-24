@@ -12216,3 +12216,10 @@ TYPE: >>
 INPUT: DeleteFile[Close[strm]];
 EXPECTED: (none)
 ---
+FILE: mathics/builtin/binary/io.py
+CLASS: BinaryWrite
+LINE: 579
+TYPE: >>
+INPUT: DeleteFile[Close[strm]];
+EXPECTED: (none)
+---
