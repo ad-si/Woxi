@@ -172,6 +172,7 @@ pub fn dsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement: Box::new(Expr::NamedFunction {
         params: vec![x_name],
         body: Box::new(solution),
+        bracketed: true,
       }),
     }
   } else {

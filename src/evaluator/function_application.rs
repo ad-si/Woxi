@@ -203,7 +203,7 @@ pub fn apply_apply_ast(
         evaluate_expr_to_expr(&substituted)
       }
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       // Named-parameter function applied to list items
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
@@ -286,7 +286,7 @@ pub fn apply_function_to_arg(
         crate::syntax::substitute_slots(&self_substituted, &[arg.clone()]);
       evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       // Named-parameter function: substitute params with arg
       if params.len() > 1 {
         // Too many parameters for a single argument — return unevaluated
@@ -383,7 +383,7 @@ pub fn apply_curried_call(
         crate::syntax::substitute_slots(&self_substituted, args);
       evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       // Named-parameter function: substitute each param with corresponding arg
       if params.len() > args.len() {
         // Too many parameters for the given arguments — return unevaluated

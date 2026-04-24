@@ -317,10 +317,14 @@ pub enum Expr {
   CurriedCall { func: Box<Self>, args: Vec<Self> },
   /// Anonymous function: body &
   Function { body: Box<Self> },
-  /// Named-parameter function: Function[x, body] or Function[{x,y,...}, body]
+  /// Named-parameter function: Function[x, body] or Function[{x,y,...}, body].
+  /// `bracketed` preserves how the parameters were written so the display
+  /// stays faithful to the input: `Function[y, ...]` renders as
+  /// `Function[y, ...]` and `Function[{y}, ...]` as `Function[{y}, ...]`.
   NamedFunction {
     params: Vec<String>,
     body: Box<Self>,
+    bracketed: bool,
   },
   /// Pattern: name_ or name_Head or name__ (BlankSequence) or name___ (BlankNullSequence)
   /// blank_type: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
@@ -858,7 +862,7 @@ impl Clone for Expr {
       Part,
       CurriedCall(usize),
       Function,
-      NamedFunction(Vec<String>),
+      NamedFunction(Vec<String>, bool),
       PatternOptional(String, Option<String>, bool), // name, head, has_default
       PatternTest(String, Option<String>, u8),
     }
@@ -1021,9 +1025,14 @@ impl Clone for Expr {
             tasks.push(CloneTask::Build(CloneFrame::Function));
             tasks.push(CloneTask::Visit(body));
           }
-          Self::NamedFunction { params, body } => {
+          Self::NamedFunction {
+            params,
+            body,
+            bracketed,
+          } => {
             tasks.push(CloneTask::Build(CloneFrame::NamedFunction(
               params.clone(),
+              *bracketed,
             )));
             tasks.push(CloneTask::Visit(body));
           }
@@ -1173,9 +1182,13 @@ impl Clone for Expr {
               let body = Box::new(results.pop().unwrap());
               Self::Function { body }
             }
-            CloneFrame::NamedFunction(params) => {
+            CloneFrame::NamedFunction(params, bracketed) => {
               let body = Box::new(results.pop().unwrap());
-              Self::NamedFunction { params, body }
+              Self::NamedFunction {
+                params,
+                body,
+                bracketed,
+              }
             }
             CloneFrame::PatternOptional(name, head, has_default) => {
               let default = if has_default {
@@ -6566,8 +6579,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
       format!("{} & ", format_expr(body, ExprForm::Input))
     }
-    Expr::NamedFunction { params, body } => {
-      if params.len() == 1 {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      if params.len() == 1 && !bracketed {
         format!(
           "Function[{}, {}]",
           params[0],
@@ -7978,11 +7995,16 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       // Slots (#, #2, etc.) bind to the innermost & (Function).
       Expr::Function { body: body.clone() }
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
       // Named functions don't use slots, so no substitution needed
       Expr::NamedFunction {
         params: params.clone(),
         body: body.clone(),
+        bracketed: *bracketed,
       }
     }
     Expr::PatternOptional {
@@ -8130,18 +8152,24 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     Expr::Function { body } => Expr::Function {
       body: Box::new(substitute_variable(body, var_name, value)),
     },
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
       // Don't substitute if var_name is one of the function's own parameters
       // (they are locally scoped)
       if params.contains(&var_name.to_string()) {
         Expr::NamedFunction {
           params: params.clone(),
           body: body.clone(),
+          bracketed: *bracketed,
         }
       } else {
         Expr::NamedFunction {
           params: params.clone(),
           body: Box::new(substitute_variable(body, var_name, value)),
+          bracketed: *bracketed,
         }
       }
     }
@@ -8306,7 +8334,11 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
     Expr::Function { body } => Expr::Function {
       body: Box::new(substitute_variables(body, bindings)),
     },
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
       // Filter out bindings that are shadowed by the function's own parameters
       let filtered: Vec<(&str, &Expr)> = bindings
         .iter()
@@ -8319,6 +8351,7 @@ pub fn substitute_variables(expr: &Expr, bindings: &[(&str, &Expr)]) -> Expr {
         Expr::NamedFunction {
           params: params.clone(),
           body: Box::new(substitute_variables(body, &filtered)),
+          bracketed: *bracketed,
         }
       }
     }

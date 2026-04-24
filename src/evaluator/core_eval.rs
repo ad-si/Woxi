@@ -1878,11 +1878,16 @@ pub fn evaluate_expr_to_expr_inner(
       // Return anonymous function as-is
       Ok(Expr::Function { body: body.clone() })
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
       // Return named function as-is
       Ok(Expr::NamedFunction {
         params: params.clone(),
         body: body.clone(),
+        bracketed: *bracketed,
       })
     }
     Expr::Pattern {

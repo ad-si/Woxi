@@ -728,7 +728,7 @@ pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             );
             crate::evaluator::evaluate_expr_to_expr(&substituted)
           }
-          Expr::NamedFunction { params, body } => {
+          Expr::NamedFunction { params, body, .. } => {
             let mut substituted = (**body).clone();
             let args_vec = [&key, &value];
             for (param, arg) in params.iter().zip(args_vec.iter()) {

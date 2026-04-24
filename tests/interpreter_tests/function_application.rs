@@ -146,6 +146,31 @@ mod function_head {
     );
   }
 
+  // A single-parameter `Function[{y}, body]` keeps its braces on display,
+  // distinct from the no-braces form `Function[y, body]`. Matches Wolfram.
+  #[test]
+  fn function_single_param_preserves_braces() {
+    assert_eq!(
+      interpret("Function[{y}, f[y]]").unwrap(),
+      "Function[{y}, f[y]]"
+    );
+    assert_eq!(interpret("Function[y, f[y]]").unwrap(), "Function[y, f[y]]");
+  }
+
+  // ReplaceAll into the body must preserve the original parameter form:
+  // bracketed-in stays bracketed-out, bare stays bare.
+  #[test]
+  fn function_replace_all_preserves_param_form() {
+    assert_eq!(
+      interpret("Function[{y}, f[x, y]] /. x -> y").unwrap(),
+      "Function[{y}, f[y, y]]"
+    );
+    assert_eq!(
+      interpret("Function[y, f[x, y]] /. x -> y").unwrap(),
+      "Function[y, f[y, y]]"
+    );
+  }
+
   #[test]
   fn function_assigned_to_variable() {
     clear_state();

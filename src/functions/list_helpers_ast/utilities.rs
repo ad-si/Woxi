@@ -42,7 +42,7 @@ pub fn apply_func_to_two_args(
         crate::syntax::substitute_slots(body, &[arg1.clone(), arg2.clone()]);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       let args_vec = [arg1, arg2];
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
@@ -108,7 +108,7 @@ pub fn apply_func_to_n_args(
       let substituted = crate::syntax::substitute_slots(body, args);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
         .zip(args.iter())

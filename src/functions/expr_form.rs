@@ -302,8 +302,12 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     },
 
     // --- NamedFunction ---
-    Expr::NamedFunction { params, body } => {
-      let params_expr = if params.len() == 1 {
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let params_expr = if params.len() == 1 && !bracketed {
         Expr::Identifier(params[0].clone())
       } else {
         Expr::List(params.iter().map(|p| Expr::Identifier(p.clone())).collect())

@@ -11725,3 +11725,11 @@ EXPECTED:
 | Inner: x
 = {Null, {f[1, {b}]}}
 ---
+FILE: mathics/builtin/functional/application.py
+CLASS: Function
+LINE: 56
+TYPE: >>
+INPUT: Function[{y}, f[x, y]] /. x->y
+EXPECTED:
+= Function[{y}, f[y, y]]
+---

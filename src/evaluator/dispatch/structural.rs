@@ -13,18 +13,21 @@ pub fn dispatch_structural(
         }));
       }
       2 => {
-        let params = match &args[0] {
-          Expr::Identifier(name) => vec![name.clone()],
-          Expr::List(items) => items
-            .iter()
-            .filter_map(|item| {
-              if let Expr::Identifier(n) = item {
-                Some(n.clone())
-              } else {
-                None
-              }
-            })
-            .collect(),
+        let (params, bracketed) = match &args[0] {
+          Expr::Identifier(name) => (vec![name.clone()], false),
+          Expr::List(items) => (
+            items
+              .iter()
+              .filter_map(|item| {
+                if let Expr::Identifier(n) = item {
+                  Some(n.clone())
+                } else {
+                  None
+                }
+              })
+              .collect(),
+            true,
+          ),
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "Function".to_string(),
@@ -35,6 +38,7 @@ pub fn dispatch_structural(
         return Some(Ok(Expr::NamedFunction {
           params,
           body: Box::new(args[1].clone()),
+          bracketed,
         }));
       }
       _ => {

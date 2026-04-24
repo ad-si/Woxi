@@ -481,7 +481,7 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       let substituted = crate::syntax::substitute_slots(body, &items);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
         .zip(items.iter())
@@ -663,7 +663,7 @@ fn apply_func_as_head(
       let substituted = crate::syntax::substitute_slots(body, items);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
-    Expr::NamedFunction { params, body } => {
+    Expr::NamedFunction { params, body, .. } => {
       let bindings: Vec<(&str, &Expr)> = params
         .iter()
         .zip(items.iter())
@@ -986,14 +986,8 @@ fn inner_recursive(
       let mut col = Vec::new();
       for bk in items_b {
         match bk {
-          Expr::List(inner) => {
-            if j < inner.len() {
-              col.push(inner[j].clone());
-            } else {
-              return Err(InterpreterError::EvaluationError(
-                "Inner: incompatible dimensions".into(),
-              ));
-            }
+          Expr::List(inner) if j < inner.len() => {
+            col.push(inner[j].clone());
           }
           _ => {
             return Err(InterpreterError::EvaluationError(
