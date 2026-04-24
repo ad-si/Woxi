@@ -12324,3 +12324,11 @@ INPUT: FileDate["ExampleData/sunflowers.jpg", "Change"]
 EXPECTED:
 = ...
 ---
+FILE: mathics/builtin/file_operations/file_properties.py
+CLASS: FileDate
+LINE: 45
+TYPE: >>
+INPUT: FileDate["ExampleData/sunflowers.jpg", "Modification"]
+EXPECTED:
+= ...
+---
