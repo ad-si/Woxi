@@ -432,12 +432,83 @@ pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   conjugate_one(&args[0])
 }
 
+/// Heuristic: is `e` a strictly positive real value? Used to strip
+/// positive-real scaling factors inside Arg[z * positive_real] = Arg[z].
+fn is_strictly_positive_real(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n > 0,
+    Expr::BigInteger(n) => {
+      use num_traits::Signed;
+      n.is_positive()
+    }
+    Expr::Real(f) => *f > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!(
+        (&args[0], &args[1]),
+        (Expr::Integer(n), Expr::Integer(d)) if (*n > 0 && *d > 0) || (*n < 0 && *d < 0)
+      )
+    }
+    Expr::Identifier(s) | Expr::Constant(s) => {
+      matches!(s.as_str(), "Pi" | "E" | "GoldenRatio" | "EulerGamma" | "Catalan")
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      is_strictly_positive_real(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      // Power[positive, any_real] > 0
+      is_strictly_positive_real(&args[0])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right: _,
+    } => is_strictly_positive_real(left),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().all(is_strictly_positive_real)
+    }
+    _ => false,
+  }
+}
+
 /// Arg[z] - Argument (phase angle) of a complex number
 pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Arg expects exactly 1 argument".into(),
     ));
+  }
+
+  // Arg[DirectedInfinity[z]] = Arg[z]
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "DirectedInfinity"
+    && inner.len() == 1
+  {
+    return arg_ast(&[inner[0].clone()]);
+  }
+
+  // Arg[Times[positive_real, z, ...]] = Arg[Times[z, ...]]
+  // Strip strictly-positive real factors (they don't affect the argument).
+  if let Expr::FunctionCall { name, args: factors } = &args[0]
+    && name == "Times"
+    && factors.iter().any(is_strictly_positive_real)
+    && !factors.iter().all(is_strictly_positive_real)
+  {
+    let kept: Vec<Expr> = factors
+      .iter()
+      .filter(|f| !is_strictly_positive_real(f))
+      .cloned()
+      .collect();
+    let remaining = if kept.len() == 1 {
+      kept.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: kept,
+      }
+    };
+    return arg_ast(&[remaining]);
   }
 
   // Try exact rational (pure real: integer or rational)
