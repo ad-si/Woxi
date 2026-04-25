@@ -1518,6 +1518,71 @@ fn make_non_greedy(regex: &str) -> String {
   out
 }
 
+/// Compute the set-difference of two regex character classes (`base \ excluded`)
+/// when both are simple bracket forms like `[a-zA-Z0-9\p{L}]`. Returns a
+/// regex string representing only the atoms present in `base` but not in
+/// `excluded`. Returns None if either side is not a single bracket class.
+fn char_class_difference(excluded: &str, base: &str) -> Option<String> {
+  let parse = |s: &str| -> Option<Vec<String>> {
+    let body = s.strip_prefix('[').and_then(|s| s.strip_suffix(']'))?;
+    if body.starts_with('^') {
+      // Negated classes are not currently supported here.
+      return None;
+    }
+    let mut atoms: Vec<String> = Vec::new();
+    let chars: Vec<char> = body.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+      let c = chars[i];
+      if c == '\\' && i + 1 < chars.len() {
+        // Escape sequence: \p{L}, \w, \d, \s, \\, etc.
+        let next = chars[i + 1];
+        if next == 'p' || next == 'P' {
+          // \p{...} — capture through closing brace.
+          let mut j = i + 2;
+          if j < chars.len() && chars[j] == '{' {
+            while j < chars.len() && chars[j] != '}' {
+              j += 1;
+            }
+            if j < chars.len() {
+              j += 1; // include }
+              atoms.push(chars[i..j].iter().collect());
+              i = j;
+              continue;
+            }
+          }
+          atoms.push(format!("\\{}", next));
+          i += 2;
+          continue;
+        }
+        atoms.push(format!("\\{}", next));
+        i += 2;
+        continue;
+      }
+      // Range like a-z?
+      if i + 2 < chars.len() && chars[i + 1] == '-' && chars[i + 2] != ']' {
+        atoms.push(format!("{}-{}", c, chars[i + 2]));
+        i += 3;
+        continue;
+      }
+      atoms.push(c.to_string());
+      i += 1;
+    }
+    Some(atoms)
+  };
+
+  let excluded_atoms = parse(excluded)?;
+  let base_atoms = parse(base)?;
+  let kept: Vec<String> = base_atoms
+    .into_iter()
+    .filter(|a| !excluded_atoms.contains(a))
+    .collect();
+  if kept.is_empty() {
+    return Some(r"(?!.)".to_string());
+  }
+  Some(format!("[{}]", kept.join("")))
+}
+
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
 fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
@@ -1700,6 +1765,19 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       }
       // Otherwise fall back to a regex negative lookahead + any char.
       Some(format!("(?:(?!{}).)", inner))
+    }
+
+    // Except[c, base] — match `base` but not `c`. The Rust `regex` crate
+    // does not support look-around, so realize the set difference at the
+    // character-class level: parse both regex character classes into atoms
+    // (single chars, ranges, escape classes) and drop any atom from `base`
+    // that also appears in `excluded`.
+    Expr::FunctionCall { name, args }
+      if name == "Except" && args.len() == 2 =>
+    {
+      let excluded = string_pattern_to_regex(&args[0])?;
+      let base = string_pattern_to_regex(&args[1])?;
+      char_class_difference(&excluded, &base)
     }
 
     _ => None,
@@ -2569,8 +2647,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // Subscript[x, i, j, ...] -> x_{i, j, ...}
     "Subscript" if args.len() >= 2 => {
       let base = expr_to_tex(&args[0]);
-      let idx_tex: Vec<String> =
-        args[1..].iter().map(expr_to_tex).collect();
+      let idx_tex: Vec<String> = args[1..].iter().map(expr_to_tex).collect();
       if args.len() == 2 {
         let s = &idx_tex[0];
         if s.chars().count() == 1 {
