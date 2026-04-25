@@ -67,8 +67,7 @@ pub fn dispatch_complex_and_special(
             Expr::FunctionCall { name, args }
               if name == "Rational" && args.len() == 2 =>
             {
-              if let (Expr::Integer(n), Expr::Integer(d)) =
-                (&args[0], &args[1])
+              if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
               {
                 Expr::Real(*n as f64 / *d as f64)
               } else {
@@ -210,6 +209,23 @@ pub fn dispatch_complex_and_special(
           return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
         }
         _ => {
+          // Real numeric arguments collapse to ±Infinity by sign.
+          // Sqrt[3], Pi, 2*Sqrt[3], etc. evaluate to a real f64, so we can
+          // decide directly without going through the rational complex path.
+          if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+            && v.is_finite()
+          {
+            if v > 0.0 {
+              return Some(Ok(Expr::Identifier("Infinity".to_string())));
+            }
+            if v < 0.0 {
+              return Some(Ok(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(Expr::Identifier("Infinity".to_string())),
+              }));
+            }
+            return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+          }
           // Try to normalize: DirectedInfinity[z] -> DirectedInfinity[z/Abs[z]]
           if let Some(((re_n, re_d), (im_n, im_d))) =
             crate::functions::math_ast::try_extract_complex_exact(&args[0])
