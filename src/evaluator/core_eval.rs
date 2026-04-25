@@ -1673,6 +1673,10 @@ pub fn evaluate_expr_to_expr_inner(
               // Machine-precision Reals are compared up to the last ~7 bits
               // (matches wolframscript, which treats the f64 guard bits as
               // "insignificant"). Exact-vs-exact comparisons stay strict.
+              // When a BigFloat with low precision p is involved, also
+              // widen the tolerance to `10^-p · max(|l|, |r|)` so e.g.
+              // `3.1416 == 3.14`2` is True (the shorter operand only
+              // commits to ~2 significant decimals).
               let involves_real =
                 matches!(left, Expr::Real(_) | Expr::BigFloat(_, _))
                   || matches!(right, Expr::Real(_) | Expr::BigFloat(_, _))
@@ -1681,7 +1685,22 @@ pub fn evaluate_expr_to_expr_inner(
                   || matches!(right, Expr::UnaryOp { operand, .. }
                   if matches!(operand.as_ref(), Expr::Real(_)));
               if involves_real {
-                let tol = f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
+                let mut tol =
+                  f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
+                let bigfloat_prec = [left, right]
+                  .iter()
+                  .filter_map(|e| match e {
+                    Expr::BigFloat(_, p) => Some(*p),
+                    _ => None,
+                  })
+                  .reduce(f64::min);
+                if let Some(p) = bigfloat_prec {
+                  let prec_tol =
+                    f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
+                  if prec_tol > tol {
+                    tol = prec_tol;
+                  }
+                }
                 (l - r).abs() <= tol
               } else {
                 l == r
@@ -2088,9 +2107,8 @@ pub fn evaluate_expr_to_expr_inner(
       let hold_attrs = function_hold_attributes(&evaluated_func);
       let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
       for (i, a) in args.iter().enumerate() {
-        let hold = hold_attrs.0
-          || (hold_attrs.1 && i == 0)
-          || (hold_attrs.2 && i > 0);
+        let hold =
+          hold_attrs.0 || (hold_attrs.1 && i == 0) || (hold_attrs.2 && i > 0);
         if hold {
           prepared.push(a.clone());
         } else {
@@ -2116,13 +2134,17 @@ fn function_hold_attributes(expr: &Expr) -> (bool, bool, bool) {
   let has = |needle: &str| -> bool {
     match attrs {
       Some(Expr::Identifier(s)) => s == needle,
-      Some(Expr::List(items)) => items.iter().any(
-        |e| matches!(e, Expr::Identifier(s) if s == needle),
-      ),
+      Some(Expr::List(items)) => items
+        .iter()
+        .any(|e| matches!(e, Expr::Identifier(s) if s == needle)),
       _ => false,
     }
   };
-  (has("HoldAll") || has("HoldAllComplete"), has("HoldFirst"), has("HoldRest"))
+  (
+    has("HoldAll") || has("HoldAllComplete"),
+    has("HoldFirst"),
+    has("HoldRest"),
+  )
 }
 
 /// Recursively unwrap `Evaluate[expr]` subexpressions inside a Function body

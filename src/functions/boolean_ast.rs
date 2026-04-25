@@ -305,16 +305,34 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // f64 "guard" bits wolframscript ignores). Promote to exact comparison
     // only if no operand is a Real; otherwise two values that differ by at
     // most `2^-46 · max(|a|, |b|)` are considered equal.
+    //
+    // When any operand is a BigFloat with low precision p, also widen the
+    // tolerance to `10^-p · max(|a|, |b|)`: 3.1416 == 3.14`2 should be
+    // True because the shorter operand only commits to ~2 digits.
     let any_real = args.iter().any(|a| {
       matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
         || matches!(a, Expr::UnaryOp { operand, .. }
           if matches!(operand.as_ref(), Expr::Real(_)))
     });
+    let min_bigfloat_precision: Option<f64> = args
+      .iter()
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min);
     let first = nums[0].unwrap();
     for n in nums.iter().skip(1) {
       let v = n.unwrap();
       if any_real {
-        let tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
+        let mut tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
+        if let Some(p) = min_bigfloat_precision {
+          let prec_tol =
+            f64::max(first.abs(), v.abs()) * 10.0_f64.powf(-p);
+          if prec_tol > tol {
+            tol = prec_tol;
+          }
+        }
         if (first - v).abs() > tol && first != v {
           return Ok(Expr::Identifier("False".to_string()));
         }
