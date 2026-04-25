@@ -1143,7 +1143,10 @@ pub fn set_delayed_ast(
           blank_types.push(1);
         }
         // PatternTest: x_?test or x_Head?test — store as structural pattern
-        // to preserve the test condition during dispatch
+        // to preserve the test condition during dispatch.
+        // Use the original PatternTest expression directly: round-tripping
+        // it through normalize_structural_pattern drops the `?test` part
+        // (collect_pattern_vars only records name/head/optional, not tests).
         Expr::PatternTest {
           name,
           head,
@@ -1155,10 +1158,9 @@ pub fn set_delayed_ast(
           } else {
             name.clone()
           };
-          let normalized = normalize_structural_pattern(arg);
           conditions.push(Some(Expr::FunctionCall {
             name: "__StructuralPattern__".to_string(),
-            args: vec![Expr::Identifier(param_name.clone()), normalized],
+            args: vec![Expr::Identifier(param_name.clone()), arg.clone()],
           }));
           params.push(param_name);
           defaults.push(None);

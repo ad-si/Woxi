@@ -538,6 +538,38 @@ mod pattern_matching {
         "{1, 4, 3, 16}"
       );
     }
+
+    #[test]
+    fn pattern_test_in_function_def_undefined_test() {
+      // Regression: `f[x_?TestSym] := body` previously stored only the
+      // bare `x_` pattern (the `?TestSym` was dropped during the structural
+      // pattern round-trip), so the rule fired even when `TestSym[x]`
+      // didn't return True. With the test preserved, the call must stay
+      // unevaluated when the test doesn't succeed.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "MyD[Sin[f_], x_?NotListQ] := D[f, x]*Cos[f]; MyD[Sin[2 x], x]"
+        )
+        .unwrap(),
+        "MyD[Sin[2*x], x]"
+      );
+    }
+
+    #[test]
+    fn pattern_test_in_function_def_test_passes() {
+      clear_state();
+      assert_eq!(interpret("g[x_?IntegerQ] := x + 1; g[5]").unwrap(), "6");
+    }
+
+    #[test]
+    fn pattern_test_in_function_def_test_fails() {
+      clear_state();
+      assert_eq!(
+        interpret(r#"g[x_?IntegerQ] := x + 1; g["str"]"#).unwrap(),
+        "g[str]"
+      );
+    }
   }
 
   mod multiple_rules {
