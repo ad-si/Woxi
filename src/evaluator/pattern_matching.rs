@@ -2966,8 +2966,7 @@ pub fn apply_replace_all_multi_ast(
         let substituted =
           crate::syntax::substitute_variables(test, &binding_refs);
         match evaluate_expr_to_expr(&substituted) {
-          Ok(t)
-            if matches!(&t, Expr::Identifier(s) if s == "True") => {}
+          Ok(t) if matches!(&t, Expr::Identifier(s) if s == "True") => {}
           _ => continue,
         }
       }

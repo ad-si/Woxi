@@ -1085,10 +1085,16 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Denominator[x] - Returns the denominator of a rational expression
 pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Denominator expects exactly 1 argument".into(),
+      "Denominator expects 1 or 2 arguments".into(),
     ));
+  }
+  // Optional Trig -> True option enables denominator extraction
+  // for top-level Tan/Cot/Sec/Csc and their hyperbolic counterparts.
+  let trig_option = args.len() == 2 && is_trig_true_option(&args[1]);
+  if trig_option && let Some(d) = denominator_trig(&args[0]) {
+    return Ok(d);
   }
   // Pure exact complex rational: 3/7 + I/11 → Denominator 77 (LCM).
   if let Expr::FunctionCall { name, .. } = &args[0]
@@ -1153,6 +1159,63 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => Ok(Expr::Integer(1)),
+  }
+}
+
+/// Match `Trig -> True` (or `Trig :> True`) option.
+fn is_trig_true_option(expr: &Expr) -> bool {
+  match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Trig")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Identifier(s) if s == "Trig")
+        && matches!(&args[1], Expr::Identifier(s) if s == "True")
+    }
+    _ => false,
+  }
+}
+
+/// With `Trig -> True`, top-level Tan/Cot/Sec/Csc and their hyperbolic
+/// counterparts have a denominator (the trig identity that puts them in
+/// numerator/denominator form). Sin/Cos/Sinh/Cosh have denominator 1.
+fn denominator_trig(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let arg = args[0].clone();
+  match name.as_str() {
+    "Sin" | "Cos" | "Sinh" | "Cosh" => Some(Expr::Integer(1)),
+    "Tan" | "Sec" => Some(Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![arg],
+    }),
+    "Cot" | "Csc" => Some(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg],
+    }),
+    "Tanh" | "Sech" => Some(Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![arg],
+    }),
+    "Coth" | "Csch" => Some(Expr::FunctionCall {
+      name: "Sinh".to_string(),
+      args: vec![arg],
+    }),
+    _ => None,
   }
 }
 

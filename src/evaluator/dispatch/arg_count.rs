@@ -225,7 +225,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DeleteCases" => Some((1, 4)),
     "DeleteDuplicates" => Some((1, 2)),
     "DeleteDuplicatesBy" => Some((1, 2)),
-    "Denominator" => Some((1, 1)),
+    "Denominator" => Some((1, 2)),
     "DensityPlot" => Some((3, usize::MAX)),
     "Depth" => Some((1, 1)),
     "Derivative" => Some((1, usize::MAX)),

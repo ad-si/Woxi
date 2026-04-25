@@ -407,8 +407,7 @@ fn airy_build_value(
 fn airy_ai_zero_f64(n: i128) -> f64 {
   let t = 3.0 * std::f64::consts::PI * (4.0 * n as f64 - 1.0) / 8.0;
   let t2 = t * t;
-  let correction =
-    1.0 + 5.0 / (48.0 * t2) - 5.0 / (36.0 * t2 * t2);
+  let correction = 1.0 + 5.0 / (48.0 * t2) - 5.0 / (36.0 * t2 * t2);
   let mut x = -t.powf(2.0 / 3.0) * correction;
   // Polish with Newton's method on Ai: x_{k+1} = x - Ai(x)/Ai'(x).
   for _ in 0..40 {
@@ -431,8 +430,7 @@ fn airy_ai_zero_f64(n: i128) -> f64 {
 fn airy_bi_zero_f64(n: i128) -> f64 {
   let t = 3.0 * std::f64::consts::PI * (4.0 * n as f64 - 3.0) / 8.0;
   let t2 = t * t;
-  let correction =
-    1.0 - 7.0 / (48.0 * t2) + 35.0 / (288.0 * t2 * t2);
+  let correction = 1.0 - 7.0 / (48.0 * t2) + 35.0 / (288.0 * t2 * t2);
   let mut x = -t.powf(2.0 / 3.0) * correction;
   for _ in 0..40 {
     let f = airy_bi(x);

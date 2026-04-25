@@ -2580,12 +2580,8 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Underflow[] / Overflow[] absorb non-zero numeric factors (Wolfram
   // keeps them symbolic when multiplied by symbols). 0 * Underflow[] = 0.
-  let is_underflow = |a: &Expr| {
-    matches!(a, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty())
-  };
-  let is_overflow = |a: &Expr| {
-    matches!(a, Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
-  };
+  let is_underflow = |a: &Expr| matches!(a, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty());
+  let is_overflow = |a: &Expr| matches!(a, Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty());
   if flat_args.iter().any(|a| is_underflow(a) || is_overflow(a)) {
     let has_zero = flat_args.iter().any(|a| matches!(a, Expr::Integer(0)));
     if has_zero {
@@ -2605,8 +2601,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if name == "Rational" && ra.len() == 2)
     });
     if all_numeric_or_flag {
-      let tag =
-        if flat_args.iter().any(&is_overflow) { "Overflow" } else { "Underflow" };
+      let tag = if flat_args.iter().any(&is_overflow) {
+        "Overflow"
+      } else {
+        "Underflow"
+      };
       return Ok(Expr::FunctionCall {
         name: tag.to_string(),
         args: vec![],

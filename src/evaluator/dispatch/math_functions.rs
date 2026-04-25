@@ -1553,7 +1553,7 @@ pub fn dispatch_math_functions(
     "Numerator" if args.len() == 1 => {
       return Some(crate::functions::math_ast::numerator_ast(args));
     }
-    "Denominator" if args.len() == 1 => {
+    "Denominator" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::denominator_ast(args));
     }
     "Binomial" if args.len() == 2 => {

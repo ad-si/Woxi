@@ -124,6 +124,8 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "Im"
       | "Arg"
       | "Conjugate"
+      | "Numerator"
+      | "Denominator"
   )
 }
 

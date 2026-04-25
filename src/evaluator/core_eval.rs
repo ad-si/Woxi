@@ -1575,8 +1575,7 @@ pub fn evaluate_expr_to_expr_inner(
       if operators.len() >= 2
         && operators.iter().all(|op| *op == ComparisonOp::NotEqual)
       {
-        let result =
-          crate::functions::boolean_ast::unequal_ast(&values)?;
+        let result = crate::functions::boolean_ast::unequal_ast(&values)?;
         // Preserve the chained-comparison form for symbolic results so
         // that 1 != 2 != x prints as `1 != 2 != x`, not Unequal[...].
         if matches!(&result, Expr::FunctionCall { name, .. } if name == "Unequal")
