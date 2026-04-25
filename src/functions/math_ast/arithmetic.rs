@@ -225,6 +225,23 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       final_args.push(exact_sum.to_expr());
     }
 
+    // When the sum has any Real (or BigFloat) component, promote the
+    // integer/rational coefficient of any imaginary symbolic term to a
+    // Real. Wolfram's `1. + 2 I` evaluates to `Complex[1., 2.]`, not
+    // `Plus[1., Times[2, I]]`; the closest we can get without a Complex
+    // node is `Plus[1., Times[2., I]]`.
+    let needs_complex_promotion = (has_real_term
+      || flat_args.iter().any(|a| matches!(a, Expr::BigFloat(_, _))))
+      && symbolic_args.iter().any(is_integer_times_i);
+    let symbolic_args = if needs_complex_promotion {
+      symbolic_args
+        .into_iter()
+        .map(promote_integer_times_i_to_real)
+        .collect()
+    } else {
+      symbolic_args
+    };
+
     // Collect like terms: group symbolic terms by their base expression
     // e.g. E + E → 2*E, 3*x + 2*x → 5*x
     let collected = collect_like_terms(&symbolic_args);
@@ -248,6 +265,164 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Recognise an exact-coefficient imaginary term that should be promoted
+/// to Real form when combined with an inexact value via Plus.
+/// Matches `I`, `Times[Integer|Rational, I]` (FunctionCall or BinaryOp),
+/// `Complex[Integer|Rational, Integer|Rational]`.
+fn is_integer_times_i(e: &Expr) -> bool {
+  let exact_numeric = |x: &Expr| -> bool {
+    match x {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::FunctionCall { name: n, args: r }
+        if n == "Rational" && r.len() == 2 =>
+      {
+        true
+      }
+      _ => false,
+    }
+  };
+  match e {
+    Expr::Identifier(s) if s == "I" => true,
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut has_i = false;
+      for a in args {
+        match a {
+          Expr::Identifier(s) if s == "I" => has_i = true,
+          Expr::Integer(_) | Expr::BigInteger(_) => {}
+          Expr::FunctionCall { name: n, args: r }
+            if n == "Rational" && r.len() == 2 => {}
+          _ => return false,
+        }
+      }
+      has_i
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let is_i = |x: &Expr| matches!(x, Expr::Identifier(s) if s == "I");
+      (is_i(left) && exact_numeric(right))
+        || (is_i(right) && exact_numeric(left))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      exact_numeric(&args[0]) && exact_numeric(&args[1])
+    }
+    _ => false,
+  }
+}
+
+/// Convert exact (Integer/Rational) coefficients in a `Times[…, I]` or
+/// `Complex[a, b]` term to Real. Used when combining with an inexact
+/// Real/BigFloat in Plus.
+fn promote_integer_times_i_to_real(e: Expr) -> Expr {
+  let to_real = |x: &Expr| -> Option<Expr> {
+    match x {
+      Expr::Integer(n) => Some(Expr::Real(*n as f64)),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        Some(Expr::Real(n.to_f64().unwrap_or(f64::INFINITY)))
+      }
+      Expr::FunctionCall { name: n, args: r }
+        if n == "Rational" && r.len() == 2 =>
+      {
+        if let (Expr::Integer(num), Expr::Integer(den)) = (&r[0], &r[1]) {
+          Some(Expr::Real(*num as f64 / *den as f64))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  if matches!(&e, Expr::Identifier(s) if s == "I") {
+    return Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Real(1.0), Expr::Identifier("I".to_string())],
+    };
+  }
+  if let Expr::FunctionCall { name, args } = &e
+    && name == "Times"
+  {
+    let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
+    for a in args {
+      if let Some(r) = to_real(a) {
+        new_args.push(r);
+      } else {
+        new_args.push(a.clone());
+      }
+    }
+    return Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: new_args,
+    };
+  }
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = &e
+  {
+    let left_new = to_real(left).unwrap_or((**left).clone());
+    let right_new = to_real(right).unwrap_or((**right).clone());
+    return Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![left_new, right_new],
+    };
+  }
+  // Complex[a, b] → Times[Real(b), I] is an oversimplification when a != 0;
+  // for the simple `Complex[0, n]` case we expand to `Times[Real(n), I]`,
+  // and for general Complex we replace the components with their Real
+  // equivalents so downstream code can fold them with the leading Real.
+  if let Expr::FunctionCall { name, args } = &e
+    && name == "Complex"
+    && args.len() == 2
+  {
+    let to_real = |x: &Expr| -> Expr {
+      match x {
+        Expr::Integer(n) => Expr::Real(*n as f64),
+        Expr::BigInteger(n) => {
+          use num_traits::ToPrimitive;
+          Expr::Real(n.to_f64().unwrap_or(f64::INFINITY))
+        }
+        Expr::FunctionCall { name: n, args: r }
+          if n == "Rational" && r.len() == 2 =>
+        {
+          if let (Expr::Integer(num), Expr::Integer(den)) = (&r[0], &r[1]) {
+            Expr::Real(*num as f64 / *den as f64)
+          } else {
+            x.clone()
+          }
+        }
+        _ => x.clone(),
+      }
+    };
+    let re = to_real(&args[0]);
+    let im = to_real(&args[1]);
+    let zero_re =
+      matches!(&re, Expr::Real(f) if *f == 0.0) || matches!(&re, Expr::Integer(0));
+    if zero_re {
+      return Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![im, Expr::Identifier("I".to_string())],
+      };
+    }
+    return Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        re,
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![im, Expr::Identifier("I".to_string())],
+        },
+      ],
+    };
+  }
+  e
 }
 
 fn bigint_gcd(
