@@ -64,18 +64,26 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Handle D[expr, {var, n}] for higher-order derivatives
+  // If args[1] is a 2-element List that isn't a valid {var, n} (n must
+  // be a non-negative integer), return unevaluated — matching
+  // wolframscript for forms like D[expr, {x, y}] with symbolic y.
   if let Expr::List(items) = &args[1]
     && items.len() == 2
+    && !matches!(&items[1], Expr::Integer(n) if *n >= 0)
   {
-    let n = match &items[1] {
-      Expr::Integer(n) if *n >= 0 => *n as usize,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Derivative order in D must be a non-negative integer".into(),
-        ));
-      }
-    };
+    return Ok(Expr::FunctionCall {
+      name: "D".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Handle D[expr, {var, n}] for higher-order derivatives.
+  if let Expr::List(items) = &args[1]
+    && items.len() == 2
+    && let Expr::Integer(n_val) = &items[1]
+    && *n_val >= 0
+  {
+    let n = *n_val as usize;
     // Identifier variable — symbolic differentiation.
     if let Expr::Identifier(var_name) = &items[0] {
       let mut result = args[0].clone();
