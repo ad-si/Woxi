@@ -60,6 +60,26 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
 
+  // Negative integer order: J_{-n}(z) = (-1)^n * J_n(z).
+  if let Expr::Integer(n) = n_expr
+    && *n < 0
+  {
+    let pos_n = -n;
+    let parity = pos_n.unsigned_abs() & 1;
+    let positive_call = Expr::FunctionCall {
+      name: "BesselJ".to_string(),
+      args: vec![Expr::Integer(pos_n), z_expr.clone()],
+    };
+    return if parity == 0 {
+      Ok(positive_call)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), positive_call],
+      })
+    };
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "BesselJ".to_string(),
