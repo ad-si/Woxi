@@ -467,6 +467,30 @@ mod messages {
   fn messages_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("Messages[a]").unwrap(), "{}");
   }
+
+  #[test]
+  fn general_argr_returns_template_text() {
+    // `General::argr` is one of the standard built-in messages; without
+    // any user-installed DownValue on MessageName the lookup must still
+    // produce the canonical template text (matching wolframscript). The
+    // returned string keeps the `1`/`2` slot markers verbatim — they are
+    // only filled in when the message is emitted via Message[...].
+    assert_eq!(
+      interpret("General::argr").unwrap(),
+      "`1` called with 1 argument; `2` arguments are expected."
+    );
+  }
+
+  #[test]
+  fn user_message_overrides_builtin() {
+    // A user-installed DownValue on MessageName must take precedence
+    // over the built-in template.
+    clear_state();
+    assert_eq!(
+      interpret(r#"General::argr = "custom"; General::argr"#).unwrap(),
+      "custom"
+    );
+  }
 }
 
 mod nvalues {

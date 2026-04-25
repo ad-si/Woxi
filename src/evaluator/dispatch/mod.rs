@@ -1307,6 +1307,16 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // MessageName[sym, tag] — fall back to built-in message templates when
+  // the user has not installed their own DownValue. Wolfram returns the
+  // template text; without this, e.g. `General::argr` would stay
+  // unevaluated as `MessageName[General, argr]`.
+  if name == "MessageName" && args.len() == 2
+    && let Some(text) = builtin_message_text(&args[0], &args[1])
+  {
+    return Ok(Expr::String(text.to_string()));
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"
@@ -6480,4 +6490,27 @@ fn find_spanning_tree_impl(
     name: "Graph".to_string(),
     args: vec![Expr::List(verts.to_vec()), Expr::List(tree_edges)],
   })
+}
+
+/// Built-in message template lookup.
+/// Returns the canonical text for `sym::tag` when no user definition has
+/// been installed. The `\`1\``, `\`2\`` placeholders are filled in by the
+/// caller (or printed verbatim when the message is referenced directly,
+/// matching wolframscript's behavior).
+fn builtin_message_text(sym: &Expr, tag: &Expr) -> Option<&'static str> {
+  let sym_name = match sym {
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  let tag_str = match tag {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  match (sym_name, tag_str) {
+    ("General", "argr") => {
+      Some("`1` called with 1 argument; `2` arguments are expected.")
+    }
+    _ => None,
+  }
 }
