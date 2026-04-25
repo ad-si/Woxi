@@ -286,10 +286,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(re / abs),
           Expr::FunctionCall {
             name: "Times".to_string(),
-            args: vec![
-              Expr::Real(im / abs),
-              Expr::Identifier("I".to_string()),
-            ],
+            args: vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())],
           },
         ],
       });
@@ -1774,14 +1771,27 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     _ => {
-      // For symbolic constants (Pi, E, GoldenRatio, etc.), return x - Floor[x]
-      // symbolically to avoid losing precision by converting to float.
-      let is_known_constant = matches!(&args[0], Expr::Constant(_))
-        || matches!(&args[0], Expr::Identifier(s) if matches!(s.as_str(),
-          "GoldenRatio" | "EulerGamma" | "Catalan" | "Khinchin" | "Glaisher"));
-      if is_known_constant {
-        let floor_val =
-          crate::functions::math_ast::floor_ast(&[args[0].clone()])?;
+      // For symbolic expressions that contain no Real/BigFloat literal but
+      // can still be evaluated to a real f64 (e.g. Pi, E, Pi^20, Pi+E),
+      // return the exact symbolic form `x - Floor[x]` to match wolframscript
+      // (FractionalPart[Pi^20] -> -8769956796 + Pi^20).
+      fn has_inexact(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) | Expr::BigFloat(_, _) => true,
+          Expr::BinaryOp { left, right, .. } => {
+            has_inexact(left) || has_inexact(right)
+          }
+          Expr::UnaryOp { operand, .. } => has_inexact(operand),
+          Expr::FunctionCall { args, .. } | Expr::List(args) => {
+            args.iter().any(has_inexact)
+          }
+          _ => false,
+        }
+      }
+      if !has_inexact(&args[0])
+        && let Ok(floor_val) =
+          crate::functions::math_ast::floor_ast(&[args[0].clone()])
+      {
         if let Expr::Integer(n) = &floor_val {
           if *n == 0 {
             return Ok(args[0].clone());
@@ -1789,6 +1799,18 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return crate::evaluator::evaluate_function_call_ast(
             "Plus",
             &[args[0].clone(), Expr::Integer(-*n)],
+          );
+        }
+        if let Expr::BigInteger(_) = &floor_val {
+          return crate::evaluator::evaluate_function_call_ast(
+            "Plus",
+            &[
+              args[0].clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), floor_val],
+              },
+            ],
           );
         }
       }
