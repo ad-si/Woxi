@@ -499,7 +499,34 @@ pub fn dispatch_complex_and_special(
           lines.push(format!("{} = {}", sym, val_str));
         }
 
-        // 3. Show DownValues (function definitions). Filter out entries
+        // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
+        // etc.), matching wolframscript's ordering. UpValues precede
+        // DownValues in Definition output.
+        let up_values = crate::UPVALUES.with(|m| {
+          let defs = m.borrow();
+          defs.get(sym).cloned()
+        });
+        if let Some(entries) = up_values {
+          for (
+            _outer,
+            _params,
+            _conds,
+            _defaults,
+            _heads,
+            _body,
+            orig_lhs,
+            orig_body,
+          ) in &entries
+          {
+            lines.push(format!(
+              "{} ^:= {}",
+              expr_to_string(orig_lhs),
+              expr_to_string(orig_body)
+            ));
+          }
+        }
+
+        // 4. Show DownValues (function definitions). Filter out entries
         // that were stored via TagSet/TagSetDelayed — those belong in
         // UpValues, not DownValues, even though Woxi stores them in
         // FUNC_DEFS too so ordinary dispatch can find them.
@@ -587,31 +614,6 @@ pub fn dispatch_complex_and_special(
                 expr_to_string(body)
               ));
             }
-          }
-        }
-
-        // 3b. Show UpValues (rules attached via Real /: F[x_Real] := x etc.)
-        let up_values = crate::UPVALUES.with(|m| {
-          let defs = m.borrow();
-          defs.get(sym).cloned()
-        });
-        if let Some(entries) = up_values {
-          for (
-            _outer,
-            _params,
-            _conds,
-            _defaults,
-            _heads,
-            _body,
-            orig_lhs,
-            orig_body,
-          ) in &entries
-          {
-            lines.push(format!(
-              "{} ^:= {}",
-              expr_to_string(orig_lhs),
-              expr_to_string(orig_body)
-            ));
           }
         }
 

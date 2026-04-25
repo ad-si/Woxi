@@ -353,11 +353,12 @@ mod options {
   fn definition_includes_upvalues() {
     // Definition[f] must include any UpValues attached to f (rules
     // installed via `... /: expr[f] := ...` or `expr[f] ^:= ...`), not
-    // misclassify them as DownValues.
+    // misclassify them as DownValues. UpValues print *before* DownValues
+    // (matching wolframscript's ordering).
     clear_state();
     assert_eq!(
       interpret("f[x_] := x^2; g[f] ^:= 2; Definition[f]").unwrap(),
-      "f[x_] := x^2\n \ng[f] ^:= 2"
+      "g[f] ^:= 2\n \nf[x_] := x^2"
     );
   }
 }
