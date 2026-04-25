@@ -45,14 +45,16 @@ UnsignedReal = @{
 // Precision-tagged real: 0.1`1 means 0.1 with precision 1 digit
 // 0.1` means machine precision (bare backtick)
 // Precision value can be integer or real: 0.1`5, 0.1`5.2
+// Integer-form is also accepted: `0`` and `0`3` parse as 0. with the
+// given precision tag (Wolfram allows trailing-backtick on integers).
 UnsignedPrecisionReal = @{
-    (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
+    (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ "`"
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
 }
 PrecisionReal = @{
     ("-")?
-    ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
+    ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ "`"
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
 }

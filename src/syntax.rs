@@ -1365,7 +1365,15 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let backtick_pos = s.find('`').unwrap();
       let value_str = &s[..backtick_pos];
       let prec_str = &s[backtick_pos + 1..];
-      if prec_str.is_empty() {
+      // Integer-form `n`p` (no decimal point, with precision p) drops the
+      // precision tag entirely and stays as an Integer (matches Wolfram:
+      // `0`2 // Head` → Integer). The bare-backtick form `n`` still
+      // promotes to Real to match Wolfram (`0` // Head` → Real).
+      let int_form = !value_str.contains('.') && !prec_str.is_empty();
+      if int_form {
+        let n: i128 = value_str.parse().unwrap_or(0);
+        Expr::Integer(n)
+      } else if prec_str.is_empty() {
         // Bare backtick = machine precision, just parse as Real
         Expr::Real(value_str.parse().unwrap_or(0.0))
       } else {
