@@ -1798,22 +1798,34 @@ pub fn dispatch_list_operations(
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
-      if args.len() >= 2 {
-        // ArrayQ[expr, n] - check if expr is an array of depth n
-        if matches!(&is_array, Expr::Identifier(s) if s == "True")
-          && let Ok(dims) = list_helpers_ast::dimensions_ast(&[args[0].clone()])
-          && let Expr::List(d) = &dims
-          && let Some(n) = expr_to_i128(&args[1])
-        {
-          return Some(Ok(if d.len() == n as usize {
-            Expr::Identifier("True".to_string())
-          } else {
-            Expr::Identifier("False".to_string())
-          }));
-        }
+      if !matches!(&is_array, Expr::Identifier(s) if s == "True") {
         return Some(Ok(is_array));
       }
-      return Some(Ok(is_array));
+      // Determine array depth.
+      let depth = match list_helpers_ast::dimensions_ast(&[args[0].clone()]) {
+        Ok(Expr::List(ref d)) => d.len(),
+        _ => return Some(Ok(is_array)),
+      };
+      if args.len() >= 2 {
+        // ArrayQ[expr, n] - depth must equal n
+        if let Some(n) = expr_to_i128(&args[1]) {
+          if depth != n as usize {
+            return Some(Ok(Expr::Identifier("False".to_string())));
+          }
+        } else {
+          return Some(Ok(is_array));
+        }
+      }
+      if args.len() == 3 {
+        // ArrayQ[expr, n, test] - every leaf at depth `n` must pass `test`
+        let test = &args[2];
+        let leaves_pass =
+          list_helpers_ast::all_leaves_pass_test(&args[0], depth, test);
+        return Some(Ok(Expr::Identifier(
+          (if leaves_pass { "True" } else { "False" }).to_string(),
+        )));
+      }
+      return Some(Ok(Expr::Identifier("True".to_string())));
     }
     "VectorQ" if args.len() == 1 => {
       return Some(list_helpers_ast::vector_q_ast(&args[0]));

@@ -174,6 +174,23 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Apply `test` to every leaf at depth `depth` of `expr` and return True only
+/// if every test call returns True. Used by ArrayQ[expr, n, test].
+pub fn all_leaves_pass_test(expr: &Expr, depth: usize, test: &Expr) -> bool {
+  if depth == 0 {
+    let result = crate::functions::list_helpers_ast::utilities::apply_func_ast(
+      test, expr,
+    );
+    return matches!(result, Ok(Expr::Identifier(ref s)) if s == "True");
+  }
+  match expr {
+    Expr::List(items) => items
+      .iter()
+      .all(|child| all_leaves_pass_test(child, depth - 1, test)),
+    _ => false,
+  }
+}
+
 /// MatrixQ[m, test] - True if m is a matrix and test[elem] is True for all elements.
 pub fn matrix_q_with_test_ast(
   expr: &Expr,
