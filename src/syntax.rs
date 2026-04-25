@@ -4019,8 +4019,18 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     }
   }
 
-  // Normal format (no scientific notation needed)
-  format!("{}`{}", digits, format_precision(prec))
+  // Normal format (no scientific notation needed). Trim trailing zeros
+  // from the fractional part — Wolfram normalizes `10.00`2` to `10.`2.`,
+  // but keep the decimal point so `n.` stays distinct from integer `n`.
+  let normalized = if let Some(dp) = abs_digits.find('.') {
+    let int_p = &abs_digits[..dp];
+    let frac_p = &abs_digits[dp + 1..];
+    let trimmed_frac = frac_p.trim_end_matches('0');
+    format!("{}{}.{}", prefix, int_p, trimmed_frac)
+  } else {
+    format!("{}", digits)
+  };
+  format!("{}`{}", normalized, format_precision(prec))
 }
 
 /// If expr is Times[negative_coeff, rest...], return Some(Times[abs(coeff), rest...]).
