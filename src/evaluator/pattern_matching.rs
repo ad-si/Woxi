@@ -3046,6 +3046,22 @@ pub fn apply_replace_all_multi_ast(
   expr: &Expr,
   rules: &[(&Expr, &Expr)],
 ) -> Result<Expr, InterpreterError> {
+  apply_replace_all_multi_ast_impl(expr, rules, false)
+}
+
+fn is_hold_head(name: &str) -> bool {
+  matches!(name, "Hold" | "HoldComplete" | "HoldForm" | "HoldPattern")
+}
+
+/// Internal: `held` is true when we are recursing inside a Hold/HoldComplete/
+/// HoldForm/HoldPattern context. In that case the substituted RHS of a rule
+/// must NOT be re-evaluated, so e.g. `Hold[x] /. {x :> y}` (with `y = 5`)
+/// yields `Hold[y]` rather than `Hold[5]`.
+fn apply_replace_all_multi_ast_impl(
+  expr: &Expr,
+  rules: &[(&Expr, &Expr)],
+  held: bool,
+) -> Result<Expr, InterpreterError> {
   // Try each rule against the whole expression
   for (pattern, replacement) in rules {
     // Handle Expr::Raw patterns (conditional patterns like n_ /; EvenQ[n])
@@ -3089,7 +3105,12 @@ pub fn apply_replace_all_multi_ast(
       }
       let result =
         crate::syntax::substitute_variables(replacement, &binding_refs);
-      let evaluated = evaluate_expr_to_expr(&result)?;
+      // Inside a Hold-like context the substituted RHS stays unevaluated.
+      let evaluated = if held {
+        result
+      } else {
+        evaluate_expr_to_expr(&result)?
+      };
       // RHS Condition[expr, test] semantics: True → expr, False → skip.
       if let Expr::FunctionCall { name, args } = &evaluated
         && name == "Condition"
@@ -3114,7 +3135,7 @@ pub fn apply_replace_all_multi_ast(
     Expr::List(items) => {
       let new_items: Result<Vec<Expr>, _> = items
         .iter()
-        .map(|item| apply_replace_all_multi_ast(item, rules))
+        .map(|item| apply_replace_all_multi_ast_impl(item, rules, held))
         .collect();
       let new_items = new_items?;
       // Check if any rule replaces the "List" head
@@ -3135,9 +3156,10 @@ pub fn apply_replace_all_multi_ast(
       Ok(Expr::List(new_items))
     }
     Expr::FunctionCall { name, args } => {
+      let child_held = held || is_hold_head(name);
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
-        .map(|arg| apply_replace_all_multi_ast(arg, rules))
+        .map(|arg| apply_replace_all_multi_ast_impl(arg, rules, child_held))
         .collect();
       let new_args = new_args?;
       // Check if any rule replaces the function head
@@ -3146,7 +3168,13 @@ pub fn apply_replace_all_multi_ast(
           && sym == name
         {
           return match replacement {
-            Expr::Identifier(h) => evaluate_expr_to_expr(&Expr::FunctionCall {
+            Expr::Identifier(h) if !held => {
+              evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: h.clone(),
+                args: new_args,
+              })
+            }
+            Expr::Identifier(h) => Ok(Expr::FunctionCall {
               name: h.clone(),
               args: new_args,
             }),
@@ -3164,8 +3192,8 @@ pub fn apply_replace_all_multi_ast(
       })
     }
     Expr::BinaryOp { op, left, right } => {
-      let new_left = apply_replace_all_multi_ast(left, rules)?;
-      let new_right = apply_replace_all_multi_ast(right, rules)?;
+      let new_left = apply_replace_all_multi_ast_impl(left, rules, held)?;
+      let new_right = apply_replace_all_multi_ast_impl(right, rules, held)?;
       Ok(Expr::BinaryOp {
         op: *op,
         left: Box::new(new_left),

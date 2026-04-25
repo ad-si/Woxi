@@ -659,6 +659,56 @@ mod pattern_matching {
       );
     }
   }
+
+  mod replace_inside_hold {
+    use super::*;
+
+    // Substitutions that land inside Hold/HoldComplete/HoldForm/HoldPattern
+    // must keep the result unevaluated, matching Wolfram. Regression for
+    // `Hold[x] /. {x :> y}` previously yielding `Hold[5]` when `y = 5`.
+    #[test]
+    fn rule_delayed_inside_hold_keeps_rhs_unevaluated() {
+      assert_eq!(
+        interpret("y = 5; Hold[x] /. {x :> y}").unwrap(),
+        "Hold[y]"
+      );
+    }
+
+    #[test]
+    fn hold_pattern_rule_delayed_via_own_values() {
+      assert_eq!(
+        interpret(
+          "x := y; y = 5; Hold[x] /. OwnValues[x]"
+        )
+        .unwrap(),
+        "Hold[y]"
+      );
+    }
+
+    #[test]
+    fn rule_inside_hold_still_evaluates_rhs_at_rule_creation() {
+      // With `->`, the RHS is evaluated when the rule is created, so the
+      // substituted value is already 5 even before reaching Hold.
+      assert_eq!(
+        interpret("y = 5; Hold[x] /. {x -> y}").unwrap(),
+        "Hold[5]"
+      );
+    }
+
+    #[test]
+    fn nested_hold_substitution_stays_unevaluated() {
+      assert_eq!(
+        interpret("y = 5; Hold[Hold[x]] /. {x :> y}").unwrap(),
+        "Hold[Hold[y]]"
+      );
+    }
+
+    #[test]
+    fn replacement_outside_hold_still_evaluates() {
+      // Sanity check: outside Hold, the substituted RHS is evaluated as usual.
+      assert_eq!(interpret("y = 5; {x} /. {x :> y}").unwrap(), "{5}");
+    }
+  }
 }
 
 mod alternatives {
