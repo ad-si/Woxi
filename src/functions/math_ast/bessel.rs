@@ -55,10 +55,9 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
     && (n_num.unsigned_abs() <= 51)
+    && let Some(result) = half_int_bessel_j(n_num, z_expr)?
   {
-    if let Some(result) = half_int_bessel_j(n_num, z_expr)? {
-      return Ok(result);
-    }
+    return Ok(result);
   }
 
   // Return unevaluated
@@ -83,18 +82,41 @@ fn half_int_bessel_j(
   if m % 2 == 0 {
     return Ok(None);
   }
-  let p = half_int_bessel_polynomial(m, z_expr, "Sin", "Cos")?;
+  let p = half_int_bessel_polynomial(m, z_expr, "Sin", "Cos", BesselSign::J)?;
   Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
 }
 
+/// Compute BesselI[m/2, z] for odd integer m. Anchors P_1 = Sinh[z],
+/// P_{-1} = Cosh[z]; recurrence P_{m+2} = -(m/z) * P_m + P_{m-2}.
+fn half_int_bessel_i(
+  m: i128,
+  z_expr: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  if m % 2 == 0 {
+    return Ok(None);
+  }
+  let p = half_int_bessel_polynomial(m, z_expr, "Sinh", "Cosh", BesselSign::I)?;
+  Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
+}
+
+/// Sign convention for the half-integer Bessel polynomial recurrence.
+#[derive(Clone, Copy)]
+enum BesselSign {
+  /// Forward: P_{m+2} = (m/z) * P_m - P_{m-2}; backward: P_{m-2} = (m/z) P_m - P_{m+2}
+  J,
+  /// Forward: P_{m+2} = -(m/z) * P_m + P_{m-2}; backward: P_{m-2} = (m/z) P_m + P_{m+2}
+  I,
+}
+
 /// Compute `P_{m}` for the half-integer Bessel recurrence, parameterised on
-/// the two trig anchors (P_1 and P_{-1}). Used by both BesselJ (Sin/Cos) and
-/// BesselI (Sinh/Cosh, with a sign-flipped recurrence).
+/// the two trig anchors (P_1 and P_{-1}) and the sign convention
+/// (J vs I family).
 fn half_int_bessel_polynomial(
   m: i128,
   z_expr: &Expr,
   trig_pos: &str,
   trig_neg: &str,
+  sign: BesselSign,
 ) -> Result<Expr, InterpreterError> {
   let mut prev = trig_call(trig_neg, z_expr); // P_{-1}
   let mut curr = trig_call(trig_pos, z_expr); // P_{1}
@@ -107,7 +129,8 @@ fn half_int_bessel_polynomial(
   if m > 1 {
     let mut m_cur: i128 = 1;
     while m_cur < m {
-      let next = bessel_poly_recurrence(&curr, &prev, m_cur, z_expr)?;
+      let next =
+        bessel_poly_recurrence(&curr, &prev, m_cur, z_expr, sign, true)?;
       prev = curr;
       curr = next;
       m_cur += 2;
@@ -118,7 +141,7 @@ fn half_int_bessel_polynomial(
     let mut b = curr; // P_{1}
     let mut m_cur: i128 = -1;
     while m_cur > m {
-      let next = bessel_poly_recurrence(&a, &b, m_cur, z_expr)?;
+      let next = bessel_poly_recurrence(&a, &b, m_cur, z_expr, sign, false)?;
       b = a;
       a = next;
       m_cur -= 2;
@@ -134,21 +157,34 @@ fn trig_call(name: &str, z_expr: &Expr) -> Expr {
   }
 }
 
-/// One step of P_{m+2} = (m/z) * P_m - P_{m-2}.
+/// One step of the half-integer Bessel polynomial recurrence.
+///
+/// J family, forward: P_{m+2} = (m/z) * P_m - P_{m-2}
+/// J family, backward: P_{m-2} = (m/z) * P_m - P_{m+2}
+/// I family, forward: P_{m+2} = -(m/z) * P_m + P_{m-2}
+/// I family, backward: P_{m-2} = (m/z) * P_m + P_{m+2}
 fn bessel_poly_recurrence(
   p_n: &Expr,
   p_other: &Expr,
   coef: i128,
   z_expr: &Expr,
+  sign: BesselSign,
+  forward: bool,
 ) -> Result<Expr, InterpreterError> {
   use crate::syntax::Expr::*;
+  // Coefficient on the (m/z) * P_m term and on P_{other}.
+  let (a_coef, b_coef): (i128, i128) = match (sign, forward) {
+    (BesselSign::J, _) => (coef, -1),       // (m/z) P_m - P_other
+    (BesselSign::I, true) => (-coef, 1),    // -(m/z) P_m + P_other
+    (BesselSign::I, false) => (coef, 1),    // (m/z) P_m + P_other
+  };
   let expr = FunctionCall {
     name: "Plus".to_string(),
     args: vec![
       FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Integer(coef),
+          Integer(a_coef),
           FunctionCall {
             name: "Power".to_string(),
             args: vec![z_expr.clone(), Integer(-1)],
@@ -158,7 +194,7 @@ fn bessel_poly_recurrence(
       },
       FunctionCall {
         name: "Times".to_string(),
-        args: vec![Integer(-1), p_other.clone()],
+        args: vec![Integer(b_coef), p_other.clone()],
       },
     ],
   };
@@ -188,47 +224,6 @@ fn wrap_with_sqrt_factor(
         }],
       },
       p.clone(),
-      FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![z_expr.clone()],
-          },
-          Integer(-1),
-        ],
-      },
-    ],
-  };
-  crate::evaluator::evaluate_expr_to_expr(&expr)
-}
-
-/// Build `Sqrt[2/Pi] * Trig[z] / Sqrt[z]`, the half-integer Bessel closed form.
-fn half_int_bessel_form(
-  trig: &str,
-  z_expr: &Expr,
-) -> Result<Expr, InterpreterError> {
-  use crate::syntax::Expr::*;
-  let expr = FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Integer(2),
-            FunctionCall {
-              name: "Power".to_string(),
-              args: vec![Identifier("Pi".to_string()), Integer(-1)],
-            },
-          ],
-        }],
-      },
-      FunctionCall {
-        name: trig.to_string(),
-        args: vec![z_expr.clone()],
-      },
       FunctionCall {
         name: "Power".to_string(),
         args: vec![
@@ -412,20 +407,15 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
-  // Closed-form rules at ±1/2: BesselI[1/2, z] = Sqrt[2/(Pi z)] * Sinh[z];
-  // BesselI[-1/2, z] = Sqrt[2/(Pi z)] * Cosh[z].
+  // Closed-form rules at half-integer orders. Anchored at I_{±1/2}; the
+  // recurrence I_{n+1}(z) = I_{n-1}(z) - (2n/z) I_n(z) (sign-flipped vs J).
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
+    && (n_num.unsigned_abs() <= 51)
+    && let Some(result) = half_int_bessel_i(n_num, z_expr)?
   {
-    let trig = match n_num {
-      1 => Some("Sinh"),
-      -1 => Some("Cosh"),
-      _ => None,
-    };
-    if let Some(t) = trig {
-      return half_int_bessel_form(t, z_expr);
-    }
+    return Ok(result);
   }
 
   Ok(Expr::FunctionCall {
