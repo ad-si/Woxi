@@ -4602,9 +4602,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])
-  // Only apply for purely numeric exponents, not symbolic ones like I*Pi/3
+  // Only apply for purely numeric exponents that contain at least one inexact
+  // (Real/BigFloat) component. For exact symbolic complex exponents like `I`
+  // or `I*Pi/3`, leave the expression symbolic (Wolfram does the same).
   if matches!(base, Expr::Constant(c) if c == "E")
     && try_extract_i_pi_rational_multiple(exp).is_none()
+    && contains_real(exp)
   {
     // Try float complex extraction for the exponent
     if let Some((re, im)) = try_extract_complex_float(exp)
