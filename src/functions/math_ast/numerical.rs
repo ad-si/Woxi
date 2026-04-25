@@ -1839,6 +1839,19 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let accuracy = machine_precision - f.abs().log10();
       Ok(Expr::Real(accuracy))
     }
+    // Arbitrary-precision: Accuracy = Precision - Log10[Abs[x]]. The
+    // BigFloat carries the precision in its own field; for x == 0 the
+    // precision *is* the accuracy (Wolfram stores `0``a` as a 0 with
+    // accuracy a, which we represent as a BigFloat whose precision field
+    // already holds a — see the parser).
+    Expr::BigFloat(digits, prec) => {
+      let val: f64 = digits.parse().unwrap_or(0.0);
+      let prec_f = *prec as f64;
+      if val == 0.0 {
+        return Ok(Expr::Real(prec_f));
+      }
+      Ok(Expr::Real(prec_f - val.abs().log10()))
+    }
     Expr::Identifier(name)
       if name == "Infinity"
         || name == "ComplexInfinity"
@@ -1852,24 +1865,33 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => Ok(Expr::Identifier("Infinity".to_string())),
     // Symbolic identifiers (variables) have infinite accuracy
     Expr::Identifier(_) => Ok(Expr::Identifier("Infinity".to_string())),
-    // For symbolic expressions, check subexpressions
-    Expr::FunctionCall { args: fargs, .. } => {
-      let mut has_finite = false;
+    // For symbolic expressions and lists, take the minimum of the
+    // children's accuracies. Wolfram: Accuracy[F[1.3, Pi, A]] → 15.840…,
+    // picking the less-accurate Real over the exact Pi/A. Lists are
+    // handled the same way: Accuracy[{1, 1.``5}] → 5.
+    Expr::FunctionCall { args: fargs, .. } | Expr::List(fargs) => {
+      let mut min_finite: Option<f64> = None;
       for arg in fargs {
         let a = accuracy_ast(&[arg.clone()])?;
-        if !matches!(&a, Expr::Identifier(n) if n == "Infinity") {
-          has_finite = true;
-          break;
+        match a {
+          Expr::Identifier(ref n) if n == "Infinity" => {}
+          Expr::Real(v) => {
+            min_finite = Some(min_finite.map_or(v, |m| m.min(v)));
+          }
+          _ => {
+            // Some child still couldn't be reduced to a number — keep the
+            // call symbolic rather than guess.
+            return Ok(Expr::FunctionCall {
+              name: "Accuracy".to_string(),
+              args: args.to_vec(),
+            });
+          }
         }
       }
-      if has_finite {
-        Ok(Expr::FunctionCall {
-          name: "Accuracy".to_string(),
-          args: args.to_vec(),
-        })
-      } else {
-        Ok(Expr::Identifier("Infinity".to_string()))
-      }
+      Ok(match min_finite {
+        Some(v) => Expr::Real(v),
+        None => Expr::Identifier("Infinity".to_string()),
+      })
     }
     _ => Ok(Expr::Identifier("Infinity".to_string())),
   }

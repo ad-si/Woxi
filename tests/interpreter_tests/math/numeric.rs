@@ -924,6 +924,43 @@ mod accuracy {
     let val: f64 = result.parse().unwrap();
     assert!((val - 16.2556).abs() < 0.01);
   }
+
+  #[test]
+  fn arbitrary_precision_real() {
+    // Accuracy[3.14``5] = 5 (the explicit accuracy specified by `\`\`5`).
+    let result = interpret("Accuracy[3.14``5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 5.0).abs() < 0.01);
+  }
+
+  #[test]
+  fn zero_with_accuracy_tag() {
+    // `0.\`\`2` is a 0 with accuracy 2; Accuracy reads that off.
+    let result = interpret("Accuracy[0.``2]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.0).abs() < 0.01);
+  }
+
+  #[test]
+  fn function_call_with_inexact_arg() {
+    // Accuracy of an unevaluated head propagates the minimum accuracy
+    // among the arguments. `F[1, Pi, A]` is exact (∞), `F[1.3, Pi, A]`
+    // takes its accuracy from 1.3 ≈ 15.84.
+    assert_eq!(interpret("Accuracy[F[1, Pi, A]]").unwrap(), "Infinity");
+    let result = interpret("Accuracy[F[1.3, Pi, A]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 15.8406).abs() < 0.01);
+  }
+
+  #[test]
+  fn list_minimum() {
+    // Accuracy of a list is the minimum accuracy of its elements
+    // (recursively). Mixed exact and inexact: the inexact entry wins.
+    let result =
+      interpret("Accuracy[{{1, 1.`}, {1.``5, 1.``10}}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 5.0).abs() < 0.01);
+  }
 }
 
 mod exponent {
