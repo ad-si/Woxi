@@ -229,7 +229,44 @@ fn handle_power(
     }
   }
 
+  // Case: algebraic ^ (1/q) — a q-th root of an algebraic number.
+  // If p(t) is the minpoly of base, then α = base^(1/q) satisfies p(α^q) = 0,
+  // so x^q substituted into p(t) gives a polynomial vanishing at α.
+  if let Some((p, q)) = extract_rational_pair(exp)
+    && p == 1
+    && q >= 2
+    && q <= 10
+  {
+    let base_poly = compute_minpoly_coeffs(base)?;
+    if let Some(bp) = base_poly {
+      let numeric_val =
+        expr_to_f64(exp).and_then(|ne| expr_to_f64(base).map(|be| be.powf(ne)));
+      let composed = compose_with_x_power(&bp, q as usize);
+      let primitive = make_primitive_monic(&composed);
+      let result = if let Some(val) = numeric_val {
+        pick_irreducible_factor(&primitive, val).unwrap_or(primitive)
+      } else {
+        primitive
+      };
+      return Ok(Some(result));
+    }
+  }
+
   Ok(None)
+}
+
+/// Substitute x^k for the variable in a polynomial coefficient list.
+/// `coeffs[i]` is the coefficient of t^i; the result has coeffs[i] at index i*k.
+fn compose_with_x_power(coeffs: &[i128], k: usize) -> Vec<i128> {
+  if coeffs.is_empty() {
+    return vec![0];
+  }
+  let new_len = (coeffs.len() - 1) * k + 1;
+  let mut out = vec![0i128; new_len];
+  for (i, &c) in coeffs.iter().enumerate() {
+    out[i * k] = c;
+  }
+  out
 }
 
 /// Handle Times expressions
