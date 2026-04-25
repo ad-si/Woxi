@@ -5065,8 +5065,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
         let test = fmt(&args[1]);
-        // Simple _ doesn't need parens, everything else does
-        if pat == "_" || pat == "__" || pat == "___" {
+        // Bare blanks `_`/`__`/`___` and simple Identifiers like `A`
+        // print without parens, matching wolframscript.
+        let pat_atomic = pat == "_"
+          || pat == "__"
+          || pat == "___"
+          || matches!(&args[0], Expr::Identifier(_));
+        if pat_atomic {
           return format!("{}?{}", pat, test);
         }
         return format!("({})?{}", pat, test);
@@ -6562,8 +6567,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             ComparisonOp::UnsameQ => "=!=",
           };
           if i + 1 < operands.len() {
-            result =
-              format!("{} {} {}", result, op_str, fmt_operand(&operands[i + 1]));
+            result = format!(
+              "{} {} {}",
+              result,
+              op_str,
+              fmt_operand(&operands[i + 1])
+            );
           }
         }
         result
