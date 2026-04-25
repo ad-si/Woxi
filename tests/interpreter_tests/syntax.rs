@@ -4107,6 +4107,19 @@ mod compound_expression {
   }
 
   #[test]
+  fn compound_expression_inside_list_element() {
+    // Wolfram allows `;` inside a list element: each comma-separated
+    // slot can be a CompoundExpression. The list value is the last
+    // expression of each slot, side effects run left-to-right.
+    clear_state();
+    assert_eq!(interpret("{a; b, c}").unwrap(), "{b, c}");
+    assert_eq!(
+      interpret("{F[a, b], F = Q; F[a, b], Clear[F]; F[a, b]}").unwrap(),
+      "{F[a, b], Q[a, b], F[a, b]}"
+    );
+  }
+
+  #[test]
   fn function_form_with_side_effects() {
     // Side effects execute sequentially
     assert_eq!(

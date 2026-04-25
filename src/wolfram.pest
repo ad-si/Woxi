@@ -519,7 +519,7 @@ HasSemicolon = @{ (
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
-ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSpanSep ~ SpanExpr | Expression }
+ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 
 AssociationItem = { ConditionExpr ~ ("->" | "\u{2192}" | ":>") ~ ConditionExpr }
 // Non-rule items inside <|...|> are rare but legal — Wolfram parses <|a, b|>
