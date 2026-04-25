@@ -359,6 +359,29 @@ pub fn extract_part_ast(
         // Part[f[...], 0] returns the head
         return Ok(Expr::Identifier(name.clone()));
       }
+      // ByteArray["base64"] indexes into the decoded byte sequence,
+      // matching wolframscript: ByteArray[{1, 25, 3}][[2]] -> 25.
+      if name == "ByteArray"
+        && args.len() == 1
+        && let Expr::String(b64) = &args[0]
+      {
+        use base64::Engine;
+        let engine = base64::engine::general_purpose::STANDARD;
+        if let Ok(bytes) = engine.decode(b64) {
+          let len = bytes.len() as i64;
+          let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+          if actual_idx >= 0 && actual_idx < len {
+            return Ok(Expr::Integer(bytes[actual_idx as usize] as i128));
+          } else {
+            let expr_str = crate::syntax::expr_to_string(expr);
+            crate::emit_message(&format!(
+              "Part::partw: Part {} of {} does not exist.",
+              idx, expr_str
+            ));
+            return Ok(part_take_unevaluated(expr, index));
+          }
+        }
+      }
       let len = args.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
       if actual_idx >= 0 && actual_idx < len {
