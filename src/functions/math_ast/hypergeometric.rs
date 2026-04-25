@@ -552,6 +552,16 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // 1F1[0, 0, z] = 1 — the Pochhammer ratio (0)_k/(0)_k is conventionally 0
+  // for k ≥ 1, so only the k=0 term survives. (Distinct from the general
+  // 1F1[a, a, z] = E^z rule; here a = 0 collapses to the constant 1.)
+  if is_expr_zero(&args[0]) && is_expr_zero(&args[1]) {
+    if matches!(&args[2], Expr::Real(_) | Expr::BigFloat(_, _)) {
+      return Ok(Expr::Real(1.0));
+    }
+    return Ok(Expr::Integer(1));
+  }
+
   // 1F1[a, a, z] = E^z (the (a)_n factors cancel). Use Exp to trigger the
   // numeric-path evaluation when z is real and threading over lists.
   if crate::syntax::expr_to_string(&args[0])
