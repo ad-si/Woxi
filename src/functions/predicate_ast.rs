@@ -1739,7 +1739,20 @@ pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(val.abs() < 1e-10));
   }
 
-  // 8. For expressions we can't evaluate numerically, return False
+  // 8. For complex-valued expressions, evaluate via N[] and check magnitude.
+  let n_call = Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![expr.clone()],
+  };
+  if let Ok(num) = crate::evaluator::evaluate_expr_to_expr(&n_call)
+    && let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(&num)
+    && (re.abs() + im.abs()) < 1e-10
+  {
+    return Ok(bool_expr(true));
+  }
+
+  // 9. For expressions we can't evaluate numerically, return False
   // (matches Wolfram behavior for symbolic unknowns like x)
   Ok(bool_expr(false))
 }
