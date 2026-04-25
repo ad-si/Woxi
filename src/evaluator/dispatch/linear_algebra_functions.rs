@@ -337,15 +337,30 @@ pub fn dispatch_linear_algebra_functions(
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
+    // DotProduct[a, b] is the legacy VectorAnalysis spelling of Dot[a, b];
+    // CrossProduct[a, b] is the same for Cross[a, b]. wolframscript's
+    // `-code` mode leaves them unevaluated (the package isn't loaded),
+    // but the natural reduction is what mathics expects.
+    "DotProduct" if args.len() == 2 || args.len() == 3 => {
+      let dot_call = Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![args[0].clone(), args[1].clone()],
+      };
+      return Some(evaluate_expr_to_expr(&dot_call));
+    }
+    "CrossProduct" if args.len() == 2 => {
+      return Some(crate::functions::linear_algebra_ast::cross_ast(args));
+    }
     // ScalarTripleProduct[a, b, c] = a · (b × c). Originally part of the
     // legacy VectorAnalysis package — wolframscript's `-code` mode also
     // leaves it unevaluated, so the value-level reduction here matches
     // the mathics expectation (and is consistent with how Cross/Dot are
     // already evaluated eagerly).
     "ScalarTripleProduct" if args.len() == 3 => {
-      let cross_bc = match crate::functions::linear_algebra_ast::cross_ast(
-        &[args[1].clone(), args[2].clone()],
-      ) {
+      let cross_bc = match crate::functions::linear_algebra_ast::cross_ast(&[
+        args[1].clone(),
+        args[2].clone(),
+      ]) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };

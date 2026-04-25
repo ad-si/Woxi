@@ -478,6 +478,48 @@ mod cross {
   }
 }
 
+mod dot_product {
+  use super::*;
+
+  #[test]
+  fn dot_product_integers() {
+    // Legacy VectorAnalysis spelling of Dot.
+    assert_eq!(
+      interpret("DotProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "32"
+    );
+  }
+
+  #[test]
+  fn dot_product_floats() {
+    assert_eq!(
+      interpret("DotProduct[{-1.4, 0.6, 0.2}, {0.1, 0.6, 1.7}]").unwrap(),
+      "0.56"
+    );
+  }
+}
+
+mod cross_product {
+  use super::*;
+
+  #[test]
+  fn cross_product_integers() {
+    // Legacy VectorAnalysis spelling of Cross.
+    assert_eq!(
+      interpret("CrossProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "{-3, 6, -3}"
+    );
+  }
+
+  #[test]
+  fn cross_product_unit_vectors() {
+    assert_eq!(
+      interpret("CrossProduct[{1, 0, 0}, {0, 1, 0}]").unwrap(),
+      "{0, 0, 1}"
+    );
+  }
+}
+
 mod scalar_triple_product {
   use super::*;
 
