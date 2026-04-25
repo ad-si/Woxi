@@ -4386,6 +4386,24 @@ fn binomial_coeff(n: u128, k: u128) -> u128 {
   result
 }
 
+/// Returns true when the base of a Power can be treated as a positive
+/// real value for the purpose of complex-expansion (so
+/// `base^(a + I*b) = base^a * (Cos[b*Log[base]] + I*Sin[b*Log[base]])`).
+/// Recognizes E, positive integer literals, and positive Real literals.
+fn is_complex_expand_real_base(base: &Expr) -> bool {
+  match base {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "E" => true,
+    Expr::Integer(n) if *n > 0 => true,
+    Expr::Real(f) if *f > 0.0 => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]), (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0)
+    }
+    _ => false,
+  }
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -4618,14 +4636,15 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         args: args.iter().map(complex_expand_recursive).collect(),
       }
     }
-    // Handle E^(a + I*b) → E^a*Cos[b] + I*E^a*Sin[b]
+    // Handle base^(a + I*b) for a positive real-valued base:
+    //   base^(a + I*b) = base^a * (Cos[b*Log[base]] + I*Sin[b*Log[base]])
+    // E (constant) and positive integers are treated as positive reals.
+    // For E specifically, Log[E] = 1, so b*Log[E] simplifies to b.
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left: base,
       right: exp,
-    } if (matches!(base.as_ref(), Expr::Identifier(s) if s == "E")
-      || matches!(base.as_ref(), Expr::Constant(s) if s == "E")) =>
-    {
+    } if is_complex_expand_real_base(base) => {
       if let Some((re, im)) = split_real_imag(exp) {
         let im_is_zero = matches!(&im, Expr::Integer(0));
         if !im_is_zero {
@@ -4634,13 +4653,28 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             left: base.clone(),
             right: Box::new(re),
           };
+          // Inner Cos/Sin argument: b * Log[base]; collapse to b for E.
+          let inner_arg = if matches!(base.as_ref(), Expr::Identifier(s) if s == "E")
+            || matches!(base.as_ref(), Expr::Constant(s) if s == "E")
+          {
+            im.clone()
+          } else {
+            ce_simplify(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(im.clone()),
+              right: Box::new(Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![(**base).clone()],
+              }),
+            })
+          };
           let cos_b = Expr::FunctionCall {
             name: "Cos".to_string(),
-            args: vec![im.clone()],
+            args: vec![inner_arg.clone()],
           };
           let sin_b = Expr::FunctionCall {
             name: "Sin".to_string(),
-            args: vec![im],
+            args: vec![inner_arg],
           };
           return ce_simplify(Expr::BinaryOp {
             op: BinaryOperator::Plus,
