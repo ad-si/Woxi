@@ -1799,6 +1799,23 @@ pub fn dispatch_math_functions(
     "ComplexExpand" if args.len() == 1 => {
       return Some(complex_expand_ast(&args[0]));
     }
+    "ComplexExpand" if args.len() == 2 => {
+      // ComplexExpand[expr, vars]: treat each name in `vars` as complex,
+      // substituting it with Re[v] + I*Im[v], then expand as usual.
+      let vars: Vec<String> = match &args[1] {
+        Expr::Identifier(name) => vec![name.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|e| match e {
+            Expr::Identifier(name) => Some(name.clone()),
+            _ => None,
+          })
+          .collect(),
+        _ => vec![],
+      };
+      let substituted = substitute_complex_vars(&args[0], &vars);
+      return Some(complex_expand_with_expand(&substituted));
+    }
     "TrigReduce" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_reduce_ast(args));
     }
@@ -3982,10 +3999,63 @@ fn rational_to_expr_local(n: i128, d: i128) -> Expr {
   }
 }
 
+/// Substitute each variable named in `vars` with `Re[v] + I*Im[v]` so that
+/// the subsequent ComplexExpand pass treats it as complex-valued.
+fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
+  match expr {
+    Expr::Identifier(name) if vars.iter().any(|v| v == name) => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::FunctionCall {
+        name: "Re".to_string(),
+        args: vec![Expr::Identifier(name.clone())],
+      }),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Identifier("I".to_string())),
+        right: Box::new(Expr::FunctionCall {
+          name: "Im".to_string(),
+          args: vec![Expr::Identifier(name.clone())],
+        }),
+      }),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_complex_vars(a, vars))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_complex_vars(left, vars)),
+      right: Box::new(substitute_complex_vars(right, vars)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_complex_vars(operand, vars)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|a| substitute_complex_vars(a, vars)).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// ComplexExpand[expr] — expand complex-valued functions assuming all
 /// variables are real. E.g. Sin[x + I*y] → Sin[x]*Cosh[y] + I*Cos[x]*Sinh[y].
 fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(complex_expand_recursive(expr))
+}
+
+/// Like `complex_expand_ast` but additionally distributes products via
+/// Expand, used by the 2-arg form `ComplexExpand[expr, vars]` so the
+/// polynomial result is a single distributed Plus chain.
+fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let expanded = complex_expand_recursive(expr);
+  Ok(
+    crate::evaluator::evaluate_function_call_ast("Expand", &[expanded.clone()])
+      .unwrap_or(expanded),
+  )
 }
 
 fn ce_simplify(e: Expr) -> Expr {
@@ -4039,63 +4109,87 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
         }),
       ))
     }
-    // c * expr — check if one factor is I
+    // c * expr — split each side and combine via complex multiplication.
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
       right,
     } => {
-      // I * something
-      if matches!(left.as_ref(), Expr::Identifier(s) if s == "I") {
-        let (rr, ri) = split_real_imag(right)?;
-        // I * (rr + I*ri) = -ri + I*rr
-        return Some((
-          ce_simplify(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
-            operand: Box::new(ri),
+      let (lr, li) = split_real_imag(left)?;
+      let (rr, ri) = split_real_imag(right)?;
+      // (lr + li i) * (rr + ri i) = (lr*rr - li*ri) + (lr*ri + li*rr) i
+      Some((
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(lr.clone()),
+            right: Box::new(rr.clone()),
           }),
-          rr,
-        ));
-      }
-      if matches!(right.as_ref(), Expr::Identifier(s) if s == "I") {
-        let (lr, li) = split_real_imag(left)?;
-        return Some((
-          ce_simplify(Expr::UnaryOp {
-            op: crate::syntax::UnaryOperator::Minus,
-            operand: Box::new(li),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(li.clone()),
+            right: Box::new(ri.clone()),
           }),
-          lr,
-        ));
-      }
-      // Both real
-      None
+        }),
+        ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(lr),
+            right: Box::new(ri),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(li),
+            right: Box::new(rr),
+          }),
+        }),
+      ))
     }
     // I itself
     Expr::Identifier(s) if s == "I" => {
       Some((Expr::Integer(0), Expr::Integer(1)))
     }
-    // FunctionCall Times[...] containing I
-    Expr::FunctionCall { name, args }
-      if name == "Times"
-        && args
-          .iter()
-          .any(|a| matches!(a, Expr::Identifier(s) if s == "I")) =>
-    {
-      // Extract I and multiply the rest
-      let without_i: Vec<Expr> = args
-        .iter()
-        .filter(|a| !matches!(a, Expr::Identifier(s) if s == "I"))
-        .cloned()
-        .collect();
-      let rest = if without_i.len() == 1 {
-        without_i.into_iter().next().unwrap()
-      } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: without_i,
-        }
-      };
-      Some((Expr::Integer(0), rest))
+    // FunctionCall Times[...] — fold each arg as a complex split and combine.
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      if args.is_empty() {
+        return None;
+      }
+      let (mut acc_re, mut acc_im) = split_real_imag(&args[0])?;
+      for arg in &args[1..] {
+        let (rr, ri) = split_real_imag(arg)?;
+        // (acc_re + acc_im*I) * (rr + ri*I)
+        let new_re = ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(acc_re.clone()),
+            right: Box::new(rr.clone()),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(acc_im.clone()),
+            right: Box::new(ri.clone()),
+          }),
+        });
+        let new_im = ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(acc_re.clone()),
+            right: Box::new(ri),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(acc_im),
+            right: Box::new(rr),
+          }),
+        });
+        acc_re = new_re;
+        acc_im = new_im;
+      }
+      Some((acc_re, acc_im))
     }
     // FunctionCall Plus[...] with I terms
     Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -4128,9 +4222,132 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       };
       Some((ce_simplify(real), ce_simplify(imag)))
     }
-    // Real atoms/identifiers
+    // Power[base, n] where n is a non-negative integer and base splits
+    // into a + b*I. Expand via the binomial theorem so the polynomial
+    // case (a + b*I)^n contributes to both real and imag parts.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => power_split_real_imag(left, right),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      power_split_real_imag(&args[0], &args[1])
+    }
+    // Re[v] / Im[v] / other Re-valued function calls: treat as real.
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg") =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
+    // Numeric atoms and plain symbols: treat as real-valued.
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => Some((expr.clone(), Expr::Integer(0))),
     _ => None,
   }
+}
+
+/// Decompose `base^exp` into real and imaginary parts when base = a + b*I and
+/// exp is a non-negative integer. Returns None otherwise.
+fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
+  // Exponent must be a non-negative integer literal.
+  let n = match exp {
+    Expr::Integer(n) if *n >= 0 => *n,
+    _ => return None,
+  };
+  let (a, b) = split_real_imag(base)?;
+  // Skip if imag part is exactly 0 — let normal recursion handle it.
+  if matches!(b, Expr::Integer(0)) {
+    return None;
+  }
+  let mut real_terms: Vec<Expr> = Vec::new();
+  let mut imag_terms: Vec<Expr> = Vec::new();
+  for k in 0..=n {
+    let coef = (binomial_coeff(n as u128, k as u128)) as i128;
+    // i^k cycles: 0→+real, 1→+imag, 2→-real, 3→-imag.
+    let phase = k.rem_euclid(4);
+    let sign: i128 = match phase {
+      0 | 1 => 1,
+      _ => -1,
+    };
+    let signed_coef = sign * coef;
+    let term = make_term(signed_coef, &a, n - k, &b, k);
+    if phase % 2 == 0 {
+      real_terms.push(term);
+    } else {
+      imag_terms.push(term);
+    }
+  }
+  Some((sum_terms(real_terms), sum_terms(imag_terms)))
+}
+
+fn make_term(coef: i128, a: &Expr, ai: i128, b: &Expr, bi: i128) -> Expr {
+  let mut factors: Vec<Expr> = Vec::new();
+  if coef != 1 {
+    factors.push(Expr::Integer(coef));
+  }
+  if ai > 0 {
+    if ai == 1 {
+      factors.push(a.clone());
+    } else {
+      factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(a.clone()),
+        right: Box::new(Expr::Integer(ai)),
+      });
+    }
+  }
+  if bi > 0 {
+    if bi == 1 {
+      factors.push(b.clone());
+    } else {
+      factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(b.clone()),
+        right: Box::new(Expr::Integer(bi)),
+      });
+    }
+  }
+  if factors.is_empty() {
+    return Expr::Integer(coef);
+  }
+  if factors.len() == 1 {
+    return factors.into_iter().next().unwrap();
+  }
+  ce_simplify(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors,
+  })
+}
+
+fn sum_terms(terms: Vec<Expr>) -> Expr {
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  if terms.len() == 1 {
+    return terms.into_iter().next().unwrap();
+  }
+  ce_simplify(Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  })
+}
+
+fn binomial_coeff(n: u128, k: u128) -> u128 {
+  if k > n {
+    return 0;
+  }
+  let k = k.min(n - k);
+  let mut result: u128 = 1;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
 }
 
 fn complex_expand_recursive(expr: &Expr) -> Expr {
