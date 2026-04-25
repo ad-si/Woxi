@@ -520,7 +520,10 @@ fn half_int_bessel_k(
 
 /// Compute the K-family polynomial P_m. Anchors P_1 = P_{-1} = 1.
 /// Recurrence: P_{m+2} = (m/z) P_m + P_{m-2}.
-fn bessel_k_polynomial(m: i128, z_expr: &Expr) -> Result<Expr, InterpreterError> {
+fn bessel_k_polynomial(
+  m: i128,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
   if m == 1 {
     return Ok(Expr::Integer(1));
   }
@@ -751,6 +754,24 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_numeric_eval {
     let result = bessel_y(n_val.unwrap(), z_val.unwrap());
     return Ok(Expr::Real(result));
+  }
+
+  // Closed-form rules at half-integer orders.
+  // Y_{m/2}(z) = -(-1)^k * J_{-m/2}(z) where k = (m-1)/2,
+  // derived from Y_n = (J_n cos(n*Pi) - J_{-n}) / sin(n*Pi) at n = m/2.
+  if let Some((n_num, n_den)) =
+    crate::functions::math_ast::expr_to_rational(n_expr)
+    && n_den == 2
+    && (n_num.unsigned_abs() <= 51)
+    && let Some(j_neg) = half_int_bessel_j(-n_num, z_expr)?
+  {
+    let k = (n_num - 1).div_euclid(2);
+    let sign: i128 = if k.rem_euclid(2) == 0 { -1 } else { 1 };
+    let result_expr = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(sign), j_neg],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&result_expr);
   }
 
   Ok(Expr::FunctionCall {
