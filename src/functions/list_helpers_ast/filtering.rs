@@ -1224,6 +1224,16 @@ pub fn delete_cases_with_count_ast(
 ) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
+    // For non-list arguments wolframscript silently returns the input
+    // unchanged (there is nothing to delete from an atom or non-listy
+    // expression).
+    Expr::Identifier(_)
+    | Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _)
+    | Expr::Constant(_) => return Ok(list.clone()),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DeleteCases".to_string(),
