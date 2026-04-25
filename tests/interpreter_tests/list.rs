@@ -4815,6 +4815,43 @@ mod join_non_list {
     assert_eq!(interpret("Normal[ByteArray[{4, 2}]]").unwrap(), "{4, 2}");
   }
 
+  // `Order` on ByteArrays compares the decoded byte payload, not the
+  // wrapping `ByteArray["<base64>"]` string. wolframscript:
+  //   Order[ByteArray[{1, 99}], ByteArray[{2, 0}]] = 1
+  // because the first byte 1 < 2, even though "AWM=" > "AgA=" lexically.
+  #[test]
+  fn order_byte_array_first_byte_smaller() {
+    assert_eq!(
+      interpret("Order[ByteArray[{1, 99}], ByteArray[{2, 0}]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn order_byte_array_first_byte_larger() {
+    assert_eq!(
+      interpret("Order[ByteArray[{2, 0}], ByteArray[{1, 99}]]").unwrap(),
+      "-1"
+    );
+  }
+
+  #[test]
+  fn order_byte_array_equal() {
+    assert_eq!(
+      interpret("Order[ByteArray[{1, 99}], ByteArray[{1, 99}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn order_byte_array_prefix_sorts_first() {
+    // [1, 2] is a prefix of [1, 2, 3] so it sorts first → Order = 1.
+    assert_eq!(
+      interpret("Order[ByteArray[{1, 2}], ByteArray[{1, 2, 3}]]").unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn count_at_level() {
     assert_eq!(

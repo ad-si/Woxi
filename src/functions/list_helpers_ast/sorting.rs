@@ -596,6 +596,19 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  // ByteArray vs ByteArray: compare by decoded byte payload, not by the
+  // wrapping `ByteArray["<base64>"]` string. wolframscript:
+  //   Order[ByteArray[{1, 99}], ByteArray[{2, 0}]] = 1
+  // because the first byte 1 < 2.
+  if let (Some(a_bytes), Some(b_bytes)) =
+    (decode_byte_array(a), decode_byte_array(b))
+  {
+    return match a_bytes.as_slice().cmp(b_bytes.as_slice()) {
+      std::cmp::Ordering::Less => 1,
+      std::cmp::Ordering::Greater => -1,
+      std::cmp::Ordering::Equal => 0,
+    };
+  }
   // Try numeric comparison first (including Infinity/-Infinity)
   let a_num = try_eval_to_f64_with_infinity(a);
   let b_num = try_eval_to_f64_with_infinity(b);
@@ -709,6 +722,22 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       }
     }
   }
+}
+
+/// If `expr` is `ByteArray["<base64>"]`, decode and return its raw byte
+/// payload. Used by `compare_exprs` so canonical-order comparisons walk
+/// the underlying bytes rather than the base64 wrapper string.
+fn decode_byte_array(expr: &Expr) -> Option<Vec<u8>> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "ByteArray"
+    && args.len() == 1
+    && let Expr::String(b64) = &args[0]
+  {
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::STANDARD;
+    return engine.decode(b64).ok();
+  }
+  None
 }
 
 /// Check if an expression is a Power (BinaryOp or FunctionCall)
