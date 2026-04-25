@@ -139,10 +139,14 @@ pub fn association_nested_access(
             current_val = Some(val.clone());
           }
         } else {
-          // Key not found
+          // Key not found — match wolframscript by returning
+          // Missing["KeyAbsent", key].
           return Ok(Expr::FunctionCall {
-            name: var_name.to_string(),
-            args: keys.to_vec(),
+            name: "Missing".to_string(),
+            args: vec![
+              Expr::String("KeyAbsent".to_string()),
+              key.clone(),
+            ],
           });
         }
       }
