@@ -649,10 +649,10 @@ pub fn apply_curried_call(
         new_args.extend(func_args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
       } else if name == "Function" && func_args.len() >= 2 {
-        // Function[{params...}, body][args...] — substitute params with args
-        // in body and evaluate. Function[body][args] uses #1, #2, ... slots.
-        // (Only the 2-arg form is handled here; the slot-form arrives as
-        // Expr::Function which the outer match already handles.)
+        // Function[{params...}, body, attrs?][args...] — substitute params
+        // with args in body and evaluate. Hold attributes on the 3rd arg
+        // are honoured by the caller (see function_hold_attributes); here
+        // we just bind and evaluate.
         let params: Vec<String> = match &func_args[0] {
           Expr::List(items) => items
             .iter()
@@ -666,7 +666,6 @@ pub fn apply_curried_call(
         };
         let body = &func_args[1];
         if params.is_empty() {
-          // Slot-based body
           let substituted = crate::syntax::substitute_slots(body, args);
           evaluate_expr_to_expr(&substituted)
         } else {

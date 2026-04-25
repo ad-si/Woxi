@@ -1368,11 +1368,22 @@ pub fn evaluate_expr_to_expr_inner(
             Expr::Function { .. }
             | Expr::NamedFunction { .. }
             | Expr::FunctionCall { .. } => {
-              let evaluated_args: Vec<Expr> = args
-                .iter()
-                .map(evaluate_expr_to_expr)
-                .collect::<Result<_, _>>()?;
-              return apply_curried_call(stored_expr, &evaluated_args);
+              // For Function[{params}, body, attrs] with HoldAll/HoldFirst/
+              // HoldRest, suppress argument evaluation so the function body
+              // sees the unevaluated forms.
+              let hold_attrs = function_hold_attributes(stored_expr);
+              let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+              for (i, a) in args.iter().enumerate() {
+                let hold = hold_attrs.0
+                  || (hold_attrs.1 && i == 0)
+                  || (hold_attrs.2 && i > 0);
+                if hold {
+                  prepared.push(a.clone());
+                } else {
+                  prepared.push(evaluate_expr_to_expr(a)?);
+                }
+              }
+              return apply_curried_call(stored_expr, &prepared);
             }
             _ => {}
           }
@@ -2070,15 +2081,48 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::Image { .. } => Ok(expr.clone()),
     Expr::Graphics { .. } => Ok(expr.clone()),
     Expr::CurriedCall { func, args } => {
-      // Evaluate the curried call: f[a][b] -> apply f[a] to args
+      // Evaluate the curried call: f[a][b] -> apply f[a] to args.
+      // Honour Function[{params}, body, attrs] hold attributes so that
+      // Function[..., HoldAll][1+1] sees its arg unevaluated.
       let evaluated_func = evaluate_expr_to_expr(func)?;
-      let evaluated_args: Vec<Expr> = args
-        .iter()
-        .map(evaluate_expr_to_expr)
-        .collect::<Result<_, _>>()?;
-      apply_curried_call(&evaluated_func, &evaluated_args)
+      let hold_attrs = function_hold_attributes(&evaluated_func);
+      let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+      for (i, a) in args.iter().enumerate() {
+        let hold = hold_attrs.0
+          || (hold_attrs.1 && i == 0)
+          || (hold_attrs.2 && i > 0);
+        if hold {
+          prepared.push(a.clone());
+        } else {
+          prepared.push(evaluate_expr_to_expr(a)?);
+        }
+      }
+      apply_curried_call(&evaluated_func, &prepared)
     }
   }
+}
+
+/// Inspect a stored Function value for Hold attributes.
+/// Returns (hold_all, hold_first, hold_rest).
+fn function_hold_attributes(expr: &Expr) -> (bool, bool, bool) {
+  let attrs = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Function" && args.len() >= 3 =>
+    {
+      Some(&args[2])
+    }
+    _ => None,
+  };
+  let has = |needle: &str| -> bool {
+    match attrs {
+      Some(Expr::Identifier(s)) => s == needle,
+      Some(Expr::List(items)) => items.iter().any(
+        |e| matches!(e, Expr::Identifier(s) if s == needle),
+      ),
+      _ => false,
+    }
+  };
+  (has("HoldAll") || has("HoldAllComplete"), has("HoldFirst"), has("HoldRest"))
 }
 
 /// Recursively unwrap `Evaluate[expr]` subexpressions inside a Function body
