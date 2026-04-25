@@ -89,15 +89,21 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // standard chain-rule differentiation, then put the slot back.
     if let Expr::Slot(_) = &items[0] {
       let fresh = "$__DSlotVar__";
-      let body =
-        replace_subexpr_simple(&args[0], &items[0], &Expr::Identifier(fresh.to_string()));
+      let body = replace_subexpr_simple(
+        &args[0],
+        &items[0],
+        &Expr::Identifier(fresh.to_string()),
+      );
       let mut result = body;
       for _ in 0..n {
         result = differentiate(&result, fresh)?;
         result = simplify(result);
       }
-      result =
-        replace_subexpr_simple(&result, &Expr::Identifier(fresh.to_string()), &items[0]);
+      result = replace_subexpr_simple(
+        &result,
+        &Expr::Identifier(fresh.to_string()),
+        &items[0],
+      );
       return Ok(result);
     }
     // Non-symbol variable specifier (e.g. x[k]) — apply
@@ -108,6 +114,23 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result = simplify(result);
     }
     return Ok(result);
+  }
+
+  // Slot variable: same fresh-symbol trick as the {Slot, n} branch.
+  if let Expr::Slot(_) = &args[1] {
+    let fresh = "$__DSlotVar__";
+    let body = replace_subexpr_simple(
+      &args[0],
+      &args[1],
+      &Expr::Identifier(fresh.to_string()),
+    );
+    let result = differentiate(&body, fresh)?;
+    let result = simplify(result);
+    return Ok(replace_subexpr_simple(
+      &result,
+      &Expr::Identifier(fresh.to_string()),
+      &args[1],
+    ));
   }
 
   // Get the variable name
@@ -134,7 +157,11 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Recursively replace every occurrence of `target` in `expr` with `replacement`.
 /// Used by D[expr, {Slot[k], n}] to swap a slot for a fresh symbolic variable.
-fn replace_subexpr_simple(expr: &Expr, target: &Expr, replacement: &Expr) -> Expr {
+fn replace_subexpr_simple(
+  expr: &Expr,
+  target: &Expr,
+  replacement: &Expr,
+) -> Expr {
   use crate::evaluator::pattern_matching::expr_equal;
   if expr_equal(expr, target) {
     return replacement.clone();
