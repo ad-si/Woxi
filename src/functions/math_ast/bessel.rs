@@ -1121,3 +1121,104 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
+
+/// Real-valued `ker(x)` via the standard power series (DLMF 10.65.6).
+///   ker(x) = -[γ + ln(x/2)] ber(x) + (π/4) bei(x)
+///          + Σ_{k=1..} (-1)^k φ(2k) (x/2)^(4k) / ((2k)!)^2
+/// where φ(n) = 1 + 1/2 + … + 1/n.
+fn ker_series(x: f64) -> f64 {
+  use std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329_f64;
+  let half = x * 0.5;
+  let half2 = half * half;
+  let mut total = -(euler_gamma + (half).ln()) * ber_series(x)
+    + (PI / 4.0) * bei_series(x);
+  // k = 1..∞: term_k = (-1)^k * φ(2k) * half^(4k) / ((2k)!)^2
+  let mut phi = 0.0_f64; // φ(0)
+  let mut fact_sq = 1.0_f64; // ((2*0)!)^2 = 1
+  let mut half_pow = 1.0_f64; // half^(4*0)
+  for k in 1..200usize {
+    // accumulate φ(2k-1), φ(2k)
+    let n2m1 = (2 * k - 1) as f64;
+    let n2 = (2 * k) as f64;
+    phi += 1.0 / n2m1 + 1.0 / n2;
+    fact_sq *= n2m1 * n2 * n2m1 * n2; // ((2k)!)^2 / ((2k-2)!)^2
+    half_pow *= half2 * half2;
+    let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
+    let term = sign * phi * half_pow / fact_sq;
+    total += term;
+    if term.abs() < 1e-18 * total.abs().max(1.0) {
+      break;
+    }
+  }
+  total
+}
+
+/// Real-valued `kei(x)` via the standard power series (DLMF 10.65.7).
+///   kei(x) = -[γ + ln(x/2)] bei(x) - (π/4) ber(x)
+///          + Σ_{k=0..} (-1)^k φ(2k+1) (x/2)^(4k+2) / ((2k+1)!)^2
+fn kei_series(x: f64) -> f64 {
+  use std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329_f64;
+  let half = x * 0.5;
+  let half2 = half * half;
+  let mut total = -(euler_gamma + (half).ln()) * bei_series(x)
+    - (PI / 4.0) * ber_series(x);
+  // k = 0..∞: term_k = (-1)^k * φ(2k+1) * half^(4k+2) / ((2k+1)!)^2
+  let mut phi = 1.0_f64; // φ(1)
+  let mut fact_sq = 1.0_f64; // ((2*0+1)!)^2 = 1
+  let mut half_pow = half2; // half^(4*0+2)
+  total += phi * half_pow / fact_sq;
+  for k in 1..200usize {
+    let n2 = (2 * k) as f64;
+    let n2p1 = (2 * k + 1) as f64;
+    phi += 1.0 / n2 + 1.0 / n2p1;
+    fact_sq *= n2 * n2p1 * n2 * n2p1; // ((2k+1)!)^2 / ((2k-1)!)^2
+    half_pow *= half2 * half2;
+    let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
+    let term = sign * phi * half_pow / fact_sq;
+    total += term;
+    if term.abs() < 1e-18 * total.abs().max(1.0) {
+      break;
+    }
+  }
+  total
+}
+
+/// KelvinKer[x] - real part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
+pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KelvinKer expects 1 argument".into(),
+    ));
+  }
+  if let Some(x) = match &args[0] {
+    Expr::Real(f) if *f > 0.0 => Some(*f),
+    _ => None,
+  } {
+    return Ok(Expr::Real(ker_series(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "KelvinKer".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// KelvinKei[x] - imaginary part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
+pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KelvinKei expects 1 argument".into(),
+    ));
+  }
+  if let Some(x) = match &args[0] {
+    Expr::Real(f) if *f > 0.0 => Some(*f),
+    _ => None,
+  } {
+    return Ok(Expr::Real(kei_series(x)));
+  }
+  Ok(Expr::FunctionCall {
+    name: "KelvinKei".to_string(),
+    args: args.to_vec(),
+  })
+}

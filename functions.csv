@@ -1289,10 +1289,10 @@ GeneratedCell,,🚫,,3.0,1303
 StreamStyle,,🚫,,7.0,1304
 MaxValue,,🚫,,7.0,1305
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
-KelvinKei,,🚫,,6.0,1307
+KelvinKei,Kelvin kei function (imaginary part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1307
 TabView,,🚫,,6.0,1308
 SinhIntegral,Hyperbolic sine integral Shi(z),✅,pure,3.0,1309
-KelvinKer,,🚫,,6.0,1310
+KelvinKer,Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated argument),✅,pure,6.0,1310
 ComplexPlot3D,,🚫,,12.0,1311
 ControlActive,,🚫,,6.0,1312
 ButtonBox,,🚫,,3.0,1313

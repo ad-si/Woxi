@@ -570,6 +570,12 @@ pub fn dispatch_math_functions(
     "KelvinBei" if args.len() == 1 => {
       return Some(crate::functions::math_ast::kelvin_bei_ast(args));
     }
+    "KelvinKer" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::kelvin_ker_ast(args));
+    }
+    "KelvinKei" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::kelvin_kei_ast(args));
+    }
     "AiryAi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_ai_ast(args));
     }
@@ -1352,10 +1358,7 @@ pub fn dispatch_math_functions(
         }
       };
       if val_num == 0.0 {
-        return Some(Ok(Expr::List(vec![
-          Expr::Integer(0),
-          Expr::Integer(0),
-        ])));
+        return Some(Ok(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])));
       }
       let e = (val_num.abs().ln() / base_num.ln()).floor() as i128 + 1;
       // Whether the result should be a numeric Real or stay symbolic:
@@ -1368,31 +1371,30 @@ pub fn dispatch_math_functions(
           _ => false,
         }
       }
-      if is_inexact(&args[0])
-        || (args.len() == 2 && is_inexact(&args[1]))
-      {
+      if is_inexact(&args[0]) || (args.len() == 2 && is_inexact(&args[1])) {
         let m = val_num / base_num.powi(e as i32);
         return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
       }
       // Special-case integer base 10 with integer value: keep mantissa
       // exact as a rational (existing behavior).
-      if args.len() == 1 || matches!(&args[1], Expr::Integer(_)) {
-        if let Expr::Integer(n) = &args[0] {
-          let base_int: i128 = if args.len() == 2 {
-            if let Expr::Integer(b) = &args[1] { *b } else { 10 }
+      if (args.len() == 1 || matches!(&args[1], Expr::Integer(_)))
+        && let Expr::Integer(n) = &args[0]
+      {
+        let base_int: i128 = if args.len() == 2 {
+          if let Expr::Integer(b) = &args[1] {
+            *b
           } else {
             10
-          };
-          if base_int >= 2 {
-            let denom = (base_int as f64).powi(e as i32) as i128;
-            if denom > 0 {
-              let mantissa =
-                crate::functions::math_ast::make_rational_pub(*n, denom);
-              return Some(Ok(Expr::List(vec![
-                mantissa,
-                Expr::Integer(e),
-              ])));
-            }
+          }
+        } else {
+          10
+        };
+        if base_int >= 2 {
+          let denom = (base_int as f64).powi(e as i32) as i128;
+          if denom > 0 {
+            let mantissa =
+              crate::functions::math_ast::make_rational_pub(*n, denom);
+            return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)])));
           }
         }
       }
@@ -1413,8 +1415,7 @@ pub fn dispatch_math_functions(
         ],
       };
       let mantissa_eval =
-        crate::evaluator::evaluate_expr_to_expr(&mantissa)
-          .unwrap_or(mantissa);
+        crate::evaluator::evaluate_expr_to_expr(&mantissa).unwrap_or(mantissa);
       return Some(Ok(Expr::List(vec![mantissa_eval, Expr::Integer(e)])));
     }
     "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
