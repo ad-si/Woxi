@@ -2265,10 +2265,11 @@ mod string_form {
 
   #[test]
   fn display_with_placeholder() {
-    // StringForm displays the formatted string in OutputForm
+    // StringForm at top level renders as the literal wrapper, matching
+    // wolframscript. Substitution only happens via explicit ToString.
     assert_eq!(
       interpret("StringForm[\"The value is ``.\", 5]").unwrap(),
-      "The value is 5."
+      "StringForm[The value is ``., 5]"
     );
   }
 
@@ -2331,23 +2332,28 @@ mod string_form {
 
   #[test]
   fn display_indexed_placeholders() {
+    // Top-level StringForm renders as the literal wrapper.
     assert_eq!(
       interpret("StringForm[\"`1` plus `2` is `3`\", 1, 2, 3]").unwrap(),
-      "1 plus 2 is 3"
+      "StringForm[`1` plus `2` is `3`, 1, 2, 3]"
     );
   }
 
-  // Out-of-range indexed placeholders keep the `n` literal in the output
-  // (instead of silently blanking it). Matches wolframscript/mathics.
+  // Out-of-range indexed placeholders are kept literal even after ToString
+  // forces substitution (instead of silently blanking them). This is the
+  // wolframscript/mathics behaviour.
   #[test]
   fn out_of_range_positive_index_kept_literal() {
-    assert_eq!(interpret("StringForm[\"`2` bla\", a]").unwrap(), "`2` bla");
+    assert_eq!(
+      interpret("ToString[StringForm[\"`2` bla\", a]]").unwrap(),
+      "`2` bla"
+    );
   }
 
   #[test]
   fn out_of_range_negative_index_kept_literal() {
     assert_eq!(
-      interpret("StringForm[\"`-1` bla\", a]").unwrap(),
+      interpret("ToString[StringForm[\"`-1` bla\", a]]").unwrap(),
       "`-1` bla"
     );
   }
@@ -2355,7 +2361,10 @@ mod string_form {
   #[test]
   fn out_of_range_sequential_placeholder_kept_literal() {
     // `` with no argument to pull from: keep the two backticks literal.
-    assert_eq!(interpret("StringForm[\"x=``\"]").unwrap(), "x=``");
+    assert_eq!(
+      interpret("ToString[StringForm[\"x=``\"]]").unwrap(),
+      "x=``"
+    );
   }
 
   #[test]
@@ -2363,8 +2372,10 @@ mod string_form {
     // `` picks up from the most recently used numbered slot + 1, not from
     // its own independent counter. `1` was the most recent; so `` -> arg 2.
     assert_eq!(
-      interpret("StringForm[\"`2` bla `1` blub `` bla `3`\", a, b, c]")
-        .unwrap(),
+      interpret(
+        "ToString[StringForm[\"`2` bla `1` blub `` bla `3`\", a, b, c]]"
+      )
+      .unwrap(),
       "b bla a blub b bla c"
     );
   }
@@ -2374,7 +2385,7 @@ mod string_form {
     // \` inside the template is a literal backslash + backtick sequence;
     // Woxi/wolframscript keep both bytes verbatim in the output.
     assert_eq!(
-      interpret(r#"StringForm["`` is Global\`a", a]"#).unwrap(),
+      interpret(r#"ToString[StringForm["`` is Global\`a", a]]"#).unwrap(),
       "a is Global\\`a"
     );
   }

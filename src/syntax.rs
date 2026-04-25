@@ -5425,17 +5425,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       {
         return fmt(&args[0]);
       }
-      // OutputForm-only: StringForm["template", args...] substitutes placeholders
-      if is_output
-        && name == "StringForm"
-        && !args.is_empty()
-        && let Expr::String(template) = &args[0]
-      {
-        return crate::functions::string_ast::format_string_form(
-          template,
-          &args[1..],
-        );
-      }
+      // StringForm at top level renders as the literal `StringForm[…, args]`
+      // wrapper in both InputForm and OutputForm — Wolfram substitutes only
+      // when the user explicitly calls ToString. Fall through to the
+      // general FunctionCall renderer below.
       // OutputForm-only: Column[{exprs...}] displays each element on a new line
       if is_output
         && name == "Column"
