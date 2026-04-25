@@ -1006,6 +1006,49 @@ pub fn set_delayed_ast(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // Handle UpValues[sym] := rules: replay each rule as a TagSetDelayed on
+  // `sym` so the upvalue dispatch (UPVALUES) picks them up. The tag is
+  // the symbol named by `sym`; each rule's pattern becomes the LHS of
+  // `sym /: lhs := rhs`.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "UpValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    let rules: Vec<Expr> = match &rhs_value {
+      Expr::List(items) => items.clone(),
+      other => vec![other.clone()],
+    };
+    let tag = Expr::Identifier(sym.clone());
+    for rule in &rules {
+      let (pat, body) = match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone()),
+        _ => continue,
+      };
+      let pattern_lhs = match &pat {
+        Expr::FunctionCall { name, args }
+          if name == "HoldPattern" && args.len() == 1 =>
+        {
+          args[0].clone()
+        }
+        _ => pat.clone(),
+      };
+      tag_set_delayed_ast(&tag, &pattern_lhs, &body, false)?;
+    }
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
@@ -1152,14 +1195,18 @@ pub fn set_delayed_ast(
           // placeholder so dispatch can pull a user-set Default[f] at call
           // time (matching Wolfram's `f[x_.] := ...` + `Default[f] = c`).
           let default_for_slot = match arg {
-            Expr::PatternOptional { default: Some(d), .. } => Some((**d).clone()),
-            Expr::PatternOptional { default: None, .. } => Some(Expr::FunctionCall {
-              name: "Default".to_string(),
-              args: vec![
-                Expr::Identifier(func_name.clone()),
-                Expr::Integer((i + 1) as i128),
-              ],
-            }),
+            Expr::PatternOptional {
+              default: Some(d), ..
+            } => Some((**d).clone()),
+            Expr::PatternOptional { default: None, .. } => {
+              Some(Expr::FunctionCall {
+                name: "Default".to_string(),
+                args: vec![
+                  Expr::Identifier(func_name.clone()),
+                  Expr::Integer((i + 1) as i128),
+                ],
+              })
+            }
             _ => None,
           };
           defaults.push(default_for_slot);
