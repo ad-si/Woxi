@@ -660,6 +660,19 @@ mod factor_multivariate {
       "6*(x + y)^2"
     );
   }
+
+  // Factor's internal grouping previously used a single-variable-first
+  // sort that doesn't match Wolfram's canonical Times order, so e.g.
+  // `Factor[x*a == x*b + x*c]` would emit `x*(b + c)` instead of
+  // `(b + c)*x`. The result now flows through `times_ast` so factors are
+  // canonically ordered.
+  #[test]
+  fn equation_canonical_factor_order() {
+    assert_eq!(
+      interpret("Factor[x a == x b + x c]").unwrap(),
+      "a*x == (b + c)*x"
+    );
+  }
 }
 
 mod factor_list {

@@ -2870,6 +2870,13 @@ fn build_multivariate_result(
   } else if result_factors.len() == 1 {
     result_factors.remove(0)
   } else {
-    build_product(result_factors)
+    // Canonicalise the Times ordering so e.g. `Factor[x a == x b + x c]`
+    // produces `(b + c)*x` rather than `x*(b + c)`. The factor-specific
+    // sort above (by constant term/degree/term-count) is right for
+    // grouping and sign placement but doesn't match Wolfram's display
+    // order; running through `times_ast` applies the canonical Times
+    // sort that Times itself uses.
+    crate::functions::math_ast::times_ast(&result_factors)
+      .unwrap_or_else(|_| build_product(result_factors))
   }
 }
