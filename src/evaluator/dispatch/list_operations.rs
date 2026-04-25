@@ -6,7 +6,9 @@ use crate::functions::list_helpers_ast;
 /// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
 fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
   match expr {
-    Expr::Identifier(s) if s == "All" => Some(list_helpers_ast::NestWhileM::All),
+    Expr::Identifier(s) if s == "All" => {
+      Some(list_helpers_ast::NestWhileM::All)
+    }
     Expr::Integer(n) if *n >= 1 => {
       Some(list_helpers_ast::NestWhileM::Last(*n as usize))
     }
@@ -1597,10 +1599,7 @@ pub fn dispatch_list_operations(
       // NestWhile[f, x, test, m, max, n]   — n extra iterations (or -|n|
       //                                        steps back) once test fails
       let m = if args.len() >= 4 {
-        match parse_nest_while_m(&args[3]) {
-          Some(v) => v,
-          None => return None,
-        }
+        parse_nest_while_m(&args[3])?
       } else {
         list_helpers_ast::NestWhileM::Last(1)
       };
@@ -1620,10 +1619,7 @@ pub fn dispatch_list_operations(
     }
     "NestWhileList" if (3..=6).contains(&args.len()) => {
       let m = if args.len() >= 4 {
-        match parse_nest_while_m(&args[3]) {
-          Some(v) => v,
-          None => return None,
-        }
+        parse_nest_while_m(&args[3])?
       } else {
         list_helpers_ast::NestWhileM::Last(1)
       };

@@ -624,6 +624,7 @@ pub fn apply_curried_call(
         "Derivative"
           | "Apply"
           | "Map"
+          | "MapIndexed"
           | "MapThread"
           | "Scan"
           | "Append"
