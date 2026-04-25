@@ -53,47 +53,13 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
   {
-    use crate::syntax::Expr::*;
     let trig = match n_num {
       1 => Some("Sin"),
       -1 => Some("Cos"),
       _ => None,
     };
     if let Some(t) = trig {
-      // Build Sqrt[2] {Trig}[z] / (Sqrt[z] Sqrt[Pi])
-      let expr = FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Integer(2)],
-          },
-          FunctionCall {
-            name: t.to_string(),
-            args: vec![z_expr.clone()],
-          },
-          FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
-                  FunctionCall {
-                    name: "Sqrt".to_string(),
-                    args: vec![z_expr.clone()],
-                  },
-                  FunctionCall {
-                    name: "Sqrt".to_string(),
-                    args: vec![Identifier("Pi".to_string())],
-                  },
-                ],
-              },
-              Integer(-1),
-            ],
-          },
-        ],
-      };
-      return crate::evaluator::evaluate_expr_to_expr(&expr);
+      return half_int_bessel_form(t, z_expr);
     }
   }
 
@@ -102,6 +68,47 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "BesselJ".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Build `Sqrt[2/Pi] * Trig[z] / Sqrt[z]`, the half-integer Bessel closed form.
+fn half_int_bessel_form(
+  trig: &str,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  let expr = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Integer(2),
+            FunctionCall {
+              name: "Power".to_string(),
+              args: vec![Identifier("Pi".to_string()), Integer(-1)],
+            },
+          ],
+        }],
+      },
+      FunctionCall {
+        name: trig.to_string(),
+        args: vec![z_expr.clone()],
+      },
+      FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![z_expr.clone()],
+          },
+          Integer(-1),
+        ],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// BesselJZero[n, k] — k-th positive zero of the Bessel function J_n
@@ -270,6 +277,22 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_numeric_eval {
     let result = bessel_i(n_val.unwrap(), z_val.unwrap());
     return Ok(Expr::Real(result));
+  }
+
+  // Closed-form rules at ±1/2: BesselI[1/2, z] = Sqrt[2/(Pi z)] * Sinh[z];
+  // BesselI[-1/2, z] = Sqrt[2/(Pi z)] * Cosh[z].
+  if let Some((n_num, n_den)) =
+    crate::functions::math_ast::expr_to_rational(n_expr)
+    && n_den == 2
+  {
+    let trig = match n_num {
+      1 => Some("Sinh"),
+      -1 => Some("Cosh"),
+      _ => None,
+    };
+    if let Some(t) = trig {
+      return half_int_bessel_form(t, z_expr);
+    }
   }
 
   Ok(Expr::FunctionCall {

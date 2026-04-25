@@ -146,7 +146,7 @@ mod bessel_j {
   fn half_order_sin_closed_form() {
     assert_eq!(
       interpret("BesselJ[1/2, x]").unwrap(),
-      "(Sqrt[2]*Sin[x])/(Sqrt[Pi]*Sqrt[x])"
+      "(Sqrt[2/Pi]*Sin[x])/Sqrt[x]"
     );
   }
 
@@ -154,7 +154,7 @@ mod bessel_j {
   fn negative_half_order_cos_closed_form() {
     assert_eq!(
       interpret("BesselJ[-1/2, x]").unwrap(),
-      "(Sqrt[2]*Cos[x])/(Sqrt[Pi]*Sqrt[x])"
+      "(Sqrt[2/Pi]*Cos[x])/Sqrt[x]"
     );
   }
 }
