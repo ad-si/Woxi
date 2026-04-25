@@ -10,6 +10,11 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if args.len() == 2 {
+    // N[expr, MachinePrecision] is identical to N[expr] — return a
+    // machine-precision Real, not a BigFloat.
+    if matches!(&args[1], Expr::Identifier(s) if s == "MachinePrecision") {
+      return n_eval(&args[0]);
+    }
     // N[expr, precision] — arbitrary-precision evaluation
     // Precision can be a numeric expression (e.g. N[Pi, Pi])
     let precision = match &args[1] {
