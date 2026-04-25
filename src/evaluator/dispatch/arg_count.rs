@@ -685,7 +685,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NSolve" => Some((2, 2)),
     "NullSpace" => Some((1, 1)),
     "NumberQ" => Some((1, 1)),
-    "Numerator" => Some((1, 1)),
+    "Numerator" => Some((1, 2)),
     "NumericalSort" => Some((1, 1)),
     "NumericQ" => Some((1, 1)),
     "O" => Some((1, 2)),

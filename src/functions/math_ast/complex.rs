@@ -1013,10 +1013,16 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
 
 /// Numerator[x] - Returns the numerator of a rational expression
 pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Numerator expects exactly 1 argument".into(),
+      "Numerator expects 1 or 2 arguments".into(),
     ));
+  }
+  // Optional Trig -> True option: return the trig-form numerator for
+  // top-level Sin/Cos/Tan/Csc/Sec/Cot (and hyperbolic counterparts).
+  let trig_option = args.len() == 2 && is_trig_true_option(&args[1]);
+  if trig_option && let Some(n) = numerator_trig(&args[0]) {
+    return Ok(n);
   }
   // Exact complex rational: combine to common denominator and return the
   // integer (or Complex integer) numerator, e.g. 3/7 + I/11 → 33 + 7 I.
@@ -1186,6 +1192,50 @@ fn is_trig_true_option(expr: &Expr) -> bool {
   }
 }
 
+/// With `Trig -> True`, top-level Sin/Cos/Tan/Csc/Sec/Cot (and hyperbolic
+/// counterparts) have a numerator obtained by writing the trig function in
+/// its sin/cos identity form: Tan[x] -> Sin[x], Csc[x] -> 1, etc.
+fn numerator_trig(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let arg = args[0].clone();
+  match name.as_str() {
+    "Sin" | "Cos" => Some(Expr::FunctionCall {
+      name: name.clone(),
+      args: vec![arg],
+    }),
+    "Sinh" | "Cosh" => Some(Expr::FunctionCall {
+      name: name.clone(),
+      args: vec![arg],
+    }),
+    // Tan[x] = Sin[x]/Cos[x]; Sec[x] = 1/Cos[x] -> numerator 1.
+    "Tan" => Some(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg],
+    }),
+    "Sec" | "Csc" => Some(Expr::Integer(1)),
+    "Tanh" => Some(Expr::FunctionCall {
+      name: "Sinh".to_string(),
+      args: vec![arg],
+    }),
+    "Sech" | "Csch" => Some(Expr::Integer(1)),
+    // Cot[x] = Cos[x]/Sin[x]
+    "Cot" => Some(Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![arg],
+    }),
+    "Coth" => Some(Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![arg],
+    }),
+    _ => None,
+  }
+}
+
 /// With `Trig -> True`, top-level Tan/Cot/Sec/Csc and their hyperbolic
 /// counterparts have a denominator (the trig identity that puts them in
 /// numerator/denominator form). Sin/Cos/Sinh/Cosh have denominator 1.
@@ -1221,35 +1271,46 @@ fn denominator_trig(expr: &Expr) -> Option<Expr> {
 
 /// If expr is Power[base, neg_exp] where neg_exp is negative,
 /// return Some((base, -neg_exp)) i.e. the base and the positive exponent.
-/// E.g. Power[x, -2] → Some((x, 2)), Power[x, -1] → Some((x, 1))
+/// E.g. Power[x, -2] → Some((x, 2)), Power[x, -1] → Some((x, 1)),
+///      Power[y, Times[-1, m]] → Some((y, m)).
 fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
-  match expr {
+  let (base, exp) = match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
       right,
-    } => {
-      if let Expr::Integer(n) = right.as_ref()
-        && *n < 0
-      {
-        return Some((left.as_ref().clone(), Expr::Integer(-n)));
-      }
-      if let Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand,
-      } = right.as_ref()
-      {
-        return Some((left.as_ref().clone(), operand.as_ref().clone()));
-      }
-      None
-    }
+    } => (left.as_ref().clone(), right.as_ref().clone()),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1]
-        && *n < 0
-      {
-        return Some((args[0].clone(), Expr::Integer(-n)));
+      (args[0].clone(), args[1].clone())
+    }
+    _ => return None,
+  };
+  negate_if_negative(&exp).map(|positive_exp| (base, positive_exp))
+}
+
+/// Return the negation of `exp` if it is recognisably negative (a negative
+/// integer literal, a unary-minus expression, or a `Times[-1, ...]` form).
+fn negate_if_negative(exp: &Expr) -> Option<Expr> {
+  match exp {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some(operand.as_ref().clone()),
+    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+      // Match Times[-1, rest...] as a negative form.
+      if matches!(args[0], Expr::Integer(-1)) {
+        Some(if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec(),
+          }
+        })
+      } else {
+        None
       }
-      None
     }
     _ => None,
   }

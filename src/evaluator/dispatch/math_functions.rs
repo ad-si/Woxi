@@ -1550,7 +1550,7 @@ pub fn dispatch_math_functions(
     "Rationalize" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::rationalize_ast(args));
     }
-    "Numerator" if args.len() == 1 => {
+    "Numerator" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::numerator_ast(args));
     }
     "Denominator" if args.len() == 1 || args.len() == 2 => {
