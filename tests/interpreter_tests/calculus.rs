@@ -2060,6 +2060,27 @@ mod find_minimum {
     let result = interpret("FindMaximum[-(x - 5)^2 + 10, {x, 0}]").unwrap();
     assert!(result.starts_with("{10., {x -> 5."));
   }
+
+  #[test]
+  fn quadratic_with_tiny_coefficient() {
+    // Regression: a quadratic scaled by 10^-30 has gradient ~10^-30
+    // and Hessian ~10^-30, so the Newton step (-grad/Hess) is still
+    // O(1) and reaches the exact minimum in one iteration. The earlier
+    // implementation declared convergence on |grad| < 1e-15 *before*
+    // even attempting the step and froze at the starting point.
+    clear_state();
+    let result =
+      interpret("FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]").unwrap();
+    assert_eq!(result, "{2., {x -> 3.}}");
+  }
+
+  #[test]
+  fn maximum_with_tiny_coefficient() {
+    clear_state();
+    let result =
+      interpret("FindMaximum[-10*^-30 *(x-3)^2+2., {x, 1}]").unwrap();
+    assert_eq!(result, "{2., {x -> 3.}}");
+  }
 }
 
 mod dt {

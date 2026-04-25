@@ -4954,12 +4954,11 @@ pub fn find_minimum_ast(
     // Uses line search to ensure we actually decrease/increase the function
     for _ in 0..max_iter {
       let gval = eval_at(&grad_exprs[0], &x)?;
-      if gval.abs() < tol {
-        break;
-      }
       let hval = eval_at(&hess_exprs[0][0], &x)?;
 
-      // Compute Newton direction
+      // Compute Newton direction. For a quadratic this gives the exact
+      // minimum in one step regardless of overall scale, so we converge
+      // even when both gval and hval are tiny (e.g. 10^-30 · (x-3)^2).
       let step = if hval.abs() < 1e-30 {
         // Hessian too small — use gradient descent step
         sign * gval * 0.1
@@ -4971,15 +4970,26 @@ pub fn find_minimum_ast(
         gval / hval
       };
 
-      // Line search along Newton direction to ensure improvement
+      // Convergence: the Newton step itself is small. Using gval alone
+      // would terminate too eagerly when the function is scaled by a
+      // tiny constant (gradient is O(scale), but the step is O(1)).
+      if step.abs() < tol {
+        break;
+      }
+
+      // Line search along Newton direction to ensure improvement.
+      // Use `<=`: if the function is flat to machine precision (e.g. a
+      // quadratic scaled by 10^-30 added to 2., which evaluates to 2.0
+      // identically in f64), we still want to take the Newton step rather
+      // than backtracking to a near-zero alpha and freezing in place.
       let current_f = eval_at(f, &x)? * sign;
       let mut alpha = 1.0;
       let mut best_x = x[0] - step;
       let mut best_f = eval_at(f, &[best_x])? * sign;
 
-      // Backtracking: reduce step if it doesn't improve
+      // Backtracking: reduce step only if it strictly worsens the value.
       for _ in 0..30 {
-        if best_f < current_f {
+        if best_f <= current_f {
           break;
         }
         alpha *= 0.5;
