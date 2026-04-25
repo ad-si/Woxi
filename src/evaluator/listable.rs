@@ -195,6 +195,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
   match name {
     "$RecursionLimit" => Some(Expr::Integer(256)),
     "$IterationLimit" => Some(Expr::Integer(4096)),
+    "$HistoryLength" => Some(Expr::Identifier("Infinity".to_string())),
     "$MachinePrecision" => Some(Expr::Real(15.954589770191003)),
     "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
     "$MaxMachineNumber" => Some(Expr::Real(f64::MAX)),
