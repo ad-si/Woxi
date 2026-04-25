@@ -52,6 +52,46 @@ pub fn dispatch_complex_and_special(
       if matches!(real, Expr::Integer(0)) && matches!(imag, Expr::Integer(1)) {
         return Some(Ok(Expr::Identifier("I".to_string())));
       }
+      // If either component is inexact (Real/BigFloat) and the other is an
+      // exact Integer/Rational, coerce the exact one to Real so the formed
+      // a + b*I is fully inexact (matches Wolfram).
+      fn is_inexact(e: &Expr) -> bool {
+        matches!(e, Expr::Real(_) | Expr::BigFloat(_, _))
+      }
+      let need_coerce = is_inexact(real) ^ is_inexact(imag);
+      let (real_owned, imag_owned);
+      let (real, imag) = if need_coerce {
+        let to_real = |e: &Expr| -> Expr {
+          match e {
+            Expr::Integer(n) => Expr::Real(*n as f64),
+            Expr::FunctionCall { name, args }
+              if name == "Rational" && args.len() == 2 =>
+            {
+              if let (Expr::Integer(n), Expr::Integer(d)) =
+                (&args[0], &args[1])
+              {
+                Expr::Real(*n as f64 / *d as f64)
+              } else {
+                e.clone()
+              }
+            }
+            _ => e.clone(),
+          }
+        };
+        real_owned = if is_inexact(real) {
+          real.clone()
+        } else {
+          to_real(real)
+        };
+        imag_owned = if is_inexact(imag) {
+          imag.clone()
+        } else {
+          to_real(imag)
+        };
+        (&real_owned, &imag_owned)
+      } else {
+        (real, imag)
+      };
       // Check if both parts are purely real numbers (no I involved) for non-evaluated path
       let imag_has_i = contains_i(imag);
       if !imag_has_i {
