@@ -349,13 +349,25 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use crate::functions::math_ast::try_eval_to_f64;
 
-  // Check if any pair is structurally identical → False
   let strs: Vec<String> =
     args.iter().map(crate::syntax::expr_to_string).collect();
+  let has_free = args.iter().any(crate::evaluator::has_free_symbols);
 
-  for i in 0..strs.len() {
-    for j in i + 1..strs.len() {
-      if strs[i] == strs[j] {
+  // For symbolic chains, Wolfram only collapses Unequal to False when an
+  // *adjacent* pair is structurally identical (a != a != b → False, but
+  // a != b != a stays unevaluated). For all-numeric / all-string args,
+  // any duplicate (even non-adjacent) collapses to False.
+  if !has_free {
+    for i in 0..strs.len() {
+      for j in i + 1..strs.len() {
+        if strs[i] == strs[j] {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
+    }
+  } else {
+    for i in 0..strs.len() - 1 {
+      if strs[i] == strs[i + 1] {
         return Ok(Expr::Identifier("False".to_string()));
       }
     }
@@ -369,7 +381,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Only stay symbolic if at least one arg has free symbols
-  if args.iter().any(crate::evaluator::has_free_symbols) {
+  if has_free {
     Ok(Expr::FunctionCall {
       name: "Unequal".to_string(),
       args: args.to_vec(),

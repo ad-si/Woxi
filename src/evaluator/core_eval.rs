@@ -1570,6 +1570,25 @@ pub fn evaluate_expr_to_expr_inner(
         return crate::functions::boolean_ast::unsame_q_ast(&values);
       }
 
+      // Unequal (!=) with 3+ operands is also all-pairs, not adjacent
+      // pairs. "abc" != "def" != "abc" must return False.
+      if operators.len() >= 2
+        && operators.iter().all(|op| *op == ComparisonOp::NotEqual)
+      {
+        let result =
+          crate::functions::boolean_ast::unequal_ast(&values)?;
+        // Preserve the chained-comparison form for symbolic results so
+        // that 1 != 2 != x prints as `1 != 2 != x`, not Unequal[...].
+        if matches!(&result, Expr::FunctionCall { name, .. } if name == "Unequal")
+        {
+          return Ok(Expr::Comparison {
+            operands: values,
+            operators: operators.clone(),
+          });
+        }
+        return Ok(result);
+      }
+
       // Evaluate comparison chain
       // Use try_eval_to_f64_with_infinity for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], Infinity, etc.)
       use crate::functions::math_ast::try_eval_to_f64_with_infinity as try_eval_to_f64;
@@ -2083,6 +2102,11 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
     Expr::Association(pairs) => pairs
       .iter()
       .any(|(k, v)| has_free_symbols(k) || has_free_symbols(v)),
+    // Patterns like a_ / a_Integer / a_. are symbolic — they can match
+    // anything, so Unequal[a_, b_] must stay unevaluated (matches Wolfram).
+    Expr::Pattern { .. }
+    | Expr::PatternOptional { .. }
+    | Expr::PatternTest { .. } => true,
     _ => false,
   }
 }
