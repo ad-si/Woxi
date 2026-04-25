@@ -958,7 +958,9 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   if let Expr::Real(f) = &args[0] {
-    return Ok(num_to_expr(f.tan()));
+    // Tan of a Real always returns a Real, even if the numeric value
+    // happens to be a whole number (matching wolframscript).
+    return Ok(Expr::Real(f.tan()));
   }
   // Exact complex: for purely imaginary: tan(bi) = i*tanh(b)
   if let Some(((re_num, _re_den), (im_num, im_den))) =
