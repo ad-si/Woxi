@@ -2605,9 +2605,13 @@ mod laguerre_l {
 
   #[test]
   fn generalized_laguerre() {
+    // Wolfram puts every term over a common denominator, matching
+    // wolframscript: `(2520 - 4200*x + 2100*x^2 - 420*x^3 + 35*x^4 -
+    // x^5)/120`. Per-term rendering would otherwise give the
+    // mathematically-equal `21 - 35*x + (35*x^2)/2 - …`.
     assert_eq!(
       interpret("LaguerreL[5, 2, x]").unwrap(),
-      "21 - 35*x + (35*x^2)/2 - (7*x^3)/2 + (7*x^4)/24 - x^5/120"
+      "(2520 - 4200*x + 2100*x^2 - 420*x^3 + 35*x^4 - x^5)/120"
     );
   }
 
@@ -2619,6 +2623,25 @@ mod laguerre_l {
   #[test]
   fn generalized_laguerre_l1() {
     assert_eq!(interpret("LaguerreL[1, 3, x]").unwrap(), "4 - x");
+  }
+
+  // L_n^(a)(x) coefficients all share `n!` in the denominator; emit the
+  // result as `(numerator)/n!` instead of distributing the rational
+  // factor over each term, matching wolframscript's display.
+  #[test]
+  fn generalized_laguerre_uses_common_denominator() {
+    assert_eq!(
+      interpret("LaguerreL[2, 1, x]").unwrap(),
+      "(6 - 6*x + x^2)/2"
+    );
+    assert_eq!(
+      interpret("LaguerreL[3, 0, x]").unwrap(),
+      "(6 - 18*x + 9*x^2 - x^3)/6"
+    );
+    assert_eq!(
+      interpret("LaguerreL[4, 1, x]").unwrap(),
+      "(120 - 240*x + 120*x^2 - 20*x^3 + x^4)/24"
+    );
   }
 }
 

@@ -49,8 +49,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       b.clone(),
     ])?;
     let coeff_x = crate::functions::math_ast::times_ast(&[two_plus_ab, x])?;
-    let neg_b =
-      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b])?;
+    let neg_b = crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b])?;
     let numer = crate::functions::math_ast::plus_ast(&[a, neg_b, coeff_x])?;
     let half = Expr::FunctionCall {
       name: "Rational".to_string(),
@@ -1785,13 +1784,33 @@ fn generalized_laguerre_l_ast(
       coeffs.push((cn, cd));
     }
 
-    // Build the polynomial expression
+    // Combine over a common denominator so the result displays as
+    // `(c_0 + c_1*x + …)/D`, matching Wolfram's `LaguerreL[5, 2, x]`
+    // output `(2520 - 4200*x + 2100*x^2 - 420*x^3 + 35*x^4 - x^5)/120`.
+    // (Per-term rendering would otherwise give `21 - 35*x + (35*x^2)/2
+    // - (7*x^3)/2 + …`, which is mathematically equal but not what
+    // wolframscript prints.)
+    let common_denom = coeffs
+      .iter()
+      .filter(|(n, _)| *n != 0)
+      .map(|(_, d)| *d)
+      .fold(1i128, |acc, d| {
+        let g = gcd(
+          acc.unsigned_abs() as i128,
+          d.unsigned_abs() as i128,
+        );
+        if g == 0 { acc * d } else { acc / g * d }
+      });
+
     let mut terms = Vec::new();
     for (k, &(cn, cd)) in coeffs.iter().enumerate() {
       if cn == 0 {
         continue;
       }
-      let coeff_expr = make_rational(cn, cd);
+      // Scale the numerator so every term sits over the common
+      // denominator: c_k_scaled = cn * (D / cd).
+      let scaled = cn * (common_denom / cd);
+      let coeff_expr = Expr::Integer(scaled);
       let term = if k == 0 {
         coeff_expr
       } else {
@@ -1804,9 +1823,9 @@ fn generalized_laguerre_l_ast(
             right: Box::new(Expr::Integer(k as i128)),
           }
         };
-        if cn == cd {
+        if scaled == 1 {
           power
-        } else if cn == -cd {
+        } else if scaled == -1 {
           Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Times,
             left: Box::new(Expr::Integer(-1)),
@@ -1827,14 +1846,23 @@ fn generalized_laguerre_l_ast(
       return Ok(Expr::Integer(0));
     }
 
-    let mut result = terms[0].clone();
+    let mut numer = terms[0].clone();
     for term in &terms[1..] {
-      result = Expr::BinaryOp {
+      numer = Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Plus,
-        left: Box::new(result),
+        left: Box::new(numer),
         right: Box::new(term.clone()),
       };
     }
+    let result = if common_denom == 1 {
+      numer
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(numer),
+        right: Box::new(Expr::Integer(common_denom)),
+      }
+    };
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
