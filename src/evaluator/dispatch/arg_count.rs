@@ -183,6 +183,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Convergents" => Some((1, 2)),
     "CoordinateBounds" => Some((1, 1)),
     "CoordinateBoundsArray" => Some((1, 2)),
+    "CoordinatesFromCartesian" => Some((1, 2)),
+    "CoordinatesToCartesian" => Some((1, 2)),
     "CoprimeQ" => Some((2, usize::MAX)),
     "Correlation" => Some((2, 2)),
     "CorrelationDistance" => Some((2, 2)),

@@ -484,10 +484,7 @@ mod dot_product {
   #[test]
   fn dot_product_integers() {
     // Legacy VectorAnalysis spelling of Dot.
-    assert_eq!(
-      interpret("DotProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(),
-      "32"
-    );
+    assert_eq!(interpret("DotProduct[{1, 2, 3}, {4, 5, 6}]").unwrap(), "32");
   }
 
   #[test]
@@ -554,6 +551,77 @@ mod scalar_triple_product {
     // We just check that the result mentions the right pieces.
     assert!(result.contains("e*i") || result.contains("i*e"));
     assert!(result.contains("f*h") || result.contains("h*f"));
+  }
+}
+
+// Legacy `VectorAnalysis` package: CoordinatesToCartesian /
+// CoordinatesFromCartesian for Spherical and Cylindrical systems.
+mod coordinate_conversions {
+  use super::*;
+
+  #[test]
+  fn spherical_to_cartesian_exact() {
+    // {r, θ, φ} = {2, π, 3} → {2 sin π cos 3, 2 sin π sin 3, 2 cos π}
+    // = {0, 0, -2}.
+    assert_eq!(
+      interpret("CoordinatesToCartesian[{2, Pi, 3}, Spherical]").unwrap(),
+      "{0, 0, -2}"
+    );
+  }
+
+  #[test]
+  fn cylindrical_to_cartesian_exact() {
+    // {r, θ, z} = {2, π, 3} → {2 cos π, 2 sin π, 3} = {-2, 0, 3}.
+    assert_eq!(
+      interpret("CoordinatesToCartesian[{2, Pi, 3}, Cylindrical]").unwrap(),
+      "{-2, 0, 3}"
+    );
+  }
+
+  #[test]
+  fn spherical_to_cartesian_numeric() {
+    assert_eq!(
+      interpret("CoordinatesToCartesian[{0.27, 0.51, 0.92}, Spherical]")
+        .unwrap(),
+      "{0.0798518563676219, 0.10486654429093223, 0.23564101706435286}"
+    );
+  }
+
+  #[test]
+  fn cylindrical_to_cartesian_numeric() {
+    assert_eq!(
+      interpret("CoordinatesToCartesian[{0.27, 0.51, 0.92}, Cylindrical]")
+        .unwrap(),
+      "{0.23564101706435286, 0.13180785665838501, 0.92}"
+    );
+  }
+
+  #[test]
+  fn spherical_inverse_round_trip() {
+    assert_eq!(
+      interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]").unwrap(),
+      "{2, Pi, 0}"
+    );
+  }
+
+  #[test]
+  fn cylindrical_inverse_round_trip() {
+    assert_eq!(
+      interpret("CoordinatesFromCartesian[{-2, 0, 3}, Cylindrical]").unwrap(),
+      "{2, Pi, 3}"
+    );
+  }
+
+  // Both x and y are zero ⇒ azimuth conventionally 0 even though
+  // ArcTan[0, 0] is Indeterminate. Matches `VectorAnalysis`.
+  #[test]
+  fn azimuth_zero_when_xy_both_zero() {
+    let r = interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]")
+      .unwrap();
+    assert!(r.ends_with(", 0}"), "azimuth should be 0, got: {}", r);
+    let r2 = interpret("CoordinatesFromCartesian[{0, 0, 5}, Cylindrical]")
+      .unwrap();
+    assert!(r2.contains(", 0,"), "azimuth should be 0, got: {}", r2);
   }
 }
 
