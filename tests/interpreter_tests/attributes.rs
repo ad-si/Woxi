@@ -508,10 +508,7 @@ mod hold_all_complete_blocks_upvalues {
   #[test]
   fn upvalue_normally_fires() {
     clear_state();
-    assert_eq!(
-      interpret("ClearAll[g, a]; g[a] ^= 3; g[a]").unwrap(),
-      "3"
-    );
+    assert_eq!(interpret("ClearAll[g, a]; g[a] ^= 3; g[a]").unwrap(), "3");
   }
 
   #[test]
