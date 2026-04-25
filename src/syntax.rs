@@ -4271,6 +4271,23 @@ pub fn extract_neg_power_info(expr: &Expr) -> Option<(&Expr, i128)> {
   }
 }
 
+/// True for atomic exponents that don't need parentheses inside a Quantity
+/// unit display. Wolfram renders `Watts^0.24` (no parens) but parenthesizes
+/// compound exponents like `Watts^(1+a)` and `Watts^(1/3)`. A Rational is
+/// displayed as the infix expression `n/d` in InputForm, so it needs parens.
+fn is_quantity_exp_atom(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::Identifier(_)
+      | Expr::Constant(_)
+      | Expr::String(_)
+  )
+}
+
 /// Format a Quantity unit expression without quoting.
 /// Wolfram displays units unquoted: Meters, Miles/Hours, Meters/Seconds^2
 fn quantity_unit_to_string(unit: &Expr) -> String {
@@ -4288,7 +4305,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
       right,
     } => {
       let exp_str = expr_to_string(right);
-      let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
+      let exp_fmt = if is_quantity_exp_atom(right) {
         exp_str
       } else {
         format!("({})", exp_str)
@@ -4320,7 +4337,7 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
     Expr::BinaryOp { .. } => expr_to_string(unit),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       let exp_str = expr_to_string(&args[1]);
-      let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
+      let exp_fmt = if is_quantity_exp_atom(&args[1]) {
         exp_str
       } else {
         format!("({})", exp_str)

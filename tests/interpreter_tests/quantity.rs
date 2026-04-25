@@ -955,6 +955,31 @@ fn quantity_power_third() {
   );
 }
 
+#[test]
+fn quantity_real_exponent_no_parens() {
+  // A Real exponent in a Quantity unit renders without parentheses,
+  // matching wolframscript: Watts^0.24, not Watts^(0.24).
+  assert_eq!(
+    interpret(r#"Quantity[4., "watt"]^(.24)"#).unwrap(),
+    "Quantity[1.3947436663504054, Watts^0.24]"
+  );
+}
+
+#[test]
+fn quantity_rational_exponent_keeps_parens() {
+  // A Rational exponent prints as `n/d` so it needs parens to disambiguate
+  // from `Watts^n / d`. Wolfram displays it as Watts^(1/3).
+  assert_eq!(
+    interpret(r#"Quantity[8, "Meters"^3]^(1/3)"#).unwrap(),
+    "Quantity[2, Meters]"
+  );
+  // Confirm the parens form on a unit that doesn't simplify away.
+  assert_eq!(
+    interpret(r#"Quantity[4., "watt"]^(1/3)"#).unwrap(),
+    "Quantity[1.5874010519681994, Watts^(1/3)]"
+  );
+}
+
 // ─── Extended units: Time ──────────────────────────────────────────────────
 
 #[test]
