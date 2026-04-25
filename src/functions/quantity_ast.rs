@@ -1576,13 +1576,20 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => {
       // QuantityMagnitude[Quantity[m, u]] → m
       if let Some((mag, _unit)) = is_quantity(&args[0]) {
-        Ok(mag.clone())
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "QuantityMagnitude".to_string(),
-          args: args.to_vec(),
-        })
+        return Ok(mag.clone());
       }
+      // Thread over a list of quantities (matches wolframscript).
+      if let Expr::List(items) = &args[0] {
+        let mapped: Result<Vec<Expr>, InterpreterError> = items
+          .iter()
+          .map(|it| quantity_magnitude_ast(std::slice::from_ref(it)))
+          .collect();
+        return Ok(Expr::List(mapped?));
+      }
+      Ok(Expr::FunctionCall {
+        name: "QuantityMagnitude".to_string(),
+        args: args.to_vec(),
+      })
     }
     2 => {
       // QuantityMagnitude[Quantity[m, u], target_unit] → convert, return magnitude
@@ -1591,19 +1598,25 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let from_name = unit_name(unit);
         let to_name = unit_name(target);
         if let (Some(from), Some(to)) = (from_name, to_name) {
-          convert_magnitude(mag, from, to)
-        } else {
-          Ok(Expr::FunctionCall {
-            name: "QuantityMagnitude".to_string(),
-            args: args.to_vec(),
-          })
+          return convert_magnitude(mag, from, to);
         }
-      } else {
-        Ok(Expr::FunctionCall {
+        return Ok(Expr::FunctionCall {
           name: "QuantityMagnitude".to_string(),
           args: args.to_vec(),
-        })
+        });
       }
+      // Thread over a list of quantities; pass the target unit through.
+      if let Expr::List(items) = &args[0] {
+        let mapped: Result<Vec<Expr>, InterpreterError> = items
+          .iter()
+          .map(|it| quantity_magnitude_ast(&[it.clone(), args[1].clone()]))
+          .collect();
+        return Ok(Expr::List(mapped?));
+      }
+      Ok(Expr::FunctionCall {
+        name: "QuantityMagnitude".to_string(),
+        args: args.to_vec(),
+      })
     }
     _ => Err(InterpreterError::EvaluationError(
       "QuantityMagnitude expects 1 or 2 arguments".into(),
