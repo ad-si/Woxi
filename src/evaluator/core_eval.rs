@@ -834,6 +834,37 @@ pub fn evaluate_expr_to_expr_inner(
             }
             return Ok(Expr::Identifier("Null".to_string()));
           }
+          // OwnValues[sym] =. clears the OwnValue for sym (equivalent to
+          // sym =.). Wolfram returns Null whether or not the value was set.
+          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+            && head == "OwnValues"
+            && lhs_args.len() == 1
+            && let Expr::Identifier(var_name) = &lhs_args[0]
+          {
+            ENV.with(|e| e.borrow_mut().remove(var_name));
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // SubValues[sym] =. and DownValues[sym] =. clear the corresponding
+          // function definitions for sym.
+          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+            && (head == "DownValues" || head == "SubValues")
+            && lhs_args.len() == 1
+            && let Expr::Identifier(sym_name) = &lhs_args[0]
+          {
+            crate::FUNC_DEFS.with(|m| {
+              m.borrow_mut().remove(sym_name);
+            });
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // UpValues[sym] =. and Messages[sym] =. — Woxi has no per-symbol
+          // upvalue/message storage yet; treat as no-op success.
+          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+            && (head == "UpValues" || head == "Messages")
+            && lhs_args.len() == 1
+            && matches!(&lhs_args[0], Expr::Identifier(_))
+          {
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
           // Pattern-based unset: f[args] =.
           // Requires a matching DownValue in FUNC_DEFS; otherwise Mathematica
           // emits an 'Unset::norep' warning and returns $Failed.
@@ -1685,8 +1716,7 @@ pub fn evaluate_expr_to_expr_inner(
                   || matches!(right, Expr::UnaryOp { operand, .. }
                   if matches!(operand.as_ref(), Expr::Real(_)));
               if involves_real {
-                let mut tol =
-                  f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
+                let mut tol = f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
                 let bigfloat_prec = [left, right]
                   .iter()
                   .filter_map(|e| match e {
@@ -1695,8 +1725,7 @@ pub fn evaluate_expr_to_expr_inner(
                   })
                   .reduce(f64::min);
                 if let Some(p) = bigfloat_prec {
-                  let prec_tol =
-                    f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
+                  let prec_tol = f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
                   if prec_tol > tol {
                     tol = prec_tol;
                   }
