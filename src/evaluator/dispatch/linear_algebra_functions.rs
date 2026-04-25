@@ -337,6 +337,24 @@ pub fn dispatch_linear_algebra_functions(
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
+    // ScalarTripleProduct[a, b, c] = a · (b × c). Originally part of the
+    // legacy VectorAnalysis package — wolframscript's `-code` mode also
+    // leaves it unevaluated, so the value-level reduction here matches
+    // the mathics expectation (and is consistent with how Cross/Dot are
+    // already evaluated eagerly).
+    "ScalarTripleProduct" if args.len() == 3 => {
+      let cross_bc = match crate::functions::linear_algebra_ast::cross_ast(
+        &[args[1].clone(), args[2].clone()],
+      ) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let dot_call = Expr::FunctionCall {
+        name: "Dot".to_string(),
+        args: vec![args[0].clone(), cross_bc],
+      };
+      return Some(evaluate_expr_to_expr(&dot_call));
+    }
     "TensorWedge" if !args.is_empty() => {
       return Some(crate::functions::linear_algebra_ast::tensor_wedge_ast(
         args,

@@ -478,6 +478,43 @@ mod cross {
   }
 }
 
+mod scalar_triple_product {
+  use super::*;
+
+  #[test]
+  fn scalar_triple_product_integers() {
+    // ScalarTripleProduct[a, b, c] = a · (b × c).
+    // For a=(-2,3,1), b=(0,4,0), c=(-1,3,3):
+    //   b × c = (12, 0, 4) and a · (12,0,4) = -24 + 0 + 4 = -20.
+    assert_eq!(
+      interpret("ScalarTripleProduct[{-2,3,1},{0,4,0},{-1,3,3}]").unwrap(),
+      "-20"
+    );
+  }
+
+  #[test]
+  fn scalar_triple_product_floats() {
+    let result = interpret(
+      "ScalarTripleProduct[{-1.4,0.6,0.2}, {0.1,0.6,1.7}, {0.7,-1.5,-0.2}]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-2.79)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn scalar_triple_product_symbolic() {
+    // Cyclic: ScalarTripleProduct[a, b, c] = a·(b×c) for symbolic vectors.
+    let result =
+      interpret("ScalarTripleProduct[{a, b, c}, {d, e, f}, {g, h, i}]")
+        .unwrap();
+    // Expand the determinant: a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g).
+    // We just check that the result mentions the right pieces.
+    assert!(result.contains("e*i") || result.contains("i*e"));
+    assert!(result.contains("f*h") || result.contains("h*f"));
+  }
+}
+
 mod projection {
   use super::*;
 

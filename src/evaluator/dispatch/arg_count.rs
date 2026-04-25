@@ -859,6 +859,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Run" => Some((1, 1)),
     "Save" => Some((2, 2)),
     "SawtoothWave" => Some((1, 2)),
+    "ScalarTripleProduct" => Some((3, 3)),
     "ScalingMatrix" => Some((1, 1)),
     "ScalingTransform" => Some((1, 2)),
     "Scan" => Some((1, 2)),
