@@ -1758,7 +1758,13 @@ pub fn evaluate_expr_to_expr_inner(
           ComparisonOp::SameQ => {
             // SameQ tests structural identity, not numeric equality.
             // Integer[1] !== Real[1.] even though they are numerically equal.
+            // Special case: a machine-precision Real and a BigFloat with
+            // a precision tag inside the machine-precision band collapse
+            // to the same f64 — Wolfram treats them as SameQ.
             expr_to_string(left) == expr_to_string(right)
+              || crate::functions::boolean_ast::same_q_real_bigfloat(
+                left, right,
+              )
           }
           ComparisonOp::Equal => {
             // Two BigFloats with > ~16 digits of precision can carry
@@ -1773,8 +1779,7 @@ pub fn evaluate_expr_to_expr_inner(
             {
               // Compare to (shared - 1) digits so a 1-ULP difference at
               // the last shared digit stays equal-within-tolerance.
-              let shared =
-                (p_l.min(*p_r).floor() as usize).saturating_sub(1);
+              let shared = (p_l.min(*p_r).floor() as usize).saturating_sub(1);
               if shared > 0
                 && !crate::functions::boolean_ast::bigfloat_digits_match_to(
                   d_l, d_r, shared,

@@ -167,11 +167,45 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args.iter().skip(1) {
     let val = evaluate_expr_to_expr(arg)?;
     let val_str = crate::syntax::expr_to_string(&val);
-    if val_str != first_str {
+    if val_str != first_str && !same_q_real_bigfloat(&first, &val) {
       return Ok(Expr::Identifier("False".to_string()));
     }
   }
   Ok(Expr::Identifier("True".to_string()))
+}
+
+/// Special-case SameQ between a machine-precision `Real` and a BigFloat
+/// whose precision tag is close to MachinePrecision (≈15.95 digits, the
+/// f64 mantissa precision). Wolfram treats `2./9. === .2222…`15.9546`
+/// as True even though one side carries an explicit precision marker.
+/// The match requires that the two values agree at f64 resolution.
+pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
+  fn as_pair(e: &Expr) -> Option<(f64, Option<f64>)> {
+    match e {
+      Expr::Real(f) => Some((*f, None)),
+      Expr::BigFloat(s, p) => s.parse::<f64>().ok().map(|f| (f, Some(*p))),
+      _ => None,
+    }
+  }
+  let Some((va, pa)) = as_pair(a) else {
+    return false;
+  };
+  let Some((vb, pb)) = as_pair(b) else {
+    return false;
+  };
+  // At least one side must be a machine Real and the other a BigFloat
+  // with precision in the machine-precision band; otherwise the regular
+  // string comparison decides.
+  let machine_band = |p: Option<f64>| -> bool {
+    matches!(p, None) || matches!(p, Some(p) if (15.0..=16.5).contains(&p))
+  };
+  if !(machine_band(pa) && machine_band(pb)) {
+    return false;
+  }
+  if pa.is_none() && pb.is_none() {
+    return false; // two plain Reals — defer to string equality
+  }
+  va.to_bits() == vb.to_bits()
 }
 
 /// UnsameQ[expr1, expr2] - Tests whether expressions are not identical
