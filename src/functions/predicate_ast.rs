@@ -1289,7 +1289,9 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Length expects exactly 1 argument".into(),
     ));
   }
-  let len = match &args[0] {
+  // Unevaluated[expr] is consumed by Length: count elements of expr directly.
+  let stripped = crate::evaluator::strip_unevaluated(&args[0]);
+  let len = match &stripped {
     Expr::List(items) => items.len() as i128,
     Expr::Association(items) => items.len() as i128,
     // Rational[n, d] and Complex[re, im] are atoms with length 0
@@ -1319,7 +1321,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { args, .. } => args.len() as i128,
     Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
       if let Some((_head, ha_args)) =
-        crate::functions::list_helpers_ast::expr_to_head_args(&args[0])
+        crate::functions::list_helpers_ast::expr_to_head_args(&stripped)
       {
         ha_args.len() as i128
       } else {

@@ -7,38 +7,88 @@ use super::*;
 /// (head_name, args) form so that First/Rest/Part/etc. can operate on them.
 ///
 /// Returns None for atoms and already-handled types (List, FunctionCall).
+/// Flatten a chained binary operator (Plus/Times/And/Or/StringJoin/Alternatives)
+/// into its full n-ary argument list. e.g. `(((1+2)+3)+4)` → `[1, 2, 3, 4]`.
+fn flatten_assoc_binop(
+  op: crate::syntax::BinaryOperator,
+  left: &crate::syntax::Expr,
+  right: &crate::syntax::Expr,
+) -> Vec<crate::syntax::Expr> {
+  let mut out = flatten_assoc_one(op, left);
+  out.extend(flatten_assoc_one(op, right));
+  out
+}
+
+fn flatten_assoc_one(
+  op: crate::syntax::BinaryOperator,
+  expr: &crate::syntax::Expr,
+) -> Vec<crate::syntax::Expr> {
+  if let crate::syntax::Expr::BinaryOp {
+    op: inner_op,
+    left,
+    right,
+  } = expr
+    && *inner_op == op
+  {
+    flatten_assoc_binop(op, left, right)
+  } else {
+    vec![expr.clone()]
+  }
+}
+
 pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
   use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::BinaryOp { op, left, right } => {
       let (head, args) = match op {
-        BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Plus => (
+          "Plus",
+          flatten_assoc_binop(BinaryOperator::Plus, left, right),
+        ),
         BinaryOperator::Minus => {
           // a - b  =  Plus[a, Times[-1, b]]
           let neg_right = Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![Expr::Integer(-1), *right.clone()],
           };
-          ("Plus", vec![*left.clone(), neg_right])
+          // Still flatten any further chained Plus on the left.
+          let mut args =
+            flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
+          args.push(neg_right);
+          ("Plus", args)
         }
-        BinaryOperator::Times => ("Times", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Times => (
+          "Times",
+          flatten_assoc_binop(BinaryOperator::Times, left, right),
+        ),
         BinaryOperator::Divide => {
           // a / b  =  Times[a, Power[b, -1]]
           let inv_right = Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![*right.clone(), Expr::Integer(-1)],
           };
-          ("Times", vec![*left.clone(), inv_right])
+          let mut args =
+            flatten_assoc_one(BinaryOperator::Times, left.as_ref());
+          args.push(inv_right);
+          ("Times", args)
         }
         BinaryOperator::Power => ("Power", vec![*left.clone(), *right.clone()]),
-        BinaryOperator::And => ("And", vec![*left.clone(), *right.clone()]),
-        BinaryOperator::Or => ("Or", vec![*left.clone(), *right.clone()]),
-        BinaryOperator::StringJoin => {
-          ("StringJoin", vec![*left.clone(), *right.clone()])
-        }
-        BinaryOperator::Alternatives => {
-          ("Alternatives", vec![*left.clone(), *right.clone()])
-        }
+        BinaryOperator::And => (
+          "And",
+          flatten_assoc_binop(BinaryOperator::And, left, right),
+        ),
+        BinaryOperator::Or => (
+          "Or",
+          flatten_assoc_binop(BinaryOperator::Or, left, right),
+        ),
+        BinaryOperator::StringJoin => (
+          "StringJoin",
+          flatten_assoc_binop(BinaryOperator::StringJoin, left, right),
+        ),
+        BinaryOperator::Alternatives => (
+          "Alternatives",
+          flatten_assoc_binop(BinaryOperator::Alternatives, left, right),
+        ),
       };
       Some((head.to_string(), args))
     }

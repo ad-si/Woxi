@@ -270,6 +270,13 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sqrt expects exactly 1 argument".into(),
     ));
   }
+  // Strip a top-level Unevaluated wrapper before computing.
+  if let Expr::FunctionCall { name, args: u_args } = &args[0]
+    && name == "Unevaluated"
+    && u_args.len() == 1
+  {
+    return sqrt_ast(&[u_args[0].clone()]);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }

@@ -89,6 +89,19 @@ fn evaluate_args_with_hold(
   }
 }
 
+/// If `expr` is `Unevaluated[inner]`, return `inner`; otherwise return `expr`
+/// unchanged. Used by select built-ins (Length, Sqrt, etc.) that consume
+/// the Unevaluated wrapper before computing.
+pub fn strip_unevaluated(expr: &Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Unevaluated"
+    && args.len() == 1
+  {
+    return args[0].clone();
+  }
+  expr.clone()
+}
+
 /// If `arg` is `Evaluate[expr]`, evaluate `expr`. Otherwise return `arg`
 /// unchanged. (Only the top-level Evaluate is unwrapped — nested calls
 /// keep their normal evaluation rules.)
