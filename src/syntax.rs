@@ -1356,6 +1356,23 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         let with_e = format!("{}e{}", &s[..idx], &s[idx + 2..]);
         Expr::Real(with_e.parse().unwrap_or(0.0))
       } else {
+        // Detect a literal zero with 18+ trailing zeros after the decimal
+        // point — Wolfram treats `0.000...0` (with at least 18 zeros) as
+        // an accuracy-tagged Real with accuracy = number of zeros. Up to
+        // 17 zeros, the literal stays a machine Real(0.).
+        if let Some(dot_pos) = s.find('.') {
+          let int_part = &s[..dot_pos];
+          let frac_part = &s[dot_pos + 1..];
+          let int_zero = int_part.is_empty()
+            || int_part.chars().all(|c| c == '0' || c == '+' || c == '-');
+          if int_zero
+            && frac_part.len() >= 18
+            && frac_part.chars().all(|c| c == '0')
+          {
+            let acc = frac_part.len() as f64;
+            return Expr::BigFloat("0".to_string(), acc);
+          }
+        }
         Expr::Real(s.parse().unwrap_or(0.0))
       }
     }
@@ -1384,12 +1401,19 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         Expr::Real(value_str.parse().unwrap_or(0.0))
       } else {
         let value_f64: f64 = value_str.parse().unwrap_or(0.0);
-        // A zero value loses its precision tag in Wolfram and is just `0.`
-        // (the accuracy variant displays differently but we collapse it
-        // to Real(0.) for now since BigFloat can't represent a zero value
-        // distinctly).
         if value_f64 == 0.0 {
-          Expr::Real(0.0)
+          // For accuracy form `0.``α`, preserve the accuracy as a BigFloat
+          // with value "0" and the parsed accuracy. The display path
+          // formats BigFloat("0", α) as `0``α.`. For precision form
+          // `0.`α`, the precision tag is meaningless on a zero value
+          // and Wolfram drops it (output is just `0.`).
+          if double {
+            let acc: f64 = prec_str.parse().unwrap_or(0.0);
+            let acc = acc.max(1.0);
+            Expr::BigFloat("0".to_string(), acc)
+          } else {
+            Expr::Real(0.0)
+          }
         } else {
           let raw_prec: f64 = prec_str.parse().unwrap_or(0.0);
           // Accuracy form: precision = accuracy + log10(|value|).
@@ -3926,6 +3950,12 @@ fn format_precision(prec: f64) -> String {
 }
 
 pub fn format_bigfloat(digits: &str, prec: f64) -> String {
+  // Special case: BigFloat("0", α) is the accuracy form `0``α.` (zero with
+  // accuracy α). Wolfram displays the integer 0 followed by a double
+  // backtick and the accuracy.
+  if digits == "0" {
+    return format!("0``{}", format_precision(prec));
+  }
   let (is_negative, abs_digits) = if let Some(rest) = digits.strip_prefix('-') {
     (true, rest)
   } else {

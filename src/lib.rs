@@ -759,7 +759,28 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   if trimmed.contains('.')
     && let Ok(n) = trimmed.parse::<f64>()
   {
-    return Ok(format_real_result(n));
+    // Skip the fast path when the literal is `0.000...0` with more than
+    // 17 trailing zeros — Wolfram parses that as an accuracy-tagged Real,
+    // displayed as `0``N.`. Up to 17 zeros it stays as a machine Real.
+    // The full parser handles the accuracy-tagged case via Rule::Real.
+    if n == 0.0
+      && let Some(dot) = trimmed.find('.')
+    {
+      let int_part = &trimmed[..dot];
+      let frac_part = &trimmed[dot + 1..];
+      let int_zero = int_part.is_empty()
+        || int_part.chars().all(|c| c == '0' || c == '+' || c == '-');
+      if int_zero
+        && frac_part.len() >= 18
+        && frac_part.chars().all(|c| c == '0')
+      {
+        // Fall through to the full parser.
+      } else {
+        return Ok(format_real_result(n));
+      }
+    } else {
+      return Ok(format_real_result(n));
+    }
   }
   // Check for quoted string - return content without quotes (like wolframscript)
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
