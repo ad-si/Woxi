@@ -384,12 +384,28 @@ fn collect_option_bindings(
     }
   }
 
-  // Extract explicit options from the argument (could be a Sequence of rules)
-  let explicit_rules = match opts_arg {
-    Expr::FunctionCall { name, args } if name == "Sequence" => args.clone(),
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } => vec![opts_arg.clone()],
-    _ => vec![],
-  };
+  // Extract explicit options from the argument. Wolfram accepts a
+  // single rule, a Sequence of rules, a list of rules, or arbitrarily-
+  // nested lists/Sequences thereof — `f[x, {{{n -> 4}}}]` should still
+  // pull `n -> 4` out for OptionValue lookups.
+  fn collect_rules(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => out.push(expr.clone()),
+      Expr::List(items) => {
+        for item in items {
+          collect_rules(item, out);
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "Sequence" => {
+        for arg in args {
+          collect_rules(arg, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut explicit_rules: Vec<Expr> = Vec::new();
+  collect_rules(opts_arg, &mut explicit_rules);
 
   // Override defaults with explicit options
   for rule in &explicit_rules {

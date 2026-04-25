@@ -530,4 +530,65 @@ mod option_value {
       "9"
     );
   }
+
+  // Regression tests for cases 1660 and 1661 — OptionsPattern must accept
+  // a single rule, a flat list of rules, or arbitrarily-nested lists of
+  // rules and still surface the bound options to OptionValue lookups.
+  #[test]
+  fn options_pattern_accepts_bare_rule() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x, n -> 4]"
+      )
+      .unwrap(),
+      "x^4"
+    );
+  }
+
+  #[test]
+  fn options_pattern_accepts_single_list() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x, {n -> 4}]"
+      )
+      .unwrap(),
+      "x^4"
+    );
+  }
+
+  #[test]
+  fn options_pattern_accepts_nested_list() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x, {{{n -> 4}}}]"
+      )
+      .unwrap(),
+      "x^4"
+    );
+  }
+
+  #[test]
+  fn options_pattern_default_when_no_options_passed() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x]"
+      )
+      .unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn options_pattern_rule_delayed_resolves_through_env() {
+    // Mirrors test_cases case 1660 — RuleDelayed defers evaluation of the
+    // RHS until OptionValue lookup time, so a later assignment to `a` is
+    // picked up.
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; e = f[x, n :> a]; a = 5; e"
+      )
+      .unwrap(),
+      "x^5"
+    );
+  }
 }
