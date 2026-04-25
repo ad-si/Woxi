@@ -833,7 +833,7 @@ mod cdf {
   fn bernoulli() {
     assert_eq!(
       interpret("CDF[BernoulliDistribution[p], k]").unwrap(),
-      "Piecewise[{{0, k < 0}, {1 - p, 0 <= k < 1}}, 1]"
+      "Piecewise[{{0, k < 0}, {1 - p, Inequality[0, LessEqual, k, Less, 1]}}, 1]"
     );
   }
 
@@ -1801,7 +1801,10 @@ mod location_test {
       result
     );
     assert!(result.contains("Statistic"), "Expected 'Statistic' header");
-    assert!(result.contains("P\u{2010}Value"), "Expected 'P-Value' header");
+    assert!(
+      result.contains("P\u{2010}Value"),
+      "Expected 'P-Value' header"
+    );
   }
 
   #[test]
@@ -2551,7 +2554,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SL", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/sigma])/Sqrt[2]]/2, mu < x <= mu + sigma}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/sigma])/Sqrt[2]])/2, x > mu + sigma}}, 0]"
+      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/sigma])/Sqrt[2]]/2, Inequality[mu, Less, x, LessEqual, mu + sigma]}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/sigma])/Sqrt[2]])/2, x > mu + sigma}}, 0]"
     );
   }
 
@@ -2570,7 +2573,7 @@ mod johnson_distribution {
         r#"CDF[JohnsonDistribution["SB", gamma, delta, mu, sigma], x]"#
       )
       .unwrap(),
-      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]]/2, mu < x < mu + sigma/2}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]])/2, mu + sigma/2 <= x < mu + sigma}, {1, x >= mu + sigma}}, 0]"
+      "Piecewise[{{Erfc[(-gamma - delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]]/2, mu < x < mu + sigma/2}, {(1 + Erf[(gamma + delta*Log[(-mu + x)/(mu + sigma - x)])/Sqrt[2]])/2, Inequality[mu + sigma/2, LessEqual, x, Less, mu + sigma]}, {1, x >= mu + sigma}}, 0]"
     );
   }
 

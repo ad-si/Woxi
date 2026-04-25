@@ -762,9 +762,12 @@ mod equal_edge_cases {
   #[test]
   fn equal_mixed_with_less_keeps_inequality() {
     // `a == b <= c` stays as a chain (Equal + Less-direction, no Unequal
-    // and no opposite direction) — matches wolframscript's
-    // `Inequality[a, Equal, b, LessEqual, c]` semantic.
-    assert_eq!(interpret("a == b <= c").unwrap(), "a == b <= c");
+    // and no opposite direction) — wolframscript displays the head form
+    // `Inequality[a, Equal, b, LessEqual, c]`.
+    assert_eq!(
+      interpret("a == b <= c").unwrap(),
+      "Inequality[a, Equal, b, LessEqual, c]"
+    );
   }
 
   #[test]

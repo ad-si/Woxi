@@ -6591,29 +6591,6 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             .map(|e| format_expr(e, ExprForm::Input))
             .collect();
           parts.join(op_str)
-        } else if is_output {
-          // OutputForm: render mixed chained comparison as infix, e.g. 0 <= x < 1
-          let mut result = String::new();
-          for (i, operand) in operands.iter().enumerate() {
-            if i > 0 {
-              result.push(' ');
-            }
-            result.push_str(&fmt(operand));
-            if i < operators.len() {
-              let op_str = match &operators[i] {
-                ComparisonOp::Less => " <",
-                ComparisonOp::LessEqual => " <=",
-                ComparisonOp::Greater => " >",
-                ComparisonOp::GreaterEqual => " >=",
-                ComparisonOp::Equal => " ==",
-                ComparisonOp::NotEqual => " !=",
-                ComparisonOp::SameQ => " ===",
-                ComparisonOp::UnsameQ => " =!=",
-              };
-              result.push_str(op_str);
-            }
-          }
-          result
         } else {
           let mut parts = Vec::with_capacity(operands.len() + operators.len());
           for (i, operand) in operands.iter().enumerate() {
