@@ -403,8 +403,8 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     };
     let re = to_real(&args[0]);
     let im = to_real(&args[1]);
-    let zero_re =
-      matches!(&re, Expr::Real(f) if *f == 0.0) || matches!(&re, Expr::Integer(0));
+    let zero_re = matches!(&re, Expr::Real(f) if *f == 0.0)
+      || matches!(&re, Expr::Integer(0));
     if zero_re {
       return Expr::FunctionCall {
         name: "Times".to_string(),
@@ -3110,7 +3110,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
-    if total != 1.0 {
+    // Keep a Real(1.0) coefficient when the symbolic factors include `I`,
+    // so `1. * I` produces `Times[1., I]` (which displays as `0. + 1.*I`)
+    // instead of dropping the 1. and yielding plain `I`. For purely
+    // symbolic factors without I, `1. * x` still collapses to `x`.
+    let has_imag_factor = symbolic_args
+      .iter()
+      .any(|a| matches!(a, Expr::Identifier(s) if s == "I"));
+    if total != 1.0 || has_imag_factor {
       final_args.push(Expr::Real(total));
     }
     final_args.extend(symbolic_args);
