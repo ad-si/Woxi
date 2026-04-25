@@ -435,8 +435,27 @@ pub fn evaluate_expr_to_expr_inner(
             result
           }
           StoredValue::Raw(val) => {
-            // Parse the stored value back to Expr
-            string_to_expr(&val)
+            // Parse the stored value back to Expr. If the parsed result is
+            // itself a free symbol bound to another value (e.g. `a = b;
+            // b = 4` stored a as Raw("b")), recursively evaluate so the
+            // chain resolves all the way through.
+            let parsed = string_to_expr(&val)?;
+            if matches!(&parsed, Expr::Identifier(s) if s == name) {
+              return Ok(parsed);
+            }
+            if !needs_reevaluation(&parsed, name) {
+              return Ok(parsed);
+            }
+            let already =
+              SYMBOLS_BEING_EVALUATED.with(|s| s.borrow().contains(name));
+            if already {
+              return Ok(parsed);
+            }
+            SYMBOLS_BEING_EVALUATED
+              .with(|s| s.borrow_mut().insert(name.clone()));
+            let result = evaluate_expr_to_expr(&parsed);
+            SYMBOLS_BEING_EVALUATED.with(|s| s.borrow_mut().remove(name));
+            result
           }
           StoredValue::Association(items) => {
             // Convert stored association back to Expr::Association
@@ -836,7 +855,10 @@ pub fn evaluate_expr_to_expr_inner(
           }
           // OwnValues[sym] =. clears the OwnValue for sym (equivalent to
           // sym =.). Wolfram returns Null whether or not the value was set.
-          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+          if let Expr::FunctionCall {
+            name: head,
+            args: lhs_args,
+          } = &args[0]
             && head == "OwnValues"
             && lhs_args.len() == 1
             && let Expr::Identifier(var_name) = &lhs_args[0]
@@ -846,7 +868,10 @@ pub fn evaluate_expr_to_expr_inner(
           }
           // SubValues[sym] =. and DownValues[sym] =. clear the corresponding
           // function definitions for sym.
-          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+          if let Expr::FunctionCall {
+            name: head,
+            args: lhs_args,
+          } = &args[0]
             && (head == "DownValues" || head == "SubValues")
             && lhs_args.len() == 1
             && let Expr::Identifier(sym_name) = &lhs_args[0]
@@ -858,7 +883,10 @@ pub fn evaluate_expr_to_expr_inner(
           }
           // UpValues[sym] =. and Messages[sym] =. — Woxi has no per-symbol
           // upvalue/message storage yet; treat as no-op success.
-          if let Expr::FunctionCall { name: head, args: lhs_args } = &args[0]
+          if let Expr::FunctionCall {
+            name: head,
+            args: lhs_args,
+          } = &args[0]
             && (head == "UpValues" || head == "Messages")
             && lhs_args.len() == 1
             && matches!(&lhs_args[0], Expr::Identifier(_))
