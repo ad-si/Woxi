@@ -16,6 +16,13 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return airy_build_value((-2, 3), (2, 3), false);
   }
 
+  // AiryAi[AiryAiZero[k]] = 0 by definition
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "AiryAiZero"
+  {
+    return Ok(Expr::Integer(0));
+  }
+
   // Numeric evaluation
   if let Some(x_f) = expr_to_f64(&args[0])
     && matches!(&args[0], Expr::Real(_))
@@ -96,6 +103,13 @@ pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // AiryBi[0] = 3^(5/6) / (3 * Gamma[2/3])
   if matches!(&args[0], Expr::Integer(0)) {
     return airy_build_value((5, 6), (2, 3), true);
+  }
+
+  // AiryBi[AiryBiZero[k]] = 0 by definition
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && name == "AiryBiZero"
+  {
+    return Ok(Expr::Integer(0));
   }
 
   // Numeric evaluation
