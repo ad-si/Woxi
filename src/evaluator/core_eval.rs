@@ -47,26 +47,39 @@ fn has_hold_attribute(name: &str, attr: &str) -> bool {
 
 /// Evaluate function arguments respecting Hold attributes.
 /// Returns the evaluated (or held) arguments based on the function's attributes.
+/// Held arguments still honour `Evaluate[expr]`: it forces evaluation of the
+/// wrapped expression even though the surrounding head holds. HoldAllComplete
+/// is the exception — it suppresses Evaluate too.
 fn evaluate_args_with_hold(
   name: &str,
   args: &[Expr],
 ) -> Result<Vec<Expr>, InterpreterError> {
-  let hold_all = has_hold_attribute(name, "HoldAll")
-    || has_hold_attribute(name, "HoldAllComplete");
+  let hold_all_complete = has_hold_attribute(name, "HoldAllComplete");
+  let hold_all = has_hold_attribute(name, "HoldAll") || hold_all_complete;
   let hold_first = has_hold_attribute(name, "HoldFirst");
   let hold_rest = has_hold_attribute(name, "HoldRest");
 
+  let process_held = |arg: &Expr| -> Result<Expr, InterpreterError> {
+    if hold_all_complete {
+      Ok(arg.clone())
+    } else {
+      unwrap_top_level_evaluate(arg)
+    }
+  };
+
   if hold_all {
-    Ok(args.to_vec())
+    args.iter().map(process_held).collect()
   } else if hold_first && !args.is_empty() {
-    let mut result = vec![args[0].clone()];
+    let mut result = vec![process_held(&args[0])?];
     for arg in &args[1..] {
       result.push(evaluate_expr_to_expr(arg)?);
     }
     Ok(result)
   } else if hold_rest && !args.is_empty() {
     let mut result = vec![evaluate_expr_to_expr(&args[0])?];
-    result.extend(args[1..].to_vec());
+    for arg in &args[1..] {
+      result.push(process_held(arg)?);
+    }
     Ok(result)
   } else {
     args
@@ -74,6 +87,19 @@ fn evaluate_args_with_hold(
       .map(evaluate_expr_to_expr)
       .collect::<Result<_, _>>()
   }
+}
+
+/// If `arg` is `Evaluate[expr]`, evaluate `expr`. Otherwise return `arg`
+/// unchanged. (Only the top-level Evaluate is unwrapped — nested calls
+/// keep their normal evaluation rules.)
+fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::FunctionCall { name, args } = arg
+    && name == "Evaluate"
+    && args.len() == 1
+  {
+    return evaluate_expr_to_expr(&args[0]);
+  }
+  Ok(arg.clone())
 }
 
 /// Helper to construct an RGBColor Expr from numeric values.
@@ -1305,6 +1331,20 @@ pub fn evaluate_expr_to_expr_inner(
         {
           // Flatten Sequence even in held args (unless SequenceHold)
           let args = flatten_sequences(name, args);
+          // Honour Evaluate[...] inside HoldAll wrappers like Hold and
+          // HoldForm — Evaluate forces evaluation of its argument even
+          // through a hold. HoldComplete suppresses it (matching Wolfram).
+          let args = if matches!(
+            name.as_str(),
+            "Hold" | "HoldForm" | "Function" | "Reap" | "Manipulate"
+          ) {
+            args
+              .iter()
+              .map(unwrap_top_level_evaluate)
+              .collect::<Result<Vec<Expr>, _>>()?
+          } else {
+            args
+          };
           // Pass unevaluated args to the function dispatcher
           return evaluate_function_call_ast(name, &args);
         }
