@@ -1006,6 +1006,22 @@ pub fn set_delayed_ast(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // Handle Options[f] := rules — same as Options[f] = rules (SetDelayed
+  // still evaluates the RHS to extract the rule list, which doesn't depend
+  // on f's later state). OptionValue then looks up via FUNC_OPTIONS.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Options"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    set_options_from_value(sym_name, &rhs_value)?;
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
   // Handle UpValues[sym] := rules: replay each rule as a TagSetDelayed on
   // `sym` so the upvalue dispatch (UPVALUES) picks them up. The tag is
   // the symbol named by `sym`; each rule's pattern becomes the LHS of

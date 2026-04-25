@@ -275,6 +275,19 @@ mod options {
   }
 
   #[test]
+  fn set_delayed_form() {
+    // `Options[f] := {...}` must install the rules just like the immediate
+    // form. The RHS is a static rule list, so SetDelayed and Set behave
+    // the same way for OptionValue lookup.
+    clear_state();
+    assert_eq!(
+      interpret("Options[F] := {a -> 89, b -> 37}; OptionValue[F, a]").unwrap(),
+      "89"
+    );
+    assert_eq!(interpret("Options[F]").unwrap(), "{a -> 89, b -> 37}");
+  }
+
+  #[test]
   fn multiple_functions() {
     assert_eq!(
       interpret(
