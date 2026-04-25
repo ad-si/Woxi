@@ -1987,6 +1987,35 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // RealSign[u]: D[RealSign[u], u] = Piecewise[{{0, u != 0}}, Indeterminate]
+        "RealSign" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let result = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(vec![Expr::List(vec![
+                Expr::Integer(0),
+                Expr::Comparison {
+                  operands: vec![args[0].clone(), Expr::Integer(0)],
+                  operators: vec![crate::syntax::ComparisonOp::NotEqual],
+                },
+              ])]),
+              Expr::Identifier("Indeterminate".to_string()),
+            ],
+          };
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // UnitStep[x]: D[UnitStep[x], x] = Piecewise[{{Indeterminate, x == 0}}, 0]
         "UnitStep" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;
