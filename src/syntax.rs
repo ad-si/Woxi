@@ -1369,9 +1369,15 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         // Bare backtick = machine precision, just parse as Real
         Expr::Real(value_str.parse().unwrap_or(0.0))
       } else {
-        let prec: f64 = prec_str.parse().unwrap_or(0.0);
-        let prec = prec.max(1.0);
-        Expr::BigFloat(value_str.to_string(), prec)
+        let value_f64: f64 = value_str.parse().unwrap_or(0.0);
+        // A zero value loses its precision tag in Wolfram and is just `0.`.
+        if value_f64 == 0.0 {
+          Expr::Real(0.0)
+        } else {
+          let prec: f64 = prec_str.parse().unwrap_or(0.0);
+          let prec = prec.max(1.0);
+          Expr::BigFloat(value_str.to_string(), prec)
+        }
       }
     }
     Rule::BasePrefix => {
