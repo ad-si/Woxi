@@ -785,6 +785,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Recursively set a value at a path of indices within an Expr.
 /// Supports lists and FunctionCall arguments (e.g., Grid[[1, row, col]]).
+/// Supports Span indices (e.g., `A[[;;, 2]] = {6, 7}`).
 pub fn set_part_deep(
   expr: &mut Expr,
   indices: &[Expr],
@@ -792,6 +793,50 @@ pub fn set_part_deep(
 ) -> Result<(), InterpreterError> {
   if indices.is_empty() {
     *expr = value.clone();
+    return Ok(());
+  }
+
+  // Handle Span index (e.g., 1;;n, ;;, 1;;-1) by threading the assignment
+  // over each selected position in the current list.
+  if let Expr::FunctionCall { name, args } = &indices[0]
+    && name == "Span"
+  {
+    let len = match expr {
+      Expr::List(items) => items.len() as i64,
+      Expr::FunctionCall { args, .. } => args.len() as i64,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Part assignment: cannot apply Span to this expression".into(),
+        ));
+      }
+    };
+    let positions = resolve_span(args, len)?;
+    let rhs_items = match value {
+      Expr::List(items) => Some(items.clone()),
+      _ => None,
+    };
+    if let Some(rhs_items) = &rhs_items
+      && rhs_items.len() != positions.len()
+    {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Set::partw: Cannot assign {} values to {} positions.",
+        rhs_items.len(),
+        positions.len()
+      )));
+    }
+    for (i, &pos) in positions.iter().enumerate() {
+      let actual_idx = (pos - 1) as usize;
+      let elem_value = match &rhs_items {
+        Some(items) => &items[i],
+        None => value,
+      };
+      let inner = match expr {
+        Expr::List(items) => &mut items[actual_idx],
+        Expr::FunctionCall { args, .. } => &mut args[actual_idx],
+        _ => unreachable!(),
+      };
+      set_part_deep(inner, &indices[1..], elem_value)?;
+    }
     return Ok(());
   }
 
@@ -844,4 +889,71 @@ pub fn set_part_deep(
       "Part assignment: cannot index into this expression".into(),
     )),
   }
+}
+
+/// Resolve a Span[start, end] (or Span[start, end, step]) over a sequence of
+/// `len` elements into the list of 1-based positions it selects.
+fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
+  let to_pos = |e: &Expr, default: i64| -> Result<i64, InterpreterError> {
+    match e {
+      Expr::Integer(n) => {
+        let n = *n as i64;
+        Ok(if n < 0 { len + n + 1 } else { n })
+      }
+      Expr::Identifier(s) if s == "All" => Ok(default),
+      _ => Err(InterpreterError::EvaluationError(
+        "Part assignment: unsupported Span endpoint".into(),
+      )),
+    }
+  };
+  let (start, end, step) = match args.len() {
+    2 => (to_pos(&args[0], 1)?, to_pos(&args[1], len)?, 1i64),
+    3 => {
+      let step_val = match &args[2] {
+        Expr::Integer(n) => *n as i64,
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Part assignment: unsupported Span step".into(),
+          ));
+        }
+      };
+      (to_pos(&args[0], 1)?, to_pos(&args[1], len)?, step_val)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Part assignment: malformed Span".into(),
+      ));
+    }
+  };
+  if step == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Part assignment: Span step cannot be zero".into(),
+    ));
+  }
+  let mut positions = Vec::new();
+  let mut p = start;
+  if step > 0 {
+    while p <= end {
+      if p < 1 || p > len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of list does not exist.",
+          p
+        )));
+      }
+      positions.push(p);
+      p += step;
+    }
+  } else {
+    while p >= end {
+      if p < 1 || p > len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of list does not exist.",
+          p
+        )));
+      }
+      positions.push(p);
+      p += step;
+    }
+  }
+  Ok(positions)
 }
