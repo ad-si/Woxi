@@ -4081,3 +4081,35 @@ mod string_position_anchors {
     );
   }
 }
+
+// `ToString[BigFloat]` drops the `\`p` precision marker and truncates
+// the decimal expansion to `p` significant digits — matching
+// wolframscript: `ToString[N[Pi, 100]]` is the bare 101-char string
+// "3.<99 digits>".
+mod to_string_bigfloat {
+  use super::*;
+
+  #[test]
+  fn to_string_pi_100_strips_precision_marker() {
+    let result = interpret("ToString[N[Pi, 100]]").unwrap();
+    assert!(!result.contains('`'), "no precision marker, got: {}", result);
+    assert!(result.starts_with("3.14159265358979323846264338327"));
+    // 1 integer digit + dot + 99 fractional digits.
+    assert_eq!(result.len(), 101);
+  }
+
+  #[test]
+  fn to_string_pi_50_returns_50_significant_digits() {
+    assert_eq!(
+      interpret("ToString[N[Pi, 50]]").unwrap(),
+      "3.1415926535897932384626433832795028841971693993751"
+    );
+  }
+
+  #[test]
+  fn to_string_sqrt2_30_drops_marker() {
+    let result = interpret("ToString[N[Sqrt[2], 30]]").unwrap();
+    assert!(!result.contains('`'), "no precision marker, got: {}", result);
+    assert!(result.starts_with("1.41421356237309504880168872420"));
+  }
+}
