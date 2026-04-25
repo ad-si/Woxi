@@ -216,7 +216,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,,🚫,,6.0,224
+ColorData,List of color data categories (no-arg form only),🚧,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227

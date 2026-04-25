@@ -154,6 +154,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CoefficientRules" => Some((2, 2)),
     "Collect" => Some((2, 3)),
     "ColorConvert" => Some((2, 2)),
+    "ColorData" => Some((0, 2)),
     "CarmichaelLambda" => Some((1, 1)),
     "ColorNegate" => Some((1, 1)),
     "ColorQ" => Some((1, 1)),

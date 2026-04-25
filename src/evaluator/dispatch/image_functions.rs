@@ -103,6 +103,15 @@ pub fn dispatch_image_functions(
         return Some(crate::functions::image_ast::color_convert_ast(args));
       }
     }
+    // ColorData[]: list of available data categories.
+    "ColorData" if args.is_empty() => {
+      return Some(Ok(Expr::List(vec![
+        Expr::String("Gradients".to_string()),
+        Expr::String("Indexed".to_string()),
+        Expr::String("Named".to_string()),
+        Expr::String("Physical".to_string()),
+      ])));
+    }
     "ImageCompose" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_compose_ast(args));
     }
