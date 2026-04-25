@@ -47,7 +47,16 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
     Expr::Real(_) => Ok(expr.clone()),
-    Expr::BigFloat(_, _) => Ok(expr.clone()),
+    // N[BigFloat] without an explicit precision collapses to a
+    // machine-precision Real, matching wolframscript:
+    // `N[1.01234567890123456789]` → `1.0123456789012346`.
+    Expr::BigFloat(digits, _) => {
+      if let Ok(f) = digits.parse::<f64>() {
+        Ok(Expr::Real(f))
+      } else {
+        Ok(expr.clone())
+      }
+    }
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
       Ok(Expr::List(results?))

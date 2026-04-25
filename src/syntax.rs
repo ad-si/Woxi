@@ -1356,21 +1356,46 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         let with_e = format!("{}e{}", &s[..idx], &s[idx + 2..]);
         Expr::Real(with_e.parse().unwrap_or(0.0))
       } else {
-        // Detect a literal zero with 18+ trailing zeros after the decimal
-        // point — Wolfram treats `0.000...0` (with at least 18 zeros) as
-        // an accuracy-tagged Real with accuracy = number of zeros. Up to
-        // 17 zeros, the literal stays a machine Real(0.).
+        // Wolfram switches a Real literal to a BigFloat once the total
+        // digit count reaches 18.
+        // - For an integer-zero part with all-zero fractional part
+        //   (`0.000…0`), it becomes the accuracy form `0``N.` where N
+        //   is the count of trailing zeros.
+        // - For non-zero values like `10.000…0` it becomes a precision
+        //   form with precision ≈ frac_len + log10(|value|).
         if let Some(dot_pos) = s.find('.') {
           let int_part = &s[..dot_pos];
           let frac_part = &s[dot_pos + 1..];
-          let int_zero = int_part.is_empty()
-            || int_part.chars().all(|c| c == '0' || c == '+' || c == '-');
-          if int_zero
-            && frac_part.len() >= 18
-            && frac_part.chars().all(|c| c == '0')
-          {
-            let acc = frac_part.len() as f64;
-            return Expr::BigFloat("0".to_string(), acc);
+          let int_signless =
+            int_part.trim_start_matches(|c| c == '+' || c == '-');
+          let int_zero = int_signless.is_empty()
+            || int_signless.chars().all(|c| c == '0');
+          let total_digits = int_signless.len() + frac_part.len();
+          if int_zero {
+            // Zero literal with at least 18 trailing fractional zeros.
+            if frac_part.len() >= 18
+              && frac_part.chars().all(|c| c == '0')
+            {
+              let acc = frac_part.len() as f64;
+              return Expr::BigFloat("0".to_string(), acc);
+            }
+          } else if total_digits >= 18 {
+            // Non-zero literal; convert to BigFloat with appropriate
+            // precision. Strip a leading sign for the stored value to
+            // match the existing BigFloat conventions, then keep the sign
+            // by prefixing the digit string with `-` if needed.
+            let value_f64: f64 = s.parse().unwrap_or(0.0);
+            if value_f64 != 0.0 {
+              let prec = frac_part.len() as f64 + value_f64.abs().log10();
+              let prec = prec.max(1.0);
+              let neg = int_part.starts_with('-');
+              let digits = if neg {
+                format!("-{}.{}", int_signless, frac_part)
+              } else {
+                format!("{}.{}", int_signless, frac_part)
+              };
+              return Expr::BigFloat(digits, prec);
+            }
           }
         }
         Expr::Real(s.parse().unwrap_or(0.0))
@@ -4028,7 +4053,7 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
     let trimmed_frac = frac_p.trim_end_matches('0');
     format!("{}{}.{}", prefix, int_p, trimmed_frac)
   } else {
-    format!("{}", digits)
+    digits.to_string()
   };
   format!("{}`{}", normalized, format_precision(prec))
 }

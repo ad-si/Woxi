@@ -759,21 +759,24 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   if trimmed.contains('.')
     && let Ok(n) = trimmed.parse::<f64>()
   {
-    // Skip the fast path when the literal is `0.000...0` with more than
-    // 17 trailing zeros — Wolfram parses that as an accuracy-tagged Real,
-    // displayed as `0``N.`. Up to 17 zeros it stays as a machine Real.
-    // The full parser handles the accuracy-tagged case via Rule::Real.
-    if n == 0.0
-      && let Some(dot) = trimmed.find('.')
-    {
+    // Skip the fast path when the literal would be parsed as an
+    // accuracy/precision-tagged BigFloat by Wolfram:
+    // - `0.000…0` with 18+ trailing zeros → accuracy form `0``N.`
+    // - non-zero literal with 18+ total digits → precision form
+    if let Some(dot) = trimmed.find('.') {
       let int_part = &trimmed[..dot];
       let frac_part = &trimmed[dot + 1..];
-      let int_zero = int_part.is_empty()
-        || int_part.chars().all(|c| c == '0' || c == '+' || c == '-');
-      if int_zero
+      let int_signless = int_part
+        .trim_start_matches(|c: char| c == '+' || c == '-');
+      let int_zero = int_signless.is_empty()
+        || int_signless.chars().all(|c| c == '0');
+      let total_digits = int_signless.len() + frac_part.len();
+      let zero_accuracy = n == 0.0
+        && int_zero
         && frac_part.len() >= 18
-        && frac_part.chars().all(|c| c == '0')
-      {
+        && frac_part.chars().all(|c| c == '0');
+      let nonzero_precision = n != 0.0 && total_digits >= 18;
+      if zero_accuracy || nonzero_precision {
         // Fall through to the full parser.
       } else {
         return Ok(format_real_result(n));
