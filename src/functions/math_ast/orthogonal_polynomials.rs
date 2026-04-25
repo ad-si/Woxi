@@ -32,6 +32,33 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // Symbolic closed forms for the small-n cases that Wolfram simplifies
+  // even when a/b/x are themselves symbolic:
+  //   P_0^{(a,b)}(x) = 1
+  //   P_1^{(a,b)}(x) = (a - b + (2 + a + b)*x) / 2
+  if n == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if n == 1 {
+    let a = args[1].clone();
+    let b = args[2].clone();
+    let x = args[3].clone();
+    let two_plus_ab = crate::functions::math_ast::plus_ast(&[
+      Expr::Integer(2),
+      a.clone(),
+      b.clone(),
+    ])?;
+    let coeff_x = crate::functions::math_ast::times_ast(&[two_plus_ab, x])?;
+    let neg_b =
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), b])?;
+    let numer = crate::functions::math_ast::plus_ast(&[a, neg_b, coeff_x])?;
+    let half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(1), Expr::Integer(2)],
+    };
+    return crate::functions::math_ast::times_ast(&[half, numer]);
+  }
+
   // Try rational evaluation for integer/rational a, b, x
   // For now, return unevaluated for symbolic args
   Ok(Expr::FunctionCall {
@@ -830,8 +857,11 @@ fn chebyshev_general_numeric(
   // Distribute the leading scalar so the U-form result is a single
   // a + b*I expression rather than `c * (a + b*I)`.
   Some(
-    crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated.clone()])
-      .unwrap_or(evaluated),
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[evaluated.clone()],
+    )
+    .unwrap_or(evaluated),
   )
 }
 

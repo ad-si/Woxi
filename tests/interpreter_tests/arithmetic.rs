@@ -329,6 +329,37 @@ mod arithmetic {
         "1/(2*(x - y)*y) - 1/(2*y*(x + y))"
       );
     }
+
+    // Bare-identifier vs additive: Wolfram's `Order[Plus[2,a,b], z]` is 1
+    // because Plus's highest-key arg `b` is alphabetically smaller than
+    // `z`, so the additive sorts first in `Times`. This applies only to
+    // bare identifiers — Power[x, n] vs additive keeps its existing
+    // ordering (`x^x*(1 + Log[x])`, not `(1 + Log[x])*x^x`).
+    #[test]
+    fn additive_before_bare_identifier_when_key_is_smaller() {
+      assert_eq!(interpret("(2 + a + b)*z").unwrap(), "(2 + a + b)*z");
+      assert_eq!(interpret("z*(2 + a + b)").unwrap(), "(2 + a + b)*z");
+    }
+
+    #[test]
+    fn bare_identifier_keeps_first_when_additive_key_is_larger() {
+      assert_eq!(interpret("a*(b + c)").unwrap(), "a*(b + c)");
+    }
+
+    #[test]
+    fn bare_identifier_keeps_first_when_keys_tie() {
+      // Plus[x, y].sort_key = "y" ties with `y`; bare identifier wins
+      // (matches `Order[x+y, y] = -1`).
+      assert_eq!(interpret("y*(x + y)").unwrap(), "y*(x + y)");
+    }
+
+    #[test]
+    fn power_factor_keeps_existing_order_against_additive() {
+      // D[x^x, x] → x^x*(1 + Log[x]). Power[x, x] is NOT a bare
+      // identifier, so the additive doesn't sort first even though
+      // sort_key("Log[x]") < sort_key("x") would suggest it should.
+      assert_eq!(interpret("D[x^x, x]").unwrap(), "x^x*(1 + Log[x])");
+    }
   }
 
   mod combine_like_bases {

@@ -2110,6 +2110,8 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
       // 2. The additive is Plus[n, var] where n < 0 and var is the same identifier:
       //    (-3+x)*x not x*(-3+x)   (monic linear factor with negative constant)
       // This matches Wolfram's canonical ordering.
+      let is_bare_identifier =
+        |e: &Expr| matches!(e, Expr::Identifier(_) | Expr::Constant(_));
       if sa == 0 && sb == 1 {
         // a is Identifier, b is additive
         if additive_contains_negated(b, a) || additive_is_neg_const_plus_ident(b, a) {
@@ -2133,6 +2135,25 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
             };
           }
         }
+        // Bare identifier vs additive: the additive sorts BEFORE the
+        // identifier when its highest-key arg is alphabetically smaller
+        // (matches Wolfram `Order[Plus[2,a,b], z] = 1`). Only applies
+        // for true bare identifiers — Power[x, n] keeps its existing
+        // comparison behaviour against additives.
+        if is_bare_identifier(a) {
+          let ak =
+            crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+          let bk =
+            crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+          let ord =
+            crate::functions::list_helpers_ast::wolfram_string_order(&bk, &ak);
+          if ord > 0 {
+            return std::cmp::Ordering::Greater; // additive first
+          }
+          if ord < 0 {
+            return std::cmp::Ordering::Less; // identifier first
+          }
+        }
       } else if sa == 1 && sb == 0 {
         // a is additive, b is Identifier
         if additive_contains_negated(a, b) || additive_is_neg_const_plus_ident(a, b) {
@@ -2151,6 +2172,23 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
             } else {
               std::cmp::Ordering::Greater
             };
+          }
+        }
+        // Mirror of the (identifier, additive) case above — only applies
+        // when b is a bare identifier so Power factors keep their
+        // existing comparison behaviour.
+        if is_bare_identifier(b) {
+          let ak =
+            crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
+          let bk =
+            crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
+          let ord =
+            crate::functions::list_helpers_ast::wolfram_string_order(&ak, &bk);
+          if ord > 0 {
+            return std::cmp::Ordering::Less; // additive first
+          }
+          if ord < 0 {
+            return std::cmp::Ordering::Greater; // identifier first
           }
         }
       }
