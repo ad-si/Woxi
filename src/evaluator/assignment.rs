@@ -710,6 +710,24 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       if has_literal_conditions {
         // Literal-match definitions go before pattern definitions but after
         // existing literal definitions (preserving definition order).
+        // Re-defining the same literal pattern (e.g. NumericQ[a] = True
+        // followed by NumericQ[a] = False) replaces the prior definition
+        // rather than shadowing it — match Wolfram's "second Set wins"
+        // semantics. Compare on params + conditions structurally.
+        let cond_strs: Vec<Option<String>> = conditions
+          .iter()
+          .map(|c| c.as_ref().map(crate::syntax::expr_to_string))
+          .collect();
+        entry.retain(|(p, c, _, _, _, _)| {
+          if p != &params {
+            return true;
+          }
+          let other_strs: Vec<Option<String>> = c
+            .iter()
+            .map(|c| c.as_ref().map(crate::syntax::expr_to_string))
+            .collect();
+          other_strs != cond_strs
+        });
         let pos = entry
           .iter()
           .position(|(_, c, _, _, _, _)| {
