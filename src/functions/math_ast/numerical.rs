@@ -176,13 +176,18 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// `astro-float` internally rounds up to 64-bit word boundaries.
 /// Minimum 128 bits (2 words) to avoid precision issues with small values.
 pub fn nominal_bits(precision: usize) -> usize {
-  // Compute the minimum bits for the requested decimal precision, then
-  // round up to the next 64-bit word boundary to match Wolfram's output
-  // behavior (which displays all digits from the full word-aligned
-  // precision, giving slightly more digits than requested).
+  // Compute decimal precision plus ~36-bit guard, padded to the next
+  // 64-bit word boundary. Mirrors Wolfram's bit budget so output digit
+  // counts line up:
+  //   p ≤ 8        →  64 bits  → 19 digits
+  //   9 ≤ p ≤ 27   → 128 bits  → 38 digits
+  //   28 ≤ p ≤ 47  → 192 bits  → 58 digits
+  //   48 ≤ p ≤ 66  → 256 bits  → 77 digits
+  // We keep a 128-bit minimum because astro-float's 64-bit operations
+  // are unstable for some inputs (e.g. division produces convert_to_radix
+  // errors).
   let base_bits =
-    (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize;
-  // Round up to next word boundary
+    (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
   let bits = (base_bits + 63) & !63;
   bits.max(128)
 }
@@ -338,10 +343,29 @@ pub fn n_eval_arbitrary(
   // number of output digits.
   let bits = nominal_bits(precision);
 
+  // Wolfram displays digit counts that match a 64-bit-aligned bit count
+  // computed from precision plus a ~36-bit guard. We always evaluate with
+  // at least 128 bits internally for stability, but truncate the displayed
+  // decimal string so the digit count tracks Wolfram's:
+  //   p ≤ 8   → 19 digits  (64-bit-equivalent)
+  //   9 ≤ p ≤ 27 → 38 digits  (128-bit)
+  //   28 ≤ p ≤ 47 → 58 digits  (192-bit)
+  //   etc.
+  let display_bits = {
+    let b = (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
+    ((b + 63) & !63).max(64)
+  };
+  // Match Wolfram's display digit counts:
+  //    64 → 19, 128 → 38, 192 → 58, 256 → 77, 320 → 96, ...
+  // floor((bits + 1) * log10(2)) reproduces this table exactly.
+  let max_display_digits =
+    ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
   match expr_to_bigfloat(expr, bits, rm, &mut cc) {
     Ok(result) => {
-      let decimal = bigfloat_to_string(&result, None, rm, &mut cc)?;
+      let decimal =
+        bigfloat_to_string(&result, Some(max_display_digits), rm, &mut cc)?;
       Ok(Expr::BigFloat(decimal, precision as f64))
     }
     Err(_) => {
