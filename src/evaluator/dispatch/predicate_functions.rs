@@ -743,25 +743,27 @@ pub fn dispatch_predicate_functions(
         // the entries whose first slot literally equals `sym`.
         let func_defs = crate::FUNC_DEFS
           .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
-        let slot_literal_for = |conds: &[Option<Expr>], param: &str| -> Option<Expr> {
-          conds.iter().find_map(|c| {
-            if let Some(Expr::Comparison { operands, operators }) = c
-              && operators.len() == 1
-              && matches!(
-                operators[0],
-                crate::syntax::ComparisonOp::SameQ
-              )
-              && operands.len() == 2
-              && let Expr::Identifier(name) = &operands[0]
-              && name == param
-            {
-              Some(operands[1].clone())
-            } else {
-              None
-            }
-          })
-        };
-        for (params, conds, _defaults, _heads, _blank_types, body) in &func_defs {
+        let slot_literal_for =
+          |conds: &[Option<Expr>], param: &str| -> Option<Expr> {
+            conds.iter().find_map(|c| {
+              if let Some(Expr::Comparison {
+                operands,
+                operators,
+              }) = c
+                && operators.len() == 1
+                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && operands.len() == 2
+                && let Expr::Identifier(name) = &operands[0]
+                && name == param
+              {
+                Some(operands[1].clone())
+              } else {
+                None
+              }
+            })
+          };
+        for (params, conds, _defaults, _heads, _blank_types, body) in &func_defs
+        {
           // Default's first slot is the symbol literal (matched as SameQ).
           let Some(slot0) = slot_literal_for(conds, &params[0]) else {
             continue;
@@ -1096,7 +1098,10 @@ pub fn dispatch_predicate_functions(
         return Some(Ok(Expr::List(matching)));
       }
     }
-    // OptionValue[name] - look up option value from current OptionsPattern context
+    // OptionValue[name] - look up option value from current OptionsPattern context.
+    // The name can be a Symbol (`OptionValue[m]`) or a String
+    // (`OptionValue["m"]`) — Wolfram looks both up against the same
+    // `Options[f]` rule list.
     "OptionValue" if args.len() == 1 => {
       let opt_arg = match evaluate_expr_to_expr(&args[0]) {
         Ok(v) => v,
@@ -1104,6 +1109,7 @@ pub fn dispatch_predicate_functions(
       };
       let opt_name = match &opt_arg {
         Expr::Identifier(name) => name.clone(),
+        Expr::String(name) => name.clone(),
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "OptionValue".to_string(),

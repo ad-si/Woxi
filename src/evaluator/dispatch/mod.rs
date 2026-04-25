@@ -405,7 +405,10 @@ fn collect_option_bindings(
   Some(bindings)
 }
 
-/// Extract the key-value pair from a Rule or RuleDelayed expression
+/// Extract the key-value pair from a Rule or RuleDelayed expression.
+/// Both Symbol keys (`m -> 7`) and String keys (`"m" -> 7`) collapse to
+/// the bare name `"m"` so that `OptionValue[m]` and `OptionValue["m"]`
+/// both find the same binding (matching Wolfram).
 fn extract_rule_pair(rule: &Expr) -> Option<(String, Expr)> {
   match rule {
     Expr::Rule {
@@ -418,6 +421,7 @@ fn extract_rule_pair(rule: &Expr) -> Option<(String, Expr)> {
     } => {
       let key = match pattern.as_ref() {
         Expr::Identifier(s) => s.clone(),
+        Expr::String(s) => s.clone(),
         _ => expr_to_string(pattern),
       };
       Some((key, *replacement.clone()))
@@ -534,7 +538,8 @@ pub fn evaluate_function_call_ast_inner(
     m.borrow()
       .get(name)
       .is_some_and(|attrs| attrs.contains(&"HoldAllComplete".to_string()))
-  }) || get_builtin_attributes(name).contains(&"HoldAllComplete");
+  }) || get_builtin_attributes(name)
+    .contains(&"HoldAllComplete");
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
     let raw = defs.get(name).cloned();

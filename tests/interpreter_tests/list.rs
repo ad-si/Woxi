@@ -7372,3 +7372,47 @@ mod table_infinity_step {
     assert_eq!(interpret("Table[i, {i, 1, 9, Infinity}]").unwrap(), "{1}");
   }
 }
+
+// `OptionValue["m"]` (string key) and `OptionValue[m]` (symbol key)
+// should both resolve against the same `Options[f]` rule list — they
+// share the same underlying name "m". Wolfram folds them together;
+// previously Woxi only matched symbol keys.
+mod option_value_string_key {
+  use super::*;
+
+  #[test]
+  fn string_key_resolves_in_options_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[x_, OptionsPattern[f]] := x ^ OptionValue["m"]; Options[f] = {"m" -> 7}; f[x]"#
+      )
+      .unwrap(),
+      "x^7"
+    );
+  }
+
+  #[test]
+  fn symbol_lookup_against_string_default() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[x_, OptionsPattern[f]] := x ^ OptionValue[m]; Options[f] = {"m" -> 7}; f[x]"#
+      )
+      .unwrap(),
+      "x^7"
+    );
+  }
+
+  #[test]
+  fn string_lookup_against_symbol_default() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[x_, OptionsPattern[f]] := x ^ OptionValue["m"]; Options[f] = {m -> 7}; f[x]"#
+      )
+      .unwrap(),
+      "x^7"
+    );
+  }
+}
