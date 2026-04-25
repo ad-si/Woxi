@@ -554,6 +554,26 @@ mod infinity_arithmetic {
       "a*b*DirectedInfinity[-I]"
     );
   }
+
+  // Inexact (machine-precision Real) directions get normalised
+  // numerically — e.g. `DirectedInfinity[1. + 2. I]` becomes
+  // `DirectedInfinity[0.4472… + 0.8944…*I]`. Exact symbolic directions
+  // like `(1 + 2 I)/Sqrt[5]` keep their closed form.
+  #[test]
+  fn directed_infinity_floating_complex_normalised() {
+    assert_eq!(
+      interpret("DirectedInfinity[1. + 2. I]").unwrap(),
+      "DirectedInfinity[0.4472135954999579 + 0.8944271909999159*I]"
+    );
+  }
+
+  #[test]
+  fn directed_infinity_exact_unit_direction_kept_symbolic() {
+    assert_eq!(
+      interpret("DirectedInfinity[(1 + 2 I)/Sqrt[5]]").unwrap(),
+      "DirectedInfinity[(1 + 2*I)/Sqrt[5]]"
+    );
+  }
 }
 
 mod constant_real_arithmetic {

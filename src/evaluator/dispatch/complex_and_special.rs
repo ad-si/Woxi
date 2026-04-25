@@ -298,6 +298,58 @@ pub fn dispatch_complex_and_special(
               }));
             }
           }
+          // Floating-point complex direction: normalize numerically so
+          // `DirectedInfinity[1. + 2. I]` displays as
+          // `DirectedInfinity[0.4472… + 0.8944…*I]`, matching Wolfram.
+          // Only apply when the input is genuinely inexact — an exact
+          // symbolic expression like `(1 + 2 I)/Sqrt[5]` should keep
+          // its closed form, even though `try_extract_complex_f64`
+          // could compute a float for it.
+          if expr_contains_real(&args[0])
+            && let Some((re, im)) =
+              crate::functions::math_ast::try_extract_complex_f64(&args[0])
+            && (re != 0.0 || im != 0.0)
+            && (re.is_finite() && im.is_finite())
+          {
+            let mag = (re * re + im * im).sqrt();
+            if mag.is_finite() && mag > 0.0 {
+              let nre = re / mag;
+              let nim = im / mag;
+              if nim == 0.0 {
+                if nre > 0.0 {
+                  return Some(Ok(Expr::Identifier("Infinity".to_string())));
+                }
+                if nre < 0.0 {
+                  return Some(Ok(Expr::UnaryOp {
+                    op: crate::syntax::UnaryOperator::Minus,
+                    operand: Box::new(Expr::Identifier(
+                      "Infinity".to_string(),
+                    )),
+                  }));
+                }
+              }
+              // Build `re + im*I` so the regular Times printer handles
+              // sign placement and `0. + r*I` Re/Im split.
+              let im_term = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Real(nim)),
+                right: Box::new(Expr::Identifier("I".to_string())),
+              };
+              let direction = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(Expr::Real(nre)),
+                right: Box::new(im_term),
+              };
+              let direction = match evaluate_expr_to_expr(&direction) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+              };
+              return Some(Ok(Expr::FunctionCall {
+                name: "DirectedInfinity".to_string(),
+                args: vec![direction],
+              }));
+            }
+          }
           return Some(Ok(Expr::FunctionCall {
             name: "DirectedInfinity".to_string(),
             args: args.to_vec(),
@@ -1737,7 +1789,8 @@ pub fn dispatch_complex_and_special(
         // Try the builtin per-position default.
         if let Expr::Integer(pos) = &args[1]
           && *pos > 0
-          && let Some(val) = builtin_default_value_at_position(sym, *pos as usize)
+          && let Some(val) =
+            builtin_default_value_at_position(sym, *pos as usize)
         {
           return Some(Ok(val));
         }
@@ -5225,4 +5278,21 @@ fn region_within(
   }
 
   unevaluated()
+}
+
+/// `true` if `expr` contains a machine-precision Real anywhere in its
+/// structure. Used by `DirectedInfinity` to distinguish exact closed-form
+/// directions like `(1 + 2 I)/Sqrt[5]` from inexact ones like
+/// `1. + 2. I` — only the latter should be normalised numerically.
+fn expr_contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::UnaryOp { operand, .. } => expr_contains_real(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_real(left) || expr_contains_real(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_real),
+    Expr::List(items) => items.iter().any(expr_contains_real),
+    _ => false,
+  }
 }
