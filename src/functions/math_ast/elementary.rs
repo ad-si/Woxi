@@ -1430,9 +1430,10 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // divisor and there is a non-zero remainder, round the truncated
         // quotient toward -infinity.
         let (mut q, r) = (&a / &b, &a % &b);
-        if !r.is_zero() && ((a.sign() != num_bigint::Sign::NoSign
-          && b.sign() != num_bigint::Sign::NoSign)
-          && (a.sign() != b.sign()))
+        if !r.is_zero()
+          && ((a.sign() != num_bigint::Sign::NoSign
+            && b.sign() != num_bigint::Sign::NoSign)
+            && (a.sign() != b.sign()))
         {
           q -= 1;
         }
@@ -1447,6 +1448,29 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ))
         } else {
           Ok(Expr::Integer((a / b).floor() as i128))
+        }
+      } else if let (Some((a_re, a_im)), Some((c_re, c_im))) = (
+        crate::functions::math_ast::try_extract_complex_float(&args[0]),
+        crate::functions::math_ast::try_extract_complex_float(&args[1]),
+      ) && (a_im != 0.0 || c_im != 0.0)
+      {
+        // Gaussian quotient: z/w = (z conj(w)) / |w|^2, then round each
+        // component to nearest integer.
+        let denom = c_re * c_re + c_im * c_im;
+        if denom == 0.0 {
+          return Err(InterpreterError::EvaluationError(
+            "Quotient: division by zero".into(),
+          ));
+        }
+        let q_re = ((a_re * c_re + a_im * c_im) / denom).round() as i128;
+        let q_im = ((a_im * c_re - a_re * c_im) / denom).round() as i128;
+        if q_im == 0 {
+          Ok(Expr::Integer(q_re))
+        } else {
+          Ok(Expr::FunctionCall {
+            name: "Complex".to_string(),
+            args: vec![Expr::Integer(q_re), Expr::Integer(q_im)],
+          })
         }
       } else {
         Ok(Expr::FunctionCall {
