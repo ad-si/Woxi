@@ -112,6 +112,69 @@ pub fn dispatch_image_functions(
         Expr::String("Physical".to_string()),
       ])));
     }
+    // ColorData["Gradients"]: list of named built-in color gradients.
+    "ColorData" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0]
+        && s == "Gradients"
+      {
+        let names = [
+          "AlpineColors",
+          "Aquamarine",
+          "ArmyColors",
+          "AtlanticColors",
+          "AuroraColors",
+          "AvocadoColors",
+          "BeachColors",
+          "BlueGreenYellow",
+          "BrassTones",
+          "BrightBands",
+          "BrownCyanTones",
+          "CandyColors",
+          "CherryTones",
+          "CMYKColors",
+          "CoffeeTones",
+          "DarkBands",
+          "DarkRainbow",
+          "DarkTerrain",
+          "DeepSeaColors",
+          "FallColors",
+          "FruitPunchColors",
+          "FuchsiaTones",
+          "GrayTones",
+          "GrayYellowTones",
+          "GreenBrownTerrain",
+          "GreenPinkTones",
+          "IslandColors",
+          "LakeColors",
+          "LightTemperatureMap",
+          "LightTerrain",
+          "MintColors",
+          "NeonColors",
+          "Pastel",
+          "PearlColors",
+          "PigeonTones",
+          "PlumColors",
+          "Rainbow",
+          "RedBlueTones",
+          "RedGreenSplit",
+          "RoseColors",
+          "RustTones",
+          "SandyTerrain",
+          "SiennaTones",
+          "SolarColors",
+          "SouthwestColors",
+          "StarryNightColors",
+          "SunsetColors",
+          "TemperatureMap",
+          "ThermometerColors",
+          "ValentineTones",
+          "WatermelonColors",
+        ];
+        return Some(Ok(Expr::List(
+          names.iter().map(|n| Expr::String((*n).to_string())).collect(),
+        )));
+      }
+    }
     "ImageCompose" if args.len() == 2 => {
       return Some(crate::functions::image_ast::image_compose_ast(args));
     }
