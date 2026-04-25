@@ -1325,13 +1325,12 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::prime_nu_ast(args));
     }
     "MantissaExponent" if args.len() == 1 || args.len() == 2 => {
-      // Parse base (default 10). If a second argument is supplied but is
-      // non-numeric (e.g. a symbol), wolframscript keeps the call
-      // unevaluated rather than silently treating the base as 10.
-      let base: f64 = if args.len() == 2 {
-        match &args[1] {
-          Expr::Integer(b) => *b as f64,
-          Expr::Real(b) => *b,
+      use crate::functions::math_ast::try_eval_to_f64;
+      // Numerically evaluate base. If 2-arg form has a non-numeric base
+      // (incl. symbolic constants like Pi/E), keep the call unevaluated.
+      let base_num: f64 = if args.len() == 2 {
+        match try_eval_to_f64(&args[1]) {
+          Some(b) if b > 0.0 && b != 1.0 => b,
           _ => {
             return Some(Ok(Expr::FunctionCall {
               name: "MantissaExponent".to_string(),
@@ -1342,48 +1341,81 @@ pub fn dispatch_math_functions(
       } else {
         10.0
       };
-      match &args[0] {
-        Expr::Real(f) => {
-          if *f == 0.0 {
-            return Some(Ok(Expr::List(vec![
-              Expr::Real(0.0),
-              Expr::Integer(0),
-            ])));
-          }
-          let abs_f = f.abs();
-          let e = (abs_f.ln() / base.ln()).floor() as i128 + 1;
-          let m = f / base.powi(e as i32);
-          return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
+      // Numerically evaluate the value to compute the exponent.
+      let val_num: f64 = match try_eval_to_f64(&args[0]) {
+        Some(v) => v,
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "MantissaExponent".to_string(),
+            args: args.to_vec(),
+          }));
         }
-        Expr::Integer(n) if base == 10.0 => {
-          if *n == 0 {
-            return Some(Ok(Expr::List(vec![
-              Expr::Integer(0),
-              Expr::Integer(0),
-            ])));
-          }
-          let abs_n = n.unsigned_abs();
-          let e = (abs_n as f64).log10().floor() as i128 + 1;
-          let denom = 10_i128.pow(e as u32);
-          let mantissa =
-            crate::functions::math_ast::make_rational_pub(*n, denom);
-          return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)])));
-        }
-        Expr::Integer(n) => {
-          if *n == 0 {
-            return Some(Ok(Expr::List(vec![
-              Expr::Integer(0),
-              Expr::Integer(0),
-            ])));
-          }
-          let f = *n as f64;
-          let abs_f = f.abs();
-          let e = (abs_f.ln() / base.ln()).floor() as i128 + 1;
-          let m = f / base.powi(e as i32);
-          return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
-        }
-        _ => {}
+      };
+      if val_num == 0.0 {
+        return Some(Ok(Expr::List(vec![
+          Expr::Integer(0),
+          Expr::Integer(0),
+        ])));
       }
+      let e = (val_num.abs().ln() / base_num.ln()).floor() as i128 + 1;
+      // Whether the result should be a numeric Real or stay symbolic:
+      // any inexact (Real/BigFloat) component forces a Real result.
+      fn is_inexact(expr: &Expr) -> bool {
+        match expr {
+          Expr::Real(_) | Expr::BigFloat(_, _) => true,
+          Expr::FunctionCall { args, .. } => args.iter().any(is_inexact),
+          Expr::List(items) => items.iter().any(is_inexact),
+          _ => false,
+        }
+      }
+      if is_inexact(&args[0])
+        || (args.len() == 2 && is_inexact(&args[1]))
+      {
+        let m = val_num / base_num.powi(e as i32);
+        return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
+      }
+      // Special-case integer base 10 with integer value: keep mantissa
+      // exact as a rational (existing behavior).
+      if args.len() == 1 || matches!(&args[1], Expr::Integer(_)) {
+        if let Expr::Integer(n) = &args[0] {
+          let base_int: i128 = if args.len() == 2 {
+            if let Expr::Integer(b) = &args[1] { *b } else { 10 }
+          } else {
+            10
+          };
+          if base_int >= 2 {
+            let denom = (base_int as f64).powi(e as i32) as i128;
+            if denom > 0 {
+              let mantissa =
+                crate::functions::math_ast::make_rational_pub(*n, denom);
+              return Some(Ok(Expr::List(vec![
+                mantissa,
+                Expr::Integer(e),
+              ])));
+            }
+          }
+        }
+      }
+      // Symbolic mantissa = value * base^(-e). Let Woxi simplify.
+      let base_expr = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::Integer(10)
+      };
+      let mantissa = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          args[0].clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![base_expr, Expr::Integer(-e)],
+          },
+        ],
+      };
+      let mantissa_eval =
+        crate::evaluator::evaluate_expr_to_expr(&mantissa)
+          .unwrap_or(mantissa);
+      return Some(Ok(Expr::List(vec![mantissa_eval, Expr::Integer(e)])));
     }
     "IntegerPartitions" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
@@ -4003,21 +4035,23 @@ fn rational_to_expr_local(n: i128, d: i128) -> Expr {
 /// the subsequent ComplexExpand pass treats it as complex-valued.
 fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
   match expr {
-    Expr::Identifier(name) if vars.iter().any(|v| v == name) => Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::FunctionCall {
-        name: "Re".to_string(),
-        args: vec![Expr::Identifier(name.clone())],
-      }),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Identifier("I".to_string())),
-        right: Box::new(Expr::FunctionCall {
-          name: "Im".to_string(),
+    Expr::Identifier(name) if vars.iter().any(|v| v == name) => {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::FunctionCall {
+          name: "Re".to_string(),
           args: vec![Expr::Identifier(name.clone())],
         }),
-      }),
-    },
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Identifier("I".to_string())),
+          right: Box::new(Expr::FunctionCall {
+            name: "Im".to_string(),
+            args: vec![Expr::Identifier(name.clone())],
+          }),
+        }),
+      }
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args
@@ -4034,9 +4068,12 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
       op: *op,
       operand: Box::new(substitute_complex_vars(operand, vars)),
     },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(|a| substitute_complex_vars(a, vars)).collect())
-    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_complex_vars(a, vars))
+        .collect(),
+    ),
     _ => expr.clone(),
   }
 }
@@ -4230,9 +4267,7 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       left,
       right,
     } => power_split_real_imag(left, right),
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       power_split_real_imag(&args[0], &args[1])
     }
     // Re[v] / Im[v] / other Re-valued function calls: treat as real.
