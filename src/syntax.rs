@@ -5880,7 +5880,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       }
       // Special case: Plus displays as infix with + (with spaces)
       if name == "Plus" && args.len() >= 2 {
-        let mut result = fmt(&args[0]);
+        // Pattern/PatternOptional/PatternTest terms in Plus are
+        // parenthesised in Wolfram (e.g. `B[...] + (a_.)`, never
+        // `B[...] + a_.`). The `_` inside the term is otherwise
+        // syntactically ambiguous next to an additive operator.
+        let needs_pattern_parens = |a: &Expr| -> bool {
+          matches!(
+            a,
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          )
+        };
+        let fmt_plus_term = |a: &Expr| -> String {
+          let s = fmt(a);
+          if needs_pattern_parens(a) {
+            format!("({})", s)
+          } else {
+            s
+          }
+        };
+        let mut result = fmt_plus_term(&args[0]);
         for arg in args.iter().skip(1) {
           if let Expr::UnaryOp {
             op: UnaryOperator::Minus,
@@ -5888,7 +5908,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           } = arg
           {
             result.push_str(" - ");
-            result.push_str(&fmt(operand));
+            result.push_str(&fmt_plus_term(operand));
           } else if let Expr::BinaryOp {
             op: BinaryOperator::Times,
             left,
@@ -5897,7 +5917,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           {
             if matches!(left.as_ref(), Expr::Integer(-1)) {
               result.push_str(" - ");
-              result.push_str(&fmt(right));
+              result.push_str(&fmt_plus_term(right));
             } else if let Expr::Integer(n) = left.as_ref() {
               if *n < 0 {
                 result.push_str(" - ");
@@ -5981,14 +6001,14 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                     }
                   }
                 };
-                result.push_str(&fmt(&pos_term));
+                result.push_str(&fmt_plus_term(&pos_term));
               } else {
                 result.push_str(" + ");
                 result.push_str(&fmt(arg));
               }
             } else {
               result.push_str(" + ");
-              result.push_str(&fmt(arg));
+              result.push_str(&fmt_plus_term(arg));
             }
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
@@ -6000,7 +6020,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             }
           } else if !is_output {
             // InputForm: Fallback check if the rendered form starts with "-"
-            let s = fmt(arg);
+            let s = fmt_plus_term(arg);
             if s.starts_with('-') {
               result.push_str(" - ");
               result.push_str(&s[1..]);
@@ -6011,7 +6031,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           } else {
             // OutputForm: no starts_with('-') check
             result.push_str(" + ");
-            result.push_str(&fmt(arg));
+            result.push_str(&fmt_plus_term(arg));
           }
         }
         return result;
@@ -6956,7 +6976,9 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
         || matches!(
           func.as_ref(),
-          Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. }
+          Expr::BinaryOp { .. }
+            | Expr::UnaryOp { .. }
+            | Expr::Comparison { .. }
         )
         || matches!(
           func.as_ref(),

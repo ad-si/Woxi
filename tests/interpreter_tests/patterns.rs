@@ -700,6 +700,38 @@ mod pattern_matching {
       assert_eq!(interpret("y = 5; {x} /. {x :> y}").unwrap(), "{5}");
     }
   }
+
+  // Pattern variables inside Plus expressions must be parenthesised in
+  // Wolfram's display form so the bare `_` in `a_.` can't bleed into the
+  // surrounding `+`/`-` operator.
+  mod patterns_inside_plus {
+    use super::*;
+
+    #[test]
+    fn pattern_optional_in_plus_wraps() {
+      assert_eq!(interpret("a_. + b_").unwrap(), "(a_.) + (b_)");
+    }
+
+    #[test]
+    fn pattern_optional_subtracted_wraps() {
+      assert_eq!(interpret("a_. - b_").unwrap(), "(a_.) - (b_)");
+    }
+
+    #[test]
+    fn pattern_in_replacement_rule_wraps_when_displayed() {
+      assert_eq!(
+        interpret("A[a_. + B[b_.*x_]] -> {a, b, x}").unwrap(),
+        "A[B[(b_.)*(x_)] + (a_.)] -> {a, b, x}"
+      );
+    }
+
+    #[test]
+    fn pattern_in_list_does_not_wrap() {
+      // Patterns only need parens when adjacent to + / - — list elements
+      // are already comma-separated, so they stay bare.
+      assert_eq!(interpret("{a_., b_, x_}").unwrap(), "{a_., b_, x_}");
+    }
+  }
 }
 
 mod alternatives {
