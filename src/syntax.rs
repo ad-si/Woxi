@@ -6534,7 +6534,22 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           format!("Inequality[{}]", parts.join(", "))
         }
       } else {
-        let mut result = format_expr(&operands[0], ExprForm::Input);
+        // Patterns need parenthesisation in comparison output to match
+        // wolframscript: `(a_) != (b_)` instead of `a_ != b_`.
+        fn fmt_operand(e: &Expr) -> String {
+          let s = format_expr(e, ExprForm::Input);
+          if matches!(
+            e,
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          ) {
+            format!("({})", s)
+          } else {
+            s
+          }
+        }
+        let mut result = fmt_operand(&operands[0]);
         for (i, op) in operators.iter().enumerate() {
           let op_str = match op {
             ComparisonOp::Equal => "==",
@@ -6547,12 +6562,8 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             ComparisonOp::UnsameQ => "=!=",
           };
           if i + 1 < operands.len() {
-            result = format!(
-              "{} {} {}",
-              result,
-              op_str,
-              format_expr(&operands[i + 1], ExprForm::Input)
-            );
+            result =
+              format!("{} {} {}", result, op_str, fmt_operand(&operands[i + 1]));
           }
         }
         result
