@@ -616,12 +616,48 @@ mod coordinate_conversions {
   // ArcTan[0, 0] is Indeterminate. Matches `VectorAnalysis`.
   #[test]
   fn azimuth_zero_when_xy_both_zero() {
-    let r = interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]")
-      .unwrap();
+    let r =
+      interpret("CoordinatesFromCartesian[{0, 0, -2}, Spherical]").unwrap();
     assert!(r.ends_with(", 0}"), "azimuth should be 0, got: {}", r);
-    let r2 = interpret("CoordinatesFromCartesian[{0, 0, 5}, Cylindrical]")
-      .unwrap();
+    let r2 =
+      interpret("CoordinatesFromCartesian[{0, 0, 5}, Cylindrical]").unwrap();
     assert!(r2.contains(", 0,"), "azimuth should be 0, got: {}", r2);
+  }
+
+  // `Coordinates[sys]` lists the conventional symbol names from the
+  // legacy `VectorAnalysis` package. `SetCoordinates[sys]` packages them
+  // into `sys[<symbols>]`.
+  #[test]
+  fn coordinates_default_is_cartesian() {
+    assert_eq!(interpret("Coordinates[]").unwrap(), "{Xx, Yy, Zz}");
+  }
+
+  #[test]
+  fn coordinates_spherical_symbols() {
+    assert_eq!(
+      interpret("Coordinates[Spherical]").unwrap(),
+      "{Rr, Ttheta, Pphi}"
+    );
+  }
+
+  #[test]
+  fn coordinates_cylindrical_symbols() {
+    assert_eq!(
+      interpret("Coordinates[Cylindrical]").unwrap(),
+      "{Rr, Ttheta, Zz}"
+    );
+  }
+
+  #[test]
+  fn set_coordinates_returns_system_with_symbols() {
+    assert_eq!(
+      interpret("SetCoordinates[Cylindrical]").unwrap(),
+      "Cylindrical[Rr, Ttheta, Zz]"
+    );
+    assert_eq!(
+      interpret("SetCoordinates[Spherical]").unwrap(),
+      "Spherical[Rr, Ttheta, Pphi]"
+    );
   }
 }
 

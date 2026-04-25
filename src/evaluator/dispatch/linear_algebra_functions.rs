@@ -356,6 +356,41 @@ pub fn dispatch_linear_algebra_functions(
     // leaves it unevaluated, so the value-level reduction here matches
     // the mathics expectation (and is consistent with how Cross/Dot are
     // already evaluated eagerly).
+    // Legacy VectorAnalysis package: `Coordinates[]` returns the
+    // default coordinate symbols (Cartesian), `Coordinates[sys]`
+    // returns the symbols for the named system. `SetCoordinates[sys]`
+    // returns `sys[<symbols>]`.
+    "Coordinates" if args.is_empty() => {
+      return Some(Ok(Expr::List(coordinate_symbols("Cartesian"))));
+    }
+    "Coordinates" if args.len() == 1 => {
+      if let Expr::Identifier(s) = &args[0] {
+        return Some(Ok(Expr::List(coordinate_symbols(s))));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Coordinates".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "SetCoordinates" if args.is_empty() => {
+      // 0-arg form reports the current default — Cartesian in Woxi.
+      return Some(Ok(Expr::FunctionCall {
+        name: "Cartesian".to_string(),
+        args: coordinate_symbols("Cartesian"),
+      }));
+    }
+    "SetCoordinates" if args.len() == 1 => {
+      if let Expr::Identifier(sys) = &args[0] {
+        return Some(Ok(Expr::FunctionCall {
+          name: sys.clone(),
+          args: coordinate_symbols(sys),
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "SetCoordinates".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Legacy VectorAnalysis package: CoordinatesToCartesian /
     // CoordinatesFromCartesian convert between coordinate systems. Default
     // system is Cartesian (no-op), `Spherical` is {r, θ, φ}, `Cylindrical`
@@ -382,7 +417,9 @@ pub fn dispatch_linear_algebra_functions(
           }));
         }
       };
-      return Some(coordinates_to_cartesian(&items[0], &items[1], &items[2], system));
+      return Some(coordinates_to_cartesian(
+        &items[0], &items[1], &items[2], system,
+      ));
     }
     "CoordinatesFromCartesian" if args.len() == 2 => {
       let Expr::List(items) = &args[0] else {
@@ -406,7 +443,9 @@ pub fn dispatch_linear_algebra_functions(
           }));
         }
       };
-      return Some(coordinates_from_cartesian(&items[0], &items[1], &items[2], system));
+      return Some(coordinates_from_cartesian(
+        &items[0], &items[1], &items[2], system,
+      ));
     }
     "ScalarTripleProduct" if args.len() == 3 => {
       let cross_bc = match crate::functions::linear_algebra_ast::cross_ast(&[
@@ -1968,6 +2007,19 @@ fn binary_dissimilarity_ast(
   Ok(crate::functions::math_ast::make_rational(num, den))
 }
 
+/// Default symbol names for each coordinate system, matching the legacy
+/// `VectorAnalysis` package: Cartesian = `{Xx, Yy, Zz}`,
+/// Spherical = `{Rr, Ttheta, Pphi}`, Cylindrical = `{Rr, Ttheta, Zz}`.
+/// Unknown systems return Cartesian (the Wolfram default).
+fn coordinate_symbols(system: &str) -> Vec<Expr> {
+  let names: [&str; 3] = match system {
+    "Spherical" => ["Rr", "Ttheta", "Pphi"],
+    "Cylindrical" => ["Rr", "Ttheta", "Zz"],
+    _ => ["Xx", "Yy", "Zz"],
+  };
+  names.iter().map(|n| Expr::Identifier((*n).to_string())).collect()
+}
+
 /// Build `Sin[arg]`, `Cos[arg]`, `ArcCos[arg]`, etc. and immediately
 /// evaluate so numeric inputs give numeric output and exact symbolic
 /// inputs (`Pi`, `Pi/2`, …) reduce to their canonical form.
@@ -2060,11 +2112,8 @@ fn coordinates_from_cartesian(
         left: Box::new(e.clone()),
         right: Box::new(two.clone()),
       };
-      let sum_sq = crate::functions::math_ast::plus_ast(&[
-        sq(&x),
-        sq(&y),
-        sq(&z),
-      ])?;
+      let sum_sq =
+        crate::functions::math_ast::plus_ast(&[sq(&x), sq(&y), sq(&z)])?;
       let r = call_eval("Sqrt", sum_sq)?;
       // ArcCos[z / r]
       let z_over_r = crate::functions::math_ast::times_ast(&[
@@ -2098,8 +2147,7 @@ fn coordinates_from_cartesian(
         left: Box::new(e.clone()),
         right: Box::new(two.clone()),
       };
-      let sum_sq =
-        crate::functions::math_ast::plus_ast(&[sq(&x), sq(&y)])?;
+      let sum_sq = crate::functions::math_ast::plus_ast(&[sq(&x), sq(&y)])?;
       let r = call_eval("Sqrt", sum_sq)?;
       let theta = if is_zero_expr(&x) && is_zero_expr(&y) {
         Expr::Integer(0)
