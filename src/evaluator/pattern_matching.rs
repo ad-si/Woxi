@@ -491,6 +491,58 @@ pub fn try_one_identity_match(
     {
       return Some(req_bindings);
     }
+    return None;
+  }
+
+  // All slots optional (e.g. Times[a_., b_.]): pick one optional to take the
+  // expression while every other optional uses its default.
+  if required_indices.is_empty() {
+    for (target_idx, target_arg) in pat_args.iter().enumerate() {
+      let Expr::PatternOptional { .. } = target_arg else {
+        continue;
+      };
+      // Collect bindings for the other optionals (their defaults) and the
+      // matched binding for this one.
+      let inner_pat = match target_arg {
+        Expr::PatternOptional { name, head, .. } => Expr::Pattern {
+          name: name.clone(),
+          head: head.clone(),
+          blank_type: 1,
+        },
+        _ => continue,
+      };
+      if let Some(mut req_bindings) = match_pattern(expr, &inner_pat) {
+        let other_bindings: Vec<(String, Expr)> = bindings
+          .iter()
+          .enumerate()
+          .filter_map(|(bi, b)| {
+            // The bindings vector parallels the encounter order of optionals.
+            // We need to skip the binding for `target_idx`.
+            // Reconstruct the pattern index for each binding by counting
+            // optionals up to `bi`.
+            let mut opt_count = 0usize;
+            let mut pat_idx = None;
+            for (pi, p) in pat_args.iter().enumerate() {
+              if matches!(p, Expr::PatternOptional { .. }) {
+                if opt_count == bi {
+                  pat_idx = Some(pi);
+                  break;
+                }
+                opt_count += 1;
+              }
+            }
+            if pat_idx == Some(target_idx) {
+              None
+            } else {
+              Some(b.clone())
+            }
+          })
+          .collect();
+        if merge_bindings(&mut req_bindings, other_bindings) {
+          return Some(req_bindings);
+        }
+      }
+    }
   }
 
   None
@@ -2610,7 +2662,12 @@ fn match_pattern_impl(
       } = expr
       {
         if pat_name != expr_name {
-          return None;
+          // Try OneIdentity collapse: when the pattern's head has
+          // OneIdentity (e.g. Plus, Times) and at least one optional slot
+          // can take a default, fall through to matching expr against the
+          // single required slot. Without this, MatchQ[2*x, a_.+b_.*x_]
+          // would always be False.
+          return try_one_identity_match(expr, pat_name, pat_args);
         }
         // Check if any pattern arg is a sequence pattern
         let has_sequence =
