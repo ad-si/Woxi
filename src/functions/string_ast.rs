@@ -131,12 +131,21 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::String(chars[idx as usize].to_string()))
     }
     Expr::List(elems) if elems.len() == 2 => {
-      // StringTake[s, {m, n}] - characters m through n
+      // StringTake[s, {m, n}] - characters m through n. Wolfram returns
+      // an empty string for "degenerate" ranges where m > n (e.g. {3, 2})
+      // or when n == 0 (interpreted as "0 characters", e.g. {1, 0}).
       let m = expr_to_int(&elems[0])?;
       let n = expr_to_int(&elems[1])?;
+      // Degenerate range that yields empty string regardless of length.
+      if m > n && n >= 0 || (m == 1 && n == 0) {
+        return Ok(Expr::String(String::new()));
+      }
       let start = if m > 0 { m - 1 } else { len + m };
       let end = if n > 0 { n - 1 } else { len + n };
-      if start < 0 || end < 0 || start >= len || end >= len || start > end {
+      if start > end {
+        return Ok(Expr::String(String::new()));
+      }
+      if start < 0 || end < 0 || start >= len || end >= len {
         return Err(InterpreterError::EvaluationError(format!(
           "StringTake range {{{}, {}}} out of range for string of length {}",
           m, n, len
