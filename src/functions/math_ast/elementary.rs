@@ -122,6 +122,124 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// True iff `expr` mentions the imaginary unit `I` (either as the symbol
+/// `I` or the literal `Complex[0, 1]`). Used to recognise expressions that
+/// are syntactically real (no I anywhere) so unit-magnitude shortcuts in
+/// `Sign` can fire safely.
+fn mentions_imaginary_unit(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) | Expr::Constant(s) => s == "I",
+    Expr::FunctionCall { name, args } => {
+      (name == "Complex"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(0))
+        && matches!(&args[1], Expr::Integer(1)))
+        || args.iter().any(mentions_imaginary_unit)
+    }
+    Expr::List(items) => items.iter().any(mentions_imaginary_unit),
+    Expr::BinaryOp { left, right, .. } => {
+      mentions_imaginary_unit(left) || mentions_imaginary_unit(right)
+    }
+    Expr::UnaryOp { operand, .. } => mentions_imaginary_unit(operand),
+    _ => false,
+  }
+}
+
+/// True iff `expr` evaluates to the imaginary unit `I` itself.
+fn is_imaginary_unit(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+    || matches!(
+      expr,
+      Expr::FunctionCall { name, args }
+        if name == "Complex"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(0))
+          && matches!(&args[1], Expr::Integer(1))
+    )
+}
+
+/// True iff `expr` is a positive real literal (Integer ≥ 1, BigInteger,
+/// positive Real, positive Rational). These have a real-valued logarithm,
+/// so `posreal^(b I)` lies on the unit circle whenever `b` is real.
+fn is_positive_real_literal(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n > 0,
+    Expr::BigInteger(n) => n > &num_bigint::BigInt::from(0),
+    Expr::Real(f) => *f > 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let pos = matches!(&args[0], Expr::Integer(n) if *n > 0)
+        && matches!(&args[1], Expr::Integer(n) if *n > 0);
+      pos
+    }
+    _ => false,
+  }
+}
+
+/// Collect a Times product into a flat list of factors. Handles both the
+/// `FunctionCall { name: "Times", args }` form and the binary-operator
+/// tree form `BinaryOp { op: Times, left, right }`.
+fn collect_times_factors<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        collect_times_factors(a, out);
+      }
+      true
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      collect_times_factors(left, out);
+      collect_times_factors(right, out);
+      true
+    }
+    _ => {
+      out.push(expr);
+      false
+    }
+  }
+}
+
+/// True iff `expr` is a value with zero real part and a non-zero
+/// imaginary part — i.e. it lies on the imaginary axis. Recognised forms:
+///   - `I` itself
+///   - `Complex[0, n]` (the canonical pure-imaginary literal)
+///   - `Times[..., I, ...]` where every non-`I` factor is syntactically
+///     real (mentions no `I`).
+fn is_purely_imaginary_product(expr: &Expr) -> bool {
+  if is_imaginary_unit(expr) {
+    return true;
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Complex"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Integer(0))
+    && !matches!(&args[1], Expr::Integer(0))
+  {
+    return true;
+  }
+  // Try to flatten a Times product (FunctionCall or BinaryOp). If the
+  // expression isn't a product, give up.
+  let mut factors: Vec<&Expr> = Vec::new();
+  let is_times = collect_times_factors(expr, &mut factors);
+  if !is_times {
+    return false;
+  }
+  let mut i_count = 0;
+  for f in &factors {
+    if is_imaginary_unit(f) {
+      i_count += 1;
+    } else if mentions_imaginary_unit(f) {
+      return false;
+    }
+  }
+  i_count == 1
+}
+
 /// Sign[x] - Sign of a number (-1, 0, or 1)
 /// For complex z: Sign[z] = z / Abs[z]
 pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -129,6 +247,31 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Sign expects exactly 1 argument".into(),
     ));
+  }
+  // Sign of a unit-magnitude power is the power itself:
+  //   Sign[I^realexp]    → I^realexp     (|I^realexp| = 1)
+  //   Sign[posreal^(b I)] → posreal^(b I) (|a^(b I)| = 1 for a>0, b real)
+  // Detected structurally: I^x where x mentions no I, or a^(c*I) where a
+  // is a positive real literal and c is real (i.e. the exponent is a Times
+  // product whose only I-mentioning factor is I itself).
+  let power_parts: Option<(&Expr, &Expr)> = match &args[0] {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args: pargs }
+      if name == "Power" && pargs.len() == 2 =>
+    {
+      Some((&pargs[0], &pargs[1]))
+    }
+    _ => None,
+  };
+  if let Some((base, exp)) = power_parts
+    && ((is_imaginary_unit(base) && !mentions_imaginary_unit(exp))
+      || (is_positive_real_literal(base) && is_purely_imaginary_product(exp)))
+  {
+    return Ok(args[0].clone());
   }
   // Handle Infinity, -Infinity, ComplexInfinity, Indeterminate
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {

@@ -77,6 +77,23 @@ mod sign_complex_tests {
   fn sign_complex_infinity() {
     assert_eq!(interpret("Sign[ComplexInfinity]").unwrap(), "Indeterminate");
   }
+
+  #[test]
+  fn sign_i_to_real_power() {
+    // Sign[I^realexp] = I^realexp because |I^x| = 1 for any real x.
+    // (`I^5` would have already simplified to `I` itself before Sign sees
+    // it, so the test uses a non-collapsing exponent.)
+    assert_eq!(interpret("Sign[I^(2 Pi)]").unwrap(), "I^(2*Pi)");
+  }
+
+  #[test]
+  fn sign_positive_real_to_imaginary_power() {
+    // Sign[a^(b I)] = a^(b I) when a is positive real and b is real,
+    // because |a^(b I)| = e^(-b * Im(Log a)) = 1 (Log of positive real
+    // is real, so Im is 0).
+    assert_eq!(interpret("Sign[4^(2 Pi I)]").unwrap(), "4^((2*I)*Pi)");
+    assert_eq!(interpret("Sign[2^(3 I)]").unwrap(), "2^(3*I)");
+  }
 }
 
 mod abs_complex_tests {
