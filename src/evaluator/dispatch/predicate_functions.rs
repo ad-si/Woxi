@@ -638,67 +638,68 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(s) => s.clone(),
         _ => return Some(Ok(Expr::List(vec![]))),
       };
-      let func_defs = crate::FUNC_DEFS.with(|m| {
-        m.borrow().get("MessageName").cloned().unwrap_or_default()
-      });
+      let func_defs = crate::FUNC_DEFS
+        .with(|m| m.borrow().get("MessageName").cloned().unwrap_or_default());
       let rules: Vec<Expr> = func_defs
         .iter()
-        .filter_map(|(params, _conds, _defaults, _heads, _blank_types, body)| {
-          // MessageName has exactly two slots: first is the symbol literal
-          // (matched as a SameQ condition with param `_dv0`), second is
-          // the tag string (`_dv1`). Re-derive the literal MessageName
-          // pattern from `body`'s associated structural-pattern conditions.
-          // The simpler path: use the conditions to read the literal sym
-          // value matched in slot 0. If the rule's slot-0 SameQ value
-          // doesn't equal `sym`, skip it.
-          let slot0_literal = _conds.iter().find_map(|c| {
-            if let Some(Expr::Comparison { operands, operators }) = c
-              && operators.len() == 1
-              && matches!(
-                operators[0],
-                crate::syntax::ComparisonOp::SameQ
-              )
-              && operands.len() == 2
-              && let Expr::Identifier(name) = &operands[0]
-              && name == &params[0]
-            {
-              Some(operands[1].clone())
-            } else {
-              None
+        .filter_map(
+          |(params, _conds, _defaults, _heads, _blank_types, body)| {
+            // MessageName has exactly two slots: first is the symbol literal
+            // (matched as a SameQ condition with param `_dv0`), second is
+            // the tag string (`_dv1`). Re-derive the literal MessageName
+            // pattern from `body`'s associated structural-pattern conditions.
+            // The simpler path: use the conditions to read the literal sym
+            // value matched in slot 0. If the rule's slot-0 SameQ value
+            // doesn't equal `sym`, skip it.
+            let slot0_literal = _conds.iter().find_map(|c| {
+              if let Some(Expr::Comparison {
+                operands,
+                operators,
+              }) = c
+                && operators.len() == 1
+                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && operands.len() == 2
+                && let Expr::Identifier(name) = &operands[0]
+                && name == &params[0]
+              {
+                Some(operands[1].clone())
+              } else {
+                None
+              }
+            })?;
+            if !matches!(&slot0_literal, Expr::Identifier(s) if s == &sym) {
+              return None;
             }
-          })?;
-          if !matches!(&slot0_literal, Expr::Identifier(s) if s == &sym) {
-            return None;
-          }
-          // Slot 1 is the tag string (or symbol). It's matched the same
-          // way; pull its literal value out of the conditions.
-          let slot1_literal = _conds.iter().find_map(|c| {
-            if let Some(Expr::Comparison { operands, operators }) = c
-              && operators.len() == 1
-              && matches!(
-                operators[0],
-                crate::syntax::ComparisonOp::SameQ
-              )
-              && operands.len() == 2
-              && let Expr::Identifier(name) = &operands[0]
-              && name == &params[1]
-            {
-              Some(operands[1].clone())
-            } else {
-              None
-            }
-          })?;
-          Some(Expr::RuleDelayed {
-            pattern: Box::new(Expr::FunctionCall {
-              name: "HoldPattern".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "MessageName".to_string(),
-                args: vec![slot0_literal, slot1_literal],
-              }],
-            }),
-            replacement: Box::new(body.clone()),
-          })
-        })
+            // Slot 1 is the tag string (or symbol). It's matched the same
+            // way; pull its literal value out of the conditions.
+            let slot1_literal = _conds.iter().find_map(|c| {
+              if let Some(Expr::Comparison {
+                operands,
+                operators,
+              }) = c
+                && operators.len() == 1
+                && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+                && operands.len() == 2
+                && let Expr::Identifier(name) = &operands[0]
+                && name == &params[1]
+              {
+                Some(operands[1].clone())
+              } else {
+                None
+              }
+            })?;
+            Some(Expr::RuleDelayed {
+              pattern: Box::new(Expr::FunctionCall {
+                name: "HoldPattern".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "MessageName".to_string(),
+                  args: vec![slot0_literal, slot1_literal],
+                }],
+              }),
+              replacement: Box::new(body.clone()),
+            })
+          },
+        )
         .collect();
       return Some(Ok(Expr::List(rules)));
     }
@@ -727,7 +728,8 @@ pub fn dispatch_predicate_functions(
         }
       };
       if let Expr::Identifier(sym) = &args[0] {
-        let values: Vec<Expr> = match sym.as_str() {
+        // Built-in defaults: Plus → 0, Times → 1, Power slot 2 → 1.
+        let mut values: Vec<Expr> = match sym.as_str() {
           "Plus" => vec![rule(default_of("Plus", vec![]), Expr::Integer(0))],
           "Times" => vec![rule(default_of("Times", vec![]), Expr::Integer(1))],
           "Power" => vec![rule(
@@ -736,6 +738,51 @@ pub fn dispatch_predicate_functions(
           )],
           _ => vec![],
         };
+        // User-installed defaults: `Default[sym, n] = v` is stored as a
+        // DownValue on `Default` itself. Walk FUNC_DEFS["Default"] and pull
+        // the entries whose first slot literally equals `sym`.
+        let func_defs = crate::FUNC_DEFS
+          .with(|m| m.borrow().get("Default").cloned().unwrap_or_default());
+        let slot_literal_for = |conds: &[Option<Expr>], param: &str| -> Option<Expr> {
+          conds.iter().find_map(|c| {
+            if let Some(Expr::Comparison { operands, operators }) = c
+              && operators.len() == 1
+              && matches!(
+                operators[0],
+                crate::syntax::ComparisonOp::SameQ
+              )
+              && operands.len() == 2
+              && let Expr::Identifier(name) = &operands[0]
+              && name == param
+            {
+              Some(operands[1].clone())
+            } else {
+              None
+            }
+          })
+        };
+        for (params, conds, _defaults, _heads, _blank_types, body) in &func_defs {
+          // Default's first slot is the symbol literal (matched as SameQ).
+          let Some(slot0) = slot_literal_for(conds, &params[0]) else {
+            continue;
+          };
+          if !matches!(&slot0, Expr::Identifier(s) if s == sym) {
+            continue;
+          }
+          // Reconstruct the pattern as Default[sym] / Default[sym, n] /
+          // Default[sym, n, m] depending on how many slots were captured.
+          let mut pat_args = vec![slot0];
+          for p in params.iter().skip(1) {
+            if let Some(lit) = slot_literal_for(conds, p) {
+              pat_args.push(lit);
+            }
+          }
+          let pattern = Expr::FunctionCall {
+            name: "Default".to_string(),
+            args: pat_args,
+          };
+          values.push(rule(pattern, body.clone()));
+        }
         return Some(Ok(Expr::List(values)));
       }
       return Some(Ok(Expr::List(vec![])));

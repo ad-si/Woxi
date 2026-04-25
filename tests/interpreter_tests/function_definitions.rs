@@ -370,6 +370,38 @@ mod default_values {
     assert_eq!(interpret("DefaultValues[Sin]").unwrap(), "{}");
     assert_eq!(interpret("DefaultValues[myFunc]").unwrap(), "{}");
   }
+
+  #[test]
+  fn user_set_default_position_appears_in_default_values() {
+    // `Default[f, n] = v` is stored as a DownValue on Default itself;
+    // DefaultValues[f] must surface it as a HoldPattern RuleDelayed list.
+    clear_state();
+    assert_eq!(
+      interpret("Default[f, 1] = 4; DefaultValues[f]").unwrap(),
+      "{HoldPattern[Default[f, 1]] :> 4}"
+    );
+  }
+
+  #[test]
+  fn user_set_position_less_default_appears_in_default_values() {
+    clear_state();
+    assert_eq!(
+      interpret("Default[g] = 3; DefaultValues[g]").unwrap(),
+      "{HoldPattern[Default[g]] :> 3}"
+    );
+  }
+
+  #[test]
+  fn default_values_filters_to_target_symbol() {
+    // Multiple symbols share the Default DownValues table; DefaultValues
+    // must only return entries whose first arg is the requested symbol.
+    clear_state();
+    assert_eq!(
+      interpret("Default[h, 1] = 7; Default[k, 2] = 9; DefaultValues[k]")
+        .unwrap(),
+      "{HoldPattern[Default[k, 2]] :> 9}"
+    );
+  }
 }
 
 mod compile {
