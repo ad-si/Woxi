@@ -6016,6 +6016,20 @@ fn limit_at_infinity(
     return Ok(point.clone());
   }
 
+  // Oscillating trig functions at +/- Infinity have no limit:
+  // Limit[Sin[x], x -> Infinity] etc. -> Indeterminate.
+  if let Expr::FunctionCall { name, args: targs } = expr
+    && targs.len() == 1
+    && matches!(
+      name.as_str(),
+      "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc"
+    )
+    && let Expr::Identifier(arg_name) = &targs[0]
+    && arg_name == var_name
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // Handle f^g form (e.g., (1 + 1/n)^n -> E)
   if let Some((base, exp)) = extract_power(expr) {
     // Check if base -> 1 and exponent -> Infinity (1^Infinity indeterminate form)
