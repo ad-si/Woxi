@@ -174,9 +174,9 @@ fn bessel_poly_recurrence(
   use crate::syntax::Expr::*;
   // Coefficient on the (m/z) * P_m term and on P_{other}.
   let (a_coef, b_coef): (i128, i128) = match (sign, forward) {
-    (BesselSign::J, _) => (coef, -1),       // (m/z) P_m - P_other
-    (BesselSign::I, true) => (-coef, 1),    // -(m/z) P_m + P_other
-    (BesselSign::I, false) => (coef, 1),    // (m/z) P_m + P_other
+    (BesselSign::J, _) => (coef, -1), // (m/z) P_m - P_other
+    (BesselSign::I, true) => (-coef, 1), // -(m/z) P_m + P_other
+    (BesselSign::I, false) => (coef, 1), // (m/z) P_m + P_other
   };
   let expr = FunctionCall {
     name: "Plus".to_string(),
@@ -483,10 +483,127 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // Closed-form rules at half-integer orders. K_{1/2}(z) = K_{-1/2}(z) =
+  // Sqrt[Pi/(2z)] * E^(-z); K_{n+1}(z) = (2n/z) K_n(z) + K_{n-1}(z).
+  // K is symmetric: K_{-n}(z) = K_n(z).
+  if let Some((n_num, n_den)) =
+    crate::functions::math_ast::expr_to_rational(n_expr)
+    && n_den == 2
+    && (n_num.unsigned_abs() <= 51)
+    && let Some(result) = half_int_bessel_k(n_num, z_expr)?
+  {
+    return Ok(result);
+  }
+
   Ok(Expr::FunctionCall {
     name: "BesselK".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Compute BesselK[m/2, z] for odd integer m. Anchors P_1 = P_{-1} = 1
+/// (since K_{1/2} = K_{-1/2} = Sqrt[Pi/(2z)] E^(-z)); recurrence is
+/// P_{m+2} = (m/z) P_m + P_{m-2}. Result is wrapped as
+/// Sqrt[Pi/2] * P / (E^z * Sqrt[z]).
+fn half_int_bessel_k(
+  m: i128,
+  z_expr: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  if m % 2 == 0 {
+    return Ok(None);
+  }
+  // K is symmetric in n; reduce to |m|.
+  let m = m.unsigned_abs() as i128;
+  let p = bessel_k_polynomial(m, z_expr)?;
+  Ok(Some(wrap_bessel_k_factor(&p, z_expr)?))
+}
+
+/// Compute the K-family polynomial P_m. Anchors P_1 = P_{-1} = 1.
+/// Recurrence: P_{m+2} = (m/z) P_m + P_{m-2}.
+fn bessel_k_polynomial(m: i128, z_expr: &Expr) -> Result<Expr, InterpreterError> {
+  if m == 1 {
+    return Ok(Expr::Integer(1));
+  }
+  let mut prev = Expr::Integer(1); // P_{-1}
+  let mut curr = Expr::Integer(1); // P_{1}
+  let mut m_cur: i128 = 1;
+  while m_cur < m {
+    use crate::syntax::Expr::*;
+    // P_{m_cur+2} = (m_cur/z) * curr + prev
+    let next_expr = FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Integer(m_cur),
+            FunctionCall {
+              name: "Power".to_string(),
+              args: vec![z_expr.clone(), Integer(-1)],
+            },
+            curr.clone(),
+          ],
+        },
+        prev.clone(),
+      ],
+    };
+    let next = crate::evaluator::evaluate_expr_to_expr(&next_expr)?;
+    prev = curr;
+    curr = next;
+    m_cur += 2;
+  }
+  Ok(curr)
+}
+
+/// Wrap K-polynomial: Sqrt[Pi/2] * P / (E^z * Sqrt[z]).
+fn wrap_bessel_k_factor(
+  p: &Expr,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  let expr = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      // Sqrt[Pi/2]
+      FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Identifier("Pi".to_string()),
+            FunctionCall {
+              name: "Power".to_string(),
+              args: vec![Integer(2), Integer(-1)],
+            },
+          ],
+        }],
+      },
+      p.clone(),
+      // 1 / E^z = E^(-z)
+      FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Constant("E".to_string()),
+          FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Integer(-1), z_expr.clone()],
+          },
+        ],
+      },
+      // 1 / Sqrt[z]
+      FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![z_expr.clone()],
+          },
+          Integer(-1),
+        ],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// Compute K_n(z) for integer n using the Temme method for small z
