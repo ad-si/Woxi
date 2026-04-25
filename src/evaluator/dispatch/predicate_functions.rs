@@ -1,6 +1,59 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// True if `expr` contains any Real or BigFloat node — used to decide
+/// between exact and inexact number predicates.
+fn contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_real)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_real(left) || contains_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_real(operand),
+    _ => false,
+  }
+}
+
+/// ExactNumberQ[x]: True for Integer/Rational/exact Complex (and their
+/// expanded forms). `I`, `1 + I`, `4 I + 5/6` are all exact.
+fn is_exact_number(expr: &Expr) -> bool {
+  use crate::functions::math_ast::try_extract_complex_exact;
+  if contains_real(expr) {
+    return false;
+  }
+  if matches!(expr, Expr::Integer(_) | Expr::BigInteger(_)) {
+    return true;
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+    && matches!(args[0], Expr::Integer(_) | Expr::BigInteger(_))
+    && matches!(args[1], Expr::Integer(_) | Expr::BigInteger(_))
+  {
+    return true;
+  }
+  // Pure imaginary unit and exact complex combinations — try the exact
+  // (integer/rational) extractor.
+  matches!(expr, Expr::Identifier(s) if s == "I")
+    || try_extract_complex_exact(expr).is_some_and(|((_, rd), (_, id))| {
+      // Both denominators must be non-zero for a meaningful exact rational.
+      rd != 0 && id != 0
+    })
+}
+
+/// InexactNumberQ[x]: True when `x` is a numeric value that contains a
+/// Real or BigFloat (and otherwise extracts to a complex form).
+fn is_inexact_number(expr: &Expr) -> bool {
+  use crate::functions::math_ast::try_extract_complex_float;
+  if matches!(expr, Expr::Real(_) | Expr::BigFloat(_, _)) {
+    return true;
+  }
+  contains_real(expr) && try_extract_complex_float(expr).is_some()
+}
+
 /// Mirror of the same-family rule in core_eval's Comparison handler, but
 /// for Inequality's string operator names. Returns true iff the chain
 /// should be split into pairwise `&&`.
@@ -412,26 +465,13 @@ pub fn dispatch_predicate_functions(
       return Some(crate::functions::predicate_ast::numeric_q_ast(args));
     }
     "ExactNumberQ" if args.len() == 1 => {
-      let is_exact = match &args[0] {
-        Expr::Integer(_) | Expr::BigInteger(_) => true,
-        Expr::FunctionCall {
-          name: fname,
-          args: rargs,
-        } if fname == "Rational"
-          && rargs.len() == 2
-          && matches!(rargs[0], Expr::Integer(_))
-          && matches!(rargs[1], Expr::Integer(_)) =>
-        {
-          true
-        }
-        _ => false,
-      };
+      let is_exact = is_exact_number(&args[0]);
       return Some(Ok(Expr::Identifier(
         if is_exact { "True" } else { "False" }.to_string(),
       )));
     }
     "InexactNumberQ" if args.len() == 1 => {
-      let is_inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _));
+      let is_inexact = is_inexact_number(&args[0]);
       return Some(Ok(Expr::Identifier(
         if is_inexact { "True" } else { "False" }.to_string(),
       )));
