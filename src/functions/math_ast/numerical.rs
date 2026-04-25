@@ -85,9 +85,42 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(r);
         }
       }
-      // Otherwise, recursively apply N to arguments and re-evaluate
-      let new_args: Result<Vec<Expr>, _> = args.iter().map(n_eval).collect();
-      let new_args = new_args?;
+      // Honour NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
+      // user-set). When a slot is held, leave the argument literal and
+      // skip the recursive N application.
+      let attrs: Vec<String> = {
+        let builtin: Vec<String> =
+          crate::evaluator::get_builtin_attributes(name)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let user = crate::FUNC_ATTRS
+          .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
+        let mut combined = builtin;
+        for a in user {
+          if !combined.contains(&a) {
+            combined.push(a);
+          }
+        }
+        combined
+      };
+      let hold_all = attrs.iter().any(|a| a == "NHoldAll");
+      let hold_first = attrs.iter().any(|a| a == "NHoldFirst");
+      let hold_rest = attrs.iter().any(|a| a == "NHoldRest");
+      let new_args: Vec<Expr> = if hold_all {
+        args.clone()
+      } else {
+        let mut out = Vec::with_capacity(args.len());
+        for (i, a) in args.iter().enumerate() {
+          let held = (i == 0 && hold_first) || (i > 0 && hold_rest);
+          if held {
+            out.push(a.clone());
+          } else {
+            out.push(n_eval(a)?);
+          }
+        }
+        out
+      };
       // Re-evaluate the function with numeric arguments
       let new_expr = Expr::FunctionCall {
         name: name.clone(),
@@ -162,6 +195,29 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       pattern: pattern.clone(),
       replacement: Box::new(n_eval(replacement)?),
     }),
+    Expr::Identifier(_) | Expr::Constant(_) => {
+      if let Some(v) = try_eval_to_f64(expr) {
+        return Ok(Expr::Real(v));
+      }
+      // No built-in numeric value for this symbol — try to invoke
+      // `N[expr]` so any user-installed `N[a] = 10.9` style DownValue
+      // gets a chance to fire (matching Wolfram's NValues lookup).
+      // Compare string forms to detect the "no rule" echo path.
+      let original_str = crate::syntax::expr_to_string(expr);
+      let n_call_str = format!("N[{}]", original_str);
+      match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()])
+      {
+        Ok(result) => {
+          let result_str = crate::syntax::expr_to_string(&result);
+          if result_str == n_call_str {
+            Ok(expr.clone())
+          } else {
+            Ok(result)
+          }
+        }
+        Err(_) => Ok(expr.clone()),
+      }
+    }
     _ => {
       if let Some(v) = try_eval_to_f64(expr) {
         Ok(Expr::Real(v))
@@ -1846,7 +1902,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // already holds a — see the parser).
     Expr::BigFloat(digits, prec) => {
       let val: f64 = digits.parse().unwrap_or(0.0);
-      let prec_f = *prec as f64;
+      let prec_f = *prec;
       if val == 0.0 {
         return Ok(Expr::Real(prec_f));
       }

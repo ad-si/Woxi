@@ -306,6 +306,62 @@ mod n_arbitrary_precision {
   }
 }
 
+mod n_threading {
+  use super::*;
+
+  #[test]
+  fn n_value_propagates_through_plus() {
+    // `N[a] = 10.9; N[a + b]` should thread N over Plus, look up
+    // `N[a]` (returning 10.9) and leave `b` symbolic.
+    clear_state();
+    assert_eq!(interpret("N[a] = 10.9; N[a + b]").unwrap(), "10.9 + b");
+  }
+
+  #[test]
+  fn n_value_propagates_through_function_call() {
+    clear_state();
+    assert_eq!(interpret("N[a] = 10.9; N[f[a, b]]").unwrap(), "f[10.9, b]");
+  }
+
+  #[test]
+  fn nholdall_blocks_n_threading() {
+    // SetAttributes[f, NHoldAll] should keep N from threading into f's
+    // arguments — `N[f[a, b]]` stays as `f[a, b]`.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "N[a] = 10.9; SetAttributes[f, NHoldAll]; N[f[a, b]]"
+      )
+      .unwrap(),
+      "f[a, b]"
+    );
+  }
+
+  #[test]
+  fn nholdfirst_blocks_only_first_arg() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "N[a] = 10.9; N[b] = 7.7; SetAttributes[g, NHoldFirst]; N[g[a, b]]"
+      )
+      .unwrap(),
+      "g[a, 7.7]"
+    );
+  }
+
+  #[test]
+  fn nholdrest_blocks_only_rest_args() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "N[a] = 10.9; N[b] = 7.7; SetAttributes[h, NHoldRest]; N[h[a, b]]"
+      )
+      .unwrap(),
+      "h[10.9, b]"
+    );
+  }
+}
+
 mod real_precision {
   use super::*;
 
@@ -956,8 +1012,7 @@ mod accuracy {
   fn list_minimum() {
     // Accuracy of a list is the minimum accuracy of its elements
     // (recursively). Mixed exact and inexact: the inexact entry wins.
-    let result =
-      interpret("Accuracy[{{1, 1.`}, {1.``5, 1.``10}}]").unwrap();
+    let result = interpret("Accuracy[{{1, 1.`}, {1.``5, 1.``10}}]").unwrap();
     let val: f64 = result.parse().unwrap();
     assert!((val - 5.0).abs() < 0.01);
   }
