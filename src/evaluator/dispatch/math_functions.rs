@@ -871,6 +871,15 @@ pub fn dispatch_math_functions(
     "SphericalBesselJ" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spherical_bessel_j_ast(args));
     }
+    "SphericalBesselY" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::spherical_bessel_y_ast(args));
+    }
+    "SphericalHankelH1" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::spherical_hankel_h1_ast(args));
+    }
+    "SphericalHankelH2" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::spherical_hankel_h2_ast(args));
+    }
     "LogGamma" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log_gamma_ast(args));
     }

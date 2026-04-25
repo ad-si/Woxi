@@ -1010,6 +1010,76 @@ fn build_hankel(
   })
 }
 
+/// SphericalBesselY[n, z] — spherical Bessel function of the second kind.
+/// For non-negative integer `n` and positive real `z`, evaluate via the
+/// closed-form base cases and the standard upward three-term recurrence
+///   y_{n+1}(x) = (2n+1)/x · y_n(x) - y_{n-1}(x)
+/// with y_0(x) = -cos(x)/x, y_1(x) = -sin(x)/x - cos(x)/x^2.
+/// Falls back to Sqrt[Pi/(2z)] * BesselY[n + 1/2, z] for non-integer `n`.
+pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "SphericalBesselY".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  let has_real =
+    matches!(n_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_));
+  let z_f64 = try_eval_to_f64(z_expr);
+
+  // Integer-order direct evaluation (more accurate than the BesselY route).
+  if has_real
+    && let Some(n) = expr_to_i128(n_expr)
+    && n >= 0
+    && let Some(z) = z_f64
+    && z > 0.0
+  {
+    let s = z.sin();
+    let c = z.cos();
+    let mut prev = -c / z; // y_0
+    let mut curr = -s / z - c / (z * z); // y_1
+    if n == 0 {
+      return Ok(Expr::Real(prev));
+    }
+    if n == 1 {
+      return Ok(Expr::Real(curr));
+    }
+    for k in 1..n {
+      let next = (2.0 * k as f64 + 1.0) / z * curr - prev;
+      prev = curr;
+      curr = next;
+    }
+    return Ok(Expr::Real(curr));
+  }
+
+  // Fallback: Sqrt[Pi/(2z)] * BesselY[n + 1/2, z] for non-integer order.
+  let n_f64 = try_eval_to_f64(n_expr);
+  if has_real
+    && let (Some(n_val), Some(z_val)) = (n_f64, z_f64)
+    && z_val > 0.0
+  {
+    let bessel_result =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "BesselY".to_string(),
+        args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+      })?;
+    if let Some(by) = try_eval_to_f64(&bessel_result) {
+      let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * by;
+      return Ok(Expr::Real(result));
+    }
+  }
+
+  // Return unevaluated for symbolic case
+  Ok(Expr::FunctionCall {
+    name: "SphericalBesselY".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// HankelH1[n, z] = BesselJ[n, z] + I * BesselY[n, z]
 pub fn hankel_h1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   build_hankel("HankelH1", "BesselJ", "BesselY", 1, args)
@@ -1131,8 +1201,8 @@ fn ker_series(x: f64) -> f64 {
   let euler_gamma = 0.5772156649015329_f64;
   let half = x * 0.5;
   let half2 = half * half;
-  let mut total = -(euler_gamma + (half).ln()) * ber_series(x)
-    + (PI / 4.0) * bei_series(x);
+  let mut total =
+    -(euler_gamma + (half).ln()) * ber_series(x) + (PI / 4.0) * bei_series(x);
   // k = 1..∞: term_k = (-1)^k * φ(2k) * half^(4k) / ((2k)!)^2
   let mut phi = 0.0_f64; // φ(0)
   let mut fact_sq = 1.0_f64; // ((2*0)!)^2 = 1
@@ -1162,8 +1232,8 @@ fn kei_series(x: f64) -> f64 {
   let euler_gamma = 0.5772156649015329_f64;
   let half = x * 0.5;
   let half2 = half * half;
-  let mut total = -(euler_gamma + (half).ln()) * bei_series(x)
-    - (PI / 4.0) * ber_series(x);
+  let mut total =
+    -(euler_gamma + (half).ln()) * bei_series(x) - (PI / 4.0) * ber_series(x);
   // k = 0..∞: term_k = (-1)^k * φ(2k+1) * half^(4k+2) / ((2k+1)!)^2
   let mut phi = 1.0_f64; // φ(1)
   let mut fact_sq = 1.0_f64; // ((2*0+1)!)^2 = 1
