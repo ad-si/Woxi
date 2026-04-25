@@ -1098,6 +1098,12 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       Ok(Expr::Integer(0))
     }
 
+    // Slots are independent variables of a pure function. When the
+    // differentiation variable is itself one slot (substituted through
+    // a fresh symbol), other Slot[k] nodes contribute zero rather than
+    // an unresolved D[#k, x] term.
+    Expr::Slot(_) | Expr::SlotSequence(_) => Ok(Expr::Integer(0)),
+
     // Variable
     Expr::Identifier(name) => {
       if name == var {
