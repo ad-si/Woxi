@@ -1928,15 +1928,26 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         crate::evaluator::evaluate_expr_to_expr(&result)
       } else {
-        // No cube factor — return n^(1/3)
-        Ok(Expr::BinaryOp {
+        // No cube factor — CubeRoot is the real cube root, so return
+        // Sign[n] * abs[n]^(1/3) (matching wolframscript: CubeRoot[-5]
+        // -> -5^(1/3), i.e. -(5^(1/3)), not the complex (-5)^(1/3)).
+        let pow = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Power,
-          left: Box::new(Expr::Integer(sign * abs_n as i128)),
+          left: Box::new(Expr::Integer(abs_n as i128)),
           right: Box::new(Expr::FunctionCall {
             name: "Rational".to_string(),
             args: vec![Expr::Integer(1), Expr::Integer(3)],
           }),
-        })
+        };
+        if sign < 0 {
+          Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(pow),
+          })
+        } else {
+          Ok(pow)
+        }
       }
     }
     Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
