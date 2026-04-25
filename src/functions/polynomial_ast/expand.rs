@@ -1069,6 +1069,22 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
       }
     }
 
+    Expr::CurriedCall { func, args } => {
+      // ExpandAll[(expr1)[expr2]] expands inside both the head expression
+      // and each curried argument (matches Wolfram, where
+      // `ExpandAll[((1+x)(1+y))[x]]` produces `(1 + x + y + x*y)[x]`).
+      let func_exp = expand_all_recursive(func);
+      let args_exp: Vec<Expr> = args.iter().map(expand_all_recursive).collect();
+      Expr::CurriedCall {
+        func: Box::new(func_exp),
+        args: args_exp,
+      }
+    }
+
+    Expr::List(items) => {
+      Expr::List(items.iter().map(expand_all_recursive).collect())
+    }
+
     Expr::FunctionCall { name, args } => {
       let expanded_args: Vec<Expr> =
         args.iter().map(expand_all_recursive).collect();

@@ -6885,10 +6885,24 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::CurriedCall { func, args } => {
       // Display as nested calls: f[a][b, c]
-      // When func is a Function (body &), wrap in parens: (body & )[args]
+      // When func is a Function (body &) or a non-atomic expression
+      // (e.g. a Plus/Times like `1 + x + y + x*y`), wrap in parens so
+      // `[x]` clearly applies to the whole head, matching Wolfram's
+      // `(1 + x + y + x*y)[x]` rendering.
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
-      let func_display = if matches!(func.as_ref(), Expr::Function { .. }) {
+      let needs_parens = matches!(func.as_ref(), Expr::Function { .. })
+        || matches!(
+          func.as_ref(),
+          Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. }
+        )
+        || matches!(
+          func.as_ref(),
+          Expr::FunctionCall { name, args }
+            if matches!(name.as_str(), "Plus" | "Times" | "Power")
+              && args.len() >= 2
+        );
+      let func_display = if needs_parens {
         format!("({})", func_str)
       } else {
         func_str
