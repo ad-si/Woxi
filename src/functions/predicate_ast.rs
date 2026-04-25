@@ -367,6 +367,24 @@ fn is_numeric_function(name: &str) -> bool {
 }
 
 /// PositiveQ[x] - Tests if x is a positive number
+/// Numerically evaluate a NumericQ expression (e.g. Sin[11]) and apply
+/// `cmp` to the resulting f64. Returns None when the expression isn't
+/// purely real-numeric (e.g. it has free user symbols, or evaluates to
+/// a complex / non-finite value).
+fn sign_via_numeric(expr: &Expr, cmp: impl Fn(f64) -> bool) -> Option<bool> {
+  // Only fire when NumericQ would succeed — that's how Wolfram decides
+  // it can numerically evaluate. Avoids forcing Negative[a] to True or
+  // anything weird for unevaluated user symbols.
+  if !is_numeric_q_pub(expr) {
+    return None;
+  }
+  let val = super::math_ast::try_eval_to_f64(expr)?;
+  if !val.is_finite() {
+    return None;
+  }
+  Some(cmp(val))
+}
+
 /// Detect a non-real complex value: Complex[_, b] with non-zero b, or its
 /// expanded forms `b*I`, `a + b*I`, etc.
 fn has_nonzero_imag_part(expr: &Expr) -> bool {
@@ -512,13 +530,17 @@ pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_nonzero_imag_part(&args[0]) {
     return Ok(bool_expr(false));
   }
-  match is_known_positive(&args[0]) {
-    Some(val) => Ok(bool_expr(val)),
-    None => Ok(Expr::FunctionCall {
-      name: "Positive".to_string(),
-      args: args.to_vec(),
-    }),
+  if let Some(val) = is_known_positive(&args[0]) {
+    return Ok(bool_expr(val));
   }
+  // NumericQ inputs (e.g. Sin[11]) get evaluated to a real f64 to decide.
+  if let Some(b) = sign_via_numeric(&args[0], |f| f > 0.0) {
+    return Ok(bool_expr(b));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Positive".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// NegativeQ[x] - Tests if x is a negative number
@@ -532,13 +554,16 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_nonzero_imag_part(&args[0]) {
     return Ok(bool_expr(false));
   }
-  match is_known_negative(&args[0]) {
-    Some(val) => Ok(bool_expr(val)),
-    None => Ok(Expr::FunctionCall {
-      name: "Negative".to_string(),
-      args: args.to_vec(),
-    }),
+  if let Some(val) = is_known_negative(&args[0]) {
+    return Ok(bool_expr(val));
   }
+  if let Some(b) = sign_via_numeric(&args[0], |f| f < 0.0) {
+    return Ok(bool_expr(b));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Negative".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// NonPositiveQ[x] - Tests if x is <= 0
