@@ -2028,6 +2028,12 @@ pub fn term_priority(e: &Expr) -> i32 {
 /// This ensures simple symbols sort before sums/products, matching Wolfram behavior.
 pub fn times_factor_subpriority(e: &Expr) -> i32 {
   match e {
+    // Arbitrary-precision numerics survive in `symbolic_args` rather
+    // than being absorbed into the integer coefficient, so they pass
+    // through the Times canonical sort. Wolfram puts them BEFORE the
+    // imaginary unit (e.g. `N[Pi, 30]*I` displays as `<BigFloat>*I`,
+    // not `I*<BigFloat>`), hence the priority below `I`'s −2.
+    Expr::BigFloat(_, _) | Expr::BigInteger(_) => -3,
     // Imaginary unit I sorts before all other symbolic factors
     Expr::Identifier(name) if name == "I" => -2,
     Expr::Identifier(_) | Expr::Constant(_) => 0,

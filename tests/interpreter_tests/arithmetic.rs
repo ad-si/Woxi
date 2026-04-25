@@ -360,6 +360,29 @@ mod arithmetic {
       // sort_key("Log[x]") < sort_key("x") would suggest it should.
       assert_eq!(interpret("D[x^x, x]").unwrap(), "x^x*(1 + Log[x])");
     }
+
+    // BigFloat factors sort BEFORE the imaginary unit (matches Wolfram:
+    // `N[Pi, 30]*I` displays as `<BigFloat>*I`, not `I*<BigFloat>`).
+    // Machine-precision Reals continue to use the `0. + r*I` Re/Im
+    // split that wolframscript prints for them.
+    #[test]
+    fn bigfloat_sorts_before_imaginary_unit() {
+      assert!(
+        interpret("N[Pi, 30] * I")
+          .unwrap()
+          .ends_with("*I"),
+        "N[Pi, 30] * I should display BigFloat first then *I"
+      );
+      assert!(
+        !interpret("N[Pi, 30] * I").unwrap().starts_with("I*"),
+        "N[Pi, 30] * I must not display I*BigFloat"
+      );
+    }
+
+    #[test]
+    fn machine_real_keeps_re_im_split() {
+      assert_eq!(interpret("3.5 I").unwrap(), "0. + 3.5*I");
+    }
   }
 
   mod combine_like_bases {

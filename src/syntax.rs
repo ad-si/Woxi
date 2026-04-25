@@ -5778,7 +5778,15 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               _ => symbolic_factors.push(arg),
             }
           }
-          if !symbolic_factors.is_empty() {
+          // When a BigFloat is present alongside the imaginary unit,
+          // Wolfram does NOT use the `I*<rest>` grouping — it just emits
+          // the canonical Times order, e.g. `<BigFloat>*I`. Fall through
+          // to the default Times formatter so the BigFloat sorts before
+          // I (its `times_factor_subpriority` is -3).
+          let any_bigfloat = symbolic_factors
+            .iter()
+            .any(|a| matches!(a, Expr::BigFloat(_, _) | Expr::BigInteger(_)));
+          if !symbolic_factors.is_empty() && !any_bigfloat {
             let i_part_opt: Option<String> = if numeric_factors.is_empty() {
               Some("I".to_string())
             } else if numeric_factors.len() == 1 {
@@ -9403,13 +9411,14 @@ pub fn top_level_output(expr: &Expr) -> String {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
     }
     // Pure-imaginary `Times[Real, I]` at the top level displays as
-    // `0. ± r*I` to match wolframscript's Complex output. Inside larger
-    // expressions the existing Times display is used (so `2. + 3.*I`
-    // stays unchanged).
+    // `0. ± r*I` to match wolframscript's Complex output for
+    // *machine-precision* Reals. Inside larger expressions the existing
+    // Times display is used (so `2. + 3.*I` stays unchanged).
+    // BigFloat * I keeps the literal `<BigFloat>*I` form — Wolfram does
+    // NOT split arbitrary-precision factors into Re/Im at display time.
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       let real_coef = match &args[0] {
         Expr::Real(f) => Some(*f),
-        Expr::BigFloat(s, _) => s.parse::<f64>().ok(),
         _ => None,
       };
       let i_factor = matches!(&args[1], Expr::Identifier(s) if s == "I")
@@ -9419,11 +9428,7 @@ pub fn top_level_output(expr: &Expr) -> String {
               && matches!(&ca[0], Expr::Integer(0))
               && matches!(&ca[1], Expr::Integer(1)));
       if let (Some(c), true) = (real_coef, i_factor) {
-        let coef_str = match &args[0] {
-          Expr::Real(_) => format_real(c),
-          Expr::BigFloat(s, p) => format_bigfloat(s, *p),
-          _ => format_real(c),
-        };
+        let coef_str = format_real(c);
         if c < 0.0 {
           let abs_str = coef_str
             .strip_prefix('-')
