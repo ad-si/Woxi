@@ -1173,8 +1173,7 @@ mod export_string {
   #[test]
   fn export_string_tsv_uses_tab_separator() {
     clear_state();
-    let result =
-      interpret("ExportString[{{1,2},{3,4}}, \"TSV\"]").unwrap();
+    let result = interpret("ExportString[{{1,2},{3,4}}, \"TSV\"]").unwrap();
     assert_eq!(result, "1\t2\n3\t4\n");
   }
 }
@@ -3155,6 +3154,62 @@ mod import_string {
         .contains("ImportString::string: First argument str is not a string.")),
       "expected ImportString::string warning, got {:?}",
       result.warnings
+    );
+  }
+
+  // Plain-text formats: Elements, Lines, Plaintext, String, Words.
+  #[test]
+  fn import_string_elements_lists_plain_text_formats() {
+    assert_eq!(
+      interpret(r#"ImportString["any", "Elements"]"#).unwrap(),
+      r#"{Data, Lines, Plaintext, String, Summary, Words}"#
+    );
+  }
+
+  #[test]
+  fn import_string_lines_basic_split() {
+    assert_eq!(
+      interpret(r#"ImportString["Hello\nworld", "Lines"]"#).unwrap(),
+      r#"{Hello, world}"#
+    );
+  }
+
+  #[test]
+  fn import_string_lines_drops_single_trailing_newline() {
+    // wolframscript: `"a\nb\n"` → `{"a","b"}` — the final newline is a
+    // record terminator, not a separator that introduces an empty record.
+    assert_eq!(
+      interpret(r#"ImportString["a\nb\n", "Lines"]"#).unwrap(),
+      r#"{a, b}"#
+    );
+  }
+
+  #[test]
+  fn import_string_lines_preserves_interior_blank_lines() {
+    assert_eq!(
+      interpret(r#"ImportString["a\n\nb", "Lines"]"#).unwrap(),
+      r#"{a, , b}"#
+    );
+  }
+
+  #[test]
+  fn import_string_lines_empty_input_returns_empty_list() {
+    assert_eq!(interpret(r#"ImportString["", "Lines"]"#).unwrap(), r#"{}"#);
+  }
+
+  #[test]
+  fn import_string_words_splits_on_whitespace() {
+    assert_eq!(
+      interpret(r#"ImportString["Hello world\nfoo bar", "Words"]"#).unwrap(),
+      r#"{Hello, world, foo, bar}"#
+    );
+  }
+
+  #[test]
+  fn import_string_plaintext_returns_input_verbatim() {
+    assert_eq!(
+      interpret(r#"ImportString["Hello world", "Plaintext"]"#).unwrap(),
+      "Hello world"
     );
   }
 }

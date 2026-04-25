@@ -171,7 +171,10 @@ pub fn dispatch_image_functions(
           "WatermelonColors",
         ];
         return Some(Ok(Expr::List(
-          names.iter().map(|n| Expr::String((*n).to_string())).collect(),
+          names
+            .iter()
+            .map(|n| Expr::String((*n).to_string()))
+            .collect(),
         )));
       }
     }
@@ -462,6 +465,44 @@ pub fn dispatch_image_functions(
       } else {
         "CSV"
       };
+
+      // Plain-text format elements that don't depend on a parser.
+      // `Elements` returns the static list of supported plain-text
+      // element names so callers can probe what's available.
+      if format == "Elements" {
+        let names =
+          ["Data", "Lines", "Plaintext", "String", "Summary", "Words"];
+        return Some(Ok(Expr::List(
+          names.iter().map(|n| Expr::String((*n).to_string())).collect(),
+        )));
+      }
+      // `Lines` splits the input at every `\n`. A single trailing newline
+      // is dropped (matches wolframscript: `"a\nb\n"` → `{"a","b"}`),
+      // but interior blank lines are preserved.
+      if format == "Lines" {
+        let trimmed = content.strip_suffix('\n').unwrap_or(&content);
+        let items: Vec<Expr> = if trimmed.is_empty() {
+          Vec::new()
+        } else {
+          trimmed
+            .split('\n')
+            .map(|s| Expr::String(s.to_string()))
+            .collect()
+        };
+        return Some(Ok(Expr::List(items)));
+      }
+      // `String` / `Plaintext` return the input verbatim.
+      if format == "String" || format == "Plaintext" {
+        return Some(Ok(Expr::String(content)));
+      }
+      // `Words` splits on ASCII whitespace and drops empty fragments.
+      if format == "Words" {
+        let items: Vec<Expr> = content
+          .split_whitespace()
+          .map(|s| Expr::String(s.to_string()))
+          .collect();
+        return Some(Ok(Expr::List(items)));
+      }
 
       if format != "CSV" {
         return Some(Ok(Expr::FunctionCall {
