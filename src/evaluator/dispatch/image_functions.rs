@@ -473,7 +473,10 @@ pub fn dispatch_image_functions(
         let names =
           ["Data", "Lines", "Plaintext", "String", "Summary", "Words"];
         return Some(Ok(Expr::List(
-          names.iter().map(|n| Expr::String((*n).to_string())).collect(),
+          names
+            .iter()
+            .map(|n| Expr::String((*n).to_string()))
+            .collect(),
         )));
       }
       // `Lines` splits the input at every `\n`. A single trailing newline

@@ -497,3 +497,44 @@ mod attributes_assignment {
     );
   }
 }
+
+// HoldAllComplete suppresses UpValues lookup (in addition to holding all
+// args and disabling Sequence flattening / Evaluate). A symbol's upvalue
+// is normally consulted when the surrounding head sees it, but with
+// HoldAllComplete on the head the upvalue stays dormant.
+mod hold_all_complete_blocks_upvalues {
+  use super::*;
+
+  #[test]
+  fn upvalue_normally_fires() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[g, a]; g[a] ^= 3; g[a]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn upvalue_blocked_when_head_has_hold_all_complete() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[f, a]; SetAttributes[f, HoldAllComplete]; f[a] ^= 3; f[a]"
+      )
+      .unwrap(),
+      "f[a]"
+    );
+  }
+
+  #[test]
+  fn hold_all_complete_also_keeps_sequence_unsplattered() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[f]; SetAttributes[f, HoldAllComplete]; f[Sequence[a, b]]"
+      )
+      .unwrap(),
+      "f[Sequence[a, b]]"
+    );
+  }
+}

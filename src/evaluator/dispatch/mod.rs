@@ -524,10 +524,31 @@ pub fn evaluate_function_call_ast_inner(
 
   // Check for user-defined functions (before built-in dispatch, so user
   // overrides take precedence — matching Wolfram Language semantics)
-  // Clone overloads to avoid holding the borrow across evaluate calls
+  // Clone overloads to avoid holding the borrow across evaluate calls.
+  //
+  // HoldAllComplete suppresses UpValues lookup (matching Wolfram). Woxi
+  // stores upvalues in FUNC_DEFS too (their params start with `_up`), so
+  // when the head carries HoldAllComplete we drop those entries before
+  // dispatch — DownValues for the same head are still tried as usual.
+  let head_has_hold_all_complete = crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"HoldAllComplete".to_string()))
+  }) || get_builtin_attributes(name).contains(&"HoldAllComplete");
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
-    defs.get(name).cloned()
+    let raw = defs.get(name).cloned();
+    if head_has_hold_all_complete {
+      raw.map(|v| {
+        v.into_iter()
+          .filter(|(params, _, _, _, _, _)| {
+            !params.iter().any(|p| p.starts_with("_up"))
+          })
+          .collect::<Vec<_>>()
+      })
+    } else {
+      raw
+    }
   });
   let inline_opts_overloads = crate::FUNC_OPTS_INLINE.with(|m| {
     let map = m.borrow();
@@ -1311,7 +1332,8 @@ pub fn evaluate_function_call_ast_inner(
   // the user has not installed their own DownValue. Wolfram returns the
   // template text; without this, e.g. `General::argr` would stay
   // unevaluated as `MessageName[General, argr]`.
-  if name == "MessageName" && args.len() == 2
+  if name == "MessageName"
+    && args.len() == 2
     && let Some(text) = builtin_message_text(&args[0], &args[1])
   {
     return Ok(Expr::String(text.to_string()));
