@@ -3236,8 +3236,8 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     let a_is_int_zero = matches!(a, Expr::Integer(0));
     let a_is_real_zero = matches!(a, Expr::Real(f) if *f == 0.0);
     if a_is_int_zero || a_is_real_zero {
-      let either_real = a_is_real_zero
-        || matches!(b, Expr::Real(_) | Expr::BigFloat(_, _));
+      let either_real =
+        a_is_real_zero || matches!(b, Expr::Real(_) | Expr::BigFloat(_, _));
       return Ok(if either_real {
         Expr::Real(0.0)
       } else {
@@ -4078,14 +4078,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
             return power_two(inner_base, &new_exp);
           }
         }
-        // (constant^symbolic_exp)^n → constant^(symbolic_exp * n) for E, Pi, integers
+        // (base^symbolic_exp)^n → base^(symbolic_exp * n)
+        // Wolfram combines whenever the outer exponent is an integer,
+        // regardless of the inner exponent or base.
         _ => {
-          let is_const_base =
-            matches!(inner_base, Expr::Constant(_) | Expr::Integer(_));
-          if is_const_base {
-            let new_exp = times_ast(&[inner_exp.clone(), Expr::Integer(*e2)])?;
-            return power_two(inner_base, &new_exp);
-          }
+          let new_exp = times_ast(&[inner_exp.clone(), Expr::Integer(*e2)])?;
+          return power_two(inner_base, &new_exp);
         }
       }
     }
