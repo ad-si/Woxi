@@ -770,19 +770,41 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
-    // Rationalize[x] with no tolerance: convert the decimal representation to an exact
-    // rational fraction p/10^n and simplify by GCD, matching Wolfram Language behavior.
-    // If the resulting fraction has a large denominator and the number is very close to
-    // a simple fraction (denominator ≤ 3), return the Real unchanged (ambiguous input).
+    // Rationalize[x] with no tolerance.
+    //
+    // 1. If x is within ~10×machine-epsilon of a small-denominator rational
+    //    (denom ≤ 1000), return that rational. This catches 0.6666...6 → 2/3.
+    // 2. Otherwise compute the exact decimal-to-fraction p/10^n.
+    //    - If the simplified denom is huge AND x is close (~1e-5) to some
+    //      simple fraction (denom ≤ 3), return x as Real (the input is
+    //      ambiguous, e.g. 0.333333).
+    //    - If the simplified denom is huge with no close simple fraction
+    //      (e.g. N[Pi] → 3.141592653589793), return x as Real.
+    //    - Otherwise return the rational p/q.
+    let near_small_tol = (x.abs() * 10.0 * f64::EPSILON).max(f64::MIN_POSITIVE);
+    let (sn, sd) = find_rational_smallest_denom(x, near_small_tol);
+    if sd > 0
+      && sd <= 1000
+      && (sn as f64 / sd as f64 - x).abs() <= near_small_tol
+    {
+      return Ok(if sd == 1 {
+        Expr::Integer(sn as i128)
+      } else {
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(sn as i128), Expr::Integer(sd as i128)],
+        }
+      });
+    }
+
     let (numer, denom) = decimal_to_fraction(x);
     if denom == 1 {
       return Ok(Expr::Integer(numer as i128));
     }
 
-    // Check for ambiguity: if the simplified fraction still has a large denominator
-    // and x is very close to a fraction with denominator ≤ 3 (like 1/2, 1/3, 2/3),
-    // Wolfram considers the input ambiguous and returns the Real unchanged.
     if denom > 500_000 {
+      // Ambiguity: x is very close to a fraction with denom ≤ 3 — return
+      // the float to signal that the input is not exactly that fraction.
       for d in [2i64, 3] {
         let n = (x * d as f64).round() as i64;
         if n != 0 {
@@ -791,6 +813,11 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(num_to_expr(x));
           }
         }
+      }
+      // Even the decimal expansion needs many digits and x is not near a
+      // tiny fraction — looks like an opaque float (e.g. N[Pi]).
+      if denom > 100_000_000 {
+        return Ok(num_to_expr(x));
       }
     }
 
@@ -1297,7 +1324,9 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
     } => Some(operand.as_ref().clone()),
-    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
       // Match Times[-1, rest...] as a negative form.
       if matches!(args[0], Expr::Integer(-1)) {
         Some(if args.len() == 2 {
