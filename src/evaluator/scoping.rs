@@ -200,14 +200,19 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (var_name, init_expr) in &local_vars {
     let pv = if let Some(expr) = init_expr {
+      // Evaluate initializer with the *previous* binding still active (so
+      // `Block[{x = n+2, n}, ...]` sees the outer `n`).
       let evaluated = evaluate_expr_to_expr(expr)?;
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
       })
     } else {
-      // Block with no initializer removes the variable binding so it evaluates as a symbol
-      ENV.with(|e| e.borrow_mut().remove(var_name))
+      // No initializer: Block preserves the current global value during the
+      // body but restores it on exit. We snapshot the existing binding
+      // (without removing it) so any assignments inside the block can be
+      // reverted afterwards.
+      ENV.with(|e| e.borrow().get(var_name).cloned())
     };
     prev.push((var_name.clone(), pv));
   }
