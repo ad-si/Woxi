@@ -1960,8 +1960,13 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(result)
     }
     Expr::Function { body } => {
-      // Return anonymous function as-is
-      Ok(Expr::Function { body: body.clone() })
+      // Function has HoldAll, but Evaluate[...] inside the body forces
+      // evaluation of its argument before the function is held. Match
+      // wolframscript: Evaluate[expr]& becomes Function[expr_evaluated].
+      let new_body = unwrap_evaluate_in_body(body)?;
+      Ok(Expr::Function {
+        body: Box::new(new_body),
+      })
     }
     Expr::NamedFunction {
       params,
@@ -2020,6 +2025,48 @@ pub fn evaluate_expr_to_expr_inner(
         .collect::<Result<_, _>>()?;
       apply_curried_call(&evaluated_func, &evaluated_args)
     }
+  }
+}
+
+/// Recursively unwrap `Evaluate[expr]` subexpressions inside a Function body
+/// (or any held expression), evaluating their arguments. This implements
+/// Wolfram's rule that Evaluate forces evaluation through HoldAll wrappers.
+fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::FunctionCall { name, args } = body
+    && name == "Evaluate"
+    && args.len() == 1
+  {
+    return evaluate_expr_to_expr(&args[0]);
+  }
+  // Recurse into common compound forms so nested Evaluate gets evaluated too.
+  match body {
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(unwrap_evaluate_in_body)
+        .collect::<Result<_, _>>()?;
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      })
+    }
+    Expr::List(items) => {
+      let new_items: Vec<Expr> = items
+        .iter()
+        .map(unwrap_evaluate_in_body)
+        .collect::<Result<_, _>>()?;
+      Ok(Expr::List(new_items))
+    }
+    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
+      op: *op,
+      left: Box::new(unwrap_evaluate_in_body(left)?),
+      right: Box::new(unwrap_evaluate_in_body(right)?),
+    }),
+    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(unwrap_evaluate_in_body(operand)?),
+    }),
+    other => Ok(other.clone()),
   }
 }
 
