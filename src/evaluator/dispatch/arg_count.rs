@@ -1020,7 +1020,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Tuples" => Some((1, 2)),
     "TuringMachine" => Some((3, 3)),
     "Uncompress" => Some((1, 1)),
-    "Unequal" => Some((2, usize::MAX)),
+    "Unequal" => Some((0, usize::MAX)),
     "UnequalTo" => Some((1, 1)),
     "UniformDistribution" => Some((0, 1)),
     "Unique" => Some((0, 1)),

@@ -53,6 +53,10 @@ pub fn dispatch_boolean_functions(
     "Unequal" if args.len() >= 2 => {
       return Some(crate::functions::boolean_ast::unequal_ast(args));
     }
+    // 0- or 1-arg Unequal is trivially True (no pair of unequal items).
+    "Unequal" if args.len() < 2 => {
+      return Some(Ok(Expr::Identifier("True".to_string())));
+    }
     "Less" if args.len() >= 2 => {
       return Some(crate::functions::boolean_ast::less_ast(args));
     }
