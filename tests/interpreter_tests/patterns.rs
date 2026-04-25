@@ -668,19 +668,13 @@ mod pattern_matching {
     // `Hold[x] /. {x :> y}` previously yielding `Hold[5]` when `y = 5`.
     #[test]
     fn rule_delayed_inside_hold_keeps_rhs_unevaluated() {
-      assert_eq!(
-        interpret("y = 5; Hold[x] /. {x :> y}").unwrap(),
-        "Hold[y]"
-      );
+      assert_eq!(interpret("y = 5; Hold[x] /. {x :> y}").unwrap(), "Hold[y]");
     }
 
     #[test]
     fn hold_pattern_rule_delayed_via_own_values() {
       assert_eq!(
-        interpret(
-          "x := y; y = 5; Hold[x] /. OwnValues[x]"
-        )
-        .unwrap(),
+        interpret("x := y; y = 5; Hold[x] /. OwnValues[x]").unwrap(),
         "Hold[y]"
       );
     }
@@ -689,10 +683,7 @@ mod pattern_matching {
     fn rule_inside_hold_still_evaluates_rhs_at_rule_creation() {
       // With `->`, the RHS is evaluated when the rule is created, so the
       // substituted value is already 5 even before reaching Hold.
-      assert_eq!(
-        interpret("y = 5; Hold[x] /. {x -> y}").unwrap(),
-        "Hold[5]"
-      );
+      assert_eq!(interpret("y = 5; Hold[x] /. {x -> y}").unwrap(), "Hold[5]");
     }
 
     #[test]

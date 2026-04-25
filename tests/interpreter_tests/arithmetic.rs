@@ -306,6 +306,29 @@ mod arithmetic {
     fn derivative_sorted() {
       assert_eq!(interpret("D[Sin[x]^2, x]").unwrap(), "2*Cos[x]*Sin[x]");
     }
+
+    // When two reciprocal factors share the same sort key (e.g. y vs (x-y)),
+    // the additive base sorts FIRST when it contains the negation of the
+    // bare identifier — matching Wolfram. Regression for `Apart` output.
+    #[test]
+    fn reciprocal_additive_with_negated_ident_sorts_first() {
+      assert_eq!(interpret("y^-1 * (x - y)^-1").unwrap(), "1/((x - y)*y)");
+      assert_eq!(interpret("(x - y)^-1 * y^-1").unwrap(), "1/((x - y)*y)");
+    }
+
+    #[test]
+    fn reciprocal_additive_without_negated_ident_keeps_default_order() {
+      // `x + y` does not contain `-y`, so the shorter `y` factor stays first.
+      assert_eq!(interpret("y^-1 * (x + y)^-1").unwrap(), "1/(y*(x + y))");
+    }
+
+    #[test]
+    fn apart_partial_fraction_canonical_factor_order() {
+      assert_eq!(
+        interpret("Apart[1 / (x^2 - y^2), x]").unwrap(),
+        "1/(2*(x - y)*y) - 1/(2*y*(x + y))"
+      );
+    }
   }
 
   mod combine_like_bases {

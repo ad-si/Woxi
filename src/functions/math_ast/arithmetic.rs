@@ -2290,6 +2290,43 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
           return std::cmp::Ordering::Greater;
         }
       }
+      // Tiebreak when one Power-like factor's base is an Identifier and the
+      // other's base is an additive expression that contains the negation of
+      // that identifier (or has the form Plus[neg_const, ident]). Wolfram
+      // sorts the additive base FIRST so e.g. `(x-y)^-1 * y^-1` displays as
+      // `1/((x-y)*y)`, not `1/(y*(x-y))`. Without this rule, the two factors
+      // share sort key "y" and string-length fallback puts the shorter one
+      // (y^-1) first, which is wrong.
+      let base_a_is_ident =
+        matches!(&base_a, Expr::Identifier(_) | Expr::Constant(_));
+      let base_b_is_ident =
+        matches!(&base_b, Expr::Identifier(_) | Expr::Constant(_));
+      let is_additive = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus
+              | crate::syntax::BinaryOperator::Minus,
+            ..
+          }
+        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      };
+      let base_a_is_additive = is_additive(&base_a);
+      let base_b_is_additive = is_additive(&base_b);
+      if base_a_is_ident
+        && base_b_is_additive
+        && (additive_contains_negated(&base_b, &base_a)
+          || additive_is_neg_const_plus_ident(&base_b, &base_a))
+      {
+        return std::cmp::Ordering::Greater; // additive base first
+      }
+      if base_b_is_ident
+        && base_a_is_additive
+        && (additive_contains_negated(&base_a, &base_b)
+          || additive_is_neg_const_plus_ident(&base_a, &base_b))
+      {
+        return std::cmp::Ordering::Less; // additive base first
+      }
       // Fall back to string length then alphabetical
       let as_str = crate::syntax::expr_to_string(a);
       let bs_str = crate::syntax::expr_to_string(b);
