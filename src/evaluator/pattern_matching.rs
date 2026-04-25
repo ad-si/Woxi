@@ -361,6 +361,46 @@ pub fn has_one_identity(name: &str) -> bool {
   })
 }
 
+/// Look up a user-defined `Default[f, position]` (or position-less
+/// `Default[f]`) value via the existing DownValue dispatch. Returns the
+/// stored default if one was set with `Default[f, ...] = value`, or None
+/// otherwise.
+fn lookup_user_default(
+  func_name: &str,
+  position: usize,
+  total_args: usize,
+) -> Option<Expr> {
+  // Try Default[f, position, total_args], Default[f, position], Default[f]
+  // matching Wolfram's lookup chain.
+  for default_args in [
+    vec![
+      Expr::Identifier(func_name.to_string()),
+      Expr::Integer(position as i128),
+      Expr::Integer(total_args as i128),
+    ],
+    vec![
+      Expr::Identifier(func_name.to_string()),
+      Expr::Integer(position as i128),
+    ],
+    vec![Expr::Identifier(func_name.to_string())],
+  ] {
+    let call = Expr::FunctionCall {
+      name: "Default".to_string(),
+      args: default_args,
+    };
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&call) {
+      // If evaluation produced something other than the unevaluated form,
+      // a user-defined Default fired.
+      let call_str = crate::syntax::expr_to_string(&call);
+      let result_str = crate::syntax::expr_to_string(&result);
+      if result_str != call_str {
+        return Some(result);
+      }
+    }
+  }
+  None
+}
+
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
 pub fn binary_op_to_func_name(
   op: &crate::syntax::BinaryOperator,
@@ -391,10 +431,13 @@ pub fn try_one_identity_match(
   // Separate args into optional (with defaults) and required patterns
   let mut required_indices = Vec::new();
   let mut bindings = Vec::new();
+  let mut has_optional = false;
+  let mut all_optionals_have_default = true;
 
   for (i, arg) in pat_args.iter().enumerate() {
     match arg {
       Expr::PatternOptional { name, default, .. } => {
+        has_optional = true;
         // Bind optional pattern to its default value
         if let Some(d) = default {
           bindings.push((name.clone(), *d.clone()));
@@ -411,6 +454,15 @@ pub fn try_one_identity_match(
         {
           // Fallback to position-independent Default[f]
           bindings.push((name.clone(), def));
+        } else if let Some(def) =
+          lookup_user_default(pat_name, i + 1, pat_args.len())
+        {
+          // User-set Default[f, ...] = value via DownValue dispatch.
+          bindings.push((name.clone(), def));
+        } else {
+          // `x_.` with no inline default and no Default[f] defined:
+          // the optional cannot fire, so OneIdentity does not apply.
+          all_optionals_have_default = false;
         }
       }
       Expr::Pattern { .. } | Expr::Identifier(_) => {
@@ -420,6 +472,14 @@ pub fn try_one_identity_match(
         required_indices.push(i);
       }
     }
+  }
+
+  // Per the Wolfram docs, OneIdentity only short-circuits a match when at
+  // least one pattern slot has a default value (`x_:c` or `x_.`). Without
+  // any such optional slot — or if any `x_.` has no resolvable default —
+  // OneIdentity does not collapse the match.
+  if !has_optional || !all_optionals_have_default {
+    return None;
   }
 
   // OneIdentity: if there's exactly one required (non-optional) pattern slot,
