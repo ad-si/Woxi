@@ -1371,10 +1371,21 @@ pub fn set_delayed_ast(
       ));
       return Ok(Expr::Identifier("Null".to_string()));
     }
+    // If a `/; cond` clause was stripped from the LHS (or RHS), wrap the
+    // body in `Condition[body, cond]` so the lookup can re-check the
+    // guard at access time and skip the rule when it fails (matching
+    // Wolfram's `a /; b > 0 := 3` semantics).
+    let stored_body = match body_condition {
+      Some(cond) => Expr::FunctionCall {
+        name: "Condition".to_string(),
+        args: vec![body.clone(), cond.clone()],
+      },
+      None => body.clone(),
+    };
     // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed
     ENV.with(|e| {
       e.borrow_mut()
-        .insert(var_name.clone(), StoredValue::ExprVal(body.clone()))
+        .insert(var_name.clone(), StoredValue::ExprVal(stored_body))
     });
     return Ok(Expr::Identifier("Null".to_string()));
   }

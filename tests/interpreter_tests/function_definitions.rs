@@ -541,6 +541,27 @@ mod ownvalues {
   fn ownvalues_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("OwnValues[x]").unwrap(), "{}");
   }
+
+  #[test]
+  fn conditional_ownvalue_skipped_when_test_fails() {
+    // `a /; b > 0 := 3` only fires when `b > 0` evaluates to True. With
+    // `b` unbound the test stays unevaluated, so the rule must NOT fire
+    // and `a` returns as itself (matches wolframscript).
+    clear_state();
+    assert_eq!(interpret("a /; b > 0 := 3; a").unwrap(), "a");
+  }
+
+  #[test]
+  fn conditional_ownvalue_fires_when_test_passes() {
+    clear_state();
+    assert_eq!(interpret("a /; b > 0 := 3; b = 5; a").unwrap(), "3");
+  }
+
+  #[test]
+  fn conditional_ownvalue_skipped_when_test_false() {
+    clear_state();
+    assert_eq!(interpret("a /; b > 0 := 3; b = -5; a").unwrap(), "a");
+  }
 }
 
 mod formatvalues {

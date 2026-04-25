@@ -417,6 +417,27 @@ pub fn evaluate_expr_to_expr_inner(
           // fixpoint and re-evaluating is wasted work (plus risks
           // quadratic blowup for growing lists like `k = {k, 1}`).
           StoredValue::ExprVal(e) => {
+            // `a /; cond := body` stored the OwnValue as
+            // `Condition[body, cond]` so the guard can be re-checked at
+            // lookup time. Evaluate the test; if it isn't True the rule
+            // doesn't fire and the symbol returns as itself.
+            if let Expr::FunctionCall {
+              name: cond_name,
+              args: cond_args,
+            } = &e
+              && cond_name == "Condition"
+              && cond_args.len() == 2
+            {
+              let test_eval = evaluate_expr_to_expr(&cond_args[1]);
+              let passes = matches!(
+                test_eval,
+                Ok(Expr::Identifier(ref s)) if s == "True"
+              );
+              if !passes {
+                return Ok(Expr::Identifier(name.clone()));
+              }
+              return evaluate_expr_to_expr(&cond_args[0]);
+            }
             if matches!(&e, Expr::Identifier(s) if s == name) {
               return Ok(e);
             }
