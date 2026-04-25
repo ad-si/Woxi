@@ -198,7 +198,10 @@ DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
 // "b y^3" parses as b*(y^3) not (b*y)^3 and "2 x[[1]]" parses as 2*x[[1]]
-ImplicitPowerSuffix = { "^" ~ SimpleTerm }
+// Allow a leading unary minus in the exponent so `y^-m` parses as
+// y^(-m) instead of y^0 - m (Wolfram's implicit-power semantics).
+NegSimpleTerm = { "-" ~ SimpleTerm }
+ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm | SimpleTerm) }
 ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.

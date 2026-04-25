@@ -1273,6 +1273,19 @@ pub enum ComparisonOp {
 use crate::Rule;
 use pest::iterators::Pair;
 
+/// Extract the exponent expression from an `ImplicitPowerSuffix` pair.
+/// Handles both the plain `^expr` and the `^-expr` (NegSimpleTerm) forms.
+pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
+  let inner = pair.into_inner().next().unwrap();
+  match inner.as_rule() {
+    Rule::NegSimpleTerm => Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(pair_to_expr(inner.into_inner().next().unwrap())),
+    },
+    _ => pair_to_expr(inner),
+  }
+}
+
 /// Convert a pest Pair to an owned Expr AST.
 /// This is used to store function bodies without re-parsing.
 pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
@@ -1841,8 +1854,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               }
             } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
               if let Some(base) = factors.pop() {
-                let exponent =
-                  pair_to_expr(inners[i].clone().into_inner().next().unwrap());
+                let exponent = implicit_power_exponent(inners[i].clone());
                 factors.push(Expr::BinaryOp {
                   op: BinaryOperator::Power,
                   left: Box::new(base),
@@ -1876,15 +1888,12 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           };
         }
         if has_implicit_power {
-          let exponent = pair_to_expr(
+          let exponent = implicit_power_exponent(
             inner_pairs
               .iter()
               .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
               .unwrap()
-              .clone()
-              .into_inner()
-              .next()
-              .unwrap(),
+              .clone(),
           );
           result = Expr::BinaryOp {
             op: BinaryOperator::Power,
@@ -1912,15 +1921,12 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
         let mut result = base_func;
         if has_implicit_power {
-          let exponent = pair_to_expr(
+          let exponent = implicit_power_exponent(
             inner_pairs
               .iter()
               .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
               .unwrap()
-              .clone()
-              .into_inner()
-              .next()
-              .unwrap(),
+              .clone(),
           );
           result = Expr::BinaryOp {
             op: BinaryOperator::Power,
@@ -2725,8 +2731,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           // Power suffix follows the previous factor
           if let Some(base) = factors.pop() {
-            let exponent =
-              pair_to_expr(inners[i].clone().into_inner().next().unwrap());
+            let exponent = implicit_power_exponent(inners[i].clone());
             factors.push(Expr::BinaryOp {
               op: BinaryOperator::Power,
               left: Box::new(base),
@@ -9319,9 +9324,7 @@ pub fn top_level_output(expr: &Expr) -> String {
     // `0. ± r*I` to match wolframscript's Complex output. Inside larger
     // expressions the existing Times display is used (so `2. + 3.*I`
     // stays unchanged).
-    Expr::FunctionCall { name, args }
-      if name == "Times" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       let real_coef = match &args[0] {
         Expr::Real(f) => Some(*f),
         Expr::BigFloat(s, _) => s.parse::<f64>().ok(),
