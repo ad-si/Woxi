@@ -3229,15 +3229,20 @@ pub fn is_infinity_like(expr: &Expr) -> bool {
 
 /// Helper for division of two arguments
 pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
-  // 0 / expr → 0  (as long as denominator is not also zero)
+  // 0 / expr → 0 (Real if either operand is Real, else Integer).
   let b_is_zero =
     matches!(b, Expr::Integer(0)) || matches!(b, Expr::Real(z) if *z == 0.0);
   if !b_is_zero {
-    if matches!(a, Expr::Integer(0)) {
-      return Ok(Expr::Integer(0));
-    }
-    if matches!(a, Expr::Real(f) if *f == 0.0) {
-      return Ok(Expr::Real(0.0));
+    let a_is_int_zero = matches!(a, Expr::Integer(0));
+    let a_is_real_zero = matches!(a, Expr::Real(f) if *f == 0.0);
+    if a_is_int_zero || a_is_real_zero {
+      let either_real = a_is_real_zero
+        || matches!(b, Expr::Real(_) | Expr::BigFloat(_, _));
+      return Ok(if either_real {
+        Expr::Real(0.0)
+      } else {
+        Expr::Integer(0)
+      });
     }
   }
 
