@@ -1,5 +1,18 @@
 #[allow(unused_imports)]
 use super::*;
+use std::cell::Cell;
+
+thread_local! {
+  /// When set, `set_delayed_ast` appends new rules to FUNC_DEFS in source
+  /// order instead of inserting by pattern specificity. Used by
+  /// `set_downvalues_from_rules` so `DownValues[f] := {...}` preserves the
+  /// caller's ordering, matching Wolfram.
+  static SUPPRESS_SPECIFICITY_SORT: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn suppress_specificity_sort() -> bool {
+  SUPPRESS_SPECIFICITY_SORT.with(|c| c.get())
+}
 
 /// Resolve a function name through the environment to pick up Module-scoped
 /// unique symbols.  When Module[{f}, …] creates a unique symbol like `f$1` and
@@ -389,6 +402,84 @@ pub fn set_attributes_from_value(
   Ok(rhs_value.clone())
 }
 
+/// Helper for `DownValues[f] = rules` / `DownValues[f] := rules` (and the
+/// SubValues variant): unpack each Rule/RuleDelayed in `rhs` (`HoldPattern`
+/// wrappers are stripped) and replay it as an individual `lhs := rhs` so
+/// the rules get installed in FUNC_DEFS via the regular SetDelayed path.
+/// Iteration order is preserved (no specificity sorting), matching Wolfram.
+pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
+  let rules: Vec<Expr> = match rhs {
+    Expr::List(items) => items.clone(),
+    other => vec![other.clone()],
+  };
+  // Collect the head symbols touched by these rules and clear their existing
+  // FUNC_DEFS so the new list replaces (rather than augments) old definitions.
+  let mut touched_heads: Vec<String> = Vec::new();
+  for rule in &rules {
+    let (pat, _) = match rule {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => ((**pattern).clone(), (**replacement).clone()),
+      _ => continue,
+    };
+    let unwrapped = match &pat {
+      Expr::FunctionCall { name, args }
+        if name == "HoldPattern" && args.len() == 1 =>
+      {
+        args[0].clone()
+      }
+      _ => pat.clone(),
+    };
+    if let Expr::FunctionCall { name, .. } = &unwrapped
+      && !touched_heads.contains(name)
+    {
+      touched_heads.push(name.clone());
+    }
+  }
+  for head in &touched_heads {
+    crate::FUNC_DEFS.with(|m| {
+      m.borrow_mut().remove(head);
+    });
+  }
+
+  // Replay each rule in given order with specificity sorting disabled so
+  // FUNC_DEFS preserves the caller's listing order.
+  let prev = SUPPRESS_SPECIFICITY_SORT.with(|c| c.replace(true));
+  let result = (|| -> Result<(), InterpreterError> {
+    for rule in &rules {
+      let (pat, body) = match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone()),
+        _ => continue,
+      };
+      let lhs = match &pat {
+        Expr::FunctionCall { name, args }
+          if name == "HoldPattern" && args.len() == 1 =>
+        {
+          args[0].clone()
+        }
+        _ => pat.clone(),
+      };
+      set_delayed_ast(&lhs, &body)?;
+    }
+    Ok(())
+  })();
+  SUPPRESS_SPECIFICITY_SORT.with(|c| c.set(prev));
+  result?;
+  Ok(rhs.clone())
+}
+
 /// Helper for Options[f] = value — set options for symbol f
 pub fn set_options_from_value(
   sym_name: &str,
@@ -619,6 +710,21 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
     return set_attributes_from_value(sym_name, &rhs_value);
+  }
+
+  // Handle DownValues[sym] = rules / SubValues[sym] = rules: replay each
+  // rule as an individual `lhs := rhs` so the global FUNC_DEFS table picks
+  // up the function definitions used during dispatch.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && (func_name == "DownValues" || func_name == "SubValues")
+    && lhs_args.len() == 1
+    && matches!(&lhs_args[0], Expr::Identifier(_))
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_downvalues_from_rules(&rhs_value);
   }
 
   // Handle DownValues: f[val1, val2, ...] = rhs
@@ -885,6 +991,21 @@ pub fn set_delayed_ast(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // Handle DownValues[sym] := rules / SubValues[sym] := rules: replay each
+  // rule via set_delayed_ast so dispatch picks them up.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && (func_name == "DownValues" || func_name == "SubValues")
+    && lhs_args.len() == 1
+    && matches!(&lhs_args[0], Expr::Identifier(_))
+  {
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    set_downvalues_from_rules(&rhs_value)?;
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
@@ -1106,7 +1227,11 @@ pub fn set_delayed_ast(
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
-      let insert_pos = if has_literal_conditions {
+      let insert_pos = if suppress_specificity_sort() {
+        // DownValues[f] := {...} replay: append in source order so the
+        // caller's listing is preserved.
+        entry.len()
+      } else if has_literal_conditions {
         // Literal-match definitions go before pattern definitions but after
         // existing literal definitions (preserving definition order).
         entry
