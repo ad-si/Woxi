@@ -745,6 +745,96 @@ pub fn legendre_q_eval_f64(n: usize, x: f64) -> f64 {
   curr
 }
 
+/// Closed-form numeric evaluation of ChebyshevT/U for non-integer or complex
+/// order n via the identities:
+///   T_n(x) = Cos[n * ArcCos[x]]
+///   U_n(x) = Sin[(n+1) * ArcCos[x]] / Sqrt[1 - x^2]
+///
+/// `kind` is "T" or "U". Returns Some(result) only when at least one of n
+/// and x carries a Real literal (so the result evaluates numerically).
+/// Delegates to Woxi's evaluator for Cos/Sin/ArcCos so the floating-point
+/// precision matches the rest of the system.
+fn chebyshev_general_numeric(
+  kind: &str,
+  n_expr: &Expr,
+  x_expr: &Expr,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+  fn has_real_literal(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(has_real_literal)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        has_real_literal(left) || has_real_literal(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_real_literal(operand),
+      _ => false,
+    }
+  }
+  if !has_real_literal(n_expr) && !has_real_literal(x_expr) {
+    return None;
+  }
+  let acos_x = Expr::FunctionCall {
+    name: "ArcCos".to_string(),
+    args: vec![x_expr.clone()],
+  };
+  let order = match kind {
+    "T" => n_expr.clone(),
+    "U" => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(n_expr.clone()),
+      right: Box::new(Expr::Integer(1)),
+    },
+    _ => return None,
+  };
+  let arg = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(order),
+    right: Box::new(acos_x),
+  };
+  let trig = Expr::FunctionCall {
+    name: match kind {
+      "T" => "Cos".to_string(),
+      "U" => "Sin".to_string(),
+      _ => return None,
+    },
+    args: vec![arg],
+  };
+  let final_expr = match kind {
+    "T" => trig,
+    "U" => {
+      // Divide by Sqrt[1 - x^2]
+      let denom = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(x_expr.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        }],
+      };
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(trig),
+        right: Box::new(denom),
+      }
+    }
+    _ => return None,
+  };
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&final_expr).ok()?;
+  // Distribute the leading scalar so the U-form result is a single
+  // a + b*I expression rather than `c * (a + b*I)`.
+  Some(
+    crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated.clone()])
+      .unwrap_or(evaluated),
+  )
+}
+
 /// ChebyshevT[n, x] - Chebyshev polynomial of the first kind
 pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -756,6 +846,12 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
+      // Complex (or non-integer) order with a numeric x: use the closed
+      // form T_n(x) = Cos[n * ArcCos[x]] so wolframscript-style numeric
+      // results work, e.g. ChebyshevT[1 - I, 0.5].
+      if let Some(result) = chebyshev_general_numeric("T", &args[0], &args[1]) {
+        return Ok(result);
+      }
       return Ok(Expr::FunctionCall {
         name: "ChebyshevT".to_string(),
         args: args.to_vec(),
@@ -962,6 +1058,11 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
+      // Complex (or non-integer) order with a numeric x: use the closed
+      // form U_n(x) = Sin[(n+1) * ArcCos[x]] / Sqrt[1 - x^2].
+      if let Some(result) = chebyshev_general_numeric("U", &args[0], &args[1]) {
+        return Ok(result);
+      }
       return Ok(Expr::FunctionCall {
         name: "ChebyshevU".to_string(),
         args: args.to_vec(),
