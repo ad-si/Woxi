@@ -902,13 +902,53 @@ pub fn evaluate_expr_to_expr_inner(
             });
             return Ok(Expr::Identifier("Null".to_string()));
           }
-          // UpValues[sym] =. and Messages[sym] =. — Woxi has no per-symbol
-          // upvalue/message storage yet; treat as no-op success.
+          // UpValues[sym] =. removes every upvalue rule attached to
+          // `sym`. Each rule lives in two places: `UPVALUES[sym]` (for
+          // introspection) and `FUNC_DEFS[outer_head]` (where dispatch
+          // looks). Drop both. (Mirrors the upvalue-cleanup branch of
+          // `ClearAll[sym]`.)
           if let Expr::FunctionCall {
             name: head,
             args: lhs_args,
           } = &args[0]
-            && (head == "UpValues" || head == "Messages")
+            && head == "UpValues"
+            && lhs_args.len() == 1
+            && let Expr::Identifier(sym_name) = &lhs_args[0]
+          {
+            let up_defs =
+              crate::UPVALUES.with(|m| m.borrow_mut().remove(sym_name));
+            if let Some(up_defs) = up_defs {
+              for (
+                outer_func,
+                params,
+                _conds,
+                _defaults,
+                _heads,
+                body,
+                _orig_lhs,
+                _orig_body,
+              ) in &up_defs
+              {
+                let body_str = crate::syntax::expr_to_string(body);
+                crate::FUNC_DEFS.with(|m| {
+                  if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
+                    entry.retain(|(p, _, _, _, _, b)| {
+                      !(p == params
+                        && crate::syntax::expr_to_string(b) == body_str)
+                    });
+                  }
+                });
+              }
+            }
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+          // Messages[sym] =. — Woxi has no per-symbol message storage
+          // yet; treat as a no-op success.
+          if let Expr::FunctionCall {
+            name: head,
+            args: lhs_args,
+          } = &args[0]
+            && head == "Messages"
             && lhs_args.len() == 1
             && matches!(&lhs_args[0], Expr::Identifier(_))
           {

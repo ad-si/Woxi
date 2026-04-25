@@ -423,10 +423,8 @@ mod default_values {
     // should look up `Default[g]` and substitute its value (3).
     clear_state();
     assert_eq!(
-      interpret(
-        "DefaultValues[g] = {Default[g] -> 3}; g[x_.] := {x}; g[]"
-      )
-      .unwrap(),
+      interpret("DefaultValues[g] = {Default[g] -> 3}; g[x_.] := {x}; g[]")
+        .unwrap(),
       "{3}"
     );
   }
@@ -964,6 +962,46 @@ mod cells {
     assert_eq!(
       interpret("Attributes[Cells]").unwrap(),
       "{Protected, ReadProtected}"
+    );
+  }
+}
+
+// `f[a][b] = rhs` (curried Set) and `UpValues[sym] =.` (clearing all
+// upvalues attached to a symbol) — both surface-level forms that
+// previously errored or no-op'd silently.
+mod set_curried_and_upvalues_unset {
+  use super::*;
+
+  #[test]
+  fn set_on_curried_call_returns_rhs() {
+    clear_state();
+    // Same shape as `f[a][b] := rhs` but with `=`. Doesn't actually
+    // install a SubValue (Woxi doesn't model SubValues yet) — just
+    // returns the RHS instead of erroring.
+    assert_eq!(interpret("f[a][b] = 3").unwrap(), "3");
+  }
+
+  #[test]
+  fn upvalues_unset_removes_upvalue_rule() {
+    clear_state();
+    // `g[a] ^= 5` attaches an upvalue to `a` so `g[a]` returns 5.
+    // `UpValues[a] =.` should remove every upvalue tagged on `a`,
+    // making `g[a]` revert to its symbolic form.
+    assert_eq!(
+      interpret("g[a] ^= 5; g[a]; UpValues[a] =.; g[a]").unwrap(),
+      "g[a]"
+    );
+  }
+
+  #[test]
+  fn upvalues_unset_then_predicate_falls_back() {
+    clear_state();
+    // PrimeQ has no DownValue for `p`, so once the upvalue is cleared
+    // it returns False (matching wolframscript).
+    assert_eq!(
+      interpret("PrimeQ[p] ^= True; PrimeQ[p]; UpValues[p] =.; PrimeQ[p]")
+        .unwrap(),
+      "False"
     );
   }
 }

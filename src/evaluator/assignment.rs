@@ -937,6 +937,25 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
+  // SubValue form: `f[a][b] = rhs` (also deeper nestings). Mathematica
+  // stores these under SubValues[f]; Woxi's `set_delayed_ast` already
+  // accepts `:=` here and returns Null without actually installing a
+  // subvalue rule. Mirror that for `=` so `f[a][b] = 3` doesn't error
+  // out — matching wolframscript's surface behaviour.
+  if let Expr::CurriedCall { func, .. } = lhs {
+    let mut inner = func.as_ref();
+    loop {
+      match inner {
+        Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+        Expr::FunctionCall { .. } => {
+          let rhs_value = evaluate_expr_to_expr(rhs)?;
+          return Ok(rhs_value);
+        }
+        _ => break,
+      }
+    }
+  }
+
   Err(InterpreterError::EvaluationError(
     "First argument of Set must be an identifier, part extract, or function call".into(),
   ))
