@@ -2566,6 +2566,49 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       let im = expr_to_tex(&args[1]);
       format!("{}+{} i", re, im)
     }
+    // Subscript[x, i, j, ...] -> x_{i, j, ...}
+    "Subscript" if args.len() >= 2 => {
+      let base = expr_to_tex(&args[0]);
+      let idx_tex: Vec<String> =
+        args[1..].iter().map(expr_to_tex).collect();
+      if args.len() == 2 {
+        let s = &idx_tex[0];
+        if s.chars().count() == 1 {
+          format!("{}_{}", base, s)
+        } else {
+          format!("{}_{{{}}}", base, s)
+        }
+      } else {
+        format!("{}_{{{}}}", base, idx_tex.join(", "))
+      }
+    }
+    // Superscript[x, n] -> x^n or x^{n}
+    "Superscript" if args.len() == 2 => {
+      let base = expr_to_tex(&args[0]);
+      let exp = expr_to_tex(&args[1]);
+      if exp.chars().count() == 1 {
+        format!("{}^{}", base, exp)
+      } else {
+        format!("{}^{{{}}}", base, exp)
+      }
+    }
+    // Subsuperscript[x, b, c] -> x_b^c (with brace wrapping for multi-char parts)
+    "Subsuperscript" if args.len() == 3 => {
+      let base = expr_to_tex(&args[0]);
+      let sub = expr_to_tex(&args[1]);
+      let sup = expr_to_tex(&args[2]);
+      let sub_part = if sub.chars().count() == 1 {
+        format!("_{}", sub)
+      } else {
+        format!("_{{{}}}", sub)
+      };
+      let sup_part = if sup.chars().count() == 1 {
+        format!("^{}", sup)
+      } else {
+        format!("^{{{}}}", sup)
+      };
+      format!("{}{}{}", base, sub_part, sup_part)
+    }
     // Default: render as function name with parenthesized args. Single-letter
     // names render bare (matches wolframscript: f[x] -> f(x)); multi-letter
     // names use \text{} to distinguish them from implicit products.

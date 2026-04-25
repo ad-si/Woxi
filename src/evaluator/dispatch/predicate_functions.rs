@@ -612,8 +612,25 @@ pub fn dispatch_predicate_functions(
       let bytes = crate::functions::memory::memory_available();
       return Some(Ok(Expr::Integer(bytes)));
     }
-    // Introspection functions - return {} for symbols without stored definitions
-    "Messages" | "OwnValues" | "SubValues" | "NValues" | "FormatValues"
+    // OwnValues[sym]: if `sym` has a stored value (from `sym = value`),
+    // return `{HoldPattern[sym] :> value}`, matching Wolfram. Otherwise {}.
+    "OwnValues" if args.len() == 1 => {
+      if let Expr::Identifier(name) = &args[0] {
+        let value_expr = crate::lookup_env_as_expr(name);
+        if let Some(v) = value_expr {
+          return Some(Ok(Expr::List(vec![Expr::RuleDelayed {
+            pattern: Box::new(Expr::FunctionCall {
+              name: "HoldPattern".to_string(),
+              args: vec![Expr::Identifier(name.clone())],
+            }),
+            replacement: Box::new(v),
+          }])));
+        }
+      }
+      return Some(Ok(Expr::List(vec![])));
+    }
+    // Other introspection functions - return {} for symbols without stored definitions
+    "Messages" | "SubValues" | "NValues" | "FormatValues"
       if args.len() == 1 =>
     {
       return Some(Ok(Expr::List(vec![])));

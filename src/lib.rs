@@ -209,6 +209,22 @@ pub fn session_time() -> f64 {
   SESSION_START.elapsed().as_secs_f64()
 }
 
+/// Look up the value stored in ENV for a name and return it as an Expr.
+/// Used by introspection functions like OwnValues. Returns None if the name
+/// has no stored value.
+pub fn lookup_env_as_expr(name: &str) -> Option<syntax::Expr> {
+  ENV.with(|e| {
+    e.borrow().get(name).map(|v| match v {
+      StoredValue::ExprVal(expr) => expr.clone(),
+      StoredValue::Raw(s) => match interpret_to_expr(s) {
+        Ok(expr) => expr,
+        Err(_) => syntax::Expr::String(s.clone()),
+      },
+      StoredValue::Association(_) => syntax::Expr::Identifier(name.to_string()),
+    })
+  })
+}
+
 // Captured unimplemented function calls (e.g. "Quantity[13.77, \"BillionYears\"]")
 thread_local! {
     static UNIMPLEMENTED_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
