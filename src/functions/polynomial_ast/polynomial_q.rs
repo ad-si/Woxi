@@ -189,7 +189,13 @@ pub fn is_polynomial(expr: &Expr, var: &str) -> bool {
         // base must contain the variable and exponent must be a non-negative integer
         if is_constant_wrt(right, var) {
           if let Expr::Integer(n) = right.as_ref() {
-            *n >= 0 && is_polynomial(left, var)
+            if *n < 0 {
+              // Negative exponent only ok if base is constant w.r.t. var
+              // (e.g. y^-1 is a valid coefficient when checking polynomial in x).
+              is_constant_wrt(left, var)
+            } else {
+              is_polynomial(left, var)
+            }
           } else {
             // non-integer exponent like x^y where y is a symbol ≠ var
             // Only polynomial if base is constant w.r.t. var
@@ -214,7 +220,11 @@ pub fn is_polynomial(expr: &Expr, var: &str) -> bool {
       "Power" if args.len() == 2 => {
         if is_constant_wrt(&args[1], var) {
           if let Expr::Integer(n) = &args[1] {
-            *n >= 0 && is_polynomial(&args[0], var)
+            if *n < 0 {
+              is_constant_wrt(&args[0], var)
+            } else {
+              is_polynomial(&args[0], var)
+            }
           } else {
             is_constant_wrt(&args[0], var)
           }
