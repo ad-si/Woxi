@@ -1383,29 +1383,43 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           let int_zero =
             int_signless.is_empty() || int_signless.chars().all(|c| c == '0');
           let total_digits = int_signless.len() + frac_part.len();
-          if int_zero {
-            // Zero literal with at least 18 trailing fractional zeros.
-            if frac_part.len() >= 18 && frac_part.chars().all(|c| c == '0') {
-              let acc = frac_part.len() as f64;
-              return Expr::BigFloat("0".to_string(), acc);
-            }
-          } else if total_digits >= 18 {
-            // Non-zero literal; convert to BigFloat with appropriate
-            // precision. Strip a leading sign for the stored value to
-            // match the existing BigFloat conventions, then keep the sign
-            // by prefixing the digit string with `-` if needed.
-            let value_f64: f64 = s.parse().unwrap_or(0.0);
-            if value_f64 != 0.0 {
-              let prec = frac_part.len() as f64 + value_f64.abs().log10();
-              let prec = prec.max(1.0);
-              let neg = int_part.starts_with('-');
-              let digits = if neg {
-                format!("-{}.{}", int_signless, frac_part)
-              } else {
-                format!("{}.{}", int_signless, frac_part)
-              };
-              return Expr::BigFloat(digits, prec);
-            }
+          let value_f64: f64 = s.parse().unwrap_or(0.0);
+          if int_zero
+            && value_f64 == 0.0
+            && frac_part.len() >= 18
+            && frac_part.chars().all(|c| c == '0')
+          {
+            // Pure-zero literal with at least 18 fractional zeros becomes
+            // the accuracy form `0``N.`.
+            let acc = frac_part.len() as f64;
+            return Expr::BigFloat("0".to_string(), acc);
+          }
+          // Significant-digit count: drop leading zeros for 0.xxx values.
+          let significant_digits = if int_zero {
+            let leading_zeros =
+              frac_part.chars().take_while(|c| *c == '0').count();
+            frac_part.len().saturating_sub(leading_zeros)
+          } else {
+            total_digits
+          };
+          if value_f64 != 0.0 && significant_digits >= 18 {
+            // Non-zero literal with 18+ significant digits: store as a
+            // BigFloat with that precision. Trailing zeros count toward
+            // precision (Wolfram treats `0.7390…200…0` as a 25+ digit
+            // PrecisionReal even though many digits are zero).
+            let prec = if int_zero {
+              significant_digits as f64
+            } else {
+              frac_part.len() as f64 + value_f64.abs().log10()
+            };
+            let prec = prec.max(1.0);
+            let neg = int_part.starts_with('-');
+            let digits = if neg {
+              format!("-{}.{}", int_signless, frac_part)
+            } else {
+              format!("{}.{}", int_signless, frac_part)
+            };
+            return Expr::BigFloat(digits, prec);
           }
         }
         Expr::Real(s.parse().unwrap_or(0.0))

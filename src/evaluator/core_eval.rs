@@ -1761,6 +1761,28 @@ pub fn evaluate_expr_to_expr_inner(
             expr_to_string(left) == expr_to_string(right)
           }
           ComparisonOp::Equal => {
+            // Two BigFloats with > ~16 digits of precision can carry
+            // distinct stored digit strings even though both collapse
+            // to the same f64. Compare the digit strings truncated to
+            // the *shared* precision so genuinely-different literals
+            // are False but values that agree to the shared precision
+            // (e.g. `N[E, 100]` vs `N[E, 150]`) stay equal.
+            if let (Expr::BigFloat(d_l, p_l), Expr::BigFloat(d_r, p_r)) =
+              (left, right)
+              && p_l.min(*p_r) > 16.0
+            {
+              // Compare to (shared - 1) digits so a 1-ULP difference at
+              // the last shared digit stays equal-within-tolerance.
+              let shared =
+                (p_l.min(*p_r).floor() as usize).saturating_sub(1);
+              if shared > 0
+                && !crate::functions::boolean_ast::bigfloat_digits_match_to(
+                  d_l, d_r, shared,
+                )
+              {
+                return Ok(Expr::Identifier("False".to_string()));
+              }
+            }
             if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {

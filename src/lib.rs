@@ -774,7 +774,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         && int_zero
         && frac_part.len() >= 18
         && frac_part.chars().all(|c| c == '0');
-      let nonzero_precision = n != 0.0 && total_digits >= 18;
+      // Use significant-digit count: leading zeros in 0.xxx don't count.
+      let significant_digits = if int_zero {
+        let leading_zeros =
+          frac_part.chars().take_while(|c| *c == '0').count();
+        frac_part.len().saturating_sub(leading_zeros)
+      } else {
+        total_digits
+      };
+      let nonzero_precision = n != 0.0 && significant_digits >= 18;
       if zero_accuracy || nonzero_precision {
         // Fall through to the full parser.
       } else {

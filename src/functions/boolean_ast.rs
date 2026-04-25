@@ -275,6 +275,42 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Equal[a, b] or a == b - Tests for equality
 /// Returns True if all args are identical, False if all are numeric and differ,
 /// or stays symbolic (unevaluated) if args contain symbols and aren't identical.
+/// Compare two BigFloat digit strings truncated to `n` significant digits.
+/// Strips a leading `-` sign and the decimal point, then takes the first
+/// `n` non-sign digits from each side. Returns true iff those prefixes
+/// are equal.
+pub fn bigfloat_digits_match_to(d0: &str, d1: &str, n: usize) -> bool {
+  fn sig_prefix(s: &str, n: usize) -> String {
+    let s = s.strip_prefix('-').unwrap_or(s);
+    let mut out = String::new();
+    let mut count = 0usize;
+    let mut seen_nonzero = false;
+    for c in s.chars() {
+      if c == '.' {
+        continue;
+      }
+      if !seen_nonzero {
+        if c == '0' {
+          out.push(c);
+          continue;
+        }
+        seen_nonzero = true;
+      }
+      if count == n {
+        break;
+      }
+      out.push(c);
+      count += 1;
+    }
+    out
+  }
+  // Need matching signs: both negative or both non-negative.
+  if d0.starts_with('-') != d1.starts_with('-') {
+    return false;
+  }
+  sig_prefix(d0, n) == sig_prefix(d1, n)
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
@@ -321,9 +357,29 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .reduce(f64::min);
+    // When two BigFloats both carry more than ~16 digits of precision,
+    // their stored digit strings can differ even though both collapse to
+    // the same f64 mantissa. Compare the digit strings truncated to the
+    // *shared* precision so high-precision near-equal literals (e.g.
+    // `0.7390…642…0` vs `0.7390…641…0`, both 26 digits) are reported
+    // correctly while values that agree up to the shared precision (e.g.
+    // `N[E, 100]` vs `N[E, 150]`) remain equal.
     let first = nums[0].unwrap();
-    for n in nums.iter().skip(1) {
+    for (i, n) in nums.iter().enumerate().skip(1) {
       let v = n.unwrap();
+      if let (Expr::BigFloat(d0, p0), Expr::BigFloat(d1, p1)) =
+        (&args[0], &args[i])
+        && p0.min(*p1) > 16.0
+      {
+        // Compare to (shared_precision - 1) digits so a 1-ULP difference
+        // at the last shared digit is treated as "equal within
+        // tolerance" — matches Wolfram, where `0.7390…642 == 0.7390…641`
+        // is True for 18-digit literals.
+        let shared = (p0.min(*p1).floor() as usize).saturating_sub(1);
+        if shared > 0 && !bigfloat_digits_match_to(d0, d1, shared) {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
       if any_real {
         let mut tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
         if let Some(p) = min_bigfloat_precision {
