@@ -1132,8 +1132,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // from VoronoiMesh, or Graphics that stayed symbolic for Show merging).
         // Must run before other render passes that expect Expr::Graphics.
         let result_expr = render_graphics_fc_if_needed(result_expr);
-        // If the result is a Grid expression, render it as SVG
-        let result_expr = render_grid_if_needed(result_expr);
+        // If the result is a Grid expression, render it as SVG (visual mode
+        // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_grid_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // If the result is a Dataset expression, render it as an SVG table
         let result_expr = render_dataset_if_needed(result_expr);
         // If the result is a Tabular expression, render it as an SVG table

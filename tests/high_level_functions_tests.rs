@@ -2316,10 +2316,13 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_style_grid_renders() {
-      // Style[Grid[...], Bold, Red] should produce graphical output
+      // CLI `interpret(...)` keeps Grid[...] symbolic to match wolframscript;
+      // the SVG render only happens in visual mode (notebook / playground)
+      // or via ExportString. Style[..., directives] unwraps to its first
+      // arg in CLI output.
       assert_eq!(
         interpret("Style[Grid[{{a, b}, {c, d}}], Bold, Red]").unwrap(),
-        "-Graphics-"
+        "Grid[{{a, b}, {c, d}}]"
       );
     }
 

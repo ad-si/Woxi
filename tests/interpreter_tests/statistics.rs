@@ -1788,16 +1788,20 @@ mod location_test {
 
   #[test]
   fn test_data_table() {
-    // TestDataTable returns a Grid which renders as -Graphics-
+    // TestDataTable returns a Grid expression (Woxi keeps Grid symbolic in
+    // CLI mode to match wolframscript). The grid contains the column
+    // headers and a row with the T statistic and P-value.
     let result = interpret(
       "LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, \"TestDataTable\"]",
     )
     .unwrap();
     assert!(
-      result == "-Graphics-",
-      "Expected -Graphics-, got: {}",
+      result.starts_with("Grid["),
+      "Expected Grid[...], got: {}",
       result
     );
+    assert!(result.contains("Statistic"), "Expected 'Statistic' header");
+    assert!(result.contains("P\u{2010}Value"), "Expected 'P-Value' header");
   }
 
   #[test]

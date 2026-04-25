@@ -4627,10 +4627,12 @@ mod grid {
   #[test]
   fn traditional_form_grid() {
     clear_state();
+    // CLI mode keeps TraditionalForm[Grid[...]] symbolic to match
+    // wolframscript; the SVG render only happens in visual mode.
     assert_eq!(
       interpret("TraditionalForm[Grid[{{1, 2}, {3, 4}}, Frame -> All]]")
         .unwrap(),
-      "-Graphics-"
+      "TraditionalForm[Grid[{{1, 2}, {3, 4}}, Frame -> All]]"
     );
   }
 
@@ -4650,13 +4652,14 @@ mod grid {
   #[test]
   fn traditional_form_grid_with_table() {
     clear_state();
-    assert_eq!(
-      interpret(
-        "f[x_] := x^2; values = Table[{i, f[i]}, {i, 1, 10, 1}]; PrependTo[values, {\"x\", \"x^2\"}]; TraditionalForm[Grid[values, Frame -> All]]"
-      )
-      .unwrap(),
-      "-Graphics-"
-    );
+    // CLI mode keeps TraditionalForm[Grid[...]] symbolic to match
+    // wolframscript; the SVG render only happens in visual mode.
+    let out = interpret(
+      "f[x_] := x^2; values = Table[{i, f[i]}, {i, 1, 10, 1}]; PrependTo[values, {\"x\", \"x^2\"}]; TraditionalForm[Grid[values, Frame -> All]]"
+    )
+    .unwrap();
+    assert!(out.starts_with("TraditionalForm[Grid["), "got: {}", out);
+    assert!(out.contains("x^2"));
   }
 
   #[test]
@@ -4708,13 +4711,13 @@ mod text_grid {
   #[test]
   fn renders_as_graphics() {
     clear_state();
-    assert_eq!(
-      interpret(
-        "TextGrid[{{\"item 1\", \"item 2\"}, {\"item 3\", \"item 4\"}}, Frame -> All]"
-      )
-      .unwrap(),
-      "-Graphics-"
-    );
+    // CLI mode keeps TextGrid symbolic to match wolframscript; the SVG
+    // render only happens in visual mode.
+    let out = interpret(
+      "TextGrid[{{\"item 1\", \"item 2\"}, {\"item 3\", \"item 4\"}}, Frame -> All]",
+    )
+    .unwrap();
+    assert!(out.starts_with("TextGrid["), "got: {}", out);
   }
 
   #[test]
