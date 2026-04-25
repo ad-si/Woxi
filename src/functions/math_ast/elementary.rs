@@ -257,6 +257,44 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Inexact complex (e.g. 1. + I, 2. + 3 I): produce a numerical Sign.
+  // We trigger this only when the expression actually contains a Real or
+  // BigFloat literal — otherwise leave symbolic forms like Sign[Pi + I]
+  // alone for a future symbolic implementation.
+  fn has_real_or_bigfloat(expr: &Expr) -> bool {
+    match expr {
+      Expr::Real(_) | Expr::BigFloat(_, _) => true,
+      Expr::BinaryOp { left, right, .. } => {
+        has_real_or_bigfloat(left) || has_real_or_bigfloat(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_real_or_bigfloat(operand),
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().any(has_real_or_bigfloat)
+      }
+      _ => false,
+    }
+  }
+  if has_real_or_bigfloat(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let abs = (re * re + im * im).sqrt();
+    if abs > 0.0 {
+      return Ok(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Real(re / abs),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Real(im / abs),
+              Expr::Identifier("I".to_string()),
+            ],
+          },
+        ],
+      });
+    }
+  }
   Ok(Expr::FunctionCall {
     name: "Sign".to_string(),
     args: args.to_vec(),
