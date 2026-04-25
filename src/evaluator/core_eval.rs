@@ -1711,9 +1711,44 @@ pub fn evaluate_expr_to_expr_inner(
         return Ok(result);
       }
 
-      // Evaluate comparison chain
-      // Use try_eval_to_f64_with_infinity for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], Infinity, etc.)
+      // For homogeneous monotone chains (all Less, all LessEqual, all
+      // Greater, all GreaterEqual) detect contradictions across non-adjacent
+      // numeric values. `1 < 3 < x < 2` is False because 3 < ... < 2 cannot
+      // hold even though x is symbolic; without this scan the pair (3, x)
+      // would short-circuit to an unevaluated form.
       use crate::functions::math_ast::try_eval_to_f64_with_infinity as try_eval_to_f64;
+      let monotone_op = operators.first().filter(|_| {
+        operators.iter().all(|op| {
+          matches!(
+            op,
+            ComparisonOp::Less
+              | ComparisonOp::LessEqual
+              | ComparisonOp::Greater
+              | ComparisonOp::GreaterEqual
+          )
+        }) && operators.iter().skip(1).all(|op| op == &operators[0])
+      });
+      if let Some(op) = monotone_op {
+        let nums: Vec<(usize, f64)> = values
+          .iter()
+          .enumerate()
+          .filter_map(|(i, e)| try_eval_to_f64(e).map(|n| (i, n)))
+          .collect();
+        for w in nums.windows(2) {
+          let ok = match op {
+            ComparisonOp::Less => w[0].1 < w[1].1,
+            ComparisonOp::LessEqual => w[0].1 <= w[1].1,
+            ComparisonOp::Greater => w[0].1 > w[1].1,
+            ComparisonOp::GreaterEqual => w[0].1 >= w[1].1,
+            _ => true,
+          };
+          if !ok {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        }
+      }
+
+      // Evaluate comparison chain
       for i in 0..operators.len() {
         let left = &values[i];
         let right = &values[i + 1];

@@ -327,8 +327,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if any_real {
         let mut tol = f64::max(first.abs(), v.abs()) * (2.0_f64).powi(-46);
         if let Some(p) = min_bigfloat_precision {
-          let prec_tol =
-            f64::max(first.abs(), v.abs()) * 10.0_f64.powf(-p);
+          let prec_tol = f64::max(first.abs(), v.abs()) * 10.0_f64.powf(-p);
           if prec_tol > tol {
             tol = prec_tol;
           }
@@ -428,6 +427,23 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::interval_ast::try_interval_compare(args, "Less")
   {
     return result;
+  }
+
+  // Detect impossible numeric ordering anywhere in the chain. For
+  // `Less[a1, ..., an]` the chain is True only if every pair (ai, aj)
+  // with i<j satisfies ai < aj transitively, so any pair with both
+  // values numeric and ai >= aj forces the whole chain to False even
+  // when intermediate values are symbolic. E.g. `Less[1, 3, x, 2]` is
+  // False because 3 < ... < 2 cannot hold.
+  let nums: Vec<(usize, f64)> = args
+    .iter()
+    .enumerate()
+    .filter_map(|(i, a)| expr_to_num(a).map(|n| (i, n)))
+    .collect();
+  for w in nums.windows(2) {
+    if w[0].1 >= w[1].1 {
+      return Ok(Expr::Identifier("False".to_string()));
+    }
   }
 
   let mut prev = match expr_to_num(&args[0]) {
