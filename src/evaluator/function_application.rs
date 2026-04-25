@@ -648,6 +648,37 @@ pub fn apply_curried_call(
         let mut new_args = args.to_vec();
         new_args.extend(func_args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "Function" && func_args.len() >= 2 {
+        // Function[{params...}, body][args...] — substitute params with args
+        // in body and evaluate. Function[body][args] uses #1, #2, ... slots.
+        // (Only the 2-arg form is handled here; the slot-form arrives as
+        // Expr::Function which the outer match already handles.)
+        let params: Vec<String> = match &func_args[0] {
+          Expr::List(items) => items
+            .iter()
+            .filter_map(|e| match e {
+              Expr::Identifier(n) => Some(n.clone()),
+              _ => None,
+            })
+            .collect(),
+          Expr::Identifier(n) => vec![n.clone()],
+          _ => Vec::new(),
+        };
+        let body = &func_args[1];
+        if params.is_empty() {
+          // Slot-based body
+          let substituted = crate::syntax::substitute_slots(body, args);
+          evaluate_expr_to_expr(&substituted)
+        } else {
+          let bindings: Vec<(&str, &Expr)> = params
+            .iter()
+            .zip(args.iter())
+            .map(|(p, a)| (p.as_str(), a))
+            .collect();
+          let substituted =
+            crate::syntax::substitute_variables(body, &bindings);
+          evaluate_expr_to_expr(&substituted)
+        }
       } else {
         // Unknown/symbolic curried call: preserve the CurriedCall form
         // e.g. f[g][x] stays as f[g][x], not f[g, x]
