@@ -2552,6 +2552,51 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::ParenExtended => {
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let base_expr = pair_to_expr(inner_pairs[0].clone());
+      // Check for derivative prime first: (expr)' -> Derivative[n][expr]
+      // and (expr)'[args] -> Derivative[n][expr][args].
+      let prime_pair = inner_pairs
+        .iter()
+        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime));
+      if let Some(prime) = prime_pair {
+        let order = prime.as_str().chars().filter(|c| *c == '\'').count();
+        let derivative_head = Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![Expr::Integer(order as i128)],
+        };
+        let derivative_call = Expr::CurriedCall {
+          func: Box::new(derivative_head),
+          args: vec![base_expr],
+        };
+        // Optional bracket call: (expr)'[args]
+        let call_suffix = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
+        if let Some(suffix) = call_suffix {
+          let bracket_sequences: Vec<Vec<Expr>> = suffix
+            .clone()
+            .into_inner()
+            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+            .map(|bracket| {
+              bracket
+                .into_inner()
+                .filter(|p| {
+                  p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+                })
+                .map(pair_to_expr)
+                .collect()
+            })
+            .collect();
+          let mut result = derivative_call;
+          for args in bracket_sequences {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args,
+            };
+          }
+          return result;
+        }
+        return derivative_call;
+      }
       // Check whether this is a Part extraction or a bracket call
       let has_call_suffix = inner_pairs
         .iter()

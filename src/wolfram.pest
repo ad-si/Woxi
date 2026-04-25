@@ -103,12 +103,16 @@ ListExtended = {
       | ListCallSuffix    // List[...] (ListCall)
     )?
 }
-// ParenExtended handles Part extraction and bracket-call on parenthesized expressions:
+// ParenExtended handles Part extraction, bracket-call, and derivative
+// prime on parenthesized expressions:
 //   (expr)[[index]]  — Part extraction
 //   (expr)[args]     — function call on parenthesized expression (e.g. (D[#, x] &)[x^3])
+//   (expr)'          — Derivative[1][expr] (e.g. (#^4&)'' is Derivative[2][#^4&])
+//   (expr)'[args]    — Derivative[n][expr] applied to args
 ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
-    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ (PartIndexSuffix | ParenCallSuffix)
+    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+    ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }

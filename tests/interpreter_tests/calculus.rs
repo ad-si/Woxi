@@ -683,6 +683,25 @@ mod derivative_prime_notation {
   }
 
   #[test]
+  fn derivative_prime_on_paren_anonymous_function() {
+    // `(#^4&)'` — derivative on a parenthesized anonymous function.
+    // Previously rejected by the parser; ParenExtended now accepts an
+    // optional DerivativePrime suffix.
+    assert_eq!(interpret("(#^4&)'").unwrap(), "4*#1^3 & ");
+  }
+
+  #[test]
+  fn derivative_double_prime_on_paren_anonymous_function() {
+    assert_eq!(interpret("(#^4&)''").unwrap(), "12*#1^2 & ");
+  }
+
+  #[test]
+  fn derivative_prime_on_paren_then_apply() {
+    // `(#^3&)'[x]` — the prime suffix can still be followed by [args].
+    assert_eq!(interpret("(#^3&)'[x]").unwrap(), "3*x^2");
+  }
+
+  #[test]
   fn derivative_symbolic_via_inputform() {
     // `f'[x] // InputForm` keeps the symbolic Derivative wrapped in
     // unevaluated InputForm (matches wolframscript).
@@ -2069,8 +2088,7 @@ mod find_minimum {
     // implementation declared convergence on |grad| < 1e-15 *before*
     // even attempting the step and froze at the starting point.
     clear_state();
-    let result =
-      interpret("FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]").unwrap();
+    let result = interpret("FindMinimum[10*^-30 *(x-3)^2+2., {x, 1}]").unwrap();
     assert_eq!(result, "{2., {x -> 3.}}");
   }
 
