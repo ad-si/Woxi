@@ -48,18 +48,16 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
-  // Closed-form rules at ±1/2: BesselJ[±1/2, z] = Sqrt[2/(Pi z)] * {Sin,Cos}[z].
+  // Closed-form rules at half-integer orders. Use the standard recurrence
+  //   J_{n+1}(z) = (2n/z) J_n(z) - J_{n-1}(z)
+  // anchored at J_{±1/2}. Walks numerically through the integer m in n = m/2.
   if let Some((n_num, n_den)) =
     crate::functions::math_ast::expr_to_rational(n_expr)
     && n_den == 2
+    && (n_num.unsigned_abs() <= 51)
   {
-    let trig = match n_num {
-      1 => Some("Sin"),
-      -1 => Some("Cos"),
-      _ => None,
-    };
-    if let Some(t) = trig {
-      return half_int_bessel_form(t, z_expr);
+    if let Some(result) = half_int_bessel_j(n_num, z_expr)? {
+      return Ok(result);
     }
   }
 
@@ -68,6 +66,141 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "BesselJ".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Compute BesselJ[m/2, z] for odd integer m using the recurrence
+/// J_{n+1}(z) = (2n/z) J_n(z) - J_{n-1}(z).
+///
+/// We work in the factored form J_{m/2}(z) = (Sqrt[2/Pi]/Sqrt[z]) * P_m(z),
+/// where P_1 = Sin[z], P_{-1} = Cos[z], and the recurrence transfers to
+/// P_{m+2} = (m/z) * P_m - P_{m-2}. Computing only P keeps the result a
+/// single Times expression after the final wrap, matching wolframscript's
+/// canonical print form.
+fn half_int_bessel_j(
+  m: i128,
+  z_expr: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  if m % 2 == 0 {
+    return Ok(None);
+  }
+  let p = half_int_bessel_polynomial(m, z_expr, "Sin", "Cos")?;
+  Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
+}
+
+/// Compute `P_{m}` for the half-integer Bessel recurrence, parameterised on
+/// the two trig anchors (P_1 and P_{-1}). Used by both BesselJ (Sin/Cos) and
+/// BesselI (Sinh/Cosh, with a sign-flipped recurrence).
+fn half_int_bessel_polynomial(
+  m: i128,
+  z_expr: &Expr,
+  trig_pos: &str,
+  trig_neg: &str,
+) -> Result<Expr, InterpreterError> {
+  let mut prev = trig_call(trig_neg, z_expr); // P_{-1}
+  let mut curr = trig_call(trig_pos, z_expr); // P_{1}
+  if m == 1 {
+    return Ok(curr);
+  }
+  if m == -1 {
+    return Ok(prev);
+  }
+  if m > 1 {
+    let mut m_cur: i128 = 1;
+    while m_cur < m {
+      let next = bessel_poly_recurrence(&curr, &prev, m_cur, z_expr)?;
+      prev = curr;
+      curr = next;
+      m_cur += 2;
+    }
+    Ok(curr)
+  } else {
+    let mut a = prev; // P_{-1}
+    let mut b = curr; // P_{1}
+    let mut m_cur: i128 = -1;
+    while m_cur > m {
+      let next = bessel_poly_recurrence(&a, &b, m_cur, z_expr)?;
+      b = a;
+      a = next;
+      m_cur -= 2;
+    }
+    Ok(a)
+  }
+}
+
+fn trig_call(name: &str, z_expr: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![z_expr.clone()],
+  }
+}
+
+/// One step of P_{m+2} = (m/z) * P_m - P_{m-2}.
+fn bessel_poly_recurrence(
+  p_n: &Expr,
+  p_other: &Expr,
+  coef: i128,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  let expr = FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Integer(coef),
+          FunctionCall {
+            name: "Power".to_string(),
+            args: vec![z_expr.clone(), Integer(-1)],
+          },
+          p_n.clone(),
+        ],
+      },
+      FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Integer(-1), p_other.clone()],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
+}
+
+/// Wrap a half-integer Bessel polynomial as Sqrt[2/Pi] * P / Sqrt[z].
+fn wrap_with_sqrt_factor(
+  p: &Expr,
+  z_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::Expr::*;
+  let expr = FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Integer(2),
+            FunctionCall {
+              name: "Power".to_string(),
+              args: vec![Identifier("Pi".to_string()), Integer(-1)],
+            },
+          ],
+        }],
+      },
+      p.clone(),
+      FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![z_expr.clone()],
+          },
+          Integer(-1),
+        ],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
 /// Build `Sqrt[2/Pi] * Trig[z] / Sqrt[z]`, the half-integer Bessel closed form.
