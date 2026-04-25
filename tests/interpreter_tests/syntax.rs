@@ -12,6 +12,39 @@ mod errors {
   }
 }
 
+mod char_escapes {
+  use super::*;
+
+  #[test]
+  fn hex_2digit_outside_string() {
+    assert_eq!(interpret(r#"\.78\.79\.7A"#).unwrap(), "xyz");
+  }
+
+  #[test]
+  fn hex_4digit_outside_string() {
+    assert_eq!(interpret(r#"\:0078\:0079\:007A"#).unwrap(), "xyz");
+  }
+
+  #[test]
+  fn octal_3digit_outside_string() {
+    assert_eq!(interpret(r#"\101\102\103\061\062\063"#).unwrap(), "ABC123");
+  }
+
+  #[test]
+  fn hex_2digit_inside_string() {
+    assert_eq!(interpret(r#""\.78""#).unwrap(), "x");
+  }
+
+  #[test]
+  fn double_backslash_preserves_literal() {
+    assert_eq!(
+      interpret(r#"StringLength["\\.78"]"#).unwrap(),
+      "4",
+      "literal-backslash escape should not consume the following \\.78",
+    );
+  }
+}
+
 mod postfix_application {
   use super::*;
 

@@ -748,6 +748,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   } else {
     std::borrow::Cow::Borrowed(input)
   };
+  // Expand Wolfram character escapes (\.HH, \:HHHH, \OOO) to their UTF-8
+  // characters BEFORE any fast paths so quoted-string and other shortcuts
+  // see the post-expansion form (matching wolframscript).
+  let input = if input.contains('\\') {
+    std::borrow::Cow::Owned(expand_char_escapes(&input))
+  } else {
+    input
+  };
   let trimmed = input.trim();
 
   // Fast path for simple literals that don't need parsing
@@ -2132,6 +2140,112 @@ fn generate_output_svg(expr: &syntax::Expr) {
   let text_fill = functions::graphics::theme().text_primary;
   let svg = functions::graphics::layout_to_svg(&layout, text_fill);
   capture_output_svg(&svg);
+}
+
+/// Expand Wolfram character escape sequences to UTF-8 characters:
+///   `\.HH`     → 2-digit hex code point (ASCII range)
+///   `\:HHHH`   → 4-digit hex code point (BMP)
+///   `\OOO`     → 3-digit octal code point
+/// Inside string literals (`"..."`), the leading `\\` (literal backslash) is
+/// preserved unchanged so the string parser still sees its own escapes.
+/// Outside strings, escapes are expanded directly. Other escape sequences
+/// like `\n`, `\[Name]`, `\"` are left untouched for the string parser /
+/// named-character handler to deal with.
+pub fn expand_char_escapes(input: &str) -> String {
+  // Fast path: no backslash means nothing to do.
+  if !input.contains('\\') {
+    return input.to_string();
+  }
+  let chars: Vec<char> = input.chars().collect();
+  let len = chars.len();
+  let mut result = String::with_capacity(input.len());
+  let mut i = 0;
+  let mut in_string = false;
+  while i < len {
+    let ch = chars[i];
+    if ch == '"' {
+      in_string = !in_string;
+      result.push(ch);
+      i += 1;
+      continue;
+    }
+    if ch != '\\' {
+      result.push(ch);
+      i += 1;
+      continue;
+    }
+    // `ch == '\\'` here. Decide what kind of escape follows.
+    let next = chars.get(i + 1).copied();
+    // Inside strings, `\\` is a literal-backslash escape — preserve it so the
+    // string parser still produces a single backslash.
+    if in_string && next == Some('\\') {
+      result.push('\\');
+      result.push('\\');
+      i += 2;
+      continue;
+    }
+    match next {
+      Some('.') => {
+        // `\.HH` — 2 hex digits
+        if i + 3 < len
+          && chars[i + 2].is_ascii_hexdigit()
+          && chars[i + 3].is_ascii_hexdigit()
+        {
+          let hex: String = [chars[i + 2], chars[i + 3]].iter().collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(c) = char::from_u32(code)
+          {
+            result.push(c);
+            i += 4;
+            continue;
+          }
+        }
+      }
+      Some(':') => {
+        // `\:HHHH` — 4 hex digits
+        if i + 5 < len
+          && chars[i + 2].is_ascii_hexdigit()
+          && chars[i + 3].is_ascii_hexdigit()
+          && chars[i + 4].is_ascii_hexdigit()
+          && chars[i + 5].is_ascii_hexdigit()
+        {
+          let hex: String =
+            [chars[i + 2], chars[i + 3], chars[i + 4], chars[i + 5]]
+              .iter()
+              .collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(c) = char::from_u32(code)
+          {
+            result.push(c);
+            i += 6;
+            continue;
+          }
+        }
+      }
+      Some(d) if ('0'..='7').contains(&d) => {
+        // `\OOO` — 3 octal digits (must all be 0-7).
+        if i + 3 < len
+          && ('0'..='7').contains(&chars[i + 2])
+          && ('0'..='7').contains(&chars[i + 3])
+        {
+          let oct: String =
+            [chars[i + 1], chars[i + 2], chars[i + 3]].iter().collect();
+          if let Ok(code) = u32::from_str_radix(&oct, 8)
+            && let Some(c) = char::from_u32(code)
+          {
+            result.push(c);
+            i += 4;
+            continue;
+          }
+        }
+      }
+      _ => {}
+    }
+    // Not a recognized escape — emit the backslash and continue.
+    result.push(ch);
+    i += 1;
+  }
+  result
 }
 
 /// Insert semicolons at top-level newline boundaries so the parser treats
