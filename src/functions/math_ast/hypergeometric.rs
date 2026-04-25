@@ -173,6 +173,30 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
+  // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
+  if a_list.len() == 1 && b_list.is_empty() {
+    let one_minus_z = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), z.clone()],
+        },
+      ],
+    };
+    let neg_a = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), a_list[0].clone()],
+    };
+    let pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![one_minus_z, neg_a],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&pow);
+  }
+
   // When each upper parameter cancels a lower parameter (identical
   // multisets), (a)_n / (a)_n = 1 and the series reduces to Σ z^n/n! = E^z.
   if a_list.len() == b_list.len() && !a_list.is_empty() {
