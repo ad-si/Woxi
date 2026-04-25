@@ -1366,16 +1366,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         if let Some(dot_pos) = s.find('.') {
           let int_part = &s[..dot_pos];
           let frac_part = &s[dot_pos + 1..];
-          let int_signless =
-            int_part.trim_start_matches(|c| c == '+' || c == '-');
-          let int_zero = int_signless.is_empty()
-            || int_signless.chars().all(|c| c == '0');
+          let int_signless = int_part.trim_start_matches(['+', '-']);
+          let int_zero =
+            int_signless.is_empty() || int_signless.chars().all(|c| c == '0');
           let total_digits = int_signless.len() + frac_part.len();
           if int_zero {
             // Zero literal with at least 18 trailing fractional zeros.
-            if frac_part.len() >= 18
-              && frac_part.chars().all(|c| c == '0')
-            {
+            if frac_part.len() >= 18 && frac_part.chars().all(|c| c == '0') {
               let acc = frac_part.len() as f64;
               return Expr::BigFloat("0".to_string(), acc);
             }
@@ -9317,6 +9314,41 @@ pub fn top_level_output(expr: &Expr) -> String {
     }
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
+    }
+    // Pure-imaginary `Times[Real, I]` at the top level displays as
+    // `0. ± r*I` to match wolframscript's Complex output. Inside larger
+    // expressions the existing Times display is used (so `2. + 3.*I`
+    // stays unchanged).
+    Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() == 2 =>
+    {
+      let real_coef = match &args[0] {
+        Expr::Real(f) => Some(*f),
+        Expr::BigFloat(s, _) => s.parse::<f64>().ok(),
+        _ => None,
+      };
+      let i_factor = matches!(&args[1], Expr::Identifier(s) if s == "I")
+        || matches!(&args[1],
+          Expr::FunctionCall { name: cn, args: ca }
+            if cn == "Complex" && ca.len() == 2
+              && matches!(&ca[0], Expr::Integer(0))
+              && matches!(&ca[1], Expr::Integer(1)));
+      if let (Some(c), true) = (real_coef, i_factor) {
+        let coef_str = match &args[0] {
+          Expr::Real(_) => format_real(c),
+          Expr::BigFloat(s, p) => format_bigfloat(s, *p),
+          _ => format_real(c),
+        };
+        if c < 0.0 {
+          let abs_str = coef_str
+            .strip_prefix('-')
+            .map(str::to_string)
+            .unwrap_or(coef_str);
+          return format!("0. - {}*I", abs_str);
+        }
+        return format!("0. + {}*I", coef_str);
+      }
+      expr_to_output(expr)
     }
     _ => expr_to_output(expr),
   }
