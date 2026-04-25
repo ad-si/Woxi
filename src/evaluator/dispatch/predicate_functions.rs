@@ -476,20 +476,6 @@ pub fn dispatch_predicate_functions(
         if is_inexact { "True" } else { "False" }.to_string(),
       )));
     }
-    "LevelQ" if args.len() == 1 => {
-      let is_valid = match &args[0] {
-        Expr::Integer(_) => true,
-        Expr::Identifier(name) if name == "Infinity" => true,
-        Expr::List(items) => items.iter().all(|item| {
-          matches!(item, Expr::Integer(_))
-            || matches!(item, Expr::Identifier(n) if n == "Infinity")
-        }),
-        _ => false,
-      };
-      return Some(Ok(Expr::Identifier(
-        if is_valid { "True" } else { "False" }.to_string(),
-      )));
-    }
     "Positive" | "PositiveQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::positive_q_ast(args));
     }
