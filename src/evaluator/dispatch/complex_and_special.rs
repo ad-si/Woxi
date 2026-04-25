@@ -1193,6 +1193,78 @@ pub fn dispatch_complex_and_special(
       if max_matches == Some(0) {
         return Some(Ok(Expr::List(vec![])));
       }
+
+      // ReplaceList[expr, {{rules1}, {rules2}, ...}, n] form: when every
+      // top-level element of the rules argument is itself a list (with the
+      // first element being a Rule/RuleDelayed), apply each rules-list
+      // separately and collect the per-rules-list results into an outer list.
+      if let Expr::List(rule_groups) = &args[1]
+        && !rule_groups.is_empty()
+        && rule_groups.iter().all(|g| {
+          matches!(g, Expr::List(items) if items.iter().all(|it| matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })))
+        })
+      {
+        let mut outer: Vec<Expr> = Vec::new();
+        for group in rule_groups {
+          let group_args: Vec<Expr> = if args.len() == 3 {
+            vec![args[0].clone(), group.clone(), args[2].clone()]
+          } else {
+            vec![args[0].clone(), group.clone()]
+          };
+          let inner_call = Expr::FunctionCall {
+            name: "ReplaceList".to_string(),
+            args: group_args,
+          };
+          match evaluate_expr_to_expr(&inner_call) {
+            Ok(r) => outer.push(r),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(Ok(Expr::List(outer)));
+      }
+
+      // ReplaceList[expr, {rule1, rule2, ...}, n]: a flat list of rules.
+      // Apply each rule via the single-rule path and concatenate the
+      // results, capping the total at `n`.
+      if let Expr::List(rules) = &args[1]
+        && !rules.is_empty()
+        && rules.iter().all(|r| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      {
+        let mut combined: Vec<Expr> = Vec::new();
+        'outer: for rule in rules {
+          let inner_args: Vec<Expr> = if args.len() == 3 {
+            vec![args[0].clone(), rule.clone(), args[2].clone()]
+          } else {
+            vec![args[0].clone(), rule.clone()]
+          };
+          let inner_call = Expr::FunctionCall {
+            name: "ReplaceList".to_string(),
+            args: inner_args,
+          };
+          let result = match evaluate_expr_to_expr(&inner_call) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+          };
+          if let Expr::List(items) = &result {
+            for it in items {
+              combined.push(it.clone());
+              if let Some(n) = max_matches
+                && combined.len() as i128 >= n
+              {
+                break 'outer;
+              }
+            }
+          } else {
+            combined.push(result);
+            if let Some(n) = max_matches
+              && combined.len() as i128 >= n
+            {
+              break 'outer;
+            }
+          }
+        }
+        return Some(Ok(Expr::List(combined)));
+      }
       // Try the list-sequence enumerator first.
       if let Expr::List(expr_elems) = &args[0]
         && let Expr::Rule {
