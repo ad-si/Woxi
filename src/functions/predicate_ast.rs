@@ -367,6 +367,42 @@ fn is_numeric_function(name: &str) -> bool {
 }
 
 /// PositiveQ[x] - Tests if x is a positive number
+/// Detect a non-real complex value: Complex[_, b] with non-zero b, or its
+/// expanded forms `b*I`, `a + b*I`, etc.
+fn has_nonzero_imag_part(expr: &Expr) -> bool {
+  use super::math_ast::{try_extract_complex_exact, try_extract_complex_float};
+  if let Some((_, (im_n, _))) = try_extract_complex_exact(expr)
+    && im_n != 0
+  {
+    return true;
+  }
+  if let Some((_, im)) = try_extract_complex_float(expr)
+    && im != 0.0
+    && expr_has_real_or_i(expr)
+  {
+    return true;
+  }
+  false
+}
+
+/// True if `expr` contains a Real/BigFloat or the literal symbol `I` (so
+/// the float-extraction result is meaningful and not just a coerced symbolic
+/// constant like Pi).
+fn expr_has_real_or_i(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::Identifier(s) if s == "I" => true,
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(expr_has_real_or_i)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_has_real_or_i(left) || expr_has_real_or_i(right)
+    }
+    Expr::UnaryOp { operand, .. } => expr_has_real_or_i(operand),
+    _ => false,
+  }
+}
+
 /// Check if an expression is known to be strictly positive.
 fn is_known_positive(expr: &Expr) -> Option<bool> {
   match expr {
@@ -472,6 +508,10 @@ pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PositiveQ expects exactly 1 argument".into(),
     ));
   }
+  // Positive on a non-real complex value is False.
+  if has_nonzero_imag_part(&args[0]) {
+    return Ok(bool_expr(false));
+  }
   match is_known_positive(&args[0]) {
     Some(val) => Ok(bool_expr(val)),
     None => Ok(Expr::FunctionCall {
@@ -487,6 +527,10 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "NegativeQ expects exactly 1 argument".into(),
     ));
+  }
+  // Negative on a non-real complex value is False.
+  if has_nonzero_imag_part(&args[0]) {
+    return Ok(bool_expr(false));
   }
   match is_known_negative(&args[0]) {
     Some(val) => Ok(bool_expr(val)),
