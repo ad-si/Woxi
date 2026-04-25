@@ -1152,7 +1152,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           result_expr
         };
         // If the result is a list of Graphics objects, combine their SVGs
-        let result_expr = render_graphics_list_if_needed(result_expr);
+        // (visual contexts only — plain `interpret` keeps the list shape so
+        // tests like Length[Table[Graphics[...], ...]] stay accurate).
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_graphics_list_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
         // In visual mode (playground), unwrap StandardForm/InputForm wrappers
