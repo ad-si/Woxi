@@ -1723,6 +1723,30 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
           }))
         }
+        // RealAbs[f(x)]: d/dx[RealAbs[f]] = f'(x) * f / RealAbs[f]
+        // (matching wolframscript's preferred form, which avoids Sign).
+        "RealAbs" if args.len() == 1 => {
+          let df = differentiate(&args[0], var)?;
+          if matches!(df, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          // Build: df * f / RealAbs[f]
+          let f = args[0].clone();
+          let real_abs = Expr::FunctionCall {
+            name: "RealAbs".to_string(),
+            args: vec![f.clone()],
+          };
+          let f_over_abs = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(f),
+            right: Box::new(real_abs),
+          };
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(f_over_abs),
+          }))
+        }
         // Sign derivative: D[Sign[f(x)], x] = Derivative[2][Abs][f(x)] * f'(x)
         // (Wolfram uses this form instead of 2*DiracDelta[x])
         "Sign" if args.len() == 1 => {
