@@ -143,10 +143,7 @@ pub fn association_nested_access(
           // Missing["KeyAbsent", key].
           return Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
-            args: vec![
-              Expr::String("KeyAbsent".to_string()),
-              key.clone(),
-            ],
+            args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
           });
         }
       }
@@ -446,6 +443,18 @@ pub fn try_ast_pattern_replace_single(
   replacement: &Expr,
   condition: Option<&str>,
 ) -> Result<Option<Expr>, InterpreterError> {
+  // Unwrap a `Condition[pat, test]` LHS into its inner pattern and an
+  // additional guard string. This makes /; on the pattern side and
+  // Condition[...] on the LHS behave the same way.
+  let (pattern, lhs_extra_cond): (&Expr, Option<String>) = match pattern {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      (&args[0], Some(expr_to_string(&args[1])))
+    }
+    _ => (pattern, None),
+  };
+
   // First try normal structural match
   let bindings_opt = match match_pattern(value, pattern) {
     Some(bindings) => Some(bindings),
@@ -477,8 +486,33 @@ pub fn try_ast_pattern_replace_single(
         _ => return Ok(None), // Condition not satisfied
       }
     }
+    // Same for an LHS Condition[pat, test] guard.
+    if let Some(cond_str) = lhs_extra_cond {
+      let mut substituted_cond = cond_str.clone();
+      for (var, val) in &bindings {
+        substituted_cond =
+          replace_var_with_value(&substituted_cond, var, &expr_to_string(val));
+      }
+      match interpret(&substituted_cond) {
+        Ok(result) if result == "True" => {}
+        _ => return Ok(None),
+      }
+    }
     // Substitute bindings into replacement using apply_bindings
-    return Ok(Some(apply_bindings(replacement, &bindings)?));
+    let result = apply_bindings(replacement, &bindings)?;
+    // RHS `Condition[expr, test]` semantics: evaluate test; True →
+    // return expr, False → reject the rule (return None).
+    if let Expr::FunctionCall { name, args } = &result
+      && name == "Condition"
+      && args.len() == 2
+    {
+      match interpret(&expr_to_string(&args[1])) {
+        Ok(t) if t == "True" => return Ok(Some(args[0].clone())),
+        Ok(t) if t == "False" => return Ok(None),
+        _ => {}
+      }
+    }
+    return Ok(Some(result));
   }
   Ok(None)
 }
@@ -2911,16 +2945,51 @@ pub fn apply_replace_all_multi_ast(
       }
       continue;
     }
-    if let Some(bindings) = match_pattern(expr, pattern) {
+    // Unwrap a `Condition[pat, test]` LHS into pat + extra guard.
+    let (eff_pattern, lhs_extra_cond): (&Expr, Option<&Expr>) = match pattern {
+      Expr::FunctionCall { name, args }
+        if name == "Condition" && args.len() == 2 =>
+      {
+        (&args[0], Some(&args[1]))
+      }
+      _ => (*pattern, None),
+    };
+    if let Some(bindings) = match_pattern(expr, eff_pattern) {
       // Use simultaneous substitution to prevent variable name leakage
       let binding_refs: Vec<(&str, &Expr)> = bindings
         .iter()
         .filter(|(name, _)| !name.is_empty())
         .map(|(name, val)| (name.as_str(), val))
         .collect();
+      // LHS Condition test: substitute, evaluate, skip the rule if False.
+      if let Some(test) = lhs_extra_cond {
+        let substituted =
+          crate::syntax::substitute_variables(test, &binding_refs);
+        match evaluate_expr_to_expr(&substituted) {
+          Ok(t)
+            if matches!(&t, Expr::Identifier(s) if s == "True") => {}
+          _ => continue,
+        }
+      }
       let result =
         crate::syntax::substitute_variables(replacement, &binding_refs);
-      return evaluate_expr_to_expr(&result);
+      let evaluated = evaluate_expr_to_expr(&result)?;
+      // RHS Condition[expr, test] semantics: True → expr, False → skip.
+      if let Expr::FunctionCall { name, args } = &evaluated
+        && name == "Condition"
+        && args.len() == 2
+      {
+        match evaluate_expr_to_expr(&args[1]) {
+          Ok(t) if matches!(&t, Expr::Identifier(s) if s == "True") => {
+            return Ok(args[0].clone());
+          }
+          Ok(t) if matches!(&t, Expr::Identifier(s) if s == "False") => {
+            continue;
+          }
+          _ => {}
+        }
+      }
+      return Ok(evaluated);
     }
   }
 
