@@ -325,16 +325,26 @@ pub fn fixed_point_list_ast(
 /// being True (or `max_iterations` is reached), apply `func` an additional
 /// `n` times when `n > 0`, or return the result `|n|` iterations earlier
 /// when `n < 0`.
+/// Selector for the `m` argument of NestWhile.
+#[derive(Clone, Copy, Debug)]
+pub enum NestWhileM {
+  /// Pass last `n` history values to the test predicate.
+  Last(usize),
+  /// Pass *all* history values to the test predicate.
+  All,
+}
+
 pub fn nest_while_ast(
   func: &Expr,
   init: &Expr,
   test: &Expr,
+  m: NestWhileM,
   max_iterations: Option<i128>,
   extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
   // We always materialise the full history when `extra_n` could need it,
   // so that negative `extra_n` can step back through previously seen values.
-  let history = nest_while_history(func, init, test, max_iterations)?;
+  let history = nest_while_history(func, init, test, m, max_iterations)?;
   let len = history.len() as i128;
   let target = (len - 1) + extra_n;
   if target < 0 {
@@ -359,10 +369,11 @@ pub fn nest_while_list_ast(
   func: &Expr,
   init: &Expr,
   test: &Expr,
+  m: NestWhileM,
   max_iterations: Option<i128>,
   extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
-  let mut history = nest_while_history(func, init, test, max_iterations)?;
+  let mut history = nest_while_history(func, init, test, m, max_iterations)?;
   if extra_n > 0 {
     // Continue applying `func` for the requested extra iterations.
     let mut current = history.last().cloned().unwrap_or_else(|| init.clone());
@@ -381,22 +392,30 @@ pub fn nest_while_list_ast(
 
 /// Iterate `func` from `init` while `test` is True, returning the entire
 /// history (initial value first). Stops at `max_iterations` if provided.
+/// `m` selects which history values are supplied to `test`.
 fn nest_while_history(
   func: &Expr,
   init: &Expr,
   test: &Expr,
+  m: NestWhileM,
   max_iterations: Option<i128>,
 ) -> Result<Vec<Expr>, InterpreterError> {
   let max = max_iterations.unwrap_or(10000);
   let mut history = vec![init.clone()];
-  let mut current = init.clone();
   for _ in 0..max {
-    let test_result = apply_func_ast(test, &current)?;
+    let test_args: Vec<Expr> = match m {
+      NestWhileM::Last(n) => {
+        let start = history.len().saturating_sub(n);
+        history[start..].to_vec()
+      }
+      NestWhileM::All => history.clone(),
+    };
+    let test_result = apply_func_to_n_args(test, &test_args)?;
     if expr_to_bool(&test_result) != Some(true) {
       break;
     }
-    current = apply_func_ast(func, &current)?;
-    history.push(current.clone());
+    let next = apply_func_ast(func, history.last().unwrap())?;
+    history.push(next);
   }
   Ok(history)
 }

@@ -2,6 +2,18 @@
 use super::*;
 use crate::functions::list_helpers_ast;
 
+/// Parse the `m` argument of NestWhile[f, x, test, m, ...]. Returns `All` for
+/// the symbol `All`, `Last(n)` for a positive integer, and `None` otherwise.
+fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
+  match expr {
+    Expr::Identifier(s) if s == "All" => Some(list_helpers_ast::NestWhileM::All),
+    Expr::Integer(n) if *n >= 1 => {
+      Some(list_helpers_ast::NestWhileM::Last(*n as usize))
+    }
+    _ => None,
+  }
+}
+
 /// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
 fn has_pattern_element(expr: &Expr) -> bool {
   match expr {
@@ -1577,15 +1589,21 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::constant_array_ast(&args[0], &args[1]));
     }
     "NestWhile" if (3..=6).contains(&args.len()) => {
-      // NestWhile[f, x, test]              — plain
-      // NestWhile[f, x, test, m]           — m = supply-last-m (currently only
-      //                                        m == 1 is supported)
+      // NestWhile[f, x, test]              — plain (m = 1)
+      // NestWhile[f, x, test, m]           — m = number of recent values to
+      //                                        pass to test (positive integer
+      //                                        or `All`)
       // NestWhile[f, x, test, m, max]      — max is the maximum iteration cap
       // NestWhile[f, x, test, m, max, n]   — n extra iterations (or -|n|
       //                                        steps back) once test fails
-      if args.len() >= 4 && !matches!(&args[3], Expr::Integer(1)) {
-        return None; // let the default unevaluated path handle m > 1
-      }
+      let m = if args.len() >= 4 {
+        match parse_nest_while_m(&args[3]) {
+          Some(v) => v,
+          None => return None,
+        }
+      } else {
+        list_helpers_ast::NestWhileM::Last(1)
+      };
       let max_iter = if args.len() >= 5 {
         expr_to_i128(&args[4])
       } else {
@@ -1597,13 +1615,18 @@ pub fn dispatch_list_operations(
         0
       };
       return Some(list_helpers_ast::nest_while_ast(
-        &args[0], &args[1], &args[2], max_iter, extra_n,
+        &args[0], &args[1], &args[2], m, max_iter, extra_n,
       ));
     }
     "NestWhileList" if (3..=6).contains(&args.len()) => {
-      if args.len() >= 4 && !matches!(&args[3], Expr::Integer(1)) {
-        return None;
-      }
+      let m = if args.len() >= 4 {
+        match parse_nest_while_m(&args[3]) {
+          Some(v) => v,
+          None => return None,
+        }
+      } else {
+        list_helpers_ast::NestWhileM::Last(1)
+      };
       let max_iter = if args.len() >= 5 {
         expr_to_i128(&args[4])
       } else {
@@ -1615,7 +1638,7 @@ pub fn dispatch_list_operations(
         0
       };
       return Some(list_helpers_ast::nest_while_list_ast(
-        &args[0], &args[1], &args[2], max_iter, extra_n,
+        &args[0], &args[1], &args[2], m, max_iter, extra_n,
       ));
     }
     "Thread" if args.len() == 1 => {
