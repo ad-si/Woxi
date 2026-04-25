@@ -1361,15 +1361,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::PrecisionReal | Rule::UnsignedPrecisionReal => {
       let s = pair.as_str();
-      // Split on backtick: "0.1`5" → value="0.1", prec="5"
+      // Detect double-backtick (accuracy) form. Single-backtick is precision.
+      let double = s.contains("``");
       let backtick_pos = s.find('`').unwrap();
       let value_str = &s[..backtick_pos];
-      let prec_str = &s[backtick_pos + 1..];
+      let prec_str = if double {
+        &s[backtick_pos + 2..]
+      } else {
+        &s[backtick_pos + 1..]
+      };
       // Integer-form `n`p` (no decimal point, with precision p) drops the
       // precision tag entirely and stays as an Integer (matches Wolfram:
       // `0`2 // Head` → Integer). The bare-backtick form `n`` still
       // promotes to Real to match Wolfram (`0` // Head` → Real).
-      let int_form = !value_str.contains('.') && !prec_str.is_empty();
+      let int_form =
+        !value_str.contains('.') && !prec_str.is_empty() && !double;
       if int_form {
         let n: i128 = value_str.parse().unwrap_or(0);
         Expr::Integer(n)
@@ -1378,11 +1384,20 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         Expr::Real(value_str.parse().unwrap_or(0.0))
       } else {
         let value_f64: f64 = value_str.parse().unwrap_or(0.0);
-        // A zero value loses its precision tag in Wolfram and is just `0.`.
+        // A zero value loses its precision tag in Wolfram and is just `0.`
+        // (the accuracy variant displays differently but we collapse it
+        // to Real(0.) for now since BigFloat can't represent a zero value
+        // distinctly).
         if value_f64 == 0.0 {
           Expr::Real(0.0)
         } else {
-          let prec: f64 = prec_str.parse().unwrap_or(0.0);
+          let raw_prec: f64 = prec_str.parse().unwrap_or(0.0);
+          // Accuracy form: precision = accuracy + log10(|value|).
+          let prec = if double {
+            raw_prec + value_f64.abs().log10()
+          } else {
+            raw_prec
+          };
           let prec = prec.max(1.0);
           Expr::BigFloat(value_str.to_string(), prec)
         }

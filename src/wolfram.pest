@@ -47,15 +47,18 @@ UnsignedReal = @{
 // Precision value can be integer or real: 0.1`5, 0.1`5.2
 // Integer-form is also accepted: `0`` and `0`3` parse as 0. with the
 // given precision tag (Wolfram allows trailing-backtick on integers).
+// Double-backtick `n``a` is the accuracy form: n with accuracy a digits.
+// In Wolfram, `n``a` ≡ `n`(a + log10(|n|))` for n ≠ 0; for n == 0 it
+// produces a Real(0.) with the accuracy spec preserved on display.
 UnsignedPrecisionReal = @{
     (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
-    ~ "`"
+    ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
 }
 PrecisionReal = @{
     ("-")?
     ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
-    ~ "`"
+    ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
 }
 UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
