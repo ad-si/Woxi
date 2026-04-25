@@ -68,14 +68,6 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[1]
     && items.len() == 2
   {
-    let var_name = match &items[0] {
-      Expr::Identifier(name) => name.clone(),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Variable specification in D must be a symbol".into(),
-        ));
-      }
-    };
     let n = match &items[1] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
       _ => {
@@ -84,10 +76,35 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     };
-    // Apply differentiation n times
+    // Identifier variable — symbolic differentiation.
+    if let Expr::Identifier(var_name) = &items[0] {
+      let mut result = args[0].clone();
+      for _ in 0..n {
+        result = differentiate(&result, var_name)?;
+        result = simplify(result);
+      }
+      return Ok(result);
+    }
+    // Slot variable: replace `Slot[k]` with a fresh symbol, run the
+    // standard chain-rule differentiation, then put the slot back.
+    if let Expr::Slot(_) = &items[0] {
+      let fresh = "$__DSlotVar__";
+      let body =
+        replace_subexpr_simple(&args[0], &items[0], &Expr::Identifier(fresh.to_string()));
+      let mut result = body;
+      for _ in 0..n {
+        result = differentiate(&result, fresh)?;
+        result = simplify(result);
+      }
+      result =
+        replace_subexpr_simple(&result, &Expr::Identifier(fresh.to_string()), &items[0]);
+      return Ok(result);
+    }
+    // Non-symbol variable specifier (e.g. x[k]) — apply
+    // differentiate_wrt_expr n times.
     let mut result = args[0].clone();
     for _ in 0..n {
-      result = differentiate(&result, &var_name)?;
+      result = differentiate_wrt_expr(&result, &items[0])?;
       result = simplify(result);
     }
     return Ok(result);
@@ -112,6 +129,47 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(crate::functions::polynomial_ast::cancel_expr(&result))
   } else {
     Ok(result)
+  }
+}
+
+/// Recursively replace every occurrence of `target` in `expr` with `replacement`.
+/// Used by D[expr, {Slot[k], n}] to swap a slot for a fresh symbolic variable.
+fn replace_subexpr_simple(expr: &Expr, target: &Expr, replacement: &Expr) -> Expr {
+  use crate::evaluator::pattern_matching::expr_equal;
+  if expr_equal(expr, target) {
+    return replacement.clone();
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_subexpr_simple(a, target, replacement))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_subexpr_simple(a, target, replacement))
+        .collect(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_subexpr_simple(left, target, replacement)),
+      right: Box::new(replace_subexpr_simple(right, target, replacement)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_subexpr_simple(operand, target, replacement)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(replace_subexpr_simple(func, target, replacement)),
+      args: args
+        .iter()
+        .map(|a| replace_subexpr_simple(a, target, replacement))
+        .collect(),
+    },
+    _ => expr.clone(),
   }
 }
 
@@ -6020,10 +6078,7 @@ fn limit_at_infinity(
   // Limit[Sin[x], x -> Infinity] etc. -> Indeterminate.
   if let Expr::FunctionCall { name, args: targs } = expr
     && targs.len() == 1
-    && matches!(
-      name.as_str(),
-      "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc"
-    )
+    && matches!(name.as_str(), "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc")
     && let Expr::Identifier(arg_name) = &targs[0]
     && arg_name == var_name
   {
