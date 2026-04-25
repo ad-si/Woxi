@@ -2361,10 +2361,7 @@ mod string_form {
   #[test]
   fn out_of_range_sequential_placeholder_kept_literal() {
     // `` with no argument to pull from: keep the two backticks literal.
-    assert_eq!(
-      interpret("ToString[StringForm[\"x=``\"]]").unwrap(),
-      "x=``"
-    );
+    assert_eq!(interpret("ToString[StringForm[\"x=``\"]]").unwrap(), "x=``");
   }
 
   #[test]

@@ -514,14 +514,15 @@ pub fn dispatch_io_functions(
         }
         return Some(Ok(Expr::String(svg)));
       }
-      if format_str != "SVG" && format_str != "PDF" {
-        // Return unevaluated for unsupported formats
-        return Some(Ok(Expr::FunctionCall {
-          name: "ExportString".to_string(),
-          args: args.to_vec(),
-        }));
+      if format_str == "CSV" || format_str == "TSV" {
+        let sep = if format_str == "CSV" { ',' } else { '\t' };
+        return Some(Ok(Expr::String(export_string_csv(&args[0], sep))));
       }
-      unreachable!()
+      // Return unevaluated for unsupported formats
+      return Some(Ok(Expr::FunctionCall {
+        name: "ExportString".to_string(),
+        args: args.to_vec(),
+      }));
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Find" if args.len() == 2 => {
@@ -1989,6 +1990,49 @@ pub fn dispatch_io_functions(
     _ => {}
   }
   None
+}
+
+/// Render a single CSV/TSV cell. Numeric/symbolic atoms are emitted bare;
+/// strings are always wrapped in `"…"` (matching wolframscript) with
+/// embedded `"` characters doubled.
+fn csv_cell(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => format!("\"{}\"", s.replace('"', "\"\"")),
+    _ => crate::syntax::expr_to_string(expr),
+  }
+}
+
+/// Serialize an expression to CSV (or TSV when `sep` is `\t`).
+/// A list-of-lists is rendered one row per inner list; a flat list is
+/// rendered one element per row. Other expressions become a single row.
+/// Each row is terminated with a newline (Wolfram's `ExportString` always
+/// emits a trailing newline after the last record).
+fn export_string_csv(expr: &Expr, sep: char) -> String {
+  let row_strs = |row: &Expr| -> String {
+    if let Expr::List(items) = row {
+      items
+        .iter()
+        .map(csv_cell)
+        .collect::<Vec<_>>()
+        .join(&sep.to_string())
+    } else {
+      csv_cell(row)
+    }
+  };
+  let rows: Vec<String> = match expr {
+    Expr::List(items) => {
+      let any_nested = items.iter().any(|e| matches!(e, Expr::List(_)));
+      if any_nested {
+        items.iter().map(row_strs).collect()
+      } else {
+        items.iter().map(csv_cell).collect()
+      }
+    }
+    _ => vec![csv_cell(expr)],
+  };
+  let mut out = rows.join("\n");
+  out.push('\n');
+  out
 }
 
 /// Collect file names matching a glob pattern in a directory.

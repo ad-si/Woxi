@@ -1132,6 +1132,51 @@ mod export_string {
       &result[..50.min(result.len())]
     );
   }
+
+  // ─── ExportString CSV / TSV ───────────────────────────────────────
+  // wolframscript emits one row per inner list, comma-separated, with a
+  // trailing newline after the last row. Strings are always wrapped in
+  // `"…"` and embedded `"` is escaped as `""`.
+  #[test]
+  fn export_string_csv_2d_int_list() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{1,2,3,4},{3},{2},{4}}, \"CSV\"]").unwrap();
+    assert_eq!(result, "1,2,3,4\n3\n2\n4\n");
+  }
+
+  #[test]
+  fn export_string_csv_flat_list_one_per_row() {
+    clear_state();
+    let result = interpret("ExportString[{1,2,3,4}, \"CSV\"]").unwrap();
+    assert_eq!(result, "1\n2\n3\n4\n");
+  }
+
+  #[test]
+  fn export_string_csv_strings_always_quoted() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{\"a\",\"b\"},{\"c\",\"d\"}}, \"CSV\"]")
+        .unwrap();
+    assert_eq!(result, "\"a\",\"b\"\n\"c\",\"d\"\n");
+  }
+
+  #[test]
+  fn export_string_csv_string_with_embedded_quote() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{\"he said \\\"hi\\\"\"}}, \"CSV\"]").unwrap();
+    // Inner `"` is escaped to `""`, then the cell is wrapped in `"…"`.
+    assert_eq!(result, "\"he said \"\"hi\"\"\"\n");
+  }
+
+  #[test]
+  fn export_string_tsv_uses_tab_separator() {
+    clear_state();
+    let result =
+      interpret("ExportString[{{1,2},{3,4}}, \"TSV\"]").unwrap();
+    assert_eq!(result, "1\t2\n3\t4\n");
+  }
 }
 
 mod grid_graphics {
