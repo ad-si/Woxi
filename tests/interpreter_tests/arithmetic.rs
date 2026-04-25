@@ -2505,6 +2505,37 @@ mod expand_threading {
       result
     );
   }
+
+  // Wolfram caps the digit count AFTER the decimal point per bit budget.
+  // For prec 40 (192-bit equivalent), that cap is 58 fractional digits, so
+  // a value ≥ 1 (one integer digit) shows 59 sig digits while a value < 1
+  // shows 58 — and the last shown digit is rounded, not truncated.
+  #[test]
+  fn n_sqrt2_prec40_rounds_last_digit() {
+    assert_eq!(
+      interpret("N[Sqrt[2], 40]").unwrap(),
+      "1.4142135623730950488016887242096980785696718753769480731767`40."
+    );
+  }
+
+  #[test]
+  fn n_sin1_prec40_caps_at_58_fraction_digits() {
+    assert_eq!(
+      interpret("N[Sin[1], 40]").unwrap(),
+      "0.8414709848078965066525023216302989996225630607983710656728`40."
+    );
+  }
+
+  #[test]
+  fn n_sqrt2_prec4_shows_20_significant_digits() {
+    // Bit budget for prec ≤ 8 is 64 bits → 19 fractional digits cap; with
+    // a single integer digit that yields the 20-significant-digit form
+    // Wolfram displays for any prec in this band.
+    assert_eq!(
+      interpret("N[Sqrt[2], 4]").unwrap(),
+      "1.4142135623730950488`4."
+    );
+  }
 }
 
 /// Regression tests for unary minus after operators (issues 2 & 5)

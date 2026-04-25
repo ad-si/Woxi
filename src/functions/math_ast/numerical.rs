@@ -205,8 +205,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Compare string forms to detect the "no rule" echo path.
       let original_str = crate::syntax::expr_to_string(expr);
       let n_call_str = format!("N[{}]", original_str);
-      match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()])
-      {
+      match crate::evaluator::evaluate_function_call_ast("N", &[expr.clone()]) {
         Ok(result) => {
           let result_str = crate::syntax::expr_to_string(&result);
           if result_str == n_call_str {
@@ -291,10 +290,14 @@ fn bigfloat_powi(
 }
 
 /// Convert a BigFloat to a decimal string.
-/// If `max_digits` is Some(n), truncate the output to at most n significant digits.
+/// If `max_fraction_digits` is Some(n), keep at most `n` digits AFTER the
+/// decimal point. The integer part (when |x| ≥ 1) is preserved in full, so
+/// e.g. with `n = 58`, Sqrt[2] (exp = 1) yields 1 + 58 = 59 total digits
+/// while Sin[1] (exp = 0) yields 0 + 58 = 58 total digits — matching how
+/// Wolfram caps display digits relative to the decimal point.
 pub fn bigfloat_to_string(
   bf: &astro_float::BigFloat,
-  max_digits: Option<usize>,
+  max_fraction_digits: Option<usize>,
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<String, InterpreterError> {
@@ -318,19 +321,56 @@ pub fn bigfloat_to_string(
   // Convert digit values to ASCII string
   let digit_str: String = digits.iter().map(|&d| (b'0' + d) as char).collect();
 
-  // Truncate to max_digits if specified
-  let digit_str = if let Some(max_d) = max_digits {
-    if digit_str.len() > max_d {
-      digit_str[..max_d].to_string()
+  // Round to (fraction_cap + max(exp, 0)) total digits if requested. This
+  // gives Wolfram's display: a fixed number of digits AFTER the dot,
+  // independent of the value's magnitude. Rounding (not truncation) the
+  // last shown digit matches Wolfram. Carries that ripple past the leading
+  // digit increment the decimal exponent.
+  let (digit_str, decimal_exp) = if let Some(max_frac) = max_fraction_digits {
+    let exp_i64 = exponent as i64;
+    // total_keep = max_frac + max(exp, 0). For exp ≤ 0 the number is < 1
+    // and all digit_str entries are fractional, so we just keep max_frac.
+    // (Leading zeros from a negative exponent come from the format step
+    // and don't draw from digit_str.) For exp > 0 the integer part needs
+    // `exp` extra digits on top of the fraction cap.
+    let total_keep = (max_frac as i64 + exp_i64.max(0)) as usize;
+    if digit_str.len() > total_keep && total_keep > 0 {
+      let kept = &digit_str[..total_keep];
+      let next_digit = digit_str.as_bytes()[total_keep] - b'0';
+      let mut bytes: Vec<u8> = kept.bytes().collect();
+      let mut carry = if next_digit >= 5 { 1u8 } else { 0u8 };
+      // Round-half-up. (Wolfram uses banker's rounding internally, but the
+      // BigFloat is already at higher precision than `total_keep` so the
+      // next digit is rarely exactly 5 with no further nonzero digits.)
+      for b in bytes.iter_mut().rev() {
+        if carry == 0 {
+          break;
+        }
+        let v = *b - b'0' + carry;
+        if v >= 10 {
+          *b = b'0';
+          carry = 1;
+        } else {
+          *b = b'0' + v;
+          carry = 0;
+        }
+      }
+      let new_exp = if carry == 1 {
+        // All 9s rolled over: prepend a 1, drop the trailing 0, bump exponent.
+        bytes.pop();
+        bytes.insert(0, b'1');
+        exp_i64 + 1
+      } else {
+        exp_i64
+      };
+      let s: String = String::from_utf8(bytes).expect("ascii digits");
+      (s, new_exp)
     } else {
-      digit_str
+      (digit_str, exp_i64)
     }
   } else {
-    digit_str
+    (digit_str, exponent as i64)
   };
-
-  // exponent from convert_to_radix: value = 0.d1d2d3... * 10^exponent
-  let decimal_exp = exponent as i64;
 
   if decimal_exp <= 0 {
     // Number like 0.000xxxx
@@ -394,34 +434,40 @@ pub fn n_eval_arbitrary(
   })?;
   let rm = RoundingMode::ToEven;
 
-  // Compute at the nominal bit-precision. astro-float internally
-  // rounds up to 64-bit word boundaries, giving us the correct
-  // number of output digits.
-  let bits = nominal_bits(precision);
+  // Compute at one extra 64-bit word above the nominal display precision
+  // so astro-float's `convert_to_radix` always emits at least
+  // `max_display_digits` decimal digits — without the extra word, e.g. a
+  // 192-bit Sqrt[2] only yields 58 digits and N[Sqrt[2], 40] truncates one
+  // digit short of Wolfram's 59-digit display.
+  let bits = nominal_bits(precision) + 64;
 
   // Wolfram displays digit counts that match a 64-bit-aligned bit count
   // computed from precision plus a ~36-bit guard. We always evaluate with
   // at least 128 bits internally for stability, but truncate the displayed
   // decimal string so the digit count tracks Wolfram's:
-  //   p ≤ 8   → 19 digits  (64-bit-equivalent)
-  //   9 ≤ p ≤ 27 → 38 digits  (128-bit)
-  //   28 ≤ p ≤ 47 → 58 digits  (192-bit)
+  //   p ≤ 8        → 20 digits  (64-bit-equivalent)
+  //   9 ≤ p ≤ 28   → 39 digits  (128-bit)
+  //   29 ≤ p ≤ 47  → 59 digits  (192-bit)
   //   etc.
   let display_bits = {
     let b = (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize + 36;
     ((b + 63) & !63).max(64)
   };
-  // Match Wolfram's display digit counts:
-  //    64 → 19, 128 → 38, 192 → 58, 256 → 77, 320 → 96, ...
-  // floor((bits + 1) * log10(2)) reproduces this table exactly.
-  let max_display_digits =
+  // Match Wolfram's display digit counts. The number of fractional digits
+  // shown is fixed per bit budget (e.g. 58 for 192 bits), regardless of
+  // the value's magnitude. `bigfloat_to_string` adds the integer-part
+  // digits on top when the exponent is positive, so e.g. N[Sqrt[2], 40]
+  // displays 1 integer digit + 58 fractional digits = 59 total, while
+  // N[Sin[1], 40] displays "0.<58 digits>".
+  //   64 → 19, 128 → 38, 192 → 58, 256 → 77, 320 → 96, 384 → 115, ...
+  let max_fraction_digits =
     ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
 
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
   match expr_to_bigfloat(expr, bits, rm, &mut cc) {
     Ok(result) => {
       let decimal =
-        bigfloat_to_string(&result, Some(max_display_digits), rm, &mut cc)?;
+        bigfloat_to_string(&result, Some(max_fraction_digits), rm, &mut cc)?;
       Ok(Expr::BigFloat(decimal, precision as f64))
     }
     Err(_) => {
