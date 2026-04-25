@@ -6658,11 +6658,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       format!("{}[{}]", func_display, arg_str)
     }
     Expr::Postfix { expr, func } => {
-      format!(
-        "{} // {}",
-        format_expr(expr, ExprForm::Input),
-        format_expr(func, ExprForm::Input)
-      )
+      // Display as function-call form (matching wolframscript): `x // f` is
+      // semantically `f[x]`, so render as such inside Hold/FullForm output.
+      let func_str = format_expr(func, ExprForm::Input);
+      let arg_str = format_expr(expr, ExprForm::Input);
+      let func_display = match func.as_ref() {
+        Expr::Identifier(_)
+        | Expr::FunctionCall { .. }
+        | Expr::CurriedCall { .. } => func_str,
+        _ => format!("({})", func_str),
+      };
+      format!("{}[{}]", func_display, arg_str)
     }
     Expr::Part { expr, index } => {
       // Flatten nested Part into a single [[i, j, k]] notation
