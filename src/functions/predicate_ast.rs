@@ -1135,6 +1135,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Check if an expression represents a complex number (has nonzero imaginary part).
 /// In Wolfram Language, I, 3*I, 2+3*I, Complex[a,b] are all Complex atoms.
+/// Symbolic combinations like `Pi*I` or `a*I` stay as Times (not Complex).
 pub fn is_complex_number(expr: &Expr) -> bool {
   // I itself is Complex[0, 1]
   if let Expr::Identifier(name) = expr {
@@ -1147,36 +1148,30 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   {
     return true;
   }
-  // Check float complex extraction
-  if let Some((_, im)) = super::math_ast::try_extract_complex_float(expr)
+  // Float complex extraction: only treat as Complex when the expression
+  // actually contains a Real / BigFloat literal — symbolic constants like
+  // Pi or E should keep Times[Pi, I] as a Times expression, not coerce to
+  // a float complex.
+  if contains_real_literal(expr)
+    && let Some((_, im)) = super::math_ast::try_extract_complex_float(expr)
     && im != 0.0
   {
     return true;
   }
-  // Check structural presence of I (e.g. 0. + 0.*I)
-  expr_contains_i(expr)
+  false
 }
 
-/// Check if an expression structurally contains the imaginary unit I
-/// in a multiplication context (e.g. Times[0., I]).
-fn expr_contains_i(expr: &Expr) -> bool {
+/// Check whether the expression contains any actual Real/BigFloat node.
+fn contains_real_literal(expr: &Expr) -> bool {
   match expr {
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Plus,
-      left,
-      right,
-    } => expr_contains_i(left) || expr_contains_i(right),
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      matches!(left.as_ref(), Expr::Identifier(s) if s == "I")
-        || matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_real_literal(left) || contains_real_literal(right)
     }
-    Expr::FunctionCall { name, args } if name == "Times" => args
-      .iter()
-      .any(|a| matches!(a, Expr::Identifier(s) if s == "I")),
+    Expr::UnaryOp { operand, .. } => contains_real_literal(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_real_literal)
+    }
     _ => false,
   }
 }
