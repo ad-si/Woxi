@@ -452,15 +452,15 @@ pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
   let prev = SUPPRESS_SPECIFICITY_SORT.with(|c| c.replace(true));
   let result = (|| -> Result<(), InterpreterError> {
     for rule in &rules {
-      let (pat, body) = match rule {
+      let (pat, body, is_delayed) = match rule {
         Expr::Rule {
           pattern,
           replacement,
-        }
-        | Expr::RuleDelayed {
+        } => ((**pattern).clone(), (**replacement).clone(), false),
+        Expr::RuleDelayed {
           pattern,
           replacement,
-        } => ((**pattern).clone(), (**replacement).clone()),
+        } => ((**pattern).clone(), (**replacement).clone(), true),
         _ => continue,
       };
       let lhs = match &pat {
@@ -471,7 +471,15 @@ pub fn set_downvalues_from_rules(rhs: &Expr) -> Result<Expr, InterpreterError> {
         }
         _ => pat.clone(),
       };
-      set_delayed_ast(&lhs, &body)?;
+      // Rule (`->`) on the RHS replays as Set (literal-match LHS); only
+      // RuleDelayed (`:>`) replays as SetDelayed (pattern-match LHS).
+      // This matters when the LHS contains plain identifiers that should
+      // remain literal (e.g. `Default[g] -> 3` in `DefaultValues[g] = …`).
+      if is_delayed {
+        set_delayed_ast(&lhs, &body)?;
+      } else {
+        set_ast(&lhs, &body)?;
+      }
     }
     Ok(())
   })();
@@ -720,6 +728,23 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     args: lhs_args,
   } = lhs
     && (func_name == "DownValues" || func_name == "SubValues")
+    && lhs_args.len() == 1
+    && matches!(&lhs_args[0], Expr::Identifier(_))
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_downvalues_from_rules(&rhs_value);
+  }
+
+  // Handle DefaultValues[sym] = rules — same machinery as DownValues but
+  // the rules' LHS is `Default[sym, ...]`. set_downvalues_from_rules
+  // already replays each Rule/RuleDelayed via set_delayed_ast, which
+  // routes Default[sym, n] = v through the regular Default DownValue
+  // path so OptionValue / Default[sym] lookups find it.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "DefaultValues"
     && lhs_args.len() == 1
     && matches!(&lhs_args[0], Expr::Identifier(_))
   {

@@ -402,6 +402,34 @@ mod default_values {
       "{HoldPattern[Default[k, 2]] :> 9}"
     );
   }
+
+  #[test]
+  fn default_values_set_via_assignment_round_trips() {
+    // `DefaultValues[g] = {Default[g] -> 3}` should install the rule
+    // such that `Default[g]` returns 3 *and* `DefaultValues[g]` reports
+    // it back, matching wolframscript's round-trip behavior.
+    clear_state();
+    assert_eq!(
+      interpret("DefaultValues[g] = {Default[g] -> 3}; DefaultValues[g]")
+        .unwrap(),
+      "{HoldPattern[Default[g]] :> 3}"
+    );
+    assert_eq!(interpret("Default[g]").unwrap(), "3");
+  }
+
+  #[test]
+  fn default_values_set_drives_optional_match() {
+    // The whole point of DefaultValues — `g[x_.]` with no argument
+    // should look up `Default[g]` and substitute its value (3).
+    clear_state();
+    assert_eq!(
+      interpret(
+        "DefaultValues[g] = {Default[g] -> 3}; g[x_.] := {x}; g[]"
+      )
+      .unwrap(),
+      "{3}"
+    );
+  }
 }
 
 mod compile {
