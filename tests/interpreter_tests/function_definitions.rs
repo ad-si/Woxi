@@ -491,6 +491,29 @@ mod messages {
       "custom"
     );
   }
+
+  #[test]
+  fn messages_returns_user_set_message() {
+    // `a::b = "foo"` installs the message text as a DownValue on
+    // MessageName. `Messages[a]` should surface it as a HoldPattern
+    // RuleDelayed list — matching wolframscript's long-form rendering.
+    clear_state();
+    assert_eq!(
+      interpret(r#"a::b = "foo"; Messages[a]"#).unwrap(),
+      "{HoldPattern[MessageName[a, b]] :> foo}"
+    );
+  }
+
+  #[test]
+  fn messages_filters_to_target_symbol() {
+    // Multiple symbols share the MessageName DownValues table; Messages
+    // must only return entries whose first arg is the requested symbol.
+    clear_state();
+    assert_eq!(
+      interpret(r#"a::x = "ax"; b::y = "by"; Messages[b]"#).unwrap(),
+      "{HoldPattern[MessageName[b, y]] :> by}"
+    );
+  }
 }
 
 mod nvalues {

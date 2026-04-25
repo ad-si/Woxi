@@ -629,10 +629,81 @@ pub fn dispatch_predicate_functions(
       }
       return Some(Ok(Expr::List(vec![])));
     }
+    // Messages[sym] — return all stored MessageName DownValues that
+    // target this symbol. `sym::tag = "text"` is stored as a DownValue
+    // on MessageName itself (`MessageName[sym, "tag"] :> "text"`); pull
+    // out the ones whose first argument is `sym`.
+    "Messages" if args.len() == 1 => {
+      let sym = match &args[0] {
+        Expr::Identifier(s) => s.clone(),
+        _ => return Some(Ok(Expr::List(vec![]))),
+      };
+      let func_defs = crate::FUNC_DEFS.with(|m| {
+        m.borrow().get("MessageName").cloned().unwrap_or_default()
+      });
+      let rules: Vec<Expr> = func_defs
+        .iter()
+        .filter_map(|(params, _conds, _defaults, _heads, _blank_types, body)| {
+          // MessageName has exactly two slots: first is the symbol literal
+          // (matched as a SameQ condition with param `_dv0`), second is
+          // the tag string (`_dv1`). Re-derive the literal MessageName
+          // pattern from `body`'s associated structural-pattern conditions.
+          // The simpler path: use the conditions to read the literal sym
+          // value matched in slot 0. If the rule's slot-0 SameQ value
+          // doesn't equal `sym`, skip it.
+          let slot0_literal = _conds.iter().find_map(|c| {
+            if let Some(Expr::Comparison { operands, operators }) = c
+              && operators.len() == 1
+              && matches!(
+                operators[0],
+                crate::syntax::ComparisonOp::SameQ
+              )
+              && operands.len() == 2
+              && let Expr::Identifier(name) = &operands[0]
+              && name == &params[0]
+            {
+              Some(operands[1].clone())
+            } else {
+              None
+            }
+          })?;
+          if !matches!(&slot0_literal, Expr::Identifier(s) if s == &sym) {
+            return None;
+          }
+          // Slot 1 is the tag string (or symbol). It's matched the same
+          // way; pull its literal value out of the conditions.
+          let slot1_literal = _conds.iter().find_map(|c| {
+            if let Some(Expr::Comparison { operands, operators }) = c
+              && operators.len() == 1
+              && matches!(
+                operators[0],
+                crate::syntax::ComparisonOp::SameQ
+              )
+              && operands.len() == 2
+              && let Expr::Identifier(name) = &operands[0]
+              && name == &params[1]
+            {
+              Some(operands[1].clone())
+            } else {
+              None
+            }
+          })?;
+          Some(Expr::RuleDelayed {
+            pattern: Box::new(Expr::FunctionCall {
+              name: "HoldPattern".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "MessageName".to_string(),
+                args: vec![slot0_literal, slot1_literal],
+              }],
+            }),
+            replacement: Box::new(body.clone()),
+          })
+        })
+        .collect();
+      return Some(Ok(Expr::List(rules)));
+    }
     // Other introspection functions - return {} for symbols without stored definitions
-    "Messages" | "SubValues" | "NValues" | "FormatValues"
-      if args.len() == 1 =>
-    {
+    "SubValues" | "NValues" | "FormatValues" if args.len() == 1 => {
       return Some(Ok(Expr::List(vec![])));
     }
     // DefaultValues exposes the built-in identity elements used by
