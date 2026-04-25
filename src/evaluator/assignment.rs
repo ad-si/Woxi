@@ -1147,7 +1147,22 @@ pub fn set_delayed_ast(
             conditions.push(None);
             blank_types.push(blank_type);
           }
-          defaults.push(None);
+          // Carry inline default through; if `arg` is `x_.` (PatternOptional
+          // with no inline default), store `Default[func]` as a deferred
+          // placeholder so dispatch can pull a user-set Default[f] at call
+          // time (matching Wolfram's `f[x_.] := ...` + `Default[f] = c`).
+          let default_for_slot = match arg {
+            Expr::PatternOptional { default: Some(d), .. } => Some((**d).clone()),
+            Expr::PatternOptional { default: None, .. } => Some(Expr::FunctionCall {
+              name: "Default".to_string(),
+              args: vec![
+                Expr::Identifier(func_name.clone()),
+                Expr::Integer((i + 1) as i128),
+              ],
+            }),
+            _ => None,
+          };
+          defaults.push(default_for_slot);
           heads.push(head);
         }
       }

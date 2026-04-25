@@ -766,10 +766,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     if let Some(dot) = trimmed.find('.') {
       let int_part = &trimmed[..dot];
       let frac_part = &trimmed[dot + 1..];
-      let int_signless = int_part
-        .trim_start_matches(|c: char| c == '+' || c == '-');
-      let int_zero = int_signless.is_empty()
-        || int_signless.chars().all(|c| c == '0');
+      let int_signless = int_part.trim_start_matches(['+', '-']);
+      let int_zero =
+        int_signless.is_empty() || int_signless.chars().all(|c| c == '0');
       let total_digits = int_signless.len() + frac_part.len();
       let zero_accuracy = n == 0.0
         && int_zero
@@ -2878,10 +2877,21 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
           .next()
           .map(|p| p.as_str().to_owned())
           .unwrap_or_default();
+        let position = params.len() + 1;
         params.push(param_name);
         conditions.push(None);
-        // System-determined default (None means use Default[f, position])
-        defaults.push(None);
+        // `x_.` resolves its default from `Default[func, position]` at
+        // dispatch time. Store that as the placeholder so the runtime
+        // lookup chain (which falls through to `Default[func]`) supplies
+        // the user-set value (matching Wolfram's `f[x_.] := ...` +
+        // `Default[f] = c` semantics).
+        defaults.push(Some(syntax::Expr::FunctionCall {
+          name: "Default".to_string(),
+          args: vec![
+            syntax::Expr::Identifier(func_name.clone()),
+            syntax::Expr::Integer(position as i128),
+          ],
+        }));
         heads.push(None);
         blank_types.push(1);
       }

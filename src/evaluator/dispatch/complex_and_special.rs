@@ -1228,7 +1228,9 @@ pub fn dispatch_complex_and_special(
       // results, capping the total at `n`.
       if let Expr::List(rules) = &args[1]
         && !rules.is_empty()
-        && rules.iter().all(|r| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        && rules
+          .iter()
+          .all(|r| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
       {
         let mut combined: Vec<Expr> = Vec::new();
         'outer: for rule in rules {
@@ -1707,6 +1709,37 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(val));
       }
       // Return unevaluated for symbols without defaults
+      return Some(Ok(Expr::FunctionCall {
+        name: "Default".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
+    // Default[f, n] / Default[f, n, m] — when the user hasn't installed a
+    // specific multi-argument Default[f, n] DownValue, fall through to the
+    // single-argument Default[f] (matching Wolfram's lookup chain).
+    "Default" if (args.len() == 2 || args.len() == 3) => {
+      if let Expr::Identifier(sym) = &args[0] {
+        // First try the position-less form.
+        let one_arg_call = Expr::FunctionCall {
+          name: "Default".to_string(),
+          args: vec![args[0].clone()],
+        };
+        if let Ok(result) = evaluate_expr_to_expr(&one_arg_call) {
+          let original = crate::syntax::expr_to_string(&one_arg_call);
+          let after = crate::syntax::expr_to_string(&result);
+          if after != original {
+            return Some(Ok(result));
+          }
+        }
+        // Try the builtin per-position default.
+        if let Expr::Integer(pos) = &args[1]
+          && *pos > 0
+          && let Some(val) = builtin_default_value_at_position(sym, *pos as usize)
+        {
+          return Some(Ok(val));
+        }
+      }
       return Some(Ok(Expr::FunctionCall {
         name: "Default".to_string(),
         args: args.to_vec(),
