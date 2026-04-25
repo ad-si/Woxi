@@ -636,7 +636,9 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
 }
 
 pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
-  // Check for SequenceHold attribute
+  // Check for SequenceHold attribute. HoldAllComplete implicitly carries
+  // SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
+  // + SequenceHold + ... ).
   let has_sequence_hold = matches!(
     name,
     "Set"
@@ -646,10 +648,13 @@ pub fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
       | "HoldComplete"
       | "MakeBoxes"
   ) || crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"SequenceHold".to_string()))
-  });
+    m.borrow().get(name).is_some_and(|attrs| {
+      attrs.contains(&"SequenceHold".to_string())
+        || attrs.contains(&"HoldAllComplete".to_string())
+    })
+  })
+    || crate::evaluator::attributes::get_builtin_attributes(name)
+      .contains(&"HoldAllComplete");
 
   if has_sequence_hold {
     return args.to_vec();
