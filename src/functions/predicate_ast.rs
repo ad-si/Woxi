@@ -1460,6 +1460,10 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { args, .. } => {
         1 + args.iter().map(count_leaves).sum::<i128>()
       }
+      // CurriedCall f[a,b][x,y]: head expression contributes its own leaves; no extra 1
+      Expr::CurriedCall { func, args } => {
+        count_leaves(func) + args.iter().map(count_leaves).sum::<i128>()
+      }
       // BinaryOp: 1 for the operator head + left + right
       Expr::BinaryOp { left, right, .. } => {
         1 + count_leaves(left) + count_leaves(right)
