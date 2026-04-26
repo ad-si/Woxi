@@ -190,12 +190,14 @@ InformationPattern = @{ (ASCII_ALPHA | "$" | "*")+ ~ (ASCII_ALPHANUMERIC | "$" |
 
 // Unset: x =. (removes definition for simple identifiers)
 // Function call unsets (f[x] =.) are handled by UnsetSuffix in Expression.
-Unset = { Identifier ~ "=." ~ !ASCII_DIGIT }
+// Wolfram allows whitespace between `=` and `.` (e.g. `x = .`), so split
+// the literal across `=` and `.` to leverage pest's implicit whitespace.
+Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 
 // UnsetSuffix: "=." postfix operator used within Expression to handle f[x] =.
 // This is separate from Term-level Unset because it needs to participate in
 // operator precedence (same level as = assignment).
-UnsetSuffix = { "=." ~ !ASCII_DIGIT }
+UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
 // Compound assignment: x += y, x -= y, x *= y, x /= y
 AddTo = { (PartExtract | Identifier) ~ "+=" ~ Expression }
