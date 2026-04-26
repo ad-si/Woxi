@@ -683,7 +683,19 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(Expr::Slot(*n))
     }
     Expr::SlotSequence(n) => Ok(Expr::SlotSequence(*n)),
-    Expr::Constant(name) => Ok(Expr::Constant(name.clone())),
+    Expr::Constant(name) => {
+      // After `Unprotect[c]; c = value`, the user has reassigned the
+      // built-in constant. Honour the new OwnValue if one was stored —
+      // matching wolframscript's `Unprotect[Pi]; Pi = 3; Pi → 3`.
+      if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
+        match stored {
+          StoredValue::Raw(val) => return string_to_expr(&val),
+          StoredValue::ExprVal(e) => return Ok(e),
+          _ => {}
+        }
+      }
+      Ok(Expr::Constant(name.clone()))
+    }
     Expr::List(items) => {
       let mut evaluated: Vec<Expr> = Vec::with_capacity(items.len());
       for item in items {

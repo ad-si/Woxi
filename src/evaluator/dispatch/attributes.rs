@@ -218,7 +218,7 @@ pub fn dispatch_attributes(
     "Clear" => {
       for arg in args {
         match arg {
-          Expr::Identifier(sym) => {
+          Expr::Identifier(sym) | Expr::Constant(sym) => {
             ENV.with(|e| e.borrow_mut().remove(sym));
             crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
           }

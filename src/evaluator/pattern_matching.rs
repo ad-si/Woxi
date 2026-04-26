@@ -339,7 +339,15 @@ fn try_ast_pattern_replace_impl(
 /// Check if a symbol has the Protected attribute (builtin or user-defined).
 pub fn is_symbol_protected(name: &str) -> bool {
   let builtin = get_builtin_attributes(name);
-  if builtin.contains(&"Protected") {
+  let builtin_protected = builtin.contains(&"Protected");
+  // `Unprotect` records the removal in FUNC_ATTRS_REMOVED so the builtin's
+  // baseline can be temporarily overridden without losing it.
+  let removed = crate::FUNC_ATTRS_REMOVED.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.iter().any(|a| a == "Protected"))
+  });
+  if builtin_protected && !removed {
     return true;
   }
   crate::FUNC_ATTRS.with(|m| {
