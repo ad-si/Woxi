@@ -1145,6 +1145,33 @@ mod transpose_extended {
       "{{{1, 5}, {2, 6}}, {{3, 7}, {4, 8}}}"
     );
   }
+
+  #[test]
+  fn empty_list() {
+    // Transpose[{}] returns {} — wolframscript also keeps the empty
+    // tensor as-is rather than emitting an error.
+    assert_eq!(interpret("Transpose[{}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn double_transpose_is_identity() {
+    // The classic involution: Transpose[Transpose[m]] == m for any
+    // rectangular matrix or higher-rank tensor.
+    assert_eq!(
+      interpret(
+        "matrix = {{1, 2}, {3, 4}, {5, 6}}; Transpose[Transpose[matrix]] == matrix"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "tensor = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[Transpose[tensor]] == tensor"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod product_extended {
