@@ -297,6 +297,98 @@ pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// BesselYZero[n, k] — k-th positive zero of the Bessel function Y_n
+pub fn bessel_y_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselYZero expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_val = match &args[0] {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let k_val = match &args[1] {
+    Expr::Integer(k) => Some(*k),
+    Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
+    _ => None,
+  };
+  let has_real =
+    matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+  if has_real
+    && let (Some(n), Some(k)) = (n_val, k_val)
+    && k >= 1
+  {
+    let result = bessel_y_zero(n, k as usize);
+    return Ok(Expr::Real(result));
+  }
+  Ok(Expr::FunctionCall {
+    name: "BesselYZero".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Find the k-th positive zero of Y_n(x) using bisection + Newton's method.
+/// Y_n(x) is a Bessel function of the second kind; its first zero for n=0
+/// is `0.8935776066…`. The implementation mirrors `bessel_j_zero` but
+/// evaluates `bessel_y` and uses the recurrence
+/// `Y'_n(x) = n/x · Y_n(x) − Y_{n+1}(x)` for Newton refinement.
+fn bessel_y_zero(n: f64, k: usize) -> f64 {
+  let step = 0.5;
+  // Y_n diverges at x = 0, so start the scan past a small positive
+  // value (and past `n * 0.5` for large `n`, where the first zero
+  // tracks the order).
+  let start = if n > 0.0 { (n * 0.5).max(step) } else { step };
+  let mut x = start;
+  let mut prev_val = bessel_y(n, x);
+  let mut zeros_found = 0;
+  loop {
+    let next_x = x + step;
+    let next_val = bessel_y(n, next_x);
+    if prev_val * next_val < 0.0 {
+      zeros_found += 1;
+      if zeros_found == k {
+        let mut lo = x;
+        let mut hi = next_x;
+        for _ in 0..60 {
+          let mid = (lo + hi) / 2.0;
+          let mid_val = bessel_y(n, mid);
+          if mid_val == 0.0 {
+            return mid;
+          }
+          if bessel_y(n, lo) * mid_val < 0.0 {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+        let mut root = (lo + hi) / 2.0;
+        for _ in 0..20 {
+          let yn = bessel_y(n, root);
+          let yn1 = bessel_y(n + 1.0, root);
+          let deriv = (n / root) * yn - yn1;
+          if deriv.abs() < 1e-300 {
+            break;
+          }
+          let delta = yn / deriv;
+          root -= delta;
+          if delta.abs() < 1e-15 * root.abs() {
+            break;
+          }
+        }
+        return root;
+      }
+    }
+    prev_val = next_val;
+    x = next_x;
+    if x > n + (k as f64) * std::f64::consts::PI + 100.0 {
+      break;
+    }
+  }
+  f64::NAN
+}
+
 /// Find the k-th positive zero of J_n(x) using bisection + Newton's method
 fn bessel_j_zero(n: f64, k: usize) -> f64 {
   // Find zeros by scanning for sign changes, then refining with bisection

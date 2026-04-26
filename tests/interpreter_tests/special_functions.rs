@@ -640,6 +640,51 @@ mod bessel_j_zero {
   }
 }
 
+mod bessel_y_zero {
+  use super::*;
+
+  // BesselYZero stays symbolic when both arguments are exact (matching
+  // BesselJZero's pattern) so users can still reason about it as a
+  // symbol; numeric evaluation kicks in when either argument is a Real.
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("BesselYZero[0, 1]").unwrap(), "BesselYZero[0, 1]");
+  }
+
+  // The first positive zero of Y_0 is `0.89357696627916752…`. f64
+  // resolves the value to about 16 digits; the implementation uses a
+  // bisection scan plus Newton polish identical to `BesselJZero`'s.
+  #[test]
+  fn numeric_y0_1() {
+    let result = interpret("N[BesselYZero[0, 1]]").unwrap();
+    let val: f64 = result.parse().expect("should parse to a Real");
+    assert!(
+      (val - 0.8935769662791675).abs() < 1e-13,
+      "expected ~0.89357696627916752, got {val}"
+    );
+  }
+
+  #[test]
+  fn numeric_y0_2() {
+    let result = interpret("N[BesselYZero[0, 2]]").unwrap();
+    let val: f64 = result.parse().expect("should parse to a Real");
+    assert!(
+      (val - 3.957678419314858).abs() < 1e-13,
+      "expected ~3.95767841931486, got {val}"
+    );
+  }
+
+  // Round-trip: the computed zero should drive `BesselY[0, x]` to
+  // approximately 0 at machine precision.
+  #[test]
+  fn is_actual_zero() {
+    assert_eq!(
+      interpret("Chop[BesselY[0, N[BesselYZero[0, 1]]]]").unwrap(),
+      "0"
+    );
+  }
+}
+
 mod jacobi_zeta {
   use super::*;
 
