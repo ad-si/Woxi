@@ -468,6 +468,23 @@ mod pattern_matching {
         "{1, 2, 0, 0}"
       );
     }
+
+    // `Condition` (`/;`) binds looser than `+`, so when a Condition
+    // appears as a Plus term, the printer must wrap it in parens —
+    // otherwise `p + Condition[1, 2 > 1]` round-trips as
+    // `Condition[p + 1, 2 > 1]`. wolframscript prints `p + (1 /; 2 > 1)`
+    // and Woxi must too.
+    #[test]
+    fn condition_inside_plus_wraps_in_parens() {
+      assert_eq!(
+        interpret("p + Condition[1, 2 > 1]").unwrap(),
+        "p + (1 /; 2 > 1)"
+      );
+      assert_eq!(
+        interpret("Condition[1, 2 > 1] + p").unwrap(),
+        "p + (1 /; 2 > 1)"
+      );
+    }
   }
 
   mod pattern_test {

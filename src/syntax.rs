@@ -5924,9 +5924,19 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               | Expr::PatternTest { .. }
           )
         };
+        // `Condition[expr, test]` — printed with `/;`, which binds looser
+        // than `+`. Wrap the whole thing so `p + (1 /; 2 > 1)` doesn't
+        // surface as `p + 1 /; 2 > 1` (which would parse as
+        // `Condition[p + 1, 2 > 1]`).
+        let needs_condition_parens = |a: &Expr| -> bool {
+          matches!(
+            a,
+            Expr::FunctionCall { name, args } if name == "Condition" && args.len() == 2
+          )
+        };
         let fmt_plus_term = |a: &Expr| -> String {
           let s = fmt(a);
-          if needs_pattern_parens(a) {
+          if needs_pattern_parens(a) || needs_condition_parens(a) {
             format!("({})", s)
           } else {
             s
