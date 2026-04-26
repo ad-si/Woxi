@@ -5962,6 +5962,27 @@ mod koch_curve {
   }
 }
 
+mod tetrahedron {
+  use super::*;
+
+  // Wolfram accepts Tetrahedron[], Tetrahedron[v], and Tetrahedron[v, s].
+  // Woxi was rejecting the no-argument form via an arity restriction
+  // (1..=1) — relax to 0..=2 so callers like `Graphics3D[Tetrahedron[]]`
+  // don't trigger Tetrahedron::argx.
+  #[test]
+  fn no_args_stays_unevaluated() {
+    assert_eq!(interpret("Tetrahedron[]").unwrap(), "Tetrahedron[]");
+  }
+
+  #[test]
+  fn two_args_stays_unevaluated() {
+    assert_eq!(
+      interpret("Tetrahedron[{0, 0, 0}, 1]").unwrap(),
+      "Tetrahedron[{0, 0, 0}, 1]"
+    );
+  }
+}
+
 mod insphere {
   use super::*;
 
