@@ -1311,6 +1311,20 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
     // Function calls
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
+        // `List[a, b, ...]` differentiates element-wise. Without this
+        // special case, the generic chain rule below produces the
+        // unresolved `Derivative[1, ...][List][...]` form, which
+        // `Derivative[n][List]` then refuses to fold into a pure
+        // function. Apply the same rule the `Expr::List` arm does
+        // further down so `Derivative[1][List]` returns `{1}&` and
+        // `Derivative[0, 0, 1][List]` returns `{0, 0, 1}&`.
+        "List" => {
+          let mut diffed: Vec<Expr> = Vec::with_capacity(args.len());
+          for a in args {
+            diffed.push(differentiate(a, var)?);
+          }
+          Ok(Expr::List(diffed))
+        }
         "Sin" if args.len() == 1 => {
           // d/dx[sin(f(x))] = cos(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
@@ -2533,6 +2547,19 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           args: vec![expr.clone(), Expr::Identifier(var.to_string())],
         })
       }
+    }
+
+    // Lists differentiate element-wise. The fallback below would fold a
+    // constant-w.r.t.-`var` list to a single `0` via `is_constant_wrt`,
+    // which trips the `Derivative[n][List]` chain (after the first
+    // derivative the list contains only constants like `{1}`, and the
+    // second pass needs to yield `{0}` rather than `0`).
+    Expr::List(items) => {
+      let mut diffed: Vec<Expr> = Vec::with_capacity(items.len());
+      for item in items {
+        diffed.push(differentiate(item, var)?);
+      }
+      Ok(Expr::List(diffed))
     }
 
     _ => {

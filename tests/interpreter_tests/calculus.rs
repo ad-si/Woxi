@@ -682,6 +682,40 @@ mod derivative_prime_notation {
     assert_eq!(interpret("h'[x]").unwrap(), "Derivative[1][h][x]");
   }
 
+  // `Derivative[n][List]` and `Derivative[n1, ..., nk][List]` — Wolfram
+  // treats `List` as a varargs identity function, so its derivative is
+  // a Function returning a list of zeros and ones at the differentiated
+  // positions. The chain `D[List[var]] = {1}`, `D[{1}] = {0}`, etc.
+  #[test]
+  fn derivative_on_list_first_order() {
+    assert_eq!(interpret("Derivative[1][List]").unwrap(), "{1} & ");
+  }
+
+  #[test]
+  fn derivative_on_list_higher_order_vanishes() {
+    // Each list slot is linear in its argument, so any second or
+    // higher derivative is the zero list of the same length.
+    assert_eq!(interpret("Derivative[2][List]").unwrap(), "{0} & ");
+    assert_eq!(interpret("Derivative[3][List]").unwrap(), "{0} & ");
+  }
+
+  #[test]
+  fn derivative_multi_index_on_list() {
+    // `Derivative[0, 0, 1][List]` differentiates the third slot —
+    // result has a 1 at position 3, zeros elsewhere.
+    assert_eq!(
+      interpret("Derivative[0, 0, 1][List]").unwrap(),
+      "{0, 0, 1} & "
+    );
+    assert_eq!(
+      interpret("Derivative[1, 0, 0][List]").unwrap(),
+      "{1, 0, 0} & "
+    );
+    // Mixed first-order indices collapse to zeros (each slot is linear
+    // in only its own variable).
+    assert_eq!(interpret("Derivative[1, 1][List]").unwrap(), "{0, 0} & ");
+  }
+
   #[test]
   fn derivative_prime_on_paren_anonymous_function() {
     // `(#^4&)'` — derivative on a parenthesized anonymous function.

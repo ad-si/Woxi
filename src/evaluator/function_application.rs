@@ -612,6 +612,53 @@ pub fn apply_curried_call(
           // Multi-arg: apply the body to the args.
           return evaluate_function_call_ast("CompoundExpression", args);
         }
+        // `Derivative[n1, ..., nk][List]` — fold to a Function that
+        // returns a `List` of length `k`. Each entry is `D[#i, #1^n1, …,
+        // #k^nk]`: 1 when exactly that position has order 1 and every
+        // other position has order 0, otherwise 0.
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == "List")
+        {
+          let orders: Vec<i128> = func_args
+            .iter()
+            .map(|a| match a {
+              Expr::Integer(n) => *n,
+              _ => 0,
+            })
+            .collect();
+          let any_high = orders.iter().any(|n| *n > 1 || *n < 0);
+          let ones: Vec<usize> = orders
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| if *n == 1 { Some(i) } else { None })
+            .collect();
+          let body: Expr = if any_high || ones.len() > 1 {
+            Expr::List(orders.iter().map(|_| Expr::Integer(0)).collect())
+          } else if ones.len() == 1 {
+            let target = ones[0];
+            Expr::List(
+              (0..orders.len())
+                .map(|i| {
+                  if i == target {
+                    Expr::Integer(1)
+                  } else {
+                    Expr::Integer(0)
+                  }
+                })
+                .collect(),
+            )
+          } else {
+            // Every order is zero — this branch is unreachable because
+            // the all-zeros guard above caught it, but keep the fallback
+            // for completeness.
+            Expr::List(
+              (0..orders.len()).map(|i| Expr::Slot(i + 1)).collect(),
+            )
+          };
+          return Ok(Expr::Function {
+            body: Box::new(body),
+          });
+        }
         // Multi-index derivative: Derivative[n1, n2, ...][f] — keep as
         // CurriedCall since the flattened form is ambiguous with
         // Derivative[n, f, x] (nth derivative of f at x).
