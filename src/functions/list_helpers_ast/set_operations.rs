@@ -248,11 +248,16 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(test) = same_test {
     // Deduplicate by equivalence. Each sorted element is compared
     // against every already-kept representative; the first
-    // representative that `test[rep, item]` is True for absorbs it.
+    // representative that `test[item, rep]` is True for absorbs it.
+    // The new candidate goes on the *left* of `test` to match
+    // wolframscript: `Union[{1,2,3,4}, SameTest->Greater]` yields
+    // `{1}` because `Greater[2,1]`, `Greater[3,1]`, `Greater[4,1]`
+    // all hold, while `Less` keeps every element since
+    // `Less[k, 1]` is False for every later `k`.
     let mut reps: Vec<Expr> = Vec::new();
     'outer: for item in result.into_iter() {
       for rep in &reps {
-        let r = apply_func_to_two_args(test, rep, &item)?;
+        let r = apply_func_to_two_args(test, &item, rep)?;
         if matches!(r, Expr::Identifier(ref s) if s == "True") {
           continue 'outer;
         }

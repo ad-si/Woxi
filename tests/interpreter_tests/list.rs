@@ -194,6 +194,43 @@ mod union_sorting {
       "{2, 3}"
     );
   }
+
+  // The candidate goes on the *left* of the SameTest. With `Greater`,
+  // every element after the smallest gets absorbed (Greater[k, 1] is
+  // True for k > 1), collapsing the result to the singleton smallest.
+  #[test]
+  fn union_same_test_greater_collapses_to_smallest() {
+    assert_eq!(
+      interpret("Union[{1, 2, 3, 4}, SameTest -> Greater]").unwrap(),
+      "{1}"
+    );
+  }
+
+  // `Less` is the dual: `Less[k, 1]` is False for every k ≥ 1, so no
+  // element is absorbed and the sorted concatenation survives — the
+  // mathics doctest case from test_cases.rs case 2518.
+  #[test]
+  fn union_same_test_less_keeps_all_elements_sorted() {
+    assert_eq!(
+      interpret("Union[{1, 2, 3}, {2, 3, 4}, SameTest -> Less]").unwrap(),
+      "{1, 2, 2, 3, 3, 4}"
+    );
+  }
+
+  // SameTest applied to a structural test — key off the last element of
+  // each pair. The first occurrence wins, so `{a, 1}` keeps its slot
+  // while `{c, 1}` (same last-component) is absorbed.
+  #[test]
+  fn union_same_test_structural_keeps_first_representative() {
+    assert_eq!(
+      interpret(
+        "Union[{{a, 1}, {b, 2}}, {{c, 1}, {d, 3}}, \
+         SameTest -> (SameQ[Last[#1], Last[#2]] &)]"
+      )
+      .unwrap(),
+      "{{a, 1}, {b, 2}, {d, 3}}"
+    );
+  }
 }
 
 mod subsequences {
