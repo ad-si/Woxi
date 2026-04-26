@@ -331,6 +331,33 @@ mod subtraction_without_spaces {
   }
 
   #[test]
+  fn divide_then_implicit_times_keeps_multiplicative_precedence() {
+    // Regression: `a/b c` must parse as `(a*c)/b`, not `a/(b*c)`. The
+    // ImplicitTimes term following `/` was being consumed wholesale as a
+    // single divisor, putting later factors into the denominator.
+    assert_eq!(interpret("6/2 3").unwrap(), "9");
+    assert_eq!(
+      interpret("FullForm[a/b c]").unwrap(),
+      "Times[a, Power[b, -1], c]"
+    );
+    assert_eq!(
+      interpret("FullForm[a/b c d]").unwrap(),
+      "Times[a, Power[b, -1], c, d]"
+    );
+  }
+
+  #[test]
+  fn divide_then_implicit_times_with_negated_power() {
+    // Regression for case 1095: the trailing `c^-d` after implicit
+    // multiplication caused the precedence chain to invert several
+    // factors.
+    assert_eq!(
+      interpret("5/7 (x - 1)^2/(x - 2)^3 a^b c^-d").unwrap(),
+      "(5*a^b*(-1 + x)^2)/(7*c^d*(-2 + x)^3)"
+    );
+  }
+
+  #[test]
   fn implicit_times_then_minus_constant_fraction() {
     // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
     // The result is simplified: 2*Pi - Pi/4 = (8*Pi - Pi)/4 = 7*Pi/4

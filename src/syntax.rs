@@ -2950,6 +2950,29 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// Flatten a left-associative chain of `Times` BinaryOps into a Vec of
+/// individual factors. Used when splicing the contents of an
+/// `ImplicitTimes` term back into the parent operator chain so that
+/// `a/b c d` parses as `(a*c*d)/b` rather than `a/(b*c*d)`.
+fn flatten_times_chain(expr: Expr) -> Vec<Expr> {
+  fn walk(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        walk(left, out);
+        walk(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut out = Vec::new();
+  walk(&expr, &mut out);
+  out
+}
+
 /// Parse an expression with operators into an Expr
 fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
@@ -3146,8 +3169,28 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           operators.push("NEGATE".to_string());
           leading_minus = false;
         }
+        // When an `ImplicitTimes` follows a Divide operator (`/`), splice
+        // its factors into the running term/operator vectors so that the
+        // implicit factors stay at multiplicative precedence — `a/b c`
+        // must parse as `(a*c)/b`, not `a/(b*c)`. Without this, the whole
+        // ImplicitTimes is consumed as a single divisor.
+        let is_implicit_times = matches!(item.as_rule(), Rule::ImplicitTimes);
+        let split_implicit = is_implicit_times
+          && operators.last().is_some_and(|o| o == "/");
         let expr = pair_to_expr(item);
-        terms.push(expr);
+        if split_implicit {
+          let factors = flatten_times_chain(expr);
+          let mut iter = factors.into_iter();
+          if let Some(first) = iter.next() {
+            terms.push(first);
+            for rest in iter {
+              operators.push("*".to_string());
+              terms.push(rest);
+            }
+          }
+        } else {
+          terms.push(expr);
+        }
         if leading_not {
           // Defer the Not wrapping until any postfix suffixes have been
           // applied so that operators like `!` bind tighter than the prefix
