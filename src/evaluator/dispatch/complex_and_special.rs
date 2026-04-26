@@ -1746,10 +1746,28 @@ pub fn dispatch_complex_and_special(
     }
 
     // Symbolic operators with no built-in meaning -- just return as-is with evaluated args
-    "Therefore" | "Because" | "TableForm" | "MatrixForm" | "Row" | "In"
-    | "Grid" | "TextGrid" | "Column" | "Framed" => {
+    "Therefore" | "Because" | "TableForm" | "MatrixForm" | "Row" | "Grid"
+    | "TextGrid" | "Column" | "Framed" => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
+    // `In[k]` references prior input. With no input history (script mode),
+    // `In[-N]` resolves to `In[$Line - N]`, which clamps to `In[0]` for any
+    // non-positive index. Positive indices stay unevaluated as `In[k]`.
+    "In" if args.len() == 1 => {
+      if let Expr::Integer(k) = &args[0]
+        && *k <= 0
+      {
+        return Some(Ok(Expr::FunctionCall {
+          name: "In".to_string(),
+          args: vec![Expr::Integer(0)],
+        }));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "In".to_string(),
         args: args.to_vec(),
       }));
     }
