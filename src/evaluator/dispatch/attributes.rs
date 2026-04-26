@@ -139,8 +139,7 @@ pub fn dispatch_attributes(
           // If Protected is a builtin attribute that was previously removed,
           // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
           // user-set attribute.
-          let was_builtin =
-            get_builtin_attributes(sym).contains(&"Protected");
+          let was_builtin = get_builtin_attributes(sym).contains(&"Protected");
           if was_builtin {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
               let mut removed = m.borrow_mut();
