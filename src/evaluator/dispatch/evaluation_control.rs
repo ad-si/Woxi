@@ -68,6 +68,25 @@ pub fn dispatch_evaluation_control(
     "TimeRemaining" if args.is_empty() => {
       return Some(Ok(Expr::Identifier("Infinity".to_string())));
     }
+    "Out" => {
+      // `Out[]` and `Out[k]` for k <= 0 collapse to `Out[0]` because no
+      // output history is preserved across script-mode evaluations
+      // (mirroring `$Line == 1`). Positive integers stay as `Out[k]`
+      // symbolically — matching wolframscript, which renders the literal
+      // reference when the slot has nothing cached.
+      let target: Option<i128> = match args {
+        [] => Some(0),
+        [Expr::Integer(n)] => Some(*n),
+        _ => None,
+      };
+      if let Some(k) = target {
+        let normalized = if k <= 0 { 0 } else { k };
+        return Some(Ok(Expr::FunctionCall {
+          name: "Out".to_string(),
+          args: vec![Expr::Integer(normalized)],
+        }));
+      }
+    }
     "Evaluate" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }

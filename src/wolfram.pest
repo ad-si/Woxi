@@ -82,6 +82,10 @@ String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ A
 // Anonymous function syntax: body & where body contains # slots
 SlotSequence = @{ "##" ~ ASCII_DIGIT* }
 Slot = @{ "#" ~ !"#" ~ ASCII_DIGIT* }
+// Output reference shortcut: `%n` (digits) is `Out[n]`, plain `%`/`%%`/`%%%` is
+// `Out[$Line - k]`. Atomic so adjacent text isn't dragged in. The digit form
+// must come first so `%5` is consumed as a single token rather than `% * 5`.
+OutShortcut = @{ "%" ~ ASCII_DIGIT+ | "%"+ }
 // SimpleAnonymousFunction is # or # op term followed by & (not &&)
 SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 // SlotTerm is what can follow an operator in an anonymous function body
@@ -340,6 +344,7 @@ Term = _{
   | Identifier
   | SlotSequence
   | Slot
+  | OutShortcut
   | AssociationExtended
   | Association
   | ParenExtended
@@ -361,6 +366,7 @@ SimpleTerm = _{
   | SlotSequence
   | SlotCall
   | Slot
+  | OutShortcut
   | List
   | "(" ~ Expression ~ ")"
 }
@@ -390,6 +396,7 @@ TermNoImplicit = _{
   | Identifier
   | SlotSequence
   | Slot
+  | OutShortcut
   | AssociationExtended
   | Association
   | ParenExtended

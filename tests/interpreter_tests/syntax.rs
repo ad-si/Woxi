@@ -6715,3 +6715,63 @@ mod anonymous_function_precedence {
     );
   }
 }
+
+mod out_shortcut {
+  use super::*;
+
+  // `%` parses as Out[$Line - 1]; in script mode `$Line` is always 1, so
+  // `%` collapses to Out[0]. `%%` and longer `%`-runs reach further back
+  // and also fall through to Out[0] because no history is cached.
+  #[test]
+  fn percent_alone() {
+    assert_eq!(interpret("%").unwrap(), "Out[0]");
+  }
+
+  #[test]
+  fn double_and_triple_percent_collapse_to_out_zero() {
+    assert_eq!(interpret("%%").unwrap(), "Out[0]");
+    assert_eq!(interpret("%%%").unwrap(), "Out[0]");
+  }
+
+  #[test]
+  fn percent_with_digits_keeps_index() {
+    assert_eq!(interpret("%5").unwrap(), "Out[5]");
+    assert_eq!(interpret("%1").unwrap(), "Out[1]");
+    assert_eq!(interpret("%100").unwrap(), "Out[100]");
+  }
+
+  #[test]
+  fn out_negative_or_zero_normalises_to_out_zero() {
+    assert_eq!(interpret("Out[-1]").unwrap(), "Out[0]");
+    assert_eq!(interpret("Out[-5]").unwrap(), "Out[0]");
+    assert_eq!(interpret("Out[0]").unwrap(), "Out[0]");
+  }
+
+  #[test]
+  fn out_positive_stays_symbolic() {
+    assert_eq!(interpret("Out[1]").unwrap(), "Out[1]");
+    assert_eq!(interpret("Out[42]").unwrap(), "Out[42]");
+  }
+
+  #[test]
+  fn percent_inside_compound_expression() {
+    // `42; %` — the Out[0] reference comes after a leading expression
+    // and remains the visible value of the chained statement list.
+    assert_eq!(interpret("42; %").unwrap(), "Out[0]");
+    // Inside an arbitrary head — the wrapper is preserved around Out[0].
+    assert_eq!(
+      interpret("square = {{1, 2}, {3, 4}}; Transpose[square]; MatrixForm[%]")
+        .unwrap(),
+      "MatrixForm[Out[0]]"
+    );
+  }
+
+  // Adjacency tests — wolframscript treats `%%5` as `%% * 5` and `%5%`
+  // as `%5 * %`, so the parser must split runs of `%` from following
+  // digits or following `%`-runs cleanly.
+  #[test]
+  fn percent_runs_split_from_digits() {
+    assert_eq!(interpret("%%5").unwrap(), "5*Out[0]");
+    assert_eq!(interpret("%5%").unwrap(), "Out[0]*Out[5]");
+  }
+}

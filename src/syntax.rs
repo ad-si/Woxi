@@ -1670,6 +1670,23 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       };
       Expr::SlotSequence(num)
     }
+    Rule::OutShortcut => {
+      // `%n` (digits) → Out[n]; bare `%`/`%%`/`%%%` → Out[$Line - k]. We
+      // model `$Line` as a fresh-session counter that always reads as 1
+      // (matching wolframscript's script-mode behaviour), so the parser
+      // emits the resolved index directly. Negative indices stay as
+      // Out[k] until evaluation collapses them to Out[0].
+      let s = pair.as_str();
+      let digit_start = s.find(|c: char| c.is_ascii_digit());
+      let n: i128 = match digit_start {
+        Some(i) => s[i..].parse().unwrap_or(0),
+        None => 1 - (s.chars().filter(|c| *c == '%').count() as i128),
+      };
+      Expr::FunctionCall {
+        name: "Out".to_string(),
+        args: vec![Expr::Integer(n)],
+      }
+    }
     Rule::Constant | Rule::UnsignedConstant => {
       Expr::Constant(pair.as_str().trim().to_string())
     }
