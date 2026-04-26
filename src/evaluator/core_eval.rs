@@ -1865,78 +1865,82 @@ pub fn evaluate_expr_to_expr_inner(
             if let Some(ord) = exact_integer_ord(left, right) {
               matches!(ord, std::cmp::Ordering::Equal)
             } else {
-            // Two BigFloats with > ~16 digits of precision can carry
-            // distinct stored digit strings even though both collapse
-            // to the same f64. Compare the digit strings truncated to
-            // the *shared* precision so genuinely-different literals
-            // are False but values that agree to the shared precision
-            // (e.g. `N[E, 100]` vs `N[E, 150]`) stay equal.
-            if let (Expr::BigFloat(d_l, p_l), Expr::BigFloat(d_r, p_r)) =
-              (left, right)
-              && p_l.min(*p_r) > 16.0
-            {
-              // Compare to (shared - 1) digits so a 1-ULP difference at
-              // the last shared digit stays equal-within-tolerance.
-              let shared = (p_l.min(*p_r).floor() as usize).saturating_sub(1);
-              if shared > 0
-                && !crate::functions::boolean_ast::bigfloat_digits_match_to(
-                  d_l, d_r, shared,
+              // Two BigFloats with > ~16 digits of precision can carry
+              // distinct stored digit strings even though both collapse
+              // to the same f64. Compare the digit strings truncated to
+              // the *shared* precision so genuinely-different literals
+              // are False but values that agree to the shared precision
+              // (e.g. `N[E, 100]` vs `N[E, 150]`) stay equal.
+              if let (Expr::BigFloat(d_l, p_l), Expr::BigFloat(d_r, p_r)) =
+                (left, right)
+                && p_l.min(*p_r) > 16.0
+              {
+                // Compare to (shared - 1) digits so a 1-ULP difference at
+                // the last shared digit stays equal-within-tolerance.
+                let shared = (p_l.min(*p_r).floor() as usize).saturating_sub(1);
+                if shared > 0
+                  && !crate::functions::boolean_ast::bigfloat_digits_match_to(
+                    d_l, d_r, shared,
+                  )
+                {
+                  return Ok(Expr::Identifier("False".to_string()));
+                }
+              }
+              if let (Some(l), Some(r)) =
+                (try_eval_to_f64(left), try_eval_to_f64(right))
+              {
+                // Machine-precision Reals are compared up to the last ~7 bits
+                // (matches wolframscript, which treats the f64 guard bits as
+                // "insignificant"). Exact-vs-exact comparisons stay strict.
+                // When a BigFloat with low precision p is involved, also
+                // widen the tolerance to `10^-p · max(|l|, |r|)` so e.g.
+                // `3.1416 == 3.14`2` is True (the shorter operand only
+                // commits to ~2 significant decimals).
+                let involves_real =
+                  matches!(left, Expr::Real(_) | Expr::BigFloat(_, _))
+                    || matches!(right, Expr::Real(_) | Expr::BigFloat(_, _))
+                    || matches!(left, Expr::UnaryOp { operand, .. }
+                if matches!(operand.as_ref(), Expr::Real(_)))
+                    || matches!(right, Expr::UnaryOp { operand, .. }
+                  if matches!(operand.as_ref(), Expr::Real(_)));
+                if involves_real {
+                  let mut tol =
+                    f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
+                  let bigfloat_prec = [left, right]
+                    .iter()
+                    .filter_map(|e| match e {
+                      Expr::BigFloat(_, p) => Some(*p),
+                      _ => None,
+                    })
+                    .reduce(f64::min);
+                  if let Some(p) = bigfloat_prec {
+                    let prec_tol =
+                      f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
+                    if prec_tol > tol {
+                      tol = prec_tol;
+                    }
+                  }
+                  (l - r).abs() <= tol
+                } else {
+                  l == r
+                }
+              } else if expr_to_string(left) == expr_to_string(right) {
+                true
+              } else if let Some(ord) =
+                crate::functions::quantity_ast::try_quantity_compare(
+                  left, right,
                 )
               {
-                return Ok(Expr::Identifier("False".to_string()));
-              }
-            }
-            if let (Some(l), Some(r)) =
-              (try_eval_to_f64(left), try_eval_to_f64(right))
-            {
-              // Machine-precision Reals are compared up to the last ~7 bits
-              // (matches wolframscript, which treats the f64 guard bits as
-              // "insignificant"). Exact-vs-exact comparisons stay strict.
-              // When a BigFloat with low precision p is involved, also
-              // widen the tolerance to `10^-p · max(|l|, |r|)` so e.g.
-              // `3.1416 == 3.14`2` is True (the shorter operand only
-              // commits to ~2 significant decimals).
-              let involves_real =
-                matches!(left, Expr::Real(_) | Expr::BigFloat(_, _))
-                  || matches!(right, Expr::Real(_) | Expr::BigFloat(_, _))
-                  || matches!(left, Expr::UnaryOp { operand, .. }
-                if matches!(operand.as_ref(), Expr::Real(_)))
-                  || matches!(right, Expr::UnaryOp { operand, .. }
-                  if matches!(operand.as_ref(), Expr::Real(_)));
-              if involves_real {
-                let mut tol = f64::max(l.abs(), r.abs()) * (2.0_f64).powi(-46);
-                let bigfloat_prec = [left, right]
-                  .iter()
-                  .filter_map(|e| match e {
-                    Expr::BigFloat(_, p) => Some(*p),
-                    _ => None,
-                  })
-                  .reduce(f64::min);
-                if let Some(p) = bigfloat_prec {
-                  let prec_tol = f64::max(l.abs(), r.abs()) * 10.0_f64.powf(-p);
-                  if prec_tol > tol {
-                    tol = prec_tol;
-                  }
-                }
-                (l - r).abs() <= tol
+                ord == std::cmp::Ordering::Equal
+              } else if has_free_symbols(left) || has_free_symbols(right) {
+                // Symbolic: return unevaluated
+                return Ok(Expr::Comparison {
+                  operands: values,
+                  operators: operators.clone(),
+                });
               } else {
-                l == r
+                false
               }
-            } else if expr_to_string(left) == expr_to_string(right) {
-              true
-            } else if let Some(ord) =
-              crate::functions::quantity_ast::try_quantity_compare(left, right)
-            {
-              ord == std::cmp::Ordering::Equal
-            } else if has_free_symbols(left) || has_free_symbols(right) {
-              // Symbolic: return unevaluated
-              return Ok(Expr::Comparison {
-                operands: values,
-                operators: operators.clone(),
-              });
-            } else {
-              false
-            }
             }
           }
           ComparisonOp::UnsameQ => {

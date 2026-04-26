@@ -8087,7 +8087,8 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
   if !trimmed.contains(['.', 'e', 'E', '*', '/']) {
     let raw = trimmed.strip_prefix('+').unwrap_or(trimmed);
     let digits = raw.strip_prefix('-').unwrap_or(raw);
-    if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+    if !digits.is_empty()
+      && digits.chars().all(|c| c.is_ascii_digit())
       && let Ok(n) = trimmed.parse::<num_bigint::BigInt>()
     {
       return Ok(Expr::BigInteger(n));
