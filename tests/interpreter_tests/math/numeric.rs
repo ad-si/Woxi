@@ -329,10 +329,7 @@ mod n_threading {
     // arguments — `N[f[a, b]]` stays as `f[a, b]`.
     clear_state();
     assert_eq!(
-      interpret(
-        "N[a] = 10.9; SetAttributes[f, NHoldAll]; N[f[a, b]]"
-      )
-      .unwrap(),
+      interpret("N[a] = 10.9; SetAttributes[f, NHoldAll]; N[f[a, b]]").unwrap(),
       "f[a, b]"
     );
   }
@@ -795,6 +792,16 @@ mod precision {
       interpret("StringStartsQ[$Version, \"Woxi \"]").unwrap(),
       "True"
     );
+  }
+
+  // `$Line` tracks the input line number; wolframscript runs each script
+  // as a fresh session, so it always reads as 1 regardless of how many
+  // statements have already been evaluated.
+  #[test]
+  fn dollar_line_is_one() {
+    assert_eq!(interpret("$Line").unwrap(), "1");
+    assert_eq!(interpret("$Line; $Line").unwrap(), "1");
+    assert_eq!(interpret("42; $Line").unwrap(), "1");
   }
 
   #[test]
