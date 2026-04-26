@@ -1442,7 +1442,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Sort a list of Solve solutions (each is `{var -> val}`) by root value.
-/// Real solutions come first (ascending), then complex solutions.
+/// Uses `solve_order` so complex roots interleave with reals by real
+/// part, matching wolframscript's `Solve[x^5 == x, x]` output.
 fn sort_solutions(solutions: &mut Vec<Expr>) {
   solutions.sort_by(|a, b| {
     let val_a = match a {
@@ -1459,7 +1460,7 @@ fn sort_solutions(solutions: &mut Vec<Expr>) {
       },
       _ => b,
     };
-    root_order(val_a, val_b)
+    solve_order(val_a, val_b)
   });
 }
 
@@ -2339,8 +2340,8 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&roots[idx])
 }
 
-/// Order roots the way Wolfram does:
-/// Real roots first sorted ascending, then complex roots sorted by (Re, Im).
+/// Order roots the way Wolfram's `Root` does: real roots first, sorted
+/// ascending, then complex roots sorted by (real, imag).
 pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
   let pa = expr_to_complex_parts_pub(a);
@@ -2366,6 +2367,37 @@ pub fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             other => other,
           }
         }
+      }
+    }
+    (Some(_), None) => std::cmp::Ordering::Less,
+    (None, Some(_)) => std::cmp::Ordering::Greater,
+    (None, None) => std::cmp::Ordering::Equal,
+  }
+}
+
+/// Order solutions the way Wolfram's `Solve` does: lexicographic by
+/// (real, imag) with real (imag = 0) tied to the front of any complex
+/// group sharing the same real part. `{-1, 0, 1, -I, I}` sorts as
+/// `{-1, 0, -I, I, 1}` — `-I` and `I` slot between `0` and `1` because
+/// they share real part 0. (`Root` uses a different rule that floats
+/// every real to the head; both functions are intentionally distinct.)
+pub fn solve_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  let pa = expr_to_complex_parts_pub(a);
+  let pb = expr_to_complex_parts_pub(b);
+
+  match (pa, pb) {
+    (Some((a_re, a_im)), Some((b_re, b_im))) => {
+      let by_re = a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal);
+      if by_re != std::cmp::Ordering::Equal {
+        return by_re;
+      }
+      let a_real = a_im.abs() < 1e-15;
+      let b_real = b_im.abs() < 1e-15;
+      match (a_real, b_real) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal),
       }
     }
     (Some(_), None) => std::cmp::Ordering::Less,

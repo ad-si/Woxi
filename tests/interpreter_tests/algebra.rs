@@ -1910,6 +1910,27 @@ mod solve {
       "{{x -> (-1 + E^3)/2}}"
     );
   }
+
+  // wolframscript's `Solve` orders solutions lexicographically by
+  // (real, imag) — `-I` and `I` slot between `0` and `1` because they
+  // share real part 0. (`Root` uses a different rule that floats every
+  // real to the head of the whole list.)
+  #[test]
+  fn solve_orders_complex_roots_by_real_part() {
+    assert_eq!(
+      interpret("Solve[x^5 == x, x]").unwrap(),
+      "{{x -> -1}, {x -> 0}, {x -> -I}, {x -> I}, {x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn solve_orders_pure_complex_roots() {
+    // `x^4 == 1`: real ±1 split around the unit-circle complex pair.
+    assert_eq!(
+      interpret("Solve[x^4 == 1, x]").unwrap(),
+      "{{x -> -1}, {x -> -I}, {x -> I}, {x -> 1}}"
+    );
+  }
 }
 
 mod rsolve {
