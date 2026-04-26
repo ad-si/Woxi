@@ -1500,6 +1500,11 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
     }
     // Same shape, but Position defaults Heads -> True.
     "Position" => vec![make_rule("Heads", id("True"))],
+    // Polynomial-manipulation defaults (matching wolframscript).
+    "Expand" | "ExpandAll" => vec![
+      make_rule("Modulus", Expr::Integer(0)),
+      make_rule("Trig", id("False")),
+    ],
     _ => vec![],
   }
 }
