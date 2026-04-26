@@ -3175,8 +3175,8 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         // must parse as `(a*c)/b`, not `a/(b*c)`. Without this, the whole
         // ImplicitTimes is consumed as a single divisor.
         let is_implicit_times = matches!(item.as_rule(), Rule::ImplicitTimes);
-        let split_implicit = is_implicit_times
-          && operators.last().is_some_and(|o| o == "/");
+        let split_implicit =
+          is_implicit_times && operators.last().is_some_and(|o| o == "/");
         let expr = pair_to_expr(item);
         if split_implicit {
           let factors = flatten_times_chain(expr);
