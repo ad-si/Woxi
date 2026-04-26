@@ -1375,3 +1375,80 @@ mod function_interpolation {
     );
   }
 }
+
+mod hankel_h1_h2 {
+  use super::*;
+
+  // HankelH1[v, z] = J_v[z] + I Y_v[z]; HankelH2 is the complex conjugate.
+  // Pin the half-integer-order values used by the mathics doctests so a
+  // numerical regression in BesselJ/BesselY surfaces here directly.
+  #[test]
+  fn hankel_h1_real_arg_half_integer_order() {
+    let result = interpret("HankelH1[1.5, 4]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!(
+      (re - 0.18528594835426884).abs() < 1e-12,
+      "Re mismatch: {result}"
+    );
+    assert!(
+      (im - 0.3671120324609341).abs() < 1e-12,
+      "Im mismatch: {result}"
+    );
+  }
+
+  #[test]
+  fn hankel_h2_is_conjugate_of_hankel_h1_for_real_arg() {
+    let h1 = parse_complex(&interpret("HankelH1[1.5, 4]").unwrap());
+    let h2 = parse_complex(&interpret("HankelH2[1.5, 4]").unwrap());
+    assert!((h1.0 - h2.0).abs() < 1e-12, "real parts should match");
+    assert!((h1.1 + h2.1).abs() < 1e-12, "imag parts should be opposite");
+  }
+
+  // SphericalHankelH1[n, z] = sqrt(Pi/(2 z)) HankelH1[n + 1/2, z]; integer
+  // order maps cleanly to a closed-form evaluation, so the result should
+  // round-trip a complex number rather than returning the symbolic call.
+  #[test]
+  fn spherical_hankel_h1_integer_order() {
+    let result = interpret("SphericalHankelH1[3, 1.5]").unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!((re - 0.0283246415824718).abs() < 1e-12, "Re: {result}");
+    assert!((im - -3.7892735647020435).abs() < 1e-12, "Im: {result}");
+  }
+
+  #[test]
+  fn spherical_hankel_h2_is_conjugate_of_h1() {
+    let h1 = parse_complex(&interpret("SphericalHankelH1[3, 1.5]").unwrap());
+    let h2 = parse_complex(&interpret("SphericalHankelH2[3, 1.5]").unwrap());
+    assert!((h1.0 - h2.0).abs() < 1e-12, "real parts should match");
+    assert!((h1.1 + h2.1).abs() < 1e-12, "imag parts should be opposite");
+  }
+
+  /// Parse a Wolfram-style `<re> + <im>*I` string into an `(re, im)` pair.
+  fn parse_complex(s: &str) -> (f64, f64) {
+    let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = compact.as_bytes();
+    // Walk from the right looking for a `+`/`-` that splits the parts.
+    // Skip exponent markers (`e`/`E`) so `1.5e-10+2.0*I` parses cleanly.
+    let mut split = None;
+    for i in (1..bytes.len()).rev() {
+      let c = bytes[i] as char;
+      if (c == '+' || c == '-') && bytes[i - 1] != b'e' && bytes[i - 1] != b'E'
+      {
+        split = Some(i);
+        break;
+      }
+    }
+    let (re_s, im_s) = match split {
+      Some(i) => (&compact[..i], &compact[i..]),
+      None => (compact.as_str(), ""),
+    };
+    let re: f64 = re_s.parse().unwrap_or(0.0);
+    let im_part = im_s.trim_end_matches("*I").trim_end_matches('I');
+    let im: f64 = match im_part {
+      "" | "+" => 1.0,
+      "-" => -1.0,
+      other => other.parse().unwrap_or(0.0),
+    };
+    (re, im)
+  }
+}
