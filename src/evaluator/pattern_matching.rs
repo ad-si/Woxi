@@ -2353,12 +2353,20 @@ fn try_skip_optional_subsets(
               .or_else(|| {
                 crate::evaluator::dispatch::builtin_default_value(pat_name)
               })
+              .or_else(|| lookup_user_default(pat_name, i + 1, pat_args.len()))
             }
           };
-          if let Some(d) = def
-            && !name.is_empty()
-          {
-            bindings.push((name.clone(), d));
+          match def {
+            Some(d) => {
+              if !name.is_empty() {
+                bindings.push((name.clone(), d));
+              }
+            }
+            // `x_.` with no inline default and no Default[f] for this
+            // position: the optional cannot fire, so the partial-fill attempt
+            // fails (matching wolframscript's behavior of leaving f[x_,y_.]
+            // unmatched against f[a] when Default[f] is unset).
+            None => return None,
           }
         }
         continue;
