@@ -299,6 +299,23 @@ mod protect_unprotect {
   }
 
   #[test]
+  fn set_protected_constant_returns_rhs() {
+    // `Pi = 4` should emit `Set::wrsym` and return 4 (the RHS), matching
+    // wolframscript. Pi parses as `Expr::Constant("Pi")`, so the
+    // simple-identifier path needs to accept both Identifier and
+    // Constant variants.
+    assert_eq!(interpret("Pi = 4").unwrap(), "4");
+  }
+
+  #[test]
+  fn clear_protected_constant_returns_null() {
+    // `Pi = 4; Clear[Pi]` emits warnings on both statements but the
+    // final result is Null (from Clear). `interpret` uses "\0" as the
+    // sentinel for Null so the CLI can suppress it cleanly.
+    assert_eq!(interpret("Pi = 4; Clear[Pi]").unwrap(), "\0");
+  }
+
+  #[test]
   fn protect_blocks_part_assignment() {
     clear_state();
     assert_eq!(

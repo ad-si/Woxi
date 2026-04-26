@@ -641,7 +641,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // Handle simple identifier assignment: x = value
-  if let Expr::Identifier(var_name) = lhs {
+  // Constants like Pi/E parse as `Expr::Constant`, but at the top level
+  // they should still be assignable (subject to the Protected check),
+  // matching wolframscript's `Pi = 4` → emits Set::wrsym and returns 4.
+  if let Expr::Identifier(var_name) | Expr::Constant(var_name) = lhs {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // Check Protected attribute
