@@ -1,6 +1,16 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Extract a symbol name from `Expr::Identifier(name)` or
+/// `Expr::Constant(name)` (constants like Pi/E are parsed as `Expr::Constant`
+/// so handlers that take "any symbol" must accept both).
+fn symbol_name(e: &Expr) -> Option<String> {
+  match e {
+    Expr::Identifier(n) | Expr::Constant(n) => Some(n.clone()),
+    _ => None,
+  }
+}
+
 pub fn dispatch_attributes(
   name: &str,
   args: &[Expr],
@@ -8,18 +18,8 @@ pub fn dispatch_attributes(
   match name {
     "SetAttributes" if args.len() == 2 => {
       let func_names: Vec<String> = match &args[0] {
-        Expr::Identifier(name) => vec![name.clone()],
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::Identifier(n) = item {
-              Some(n.clone())
-            } else {
-              None
-            }
-          })
-          .collect(),
-        _ => vec![],
+        Expr::List(items) => items.iter().filter_map(symbol_name).collect(),
+        _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
       };
       let attr: Vec<String> = match &args[1] {
         Expr::Identifier(a) => vec![a.clone()],
@@ -58,6 +58,16 @@ pub fn dispatch_attributes(
             }
           }
         });
+        // Re-adding a builtin attribute via SetAttributes prunes it from
+        // the removed-tracking, so `Attributes[sym]` once again reports it.
+        crate::FUNC_ATTRS_REMOVED.with(|m| {
+          let mut removed = m.borrow_mut();
+          for func_name in &func_names {
+            if let Some(entry) = removed.get_mut(func_name) {
+              entry.retain(|a| !attr.contains(a));
+            }
+          }
+        });
         if locked {
           return Some(Ok(Expr::Identifier("Null".to_string())));
         }
@@ -66,18 +76,8 @@ pub fn dispatch_attributes(
     }
     "ClearAttributes" if args.len() == 2 => {
       let func_names: Vec<String> = match &args[0] {
-        Expr::Identifier(name) => vec![name.clone()],
-        Expr::List(items) => items
-          .iter()
-          .filter_map(|item| {
-            if let Expr::Identifier(n) = item {
-              Some(n.clone())
-            } else {
-              None
-            }
-          })
-          .collect(),
-        _ => vec![],
+        Expr::List(items) => items.iter().filter_map(symbol_name).collect(),
+        _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
       };
       let to_remove: Vec<String> = match &args[1] {
         Expr::Identifier(a) => vec![a.clone()],
@@ -111,20 +111,52 @@ pub fn dispatch_attributes(
             }
           }
         });
+        // Remove from builtin attributes via the removed-tracking, mirroring
+        // how Unprotect handles the Protected attribute.
+        crate::FUNC_ATTRS_REMOVED.with(|m| {
+          let mut removed = m.borrow_mut();
+          for func_name in &func_names {
+            let builtin = get_builtin_attributes(func_name);
+            for a in &to_remove {
+              if builtin.contains(&a.as_str()) {
+                let entry =
+                  removed.entry(func_name.clone()).or_insert_with(Vec::new);
+                if !entry.contains(a) {
+                  entry.push(a.clone());
+                }
+              }
+            }
+          }
+        });
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }
     "Protect" => {
       let mut protected_syms = Vec::new();
       for arg in args {
-        if let Expr::Identifier(sym) = arg {
-          crate::FUNC_ATTRS.with(|m| {
-            let mut attrs = m.borrow_mut();
-            let entry = attrs.entry(sym.clone()).or_insert_with(Vec::new);
-            if !entry.contains(&"Protected".to_string()) {
-              entry.push("Protected".to_string());
-            }
-          });
+        if let Some(sym) = symbol_name(arg) {
+          let sym = &sym;
+          // If Protected is a builtin attribute that was previously removed,
+          // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
+          // user-set attribute.
+          let was_builtin =
+            get_builtin_attributes(sym).contains(&"Protected");
+          if was_builtin {
+            crate::FUNC_ATTRS_REMOVED.with(|m| {
+              let mut removed = m.borrow_mut();
+              if let Some(entry) = removed.get_mut(sym) {
+                entry.retain(|a| a != "Protected");
+              }
+            });
+          } else {
+            crate::FUNC_ATTRS.with(|m| {
+              let mut attrs = m.borrow_mut();
+              let entry = attrs.entry(sym.clone()).or_insert_with(Vec::new);
+              if !entry.contains(&"Protected".to_string()) {
+                entry.push("Protected".to_string());
+              }
+            });
+          }
           protected_syms.push(Expr::String(sym.clone()));
         }
       }
@@ -133,7 +165,8 @@ pub fn dispatch_attributes(
     "Unprotect" => {
       let mut unprotected_syms = Vec::new();
       for arg in args {
-        if let Expr::Identifier(sym) = arg {
+        if let Some(sym) = symbol_name(arg) {
+          let sym = &sym;
           let is_locked = {
             let builtin = get_builtin_attributes(sym);
             if builtin.contains(&"Locked") {
@@ -167,6 +200,15 @@ pub fn dispatch_attributes(
           });
           let was_builtin_protected =
             get_builtin_attributes(sym).contains(&"Protected");
+          if was_builtin_protected {
+            crate::FUNC_ATTRS_REMOVED.with(|m| {
+              let mut removed = m.borrow_mut();
+              let entry = removed.entry(sym.clone()).or_insert_with(Vec::new);
+              if !entry.contains(&"Protected".to_string()) {
+                entry.push("Protected".to_string());
+              }
+            });
+          }
           if was_user_protected || was_builtin_protected {
             unprotected_syms.push(Expr::String(sym.clone()));
           }
@@ -197,6 +239,20 @@ pub fn dispatch_attributes(
         ENV.with(|e| e.borrow_mut().remove(sym));
         crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+        // Mark every builtin attribute as removed so `Attributes[sym]`
+        // returns `{}` after ClearAll, matching wolframscript.
+        let builtin = get_builtin_attributes(sym);
+        if !builtin.is_empty() {
+          crate::FUNC_ATTRS_REMOVED.with(|m| {
+            let mut removed = m.borrow_mut();
+            let entry = removed.entry(sym.to_string()).or_insert_with(Vec::new);
+            for a in builtin {
+              if !entry.contains(&a.to_string()) {
+                entry.push(a.to_string());
+              }
+            }
+          });
+        }
         let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
         if let Some(up_defs) = up_defs {
           for (
@@ -223,7 +279,7 @@ pub fn dispatch_attributes(
       };
       for arg in args {
         match arg {
-          Expr::Identifier(sym) => clear_one(sym),
+          Expr::Identifier(sym) | Expr::Constant(sym) => clear_one(sym),
           Expr::String(pattern) => {
             for sym in matching_user_symbols(pattern) {
               clear_one(&sym);

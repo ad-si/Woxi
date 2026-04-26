@@ -368,6 +368,44 @@ mod protect_unprotect {
   }
 
   #[test]
+  fn unprotect_pi_drops_protected_from_attributes() {
+    // `Unprotect[Pi]` should remove `Protected` from Pi's reported
+    // attributes, even though it's a builtin attribute. Pi parses as
+    // `Expr::Constant("Pi")` rather than `Expr::Identifier`, so the
+    // handler must accept both variants.
+    assert_eq!(
+      interpret("Unprotect[Pi]; Attributes[Pi]").unwrap(),
+      "{Constant, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn protect_pi_restores_protected() {
+    assert_eq!(
+      interpret("Unprotect[Pi]; Protect[Pi]; Attributes[Pi]").unwrap(),
+      "{Constant, Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn clear_all_pi_drops_all_builtin_attributes() {
+    // ClearAll should wipe both user and builtin attributes.
+    assert_eq!(
+      interpret("Unprotect[Pi]; ClearAll[Pi]; Attributes[Pi]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn clear_pi_keeps_remaining_builtin_attributes() {
+    // Clear (without "All") doesn't remove attributes — only OwnValues.
+    assert_eq!(
+      interpret("Unprotect[Pi]; Clear[Pi]; Attributes[Pi]").unwrap(),
+      "{Constant, ReadProtected}"
+    );
+  }
+
+  #[test]
   fn unprotect_blocked_by_locked() {
     clear_state();
     assert_eq!(

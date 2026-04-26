@@ -31,6 +31,11 @@ thread_local! {
     static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, Vec<u8>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+    // Builtin attributes that have been explicitly removed (via Unprotect,
+    // ClearAttributes, or ClearAll). Subtracted from `Attributes[sym]` so
+    // that e.g. `Unprotect[Pi]; Attributes[Pi]` no longer contains
+    // `Protected`. Re-adding via SetAttributes/Protect prunes the entry.
+    pub static FUNC_ATTRS_REMOVED: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
     pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
     // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body, original_lhs, original_body)

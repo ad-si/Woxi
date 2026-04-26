@@ -935,8 +935,14 @@ pub fn dispatch_predicate_functions(
       let user_attrs =
         crate::FUNC_ATTRS.with(|m| m.borrow().get(sym_name).cloned());
       let builtin = get_builtin_attributes(sym_name);
-      let mut all_attr_strs: Vec<String> =
-        builtin.iter().map(|a| a.to_string()).collect();
+      let removed = crate::FUNC_ATTRS_REMOVED
+        .with(|m| m.borrow().get(sym_name).cloned())
+        .unwrap_or_default();
+      let mut all_attr_strs: Vec<String> = builtin
+        .iter()
+        .map(|a| a.to_string())
+        .filter(|a| !removed.contains(a))
+        .collect();
       if let Some(user) = user_attrs {
         for a in user {
           if !all_attr_strs.contains(&a) {
