@@ -296,6 +296,24 @@ pub fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
 pub(super) fn negate_expr(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(f) => Expr::Real(-f),
+    // Rational[a, b] is stored as a FunctionCall — negate the numerator
+    // so `-Rational[-49, 8]` collapses to `Rational[49, 8]` rather than
+    // surfacing a stale `Minus` wrapper that displays as `--49/8`.
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let Expr::Integer(num) = &args[0] {
+        return Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-num), args[1].clone()],
+        };
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(expr.clone()),
+      }
+    }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,

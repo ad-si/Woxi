@@ -2302,6 +2302,19 @@ mod minimize {
     );
   }
 
+  // The maximum of `-2 x^2 - 3 x + 5` is the rational `49/8` at `-3/4`.
+  // The negate-back step inside `minimize_single_var` produced
+  // `Times[-1, Rational[-49, 8]]` which surfaced as `--49/8`; pin the
+  // rational-output branch so a regression in negate_expr is caught
+  // directly rather than via the long compound-statement case_499.
+  #[test]
+  fn maximize_rational_value() {
+    assert_eq!(
+      interpret("Maximize[-2 x^2 - 3 x + 5, x]").unwrap(),
+      "{49/8, {x -> -3/4}}"
+    );
+  }
+
   #[test]
   fn constrained_chained_comparison() {
     // Chained comparison 0 <= x <= 30 should be split into two constraints
