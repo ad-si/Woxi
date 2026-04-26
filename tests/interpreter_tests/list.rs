@@ -578,6 +578,45 @@ mod map_indexed {
       "f[List, {0}][f[a, {1}], f[b, {2}]]"
     );
   }
+
+  // `{-1}` selects every atomic leaf, threading the position index. The
+  // mathics doctest in test_cases.rs case 3356 walks a deep nested
+  // listified expression — pin the simpler shape here so a regression
+  // surfaces directly rather than blowing up in the chained statement.
+  #[test]
+  fn level_spec_neg_one_visits_atoms_only() {
+    assert_eq!(
+      interpret("MapIndexed[#2 &, {a, {b, {c}}}, {-1}]").unwrap(),
+      "{{1}, {{2, 1}, {{2, 2, 1}}}}"
+    );
+  }
+
+  // With Heads -> True at level {-1}, the head of every compound node is
+  // also rewritten — the head's position is the parent's position with
+  // `0` appended.
+  #[test]
+  fn level_spec_neg_one_with_heads_rewrites_head() {
+    assert_eq!(
+      interpret("MapIndexed[#2 &, {a, {b}}, {-1}, Heads -> True]").unwrap(),
+      "{0}[{1}, {2, 0}[{2, 1}]]"
+    );
+  }
+
+  // Round-trip identity: extracting each leaf at its `MapIndexed`-found
+  // position reconstructs the original expression. This matches case
+  // 3358's chained-statement doctest end-to-end.
+  #[test]
+  fn level_spec_neg_one_round_trip_via_extract() {
+    assert_eq!(
+      interpret(
+        "expr = a + b * f[g] * c ^ e; \
+         listified = Apply[List, expr, {0, Infinity}]; \
+         MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]"
+      )
+      .unwrap(),
+      "a + b*c^e*f[g]"
+    );
+  }
 }
 
 mod tensor_product {

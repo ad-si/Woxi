@@ -563,6 +563,11 @@ pub fn map_indexed_with_level_ast(
   if is_heads_true_option(level_spec) {
     return map_indexed_at_depth_heads(func, expr, 0, 1, 1, &[]);
   }
+  // `{-1}` selects every atomic leaf — handle it directly so we don't
+  // need a depth-from-leaves walk in the general routine.
+  if is_neg_one_levelspec(level_spec) {
+    return map_indexed_atoms(func, expr, &[], false);
+  }
   // Parse level spec: {n} = exactly level n
   let (min_level, max_level) = match level_spec {
     Expr::Integer(n) => (1i64, *n as i64),
@@ -592,6 +597,83 @@ pub fn map_indexed_with_level_ast(
   map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
 }
 
+/// Detect the special `{-1}` levelspec (atomic leaves). Negative levels in
+/// general count "depth from leaves", but `{-1}` is by far the common
+/// case in the mathics doctest suite, so we special-case it without a
+/// full depth-from-leaves traversal.
+fn is_neg_one_levelspec(level_spec: &Expr) -> bool {
+  match level_spec {
+    Expr::List(items) if items.len() == 1 => {
+      matches!(&items[0], Expr::Integer(n) if *n == -1)
+    }
+    _ => false,
+  }
+}
+
+/// Apply `func` to every atomic leaf, threading the position index list.
+/// When `with_heads` is true the head of every compound node is also
+/// visited, with `0` appended to its position — matching `Heads -> True`.
+fn map_indexed_atoms(
+  func: &Expr,
+  expr: &Expr,
+  position: &[i128],
+  with_heads: bool,
+) -> Result<Expr, InterpreterError> {
+  let (children, head_name_opt): (Option<&[Expr]>, Option<String>) = match expr
+  {
+    Expr::List(items) => (Some(items.as_slice()), Some("List".to_string())),
+    Expr::FunctionCall { name, args } => {
+      (Some(args.as_slice()), Some(name.clone()))
+    }
+    _ => (None, None),
+  };
+  if let (Some(items), Some(head_name)) = (children, head_name_opt) {
+    let mut mapped: Vec<Expr> = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+      let mut child_pos = position.to_vec();
+      child_pos.push((i + 1) as i128);
+      mapped.push(map_indexed_atoms(func, item, &child_pos, with_heads)?);
+    }
+    if !with_heads {
+      return Ok(if head_name == "List" {
+        Expr::List(mapped)
+      } else {
+        Expr::FunctionCall {
+          name: head_name,
+          args: mapped,
+        }
+      });
+    }
+    // Heads-True: rewrite the head as `func[head, append(position, 0)]`.
+    let mut head_pos = position.to_vec();
+    head_pos.push(0);
+    let head_index =
+      Expr::List(head_pos.iter().map(|&i| Expr::Integer(i)).collect());
+    let head_expr = apply_func_to_two_args(
+      func,
+      &Expr::Identifier(head_name.clone()),
+      &head_index,
+    )?;
+    // If the rewritten head reduced to a bare Identifier, splice it as
+    // the function head; otherwise wrap as `head_expr[mapped...]` so
+    // the head expression is still visible in the result.
+    return Ok(match &head_expr {
+      Expr::Identifier(n) if n == "List" => Expr::List(mapped),
+      Expr::Identifier(n) => Expr::FunctionCall {
+        name: n.clone(),
+        args: mapped,
+      },
+      _ => Expr::CurriedCall {
+        func: Box::new(head_expr),
+        args: mapped,
+      },
+    });
+  }
+  // Atomic leaf — apply `func` with the position index list.
+  let index = Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
+  apply_func_to_two_args(func, expr, &index)
+}
+
 /// MapIndexed[f, expr, levelspec, Heads -> True].
 pub fn map_indexed_with_level_heads_ast(
   func: &Expr,
@@ -609,6 +691,11 @@ pub fn map_indexed_with_level_heads_ast(
         heads_opt.clone(),
       ],
     });
+  }
+  // `{-1}` selects every atomic leaf; with `Heads -> True` each compound
+  // node's head is also rewritten with `0` appended to its position.
+  if is_neg_one_levelspec(level_spec) {
+    return map_indexed_atoms(func, expr, &[], true);
   }
   // Parse level spec the same way as the 3-arg form.
   let (min_level, max_level) = match level_spec {
