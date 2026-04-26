@@ -651,6 +651,16 @@ mod precision {
   }
 
   #[test]
+  fn byte_ordering_is_minus_one_or_one() {
+    // -1 = little-endian (most modern platforms), 1 = big-endian.
+    assert_eq!(
+      interpret("$ByteOrdering == -1 || $ByteOrdering == 1").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Head[$ByteOrdering] == Integer").unwrap(), "True");
+  }
+
+  #[test]
   fn operating_system_head_is_string() {
     assert_eq!(
       interpret("Head[$OperatingSystem] == String").unwrap(),

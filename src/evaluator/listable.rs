@@ -210,6 +210,12 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     "$MaxPrecision" => Some(Expr::Identifier("Infinity".to_string())),
     "$MinPrecision" => Some(Expr::Integer(0)),
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),
+    // -1 for little-endian, 1 for big-endian (Wolfram convention).
+    "$ByteOrdering" => Some(Expr::Integer(if cfg!(target_endian = "little") {
+      -1
+    } else {
+      1
+    })),
     "$SessionID" => Some(Expr::Integer(std::process::id() as i128)),
     "$ProcessID" => Some(Expr::Integer(std::process::id() as i128)),
     #[cfg(unix)]
