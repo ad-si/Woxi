@@ -211,6 +211,18 @@ mod one_identity_attribute {
   }
 
   #[test]
+  fn one_identity_requires_default_in_pattern() {
+    // OneIdentity alone doesn't make a bare `a` match `f[u_]` — the
+    // pattern must include an Optional/default slot (e.g. `x_:0`) so
+    // OneIdentity has somewhere to fold the missing arguments. With
+    // just `f[u_]`, `a` stays unmatched.
+    assert_eq!(
+      interpret("SetAttributes[f, OneIdentity]; a /. f[u_] -> {u}").unwrap(),
+      "a"
+    );
+  }
+
+  #[test]
   fn one_identity_direct_function_call_still_matches() {
     // Direct function calls should still match normally
     assert_eq!(
