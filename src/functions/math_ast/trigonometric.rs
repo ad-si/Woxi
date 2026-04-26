@@ -2919,6 +2919,29 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       }
     }
+    // ArcCoth[0``α] = (Pi/2 at α-digit accuracy) * I
+    Expr::BigFloat(s, prec) if s == "0" => {
+      let pi_half = crate::evaluator::evaluate_function_call_ast(
+        "N",
+        &[
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+              Expr::Constant("Pi".to_string()),
+            ],
+          },
+          Expr::Real(*prec),
+        ],
+      )?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[pi_half, Expr::Identifier("I".to_string())],
+      );
+    }
     _ => {}
   }
   Ok(Expr::FunctionCall {
