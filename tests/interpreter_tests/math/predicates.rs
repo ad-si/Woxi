@@ -713,6 +713,22 @@ mod equal_edge_cases {
     );
   }
 
+  // SameQ between two BigFloats with explicit precision tags compares at
+  // the *lower* of the two precisions. `.2222222\`6` and `.2222\`3` both
+  // round to `0.222` once you only keep 3 significant digits, so SameQ
+  // is True; `.22\`3` rounds to a different number and stays False.
+  #[test]
+  fn same_q_bigfloats_agree_at_lower_precision() {
+    assert_eq!(interpret(".2222222`6 === .2222`3").unwrap(), "True");
+    assert_eq!(interpret(".2222222`6 === .222`3").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_bigfloats_disagree_below_lower_precision() {
+    assert_eq!(interpret(".2222222`6 === .22`3").unwrap(), "False");
+    assert_eq!(interpret(".2222`3 === .333`3").unwrap(), "False");
+  }
+
   #[test]
   fn equal_of_non_comparable_function_calls_stays_symbolic() {
     // g[2] == g[3] — no assumption that g is injective; stays symbolic.

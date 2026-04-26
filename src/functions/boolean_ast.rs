@@ -174,11 +174,17 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("True".to_string()))
 }
 
-/// Special-case SameQ between a machine-precision `Real` and a BigFloat
-/// whose precision tag is close to MachinePrecision (≈15.95 digits, the
-/// f64 mantissa precision). Wolfram treats `2./9. === .2222…`15.9546`
-/// as True even though one side carries an explicit precision marker.
-/// The match requires that the two values agree at f64 resolution.
+/// Special-case SameQ between two floating-point operands where at least
+/// one carries an explicit precision tag. Two flavours are handled:
+///
+/// 1. Machine-precision `Real` vs a BigFloat whose precision tag is in the
+///    machine-precision band (≈15.95 digits): require bit-exact f64
+///    agreement, so `2./9. === .2222…`15.9546` is True even though one
+///    side is tagged.
+/// 2. Two BigFloats with explicit precision tags: agree if the values
+///    round to the same number at the *lower* of the two precisions.
+///    `.2222222`6 === .2222`3` is True because both reduce to `.222`
+///    once you only look at 3 significant digits.
 pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
   fn as_pair(e: &Expr) -> Option<(f64, Option<f64>)> {
     match e {
@@ -193,19 +199,39 @@ pub fn same_q_real_bigfloat(a: &Expr, b: &Expr) -> bool {
   let Some((vb, pb)) = as_pair(b) else {
     return false;
   };
-  // At least one side must be a machine Real and the other a BigFloat
-  // with precision in the machine-precision band; otherwise the regular
-  // string comparison decides.
-  let machine_band = |p: Option<f64>| -> bool {
-    matches!(p, None) || matches!(p, Some(p) if (15.0..=16.5).contains(&p))
+  let machine_band = |p: f64| -> bool { (15.0..=16.5).contains(&p) };
+  // Branch 1: machine Real ↔ BigFloat in the machine band — require
+  // bit-exact f64 equality.
+  let either_machine = pa.is_none() || pb.is_none();
+  if either_machine {
+    let band_ok = pa.is_none_or(machine_band) && pb.is_none_or(machine_band);
+    if !band_ok {
+      return false;
+    }
+    if pa.is_none() && pb.is_none() {
+      return false; // two plain Reals — defer to string equality
+    }
+    return va.to_bits() == vb.to_bits();
+  }
+  // Branch 2: two BigFloats with precision tags. Agree at the lower
+  // precision: |a - b| ≤ ½ * 10^(⌊log10|max|⌋ - p_min + 1). Using
+  // ½ ULP at the rounded position lets two values that round to the
+  // same lower-precision number still compare equal — wolframscript's
+  // SameQ semantics for tagged numbers.
+  let (Some(p_a), Some(p_b)) = (pa, pb) else {
+    return false;
   };
-  if !(machine_band(pa) && machine_band(pb)) {
+  let p_min = p_a.min(p_b);
+  if !p_min.is_finite() || p_min <= 0.0 {
     return false;
   }
-  if pa.is_none() && pb.is_none() {
-    return false; // two plain Reals — defer to string equality
+  let scale = va.abs().max(vb.abs());
+  if scale == 0.0 {
+    return va == vb;
   }
-  va.to_bits() == vb.to_bits()
+  let exponent = scale.log10().floor();
+  let tol = 0.5 * 10f64.powf(exponent - p_min + 1.0);
+  (va - vb).abs() <= tol
 }
 
 /// UnsameQ[expr1, expr2] - Tests whether expressions are not identical
