@@ -1094,12 +1094,18 @@ pub fn evaluate_expr_to_expr_inner(
             Some(StoredValue::Raw(s)) => {
               crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
             }
-            _ => {
-              return Err(InterpreterError::EvaluationError(format!(
-                "{} requires a variable with a list value",
-                name
-              )));
-            }
+            // System variables like `$BoxForms` aren't in ENV until written —
+            // first AppendTo seeds the env from the built-in default.
+            _ => match crate::evaluator::listable::get_system_variable(var_name)
+            {
+              Some(default) => default,
+              None => {
+                return Err(InterpreterError::EvaluationError(format!(
+                  "{} requires a variable with a list value",
+                  name
+                )));
+              }
+            },
           };
           let new_val = match &mut current_val {
             Expr::List(items) => {
