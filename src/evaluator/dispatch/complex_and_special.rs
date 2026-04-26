@@ -397,8 +397,11 @@ pub fn dispatch_complex_and_special(
     }
 
     // Information[symbol] or Information[symbol, LongForm -> True]
-    // ?symbol parses as Information[symbol]
-    // ??symbol parses as Information[symbol, LongForm -> True]
+    // `?symbol` parses as Information[Unevaluated[symbol], LongForm -> False]
+    // `??symbol` parses as Information[Unevaluated[symbol], LongForm -> True]
+    // The Unevaluated wrapper is what makes the REPL shortcuts inspect the
+    // symbol even when its OwnValue would otherwise replace it. Strip it
+    // here before classifying the argument.
     // Legacy "Full" string form is still accepted for backward compatibility.
     "Information" if args.len() == 1 || args.len() == 2 => {
       let is_full = args.len() == 2
@@ -409,7 +412,16 @@ pub fn dispatch_complex_and_special(
                 && matches!(replacement.as_ref(),
                   Expr::Identifier(v) if v == "True")));
 
-      if let Expr::Identifier(sym) = &args[0] {
+      let first_arg = match &args[0] {
+        Expr::FunctionCall { name: n, args: ua }
+          if n == "Unevaluated" && ua.len() == 1 =>
+        {
+          &ua[0]
+        }
+        other => other,
+      };
+
+      if let Expr::Identifier(sym) = first_arg {
         // Check if this is a built-in function (in functions.csv)
         let builtin_info = crate::evaluator::get_builtin_function_info(sym);
         let builtin_attrs =
@@ -461,7 +473,7 @@ pub fn dispatch_complex_and_special(
       }
 
       // Pattern query: ?Plot* or ?*Plot* — first arg is a String with wildcards
-      if let Expr::String(pattern) = &args[0]
+      if let Expr::String(pattern) = first_arg
         && pattern.contains('*')
       {
         let regex_pattern =

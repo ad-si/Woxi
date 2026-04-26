@@ -1013,10 +1013,12 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return Ok(Expr::Identifier("Null".to_string()));
         }
-        // Special handling for Information/Definition/FullDefinition - hold argument unevaluated
-        if (name == "Information"
-          || name == "Definition"
-          || name == "FullDefinition")
+        // Definition and FullDefinition have HoldAll in Wolfram, so their
+        // argument stays unevaluated. Information has no Hold attribute —
+        // its argument is evaluated like any other call. The `?symbol` REPL
+        // shortcut wraps the arg in `Unevaluated` to preserve symbol
+        // inspection (handled in the Information dispatcher).
+        if (name == "Definition" || name == "FullDefinition")
           && args.len() == 1
         {
           return dispatch::evaluate_function_call_ast(name, args);

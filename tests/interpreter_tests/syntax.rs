@@ -3182,12 +3182,15 @@ mod information_function {
 
   #[test]
   fn double_question_mark_parses_as_long_form_rule() {
-    // `??a + b` → `Information[a, LongForm -> True] + b` — matching
-    // Wolfram's parse (mathics test_parser.py:641).
+    // `??a + b` → `Information[Unevaluated[a], LongForm -> True] + b`.
+    // Wolfram itself parses `??a` to `Information[a, LongForm -> True]` and
+    // implements the symbol-hold semantics in the REPL. Woxi has no separate
+    // REPL layer, so it folds the hold into the parsed AST via Unevaluated;
+    // the Information dispatcher unwraps it before classifying the argument.
     clear_state();
     assert_eq!(
       interpret("Hold[??a + b]").unwrap(),
-      "Hold[Information[a, LongForm -> True] + b]"
+      "Hold[Information[Unevaluated[a], LongForm -> True] + b]"
     );
   }
 

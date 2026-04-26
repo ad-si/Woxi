@@ -1575,6 +1575,11 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::String(result)
     }
     Rule::InformationQuery => {
+      // `?symbol` is a REPL shortcut for symbol inspection. Information has
+      // no Hold attribute, so a plain `Information[a]` would evaluate `a`
+      // first; wrap the symbol in Unevaluated so `?a` keeps inspecting `a`
+      // even after `a` was assigned a value. (String wildcards like `?Plot*`
+      // need no wrapping — they're already non-evaluating.)
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
       if symbol_name.contains('*') {
         Expr::FunctionCall {
@@ -1584,13 +1589,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Information".to_string(),
-          args: vec![Expr::Identifier(symbol_name)],
+          args: vec![Expr::FunctionCall {
+            name: "Unevaluated".to_string(),
+            args: vec![Expr::Identifier(symbol_name)],
+          }],
         }
       }
     }
     Rule::FullInformationQuery => {
-      // ??symbol → Information[symbol, LongForm -> True], matching Wolfram's
-      // parse (mathics test_parser.py:641).
+      // `??symbol` parses as Information[symbol, LongForm -> True]; like `?`
+      // it must hold the symbol so post-assignment inspection works.
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
       let long_form_rule = Expr::Rule {
         pattern: Box::new(Expr::Identifier("LongForm".to_string())),
@@ -1604,7 +1612,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       } else {
         Expr::FunctionCall {
           name: "Information".to_string(),
-          args: vec![Expr::Identifier(symbol_name), long_form_rule],
+          args: vec![
+            Expr::FunctionCall {
+              name: "Unevaluated".to_string(),
+              args: vec![Expr::Identifier(symbol_name)],
+            },
+            long_form_rule,
+          ],
         }
       }
     }

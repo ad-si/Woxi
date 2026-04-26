@@ -2139,7 +2139,11 @@ mod information {
   #[test]
   fn information_function_call_form() {
     clear_state();
-    let result = interpret("a = 10; Information[a]").unwrap();
+    // `Information` has no Hold attribute in Wolfram, so a plain
+    // `Information[a]` after `a = 10` evaluates `a` first and stays as
+    // `Information[10]`. The `?a` REPL shortcut wraps the symbol in
+    // `Unevaluated` so it still inspects the symbol post-assignment.
+    let result = interpret("a = 10; ?a").unwrap();
     assert!(result.contains(
       "OwnValues -> Information`InformationValueForm[OwnValues, a, {a -> 10}]"
     ));
