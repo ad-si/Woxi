@@ -252,6 +252,16 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // so that -x sorts next to x rather than before everything.
     let mut sorted_symbolic = collected;
     sorted_symbolic.sort_by(compare_plus_terms);
+
+    // Underflow[] floats ahead of the numeric coefficient too — Wolfram
+    // prints `1 - Underflow[]` as `Underflow[] + 1`. Splice any Underflow[]
+    // term out of the symbolic list and prepend it to final_args before
+    // the numeric coefficient lands.
+    if let Some(idx) = sorted_symbolic.iter().position(is_underflow_term) {
+      let term = sorted_symbolic.remove(idx);
+      final_args.insert(0, term);
+    }
+
     final_args.extend(sorted_symbolic);
 
     if final_args.is_empty() {
@@ -1193,11 +1203,27 @@ fn is_numeric_constant(e: &Expr) -> bool {
   }
 }
 
+/// True if `e`'s base (sign-stripped) is exactly `Underflow[]`, which
+/// Wolfram floats to the front of any Plus regardless of the other terms'
+/// shape (e.g. `1 - Underflow[]` prints as `Underflow[] + 1`).
+fn is_underflow_term(e: &Expr) -> bool {
+  let (_, base) = decompose_term(e);
+  matches!(&base, Expr::FunctionCall { name, args } if name == "Underflow" && args.is_empty())
+}
+
 /// Compare two Plus terms using Wolfram-compatible canonical ordering.
 /// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
 /// each term's pairs are sorted by variable name descending, then compared
 /// lexicographically (variable ascending, exponent ascending, shorter first).
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Underflow[] always sorts to the front of a Plus, ahead of constants
+  // and every other term shape.
+  match (is_underflow_term(a), is_underflow_term(b)) {
+    (true, false) => return std::cmp::Ordering::Less,
+    (false, true) => return std::cmp::Ordering::Greater,
+    _ => {}
+  }
+
   let pa = term_priority(a);
   let pb = term_priority(b);
   if pa != pb {
