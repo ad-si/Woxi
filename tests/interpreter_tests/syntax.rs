@@ -4164,8 +4164,10 @@ mod hold_form {
 
   #[test]
   fn hold_form_unevaluated() {
-    // HoldForm prevents evaluation but displays without the wrapper
-    assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "1 + 1");
+    // HoldForm prevents evaluation; at the top level the wrapper is kept
+    // (matching `wolframscript -code 'HoldForm[1 + 1]'` → `HoldForm[1 + 1]`).
+    // Nested HoldForm still strips its wrapper.
+    assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "HoldForm[1 + 1]");
   }
 }
 
@@ -4555,8 +4557,12 @@ mod hold {
 
   #[test]
   fn hold_form_prevents_evaluation() {
-    // HoldForm prevents evaluation but displays without the wrapper
-    assert_eq!(interpret("HoldForm[1 + 2 + 3]").unwrap(), "1 + 2 + 3");
+    // HoldForm prevents evaluation; at the top level the wrapper is kept
+    // (`wolframscript -code 'HoldForm[1 + 2 + 3]'` → `HoldForm[1 + 2 + 3]`).
+    assert_eq!(
+      interpret("HoldForm[1 + 2 + 3]").unwrap(),
+      "HoldForm[1 + 2 + 3]"
+    );
   }
 
   #[test]

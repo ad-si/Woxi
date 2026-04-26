@@ -9520,6 +9520,15 @@ pub fn top_level_output(expr: &Expr) -> String {
     {
       crate::functions::expr_form::render_full_form(&args[0])
     }
+    // `HoldForm[expr]` at the top level keeps its wrapper —
+    // `wolframscript -code 'HoldForm[1 + 2 + 3]'` prints `HoldForm[1 + 2 + 3]`
+    // verbatim. The OutputForm strip in `expr_to_output` (used for nested
+    // contexts) still applies, but the outermost call should not.
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      format!("HoldForm[{}]", expr_to_output(&args[0]))
+    }
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
     }
