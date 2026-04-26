@@ -1609,9 +1609,11 @@ fn quantity_box_simple_unit() {
 
 #[test]
 fn quantity_box_compound_divide() {
+  // Wolfram emits a trailing backtick on machine-precision floats inside
+  // box output (e.g. `12.345\``), matching MakeBoxes/ToBoxes precision marker.
   assert_eq!(
     interpret("ToBoxes[Quantity[12.345, \"Meters\"/\"Seconds\"]]").unwrap(),
-    "RowBox[{12.345,  , RowBox[{m, /, s}]}]"
+    "RowBox[{12.345`,  , RowBox[{m, /, s}]}]"
   );
 }
 

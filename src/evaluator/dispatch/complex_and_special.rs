@@ -2296,7 +2296,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(n) => Expr::String(n.to_string()),
     Expr::BigInteger(n) => Expr::String(n.to_string()),
-    Expr::Real(f) => Expr::String(crate::syntax::format_real(*f)),
+    Expr::Real(f) => {
+      // Machine-precision floats render with a trailing backtick (`2.``)
+      // in MakeBoxes output, matching wolframscript.
+      Expr::String(format!("{}`", crate::syntax::format_real(*f)))
+    }
     Expr::BigFloat(digits, prec) => {
       Expr::String(crate::syntax::format_bigfloat(digits, *prec))
     }
