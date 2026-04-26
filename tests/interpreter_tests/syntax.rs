@@ -6774,4 +6774,23 @@ mod out_shortcut {
     assert_eq!(interpret("%%5").unwrap(), "5*Out[0]");
     assert_eq!(interpret("%5%").unwrap(), "Out[0]*Out[5]");
   }
+
+  // `Out[-k]` only surfaces when wrapped in a held context — the
+  // standalone evaluator collapses non-positive arguments to `Out[0]`.
+  // When it does surface, wolframscript renders it back as the `%`
+  // shortcut: `Out[-1]` → `%`, `Out[-2]` → `%%`, etc. `Out[0]` and
+  // positive indices keep the literal `Out[k]` form.
+  #[test]
+  fn held_negative_out_renders_as_percent_run() {
+    assert_eq!(interpret("Hold[Out[-1]]").unwrap(), "Hold[%]");
+    assert_eq!(interpret("Hold[Out[-2]]").unwrap(), "Hold[%%]");
+    assert_eq!(interpret("Hold[Out[-3]]").unwrap(), "Hold[%%%]");
+  }
+
+  #[test]
+  fn held_zero_or_positive_out_keeps_literal_form() {
+    assert_eq!(interpret("Hold[Out[0]]").unwrap(), "Hold[Out[0]]");
+    assert_eq!(interpret("Hold[Out[1]]").unwrap(), "Hold[Out[1]]");
+    assert_eq!(interpret("Hold[Out[42]]").unwrap(), "Hold[Out[42]]");
+  }
 }

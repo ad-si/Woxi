@@ -5437,6 +5437,20 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return format!("Entity[{}]", parts.join(", "));
       }
+      // `Out[-k]` for k > 0 displays as the `%` shortcut — `Out[-1]` is
+      // `%`, `Out[-2]` is `%%`, etc. Negative indices only show up here
+      // when wrapped in a held context (Hold/HoldComplete/HoldPattern);
+      // the standalone evaluator already collapses non-positive Out
+      // arguments to `Out[0]`. `Out[0]` and positive indices render as
+      // the literal `Out[k]` form, matching wolframscript.
+      if name == "Out"
+        && args.len() == 1
+        && let Expr::Integer(n) = &args[0]
+        && *n < 0
+      {
+        let count = (-*n) as usize;
+        return "%".repeat(count);
+      }
       // OutputForm-only: HoldForm[expr] and Defer[expr] display without wrapper
       if is_output && (name == "HoldForm" || name == "Defer") && args.len() == 1
       {
