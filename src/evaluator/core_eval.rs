@@ -13,6 +13,22 @@ thread_local! {
 /// current stored OwnValue might produce a different result on
 /// re-evaluation? Used to skip wasteful re-evaluation of stored values
 /// that are already at fixpoint.
+/// Compare two operands as exact integers when both are `Integer` /
+/// `BigInteger`. f64 conversion silently rounds 1-ULP differences to
+/// a tie above ~2^53, so `2^60 < 2^60 + 1` would otherwise return
+/// False. Returns `None` if either side isn't an exact integer, in
+/// which case the f64 path takes over.
+fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  fn as_bigint(e: &Expr) -> Option<num_bigint::BigInt> {
+    match e {
+      Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
+      Expr::BigInteger(n) => Some(n.clone()),
+      _ => None,
+    }
+  }
+  Some(as_bigint(a)?.cmp(&as_bigint(b)?))
+}
+
 fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => {
@@ -1796,11 +1812,29 @@ pub fn evaluate_expr_to_expr_inner(
           .filter_map(|(i, e)| try_eval_to_f64(e).map(|n| (i, n)))
           .collect();
         for w in nums.windows(2) {
-          let ok = match op {
-            ComparisonOp::Less => w[0].1 < w[1].1,
-            ComparisonOp::LessEqual => w[0].1 <= w[1].1,
-            ComparisonOp::Greater => w[0].1 > w[1].1,
-            ComparisonOp::GreaterEqual => w[0].1 >= w[1].1,
+          // f64 conversion silently rounds 1-ULP differences above
+          // ~2^53 to a tie — `2^60 < 2^60 + 1` would otherwise
+          // short-circuit to False. Use the BigInt path when both
+          // endpoints are exact integers; let the f64 fallback handle
+          // any pair that mixes a non-integer.
+          let exact = exact_integer_ord(&values[w[0].0], &values[w[1].0]);
+          let ok = match (exact, op) {
+            (Some(o), ComparisonOp::Less) => {
+              matches!(o, std::cmp::Ordering::Less)
+            }
+            (Some(o), ComparisonOp::LessEqual) => {
+              !matches!(o, std::cmp::Ordering::Greater)
+            }
+            (Some(o), ComparisonOp::Greater) => {
+              matches!(o, std::cmp::Ordering::Greater)
+            }
+            (Some(o), ComparisonOp::GreaterEqual) => {
+              !matches!(o, std::cmp::Ordering::Less)
+            }
+            (None, ComparisonOp::Less) => w[0].1 < w[1].1,
+            (None, ComparisonOp::LessEqual) => w[0].1 <= w[1].1,
+            (None, ComparisonOp::Greater) => w[0].1 > w[1].1,
+            (None, ComparisonOp::GreaterEqual) => w[0].1 >= w[1].1,
             _ => true,
           };
           if !ok {
@@ -1828,6 +1862,9 @@ pub fn evaluate_expr_to_expr_inner(
               )
           }
           ComparisonOp::Equal => {
+            if let Some(ord) = exact_integer_ord(left, right) {
+              matches!(ord, std::cmp::Ordering::Equal)
+            } else {
             // Two BigFloats with > ~16 digits of precision can carry
             // distinct stored digit strings even though both collapse
             // to the same f64. Compare the digit strings truncated to
@@ -1900,13 +1937,16 @@ pub fn evaluate_expr_to_expr_inner(
             } else {
               false
             }
+            }
           }
           ComparisonOp::UnsameQ => {
             // UnsameQ tests structural non-identity, not numeric inequality.
             expr_to_string(left) != expr_to_string(right)
           }
           ComparisonOp::NotEqual => {
-            if let (Some(l), Some(r)) =
+            if let Some(ord) = exact_integer_ord(left, right) {
+              !matches!(ord, std::cmp::Ordering::Equal)
+            } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l != r
@@ -1923,7 +1963,9 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           ComparisonOp::Less => {
-            if let (Some(l), Some(r)) =
+            if let Some(ord) = exact_integer_ord(left, right) {
+              matches!(ord, std::cmp::Ordering::Less)
+            } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l < r
@@ -1940,7 +1982,9 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           ComparisonOp::LessEqual => {
-            if let (Some(l), Some(r)) =
+            if let Some(ord) = exact_integer_ord(left, right) {
+              !matches!(ord, std::cmp::Ordering::Greater)
+            } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l <= r
@@ -1956,7 +2000,9 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           ComparisonOp::Greater => {
-            if let (Some(l), Some(r)) =
+            if let Some(ord) = exact_integer_ord(left, right) {
+              matches!(ord, std::cmp::Ordering::Greater)
+            } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l > r
@@ -1972,7 +2018,9 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
           ComparisonOp::GreaterEqual => {
-            if let (Some(l), Some(r)) =
+            if let Some(ord) = exact_integer_ord(left, right) {
+              !matches!(ord, std::cmp::Ordering::Less)
+            } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l >= r

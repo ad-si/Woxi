@@ -530,6 +530,22 @@ fn expr_to_num(expr: &Expr) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
 }
 
+/// Compare two expressions exactly when both are integer-valued
+/// (Integer or BigInteger). f64 conversion loses ULPs above ~2^53,
+/// so `2^60 < 2^60 + 1` would round to a tie and return False; bypass
+/// that by comparing the BigInts directly. Returns `None` if either
+/// side isn't an exact integer.
+fn compare_exact_integers(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  fn as_bigint(e: &Expr) -> Option<num_bigint::BigInt> {
+    match e {
+      Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
+      Expr::BigInteger(n) => Some(n.clone()),
+      _ => None,
+    }
+  }
+  Some(as_bigint(a)?.cmp(&as_bigint(b)?))
+}
+
 /// Less[a, b] or a < b - Tests if a is less than b
 pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -557,23 +573,37 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter_map(|(i, a)| expr_to_num(a).map(|n| (i, n)))
     .collect();
   for w in nums.windows(2) {
-    if w[0].1 >= w[1].1 {
+    // Use exact-integer compare first when both endpoints are
+    // BigInteger/Integer (f64 loses 1-ULP precision above ~2^53,
+    // turning `2^60 < 2^60 + 1` into a tie). Only fall back to the
+    // f64 ordering when at least one side isn't an exact integer.
+    if let Some(ord) = compare_exact_integers(&args[w[0].0], &args[w[1].0]) {
+      if !matches!(ord, std::cmp::Ordering::Less) {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    } else if w[0].1 >= w[1].1 {
       return Ok(Expr::Identifier("False".to_string()));
     }
   }
 
-  let mut prev = match expr_to_num(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "Less".to_string(),
-        args: args.to_vec(),
-      });
+  for w in args.windows(2) {
+    let (a, b) = (&w[0], &w[1]);
+    if let Some(ord) = compare_exact_integers(a, b) {
+      if !matches!(ord, std::cmp::Ordering::Less) {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+      continue;
     }
-  };
-
-  for arg in args.iter().skip(1) {
-    let curr = match expr_to_num(arg) {
+    let prev = match expr_to_num(a) {
+      Some(n) => n,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Less".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let curr = match expr_to_num(b) {
       Some(n) => n,
       None => {
         return Ok(Expr::FunctionCall {
@@ -585,7 +615,6 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if prev >= curr {
       return Ok(Expr::Identifier("False".to_string()));
     }
-    prev = curr;
   }
   Ok(Expr::Identifier("True".to_string()))
 }

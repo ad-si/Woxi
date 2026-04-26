@@ -717,6 +717,45 @@ mod big_integer {
   fn bit_length_big_integer() {
     assert_eq!(interpret("BitLength[2^128]").unwrap(), "129");
   }
+
+  // Regression: f64 conversion silently rounded 1-ULP differences
+  // above ~2^53 to a tie, so `2^60 < 2^60 + 1` returned False.
+  #[test]
+  fn big_integer_strict_less_one_ulp() {
+    assert_eq!(interpret("2^60 < 2^60 + 1").unwrap(), "True");
+    assert_eq!(interpret("2^10000 < 2^10000 + 1").unwrap(), "True");
+  }
+
+  #[test]
+  fn big_integer_equal_one_ulp() {
+    assert_eq!(interpret("2^60 == 2^60 + 1").unwrap(), "False");
+    assert_eq!(interpret("2^10000 == 2^10000 + 1").unwrap(), "False");
+  }
+
+  #[test]
+  fn big_integer_unequal_one_ulp() {
+    assert_eq!(interpret("2^60 != 2^60 + 1").unwrap(), "True");
+  }
+
+  // Regression: storing a BigInteger via Set used to round-trip through
+  // `expr_to_string` + `string_to_expr`'s f64 fallback, collapsing
+  // `2^200` to a `Real`. After the fix `Head[a]` is `Integer`.
+  #[test]
+  fn big_integer_set_preserves_head() {
+    assert_eq!(interpret("a = 2^200; Head[a]").unwrap(), "Integer");
+  }
+
+  // Regression: compound destructuring `{a, b} = {2^60, 2^60 + 1}`
+  // collapsed both bindings to the same f64 when comparing for
+  // equality.
+  #[test]
+  fn big_integer_destructured_comparison() {
+    assert_eq!(
+      interpret("{a, b} = {2^10000, 2^10000 + 1}; {a == b, a < b, a <= b}")
+        .unwrap(),
+      "{False, True, True}"
+    );
+  }
 }
 
 mod power_with_negative_exponent {

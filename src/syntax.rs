@@ -8079,6 +8079,20 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
   if let Ok(n) = trimmed.parse::<i128>() {
     return Ok(Expr::Integer(n));
   }
+  // i128 overflow: try BigInteger before falling through to f64. Without
+  // this branch a stored value like `2^200` round-trips through
+  // `Set` (which stringifies the BigInteger then re-parses it from
+  // `StoredValue::Raw`) and lossily collapses to a `Real` — which
+  // breaks exact integer comparisons such as `2^200 < 2^200 + 1`.
+  if !trimmed.contains(['.', 'e', 'E', '*', '/']) {
+    let raw = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    let digits = raw.strip_prefix('-').unwrap_or(raw);
+    if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
+      && let Ok(n) = trimmed.parse::<num_bigint::BigInt>()
+    {
+      return Ok(Expr::BigInteger(n));
+    }
+  }
   if let Ok(f) = trimmed.parse::<f64>() {
     return Ok(Expr::Real(f));
   }
