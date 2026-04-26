@@ -169,9 +169,8 @@ fn is_positive_real_literal(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      let pos = matches!(&args[0], Expr::Integer(n) if *n > 0)
-        && matches!(&args[1], Expr::Integer(n) if *n > 0);
-      pos
+      (matches!(&args[0], Expr::Integer(n) if *n > 0)
+        && matches!(&args[1], Expr::Integer(n) if *n > 0))
     }
     _ => false,
   }
@@ -324,6 +323,76 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       0
     }));
+  }
+  // `Sign[Times[r1, r2, ..., z]]` where every `ri` is a positive
+  // *exact* real factor and `z` is an exact complex literal: pull the
+  // reals out and recurse on the lone complex factor.
+  // |Times[r..., z]| = (r1...rk) |z|, so the product divided by its
+  // magnitude equals `z / |z| = Sign[z]`. Inexact factors (Real /
+  // BigFloat) are intentionally excluded so the inexact-complex
+  // numerical fallback can still produce a Real-coefficient answer.
+  fn is_exact_positive(f: &Expr) -> bool {
+    fn inner(f: &Expr) -> bool {
+      match f {
+        Expr::Integer(n) => *n > 0,
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          matches!(&args[0], Expr::Integer(n) if *n > 0)
+            && matches!(&args[1], Expr::Integer(d) if *d > 0)
+        }
+        // `Power[positive_exact, exact_real]` — `2^(-1/2)` etc. The base
+        // must be strictly positive; no non-real exponent (which would
+        // introduce an imaginary phase). We don't recurse into the
+        // exponent's positivity since real-valued exponents on a
+        // positive base always give a positive result.
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          inner(&args[0]) && {
+            // Exponent must not contain `I` to keep the result real.
+            !mentions_imaginary_unit(&args[1])
+          }
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left,
+          right,
+        } => {
+          inner(left)
+            && !mentions_imaginary_unit(right)
+        }
+        _ => is_positive_real_literal(f) && !matches!(f, Expr::Real(_)),
+      }
+    }
+    inner(f)
+  }
+  if let Expr::FunctionCall { name, args: factors } = &args[0]
+    && name == "Times"
+    && factors.len() >= 2
+  {
+    let mut complex_factor: Option<Expr> = None;
+    let mut all_positive_reals_or_one_complex = true;
+    for f in factors {
+      if try_extract_complex_exact(f).is_some()
+        && !matches!(f, Expr::Integer(_))
+        && !matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        if complex_factor.is_some() {
+          all_positive_reals_or_one_complex = false;
+          break;
+        }
+        complex_factor = Some(f.clone());
+      } else if !is_exact_positive(f) {
+        all_positive_reals_or_one_complex = false;
+        break;
+      }
+    }
+    if all_positive_reals_or_one_complex
+      && let Some(z) = complex_factor
+    {
+      return sign_ast(&[z]);
+    }
   }
   // Handle complex numbers: Sign[a + b*I] = (a + b*I) / Abs[a + b*I]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {

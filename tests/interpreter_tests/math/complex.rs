@@ -94,6 +94,43 @@ mod sign_complex_tests {
     assert_eq!(interpret("Sign[4^(2 Pi I)]").unwrap(), "4^((2*I)*Pi)");
     assert_eq!(interpret("Sign[2^(3 I)]").unwrap(), "2^(3*I)");
   }
+
+  // `Sign[Times[r1, ..., rk, z]]` collapses to `Sign[z]` when every
+  // `ri` is an exact strictly-positive real factor — magnitudes
+  // multiply, so the real factors cancel themselves out. This lets
+  // `Sign[(1 + I)/Sqrt[2]]` (stored as
+  // `Times[Power[2, -1/2], Complex[1, 1]]`) reduce all the way to
+  // `(1 + I)/Sqrt[2]` because `Sign[1 + I]` is itself that
+  // unit-circle form.
+  #[test]
+  fn sign_factors_out_exact_positive_real() {
+    assert_eq!(
+      interpret("Sign[(1 + I)/Sqrt[2]]").unwrap(),
+      "(1 + I)/Sqrt[2]"
+    );
+    // Same identity scaled differently — the answer is still the
+    // sign of the complex factor alone.
+    assert_eq!(interpret("Sign[(3 - 4*I)/7]").unwrap(), "3/5 - (4*I)/5");
+  }
+
+  // Inexact (Real) factors must NOT trigger the exact-positive
+  // simplification — wolframscript folds those through to a
+  // numerical complex Sign with Real parts.
+  #[test]
+  fn sign_inexact_factor_keeps_numeric_form() {
+    let result = interpret("Sign[(1 + I)/Sqrt[2.]]").unwrap();
+    let (re_str, im_str) = result.split_once(" + ").unwrap();
+    let re: f64 = re_str.parse().unwrap();
+    let im: f64 = im_str.trim_end_matches("*I").parse().unwrap();
+    assert!(
+      (re - 0.7071067811865475).abs() < 1e-12,
+      "real part should be ~1/Sqrt[2], got {re}"
+    );
+    assert!(
+      (im - 0.7071067811865475).abs() < 1e-12,
+      "imag part should be ~1/Sqrt[2], got {im}"
+    );
+  }
 }
 
 mod abs_complex_tests {

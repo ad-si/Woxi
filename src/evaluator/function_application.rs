@@ -651,9 +651,7 @@ pub fn apply_curried_call(
             // Every order is zero — this branch is unreachable because
             // the all-zeros guard above caught it, but keep the fallback
             // for completeness.
-            Expr::List(
-              (0..orders.len()).map(|i| Expr::Slot(i + 1)).collect(),
-            )
+            Expr::List((0..orders.len()).map(|i| Expr::Slot(i + 1)).collect())
           };
           return Ok(Expr::Function {
             body: Box::new(body),
