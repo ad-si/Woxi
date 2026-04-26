@@ -67,6 +67,15 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
     }
+    // URLFetch[url] / URLFetch[url, params] — minimal stub.
+    // Returns $Failed for URLs that lack a host (e.g. "https://"), matching
+    // wolframscript's behavior. Network fetches are out of scope for the
+    // CLI/snapshot test loop, so any other URL also returns $Failed.
+    "URLFetch" if args.len() == 1 || args.len() == 2 => {
+      if let Expr::String(_) = &args[0] {
+        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      }
+    }
     // Environment["name"] — return the named environment variable value
     "Environment" if args.len() == 1 => {
       if let Expr::String(var_name) = &args[0] {
