@@ -3956,6 +3956,20 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ascii
     }
     Some("Spanish") => chars_to_list("abcdefghijklmnñopqrstuvwxyz"),
+    Some("Swedish") | Some("Finnish") => {
+      chars_to_list("abcdefghijklmnopqrstuvwxyzåäö")
+    }
+    Some("Norwegian") | Some("Danish") => {
+      chars_to_list("abcdefghijklmnopqrstuvwxyzæøå")
+    }
+    Some("Polish") => [
+      "a", "ą", "b", "c", "ć", "d", "e", "ę", "f", "g", "h", "i", "j", "k",
+      "l", "ł", "m", "n", "ń", "o", "ó", "p", "r", "s", "ś", "t", "u", "w",
+      "y", "z", "ź", "ż",
+    ]
+    .iter()
+    .map(|s| Expr::String((*s).to_string()))
+    .collect(),
     Some("Russian") => chars_to_list("абвгдеёжзийклмнопрстуфхцчшщъыьэюя"),
     // Pan-Cyrillic: superset covering several national alphabets (Russian,
     // Ukrainian, Serbian, …) including combined graphemes like з́ and с́.

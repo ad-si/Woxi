@@ -753,6 +753,50 @@ mod alphabet {
   }
 
   #[test]
+  fn swedish_appends_aaring_aumlaut_oumlaut() {
+    // Swedish adds å, ä, ö after z. Regression for new locale support.
+    assert_eq!(
+      interpret("Alphabet[\"Swedish\"]").unwrap(),
+      "{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, \
+       x, y, z, å, ä, ö}"
+    );
+  }
+
+  #[test]
+  fn finnish_matches_swedish() {
+    assert_eq!(
+      interpret("Alphabet[\"Finnish\"]").unwrap(),
+      interpret("Alphabet[\"Swedish\"]").unwrap()
+    );
+  }
+
+  #[test]
+  fn norwegian_appends_aelig_oslash_aaring() {
+    assert_eq!(
+      interpret("Alphabet[\"Norwegian\"]").unwrap(),
+      "{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, \
+       x, y, z, æ, ø, å}"
+    );
+  }
+
+  #[test]
+  fn danish_matches_norwegian() {
+    assert_eq!(
+      interpret("Alphabet[\"Danish\"]").unwrap(),
+      interpret("Alphabet[\"Norwegian\"]").unwrap()
+    );
+  }
+
+  #[test]
+  fn polish_has_diacritic_letters_interleaved() {
+    assert_eq!(
+      interpret("Alphabet[\"Polish\"]").unwrap(),
+      "{a, ą, b, c, ć, d, e, ę, f, g, h, i, j, k, l, ł, m, n, ń, o, ó, p, r, \
+       s, ś, t, u, w, y, z, ź, ż}"
+    );
+  }
+
+  #[test]
   fn russian_differs_from_cyrillic() {
     // wolframscript's Cyrillic list is a superset of Russian's (covers
     // Ukrainian, Serbian, …). Regression for mathics atomic/strings.py:239,
