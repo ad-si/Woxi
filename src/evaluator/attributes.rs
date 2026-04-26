@@ -293,7 +293,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "SlotSequence" => vec!["NHoldAll", "Protected"],
 
     // Listable + NHoldFirst + Protected
-    "Out" => vec!["Listable", "NHoldFirst", "Protected"],
+    "In" | "Out" => vec!["Listable", "NHoldFirst", "Protected"],
 
     // Protected only
     "Map"

@@ -527,13 +527,25 @@ pub fn dispatch_complex_and_special(
       if let Expr::Identifier(sym) = &args[0] {
         let mut lines: Vec<String> = Vec::new();
 
-        // 1. Show user-set attributes (if any)
+        // 1. Show user-set attributes if present, otherwise fall back to
+        // built-in attributes — `Definition[In]` should print
+        // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
+        // user-installed attrs, matching wolframscript.
         let user_attrs =
           crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-        if let Some(attrs) = &user_attrs
-          && !attrs.is_empty()
-        {
-          lines.push(format!("Attributes[{}] = {{{}}}", sym, attrs.join(", ")));
+        let attrs_to_show: Vec<String> = match &user_attrs {
+          Some(a) if !a.is_empty() => a.clone(),
+          _ => crate::evaluator::attributes::get_builtin_attributes(sym)
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect(),
+        };
+        if !attrs_to_show.is_empty() {
+          lines.push(format!(
+            "Attributes[{}] = {{{}}}",
+            sym,
+            attrs_to_show.join(", ")
+          ));
         }
 
         // 2. Show OwnValues (variable assignments)
