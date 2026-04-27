@@ -675,10 +675,13 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if k == 1 {
         z.clone()
       } else {
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![z.clone(), Expr::Integer(k as i128)],
-        }
+        // Evaluate Power[z, k] eagerly so a numeric `z` collapses to its
+        // value here instead of leaving `Times[3, Power[2, 2]]` in the
+        // result. `evaluate_function_call_ast` does not descend into args.
+        crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[z.clone(), Expr::Integer(k as i128)],
+        )?
       };
       let term = match coeff {
         (1, 1) => z_pow,
