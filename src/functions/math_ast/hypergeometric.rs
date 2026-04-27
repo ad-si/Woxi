@@ -213,33 +213,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Closed form: 1F1[b+1, b, z] = ((b + z) / b) * E^z for positive integer b.
-  if a_list.len() == 1
-    && b_list.len() == 1
-    && let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&a_list[0], &b_list[0])
-    && *b_i >= 1
-    && *a_i == *b_i + 1
-  {
-    let b_int = *b_i;
-    let plus = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![Expr::Integer(b_int), z.clone()],
-    };
-    let ratio = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(plus),
-      right: Box::new(Expr::Integer(b_int)),
-    };
-    let exp_z = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![Expr::Identifier("E".to_string()), z.clone()],
-    };
-    let prod = Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left: Box::new(ratio),
-      right: Box::new(exp_z),
-    };
-    return crate::evaluator::evaluate_expr_to_expr(&prod);
+  // p=q=1 form is just Hypergeometric1F1, which has its own closed-form
+  // simplifications. Delegate so e.g. `HypergeometricPFQ[{6},{1},2]` →
+  // `(719*E^2)/15` rather than the unsimplified series.
+  if a_list.len() == 1 && b_list.len() == 1 {
+    return crate::functions::math_ast::hypergeometric::hypergeometric1f1_ast(
+      &[a_list[0].clone(), b_list[0].clone(), z.clone()],
+    );
   }
 
   // Numeric evaluation: all parameters and z must be numeric
@@ -654,6 +634,34 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Plus",
       &[Expr::Integer(1), product],
     );
+  }
+
+  // Closed form: 1F1[b+1, b, z] = ((b + z) / b) · E^z for positive integer b.
+  if let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&args[0], &args[1])
+    && *b_i >= 1
+    && *a_i == *b_i + 1
+  {
+    let b_int = *b_i;
+    let z = &args[2];
+    let plus = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Integer(b_int), z.clone()],
+    };
+    let ratio = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(plus),
+      right: Box::new(Expr::Integer(b_int)),
+    };
+    let exp_z = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()],
+    };
+    let prod = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(ratio),
+      right: Box::new(exp_z),
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&prod);
   }
 
   // Closed form for 1F1[positive integer a, 1, z]:
