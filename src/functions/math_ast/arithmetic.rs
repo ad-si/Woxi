@@ -3543,6 +3543,48 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build final args: coefficient (if not 1) + sorted symbolic terms
   sort_symbolic_factors(&mut symbolic_args);
+
+  // Final-pass canonicalization: Rational[±1, cd] * Sqrt[Rational[p, q]] →
+  // ±Sqrt[Rational[p, q*cd^2]] reduced. Only triggers when:
+  // (1) the sqrt argument is itself a rational (avoids recursion with the
+  //     (1/d)*Sqrt[n] form which is already canonical), and
+  // (2) gcd(p, cd^2) > 1, so absorption actually reduces the inner rational
+  //     (otherwise sqrt_ast would re-extract the cd^2 factor from the
+  //     denominator and recurse). Wolfram-canonical: (1/3)*Sqrt[15/11] →
+  //     Sqrt[5/33] (absorb), (1/3)*Sqrt[5/11] stays as Sqrt[5/11]/3.
+  if symbolic_args.len() == 1
+    && let Expr::FunctionCall {
+      name: rname,
+      args: rargs,
+    } = &coeff
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(cn), Expr::Integer(cd)) = (&rargs[0], &rargs[1])
+    && cn.unsigned_abs() == 1
+    && *cd > 1
+    && let Some(sqrt_arg) = is_sqrt(&symbolic_args[0])
+    && let Expr::FunctionCall {
+      name: sname,
+      args: sargs,
+    } = sqrt_arg
+    && sname == "Rational"
+    && sargs.len() == 2
+    && let (Expr::Integer(sp), Expr::Integer(sq)) = (&sargs[0], &sargs[1])
+    && *sp > 0
+    && *sq > 0
+    && gcd(*sp, cd * cd) > 1
+  {
+    if let Some(new_sq) = sq.checked_mul(*cd).and_then(|v| v.checked_mul(*cd))
+    {
+      let absorbed = sqrt_ast(&[make_rational(*sp, new_sq)])?;
+      if *cn < 0 {
+        return times_ast(&[Expr::Integer(-1), absorbed]);
+      } else {
+        return Ok(absorbed);
+      }
+    }
+  }
+
   let mut final_args: Vec<Expr> = Vec::new();
   let is_unit = matches!(&coeff, Expr::Integer(1));
   if !is_unit {
@@ -3807,6 +3849,27 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
     if !has_sq_factor {
       return sqrt_ast(&[make_rational(*n, denom)]);
+    }
+  }
+
+  // Sqrt[p/q] / d → Sqrt[p/(q*d^2)] for positive rational p/q and integer d
+  // E.g. Sqrt[15/11]/3 → Sqrt[15/99] = Sqrt[5/33]
+  if let Expr::Integer(d) = b
+    && *d != 0
+    && is_sqrt(a).is_some()
+    && let Expr::FunctionCall {
+      name: rname,
+      args: rargs,
+    } = is_sqrt(a).unwrap()
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *p > 0
+    && *q > 0
+  {
+    let new_q = q.checked_mul(*d).and_then(|v| v.checked_mul(*d));
+    if let Some(new_q) = new_q {
+      return sqrt_ast(&[make_rational(*p, new_q)]);
     }
   }
 
