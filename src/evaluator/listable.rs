@@ -340,6 +340,17 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
       }
+      // User-defined forms registered via `Format[expr, FORM] := …`.
+      crate::evaluator::assignment::USER_PRINT_FORMS.with(|v| {
+        for name in v.borrow().iter() {
+          if !items
+            .iter()
+            .any(|e| matches!(e, Expr::Identifier(s) if s == name))
+          {
+            items.push(Expr::Identifier(name.clone()));
+          }
+        }
+      });
       Some(Expr::List(items))
     }
     // Fixed list of output forms (superset of $PrintForms that adds
@@ -394,6 +405,17 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
       if let Expr::List(box_items) = &box_forms {
         items.extend(box_items.iter().cloned());
       }
+      // User-defined forms registered via `Format[expr, FORM] := …`.
+      crate::evaluator::assignment::USER_PRINT_FORMS.with(|v| {
+        for name in v.borrow().iter() {
+          if !items
+            .iter()
+            .any(|e| matches!(e, Expr::Identifier(s) if s == name))
+          {
+            items.push(Expr::Identifier(name.clone()));
+          }
+        }
+      });
       Some(Expr::List(items))
     }
     // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.

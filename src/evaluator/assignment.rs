@@ -8,6 +8,38 @@ thread_local! {
   /// `set_downvalues_from_rules` so `DownValues[f] := {...}` preserves the
   /// caller's ordering, matching Wolfram.
   static SUPPRESS_SPECIFICITY_SORT: Cell<bool> = const { Cell::new(false) };
+
+  /// Names of forms registered via `Format[expr, FORM] := …` that should
+  /// appear in `$PrintForms` (and `$OutputForms`) in addition to the
+  /// builtin defaults. Insertion order is preserved.
+  pub static USER_PRINT_FORMS: std::cell::RefCell<Vec<String>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Register a user-defined print form (e.g. via `Format[expr, FORM] := …`).
+/// No-op if already registered or if `name` is one of the builtin forms.
+pub fn register_user_print_form(name: &str) {
+  const BUILTIN: &[&str] = &[
+    "InputForm",
+    "OutputForm",
+    "TextForm",
+    "CForm",
+    "FortranForm",
+    "ScriptForm",
+    "MathMLForm",
+    "TeXForm",
+    "StandardForm",
+    "TraditionalForm",
+  ];
+  if BUILTIN.contains(&name) {
+    return;
+  }
+  USER_PRINT_FORMS.with(|v| {
+    let mut v = v.borrow_mut();
+    if !v.iter().any(|s| s == name) {
+      v.push(name.to_string());
+    }
+  });
 }
 
 pub fn suppress_specificity_sort() -> bool {
@@ -1035,6 +1067,21 @@ pub fn set_delayed_ast(
     if matches!(&result, Expr::Identifier(s) if s == "$Failed") {
       return Ok(result);
     }
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // `Format[expr, FORM] := …` (or its UpSet/UpSetDelayed cousins) registers
+  // FORM in `$PrintForms`/`$OutputForms`. We don't yet evaluate the format
+  // rule itself, but tracking the form name is enough for MemberQ checks.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Format"
+    && lhs_args.len() >= 2
+    && let Expr::Identifier(form_name) = &lhs_args[1]
+  {
+    register_user_print_form(form_name);
     return Ok(Expr::Identifier("Null".to_string()));
   }
 

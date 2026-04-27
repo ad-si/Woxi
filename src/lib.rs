@@ -719,6 +719,7 @@ pub fn clear_state() {
   RECURSION_DEPTH.with(|d| d.set(0));
   EVAL_STACK.with(|s| s.borrow_mut().clear());
   LAST_ERROR_TRACE.with(|t| *t.borrow_mut() = None);
+  evaluator::assignment::USER_PRINT_FORMS.with(|v| v.borrow_mut().clear());
   functions::entity_ast::clear_entity_stores();
   unseed_rng();
   clear_captured_stdout();
@@ -789,8 +790,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         && frac_part.chars().all(|c| c == '0');
       // Use significant-digit count: leading zeros in 0.xxx don't count.
       let significant_digits = if int_zero {
-        let leading_zeros =
-          frac_part.chars().take_while(|c| *c == '0').count();
+        let leading_zeros = frac_part.chars().take_while(|c| *c == '0').count();
         frac_part.len().saturating_sub(leading_zeros)
       } else {
         total_digits
@@ -1287,6 +1287,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           last_result = Some(output_text);
         }
         any_nonempty = true;
+        // A Return inside a multi-statement program propagates past any
+        // remaining statements — drop them and emit the Return value.
+        if return_short_circuit {
+          break;
+        }
       }
       ProgramStmt::FunctionDefinition(node) => {
         store_function_definition(node.clone())?;
@@ -2216,12 +2221,12 @@ pub fn expand_char_escapes(input: &str) -> String {
       continue;
     }
     match next {
-      Some('.') => {
+      Some('.')
         // `\.HH` — 2 hex digits
         if i + 3 < len
           && chars[i + 2].is_ascii_hexdigit()
           && chars[i + 3].is_ascii_hexdigit()
-        {
+        => {
           let hex: String = [chars[i + 2], chars[i + 3]].iter().collect();
           if let Ok(code) = u32::from_str_radix(&hex, 16)
             && let Some(c) = char::from_u32(code)
@@ -2231,15 +2236,14 @@ pub fn expand_char_escapes(input: &str) -> String {
             continue;
           }
         }
-      }
-      Some(':') => {
+      Some(':')
         // `\:HHHH` — 4 hex digits
         if i + 5 < len
           && chars[i + 2].is_ascii_hexdigit()
           && chars[i + 3].is_ascii_hexdigit()
           && chars[i + 4].is_ascii_hexdigit()
           && chars[i + 5].is_ascii_hexdigit()
-        {
+        => {
           let hex: String =
             [chars[i + 2], chars[i + 3], chars[i + 4], chars[i + 5]]
               .iter()
@@ -2252,13 +2256,12 @@ pub fn expand_char_escapes(input: &str) -> String {
             continue;
           }
         }
-      }
-      Some(d) if ('0'..='7').contains(&d) => {
+      Some(d) if ('0'..='7').contains(&d)
         // `\OOO` — 3 octal digits (must all be 0-7).
-        if i + 3 < len
+        && i + 3 < len
           && ('0'..='7').contains(&chars[i + 2])
           && ('0'..='7').contains(&chars[i + 3])
-        {
+        => {
           let oct: String =
             [chars[i + 1], chars[i + 2], chars[i + 3]].iter().collect();
           if let Ok(code) = u32::from_str_radix(&oct, 8)
@@ -2269,7 +2272,6 @@ pub fn expand_char_escapes(input: &str) -> String {
             continue;
           }
         }
-      }
       _ => {}
     }
     // Not a recognized escape — emit the backslash and continue.
