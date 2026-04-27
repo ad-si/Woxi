@@ -1116,14 +1116,34 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(name) => {
             crate::evaluator::evaluate_function_call_ast(name, &index_args)
           }
+          // `Subscript[a, ##] &` — substitute each `#k`/`##` slot with the
+          // index args, then evaluate the body so e.g.
+          // `Array[Subscript[a, ##] &, {2, 2}]` produces concrete
+          // `Subscript[a, i, j]` cells.
+          Expr::Function { body } => {
+            let substituted =
+              crate::syntax::substitute_slots(body, &index_args);
+            crate::evaluator::evaluate_expr_to_expr(&substituted)
+          }
+          // `Function[{i, j, …}, body]` — bind named params positionally.
+          Expr::NamedFunction { params, body, .. } => {
+            let bindings: Vec<(&str, &Expr)> = params
+              .iter()
+              .zip(index_args.iter())
+              .map(|(p, a)| (p.as_str(), a))
+              .collect();
+            let substituted =
+              crate::syntax::substitute_variables(body, &bindings);
+            crate::evaluator::evaluate_expr_to_expr(&substituted)
+          }
           _ => {
-            // For pure functions, we need to call with Sequence of args
-            // Build f[i1, i2, ...] manually
-            let func_call = Expr::FunctionCall {
-              name: crate::syntax::expr_to_string(func),
-              args: index_args,
-            };
-            crate::evaluator::evaluate_expr_to_expr(&func_call)
+            // Fall back to invoking the function via the standard call form
+            // (e.g. Composition, named symbols stored as values, …).
+            let func_str = crate::syntax::expr_to_string(func);
+            crate::evaluator::evaluate_function_call_ast(
+              &func_str,
+              &index_args,
+            )
           }
         }
       }

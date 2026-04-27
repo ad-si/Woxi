@@ -552,8 +552,7 @@ fn n_eval_arbitrary_partial(
         .iter()
         .enumerate()
         .map(|(i, a)| {
-          let held =
-            hold_all || (hold_first && i == 0) || (hold_rest && i > 0);
+          let held = hold_all || (hold_first && i == 0) || (hold_rest && i > 0);
           if held {
             Ok(a.clone())
           } else {
@@ -1498,6 +1497,21 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => p_val == Some(f64::INFINITY),
   };
+
+  // Norm[matrix, "Frobenius"] — sqrt of sum of squared absolute values
+  // across every entry of the (rectangular) matrix.
+  if matches!(&p_expr, Some(Expr::String(s)) if s == "Frobenius")
+    && let Expr::List(rows) = &args[0]
+    && rows.iter().all(|r| matches!(r, Expr::List(_)))
+  {
+    let mut flat: Vec<Expr> = Vec::new();
+    for row in rows {
+      if let Expr::List(cells) = row {
+        flat.extend(cells.iter().cloned());
+      }
+    }
+    return norm_ast(&[Expr::List(flat)]);
+  }
 
   match &args[0] {
     Expr::List(items) => {
