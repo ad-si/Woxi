@@ -1134,7 +1134,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     match &stmts[stmt_idx] {
       ProgramStmt::Expr(expr) => {
         // Evaluate using AST-based evaluation
-        // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
+        // At top level, uncaught Return[] just yields its argument value
+        // (matching wolframscript: `Return[5]` outputs `5`, not `Return[5]`).
         //
         // Pre-pass (visual mode only): when the top-level expression is a
         // list (1-D or 2-D) of graphics-producing function calls, inject
@@ -1151,12 +1152,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let expr_to_eval: &syntax::Expr =
           rewritten_expr.as_ref().unwrap_or(expr);
         let result_expr = match evaluator::evaluate_expr_to_expr(expr_to_eval) {
-          Err(InterpreterError::ReturnValue(val)) => {
-            syntax::Expr::FunctionCall {
-              name: "Return".to_string(),
-              args: vec![*val],
-            }
-          }
+          Err(InterpreterError::ReturnValue(val)) => *val,
           Err(InterpreterError::Abort) => {
             return Ok("$Aborted".to_string());
           }

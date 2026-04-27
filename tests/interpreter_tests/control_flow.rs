@@ -140,17 +140,19 @@ mod return_value {
   #[test]
   fn return_in_block() {
     clear_state();
-    // Return propagates through Block; at top level it becomes symbolic Return[val] (like wolframscript)
-    assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "Return[42]");
+    // Return propagates through Block; at top level it yields its argument
+    // (matching wolframscript: `Block[{}, Return[42]]` outputs `42`).
+    assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "42");
   }
 
   #[test]
   fn return_in_module() {
     clear_state();
-    // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
+    // At top level, uncaught Return[] yields its argument (matching
+    // wolframscript: `Module[{x=10}, Return[x+1]]` outputs `11`).
     assert_eq!(
       interpret("Module[{x = 10}, Return[x + 1]]").unwrap(),
-      "Return[11]"
+      "11"
     );
   }
 
@@ -1087,19 +1089,21 @@ mod return_in_loops {
   #[test]
   fn return_in_while() {
     clear_state();
-    // In Wolfram, Return[] inside While is NOT caught by the loop -
-    // it propagates up as the symbolic Return[99]
-    assert_eq!(interpret("While[True, Return[99]]").unwrap(), "Return[99]");
+    // In Wolfram, Return[] inside While is NOT caught by the loop — it
+    // propagates up; at top level the value is yielded directly (no
+    // `Return[]` wrapper), matching wolframscript.
+    assert_eq!(interpret("While[True, Return[99]]").unwrap(), "99");
   }
 
   #[test]
   fn return_in_for() {
     clear_state();
-    // In Wolfram, Return[] inside For is NOT caught by the loop -
-    // it propagates up as the symbolic Return[5]
+    // In Wolfram, Return[] inside For is NOT caught by the loop — it
+    // propagates up; at top level the value is yielded directly (no
+    // `Return[]` wrapper), matching wolframscript.
     assert_eq!(
       interpret("For[i=1, i<=10, i++, If[i==5, Return[i]]]").unwrap(),
-      "Return[5]"
+      "5"
     );
   }
 }
@@ -1474,10 +1478,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Plus]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(
-      result.stdout.trim(),
-      "HoldForm[2^3 + 5]\nHoldForm[8 + 5]"
-    );
+    assert_eq!(result.stdout.trim(), "HoldForm[2^3 + 5]\nHoldForm[8 + 5]");
   }
 
   #[test]
