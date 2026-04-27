@@ -1468,19 +1468,23 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(Expr::Raw(rendered)));
     }
     "OutputForm" if args.len() == 1 => {
-      // Graphics/Graphics3D bodies haven't been converted to Expr::Graphics
-      // yet at dispatch time (that happens post-evaluation in lib.rs), so
-      // render them to their "-Graphics-" abbreviation here explicitly.
-      if let Expr::FunctionCall { name: inner, .. } = &args[0] {
-        if inner == "Graphics" {
-          return Some(Ok(Expr::Raw("-Graphics-".to_string())));
+      // `wolframscript -code 'OutputForm[expr]'` returns the unevaluated
+      // wrapper `OutputForm[<expr>]`; preserve it. Graphics/Graphics3D
+      // arguments still collapse to the abbreviated `-Graphics-` /
+      // `-Graphics3D-` form inside the wrapper, matching wolframscript.
+      let inner = match &args[0] {
+        Expr::FunctionCall { name: head, .. } if head == "Graphics" => {
+          Expr::Raw("-Graphics-".to_string())
         }
-        if inner == "Graphics3D" {
-          return Some(Ok(Expr::Raw("-Graphics3D-".to_string())));
+        Expr::FunctionCall { name: head, .. } if head == "Graphics3D" => {
+          Expr::Raw("-Graphics3D-".to_string())
         }
-      }
-      let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
-      return Some(Ok(Expr::Raw(rendered)));
+        other => other.clone(),
+      };
+      return Some(Ok(Expr::FunctionCall {
+        name: "OutputForm".to_string(),
+        args: vec![inner],
+      }));
     }
     // ToBoxes[expr] / ToBoxes[expr, form] — convert expression to box form
     "ToBoxes" if args.len() == 1 || args.len() == 2 => {

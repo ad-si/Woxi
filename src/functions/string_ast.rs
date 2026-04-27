@@ -1983,6 +1983,21 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(expr_to_tex(&inner_args[0])));
   }
 
+  // If the expression is OutputForm[inner], produce the OutputForm-rendered
+  // text (e.g. `f'[x]` for derivative prime notation). Mirrors what
+  // wolframscript prints when ToString unwraps the form wrapper.
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "OutputForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(crate::syntax::expr_to_output_form_2d(
+      &inner_args[0],
+    )));
+  }
+
   // If the expression is FortranForm[inner], produce Fortran representation
   if let Expr::FunctionCall {
     name,
@@ -2134,6 +2149,16 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     && args.len() == 1
   {
     return expr_to_tex(&args[0]);
+  }
+  // OutputForm[x] renders the content to its OutputForm text first, then
+  // TeXForm wraps that in `\text{…}`. Wolfram prints
+  // `b // OutputForm // TeXForm` as `\text{b}`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "OutputForm"
+    && args.len() == 1
+  {
+    let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
+    return format!("\\text{{{}}}", rendered);
   }
   match expr {
     Expr::Integer(n) => n.to_string(),

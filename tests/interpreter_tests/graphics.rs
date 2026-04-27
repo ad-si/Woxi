@@ -3600,18 +3600,20 @@ mod graphics_list {
       interpret("InputForm[{1, 2, 3}]").unwrap(),
       "InputForm[{1, 2, 3}]"
     );
-    // OutputForm is the display form, so it renders directly
-    assert_eq!(interpret("OutputForm[42]").unwrap(), "42");
+    // OutputForm now keeps its wrapper too — `wolframscript -code 'OutputForm[42]'`
+    // prints `OutputForm[42]`, not the bare value.
+    assert_eq!(interpret("OutputForm[42]").unwrap(), "OutputForm[42]");
 
-    // OutputForm of a Graphics/Graphics3D expression renders the short
-    // abbreviation rather than the underlying function call.
+    // Graphics/Graphics3D arguments collapse to their abbreviated forms
+    // *inside* the OutputForm wrapper, matching wolframscript:
+    // `OutputForm[Graphics[Rectangle[]]]` → `OutputForm[-Graphics-]`.
     assert_eq!(
       interpret("OutputForm[Graphics[Rectangle[]]]").unwrap(),
-      "-Graphics-"
+      "OutputForm[-Graphics-]"
     );
     assert_eq!(
       interpret("OutputForm[Graphics3D[{}]]").unwrap(),
-      "-Graphics3D-"
+      "OutputForm[-Graphics3D-]"
     );
   }
 
