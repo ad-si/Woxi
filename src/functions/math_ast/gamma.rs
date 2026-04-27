@@ -822,6 +822,22 @@ fn binomial_i128(n: u32, k: u32) -> i128 {
   result
 }
 
+/// Stirling's series for log(gamma(z)) when z is large and positive.
+/// log(gamma(z)) = (z - 1/2)*log(z) - z + (1/2)*log(2π)
+///                 + 1/(12z) - 1/(360z³) + 1/(1260z⁵) - ...
+fn log_gamma_stirling(z: f64) -> f64 {
+  use std::f64::consts::PI;
+  let log_2pi = (2.0 * PI).ln();
+  let z2 = z * z;
+  let z3 = z2 * z;
+  let z5 = z3 * z2;
+  let z7 = z5 * z2;
+  (z - 0.5) * z.ln() - z + 0.5 * log_2pi + 1.0 / (12.0 * z)
+    - 1.0 / (360.0 * z3)
+    + 1.0 / (1260.0 * z5)
+    - 1.0 / (1680.0 * z7)
+}
+
 /// LogGamma[z] — logarithm of the gamma function.
 pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -880,7 +896,13 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Infinity".to_string()));
     }
     if matches!(z, Expr::Real(_)) {
-      let result = gamma_fn(f).abs().ln();
+      // Compute log(|gamma(f)|) directly to avoid overflow for large f.
+      // Use Stirling series for f > 12, and Log[Gamma[f]] for smaller.
+      let result = if f >= 12.0 {
+        log_gamma_stirling(f)
+      } else {
+        gamma_fn(f).abs().ln()
+      };
       return Ok(Expr::Real(result));
     }
   }
