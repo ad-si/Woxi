@@ -83,20 +83,31 @@ fn evaluate_args_with_hold(
     }
   };
 
+  // HoldAllComplete keeps `Sequence[…]` un-spliced (Wolfram preserves the
+  // wrapper); other hold attributes still splice so multi-arg
+  // `Evaluate[…]` produces a flat sequence in the surrounding context.
+  let maybe_splice = |xs: Vec<Expr>| -> Vec<Expr> {
+    if hold_all_complete {
+      xs
+    } else {
+      splice_top_level_sequences(xs)
+    }
+  };
   if hold_all {
-    args.iter().map(process_held).collect()
+    let raw: Result<Vec<Expr>, _> = args.iter().map(process_held).collect();
+    Ok(maybe_splice(raw?))
   } else if hold_first && !args.is_empty() {
     let mut result = vec![process_held(&args[0])?];
     for arg in &args[1..] {
       result.push(evaluate_expr_to_expr(arg)?);
     }
-    Ok(result)
+    Ok(maybe_splice(result))
   } else if hold_rest && !args.is_empty() {
     let mut result = vec![evaluate_expr_to_expr(&args[0])?];
     for arg in &args[1..] {
       result.push(process_held(arg)?);
     }
-    Ok(result)
+    Ok(maybe_splice(result))
   } else {
     args
       .iter()
@@ -120,15 +131,41 @@ pub fn strip_unevaluated(expr: &Expr) -> Expr {
 
 /// If `arg` is `Evaluate[expr]`, evaluate `expr`. Otherwise return `arg`
 /// unchanged. (Only the top-level Evaluate is unwrapped — nested calls
-/// keep their normal evaluation rules.)
+/// keep their normal evaluation rules.) Multi-argument
+/// `Evaluate[a, b, …]` becomes `Sequence[a-evaluated, b-evaluated, …]`,
+/// which the caller splices into the surrounding args.
 fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::FunctionCall { name, args } = arg
     && name == "Evaluate"
-    && args.len() == 1
   {
-    return evaluate_expr_to_expr(&args[0]);
+    if args.len() == 1 {
+      return evaluate_expr_to_expr(&args[0]);
+    }
+    let evaluated: Result<Vec<Expr>, _> =
+      args.iter().map(evaluate_expr_to_expr).collect();
+    return Ok(Expr::FunctionCall {
+      name: "Sequence".to_string(),
+      args: evaluated?,
+    });
   }
   Ok(arg.clone())
+}
+
+/// Splice any top-level `Sequence[...]` elements in `args` into the list.
+/// Required so that `Hold[Evaluate[1, 2]]` flattens to `Hold[1, 2]` (the
+/// `Evaluate` produces a `Sequence` that gets spliced into Hold's args).
+fn splice_top_level_sequences(args: Vec<Expr>) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(args.len());
+  for a in args {
+    if let Expr::FunctionCall { name, args: inner } = &a
+      && name == "Sequence"
+    {
+      out.extend(inner.iter().cloned());
+    } else {
+      out.push(a);
+    }
+  }
+  out
 }
 
 /// Helper to construct an RGBColor Expr from numeric values.
@@ -302,6 +339,18 @@ pub fn evaluate_expr_to_expr_early_dispatch(
           }
         }
         break;
+      }
+      // If the final value is a `Sequence[...]`, splice and take the last
+      // spliced element — wolframscript yields `2` for
+      // `a; Sequence[1, 2]`, not the whole Sequence. Empty sequences
+      // collapse to Null.
+      if let Expr::FunctionCall { name: n, args: seq_args } = &result
+        && n == "Sequence"
+      {
+        result = seq_args
+          .last()
+          .cloned()
+          .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
       }
       return Ok(Some(result));
     }
@@ -1018,8 +1067,7 @@ pub fn evaluate_expr_to_expr_inner(
         // its argument is evaluated like any other call. The `?symbol` REPL
         // shortcut wraps the arg in `Unevaluated` to preserve symbol
         // inspection (handled in the Information dispatcher).
-        if (name == "Definition" || name == "FullDefinition")
-          && args.len() == 1
+        if (name == "Definition" || name == "FullDefinition") && args.len() == 1
         {
           return dispatch::evaluate_function_call_ast(name, args);
         }
@@ -1096,16 +1144,17 @@ pub fn evaluate_expr_to_expr_inner(
             }
             // System variables like `$BoxForms` aren't in ENV until written —
             // first AppendTo seeds the env from the built-in default.
-            _ => match crate::evaluator::listable::get_system_variable(var_name)
-            {
-              Some(default) => default,
-              None => {
-                return Err(InterpreterError::EvaluationError(format!(
-                  "{} requires a variable with a list value",
-                  name
-                )));
+            _ => {
+              match crate::evaluator::listable::get_system_variable(var_name) {
+                Some(default) => default,
+                None => {
+                  return Err(InterpreterError::EvaluationError(format!(
+                    "{} requires a variable with a list value",
+                    name
+                  )));
+                }
               }
-            },
+            }
           };
           let new_val = match &mut current_val {
             Expr::List(items) => {
@@ -1507,10 +1556,14 @@ pub fn evaluate_expr_to_expr_inner(
             name.as_str(),
             "Hold" | "HoldForm" | "Function" | "Reap" | "Manipulate"
           ) {
-            args
+            let raw: Vec<Expr> = args
               .iter()
               .map(unwrap_top_level_evaluate)
-              .collect::<Result<Vec<Expr>, _>>()?
+              .collect::<Result<Vec<Expr>, _>>()?;
+            // Multi-arg Evaluate yields a Sequence that must splice into
+            // the surrounding hold context (e.g. `Hold[Evaluate[1, 2]]`
+            // becomes `Hold[1, 2]`).
+            splice_top_level_sequences(raw)
           } else {
             args
           };
@@ -2086,6 +2139,17 @@ pub fn evaluate_expr_to_expr_inner(
           }
         }
         break;
+      }
+      // Trailing `Sequence[...]` splices into the surrounding context;
+      // wolframscript yields `2` for `a; Sequence[1, 2]`. Empty sequences
+      // collapse to Null.
+      if let Expr::FunctionCall { name: n, args: seq_args } = &result
+        && n == "Sequence"
+      {
+        result = seq_args
+          .last()
+          .cloned()
+          .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
       }
       Ok(result)
     }

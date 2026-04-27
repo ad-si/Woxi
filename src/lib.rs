@@ -1151,7 +1151,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         };
         let expr_to_eval: &syntax::Expr =
           rewritten_expr.as_ref().unwrap_or(expr);
-        let result_expr = match evaluator::evaluate_expr_to_expr(expr_to_eval) {
+        let mut result_expr = match evaluator::evaluate_expr_to_expr(
+          expr_to_eval,
+        ) {
           Err(InterpreterError::ReturnValue(val)) => *val,
           Err(InterpreterError::Abort) => {
             return Ok("$Aborted".to_string());
@@ -1182,6 +1184,24 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           }
           other => other?,
         };
+        // Multi-statement input behaves like CompoundExpression: a
+        // trailing `Sequence[…]` splices, so we keep just its last
+        // element. A lone `Sequence[1, 2]` (single-statement program)
+        // still prints as `12`.
+        let multi_statement = stmts
+          .iter()
+          .filter(|s| matches!(s, ProgramStmt::Expr(_)))
+          .count()
+          > 1;
+        if multi_statement
+          && let syntax::Expr::FunctionCall { name: n, args: seq_args } =
+            &result_expr
+          && n == "Sequence"
+        {
+          result_expr = seq_args.last().cloned().unwrap_or_else(|| {
+            syntax::Expr::Identifier("Null".to_string())
+          });
+        }
         // If the result is an Image, render it as a PNG <img> tag
         let result_expr = render_image_if_needed(result_expr);
         // Render unevaluated Graphics[{...}] FunctionCalls to SVG (e.g.

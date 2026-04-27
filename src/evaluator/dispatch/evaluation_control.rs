@@ -90,6 +90,15 @@ pub fn dispatch_evaluation_control(
     "Evaluate" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }
+    // `Evaluate[a, b, c]` returns `Sequence[a, b, c]`, which then splices
+    // into the surrounding context. Matches wolframscript's
+    // `Hold[Evaluate[1, 2]]` → `Hold[1, 2]`.
+    "Evaluate" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "Sequence".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "RegularExpression" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "RegularExpression".to_string(),

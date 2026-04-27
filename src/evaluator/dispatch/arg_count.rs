@@ -306,7 +306,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "EulerAngles" => Some((1, 1)),
     "EulerE" => Some((1, 2)),
     "EulerPhi" => Some((1, 1)),
-    "Evaluate" => Some((1, 1)),
+    "Evaluate" => Some((0, usize::MAX)),
     "EvenQ" => Some((1, 1)),
     "ExactNumberQ" => Some((1, 1)),
     "Exp" => Some((1, 1)),
