@@ -636,7 +636,109 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // Closed form for 1F1[positive integer a > b, positive integer b, z]
+  // via Kummer's transformation:
+  //   1F1[a, b, z] = E^z · 1F1[b - a, b, -z]
+  // The right-hand side has a negative integer first argument, so its
+  // series terminates after `a - b` terms — we compute that polynomial
+  // exactly using BigInt arithmetic, multiply by E^z, and return.
+  //
+  // Skip the immediate `a = b+1` case so the tighter `((b+z)/b)·E^z`
+  // form below stays in effect.
+  if let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&args[0], &args[1])
+    && *a_i >= 1
+    && *b_i >= 1
+    && *a_i > *b_i + 1
+    && *a_i - *b_i <= 30
+  {
+    use num_bigint::BigInt;
+    let n = *a_i - *b_i; // positive
+    let b = *b_i;
+    let z = &args[2];
+    fn fact(n: i128) -> BigInt {
+      let mut acc = BigInt::from(1);
+      for i in 2..=n {
+        acc *= i;
+      }
+      acc
+    }
+    // 1F1[-n, b, -z] = Σ_{k=0}^n n! / ((n-k)! · (b)_k · k!) · z^k
+    // (b)_k = b · (b+1) · … · (b+k-1)
+    let n_fact = fact(n);
+    let mut terms: Vec<Expr> = Vec::with_capacity((n + 1) as usize);
+    let mut b_pochhammer = BigInt::from(1);
+    let mut k_fact = BigInt::from(1);
+    for k in 0..=n {
+      if k > 0 {
+        b_pochhammer *= (b + k - 1) as i128;
+        k_fact *= k as i128;
+      }
+      let denom = fact(n - k) * &b_pochhammer * &k_fact;
+      // coeff = n! / denom (reduce GCD).
+      use num_bigint::BigInt as BI;
+      fn bigint_gcd(a: &BI, b: &BI) -> BI {
+        use num_traits::Zero;
+        let (mut a, mut b) = (a.clone(), b.clone());
+        if a < BI::from(0) {
+          a = -a;
+        }
+        if b < BI::from(0) {
+          b = -b;
+        }
+        while !b.is_zero() {
+          let r = &a % &b;
+          a = b;
+          b = r;
+        }
+        a
+      }
+      let g = bigint_gcd(&n_fact, &denom);
+      let cn = &n_fact / &g;
+      let cd = &denom / &g;
+      let z_pow = if k == 0 {
+        Expr::Integer(1)
+      } else if k == 1 {
+        z.clone()
+      } else {
+        crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[z.clone(), Expr::Integer(k)],
+        )?
+      };
+      let coeff_expr = if cd == BigInt::from(1) {
+        bigint_to_expr(cn)
+      } else {
+        crate::evaluator::evaluate_function_call_ast(
+          "Rational",
+          &[bigint_to_expr(cn), bigint_to_expr(cd)],
+        )?
+      };
+      let term = if matches!(coeff_expr, Expr::Integer(1)) {
+        z_pow
+      } else if matches!(z_pow, Expr::Integer(1)) {
+        coeff_expr
+      } else {
+        crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[coeff_expr, z_pow],
+        )?
+      };
+      terms.push(term);
+    }
+    let polynomial =
+      crate::evaluator::evaluate_function_call_ast("Plus", &terms)?;
+    let exp_part = crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[Expr::Identifier("E".to_string()), z.clone()],
+    )?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[exp_part, polynomial],
+    );
+  }
+
   // Closed form: 1F1[b+1, b, z] = ((b + z) / b) · E^z for positive integer b.
+  // (Subset of the a > b case above, but with a tighter form.)
   if let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&args[0], &args[1])
     && *b_i >= 1
     && *a_i == *b_i + 1
@@ -737,10 +839,8 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     use num_traits::Signed;
     // Reduce by the gcd shared between numerator e^z coefficient, the
     // numerator constant, and the denominator.
-    let g_all = bigint_gcd(
-      bigint_gcd(e_num.abs(), const_num.abs()),
-      z_max.abs(),
-    );
+    let g_all =
+      bigint_gcd(bigint_gcd(e_num.abs(), const_num.abs()), z_max.abs());
     let denom = if g_all != BigInt::from(0) {
       &z_max / &g_all
     } else {

@@ -322,9 +322,7 @@ pub fn dispatch_complex_and_special(
                 if nre < 0.0 {
                   return Some(Ok(Expr::UnaryOp {
                     op: crate::syntax::UnaryOperator::Minus,
-                    operand: Box::new(Expr::Identifier(
-                      "Infinity".to_string(),
-                    )),
+                    operand: Box::new(Expr::Identifier("Infinity".to_string())),
                   }));
                 }
               }
@@ -690,6 +688,21 @@ pub fn dispatch_complex_and_special(
                 expr_to_string(body)
               ));
             }
+          }
+        }
+
+        // 4b. Show SubValues (rules like `f[1][x_] := x` keyed under f).
+        let sub_value_entries =
+          crate::evaluator::assignment::SUB_VALUES.with(|m| {
+            m.borrow().get(sym).cloned()
+          });
+        if let Some(entries) = sub_value_entries {
+          for (lhs, rhs) in &entries {
+            lines.push(format!(
+              "{} := {}",
+              expr_to_string(lhs),
+              expr_to_string(rhs)
+            ));
           }
         }
 
