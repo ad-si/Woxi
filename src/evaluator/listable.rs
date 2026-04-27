@@ -304,9 +304,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // `$SystemCharacterEncoding` uses the IANA form with a dash
     // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
     "$SystemCharacterEncoding" => Some(Expr::String("UTF-8".to_string())),
-    // Fixed list of available print forms, in wolframscript's exact
-    // order — InputForm/OutputForm first, then the specialised ones, then
-    // StandardForm/TraditionalForm last.
+    // List of available print forms, in wolframscript's exact order —
+    // InputForm/OutputForm first, then the specialised ones, then the
+    // current `$BoxForms` last (so user-defined box forms appended to
+    // `$BoxForms` show up in `$PrintForms` too).
     "$PrintForms" => {
       let forms = [
         "InputForm",
@@ -317,15 +318,29 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         "ScriptForm",
         "MathMLForm",
         "TeXForm",
-        "StandardForm",
-        "TraditionalForm",
       ];
-      Some(Expr::List(
-        forms
-          .iter()
-          .map(|s| Expr::Identifier((*s).to_string()))
-          .collect(),
-      ))
+      let mut items: Vec<Expr> = forms
+        .iter()
+        .map(|s| Expr::Identifier((*s).to_string()))
+        .collect();
+      // Look up the (possibly user-modified) `$BoxForms` and append.
+      let box_forms = crate::ENV
+        .with(|e| e.borrow().get("$BoxForms").cloned())
+        .and_then(|sv| match sv {
+          crate::StoredValue::ExprVal(e) => Some(e),
+          crate::StoredValue::Raw(s) => crate::syntax::string_to_expr(&s).ok(),
+          _ => None,
+        })
+        .unwrap_or_else(|| {
+          Expr::List(vec![
+            Expr::Identifier("StandardForm".to_string()),
+            Expr::Identifier("TraditionalForm".to_string()),
+          ])
+        });
+      if let Expr::List(box_items) = &box_forms {
+        items.extend(box_items.iter().cloned());
+      }
+      Some(Expr::List(items))
     }
     // Fixed list of output forms (superset of $PrintForms that adds
     // Short/Shallow/MatrixForm/…). Matches wolframscript's order.
@@ -356,15 +371,30 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         "ScriptForm",
         "MathMLForm",
         "TeXForm",
-        "StandardForm",
-        "TraditionalForm",
       ];
-      Some(Expr::List(
-        forms
-          .iter()
-          .map(|s| Expr::Identifier((*s).to_string()))
-          .collect(),
-      ))
+      let mut items: Vec<Expr> = forms
+        .iter()
+        .map(|s| Expr::Identifier((*s).to_string()))
+        .collect();
+      // Tail of `$OutputForms` is the current `$BoxForms` (default forms +
+      // any user-appended box forms).
+      let box_forms = crate::ENV
+        .with(|e| e.borrow().get("$BoxForms").cloned())
+        .and_then(|sv| match sv {
+          crate::StoredValue::ExprVal(e) => Some(e),
+          crate::StoredValue::Raw(s) => crate::syntax::string_to_expr(&s).ok(),
+          _ => None,
+        })
+        .unwrap_or_else(|| {
+          Expr::List(vec![
+            Expr::Identifier("StandardForm".to_string()),
+            Expr::Identifier("TraditionalForm".to_string()),
+          ])
+        });
+      if let Expr::List(box_items) = &box_forms {
+        items.extend(box_items.iter().cloned());
+      }
+      Some(Expr::List(items))
     }
     // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.
     "$BoxForms" => Some(Expr::List(vec![
