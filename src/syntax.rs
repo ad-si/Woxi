@@ -6278,6 +6278,36 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       let base_str = expr_to_output(left);
       format!("1/Sqrt[{}]", base_str)
     }
+    // StringJoin renders as the function-call form `StringJoin[a, b, ...]`,
+    // never as the infix `<>` operator. Wolfram's parser produces a flat
+    // `StringJoin[a, b, c]`, and held instances stay in that form when
+    // displayed (e.g. `Hold["a"<>"b"<>"c"]` → `Hold[StringJoin[a, b, c]]`).
+    // Handle this before the generic OutputForm→InputForm fallthrough so
+    // that strings inside render without quotes in OutputForm contexts.
+    Expr::BinaryOp {
+      op: BinaryOperator::StringJoin,
+      left,
+      right,
+    } => {
+      fn collect_string_join(e: &Expr, out: &mut Vec<Expr>) {
+        match e {
+          Expr::BinaryOp {
+            op: BinaryOperator::StringJoin,
+            left,
+            right,
+          } => {
+            collect_string_join(left, out);
+            collect_string_join(right, out);
+          }
+          other => out.push(other.clone()),
+        }
+      }
+      let mut parts: Vec<Expr> = Vec::new();
+      collect_string_join(left, &mut parts);
+      collect_string_join(right, &mut parts);
+      let rendered: Vec<String> = parts.iter().map(&fmt).collect();
+      format!("StringJoin[{}]", rendered.join(", "))
+    }
     // All other BinaryOps in OutputForm fall through to InputForm
     Expr::BinaryOp { .. } if is_output => format_expr(expr, ExprForm::Input),
     // InputForm BinaryOp handling
