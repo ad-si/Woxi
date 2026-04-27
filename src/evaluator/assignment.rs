@@ -14,6 +14,13 @@ thread_local! {
   /// builtin defaults. Insertion order is preserved.
   pub static USER_PRINT_FORMS: std::cell::RefCell<Vec<String>> =
     const { std::cell::RefCell::new(Vec::new()) };
+
+  /// Format rules registered via `Format[pat, FORM] := body`, keyed by the
+  /// head symbol of `pat`. Stored as `(form_name, lhs_pattern, rhs_body)`
+  /// triples in source order.
+  pub static FORMAT_VALUES: std::cell::RefCell<
+    std::collections::HashMap<String, Vec<(String, Expr, Expr)>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// If `expr` is a pattern with a head constraint (e.g. `_Q`, `x_Q`, `Blank[Q]`,
@@ -39,6 +46,17 @@ fn pattern_head_tag(expr: &Expr) -> Option<String> {
     {
       pattern_head_tag(&args[1])
     }
+    _ => None,
+  }
+}
+
+/// Return the head symbol of a `Format` LHS pattern so the rule can be keyed
+/// in `FORMAT_VALUES`. For `F[x_]` returns `Some("F")`; for a bare symbol
+/// returns the symbol name. Returns None for unrecognised shapes.
+fn format_pattern_head(pat: &Expr) -> Option<String> {
+  match pat {
+    Expr::Identifier(s) => Some(s.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
     _ => None,
   }
 }
@@ -1098,8 +1116,8 @@ pub fn set_delayed_ast(
   }
 
   // `Format[expr, FORM] := …` (or its UpSet/UpSetDelayed cousins) registers
-  // FORM in `$PrintForms`/`$OutputForms`. We don't yet evaluate the format
-  // rule itself, but tracking the form name is enough for MemberQ checks.
+  // FORM in `$PrintForms`/`$OutputForms` and stores the rule under
+  // `FormatValues[head]` where `head` is the head symbol of `expr`.
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,
@@ -1109,6 +1127,14 @@ pub fn set_delayed_ast(
     && let Expr::Identifier(form_name) = &lhs_args[1]
   {
     register_user_print_form(form_name);
+    if let Some(head) = format_pattern_head(&lhs_args[0]) {
+      FORMAT_VALUES.with(|m| {
+        m.borrow_mut()
+          .entry(head)
+          .or_default()
+          .push((form_name.clone(), lhs_args[0].clone(), body.clone()));
+      });
+    }
     return Ok(Expr::Identifier("Null".to_string()));
   }
 

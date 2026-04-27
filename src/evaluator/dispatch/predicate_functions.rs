@@ -704,8 +704,49 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::List(rules)));
     }
     // Other introspection functions - return {} for symbols without stored definitions
-    "SubValues" | "NValues" | "FormatValues" if args.len() == 1 => {
+    "SubValues" | "NValues" if args.len() == 1 => {
       return Some(Ok(Expr::List(vec![])));
+    }
+    "FormatValues" if args.len() == 1 => {
+      let head = match &args[0] {
+        Expr::Identifier(s) => s.clone(),
+        _ => return Some(Ok(Expr::List(vec![]))),
+      };
+      let rules: Vec<Expr> =
+        crate::evaluator::assignment::FORMAT_VALUES.with(|m| {
+          m.borrow()
+            .get(&head)
+            .map(|entries| {
+              entries
+                .iter()
+                .map(|(form, lhs, rhs)| {
+                  // OutputForm rules use the LHS pattern verbatim;
+                  // box-form rules wrap the LHS in
+                  // `MakeBoxes[lhs, FORM]` (Wolfram's canonical form).
+                  let pattern_inner = if form == "OutputForm" {
+                    lhs.clone()
+                  } else {
+                    Expr::FunctionCall {
+                      name: "MakeBoxes".to_string(),
+                      args: vec![
+                        lhs.clone(),
+                        Expr::Identifier(form.clone()),
+                      ],
+                    }
+                  };
+                  Expr::RuleDelayed {
+                    pattern: Box::new(Expr::FunctionCall {
+                      name: "HoldPattern".to_string(),
+                      args: vec![pattern_inner],
+                    }),
+                    replacement: Box::new(rhs.clone()),
+                  }
+                })
+                .collect()
+            })
+            .unwrap_or_default()
+        });
+      return Some(Ok(Expr::List(rules)));
     }
     // DefaultValues exposes the built-in identity elements used by
     // Optional/OneIdentity pattern matching: Plus → 0, Times → 1, and
