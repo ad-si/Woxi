@@ -664,6 +664,165 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&prod);
   }
 
+  // Closed form for 1F1[positive integer a, positive integer b, integer z]
+  // with 1 ≤ a < b. Uses the integral representation
+  //   1F1[a, b, z] = Γ(b)/(Γ(a)·Γ(b-a))
+  //                  · Σ_{k=0}^{b-a-1} (-1)^k · C(b-a-1, k) · I_{a-1+k}(z)
+  // where I_n(z) = ∫_0^1 t^n · e^(zt) dt = (P_n(z)·e^z + Q_n) / z^(n+1)
+  // with the recurrence P_n = z^n − n·P_{n-1}, P_0 = 1, Q_n = −n·Q_{n-1},
+  // Q_0 = −1. Result is folded into a rational coefficient times E^z plus
+  // a rational constant.
+  if let (Expr::Integer(a_i), Expr::Integer(b_i)) = (&args[0], &args[1])
+    && *a_i >= 1
+    && *b_i > *a_i
+    && let Some(z_int) = expr_to_i128(&args[2])
+    && z_int != 0
+    && *b_i <= 30
+  {
+    use num_bigint::BigInt;
+    let a = *a_i;
+    let b = *b_i;
+    let z = BigInt::from(z_int);
+    fn fact_bi(n: i128) -> BigInt {
+      let mut acc = BigInt::from(1);
+      for i in 2..=n {
+        acc *= i;
+      }
+      acc
+    }
+    fn binom_bi(n: i128, k: i128) -> BigInt {
+      let mut acc = BigInt::from(1);
+      for i in 0..k {
+        acc *= n - i;
+      }
+      acc / fact_bi(k)
+    }
+    // Compute P_n, Q_n for n = a-1..=b-2 using BigInt recurrence.
+    let max_n = (b - 2) as usize;
+    let mut p_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
+    let mut q_vec: Vec<BigInt> = Vec::with_capacity(max_n + 1);
+    let mut z_pow = BigInt::from(1);
+    p_vec.push(BigInt::from(1));
+    q_vec.push(BigInt::from(-1));
+    for n_idx in 1..=max_n {
+      z_pow *= &z;
+      let p_n = &z_pow - BigInt::from(n_idx) * &p_vec[n_idx - 1];
+      let q_n = -BigInt::from(n_idx) * &q_vec[n_idx - 1];
+      p_vec.push(p_n);
+      q_vec.push(q_n);
+    }
+    // Sum Σ_{k=0}^{b-a-1} (-1)^k · C(b-a-1, k) · I_{a-1+k}(z)
+    // where I_n = (P_n·e^z + Q_n)/z^(n+1). Accumulate the e^z-coefficient
+    // numerator, the constant numerator, and a common denominator.
+    // Common denominator = z^(b-1) (largest z^(n+1)).
+    let max_pow = b - 1;
+    let z_max = z.pow(max_pow as u32);
+    let mut e_num = BigInt::from(0);
+    let mut const_num = BigInt::from(0);
+    for k in 0..=(b - a - 1) {
+      let n_idx = (a - 1 + k) as usize;
+      let scale_pow = (max_pow - 1 - n_idx as i128) as u32;
+      let scale = z.pow(scale_pow);
+      let bin = binom_bi(b - a - 1, k);
+      let sign: i128 = if k.rem_euclid(2) == 0 { 1 } else { -1 };
+      let coeff = BigInt::from(sign) * &bin;
+      e_num += &coeff * &scale * &p_vec[n_idx];
+      const_num += &coeff * &scale * &q_vec[n_idx];
+    }
+    // Multiply by Γ(b)/(Γ(a)·Γ(b-a)) = (b-1)!/((a-1)!·(b-a-1)!)
+    let prefactor = fact_bi(b - 1) / (fact_bi(a - 1) * fact_bi(b - a - 1));
+    e_num *= &prefactor;
+    const_num *= &prefactor;
+    // Result = (e_num · E^z + const_num) / z_max  — reduce by gcd.
+    use num_traits::Signed;
+    // Reduce by the gcd shared between numerator e^z coefficient, the
+    // numerator constant, and the denominator.
+    let g_all = bigint_gcd(
+      bigint_gcd(e_num.abs(), const_num.abs()),
+      z_max.abs(),
+    );
+    let denom = if g_all != BigInt::from(0) {
+      &z_max / &g_all
+    } else {
+      z_max.clone()
+    };
+    let mut e_n = if g_all != BigInt::from(0) {
+      e_num / &g_all
+    } else {
+      e_num
+    };
+    let mut c_n = if g_all != BigInt::from(0) {
+      const_num / &g_all
+    } else {
+      const_num
+    };
+    // Wolfram displays `e_n·E^z + c_n` as `(g · (e_n/g · E^z + c_n/g))`
+    // when the numerator has a common factor — pull that factor out so
+    // the inner Plus shows the smallest integer coefficients.
+    let mut outer_factor = BigInt::from(1);
+    let g_num = bigint_gcd(e_n.abs(), c_n.abs());
+    if g_num > BigInt::from(1) {
+      outer_factor = g_num.clone();
+      e_n /= &g_num;
+      c_n /= &g_num;
+    }
+    let exp_part = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), Expr::Integer(z_int)],
+    };
+    let e_term = if e_n == BigInt::from(0) {
+      Expr::Integer(0)
+    } else if e_n == BigInt::from(1) {
+      exp_part
+    } else {
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[bigint_to_expr(e_n), exp_part],
+      )?
+    };
+    let plus = crate::evaluator::evaluate_function_call_ast(
+      "Plus",
+      &[e_term, bigint_to_expr(c_n)],
+    )?;
+    // Result = (outer_factor / denom) · plus
+    let mut factors: Vec<Expr> = Vec::new();
+    if outer_factor != BigInt::from(1) {
+      factors.push(bigint_to_expr(outer_factor));
+    }
+    factors.push(plus);
+    if denom != BigInt::from(1) {
+      let inv_denom = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[bigint_to_expr(denom), Expr::Integer(-1)],
+      )?;
+      factors.push(inv_denom);
+    }
+    return if factors.len() == 1 {
+      Ok(factors.into_iter().next().unwrap())
+    } else {
+      crate::evaluator::evaluate_function_call_ast("Times", &factors)
+    };
+  }
+
+  fn bigint_gcd(
+    a: num_bigint::BigInt,
+    b: num_bigint::BigInt,
+  ) -> num_bigint::BigInt {
+    use num_bigint::BigInt;
+    use num_traits::Zero;
+    let (mut a, mut b) = (a, b);
+    while !b.is_zero() {
+      let r = &a % &b;
+      a = b;
+      b = r;
+    }
+    if a == BigInt::from(0) {
+      BigInt::from(1)
+    } else {
+      a
+    }
+  }
+
   // Closed form for 1F1[positive integer a, 1, z]:
   //   E^z * Σ_{k=0}^{a-1} Binomial[a-1, k] z^k / k!
   // (Kummer's transformation plus the Laguerre identity 1F1[-n, 1, z] = L_n(z)
