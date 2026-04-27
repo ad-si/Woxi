@@ -6633,16 +6633,14 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sum range for t (in units of 2j):
   //   t_min = max(j1+j2+j3, j1+j5+j6, j4+j2+j6, j4+j5+j3)
   //   t_max = min(j1+j2+j4+j5, j1+j3+j4+j6, j2+j3+j5+j6)
-  let two_t_min =
-    [j1 + j2 + j3, j1 + j5 + j6, j4 + j2 + j6, j4 + j5 + j3]
-      .into_iter()
-      .max()
-      .unwrap();
-  let two_t_max =
-    [j1 + j2 + j4 + j5, j1 + j3 + j4 + j6, j2 + j3 + j5 + j6]
-      .into_iter()
-      .min()
-      .unwrap();
+  let two_t_min = [j1 + j2 + j3, j1 + j5 + j6, j4 + j2 + j6, j4 + j5 + j3]
+    .into_iter()
+    .max()
+    .unwrap();
+  let two_t_max = [j1 + j2 + j4 + j5, j1 + j3 + j4 + j6, j2 + j3 + j5 + j6]
+    .into_iter()
+    .min()
+    .unwrap();
 
   // The Racah sum runs over integer t = two_t / 2; since each two_t* is
   // a sum of (potentially half-)integers with consistent parity, both
@@ -6685,20 +6683,65 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     two_t += 2;
   }
 
-  // Result = sqrt(delta_sq_num / delta_sq_den) * sum_num / sum_den
-  //        = sum_num / sum_den * sqrt(delta_sq_num * delta_sq_den) / delta_sq_den
-  // Build:  (sum_num / (sum_den * delta_sq_den)) * Sqrt[delta_sq_num * delta_sq_den]
-  let coeff_num = sum_num;
-  let coeff_den = &sum_den * &delta_sq_den;
-  let radicand_num = delta_sq_num * delta_sq_den;
+  // Result = sqrt(delta_sq_num / delta_sq_den) * (sum_num / sum_den).
+  // Split delta_sq into a perfect-square scalar (pulled outside Sqrt) and
+  // a square-free residue. Done with BigInt arithmetic so it scales past
+  // the u64 trial-division Sqrt fall back to.
+  let (delta_sq_outside_num, delta_sq_inside_num) =
+    extract_perfect_square_bigint(&delta_sq_num);
+  let (delta_sq_outside_den, delta_sq_inside_den) =
+    extract_perfect_square_bigint(&delta_sq_den);
+  // sqrt(delta_sq_num/delta_sq_den) = (out_n/out_d) * Sqrt[in_n/in_d]
+  // result = (sum_num · out_n) / (sum_den · out_d) · Sqrt[in_n/in_d]
+  let coeff_num = sum_num * &delta_sq_outside_num;
+  let coeff_den = &sum_den * &delta_sq_outside_den;
   let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
-  let radicand = bigint_to_expr(radicand_num);
-  // Evaluate Sqrt eagerly so a perfect-square radicand collapses to an
-  // integer before Times is applied — `evaluate_function_call_ast` does
-  // not descend into args, so the Sqrt would otherwise stay symbolic.
+  let radicand_expr = if delta_sq_inside_den == num_bigint::BigInt::from(1) {
+    bigint_to_expr(delta_sq_inside_num)
+  } else {
+    crate::evaluator::evaluate_function_call_ast(
+      "Rational",
+      &[
+        bigint_to_expr(delta_sq_inside_num),
+        bigint_to_expr(delta_sq_inside_den),
+      ],
+    )?
+  };
+  // Evaluate Sqrt eagerly so a perfect-square residue collapses before
+  // Times is applied (`evaluate_function_call_ast` does not descend into
+  // args).
   let sqrt =
-    crate::evaluator::evaluate_function_call_ast("Sqrt", &[radicand])?;
+    crate::evaluator::evaluate_function_call_ast("Sqrt", &[radicand_expr])?;
   crate::evaluator::evaluate_function_call_ast("Times", &[coeff_expr, sqrt])
+}
+
+/// Split `n` (assumed positive) into `(outside, inside)` such that
+/// `n == outside^2 · inside` and `inside` is square-free. Operates on
+/// BigInt directly so it works for arguments far beyond u64 range — the
+/// general `Sqrt` path trial-divides over u64.
+fn extract_perfect_square_bigint(
+  n: &num_bigint::BigInt,
+) -> (num_bigint::BigInt, num_bigint::BigInt) {
+  use num_bigint::BigInt;
+  use num_traits::Zero;
+  if n.is_zero() {
+    return (BigInt::from(1), BigInt::from(0));
+  }
+  let mut outside = BigInt::from(1);
+  let mut inside = n.clone();
+  let mut factor = BigInt::from(2);
+  loop {
+    let fsq = &factor * &factor;
+    if fsq > inside {
+      break;
+    }
+    while (&inside % &fsq).is_zero() {
+      outside *= &factor;
+      inside /= &fsq;
+    }
+    factor += 1;
+  }
+  (outside, inside)
 }
 
 fn bigint_rational_to_expr(
