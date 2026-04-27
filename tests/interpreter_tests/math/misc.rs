@@ -353,13 +353,12 @@ mod wigner_symbols {
     assert_eq!(interpret("SixJSymbol[{1, 2, 3}, {4, 5, 12}]").unwrap(), "0");
   }
 
-  // For the degenerate valid case the symbol is returned unchanged —
-  // we haven't implemented the general Wigner 3-j formula yet.
+  // ThreeJSymbol now evaluates to its closed form via the Racah formula.
   #[test]
-  fn three_j_valid_returns_unchanged() {
+  fn three_j_valid_evaluates() {
     assert_eq!(
       interpret("ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]").unwrap(),
-      "ThreeJSymbol[{2, 0}, {6, 0}, {4, 0}]"
+      "Sqrt[5/143]"
     );
   }
 

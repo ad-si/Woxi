@@ -6550,7 +6550,105 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if (j1 + j2 + j3).rem_euclid(2) != 0 {
     return Ok(Expr::Integer(0));
   }
-  Ok(unchanged())
+  let (m1, m2, m3) = (two_m[0], two_m[1], two_m[2]);
+
+  // Wigner 3j Racah formula:
+  //   (j1 m1, j2 m2, j3 m3) = (-1)^(j1-j2-m3)
+  //     · Sqrt[Δ²(j1,j2,j3) · Π_i (j_i+m_i)!·(j_i-m_i)!]
+  //     · Σ_t (-1)^t / [t!·(j1+j2-j3-t)!·(j1-m1-t)!·(j2+m2-t)!
+  //                      · (j3-j2+m1+t)!·(j3-j1-m2+t)!]
+  // Everything below is computed in integer 2j/2m units; halve the
+  // sums/differences before plugging into factorial.
+  use num_bigint::BigInt;
+  fn fact(n: i128) -> BigInt {
+    let mut acc = BigInt::from(1);
+    for i in 2..=n {
+      acc *= i;
+    }
+    acc
+  }
+  // Δ²(j1, j2, j3): same form as the 6j helper (uses 2j units).
+  let n1 = (j1 + j2 - j3) / 2;
+  let n2 = (j1 - j2 + j3) / 2;
+  let n3 = (-j1 + j2 + j3) / 2;
+  let nd = (j1 + j2 + j3) / 2 + 1;
+  let mut radicand_num = fact(n1) * fact(n2) * fact(n3);
+  let radicand_den = fact(nd);
+  // Π_i (j_i + m_i)!·(j_i - m_i)! using 2j/2m units (every sum/difference
+  // is even because (2j_i, 2m_i) share parity).
+  for i in 0..3 {
+    let p = (two_j[i] + two_m[i]) / 2;
+    let m = (two_j[i] - two_m[i]) / 2;
+    radicand_num *= fact(p);
+    radicand_num *= fact(m);
+  }
+
+  // Σ_t. t ranges over integers because every (j ± m), (j1+j2-j3) etc.
+  // is an integer here.
+  let t_min = [0, (j2 - j3 - m1) / 2, (j1 + m2 - j3) / 2]
+    .into_iter()
+    .max()
+    .unwrap();
+  let t_max = [(j1 + j2 - j3) / 2, (j1 - m1) / 2, (j2 + m2) / 2]
+    .into_iter()
+    .min()
+    .unwrap();
+  let mut sum_num = BigInt::from(0);
+  let mut sum_den = BigInt::from(1);
+  let mut t = t_min;
+  while t <= t_max {
+    let denoms = [
+      t,
+      (j1 + j2 - j3) / 2 - t,
+      (j1 - m1) / 2 - t,
+      (j2 + m2) / 2 - t,
+      (j3 - j2 + m1) / 2 + t,
+      (j3 - j1 - m2) / 2 + t,
+    ];
+    if denoms.iter().any(|d| *d < 0) {
+      t += 1;
+      continue;
+    }
+    let mut term_den = BigInt::from(1);
+    for d in denoms {
+      term_den *= fact(d);
+    }
+    let term_num = BigInt::from(1);
+    let sign = if t.rem_euclid(2) == 0 { 1 } else { -1 };
+    let new_num =
+      &sum_num * &term_den + BigInt::from(sign) * &term_num * &sum_den;
+    let new_den = &sum_den * &term_den;
+    sum_num = new_num;
+    sum_den = new_den;
+    t += 1;
+  }
+
+  // Sign factor: (-1)^(j1 - j2 - m3). Compute in 2j/2m units; the
+  // exponent is an integer because the parity check ensures
+  // 2(j1 - j2 - m3) is even.
+  let outer_sign_exp = (j1 - j2 - m3) / 2;
+  let outer_sign: i128 = if outer_sign_exp.rem_euclid(2) == 0 { 1 } else { -1 };
+  // Combine the outer sign with the sum's coefficient.
+  sum_num *= outer_sign;
+
+  // Split radicand into a perfect-square scalar (pulled outside) and the
+  // remaining square-free residue (kept under Sqrt).
+  let (out_n, in_n) = extract_perfect_square_bigint(&radicand_num);
+  let (out_d, in_d) = extract_perfect_square_bigint(&radicand_den);
+  let coeff_num = sum_num * &out_n;
+  let coeff_den = &sum_den * &out_d;
+  let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
+  let radicand_expr = if in_d == BigInt::from(1) {
+    bigint_to_expr(in_n)
+  } else {
+    crate::evaluator::evaluate_function_call_ast(
+      "Rational",
+      &[bigint_to_expr(in_n), bigint_to_expr(in_d)],
+    )?
+  };
+  let sqrt =
+    crate::evaluator::evaluate_function_call_ast("Sqrt", &[radicand_expr])?;
+  crate::evaluator::evaluate_function_call_ast("Times", &[coeff_expr, sqrt])
 }
 
 /// SixJSymbol[{j1, j2, j3}, {j4, j5, j6}] via the Racah closed form:
