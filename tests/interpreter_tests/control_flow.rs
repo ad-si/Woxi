@@ -1397,8 +1397,12 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3]").unwrap();
     assert_eq!(result.result, "6");
-    // HoldForm wrapper is not shown in Print output (OutputForm)
-    assert_eq!(result.stdout.trim(), "1 + 2 + 3\nPlus\n1\n2\n3\n6");
+    // TraceScan wraps each step in HoldForm; the wrapper is preserved on
+    // Print, matching `wolframscript -code 'TraceScan[Print, 1 + 2 + 3]'`.
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[1 + 2 + 3]\nHoldForm[Plus]\nHoldForm[1]\nHoldForm[2]\nHoldForm[3]\nHoldForm[6]"
+    );
   }
 
   #[test]
@@ -1409,7 +1413,7 @@ mod trace_scan {
     assert_eq!(result.result, "13");
     assert_eq!(
       result.stdout.trim(),
-      "2^3 + 5\nPlus\n2^3\nPower\n2\n3\n8\n5\n8 + 5\n13"
+      "HoldForm[2^3 + 5]\nHoldForm[Plus]\nHoldForm[2^3]\nHoldForm[Power]\nHoldForm[2]\nHoldForm[3]\nHoldForm[8]\nHoldForm[5]\nHoldForm[8 + 5]\nHoldForm[13]"
     );
   }
 
@@ -1418,7 +1422,7 @@ mod trace_scan {
     clear_state();
     let result = woxi::interpret_with_stdout("TraceScan[Print, 3]").unwrap();
     assert_eq!(result.result, "3");
-    assert_eq!(result.stdout.trim(), "3");
+    assert_eq!(result.stdout.trim(), "HoldForm[3]");
   }
 
   #[test]
@@ -1427,7 +1431,10 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, f[1, 2]]").unwrap();
     assert_eq!(result.result, "f[1, 2]");
-    assert_eq!(result.stdout.trim(), "f[1, 2]\nf\n1\n2");
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[f[1, 2]]\nHoldForm[f]\nHoldForm[1]\nHoldForm[2]"
+    );
   }
 
   #[test]
@@ -1436,7 +1443,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3, Plus]").unwrap();
     assert_eq!(result.result, "6");
-    assert_eq!(result.stdout.trim(), "Plus\n6");
+    assert_eq!(result.stdout.trim(), "HoldForm[Plus]\nHoldForm[6]");
   }
 
   #[test]
@@ -1445,7 +1452,10 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, Plus]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "Plus\n8 + 5\n13");
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[Plus]\nHoldForm[8 + 5]\nHoldForm[13]"
+    );
   }
 
   #[test]
@@ -1455,7 +1465,7 @@ mod trace_scan {
       woxi::interpret_with_stdout("TraceScan[Print, 1 + 2 + 3, _Plus]")
         .unwrap();
     assert_eq!(result.result, "6");
-    assert_eq!(result.stdout.trim(), "1 + 2 + 3");
+    assert_eq!(result.stdout.trim(), "HoldForm[1 + 2 + 3]");
   }
 
   #[test]
@@ -1464,7 +1474,10 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Plus]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "2^3 + 5\n8 + 5");
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[2^3 + 5]\nHoldForm[8 + 5]"
+    );
   }
 
   #[test]
@@ -1473,7 +1486,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, Power]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "Power\n8");
+    assert_eq!(result.stdout.trim(), "HoldForm[Power]\nHoldForm[8]");
   }
 
   #[test]
@@ -1482,7 +1495,7 @@ mod trace_scan {
     let result =
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Power]").unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "2^3");
+    assert_eq!(result.stdout.trim(), "HoldForm[2^3]");
   }
 
   #[test]
@@ -1492,7 +1505,10 @@ mod trace_scan {
       woxi::interpret_with_stdout("TraceScan[Print, 2^3 + 5, _Integer]")
         .unwrap();
     assert_eq!(result.result, "13");
-    assert_eq!(result.stdout.trim(), "2\n3\n8\n5\n13");
+    assert_eq!(
+      result.stdout.trim(),
+      "HoldForm[2]\nHoldForm[3]\nHoldForm[8]\nHoldForm[5]\nHoldForm[13]"
+    );
   }
 
   #[test]

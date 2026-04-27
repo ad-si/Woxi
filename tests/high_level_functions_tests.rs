@@ -2180,13 +2180,21 @@ mod high_level_functions_tests {
 
     #[test]
     fn trace_of_simple_arithmetic() {
-      // Trace wraps each step in HoldForm; OutputForm renders it transparently.
-      assert_eq!(interpret("Trace[1 + 2]").unwrap(), "{1 + 2, 3}");
+      // Trace wraps each step in HoldForm and the wrapper is preserved on
+      // print, matching `wolframscript -code 'Trace[1 + 2]'` →
+      // `{HoldForm[1 + 2], HoldForm[3]}`.
+      assert_eq!(
+        interpret("Trace[1 + 2]").unwrap(),
+        "{HoldForm[1 + 2], HoldForm[3]}"
+      );
     }
 
     #[test]
     fn trace_of_times() {
-      assert_eq!(interpret("Trace[3 * 4]").unwrap(), "{3*4, 12}");
+      assert_eq!(
+        interpret("Trace[3 * 4]").unwrap(),
+        "{HoldForm[3*4], HoldForm[12]}"
+      );
     }
 
     #[test]

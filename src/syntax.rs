@@ -5508,9 +5508,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         let count = (-*n) as usize;
         return "%".repeat(count);
       }
-      // OutputForm-only: HoldForm[expr] and Defer[expr] display without wrapper
-      if is_output && (name == "HoldForm" || name == "Defer") && args.len() == 1
-      {
+      // OutputForm-only: Defer[expr] displays without wrapper. HoldForm is
+      // *not* stripped — wolframscript prints `Hold[HoldForm[1+2]]` as
+      // `Hold[HoldForm[1 + 2]]` and `Trace[1+2]` as
+      // `{HoldForm[1 + 2], HoldForm[3]}`.
+      if is_output && name == "Defer" && args.len() == 1 {
         return fmt(&args[0]);
       }
       // StringForm at top level renders as the literal `StringForm[…, args]`
