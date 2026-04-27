@@ -6553,11 +6553,14 @@ pub fn three_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unchanged())
 }
 
-/// SixJSymbol[{j1, j2, j3}, {j4, j5, j6}]
-///
-/// Currently implements only the degenerate cases that evaluate to 0:
-/// any of the four triangle inequalities fail. For valid cases the call is
-/// returned unchanged.
+/// SixJSymbol[{j1, j2, j3}, {j4, j5, j6}] via the Racah closed form:
+///   6j = Δ(j1,j2,j3) Δ(j4,j5,j3) Δ(j4,j2,j6) Δ(j1,j5,j6) · Σ_t f(t)
+/// where Δ(a,b,c) = √[(a+b-c)!(a-b+c)!(-a+b+c)!/(a+b+c+1)!] and the sum
+/// over t covers the values for which every factorial argument is
+/// non-negative. We accumulate the rational result symbolically as
+/// `(rational coefficient) * Sqrt[rational under-radical]` and let the
+/// evaluator combine these — for the all-integer triangle case this
+/// collapses cleanly to a plain Rational.
 pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -6586,7 +6589,6 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       two_j[group * 3 + k] = v;
     }
   }
-  // Four triangle conditions: (j1,j2,j3), (j1,j5,j6), (j4,j2,j6), (j4,j5,j3)
   let [j1, j2, j3, j4, j5, j6] = two_j;
   let triangles = [(j1, j2, j3), (j1, j5, j6), (j4, j2, j6), (j4, j5, j3)];
   for (a, b, c) in triangles {
@@ -6594,7 +6596,132 @@ pub fn six_j_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
   }
-  Ok(unchanged())
+
+  // Compute Δ²(a, b, c) = (a+b-c)!(a-b+c)!(-a+b+c)!/(a+b+c+1)! using
+  // half-integer arithmetic — every triangle has an even sum so each of
+  // (a±b±c)/2 is an integer.
+  fn fact(n: i128) -> num_bigint::BigInt {
+    let mut acc = num_bigint::BigInt::from(1);
+    for i in 2..=n {
+      acc *= i;
+    }
+    acc
+  }
+  fn delta_sq_num_den(
+    a: i128,
+    b: i128,
+    c: i128,
+  ) -> (num_bigint::BigInt, num_bigint::BigInt) {
+    // Each triangle satisfies a+b+c even, so the half-integer factorials
+    // collapse to integer factorials.
+    let n1 = (a + b - c) / 2;
+    let n2 = (a - b + c) / 2;
+    let n3 = (-a + b + c) / 2;
+    let nd = (a + b + c) / 2 + 1;
+    (fact(n1) * fact(n2) * fact(n3), fact(nd))
+  }
+  use num_bigint::BigInt;
+  // Δ_total² = Π Δ²(triangle_i). Accumulate as (num, den).
+  let mut delta_sq_num = BigInt::from(1);
+  let mut delta_sq_den = BigInt::from(1);
+  for (a, b, c) in triangles {
+    let (n, d) = delta_sq_num_den(a, b, c);
+    delta_sq_num *= n;
+    delta_sq_den *= d;
+  }
+
+  // Sum range for t (in units of 2j):
+  //   t_min = max(j1+j2+j3, j1+j5+j6, j4+j2+j6, j4+j5+j3)
+  //   t_max = min(j1+j2+j4+j5, j1+j3+j4+j6, j2+j3+j5+j6)
+  let two_t_min =
+    [j1 + j2 + j3, j1 + j5 + j6, j4 + j2 + j6, j4 + j5 + j3]
+      .into_iter()
+      .max()
+      .unwrap();
+  let two_t_max =
+    [j1 + j2 + j4 + j5, j1 + j3 + j4 + j6, j2 + j3 + j5 + j6]
+      .into_iter()
+      .min()
+      .unwrap();
+
+  // The Racah sum runs over integer t = two_t / 2; since each two_t* is
+  // a sum of (potentially half-)integers with consistent parity, both
+  // bounds share that parity, so step by 2 in two-units.
+  let mut sum_num = BigInt::from(0);
+  let mut sum_den = BigInt::from(1);
+  let mut two_t = two_t_min;
+  while two_t <= two_t_max {
+    if two_t.rem_euclid(2) != 0 {
+      // Half-integer t — Racah's sum is over integer t; if either bound
+      // is half-integer we'd be in a different branch. Skip just in case.
+      two_t += 2;
+      continue;
+    }
+    let t = two_t / 2;
+    let term_num = fact(t + 1);
+    // Denominators (each non-negative by construction).
+    let denoms = [
+      (two_t - (j1 + j2 + j3)) / 2,
+      (two_t - (j1 + j5 + j6)) / 2,
+      (two_t - (j4 + j2 + j6)) / 2,
+      (two_t - (j4 + j5 + j3)) / 2,
+      ((j1 + j2 + j4 + j5) - two_t) / 2,
+      ((j1 + j3 + j4 + j6) - two_t) / 2,
+      ((j2 + j3 + j5 + j6) - two_t) / 2,
+    ];
+    let mut term_den = BigInt::from(1);
+    for d in denoms {
+      term_den *= fact(d);
+    }
+    let sign = if t.rem_euclid(2) == 0 { 1 } else { -1 };
+    // sum += sign * term_num / term_den
+    //      = (sign * term_num * sum_den + sum_num * term_den)
+    //        / (sum_den * term_den)
+    let new_num =
+      &sum_num * &term_den + BigInt::from(sign) * &term_num * &sum_den;
+    let new_den = &sum_den * &term_den;
+    sum_num = new_num;
+    sum_den = new_den;
+    two_t += 2;
+  }
+
+  // Result = sqrt(delta_sq_num / delta_sq_den) * sum_num / sum_den
+  //        = sum_num / sum_den * sqrt(delta_sq_num * delta_sq_den) / delta_sq_den
+  // Build:  (sum_num / (sum_den * delta_sq_den)) * Sqrt[delta_sq_num * delta_sq_den]
+  let coeff_num = sum_num;
+  let coeff_den = &sum_den * &delta_sq_den;
+  let radicand_num = delta_sq_num * delta_sq_den;
+  let coeff_expr = bigint_rational_to_expr(coeff_num, coeff_den);
+  let radicand = bigint_to_expr(radicand_num);
+  // Evaluate Sqrt eagerly so a perfect-square radicand collapses to an
+  // integer before Times is applied — `evaluate_function_call_ast` does
+  // not descend into args, so the Sqrt would otherwise stay symbolic.
+  let sqrt =
+    crate::evaluator::evaluate_function_call_ast("Sqrt", &[radicand])?;
+  crate::evaluator::evaluate_function_call_ast("Times", &[coeff_expr, sqrt])
+}
+
+fn bigint_rational_to_expr(
+  num: num_bigint::BigInt,
+  den: num_bigint::BigInt,
+) -> Expr {
+  use num_traits::Zero;
+  if den.is_zero() {
+    return Expr::Identifier("ComplexInfinity".to_string());
+  }
+  let g = bigint_gcd(num.clone().abs(), den.clone().abs());
+  let (mut n, mut d) = (num / &g, den / &g);
+  if d < num_bigint::BigInt::from(0) {
+    n = -n;
+    d = -d;
+  }
+  if d == num_bigint::BigInt::from(1) {
+    return bigint_to_expr(n);
+  }
+  Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![bigint_to_expr(n), bigint_to_expr(d)],
+  }
 }
 
 /// Like `two_half_int` but preserves sign — used for the m projections in
