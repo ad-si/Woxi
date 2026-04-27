@@ -704,8 +704,33 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::List(rules)));
     }
     // Other introspection functions - return {} for symbols without stored definitions
-    "SubValues" | "NValues" if args.len() == 1 => {
+    "NValues" if args.len() == 1 => {
       return Some(Ok(Expr::List(vec![])));
+    }
+    "SubValues" if args.len() == 1 => {
+      let head = match &args[0] {
+        Expr::Identifier(s) => s.clone(),
+        _ => return Some(Ok(Expr::List(vec![]))),
+      };
+      let rules: Vec<Expr> =
+        crate::evaluator::assignment::SUB_VALUES.with(|m| {
+          m.borrow()
+            .get(&head)
+            .map(|entries| {
+              entries
+                .iter()
+                .map(|(lhs, rhs)| Expr::RuleDelayed {
+                  pattern: Box::new(Expr::FunctionCall {
+                    name: "HoldPattern".to_string(),
+                    args: vec![lhs.clone()],
+                  }),
+                  replacement: Box::new(rhs.clone()),
+                })
+                .collect()
+            })
+            .unwrap_or_default()
+        });
+      return Some(Ok(Expr::List(rules)));
     }
     "FormatValues" if args.len() == 1 => {
       let head = match &args[0] {
@@ -728,10 +753,7 @@ pub fn dispatch_predicate_functions(
                   } else {
                     Expr::FunctionCall {
                       name: "MakeBoxes".to_string(),
-                      args: vec![
-                        lhs.clone(),
-                        Expr::Identifier(form.clone()),
-                      ],
+                      args: vec![lhs.clone(), Expr::Identifier(form.clone())],
                     }
                   };
                   Expr::RuleDelayed {

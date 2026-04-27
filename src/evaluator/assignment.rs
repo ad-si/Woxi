@@ -21,6 +21,13 @@ thread_local! {
   pub static FORMAT_VALUES: std::cell::RefCell<
     std::collections::HashMap<String, Vec<(String, Expr, Expr)>>,
   > = std::cell::RefCell::new(std::collections::HashMap::new());
+
+  /// SubValue rules registered via `f[a][b] := …` (and deeper curried
+  /// forms), keyed by the outermost head symbol `f`. Stored as
+  /// `(lhs_curried_call, rhs_body)` pairs in source order.
+  pub static SUB_VALUES: std::cell::RefCell<
+    std::collections::HashMap<String, Vec<(Expr, Expr)>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// If `expr` is a pattern with a head constraint (e.g. `_Q`, `x_Q`, `Blank[Q]`,
@@ -1129,10 +1136,11 @@ pub fn set_delayed_ast(
     register_user_print_form(form_name);
     if let Some(head) = format_pattern_head(&lhs_args[0]) {
       FORMAT_VALUES.with(|m| {
-        m.borrow_mut()
-          .entry(head)
-          .or_default()
-          .push((form_name.clone(), lhs_args[0].clone(), body.clone()));
+        m.borrow_mut().entry(head).or_default().push((
+          form_name.clone(),
+          lhs_args[0].clone(),
+          body.clone(),
+        ));
       });
     }
     return Ok(Expr::Identifier("Null".to_string()));
@@ -1539,19 +1547,26 @@ pub fn set_delayed_ast(
 
   // SubValue form: f[a][b] := rhs (also deeper nestings like f[a][b][c])
   // Mathematica stores these under SubValues[f] and they fire when exactly
-  // f[a][b] is evaluated. Woxi doesn't fully implement SubValues yet, but
-  // at minimum return Null so the assignment looks like a no-op rather than
-  // echoing the unevaluated form, matching wolframscript's surface behaviour.
+  // f[a][b] is evaluated. Record the rule keyed by the outermost head so
+  // `SubValues[f]` can return them. Dispatch (`f[1][5]` → `5`) is not yet
+  // wired up here.
   if let Expr::CurriedCall { func, .. } = lhs {
     let mut inner = func.as_ref();
-    loop {
+    let outer_head = loop {
       match inner {
         Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
-        Expr::FunctionCall { .. } => {
-          return Ok(Expr::Identifier("Null".to_string()));
-        }
-        _ => break,
+        Expr::FunctionCall { name, .. } => break Some(name.clone()),
+        _ => break None,
       }
+    };
+    if let Some(head) = outer_head {
+      SUB_VALUES.with(|m| {
+        m.borrow_mut()
+          .entry(head)
+          .or_default()
+          .push((lhs.clone(), body.clone()));
+      });
+      return Ok(Expr::Identifier("Null".to_string()));
     }
   }
 
