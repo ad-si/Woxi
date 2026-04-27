@@ -673,7 +673,7 @@ fn csin(z: (f64, f64)) -> (f64, f64) {
 }
 
 /// Complex Gamma function using the Lanczos approximation.
-fn gamma_complex(re: f64, im: f64) -> (f64, f64) {
+pub fn gamma_complex(re: f64, im: f64) -> (f64, f64) {
   // Reflection for Re(z) < 0.5
   if re < 0.5 {
     // Gamma(z) = pi / (sin(pi*z) * Gamma(1-z))

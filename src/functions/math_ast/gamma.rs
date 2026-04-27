@@ -333,10 +333,43 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec(),
       })
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Gamma".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {
+      // Complex floating-point argument: use the Lanczos approximation.
+      // Only triggers when the argument has a non-zero imaginary part AND
+      // some component is a Real (not exact rationals/integers — those are
+      // handled symbolically above).
+      if let Some((re, im)) =
+        crate::functions::math_ast::try_extract_complex_float(&args[0])
+        && im != 0.0
+        && contains_inexact_real(&args[0])
+      {
+        let (gr, gi) =
+          crate::functions::math_ast::zeta_functions::gamma_complex(re, im);
+        return Ok(crate::functions::math_ast::build_complex_float_expr(
+          gr, gi,
+        ));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Returns true if the expression contains a Real (machine-precision)
+/// number anywhere in the tree. Used to distinguish exact symbolic
+/// arguments (which Gamma should not evaluate numerically) from inexact
+/// ones (which should be evaluated to floats).
+fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
+    _ => false,
   }
 }
 
