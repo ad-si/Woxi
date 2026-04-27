@@ -526,9 +526,40 @@ fn n_eval_arbitrary_partial(
 
   match expr {
     Expr::FunctionCall { name, args } => {
+      // Honour NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
+      // doesn't recurse into Out's slot and rewrite the index as a
+      // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
+      let attrs: Vec<String> = {
+        let builtin: Vec<String> =
+          crate::evaluator::get_builtin_attributes(name)
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let user = crate::FUNC_ATTRS
+          .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
+        let mut combined = builtin;
+        for a in user {
+          if !combined.contains(&a) {
+            combined.push(a);
+          }
+        }
+        combined
+      };
+      let hold_all = attrs.iter().any(|a| a == "NHoldAll");
+      let hold_first = attrs.iter().any(|a| a == "NHoldFirst");
+      let hold_rest = attrs.iter().any(|a| a == "NHoldRest");
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
-        .map(|a| n_eval_arbitrary_partial(a, precision, bits, rm, cc))
+        .enumerate()
+        .map(|(i, a)| {
+          let held =
+            hold_all || (hold_first && i == 0) || (hold_rest && i > 0);
+          if held {
+            Ok(a.clone())
+          } else {
+            n_eval_arbitrary_partial(a, precision, bits, rm, cc)
+          }
+        })
         .collect();
       let new_expr = Expr::FunctionCall {
         name: name.clone(),
