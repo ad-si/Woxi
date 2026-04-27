@@ -712,6 +712,60 @@ pub fn gamma_complex(re: f64, im: f64) -> (f64, f64) {
   (sqrt_2pi * r.0, sqrt_2pi * r.1)
 }
 
+/// Complex LogGamma function, matching Wolfram's analytic-continuation
+/// branch (continuous away from 0 and the negative real axis; in
+/// particular `LogGamma[z] − Log[Gamma[z]]` is a multiple of 2πi for z
+/// off the real axis).
+///
+/// Strategy: forward-shift z by enough to make Re(z+n) large, then apply
+/// the complex Stirling series. The recurrence
+/// `LogGamma(z) = LogGamma(z+1) − Log(z)` (with principal-branch Log)
+/// gives the correct continuation.
+pub fn log_gamma_complex(re: f64, im: f64) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let log_2pi = (2.0 * PI).ln();
+  // Forward-shift to |z| ≳ 11 for Stirling accuracy. Skipping the shift
+  // when already large preserves precision for inputs like 12+3I.
+  let mut z = (re, im);
+  let mut acc_log = (0.0_f64, 0.0_f64);
+  while z.0 * z.0 + z.1 * z.1 < 121.0 || z.0 < 11.0 {
+    let lz = cln(z);
+    acc_log = (acc_log.0 + lz.0, acc_log.1 + lz.1);
+    z = (z.0 + 1.0, z.1);
+  }
+  // Stirling: (z - 1/2)*log(z) - z + log(2π)/2 + corrections
+  let lz = cln(z);
+  let z_half = (z.0 - 0.5, z.1);
+  let main = cmul(z_half, lz);
+  let mut result = (main.0 - z.0 + 0.5 * log_2pi, main.1 - z.1);
+  // Correction series in inverse powers of z
+  let inv_z = cdiv((1.0, 0.0), z);
+  let inv_z2 = cmul(inv_z, inv_z);
+  let mut term = inv_z;
+  // 1/(12 z)
+  result = (result.0 + term.0 / 12.0, result.1 + term.1 / 12.0);
+  term = cmul(term, inv_z2);
+  // -1/(360 z^3)
+  result = (result.0 - term.0 / 360.0, result.1 - term.1 / 360.0);
+  term = cmul(term, inv_z2);
+  // 1/(1260 z^5)
+  result = (result.0 + term.0 / 1260.0, result.1 + term.1 / 1260.0);
+  term = cmul(term, inv_z2);
+  // -1/(1680 z^7)
+  result = (result.0 - term.0 / 1680.0, result.1 - term.1 / 1680.0);
+  term = cmul(term, inv_z2);
+  // 1/(1188 z^9)
+  result = (result.0 + term.0 / 1188.0, result.1 + term.1 / 1188.0);
+  term = cmul(term, inv_z2);
+  // -691/(360360 z^11)
+  result = (
+    result.0 - 691.0 * term.0 / 360360.0,
+    result.1 - 691.0 * term.1 / 360360.0,
+  );
+  // Undo the recurrence shift: subtract sum of logs we accumulated.
+  (result.0 - acc_log.0, result.1 - acc_log.1)
+}
+
 /// Compute Zeta(s) numerically for complex s using Euler-Maclaurin formula
 /// with functional equation for Re(s) < 0.5.
 pub fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {

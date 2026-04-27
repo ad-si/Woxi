@@ -832,8 +832,7 @@ fn log_gamma_stirling(z: f64) -> f64 {
   let z3 = z2 * z;
   let z5 = z3 * z2;
   let z7 = z5 * z2;
-  (z - 0.5) * z.ln() - z + 0.5 * log_2pi + 1.0 / (12.0 * z)
-    - 1.0 / (360.0 * z3)
+  (z - 0.5) * z.ln() - z + 0.5 * log_2pi + 1.0 / (12.0 * z) - 1.0 / (360.0 * z3)
     + 1.0 / (1260.0 * z5)
     - 1.0 / (1680.0 * z7)
 }
@@ -905,6 +904,20 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       return Ok(Expr::Real(result));
     }
+  }
+
+  // Complex (inexact) numeric path: route to complex LogGamma using
+  // forward-shift + Stirling series. Wolfram's LogGamma is the analytic
+  // continuation, which can differ from Log[Gamma[z]] by a 2πi multiple
+  // for z to the left of the imaginary axis.
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(z)
+    && im != 0.0
+    && contains_inexact_real(z)
+  {
+    let (lr, li) =
+      crate::functions::math_ast::zeta_functions::log_gamma_complex(re, im);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(lr, li));
   }
 
   // Return unevaluated for symbolic case
