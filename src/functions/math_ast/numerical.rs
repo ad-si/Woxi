@@ -1980,8 +1980,13 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // MachinePrecision ≈ 15.9546
       let machine_precision = 15.954589770191003_f64;
       if *f == 0.0 {
-        // Accuracy[0.] is very large (represents machine epsilon)
-        return Ok(Expr::Real(machine_precision + (2.0_f64).powi(52).log10()));
+        // Accuracy[0.] is the negative log of the smallest distinguishable
+        // machine number, i.e. MachinePrecision - Log10[$MinMachineNumber].
+        // Wolfram uses 2^-1022 (smallest normalised double) here.
+        let min_machine_number = f64::MIN_POSITIVE;
+        return Ok(Expr::Real(
+          machine_precision - min_machine_number.log10(),
+        ));
       }
       let accuracy = machine_precision - f.abs().log10();
       Ok(Expr::Real(accuracy))
