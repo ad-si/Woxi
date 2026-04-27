@@ -1151,39 +1151,46 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         };
         let expr_to_eval: &syntax::Expr =
           rewritten_expr.as_ref().unwrap_or(expr);
-        let mut result_expr = match evaluator::evaluate_expr_to_expr(
-          expr_to_eval,
-        ) {
-          Err(InterpreterError::ReturnValue(val)) => *val,
-          Err(InterpreterError::Abort) => {
-            return Ok("$Aborted".to_string());
-          }
-          Err(InterpreterError::GotoSignal(tag)) => {
-            // Search for matching Label in the top-level expression list
-            if let Some(label_idx) =
-              evaluator::find_label_index(&expr_asts, &tag)
-            {
-              // Find the stmt index corresponding to this expr_ast index
-              let mut expr_count = 0;
-              for (si, s) in stmts.iter().enumerate() {
-                if matches!(s, ProgramStmt::Expr(_)) {
-                  if expr_count == label_idx {
-                    stmt_idx = si + 1; // resume after the Label
-                    continue 'goto_loop;
+        // Track Return propagation so multi-statement programs short-
+        // circuit at the first Return — wolframscript treats top-level
+        // `;`-separated statements as a CompoundExpression, where Return
+        // bubbles past the remaining steps.
+        let mut return_short_circuit = false;
+        let mut result_expr =
+          match evaluator::evaluate_expr_to_expr(expr_to_eval) {
+            Err(InterpreterError::ReturnValue(val)) => {
+              return_short_circuit = true;
+              *val
+            }
+            Err(InterpreterError::Abort) => {
+              return Ok("$Aborted".to_string());
+            }
+            Err(InterpreterError::GotoSignal(tag)) => {
+              // Search for matching Label in the top-level expression list
+              if let Some(label_idx) =
+                evaluator::find_label_index(&expr_asts, &tag)
+              {
+                // Find the stmt index corresponding to this expr_ast index
+                let mut expr_count = 0;
+                for (si, s) in stmts.iter().enumerate() {
+                  if matches!(s, ProgramStmt::Expr(_)) {
+                    if expr_count == label_idx {
+                      stmt_idx = si + 1; // resume after the Label
+                      continue 'goto_loop;
+                    }
+                    expr_count += 1;
                   }
-                  expr_count += 1;
                 }
               }
+              let tag_str = syntax::expr_to_string(&tag);
+              emit_message(&format!(
+                "Goto::nolabel: Label {} not found.",
+                tag_str
+              ));
+              syntax::Expr::Identifier("Null".to_string())
             }
-            let tag_str = syntax::expr_to_string(&tag);
-            emit_message(&format!(
-              "Goto::nolabel: Label {} not found.",
-              tag_str
-            ));
-            syntax::Expr::Identifier("Null".to_string())
-          }
-          other => other?,
-        };
+            other => other?,
+          };
         // Multi-statement input behaves like CompoundExpression: a
         // trailing `Sequence[…]` splices, so we keep just its last
         // element. A lone `Sequence[1, 2]` (single-statement program)
@@ -1194,13 +1201,16 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           .count()
           > 1;
         if multi_statement
-          && let syntax::Expr::FunctionCall { name: n, args: seq_args } =
-            &result_expr
+          && let syntax::Expr::FunctionCall {
+            name: n,
+            args: seq_args,
+          } = &result_expr
           && n == "Sequence"
         {
-          result_expr = seq_args.last().cloned().unwrap_or_else(|| {
-            syntax::Expr::Identifier("Null".to_string())
-          });
+          result_expr = seq_args
+            .last()
+            .cloned()
+            .unwrap_or_else(|| syntax::Expr::Identifier("Null".to_string()));
         }
         // If the result is an Image, render it as a PNG <img> tag
         let result_expr = render_image_if_needed(result_expr);
