@@ -122,6 +122,53 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&result)
 }
 
+/// Largest slot index `n` referenced by `#n`/`##n` in `expr`. Returns 0 when
+/// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
+pub fn max_slot_index(expr: &Expr) -> usize {
+  fn walk(e: &Expr, max: &mut usize) {
+    match e {
+      Expr::Slot(n) | Expr::SlotSequence(n) => {
+        if *n > *max {
+          *max = *n;
+        }
+      }
+      Expr::List(items) => items.iter().for_each(|i| walk(i, max)),
+      Expr::FunctionCall { args, .. } => args.iter().for_each(|i| walk(i, max)),
+      Expr::BinaryOp { left, right, .. } => {
+        walk(left, max);
+        walk(right, max);
+      }
+      Expr::UnaryOp { operand, .. } => walk(operand, max),
+      Expr::Function { body } => walk(body, max),
+      Expr::NamedFunction { body, .. } => walk(body, max),
+      Expr::CurriedCall { func, args } => {
+        walk(func, max);
+        args.iter().for_each(|i| walk(i, max));
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        walk(pattern, max);
+        walk(replacement, max);
+      }
+      Expr::Association(items) => items.iter().for_each(|(k, v)| {
+        walk(k, max);
+        walk(v, max);
+      }),
+      Expr::CompoundExpr(items) => items.iter().for_each(|i| walk(i, max)),
+      _ => {}
+    }
+  }
+  let mut m = 0;
+  walk(expr, &mut m);
+  m
+}
+
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   match expr {
@@ -656,6 +703,32 @@ pub fn apply_curried_call(
           return Ok(Expr::Function {
             body: Box::new(body),
           });
+        }
+        // `Derivative[n1, …, nk][body &]` where the body only uses slots
+        // up to index `k_max`: any non-zero order beyond `k_max`
+        // differentiates with respect to a slot that doesn't appear, so
+        // the result is `0 &`. Matches wolframscript: `Derivative[0, 1][# &]`
+        // → `0 &`.
+        if args.len() == 1
+          && let Expr::Function { body } = &args[0]
+        {
+          let max_slot = max_slot_index(body);
+          let orders: Vec<i128> = func_args
+            .iter()
+            .map(|a| match a {
+              Expr::Integer(n) => *n,
+              _ => 0,
+            })
+            .collect();
+          let beyond_zero = orders
+            .iter()
+            .enumerate()
+            .any(|(i, n)| (i + 1) > max_slot && *n > 0);
+          if beyond_zero {
+            return Ok(Expr::Function {
+              body: Box::new(Expr::Integer(0)),
+            });
+          }
         }
         // Multi-index derivative: Derivative[n1, n2, ...][f] — keep as
         // CurriedCall since the flattened form is ambiguous with
