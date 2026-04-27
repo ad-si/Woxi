@@ -16,6 +16,33 @@ thread_local! {
     const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// If `expr` is a pattern with a head constraint (e.g. `_Q`, `x_Q`, `Blank[Q]`,
+/// `Pattern[x, Blank[Q]]`), return that head symbol so it can be used as the
+/// tag in an UpSet/UpSetDelayed assignment. Returns None otherwise.
+fn pattern_head_tag(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::Pattern { head: Some(h), .. } => Some(h.clone()),
+    Expr::FunctionCall { name, args }
+      if (name == "Blank"
+        || name == "BlankSequence"
+        || name == "BlankNullSequence")
+        && args.len() == 1 =>
+    {
+      if let Expr::Identifier(h) = &args[0] {
+        Some(h.clone())
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      pattern_head_tag(&args[1])
+    }
+    _ => None,
+  }
+}
+
 /// Register a user-defined print form (e.g. via `Format[expr, FORM] := …`).
 /// No-op if already registered or if `name` is one of the builtin forms.
 pub fn register_user_print_form(name: &str) {
@@ -2096,9 +2123,15 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(eval_rhs);
   }
 
-  // Find all tag symbols in the arguments
+  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
+  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
+  // when written via FullForm.
   let mut tags = Vec::new();
   for arg in &lhs_args {
+    if let Some(h) = pattern_head_tag(arg) {
+      tags.push(h);
+      continue;
+    }
     match arg {
       Expr::Identifier(s) => tags.push(s.clone()),
       Expr::FunctionCall { name, .. } => tags.push(name.clone()),
@@ -2141,9 +2174,15 @@ pub fn upset_delayed_ast(
   };
   let lhs = &normalized_lhs;
 
-  // Find all tag symbols in the arguments
+  // Find all tag symbols in the arguments. Patterns like `_Q` carry the
+  // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
+  // when written via FullForm.
   let mut tags = Vec::new();
   for arg in &lhs_args {
+    if let Some(h) = pattern_head_tag(arg) {
+      tags.push(h);
+      continue;
+    }
     match arg {
       Expr::Identifier(s) => tags.push(s.clone()),
       Expr::FunctionCall { name, .. } => tags.push(name.clone()),
