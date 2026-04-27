@@ -1700,6 +1700,17 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
         }
       }
+      // Log of a complex floating-point number: principal value
+      // = 0.5*Log[a^2 + b^2] + I*atan2(b, a)
+      if let Some((a, b)) =
+        crate::functions::math_ast::try_extract_complex_float(&args[0])
+        && b != 0.0
+        && contains_inexact_real_log(&args[0])
+      {
+        let re = 0.5 * (a * a + b * b).ln();
+        let im = b.atan2(a);
+        return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+      }
       Ok(Expr::FunctionCall {
         name: "Log".to_string(),
         args: args.to_vec(),
@@ -4280,5 +4291,22 @@ fn extract_trig(expr: &Expr) -> Option<(&str, Expr)> {
       Some((name.as_str(), args[0].clone()))
     }
     _ => None,
+  }
+}
+
+/// Returns true if the expression contains a Real (machine-precision)
+/// number anywhere in the tree. Used to distinguish exact symbolic
+/// arguments from inexact ones that should evaluate numerically.
+fn contains_inexact_real_log(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => contains_inexact_real_log(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real_log(left) || contains_inexact_real_log(right)
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_inexact_real_log)
+    }
+    _ => false,
   }
 }
