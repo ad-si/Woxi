@@ -4074,6 +4074,64 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // (-I)^(p/q) → -(-1)^((2q - p)/(2q) mod 2). Wolfram canonicalises a
+  // negative-imaginary base raised to a rational power into a sign · (-1)^y
+  // form by lining up the principal branch
+  //   (-I)^x  = e^(-iπx/2)
+  //   -(-1)^y = e^(iπ(1 + y))
+  // which gives y ≡ 1 − x/2 (mod 2).
+  let is_neg_i = match base {
+    Expr::FunctionCall { name, args: cargs }
+      if name == "Complex"
+        && cargs.len() == 2
+        && matches!(cargs[0], Expr::Integer(0))
+        && matches!(cargs[1], Expr::Integer(-1)) =>
+    {
+      true
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => true,
+    _ => false,
+  };
+  if is_neg_i
+    && let Expr::FunctionCall { name: rn, args: rargs } = exp
+    && rn == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *q > 0
+  {
+    let p = *p;
+    let q = *q;
+    // y_num/y_den = 1 - p/(2q) = (2q - p) / (2q), reduced mod 2.
+    let two_q = 2 * q;
+    let mut y_num = two_q - p;
+    let y_den = two_q;
+    // Reduce mod 2*y_den (since y mod 2 means y_num mod 2*y_den).
+    let modulus = 2 * y_den;
+    y_num = y_num.rem_euclid(modulus);
+    let g = crate::functions::math_ast::gcd(y_num.abs(), y_den);
+    let (yn, yd) = (y_num / g, y_den / g);
+    // Build -(-1)^Rational[yn, yd]. If yn == 0, (-1)^0 = 1, so result = -1.
+    if yn == 0 {
+      return Ok(Expr::Integer(-1));
+    }
+    let y_expr = if yd == 1 {
+      Expr::Integer(yn)
+    } else {
+      crate::functions::math_ast::make_rational_pub(yn, yd)
+    };
+    let neg_one_pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Integer(-1), y_expr],
+    };
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), neg_one_pow],
+    );
+  }
+
   // Reciprocals of Underflow[] / Overflow[] swap to the other:
   //   1 / Underflow[] -> Overflow[]
   //   1 / Overflow[]  -> Underflow[]
