@@ -2895,6 +2895,96 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // ProductLog identity: W(z) · E^W(z) ≡ z. When `Times[…]` contains
+  // matching `ProductLog[z]` and `Power[E, ProductLog[z]]` factors (for
+  // identical `z`), drop both and substitute `z` in their place. The
+  // pair check tolerates the optional 2-arg form `ProductLog[k, z]` too,
+  // matching wolframscript's reduction.
+  {
+    fn extract_product_log(e: &Expr) -> Option<Expr> {
+      if let Expr::FunctionCall { name, args } = e
+        && name == "ProductLog"
+      {
+        match args.len() {
+          1 => return Some(args[0].clone()),
+          2 => return Some(args[1].clone()),
+          _ => {}
+        }
+      }
+      None
+    }
+    fn extract_e_to_product_log(e: &Expr) -> Option<Expr> {
+      let exp_arg = match e {
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && (matches!(args[0], Expr::Identifier(ref s) if s == "E")
+              || matches!(args[0], Expr::Constant(ref s) if s == "E")) =>
+        {
+          &args[1]
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Identifier(s) if s == "E")
+          || matches!(left.as_ref(), Expr::Constant(s) if s == "E") =>
+        {
+          right.as_ref()
+        }
+        _ => return None,
+      };
+      extract_product_log(exp_arg)
+    }
+    if flat_args.len() >= 2 {
+      let pl_z: Vec<(usize, Expr)> = flat_args
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| extract_product_log(e).map(|z| (i, z)))
+        .collect();
+      let exp_pl_z: Vec<(usize, Expr)> = flat_args
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| extract_e_to_product_log(e).map(|z| (i, z)))
+        .collect();
+      let mut consumed: std::collections::HashSet<usize> =
+        std::collections::HashSet::new();
+      let mut replacements: Vec<Expr> = Vec::new();
+      for (pi, pz) in &pl_z {
+        if consumed.contains(pi) {
+          continue;
+        }
+        for (ei, ez) in &exp_pl_z {
+          if pi == ei || consumed.contains(ei) {
+            continue;
+          }
+          if crate::syntax::expr_to_string(pz)
+            == crate::syntax::expr_to_string(ez)
+          {
+            consumed.insert(*pi);
+            consumed.insert(*ei);
+            replacements.push(pz.clone());
+            break;
+          }
+        }
+      }
+      if !consumed.is_empty() {
+        let mut new_args: Vec<Expr> = flat_args
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| !consumed.contains(i))
+          .map(|(_, e)| e.clone())
+          .collect();
+        new_args.extend(replacements);
+        if new_args.len() == flat_args.len() {
+          // No-op (shouldn't happen), fall through
+        } else {
+          return times_ast(&new_args);
+        }
+      }
+    }
+  }
+
   let args = &flat_args;
 
   // Try complex multiplication: if all args can be extracted as exact complex
@@ -4096,7 +4186,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     _ => false,
   };
   if is_neg_i
-    && let Expr::FunctionCall { name: rn, args: rargs } = exp
+    && let Expr::FunctionCall {
+      name: rn,
+      args: rargs,
+    } = exp
     && rn == "Rational"
     && rargs.len() == 2
     && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
