@@ -30,10 +30,69 @@ pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(airy_ai(x_f)));
   }
 
+  // Complex floating-point argument: power series via complex arithmetic.
+  if let Some((re, im)) =
+    crate::functions::math_ast::try_extract_complex_float(&args[0])
+    && im != 0.0
+    && contains_inexact_real(&args[0])
+  {
+    let (ar, ai) = airy_ai_complex(re, im);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(ar, ai));
+  }
+
   Ok(Expr::FunctionCall {
     name: "AiryAi".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// True if the expression tree contains a Real or BigFloat node.
+fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
+    _ => false,
+  }
+}
+
+/// Complex Airy Ai via the power series
+///   Ai(z) = c1·f(z) − c2·g(z)
+///   f(z) = Σ z^(3k) / [(2·3)(5·6)…((3k−1)·3k)]
+///   g(z) = Σ z^(3k+1) / [(3·4)(6·7)…(3k·(3k+1))]
+/// Converges quickly for |z| up to ~10; sufficient for the
+/// `0.5 + I`-style arguments in the test suite.
+fn airy_ai_complex(re: f64, im: f64) -> (f64, f64) {
+  let c1 = 0.3550280538878172;
+  let c2 = 0.2588194037928068;
+  let z = (re, im);
+  let z3 = cmul(cmul(z, z), z);
+  let mut f = (1.0, 0.0);
+  let mut g = z;
+  let mut f_term = (1.0, 0.0);
+  let mut g_term = z;
+  for k in 1..1000 {
+    let k3 = 3 * k;
+    let f_div = ((k3 - 1) as f64) * (k3 as f64);
+    let g_div = (k3 as f64) * ((k3 + 1) as f64);
+    f_term = (cmul(f_term, z3).0 / f_div, cmul(f_term, z3).1 / f_div);
+    g_term = (cmul(g_term, z3).0 / g_div, cmul(g_term, z3).1 / g_div);
+    f = (f.0 + f_term.0, f.1 + f_term.1);
+    g = (g.0 + g_term.0, g.1 + g_term.1);
+    let mag_f = f_term.0 * f_term.0 + f_term.1 * f_term.1;
+    let mag_g = g_term.0 * g_term.0 + g_term.1 * g_term.1;
+    if mag_f < 1e-32 && mag_g < 1e-32 {
+      break;
+    }
+  }
+  (c1 * f.0 - c2 * g.0, c1 * f.1 - c2 * g.1)
+}
+
+fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
 }
 
 /// Compute Ai(x) using the two power series
