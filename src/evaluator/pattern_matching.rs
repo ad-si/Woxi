@@ -3216,6 +3216,65 @@ fn apply_replace_all_multi_ast_impl(
         right: Box::new(new_right),
       })
     }
+    // Function[body] — `expr &` form. Body stays held (Function holds its
+    // body via HoldAll), but `/.` is structural so we still recurse for
+    // replacement.
+    Expr::Function { body } => {
+      let new_body = apply_replace_all_multi_ast_impl(body, rules, held)?;
+      Ok(Expr::Function {
+        body: Box::new(new_body),
+      })
+    }
+    // Function[{params}, body] — recurse into body so rules like
+    // `Function[{x}, C[1]] /. {C[1] -> 1}` produce `Function[{x}, 1]`.
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let new_body = apply_replace_all_multi_ast_impl(body, rules, held)?;
+      Ok(Expr::NamedFunction {
+        params: params.clone(),
+        body: Box::new(new_body),
+        bracketed: *bracketed,
+      })
+    }
+    Expr::CurriedCall { func, args } => {
+      let new_func = apply_replace_all_multi_ast_impl(func, rules, held)?;
+      let new_args: Result<Vec<Expr>, _> = args
+        .iter()
+        .map(|arg| apply_replace_all_multi_ast_impl(arg, rules, held))
+        .collect();
+      Ok(Expr::CurriedCall {
+        func: Box::new(new_func),
+        args: new_args?,
+      })
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let new_pat = apply_replace_all_multi_ast_impl(pattern, rules, held)?;
+      let new_rep = apply_replace_all_multi_ast_impl(replacement, rules, held)?;
+      Ok(Expr::Rule {
+        pattern: Box::new(new_pat),
+        replacement: Box::new(new_rep),
+      })
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      let new_pat = apply_replace_all_multi_ast_impl(pattern, rules, held)?;
+      // RuleDelayed holds its RHS — recurse without re-evaluating after
+      // substitution.
+      let new_rep =
+        apply_replace_all_multi_ast_impl(replacement, rules, true)?;
+      Ok(Expr::RuleDelayed {
+        pattern: Box::new(new_pat),
+        replacement: Box::new(new_rep),
+      })
+    }
     // Atoms and other nodes without children — return unchanged
     _ => Ok(expr.clone()),
   }
