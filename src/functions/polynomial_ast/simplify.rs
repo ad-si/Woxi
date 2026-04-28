@@ -4278,32 +4278,176 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
 pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
   let cond_str = expr_to_string(cond);
 
-  // Get $Assumptions from environment (default: "True")
-  let assumptions_str = crate::ENV
+  // Read `$Assumptions` from the environment (default `True`). Keep both
+  // the string form (for the existing literal-equality / textual-`!cond`
+  // matches) and the structural Expr form for the simple inequality
+  // contradiction check below.
+  let (assumptions_str, assumptions_expr): (String, Option<Expr>) = crate::ENV
     .with(|e| {
       e.borrow().get("$Assumptions").map(|sv| match sv {
-        crate::StoredValue::Raw(s) => s.clone(),
-        crate::StoredValue::ExprVal(e) => expr_to_string(e),
-        _ => "True".to_string(),
+        crate::StoredValue::Raw(s) => (s.clone(), None),
+        crate::StoredValue::ExprVal(ex) => {
+          (expr_to_string(ex), Some(ex.clone()))
+        }
+        _ => ("True".to_string(), None),
       })
     })
-    .unwrap_or_else(|| "True".to_string());
+    .unwrap_or(("True".to_string(), None));
 
   if cond_str == assumptions_str {
-    // Condition matches assumptions → strip ConditionalExpression
-    simplify_expr(value)
-  } else if assumptions_str == format!("!{}", cond_str)
+    // Condition matches assumptions → strip ConditionalExpression.
+    return simplify_expr(value);
+  }
+  if assumptions_str == format!("!{}", cond_str)
     || assumptions_str == format!(" !{}", cond_str)
     || assumptions_str == format!("Not[{}]", cond_str)
   {
-    // Assumptions negate the condition → Undefined
-    Expr::Identifier("Undefined".to_string())
-  } else {
-    // Keep ConditionalExpression with simplified value
-    Expr::FunctionCall {
-      name: "ConditionalExpression".to_string(),
-      args: vec![simplify_expr(value), cond.clone()],
+    // Assumptions negate the condition → Undefined.
+    return Expr::Identifier("Undefined".to_string());
+  }
+  // Simple single-variable inequality contradiction: e.g. `$Assumptions =
+  // {a <= 0}` against `ConditionalExpression[v, a > 0]`. wolframscript
+  // collapses this to `Undefined`. Walk the assumption list (or single
+  // assumption) and look for any direct contradiction with `cond`.
+  if let Some(ref a_expr) = assumptions_expr {
+    let assumption_items: Vec<&Expr> = match a_expr {
+      Expr::List(items) => items.iter().collect(),
+      _ => vec![a_expr],
+    };
+    for a in assumption_items {
+      if inequalities_contradict(a, cond) {
+        return Expr::Identifier("Undefined".to_string());
+      }
     }
+  }
+  Expr::FunctionCall {
+    name: "ConditionalExpression".to_string(),
+    args: vec![simplify_expr(value), cond.clone()],
+  }
+}
+
+/// Extract `(var_name, op, numeric_bound)` from a binary Comparison/`Greater
+/// `/`Less`/etc. node. Returns `None` for anything we can't read as a
+/// single-variable bound on a numeric constant.
+fn extract_var_bound(expr: &Expr) -> Option<(String, &'static str, f64)> {
+  use crate::syntax::ComparisonOp;
+  let to_op = |op: &ComparisonOp| -> &'static str {
+    match op {
+      ComparisonOp::Less => "<",
+      ComparisonOp::LessEqual => "<=",
+      ComparisonOp::Greater => ">",
+      ComparisonOp::GreaterEqual => ">=",
+      ComparisonOp::Equal => "==",
+      ComparisonOp::NotEqual => "!=",
+      _ => "?",
+    }
+  };
+  // Comparison form (built by infix `>` / `<=` etc.).
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && operands.len() == 2
+    && operators.len() == 1
+  {
+    if let (Expr::Identifier(name), Some(v)) = (
+      &operands[0],
+      crate::functions::math_ast::try_eval_to_f64(&operands[1]),
+    ) {
+      return Some((name.clone(), to_op(&operators[0]), v));
+    }
+    if let (Some(v), Expr::Identifier(name)) = (
+      crate::functions::math_ast::try_eval_to_f64(&operands[0]),
+      &operands[1],
+    ) {
+      // Flip: `c < a` ≡ `a > c`.
+      let flipped = match operators[0] {
+        ComparisonOp::Less => ">",
+        ComparisonOp::LessEqual => ">=",
+        ComparisonOp::Greater => "<",
+        ComparisonOp::GreaterEqual => "<=",
+        ComparisonOp::Equal => "==",
+        ComparisonOp::NotEqual => "!=",
+        _ => return None,
+      };
+      return Some((name.clone(), flipped, v));
+    }
+  }
+  // Function-call form `Greater[a, 0]` etc.
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 2
+  {
+    let op = match name.as_str() {
+      "Less" => "<",
+      "LessEqual" => "<=",
+      "Greater" => ">",
+      "GreaterEqual" => ">=",
+      "Equal" => "==",
+      "Unequal" => "!=",
+      _ => return None,
+    };
+    if let (Expr::Identifier(n), Some(v)) = (
+      &args[0],
+      crate::functions::math_ast::try_eval_to_f64(&args[1]),
+    ) {
+      return Some((n.clone(), op, v));
+    }
+    if let (Some(v), Expr::Identifier(n)) = (
+      crate::functions::math_ast::try_eval_to_f64(&args[0]),
+      &args[1],
+    ) {
+      let flipped = match op {
+        "<" => ">",
+        "<=" => ">=",
+        ">" => "<",
+        ">=" => "<=",
+        s => s,
+      };
+      return Some((n.clone(), flipped, v));
+    }
+  }
+  None
+}
+
+/// True when two single-variable inequalities on the same variable have
+/// no overlap (e.g. `a <= 0` and `a > 0`). Only the trivial 1-variable,
+/// numeric-bound case is detected — anything richer falls through to a
+/// non-contradiction (`false`) answer so the caller keeps the
+/// `ConditionalExpression` wrapper intact.
+fn inequalities_contradict(a: &Expr, b: &Expr) -> bool {
+  let Some((va, opa, ca)) = extract_var_bound(a) else {
+    return false;
+  };
+  let Some((vb, opb, cb)) = extract_var_bound(b) else {
+    return false;
+  };
+  if va != vb {
+    return false;
+  }
+  // a says `var op_a c_a`; b says `var op_b c_b`. Detect empty intersection.
+  match (opa, opb) {
+    // a ≤ ca AND a > cb : empty when cb ≥ ca.
+    ("<=", ">") | (">", "<=") => {
+      let (low_strict, high_eq) = if opa == ">" { (ca, cb) } else { (cb, ca) };
+      low_strict >= high_eq
+    }
+    // a < ca AND a >= cb : empty when cb ≥ ca.
+    ("<", ">=") | (">=", "<") => {
+      let (low_eq, high_strict) =
+        if opa == ">=" { (ca, cb) } else { (cb, ca) };
+      low_eq >= high_strict
+    }
+    // a < ca AND a > cb : empty when cb ≥ ca.
+    ("<", ">") | (">", "<") => {
+      let (low, high) = if opa == ">" { (ca, cb) } else { (cb, ca) };
+      low >= high
+    }
+    // a ≤ ca AND a ≥ cb : empty when cb > ca.
+    ("<=", ">=") | (">=", "<=") => {
+      let (low, high) = if opa == ">=" { (ca, cb) } else { (cb, ca) };
+      low > high
+    }
+    _ => false,
   }
 }
 
