@@ -1175,11 +1175,14 @@ mod series {
   #[test]
   fn series_full_form_structure() {
     // FullForm of Series[Cosh[x], {x, 0, 2}] reveals the underlying
-    // SeriesData with coefficient list and order bounds.
+    // SeriesData with coefficient list and order bounds. Wolfram keeps the
+    // FullForm wrapper in place and renders the coefficient List with `{}`
+    // and any Rational with `n/d` notation, so the output reads
+    // `FullForm[SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]]`.
     assert_eq!(
       interpret("series = Series[Cosh[x], {x, 0, 2}]; series // FullForm")
         .unwrap(),
-      "SeriesData[x, 0, List[1, 0, Rational[1, 2]], 0, 3, 1]"
+      "FullForm[SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]]"
     );
   }
 

@@ -9644,6 +9644,19 @@ pub fn top_level_output(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
     {
+      // SeriesData has a special box display in Wolfram: even inside a
+      // FullForm wrapper, the coefficient List shows with `{}` braces and
+      // any Rational coefficients use `n/d` notation. Match this specific
+      // case so e.g. `Series[Cosh[x], {x, 0, 2}] // FullForm` lands on
+      // `FullForm[SeriesData[x, 0, {1, 0, 1/2}, 0, 3, 1]]` (wrapper kept,
+      // InputForm-style inside) rather than `SeriesData[…, List[…], …]`.
+      if let Expr::FunctionCall { name: sn, args: sa } = &args[0]
+        && sn == "SeriesData"
+        && sa.len() == 6
+      {
+        let parts: Vec<String> = sa.iter().map(expr_to_output).collect();
+        return format!("FullForm[SeriesData[{}]]", parts.join(", "));
+      }
       crate::functions::expr_form::render_full_form(&args[0])
     }
     // `HoldForm[expr]` at the top level keeps its wrapper —
