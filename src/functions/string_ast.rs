@@ -3469,6 +3469,24 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ToExpression expects 1 to 3 arguments".into(),
     ));
   }
+  // ToExpression[InterpretationBox[boxes, expr]] returns the interpreted
+  // expression directly (the second argument), evaluated. This matches
+  // wolframscript: `ToExpression[InterpretationBox["Four", 4]]` → 4.
+  if let crate::syntax::Expr::FunctionCall { name, args: ib_args } = &args[0]
+    && name == "InterpretationBox"
+    && ib_args.len() == 2
+  {
+    let interpreted =
+      crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
+    if args.len() == 3 {
+      let wrapped = crate::syntax::Expr::FunctionCall {
+        name: crate::syntax::expr_to_string(&args[2]),
+        args: vec![interpreted],
+      };
+      return crate::evaluator::evaluate_expr_to_expr(&wrapped);
+    }
+    return Ok(interpreted);
+  }
   let s = expr_to_str(&args[0])?;
   // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
   // in order and returns the last result, matching Wolfram semantics.
