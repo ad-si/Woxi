@@ -1643,15 +1643,40 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::DerivativeNumeric => {
       // 1' → Derivative[1][1], (-1.4)' → Derivative[1][-1.4], etc.
       // The literal becomes the argument of the curried Derivative form.
+      // Wolfram parses a leading minus on the LITERAL as outer unary minus,
+      // not as part of the derivative's argument: `-1.4'` is
+      // `Times[-1, Derivative[1][1.4]]`, not `Derivative[1][-1.4]`. The
+      // underlying `Real`/`Integer` rules consume the sign, so undo it
+      // here: peel off a negative literal value, build the curried
+      // derivative on the positive value, then wrap with unary minus.
       let inner_pairs: Vec<_> = pair.into_inner().collect();
       let value = pair_to_expr(inner_pairs[0].clone());
       let order = inner_pairs[1].as_str().len();
-      Expr::CurriedCall {
+      let (positive_value, negative) = match value {
+        Expr::Real(f) if f < 0.0 => (Expr::Real(-f), true),
+        Expr::Integer(n) if n < 0 => (Expr::Integer(-n), true),
+        Expr::Constant(ref s) if s.starts_with('-') => {
+          (Expr::Constant(s[1..].to_string()), true)
+        }
+        Expr::BigFloat(ref digits, prec) if digits.starts_with('-') => {
+          (Expr::BigFloat(digits[1..].to_string(), prec), true)
+        }
+        other => (other, false),
+      };
+      let curried = Expr::CurriedCall {
         func: Box::new(Expr::FunctionCall {
           name: "Derivative".to_string(),
           args: vec![Expr::Integer(order as i128)],
         }),
-        args: vec![value],
+        args: vec![positive_value],
+      };
+      if negative {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(curried),
+        }
+      } else {
+        curried
       }
     }
     Rule::Slot => {
@@ -5926,7 +5951,12 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                     op: BinaryOperator::Times | BinaryOperator::Divide,
                     ..
                   }
-                )));
+                )
+                // Anonymous functions need parens so the trailing `&`
+                // doesn't get pulled into the unary-minus expression:
+                // `-(0 & )` rather than `-0 & ` (which would parse as
+                // `Function[-0]`).
+                || matches!(&args[1], Expr::Function { .. })));
           if needs_neg_parens {
             return format!("-({})", rest);
           }
@@ -6867,7 +6897,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           format!(" !{}", inner)
         }
       } else {
-        // Minus needs parens around Plus, Minus, Times, Divide
+        // Minus needs parens around Plus, Minus, Times, Divide and around
+        // anonymous functions (so e.g. `-1.4'` displays as `-(0 & )` rather
+        // than `-0 & ` which would parse the trailing `&` as binding to
+        // the entire wrapped expression).
         let needs_parens = matches!(
           operand.as_ref(),
           Expr::BinaryOp {
@@ -6880,7 +6913,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
-        );
+        ) || matches!(operand.as_ref(), Expr::Function { .. });
         if needs_parens {
           format!("-({})", inner)
         } else {
