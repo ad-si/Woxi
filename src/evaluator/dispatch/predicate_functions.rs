@@ -1041,6 +1041,12 @@ pub fn dispatch_predicate_functions(
           }));
         }
       };
+      // Context-qualified symbols (e.g. `b` `c`) carry their context in
+      // the name itself: everything up to and including the final
+      // backtick. `b` `c` → `"b` "`, `Foo` `Bar` `x` → `"Foo` `Bar` "`.
+      if let Some(last) = sym_name.rfind('`') {
+        return Some(Ok(Expr::String(sym_name[..=last].to_string())));
+      }
       // Built-in symbols are in System` context
       let builtin = get_builtin_attributes(&sym_name);
       if !builtin.is_empty() {
