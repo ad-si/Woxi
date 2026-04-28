@@ -3620,6 +3620,50 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
   }
+
+  // Times[…, ConditionalExpression[v1, c1], ConditionalExpression[v2, c2], …]
+  // collapses each pair into ConditionalExpression[v1·v2, c1 && c2]. wolframscript:
+  //   `CE[1, a>0] CE[1, b>0]`  →  `CE[1, a>0 && b>0]`.
+  // We pull every CE factor out of `flat_args`, multiply the remaining
+  // factors with the values, and AND the conditions.
+  if flat_args
+    .iter()
+    .filter(|a| matches!(a, Expr::FunctionCall { name, args } if name == "ConditionalExpression" && args.len() == 2))
+    .count()
+    >= 2
+  {
+    let mut ce_values: Vec<Expr> = Vec::new();
+    let mut ce_conds: Vec<Expr> = Vec::new();
+    let mut other: Vec<Expr> = Vec::new();
+    for a in &flat_args {
+      if let Expr::FunctionCall { name, args } = a
+        && name == "ConditionalExpression"
+        && args.len() == 2
+      {
+        ce_values.push(args[0].clone());
+        ce_conds.push(args[1].clone());
+      } else {
+        other.push(a.clone());
+      }
+    }
+    let mut combined_value_args = other;
+    combined_value_args.extend(ce_values);
+    let combined_value = times_ast(&combined_value_args)?;
+    let combined_cond = if ce_conds.len() == 1 {
+      ce_conds.into_iter().next().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: ce_conds,
+      }
+    };
+    let combined_cond =
+      crate::evaluator::evaluate_expr_to_expr(&combined_cond)?;
+    return Ok(Expr::FunctionCall {
+      name: "ConditionalExpression".to_string(),
+      args: vec![combined_value, combined_cond],
+    });
+  }
   // ComplexInfinity * 0 = Indeterminate, ComplexInfinity * x = ComplexInfinity
   let has_complex_inf = flat_args
     .iter()

@@ -3524,11 +3524,14 @@ fn simplify_with_assumptions(
   let prev = crate::ENV.with(|e| e.borrow().get("$Assumptions").cloned());
 
   // Set $Assumptions to the combined expression so any nested Simplify/Refine
-  // calls inside the expression also see it.
-  let val = expr_to_string(&combined);
+  // calls inside the expression also see it. Storing as `ExprVal` (instead of
+  // a `Raw` string) keeps the structural form available to downstream
+  // contradiction checks like `simplify_conditional_expression`.
   crate::ENV.with(|e| {
-    e.borrow_mut()
-      .insert("$Assumptions".to_string(), crate::StoredValue::Raw(val))
+    e.borrow_mut().insert(
+      "$Assumptions".to_string(),
+      crate::StoredValue::ExprVal(combined.clone()),
+    )
   });
 
   let simplified = if full {
@@ -4309,20 +4312,49 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
   // {a <= 0}` against `ConditionalExpression[v, a > 0]`. wolframscript
   // collapses this to `Undefined`. Walk the assumption list (or single
   // assumption) and look for any direct contradiction with `cond`.
+  // `cond` itself may be an `And[c1, c2, …]` from an earlier
+  // `Times[CE[v1, c1], CE[v2, c2]]` collapse — any conjunct that
+  // contradicts an assumption makes the whole AND false.
   if let Some(ref a_expr) = assumptions_expr {
-    let assumption_items: Vec<&Expr> = match a_expr {
-      Expr::List(items) => items.iter().collect(),
-      _ => vec![a_expr],
-    };
-    for a in assumption_items {
-      if inequalities_contradict(a, cond) {
-        return Expr::Identifier("Undefined".to_string());
+    let assumption_items = flatten_assumption_atoms(a_expr);
+    let cond_atoms = flatten_assumption_atoms(cond);
+    for c_atom in &cond_atoms {
+      for a in &assumption_items {
+        if inequalities_contradict(a, c_atom) {
+          return Expr::Identifier("Undefined".to_string());
+        }
       }
     }
   }
   Expr::FunctionCall {
     name: "ConditionalExpression".to_string(),
     args: vec![simplify_expr(value), cond.clone()],
+  }
+}
+
+/// Recursively flatten `And[…]`/`List[…]` wrappers into a `Vec` of leaf
+/// inequality expressions. Anything that isn't an `And` or `List` is
+/// included verbatim — it'll be filtered downstream by
+/// `extract_var_bound`. Used to compare every conjunct of an assumption
+/// (or condition) against the other side.
+fn flatten_assumption_atoms(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::List(items) => items.iter().flat_map(flatten_assumption_atoms).collect(),
+    Expr::FunctionCall { name, args }
+      if name == "And" || name == "List" =>
+    {
+      args.iter().flat_map(flatten_assumption_atoms).collect()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => {
+      let mut v = flatten_assumption_atoms(left);
+      v.extend(flatten_assumption_atoms(right));
+      v
+    }
+    _ => vec![expr.clone()],
   }
 }
 
@@ -4433,8 +4465,7 @@ fn inequalities_contradict(a: &Expr, b: &Expr) -> bool {
     }
     // a < ca AND a >= cb : empty when cb ≥ ca.
     ("<", ">=") | (">=", "<") => {
-      let (low_eq, high_strict) =
-        if opa == ">=" { (ca, cb) } else { (cb, ca) };
+      let (low_eq, high_strict) = if opa == ">=" { (ca, cb) } else { (cb, ca) };
       low_eq >= high_strict
     }
     // a < ca AND a > cb : empty when cb ≥ ca.
