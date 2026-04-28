@@ -3,6 +3,161 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
+/// share the same `(var, x0, denom)` into a single SeriesData. The result
+/// truncates to `min(nmax_i)` so the O(…) order matches Wolfram's behaviour
+/// when adding two truncated series. Returns `None` if no two SeriesData
+/// summands are present.
+fn try_series_data_plus(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  // Collect indices of SeriesData arguments grouped by (var, x0).
+  // Different denoms are merged by lcm.
+  let series_indices: Vec<usize> = args
+    .iter()
+    .enumerate()
+    .filter_map(|(i, a)| match a {
+      Expr::FunctionCall { name, args: sa }
+        if name == "SeriesData" && sa.len() == 6 =>
+      {
+        Some(i)
+      }
+      _ => None,
+    })
+    .collect();
+  if series_indices.len() < 2 {
+    return Ok(None);
+  }
+
+  // Extract var and x0 from the first SeriesData; require all others to match.
+  let first = &args[series_indices[0]];
+  let (var0, x0_0) = match first {
+    Expr::FunctionCall { args: sa, .. } => (sa[0].clone(), sa[1].clone()),
+    _ => return Ok(None),
+  };
+  for &idx in &series_indices[1..] {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let var_eq =
+        crate::syntax::expr_to_string(&sa[0]) == crate::syntax::expr_to_string(&var0);
+      let x0_eq = crate::syntax::expr_to_string(&sa[1])
+        == crate::syntax::expr_to_string(&x0_0);
+      if !var_eq || !x0_eq {
+        return Ok(None);
+      }
+    }
+  }
+
+  // Common denom = lcm of all denoms; require Integer denoms.
+  let denom_of = |sa: &[Expr]| -> Option<i128> {
+    if let Expr::Integer(d) = &sa[5] {
+      Some(*d)
+    } else {
+      None
+    }
+  };
+  let mut common_denom: i128 = 1;
+  for &idx in &series_indices {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let d = denom_of(sa).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "SeriesData denom must be Integer".into(),
+        )
+      })?;
+      let g = numeric_utils::gcd(common_denom.abs(), d.abs());
+      if g == 0 {
+        return Ok(None);
+      }
+      common_denom = (common_denom / g).saturating_mul(d.abs());
+    }
+  }
+
+  // For each SeriesData, find its (nmin, nmax) in units of 1/common_denom.
+  // Also collect the coefficient lists.
+  let mut nmins: Vec<i128> = Vec::new();
+  let mut nmaxs: Vec<i128> = Vec::new();
+  let mut coeff_lists: Vec<Vec<Expr>> = Vec::new();
+  for &idx in &series_indices {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let nmin = match &sa[3] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(None),
+      };
+      let nmax = match &sa[4] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(None),
+      };
+      let denom = denom_of(sa).unwrap();
+      let scale = common_denom / denom;
+      nmins.push(nmin * scale);
+      nmaxs.push(nmax * scale);
+      let coeffs = match &sa[2] {
+        Expr::List(items) => items.clone(),
+        _ => return Ok(None),
+      };
+      coeff_lists.push(coeffs);
+    }
+  }
+  let new_nmin = *nmins.iter().min().unwrap();
+  let new_nmax = *nmaxs.iter().min().unwrap();
+  if new_nmax <= new_nmin {
+    return Ok(None);
+  }
+  let m_new = (new_nmax - new_nmin) as usize;
+  let mut new_coeffs: Vec<Expr> = vec![Expr::Integer(0); m_new];
+
+  for (idx_i, &orig_idx) in series_indices.iter().enumerate() {
+    let denom_i = if let Expr::FunctionCall { args: sa, .. } = &args[orig_idx]
+    {
+      denom_of(sa).unwrap()
+    } else {
+      return Ok(None);
+    };
+    let scale_i = common_denom / denom_i;
+    let nmin_i_scaled = nmins[idx_i];
+    let coeffs_i = &coeff_lists[idx_i];
+    for (k, c) in coeffs_i.iter().enumerate() {
+      let exp_scaled = nmin_i_scaled + (k as i128) * scale_i;
+      if exp_scaled >= new_nmax {
+        break;
+      }
+      let pos = (exp_scaled - new_nmin) as usize;
+      // Only fill positions that align with the common-denom grid.
+      // (When scale_i > 1, intermediate slots stay at 0.)
+      if pos < m_new {
+        new_coeffs[pos] = plus_ast(&[new_coeffs[pos].clone(), c.clone()])?;
+      }
+    }
+  }
+
+  // Collect non-SeriesData summands and prepend the unified SeriesData.
+  let series_idx_set: std::collections::HashSet<usize> =
+    series_indices.iter().copied().collect();
+  let other: Vec<Expr> = args
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| !series_idx_set.contains(i))
+    .map(|(_, a)| a.clone())
+    .collect();
+  let merged = Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      var0,
+      x0_0,
+      Expr::List(new_coeffs),
+      Expr::Integer(new_nmin),
+      Expr::Integer(new_nmax),
+      Expr::Integer(common_denom),
+    ],
+  };
+  if other.is_empty() {
+    Ok(Some(merged))
+  } else {
+    let mut new_args = vec![merged];
+    new_args.extend(other);
+    Ok(Some(plus_ast(&new_args)?))
+  }
+}
+
 /// Plus[args...] - Sum of arguments, with list threading
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
@@ -12,6 +167,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Handle DateObject subtraction: DateObject[...] - DateObject[...] → Quantity[n, "Days"]
   if let Some(result) = try_date_object_subtraction(args) {
     return result;
+  }
+
+  // Combine multiple `SeriesData[var, x0, …]` summands sharing the same
+  // (var, x0) into a single SeriesData. Truncates to the minimum order.
+  if let Some(result) = try_series_data_plus(args)? {
+    return Ok(result);
   }
 
   // Handle Quantity arithmetic before anything else
@@ -2871,16 +3032,18 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     });
     if let Some(idx) = series_idx
-      && let Expr::FunctionCall {
-        args: sd_args, ..
-      } = &args[idx]
+      && let Expr::FunctionCall { args: sd_args, .. } = &args[idx]
       && let Expr::Identifier(var_name) = &sd_args[0]
     {
-      let other_factors: Vec<&Expr> =
-        args.iter().enumerate().filter(|(i, _)| *i != idx).map(|(_, a)| a).collect();
-      let all_indep = other_factors.iter().all(|f| {
-        crate::functions::calculus_ast::is_constant_wrt(f, var_name)
-      });
+      let other_factors: Vec<&Expr> = args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != idx)
+        .map(|(_, a)| a)
+        .collect();
+      let all_indep = other_factors
+        .iter()
+        .all(|f| crate::functions::calculus_ast::is_constant_wrt(f, var_name));
       if all_indep && !other_factors.is_empty() {
         let coeff_list = match &sd_args[2] {
           Expr::List(items) => items.clone(),
