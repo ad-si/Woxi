@@ -396,10 +396,14 @@ pub fn dispatch_predicate_functions(
         args: args.to_vec(),
       }));
     }
-    // SymbolName[sym] - Get the name of a symbol as a string
+    // SymbolName[sym] - Get the name of a symbol as a string.
+    // For context-qualified identifiers like `a`b`x`, return only the
+    // trailing segment ("x") — matching wolframscript, where the context
+    // prefix is reported separately by `Context`.
     "SymbolName" if args.len() == 1 => {
       if let Expr::Identifier(name) = &args[0] {
-        return Some(Ok(Expr::String(name.clone())));
+        let leaf = name.rsplit('`').next().unwrap_or(name).to_string();
+        return Some(Ok(Expr::String(leaf)));
       }
       return Some(Ok(Expr::FunctionCall {
         name: "SymbolName".to_string(),
