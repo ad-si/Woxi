@@ -493,6 +493,12 @@ fn upper_incomplete_gamma(a: f64, z: f64) -> f64 {
   if z == 0.0 {
     return gamma_fn(a);
   }
+  // Special case: Gamma[0, z] = E_1(z) (the exponential integral). The
+  // generic series/CF route uses Gamma(a)·…−lower(a, z), which is
+  // singular at a=0 (Gamma(0)=∞ minus finite); use a dedicated routine.
+  if a == 0.0 && z > 0.0 {
+    return exp_integral_e1(z);
+  }
   // Use series for small z, continued fraction for large z
   if z < a + 1.0 {
     // Gamma(a, z) = Gamma(a) - gamma_lower(a, z)
@@ -500,6 +506,46 @@ fn upper_incomplete_gamma(a: f64, z: f64) -> f64 {
   } else {
     // Continued fraction representation (Legendre)
     upper_incomplete_gamma_cf(a, z)
+  }
+}
+
+/// E_1(z) = Gamma[0, z] for real z > 0.
+/// Uses the convergent series for z ≤ 1 and a Lentz continued fraction
+/// for larger z (cf. Numerical Recipes §6.3).
+fn exp_integral_e1(z: f64) -> f64 {
+  if z <= 1.0 {
+    let euler_gamma = 0.5772156649015329_f64;
+    let mut sum = -euler_gamma - z.ln();
+    let mut term = 1.0_f64;
+    for k in 1..200 {
+      term *= -z / k as f64;
+      let inc = -term / k as f64;
+      sum += inc;
+      if inc.abs() < 1e-18 * sum.abs().max(1.0) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Lentz continued fraction:
+    //   E_1(z) = e^{-z} / (z + 1/(1 + 1/(z + 2/(1 + 2/(z + …)))))
+    let mut b = z + 1.0;
+    let mut c = 1e30_f64;
+    let mut d = 1.0 / b;
+    let mut h = d;
+    for i in 1..200 {
+      let i_f = i as f64;
+      let a_term = -i_f * i_f;
+      b += 2.0;
+      d = 1.0 / (a_term * d + b);
+      c = b + a_term / c;
+      let del = c * d;
+      h *= del;
+      if (del - 1.0).abs() < 1e-15 {
+        break;
+      }
+    }
+    h * (-z).exp()
   }
 }
 

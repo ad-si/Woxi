@@ -1062,17 +1062,26 @@ pub fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
   let is_b_integer = (b - b_int).abs() < 1e-10;
 
   if is_b_integer {
-    // Use Richardson extrapolation: evaluate at several offsets and extrapolate
-    // to the limit b -> integer. This cancels the leading error terms.
-    let h = 0.001;
+    // Richardson extrapolation: evaluate U at b±h, b±2h, b±3h and combine
+    // so the leading even-order error terms cancel. Integer b is a removable
+    // singularity of the connection formula (Γ(1-b) ↔ Γ(a-b+1) cancellation),
+    // so the limit is finite and the symmetric average is even in h.
+    let h = 0.01;
     let u1 = hypergeometric_u_nonint(a, b + h, z);
     let u2 = hypergeometric_u_nonint(a, b - h, z);
     let u3 = hypergeometric_u_nonint(a, b + 2.0 * h, z);
     let u4 = hypergeometric_u_nonint(a, b - 2.0 * h, z);
-    // Richardson extrapolation: (4 * f(h) - f(2h)) / 3
-    let avg_h = (u1 + u2) / 2.0;
-    let avg_2h = (u3 + u4) / 2.0;
-    (4.0 * avg_h - avg_2h) / 3.0
+    let u5 = hypergeometric_u_nonint(a, b + 3.0 * h, z);
+    let u6 = hypergeometric_u_nonint(a, b - 3.0 * h, z);
+    let avg1 = (u1 + u2) / 2.0;
+    let avg2 = (u3 + u4) / 2.0;
+    let avg3 = (u5 + u6) / 2.0;
+    // 6th-order Richardson on the symmetric averages
+    //   avg(k·h) = U + c2 (k·h)² + c4 (k·h)⁴ + O(h⁶)
+    // Solving the 3×3 system at k = 1, 2, 3 for U eliminates the c2 and c4
+    // error terms:
+    //   U = (15 avg(h) − 6 avg(2h) + avg(3h)) / 10
+    (15.0 * avg1 - 6.0 * avg2 + avg3) / 10.0
   } else {
     hypergeometric_u_nonint(a, b, z)
   }
