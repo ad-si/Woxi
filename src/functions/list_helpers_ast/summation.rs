@@ -259,6 +259,72 @@ fn parse_initial_spec(expr: &Expr) -> Result<(Expr, Expr), InterpreterError> {
 }
 
 /// AST-based Product: product of list elements or iterator product.
+/// Recognise the integrand `1 + 1/var^2` across the AST shapes Woxi
+/// produces for that input. Used by the infinite-product closed form
+/// `Product[1 + 1/k², {k, 1, ∞}] = Sinh[π]/π` so we don't depend on the
+/// exact canonical form of the body.
+fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
+  use crate::syntax::BinaryOperator;
+  let is_var_squared = |e: &Expr| -> bool {
+    matches!(
+      e,
+      Expr::BinaryOp { op: BinaryOperator::Power, left, right }
+        if matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
+          && matches!(right.as_ref(), Expr::Integer(2))
+    ) || matches!(
+      e,
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(s) if s == var_name)
+          && matches!(&args[1], Expr::Integer(2))
+    )
+  };
+  let is_one_over_var_squared = |e: &Expr| -> bool {
+    // `1 / var^2`
+    if let Expr::BinaryOp { op: BinaryOperator::Divide, left, right } = e
+      && matches!(left.as_ref(), Expr::Integer(1))
+      && is_var_squared(right.as_ref())
+    {
+      return true;
+    }
+    // `var^(-2)` (canonical form for reciprocal squares)
+    if let Expr::BinaryOp { op: BinaryOperator::Power, left, right } = e
+      && matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
+      && matches!(right.as_ref(), Expr::Integer(-2))
+    {
+      return true;
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Power"
+      && args.len() == 2
+      && matches!(&args[0], Expr::Identifier(s) if s == var_name)
+      && matches!(&args[1], Expr::Integer(-2))
+    {
+      return true;
+    }
+    false
+  };
+  // Match the Plus shapes: Plus[1, 1/var^2] or Plus[1/var^2, 1] in either
+  // BinaryOp::Plus or FunctionCall["Plus", …] form.
+  if let Expr::BinaryOp { op: BinaryOperator::Plus, left, right } = body {
+    return (matches!(left.as_ref(), Expr::Integer(1))
+      && is_one_over_var_squared(right))
+      || (matches!(right.as_ref(), Expr::Integer(1))
+        && is_one_over_var_squared(left));
+  }
+  if let Expr::FunctionCall { name, args } = body
+    && name == "Plus"
+    && args.len() == 2
+  {
+    return (matches!(&args[0], Expr::Integer(1))
+      && is_one_over_var_squared(&args[1]))
+      || (matches!(&args[1], Expr::Integer(1))
+        && is_one_over_var_squared(&args[0]));
+  }
+  false
+}
+
 pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     // Product[{a, b, c}] -> a * b * c
@@ -451,6 +517,26 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 right: exp.clone(),
               });
             }
+          }
+
+          // Closed form for the classical infinite product
+          //   ∏_{k=1}^∞ (1 + 1/k²) = Sinh[π] / π
+          // (the `x = π` case of the Weierstrass factorisation
+          //   sinh(x)/x = ∏_{k=1}^∞ (1 + x²/(kπ)²)).
+          // Recognised when min == 1, max == Infinity, and the body is
+          // `1 + 1/var^2` in any of the canonical AST shapes.
+          if let Some(1) = min_concrete
+            && matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
+            && body_is_one_plus_one_over_var_squared(body, &var_name)
+          {
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![Expr::Constant("Pi".to_string())],
+              }),
+              right: Box::new(Expr::Constant("Pi".to_string())),
+            });
           }
 
           // For other symbolic cases, return unevaluated
@@ -1135,7 +1221,9 @@ fn try_symbolic_sum(
         left: Box::new(numer),
         right: Box::new(denom),
       };
-      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result)));
+      return Ok(Some(
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+      ));
     }
   }
 
