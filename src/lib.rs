@@ -3141,30 +3141,18 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
     InterpreterError::EvaluationError("Missing function body".into())
   })?);
 
-  // Unwrap Condition: f[x_] := body /; test is parsed as body being Condition[actual_body, test]
-  let body_expr = if let syntax::Expr::FunctionCall { ref name, ref args } =
+  // f[x_] := body /; test parses as `body = Condition[actual_body, test]`.
+  // Keep the Condition wrapper on the stored body so DownValues can show
+  // the original `body /; test` form. Dispatch treats `Condition[expr,
+  // False]` as "skip this rule", which preserves the runtime guard
+  // behavior even though we no longer mirror the test in the parameter
+  // condition slots.
+  let body_expr = if let syntax::Expr::FunctionCall { ref name, args: _ } =
     raw_body_expr
     && name == "Condition"
-    && args.len() == 2
   {
-    // Attach the condition to a parameter condition slot
-    let mut attached = false;
-    for c in conditions.iter_mut() {
-      if c.is_none() {
-        *c = Some(args[1].clone());
-        attached = true;
-        break;
-      }
-    }
-    if !attached && !conditions.is_empty() {
-      let existing = conditions[0].take().unwrap();
-      conditions[0] = Some(syntax::Expr::FunctionCall {
-        name: "And".to_string(),
-        args: vec![existing, args[1].clone()],
-      });
-    }
     has_any_condition = true;
-    args[0].clone()
+    raw_body_expr
   } else {
     raw_body_expr
   };
