@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{Expr, expr_to_string};
 
 /// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
 /// share the same `(var, x0, denom)` into a single SeriesData. The result
@@ -1311,6 +1311,18 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
   match e {
     Expr::Identifier(s) => Some(vec![(s.clone(), 1.0)]),
     Expr::Constant(c) => Some(vec![(format!("{c:?}"), 1.0)]),
+    // Treat the real-valued complex-component functions (Re, Im, Abs, Arg,
+    // Conjugate) as polynomial "variables" keyed by their full string form
+    // so that products like `Im[z]^2*Re[z]` sort as polynomials in
+    // (Re[z], Im[z]). Generic FunctionCall heads stay opaque.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
+      ) =>
+    {
+      Some(vec![(expr_to_string(e), 1.0)])
+    }
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
@@ -1320,12 +1332,30 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         let exp = expr_to_f64(right)?;
         return Some(vec![(s.clone(), exp)]);
       }
+      if let Expr::FunctionCall { name, .. } = left.as_ref()
+        && matches!(
+          name.as_str(),
+          "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
+        )
+      {
+        let exp = expr_to_f64(right)?;
+        return Some(vec![(expr_to_string(left), exp)]);
+      }
       None
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if let Expr::Identifier(s) = &args[0] {
         let exp = expr_to_f64(&args[1])?;
         return Some(vec![(s.clone(), exp)]);
+      }
+      if let Expr::FunctionCall { name: inner, .. } = &args[0]
+        && matches!(
+          inner.as_str(),
+          "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
+        )
+      {
+        let exp = expr_to_f64(&args[1])?;
+        return Some(vec![(expr_to_string(&args[0]), exp)]);
       }
       None
     }
