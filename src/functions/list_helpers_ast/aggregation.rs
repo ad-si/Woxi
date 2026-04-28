@@ -1578,6 +1578,103 @@ pub fn clustering_components_ast(
   Ok(Expr::List(labels))
 }
 
+/// Try to read a `FindClusters` input as `keys -> vals` (single rule
+/// whose left/right sides are equal-length lists) or as a list of rules
+/// `{key -> val, …}`. Returns `(keys, values)` on success.
+fn extract_rule_style_input(list: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  // Form: `{k1, k2, …} -> {v1, v2, …}` (single rule containing two equal-length lists).
+  if let Expr::Rule { pattern, replacement } = list
+    && let (Expr::List(ks), Expr::List(vs)) = (pattern.as_ref(), replacement.as_ref())
+    && ks.len() == vs.len()
+    && !ks.is_empty()
+  {
+    return Some((ks.clone(), vs.clone()));
+  }
+  // Form: `{k1 -> v1, k2 -> v2, …}` — every list element is a Rule.
+  if let Expr::List(items) = list
+    && !items.is_empty()
+    && items
+      .iter()
+      .all(|e| matches!(e, Expr::Rule { .. }))
+  {
+    let mut ks = Vec::with_capacity(items.len());
+    let mut vs = Vec::with_capacity(items.len());
+    for item in items {
+      if let Expr::Rule { pattern, replacement } = item {
+        ks.push(pattern.as_ref().clone());
+        vs.push(replacement.as_ref().clone());
+      }
+    }
+    return Some((ks, vs));
+  }
+  None
+}
+
+/// Cluster `keys` (1-D numeric) via single-largest-gap split, then
+/// group the corresponding `vals` and return `{{vals_high}, {vals_low}}`
+/// — wolframscript's `FindClusters[{1->a, 2->b, 10->c}]` is
+/// `{{c}, {a, b}}`, with the high-key cluster listed first.
+fn cluster_keys_emit_values(
+  keys: &[Expr],
+  vals: &[Expr],
+  raw_input: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Numeric keys only.
+  let mut numeric_keys: Vec<f64> = Vec::with_capacity(keys.len());
+  for k in keys {
+    match expr_to_f64(k) {
+      Some(v) => numeric_keys.push(v),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "FindClusters".to_string(),
+          args: vec![raw_input.clone()],
+        });
+      }
+    }
+  }
+  if numeric_keys.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  if numeric_keys.len() == 1 {
+    return Ok(Expr::List(vec![Expr::List(vec![vals[0].clone()])]));
+  }
+  // Locate the largest gap on the *sorted* keys.
+  let n = numeric_keys.len();
+  let mut sort_idx: Vec<usize> = (0..n).collect();
+  sort_idx.sort_by(|&a, &b| {
+    numeric_keys[a]
+      .partial_cmp(&numeric_keys[b])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let mut max_gap = f64::NEG_INFINITY;
+  let mut max_gap_pos = 0usize;
+  for i in 0..n - 1 {
+    let g = numeric_keys[sort_idx[i + 1]] - numeric_keys[sort_idx[i]];
+    if g > max_gap {
+      max_gap = g;
+      max_gap_pos = i;
+    }
+  }
+  // All keys identical — single cluster.
+  if max_gap == 0.0 || !max_gap.is_finite() {
+    return Ok(Expr::List(vec![Expr::List(vals.to_vec())]));
+  }
+  // Threshold halfway through the largest gap.
+  let threshold = numeric_keys[sort_idx[max_gap_pos]] + max_gap / 2.0;
+  // Bucket vals into low/high groups, preserving input order within each.
+  let mut low: Vec<Expr> = Vec::new();
+  let mut high: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    if numeric_keys[i] <= threshold {
+      low.push(vals[i].clone());
+    } else {
+      high.push(vals[i].clone());
+    }
+  }
+  // wolframscript prints the high-key cluster first.
+  Ok(Expr::List(vec![Expr::List(high), Expr::List(low)]))
+}
+
 /// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
 /// hands off to the 1-arg path when no cluster count is given, or runs
 /// the explicit `k-1` largest-gap split when `k` is provided.
@@ -1629,7 +1726,9 @@ fn find_clusters_with_k(
   }
   if k >= items.len() {
     // One element per cluster.
-    return Ok(Expr::List(items.into_iter().map(|e| Expr::List(vec![e])).collect()));
+    return Ok(Expr::List(
+      items.into_iter().map(|e| Expr::List(vec![e])).collect(),
+    ));
   }
   // Convert items to f64 for gap analysis. Bail out if any item isn't numeric.
   let mut values: Vec<f64> = Vec::with_capacity(items.len());
@@ -1657,9 +1756,8 @@ fn find_clusters_with_k(
     .map(|i| (values[sort_idx[i + 1]] - values[sort_idx[i]], i))
     .collect();
   // Pick the (k-1) largest-gap positions.
-  gaps.sort_by(|a, b| {
-    b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-  });
+  gaps
+    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
   let mut cut_positions: Vec<usize> =
     gaps.iter().take(k - 1).map(|(_, p)| *p).collect();
   cut_positions.sort();
@@ -1700,6 +1798,13 @@ fn find_clusters_with_k(
 /// `ClusteringComponents` can't label (e.g. non-numeric data or shapes
 /// the underlying algorithm doesn't yet handle).
 pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  // Rule-style inputs: `{key -> val, ...}` and `keys -> vals` — cluster by
+  // the *keys* and emit the matching values, ordered with the high-key
+  // cluster first (matching wolframscript's
+  // `FindClusters[{1->a, 2->b, 10->c}]` → `{{c}, {a, b}}`).
+  if let Some((keys, vals)) = extract_rule_style_input(list) {
+    return cluster_keys_emit_values(&keys, &vals, list);
+  }
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {
