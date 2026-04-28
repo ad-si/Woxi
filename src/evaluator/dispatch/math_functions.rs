@@ -573,10 +573,10 @@ pub fn dispatch_math_functions(
     "KelvinBei" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::kelvin_bei_ast(args));
     }
-    "KelvinKer" if args.len() == 1 => {
+    "KelvinKer" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::kelvin_ker_ast(args));
     }
-    "KelvinKei" if args.len() == 1 => {
+    "KelvinKei" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::kelvin_kei_ast(args));
     }
     "AiryAi" if args.len() == 1 => {

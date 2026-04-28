@@ -1622,12 +1622,55 @@ fn kei_series_complex(re: f64, im: f64) -> (f64, f64) {
   (total_re, total_im)
 }
 
+/// 2-arg `ker_ν(x)`/`kei_ν(x)` for non-integer ν > 0 via
+///   ker_ν + I·kei_ν = e^{-νπI/2} K_ν(x e^{πI/4})
+///                   = (π/(2 sin νπ)) [(ber_{-ν}+I·bei_{-ν}) - e^{-νπI}(ber_ν+I·bei_ν)]
+/// which reduces to
+///   ker_ν(x) = (π/(2 sin νπ)) (ber_{-ν}(x) - cos(νπ) ber_ν(x) - sin(νπ) bei_ν(x))
+///   kei_ν(x) = (π/(2 sin νπ)) (bei_{-ν}(x) - cos(νπ) bei_ν(x) + sin(νπ) ber_ν(x))
+fn ker_kei_nu_series(nu: f64, x: f64) -> Option<(f64, f64)> {
+  use std::f64::consts::PI;
+  // Handle integer ν via a separate path to avoid 1/sin(νπ) → ∞.
+  if (nu - nu.round()).abs() < 1e-12 {
+    return None;
+  }
+  let (ber_p, bei_p) = ber_bei_nu_series(nu, x);
+  let (ber_m, bei_m) = ber_bei_nu_series(-nu, x);
+  let s_nu_pi = (nu * PI).sin();
+  let c_nu_pi = (nu * PI).cos();
+  let c = PI / (2.0 * s_nu_pi);
+  let ker = c * (ber_m - c_nu_pi * ber_p - s_nu_pi * bei_p);
+  let kei = c * (bei_m - c_nu_pi * bei_p + s_nu_pi * ber_p);
+  Some((ker, kei))
+}
+
 /// KelvinKer[x] - real part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
 pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if !(args.len() == 1 || args.len() == 2) {
     return Err(InterpreterError::EvaluationError(
-      "KelvinKer expects 1 argument".into(),
+      "KelvinKer expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    let nu = match &args[0] {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ => None,
+    };
+    let x = match &args[1] {
+      Expr::Integer(n) if *n > 0 => Some(*n as f64),
+      Expr::Real(f) if *f > 0.0 => Some(*f),
+      _ => None,
+    };
+    if let (Some(nu), Some(x)) = (nu, x)
+      && let Some((ker, _)) = ker_kei_nu_series(nu, x)
+    {
+      return Ok(Expr::Real(ker));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "KelvinKer".to_string(),
+      args: args.to_vec(),
+    });
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) if *f > 0.0 => Some(*f),
@@ -1649,10 +1692,31 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// KelvinKei[x] - imaginary part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
 pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if !(args.len() == 1 || args.len() == 2) {
     return Err(InterpreterError::EvaluationError(
-      "KelvinKei expects 1 argument".into(),
+      "KelvinKei expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    let nu = match &args[0] {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ => None,
+    };
+    let x = match &args[1] {
+      Expr::Integer(n) if *n > 0 => Some(*n as f64),
+      Expr::Real(f) if *f > 0.0 => Some(*f),
+      _ => None,
+    };
+    if let (Some(nu), Some(x)) = (nu, x)
+      && let Some((_, kei)) = ker_kei_nu_series(nu, x)
+    {
+      return Ok(Expr::Real(kei));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "KelvinKei".to_string(),
+      args: args.to_vec(),
+    });
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) if *f > 0.0 => Some(*f),
