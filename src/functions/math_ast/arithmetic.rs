@@ -225,8 +225,7 @@ fn try_series_data_times(
   // Multiply the SeriesData factors pairwise. Start with the first
   // SeriesData rescaled to the common denom, then fold subsequent factors
   // in via a Cauchy product.
-  let to_common = |sa: &[Expr]|
-    -> Option<(i128, i128, Vec<Expr>)> {
+  let to_common = |sa: &[Expr]| -> Option<(i128, i128, Vec<Expr>)> {
     let nmin = match &sa[3] {
       Expr::Integer(n) => *n,
       _ => return None,
@@ -263,8 +262,7 @@ fn try_series_data_times(
           // with non-zero data; intermediate slots are 0).
           // Same for b: occupies slots at nmin_i + j*scale_i.
           let nmin_new = nmin_a + nmin_i;
-          let nmax_new =
-            (nmax_a + nmin_i).min(nmax_i + nmin_a);
+          let nmax_new = (nmax_a + nmin_i).min(nmax_i + nmin_a);
           if nmax_new <= nmin_new {
             return Ok(None);
           }
@@ -281,8 +279,7 @@ fn try_series_data_times(
               let pos = (exp_total - nmin_new) as usize;
               if pos < m_new {
                 let prod = times_ast(&[ai.clone(), bj.clone()])?;
-                coeffs_new[pos] =
-                  plus_ast(&[coeffs_new[pos].clone(), prod])?;
+                coeffs_new[pos] = plus_ast(&[coeffs_new[pos].clone(), prod])?;
               }
             }
           }
@@ -2069,6 +2066,26 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       Expr::FunctionCall { name: na, args: aa },
       Expr::FunctionCall { name: nb, args: ab },
     ) => {
+      // `Derivative[n, f, x]` and similar 3+-arg `Derivative` forms are
+      // really the flattened representation of the curried call
+      // `Derivative[n][f][x]`. In Wolfram's canonical Times ordering, this
+      // 3-level curried call sorts AFTER any single-level FunctionCall like
+      // `g[w]`, regardless of head-name comparison. Detect the curried form
+      // (Derivative with at least one non-integer arg) and treat it as
+      // higher-priority (sorts later) than non-Derivative FunctionCalls.
+      let is_curried_derivative = |n: &str, args: &[Expr]| -> bool {
+        n == "Derivative"
+          && args.len() >= 3
+          && args.iter().any(|a| !matches!(a, Expr::Integer(_)))
+      };
+      let a_curried = is_curried_derivative(na, aa);
+      let b_curried = is_curried_derivative(nb, ab);
+      if a_curried && !b_curried && nb != "Derivative" {
+        return Ordering::Greater;
+      }
+      if b_curried && !a_curried && na != "Derivative" {
+        return Ordering::Less;
+      }
       let cmp = na.cmp(nb);
       if cmp != Ordering::Equal {
         return cmp;
