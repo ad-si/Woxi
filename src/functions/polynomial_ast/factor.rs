@@ -1882,18 +1882,53 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
   if abs_gcd == 0 {
     return Expr::List(vec![Expr::Integer(1), expanded.clone()]);
   }
-  // Sign: take the sign of the LAST non-zero coefficient — Wolfram's
-  // canonical Plus order lists terms from "smallest" to "largest", and
-  // FactorTermsList extracts the content sign so that the leading
-  // (canonical-last) term ends up positive in the primitive part. So
-  // `3*(-1+2x)*(-1+y)*(1-a)` → expanded ends in `-6*a*x*y`, and the
-  // content is signed with `-1`.
-  let sign = coeffs
-    .iter()
-    .rev()
-    .find(|&&c| c != 0)
-    .map(|&c| c.signum())
-    .unwrap_or(1);
+  // Sign: take the sign of the first non-constant non-zero coefficient.
+  // In Wolfram canonical Plus order, a bare constant (e.g. `3`) is the
+  // first summand; the sign of the FIRST VARIABLE term then determines
+  // the content sign. This makes the primitive part's first variable
+  // term positive — matching wolframscript:
+  //   `FactorTermsList[6*(a+b)*(c-d)]` → `{6, a*c + b*c - a*d - b*d}`
+  //     (first term is `6*a*c`; sign +; content +6)
+  //   `FactorTermsList[3*(-1+2x)*(-1+y)*(1-a)]` →
+  //     `{-3, -1 + a + 2*x - ...}`
+  //     (first term is `3` constant, second is `-3*a`; sign −; content −3)
+  let sign = {
+    let mut found = None;
+    for (i, c) in coeffs.iter().enumerate() {
+      if *c == 0 {
+        continue;
+      }
+      // Is this term a bare constant? `summands[i]` would be Integer or
+      // UnaryOp(Minus, Integer).
+      let is_const = matches!(
+        &summands[i],
+        Expr::Integer(_)
+          | Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            ..
+          }
+      ) && match &summands[i] {
+        Expr::Integer(_) => true,
+        Expr::UnaryOp { operand, .. } => {
+          matches!(operand.as_ref(), Expr::Integer(_))
+        }
+        _ => false,
+      };
+      if !is_const {
+        found = Some(c.signum());
+        break;
+      }
+    }
+    // Fallback: if every term is a constant (single-term polynomial), use
+    // its sign.
+    found.unwrap_or_else(|| {
+      coeffs
+        .iter()
+        .find(|&&c| c != 0)
+        .map(|&c| c.signum())
+        .unwrap_or(1)
+    })
+  };
   let signed_content = abs_gcd * sign;
   // Divide each summand's integer coefficient by signed_content and rebuild
   // the polynomial so the result stays in canonical expanded form (no
@@ -1941,10 +1976,8 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
         }
         if !consumed {
           // No integer factor matched — prepend 1/div as a Rational.
-          new_args.insert(
-            0,
-            crate::functions::math_ast::make_rational_pub(1, div),
-          );
+          new_args
+            .insert(0, crate::functions::math_ast::make_rational_pub(1, div));
         }
         crate::functions::math_ast::times_ast(&new_args)
           .unwrap_or_else(|_| term.clone())
@@ -1956,13 +1989,31 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
       .unwrap_or_else(|_| term.clone()),
     }
   }
-  let new_summands: Vec<Expr> =
-    summands.iter().map(|t| divide_term(t, signed_content)).collect();
+  let new_summands: Vec<Expr> = summands
+    .iter()
+    .map(|t| divide_term(t, signed_content))
+    .collect();
   let primitive = match crate::functions::math_ast::plus_ast(&new_summands) {
     Ok(p) => p,
     Err(_) => expanded.clone(),
   };
   Expr::List(vec![Expr::Integer(signed_content), primitive])
+}
+
+fn collect_times_factors(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut fs = collect_times_factors(left);
+      fs.extend(collect_times_factors(right));
+      fs
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    _ => vec![expr.clone()],
+  }
 }
 
 fn collect_plus(expr: &Expr, out: &mut Vec<Expr>) {
@@ -2025,6 +2076,57 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(extract_multi_var_content(&expanded));
     }
   };
+
+  // 2-arg form with a chosen variable: get the multi-var content, then
+  // factor the primitive into (non-var part) × (var part) using Factor.
+  // E.g. `FactorTermsList[3*(-1+2x)*(-1+y)*(1-a), x]` →
+  // `{-3, 1-a-y+a*y, -1+2*x}`. The numeric content is taken from the
+  // multi-var extraction; the polynomial-level split groups the
+  // factored result by which factors mention `var`.
+  if args.len() == 2 {
+    let multi = extract_multi_var_content(&expanded);
+    if let Expr::List(parts) = &multi
+      && parts.len() == 2
+      && let Expr::Integer(num_content) = &parts[0]
+    {
+      let primitive = &parts[1];
+      // If the primitive doesn't actually depend on `var`, route to the
+      // existing fallback below.
+      if contains_var(primitive, &var) {
+        let factored = factor_ast(&[primitive.clone()])?;
+        let factors = collect_times_factors(&factored);
+        let mut var_factors: Vec<Expr> = Vec::new();
+        let mut non_var_factors: Vec<Expr> = Vec::new();
+        for f in factors {
+          if contains_var(&f, &var) {
+            var_factors.push(f);
+          } else {
+            non_var_factors.push(f);
+          }
+        }
+        let combine = |fs: Vec<Expr>| -> Expr {
+          if fs.is_empty() {
+            Expr::Integer(1)
+          } else if fs.len() == 1 {
+            fs.into_iter().next().unwrap()
+          } else {
+            crate::functions::math_ast::times_ast(&fs)
+              .unwrap_or(Expr::Integer(1))
+          }
+        };
+        let non_var_part = combine(non_var_factors);
+        let var_part = combine(var_factors);
+        // Expand the non-var part so its display matches the test
+        // expectation `1 - a - y + a*y` (not `(-1+a)*(-1+y)`).
+        let non_var_expanded = expand_and_combine(&non_var_part);
+        return Ok(Expr::List(vec![
+          Expr::Integer(*num_content),
+          non_var_expanded,
+          var_part,
+        ]));
+      }
+    }
+  }
 
   let coeffs = match extract_poly_coeffs(&expanded, &var) {
     Some(c) => c,
