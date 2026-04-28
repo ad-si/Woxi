@@ -404,10 +404,15 @@ fn gamma_incomplete_upper(
     return gamma_incomplete_upper_int_a(n, z);
   }
 
-  // Numeric evaluation: both args are real numbers
-  // (Wolfram keeps symbolic Gamma[0, z] and Gamma[n, z] (n >= 2) unevaluated.
-  // We only simplify Gamma[1, z] and numeric cases.)
-  if let (Some(a_val), Some(z_val)) = (try_eval_to_f64(a), try_eval_to_f64(z))
+  // Numeric evaluation: both args are real numbers AND at least one is Real
+  // (inexact). When both are integers/rationals, Wolfram keeps the form
+  // symbolic — e.g. `Gamma[0, 1]` stays as `Gamma[0, 1]` rather than
+  // collapsing to `0.21938…`.
+  let has_real_arg =
+    matches!(a, Expr::Real(_)) || matches!(z, Expr::Real(_));
+  if has_real_arg
+    && let (Some(a_val), Some(z_val)) =
+      (try_eval_to_f64(a), try_eval_to_f64(z))
     && z_val >= 0.0
   {
     let result = upper_incomplete_gamma(a_val, z_val);

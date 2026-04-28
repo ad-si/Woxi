@@ -5738,6 +5738,43 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           let numer = rest.join("*");
           return format!("({})/{}", numer, d);
         }
+        // Handle Times[Rational[n, d], e1, e2, ...] as "(n*e1*e2*...)/d"
+        // for |n| > 1, d > 1 (Wolfram convention for general rationals).
+        if args.len() >= 3
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+          && n.abs() > 1
+          && *d > 1
+          && !args[1..].iter().any(is_denominator_factor)
+          && !args[1..]
+            .iter()
+            .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
+        {
+          let fmt_factor = |a: &Expr| -> String {
+            let s = fmt(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          };
+          let rest: Vec<String> = args[1..].iter().map(fmt_factor).collect();
+          let numer = rest.join("*");
+          return format!("({}*{})/{}", n, numer, d);
+        }
         // Handle Times[Rational[-1, d], e1, e2, ...] as "-1/d*(e1*e2*...)"
         // (Wolfram convention for negative reciprocal coefficients).
         if args.len() >= 2

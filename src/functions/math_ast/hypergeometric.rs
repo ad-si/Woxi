@@ -1010,6 +1010,39 @@ pub fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
 }
 
 /// HypergeometricU[a, b, z] - confluent hypergeometric function of the second kind
+/// Recursively apply Distribute so every nested `Rational · Plus[…]` and
+/// `Integer · Plus[…]` factor inside a Times is fully distributed.
+fn distribute_recursive(e: &Expr) -> Result<Expr, InterpreterError> {
+  let dist =
+    crate::evaluator::evaluate_function_call_ast("Distribute", &[e.clone()])?;
+  match &dist {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        new_args.push(distribute_recursive(a)?);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: new_args,
+      })
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        new_args.push(distribute_recursive(a)?);
+      }
+      crate::evaluator::evaluate_function_call_ast(
+        "Distribute",
+        &[Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args,
+        }],
+      )
+    }
+    _ => Ok(dist),
+  }
+}
+
 pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -1071,6 +1104,90 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Times".to_string(),
       args: vec![pow, exp_z, gamma],
     });
+  }
+
+  // U[a, 2, z] for positive integer a ≥ 2 via the contiguous relation
+  //   a(a-1) U[a+1, 2, z] = (2(a-1) + z) U[a, 2, z] - U[a-1, 2, z]
+  // with base cases U[1, 2, z] = 1/z and U[2, 2, z] = 1/z - E^z·Gamma[0, z].
+  // E.g. `HypergeometricU[3, 2, 1] → 1 - (3*E*Gamma[0, 1])/2`.
+  if let Expr::Integer(a) = &args[0]
+    && let Expr::Integer(b) = &args[1]
+    && *b == 2
+    && *a >= 2
+  {
+    let z = &args[2];
+    // U[1, 2, z] = z^{-1}
+    let mut u_prev = crate::evaluator::evaluate_expr_to_expr(
+      &Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(-1)],
+      },
+    )?;
+    // U[2, 2, z] = z^{-1} - E^z · Gamma[0, z]
+    let exp_z = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()],
+    };
+    let mut u_curr = crate::evaluator::evaluate_expr_to_expr(
+      &Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![z.clone(), Expr::Integer(-1)],
+          },
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              exp_z,
+              Expr::FunctionCall {
+                name: "Gamma".to_string(),
+                args: vec![Expr::Integer(0), z.clone()],
+              },
+            ],
+          },
+        ],
+      },
+    )?;
+    // Iterate the recurrence from k=2 up to a-1 to obtain U[a, 2, z].
+    for k in 2..*a {
+      let coeff_curr = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![Expr::Integer(2 * (k - 1)), z.clone()],
+      };
+      let next = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(k * (k - 1))],
+          },
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![coeff_curr, u_curr.clone()],
+              },
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), u_prev.clone()],
+              },
+            ],
+          },
+        ],
+      };
+      let next = crate::evaluator::evaluate_expr_to_expr(&next)?;
+      // Distribute the rational coefficients over Plus so the result stays
+      // in the canonical "constant + coefficient·E^z·Γ[0,z]" shape rather
+      // than `(stuff)/(k(k-1))`. Apply Distribute repeatedly to flatten
+      // nested products and Distribute children too.
+      let next = distribute_recursive(&next)?;
+      u_prev = u_curr;
+      u_curr = next;
+    }
+    return Ok(u_curr);
   }
 
   // Return unevaluated
