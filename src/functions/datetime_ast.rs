@@ -659,15 +659,16 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn make_date_list(y: i64, m: i64, d: i64, h: i64, min: i64, sec: f64) -> Expr {
-  // Round seconds to avoid floating point artifacts
-  let sec_rounded = (sec * 100.0).round() / 100.0;
+  // Keep the raw f64 seconds: wolframscript exposes the floating-point
+  // residual from converting the date to absolute seconds and back (e.g.
+  // `46.019999980926514` for `{2003, 5, 0.5, 0.1, 0.767}`).
   Expr::List(vec![
     Expr::Integer(y as i128),
     Expr::Integer(m as i128),
     Expr::Integer(d as i128),
     Expr::Integer(h as i128),
     Expr::Integer(min as i128),
-    Expr::Real(sec_rounded),
+    Expr::Real(sec),
   ])
 }
 
