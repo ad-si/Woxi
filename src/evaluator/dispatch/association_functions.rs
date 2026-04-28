@@ -112,46 +112,18 @@ fn assoc_insert_dedup(pairs: &mut Vec<(Expr, Expr)>, key: Expr, val: Expr) {
   }
 }
 
-/// Convert Association[...] function call to Expr::Association
+/// Convert Association[...] function call to Expr::Association.
+///
+/// Each arg may be a Rule/RuleDelayed (added directly), an Association
+/// (whose pairs are spliced in), or a List (whose elements are recursively
+/// flattened). Later keys override earlier ones. Matches Wolfram:
+/// `Association[a -> 1, {<||>, a -> 2}]` → `<|a -> 2|>`.
 fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Association[{a -> 1, b -> 2}] - single list argument containing rules
-  if args.len() == 1
-    && let Expr::List(items) = &args[0]
-  {
-    let mut pairs = Vec::new();
-    for item in items {
-      match item {
-        Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => {
-          assoc_insert_dedup(
-            &mut pairs,
-            *pattern.clone(),
-            *replacement.clone(),
-          );
-        }
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "Association".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      }
-    }
-    return Ok(Expr::Association(pairs));
-  }
-
-  // Association[a -> 1, b -> 2] - direct rule arguments. Nested associations
-  // splice their pairs into the outer one (matches Wolfram:
-  // Association[a -> 1, Association[b -> 2]] → <|a -> 1, b -> 2|>).
-  let mut pairs = Vec::new();
-  for arg in args {
-    match arg {
+  fn ingest(
+    pairs: &mut Vec<(Expr, Expr)>,
+    item: &Expr,
+  ) -> Result<bool, InterpreterError> {
+    match item {
       Expr::Rule {
         pattern,
         replacement,
@@ -160,19 +132,34 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        assoc_insert_dedup(&mut pairs, *pattern.clone(), *replacement.clone());
+        assoc_insert_dedup(pairs, *pattern.clone(), *replacement.clone());
+        Ok(true)
       }
       Expr::Association(inner_pairs) => {
         for (k, v) in inner_pairs {
-          assoc_insert_dedup(&mut pairs, k.clone(), v.clone());
+          assoc_insert_dedup(pairs, k.clone(), v.clone());
         }
+        Ok(true)
       }
-      _ => {
-        return Ok(Expr::FunctionCall {
-          name: "Association".to_string(),
-          args: args.to_vec(),
-        });
+      Expr::List(inner) => {
+        for sub in inner {
+          if !ingest(pairs, sub)? {
+            return Ok(false);
+          }
+        }
+        Ok(true)
       }
+      _ => Ok(false),
+    }
+  }
+
+  let mut pairs = Vec::new();
+  for arg in args {
+    if !ingest(&mut pairs, arg)? {
+      return Ok(Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: args.to_vec(),
+      });
     }
   }
   Ok(Expr::Association(pairs))
