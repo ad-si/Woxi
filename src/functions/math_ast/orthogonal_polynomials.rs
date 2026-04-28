@@ -225,16 +225,16 @@ fn associated_legendre_p_ast(
         name: "Gamma".to_string(),
         args: vec![Expr::Real(1.0 - mf)],
       };
-      let gamma_val =
-        match crate::evaluator::evaluate_expr_to_expr(&gamma_call) {
-          Ok(Expr::Real(v)) => v,
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "LegendreP".to_string(),
-              args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-            });
-          }
-        };
+      let gamma_val = match crate::evaluator::evaluate_expr_to_expr(&gamma_call)
+      {
+        Ok(Expr::Real(v)) => v,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "LegendreP".to_string(),
+            args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+          });
+        }
+      };
       return Ok(Expr::Real(prefactor * hyp_val / gamma_val));
     }
     return Ok(Expr::FunctionCall {
@@ -529,6 +529,79 @@ pub fn spherical_harmonic_y_ast(
   let (l, m) = match (l_val, m_val) {
     (Some(l), Some(m)) => (l, m),
     _ => {
+      // Non-integer ℓ or m: route through the formula
+      //   Y[ℓ, m, θ, φ] =
+      //     Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
+      //     · LegendreP[ℓ, m, Cos[θ]] · E^(I m φ)
+      // when all four arguments are real-valued floats.
+      if let (Some(lf), Some(mf), Some(theta), Some(phi)) = (
+        try_eval_to_f64(&args[0]),
+        try_eval_to_f64(&args[1]),
+        try_eval_to_f64(&args[2]),
+        try_eval_to_f64(&args[3]),
+      ) {
+        let cos_theta = theta.cos();
+        let leg_call = Expr::FunctionCall {
+          name: "LegendreP".to_string(),
+          args: vec![
+            Expr::Real(lf),
+            Expr::Real(mf),
+            Expr::Real(cos_theta),
+          ],
+        };
+        let leg_val =
+          match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
+            Ok(Expr::Real(v)) => v,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "SphericalHarmonicY".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+        // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
+        let g_num_call = Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![Expr::Real(lf - mf + 1.0)],
+        };
+        let g_den_call = Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![Expr::Real(lf + mf + 1.0)],
+        };
+        let g_num =
+          match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
+            Ok(Expr::Real(v)) => v,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "SphericalHarmonicY".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+        let g_den =
+          match crate::evaluator::evaluate_expr_to_expr(&g_den_call) {
+            Ok(Expr::Real(v)) => v,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "SphericalHarmonicY".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+        let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI)
+          * g_num
+          / g_den)
+          .sqrt();
+        let phase_re = (mf * phi).cos();
+        let phase_im = (mf * phi).sin();
+        let amplitude = norm * leg_val;
+        let re = amplitude * phase_re;
+        let im = amplitude * phase_im;
+        if im.abs() < 1e-15 {
+          return Ok(Expr::Real(re));
+        }
+        return Ok(build_complex_float_expr(re, im));
+      }
       return Ok(Expr::FunctionCall {
         name: "SphericalHarmonicY".to_string(),
         args: args.to_vec(),
