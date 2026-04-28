@@ -1715,7 +1715,7 @@ MaxDetect,Detect local maxima,,unevaluated,8.0,1743
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1.0,1745
 Parallelize,Parallelize computation,,unevaluated,7.0,1745
 BernoulliGraphDistribution,Bernoulli random graph,,unevaluated,8.0,1748
-ClusteringComponents,Clustering components,,unevaluated,8.0,1748
+ClusteringComponents,Clustering components,✅,unevaluated,8.0,1748
 MandelbrotSetPlot,Mandelbrot set plot,,unevaluated,10.0,1748
 Language,Language option,,unevaluated,3.0,1749
 SequenceCases,Find matching subsequences in a list,✅,pure,10.1,1751

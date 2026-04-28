@@ -1510,3 +1510,69 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(bool_to_expr(true))
 }
+
+/// `ClusteringComponents[list]` — assign each element of a 1-D numeric list
+/// to a cluster index. Uses a single-largest-gap split: sort the values,
+/// find the largest consecutive gap, and partition into two groups at that
+/// gap. Returns `{1, 1, …, 2, 2, …}` mapping each input position to a
+/// cluster index — matching wolframscript's
+/// `ClusteringComponents[{1, 2, 3, 1, 2, 10, 100}]` → `{1, 1, 1, 1, 1, 1, 2}`.
+///
+/// Falls back to the unevaluated form for inputs that aren't a flat list of
+/// numbers — multi-dimensional or symbolic clustering would need a more
+/// general algorithm.
+pub fn clustering_components_ast(
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ClusteringComponents".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  let mut values: Vec<f64> = Vec::with_capacity(items.len());
+  for item in &items {
+    if let Some(v) = expr_to_f64(item) {
+      values.push(v);
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "ClusteringComponents".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+  // All identical: a single cluster.
+  let (min, max) = values.iter().fold(
+    (f64::INFINITY, f64::NEG_INFINITY),
+    |(lo, hi), v| (lo.min(*v), hi.max(*v)),
+  );
+  if min == max {
+    return Ok(Expr::List(vec![Expr::Integer(1); values.len()]));
+  }
+  // Find the largest gap between consecutive sorted values.
+  let mut sorted = values.clone();
+  sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let mut max_gap = 0.0_f64;
+  let mut max_gap_lower = sorted[0];
+  for w in sorted.windows(2) {
+    let gap = w[1] - w[0];
+    if gap > max_gap {
+      max_gap = gap;
+      max_gap_lower = w[0];
+    }
+  }
+  // Threshold: half-way through the largest gap. Values ≤ threshold go to
+  // cluster 1 (the lower band), the rest to cluster 2.
+  let threshold = max_gap_lower + max_gap / 2.0;
+  let labels: Vec<Expr> = values
+    .iter()
+    .map(|v| Expr::Integer(if *v <= threshold { 1 } else { 2 }))
+    .collect();
+  Ok(Expr::List(labels))
+}
