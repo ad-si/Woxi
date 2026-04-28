@@ -1884,49 +1884,88 @@ fn pointwise_image_op(
     )));
   }
 
-  match (&args[0], &args[1]) {
-    (
-      Expr::Image {
-        width: w1,
-        height: h1,
-        channels: ch1,
-        data: data1,
-        image_type: t1,
-      },
-      Expr::Image {
-        width: w2,
-        height: h2,
-        channels: ch2,
-        data: data2,
-        ..
-      },
-    ) => {
-      if w1 != w2 || h1 != h2 || ch1 != ch2 {
-        return Err(InterpreterError::EvaluationError(format!(
-          "{}: images must have the same dimensions and channels",
-          name
-        )));
-      }
-
-      let new_data: Vec<f64> = data1
-        .iter()
-        .zip(data2.iter())
-        .map(|(&a, &b)| op(a, b))
-        .collect();
-
-      Ok(Expr::Image {
-        width: *w1,
-        height: *h1,
-        channels: *ch1,
-        data: Arc::new(new_data),
-        image_type: *t1,
-      })
+  // (Image, Image) — pointwise on matching dimensions.
+  if let (
+    Expr::Image {
+      width: w1,
+      height: h1,
+      channels: ch1,
+      data: data1,
+      image_type: t1,
+    },
+    Expr::Image {
+      width: w2,
+      height: h2,
+      channels: ch2,
+      data: data2,
+      ..
+    },
+  ) = (&args[0], &args[1])
+  {
+    if w1 != w2 || h1 != h2 || ch1 != ch2 {
+      return Err(InterpreterError::EvaluationError(format!(
+        "{}: images must have the same dimensions and channels",
+        name
+      )));
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "{}: both arguments must be Images",
-      name
-    ))),
+    let new_data: Vec<f64> = data1
+      .iter()
+      .zip(data2.iter())
+      .map(|(&a, &b)| op(a, b))
+      .collect();
+    return Ok(Expr::Image {
+      width: *w1,
+      height: *h1,
+      channels: *ch1,
+      data: Arc::new(new_data),
+      image_type: *t1,
+    });
   }
+
+  // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
+  // wolframscript: `ImageAdd[i, 0.5]` adds 0.5 to every pixel.
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+    && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+  {
+    let new_data: Vec<f64> = data.iter().map(|&v| op(v, s)).collect();
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    });
+  }
+  // (scalar, Image) — apply `op(scalar, pixel)`.
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[1]
+    && let Some(s) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+  {
+    let new_data: Vec<f64> = data.iter().map(|&v| op(s, v)).collect();
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: Arc::new(new_data),
+      image_type: *image_type,
+    });
+  }
+
+  Err(InterpreterError::EvaluationError(format!(
+    "{}: both arguments must be Images",
+    name
+  )))
 }
 
 /// ImageAdd[img1, img2] - Pointwise add, clamped [0,1]
