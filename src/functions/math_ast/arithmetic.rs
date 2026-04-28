@@ -37,8 +37,8 @@ fn try_series_data_plus(
   };
   for &idx in &series_indices[1..] {
     if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
-      let var_eq =
-        crate::syntax::expr_to_string(&sa[0]) == crate::syntax::expr_to_string(&var0);
+      let var_eq = crate::syntax::expr_to_string(&sa[0])
+        == crate::syntax::expr_to_string(&var0);
       let x0_eq = crate::syntax::expr_to_string(&sa[1])
         == crate::syntax::expr_to_string(&x0_0);
       if !var_eq || !x0_eq {
@@ -106,8 +106,7 @@ fn try_series_data_plus(
   let mut new_coeffs: Vec<Expr> = vec![Expr::Integer(0); m_new];
 
   for (idx_i, &orig_idx) in series_indices.iter().enumerate() {
-    let denom_i = if let Expr::FunctionCall { args: sa, .. } = &args[orig_idx]
-    {
+    let denom_i = if let Expr::FunctionCall { args: sa, .. } = &args[orig_idx] {
       denom_of(sa).unwrap()
     } else {
       return Ok(None);
@@ -155,6 +154,171 @@ fn try_series_data_plus(
     let mut new_args = vec![merged];
     new_args.extend(other);
     Ok(Some(plus_ast(&new_args)?))
+  }
+}
+
+/// Combine two SeriesData factors into one via Cauchy product. Both must
+/// share the same `(var, x0)`. The new denom is `lcm(d1, d2)`, the new
+/// `nmin` is the sum of starting orders (in common-denom units), and the
+/// new `nmax` is `min(n1max+n2min, n2max+n1min)` so the truncation matches
+/// the tighter of the two `O(…)` orders. Returns `None` if no two
+/// SeriesData factors are present.
+fn try_series_data_times(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let series_indices: Vec<usize> = args
+    .iter()
+    .enumerate()
+    .filter_map(|(i, a)| match a {
+      Expr::FunctionCall { name, args: sa }
+        if name == "SeriesData" && sa.len() == 6 =>
+      {
+        Some(i)
+      }
+      _ => None,
+    })
+    .collect();
+  if series_indices.len() < 2 {
+    return Ok(None);
+  }
+
+  let first = &args[series_indices[0]];
+  let (var0, x0_0) = match first {
+    Expr::FunctionCall { args: sa, .. } => (sa[0].clone(), sa[1].clone()),
+    _ => return Ok(None),
+  };
+  for &idx in &series_indices[1..] {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let var_eq = crate::syntax::expr_to_string(&sa[0])
+        == crate::syntax::expr_to_string(&var0);
+      let x0_eq = crate::syntax::expr_to_string(&sa[1])
+        == crate::syntax::expr_to_string(&x0_0);
+      if !var_eq || !x0_eq {
+        return Ok(None);
+      }
+    }
+  }
+
+  let denom_of = |sa: &[Expr]| -> Option<i128> {
+    if let Expr::Integer(d) = &sa[5] {
+      Some(*d)
+    } else {
+      None
+    }
+  };
+  let mut common_denom: i128 = 1;
+  for &idx in &series_indices {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let d = denom_of(sa).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "SeriesData denom must be Integer".into(),
+        )
+      })?;
+      let g = numeric_utils::gcd(common_denom.abs(), d.abs());
+      if g == 0 {
+        return Ok(None);
+      }
+      common_denom = (common_denom / g).saturating_mul(d.abs());
+    }
+  }
+
+  // Multiply the SeriesData factors pairwise. Start with the first
+  // SeriesData rescaled to the common denom, then fold subsequent factors
+  // in via a Cauchy product.
+  let to_common = |sa: &[Expr]|
+    -> Option<(i128, i128, Vec<Expr>)> {
+    let nmin = match &sa[3] {
+      Expr::Integer(n) => *n,
+      _ => return None,
+    };
+    let nmax = match &sa[4] {
+      Expr::Integer(n) => *n,
+      _ => return None,
+    };
+    let denom = denom_of(sa)?;
+    let scale = common_denom / denom;
+    let coeffs = match &sa[2] {
+      Expr::List(items) => items.clone(),
+      _ => return None,
+    };
+    Some((nmin * scale, nmax * scale, coeffs))
+  };
+
+  let mut acc: Option<(i128, i128, Vec<Expr>, i128)> = None; // (nmin, nmax, coeffs, scale_used)
+  for &idx in &series_indices {
+    if let Expr::FunctionCall { args: sa, .. } = &args[idx] {
+      let denom_i = denom_of(sa).unwrap();
+      let scale_i = common_denom / denom_i;
+      let (nmin_i, nmax_i, coeffs_i) = match to_common(sa) {
+        Some(t) => t,
+        None => return Ok(None),
+      };
+      acc = Some(match acc {
+        None => (nmin_i, nmax_i, coeffs_i, scale_i),
+        Some((nmin_a, nmax_a, coeffs_a, scale_a)) => {
+          // Cauchy product: c_k_new = sum_{i+j*scale_a*scale_i = k_new} a_i * b_j
+          // After rescaling, slot k corresponds to exponent (nmin_*+k)/D.
+          // Acc occupies slots [0..coeffs_a.len()-1] mapping to scaled
+          // exponents nmin_a + k * scale_a (only k where slot is filled
+          // with non-zero data; intermediate slots are 0).
+          // Same for b: occupies slots at nmin_i + j*scale_i.
+          let nmin_new = nmin_a + nmin_i;
+          let nmax_new =
+            (nmax_a + nmin_i).min(nmax_i + nmin_a);
+          if nmax_new <= nmin_new {
+            return Ok(None);
+          }
+          let m_new = (nmax_new - nmin_new) as usize;
+          let mut coeffs_new: Vec<Expr> = vec![Expr::Integer(0); m_new];
+          for (i, ai) in coeffs_a.iter().enumerate() {
+            let exp_a = nmin_a + (i as i128) * scale_a;
+            for (j, bj) in coeffs_i.iter().enumerate() {
+              let exp_b = nmin_i + (j as i128) * scale_i;
+              let exp_total = exp_a + exp_b;
+              if exp_total >= nmax_new {
+                continue;
+              }
+              let pos = (exp_total - nmin_new) as usize;
+              if pos < m_new {
+                let prod = times_ast(&[ai.clone(), bj.clone()])?;
+                coeffs_new[pos] =
+                  plus_ast(&[coeffs_new[pos].clone(), prod])?;
+              }
+            }
+          }
+          (nmin_new, nmax_new, coeffs_new, 1)
+        }
+      });
+    }
+  }
+  let (nmin_f, nmax_f, coeffs_f, _) = acc.unwrap();
+
+  let merged = Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      var0,
+      x0_0,
+      Expr::List(coeffs_f),
+      Expr::Integer(nmin_f),
+      Expr::Integer(nmax_f),
+      Expr::Integer(common_denom),
+    ],
+  };
+
+  let series_idx_set: std::collections::HashSet<usize> =
+    series_indices.iter().copied().collect();
+  let other: Vec<Expr> = args
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| !series_idx_set.contains(i))
+    .map(|(_, a)| a.clone())
+    .collect();
+  if other.is_empty() {
+    Ok(Some(merged))
+  } else {
+    let mut new_args = vec![merged];
+    new_args.extend(other);
+    Ok(Some(times_ast(&new_args)?))
   }
 }
 
@@ -3014,6 +3178,14 @@ pub fn combine_like_bases(
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
+  }
+
+  // Combine two-or-more `SeriesData[var, x0, …]` factors sharing the same
+  // (var, x0) into a single SeriesData via Cauchy product. Truncates to the
+  // tightest achievable order. Runs before the one-SeriesData distribution
+  // path below.
+  if let Some(result) = try_series_data_times(args)? {
+    return Ok(result);
   }
 
   // Distribute a constant factor into a SeriesData expansion. When `args`
