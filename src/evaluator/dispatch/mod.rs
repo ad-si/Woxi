@@ -5397,7 +5397,6 @@ pub fn evaluate_function_call_ast_inner(
       | "FindPeaks"
       | "NProbability"
       | "DedekindEta"
-      | "PixelValuePositions"
       | "Weights"
       | "WhitespaceCharacter"
       | "VerticalSlider"

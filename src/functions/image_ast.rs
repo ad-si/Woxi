@@ -494,6 +494,94 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// PixelValuePositions[img, val] / PixelValuePositions[img, val, tol]
+///
+/// Return the `{x, y}` coordinates of every grayscale pixel whose value
+/// equals `val` (within `tol`, default 0). Wolfram uses bottom-left
+/// origin so `y` is `1` for the bottom-most row, `h` for the top.
+/// Iteration order is top-down, left-to-right within each row, matching
+/// wolframscript:
+///
+///   `PixelValuePositions[Image[{{0, 1}, {1, 0}, {1, 1}}], 1]`
+///     →  `{{2, 3}, {1, 2}, {1, 1}, {2, 1}}`
+pub fn pixel_value_positions_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PixelValuePositions expects 2 or 3 arguments".into(),
+    ));
+  }
+  let target = match crate::functions::math_ast::try_eval_to_f64(&args[1]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "PixelValuePositions".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let tol = if args.len() == 3 {
+    match crate::functions::math_ast::try_eval_to_f64(&args[2]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "PixelValuePositions".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    0.0
+  };
+  match &args[0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      let w = *width as usize;
+      let h = *height as usize;
+      let ch = *channels as usize;
+      // Only the grayscale path is implemented; multichannel matching
+      // would need Wolfram's `{r, g, b}`-style RGB target value.
+      if ch != 1 {
+        return Ok(Expr::FunctionCall {
+          name: "PixelValuePositions".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      let mut positions: Vec<Expr> = Vec::new();
+      for y in 0..h {
+        for x in 0..w {
+          let v = data[y * w + x];
+          if (v - target).abs() <= tol {
+            // Wolfram coords: x' = x+1, y' = h - y (bottom-left origin).
+            positions.push(Expr::List(vec![
+              Expr::Integer((x + 1) as i128),
+              Expr::Integer((h - y) as i128),
+            ]));
+          }
+        }
+      }
+      Ok(Expr::List(positions))
+    }
+    _ => {
+      crate::emit_message(
+        "PixelValuePositions: argument is not an Image; returning unevaluated."
+          .to_string()
+          .as_str(),
+      );
+      Ok(Expr::FunctionCall {
+        name: "PixelValuePositions".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
 /// ImageColorSpace[img] - "Grayscale" or "RGB"
 pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

@@ -50,6 +50,11 @@ pub fn dispatch_image_functions(
     "ImageData" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_data_ast(args));
     }
+    "PixelValuePositions" if args.len() == 2 || args.len() == 3 => {
+      return Some(
+        crate::functions::image_ast::pixel_value_positions_ast(args),
+      );
+    }
     "ImageColorSpace" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_color_space_ast(args));
     }
