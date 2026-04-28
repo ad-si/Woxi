@@ -288,6 +288,8 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // CompoundExpression separators; Span is handled at the Expression level.
 CompoundExpression = { Expression ~ (";" ~ !(&SpanSep) ~ Expression?)+ }
 
+// DerivativeNumeric: numeric literal followed by '...' (e.g. 1', (-1.4)', I via Constant)
+DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Constant) ~ DerivativePrime }
 // DerivativePrime: one or more ' characters after a function name (e.g. f', f'', f''')
 // Transforms f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
 DerivativePrime = @{ "'"+ }
@@ -335,6 +337,7 @@ Term = _{
   | Constant
   | String
   | ListExtended
+  | DerivativeNumeric
   | NumericValue
   | PreIncrement
   | PreDecrement
@@ -389,6 +392,7 @@ TermNoImplicit = _{
   | Constant
   | String
   | ListExtended
+  | DerivativeNumeric
   | NumericValue
   | PreIncrement
   | PreDecrement

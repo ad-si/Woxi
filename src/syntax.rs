@@ -1640,6 +1640,20 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(name)],
       }
     }
+    Rule::DerivativeNumeric => {
+      // 1' → Derivative[1][1], (-1.4)' → Derivative[1][-1.4], etc.
+      // The literal becomes the argument of the curried Derivative form.
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let value = pair_to_expr(inner_pairs[0].clone());
+      let order = inner_pairs[1].as_str().len();
+      Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![Expr::Integer(order as i128)],
+        }),
+        args: vec![value],
+      }
+    }
     Rule::Slot => {
       let s = pair.as_str();
       // # is slot 1, #1 is slot 1, #2 is slot 2, etc.

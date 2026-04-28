@@ -127,10 +127,8 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn max_slot_index(expr: &Expr) -> usize {
   fn walk(e: &Expr, max: &mut usize) {
     match e {
-      Expr::Slot(n) | Expr::SlotSequence(n) => {
-        if *n > *max {
-          *max = *n;
-        }
+      Expr::Slot(n) | Expr::SlotSequence(n) if *n > *max => {
+        *max = *n;
       }
       Expr::List(items) => items.iter().for_each(|i| walk(i, max)),
       Expr::FunctionCall { args, .. } => args.iter().for_each(|i| walk(i, max)),
@@ -751,6 +749,44 @@ pub fn apply_curried_call(
           | "Drop"
           | "Between"
       ) {
+        // `Derivative[n][const]` → `0&` for n ≥ 1, `const&` for n == 0.
+        // Caught here (before flattening) so the multi-index `Derivative[1, 0]`
+        // form, which goes through evaluate_function_call_ast directly, stays
+        // symbolic. Constants are atomic numerics that can't be a derivative
+        // order interpretation: Real, Rational, Constant, BigFloat, Complex,
+        // and Integer (since `Derivative[1, 0][f]` already routed through the
+        // multi-index branch above and never reaches here).
+        if name == "Derivative"
+          && func_args.len() == 1
+          && let Expr::Integer(n) = &func_args[0]
+          && args.len() == 1
+        {
+          let arg0 = &args[0];
+          let is_constant_arg = matches!(
+            arg0,
+            Expr::Integer(_)
+              | Expr::Real(_)
+              | Expr::BigFloat(_, _)
+              | Expr::BigInteger(_)
+              | Expr::Constant(_)
+          ) || matches!(
+            arg0,
+            Expr::FunctionCall { name: rn, .. }
+              if rn == "Rational" || rn == "Complex"
+          ) || matches!(
+            arg0,
+            Expr::Identifier(s) if s == "I"
+          );
+          if is_constant_arg {
+            return Ok(Expr::Function {
+              body: Box::new(if *n == 0 {
+                arg0.clone()
+              } else {
+                Expr::Integer(0)
+              }),
+            });
+          }
+        }
         // Known operator-form functions: flatten curried call
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());
