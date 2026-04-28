@@ -741,7 +741,297 @@ pub fn spherical_harmonic_y_ast(
     name: "Times".to_string(),
     args: vec![norm_expr, plm, imp],
   };
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  Ok(simplify_spherical_harmonic_form(&evaluated))
+}
+
+/// Post-process a symbolic SphericalHarmonicY result to match Wolfram's
+/// canonical form. Two transformations:
+///   1. Combine `Rational[a, b] * Sqrt[Times[Rational[c, d], Pi^-1]]` by
+///      absorbing the rational under the radical and pulling out perfect
+///      squares; e.g. `-3/4 * Sqrt[7/(12 Pi)] → -1/8 * Sqrt[21/Pi]`.
+///   2. Reorder the resulting Times factors so the leading rational is
+///      followed by `Power[E, ...]`, then the sqrt, then the polynomial,
+///      then `Sin[θ]` — matching wolframscript's canonical printout.
+fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
+  let Expr::FunctionCall { name, args } = expr else {
+    return expr.clone();
+  };
+  if name != "Times" {
+    return expr.clone();
+  }
+  // Decompose a `Power[base, exp]` whether represented as FunctionCall or
+  // BinaryOp::Power into `(base, exp)`.
+  let as_power = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some(((**left).clone(), (**right).clone())),
+      _ => None,
+    }
+  };
+
+  // ── Step 1: locate the leading Rational and the Sqrt[Rational/Pi] factor.
+  let mut rat_idx: Option<usize> = None;
+  let mut ra_n = 0_i128;
+  let mut ra_d = 1_i128;
+  for (i, a) in args.iter().enumerate() {
+    if let Expr::FunctionCall { name: rn, args: ra } = a
+      && rn == "Rational"
+      && ra.len() == 2
+      && let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1])
+    {
+      rat_idx = Some(i);
+      ra_n = *n;
+      ra_d = *d;
+      break;
+    }
+  }
+
+  let mut sqrt_idx: Option<usize> = None;
+  let mut sqrt_n = 0_i128;
+  let mut sqrt_d = 1_i128;
+  for (i, a) in args.iter().enumerate() {
+    if Some(i) == rat_idx {
+      continue;
+    }
+    let Some((base, exp)) = as_power(a) else {
+      continue;
+    };
+    let exp_is_half = matches!(&exp, Expr::FunctionCall { name: en, args: ea }
+      if en == "Rational" && ea.len() == 2
+      && matches!((&ea[0], &ea[1]), (Expr::Integer(1), Expr::Integer(2))));
+    if !exp_is_half {
+      continue;
+    }
+    let Expr::FunctionCall {
+      name: tn,
+      args: ta,
+    } = &base
+    else {
+      continue;
+    };
+    if tn != "Times" {
+      continue;
+    }
+    let mut found_rat: Option<(i128, i128)> = None;
+    let mut has_pi_inv = false;
+    for f in ta {
+      if let Expr::FunctionCall { name: rn, args: rargs } = f
+        && rn == "Rational"
+        && rargs.len() == 2
+        && let (Expr::Integer(c), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+      {
+        found_rat = Some((*c, *d));
+        continue;
+      }
+      if let Some((pb, pe)) = as_power(f)
+        && matches!(&pb, Expr::Constant(s) if s == "Pi")
+        && matches!(&pe, Expr::Integer(-1))
+      {
+        has_pi_inv = true;
+      }
+    }
+    if let Some((c, d)) = found_rat
+      && has_pi_inv
+    {
+      sqrt_idx = Some(i);
+      sqrt_n = c;
+      sqrt_d = d;
+      break;
+    }
+  }
+
+  // ── Step 2: build the simplified Rational and Sqrt if both are present.
+  let (new_coeff, new_sqrt) = if let (Some(_), Some(_)) = (rat_idx, sqrt_idx) {
+    let Some(comb_n_pre) =
+      ra_n.checked_pow(2).and_then(|x| x.checked_mul(sqrt_n))
+    else {
+      return expr.clone();
+    };
+    let Some(comb_d_pre) =
+      ra_d.checked_pow(2).and_then(|x| x.checked_mul(sqrt_d))
+    else {
+      return expr.clone();
+    };
+    let mut comb_n = comb_n_pre.abs();
+    let mut comb_d = comb_d_pre.abs();
+    let g = gcd_i128_local(comb_n, comb_d);
+    if g > 1 {
+      comb_n /= g;
+      comb_d /= g;
+    }
+    let (extract_n, residual_n) = extract_largest_square(comb_n);
+    let (extract_d, residual_d) = extract_largest_square(comb_d);
+    let g2 = gcd_i128_local(extract_n, extract_d);
+    let coeff_n_abs = extract_n / g2;
+    let coeff_d = extract_d / g2;
+    let sign: i128 = if (ra_n.signum() * ra_d.signum()) < 0 {
+      -1
+    } else {
+      1
+    };
+    let coeff_n = sign * coeff_n_abs;
+    let new_coeff = if coeff_d == 1 {
+      Expr::Integer(coeff_n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(coeff_n), Expr::Integer(coeff_d)],
+      }
+    };
+    let new_radicand_rat = if residual_d == 1 {
+      Expr::Integer(residual_n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
+      }
+    };
+    let new_sqrt_arg = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        new_radicand_rat,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+        },
+      ],
+    };
+    let new_sqrt = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        new_sqrt_arg,
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)],
+        },
+      ],
+    };
+    (Some(new_coeff), Some(new_sqrt))
+  } else {
+    (None, None)
+  };
+
+  // ── Step 3: split args into the coefficient slot (replaced if applicable)
+  // and the sortable factors.
+  let mut coeff_slot: Option<Expr> = None;
+  let mut others: Vec<Expr> = Vec::new();
+  for (i, a) in args.iter().enumerate() {
+    if Some(i) == rat_idx {
+      coeff_slot = Some(new_coeff.clone().unwrap_or_else(|| a.clone()));
+    } else if Some(i) == sqrt_idx {
+      others.push(new_sqrt.clone().unwrap_or_else(|| a.clone()));
+    } else {
+      others.push(a.clone());
+    }
+  }
+
+  // ── Step 4: sort the symbolic factors by Wolfram canonical key.
+  // Each factor's key is derived from its head/base structure:
+  //   - Power[atom, _]: the atom name (e.g. E^x → "E").
+  //   - Power[Times[..., Pi^-1], 1/2]: take the deepest atomic base ("Pi").
+  //   - Plus[…]: the head name ("Plus").
+  //   - FunctionCall like Sin, Cos: the head name ("Sin", "Cos").
+  let sort_key = |e: &Expr| -> String {
+    if let Some((base, _)) = as_power(e) {
+      // Power: drill down through compound bases to find the deepest atomic name.
+      fn deepest_atomic(b: &Expr) -> Option<String> {
+        if let Expr::Constant(s) | Expr::Identifier(s) = b {
+          return Some(s.clone());
+        }
+        if let Expr::FunctionCall { name, args } = b
+          && (name == "Times" || name == "Plus")
+          && let Some(last) = args.last()
+        {
+          // Skip plain integers/rationals at the end.
+          for a in args.iter().rev() {
+            if matches!(a, Expr::Integer(_) | Expr::Real(_)) {
+              continue;
+            }
+            if matches!(a, Expr::FunctionCall { name: rn, .. } if rn == "Rational") {
+              continue;
+            }
+            if let Some(s) = deepest_atomic(a) {
+              return Some(s);
+            }
+          }
+          return deepest_atomic(last);
+        }
+        if let Expr::FunctionCall { name, args } = b {
+          if name == "Power" && args.len() == 2 {
+            return deepest_atomic(&args[0]);
+          }
+          return Some(name.clone());
+        }
+        if let Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          ..
+        } = b
+        {
+          return deepest_atomic(left);
+        }
+        None
+      }
+      return deepest_atomic(&base).unwrap_or_else(|| "~".to_string());
+    }
+    if let Expr::FunctionCall { name, .. } = e {
+      return name.clone();
+    }
+    "~".to_string()
+  };
+
+  others.sort_by(|a, b| {
+    let ka = sort_key(a);
+    let kb = sort_key(b);
+    let la = ka.to_lowercase();
+    let lb = kb.to_lowercase();
+    la.cmp(&lb).then_with(|| ka.cmp(&kb))
+  });
+
+  let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
+  if let Some(c) = coeff_slot {
+    new_args.push(c);
+  }
+  new_args.extend(others);
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: new_args,
+  }
+}
+
+fn gcd_i128_local(mut a: i128, mut b: i128) -> i128 {
+  a = a.abs();
+  b = b.abs();
+  while b != 0 {
+    let t = a % b;
+    a = b;
+    b = t;
+  }
+  a
+}
+
+fn extract_largest_square(n: i128) -> (i128, i128) {
+  if n <= 0 {
+    return (1, n);
+  }
+  let mut k: i128 = 1;
+  let mut residual = n;
+  let mut p: i128 = 2;
+  while p.checked_mul(p).map(|s| s <= residual).unwrap_or(false) {
+    while residual % (p * p) == 0 {
+      k *= p;
+      residual /= p * p;
+    }
+    p += 1;
+  }
+  (k, residual)
 }
 
 /// Build the symbolic Legendre polynomial expression for P_n(x)
