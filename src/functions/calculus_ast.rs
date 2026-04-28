@@ -639,15 +639,16 @@ fn try_definite_integral(
     && is_infinity(hi)
     && let Some(coeff) = match_gaussian(integrand, var)
   {
-    // coeff is 'a' in E^(-a*x^2): result = Sqrt[Pi/a]
-    return Some(match coeff {
+    let result = match coeff {
       Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
       _ => make_sqrt(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(Expr::Constant("Pi".to_string())),
         right: Box::new(coeff),
       }),
-    });
+    };
+    // Re-evaluate so e.g. `Sqrt[Pi/(1/4)]` collapses to `2*Sqrt[Pi]`.
+    return Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result));
   }
 
   // Half-Gaussian: ∫_0^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]/2
@@ -663,11 +664,12 @@ fn try_definite_integral(
         right: Box::new(coeff),
       }),
     };
-    return Some(Expr::BinaryOp {
+    let result = Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(sqrt_part),
       right: Box::new(Expr::Integer(2)),
-    });
+    };
+    return Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result));
   }
 
   // Fresnel C/S: ∫_0^z Cos[Pi var^2 / 2] d var = FresnelC[z]
@@ -856,7 +858,9 @@ fn is_pi_x_squared_over_two(expr: &Expr, var: &str) -> bool {
 /// Try to match an expression as E^(-a*x^2) where a is a positive constant.
 /// Returns Some(a) if it matches, None otherwise.
 fn match_gaussian(expr: &Expr, var: &str) -> Option<Expr> {
-  // Match E^(exponent) where E is the constant
+  // Match E^(exponent) where E is the constant. Both `BinaryOp::Power` (from
+  // direct `^` parsing) and `FunctionCall["Power", [E, exponent]]` (from
+  // canonical-form simplification of e.g. `Exp[-(x/2)^2]`) are accepted.
   let exponent = match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -865,6 +869,15 @@ fn match_gaussian(expr: &Expr, var: &str) -> Option<Expr> {
     } => {
       if matches!(left.as_ref(), Expr::Constant(c) if c == "E") {
         Some(right.as_ref())
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      if matches!(&args[0], Expr::Constant(c) if c == "E") {
+        Some(&args[1])
       } else {
         None
       }
@@ -940,14 +953,33 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
     }
     // FunctionCall("Times", [...]) form
     Expr::FunctionCall { name, args } if name == "Times" => {
-      // Times[-1, x^2] => a=1
-      // Times[-a, x^2] => a (where a is positive)
-      // Times[-1, a, x^2] => a
-      // Find a negative integer factor and check remaining is a*x^2
+      // Find a negative numeric factor (Integer or Rational) and check that
+      // the remainder is x^2 or a*x^2, returning the positive coefficient.
+      // Handles e.g. `Times[Rational[-1, 4], Power[x, 2]]` from the
+      // simplified form of `Exp[-(x/2)^2]`.
+      fn neg_numeric_to_positive(e: &Expr) -> Option<Expr> {
+        match e {
+          Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+          Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+              let (n, d) = if *d < 0 { (-*n, -*d) } else { (*n, *d) };
+              if n < 0 {
+                return Some(Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(-n), Expr::Integer(d)],
+                });
+              }
+            }
+            None
+          }
+          _ => None,
+        }
+      }
       for (i, arg) in args.iter().enumerate() {
-        if let Expr::Integer(n) = arg
-          && *n < 0
-        {
+        if let Some(positive_coeff) = neg_numeric_to_positive(arg) {
           let mut rest: Vec<Expr> = args
             .iter()
             .enumerate()
@@ -962,19 +994,18 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
               args: rest,
             }
           };
-          if *n == -1 {
-            // Times[-1, x^2] => a=1
+          if matches!(arg, Expr::Integer(-1)) {
+            // Times[-1, x^2] => a=1; Times[-1, b*x^2] => b
             if is_var_squared(&rest_expr, var) {
               return Some(Expr::Integer(1));
             }
-            // Times[-1, a*x^2] => a
             if let Some(coeff) = match_a_x_squared(&rest_expr, var) {
               return Some(coeff);
             }
           } else {
-            // Times[-a, x^2] => a
+            // Times[-coeff, x^2] => coeff (positive form)
             if is_var_squared(&rest_expr, var) {
-              return Some(Expr::Integer(-*n));
+              return Some(positive_coeff);
             }
           }
         }
@@ -1001,17 +1032,27 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
-/// Check if expr is x^2 (where x is the variable)
+/// Check if expr is x^2 (where x is the variable). Accepts both the parsed
+/// `BinaryOp::Power` form and the canonicalised `Power[x, 2]` FunctionCall
+/// form (which is what falls out of simplifying `(x/2)^2` etc.).
 fn is_var_squared(expr: &Expr, var: &str) -> bool {
-  matches!(
-    expr,
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
-      left,
-      right,
-    } if matches!(left.as_ref(), Expr::Identifier(name) if name == var)
-      && matches!(right.as_ref(), Expr::Integer(2))
-  )
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = expr
+  {
+    return matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+      && matches!(right.as_ref(), Expr::Integer(2));
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Power"
+    && args.len() == 2
+  {
+    return matches!(&args[0], Expr::Identifier(n) if n == var)
+      && matches!(&args[1], Expr::Integer(2));
+  }
+  false
 }
 
 /// Match a*x^2 and return 'a'
