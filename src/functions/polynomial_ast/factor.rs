@@ -1812,6 +1812,178 @@ pub fn factor_square_free_list_ast(
   Ok(Expr::List(result))
 }
 
+/// Extract the integer GCD content from a multi-variable expanded
+/// polynomial. The sign comes from the first (canonical-leading) term —
+/// Wolfram's `FactorTermsList[3*(-1+2x)*(-1+y)*(1-a)]` returns
+/// `{-3, -1+a+2*x-...}` because the leading term `-6*a*x*y` is negative.
+fn extract_multi_var_content(expanded: &Expr) -> Expr {
+  // Collect Plus summands.
+  let summands: Vec<Expr> = match expanded {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut v = Vec::new();
+      collect_plus(left, &mut v);
+      collect_plus(right, &mut v);
+      v
+    }
+    _ => vec![expanded.clone()],
+  };
+
+  // Extract the integer coefficient from each term.
+  fn term_coeff(term: &Expr) -> Option<i128> {
+    match term {
+      Expr::Integer(n) => Some(*n),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => term_coeff(operand).map(|c| -c),
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        // Find an integer coefficient (default to 1, with sign tracked).
+        let mut coeff: i128 = 1;
+        for a in args {
+          if let Expr::Integer(n) = a {
+            coeff *= n;
+          } else if let Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } = a
+            && let Expr::Integer(n) = operand.as_ref()
+          {
+            coeff *= -n;
+          }
+        }
+        Some(coeff)
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Integer(n), _) | (_, Expr::Integer(n)) => Some(*n),
+        _ => Some(1),
+      },
+      _ => Some(1),
+    }
+  }
+
+  let coeffs: Vec<i128> = summands.iter().filter_map(term_coeff).collect();
+  if coeffs.is_empty() {
+    return Expr::List(vec![Expr::Integer(1), expanded.clone()]);
+  }
+  let abs_gcd = coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, |a, b| gcd_i128(a, b.abs()));
+  if abs_gcd == 0 {
+    return Expr::List(vec![Expr::Integer(1), expanded.clone()]);
+  }
+  // Sign: take the sign of the LAST non-zero coefficient — Wolfram's
+  // canonical Plus order lists terms from "smallest" to "largest", and
+  // FactorTermsList extracts the content sign so that the leading
+  // (canonical-last) term ends up positive in the primitive part. So
+  // `3*(-1+2x)*(-1+y)*(1-a)` → expanded ends in `-6*a*x*y`, and the
+  // content is signed with `-1`.
+  let sign = coeffs
+    .iter()
+    .rev()
+    .find(|&&c| c != 0)
+    .map(|&c| c.signum())
+    .unwrap_or(1);
+  let signed_content = abs_gcd * sign;
+  // Divide each summand's integer coefficient by signed_content and rebuild
+  // the polynomial so the result stays in canonical expanded form (no
+  // surrounding `(…)/n` fraction).
+  fn divide_term(term: &Expr, div: i128) -> Expr {
+    match term {
+      Expr::Integer(n) => {
+        if n % div == 0 {
+          Expr::Integer(n / div)
+        } else {
+          crate::functions::math_ast::divide_ast(&[
+            term.clone(),
+            Expr::Integer(div),
+          ])
+          .unwrap_or_else(|_| term.clone())
+        }
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        let inner = divide_term(operand, div);
+        crate::functions::math_ast::times_ast(&[Expr::Integer(-1), inner])
+          .unwrap_or_else(|_| Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(divide_term(operand, div)),
+          })
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        let mut new_args = Vec::with_capacity(args.len());
+        let mut consumed = false;
+        for a in args {
+          if !consumed
+            && let Expr::Integer(n) = a
+            && n % div == 0
+          {
+            let q = n / div;
+            if q != 1 {
+              new_args.push(Expr::Integer(q));
+            }
+            consumed = true;
+            continue;
+          }
+          new_args.push(a.clone());
+        }
+        if !consumed {
+          // No integer factor matched — prepend 1/div as a Rational.
+          new_args.insert(
+            0,
+            crate::functions::math_ast::make_rational_pub(1, div),
+          );
+        }
+        crate::functions::math_ast::times_ast(&new_args)
+          .unwrap_or_else(|_| term.clone())
+      }
+      _ => crate::functions::math_ast::divide_ast(&[
+        term.clone(),
+        Expr::Integer(div),
+      ])
+      .unwrap_or_else(|_| term.clone()),
+    }
+  }
+  let new_summands: Vec<Expr> =
+    summands.iter().map(|t| divide_term(t, signed_content)).collect();
+  let primitive = match crate::functions::math_ast::plus_ast(&new_summands) {
+    Ok(p) => p,
+    Err(_) => expanded.clone(),
+  };
+  Expr::List(vec![Expr::Integer(signed_content), primitive])
+}
+
+fn collect_plus(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args {
+        collect_plus(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_plus(left, out);
+      collect_plus(right, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
 /// FactorTermsList[poly] - returns {content, primitive_part}
 pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -1845,7 +2017,12 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let var = match var {
     Some(v) => v,
     None => {
-      return Ok(Expr::List(vec![Expr::Integer(1), expanded]));
+      // Multi-variable polynomial — extract the integer GCD content of the
+      // expanded sum. Wolfram's `FactorTermsList[3*(-1+2*x)*(-1+y)*(1-a)]`
+      // returns `{-3, ...}` because the leading (canonical-first) term in
+      // the expanded form has a negative coefficient, and the absolute GCD
+      // of all coefficients is 3.
+      return Ok(extract_multi_var_content(&expanded));
     }
   };
 
