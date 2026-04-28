@@ -1139,7 +1139,9 @@ pub fn differentiate_expr(
 /// `CurriedCall { func: FunctionCall("Derivative", [...]), args: [Identifier(f)] }`
 /// in `apply_curried_call`'s fallback path) into `(indices, fname)`. Returns
 /// `None` if the name doesn't parse as that exact shape.
-fn parse_stringified_derivative_head(name: &str) -> Option<(Vec<Expr>, String)> {
+fn parse_stringified_derivative_head(
+  name: &str,
+) -> Option<(Vec<Expr>, String)> {
   // Match prefix "Derivative["
   let rest = name.strip_prefix("Derivative[")?;
   // Find the closing "]" of the indices list (no nested brackets in indices)
@@ -5471,11 +5473,31 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && name == var
             && is_constant_wrt(right, var)
           {
-            let new_exp = simplify(Expr::BinaryOp {
-              op: Plus,
-              left: right.clone(),
-              right: Box::new(Expr::Integer(1)),
-            });
+            // When the exponent is a Real half-integer (e.g. 3.5), Wolfram
+            // promotes the *exponent* of the antiderivative to a Rational
+            // (`x^(9/2)`) while keeping the divisor as a Real (`/ 4.5`,
+            // displayed as `0.222... * x^(9/2)`). We build a separate
+            // `divisor_exp` so the exponent stays Rational while the
+            // division uses the Real, matching wolframscript's split.
+            let (new_exp, divisor_exp) = if let Expr::Real(f) = right.as_ref()
+              && (f * 2.0).fract() == 0.0
+            {
+              let two_n_plus_2 = ((f + 1.0) * 2.0).round() as i128;
+              (
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(two_n_plus_2), Expr::Integer(2)],
+                },
+                Expr::Real(f + 1.0),
+              )
+            } else {
+              let s = simplify(Expr::BinaryOp {
+                op: Plus,
+                left: right.clone(),
+                right: Box::new(Expr::Integer(1)),
+              });
+              (s.clone(), s)
+            };
             // Special case: ∫ x^(-1) dx = Log[x]
             if matches!(&new_exp, Expr::Integer(0)) {
               return Some(Expr::FunctionCall {
@@ -5513,7 +5535,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             return Some(Expr::BinaryOp {
               op: Divide,
               left: Box::new(power_expr),
-              right: Box::new(new_exp),
+              right: Box::new(divisor_exp),
             });
           }
           // ∫ E^x dx = E^x, ∫ E^(a*x) dx = E^(a*x)/a,
