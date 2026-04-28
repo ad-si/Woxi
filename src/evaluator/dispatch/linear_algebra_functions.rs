@@ -572,6 +572,132 @@ pub fn dispatch_linear_algebra_functions(
         ),
       );
     }
+    "MatrixExp" if args.len() == 1 => {
+      // 2×2 closed form via Sylvester's formula for distinct eigenvalues:
+      //   exp(M) = α·M + β·I
+      // with α = (e^λ₁ − e^λ₂) / (λ₁ − λ₂)
+      //      β = (λ₁·e^λ₂ − λ₂·e^λ₁) / (λ₁ − λ₂)
+      // Building the result this way (instead of expanding `V·D·V⁻¹`)
+      // keeps Wolfram-canonical factorings like `2*(-1 + E)` intact —
+      // crucial for matching `MatrixExp[{{0, 2}, {0, 1}}]` which
+      // wolframscript prints as `{{1, 2*(-1 + E)}, {0, E}}`.
+      use crate::evaluator::evaluate_function_call_ast as eval;
+      let mat = args[0].clone();
+      // Only the 2×2 case for now; fall through (unevaluated) otherwise.
+      let n = match &mat {
+        Expr::List(rows) if !rows.is_empty()
+          && rows.iter().all(|r| matches!(r, Expr::List(cols) if cols.len() == rows.len()))
+          => rows.len(),
+        _ => 0,
+      };
+      if n != 2 {
+        return Some(Ok(Expr::FunctionCall {
+          name: "MatrixExp".to_string(),
+          args: args.to_vec(),
+        }));
+      }
+      let evals = match eval("Eigenvalues", &[mat.clone()]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let evals_list = match &evals {
+        Expr::List(xs) if xs.len() == 2 => xs.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "MatrixExp".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      let l1 = evals_list[0].clone();
+      let l2 = evals_list[1].clone();
+      // Build α and β via the evaluator so e.g. `Exp[0]` collapses to `1`.
+      let make = |head: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: head.to_string(),
+          args,
+        })
+      };
+      let exp_l1 = match make("Exp", vec![l1.clone()]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let exp_l2 = match make("Exp", vec![l2.clone()]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      // λ₁ − λ₂; bail out (defective / equal-eigenvalue case) if zero.
+      let diff = match make("Plus", vec![
+        l1.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), l2.clone()],
+        },
+      ]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let diff_is_zero = matches!(&diff, Expr::Integer(0))
+        || matches!(&diff, Expr::Real(z) if *z == 0.0);
+      if diff_is_zero {
+        return Some(Ok(Expr::FunctionCall {
+          name: "MatrixExp".to_string(),
+          args: args.to_vec(),
+        }));
+      }
+      // α = (exp_l1 − exp_l2) / (λ₁ − λ₂)
+      let alpha_num = match make("Plus", vec![
+        exp_l1.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), exp_l2.clone()],
+        },
+      ]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let alpha = match make("Divide", vec![alpha_num, diff.clone()]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      // β = (λ₁ · exp_l2 − λ₂ · exp_l1) / (λ₁ − λ₂)
+      let beta_num = match make("Plus", vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![l1.clone(), exp_l2.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), l2.clone(), exp_l1.clone()],
+        },
+      ]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let beta = match make("Divide", vec![beta_num, diff]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      // I (2×2)
+      let identity = match eval("IdentityMatrix", &[Expr::Integer(2)]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      // α·M + β·I (matrix add via Plus on matrix expressions).
+      let alpha_m = match make("Times", vec![alpha, mat.clone()]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let beta_i = match make("Times", vec![beta, identity]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let result = match make("Plus", vec![alpha_m, beta_i]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(result));
+    }
     "MatrixPower" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         let mat = &args[0];
