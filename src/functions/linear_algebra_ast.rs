@@ -3512,12 +3512,40 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Build the pure-function form of the fitted expression: replace each
+  // occurrence of `var_name` with `Slot[1]` and wrap in `Function`.
+  // wolframscript exposes this as the `"Function"` property and prints it
+  // with a trailing `&` (and trailing space): `0.186… + 0.779…*#1 & `.
+  let function_form = Expr::Function {
+    body: Box::new(crate::syntax::substitute_variable(
+      &fitted_expr,
+      &var_name,
+      &Expr::Slot(1),
+    )),
+  };
+
   // Build input data as list of {x, y} pairs
   let input_data = Expr::List(
     x_vals
       .iter()
       .zip(y_vals.iter())
       .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .collect(),
+  );
+
+  // Build the response vector: the y-column of the input data, kept as
+  // exact Integers when the input was integer-valued (matching
+  // wolframscript's `m["Response"]` → `{1, 4, 3, 6}` for integer inputs).
+  let response_vec = Expr::List(
+    y_vals
+      .iter()
+      .map(|y| {
+        if y.fract() == 0.0 && y.abs() < (i128::MAX as f64) {
+          Expr::Integer(*y as i128)
+        } else {
+          Expr::Real(*y)
+        }
+      })
       .collect(),
   );
 
@@ -3563,6 +3591,8 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     (Expr::String("InputData".to_string()), input_data),
     (Expr::String("DesignMatrix".to_string()), design_matrix),
+    (Expr::String("Function".to_string()), function_form),
+    (Expr::String("Response".to_string()), response_vec),
     (
       Expr::String("VariableName".to_string()),
       Expr::String(var_name),
