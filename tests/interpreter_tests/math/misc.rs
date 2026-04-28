@@ -439,7 +439,7 @@ mod log {
 
   #[test]
   fn log_i() {
-    assert_eq!(interpret("Log[I]").unwrap(), "(I/2)*Pi");
+    assert_eq!(interpret("Log[I]").unwrap(), "I/2*Pi");
   }
 
   #[test]

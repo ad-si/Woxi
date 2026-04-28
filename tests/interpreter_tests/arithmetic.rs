@@ -368,9 +368,7 @@ mod arithmetic {
     #[test]
     fn bigfloat_sorts_before_imaginary_unit() {
       assert!(
-        interpret("N[Pi, 30] * I")
-          .unwrap()
-          .ends_with("*I"),
+        interpret("N[Pi, 30] * I").unwrap().ends_with("*I"),
         "N[Pi, 30] * I should display BigFloat first then *I"
       );
       assert!(
@@ -2286,7 +2284,7 @@ mod expand_threading {
 
   #[test]
   fn arccosh_zero() {
-    assert_eq!(interpret("ArcCosh[0]").unwrap(), "(I/2)*Pi");
+    assert_eq!(interpret("ArcCosh[0]").unwrap(), "I/2*Pi");
   }
 
   #[test]
@@ -2296,7 +2294,7 @@ mod expand_threading {
 
   #[test]
   fn arccoth_zero() {
-    assert_eq!(interpret("ArcCoth[0]").unwrap(), "(I/2)*Pi");
+    assert_eq!(interpret("ArcCoth[0]").unwrap(), "I/2*Pi");
   }
 
   #[test]

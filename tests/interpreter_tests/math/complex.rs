@@ -646,17 +646,17 @@ mod im_tests {
   #[test]
   fn exp_i_pi_third() {
     // Wolfram keeps Exp[I*Pi/3] unevaluated (only evaluates for denom 1 or 2)
-    assert_eq!(interpret("Exp[I Pi / 3]").unwrap(), "E^((I/3)*Pi)");
+    assert_eq!(interpret("Exp[I Pi / 3]").unwrap(), "E^(I/3*Pi)");
   }
 
   #[test]
   fn exp_i_pi_sixth() {
-    assert_eq!(interpret("Exp[I Pi / 6]").unwrap(), "E^((I/6)*Pi)");
+    assert_eq!(interpret("Exp[I Pi / 6]").unwrap(), "E^(I/6*Pi)");
   }
 
   #[test]
   fn exp_i_pi_fourth() {
-    assert_eq!(interpret("Exp[I Pi / 4]").unwrap(), "E^((I/4)*Pi)");
+    assert_eq!(interpret("Exp[I Pi / 4]").unwrap(), "E^(I/4*Pi)");
   }
 
   #[test]

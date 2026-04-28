@@ -6021,8 +6021,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
                   if let (Expr::Integer(num), Expr::Integer(den)) =
                     (&ra[0], &ra[1])
                   {
+                    // wolframscript prints `Times[1/2, I, x]` as `I/2*x`,
+                    // not `(I/2)*x` — `*` already binds tighter than `/`,
+                    // so the parens are redundant. Negative rationals stay
+                    // parenthesized (`(-1/2*I)*x`) so the leading `-` is
+                    // not pulled out as unary minus by the parser.
                     if *num == 1 {
-                      Some(format!("(I/{})", den))
+                      Some(format!("I/{}", den))
                     } else if *num == -1 {
                       Some(format!("(-1/{}*I)", den))
                     } else {
@@ -6913,7 +6918,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
-        ) || matches!(operand.as_ref(), Expr::Function { .. });
+        ) || matches!(
+          operand.as_ref(),
+          Expr::Function { .. }
+        );
         if needs_parens {
           format!("-({})", inner)
         } else {
