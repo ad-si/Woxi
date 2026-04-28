@@ -3498,20 +3498,28 @@ fn simplify_with_assumptions(
   opts: &Expr,
   full: bool,
 ) -> Result<Expr, InterpreterError> {
-  // Extract the assumption: either from `Assumptions -> assum` or taken directly.
-  let assumption_val = match opts {
+  // Extract the assumption value and decide whether it should *replace*
+  // or *combine* with `$Assumptions`. wolframscript treats the option
+  // form `Simplify[expr, Assumptions -> asn]` as a per-call override
+  // (asn replaces `$Assumptions`), while the plain 2-arg form
+  // `Simplify[expr, asn]` is additive (asn AND `$Assumptions`).
+  let (assumption_val, replace_global) = match opts {
     Expr::Rule {
       pattern,
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions") => {
-      replacement.as_ref().clone()
+      (replacement.as_ref().clone(), true)
     }
-    _ => opts.clone(),
+    _ => (opts.clone(), false),
   };
 
   // Combine with any already-active $Assumptions (e.g. from an outer Assuming)
-  // so `Assuming[x > 0, Simplify[expr, y > 0]]` uses both.
-  let combined = if let Some(prev_assum) = current_assumptions() {
+  // so `Assuming[x > 0, Simplify[expr, y > 0]]` uses both. The
+  // `Assumptions -> …` option form skips this so it can override the
+  // outer scope.
+  let combined = if !replace_global
+    && let Some(prev_assum) = current_assumptions()
+  {
     Expr::FunctionCall {
       name: "And".to_string(),
       args: vec![prev_assum, assumption_val.clone()],
@@ -4314,17 +4322,47 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
   // assumption) and look for any direct contradiction with `cond`.
   // `cond` itself may be an `And[c1, c2, …]` from an earlier
   // `Times[CE[v1, c1], CE[v2, c2]]` collapse — any conjunct that
-  // contradicts an assumption makes the whole AND false.
+  // contradicts an assumption makes the whole AND false. Conjuncts
+  // that are *implied* by an assumption (literal match) are dropped
+  // from the residual condition, matching wolframscript's
+  // `Simplify[CE[1, a>0 && b>0], Assumptions->{b>0}]` →
+  // `CE[1, a>0]`.
   if let Some(ref a_expr) = assumptions_expr {
     let assumption_items = flatten_assumption_atoms(a_expr);
     let cond_atoms = flatten_assumption_atoms(cond);
-    for c_atom in &cond_atoms {
+    let mut residual: Vec<Expr> = Vec::new();
+    for c_atom in cond_atoms {
+      // Contradiction with any assumption ⇒ whole AND is False.
       for a in &assumption_items {
-        if inequalities_contradict(a, c_atom) {
+        if inequalities_contradict(a, &c_atom) {
           return Expr::Identifier("Undefined".to_string());
         }
       }
+      // Drop conjuncts already implied by an assumption (literal match
+      // is enough for the cases wolframscript produces here).
+      let c_str = expr_to_string(&c_atom);
+      let implied = assumption_items
+        .iter()
+        .any(|a| expr_to_string(a) == c_str);
+      if !implied {
+        residual.push(c_atom);
+      }
     }
+    let new_cond = match residual.len() {
+      0 => Expr::Identifier("True".to_string()),
+      1 => residual.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "And".to_string(),
+        args: residual,
+      },
+    };
+    if matches!(&new_cond, Expr::Identifier(s) if s == "True") {
+      return simplify_expr(value);
+    }
+    return Expr::FunctionCall {
+      name: "ConditionalExpression".to_string(),
+      args: vec![simplify_expr(value), new_cond],
+    };
   }
   Expr::FunctionCall {
     name: "ConditionalExpression".to_string(),
@@ -4339,10 +4377,10 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
 /// (or condition) against the other side.
 fn flatten_assumption_atoms(expr: &Expr) -> Vec<Expr> {
   match expr {
-    Expr::List(items) => items.iter().flat_map(flatten_assumption_atoms).collect(),
-    Expr::FunctionCall { name, args }
-      if name == "And" || name == "List" =>
-    {
+    Expr::List(items) => {
+      items.iter().flat_map(flatten_assumption_atoms).collect()
+    }
+    Expr::FunctionCall { name, args } if name == "And" || name == "List" => {
       args.iter().flat_map(flatten_assumption_atoms).collect()
     }
     Expr::BinaryOp {
