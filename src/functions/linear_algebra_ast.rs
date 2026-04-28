@@ -3594,10 +3594,16 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fitted_expr = if terms.len() == 1 {
     terms.into_iter().next().unwrap()
   } else {
-    Expr::FunctionCall {
+    // Run the assembled `Plus[c0, c1*basis1, c2*basis2, …]` through the
+    // evaluator so it lands in canonical Plus order — wolframscript prints
+    // `m["BestFit"]` and `m["Function"]` with the basis terms sorted by
+    // primary function name (Cos before Sin, etc.), not in the input
+    // basis order.
+    let raw = Expr::FunctionCall {
       name: "Plus".to_string(),
       args: terms,
-    }
+    };
+    evaluate_expr_to_expr(&raw).unwrap_or(raw)
   };
 
   // Build the pure-function form of the fitted expression: replace each
@@ -3669,7 +3675,10 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (
       Expr::String("IndependentVariables".to_string()),
       Expr::List(
-        var_names.iter().map(|n| Expr::Identifier(n.clone())).collect(),
+        var_names
+          .iter()
+          .map(|n| Expr::Identifier(n.clone()))
+          .collect(),
       ),
     ),
     (
