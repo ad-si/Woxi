@@ -992,6 +992,58 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Extract x and y values from Fit data.
 /// Handles both `{y1, y2, ...}` and `{{x1, y1}, {x2, y2}, ...}` forms.
+/// Like `extract_fit_data` but for `n_vars` independent variables: each
+/// row is `{x1, x2, …, xn_vars, y}` (length `n_vars + 1`). Returns the
+/// independent vars as a `Vec<Vec<f64>>` (one row per data point) and the
+/// y-column separately. Falls back to univariate `extract_fit_data` shape
+/// when `n_vars == 1` so the {y} (implicit-x) case still works.
+fn extract_fit_data_multi(
+  data: &[Expr],
+  n_vars: usize,
+) -> Result<(Vec<Vec<f64>>, Vec<f64>), InterpreterError> {
+  if n_vars == 1 {
+    let (xs, ys) = extract_fit_data(data)?;
+    let multi = xs.into_iter().map(|x| vec![x]).collect();
+    return Ok((multi, ys));
+  }
+  let mut x_rows = Vec::with_capacity(data.len());
+  let mut ys = Vec::with_capacity(data.len());
+  for item in data {
+    let row = match item {
+      Expr::List(r) => r,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Fit: each data row must be a list of length n_vars + 1".into(),
+        ));
+      }
+    };
+    if row.len() != n_vars + 1 {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Fit: each data row must have {} entries (got {})",
+        n_vars + 1,
+        row.len()
+      )));
+    }
+    let mut xs = Vec::with_capacity(n_vars);
+    for x in &row[..n_vars] {
+      let v = try_eval_to_f64(x).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Fit: could not convert x coordinate to a number".into(),
+        )
+      })?;
+      xs.push(v);
+    }
+    let y = try_eval_to_f64(&row[n_vars]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Fit: could not convert y coordinate to a number".into(),
+      )
+    })?;
+    x_rows.push(xs);
+    ys.push(y);
+  }
+  Ok((x_rows, ys))
+}
+
 fn extract_fit_data(
   data: &[Expr],
 ) -> Result<(Vec<f64>, Vec<f64>), InterpreterError> {
@@ -3410,19 +3462,43 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Extract basis functions
-  let basis = match &args[1] {
+  // Extract basis functions. Wolfram's `LinearModelFit` always prepends
+  // the constant `1` (the `IncludeConstantBasis -> True` default), whether
+  // the basis is given as a single expression (`x`) or a list
+  // (`{Sin[x], Cos[y]}`).
+  let user_basis: Vec<Expr> = match &args[1] {
     Expr::List(items) => items.clone(),
-    // Single basis function (e.g., just x) - add constant term
-    other => vec![Expr::Integer(1), other.clone()],
+    other => vec![other.clone()],
   };
+  let mut basis: Vec<Expr> = vec![Expr::Integer(1)];
+  for b in user_basis {
+    if !matches!(b, Expr::Integer(1)) {
+      basis.push(b);
+    }
+  }
 
-  // Extract variable name
-  let var_name = match &args[2] {
-    Expr::Identifier(name) => name.clone(),
+  // Extract variable name(s). Accept either a single Identifier (uni­variate
+  // case) or a List of Identifiers (multi-variate, e.g. `{x, y}`).
+  let var_names: Vec<String> = match &args[2] {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items) => {
+      let mut names = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::Identifier(n) => names.push(n.clone()),
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "LinearModelFit: variable list must contain only symbols".into(),
+            ));
+          }
+        }
+      }
+      names
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "LinearModelFit: third argument must be a variable".into(),
+        "LinearModelFit: third argument must be a variable or list of variables"
+          .into(),
       ));
     }
   };
@@ -3437,24 +3513,36 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list)?;
-  let n = x_vals.len();
+  let (x_vals_multi, y_vals) =
+    extract_fit_data_multi(data_list, var_names.len())?;
+  let n = y_vals.len();
   let m = basis.len();
+  // For univariate compatibility paths below, keep a flat x list.
+  let x_vals: Vec<f64> = if var_names.len() == 1 {
+    x_vals_multi.iter().map(|row| row[0]).collect()
+  } else {
+    Vec::new()
+  };
 
   // Build design matrix A (n×m)
   let mut a_matrix = vec![vec![0.0f64; m]; n];
   for i in 0..n {
-    let x_expr = Expr::Real(x_vals[i]);
     for j in 0..m {
-      let substituted =
-        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
-      let evaluated = evaluate_expr_to_expr(&substituted)?;
+      let mut subst = basis[j].clone();
+      for (k, name) in var_names.iter().enumerate() {
+        subst = crate::syntax::substitute_variable(
+          &subst,
+          name,
+          &Expr::Real(x_vals_multi[i][k]),
+        );
+      }
+      let evaluated = evaluate_expr_to_expr(&subst)?;
       match try_eval_to_f64(&evaluated) {
         Some(v) => a_matrix[i][j] = v,
         None => {
           return Err(InterpreterError::EvaluationError(format!(
-            "LinearModelFit: could not evaluate basis function {:?} at x = {}",
-            basis[j], x_vals[i]
+            "LinearModelFit: could not evaluate basis function {:?} at row {}",
+            basis[j], i
           )));
         }
       }
@@ -3513,25 +3601,35 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Build the pure-function form of the fitted expression: replace each
-  // occurrence of `var_name` with `Slot[1]` and wrap in `Function`.
-  // wolframscript exposes this as the `"Function"` property and prints it
-  // with a trailing `&` (and trailing space): `0.186… + 0.779…*#1 & `.
+  // independent variable in turn with the matching Slot[k] and wrap in
+  // `Function`. wolframscript exposes this as the `"Function"` property
+  // (`0.186… + 0.779…*#1 & ` for the univariate case).
+  let mut function_body = fitted_expr.clone();
+  for (k, name) in var_names.iter().enumerate() {
+    function_body = crate::syntax::substitute_variable(
+      &function_body,
+      name,
+      &Expr::Slot(k + 1),
+    );
+  }
   let function_form = Expr::Function {
-    body: Box::new(crate::syntax::substitute_variable(
-      &fitted_expr,
-      &var_name,
-      &Expr::Slot(1),
-    )),
+    body: Box::new(function_body),
   };
 
-  // Build input data as list of {x, y} pairs
+  // Build input data: each row is `{x1, …, xn, y}` (or `{x, y}` in the
+  // univariate case).
   let input_data = Expr::List(
-    x_vals
+    x_vals_multi
       .iter()
       .zip(y_vals.iter())
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .map(|(xs, y)| {
+        let mut row: Vec<Expr> = xs.iter().map(|v| Expr::Real(*v)).collect();
+        row.push(Expr::Real(*y));
+        Expr::List(row)
+      })
       .collect(),
   );
+  let _ = &x_vals; // silence "unused" warning in multi-var path
 
   // Build the response vector: the y-column of the input data, kept as
   // exact Integers when the input was integer-valued (matching
@@ -3570,7 +3668,9 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     (
       Expr::String("IndependentVariables".to_string()),
-      Expr::List(vec![Expr::Identifier(var_name.clone())]),
+      Expr::List(
+        var_names.iter().map(|n| Expr::Identifier(n.clone())).collect(),
+      ),
     ),
     (
       Expr::String("BasisFunctions".to_string()),
@@ -3595,7 +3695,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Expr::String("Response".to_string()), response_vec),
     (
       Expr::String("VariableName".to_string()),
-      Expr::String(var_name),
+      Expr::String(var_names.first().cloned().unwrap_or_default()),
     ),
   ]);
 
