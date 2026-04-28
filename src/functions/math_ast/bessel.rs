@@ -1246,6 +1246,76 @@ fn bei_series(x: f64) -> f64 {
   sum
 }
 
+/// Complex-valued `ber(z)` via its power series; same series as the real
+/// version but with complex arithmetic.
+fn ber_series_complex(re: f64, im: f64) -> (f64, f64) {
+  let half_re = re * 0.5;
+  let half_im = im * 0.5;
+  // u = (z/2)^2
+  let u_re = half_re * half_re - half_im * half_im;
+  let u_im = 2.0 * half_re * half_im;
+  // u_sq = (z/2)^4
+  let u_sq_re = u_re * u_re - u_im * u_im;
+  let u_sq_im = 2.0 * u_re * u_im;
+
+  let mut term_re = 1.0_f64; // k=0 term = 1
+  let mut term_im = 0.0_f64;
+  let mut sum_re = term_re;
+  let mut sum_im = term_im;
+  for k in 1..200usize {
+    let k2 = (2 * k) as f64;
+    let denom = (k2 - 1.0) * k2 * (k2 - 1.0) * k2;
+    let factor = -1.0 / denom;
+    let new_re = (term_re * u_sq_re - term_im * u_sq_im) * factor;
+    let new_im = (term_re * u_sq_im + term_im * u_sq_re) * factor;
+    term_re = new_re;
+    term_im = new_im;
+    sum_re += term_re;
+    sum_im += term_im;
+    let term_mag2 = term_re * term_re + term_im * term_im;
+    let sum_mag2 = sum_re * sum_re + sum_im * sum_im;
+    if term_mag2 < 1e-36 * sum_mag2.max(1.0) {
+      break;
+    }
+  }
+  (sum_re, sum_im)
+}
+
+/// Complex-valued `bei(z)` via its power series; same series as the real
+/// version but with complex arithmetic.
+fn bei_series_complex(re: f64, im: f64) -> (f64, f64) {
+  let half_re = re * 0.5;
+  let half_im = im * 0.5;
+  // u = (z/2)^2
+  let u_re = half_re * half_re - half_im * half_im;
+  let u_im = 2.0 * half_re * half_im;
+  // u_sq = (z/2)^4
+  let u_sq_re = u_re * u_re - u_im * u_im;
+  let u_sq_im = 2.0 * u_re * u_im;
+
+  let mut term_re = u_re; // k=0 term = (z/2)^2
+  let mut term_im = u_im;
+  let mut sum_re = term_re;
+  let mut sum_im = term_im;
+  for k in 1..200usize {
+    let k2 = (2 * k) as f64;
+    let denom = k2 * (k2 + 1.0) * k2 * (k2 + 1.0);
+    let factor = -1.0 / denom;
+    let new_re = (term_re * u_sq_re - term_im * u_sq_im) * factor;
+    let new_im = (term_re * u_sq_im + term_im * u_sq_re) * factor;
+    term_re = new_re;
+    term_im = new_im;
+    sum_re += term_re;
+    sum_im += term_im;
+    let term_mag2 = term_re * term_re + term_im * term_im;
+    let sum_mag2 = sum_re * sum_re + sum_im * sum_im;
+    if term_mag2 < 1e-36 * sum_mag2.max(1.0) {
+      break;
+    }
+  }
+  (sum_re, sum_im)
+}
+
 /// KelvinBer[x] - real part of BesselJ[0, x·e^(3πI/4)].
 pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1258,6 +1328,12 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   } {
     return Ok(Expr::Real(ber_series(x)));
+  }
+  if let Some((re, im)) = try_extract_complex_f64(&args[0])
+    && im != 0.0
+  {
+    let (rr, ri) = ber_series_complex(re, im);
+    return Ok(build_complex_float_expr(rr, ri));
   }
   Ok(Expr::FunctionCall {
     name: "KelvinBer".to_string(),
@@ -1277,6 +1353,12 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   } {
     return Ok(Expr::Real(bei_series(x)));
+  }
+  if let Some((re, im)) = try_extract_complex_f64(&args[0])
+    && im != 0.0
+  {
+    let (rr, ri) = bei_series_complex(re, im);
+    return Ok(build_complex_float_expr(rr, ri));
   }
   Ok(Expr::FunctionCall {
     name: "KelvinBei".to_string(),
