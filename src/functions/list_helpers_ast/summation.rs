@@ -1061,6 +1061,84 @@ fn try_symbolic_sum(
     }
   }
 
+  // Sum[c^(q*var), {var, 0, n}] = (c^(q*(n+1)) - 1) / (c^q - 1) — generalised
+  // geometric series with a coefficient `q` in the exponent (constant w.r.t.
+  // `var`). Handles e.g. `Sum[a^(k*n), {k, 0, m-1}]` →
+  // `(a^(m*n) - 1) / (a^n - 1)` after simplifying `q*((m-1)+1) = q*m`.
+  if matches!(min_concrete, Some(0))
+    && let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = body
+    && crate::functions::polynomial_ast::contains_var(exp, var_name)
+    && !crate::functions::polynomial_ast::contains_var(base, var_name)
+  {
+    // Try to write `exp` as `q * var` with `q` constant w.r.t. `var`.
+    let q_opt: Option<Expr> = match exp.as_ref() {
+      Expr::Identifier(n) if n == var_name => Some(Expr::Integer(1)),
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        let l_is_var =
+          matches!(left.as_ref(), Expr::Identifier(n) if n == var_name);
+        let r_is_var =
+          matches!(right.as_ref(), Expr::Identifier(n) if n == var_name);
+        if l_is_var
+          && !crate::functions::polynomial_ast::contains_var(right, var_name)
+        {
+          Some(*right.clone())
+        } else if r_is_var
+          && !crate::functions::polynomial_ast::contains_var(left, var_name)
+        {
+          Some(*left.clone())
+        } else {
+          None
+        }
+      }
+      _ => None,
+    };
+    if let Some(q) = q_opt {
+      let one_plus_max = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(max_expr.clone()),
+      };
+      let c_to_q = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(*base.clone()),
+        right: Box::new(q.clone()),
+      };
+      let c_to_q_times_top = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(*base.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(q),
+          right: Box::new(one_plus_max),
+        }),
+      };
+      let numer = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(c_to_q_times_top),
+      };
+      let denom = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(c_to_q),
+      };
+      let result = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(numer),
+        right: Box::new(denom),
+      };
+      return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result)));
+    }
+  }
+
   // Sum[k, {k, a, n}] where a is symbolic
   if min_concrete.is_none()
     && matches!(body, Expr::Identifier(name) if name == var_name)
