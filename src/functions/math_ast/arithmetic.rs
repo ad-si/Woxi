@@ -2773,7 +2773,80 @@ pub fn combine_like_bases(
     }
   }
 
-  Ok(combined)
+  // Third pass: pair Power[a, e] with Power[b, -e] for positive numeric a, b
+  // and rational e — merging into Power[a/b, e]. E.g. Sqrt[2]/Sqrt[6] →
+  // Sqrt[2/6] = Sqrt[1/3] = 1/Sqrt[3]. Avoids leaving the expression in
+  // the unsimplified Times[Sqrt[a], Power[Sqrt[b], -1]] form.
+  fn is_pos_numeric(e: &Expr) -> bool {
+    matches!(e, Expr::Integer(n) if *n > 0)
+      || matches!(
+        e,
+        Expr::FunctionCall { name, args }
+          if name == "Rational"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Integer(n) if *n > 0)
+            && matches!(&args[1], Expr::Integer(d) if *d > 0)
+      )
+  }
+  // First scan for pairs (i positive, j negative) and mark consumed.
+  let mut consumed = vec![false; combined.len()];
+  let mut pairs: Vec<(usize, usize)> = Vec::new(); // (pos_idx, neg_idx)
+  for i in 0..combined.len() {
+    if consumed[i] {
+      continue;
+    }
+    let (base_i, exp_i) = extract_base_exponent(&combined[i]);
+    let exp_i_is_pos_rat = matches!(
+      &exp_i,
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n > 0)
+    );
+    if !is_pos_numeric(&base_i) || !exp_i_is_pos_rat {
+      continue;
+    }
+    let neg_exp_i = times_ast(&[Expr::Integer(-1), exp_i.clone()])?;
+    let neg_exp_key = crate::syntax::expr_to_string(&neg_exp_i);
+    for j in 0..combined.len() {
+      if j == i || consumed[j] {
+        continue;
+      }
+      let (base_j, exp_j) = extract_base_exponent(&combined[j]);
+      if is_pos_numeric(&base_j)
+        && crate::syntax::expr_to_string(&exp_j) == neg_exp_key
+      {
+        pairs.push((i, j));
+        consumed[i] = true;
+        consumed[j] = true;
+        break;
+      }
+    }
+  }
+  // Build merged: keep original order, replacing each pair's pos-index slot
+  // with the merged Sqrt[a/b] and skipping the neg-index slot.
+  let mut merged: Vec<Expr> = Vec::new();
+  let mut neg_indices: std::collections::HashSet<usize> =
+    std::collections::HashSet::new();
+  let mut pos_replacements: std::collections::HashMap<usize, Expr> =
+    std::collections::HashMap::new();
+  for (pi, ni) in &pairs {
+    let (base_p, exp_p) = extract_base_exponent(&combined[*pi]);
+    let (base_n, _) = extract_base_exponent(&combined[*ni]);
+    let ratio = divide_two(&base_p, &base_n)?;
+    pos_replacements.insert(*pi, power_two(&ratio, &exp_p)?);
+    neg_indices.insert(*ni);
+  }
+  for i in 0..combined.len() {
+    if neg_indices.contains(&i) {
+      continue;
+    }
+    if let Some(replacement) = pos_replacements.remove(&i) {
+      merged.push(replacement);
+    } else {
+      merged.push(combined[i].clone());
+    }
+  }
+
+  Ok(merged)
 }
 
 /// Times[args...] - Product of arguments, with list threading
@@ -3573,15 +3646,13 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && *sp > 0
     && *sq > 0
     && gcd(*sp, cd * cd) > 1
+    && let Some(new_sq) = sq.checked_mul(*cd).and_then(|v| v.checked_mul(*cd))
   {
-    if let Some(new_sq) = sq.checked_mul(*cd).and_then(|v| v.checked_mul(*cd))
-    {
-      let absorbed = sqrt_ast(&[make_rational(*sp, new_sq)])?;
-      if *cn < 0 {
-        return times_ast(&[Expr::Integer(-1), absorbed]);
-      } else {
-        return Ok(absorbed);
-      }
+    let absorbed = sqrt_ast(&[make_rational(*sp, new_sq)])?;
+    if *cn < 0 {
+      return times_ast(&[Expr::Integer(-1), absorbed]);
+    } else {
+      return Ok(absorbed);
     }
   }
 
