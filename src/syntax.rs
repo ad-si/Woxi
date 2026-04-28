@@ -6122,9 +6122,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             Expr::FunctionCall { name, args } if name == "Condition" && args.len() == 2
           )
         };
+        // Nested Plus inside Plus needs parens to preserve grouping in held
+        // expressions: `Plus[1, Plus[1, 1]]` → `1 + (1 + 1)`. Without parens
+        // the displayed `1 + 1 + 1` would parse as the flat `Plus[1, 1, 1]`.
+        let needs_nested_plus_parens = |a: &Expr| -> bool {
+          matches!(
+            a,
+            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+          ) || matches!(
+            a,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              ..
+            }
+          )
+        };
         let fmt_plus_term = |a: &Expr| -> String {
           let s = fmt(a);
-          if needs_pattern_parens(a) || needs_condition_parens(a) {
+          if needs_pattern_parens(a)
+            || needs_condition_parens(a)
+            || needs_nested_plus_parens(a)
+          {
             format!("({})", s)
           } else {
             s
@@ -6867,7 +6885,22 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             Expr::Pattern { .. }
               | Expr::PatternOptional { .. }
               | Expr::PatternTest { .. }
-          ));
+          ))
+        // Plus + Plus (right-nested): preserve grouping in held expressions.
+        // The parser produces left-nested chains, so right-nesting only
+        // appears via Hold/HoldAll substitution where we want to display
+        // `a + (b + c)` rather than auto-flattening to `a + b + c`.
+        || (matches!(op, BinaryOperator::Plus)
+          && (matches!(
+            right.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              ..
+            }
+          ) || matches!(
+            right.as_ref(),
+            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+          )));
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {
