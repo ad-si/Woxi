@@ -8,6 +8,179 @@ use crate::syntax::{Expr, expr_to_string};
 /// truncates to `min(nmax_i)` so the O(…) order matches Wolfram's behaviour
 /// when adding two truncated series. Returns `None` if no two SeriesData
 /// summands are present.
+/// If `e` is a polynomial term `c * var^n` (or `var^n`, `var`, or a
+/// constant w.r.t. `var`), return a singleton `SeriesData[var, x0, {c}, n,
+/// n+1, 1]` — used by `try_series_data_plus` to absorb plain polynomial
+/// summands into a SeriesData. Returns `None` for shapes that don't fit
+/// (e.g. terms in a different variable, fractional exponents, products
+/// containing the var more than once).
+fn polynomial_term_to_series_data(
+  e: &Expr,
+  var_name: &str,
+  sd_var: &Expr,
+  sd_x0: &Expr,
+  sd_nmax: &Expr,
+) -> Option<Expr> {
+  let make_sd = |coeff: Expr, n: i128| {
+    // Pad with zeros so the singleton spans `[n, sd_nmax)` — this keeps the
+    // truncation point at the original SeriesData's `nmax` rather than the
+    // polynomial term's degree+1.
+    let nmax_int = match sd_nmax {
+      Expr::Integer(m) => *m,
+      _ => n + 1,
+    };
+    let span = (nmax_int - n).max(1);
+    let mut coeffs: Vec<Expr> = Vec::with_capacity(span as usize);
+    coeffs.push(coeff);
+    for _ in 1..span {
+      coeffs.push(Expr::Integer(0));
+    }
+    Expr::FunctionCall {
+      name: "SeriesData".to_string(),
+      args: vec![
+        sd_var.clone(),
+        sd_x0.clone(),
+        Expr::List(coeffs),
+        Expr::Integer(n),
+        Expr::Integer(nmax_int),
+        Expr::Integer(1),
+      ],
+    }
+  };
+  // Constant w.r.t. var → coeff at order 0
+  if !crate::functions::polynomial_ast::contains_var(e, var_name) {
+    return Some(make_sd(e.clone(), 0));
+  }
+  // Bare `var` → coeff 1 at order 1
+  if matches!(e, Expr::Identifier(s) if s == var_name) {
+    return Some(make_sd(Expr::Integer(1), 1));
+  }
+  // `var^n` for non-negative integer n
+  let parse_pow = |base: &Expr, exp: &Expr| -> Option<i128> {
+    let is_var =
+      matches!(base, Expr::Identifier(s) if s == var_name);
+    if !is_var {
+      return None;
+    }
+    if let Expr::Integer(n) = exp
+      && *n >= 0
+    {
+      return Some(*n);
+    }
+    None
+  };
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = e
+    && let Some(n) = parse_pow(left, right)
+  {
+    return Some(make_sd(Expr::Integer(1), n));
+  }
+  if let Expr::FunctionCall { name, args } = e
+    && name == "Power"
+    && args.len() == 2
+    && let Some(n) = parse_pow(&args[0], &args[1])
+  {
+    return Some(make_sd(Expr::Integer(1), n));
+  }
+  // `-var` and `-var^n`
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = e
+  {
+    let inner =
+      polynomial_term_to_series_data(operand, var_name, sd_var, sd_x0, sd_nmax)?;
+    if let Expr::FunctionCall { args: sa, .. } = &inner
+      && let Expr::List(coeffs) = &sa[2]
+    {
+      let negated: Vec<Expr> = coeffs
+        .iter()
+        .map(|c| match c {
+          Expr::Integer(n) => Expr::Integer(-n),
+          other => Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(other.clone()),
+          },
+        })
+        .collect();
+      return Some(Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: vec![
+          sa[0].clone(),
+          sa[1].clone(),
+          Expr::List(negated),
+          sa[3].clone(),
+          sa[4].clone(),
+          sa[5].clone(),
+        ],
+      });
+    }
+    return None;
+  }
+  // `c * var^n`, `c * var`, `var * c`, etc. — Times of one var-bearing
+  // factor and any number of var-free factors.
+  let times_args: Option<Vec<Expr>> = match e {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    _ => None,
+  };
+  if let Some(factors) = times_args {
+    let mut coeff_factors: Vec<Expr> = Vec::new();
+    let mut var_order: Option<i128> = None;
+    for f in &factors {
+      if !crate::functions::polynomial_ast::contains_var(f, var_name) {
+        coeff_factors.push(f.clone());
+        continue;
+      }
+      // The var-bearing factor must be `var` or `var^n`.
+      let n = if matches!(f, Expr::Identifier(s) if s == var_name) {
+        1
+      } else if let Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } = f
+      {
+        parse_pow(left, right)?
+      } else if let Expr::FunctionCall {
+        name,
+        args: pargs,
+      } = f
+        && name == "Power"
+        && pargs.len() == 2
+      {
+        parse_pow(&pargs[0], &pargs[1])?
+      } else {
+        return None;
+      };
+      if var_order.is_some() {
+        return None; // more than one var-bearing factor
+      }
+      var_order = Some(n);
+    }
+    let n = var_order.unwrap_or(0);
+    let coeff = if coeff_factors.is_empty() {
+      Expr::Integer(1)
+    } else if coeff_factors.len() == 1 {
+      coeff_factors.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: coeff_factors,
+      }
+    };
+    return Some(make_sd(coeff, n));
+  }
+  None
+}
+
 fn try_series_data_plus(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -25,8 +198,50 @@ fn try_series_data_plus(
       _ => None,
     })
     .collect();
-  if series_indices.len() < 2 {
+  if series_indices.is_empty() {
     return Ok(None);
+  }
+
+  // When there is exactly one SeriesData but other args are polynomial
+  // terms in the same `(var, x0)` (constant, `c*x^n`, `c*x`, `x^n`, `x`),
+  // lift each polynomial term to a singleton SeriesData and merge — that's
+  // wolframscript's behaviour for e.g.
+  // `Series[Exp[x],{x,0,3}] - 1 - x - x^2`
+  // → `SeriesData[x, 0, {-1/2, 1/6}, 2, 4, 1]`.
+  // Polynomials are exact (no truncation), so the lifted singleton uses the
+  // SeriesData's own `nmax` instead of the polynomial term's degree+1.
+  if series_indices.len() == 1 {
+    let only_idx = series_indices[0];
+    let (sd_var, sd_x0, sd_nmax) = if let Expr::FunctionCall {
+      args: sa,
+      ..
+    } = &args[only_idx]
+    {
+      (sa[0].clone(), sa[1].clone(), sa[4].clone())
+    } else {
+      return Ok(None);
+    };
+    // Only handle x0 = 0 here; other expansion centres would need the
+    // polynomial term to be expressed in `(x - x0)` already.
+    if !matches!(&sd_x0, Expr::Integer(0)) {
+      return Ok(None);
+    }
+    let var_name = match &sd_var {
+      Expr::Identifier(s) => s.clone(),
+      _ => return Ok(None),
+    };
+    let mut lifted: Vec<Expr> = Vec::with_capacity(args.len());
+    for (i, a) in args.iter().enumerate() {
+      if i == only_idx {
+        lifted.push(a.clone());
+        continue;
+      }
+      match polynomial_term_to_series_data(a, &var_name, &sd_var, &sd_x0, &sd_nmax) {
+        Some(sd) => lifted.push(sd),
+        None => return Ok(None),
+      }
+    }
+    return try_series_data_plus(&lifted);
   }
 
   // Extract var and x0 from the first SeriesData; require all others to match.
@@ -128,6 +343,17 @@ fn try_series_data_plus(
     }
   }
 
+  // Strip leading zero coefficients (advancing `nmin`) so cancellation
+  // collapses to wolframscript's canonical form — e.g.
+  // `Series[Exp[x],{x,0,3}] - 1 - x - x^2` reduces from
+  // `SeriesData[x, 0, {0, 0, -1/2, 1/6}, 0, 4, 1]` to
+  // `SeriesData[x, 0, {-1/2, 1/6}, 2, 4, 1]`.
+  let mut adjusted_nmin = new_nmin;
+  while !new_coeffs.is_empty() && matches!(&new_coeffs[0], Expr::Integer(0)) {
+    new_coeffs.remove(0);
+    adjusted_nmin += 1;
+  }
+
   // Collect non-SeriesData summands and prepend the unified SeriesData.
   let series_idx_set: std::collections::HashSet<usize> =
     series_indices.iter().copied().collect();
@@ -143,7 +369,7 @@ fn try_series_data_plus(
       var0,
       x0_0,
       Expr::List(new_coeffs),
-      Expr::Integer(new_nmin),
+      Expr::Integer(adjusted_nmin),
       Expr::Integer(new_nmax),
       Expr::Integer(common_denom),
     ],
@@ -1316,10 +1542,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
     // so that products like `Im[z]^2*Re[z]` sort as polynomials in
     // (Re[z], Im[z]). Generic FunctionCall heads stay opaque.
     Expr::FunctionCall { name, .. }
-      if matches!(
-        name.as_str(),
-        "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
-      ) =>
+      if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate") =>
     {
       Some(vec![(expr_to_string(e), 1.0)])
     }
@@ -1333,10 +1556,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         return Some(vec![(s.clone(), exp)]);
       }
       if let Expr::FunctionCall { name, .. } = left.as_ref()
-        && matches!(
-          name.as_str(),
-          "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
-        )
+        && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
         let exp = expr_to_f64(right)?;
         return Some(vec![(expr_to_string(left), exp)]);
@@ -1349,10 +1569,7 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         return Some(vec![(s.clone(), exp)]);
       }
       if let Expr::FunctionCall { name: inner, .. } = &args[0]
-        && matches!(
-          inner.as_str(),
-          "Re" | "Im" | "Abs" | "Arg" | "Conjugate"
-        )
+        && matches!(inner.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
       {
         let exp = expr_to_f64(&args[1])?;
         return Some(vec![(expr_to_string(&args[0]), exp)]);
