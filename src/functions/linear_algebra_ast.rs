@@ -3872,10 +3872,18 @@ pub fn evaluate_fitted_model(
 
   // Check if the argument is a string (property query)
   if let Expr::String(prop) = &call_args[0] {
+    // `"BestFit"` is wolframscript's name for the fitted expression itself
+    // (mathematically: the polynomial of the basis terms with their best
+    // coefficients). Internally we store that under `"FittedExpression"`.
+    let lookup_key = if prop == "BestFit" {
+      "FittedExpression"
+    } else {
+      prop.as_str()
+    };
     // Look up the property in the association
     for (key, val) in assoc {
       if let Expr::String(k) = key
-        && k == prop
+        && k == lookup_key
       {
         return Ok(val.clone());
       }
