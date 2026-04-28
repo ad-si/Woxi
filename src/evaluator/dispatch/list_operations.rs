@@ -892,12 +892,30 @@ pub fn dispatch_list_operations(
           }
         };
 
-        // Build terms: c_i * base^(nmin + i)
+        // Build terms: c_i * base^(nmin + i). Recursively apply Normal to
+        // any inner `SeriesData` coefficient so multivariate Series like
+        // `Series[Exp[x-y], {x,0,2}, {y,0,2}] // Normal` collapse to a
+        // genuine bivariate polynomial.
         let mut terms: Vec<Expr> = Vec::new();
         for (i, coeff) in coeffs.iter().enumerate() {
           if matches!(coeff, Expr::Integer(0)) {
             continue;
           }
+          let coeff_normalised = if matches!(
+            coeff,
+            Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6
+          ) {
+            let inner = Expr::FunctionCall {
+              name: "Normal".to_string(),
+              args: vec![coeff.clone()],
+            };
+            match evaluate_expr_to_expr(&inner) {
+              Ok(v) => v,
+              Err(e) => return Some(Err(e)),
+            }
+          } else {
+            coeff.clone()
+          };
           let power = nmin + i as i128;
           // base^power
           let base_pow = if power == 0 {
@@ -915,12 +933,12 @@ pub fn dispatch_list_operations(
           // Build c * x^n in Mathematica's canonical form:
           // Rational[-a,b]*x^n => -(a*x^n)/b  which prints as -(a*x^n)/b
           let term = match base_pow {
-            None => coeff.clone(),
+            None => coeff_normalised,
             Some(bp) => {
               // Evaluate the Times to get canonical form
               let t = Expr::BinaryOp {
                 op: crate::syntax::BinaryOperator::Times,
-                left: Box::new(coeff.clone()),
+                left: Box::new(coeff_normalised),
                 right: Box::new(bp),
               };
               match evaluate_expr_to_expr(&t) {

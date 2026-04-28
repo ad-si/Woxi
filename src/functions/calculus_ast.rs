@@ -5679,6 +5679,62 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     // Function calls
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
+        // Piecewise[{{val_i, cond_i}, …}, default?] is integrated piece by
+        // piece. When the result has exactly two complementary conditions
+        // (the second is the negation of the first), wolframscript drops
+        // the second and uses its antiderivative as the default —
+        // `∫ Piecewise[{{1, x ≤ 0}, {-1, x > 0}}] dx` →
+        // `Piecewise[{{x, x ≤ 0}}, -x]`.
+        "Piecewise" if !args.is_empty() => {
+          let pieces = match &args[0] {
+            Expr::List(items) => items,
+            _ => return None,
+          };
+          let mut new_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
+          for item in pieces {
+            if let Expr::List(pair) = item
+              && pair.len() == 2
+            {
+              let antideriv =
+                simplify(integrate(&pair[0], var)?);
+              new_pieces.push(Expr::List(vec![antideriv, pair[1].clone()]));
+            } else {
+              return None;
+            }
+          }
+          let default_expr = if args.len() == 2 {
+            simplify(integrate(&args[1], var)?)
+          } else {
+            Expr::Integer(0)
+          };
+          // Detect 2-piece complementary conditions: drop the second piece
+          // and promote its antiderivative to the default. Recognise
+          // `x <= 0` ↔ `x > 0`, `x < 0` ↔ `x >= 0`, and (for symmetry) the
+          // mirrored pair, anchored at any constant `c`.
+          let is_complement =
+            |a: &Expr, b: &Expr| -> bool { conditions_are_complementary(a, b) };
+          if args.len() == 1
+            && new_pieces.len() == 2
+            && let Expr::List(pair_a) = &new_pieces[0]
+            && let Expr::List(pair_b) = &new_pieces[1]
+            && pair_a.len() == 2
+            && pair_b.len() == 2
+            && is_complement(&pair_a[1], &pair_b[1])
+          {
+            return Some(Expr::FunctionCall {
+              name: "Piecewise".to_string(),
+              args: vec![Expr::List(vec![new_pieces[0].clone()]), pair_b[0].clone()],
+            });
+          }
+          Some(Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: if args.len() == 2 {
+              vec![Expr::List(new_pieces), default_expr]
+            } else {
+              vec![Expr::List(new_pieces)]
+            },
+          })
+        }
         "Plus" if args.len() >= 2 => {
           // ∫ (a + b + ...) dx = ∫ a dx + ∫ b dx + ...
           let integrals: Option<Vec<Expr>> =
@@ -6617,6 +6673,46 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
     }
   }
   None
+}
+
+/// Check if two scalar comparisons cover the whole real line, i.e. one is
+/// the negation of the other. Recognises the four pair shapes that a
+/// Piecewise-on-the-real-line typically takes: `x ≤ c` ↔ `x > c` and
+/// `x < c` ↔ `x ≥ c`, in either order. Used by Integrate[Piecewise[…]] to
+/// collapse two complementary pieces into one piece + default.
+fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
+  use crate::syntax::ComparisonOp;
+  let extract = |c: &Expr| -> Option<(Expr, ComparisonOp, Expr)> {
+    if let Expr::Comparison { operands, operators } = c
+      && operators.len() == 1
+      && operands.len() == 2
+    {
+      Some((operands[0].clone(), operators[0], operands[1].clone()))
+    } else {
+      None
+    }
+  };
+  let (la, opa, ra) = match extract(a) {
+    Some(t) => t,
+    None => return false,
+  };
+  let (lb, opb, rb) = match extract(b) {
+    Some(t) => t,
+    None => return false,
+  };
+  // Same variable on the left, same constant on the right.
+  if crate::syntax::expr_to_string(&la) != crate::syntax::expr_to_string(&lb)
+    || crate::syntax::expr_to_string(&ra) != crate::syntax::expr_to_string(&rb)
+  {
+    return false;
+  }
+  matches!(
+    (opa, opb),
+    (ComparisonOp::LessEqual, ComparisonOp::Greater)
+      | (ComparisonOp::Greater, ComparisonOp::LessEqual)
+      | (ComparisonOp::Less, ComparisonOp::GreaterEqual)
+      | (ComparisonOp::GreaterEqual, ComparisonOp::Less)
+  )
 }
 
 /// Check if an expression contains a Piecewise function call anywhere.
