@@ -893,7 +893,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ShearingMatrix" => Some((3, 3)),
     "Sign" => Some((1, 1)),
     "Signature" => Some((1, 1)),
-    "Simplify" => Some((1, 2)),
+    "Simplify" => Some((1, usize::MAX)),
     "Sin" => Some((1, 1)),
     "SinDegrees" => Some((1, 1)),
     "Sinc" => Some((1, 1)),

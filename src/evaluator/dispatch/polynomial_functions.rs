@@ -62,7 +62,7 @@ pub fn dispatch_polynomial_functions(
     "FactorList" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::factor_list_ast(args));
     }
-    "Simplify" if args.len() <= 2 => {
+    "Simplify" if !args.is_empty() => {
       return Some(crate::functions::polynomial_ast::simplify_ast(args));
     }
     "FullSimplify" if args.len() <= 2 => {

@@ -3269,13 +3269,55 @@ fn substitute_var(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
 
 /// Simplify[expr] or Simplify[expr, Assumptions -> cond] - User-facing simplification
 pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "Simplify expects 1 or 2 arguments".into(),
+      "Simplify expects at least 1 argument".into(),
     ));
   }
-  if args.len() == 2 {
-    return simplify_with_assumptions(&args[0], &args[1], false);
+  // 2+ args: collect positional assumptions and (optional) `Assumptions
+  // -> …` override into a single combined assumption and run the
+  // single-assumption path. wolframscript:
+  //   `Simplify[expr, asn]`                — adds asn to $Assumptions
+  //   `Simplify[expr, Assumptions -> asn]` — replaces $Assumptions
+  //   `Simplify[expr, p1, …, Assumptions -> override]`
+  //                                        — replaces $Assumptions and
+  //                                          AND-s in the positional
+  //                                          assumptions
+  if args.len() >= 2 {
+    let mut override_asn: Option<Expr> = None;
+    let mut positional: Vec<Expr> = Vec::new();
+    for a in &args[1..] {
+      if let Expr::Rule { pattern, replacement } = a
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions")
+      {
+        override_asn = Some(replacement.as_ref().clone());
+      } else {
+        positional.push(a.clone());
+      }
+    }
+    let combined = match (override_asn, positional.len()) {
+      (Some(o), 0) => Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Assumptions".to_string())),
+        replacement: Box::new(o),
+      },
+      (Some(o), _) => {
+        let mut and_args = vec![o];
+        and_args.extend(positional);
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Assumptions".to_string())),
+          replacement: Box::new(Expr::FunctionCall {
+            name: "And".to_string(),
+            args: and_args,
+          }),
+        }
+      }
+      (None, 1) => positional.into_iter().next().unwrap(),
+      (None, _) => Expr::FunctionCall {
+        name: "And".to_string(),
+        args: positional,
+      },
+    };
+    return simplify_with_assumptions(&args[0], &combined, false);
   }
   // Single argument: consult $Assumptions from the environment (e.g. set by
   // Assuming[...]) and apply refinement if any are active.
@@ -3517,16 +3559,15 @@ fn simplify_with_assumptions(
   // so `Assuming[x > 0, Simplify[expr, y > 0]]` uses both. The
   // `Assumptions -> …` option form skips this so it can override the
   // outer scope.
-  let combined = if !replace_global
-    && let Some(prev_assum) = current_assumptions()
-  {
-    Expr::FunctionCall {
-      name: "And".to_string(),
-      args: vec![prev_assum, assumption_val.clone()],
-    }
-  } else {
-    assumption_val.clone()
-  };
+  let combined =
+    if !replace_global && let Some(prev_assum) = current_assumptions() {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: vec![prev_assum, assumption_val.clone()],
+      }
+    } else {
+      assumption_val.clone()
+    };
 
   // Save previous $Assumptions
   let prev = crate::ENV.with(|e| e.borrow().get("$Assumptions").cloned());
@@ -4341,9 +4382,7 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
       // Drop conjuncts already implied by an assumption (literal match
       // is enough for the cases wolframscript produces here).
       let c_str = expr_to_string(&c_atom);
-      let implied = assumption_items
-        .iter()
-        .any(|a| expr_to_string(a) == c_str);
+      let implied = assumption_items.iter().any(|a| expr_to_string(a) == c_str);
       if !implied {
         residual.push(c_atom);
       }
