@@ -670,8 +670,8 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut k_fact = BigInt::from(1);
     for k in 0..=n {
       if k > 0 {
-        b_pochhammer *= (b + k - 1) as i128;
-        k_fact *= k as i128;
+        b_pochhammer *= b + k - 1;
+        k_fact *= k;
       }
       let denom = fact(n - k) * &b_pochhammer * &k_fact;
       // coeff = n! / denom (reduce GCD).
@@ -1113,19 +1113,19 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // Extract integer values for a, b, c if available
-  let a_int = match &args[0] {
-    Expr::Integer(n) => Some(*n),
-    _ => None,
+  // Extract integer values for a, b, c if available. Treat Real arguments
+  // that are exactly integer-valued as integers too, so closed-form
+  // identities like the Euler transformation also fire for `2.`, `3.`, …
+  let int_of = |e: &Expr| -> Option<i128> {
+    match e {
+      Expr::Integer(n) => Some(*n),
+      Expr::Real(f) if f.fract() == 0.0 && f.abs() < 1e18 => Some(*f as i128),
+      _ => None,
+    }
   };
-  let b_int = match &args[1] {
-    Expr::Integer(n) => Some(*n),
-    _ => None,
-  };
-  let c_int = match &args[2] {
-    Expr::Integer(n) => Some(*n),
-    _ => None,
-  };
+  let a_int = int_of(&args[0]);
+  let b_int = int_of(&args[1]);
+  let c_int = int_of(&args[2]);
 
   // a = 0 or b = 0 => 1
   if a_int == Some(0) || b_int == Some(0) {
@@ -1230,6 +1230,60 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && c > a + 1
   {
     return hypergeometric2f1_1_b_c(a, c, z);
+  }
+
+  // Euler transformation: 2F1(a, b, c, z) = (1-z)^(c-a-b) * 2F1(c-a, c-b, c, z).
+  // When (c-a) or (c-b) lands on 1, the transformed form drops into the
+  // closed-form 2F1(1, b', c, z) branch above. This covers cases like
+  // 2F1(2, 3, 4, z) → (1-z)^(-1) * 2F1(2, 1, 4, z) = (1-z)^(-1) * 2F1(1, 2, 4, z).
+  if let (Some(a), Some(b), Some(c)) = (a_int, b_int, c_int)
+    && a > 0
+    && b > 0
+    && c > 0
+    && (c - a == 1 || c - b == 1)
+    && c - a > 0
+    && c - b > 0
+  {
+    let new_a = c - a;
+    let new_b = c - b;
+    let exp_one_minus_z = c - a - b;
+    let inner = crate::evaluator::evaluate_function_call_ast(
+      "Hypergeometric2F1",
+      &[
+        Expr::Integer(new_a),
+        Expr::Integer(new_b),
+        Expr::Integer(c),
+        z.clone(),
+      ],
+    )?;
+    let one_minus_z = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Integer(1),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), z.clone()],
+        },
+      ],
+    };
+    let prefactor = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![one_minus_z, Expr::Integer(exp_one_minus_z)],
+    };
+    let combined = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![prefactor, inner],
+    };
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&combined)?;
+    // For numeric z, distribute via Expand so the result collapses to a
+    // single complex value.
+    if matches!(z, Expr::Real(_)) {
+      return crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        &[evaluated],
+      );
+    }
+    return Ok(evaluated);
   }
 
   // Try numeric evaluation when all args are numeric and at least one is Real
