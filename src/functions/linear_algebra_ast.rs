@@ -3456,9 +3456,12 @@ fn triangularize_ast(
 /// - Queried for properties: `lm["BestFitParameters"]`, `lm["FitResiduals"]`, `lm["RSquared"]`
 /// - Converted with Normal: `Normal[lm]` returns the fitted expression
 pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    return linear_model_fit_design_matrix_form(&args[0]);
+  }
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "LinearModelFit expects exactly 3 arguments".into(),
+      "LinearModelFit expects 1 or 3 arguments".into(),
     ));
   }
 
@@ -3705,6 +3708,223 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (
       Expr::String("VariableName".to_string()),
       Expr::String(var_names.first().cloned().unwrap_or_default()),
+    ),
+  ]);
+
+  Ok(Expr::FunctionCall {
+    name: "FittedModel".to_string(),
+    args: vec![assoc],
+  })
+}
+
+/// `LinearModelFit[{X, y}]` — design-matrix form. Fits `y ≈ X · β` directly,
+/// using each column of `X` as its own basis "function" (`Slot[1]`,
+/// `Slot[2]`, …). Unlike the symbolic 3-arg form, no constant column is
+/// auto-prepended — the caller is expected to include it in `X` already.
+fn linear_model_fit_design_matrix_form(
+  data: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Expect data = `{X, y}` where X is an n×k matrix and y is an n-vector.
+  let (x_rows, y_items) = match data {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: 1-arg form expects {designMatrix, response}".into(),
+      ));
+    }
+  };
+  let x_matrix = match x_rows {
+    Expr::List(rows) if !rows.is_empty() => rows,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: design matrix must be a non-empty list of rows".into(),
+      ));
+    }
+  };
+  let y_list = match y_items {
+    Expr::List(ys) => ys,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: response must be a list".into(),
+      ));
+    }
+  };
+  if x_matrix.len() != y_list.len() {
+    return Err(InterpreterError::EvaluationError(format!(
+      "LinearModelFit: design matrix has {} rows but response has {} entries",
+      x_matrix.len(),
+      y_list.len()
+    )));
+  }
+  // Convert X to f64 rows; require all rows to be lists with the same width.
+  let n = x_matrix.len();
+  let mut a_matrix: Vec<Vec<f64>> = Vec::with_capacity(n);
+  let mut k: Option<usize> = None;
+  for row in x_matrix {
+    let row_items = match row {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "LinearModelFit: each design-matrix row must be a list".into(),
+        ));
+      }
+    };
+    let width = row_items.len();
+    match k {
+      Some(prev) if prev != width => {
+        return Err(InterpreterError::EvaluationError(
+          "LinearModelFit: design-matrix rows must all have the same width"
+            .into(),
+        ));
+      }
+      None => k = Some(width),
+      _ => {}
+    }
+    let mut row_f: Vec<f64> = Vec::with_capacity(width);
+    for v in row_items {
+      match try_eval_to_f64(v) {
+        Some(x) => row_f.push(x),
+        None => {
+          return Err(InterpreterError::EvaluationError(
+            "LinearModelFit: design-matrix entries must be numeric".into(),
+          ));
+        }
+      }
+    }
+    a_matrix.push(row_f);
+  }
+  let m = k.unwrap_or(0);
+  if m == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "LinearModelFit: design matrix has zero columns".into(),
+    ));
+  }
+  // Convert y to f64.
+  let mut y_vals: Vec<f64> = Vec::with_capacity(n);
+  for v in y_list {
+    match try_eval_to_f64(v) {
+      Some(y) => y_vals.push(y),
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "LinearModelFit: response entries must be numeric".into(),
+        ));
+      }
+    }
+  }
+
+  // Solve via QR (same path the 3-arg form uses).
+  let coeffs = solve_least_squares_qr(&a_matrix, &y_vals)?;
+
+  // Compute fitted values and residuals.
+  let mut fitted_values = Vec::with_capacity(n);
+  let mut residuals = Vec::with_capacity(n);
+  for i in 0..n {
+    let y_hat: f64 = (0..m).map(|j| coeffs[j] * a_matrix[i][j]).sum();
+    fitted_values.push(y_hat);
+    residuals.push(y_vals[i] - y_hat);
+  }
+
+  // R-squared / adjusted R-squared.
+  let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
+  let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
+  let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
+  let r_squared = if ss_tot.abs() < 1e-30 {
+    1.0
+  } else {
+    1.0 - ss_res / ss_tot
+  };
+  let adjusted_r_squared = if n > m && ss_tot.abs() > 1e-30 {
+    1.0 - (ss_res / (n - m) as f64) / (ss_tot / (n - 1) as f64)
+  } else {
+    r_squared
+  };
+
+  // BasisFunctions = {#1, #2, …, #k} — one slot per column of X.
+  let basis: Vec<Expr> = (1..=m).map(Expr::Slot).collect();
+
+  // Build the fitted expression: c1*#1 + c2*#2 + … (no auto constant).
+  let terms: Vec<Expr> = coeffs
+    .iter()
+    .enumerate()
+    .map(|(j, c)| {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Real(*c), basis[j].clone()],
+      }
+    })
+    .collect();
+  let fitted_expr = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    let raw = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    };
+    evaluate_expr_to_expr(&raw).unwrap_or(raw)
+  };
+  let function_form = Expr::Function {
+    body: Box::new(fitted_expr.clone()),
+  };
+
+  // Reuse the design matrix and the y vector verbatim.
+  let design_matrix = Expr::List(
+    a_matrix
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+  let response_vec = Expr::List(
+    y_vals
+      .iter()
+      .map(|y| {
+        if y.fract() == 0.0 && y.abs() < (i128::MAX as f64) {
+          Expr::Integer(*y as i128)
+        } else {
+          Expr::Real(*y)
+        }
+      })
+      .collect(),
+  );
+  let input_data = Expr::List(vec![design_matrix.clone(), response_vec.clone()]);
+
+  let assoc = Expr::Association(vec![
+    (
+      Expr::String("Type".to_string()),
+      Expr::Identifier("Linear".to_string()),
+    ),
+    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (
+      Expr::String("BestFitParameters".to_string()),
+      Expr::List(coeffs.iter().map(|c| Expr::Real(*c)).collect()),
+    ),
+    (
+      Expr::String("IndependentVariables".to_string()),
+      Expr::List(basis.clone()),
+    ),
+    (
+      Expr::String("BasisFunctions".to_string()),
+      Expr::List(basis),
+    ),
+    (
+      Expr::String("FitResiduals".to_string()),
+      Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
+    ),
+    (
+      Expr::String("PredictedResponse".to_string()),
+      Expr::List(fitted_values.iter().map(|v| Expr::Real(*v)).collect()),
+    ),
+    (Expr::String("RSquared".to_string()), Expr::Real(r_squared)),
+    (
+      Expr::String("AdjustedRSquared".to_string()),
+      Expr::Real(adjusted_r_squared),
+    ),
+    (Expr::String("InputData".to_string()), input_data),
+    (Expr::String("DesignMatrix".to_string()), design_matrix),
+    (Expr::String("Function".to_string()), function_form),
+    (Expr::String("Response".to_string()), response_vec),
+    (
+      Expr::String("VariableName".to_string()),
+      Expr::String(String::new()),
     ),
   ]);
 
