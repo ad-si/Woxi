@@ -1485,7 +1485,38 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(eigenvalues));
   }
 
-  // Return unevaluated for non-integer matrices
+  // Floating-point 2×2 path. wolframscript produces real-valued
+  // eigenvalues for matrices with non-negative discriminant via the
+  // closed-form `(tr ± Sqrt[tr² − 4·det]) / 2`. Sort descending so the
+  // result matches `Eigenvalues[{{1.5, 0.5}, {0.5, 2.0}}]`
+  // → `{2.3090169…, 1.1909830…}`.
+  if n == 2
+    && let (Some(a), Some(b), Some(c), Some(d)) = (
+      try_eval_to_f64(&matrix[0][0]),
+      try_eval_to_f64(&matrix[0][1]),
+      try_eval_to_f64(&matrix[1][0]),
+      try_eval_to_f64(&matrix[1][1]),
+    )
+  {
+    let tr = a + d;
+    let det = a * d - b * c;
+    let disc = tr * tr - 4.0 * det;
+    if disc >= 0.0 {
+      let s = disc.sqrt();
+      let l1 = (tr + s) / 2.0;
+      let l2 = (tr - s) / 2.0;
+      // Match Wolfram's ordering (largest-magnitude first).
+      let (e1, e2) = if l1.abs() >= l2.abs() {
+        (l1, l2)
+      } else {
+        (l2, l1)
+      };
+      return Ok(Expr::List(vec![Expr::Real(e1), Expr::Real(e2)]));
+    }
+  }
+
+  // Return unevaluated for matrices we can't yet handle (defective, complex
+  // eigenvalues for floats, larger non-integer matrices, etc.).
   Ok(Expr::FunctionCall {
     name: "Eigenvalues".to_string(),
     args: args.to_vec(),
@@ -3846,11 +3877,9 @@ fn linear_model_fit_design_matrix_form(
   let terms: Vec<Expr> = coeffs
     .iter()
     .enumerate()
-    .map(|(j, c)| {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Real(*c), basis[j].clone()],
-      }
+    .map(|(j, c)| Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Real(*c), basis[j].clone()],
     })
     .collect();
   let fitted_expr = if terms.len() == 1 {
@@ -3885,7 +3914,8 @@ fn linear_model_fit_design_matrix_form(
       })
       .collect(),
   );
-  let input_data = Expr::List(vec![design_matrix.clone(), response_vec.clone()]);
+  let input_data =
+    Expr::List(vec![design_matrix.clone(), response_vec.clone()]);
 
   let assoc = Expr::Association(vec![
     (
