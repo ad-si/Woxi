@@ -1626,7 +1626,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let s = pair.as_str();
       named_char_to_expr(s)
     }
-    Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
+    Rule::Identifier => {
+      // Strip the default `Global`` context prefix so `Global`x` collapses
+      // to plain `x`, matching wolframscript: `x === Global`x` is True.
+      // A leading backtick ` `x` ` is shorthand for the current context,
+      // which is Global by default — also collapse to `x`.
+      // Other contexts (e.g. `Foo`Bar`x`) keep their full name and remain
+      // distinct symbols.
+      let s = pair.as_str();
+      let name = s
+        .strip_prefix("Global`")
+        .or_else(|| s.strip_prefix('`'))
+        .unwrap_or(s)
+        .to_string();
+      Expr::Identifier(name)
+    }
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
       let inner_pairs: Vec<_> = pair.into_inner().collect();
