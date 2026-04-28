@@ -276,10 +276,39 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
+  // Strip a trailing `SameTest -> fn` option. When present, two elements
+  // are "equal" iff `fn[a, b]` evaluates to True. Matches wolframscript's
+  // `Intersection[{1,2,3}, {2,3,4}, SameTest->Less]` → `{3}` (Less[1,2]
+  // is True so 1 collapses with 2; Less[2,3] is True so 2 collapses with
+  // 3; net result is whatever remains after pairwise SameTest dedup).
+  let mut same_test: Option<Expr> = None;
+  let lists_slice: &[Expr] = if let Some(last) = lists.last() {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = last
+      && matches!(
+        pattern.as_ref(),
+        Expr::Identifier(s) if s == "SameTest"
+      )
+    {
+      same_test = Some(*replacement.clone());
+      &lists[..lists.len() - 1]
+    } else {
+      lists
+    }
+  } else {
+    lists
+  };
+
+  if let Some(test) = same_test {
+    return intersection_with_same_test(lists_slice, &test);
+  }
+
   use std::collections::HashSet;
 
   // Start with elements from first list
-  let first_items = match &lists[0] {
+  let first_items = match &lists_slice[0] {
     Expr::List(items) => items,
     _ => return Ok(Expr::List(vec![])),
   };
@@ -290,7 +319,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   // Intersect with each subsequent list
-  for list in lists.iter().skip(1) {
+  for list in lists_slice.iter().skip(1) {
     let items = match list {
       Expr::List(items) => items,
       _ => continue,
@@ -322,6 +351,77 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   Ok(Expr::List(result))
+}
+
+/// Intersection with a custom SameTest function. Two elements `a` and `b`
+/// from different lists count as equal iff `test[a, b]` evaluates to True.
+/// Within the result, elements are deduplicated pairwise via the same
+/// test. Element order in the result follows the first list.
+fn intersection_with_same_test(
+  lists: &[Expr],
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let first_items = match lists.first() {
+    Some(Expr::List(items)) => items.clone(),
+    _ => return Ok(Expr::List(vec![])),
+  };
+
+  let test_eq = |a: &Expr, b: &Expr| -> bool {
+    let call = Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![
+        test.clone(),
+        Expr::List(vec![a.clone(), b.clone()]),
+      ],
+    };
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&call).ok(),
+      Some(Expr::Identifier(ref s)) if s == "True"
+    )
+  };
+
+  // Filter first list down to elements that have a test-match in every
+  // subsequent list.
+  let mut filtered: Vec<Expr> = Vec::new();
+  for item in &first_items {
+    let mut keep = true;
+    for list in lists.iter().skip(1) {
+      let other = match list {
+        Expr::List(items) => items,
+        _ => {
+          keep = false;
+          break;
+        }
+      };
+      if !other.iter().any(|o| test_eq(item, o)) {
+        keep = false;
+        break;
+      }
+    }
+    if keep {
+      filtered.push(item.clone());
+    }
+  }
+
+  // Pairwise dedup the result using the same test. Keep the LAST element
+  // of each equivalence class so `{1,2,3}` with `Less` collapses left to
+  // right and leaves `3` (Less[1,2] = True drops 1, Less[2,3] = True drops 2).
+  let mut deduped: Vec<Expr> = Vec::new();
+  for item in &filtered {
+    let mut replaced = false;
+    for existing in deduped.iter_mut() {
+      if test_eq(existing, item) {
+        *existing = item.clone();
+        replaced = true;
+        break;
+      }
+    }
+    if !replaced {
+      deduped.push(item.clone());
+    }
+  }
+
+  Ok(Expr::List(deduped))
 }
 
 /// AST-based Complement: elements in first list not in others.
