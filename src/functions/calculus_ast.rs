@@ -648,7 +648,9 @@ fn try_definite_integral(
       }),
     };
     // Re-evaluate so e.g. `Sqrt[Pi/(1/4)]` collapses to `2*Sqrt[Pi]`.
-    return Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result));
+    return Some(
+      crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+    );
   }
 
   // Half-Gaussian: ∫_0^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]/2
@@ -669,7 +671,9 @@ fn try_definite_integral(
       left: Box::new(sqrt_part),
       right: Box::new(Expr::Integer(2)),
     };
-    return Some(crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result));
+    return Some(
+      crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+    );
   }
 
   // Fresnel C/S: ∫_0^z Cos[Pi var^2 / 2] d var = FresnelC[z]
@@ -873,9 +877,7 @@ fn match_gaussian(expr: &Expr, var: &str) -> Option<Expr> {
         None
       }
     }
-    Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 =>
-    {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if matches!(&args[0], Expr::Constant(c) if c == "E") {
         Some(&args[1])
       } else {
@@ -1130,6 +1132,30 @@ pub fn differentiate_expr(
   var: &str,
 ) -> Result<Expr, InterpreterError> {
   differentiate(expr, var)
+}
+
+/// Parse a stringified curried-derivative head of the form
+/// `"Derivative[i1, i2, ...][fname]"` (the result of stringifying a
+/// `CurriedCall { func: FunctionCall("Derivative", [...]), args: [Identifier(f)] }`
+/// in `apply_curried_call`'s fallback path) into `(indices, fname)`. Returns
+/// `None` if the name doesn't parse as that exact shape.
+fn parse_stringified_derivative_head(name: &str) -> Option<(Vec<Expr>, String)> {
+  // Match prefix "Derivative["
+  let rest = name.strip_prefix("Derivative[")?;
+  // Find the closing "]" of the indices list (no nested brackets in indices)
+  let close = rest.find(']')?;
+  let indices_str = &rest[..close];
+  // Then "[fname]" follows immediately
+  let after = &rest[close + 1..];
+  let fname = after.strip_prefix('[').and_then(|s| s.strip_suffix(']'))?;
+  if fname.is_empty() {
+    return None;
+  }
+  let indices: Result<Vec<Expr>, _> = indices_str
+    .split(',')
+    .map(|s| s.trim().parse::<i128>().map(Expr::Integer))
+    .collect();
+  Some((indices.ok()?, fname.to_string()))
 }
 
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
@@ -2463,15 +2489,50 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               })
               .collect();
 
-            let deriv_expr = Expr::CurriedCall {
-              func: Box::new(Expr::CurriedCall {
-                func: Box::new(Expr::FunctionCall {
-                  name: "Derivative".to_string(),
-                  args: deriv_indices,
+            // If `name` is itself the stringified head of an outer Derivative
+            // (e.g. `"Derivative[1, 0][F]"` — produced when curried-derivative
+            // application falls through to `expr_to_string` in
+            // `apply_curried_call`), parse those indices and combine them with
+            // the new `deriv_indices` so we end up with a flat
+            // `Derivative[a+1, b][F][...]` rather than a nested
+            // `Derivative[0, 1][Derivative[a, b][F]][...]`.
+            let deriv_expr = if let Some((outer_indices, inner_fn_name)) =
+              parse_stringified_derivative_head(name)
+              && outer_indices.len() == n
+            {
+              let combined: Vec<Expr> = outer_indices
+                .iter()
+                .zip(deriv_indices.iter())
+                .map(|(a, b)| match (a, b) {
+                  (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+                  _ => Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Plus,
+                    left: Box::new(a.clone()),
+                    right: Box::new(b.clone()),
+                  },
+                })
+                .collect();
+              Expr::CurriedCall {
+                func: Box::new(Expr::CurriedCall {
+                  func: Box::new(Expr::FunctionCall {
+                    name: "Derivative".to_string(),
+                    args: combined,
+                  }),
+                  args: vec![Expr::Identifier(inner_fn_name)],
                 }),
-                args: vec![Expr::Identifier(name.clone())],
-              }),
-              args: args.clone(),
+                args: args.clone(),
+              }
+            } else {
+              Expr::CurriedCall {
+                func: Box::new(Expr::CurriedCall {
+                  func: Box::new(Expr::FunctionCall {
+                    name: "Derivative".to_string(),
+                    args: deriv_indices,
+                  }),
+                  args: vec![Expr::Identifier(name.clone())],
+                }),
+                args: args.clone(),
+              }
             };
 
             if matches!(&dargs[i], Expr::Integer(1)) {
@@ -7586,11 +7647,25 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
-        _ => Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(value),
-          right: Box::new(Expr::Integer(factorial)),
-        },
+        _ => {
+          // value / factorial — fold the factorial into any leading
+          // numeric coefficient via times_ast so e.g.
+          // `Times[Rational[1, 2], Derivative[…]] / 2` collapses to
+          // `Times[Rational[1, 4], Derivative[…]]` rather than leaving a
+          // `BinaryOp::Divide` outside.
+          let inv = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(factorial)],
+          };
+          let val_clone = value.clone();
+          crate::functions::math_ast::times_ast(&[value, inv]).unwrap_or(
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(val_clone),
+              right: Box::new(Expr::Integer(factorial)),
+            },
+          )
+        }
       }
     };
 
