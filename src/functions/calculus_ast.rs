@@ -1325,6 +1325,61 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           Ok(Expr::List(diffed))
         }
+        // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
+        // element-wise through the coefficient list, leaving the
+        // (var, x0, nmin, nmax, denom) header alone. Strips leading zero
+        // coefficients (and bumps nmin) so e.g. d/da of `1 - a x + a²/2 x²`
+        // collapses to `SeriesData[x, 0, {-1, a}, 1, 3, 1]`.
+        "SeriesData" if args.len() == 6 => {
+          let coeffs = match &args[2] {
+            Expr::List(items) => items.clone(),
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "D".to_string(),
+                args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+              });
+            }
+          };
+          let mut diffed: Vec<Expr> = Vec::with_capacity(coeffs.len());
+          for c in &coeffs {
+            diffed.push(simplify(differentiate(c, var)?));
+          }
+          let mut new_nmin = match &args[3] {
+            Expr::Integer(n) => *n,
+            _ => 0,
+          };
+          let new_nmax = match &args[4] {
+            Expr::Integer(n) => *n,
+            _ => 0,
+          };
+          let new_denom = match &args[5] {
+            Expr::Integer(n) => *n,
+            _ => 1,
+          };
+          while !diffed.is_empty() && matches!(diffed[0], Expr::Integer(0)) {
+            diffed.remove(0);
+            new_nmin += 1;
+          }
+          while diffed.len() > 1
+            && matches!(diffed.last(), Some(Expr::Integer(0)))
+          {
+            diffed.pop();
+          }
+          if diffed.is_empty() {
+            return Ok(Expr::Integer(0));
+          }
+          Ok(Expr::FunctionCall {
+            name: "SeriesData".to_string(),
+            args: vec![
+              args[0].clone(),
+              args[1].clone(),
+              Expr::List(diffed),
+              Expr::Integer(new_nmin),
+              Expr::Integer(new_nmax),
+              Expr::Integer(new_denom),
+            ],
+          })
+        }
         "Sin" if args.len() == 1 => {
           // d/dx[sin(f(x))] = cos(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
