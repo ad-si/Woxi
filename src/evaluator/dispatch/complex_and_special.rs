@@ -410,6 +410,14 @@ pub fn dispatch_complex_and_special(
                 && matches!(replacement.as_ref(),
                   Expr::Identifier(v) if v == "True")));
 
+      // The `?sym` REPL shortcut wraps its argument in `Unevaluated[…]`;
+      // wolframscript returns `Missing[UnknownSymbol, …]` for the shortcut
+      // on a never-defined user symbol, but the bare `Information[sym]`
+      // form returns a default `InformationData` record. Distinguish the
+      // two paths by whether the original argument was wrapped.
+      let was_unevaluated_wrap = matches!(&args[0],
+        Expr::FunctionCall { name: n, args: ua }
+          if n == "Unevaluated" && ua.len() == 1);
       let first_arg = match &args[0] {
         Expr::FunctionCall { name: n, args: ua }
           if n == "Unevaluated" && ua.len() == 1 =>
@@ -451,7 +459,11 @@ pub fn dispatch_complex_and_special(
         let has_down = down_values.is_some();
         let has_attrs = user_attrs.as_ref().is_some_and(|a| !a.is_empty());
 
-        if !has_own && !has_down && !has_attrs {
+        // The `?sym` REPL form returns `Missing[UnknownSymbol, sym]` when
+        // the symbol has no definition, attributes, or values — matching
+        // wolframscript. The bare `Information[sym]` call falls through
+        // to the default-record path below.
+        if was_unevaluated_wrap && !has_own && !has_down && !has_attrs {
           return Some(Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
             args: vec![
@@ -461,6 +473,29 @@ pub fn dispatch_complex_and_special(
           }));
         }
 
+        // Wolfram returns a default InformationData record (with all
+        // value-set fields = None and Attributes = {}) for unknown
+        // user-context symbols, rather than `Missing[…]`.
+        return Some(Ok(format_user_information(
+          sym,
+          own_value,
+          down_values,
+          user_attrs,
+          is_full,
+        )));
+      }
+      // String form `Information["sym"]` (without wildcards): treat as a
+      // Global` symbol lookup and return the default InformationData record
+      // (matching wolframscript when the symbol has been mentioned in the
+      // current session). Wildcard strings like "Plot*" are handled below.
+      if let Expr::String(sym) = first_arg
+        && !sym.contains('*')
+      {
+        let own_value = crate::ENV.with(|e| e.borrow().get(sym).cloned());
+        let down_values =
+          crate::FUNC_DEFS.with(|m| m.borrow().get(sym).cloned());
+        let user_attrs =
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
         return Some(Ok(format_user_information(
           sym,
           own_value,
@@ -692,10 +727,8 @@ pub fn dispatch_complex_and_special(
         }
 
         // 4b. Show SubValues (rules like `f[1][x_] := x` keyed under f).
-        let sub_value_entries =
-          crate::evaluator::assignment::SUB_VALUES.with(|m| {
-            m.borrow().get(sym).cloned()
-          });
+        let sub_value_entries = crate::evaluator::assignment::SUB_VALUES
+          .with(|m| m.borrow().get(sym).cloned());
         if let Some(entries) = sub_value_entries {
           for (lhs, rhs) in &entries {
             lines.push(format!(
@@ -2063,11 +2096,9 @@ fn format_builtin_information(
     fields.push(format!("FullName -> System`{}", sym));
   }
 
-  let result_str = format!(
-    "InformationData[<|{}|>, {}]",
-    fields.join(", "),
-    if is_full { "True" } else { "False" }
-  );
+  let _ = is_full; // is_full controls which fields appear above; the
+                   // wrapper is single-arg in wolframscript regardless.
+  let result_str = format!("InformationData[<|{}|>]", fields.join(", "));
   Expr::Raw(result_str)
 }
 
@@ -2198,7 +2229,7 @@ fn format_user_information(
        FormatValues -> None, \
        Options -> {opts_str}, \
        Attributes -> {attrs_str}, \
-       FullName -> Global`{sym}|>, True]"
+       FullName -> Global`{sym}|>]"
     );
     Expr::Raw(result_str)
   } else {
@@ -2215,7 +2246,7 @@ fn format_user_information(
        FormatValues -> None, \
        Options -> None, \
        Attributes -> {attrs_str}, \
-       FullName -> Global`{sym}|>, False]"
+       FullName -> Global`{sym}|>]"
     );
     Expr::Raw(result_str)
   }

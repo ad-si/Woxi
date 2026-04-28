@@ -2171,7 +2171,8 @@ mod information {
     let result = interpret("?Plus").unwrap();
     assert!(result.contains("Name -> Plus"));
     assert!(result.contains("Usage -> Adds numbers together"));
-    assert!(result.contains("False]"));
+    assert!(result.starts_with("InformationData["));
+    assert!(result.ends_with("|>]"));
   }
 
   #[test]
@@ -2184,7 +2185,7 @@ mod information {
     assert!(result.contains("Protected"));
     assert!(result.contains("Flat"));
     assert!(result.contains("FullName -> System`Plus"));
-    assert!(result.contains("True]"));
+    assert!(result.ends_with("|>]"));
   }
 
   #[test]
@@ -2203,7 +2204,7 @@ mod information {
     assert!(result.contains("Listable"));
     assert!(result.contains("NumericFunction"));
     assert!(result.contains("FullName -> System`Sin"));
-    assert!(result.contains("True]"));
+    assert!(result.ends_with("|>]"));
   }
 
   #[test]
@@ -2212,7 +2213,7 @@ mod information {
     let result = interpret("f[x_] := x^2; ??f").unwrap();
     assert!(result.contains("DownValues -> Information`InformationValueForm"));
     assert!(result.contains("f[x_] :> x^2"));
-    assert!(result.contains("True]"));
+    assert!(result.ends_with("|>]"));
   }
 
   #[test]

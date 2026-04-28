@@ -3177,7 +3177,7 @@ mod information_function {
     // includes attributes
     assert!(result.contains("Attributes"));
     assert!(result.contains("FullName -> System`Sin"));
-    assert!(result.contains("True]"));
+    assert!(result.ends_with("|>]"));
   }
 
   #[test]
@@ -3199,7 +3199,7 @@ mod information_function {
     clear_state();
     let result = interpret("?Sin").unwrap();
     assert!(result.contains("Name -> Sin"));
-    assert!(result.contains("False]"));
+    assert!(result.ends_with("|>]"));
   }
 }
 
