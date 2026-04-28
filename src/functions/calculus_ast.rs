@@ -5509,6 +5509,18 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             args: ints,
           })
         }
+        // ∫ RealSign[x] dx = Abs[x] (RealSign is the derivative of Abs
+        // for real arguments, away from 0).
+        "RealSign" if args.len() == 1 => {
+          if matches!(&args[0], Expr::Identifier(n) if n == var) {
+            Some(Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::Identifier(var.to_string())],
+            })
+          } else {
+            None
+          }
+        }
         "Sin" if args.len() == 1 => {
           // ∫ sin(a*x) dx = -cos(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
