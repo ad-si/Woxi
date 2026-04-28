@@ -1429,6 +1429,113 @@ fn kei_series(x: f64) -> f64 {
   total
 }
 
+/// Complex-valued `ker(z)` via the same series as the real version. The
+/// log term becomes complex via `Log[r] + I·θ`; the rest is straight
+/// complex arithmetic.
+fn ker_series_complex(re: f64, im: f64) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329_f64;
+  let half_re = re * 0.5;
+  let half_im = im * 0.5;
+  // ln(z/2) = ln|z/2| + I*arg(z/2)
+  let ln_mag = 0.5 * (half_re * half_re + half_im * half_im).ln();
+  let ln_arg = half_im.atan2(half_re);
+  // half^2, half^4 (complex)
+  let half2_re = half_re * half_re - half_im * half_im;
+  let half2_im = 2.0 * half_re * half_im;
+  let half4_re = half2_re * half2_re - half2_im * half2_im;
+  let half4_im = 2.0 * half2_re * half2_im;
+
+  let (ber_re, ber_im) = ber_series_complex(re, im);
+  let (bei_re, bei_im) = bei_series_complex(re, im);
+  // -(γ + ln(z/2)) * ber(z) + (π/4) * bei(z)
+  let a_re = -(euler_gamma + ln_mag);
+  let a_im = -ln_arg;
+  let mut total_re = a_re * ber_re - a_im * ber_im + (PI / 4.0) * bei_re;
+  let mut total_im = a_re * ber_im + a_im * ber_re + (PI / 4.0) * bei_im;
+
+  // Σ_{k=1..} (-1)^k φ(2k) (z/2)^(4k) / ((2k)!)^2
+  let mut phi = 0.0_f64;
+  let mut fact_sq = 1.0_f64;
+  let mut half_pow_re = 1.0_f64; // (z/2)^0
+  let mut half_pow_im = 0.0_f64;
+  for k in 1..200usize {
+    let n2m1 = (2 * k - 1) as f64;
+    let n2 = (2 * k) as f64;
+    phi += 1.0 / n2m1 + 1.0 / n2;
+    fact_sq *= n2m1 * n2 * n2m1 * n2;
+    let new_re = half_pow_re * half4_re - half_pow_im * half4_im;
+    let new_im = half_pow_re * half4_im + half_pow_im * half4_re;
+    half_pow_re = new_re;
+    half_pow_im = new_im;
+    let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
+    let factor = sign * phi / fact_sq;
+    let term_re = factor * half_pow_re;
+    let term_im = factor * half_pow_im;
+    total_re += term_re;
+    total_im += term_im;
+    let term_mag2 = term_re * term_re + term_im * term_im;
+    let total_mag2 = total_re * total_re + total_im * total_im;
+    if term_mag2 < 1e-36 * total_mag2.max(1.0) {
+      break;
+    }
+  }
+  (total_re, total_im)
+}
+
+/// Complex-valued `kei(z)` via the same series as the real version.
+fn kei_series_complex(re: f64, im: f64) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329_f64;
+  let half_re = re * 0.5;
+  let half_im = im * 0.5;
+  let ln_mag = 0.5 * (half_re * half_re + half_im * half_im).ln();
+  let ln_arg = half_im.atan2(half_re);
+  let half2_re = half_re * half_re - half_im * half_im;
+  let half2_im = 2.0 * half_re * half_im;
+  let half4_re = half2_re * half2_re - half2_im * half2_im;
+  let half4_im = 2.0 * half2_re * half2_im;
+
+  let (ber_re, ber_im) = ber_series_complex(re, im);
+  let (bei_re, bei_im) = bei_series_complex(re, im);
+  // -(γ + ln(z/2)) * bei(z) - (π/4) * ber(z)
+  let a_re = -(euler_gamma + ln_mag);
+  let a_im = -ln_arg;
+  let mut total_re = a_re * bei_re - a_im * bei_im - (PI / 4.0) * ber_re;
+  let mut total_im = a_re * bei_im + a_im * bei_re - (PI / 4.0) * ber_im;
+
+  // Σ_{k=0..} (-1)^k φ(2k+1) (z/2)^(4k+2) / ((2k+1)!)^2
+  // k = 0 term = φ(1) * (z/2)^2 / 1 = half2
+  let mut phi = 1.0_f64;
+  let mut fact_sq = 1.0_f64;
+  let mut half_pow_re = half2_re;
+  let mut half_pow_im = half2_im;
+  total_re += phi * half_pow_re / fact_sq;
+  total_im += phi * half_pow_im / fact_sq;
+  for k in 1..200usize {
+    let n2 = (2 * k) as f64;
+    let n2p1 = (2 * k + 1) as f64;
+    phi += 1.0 / n2 + 1.0 / n2p1;
+    fact_sq *= n2 * n2p1 * n2 * n2p1;
+    let new_re = half_pow_re * half4_re - half_pow_im * half4_im;
+    let new_im = half_pow_re * half4_im + half_pow_im * half4_re;
+    half_pow_re = new_re;
+    half_pow_im = new_im;
+    let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
+    let factor = sign * phi / fact_sq;
+    let term_re = factor * half_pow_re;
+    let term_im = factor * half_pow_im;
+    total_re += term_re;
+    total_im += term_im;
+    let term_mag2 = term_re * term_re + term_im * term_im;
+    let total_mag2 = total_re * total_re + total_im * total_im;
+    if term_mag2 < 1e-36 * total_mag2.max(1.0) {
+      break;
+    }
+  }
+  (total_re, total_im)
+}
+
 /// KelvinKer[x] - real part of e^(-Pi·I/2)·BesselK[0, x·e^(Pi I/4)].
 pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1441,6 +1548,12 @@ pub fn kelvin_ker_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   } {
     return Ok(Expr::Real(ker_series(x)));
+  }
+  if let Some((re, im)) = try_extract_complex_f64(&args[0])
+    && im != 0.0
+  {
+    let (rr, ri) = ker_series_complex(re, im);
+    return Ok(build_complex_float_expr(rr, ri));
   }
   Ok(Expr::FunctionCall {
     name: "KelvinKer".to_string(),
@@ -1460,6 +1573,12 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => None,
   } {
     return Ok(Expr::Real(kei_series(x)));
+  }
+  if let Some((re, im)) = try_extract_complex_f64(&args[0])
+    && im != 0.0
+  {
+    let (rr, ri) = kei_series_complex(re, im);
+    return Ok(build_complex_float_expr(rr, ri));
   }
   Ok(Expr::FunctionCall {
     name: "KelvinKei".to_string(),
