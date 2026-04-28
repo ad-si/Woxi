@@ -57,8 +57,7 @@ fn polynomial_term_to_series_data(
   }
   // `var^n` for non-negative integer n
   let parse_pow = |base: &Expr, exp: &Expr| -> Option<i128> {
-    let is_var =
-      matches!(base, Expr::Identifier(s) if s == var_name);
+    let is_var = matches!(base, Expr::Identifier(s) if s == var_name);
     if !is_var {
       return None;
     }
@@ -91,8 +90,9 @@ fn polynomial_term_to_series_data(
     operand,
   } = e
   {
-    let inner =
-      polynomial_term_to_series_data(operand, var_name, sd_var, sd_x0, sd_nmax)?;
+    let inner = polynomial_term_to_series_data(
+      operand, var_name, sd_var, sd_x0, sd_nmax,
+    )?;
     if let Expr::FunctionCall { args: sa, .. } = &inner
       && let Expr::List(coeffs) = &sa[2]
     {
@@ -149,10 +149,7 @@ fn polynomial_term_to_series_data(
       } = f
       {
         parse_pow(left, right)?
-      } else if let Expr::FunctionCall {
-        name,
-        args: pargs,
-      } = f
+      } else if let Expr::FunctionCall { name, args: pargs } = f
         && name == "Power"
         && pargs.len() == 2
       {
@@ -212,15 +209,12 @@ fn try_series_data_plus(
   // SeriesData's own `nmax` instead of the polynomial term's degree+1.
   if series_indices.len() == 1 {
     let only_idx = series_indices[0];
-    let (sd_var, sd_x0, sd_nmax) = if let Expr::FunctionCall {
-      args: sa,
-      ..
-    } = &args[only_idx]
-    {
-      (sa[0].clone(), sa[1].clone(), sa[4].clone())
-    } else {
-      return Ok(None);
-    };
+    let (sd_var, sd_x0, sd_nmax) =
+      if let Expr::FunctionCall { args: sa, .. } = &args[only_idx] {
+        (sa[0].clone(), sa[1].clone(), sa[4].clone())
+      } else {
+        return Ok(None);
+      };
     // Only handle x0 = 0 here; other expansion centres would need the
     // polynomial term to be expressed in `(x - x0)` already.
     if !matches!(&sd_x0, Expr::Integer(0)) {
@@ -236,7 +230,9 @@ fn try_series_data_plus(
         lifted.push(a.clone());
         continue;
       }
-      match polynomial_term_to_series_data(a, &var_name, &sd_var, &sd_x0, &sd_nmax) {
+      match polynomial_term_to_series_data(
+        a, &var_name, &sd_var, &sd_x0, &sd_nmax,
+      ) {
         Some(sd) => lifted.push(sd),
         None => return Ok(None),
       }
@@ -3634,6 +3630,56 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  // Times[…, complex_number, Infinity-like, …] → fold the complex factor
+  // into the Infinity direction and let `DirectedInfinity[…]` normalize the
+  // result. Without this, a complex literal multiplied by `Infinity` stayed
+  // as the unevaluated `Times[<complex>, Infinity]` form. wolframscript:
+  //   (-1 + 2 I) Infinity  →  DirectedInfinity[(-1 + 2*I)/Sqrt[5]]
+  // Only triggers for genuinely complex (non-zero imaginary) numeric
+  // factors — real-coefficient × Infinity is handled by the existing
+  // numeric coefficient path further down.
+  let complex_idx = flat_args.iter().position(|a| {
+    if let Some(((_re_n, _re_d), (im_n, _im_d))) =
+      crate::functions::math_ast::try_extract_complex_exact(a)
+    {
+      im_n != 0
+    } else {
+      false
+    }
+  });
+  let inf_idx = flat_args.iter().position(|a| {
+    matches!(a, Expr::Identifier(n) if n == "Infinity")
+      || matches!(a, Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"))
+      || matches!(a, Expr::FunctionCall { name, args } if name == "DirectedInfinity" && args.len() == 1)
+  });
+  if let (Some(ci), Some(ii)) = (complex_idx, inf_idx)
+    && ci != ii
+  {
+    let direction: Expr = match &flat_args[ii] {
+      Expr::Identifier(_) => Expr::Integer(1),
+      Expr::UnaryOp { .. } => Expr::Integer(-1),
+      Expr::FunctionCall { args, .. } => args[0].clone(),
+      _ => unreachable!(),
+    };
+    let complex_factor = flat_args[ci].clone();
+    let combined = times_ast(&[complex_factor, direction])?;
+    let new_inf = crate::evaluator::evaluate_function_call_ast(
+      "DirectedInfinity",
+      &[combined],
+    )?;
+    let mut rest: Vec<Expr> = flat_args
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != ci && *i != ii)
+      .map(|(_, a)| a.clone())
+      .collect();
+    rest.push(new_inf);
+    return times_ast(&rest);
   }
 
   // Underflow[] / Overflow[] absorb non-zero numeric factors (Wolfram

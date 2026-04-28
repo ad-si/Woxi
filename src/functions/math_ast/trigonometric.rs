@@ -1709,7 +1709,9 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let re = 0.5 * (a * a + b * b).ln();
         let im = b.atan2(a);
-        return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+        return Ok(crate::functions::math_ast::build_complex_float_expr(
+          re, im,
+        ));
       }
       Ok(Expr::FunctionCall {
         name: "Log".to_string(),
@@ -1947,11 +1949,45 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
           has_inf = true;
         } else if matches!(a, Expr::Integer(-1)) {
           sign = -sign;
+        } else if let Expr::FunctionCall { name: dn, args: dargs } = a
+          && dn == "DirectedInfinity"
+          && dargs.len() == 1
+        {
+          // `Times[-1, DirectedInfinity[I]]` ≡ -I·Infinity. Treat
+          // `DirectedInfinity[±I]` as the combined I·Infinity factor.
+          match &dargs[0] {
+            Expr::Identifier(s) if s == "I" => {
+              has_i = true;
+              has_inf = true;
+            }
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand,
+            } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
+              has_i = true;
+              has_inf = true;
+              sign = -sign;
+            }
+            _ => return None,
+          }
         } else {
           return None;
         }
       }
       if has_i && has_inf { Some(sign) } else { None }
+    }
+    // After Times canonicalisation, `I·Infinity` collapses to
+    // `DirectedInfinity[I]` (and `-I·Infinity` to `DirectedInfinity[-I]`).
+    // Recognise both forms here so trig handlers downstream still match.
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Identifier(s) if s == "I" => Some(1),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => Some(-1),
+        _ => None,
+      }
     }
     _ => None,
   }
