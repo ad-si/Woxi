@@ -1578,6 +1578,120 @@ pub fn clustering_components_ast(
   Ok(Expr::List(labels))
 }
 
+/// `FindClusters[list]` / `FindClusters[list, k]` — dispatch entry that
+/// hands off to the 1-arg path when no cluster count is given, or runs
+/// the explicit `k-1` largest-gap split when `k` is provided.
+pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FindClusters expects 1 or 2 arguments".into(),
+    ));
+  }
+  if args.len() == 1 {
+    return find_clusters_ast(&args[0]);
+  }
+  // 2-arg form: extract k.
+  let k = match &args[1] {
+    Expr::Integer(n) if *n >= 1 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FindClusters".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  find_clusters_with_k(&args[0], k, args)
+}
+
+/// `FindClusters[list, k]` — split a 1-D numeric list into exactly `k`
+/// clusters by cutting at the `k - 1` largest gaps between sorted
+/// values. Preserves the input ordering inside each cluster, so e.g.
+/// `FindClusters[{1, 2, 10, 11, 20, 21}, 2]` → `{{1, 2, 10, 11}, {20, 21}}`.
+fn find_clusters_with_k(
+  list: &Expr,
+  k: usize,
+  raw_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FindClusters".to_string(),
+        args: raw_args.to_vec(),
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  if k == 1 {
+    return Ok(Expr::List(vec![Expr::List(items)]));
+  }
+  if k >= items.len() {
+    // One element per cluster.
+    return Ok(Expr::List(items.into_iter().map(|e| Expr::List(vec![e])).collect()));
+  }
+  // Convert items to f64 for gap analysis. Bail out if any item isn't numeric.
+  let mut values: Vec<f64> = Vec::with_capacity(items.len());
+  for item in &items {
+    match expr_to_f64(item) {
+      Some(v) => values.push(v),
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "FindClusters".to_string(),
+          args: raw_args.to_vec(),
+        });
+      }
+    }
+  }
+  // Sort indices by value to find gaps in ascending value order.
+  let n = values.len();
+  let mut sort_idx: Vec<usize> = (0..n).collect();
+  sort_idx.sort_by(|&a, &b| {
+    values[a]
+      .partial_cmp(&values[b])
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  // Compute (gap, position-in-sorted) for each adjacent pair.
+  let mut gaps: Vec<(f64, usize)> = (0..n - 1)
+    .map(|i| (values[sort_idx[i + 1]] - values[sort_idx[i]], i))
+    .collect();
+  // Pick the (k-1) largest-gap positions.
+  gaps.sort_by(|a, b| {
+    b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let mut cut_positions: Vec<usize> =
+    gaps.iter().take(k - 1).map(|(_, p)| *p).collect();
+  cut_positions.sort();
+  // Assign each input index a cluster label (1..=k) based on its
+  // position in the sorted order and the cut positions. Lower-value
+  // elements end up in cluster 1.
+  let mut labels: Vec<usize> = vec![0; n];
+  let mut cluster: usize = 1;
+  let mut next_cut = 0usize;
+  for (sorted_pos, &orig_idx) in sort_idx.iter().enumerate() {
+    if next_cut < cut_positions.len() && sorted_pos > cut_positions[next_cut] {
+      cluster += 1;
+      next_cut += 1;
+    }
+    labels[orig_idx] = cluster;
+  }
+  // Group elements by cluster label, preserving input order.
+  let mut groups: Vec<Vec<Expr>> = vec![Vec::new(); k];
+  for (i, item) in items.iter().enumerate() {
+    let c = labels[i];
+    if c >= 1 && c <= k {
+      groups[c - 1].push(item.clone());
+    }
+  }
+  let result: Vec<Expr> = groups
+    .into_iter()
+    .filter(|g| !g.is_empty())
+    .map(Expr::List)
+    .collect();
+  Ok(Expr::List(result))
+}
+
 /// `FindClusters[list]` — partition `list` into clusters, returning each
 /// cluster as a sublist. Reuses `ClusteringComponents` to obtain a label
 /// per element, then groups by label in cluster-id order.
