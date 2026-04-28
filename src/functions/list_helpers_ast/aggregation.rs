@@ -1548,10 +1548,11 @@ pub fn clustering_components_ast(
     }
   }
   // All identical: a single cluster.
-  let (min, max) = values.iter().fold(
-    (f64::INFINITY, f64::NEG_INFINITY),
-    |(lo, hi), v| (lo.min(*v), hi.max(*v)),
-  );
+  let (min, max) = values
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+      (lo.min(*v), hi.max(*v))
+    });
   if min == max {
     return Ok(Expr::List(vec![Expr::Integer(1); values.len()]));
   }
@@ -1575,4 +1576,69 @@ pub fn clustering_components_ast(
     .map(|v| Expr::Integer(if *v <= threshold { 1 } else { 2 }))
     .collect();
   Ok(Expr::List(labels))
+}
+
+/// `FindClusters[list]` — partition `list` into clusters, returning each
+/// cluster as a sublist. Reuses `ClusteringComponents` to obtain a label
+/// per element, then groups by label in cluster-id order.
+///
+/// Falls back to the unevaluated form for inputs that
+/// `ClusteringComponents` can't label (e.g. non-numeric data or shapes
+/// the underlying algorithm doesn't yet handle).
+pub fn find_clusters_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FindClusters".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  // Delegate the labeling step to ClusteringComponents.
+  let components = clustering_components_ast(list)?;
+  let labels = match &components {
+    Expr::List(ls) if ls.len() == items.len() => ls.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FindClusters".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+  // Determine the highest cluster id; group elements by id, preserving
+  // the input order within each group.
+  let mut max_id: i128 = 0;
+  for l in &labels {
+    if let Expr::Integer(k) = l {
+      if *k > max_id {
+        max_id = *k;
+      }
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "FindClusters".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+  let n = max_id as usize;
+  let mut groups: Vec<Vec<Expr>> = vec![Vec::new(); n];
+  for (item, label) in items.iter().zip(labels.iter()) {
+    if let Expr::Integer(k) = label
+      && *k >= 1
+      && (*k as usize) <= n
+    {
+      groups[(*k as usize) - 1].push(item.clone());
+    }
+  }
+  // Drop empty clusters (defensive — shouldn't occur with valid labels).
+  let result: Vec<Expr> = groups
+    .into_iter()
+    .filter(|g| !g.is_empty())
+    .map(Expr::List)
+    .collect();
+  Ok(Expr::List(result))
 }

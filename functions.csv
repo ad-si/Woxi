@@ -1183,7 +1183,7 @@ CometData,,🚫,,10.0,1195
 HighlightImage,,🚫,,9.0,1195
 Subgraph,,🚫,,8.0,1197
 Xor,Checks if exactly one condition is true,✅,pure,1.0,1197
-FindClusters,,🚫,,6.0,1198
+FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
 SmoothHistogram,,🚫,,8.0,1200
 Manipulator,,🚫,,6.0,1201

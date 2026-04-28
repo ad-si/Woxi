@@ -543,6 +543,9 @@ pub fn dispatch_list_operations(
     "ClusteringComponents" if args.len() == 1 => {
       return Some(list_helpers_ast::clustering_components_ast(&args[0]));
     }
+    "FindClusters" if args.len() == 1 => {
+      return Some(list_helpers_ast::find_clusters_ast(&args[0]));
+    }
     "ComposeList" if args.len() == 2 => {
       return Some(list_helpers_ast::compose_list_ast(args));
     }
