@@ -130,6 +130,59 @@ pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(Expr::Real(w));
     }
+    // ProductLog[x.] for x < -1/E — principal branch goes complex.
+    // The series expansion W_0(z) = -1 + p - p²/3 + 11p³/72 - … with
+    // p = ±sqrt(2(1+e·z)) gives the starting guess; refine with complex
+    // Halley.
+    Expr::Real(f) if !f.is_nan() && f.is_finite() => {
+      let x = *f;
+      let one_plus_ex = 1.0 + std::f64::consts::E * x;
+      // p = i·sqrt(|2·(1+e·x)|) for x < -1/E.
+      let p_im = (2.0 * one_plus_ex.abs()).sqrt();
+      let mut wr: f64 = -1.0;
+      let mut wi: f64 = p_im;
+      for _ in 0..200 {
+        // e^W = e^wr · (cos(wi) + I·sin(wi))
+        let ewr = wr.exp();
+        let ewre = ewr * wi.cos();
+        let ewim = ewr * wi.sin();
+        // W·e^W
+        let wewre = wr * ewre - wi * ewim;
+        let wewim = wr * ewim + wi * ewre;
+        // delta = W·e^W − z (z = x + 0·I)
+        let dre = wewre - x;
+        let dim = wewim;
+        let dmag2 = dre * dre + dim * dim;
+        if dmag2 < 1e-36 {
+          break;
+        }
+        // num1 = e^W · (W + 1)
+        let wp1_re = wr + 1.0;
+        let wp1_im = wi;
+        let n1_re = ewre * wp1_re - ewim * wp1_im;
+        let n1_im = ewre * wp1_im + ewim * wp1_re;
+        // num2 = (W + 2) · delta / (2·(W + 1))
+        let wp2_re = wr + 2.0;
+        let wp2_im = wi;
+        let prod_re = wp2_re * dre - wp2_im * dim;
+        let prod_im = wp2_re * dim + wp2_im * dre;
+        let denom_re = 2.0 * wp1_re;
+        let denom_im = 2.0 * wp1_im;
+        let denom_mag2 = denom_re * denom_re + denom_im * denom_im;
+        let n2_re = (prod_re * denom_re + prod_im * denom_im) / denom_mag2;
+        let n2_im = (prod_im * denom_re - prod_re * denom_im) / denom_mag2;
+        // denom_total = num1 - num2
+        let dt_re = n1_re - n2_re;
+        let dt_im = n1_im - n2_im;
+        let dt_mag2 = dt_re * dt_re + dt_im * dt_im;
+        // step = delta / denom_total
+        let step_re = (dre * dt_re + dim * dt_im) / dt_mag2;
+        let step_im = (dim * dt_re - dre * dt_im) / dt_mag2;
+        wr -= step_re;
+        wi -= step_im;
+      }
+      return Ok(crate::functions::math_ast::build_complex_float_expr(wr, wi));
+    }
     _ => {}
   }
   Ok(Expr::FunctionCall {
