@@ -1632,14 +1632,45 @@ pub fn try_flat_replace_all(
             }));
           }
         } else {
-          // For Flat only: try contiguous subsequences
+          // For Flat only: try contiguous subsequences. Without
+          // OneIdentity, Wolfram treats each individual arg of the
+          // Flat function as `head[arg]` ("f[Flat] treats f[x] as
+          // f[f[x]]"). So when matching `r[x_, x_]` against
+          // `r[b, b]`, we try the wrapped form `r[r[b], r[b]]` first
+          // — that binds `x = r[b]` for `r[a, b, b, c] /. r[x_, x_]
+          // -> rp[x]` → `r[a, rp[r[b]], c]`. The literal form is the
+          // fallback so plain literal patterns like `f[a, b, c] /.
+          // f[a, b] -> d` still match.
+          let has_one_identity = crate::FUNC_ATTRS.with(|m| {
+            m.borrow()
+              .get(name.as_str())
+              .is_some_and(|attrs| attrs.contains(&"OneIdentity".to_string()))
+          });
           let sub_len = pat_args.len();
           for start in 0..=(args.len() - sub_len) {
-            let sub_expr = Expr::FunctionCall {
-              name: name.clone(),
-              args: args[start..start + sub_len].to_vec(),
+            let try_match = |sub_args: Vec<Expr>| -> Option<Vec<(String, Expr)>> {
+              let sub_expr = Expr::FunctionCall {
+                name: name.clone(),
+                args: sub_args,
+              };
+              match_pattern(&sub_expr, pattern)
             };
-            if let Some(bindings) = match_pattern(&sub_expr, pattern) {
+            let literal_args: Vec<Expr> = args[start..start + sub_len].to_vec();
+            let mut bindings_opt: Option<Vec<(String, Expr)>> = None;
+            if !has_one_identity {
+              let wrapped: Vec<Expr> = literal_args
+                .iter()
+                .map(|a| Expr::FunctionCall {
+                  name: name.clone(),
+                  args: vec![a.clone()],
+                })
+                .collect();
+              bindings_opt = try_match(wrapped);
+            }
+            if bindings_opt.is_none() {
+              bindings_opt = try_match(literal_args);
+            }
+            if let Some(bindings) = bindings_opt {
               let replaced = apply_bindings(replacement, &bindings)?;
               let mut new_args = args[..start].to_vec();
               new_args.push(replaced);
@@ -3268,8 +3299,7 @@ fn apply_replace_all_multi_ast_impl(
       let new_pat = apply_replace_all_multi_ast_impl(pattern, rules, held)?;
       // RuleDelayed holds its RHS — recurse without re-evaluating after
       // substitution.
-      let new_rep =
-        apply_replace_all_multi_ast_impl(replacement, rules, true)?;
+      let new_rep = apply_replace_all_multi_ast_impl(replacement, rules, true)?;
       Ok(Expr::RuleDelayed {
         pattern: Box::new(new_pat),
         replacement: Box::new(new_rep),
