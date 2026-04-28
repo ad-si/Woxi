@@ -543,22 +543,17 @@ pub fn spherical_harmonic_y_ast(
         let cos_theta = theta.cos();
         let leg_call = Expr::FunctionCall {
           name: "LegendreP".to_string(),
-          args: vec![
-            Expr::Real(lf),
-            Expr::Real(mf),
-            Expr::Real(cos_theta),
-          ],
+          args: vec![Expr::Real(lf), Expr::Real(mf), Expr::Real(cos_theta)],
         };
-        let leg_val =
-          match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
-            Ok(Expr::Real(v)) => v,
-            _ => {
-              return Ok(Expr::FunctionCall {
-                name: "SphericalHarmonicY".to_string(),
-                args: args.to_vec(),
-              });
-            }
-          };
+        let leg_val = match crate::evaluator::evaluate_expr_to_expr(&leg_call) {
+          Ok(Expr::Real(v)) => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "SphericalHarmonicY".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
         // Normalization: Sqrt[(2ℓ+1)/(4π) · Γ(ℓ−m+1)/Γ(ℓ+m+1)]
         let g_num_call = Expr::FunctionCall {
           name: "Gamma".to_string(),
@@ -568,28 +563,25 @@ pub fn spherical_harmonic_y_ast(
           name: "Gamma".to_string(),
           args: vec![Expr::Real(lf + mf + 1.0)],
         };
-        let g_num =
-          match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
-            Ok(Expr::Real(v)) => v,
-            _ => {
-              return Ok(Expr::FunctionCall {
-                name: "SphericalHarmonicY".to_string(),
-                args: args.to_vec(),
-              });
-            }
-          };
-        let g_den =
-          match crate::evaluator::evaluate_expr_to_expr(&g_den_call) {
-            Ok(Expr::Real(v)) => v,
-            _ => {
-              return Ok(Expr::FunctionCall {
-                name: "SphericalHarmonicY".to_string(),
-                args: args.to_vec(),
-              });
-            }
-          };
-        let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI)
-          * g_num
+        let g_num = match crate::evaluator::evaluate_expr_to_expr(&g_num_call) {
+          Ok(Expr::Real(v)) => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "SphericalHarmonicY".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let g_den = match crate::evaluator::evaluate_expr_to_expr(&g_den_call) {
+          Ok(Expr::Real(v)) => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "SphericalHarmonicY".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let norm = ((2.0 * lf + 1.0) / (4.0 * std::f64::consts::PI) * g_num
           / g_den)
           .sqrt();
         let phase_re = (mf * phi).cos();
@@ -764,7 +756,9 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
   // BinaryOp::Power into `(base, exp)`.
   let as_power = |e: &Expr| -> Option<(Expr, Expr)> {
     match e {
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         Some((args[0].clone(), args[1].clone()))
       }
       Expr::BinaryOp {
@@ -809,11 +803,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     if !exp_is_half {
       continue;
     }
-    let Expr::FunctionCall {
-      name: tn,
-      args: ta,
-    } = &base
-    else {
+    let Expr::FunctionCall { name: tn, args: ta } = &base else {
       continue;
     };
     if tn != "Times" {
@@ -822,7 +812,10 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     let mut found_rat: Option<(i128, i128)> = None;
     let mut has_pi_inv = false;
     for f in ta {
-      if let Expr::FunctionCall { name: rn, args: rargs } = f
+      if let Expr::FunctionCall {
+        name: rn,
+        args: rargs,
+      } = f
         && rn == "Rational"
         && rargs.len() == 2
         && let (Expr::Integer(c), Expr::Integer(d)) = (&rargs[0], &rargs[1])
@@ -954,7 +947,8 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
             if matches!(a, Expr::Integer(_) | Expr::Real(_)) {
               continue;
             }
-            if matches!(a, Expr::FunctionCall { name: rn, .. } if rn == "Rational") {
+            if matches!(a, Expr::FunctionCall { name: rn, .. } if rn == "Rational")
+            {
               continue;
             }
             if let Some(s) = deepest_atomic(a) {
@@ -2539,6 +2533,49 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
+    // Non-integer real ν with real x: closed form via Kummer 1F1.
+    //   H_ν(x) = 2^ν √π · [1F1(-ν/2; 1/2; x²) / Γ((1-ν)/2)
+    //                    − 2x · 1F1((1-ν)/2; 3/2; x²) / Γ(-ν/2)]
+    Expr::Real(nf) if nf.fract() != 0.0 => {
+      if let Some(xf) = try_eval_to_f64(&args[1]) {
+        let nu = *nf;
+        let x2 = xf * xf;
+        let eval_real = |e: Expr| -> Option<f64> {
+          let r = crate::evaluator::evaluate_expr_to_expr(&e).ok()?;
+          try_eval_to_f64(&r)
+        };
+        let h1 = eval_real(Expr::FunctionCall {
+          name: "Hypergeometric1F1".to_string(),
+          args: vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)],
+        });
+        let h2 = eval_real(Expr::FunctionCall {
+          name: "Hypergeometric1F1".to_string(),
+          args: vec![
+            Expr::Real((1.0 - nu) / 2.0),
+            Expr::Real(1.5),
+            Expr::Real(x2),
+          ],
+        });
+        let g1 = eval_real(Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![Expr::Real((1.0 - nu) / 2.0)],
+        });
+        let g2 = eval_real(Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![Expr::Real(-nu / 2.0)],
+        });
+        if let (Some(h1v), Some(h2v), Some(g1v), Some(g2v)) = (h1, h2, g1, g2) {
+          let pi = std::f64::consts::PI;
+          let result =
+            2f64.powf(nu) * pi.sqrt() * (h1v / g1v - 2.0 * xf * h2v / g2v);
+          return Ok(Expr::Real(result));
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "HermiteH".to_string(),
+        args: args.to_vec(),
+      });
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "HermiteH".to_string(),
