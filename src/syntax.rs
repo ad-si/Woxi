@@ -5738,6 +5738,49 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           let numer = rest.join("*");
           return format!("({})/{}", numer, d);
         }
+        // Handle Times[Rational[-1, d], e1, e2, ...] as "-1/d*(e1*e2*...)"
+        // (Wolfram convention for negative reciprocal coefficients).
+        if args.len() >= 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(-1), Expr::Integer(d)) if *d > 1)
+          && let Expr::Integer(d) = &rargs[1]
+          && !args[1..]
+            .iter()
+            .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
+        {
+          let rest = if args.len() == 2 {
+            args[1].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: args[1..].to_vec(),
+            }
+          };
+          let rest_str = fmt(&rest);
+          // If rest is a multi-factor Times (no denominator), wrap in parens.
+          let needs_parens = if let Expr::FunctionCall {
+            name: rname2,
+            args: rargs2,
+          } = &rest
+          {
+            rname2 == "Times"
+              && rargs2.len() >= 2
+              && !rargs2.iter().any(is_denominator_factor)
+          } else {
+            false
+          };
+          let formatted = if needs_parens {
+            format!("({})", rest_str)
+          } else {
+            rest_str
+          };
+          return format!("-1/{}*{}", d, formatted);
+        }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
           // Special case: if Infinity is among the factors, wolframscript
