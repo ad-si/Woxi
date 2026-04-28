@@ -567,10 +567,10 @@ pub fn dispatch_math_functions(
     "HankelH2" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hankel_h2_ast(args));
     }
-    "KelvinBer" if args.len() == 1 => {
+    "KelvinBer" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::kelvin_ber_ast(args));
     }
-    "KelvinBei" if args.len() == 1 => {
+    "KelvinBei" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::kelvin_bei_ast(args));
     }
     "KelvinKer" if args.len() == 1 => {

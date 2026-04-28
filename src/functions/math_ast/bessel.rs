@@ -1316,12 +1316,78 @@ fn bei_series_complex(re: f64, im: f64) -> (f64, f64) {
   (sum_re, sum_im)
 }
 
+/// 2-arg `ber_ν(x)`/`bei_ν(x)` via the series:
+///   J_ν(x e^{3πI/4}) = (x/2)^ν e^{3πIν/4} Σ_{k≥0} (-1)^k (x/2)^{2k}/(k! Γ(ν+k+1)) e^{3πIk/2}
+/// Splitting the inner sum by `k mod 2` into real/imaginary parts gives:
+///   ber_ν(x) = (x/2)^ν (cos(3πν/4) S_re - sin(3πν/4) S_im)
+///   bei_ν(x) = (x/2)^ν (sin(3πν/4) S_re + cos(3πν/4) S_im)
+/// where
+///   S_re = Σ_{m≥0} (-1)^m (x/2)^{4m} / ((2m)! Γ(ν+2m+1))
+///   S_im = Σ_{m≥0} (-1)^m (x/2)^{4m+2} / ((2m+1)! Γ(ν+2m+2))
+fn ber_bei_nu_series(nu: f64, x: f64) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let half = x * 0.5;
+  let half2 = half * half;
+  let half4 = half2 * half2;
+
+  let mut s_re = 0.0_f64;
+  let mut s_im = 0.0_f64;
+  // term_re: (x/2)^(4m) / ((2m)! Γ(ν+2m+1))
+  // term_im: (x/2)^(4m+2) / ((2m+1)! Γ(ν+2m+2))
+  let mut term_re = (-ln_gamma(nu + 1.0)).exp(); // m=0
+  let mut term_im = half2 * (-ln_gamma(nu + 2.0)).exp(); // m=0
+  s_re += term_re;
+  s_im += term_im;
+  for m in 1..200usize {
+    let m2 = (2 * m) as f64;
+    let m2p1 = (2 * m + 1) as f64;
+    // term_re_m = -term_re_{m-1} * half4 / ((2m-1)*(2m)*(ν+2m-1)*(ν+2m))
+    term_re *= -half4 / (m2 * (m2 - 1.0) * (nu + m2 - 1.0) * (nu + m2));
+    // term_im_m = -term_im_{m-1} * half4 / ((2m)*(2m+1)*(ν+2m)*(ν+2m+1))
+    term_im *= -half4 / (m2 * m2p1 * (nu + m2) * (nu + m2p1));
+    s_re += term_re;
+    s_im += term_im;
+    if term_re.abs() < 1e-18 * s_re.abs().max(1.0)
+      && term_im.abs() < 1e-18 * s_im.abs().max(1.0)
+    {
+      break;
+    }
+  }
+  let pref = half.powf(nu);
+  let theta = 0.75 * PI * nu;
+  let c = theta.cos();
+  let s = theta.sin();
+  let ber = pref * (c * s_re - s * s_im);
+  let bei = pref * (s * s_re + c * s_im);
+  (ber, bei)
+}
+
 /// KelvinBer[x] - real part of BesselJ[0, x·e^(3πI/4)].
 pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if !(args.len() == 1 || args.len() == 2) {
     return Err(InterpreterError::EvaluationError(
-      "KelvinBer expects 1 argument".into(),
+      "KelvinBer expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    let nu = match &args[0] {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ => None,
+    };
+    let x = match &args[1] {
+      Expr::Integer(n) if *n > 0 => Some(*n as f64),
+      Expr::Real(f) if *f > 0.0 => Some(*f),
+      _ => None,
+    };
+    if let (Some(nu), Some(x)) = (nu, x) {
+      let (ber, _) = ber_bei_nu_series(nu, x);
+      return Ok(Expr::Real(ber));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "KelvinBer".to_string(),
+      args: args.to_vec(),
+    });
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) => Some(*f),
@@ -1343,10 +1409,30 @@ pub fn kelvin_ber_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// KelvinBei[x] - imaginary part of BesselJ[0, x·e^(3πI/4)].
 pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if !(args.len() == 1 || args.len() == 2) {
     return Err(InterpreterError::EvaluationError(
-      "KelvinBei expects 1 argument".into(),
+      "KelvinBei expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    let nu = match &args[0] {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ => None,
+    };
+    let x = match &args[1] {
+      Expr::Integer(n) if *n > 0 => Some(*n as f64),
+      Expr::Real(f) if *f > 0.0 => Some(*f),
+      _ => None,
+    };
+    if let (Some(nu), Some(x)) = (nu, x) {
+      let (_, bei) = ber_bei_nu_series(nu, x);
+      return Ok(Expr::Real(bei));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "KelvinBei".to_string(),
+      args: args.to_vec(),
+    });
   }
   if let Some(x) = match &args[0] {
     Expr::Real(f) => Some(*f),
