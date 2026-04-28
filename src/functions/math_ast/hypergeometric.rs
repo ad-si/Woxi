@@ -1047,6 +1047,32 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // U[1, b, z] = z^{1-b} · E^z · Gamma[b-1, z] for integer b ≥ 2.
+  // Combined with the integer-a Gamma closed form this collapses cases
+  // like `HypergeometricU[1, 4, 8] → 41/256` exactly.
+  if matches!(&args[0], Expr::Integer(1))
+    && let Expr::Integer(b) = &args[1]
+    && *b >= 2
+  {
+    let z = &args[2];
+    let pow = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![z.clone(), Expr::Integer(1 - *b)],
+    };
+    let exp_z = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()],
+    };
+    let gamma = Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![Expr::Integer(*b - 1), z.clone()],
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![pow, exp_z, gamma],
+    });
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "HypergeometricU".to_string(),

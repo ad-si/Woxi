@@ -392,6 +392,18 @@ fn gamma_incomplete_upper(
     });
   }
 
+  // For positive integer a with numeric z, prefer the exact closed form
+  //   Gamma[n, z] = (n-1)! · E^{-z} · Σ_{k=0..n-1} z^k / k!
+  // so e.g. `Gamma[3, 8] → 82/E^8` (matching Wolfram), rather than the
+  // continued-fraction f64 approximation which loses exactness when both
+  // args are integers.
+  if let Some(n) = expr_to_i128(a)
+    && n > 0
+    && try_eval_to_f64(z).is_some()
+  {
+    return gamma_incomplete_upper_int_a(n, z);
+  }
+
   // Numeric evaluation: both args are real numbers
   // (Wolfram keeps symbolic Gamma[0, z] and Gamma[n, z] (n >= 2) unevaluated.
   // We only simplify Gamma[1, z] and numeric cases.)
@@ -404,88 +416,86 @@ fn gamma_incomplete_upper(
     }
   }
 
-  // For positive integer a with numeric z: Gamma[n, z] = (n-1)! * E^(-z) * Sum[z^k/k!, {k, 0, n-1}]
-  // Only apply for numeric z (Wolfram keeps symbolic Gamma[n, x] unevaluated).
-  if let Some(n) = expr_to_i128(a)
-    && n > 0
-    && try_eval_to_f64(z).is_some()
-  {
-    let n = n as usize;
-    // Build the sum: sum_{k=0}^{n-1} z^k / k!
-    let mut terms = Vec::new();
-    let mut factorial: i128 = 1;
-    for k in 0..n {
-      if k > 0 {
-        factorial *= k as i128;
-      }
-      let z_power = if k == 0 {
-        Expr::Integer(1)
-      } else if k == 1 {
-        z.clone()
-      } else {
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![z.clone(), Expr::Integer(k as i128)],
-        }
-      };
-      let term = if factorial == 1 {
-        z_power
-      } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Rational".to_string(),
-              args: vec![Expr::Integer(1), Expr::Integer(factorial)],
-            },
-            z_power,
-          ],
-        }
-      };
-      terms.push(term);
-    }
-    let sum = if terms.len() == 1 {
-      terms.into_iter().next().unwrap()
-    } else {
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms,
-      }
-    };
-    // (n-1)! * E^(-z) * sum
-    let mut n_minus_1_factorial: i128 = 1;
-    for i in 2..n as i128 {
-      n_minus_1_factorial *= i;
-    }
-    let exp_neg_z = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        Expr::Identifier("E".to_string()),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), z.clone()],
-        },
-      ],
-    };
-    let result = if n_minus_1_factorial == 1 {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![exp_neg_z, sum],
-      }
-    } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(n_minus_1_factorial), exp_neg_z, sum],
-      }
-    };
-    return crate::evaluator::evaluate_expr_to_expr(&result);
-  }
-
   // Default: return unevaluated
   Ok(Expr::FunctionCall {
     name: "Gamma".to_string(),
     args: vec![a.clone(), z.clone()],
   })
+}
+
+/// Build the closed form Gamma[n, z] = (n-1)! · E^{-z} · Σ z^k/k! for
+/// positive integer n. Lets the evaluator simplify the resulting Times.
+fn gamma_incomplete_upper_int_a(
+  n: i128,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = n as usize;
+  let mut terms: Vec<Expr> = Vec::new();
+  let mut factorial: i128 = 1;
+  for k in 0..n {
+    if k > 0 {
+      factorial *= k as i128;
+    }
+    let z_power = if k == 0 {
+      Expr::Integer(1)
+    } else if k == 1 {
+      z.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(k as i128)],
+      }
+    };
+    let term = if factorial == 1 {
+      z_power
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(factorial)],
+          },
+          z_power,
+        ],
+      }
+    };
+    terms.push(term);
+  }
+  let sum = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+  let mut n_minus_1_factorial: i128 = 1;
+  for i in 2..n as i128 {
+    n_minus_1_factorial *= i;
+  }
+  let exp_neg_z = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::Identifier("E".to_string()),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), z.clone()],
+      },
+    ],
+  };
+  let result = if n_minus_1_factorial == 1 {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![exp_neg_z, sum],
+    }
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(n_minus_1_factorial), exp_neg_z, sum],
+    }
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Numerical upper incomplete gamma via continued fraction (Legendre)
