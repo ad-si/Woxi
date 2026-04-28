@@ -2097,9 +2097,72 @@ fn format_builtin_information(
   }
 
   let _ = is_full; // is_full controls which fields appear above; the
-                   // wrapper is single-arg in wolframscript regardless.
+  // wrapper is single-arg in wolframscript regardless.
   let result_str = format!("InformationData[<|{}|>]", fields.join(", "));
   Expr::Raw(result_str)
+}
+
+/// Look up `sym::usage` in the global MessageName DownValues, returning the
+/// stored string body if any. Used by `Information[sym]` to populate the
+/// Usage field.
+fn lookup_usage_message(sym: &str) -> Option<String> {
+  let func_defs = crate::FUNC_DEFS
+    .with(|m| m.borrow().get("MessageName").cloned().unwrap_or_default());
+  for (params, conds, _defaults, _heads, _blank_types, body) in &func_defs {
+    if params.len() != 2 {
+      continue;
+    }
+    let mut slot0_match = false;
+    let mut slot1_match = false;
+    for c in conds {
+      if let Some(Expr::Comparison {
+        operands,
+        operators,
+      }) = c
+        && operators.len() == 1
+        && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+        && operands.len() == 2
+        && let Expr::Identifier(pname) = &operands[0]
+      {
+        if pname == &params[0]
+          && matches!(&operands[1], Expr::Identifier(s) if s == sym)
+        {
+          slot0_match = true;
+        } else if pname == &params[1]
+          && matches!(&operands[1], Expr::String(s) if s == "usage")
+        {
+          slot1_match = true;
+        }
+      }
+    }
+    if slot0_match && slot1_match
+      && let Expr::String(text) = body
+    {
+      return Some(text.clone());
+    }
+  }
+  None
+}
+
+/// Format the stored UpValues for `sym` as the `Information`InformationValueForm`
+/// wrapper Wolfram emits in `Information[sym]`. Returns `None` when no
+/// UpValues are stored.
+fn format_upvalues_field(sym: &str) -> Option<String> {
+  let entries = crate::UPVALUES.with(|m| m.borrow().get(sym).cloned())?;
+  if entries.is_empty() {
+    return None;
+  }
+  let rules: Vec<String> = entries
+    .iter()
+    .map(|(_outer, _params, _conds, _defs, _heads, _body, lhs, body)| {
+      format!("{} :> {}", expr_to_string(lhs), expr_to_string(body))
+    })
+    .collect();
+  Some(format!(
+    "Information`InformationValueForm[UpValues, {}, {{{}}}]",
+    sym,
+    rules.join(", ")
+  ))
 }
 
 /// Format Information output for a user-defined symbol.
@@ -2198,6 +2261,17 @@ fn format_user_information(
     "{}".to_string()
   };
 
+  // Usage: prefer the user-installed `sym::usage` message, falling back
+  // to the bare context-qualified name `Global` `sym` that wolframscript
+  // shows when no usage has been set.
+  let usage_str = match lookup_usage_message(sym) {
+    Some(text) => text,
+    None => format!("Global`{}", sym),
+  };
+
+  // UpValues from `g[…sym…] ^:= …` style assignments.
+  let up_str = format_upvalues_field(sym).unwrap_or_else(|| "None".to_string());
+
   if is_full {
     // Full output: all fields
     // Options
@@ -2218,10 +2292,10 @@ fn format_user_information(
 
     let result_str = format!(
       "InformationData[<|ObjectType -> Symbol, \
-       Usage -> Global`{sym}, \
+       Usage -> {usage_str}, \
        Documentation -> None, \
        OwnValues -> {own_str}, \
-       UpValues -> None, \
+       UpValues -> {up_str}, \
        DownValues -> {down_str}, \
        SubValues -> None, \
        DefaultValues -> None, \
@@ -2235,10 +2309,10 @@ fn format_user_information(
   } else {
     let result_str = format!(
       "InformationData[<|ObjectType -> Symbol, \
-       Usage -> Global`{sym}, \
+       Usage -> {usage_str}, \
        Documentation -> None, \
        OwnValues -> {own_str}, \
-       UpValues -> None, \
+       UpValues -> {up_str}, \
        DownValues -> {down_str}, \
        SubValues -> None, \
        DefaultValues -> None, \
