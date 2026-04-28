@@ -188,41 +188,69 @@ fn associated_legendre_p_ast(
   m_expr: &Expr,
   x_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Non-integer n or m → use the closed-form
+  // `((1+z)/(1-z))^(m/2) * 2F1[-n, n+1, 1-m, (1-z)/2] / Gamma[1-m]`.
+  // The integer paths below stick to the differentiation-based form
+  // since it produces exact polynomial output for integer n.
+  let n_is_nonneg_int = matches!(n_expr, Expr::Integer(k) if *k >= 0);
+  let m_is_nonneg_int = matches!(m_expr, Expr::Integer(k) if *k >= 0);
+  if !n_is_nonneg_int || !m_is_nonneg_int {
+    if let (Some(nf), Some(mf), Some(xf)) = (
+      try_eval_to_f64(n_expr),
+      try_eval_to_f64(m_expr),
+      try_eval_to_f64(x_expr),
+    ) {
+      // Use the general hypergeometric form for arbitrary (real) ν, μ.
+      let ratio = (1.0 + xf) / (1.0 - xf);
+      let prefactor = ratio.powf(mf / 2.0);
+      let hyp_call = Expr::FunctionCall {
+        name: "Hypergeometric2F1".to_string(),
+        args: vec![
+          Expr::Real(-nf),
+          Expr::Real(nf + 1.0),
+          Expr::Real(1.0 - mf),
+          Expr::Real((1.0 - xf) / 2.0),
+        ],
+      };
+      let hyp_val = match crate::evaluator::evaluate_expr_to_expr(&hyp_call) {
+        Ok(Expr::Real(v)) => v,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "LegendreP".to_string(),
+            args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+          });
+        }
+      };
+      let gamma_call = Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: vec![Expr::Real(1.0 - mf)],
+      };
+      let gamma_val =
+        match crate::evaluator::evaluate_expr_to_expr(&gamma_call) {
+          Ok(Expr::Real(v)) => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "LegendreP".to_string(),
+              args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+            });
+          }
+        };
+      return Ok(Expr::Real(prefactor * hyp_val / gamma_val));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "LegendreP".to_string(),
+      args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
+    });
+  }
+
   let n = match n_expr {
     Expr::Integer(n) if *n >= 0 => *n as usize,
-    _ => {
-      // Try numeric evaluation
-      if let (Some(nf), Some(mf), Some(xf)) = (
-        try_eval_to_f64(n_expr),
-        try_eval_to_f64(m_expr),
-        try_eval_to_f64(x_expr),
-      ) {
-        return Ok(Expr::Real(associated_legendre_f64(
-          nf as i64, mf as i64, xf,
-        )));
-      }
-      return Ok(Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-      });
-    }
+    _ => unreachable!(),
   };
 
   let m = match m_expr {
     Expr::Integer(m) if *m >= 0 => *m as usize,
-    _ => {
-      if let (Some(mf), Some(xf)) =
-        (try_eval_to_f64(m_expr), try_eval_to_f64(x_expr))
-      {
-        return Ok(Expr::Real(associated_legendre_f64(
-          n as i64, mf as i64, xf,
-        )));
-      }
-      return Ok(Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-      });
-    }
+    _ => unreachable!(),
   };
 
   if m > n {
@@ -235,31 +263,35 @@ fn associated_legendre_p_ast(
   }
 
   // Build P_n^m(x) = (-1)^m * (1 - x^2)^(m/2) * D^m[P_n(x), x]
-  // First compute P_n(x) symbolically
-  let pn = legendre_p_ast(&[Expr::Integer(n as i128), x_expr.clone()])?;
-
-  // Differentiate m times
-  let mut deriv = pn;
-  let var_name = match x_expr {
-    Expr::Identifier(s) => s.clone(),
+  // For a compound x_expr (e.g. Cos[θ]) we substitute a fresh placeholder
+  // so D[…, var] sees an Identifier, then substitute it back at the end.
+  let (var_name, working_x, needs_back_sub) = match x_expr {
+    Expr::Identifier(s) => (s.clone(), x_expr.clone(), false),
     _ => {
-      // Numeric evaluation fallback
+      // Numeric evaluation fallback when no symbol is available
       if let Some(xf) = try_eval_to_f64(x_expr) {
         return Ok(Expr::Real(associated_legendre_f64(n as i64, m as i64, xf)));
       }
-      return Ok(Expr::FunctionCall {
-        name: "LegendreP".to_string(),
-        args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-      });
+      let placeholder = "$LegendrePAssocDummy$".to_string();
+      (placeholder.clone(), Expr::Identifier(placeholder), true)
     }
   };
 
+  // First compute P_n(working_x) symbolically
+  let pn = legendre_p_ast(&[Expr::Integer(n as i128), working_x.clone()])?;
+
+  // Differentiate m times w.r.t. var_name
+  let mut deriv = pn;
   for _ in 0..m {
     let d_expr = Expr::FunctionCall {
       name: "D".to_string(),
       args: vec![deriv, Expr::Identifier(var_name.clone())],
     };
     deriv = crate::evaluator::evaluate_expr_to_expr(&d_expr)?;
+  }
+  if needs_back_sub {
+    deriv = crate::syntax::substitute_variable(&deriv, &var_name, x_expr);
+    deriv = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
   }
 
   // Multiply by (-1)^m * (1 - x^2)^(m/2)
@@ -535,15 +567,13 @@ pub fn spherical_harmonic_y_ast(
       ((2.0 * l as f64 + 1.0) / (4.0 * std::f64::consts::PI) / fact_ratio)
         .sqrt();
 
-    // Associated Legendre polynomial P_l^|m|(cos θ)
-    let plm = associated_legendre_f64(l, m.abs(), cos_theta);
+    // Associated Legendre polynomial P_l^m(cos θ). Our P_l^m already
+    // includes the Condon–Shortley (−1)^m phase, so no extra sign here.
+    let plm = associated_legendre_f64(l, m, cos_theta);
 
-    // Condon-Shortley phase: (-1)^m for m > 0
-    let cs_phase = if m > 0 && m % 2 != 0 { -1.0 } else { 1.0 };
-
-    // Y_l^m = cs_phase * norm * P_l^|m|(cos θ) * e^(imφ)
-    let re = cs_phase * norm * plm * (m as f64 * phi).cos();
-    let im = cs_phase * norm * plm * (m as f64 * phi).sin();
+    // Y_l^m = norm * P_l^m(cos θ) * e^(imφ)
+    let re = norm * plm * (m as f64 * phi).cos();
+    let im = norm * plm * (m as f64 * phi).sin();
 
     if im.abs() < 1e-15 {
       return Ok(Expr::Real(re));
@@ -551,11 +581,94 @@ pub fn spherical_harmonic_y_ast(
     return Ok(build_complex_float_expr(re, im));
   }
 
-  // Return unevaluated for symbolic arguments
-  Ok(Expr::FunctionCall {
-    name: "SphericalHarmonicY".to_string(),
-    args: args.to_vec(),
-  })
+  // Symbolic evaluation: build
+  //   norm * P_l^m(Cos[θ]) * E^(I*m*φ)
+  // where norm = Sqrt[(2l+1)/(4π) · (l-|m|)!/(l+|m|)!]. The Condon-Shortley
+  // phase is already absorbed into P_l^m.
+  let m_abs = m.unsigned_abs();
+  // (l - |m|)! / (l + |m|)! as a Rational[1, prod] where prod runs from
+  // (l - |m| + 1) to (l + |m|).
+  let mut fact_ratio_den: i128 = 1;
+  let l_u = l.unsigned_abs() as i128;
+  let m_u = m_abs as i128;
+  for i in (l_u - m_u + 1)..=(l_u + m_u) {
+    fact_ratio_den *= i;
+  }
+  // norm = Sqrt[(2l+1) / (4 * Pi * fact_ratio_den)]
+  //      = Sqrt[(2l+1) / (Pi * fact_ratio_den)] / 2
+  // Pulling out the 4 factor matches Wolfram's canonical Sqrt-based form.
+  let two_l_plus_1 = 2 * l_u + 1;
+  let norm_inner = Expr::FunctionCall {
+    name: "Rational".to_string(),
+    args: vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
+  };
+  // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
+  let sqrt_arg = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      norm_inner,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
+      },
+    ],
+  };
+  let sqrt_part = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      sqrt_arg,
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+    ],
+  };
+  let norm_expr = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+      sqrt_part,
+    ],
+  };
+  let cos_theta = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![args[2].clone()],
+  };
+  let plm_raw = associated_legendre_p_ast(
+    &Expr::Integer(l as i128),
+    &Expr::Integer(m as i128),
+    &cos_theta,
+  )?;
+  // Rewrite Sqrt[1 - Cos[θ]^2] → Sin[θ] in the result so the symbolic
+  // form matches wolframscript's canonical Sin/Cos expression.
+  let plm = rewrite_sqrt_one_minus_cos_sq(&plm_raw, &args[2]);
+  // E^(I*m*φ)
+  let imp = if m == 0 {
+    Expr::Integer(1)
+  } else {
+    Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::Constant("E".to_string()),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Identifier("I".to_string()),
+            Expr::Integer(m as i128),
+            args[3].clone(),
+          ],
+        },
+      ],
+    }
+  };
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![norm_expr, plm, imp],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Build the symbolic Legendre polynomial expression for P_n(x)
@@ -1795,10 +1908,7 @@ fn generalized_laguerre_l_ast(
       .filter(|(n, _)| *n != 0)
       .map(|(_, d)| *d)
       .fold(1i128, |acc, d| {
-        let g = gcd(
-          acc.unsigned_abs() as i128,
-          d.unsigned_abs() as i128,
-        );
+        let g = gcd(acc.unsigned_abs() as i128, d.unsigned_abs() as i128);
         if g == 0 { acc * d } else { acc / g * d }
       });
 
@@ -2250,4 +2360,122 @@ pub fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
   }
 
   Some(curr)
+}
+
+/// Recursively rewrite `(1 - Cos[θ]^2)^(1/2)` (i.e. `Sqrt[1 - Cos[θ]^2]`)
+/// as `Sin[θ]` so the symbolic SphericalHarmonicY output matches Wolfram's
+/// canonical Sin-based form. Treats both `Power[..., Rational[1, 2]]` and
+/// the equivalent BinaryOp tree.
+fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
+  let theta_str = crate::syntax::expr_to_string(theta);
+  // Match Cos[θ]^2 in any form (BinaryOp::Power or Power FunctionCall).
+  let is_cos_theta_sq = |e: &Expr| -> bool {
+    let (base, exp) = match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return false,
+    };
+    if !matches!(exp, Expr::Integer(2)) {
+      return false;
+    }
+    matches!(base, Expr::FunctionCall { name, args } if name == "Cos" && args.len() == 1 && crate::syntax::expr_to_string(&args[0]) == theta_str)
+  };
+  let is_one_minus_cos_sq = |e: &Expr| -> bool {
+    // Match: 1 - Cos[θ]^2 in either `BinaryOp::Minus` or
+    // `Plus[1, Times[-1, Cos[θ]^2]]` shape.
+    if let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } = e
+      && matches!(left.as_ref(), Expr::Integer(1))
+      && is_cos_theta_sq(right)
+    {
+      return true;
+    }
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Plus"
+      && args.len() == 2
+      && matches!(args[0], Expr::Integer(1))
+      && let Expr::FunctionCall {
+        name: tn,
+        args: targs,
+      } = &args[1]
+      && tn == "Times"
+      && targs.len() == 2
+      && matches!(targs[0], Expr::Integer(-1))
+      && is_cos_theta_sq(&targs[1])
+    {
+      return true;
+    }
+    false
+  };
+  let is_one_half = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!(&args[0], Expr::Integer(1)) && matches!(&args[1], Expr::Integer(2)))
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if is_one_minus_cos_sq(left) && is_one_half(right) {
+        return Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![theta.clone()],
+        };
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
+        right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if is_one_minus_cos_sq(&args[0]) && is_one_half(&args[1]) {
+        return Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![theta.clone()],
+        };
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| rewrite_sqrt_one_minus_cos_sq(a, theta))
+          .collect(),
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rewrite_sqrt_one_minus_cos_sq(left, theta)),
+      right: Box::new(rewrite_sqrt_one_minus_cos_sq(right, theta)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rewrite_sqrt_one_minus_cos_sq(operand, theta)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| rewrite_sqrt_one_minus_cos_sq(a, theta))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| rewrite_sqrt_one_minus_cos_sq(i, theta))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
 }
