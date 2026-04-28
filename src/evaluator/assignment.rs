@@ -1322,6 +1322,52 @@ pub fn set_delayed_ast(
           heads.push(head.clone());
           blank_types.push(*blank_type);
         }
+        // `Pattern[name, body]` (long-form named pattern, e.g.
+        // `Pattern[levelspec, _?LevelQ]` ≡ `levelspec_?LevelQ`). Re-attach
+        // the name onto the inner pattern body so PatternTest/Blank handling
+        // sees it as a named pattern rather than an anonymous structural one.
+        Expr::FunctionCall {
+          name: pat_fn,
+          args: pat_args,
+        } if pat_fn == "Pattern"
+          && pat_args.len() == 2
+          && matches!(&pat_args[0], Expr::Identifier(_)) =>
+        {
+          let pname = match &pat_args[0] {
+            Expr::Identifier(s) => s.clone(),
+            _ => unreachable!(),
+          };
+          match &pat_args[1] {
+            Expr::PatternTest {
+              head, blank_type, test, ..
+            } => {
+              let normalized = Expr::PatternTest {
+                name: pname.clone(),
+                head: head.clone(),
+                blank_type: *blank_type,
+                test: test.clone(),
+              };
+              conditions.push(Some(Expr::FunctionCall {
+                name: "__StructuralPattern__".to_string(),
+                args: vec![Expr::Identifier(pname.clone()), normalized],
+              }));
+              params.push(pname);
+              defaults.push(None);
+              heads.push(head.clone());
+              blank_types.push(*blank_type);
+            }
+            // `Pattern[name, _]` / `Pattern[name, _Head]` / etc. — treat as
+            // a plain named pattern.
+            _ => {
+              let (_, head, blank_type) = extract_pattern_info(arg);
+              params.push(pname);
+              conditions.push(None);
+              defaults.push(None);
+              heads.push(head);
+              blank_types.push(blank_type);
+            }
+          }
+        }
         // Simple pattern: x_ or x_Head
         _ => {
           let (pat_name, head, blank_type) = extract_pattern_info(arg);
