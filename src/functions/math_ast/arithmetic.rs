@@ -3380,14 +3380,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
-    // Keep a Real(1.0) coefficient when the symbolic factors include `I`,
-    // so `1. * I` produces `Times[1., I]` (which displays as `0. + 1.*I`)
-    // instead of dropping the 1. and yielding plain `I`. For purely
-    // symbolic factors without I, `1. * x` still collapses to `x`.
-    let has_imag_factor = symbolic_args
-      .iter()
-      .any(|a| matches!(a, Expr::Identifier(s) if s == "I"));
-    if total != 1.0 || has_imag_factor {
+    // Keep the Real coefficient even when it equals 1.0, so `1. * a` stays
+    // as `1.*a` rather than collapsing to `a`. Wolfram preserves the
+    // `1.*x` form because the multiplication carries machine-precision
+    // information that affects downstream Real promotion (e.g. an
+    // Inverse over a matrix with one Real entry should produce `1./a`,
+    // not `a^(-1)`). The only exception: when there are no symbolic
+    // factors, return the bare `total`.
+    if !symbolic_args.is_empty() || total != 1.0 {
       final_args.push(Expr::Real(total));
     }
     final_args.extend(symbolic_args);
@@ -3728,8 +3728,12 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     let a_is_int_zero = matches!(a, Expr::Integer(0));
     let a_is_real_zero = matches!(a, Expr::Real(f) if *f == 0.0);
     if a_is_int_zero || a_is_real_zero {
-      let either_real =
-        a_is_real_zero || matches!(b, Expr::Real(_) | Expr::BigFloat(_, _));
+      // Promote to Real(0.) when either side carries a Real anywhere in the
+      // expression — including symbolic mixtures like `Times[-4., a]` from
+      // an Inverse over a matrix with Real entries. Without this, a Real
+      // determinant divided into an Integer-zero cofactor produced
+      // Integer(0) and broke Wolfram-canonical Real-promotion.
+      let either_real = a_is_real_zero || contains_real(b);
       return Ok(if either_real {
         Expr::Real(0.0)
       } else {
