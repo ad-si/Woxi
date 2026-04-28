@@ -2058,6 +2058,22 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Other forms: fall through to default (OutputForm-like) behavior
 
+  // ToString[FullForm[expr]] returns the structural FullForm string of `expr`,
+  // matching wolframscript: `ToString[FullForm[(a*Sqrt[x])^-1]]` →
+  // `Times[Power[a, -1], Power[x, Rational[-1, 2]]]`.
+  if args.len() == 1
+    && let Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } = &args[0]
+    && name == "FullForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(crate::functions::expr_form::render_full_form(
+      &inner_args[0],
+    )));
+  }
+
   // Special case: StringForm["template", args...] → substitute placeholders
   if let Expr::FunctionCall {
     name,
@@ -2091,8 +2107,11 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let int_zero = int_part.is_empty() || int_part.chars().all(|c| c == '0');
     // Number of "significant" digits already in the integer part.
-    let int_sig =
-      if int_zero { 0 } else { int_part.trim_start_matches('0').len() };
+    let int_sig = if int_zero {
+      0
+    } else {
+      int_part.trim_start_matches('0').len()
+    };
     let prec_digits = prec.round() as i64;
     let frac_keep = if prec_digits > 0 {
       let want = prec_digits - int_sig as i64;
@@ -2100,8 +2119,7 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       frac_part.len()
     };
-    let frac_truncated: String =
-      frac_part.chars().take(frac_keep).collect();
+    let frac_truncated: String = frac_part.chars().take(frac_keep).collect();
     let int_display = if int_part.is_empty() { "0" } else { int_part };
     let s = if frac_truncated.is_empty() && dot.is_some() {
       format!("{}{}.", sign, int_display)
