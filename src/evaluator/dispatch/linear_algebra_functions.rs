@@ -31,9 +31,9 @@ pub fn dispatch_linear_algebra_functions(
     }
     "LeastSquares" if args.len() == 2 => {
       // LeastSquares[A, b] = Inverse[Transpose[A] . A] . Transpose[A] . b
-      // when A has full column rank. Delegate to existing Transpose, Dot,
-      // and Inverse so the result is exact for rational matrices. Keep
-      // symbolic inputs unevaluated.
+      // when A has full column rank. For rank-deficient matrices the normal
+      // equations have no inverse; fall back to PseudoInverse[A] . b which
+      // yields the minimum-norm least-squares solution (matching Wolfram).
       let is_matrix = matches!(&args[0], Expr::List(rows)
         if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_))));
       let is_vector = matches!(&args[1], Expr::List(_));
@@ -49,14 +49,28 @@ pub fn dispatch_linear_algebra_functions(
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
-        let atb = match eval("Dot", &[at, b]) {
+        let atb = match eval("Dot", &[at, b.clone()]) {
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
-        let inv_ata = match eval("Inverse", &[ata]) {
+        // Try Inverse[A^T A] · A^T b. If A^T A is singular, Inverse leaves
+        // the call unevaluated as `Inverse[<matrix>]`; in that case use
+        // PseudoInverse[A] · b instead.
+        let inv_ata = match eval("Inverse", &[ata.clone()]) {
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
+        let normal_form_failed = matches!(
+          &inv_ata,
+          Expr::FunctionCall { name, .. } if name == "Inverse"
+        );
+        if normal_form_failed {
+          let pinv = match eval("PseudoInverse", &[a]) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+          };
+          return Some(eval("Dot", &[pinv, b]));
+        }
         return Some(eval("Dot", &[inv_ata, atb]));
       }
     }
@@ -2017,7 +2031,10 @@ fn coordinate_symbols(system: &str) -> Vec<Expr> {
     "Cylindrical" => ["Rr", "Ttheta", "Zz"],
     _ => ["Xx", "Yy", "Zz"],
   };
-  names.iter().map(|n| Expr::Identifier((*n).to_string())).collect()
+  names
+    .iter()
+    .map(|n| Expr::Identifier((*n).to_string()))
+    .collect()
 }
 
 /// Build `Sin[arg]`, `Cos[arg]`, `ArcCos[arg]`, etc. and immediately
