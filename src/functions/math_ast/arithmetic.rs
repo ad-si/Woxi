@@ -2855,6 +2855,63 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // Distribute a constant factor into a SeriesData expansion. When `args`
+  // contains exactly one `SeriesData[var, x0, {coeffs...}, nmin, nmax, denom]`
+  // and all other factors are constant w.r.t. `var`, fold the product of
+  // those factors into each coefficient. Matches wolframscript:
+  // `Series[f[x],{x,0,2}] * g[w]` →
+  // `SeriesData[x, 0, {f[0]*g[w], g[w]*Derivative[1][f][0],
+  //                    (g[w]*Derivative[2][f][0])/2}, 0, 3, 1]`.
+  if args.len() >= 2 {
+    let series_idx = args.iter().position(|a| {
+      matches!(
+        a,
+        Expr::FunctionCall { name, args }
+          if name == "SeriesData" && args.len() == 6
+      )
+    });
+    if let Some(idx) = series_idx
+      && let Expr::FunctionCall {
+        args: sd_args, ..
+      } = &args[idx]
+      && let Expr::Identifier(var_name) = &sd_args[0]
+    {
+      let other_factors: Vec<&Expr> =
+        args.iter().enumerate().filter(|(i, _)| *i != idx).map(|(_, a)| a).collect();
+      let all_indep = other_factors.iter().all(|f| {
+        crate::functions::calculus_ast::is_constant_wrt(f, var_name)
+      });
+      if all_indep && !other_factors.is_empty() {
+        let coeff_list = match &sd_args[2] {
+          Expr::List(items) => items.clone(),
+          _ => Vec::new(),
+        };
+        if !coeff_list.is_empty() {
+          let mut product = other_factors[0].clone();
+          for f in &other_factors[1..] {
+            product = times_ast(&[product, (*f).clone()])?;
+          }
+          let new_coeffs: Result<Vec<Expr>, _> = coeff_list
+            .iter()
+            .map(|c| times_ast(&[product.clone(), c.clone()]))
+            .collect();
+          let new_coeffs = new_coeffs?;
+          return Ok(Expr::FunctionCall {
+            name: "SeriesData".to_string(),
+            args: vec![
+              sd_args[0].clone(),
+              sd_args[1].clone(),
+              Expr::List(new_coeffs),
+              sd_args[3].clone(),
+              sd_args[4].clone(),
+              sd_args[5].clone(),
+            ],
+          });
+        }
+      }
+    }
+  }
+
   // Handle Quantity arithmetic before anything else
   if let Some(result) = crate::functions::quantity_ast::try_quantity_times(args)
   {
