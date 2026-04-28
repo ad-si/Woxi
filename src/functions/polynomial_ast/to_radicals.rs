@@ -13,10 +13,15 @@ pub fn to_radicals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
-    // Root[f&, k] — evaluate to get the radical form
-    Expr::FunctionCall { name, args } if name == "Root" && args.len() == 2 => {
+    // Root[f&, k] or Root[f&, k, type] — evaluate to get the radical form.
+    // Wolfram canonicalises 2-arg Root to a 3-arg form with type 0; treat
+    // both shapes the same here.
+    Expr::FunctionCall { name, args }
+      if name == "Root" && (args.len() == 2 || args.len() == 3) =>
+    {
+      let two_args = vec![args[0].clone(), args[1].clone()];
       // First try the standard root_ast solver
-      let result = super::root_ast(args)?;
+      let result = super::root_ast(&two_args)?;
       // If root_ast returned unevaluated Root[...], try our own radical extraction
       if let Expr::FunctionCall { name: rn, .. } = &result
         && rn == "Root"

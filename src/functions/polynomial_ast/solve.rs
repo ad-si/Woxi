@@ -2318,9 +2318,22 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if roots.is_empty() {
+    // No closed-form roots: return the canonical Root[poly &, k, 0] form
+    // with the polynomial body re-evaluated so its terms sort ascending in
+    // Slot[1] (matching wolframscript: `Root[#1^5+2#1+1&, 2]` →
+    // `Root[1 + 2*#1 + #1^5 &, 2, 0]`).
+    let canonical_body = match &args[0] {
+      Expr::Function { body } => {
+        let normalized = crate::evaluator::evaluate_expr_to_expr(body)?;
+        Expr::Function {
+          body: Box::new(normalized),
+        }
+      }
+      _ => args[0].clone(),
+    };
     return Ok(Expr::FunctionCall {
       name: "Root".to_string(),
-      args: args.to_vec(),
+      args: vec![canonical_body, args[1].clone(), Expr::Integer(0)],
     });
   }
 
