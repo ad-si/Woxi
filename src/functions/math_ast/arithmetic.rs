@@ -1546,6 +1546,38 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     _ => {}
   }
 
+  // Pure-imaginary symbolic terms (Times[Complex[0, n], …, only-symbolic]) sort
+  // to the END of a Plus — Wolfram's `Cosh[y] Sin[x] + I Cos[x] Sinh[y]`
+  // displays the real part first, the imaginary part second. Only kicks in
+  // when one term has the I factor and the other doesn't, so a pure
+  // numeric `0. + 0.*I` (which is really `Complex[0., 0.]`) is unaffected.
+  fn has_complex_i_factor(e: &Expr) -> bool {
+    let factors: &[Expr] = match e {
+      Expr::FunctionCall { name, args } if name == "Times" => args,
+      _ => return false,
+    };
+    factors.iter().any(|f| {
+      // Bare imaginary unit, either as an Identifier or as Complex[0, _].
+      if matches!(f, Expr::Identifier(s) if s == "I") {
+        return true;
+      }
+      if let Expr::FunctionCall { name, args } = f
+        && name == "Complex"
+        && args.len() == 2
+      {
+        let re_zero = matches!(&args[0], Expr::Integer(0))
+          || matches!(&args[0], Expr::Real(v) if *v == 0.0);
+        return re_zero;
+      }
+      false
+    })
+  }
+  match (has_complex_i_factor(a), has_complex_i_factor(b)) {
+    (true, false) => return std::cmp::Ordering::Greater,
+    (false, true) => return std::cmp::Ordering::Less,
+    _ => {}
+  }
+
   let pa = term_priority(a);
   let pb = term_priority(b);
   if pa != pb {

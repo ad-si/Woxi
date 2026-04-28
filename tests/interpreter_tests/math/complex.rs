@@ -720,13 +720,14 @@ mod im_tests {
     // Wolfram keeps E^(a+I*Pi) unevaluated (the non-I*Pi part is symbolic).
     // Our Plus ordering currently emits I*Pi before a; the semantic shape
     // (no over-simplification to -E^a) is what matters here.
-    assert_eq!(interpret("E^(a+I Pi)").unwrap(), "E^(I*Pi + a)");
+    assert_eq!(interpret("E^(a+I Pi)").unwrap(), "E^(a + I*Pi)");
   }
 
   #[test]
   fn exp_symbol_plus_two_i_pi_stays_symbolic() {
-    // Wolfram keeps E^(a+2*I*Pi) unevaluated for symbolic a.
-    assert_eq!(interpret("E^(a+2 I Pi)").unwrap(), "E^((2*I)*Pi + a)");
+    // Wolfram keeps E^(a+2*I*Pi) unevaluated for symbolic a, with the
+    // pure-imaginary `2*I*Pi` term sorting AFTER the real `a` in the Plus.
+    assert_eq!(interpret("E^(a+2 I Pi)").unwrap(), "E^(a + (2*I)*Pi)");
   }
 
   #[test]
