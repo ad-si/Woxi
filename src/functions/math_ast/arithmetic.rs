@@ -5402,6 +5402,152 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // (c * rest)^(p/q) → c^(p/q) * rest^(p/q) when c is a positive numeric
+  // factor (Integer ≥ 2 or positive Rational) and `rest` contains at least
+  // one non-numeric factor. This matches Wolfram's behavior of pulling
+  // positive numeric factors out of radicals, e.g.
+  //   (2*x)^(3/2) → 2*Sqrt[2]*x^(3/2)
+  //   (8*x)^(1/3) → 2*x^(1/3)
+  //   ((1/2)*x)^(3/2) → x^(3/2)/(2*Sqrt[2])
+  // The non-numeric guard is critical: `(2*Pi)^(1/2)` stays as `Sqrt[2*Pi]`
+  // (otherwise `Sqrt[2]*Sqrt[Pi]` recombines back via the Times Sqrt-merge
+  // pass, looping). Negative numeric factors are left alone (branch-cut
+  // sensitive).
+  if let Expr::FunctionCall {
+    name: rname,
+    args: rargs,
+  } = exp
+    && rname == "Rational"
+    && rargs.len() == 2
+    && matches!(&rargs[0], Expr::Integer(_))
+    && matches!(&rargs[1], Expr::Integer(_))
+  {
+    let factors: Option<Vec<&Expr>> = match base {
+      Expr::FunctionCall { name, args: targs }
+        if name == "Times" && targs.len() >= 2 =>
+      {
+        Some(targs.iter().collect())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![left.as_ref(), right.as_ref()]),
+      _ => None,
+    };
+    if let Some(factors) = factors {
+      // Find a positive numeric factor (Integer ≥ 2 or positive Rational).
+      let is_positive_numeric = |e: &Expr| -> bool {
+        match e {
+          Expr::Integer(n) => *n >= 2,
+          Expr::FunctionCall { name, args } if name == "Rational" => {
+            args.len() == 2
+              && matches!(&args[0], Expr::Integer(p) if *p > 0)
+              && matches!(&args[1], Expr::Integer(q) if *q > 0)
+          }
+          _ => false,
+        }
+      };
+      if let Some(idx) = factors.iter().position(|f| is_positive_numeric(f)) {
+        let numeric = factors[idx].clone();
+        let rest: Vec<Expr> = factors
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != idx)
+          .map(|(_, f)| (*f).clone())
+          .collect();
+        let pow_numeric = power_two(&numeric, exp)?;
+        // To avoid infinite recursion via the Sqrt-merge pass when ALL the
+        // remaining factors are numeric-like (e.g. `(2*Pi)^(1/2)` or
+        // `(2/Pi)^(1/2)` = Times[2, Power[Pi,-1]]^(1/2)), only distribute
+        // when either the rest contains a non-numeric factor OR when
+        // `c^(p/q)` produces a non-radical coefficient (so the distributed
+        // form is a real simplification rather than a renaming).
+        // `is_numeric_like` doesn't cover Power-as-FunctionCall or
+        // Identifier("Pi"/"E"/...), so check those locally too. Some code
+        // paths (e.g. half-integer Bessel) build constants as Identifier
+        // rather than Constant.
+        fn is_numeric_like_extended(e: &Expr) -> bool {
+          match e {
+            Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+            Expr::Constant(_) => true,
+            Expr::Identifier(s) => matches!(
+              s.as_str(),
+              "Pi"
+                | "E"
+                | "EulerGamma"
+                | "Degree"
+                | "GoldenRatio"
+                | "Catalan"
+                | "Glaisher"
+                | "Khinchin"
+                | "I"
+            ),
+            Expr::FunctionCall { name, args }
+              if name == "Rational" && args.len() == 2 =>
+            {
+              true
+            }
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              args.iter().all(is_numeric_like_extended)
+            }
+            Expr::FunctionCall { name, args }
+              if name == "Power" && args.len() == 2 =>
+            {
+              is_numeric_like_extended(&args[0])
+                && is_numeric_like_extended(&args[1])
+            }
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left,
+              right,
+            } => {
+              is_numeric_like_extended(left) && is_numeric_like_extended(right)
+            }
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left,
+              right,
+            } => {
+              is_numeric_like_extended(left) && is_numeric_like_extended(right)
+            }
+            _ => false,
+          }
+        }
+        let rest_has_nonnumeric =
+          rest.iter().any(|f| !is_numeric_like_extended(f));
+        let pow_numeric_has_coeff = match &pow_numeric {
+          Expr::Integer(n) => n.abs() > 1,
+          Expr::FunctionCall { name, args }
+            if name == "Times" && !args.is_empty() =>
+          {
+            matches!(
+              &args[0],
+              Expr::Integer(n) if n.abs() > 1
+            ) || matches!(
+              &args[0],
+              Expr::FunctionCall { name: rn, args: ra }
+                if rn == "Rational" && ra.len() == 2
+            )
+          }
+          _ => false,
+        };
+        if rest_has_nonnumeric || pow_numeric_has_coeff {
+          let rest_expr = if rest.len() == 1 {
+            rest.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            }
+          };
+          let pow_rest = power_two(&rest_expr, exp)?;
+          return times_ast(&[pow_numeric, pow_rest]);
+        }
+      }
+    }
+  }
+
   // Sqrt[x]^n → x^(n/2)
   if is_sqrt(base).is_some()
     && let Expr::Integer(n) = exp
