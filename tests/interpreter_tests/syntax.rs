@@ -3939,7 +3939,7 @@ mod subscript_function {
   fn subscript_fullform() {
     assert_eq!(
       interpret("FullForm[Subscript[x, 1]]").unwrap(),
-      "Subscript[x, 1]"
+      "FullForm[Subscript[x, 1]]"
     );
   }
 

@@ -10415,7 +10415,11 @@ pub fn top_level_output(expr: &Expr) -> String {
       {
         return format!("FullForm[{}]", expr_to_input_form(&args[0]));
       }
-      crate::functions::expr_form::render_full_form(&args[0])
+      // Default: wolframscript always keeps the `FullForm[…]` wrapper at
+      // the top level, with the inner expression rendered in InputForm
+      // (e.g. `FullForm[Foo[x]]` → `FullForm[Foo[x]]`,
+      // `FullForm[a <-> b]` → `FullForm[a <-> b]`). Stick with that.
+      format!("FullForm[{}]", expr_to_input_form(&args[0]))
     }
     // `HoldForm[expr]` at the top level keeps its wrapper —
     // `wolframscript -code 'HoldForm[1 + 2 + 3]'` prints `HoldForm[1 + 2 + 3]`

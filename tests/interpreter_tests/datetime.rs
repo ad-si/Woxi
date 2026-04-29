@@ -142,7 +142,7 @@ mod date_plus {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], 7]]")
         .unwrap(),
-      "DateObject[List[2026, 4, 8], \"Day\"]"
+      "FullForm[DateObject[{2026, 4, 8}, \"Day\"]]"
     );
   }
 
@@ -159,7 +159,7 @@ mod date_plus {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[7, \"Days\"]]]")
         .unwrap(),
-      "DateObject[List[2026, 4, 8], \"Day\"]"
+      "FullForm[DateObject[{2026, 4, 8}, \"Day\"]]"
     );
   }
 
@@ -168,7 +168,7 @@ mod date_plus {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[4, \"Weeks\"]]]")
         .unwrap(),
-      "DateObject[List[2026, 4, 29], \"Day\"]"
+      "FullForm[DateObject[{2026, 4, 29}, \"Day\"]]"
     );
   }
 
@@ -177,7 +177,7 @@ mod date_plus {
     assert_eq!(
       interpret("FullForm[DatePlus[DateObject[{2026, 4, 1}, \"Day\"], Quantity[5, \"Months\"]]]")
         .unwrap(),
-      "DateObject[List[2026, 9, 1], \"Day\"]"
+      "FullForm[DateObject[{2026, 9, 1}, \"Day\"]]"
     );
   }
 
