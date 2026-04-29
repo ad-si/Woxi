@@ -10171,6 +10171,43 @@ pub fn top_level_output(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
     }
+    // `OutputForm[Times[Real, I]]` mirrors the bare pure-imaginary
+    // display rule below — wolframscript prints
+    // `OutputForm[0. + r*I]`, not `OutputForm[r*I]`. Splice the
+    // `0. + ` (or `0. - |r|*I` for negative `r`) prefix back into the
+    // wrapped inner expression.
+    Expr::FunctionCall { name, args }
+      if name == "OutputForm"
+        && args.len() == 1
+        && matches!(&args[0],
+          Expr::FunctionCall { name: tn, args: ta }
+            if tn == "Times"
+              && ta.len() == 2
+              && matches!(&ta[0], Expr::Real(_))
+              && (matches!(&ta[1], Expr::Identifier(s) if s == "I")
+                || matches!(&ta[1],
+                  Expr::FunctionCall { name: cn, args: ca }
+                    if cn == "Complex"
+                      && ca.len() == 2
+                      && matches!(&ca[0], Expr::Integer(0))
+                      && matches!(&ca[1], Expr::Integer(1))))) =>
+    {
+      let Expr::FunctionCall { args: ta, .. } = &args[0] else {
+        unreachable!()
+      };
+      let Expr::Real(c) = &ta[0] else { unreachable!() };
+      let coef_str = format_real(*c);
+      let body = if *c < 0.0 {
+        let abs_str = coef_str
+          .strip_prefix('-')
+          .map(str::to_string)
+          .unwrap_or(coef_str);
+        format!("0. - {}*I", abs_str)
+      } else {
+        format!("0. + {}*I", coef_str)
+      };
+      format!("OutputForm[{}]", body)
+    }
     // Pure-imaginary `Times[Real, I]` at the top level displays as
     // `0. ± r*I` to match wolframscript's Complex output for
     // *machine-precision* Reals. Inside larger expressions the existing
