@@ -987,6 +987,36 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Complex numeric evaluation when at least one arg is inexact and all
+  // args reduce to a complex `(re, im)` pair. Computes the series in
+  // double-precision complex arithmetic — same convergence rules as the
+  // real path.
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(a)
+        .is_some_and(|(_, im)| im != 0.0)
+  });
+  if any_inexact
+    && let (Some(a), Some(b), Some(z)) = (
+      crate::functions::math_ast::try_extract_complex_float(&args[0]),
+      crate::functions::math_ast::try_extract_complex_float(&args[1]),
+      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+    )
+  {
+    let inexact_marker = matches!(&args[0], Expr::Real(_))
+      || matches!(&args[1], Expr::Real(_))
+      || matches!(&args[2], Expr::Real(_))
+      || a.1 != 0.0
+      || b.1 != 0.0
+      || z.1 != 0.0;
+    if inexact_marker {
+      let (re, im) = hypergeometric_1f1_complex(a, b, z);
+      return Ok(crate::functions::math_ast::build_complex_float_expr(
+        re, im,
+      ));
+    }
+  }
+
   Ok(Expr::FunctionCall {
     name: "Hypergeometric1F1".to_string(),
     args: args.to_vec(),
@@ -1003,6 +1033,37 @@ pub fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
     term *= (a + nf) * z / ((b + nf) * (nf + 1.0));
     sum += term;
     if term.abs() < 1e-16 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
+/// Compute 1F1(a, b; z) for complex arguments via the same series, in
+/// double-precision complex arithmetic. Inputs are `(re, im)` pairs.
+fn hypergeometric_1f1_complex(
+  a: (f64, f64),
+  b: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let cabs = |(r, i): (f64, f64)| (r * r + i * i).sqrt();
+
+  let mut sum = (1.0, 0.0);
+  let mut term = (1.0, 0.0);
+  for n in 0..1000 {
+    let nf = n as f64;
+    let num = cmul((a.0 + nf, a.1), z);
+    let den = ((b.0 + nf) * (nf + 1.0), (b.1) * (nf + 1.0));
+    term = cmul(term, cdiv(num, den));
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    if cabs(term) < 1e-16 * cabs(sum).max(1e-300) {
       break;
     }
   }
@@ -1457,11 +1518,69 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // Complex numeric evaluation when all four args reduce to a complex
+  // `(re, im)` pair and at least one is inexact (Real / BigFloat / non-zero
+  // imaginary part). Computes the series in double-precision complex
+  // arithmetic.
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(a)
+        .is_some_and(|(_, im)| im != 0.0)
+  });
+  if any_inexact
+    && let (Some(av), Some(bv), Some(cv), Some(zv)) = (
+      crate::functions::math_ast::try_extract_complex_float(&args[0]),
+      crate::functions::math_ast::try_extract_complex_float(&args[1]),
+      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+      crate::functions::math_ast::try_extract_complex_float(&args[3]),
+    )
+  {
+    let (re, im) = hypergeometric_2f1_complex(av, bv, cv, zv);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(
+      re, im,
+    ));
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "Hypergeometric2F1".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Compute 2F1(a, b; c; z) for complex arguments via the same series, in
+/// double-precision complex arithmetic. Inputs are `(re, im)` pairs.
+fn hypergeometric_2f1_complex(
+  a: (f64, f64),
+  b: (f64, f64),
+  c: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let cabs = |(r, i): (f64, f64)| (r * r + i * i).sqrt();
+
+  let mut sum = (1.0, 0.0);
+  let mut term = (1.0, 0.0);
+  for n in 0..2000 {
+    let nf = n as f64;
+    let num = cmul(cmul((a.0 + nf, a.1), (b.0 + nf, b.1)), z);
+    let den = (
+      (c.0 + nf) * (nf + 1.0) - (c.1) * 0.0,
+      (c.1) * (nf + 1.0),
+    );
+    term = cmul(term, cdiv(num, den));
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    if cabs(term) < 1e-16 * cabs(sum).max(1e-300) {
+      break;
+    }
+  }
+  sum
 }
 
 /// Evaluate 2F1(-n, b, c, z) as a finite polynomial (n terms).

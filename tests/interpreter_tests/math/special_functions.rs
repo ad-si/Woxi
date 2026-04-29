@@ -370,6 +370,20 @@ mod hypergeometric2f1 {
       .unwrap();
     assert!((result - 1.5451774444795618).abs() < 1e-10);
   }
+
+  #[test]
+  fn complex_args() {
+    // wolframscript: Hypergeometric2F1[2 + I, -I, 3/4, 0.5 - 0.5 I]
+    //   ≈ -0.97216657 - 0.18165874 I
+    let s =
+      interpret("Hypergeometric2F1[2 + I, -I, 3/4, 0.5 - 0.5 I]").unwrap();
+    assert!(
+      s.starts_with("-0.972166571361907")
+        && s.contains(" - 0.181658741475730"),
+      "got: {}",
+      s
+    );
+  }
 }
 
 mod hypergeometric_1f1 {
@@ -415,6 +429,19 @@ mod hypergeometric_1f1 {
       .parse()
       .unwrap();
     assert!((result - 0.7468241328124272).abs() < 1e-10);
+  }
+
+  #[test]
+  fn complex_a_real_z() {
+    // wolframscript: Hypergeometric1F1[2 + I, 2, 0.5] ≈ 1.61833 + 0.37926 I
+    let s = interpret("Hypergeometric1F1[2 + I, 2, 0.5]").unwrap();
+    assert!(
+      s.starts_with("1.6183312284015")
+        && s.contains(" + 0.3792577715004")
+        && s.ends_with("*I"),
+      "got: {}",
+      s
+    );
   }
 
   // 1F1[a, a, z] = E^z — Pochhammer factors cancel, leaving the exponential
