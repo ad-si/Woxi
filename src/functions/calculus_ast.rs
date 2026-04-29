@@ -3480,7 +3480,8 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
-/// Compute binomial coefficient C(n, k)
+/// Compute binomial coefficient C(n, k). The caller (`try_integrate_trig_power`)
+/// already declines very large `n` so the i128 mul never overflows.
 fn binomial(n: i128, k: i128) -> i128 {
   if k < 0 || k > n {
     return 0;
@@ -3505,6 +3506,14 @@ fn binomial(n: i128, k: i128) -> i128 {
 ///   cos^n(x) = (1/4^m) * [C(n,m) + 2 * Sum_{k=0}^{m-1} C(n,k) * cos((n-2k)*x)]
 fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   if n < 3 {
+    return None;
+  }
+  // Bail out for huge powers (e.g. Sin[x]^1000): the Chebyshev expansion
+  // would generate `n/2` binomial-coefficient products that overflow
+  // i128 long before we can build them. Without this guard `binomial`
+  // panics and any caller wrapped in TimeConstrained tears the kernel
+  // down. ~85 is the largest n where C(n, n/2) still fits in i128.
+  if n > 85 {
     return None;
   }
   let (name, arg) = match base {
@@ -5695,8 +5704,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             if let Expr::List(pair) = item
               && pair.len() == 2
             {
-              let antideriv =
-                simplify(integrate(&pair[0], var)?);
+              let antideriv = simplify(integrate(&pair[0], var)?);
               new_pieces.push(Expr::List(vec![antideriv, pair[1].clone()]));
             } else {
               return None;
@@ -5723,7 +5731,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             return Some(Expr::FunctionCall {
               name: "Piecewise".to_string(),
-              args: vec![Expr::List(vec![new_pieces[0].clone()]), pair_b[0].clone()],
+              args: vec![
+                Expr::List(vec![new_pieces[0].clone()]),
+                pair_b[0].clone(),
+              ],
             });
           }
           Some(Expr::FunctionCall {
@@ -6683,7 +6694,10 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
 fn conditions_are_complementary(a: &Expr, b: &Expr) -> bool {
   use crate::syntax::ComparisonOp;
   let extract = |c: &Expr| -> Option<(Expr, ComparisonOp, Expr)> {
-    if let Expr::Comparison { operands, operators } = c
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = c
       && operators.len() == 1
       && operands.len() == 2
     {

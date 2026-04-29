@@ -395,12 +395,30 @@ pub fn dispatch_complex_and_special(
     }
 
     // TimeConstrained[body, t] / TimeConstrained[body, t, fallback]
-    // Woxi has no actual evaluation timeout, so we just evaluate the body
-    // and return its result. The timeout (and fallback) are accepted but
-    // unused. Wolfram's HoldAll on TimeConstrained means the body arrives
-    // unevaluated; force evaluation here.
+    // Woxi cannot interrupt a running evaluation, but we can still
+    // detect an after-the-fact overshoot: evaluate the body, then
+    // compare the wall-clock duration to the requested limit. If the
+    // body overshot, abort retroactively — returning the supplied
+    // fallback when 3-arg, otherwise raising the canonical `$Aborted`
+    // signal that `interpret()` surfaces at the top level.
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
-      return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
+      let limit_secs = match &args[1] {
+        Expr::Real(f) => Some(*f),
+        Expr::Integer(n) => Some(*n as f64),
+        _ => None,
+      };
+      let start = std::time::Instant::now();
+      let result = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+      let elapsed = start.elapsed().as_secs_f64();
+      if let Some(limit) = limit_secs
+        && elapsed > limit
+      {
+        if args.len() == 3 {
+          return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
+        }
+        return Some(Err(InterpreterError::Abort));
+      }
+      return Some(result);
     }
     // Information[symbol] or Information[symbol, LongForm -> True]
     // `?symbol` parses as Information[Unevaluated[symbol], LongForm -> False]
