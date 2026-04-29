@@ -193,10 +193,16 @@ mod arithmetic {
 
     // FullForm of a uniform comparison chain collapses to the operator head,
     // matching Wolfram (a > b > c prints as Greater[a, b, c], not Inequality).
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around comparison
+    // expressions; the bare head form is reachable via `ToString[…]`.
     #[test]
     fn full_form_uniform_chain_greater() {
       assert_eq!(
         interpret("a > b > c // FullForm").unwrap(),
+        "FullForm[a > b > c]"
+      );
+      assert_eq!(
+        interpret("ToString[a > b > c // FullForm]").unwrap(),
         "Greater[a, b, c]"
       );
     }
@@ -205,6 +211,10 @@ mod arithmetic {
     fn full_form_mixed_chain_stays_inequality() {
       assert_eq!(
         interpret("a < b <= c // FullForm").unwrap(),
+        "FullForm[Inequality[a, Less, b, LessEqual, c]]"
+      );
+      assert_eq!(
+        interpret("ToString[a < b <= c // FullForm]").unwrap(),
         "Inequality[a, Less, b, LessEqual, c]"
       );
     }

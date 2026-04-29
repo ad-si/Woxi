@@ -9986,6 +9986,12 @@ pub fn top_level_output(expr: &Expr) -> String {
           | Expr::PatternOptional { .. }
           | Expr::PatternTest { .. }
       );
+      // `a > b > c` parses to `Expr::Comparison { … }` and renders as
+      // `Greater[a, b, c]` in bare full form, but wolframscript shows
+      // `FullForm[a > b > c]` with the natural operator chain in
+      // InputForm. Treat the variant the same as the FunctionCall heads
+      // listed above.
+      let is_comparison = matches!(&args[0], Expr::Comparison { .. });
       // "Form-wrapper" heads — these stay as `Head[…]` in both InputForm
       // and FullForm renderings (no operator-shape transformation), so
       // wolframscript shows `FullForm[Head[…]]` verbatim. Adding them
@@ -10009,11 +10015,21 @@ pub fn top_level_output(expr: &Expr) -> String {
               | "TableForm"
               | "Row"
               | "Column"
+              // Comparison/inequality heads display with the natural
+              // operator chain (`a > b > c`) in wolframscript's REPL view.
+              | "Greater"
+              | "Less"
+              | "GreaterEqual"
+              | "LessEqual"
+              | "Equal"
+              | "Unequal"
+              | "Inequality"
           )
       );
       if is_rational
         || is_repeat
         || is_pattern
+        || is_comparison
         || is_form_wrapper
         || matches!(
           &args[0],
