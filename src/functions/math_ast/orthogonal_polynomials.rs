@@ -237,9 +237,7 @@ fn associated_legendre_p_ast(
       )
     {
       let (re, im) = legendre_p_associated_complex(nc, mc, zc);
-      return Ok(crate::functions::math_ast::build_complex_float_expr(
-        re, im,
-      ));
+      return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
     }
     return Ok(Expr::FunctionCall {
       name: "LegendreP".to_string(),
@@ -1183,11 +1181,19 @@ pub fn lcm_i128(a: i128, b: i128) -> i128 {
   (a.abs() / g) * b.abs()
 }
 
-/// LegendreQ[n, x] - Legendre function of the second kind
+/// LegendreQ[n, x] / LegendreQ[n, m, x] - Legendre function of the second kind.
+/// The 3-arg associated form uses the Ferrers identity
+///   Q_ν^μ(z) = (π / (2 sin(μπ))) ·
+///     (cos(μπ) · P_ν^μ(z) − Γ(ν+μ+1)/Γ(ν−μ+1) · P_ν^(−μ)(z))
+/// extended to |z| > 1 via principal-branch logs in the P prefactor —
+/// matching wolframscript's complex-valued result for real z > 1.
 pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 3 {
+    return legendre_q_associated_ast(&args[0], &args[1], &args[2]);
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "LegendreQ expects exactly 2 arguments".into(),
+      "LegendreQ expects 2 or 3 arguments".into(),
     ));
   }
 
@@ -1275,7 +1281,10 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
   let prefactor = cmul(
     cdiv(
       gamma_complex(n_plus_one.0, n_plus_one.1),
-      cmul(two_pow_n, gamma_complex(n_plus_three_half.0, n_plus_three_half.1)),
+      cmul(
+        two_pow_n,
+        gamma_complex(n_plus_three_half.0, n_plus_three_half.1),
+      ),
     ),
     z_pow_neg,
   );
@@ -1299,6 +1308,130 @@ fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
   let i_pi_half = (0.0, std::f64::consts::PI / 2.0);
   let subtract = cmul(i_pi_half, p_val);
   (q_real.0 - subtract.0, q_real.1 - subtract.1)
+}
+
+/// 3-arg associated `LegendreQ[ν, μ, z]`. Uses the Ferrers identity
+/// extended to |z| > 1 via principal-branch logs (so the prefactor of P
+/// stays well-defined for real z > 1, matching wolframscript). Falls
+/// through to the unevaluated form when any argument fails to reduce
+/// to a complex `(re, im)` pair.
+fn legendre_q_associated_ast(
+  n_expr: &crate::syntax::Expr,
+  m_expr: &crate::syntax::Expr,
+  z_expr: &crate::syntax::Expr,
+) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+  use crate::syntax::Expr;
+  let unevaluated = || Expr::FunctionCall {
+    name: "LegendreQ".to_string(),
+    args: vec![n_expr.clone(), m_expr.clone(), z_expr.clone()],
+  };
+  let any_inexact =
+    [n_expr, m_expr, z_expr].iter().any(|a| {
+      matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+        || crate::functions::math_ast::try_extract_complex_float(a)
+          .is_some_and(|(_, im)| im != 0.0)
+    });
+  if !any_inexact {
+    return Ok(unevaluated());
+  }
+  let (n, m, z) = match (
+    crate::functions::math_ast::try_extract_complex_float(n_expr),
+    crate::functions::math_ast::try_extract_complex_float(m_expr),
+    crate::functions::math_ast::try_extract_complex_float(z_expr),
+  ) {
+    (Some(n), Some(m), Some(z)) => (n, m, z),
+    _ => return Ok(unevaluated()),
+  };
+  let (re, im) = legendre_q_associated_complex(n, m, z);
+  Ok(crate::functions::math_ast::build_complex_float_expr(re, im))
+}
+
+/// Compute LegendreP[ν, μ, z] (Ferrers form) for complex/inexact args
+/// via the hypergeometric representation, using principal-branch logs
+/// so the `((1+z)/(1-z))^(μ/2)` prefactor extends sensibly to |z| > 1.
+fn legendre_p_associated_value_complex(
+  n: (f64, f64),
+  m: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let clog = |(r, i): (f64, f64)| {
+    let im = if i == 0.0 { 0.0 } else { i };
+    ((r * r + im * im).sqrt().ln(), im.atan2(r))
+  };
+  let cexp = |(r, i): (f64, f64)| {
+    let mag = r.exp();
+    (mag * i.cos(), mag * i.sin())
+  };
+
+  let one_minus_m = (1.0 - m.0, -m.1);
+  let g_inv = cdiv((1.0, 0.0), gamma_complex(one_minus_m.0, one_minus_m.1));
+  let log_diff = (
+    clog((1.0 + z.0, z.1)).0 - clog((1.0 - z.0, -z.1)).0,
+    clog((1.0 + z.0, z.1)).1 - clog((1.0 - z.0, -z.1)).1,
+  );
+  let half_m = (m.0 / 2.0, m.1 / 2.0);
+  let pow_term = cexp(cmul(half_m, log_diff));
+  let neg_n = (-n.0, -n.1);
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
+  let f =
+    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+      neg_n,
+      n_plus_one,
+      one_minus_m,
+      half_one_minus_z,
+    );
+  cmul(cmul(g_inv, pow_term), f)
+}
+
+/// Associated LegendreQ via the Ferrers identity
+///   Q_ν^μ(z) = (π / (2 sin(μπ))) · (cos(μπ) · P_ν^μ(z)
+///             − Γ(ν+μ+1)/Γ(ν−μ+1) · P_ν^(−μ)(z))
+/// with the Ferrers P prefactor written as
+/// `Exp((μ/2) · (Log(1+z) − Log(1-z)))` so |z| > 1 lands on the same
+/// branch wolframscript chooses.
+fn legendre_q_associated_complex(
+  n: (f64, f64),
+  m: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  // Complex sin(z) = sin(re)·cosh(im) + i·cos(re)·sinh(im).
+  let csin = |(r, i): (f64, f64)| (r.sin() * i.cosh(), r.cos() * i.sinh());
+  let ccos = |(r, i): (f64, f64)| (r.cos() * i.cosh(), -r.sin() * i.sinh());
+
+  let pi = std::f64::consts::PI;
+  let mu_pi = (m.0 * pi, m.1 * pi);
+  let sin_mu_pi = csin(mu_pi);
+  let cos_mu_pi = ccos(mu_pi);
+  let two_sin = (2.0 * sin_mu_pi.0, 2.0 * sin_mu_pi.1);
+  let prefactor = cdiv((pi, 0.0), two_sin);
+
+  let p_pos = legendre_p_associated_value_complex(n, m, z);
+  let p_neg = legendre_p_associated_value_complex(n, (-m.0, -m.1), z);
+  let g_top = gamma_complex(n.0 + m.0 + 1.0, n.1 + m.1);
+  let g_bot = gamma_complex(n.0 - m.0 + 1.0, n.1 - m.1);
+  let ratio_g = cdiv(g_top, g_bot);
+  let inner = (
+    cmul(cos_mu_pi, p_pos).0 - cmul(ratio_g, p_neg).0,
+    cmul(cos_mu_pi, p_pos).1 - cmul(ratio_g, p_neg).1,
+  );
+  cmul(prefactor, inner)
 }
 
 /// Compute LegendreP[ν, z] for complex ν, z via the hypergeometric form

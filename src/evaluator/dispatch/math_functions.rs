@@ -645,7 +645,7 @@ pub fn dispatch_math_functions(
     "SphericalHarmonicY" if args.len() == 4 => {
       return Some(crate::functions::math_ast::spherical_harmonic_y_ast(args));
     }
-    "LegendreQ" if args.len() == 2 => {
+    "LegendreQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_q_ast(args));
     }
     "PolyLog" if args.len() == 2 => {

@@ -1186,6 +1186,29 @@ mod legendre_q {
       s
     );
   }
+
+  #[test]
+  fn associated_real_z_lt_one() {
+    // 3-arg form, |z| < 1: result is real (Ferrers Q on the cut).
+    // wolframscript: LegendreQ[1.75, 1.4, 0.53] ≈ 2.0549890785760923
+    let s = interpret("LegendreQ[1.75, 1.4, 0.53]").unwrap();
+    let val: f64 = s.parse().unwrap();
+    assert!((val - 2.0549890785760923).abs() < 1e-10, "got: {}", s);
+  }
+
+  #[test]
+  fn associated_complex_branch_z_gt_one() {
+    // 3-arg form, |z| > 1: complex result with the same Ferrers identity
+    // (the (1+z)^(μ/2) prefactor needs the principal-branch log).
+    // wolframscript: LegendreQ[1.6, 3.1, 1.5]
+    //   ≈ -1.7193129097069424 - 7.7027327978267826*I
+    let s = interpret("LegendreQ[1.6, 3.1, 1.5]").unwrap();
+    assert!(
+      s.starts_with("-1.7193129097069") && s.contains(" - 7.70273279782677"),
+      "got: {}",
+      s
+    );
+  }
 }
 
 mod polygamma {
