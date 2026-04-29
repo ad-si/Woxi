@@ -9986,9 +9986,35 @@ pub fn top_level_output(expr: &Expr) -> String {
           | Expr::PatternOptional { .. }
           | Expr::PatternTest { .. }
       );
+      // "Form-wrapper" heads — these stay as `Head[…]` in both InputForm
+      // and FullForm renderings (no operator-shape transformation), so
+      // wolframscript shows `FullForm[Head[…]]` verbatim. Adding them
+      // here doesn't disturb AST-inspection tests that use `FullForm` on
+      // math expressions.
+      let is_form_wrapper = matches!(
+        &args[0],
+        Expr::FunctionCall { name: fn_, .. }
+          if matches!(
+            fn_.as_str(),
+            "BaseForm"
+              | "NumberForm"
+              | "InputForm"
+              | "OutputForm"
+              | "TraditionalForm"
+              | "StandardForm"
+              | "TeXForm"
+              | "CForm"
+              | "FortranForm"
+              | "MatrixForm"
+              | "TableForm"
+              | "Row"
+              | "Column"
+          )
+      );
       if is_rational
         || is_repeat
         || is_pattern
+        || is_form_wrapper
         || matches!(
           &args[0],
           Expr::Integer(_)
