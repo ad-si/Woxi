@@ -261,6 +261,20 @@ fn kg_inner(n: i128, m: i128, shift: &mut u64) -> BigInt {
   }
 }
 
+/// Returns true if the expression contains a Real or BigFloat anywhere
+/// in the tree — i.e., the value is inexact.
+fn contains_inexact_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => contains_inexact_real(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_real(left) || contains_inexact_real(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_real),
+    _ => false,
+  }
+}
+
 /// Factorial[n] or n!
 /// Factorial[n] = Gamma[n+1]
 /// For negative integers, returns ComplexInfinity.
@@ -291,6 +305,14 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Ok(Expr::Real(result))
     }
+  } else if let Some((re, im)) = super::try_extract_complex_float(&args[0])
+    && im != 0.0
+    && contains_inexact_real(&args[0])
+  {
+    // Complex floating-point argument: Factorial[z] = Gamma[z+1].
+    let (gr, gi) =
+      crate::functions::math_ast::zeta_functions::gamma_complex(re + 1.0, im);
+    Ok(super::build_complex_float_expr(gr, gi))
   } else {
     // For rationals and other symbolic expressions, delegate to Gamma[n+1]
     // Build the expression Gamma[n + 1] and evaluate via gamma_ast
@@ -6964,24 +6986,19 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // General case via the standard CG↔3j relation:
   //   CG[{j1,m1},{j2,m2},{j,m}] = (-1)^(j1-j2+m) · Sqrt[2j+1]
   //                                · ThreeJSymbol[{j1,m1},{j2,m2},{j,-m}]
-  let neg_m3 = bigint_to_expr(num_bigint::BigInt::from(-m3))
-    .pipe_through_rational(2);
+  let neg_m3 =
+    bigint_to_expr(num_bigint::BigInt::from(-m3)).pipe_through_rational(2);
   let three_j_args = vec![
     Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j1))
-        .pipe_through_rational(2),
-      bigint_to_expr(num_bigint::BigInt::from(m1))
-        .pipe_through_rational(2),
+      bigint_to_expr(num_bigint::BigInt::from(j1)).pipe_through_rational(2),
+      bigint_to_expr(num_bigint::BigInt::from(m1)).pipe_through_rational(2),
     ]),
     Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j2))
-        .pipe_through_rational(2),
-      bigint_to_expr(num_bigint::BigInt::from(m2))
-        .pipe_through_rational(2),
+      bigint_to_expr(num_bigint::BigInt::from(j2)).pipe_through_rational(2),
+      bigint_to_expr(num_bigint::BigInt::from(m2)).pipe_through_rational(2),
     ]),
     Expr::List(vec![
-      bigint_to_expr(num_bigint::BigInt::from(j3))
-        .pipe_through_rational(2),
+      bigint_to_expr(num_bigint::BigInt::from(j3)).pipe_through_rational(2),
       neg_m3,
     ]),
   ];
@@ -6989,7 +7006,11 @@ pub fn clebsch_gordan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (-1)^(j1 - j2 + m3): the parity check above guarantees this exponent
   // is an integer.
   let outer_sign_exp = (j1 - j2 + m3) / 2;
-  let outer_sign: i128 = if outer_sign_exp.rem_euclid(2) == 0 { 1 } else { -1 };
+  let outer_sign: i128 = if outer_sign_exp.rem_euclid(2) == 0 {
+    1
+  } else {
+    -1
+  };
   // Sqrt[2j3 + 1] in 2j-units: 2j3 + 1 = j3 + 1 because j3 here is the
   // _doubled_ value. Wait — j3 above is `two_j[2]`, so the actual angular
   // momentum is j3/2 and 2(j3/2) + 1 = j3 + 1. ✓
