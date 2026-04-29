@@ -5444,9 +5444,34 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         )
       };
       // Special case: Pattern[name, body] displays as name:body
-      // (e.g. `y : 1` → `Pattern[y, 1]` → `y:1`).
+      // (e.g. `y : 1` → `Pattern[y, 1]` → `y:1`). When `body` is a
+      // looser-binding operator like Condition/Rule/RuleDelayed/
+      // ReplaceAll/ReplaceRepeated, wrap it in parens so `s:a /; b`
+      // doesn't flip to `Condition[Pattern[s, a], b]` on re-parse.
       if name == "Pattern" && args.len() == 2 {
-        return format!("{}:{}", fmt(&args[0]), fmt(&args[1]));
+        let needs_parens = matches!(
+          &args[1],
+          Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+            | Expr::ReplaceAll { .. }
+            | Expr::ReplaceRepeated { .. }
+        ) || matches!(
+          &args[1],
+          Expr::FunctionCall { name: bn, .. }
+            if matches!(
+              bn.as_str(),
+              "Condition"
+                | "Rule"
+                | "RuleDelayed"
+                | "ReplaceAll"
+                | "ReplaceRepeated"
+            )
+        );
+        let body_str = fmt(&args[1]);
+        if needs_parens {
+          return format!("{}:({})", fmt(&args[0]), body_str);
+        }
+        return format!("{}:{}", fmt(&args[0]), body_str);
       }
       if name == "Repeated" && args.len() == 1 {
         let inner = fmt(&args[0]);
@@ -7934,15 +7959,37 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(&args[1])
       )
     }
-    // Pattern[name, body] displays as name:body in InputForm
+    // Pattern[name, body] displays as name:body in InputForm; wrap
+    // looser-binding bodies (Condition/Rule/RuleDelayed/ReplaceAll/
+    // ReplaceRepeated) in parens so `s:a /; b` doesn't flip to
+    // `Condition[Pattern[s, a], b]` on re-parse.
     Expr::FunctionCall { name, args }
       if name == "Pattern" && args.len() == 2 =>
     {
-      format!(
-        "{}:{}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
-      )
+      let needs_parens = matches!(
+        &args[1],
+        Expr::Rule { .. }
+          | Expr::RuleDelayed { .. }
+          | Expr::ReplaceAll { .. }
+          | Expr::ReplaceRepeated { .. }
+      ) || matches!(
+        &args[1],
+        Expr::FunctionCall { name: bn, .. }
+          if matches!(
+            bn.as_str(),
+            "Condition"
+              | "Rule"
+              | "RuleDelayed"
+              | "ReplaceAll"
+              | "ReplaceRepeated"
+          )
+      );
+      let body = expr_to_input_form(&args[1]);
+      if needs_parens {
+        format!("{}:({})", expr_to_input_form(&args[0]), body)
+      } else {
+        format!("{}:{}", expr_to_input_form(&args[0]), body)
+      }
     }
     Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
       format!(
