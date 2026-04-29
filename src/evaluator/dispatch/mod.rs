@@ -4598,6 +4598,17 @@ pub fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // FileInformation[path] — wolframscript returns `{}` when the file does
+  // not exist; a populated list of properties when it does. Match the
+  // not-found behavior; defer the populated-list shape until needed.
+  if name == "FileInformation"
+    && args.len() == 1
+    && let Expr::String(path) = &args[0]
+    && !std::path::Path::new(path).exists()
+  {
+    return Ok(Expr::List(vec![]));
+  }
+
   // DeleteFile[path] or DeleteFile[{path1, path2, …}] — delete files.
   // wolframscript emits `DeleteFile::fdnfnd: Directory or file "<name>"
   // not found.` on the first missing entry and returns the `$Failed`
