@@ -1216,13 +1216,20 @@ pub fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
     }
   }
 
-  // For z=1 (Hurwitz zeta), add integral tail: ∫_{N}^∞ 1/(t+a)^s dt = (N+a)^(1-s)/(s-1)
+  // For z=1 (Hurwitz zeta), add Euler-Maclaurin tail to extend the partial sum:
+  //   Σ_{k=N}^∞ f(k) ≈ ∫_N^∞ f + f(N)/2 - f'(N)/12 + f'''(N)/720 - …
+  // with f(t) = 1/(t+a)^s. For 200-term partial sums this brings the residual
+  // below 1e-13 for moderate s, matching wolframscript at machine precision.
   if (z - 1.0).abs() < 1e-14 && s > 1.0 {
     let n = n_terms as f64;
-    let tail = (n + a).powf(1.0 - s) / (s - 1.0);
-    // Plus first-order Euler-Maclaurin correction: f(N)/2
-    let f_n = 1.0 / (n + a).powf(s);
-    sum += tail + f_n / 2.0;
+    let na = n + a;
+    let tail = na.powf(1.0 - s) / (s - 1.0);
+    let f_n = 1.0 / na.powf(s);
+    // -f'(N)/12 = s / (12 (N+a)^(s+1))
+    let em2 = s / (12.0 * na.powf(s + 1.0));
+    // f'''(N)/720 = -s(s+1)(s+2) / (720 (N+a)^(s+3))
+    let em3 = -s * (s + 1.0) * (s + 2.0) / (720.0 * na.powf(s + 3.0));
+    sum += tail + f_n / 2.0 + em2 + em3;
   }
 
   sum

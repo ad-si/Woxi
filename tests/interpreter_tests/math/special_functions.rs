@@ -3296,6 +3296,23 @@ mod lerch_phi {
   fn lerch_phi_symbolic() {
     assert_eq!(interpret("LerchPhi[z, s, a]").unwrap(), "LerchPhi[z, s, a]");
   }
+
+  #[test]
+  fn lerch_phi_hurwitz_zeta_quarter() {
+    // Hurwitz-zeta identity: ζ(2, 1/4) = LerchPhi[1, 2, 1/4] = π² + 8·Catalan.
+    // Tighter Euler-Maclaurin tail brings this within machine ε.
+    let result = interpret("LerchPhi[1, 2, 1/4]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let pi = std::f64::consts::PI;
+    let catalan = 0.915_965_594_177_219_015;
+    let expected = pi * pi + 8.0 * catalan;
+    assert!(
+      (val - expected).abs() < 1e-12,
+      "LerchPhi[1, 2, 1/4] should be π²+8C ≈ {}, got {}",
+      expected,
+      val
+    );
+  }
 }
 
 mod weierstrass_p {
