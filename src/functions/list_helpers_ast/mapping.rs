@@ -18,10 +18,28 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(results))
     }
     Expr::Association(items) => {
-      // Map over association applies function to values only
+      // Map over association applies function to values only. When the value
+      // is a RuleDelayed marker (`{pattern == key, replacement}`) — denoting
+      // the original entry was `key :> v` — apply func to the replacement and
+      // re-wrap the marker so the `:>` form survives.
       let results: Result<Vec<(Expr, Expr)>, InterpreterError> = items
         .iter()
         .map(|(key, val)| {
+          if let Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } = val
+            && crate::syntax::assoc_marker_matches(key, pattern)
+          {
+            let new_repl = apply_func_ast(func, replacement)?;
+            return Ok((
+              key.clone(),
+              Expr::RuleDelayed {
+                pattern: pattern.clone(),
+                replacement: Box::new(new_repl),
+              },
+            ));
+          }
           let new_val = apply_func_ast(func, val)?;
           Ok((key.clone(), new_val))
         })
@@ -265,6 +283,34 @@ fn map_at_depth(
       pattern: Box::new(recurse(pattern)?),
       replacement: Box::new(recurse(replacement)?),
     },
+    Expr::Association(items) => {
+      // Recurse through values; the key is not a child element of the
+      // Association (matches Wolfram's level numbering where `<|a->1|>`
+      // has only `1` at level 1, not `a`). When the value is a
+      // RuleDelayed marker, descend into the replacement and re-wrap.
+      let mapped: Result<Vec<(Expr, Expr)>, InterpreterError> = items
+        .iter()
+        .map(|(k, v)| {
+          if let Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } = v
+            && crate::syntax::assoc_marker_matches(k, pattern)
+          {
+            let new_repl = recurse(replacement)?;
+            return Ok((
+              k.clone(),
+              Expr::RuleDelayed {
+                pattern: pattern.clone(),
+                replacement: Box::new(new_repl),
+              },
+            ));
+          }
+          Ok((k.clone(), recurse(v)?))
+        })
+        .collect();
+      Expr::Association(mapped?)
+    }
     _ => expr.clone(),
   };
 

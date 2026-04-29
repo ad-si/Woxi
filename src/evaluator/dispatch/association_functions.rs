@@ -127,12 +127,23 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Rule {
         pattern,
         replacement,
+      } => {
+        assoc_insert_dedup(pairs, *pattern.clone(), *replacement.clone());
+        Ok(true)
       }
-      | Expr::RuleDelayed {
+      Expr::RuleDelayed {
         pattern,
         replacement,
       } => {
-        assoc_insert_dedup(pairs, *pattern.clone(), *replacement.clone());
+        // Convention from Expr::Association: a value of
+        // `RuleDelayed { pattern == key, replacement }` marks an entry
+        // that was originally `key :> value` (formatter renders `:>`).
+        let key = *pattern.clone();
+        let marker = Expr::RuleDelayed {
+          pattern: Box::new(key.clone()),
+          replacement: replacement.clone(),
+        };
+        assoc_insert_dedup(pairs, key, marker);
         Ok(true)
       }
       Expr::Association(inner_pairs) => {

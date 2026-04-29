@@ -341,7 +341,10 @@ mod high_level_functions_tests {
     #[test]
     fn test_box_chars_render_as_escapes() {
       // The parsed codepoints render back as `\(`, `\)` etc. in OutputForm.
-      assert_eq!(interpret(r#"FromCharacterCode[{63433, 65, 63424}]"#).unwrap(), "\\(A\\)");
+      assert_eq!(
+        interpret(r#"FromCharacterCode[{63433, 65, 63424}]"#).unwrap(),
+        "\\(A\\)"
+      );
     }
   }
 
@@ -2906,6 +2909,53 @@ mod high_level_functions_tests {
       assert_eq!(
         interpret(r#"<|"x" -> 1, "x" -> 2, "x" -> 3|>"#).unwrap(),
         "<|x -> 3|>"
+      );
+    }
+  }
+
+  mod association_rule_delayed_tests {
+    use super::*;
+
+    #[test]
+    fn test_literal_assoc_preserves_rule_delayed() {
+      // `<|key :> value|>` keeps the held value and renders `:>`.
+      assert_eq!(
+        interpret("<|a -> 1, b :> Association[p->3, q->4]|>").unwrap(),
+        "<|a -> 1, b :> Association[p -> 3, q -> 4]|>"
+      );
+    }
+
+    #[test]
+    fn test_constructor_assoc_preserves_rule_delayed() {
+      // The `Association[...]` constructor preserves `:>` too — the held
+      // RHS does not get evaluated to its `<|...|>` short form.
+      assert_eq!(
+        interpret("Association[a -> 1, b :> Association[p->3, q->4]]")
+          .unwrap(),
+        "<|a -> 1, b :> Association[p -> 3, q -> 4]|>"
+      );
+    }
+
+    #[test]
+    fn test_map_at_level_one_keeps_rule_delayed() {
+      // Mapping F over an association applies F to each value while
+      // keeping the original Rule/RuleDelayed kind on each entry.
+      assert_eq!(
+        interpret("Map[F, Association[a -> 1, b :> 2]]").unwrap(),
+        "<|a -> F[1], b :> F[2]|>"
+      );
+    }
+
+    #[test]
+    fn test_map_at_level_two_descends_into_held_value() {
+      // At level {2} F descends into the held replacement of the `:>`
+      // entry and is applied to that expression's children.
+      assert_eq!(
+        interpret(
+          "Map[F, Association[a -> 1, b :> Q[p->3, q->4]], {2}]"
+        )
+        .unwrap(),
+        "<|a -> 1, b :> Q[F[p -> 3], F[q -> 4]]|>"
       );
     }
   }

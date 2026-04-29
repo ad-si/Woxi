@@ -1286,6 +1286,27 @@ pub fn implicit_power_exponent(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// True if an AssociationItem source slice uses `:>` as its separator
+/// rather than `->`. The grammar accepts both but doesn't expose which one
+/// matched, so we scan the raw text for a `:>` outside of brackets.
+fn is_assoc_item_delayed(s: &str) -> bool {
+  let bytes = s.as_bytes();
+  let mut depth: i32 = 0;
+  let mut i = 0;
+  while i < bytes.len() {
+    match bytes[i] as char {
+      '[' | '{' | '(' | '<' => depth += 1,
+      ']' | '}' | ')' | '>' => depth -= 1,
+      ':' if depth == 0 && i + 1 < bytes.len() && bytes[i + 1] == b'>' => {
+        return true;
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  false
+}
+
 /// Convert a pest Pair to an owned Expr AST.
 /// This is used to store function bodies without re-parsing.
 pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
@@ -2373,10 +2394,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         let items: Vec<(Expr, Expr)> = inner_pairs
           .into_iter()
           .map(|item| {
+            // Detect `key :> val` from the raw item text. `:>` keeps the
+            // RuleDelayed marker (value is not evaluated eagerly) per the
+            // Expr::Association convention used by the formatter.
+            let item_text = item.as_str();
+            let is_delayed = is_assoc_item_delayed(item_text);
             let mut inner = item.into_inner();
             let key = pair_to_expr(inner.next().unwrap());
             let val = pair_to_expr(inner.next().unwrap());
-            (key, val)
+            if is_delayed {
+              (
+                key.clone(),
+                Expr::RuleDelayed {
+                  pattern: Box::new(key),
+                  replacement: Box::new(val),
+                },
+              )
+            } else {
+              (key, val)
+            }
           })
           .collect();
         Expr::Association(items)
@@ -5113,13 +5149,15 @@ pub enum ExprForm {
 /// Detect the marker convention used by `Expr::Association` to indicate that
 /// an entry was originally `key :> value` (RuleDelayed). The value side is
 /// `RuleDelayed { pattern, replacement }` where `pattern` equals the key.
-/// Limited to `Expr::String` keys, which is the only form constructed
-/// internally with this convention (e.g. by Tabular's failure messages).
+/// Used both by internally-constructed associations (Tabular failure
+/// messages with `Expr::String` keys) and by associations parsed from
+/// `<|key :> value|>` literals (any key type). `Expr` does not implement
+/// `PartialEq`, so we compare via the canonical InputForm rendering.
 pub(crate) fn assoc_marker_matches(key: &Expr, pattern: &Expr) -> bool {
-  matches!(
-    (key, pattern),
-    (Expr::String(a), Expr::String(b)) if a == b
-  )
+  match (key, pattern) {
+    (Expr::String(a), Expr::String(b)) => a == b,
+    _ => expr_to_string(key) == expr_to_string(pattern),
+  }
 }
 
 /// Unified expression formatter that handles both InputForm and OutputForm.
