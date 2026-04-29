@@ -3119,6 +3119,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   // Parse operators: Term (Operator Term)*
   // Build expression with proper precedence
   let mut terms: Vec<Expr> = Vec::new();
+  // Parallel to `terms`: whether each pushed term originated from an
+  // `ImplicitTimes` (i.e. unparenthesised juxtaposition like `4z`). Used so
+  // a trailing `!` can attach to the rightmost factor — `4z!` → `4*(z!)`,
+  // matching wolframscript's binding while keeping `(4z)!` intact.
+  let mut term_was_implicit_times: Vec<bool> = Vec::new();
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
   let mut leading_not = false;
@@ -3129,13 +3134,19 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut pending_not_on_last = false;
   // Apply a pending Not to the top of `terms` and clear the flag. Used at
   // every boundary that ends a term block.
-  fn flush_pending_not(pending: &mut bool, terms: &mut Vec<Expr>) {
+  fn flush_pending_not(
+    pending: &mut bool,
+    terms: &mut Vec<Expr>,
+    origins: &mut Vec<bool>,
+  ) {
     if *pending {
       if let Some(last) = terms.pop() {
+        origins.pop();
         terms.push(Expr::FunctionCall {
           name: "Not".to_string(),
           args: vec![last],
         });
+        origins.push(false);
       }
       *pending = false;
     }
@@ -3160,21 +3171,22 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         leading_not = true;
       }
       Rule::Operator | Rule::ConditionOp => {
-        flush_pending_not(&mut pending_not_on_last, &mut terms);
+        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
         operators.push(item.as_str().trim().to_string());
       }
       Rule::UnsetSuffix => {
         // f[x] =. → Unset[f[x]]: push "=." as an operator with a dummy
         // right operand so the precedence-climbing algorithm can handle it
         // like any other operator (at assignment precedence level 2).
-        flush_pending_not(&mut pending_not_on_last, &mut terms);
+        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
         operators.push("=.".to_string());
         terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
+        term_was_implicit_times.push(false);
       }
       Rule::TildeInfix => {
         // a ~f~ b → f[a, b]: encode as "~funcName~" operator string
         // The inner pair is either BaseFunctionCall or Identifier
-        flush_pending_not(&mut pending_not_on_last, &mut terms);
+        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
         let inner = item.into_inner().next().unwrap();
         let func_expr = pair_to_expr(inner);
         // Store as "~<encoded>~" for make_binary_op to handle
@@ -3187,38 +3199,83 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       Rule::FactorialSuffix => {
         // n! → Factorial[n], n!! → Factorial2[n]
         if let Some(last) = terms.pop() {
+          let was_implicit = term_was_implicit_times.pop().unwrap_or(false);
           let func_name = if item.as_str() == "!!" {
             "Factorial2"
           } else {
             "Factorial"
           };
-          terms.push(Expr::FunctionCall {
-            name: func_name.to_string(),
-            args: vec![last],
-          });
+          // For an unparenthesised juxtaposition like `4z!`, attach the
+          // factorial to the rightmost factor — `Times[4, Factorial[z]]` —
+          // matching Wolfram's binding (factorial > implicit times). The
+          // implicit-times builder yields a right-leaning BinaryOp Times
+          // tree, so we descend into the right child.
+          let mut new_term = last;
+          let mut attached = false;
+          if was_implicit {
+            if let Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              right,
+              ..
+            } = &mut new_term
+            {
+              let inner_right = std::mem::replace(
+                right.as_mut(),
+                Expr::Identifier(String::new()),
+              );
+              **right = Expr::FunctionCall {
+                name: func_name.to_string(),
+                args: vec![inner_right],
+              };
+              attached = true;
+            } else if let Expr::FunctionCall { name, args } = &mut new_term
+              && name == "Times"
+              && !args.is_empty()
+            {
+              let last_factor = args.pop().unwrap();
+              args.push(Expr::FunctionCall {
+                name: func_name.to_string(),
+                args: vec![last_factor],
+              });
+              attached = true;
+            }
+          }
+          if !attached {
+            new_term = Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![new_term],
+            };
+          }
+          terms.push(new_term);
+          term_was_implicit_times.push(false);
         }
       }
       Rule::TransposeSuffix => {
         // expr \[Transpose] → Transpose[expr]
         if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
           terms.push(Expr::FunctionCall {
             name: "Transpose".to_string(),
             args: vec![last],
           });
+          term_was_implicit_times.push(false);
         }
       }
       Rule::ConjugateTransposeSuffix => {
         // expr \[ConjugateTranspose] → ConjugateTranspose[expr]
         if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
           terms.push(Expr::FunctionCall {
             name: "ConjugateTranspose".to_string(),
             args: vec![last],
           });
+          term_was_implicit_times.push(false);
         }
       }
       Rule::RepeatedSuffix | Rule::RepeatedNullSuffix => {
         // x.. → Repeated[x], x... → RepeatedNull[x]
         if let Some(last) = terms.pop() {
+          term_was_implicit_times.pop();
           let func_name = if item.as_rule() == Rule::RepeatedNullSuffix {
             "RepeatedNull"
           } else {
@@ -3228,11 +3285,13 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
             name: func_name.to_string(),
             args: vec![last],
           });
+          term_was_implicit_times.push(false);
         }
       }
       _ => {
         if leading_minus {
           terms.push(Expr::Integer(0));
+          term_was_implicit_times.push(false);
           operators.push("NEGATE".to_string());
           leading_minus = false;
         }
@@ -3250,13 +3309,16 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           let mut iter = factors.into_iter();
           if let Some(first) = iter.next() {
             terms.push(first);
+            term_was_implicit_times.push(false);
             for rest in iter {
               operators.push("*".to_string());
               terms.push(rest);
+              term_was_implicit_times.push(false);
             }
           }
         } else {
           terms.push(expr);
+          term_was_implicit_times.push(is_implicit_times);
         }
         if leading_not {
           // Defer the Not wrapping until any postfix suffixes have been
@@ -3268,7 +3330,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
     }
   }
-  flush_pending_not(&mut pending_not_on_last, &mut terms);
+  flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
 
   let mut result = if terms.len() == 1 {
     terms.remove(0)
