@@ -358,7 +358,7 @@ Term = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple | PatternNamed
   | DerivativeIdentifier
   | FullInformationQuery
   | InformationQuery
@@ -383,7 +383,7 @@ SimpleTerm = _{
   | FunctionCall
   | DerivativeIdentifier
   | NamedCharIdentifier
-  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple | PatternNamed
   | Identifier
   | SlotSequence
   | SlotCall
@@ -413,7 +413,7 @@ TermNoImplicit = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple | PatternNamed
   | DerivativeIdentifier
   | NamedCharIdentifier
   | Identifier
@@ -486,6 +486,11 @@ PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." 
 PatternBlanks = _{ "___" | "__" | "_" }
 PatternWithHead = { PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
 PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
+// PatternNamed: `name : body` is `Pattern[name, body]` — a named pattern
+// where the body is any expression the pattern should match. Distinct
+// from `name_:default` (Optional with default) and `name::tag`
+// (MessageName); the negative lookaheads keep those forms intact.
+PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term }
 Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)

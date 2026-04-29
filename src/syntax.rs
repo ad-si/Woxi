@@ -2617,6 +2617,19 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         default: Some(Box::new(default)),
       }
     }
+    Rule::PatternNamed => {
+      // PatternNamed = { PatternName ~ ":" ~ Term }
+      // `y : 1` is `Pattern[y, 1]` — a named pattern matching the literal
+      // body. Distinct from `y_:1` (Optional with default), which keeps
+      // its own rule.
+      let mut inner = pair.into_inner();
+      let name = inner.next().unwrap().as_str().to_string();
+      let body = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "Pattern".to_string(),
+        args: vec![Expr::Identifier(name), body],
+      }
+    }
     Rule::PatternOptionalNamedBlank => {
       // PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~
       //                               Identifier? ~ ":" ~ Term }
@@ -5430,6 +5443,11 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           Expr::FunctionCall { name: pn, .. } if pn == "Pattern"
         )
       };
+      // Special case: Pattern[name, body] displays as name:body
+      // (e.g. `y : 1` → `Pattern[y, 1]` → `y:1`).
+      if name == "Pattern" && args.len() == 2 {
+        return format!("{}:{}", fmt(&args[0]), fmt(&args[1]));
+      }
       if name == "Repeated" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if is_pattern_arg(&args[0]) {
@@ -7916,6 +7934,16 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(&args[1])
       )
     }
+    // Pattern[name, body] displays as name:body in InputForm
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      format!(
+        "{}:{}",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
     Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
       format!(
         "{} = {}",
@@ -10210,6 +10238,9 @@ pub fn top_level_output(expr: &Expr) -> String {
         Expr::Pattern { .. }
           | Expr::PatternOptional { .. }
           | Expr::PatternTest { .. }
+      ) || matches!(
+        &args[0],
+        Expr::FunctionCall { name: pn, .. } if pn == "Pattern"
       );
       // `a > b > c` parses to `Expr::Comparison { … }` and renders as
       // `Greater[a, b, c]` in bare full form, but wolframscript shows
