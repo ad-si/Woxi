@@ -869,6 +869,17 @@ pub fn apply_curried_call(
         args: args.to_vec(),
       })
     }
+    Expr::CurriedCall { .. } => {
+      // Nested curried call: `s[a][b][c]` arrives here as
+      // `apply_curried_call(CurriedCall{s[a], [b]}, [c])`. Preserve the
+      // structure rather than collapsing the head to a string-named
+      // FunctionCall (which loses the AST shape that pattern-matchers
+      // rely on, e.g. `s[a][b][c] /. s[x_][y_][z_] -> …`).
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      })
+    }
     _ => {
       // Fallback: try to convert to string and evaluate
       let func_str = expr_to_string(func);

@@ -251,6 +251,9 @@ pub fn contains_pattern(expr: &Expr) -> bool {
       contains_pattern(left) || contains_pattern(right)
     }
     Expr::FunctionCall { args, .. } => args.iter().any(contains_pattern),
+    Expr::CurriedCall { func, args } => {
+      contains_pattern(func) || args.iter().any(contains_pattern)
+    }
     Expr::List(items) => items.iter().any(contains_pattern),
     Expr::UnaryOp { operand, .. } => contains_pattern(operand),
     _ => false,
@@ -325,6 +328,43 @@ fn try_ast_pattern_replace_impl(
       if any_matched {
         Ok(Some(Expr::FunctionCall {
           name: name.clone(),
+          args: new_args,
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    // Curried calls (e.g. `s[a][b][c]`) need the same descend-into-children
+    // treatment as `FunctionCall`, otherwise patterns matching against the
+    // outer curried structure can never fire on inner positions.
+    Expr::CurriedCall { func, args } => {
+      let mut any_matched = false;
+      let new_func = match try_ast_pattern_replace(
+        func,
+        pattern,
+        replacement,
+        condition,
+      )? {
+        Some(r) => {
+          any_matched = true;
+          r
+        }
+        None => (**func).clone(),
+      };
+      let mut new_args = Vec::new();
+      for arg in args {
+        if let Some(result) =
+          try_ast_pattern_replace(arg, pattern, replacement, condition)?
+        {
+          new_args.push(result);
+          any_matched = true;
+        } else {
+          new_args.push(arg.clone());
+        }
+      }
+      if any_matched {
+        Ok(Some(Expr::CurriedCall {
+          func: Box::new(new_func),
           args: new_args,
         }))
       } else {
@@ -1648,13 +1688,14 @@ pub fn try_flat_replace_all(
           });
           let sub_len = pat_args.len();
           for start in 0..=(args.len() - sub_len) {
-            let try_match = |sub_args: Vec<Expr>| -> Option<Vec<(String, Expr)>> {
-              let sub_expr = Expr::FunctionCall {
-                name: name.clone(),
-                args: sub_args,
+            let try_match =
+              |sub_args: Vec<Expr>| -> Option<Vec<(String, Expr)>> {
+                let sub_expr = Expr::FunctionCall {
+                  name: name.clone(),
+                  args: sub_args,
+                };
+                match_pattern(&sub_expr, pattern)
               };
-              match_pattern(&sub_expr, pattern)
-            };
             let literal_args: Vec<Expr> = args[start..start + sub_len].to_vec();
             let mut bindings_opt: Option<Vec<(String, Expr)>> = None;
             if !has_one_identity {
@@ -2868,6 +2909,36 @@ fn match_pattern_impl(
         // Expression is not a FunctionCall with the same name;
         // try OneIdentity matching as fallback
         try_one_identity_match(expr, pat_name, pat_args)
+      }
+    }
+    // CurriedCall pattern: match against a CurriedCall expression
+    // recursively. `s[x_][y_][z_]` (a CurriedCall pattern) matches
+    // `s[a][b][c]` by recursing on the inner func and aligning args.
+    Expr::CurriedCall {
+      func: pat_func,
+      args: pat_args,
+    } => {
+      if let Expr::CurriedCall {
+        func: expr_func,
+        args: expr_args,
+      } = expr
+      {
+        if pat_args.len() != expr_args.len() {
+          return None;
+        }
+        let mut bindings = match_pattern(expr_func, pat_func)?;
+        for (p, e) in pat_args.iter().zip(expr_args.iter()) {
+          push_match_context(&bindings);
+          let result = match_pattern(e, p);
+          pop_match_context();
+          let b = result?;
+          if !merge_bindings(&mut bindings, b) {
+            return None;
+          }
+        }
+        Some(bindings)
+      } else {
+        None
       }
     }
     Expr::BinaryOp {
