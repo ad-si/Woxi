@@ -268,10 +268,7 @@ mod plus_formatting {
     // Times[a, b] should come before c alphabetically (a < c).
     // wolframscript keeps the FullForm wrapper at the top level; the
     // bare head form is reachable via `ToString[…]`.
-    assert_eq!(
-      interpret("FullForm[a b + c]").unwrap(),
-      "FullForm[a*b + c]"
-    );
+    assert_eq!(interpret("FullForm[a b + c]").unwrap(), "FullForm[a*b + c]");
     assert_eq!(
       interpret("ToString[FullForm[a b + c]]").unwrap(),
       "Plus[Times[a, b], c]"
@@ -344,10 +341,7 @@ mod subtraction_without_spaces {
     // ImplicitTimes term following `/` was being consumed wholesale as a
     // single divisor, putting later factors into the denominator.
     assert_eq!(interpret("6/2 3").unwrap(), "9");
-    assert_eq!(
-      interpret("FullForm[a/b c]").unwrap(),
-      "FullForm[(a*c)/b]"
-    );
+    assert_eq!(interpret("FullForm[a/b c]").unwrap(), "FullForm[(a*c)/b]");
     assert_eq!(
       interpret("ToString[FullForm[a/b c]]").unwrap(),
       "Times[a, Power[b, -1], c]"
@@ -565,15 +559,22 @@ mod full_form {
   fn full_form_times_with_number() {
     // Regression test for https://github.com/ad-si/Woxi/issues/71
     assert_eq!(interpret("FullForm[5*x]").unwrap(), "FullForm[5*x]");
-    assert_eq!(
-      interpret("ToString[FullForm[5*x]]").unwrap(),
-      "Times[5, x]"
-    );
+    assert_eq!(interpret("ToString[FullForm[5*x]]").unwrap(), "Times[5, x]");
   }
 
   #[test]
   fn full_form_list() {
-    assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "List[1, 2, 3]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around lists
+    // and shows them with `{…}` braces; the bare `List[…]` head form is
+    // reachable via `ToString[…]`.
+    assert_eq!(
+      interpret("FullForm[{1, 2, 3}]").unwrap(),
+      "FullForm[{1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[{1, 2, 3}]]").unwrap(),
+      "List[1, 2, 3]"
+    );
   }
 
   #[test]
@@ -586,10 +587,7 @@ mod full_form {
 
   #[test]
   fn full_form_complex() {
-    assert_eq!(
-      interpret("FullForm[a b + c]").unwrap(),
-      "FullForm[a*b + c]"
-    );
+    assert_eq!(interpret("FullForm[a b + c]").unwrap(), "FullForm[a*b + c]");
     assert_eq!(
       interpret("ToString[FullForm[a b + c]]").unwrap(),
       "Plus[Times[a, b], c]"
@@ -598,10 +596,7 @@ mod full_form {
 
   #[test]
   fn full_form_complex_number() {
-    assert_eq!(
-      interpret("FullForm[2 + 3*I]").unwrap(),
-      "FullForm[2 + 3*I]"
-    );
+    assert_eq!(interpret("FullForm[2 + 3*I]").unwrap(), "FullForm[2 + 3*I]");
     assert_eq!(
       interpret("ToString[FullForm[2 + 3*I]]").unwrap(),
       "Complex[2, 3]"

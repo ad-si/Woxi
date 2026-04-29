@@ -10006,6 +10006,10 @@ pub fn top_level_output(expr: &Expr) -> String {
           ..
         }
       );
+      // `Expr::List` shows with `{…}` braces in wolframscript's REPL
+      // FullForm display, so `FullForm[{1, 2, 3}]` prints as
+      // `FullForm[{1, 2, 3}]` rather than the bare `List[1, 2, 3]`.
+      let is_list = matches!(&args[0], Expr::List(_));
       // "Form-wrapper" heads — these stay as `Head[…]` in both InputForm
       // and FullForm renderings (no operator-shape transformation), so
       // wolframscript shows `FullForm[Head[…]]` verbatim. Adding them
@@ -10057,6 +10061,7 @@ pub fn top_level_output(expr: &Expr) -> String {
         || is_pattern
         || is_comparison
         || is_binary_power
+        || is_list
         || is_form_wrapper
         || matches!(
           &args[0],
