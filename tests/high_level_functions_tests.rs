@@ -292,6 +292,31 @@ mod high_level_functions_tests {
     }
   }
 
+  mod string_backtick_escape_tests {
+    use super::*;
+    #[test]
+    fn test_backtick_escape_length() {
+      // `\`` parses as a single (private-use) character, not as `\` + ` ``.
+      assert_eq!(interpret(r#"StringLength["\`"]"#).unwrap(), "1");
+    }
+    #[test]
+    fn test_backtick_escape_renders_as_escape() {
+      // The parsed character renders back as `\`` in OutputForm
+      // (matching wolframscript).
+      assert_eq!(interpret(r#"Characters["\`"]"#).unwrap(), "{\\`}");
+    }
+    #[test]
+    fn test_backtick_escape_distinct_from_literal_backtick() {
+      // U+F7CD (parsed `\``) is distinct from U+0060 (literal backtick).
+      assert_eq!(interpret(r#"ToCharacterCode["\`"]"#).unwrap(), "{63437}");
+      assert_eq!(interpret(r#"ToCharacterCode["`"]"#).unwrap(), "{96}");
+    }
+    #[test]
+    fn test_mixed_backslash_backtick_space() {
+      assert_eq!(interpret(r#"StringLength["\\\` "]"#).unwrap(), "3");
+    }
+  }
+
   mod string_delete_tests {
     use super::*;
     #[test]

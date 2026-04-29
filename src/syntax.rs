@@ -1558,6 +1558,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               chars.next();
               result.push('"');
             }
+            Some(&'`') => {
+              // Wolfram represents `\`` inside a string as a private-use
+              // character (U+F7CD), distinct from a literal backtick. The
+              // formatter renders it back as `\``.
+              chars.next();
+              result.push('\u{F7CD}');
+            }
             Some(&'\n') => {
               chars.next();
             } // line continuation
@@ -5117,6 +5124,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         if s.starts_with(crate::functions::string_ast::BOX_START) {
           return box_string_to_display_form(s);
         }
+        // U+F7CD (the parsed form of `\``) renders back as `\``.
+        if s.contains('\u{F7CD}') {
+          return s.replace('\u{F7CD}', "\\`");
+        }
         s.clone() // No quotes for display
       } else {
         let escaped = escape_string_for_input_form(s);
@@ -7598,6 +7609,7 @@ fn escape_string_for_input_form(s: &str) -> String {
       '\n' => escaped.push_str("\\n"),
       '\t' => escaped.push_str("\\t"),
       '\r' => escaped.push_str("\\r"),
+      '\u{F7CD}' => escaped.push_str("\\`"),
       c => escaped.push(c),
     }
     i += 1;
