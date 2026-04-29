@@ -10089,6 +10089,8 @@ pub fn top_level_output(expr: &Expr) -> String {
             | Expr::String(_)
             | Expr::Identifier(_)
             | Expr::Constant(_)
+            | Expr::Slot(_)
+            | Expr::SlotSequence(_)
         )
       {
         return format!("FullForm[{}]", expr_to_input_form(&args[0]));
