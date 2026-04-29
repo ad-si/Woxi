@@ -499,8 +499,10 @@ pub fn together_expr(expr: &Expr) -> Expr {
   } else {
     expand_and_combine(&build_sum(new_num_terms))
   };
-  // Keep denominator in factored form (Wolfram behavior),
-  // but canonicalize each individual factor and sort them
+  // Keep denominator in factored form (Wolfram behavior). For exponent 1
+  // a base like `(y+1)` stays as `1 + y`; for exponent ≥ 2 we keep the
+  // power literal `(1 + y)^2` rather than expanding, so e.g.
+  // `Together[x/(y+1) + x/(y+1)^2]` lands on `(x*(2+y))/(1+y)^2`.
   let combined_den = {
     let mut canonical_dens: Vec<Expr> = base_exp_map
       .iter()
@@ -508,11 +510,12 @@ pub fn together_expr(expr: &Expr) -> Expr {
         if *exp == (1, 1) {
           expand_and_combine(base)
         } else {
-          expand_and_combine(&Expr::BinaryOp {
+          let canonical_base = expand_and_combine(base);
+          Expr::BinaryOp {
             op: BinaryOperator::Power,
-            left: Box::new(base.clone()),
+            left: Box::new(canonical_base),
             right: Box::new(rat_exp_to_expr(*exp)),
-          })
+          }
         }
       })
       .collect();
@@ -531,8 +534,17 @@ pub fn together_expr(expr: &Expr) -> Expr {
   } else {
     // Try to cancel common monomial factors between numerator and denominator
     // without re-expanding the denominator (preserves factored form).
-    let (simplified_num, simplified_den) =
+    let (mut simplified_num, simplified_den) =
       cancel_common_monomial_factors(&combined_num, &combined_den);
+    // When the denominator carries a non-trivial Power factor (e.g.
+    // `(y+1)^2`), wolframscript additionally factors any common monomial
+    // out of the numerator — `Together[x/(y+1) + x/(y+1)^2]` lands on
+    // `(x*(2+y))/(1+y)^2` rather than `(2*x + x*y)/(1+y)^2`. Apply that
+    // same hoist; for purely linear denominators the numerator stays
+    // expanded (matching wolframscript).
+    if denominator_has_power_factor(&simplified_den) {
+      simplified_num = factor_common_monomial_from_terms(&simplified_num);
+    }
     if matches!(&simplified_den, Expr::Integer(1)) {
       simplified_num
     } else {
@@ -543,6 +555,197 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
     }
   }
+}
+
+/// Returns `true` when `den` is a Power[base, n] with n ≥ 2 or a Times/Divide
+/// containing such a factor anywhere.
+fn denominator_has_power_factor(den: &Expr) -> bool {
+  match den {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } => matches!(right.as_ref(), Expr::Integer(n) if *n >= 2),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      matches!(&args[1], Expr::Integer(n) if *n >= 2)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(denominator_has_power_factor)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      denominator_has_power_factor(left) || denominator_has_power_factor(right)
+    }
+    _ => false,
+  }
+}
+
+/// Factor the largest common monomial out of a sum-of-products numerator.
+/// E.g. `x*y + 2*x` → `x*(2 + y)`. Returns the input unchanged when no
+/// non-trivial common factor exists. The cofactor is left expanded (matches
+/// wolframscript's surface form for the rare cases this is invoked).
+fn factor_common_monomial_from_terms(num: &Expr) -> Expr {
+  let terms = collect_additive_terms(num);
+  if terms.len() < 2 {
+    return num.clone();
+  }
+
+  fn term_factors(term: &Expr) -> Vec<(String, Expr, i128)> {
+    let factors = flatten_times_args(&[term.clone()]);
+    let mut map: Vec<(String, Expr, i128)> = Vec::new();
+    for f in &factors {
+      let (key, base, exp) = match f {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => match right.as_ref() {
+          Expr::Integer(n) if *n > 0 => {
+            (expr_to_string(left), *left.clone(), *n)
+          }
+          _ => continue,
+        },
+        Expr::FunctionCall {
+          name: pname,
+          args: pargs,
+        } if pname == "Power" && pargs.len() == 2 => match &pargs[1] {
+          Expr::Integer(n) if *n > 0 => {
+            (expr_to_string(&pargs[0]), pargs[0].clone(), *n)
+          }
+          _ => continue,
+        },
+        Expr::Integer(_) => continue,
+        _ => (expr_to_string(f), f.clone(), 1),
+      };
+      if let Some(entry) = map.iter_mut().find(|(k, _, _)| *k == key) {
+        entry.2 += exp;
+      } else {
+        map.push((key, base, exp));
+      }
+    }
+    map
+  }
+
+  let mut common = term_factors(&terms[0]);
+  for term in &terms[1..] {
+    let tmap = term_factors(term);
+    common.retain_mut(|(key, _, exp)| {
+      if let Some(entry) = tmap.iter().find(|(k, _, _)| k == key) {
+        *exp = (*exp).min(entry.2);
+        *exp > 0
+      } else {
+        false
+      }
+    });
+    if common.is_empty() {
+      break;
+    }
+  }
+  if common.is_empty() {
+    return num.clone();
+  }
+
+  // Build cofactor: divide each term by the common monomial.
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for term in &terms {
+    let mut t_factors: Vec<Expr> = flatten_times_args(&[term.clone()]);
+    for (cancel_key, cancel_exp) in common
+      .iter()
+      .map(|(k, _, e)| (k.clone(), *e))
+      .collect::<Vec<_>>()
+    {
+      let mut remaining = cancel_exp;
+      let mut new_factors = Vec::new();
+      for f in t_factors {
+        if remaining <= 0 {
+          new_factors.push(f);
+          continue;
+        }
+        let (key, base, exp) = match &f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => match right.as_ref() {
+            Expr::Integer(n) if *n > 0 => {
+              (expr_to_string(left), *left.clone(), *n)
+            }
+            _ => {
+              new_factors.push(f);
+              continue;
+            }
+          },
+          Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } if pname == "Power" && pargs.len() == 2 => match &pargs[1] {
+            Expr::Integer(n) if *n > 0 => {
+              (expr_to_string(&pargs[0]), pargs[0].clone(), *n)
+            }
+            _ => {
+              new_factors.push(f);
+              continue;
+            }
+          },
+          Expr::Integer(_) => {
+            new_factors.push(f);
+            continue;
+          }
+          _ => (expr_to_string(&f), f.clone(), 1),
+        };
+        if key == cancel_key {
+          let reduce = remaining.min(exp);
+          remaining -= reduce;
+          let new_exp = exp - reduce;
+          if new_exp > 1 {
+            new_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(Expr::Integer(new_exp)),
+            });
+          } else if new_exp == 1 {
+            new_factors.push(base);
+          }
+        } else {
+          new_factors.push(f);
+        }
+      }
+      t_factors = new_factors;
+    }
+    new_terms.push(if t_factors.is_empty() {
+      Expr::Integer(1)
+    } else {
+      build_product(t_factors)
+    });
+  }
+
+  // Build the common monomial expression.
+  let mut common_factors: Vec<Expr> = common
+    .into_iter()
+    .map(|(_, base, exp)| {
+      if exp == 1 {
+        base
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(base),
+          right: Box::new(Expr::Integer(exp)),
+        }
+      }
+    })
+    .collect();
+  let cofactor = if new_terms.len() == 1 {
+    new_terms.into_iter().next().unwrap()
+  } else {
+    build_sum(new_terms)
+  };
+  common_factors.push(cofactor);
+  build_product(common_factors)
 }
 
 /// A rational exponent represented as (numerator, denominator) with denominator > 0.
