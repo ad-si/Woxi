@@ -425,6 +425,28 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => {}
       }
+      // For a finite constant integrand with finite bounds, return
+      // (hi - lo) * integrand in factored form rather than expanding through
+      // the antiderivative path (which yields `hi*c - lo*c`). Wolfram keeps
+      // the (-lo + hi) factor. Skip when either bound is infinite — those
+      // are divergent improper integrals and need the antiderivative path's
+      // divergence detection.
+      let bounds_finite =
+        !is_infinity(lo) && !is_negative_infinity(lo)
+          && !is_infinity(hi) && !is_negative_infinity(hi);
+      if bounds_finite {
+        let width = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(hi.clone()),
+          right: Box::new(lo.clone()),
+        };
+        let product = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(width),
+          right: Box::new(args[0].clone()),
+        };
+        return crate::evaluator::evaluate_expr_to_expr(&product);
+      }
     }
 
     // Try known definite integrals first
