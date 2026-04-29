@@ -9962,6 +9962,34 @@ pub fn top_level_output(expr: &Expr) -> String {
         let parts: Vec<String> = sa.iter().map(expr_to_output).collect();
         return format!("FullForm[SeriesData[{}]]", parts.join(", "));
       }
+      // Pure-imaginary `Times[Real, I]` is the inexact-zero Complex form
+      // and Wolfram's REPL prints `FullForm[0. ± r*I]` (not `FullForm[r*I]`).
+      // Mirror the bare top-level rendering rule when this is the inner of
+      // FullForm so `(1. I) // FullForm` lands on `FullForm[0. + 1.*I]`.
+      if let Expr::FunctionCall { name: tn, args: ta } = &args[0]
+        && tn == "Times"
+        && ta.len() == 2
+        && let Expr::Real(c) = &ta[0]
+        && (matches!(&ta[1], Expr::Identifier(s) if s == "I")
+          || matches!(&ta[1],
+            Expr::FunctionCall { name: cn, args: ca }
+              if cn == "Complex"
+                && ca.len() == 2
+                && matches!(&ca[0], Expr::Integer(0))
+                && matches!(&ca[1], Expr::Integer(1))))
+      {
+        let coef_str = format_real(*c);
+        let body = if *c < 0.0 {
+          let abs_str = coef_str
+            .strip_prefix('-')
+            .map(str::to_string)
+            .unwrap_or(coef_str);
+          format!("0. - {}*I", abs_str)
+        } else {
+          format!("0. + {}*I", coef_str)
+        };
+        return format!("FullForm[{}]", body);
+      }
       // `MessageName[sym, "tag"]` shows as `MessageName[sym, tag]` inside the
       // FullForm wrapper in wolframscript's REPL: the head form is preserved
       // (instead of the `sym::tag` infix shown by InputForm), but the tag

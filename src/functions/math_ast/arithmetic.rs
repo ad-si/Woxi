@@ -1390,6 +1390,17 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
       result.push(orig);
       continue;
     }
+    // `Coeff::Real(1.0)` is the inexact one — keep it as `1.*base` (just
+    // like `times_ast` preserves `1.*x` for the same precision-tracking
+    // reason). Without this, `0. + 1. I` would collapse to `I` instead
+    // of `Complex[0., 1.]` ≡ `0. + 1.*I`.
+    if matches!(&c, Coeff::Real(_)) && c.is_one() {
+      result.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![c.to_expr(), base],
+      });
+      continue;
+    }
     if c.is_one() {
       result.push(base);
     } else {
