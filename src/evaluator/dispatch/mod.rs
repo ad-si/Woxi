@@ -1281,8 +1281,16 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
-  // SetOptions is not implemented - return unevaluated
+  // SetOptions[f] (no rules) returns the current options of `f`, matching
+  // wolframscript. The variant with option rules is not implemented yet —
+  // fall through to the unevaluated form for that case.
   if name == "SetOptions" {
+    if args.len() == 1 {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Options".to_string(),
+        args: args.to_vec(),
+      });
+    }
     return Ok(Expr::FunctionCall {
       name: "SetOptions".to_string(),
       args: args.to_vec(),
