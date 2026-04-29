@@ -9992,6 +9992,16 @@ pub fn top_level_output(expr: &Expr) -> String {
       // InputForm. Treat the variant the same as the FunctionCall heads
       // listed above.
       let is_comparison = matches!(&args[0], Expr::Comparison { .. });
+      // `Power` may appear as the `BinaryOp::Power` variant (parsed `a^b`)
+      // rather than a `FunctionCall`. wolframscript still shows it
+      // wrapped in FullForm, so accept that variant too.
+      let is_binary_power = matches!(
+        &args[0],
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          ..
+        }
+      );
       // "Form-wrapper" heads — these stay as `Head[…]` in both InputForm
       // and FullForm renderings (no operator-shape transformation), so
       // wolframscript shows `FullForm[Head[…]]` verbatim. Adding them
@@ -10024,12 +10034,18 @@ pub fn top_level_output(expr: &Expr) -> String {
               | "Equal"
               | "Unequal"
               | "Inequality"
+              // `Power` keeps its `^` operator chain inside FullForm in
+              // wolframscript's REPL: `FullForm[x^2]` prints as
+              // `FullForm[x^2]` (with `ToString[…]` reaching the bare
+              // `Power[x, 2]` form).
+              | "Power"
           )
       );
       if is_rational
         || is_repeat
         || is_pattern
         || is_comparison
+        || is_binary_power
         || is_form_wrapper
         || matches!(
           &args[0],

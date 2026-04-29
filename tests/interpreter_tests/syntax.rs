@@ -539,7 +539,13 @@ mod full_form {
 
   #[test]
   fn full_form_power() {
-    assert_eq!(interpret("FullForm[x^2]").unwrap(), "Power[x, 2]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Power`
+    // expressions; the bare head form is reachable via `ToString[…]`.
+    assert_eq!(interpret("FullForm[x^2]").unwrap(), "FullForm[x^2]");
+    assert_eq!(
+      interpret("ToString[FullForm[x^2]]").unwrap(),
+      "Power[x, 2]"
+    );
   }
 
   #[test]
@@ -561,10 +567,7 @@ mod full_form {
     // arguments and shows the inner symbol in InputForm. The raw
     // `Complex[0, 1]` representation is reachable via `ToString[…]`.
     assert_eq!(interpret("FullForm[I]").unwrap(), "FullForm[I]");
-    assert_eq!(
-      interpret("ToString[FullForm[I]]").unwrap(),
-      "Complex[0, 1]"
-    );
+    assert_eq!(interpret("ToString[FullForm[I]]").unwrap(), "Complex[0, 1]");
   }
 
   #[test]
@@ -585,7 +588,14 @@ mod full_form {
 
   #[test]
   fn full_form_reciprocal() {
-    assert_eq!(interpret("FullForm[1/z]").unwrap(), "Power[z, -1]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around `1/z`
+    // (canonicalized to `Power[z, -1]`); use `ToString[…]` for the bare
+    // head form.
+    assert_eq!(interpret("FullForm[1/z]").unwrap(), "FullForm[z^(-1)]");
+    assert_eq!(
+      interpret("ToString[FullForm[1/z]]").unwrap(),
+      "Power[z, -1]"
+    );
   }
 
   /// Division is canonicalized to Times[a, Power[b, -1]]
@@ -599,8 +609,15 @@ mod full_form {
 
   #[test]
   fn full_form_sqrt() {
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Sqrt[…]`
+    // (which is `Power[…, 1/2]`); the bare head form is reachable via
+    // `ToString[…]`.
     assert_eq!(
       interpret("FullForm[Sqrt[5]]").unwrap(),
+      "FullForm[Sqrt[5]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Sqrt[5]]]").unwrap(),
       "Power[5, Rational[1, 2]]"
     );
   }
@@ -686,7 +703,7 @@ mod full_form {
       result.output_svg.is_none(),
       "FullForm should not produce SVG output"
     );
-    assert_eq!(result.result, "Power[z, -1]");
+    assert_eq!(result.result, "FullForm[z^(-1)]");
   }
 }
 
