@@ -261,6 +261,17 @@ fn kg_inner(n: i128, m: i128, shift: &mut u64) -> BigInt {
   }
 }
 
+/// Extract a finite f64 value from a `Real` or `BigFloat`. Returns the
+/// numeric value plus the BigFloat precision marker when the input was a
+/// BigFloat, so the caller can re-tag the result.
+fn factorial2_extract_real(expr: &Expr) -> Option<(f64, Option<f64>)> {
+  match expr {
+    Expr::Real(f) => Some((*f, None)),
+    Expr::BigFloat(digits, prec) => digits.parse::<f64>().ok().map(|v| (v, Some(*prec))),
+    _ => None,
+  }
+}
+
 /// Returns true if the expression contains a Real or BigFloat anywhere
 /// in the tree — i.e., the value is inexact.
 fn contains_inexact_real(expr: &Expr) -> bool {
@@ -395,7 +406,7 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       i -= 2;
     }
     Ok(bigint_to_expr(result))
-  } else if let Expr::Real(x) = &args[0] {
+  } else if let Some((x, bf_prec)) = factorial2_extract_real(&args[0]) {
     // Real argument: evaluate via the analytic continuation used by
     // Wolfram. For all real x:
     //   x!! = 2^(x/2 + (1 - Cos[π x])/4) * Gamma[x/2 + 1]
@@ -412,6 +423,13 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Factorial2".to_string(),
         args: args.to_vec(),
       });
+    }
+    // BigFloat input → BigFloat result at the same precision marker, so
+    // `N[Pi!!, 6]` lands on a precision-tagged real instead of falling back
+    // to the unevaluated form.
+    if let Some(prec) = bf_prec {
+      let display_str = format!("{:?}", result);
+      return Ok(Expr::BigFloat(display_str, prec));
     }
     Ok(Expr::Real(result))
   } else {
