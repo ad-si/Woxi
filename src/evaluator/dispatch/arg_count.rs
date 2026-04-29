@@ -901,6 +901,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SinIntegral" => Some((1, 1)),
     "SinhIntegral" => Some((1, 1)),
     "Skewness" => Some((1, 1)),
+    "Skip" => Some((2, 3)),
     "Slot" => Some((1, 1)),
     "SlotSequence" => Some((1, 1)),
     "SmithDecomposition" => Some((1, 1)),

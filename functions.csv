@@ -2263,7 +2263,7 @@ DeleteDirectory,file system operation,✅,None,2.0,2311
 FunctionPeriod,symbolic period analysis (complex),🚫,None,10.0,2311
 MathieuCPrime,Mathieu function derivative (special function),🚫,None,3.0,2311
 PartialCorrelationFunction,time series,🚫,None,9.0,2311
-Skip,stream operation,🚫,None,2.0,2311
+Skip,Skip n values from a stream while reading,✅,None,2.0,2311
 DocumentNotebook,notebook creation,🚫,None,6.0,2317
 FindClique,graph algorithm,🚫,None,8.0,2317
 GraphHighlight,graph visualization,🚫,None,8.0,2317

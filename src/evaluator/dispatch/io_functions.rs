@@ -1283,6 +1283,70 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(result));
     }
+    // Skip[stream, type] / Skip[stream, type, n] — read and discard `n`
+    // (default 1) values of the given type, advancing the stream position.
+    "Skip" if args.len() == 2 || args.len() == 3 => {
+      let stream = &args[0];
+      let stream_id = match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            Some(*id as usize)
+          } else {
+            None
+          }
+        }
+        _ => None,
+      };
+
+      let count = if args.len() == 3 {
+        match &args[2] {
+          Expr::Integer(n) if *n >= 0 => *n as usize,
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "Skip".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      } else {
+        1
+      };
+
+      if let Some(id) = stream_id
+        && let Some((content, mut position)) = crate::get_stream_content(id)
+      {
+        let mut hit_eof = false;
+        for _ in 0..count {
+          let remaining = &content[position.min(content.len())..];
+          let (val, advance) = read_single_type(remaining, &args[1]);
+          if matches!(&val, Expr::Identifier(s) if s == "EndOfFile") {
+            hit_eof = true;
+            position = content.len();
+            break;
+          }
+          if advance == 0 {
+            hit_eof = true;
+            break;
+          }
+          position += advance;
+        }
+        crate::advance_stream_position(id, position);
+        return Some(Ok(Expr::Identifier(
+          if hit_eof { "EndOfFile" } else { "Null" }.to_string(),
+        )));
+      }
+
+      return Some(Ok(Expr::FunctionCall {
+        name: "Skip".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Read[stream] or Read[stream, type] — read from a stream
     "Read" if !args.is_empty() && args.len() <= 2 => {
       let stream = &args[0];
