@@ -9992,13 +9992,17 @@ pub fn top_level_output(expr: &Expr) -> String {
       // InputForm. Treat the variant the same as the FunctionCall heads
       // listed above.
       let is_comparison = matches!(&args[0], Expr::Comparison { .. });
-      // `Power` may appear as the `BinaryOp::Power` variant (parsed `a^b`)
-      // rather than a `FunctionCall`. wolframscript still shows it
-      // wrapped in FullForm, so accept that variant too.
+      // `Power`, `Plus`, `Times`, `Divide`, `Subtract` may appear as
+      // BinaryOp variants rather than FunctionCalls. wolframscript still
+      // shows them wrapped in FullForm.
       let is_binary_power = matches!(
         &args[0],
         Expr::BinaryOp {
-          op: BinaryOperator::Power,
+          op: BinaryOperator::Power
+            | BinaryOperator::Plus
+            | BinaryOperator::Times
+            | BinaryOperator::Divide
+            | BinaryOperator::Minus,
           ..
         }
       );
@@ -10039,6 +10043,13 @@ pub fn top_level_output(expr: &Expr) -> String {
               // `FullForm[x^2]` (with `ToString[…]` reaching the bare
               // `Power[x, 2]` form).
               | "Power"
+              // `Plus` and `Times` likewise keep their `+`/`*` operator
+              // chains in wolframscript's REPL FullForm display:
+              // `FullForm[a + b*c]` prints as `FullForm[a + b*c]`.
+              | "Plus"
+              | "Times"
+              | "Divide"
+              | "Subtract"
           )
       );
       if is_rational

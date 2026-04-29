@@ -265,9 +265,17 @@ mod plus_formatting {
 
   #[test]
   fn plus_times_before_identifier() {
-    // Times[a, b] should come before c alphabetically (a < c)
-    let result = interpret("FullForm[a b + c]").unwrap();
-    assert_eq!(result, "Plus[Times[a, b], c]");
+    // Times[a, b] should come before c alphabetically (a < c).
+    // wolframscript keeps the FullForm wrapper at the top level; the
+    // bare head form is reachable via `ToString[…]`.
+    assert_eq!(
+      interpret("FullForm[a b + c]").unwrap(),
+      "FullForm[a*b + c]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a b + c]]").unwrap(),
+      "Plus[Times[a, b], c]"
+    );
   }
 
   #[test]
@@ -338,10 +346,18 @@ mod subtraction_without_spaces {
     assert_eq!(interpret("6/2 3").unwrap(), "9");
     assert_eq!(
       interpret("FullForm[a/b c]").unwrap(),
+      "FullForm[(a*c)/b]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a/b c]]").unwrap(),
       "Times[a, Power[b, -1], c]"
     );
     assert_eq!(
       interpret("FullForm[a/b c d]").unwrap(),
+      "FullForm[(a*c*d)/b]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a/b c d]]").unwrap(),
       "Times[a, Power[b, -1], c, d]"
     );
   }
@@ -363,6 +379,10 @@ mod subtraction_without_spaces {
     // The result is simplified: 2*Pi - Pi/4 = (8*Pi - Pi)/4 = 7*Pi/4
     assert_eq!(
       interpret("FullForm[2 Pi - Pi/4]").unwrap(),
+      "FullForm[(7*Pi)/4]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[2 Pi - Pi/4]]").unwrap(),
       "Times[Rational[7, 4], Pi]"
     );
   }
@@ -518,18 +538,37 @@ mod full_form {
 
   #[test]
   fn full_form_plus() {
-    assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "Plus[x, y, z]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Plus`
+    // expressions; the bare head form is reachable via `ToString[…]`.
+    assert_eq!(
+      interpret("FullForm[x + y + z]").unwrap(),
+      "FullForm[x + y + z]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[x + y + z]]").unwrap(),
+      "Plus[x, y, z]"
+    );
   }
 
   #[test]
   fn full_form_times() {
-    assert_eq!(interpret("FullForm[x y z]").unwrap(), "Times[x, y, z]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Times`
+    // expressions; the bare head form is reachable via `ToString[…]`.
+    assert_eq!(interpret("FullForm[x y z]").unwrap(), "FullForm[x*y*z]");
+    assert_eq!(
+      interpret("ToString[FullForm[x y z]]").unwrap(),
+      "Times[x, y, z]"
+    );
   }
 
   #[test]
   fn full_form_times_with_number() {
     // Regression test for https://github.com/ad-si/Woxi/issues/71
-    assert_eq!(interpret("FullForm[5*x]").unwrap(), "Times[5, x]");
+    assert_eq!(interpret("FullForm[5*x]").unwrap(), "FullForm[5*x]");
+    assert_eq!(
+      interpret("ToString[FullForm[5*x]]").unwrap(),
+      "Times[5, x]"
+    );
   }
 
   #[test]
@@ -542,23 +581,31 @@ mod full_form {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Power`
     // expressions; the bare head form is reachable via `ToString[…]`.
     assert_eq!(interpret("FullForm[x^2]").unwrap(), "FullForm[x^2]");
-    assert_eq!(
-      interpret("ToString[FullForm[x^2]]").unwrap(),
-      "Power[x, 2]"
-    );
+    assert_eq!(interpret("ToString[FullForm[x^2]]").unwrap(), "Power[x, 2]");
   }
 
   #[test]
   fn full_form_complex() {
     assert_eq!(
       interpret("FullForm[a b + c]").unwrap(),
+      "FullForm[a*b + c]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[a b + c]]").unwrap(),
       "Plus[Times[a, b], c]"
     );
   }
 
   #[test]
   fn full_form_complex_number() {
-    assert_eq!(interpret("FullForm[2 + 3*I]").unwrap(), "Complex[2, 3]");
+    assert_eq!(
+      interpret("FullForm[2 + 3*I]").unwrap(),
+      "FullForm[2 + 3*I]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[2 + 3*I]]").unwrap(),
+      "Complex[2, 3]"
+    );
   }
 
   #[test]
@@ -574,14 +621,19 @@ mod full_form {
   fn full_form_complex_rational() {
     assert_eq!(
       interpret("FullForm[1/2 + 3/4*I]").unwrap(),
+      "FullForm[1/2 + (3*I)/4]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[1/2 + 3/4*I]]").unwrap(),
       "Complex[Rational[1, 2], Rational[3, 4]]"
     );
   }
 
   #[test]
   fn full_form_division() {
+    assert_eq!(interpret("FullForm[a/b]").unwrap(), "FullForm[a/b]");
     assert_eq!(
-      interpret("FullForm[a/b]").unwrap(),
+      interpret("ToString[FullForm[a/b]]").unwrap(),
       "Times[a, Power[b, -1]]"
     );
   }
@@ -601,8 +653,9 @@ mod full_form {
   /// Division is canonicalized to Times[a, Power[b, -1]]
   #[test]
   fn full_form_division_canonical() {
+    assert_eq!(interpret("FullForm[x/y]").unwrap(), "FullForm[x/y]");
     assert_eq!(
-      interpret("FullForm[x/y]").unwrap(),
+      interpret("ToString[FullForm[x/y]]").unwrap(),
       "Times[x, Power[y, -1]]"
     );
   }
@@ -612,10 +665,7 @@ mod full_form {
     // wolframscript's REPL keeps the `FullForm[…]` wrapper around `Sqrt[…]`
     // (which is `Power[…, 1/2]`); the bare head form is reachable via
     // `ToString[…]`.
-    assert_eq!(
-      interpret("FullForm[Sqrt[5]]").unwrap(),
-      "FullForm[Sqrt[5]]"
-    );
+    assert_eq!(interpret("FullForm[Sqrt[5]]").unwrap(), "FullForm[Sqrt[5]]");
     assert_eq!(
       interpret("ToString[FullForm[Sqrt[5]]]").unwrap(),
       "Power[5, Rational[1, 2]]"
@@ -627,6 +677,10 @@ mod full_form {
     // x/Sqrt[5] canonicalizes to Times[Power[5, Rational[-1, 2]], x]
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
+      "FullForm[x/Sqrt[5] + y^2 + z^(-1)]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[x/Sqrt[5] + y^2 + 1/z]]").unwrap(),
       "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
     );
   }
@@ -683,8 +737,12 @@ mod full_form {
   #[test]
   fn full_form_no_canonicalization_regression() {
     // Regression test for issue #91: FullForm must not canonicalize Divide.
-    // Pasting FullForm output back should give the same behavior as the original.
-    let full_form = interpret("FullForm[1/((1 + x) (5 + x))]").unwrap();
+    // Pasting the canonical full-form text (via `ToString[…]`) back should
+    // give the same behavior as the original. wolframscript's REPL keeps
+    // the `FullForm[…]` wrapper, so we read the bare full-form via
+    // `ToString[…]` and re-evaluate that.
+    let full_form =
+      interpret("ToString[FullForm[1/((1 + x) (5 + x))]]").unwrap();
     let apart_original = interpret("Apart[1/((1 + x) (5 + x))]").unwrap();
     let apart_from_full_form =
       interpret(&format!("Apart[{}]", full_form)).unwrap();

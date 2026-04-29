@@ -2183,9 +2183,15 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_power_times_distribution() {
-      // Power[Times[a, b], -1] should distribute to Times[Power[a,-1], Power[b,-1]]
+      // Power[Times[a, b], -1] should distribute to Times[Power[a,-1], Power[b,-1]].
+      // wolframscript keeps the FullForm wrapper at the top level; the
+      // bare head form is reachable via `ToString[…]`.
       assert_eq!(
         interpret("FullForm[(a*Sqrt[x])^-1]").unwrap(),
+        "FullForm[1/(a*Sqrt[x])]"
+      );
+      assert_eq!(
+        interpret("ToString[FullForm[(a*Sqrt[x])^-1]]").unwrap(),
         "Times[Power[a, -1], Power[x, Rational[-1, 2]]]"
       );
     }

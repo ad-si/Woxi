@@ -80,8 +80,9 @@ mod implicit_multiply_power_precedence {
 
   #[test]
   fn b_y_cubed() {
+    assert_eq!(interpret("FullForm[b y^3]").unwrap(), "FullForm[b*y^3]");
     assert_eq!(
-      interpret("FullForm[b y^3]").unwrap(),
+      interpret("ToString[FullForm[b y^3]]").unwrap(),
       "Times[b, Power[y, 3]]"
     );
   }
@@ -90,6 +91,10 @@ mod implicit_multiply_power_precedence {
   fn two_x_squared_y_cubed() {
     assert_eq!(
       interpret("FullForm[2 x^2 y^3]").unwrap(),
+      "FullForm[2*x^2*y^3]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[2 x^2 y^3]]").unwrap(),
       "Times[2, Power[x, 2], Power[y, 3]]"
     );
   }
