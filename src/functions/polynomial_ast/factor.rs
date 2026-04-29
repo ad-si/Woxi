@@ -53,6 +53,42 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Combine fractions in a Plus before factoring. Wolfram's `Factor` puts
+  // sums of rational terms over a common denominator first (so e.g.
+  // `Factor[1/x + 1/y] = (x + y)/(x*y)`); without this, we'd return the
+  // unmodified Plus. Detect by checking whether any Plus term has a
+  // non-trivial denominator, and only run Together if it actually changed
+  // the structure (avoids re-factoring loops on plain polynomial sums).
+  let plus_terms: Option<Vec<&Expr>> = match &args[0] {
+    Expr::FunctionCall { name, args: pa } if name == "Plus" => {
+      Some(pa.iter().collect())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![left.as_ref(), right.as_ref()]),
+    _ => None,
+  };
+  if let Some(terms) = plus_terms
+    && terms.iter().any(|t| {
+      let (_, d) = super::together::extract_num_den(t);
+      !matches!(&d, Expr::Integer(1))
+    })
+  {
+    let combined = super::together::together_expr(&args[0]);
+    let (num, den) = super::together::extract_num_den(&combined);
+    if !matches!(&den, Expr::Integer(1)) {
+      let factored_num = factor_ast(&[num])?;
+      let factored_den = factor_ast(&[den])?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(factored_num),
+        right: Box::new(factored_den),
+      });
+    }
+  }
+
   // First expand to canonical form
   let expanded = expand_and_combine(&args[0]);
 
