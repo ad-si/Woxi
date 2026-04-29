@@ -398,9 +398,11 @@ pub fn dispatch_complex_and_special(
     // Woxi cannot interrupt a running evaluation, but we can still
     // detect an after-the-fact overshoot: evaluate the body, then
     // compare the wall-clock duration to the requested limit. If the
-    // body overshot, abort retroactively — returning the supplied
-    // fallback when 3-arg, otherwise raising the canonical `$Aborted`
-    // signal that `interpret()` surfaces at the top level.
+    // body overshot, return the supplied fallback (3-arg form) or the
+    // sentinel symbol `$Aborted`. Returning the sentinel rather than
+    // raising the global Abort signal keeps subsequent CompoundExpression
+    // elements alive — wolframscript continues evaluating after a
+    // single TimeConstrained timeout.
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),
@@ -416,7 +418,7 @@ pub fn dispatch_complex_and_special(
         if args.len() == 3 {
           return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
         }
-        return Some(Err(InterpreterError::Abort));
+        return Some(Ok(Expr::Identifier("$Aborted".to_string())));
       }
       return Some(result);
     }
