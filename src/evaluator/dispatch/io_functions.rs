@@ -1167,11 +1167,16 @@ pub fn dispatch_io_functions(
         }
       }
     }
-    // SetStreamPosition[stream, pos] — set the current position of a stream
+    // SetStreamPosition[stream, pos] — set the current position of a stream.
+    // `pos` is either a non-negative integer (absolute byte offset) or
+    // `Infinity` (seek to end of stream). Returns the new position.
     "SetStreamPosition" if args.len() == 2 => {
       let stream = &args[0];
-      let pos = match &args[1] {
-        Expr::Integer(n) => *n as usize,
+      let is_infinity =
+        matches!(&args[1], Expr::Identifier(s) if s == "Infinity");
+      let pos_explicit = match &args[1] {
+        Expr::Integer(n) => Some(*n as usize),
+        _ if is_infinity => None,
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "SetStreamPosition".to_string(),
@@ -1188,8 +1193,18 @@ pub fn dispatch_io_functions(
           && stream_args.len() == 2 =>
         {
           if let Expr::Integer(id) = &stream_args[1] {
-            if crate::is_stream_open(*id as usize) {
-              crate::set_stream_position(*id as usize, pos);
+            let id_usize = *id as usize;
+            if crate::is_stream_open(id_usize) {
+              let pos = match pos_explicit {
+                Some(p) => p,
+                None => {
+                  // Infinity → end of stream content.
+                  crate::get_stream_content(id_usize)
+                    .map(|(content, _)| content.len())
+                    .unwrap_or(0)
+                }
+              };
+              crate::set_stream_position(id_usize, pos);
               return Some(Ok(Expr::Integer(pos as i128)));
             } else {
               let stream_str = crate::syntax::expr_to_string(stream);
