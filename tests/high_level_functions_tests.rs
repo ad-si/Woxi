@@ -206,6 +206,18 @@ mod high_level_functions_tests {
     fn test_arccosh_real() {
       assert_eq!(interpret("ArcCosh[2.0]").unwrap(), "1.3169578969248166");
     }
+    #[test]
+    fn test_arccosh_bigfloat_zero() {
+      // ArcCosh[0``α] = (Pi/2 at α-digit accuracy) * I — wolframscript
+      // returns the high-precision Pi/2 imaginary value.
+      let s = interpret("ArcCosh[0``38.]").unwrap();
+      assert!(
+        s.starts_with("1.5707963267948966192313216916397514")
+          && s.ends_with("*I"),
+        "got: {}",
+        s
+      );
+    }
   }
 
   mod arctanh_tests {
@@ -2930,8 +2942,7 @@ mod high_level_functions_tests {
       // The `Association[...]` constructor preserves `:>` too — the held
       // RHS does not get evaluated to its `<|...|>` short form.
       assert_eq!(
-        interpret("Association[a -> 1, b :> Association[p->3, q->4]]")
-          .unwrap(),
+        interpret("Association[a -> 1, b :> Association[p->3, q->4]]").unwrap(),
         "<|a -> 1, b :> Association[p -> 3, q -> 4]|>"
       );
     }
@@ -2951,10 +2962,8 @@ mod high_level_functions_tests {
       // At level {2} F descends into the held replacement of the `:>`
       // entry and is applied to that expression's children.
       assert_eq!(
-        interpret(
-          "Map[F, Association[a -> 1, b :> Q[p->3, q->4]], {2}]"
-        )
-        .unwrap(),
+        interpret("Map[F, Association[a -> 1, b :> Q[p->3, q->4]], {2}]")
+          .unwrap(),
         "<|a -> 1, b :> Q[F[p -> 3], F[q -> 4]]|>"
       );
     }
