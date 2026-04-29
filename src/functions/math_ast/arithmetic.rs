@@ -570,20 +570,33 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
-  // Flatten nested Plus arguments (recursive to handle deeply nested Plus)
+  // Flatten nested Plus arguments (recursive to handle deeply nested Plus).
+  // Both `FunctionCall { name: "Plus", … }` and `BinaryOp::Plus` are
+  // unwrapped so that, for example, `Plus[1., Plus[0., 0.*I]]` (the
+  // second summand built as a BinaryOp by `times_ast` for `0. I`)
+  // collapses to `Plus[1., 0., 0.*I]` rather than leaving the inner
+  // BinaryOp intact and printing `1. + (0. + 0.*I)`.
   let mut flat_args: Vec<Expr> = Vec::new();
-  let mut stack: Vec<&Expr> = args.iter().rev().collect();
+  let mut stack: Vec<Expr> = args.iter().rev().cloned().collect();
   while let Some(arg) = stack.pop() {
     match arg {
       Expr::FunctionCall {
-        name,
-        args: inner_args,
+        ref name,
+        args: ref inner_args,
       } if name == "Plus" => {
         for inner in inner_args.iter().rev() {
-          stack.push(inner);
+          stack.push(inner.clone());
         }
       }
-      _ => flat_args.push(arg.clone()),
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        ref left,
+        ref right,
+      } => {
+        stack.push((**right).clone());
+        stack.push((**left).clone());
+      }
+      other => flat_args.push(other),
     }
   }
 
@@ -757,13 +770,37 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
     let mut final_args: Vec<Expr> = Vec::new();
 
+    // Detect a `Real(0.0) * I` symbolic summand: when present, the Plus is
+    // displaying an inexact-zero Complex form (`Complex[r, 0.]`). The
+    // imaginary `0.*I` will be preserved by `collect_like_terms`, but we
+    // also need to keep a leading `0.` real coefficient so the output
+    // reads `0. + 0.*I` rather than just `0.*I`.
+    let has_inexact_zero_imag = symbolic_args.iter().any(|e| {
+      matches!(
+        e,
+        Expr::FunctionCall { name, args }
+          if name == "Times"
+            && args.len() == 2
+            && matches!(args[0], Expr::Real(v) if v == 0.0)
+            && matches!(&args[1], Expr::Identifier(s) if s == "I")
+      ) || matches!(
+        e,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Real(v) if *v == 0.0)
+          && matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
+      )
+    });
+
     // If we have both exact and real, convert exact to f64 and combine
     if has_exact && has_real_term {
       let total = exact_sum.to_f64() + real_sum;
-      if total != 0.0 {
+      if total != 0.0 || has_inexact_zero_imag {
         final_args.push(Expr::Real(total));
       }
-    } else if has_real_term && real_sum != 0.0 {
+    } else if has_real_term && (real_sum != 0.0 || has_inexact_zero_imag) {
       final_args.push(Expr::Real(real_sum));
     } else if has_exact && !exact_sum.is_zero() {
       final_args.push(exact_sum.to_expr());
@@ -1320,7 +1357,25 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   let mut result = Vec::new();
   for (_, base, c, original, count) in groups {
     if c.is_zero() {
-      continue; // terms cancelled
+      // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
+      // Complex form *only when it came from a single un-combined term*.
+      // Wolfram's `1. + 0. I` evaluates to `Complex[1., 0.]` displayed
+      // as `1. + 0.*I`; without keeping the `0.*I` here, the imaginary
+      // component would silently disappear after Plus flattening of the
+      // BinaryOp::Plus form produced by `times_ast` for `0. I`.
+      // Restrict to count == 1 so genuine cancellations (e.g. the
+      // `I + (-I)` that arises when Sum bounds drop their imaginary
+      // part) still collapse to 0 rather than leaving a stray `0.*I`.
+      if count == 1
+        && matches!(&c, Coeff::Real(_))
+        && matches!(&base, Expr::Identifier(s) if s == "I")
+      {
+        result.push(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![c.to_expr(), base],
+        });
+      }
+      continue;
     }
     // If only one term contributed and wasn't combined, AND the coefficient is the same
     // as what decompose_term extracted (meaning no simplification happened), preserve original form.
