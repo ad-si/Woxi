@@ -557,7 +557,14 @@ mod full_form {
 
   #[test]
   fn full_form_imaginary_unit() {
-    assert_eq!(interpret("FullForm[I]").unwrap(), "Complex[0, 1]");
+    // wolframscript's REPL keeps the `FullForm[…]` wrapper around atomic
+    // arguments and shows the inner symbol in InputForm. The raw
+    // `Complex[0, 1]` representation is reachable via `ToString[…]`.
+    assert_eq!(interpret("FullForm[I]").unwrap(), "FullForm[I]");
+    assert_eq!(
+      interpret("ToString[FullForm[I]]").unwrap(),
+      "Complex[0, 1]"
+    );
   }
 
   #[test]

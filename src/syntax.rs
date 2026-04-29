@@ -9939,6 +9939,32 @@ pub fn top_level_output(expr: &Expr) -> String {
         let parts: Vec<String> = sa.iter().map(expr_to_output).collect();
         return format!("FullForm[SeriesData[{}]]", parts.join(", "));
       }
+      // For atomic inputs (Identifier/Constant/Number/String) and
+      // Rational pseudo-atoms, match wolframscript's REPL display:
+      // keep the `FullForm[…]` wrapper around the inner expression
+      // rendered in InputForm. For compound inputs, fall through to
+      // the canonical FullForm rendering — many existing tests rely on
+      // `FullForm[<head>[…]]` returning the bare head form (like
+      // `Plus[a, b]`) for AST inspection.
+      let is_rational = matches!(
+        &args[0],
+        Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2
+      );
+      if is_rational
+        || matches!(
+          &args[0],
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(_, _)
+            | Expr::String(_)
+            | Expr::Identifier(_)
+            | Expr::Constant(_)
+        )
+      {
+        return format!("FullForm[{}]", expr_to_input_form(&args[0]));
+      }
       crate::functions::expr_form::render_full_form(&args[0])
     }
     // `HoldForm[expr]` at the top level keeps its wrapper —

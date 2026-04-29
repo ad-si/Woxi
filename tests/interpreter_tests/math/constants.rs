@@ -462,12 +462,18 @@ mod directed_infinity {
     assert_eq!(interpret("DirectedInfinity[]").unwrap(), "ComplexInfinity");
   }
 
-  // FullForm shows the internal DirectedInfinity[] representation of the
-  // symbolic infinity constants, matching Wolfram.
+  // wolframscript's REPL keeps the `FullForm[…]` wrapper around atomic
+  // arguments and shows the inner symbol in InputForm. To inspect the
+  // raw `DirectedInfinity[]` / `DirectedInfinity[1]` representation,
+  // wrap with `ToString[…]`.
   #[test]
   fn full_form_complex_infinity() {
     assert_eq!(
       interpret("FullForm[ComplexInfinity]").unwrap(),
+      "FullForm[ComplexInfinity]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[ComplexInfinity]]").unwrap(),
       "DirectedInfinity[]"
     );
   }
@@ -476,6 +482,10 @@ mod directed_infinity {
   fn full_form_infinity_is_directed_one() {
     assert_eq!(
       interpret("FullForm[Infinity]").unwrap(),
+      "FullForm[Infinity]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Infinity]]").unwrap(),
       "DirectedInfinity[1]"
     );
   }
