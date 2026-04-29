@@ -1565,6 +1565,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               chars.next();
               result.push('\u{F7CD}');
             }
+            // Box-syntax escapes — Wolfram maps each to a private-use codepoint
+            // distinct from the literal two-character sequence. The formatter
+            // renders these back as `\(`, `\)`, `\!`, `\*` in OutputForm.
+            Some(&'(') => {
+              chars.next();
+              result.push(crate::functions::string_ast::BOX_OPEN);
+            }
+            Some(&')') => {
+              chars.next();
+              result.push(crate::functions::string_ast::BOX_CLOSE);
+            }
+            Some(&'!') => {
+              chars.next();
+              result.push(crate::functions::string_ast::BOX_START);
+            }
+            Some(&'*') => {
+              chars.next();
+              result.push(crate::functions::string_ast::BOX_SEP);
+            }
             Some(&'\n') => {
               chars.next();
             } // line continuation
@@ -5124,9 +5143,36 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         if s.starts_with(crate::functions::string_ast::BOX_START) {
           return box_string_to_display_form(s);
         }
-        // U+F7CD (the parsed form of `\``) renders back as `\``.
-        if s.contains('\u{F7CD}') {
-          return s.replace('\u{F7CD}', "\\`");
+        // Render private-use escape codepoints back to their `\X` source form
+        // (matching wolframscript). Inputs land here from `"\("` etc. or from
+        // FromCharacterCode of the codepoint values.
+        if s.chars().any(|c| {
+          c == '\u{F7CD}'
+            || c == crate::functions::string_ast::BOX_OPEN
+            || c == crate::functions::string_ast::BOX_CLOSE
+            || c == crate::functions::string_ast::BOX_START
+            || c == crate::functions::string_ast::BOX_SEP
+        }) {
+          let mut out = String::with_capacity(s.len());
+          for c in s.chars() {
+            match c {
+              '\u{F7CD}' => out.push_str("\\`"),
+              c if c == crate::functions::string_ast::BOX_OPEN => {
+                out.push_str("\\(")
+              }
+              c if c == crate::functions::string_ast::BOX_CLOSE => {
+                out.push_str("\\)")
+              }
+              c if c == crate::functions::string_ast::BOX_START => {
+                out.push_str("\\!")
+              }
+              c if c == crate::functions::string_ast::BOX_SEP => {
+                out.push_str("\\*")
+              }
+              _ => out.push(c),
+            }
+          }
+          return out;
         }
         s.clone() // No quotes for display
       } else {

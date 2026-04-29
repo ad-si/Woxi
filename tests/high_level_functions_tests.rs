@@ -317,6 +317,34 @@ mod high_level_functions_tests {
     }
   }
 
+  mod string_box_escape_tests {
+    use super::*;
+    #[test]
+    fn test_box_open_close_length() {
+      // `\(` and `\)` each parse as a single private-use codepoint.
+      assert_eq!(interpret(r#"StringLength["\(A\)"]"#).unwrap(), "3");
+    }
+    #[test]
+    fn test_box_open_close_codepoints() {
+      // Wolfram maps `\(` → U+F7C9 (63433), `\)` → U+F7C0 (63424).
+      assert_eq!(
+        interpret(r#"ToCharacterCode["\(A\)"]"#).unwrap(),
+        "{63433, 65, 63424}"
+      );
+    }
+    #[test]
+    fn test_box_start_sep_codepoints() {
+      // `\!` → U+F7C1 (63425), `\*` → U+F7C8 (63432).
+      assert_eq!(interpret(r#"ToCharacterCode["\!"]"#).unwrap(), "{63425}");
+      assert_eq!(interpret(r#"ToCharacterCode["\*"]"#).unwrap(), "{63432}");
+    }
+    #[test]
+    fn test_box_chars_render_as_escapes() {
+      // The parsed codepoints render back as `\(`, `\)` etc. in OutputForm.
+      assert_eq!(interpret(r#"FromCharacterCode[{63433, 65, 63424}]"#).unwrap(), "\\(A\\)");
+    }
+  }
+
   mod string_delete_tests {
     use super::*;
     #[test]

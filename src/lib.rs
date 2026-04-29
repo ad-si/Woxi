@@ -811,8 +811,16 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
     // Make sure there are no unescaped quotes inside
     let inner = &trimmed[1..trimmed.len() - 1];
-    // Skip fast path if string contains named character escapes \[Name]
-    if !inner.contains('"') && !inner.contains("\\[") {
+    // Skip fast path if string contains escape sequences that the parser
+    // would expand (named characters, box-syntax markers, backtick escapes).
+    if !inner.contains('"')
+      && !inner.contains("\\[")
+      && !inner.contains("\\(")
+      && !inner.contains("\\)")
+      && !inner.contains("\\!")
+      && !inner.contains("\\*")
+      && !inner.contains("\\`")
+    {
       return Ok(inner.to_string());
     }
   }
