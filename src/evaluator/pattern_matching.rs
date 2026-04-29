@@ -2128,7 +2128,13 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
       let (mut min, mut max): (usize, Option<usize>) =
         if is_null { (0, None) } else { (1, None) };
 
-      // Parse optional count spec: {n}, {min, max}, or just n
+      // Parse optional count spec: {n}, {min, max}, or bare n
+      //   `Repeated[pat, {n}]`        — exactly n matches
+      //   `Repeated[pat, {min, max}]` — between min and max matches
+      //   `Repeated[pat, n]`          — between 1 and n (or 0 and n for
+      //                                 RepeatedNull); the bare integer
+      //                                 caps the max but keeps the
+      //                                 default minimum.
       if args.len() == 2 {
         let spec_items: Option<&[Expr]> = match &args[1] {
           Expr::List(items) => Some(items),
@@ -2158,9 +2164,7 @@ fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
             _ => {}
           }
         } else if let Expr::Integer(n) = &args[1] {
-          let n = *n as usize;
-          min = n;
-          max = Some(n);
+          max = Some(*n as usize);
         }
       }
 

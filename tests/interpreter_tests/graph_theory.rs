@@ -932,10 +932,7 @@ mod two_way_rule {
   #[test]
   fn operator_parses_as_two_way_rule() {
     // Matches Wolfram: a <-> b has Head TwoWayRule (not UndirectedEdge).
-    assert_eq!(
-      interpret("FullForm[a <-> b]").unwrap(),
-      "FullForm[a <-> b]"
-    );
+    assert_eq!(interpret("FullForm[a <-> b]").unwrap(), "FullForm[a <-> b]");
     assert_eq!(interpret("Head[a <-> b]").unwrap(), "TwoWayRule");
   }
 

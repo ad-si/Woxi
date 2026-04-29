@@ -3916,11 +3916,47 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
-    "|" => Expr::BinaryOp {
-      op: BinaryOperator::Alternatives,
-      left: Box::new(left.clone()),
-      right: Box::new(right.clone()),
-    },
+    "|" => {
+      // `:` (Pattern) binds looser than `|` (Alternatives) in Wolfram, so
+      // `x : a | b` is `Pattern[x, Alternatives[a, b]]`. Woxi's parser
+      // already consumed `x : a` into `Pattern[x, a]` before the `|` op,
+      // so reach back into that Pattern's body and absorb the new
+      // alternative there.
+      if let Expr::FunctionCall { name, args } = left
+        && name == "Pattern"
+        && args.len() == 2
+      {
+        let inner_alts = match &args[1] {
+          Expr::BinaryOp {
+            op: BinaryOperator::Alternatives,
+            left: l,
+            right: r,
+          } => Expr::BinaryOp {
+            op: BinaryOperator::Alternatives,
+            left: l.clone(),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Alternatives,
+              left: r.clone(),
+              right: Box::new(right.clone()),
+            }),
+          },
+          body => Expr::BinaryOp {
+            op: BinaryOperator::Alternatives,
+            left: Box::new(body.clone()),
+            right: Box::new(right.clone()),
+          },
+        };
+        return Expr::FunctionCall {
+          name: "Pattern".to_string(),
+          args: vec![args[0].clone(), inner_alts],
+        };
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Alternatives,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+      }
+    }
     "\\[Element]" | "\u{2208}" => Expr::FunctionCall {
       name: "Element".to_string(),
       args: vec![left.clone(), right.clone()],
