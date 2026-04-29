@@ -5311,13 +5311,36 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "StringSkeleton" && args.len() == 1 {
         return format!("<<{}>>", fmt(&args[0]));
       }
-      // Special case: Repeated[x] displays as x..
+      // Special case: Repeated[x] displays as x.. (or (x).. when x is a
+      // Pattern, matching wolframscript's parenthesisation of `_`-bearing
+      // patterns).
+      let is_pattern_arg = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::Pattern { .. }
+            | Expr::PatternOptional { .. }
+            | Expr::PatternTest { .. }
+        ) || matches!(
+          e,
+          Expr::FunctionCall { name: pn, .. } if pn == "Pattern"
+        )
+      };
       if name == "Repeated" && args.len() == 1 {
-        return format!("{}..", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if is_pattern_arg(&args[0]) {
+          format!("({})..", inner)
+        } else {
+          format!("{}..", inner)
+        };
       }
-      // Special case: RepeatedNull[x] displays as x...
+      // Special case: RepeatedNull[x] displays as x... (mirrors Repeated)
       if name == "RepeatedNull" && args.len() == 1 {
-        return format!("{}...", fmt(&args[0]));
+        let inner = fmt(&args[0]);
+        return if is_pattern_arg(&args[0]) {
+          format!("({})...", inner)
+        } else {
+          format!("{}...", inner)
+        };
       }
       // Special case: Colon[a, b, ...] displays as a ∶ b ∶ ...
       if name == "Colon" && args.len() >= 2 {
@@ -9940,18 +9963,32 @@ pub fn top_level_output(expr: &Expr) -> String {
         return format!("FullForm[SeriesData[{}]]", parts.join(", "));
       }
       // For atomic inputs (Identifier/Constant/Number/String) and
-      // Rational pseudo-atoms, match wolframscript's REPL display:
-      // keep the `FullForm[…]` wrapper around the inner expression
-      // rendered in InputForm. For compound inputs, fall through to
-      // the canonical FullForm rendering — many existing tests rely on
-      // `FullForm[<head>[…]]` returning the bare head form (like
-      // `Plus[a, b]`) for AST inspection.
+      // Rational/Repeated/RepeatedNull/Pattern* pseudo-atoms, match
+      // wolframscript's REPL display: keep the `FullForm[…]` wrapper
+      // around the inner expression rendered in InputForm. For other
+      // compound inputs (Plus, Times, generic FunctionCalls, …), fall
+      // through to the canonical FullForm rendering — many existing
+      // tests rely on `FullForm[<head>[…]]` returning the bare head
+      // form (like `Plus[a, b]`) for AST inspection.
       let is_rational = matches!(
         &args[0],
         Expr::FunctionCall { name: rn, args: ra }
           if rn == "Rational" && ra.len() == 2
       );
+      let is_repeat = matches!(
+        &args[0],
+        Expr::FunctionCall { name: rn, .. }
+          if rn == "Repeated" || rn == "RepeatedNull"
+      );
+      let is_pattern = matches!(
+        &args[0],
+        Expr::Pattern { .. }
+          | Expr::PatternOptional { .. }
+          | Expr::PatternTest { .. }
+      );
       if is_rational
+        || is_repeat
+        || is_pattern
         || matches!(
           &args[0],
           Expr::Integer(_)
