@@ -10076,7 +10076,24 @@ pub fn top_level_output(expr: &Expr) -> String {
               // `FullForm[Span[1, 4]]`, keeping the wrapper instead of
               // dropping to a bare `Span[1, 4]`.
               | "Span"
+              // `Factorial`/`Factorial2` (`x!`/`x!!`) keep their
+              // postfix-operator InputForm inside the FullForm wrapper.
+              | "Factorial"
+              | "Factorial2"
           )
+      );
+      // `Not` evaluates to `Expr::UnaryOp { Not, … }` rather than a
+      // `FunctionCall`, but wolframscript still preserves the FullForm
+      // wrapper and shows the InputForm `!x` (with a leading space when
+      // disambiguation is needed, e.g. ` !a!`) inside it. Match the
+      // UnaryOp::Not variant separately so `FullForm[!a!]` lands on
+      // `FullForm[ !a!]` rather than `Not[Factorial[a]]`.
+      let is_unary_not = matches!(
+        &args[0],
+        Expr::UnaryOp {
+          op: UnaryOperator::Not,
+          ..
+        }
       );
       if is_rational
         || is_repeat
@@ -10085,6 +10102,7 @@ pub fn top_level_output(expr: &Expr) -> String {
         || is_binary_power
         || is_list
         || is_form_wrapper
+        || is_unary_not
         || matches!(
           &args[0],
           Expr::Integer(_)

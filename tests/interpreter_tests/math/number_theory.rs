@@ -1679,10 +1679,17 @@ mod factorial {
   }
 
   // Prefix Not binds looser than postfix Factorial, so `!a!` must parse as
-  // Not[Factorial[a]] rather than Factorial[Not[a]].
+  // Not[Factorial[a]] rather than Factorial[Not[a]]. wolframscript's REPL
+  // preserves the FullForm wrapper for Not, printing `FullForm[ !a!]`
+  // (with the leading space disambiguating the postfix Factorial). The
+  // bare head form is reachable via `ToString[FullForm[…]]`.
   #[test]
   fn not_binds_looser_than_factorial() {
-    assert_eq!(interpret("!a! // FullForm").unwrap(), "Not[Factorial[a]]");
+    assert_eq!(interpret("!a! // FullForm").unwrap(), "FullForm[ !a!]");
+    assert_eq!(
+      interpret("ToString[FullForm[!a!]]").unwrap(),
+      "Not[Factorial[a]]"
+    );
   }
 }
 
