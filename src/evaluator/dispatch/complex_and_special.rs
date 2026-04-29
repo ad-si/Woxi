@@ -394,6 +394,14 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(args[0].clone()));
     }
 
+    // TimeConstrained[body, t] / TimeConstrained[body, t, fallback]
+    // Woxi has no actual evaluation timeout, so we just evaluate the body
+    // and return its result. The timeout (and fallback) are accepted but
+    // unused. Wolfram's HoldAll on TimeConstrained means the body arrives
+    // unevaluated; force evaluation here.
+    "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
+    }
     // Information[symbol] or Information[symbol, LongForm -> True]
     // `?symbol` parses as Information[Unevaluated[symbol], LongForm -> False]
     // `??symbol` parses as Information[Unevaluated[symbol], LongForm -> True]
@@ -2135,7 +2143,8 @@ fn lookup_usage_message(sym: &str) -> Option<String> {
         }
       }
     }
-    if slot0_match && slot1_match
+    if slot0_match
+      && slot1_match
       && let Expr::String(text) = body
     {
       return Some(text.clone());
@@ -2154,9 +2163,11 @@ fn format_upvalues_field(sym: &str) -> Option<String> {
   }
   let rules: Vec<String> = entries
     .iter()
-    .map(|(_outer, _params, _conds, _defs, _heads, _body, lhs, body)| {
-      format!("{} :> {}", expr_to_string(lhs), expr_to_string(body))
-    })
+    .map(
+      |(_outer, _params, _conds, _defs, _heads, _body, lhs, body)| {
+        format!("{} :> {}", expr_to_string(lhs), expr_to_string(body))
+      },
+    )
     .collect();
   Some(format!(
     "Information`InformationValueForm[UpValues, {}, {{{}}}]",
