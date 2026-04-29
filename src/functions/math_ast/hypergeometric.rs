@@ -1465,23 +1465,41 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         z.clone(),
       ],
     )?;
-    let one_minus_z = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::Integer(1),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), z.clone()],
-        },
-      ],
+    // wolframscript prefers the `(z-1)^k * positive` factoring whenever the
+    // Euler-transformed inner has a negative leading integer coefficient and
+    // the exponent on (1-z) is an odd negative integer. Flip both signs so
+    // e.g. `(1-z)^(-1) * (-3*X)` becomes `(z-1)^(-1) * (3*X)`.
+    let inner_lead_neg = inner_has_negative_int_coefficient(&inner);
+    let flip = inner_lead_neg
+      && exp_one_minus_z < 0
+      && exp_one_minus_z.rem_euclid(2) != 0;
+    let (base_expr, inner_for_combine) = if flip {
+      let z_minus_one = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![Expr::Integer(-1), z.clone()],
+      };
+      let negated_inner = negate_leading_integer_coefficient(&inner);
+      (z_minus_one, negated_inner)
+    } else {
+      let one_minus_z = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), z.clone()],
+          },
+        ],
+      };
+      (one_minus_z, inner)
     };
     let prefactor = Expr::FunctionCall {
       name: "Power".to_string(),
-      args: vec![one_minus_z, Expr::Integer(exp_one_minus_z)],
+      args: vec![base_expr, Expr::Integer(exp_one_minus_z)],
     };
     let combined = Expr::FunctionCall {
       name: "Times".to_string(),
-      args: vec![prefactor, inner],
+      args: vec![prefactor, inner_for_combine],
     };
     let evaluated = crate::evaluator::evaluate_expr_to_expr(&combined)?;
     // For numeric z, distribute via Expand so the result collapses to a
@@ -1544,6 +1562,58 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// True if the expression has the surface form `Times[neg_int, …]` —
+/// used by the Euler-transform branch to decide whether to flip
+/// `(1-z)^k` to `(z-1)^k` for matching wolframscript's canonical sign.
+fn inner_has_negative_int_coefficient(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+      matches!(&args[0], Expr::Integer(n) if *n < 0)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      ..
+    } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
+    _ => false,
+  }
+}
+
+/// Negate the leading integer coefficient of a `Times[neg_int, …]`. The
+/// caller already verified `inner_has_negative_int_coefficient` so the
+/// match arms here are exhaustive for the inputs we produce.
+fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+      let mut new_args = args.clone();
+      if let Expr::Integer(n) = &new_args[0] {
+        new_args[0] = Expr::Integer(-n);
+      }
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let new_left = if let Expr::Integer(n) = left.as_ref() {
+        Expr::Integer(-n)
+      } else {
+        (**left).clone()
+      };
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(new_left),
+        right: right.clone(),
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// Compute 2F1(a, b; c; z) for complex arguments via the same series, in
 /// double-precision complex arithmetic. Inputs are `(re, im)` pairs.
 /// For |z| > 1 (where the direct series diverges) the Pfaff transformation
@@ -1574,12 +1644,8 @@ pub fn hypergeometric_2f1_complex(
     let exponent = cmul(neg_a, log_om);
     let mag = exponent.0.exp();
     let prefactor = (mag * exponent.1.cos(), mag * exponent.1.sin());
-    let inner = hypergeometric_2f1_complex(
-      a,
-      (c.0 - b.0, c.1 - b.1),
-      c,
-      z_over_zm1,
-    );
+    let inner =
+      hypergeometric_2f1_complex(a, (c.0 - b.0, c.1 - b.1), c, z_over_zm1);
     return cmul(prefactor, inner);
   }
 

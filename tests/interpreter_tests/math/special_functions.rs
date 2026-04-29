@@ -363,6 +363,17 @@ mod hypergeometric2f1 {
   }
 
   #[test]
+  fn euler_transform_sign_canonical() {
+    // After the Euler transformation collapses to `(1-z)^(-1) · (-3·X)`,
+    // wolframscript's canonical surface form negates both factors so the
+    // numeric coefficient is positive: `(z-1)^(-1) · 3·X`.
+    assert_eq!(
+      interpret("Hypergeometric2F1[2, 3, 4, x]").unwrap(),
+      "(3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/((-1 + x)*x^3)"
+    );
+  }
+
+  #[test]
   fn n_evaluates() {
     let result: f64 = interpret("N[Hypergeometric2F1[1, 2, 3, 1/2]]")
       .unwrap()
