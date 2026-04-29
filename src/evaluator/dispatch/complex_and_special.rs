@@ -2988,6 +2988,34 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       };
       Expr::String(text)
     }
+    // Color specs render via a TemplateBox swatch wrapper:
+    //   RGBColor[r, g, b]      → TemplateBox[<|color -> RGBColor[…]|>, RGBColorSwatchTemplate]
+    //   GrayLevel[g], Hue[…], CMYKColor[…], XYZColor[…] follow the same
+    //   shape but with `<Name>ColorSwatchTemplate` when the head name does
+    //   not already end in `Color`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "RGBColor" | "Hue" | "GrayLevel" | "CMYKColor" | "XYZColor"
+      ) && !args.is_empty() =>
+    {
+      let template = if name.ends_with("Color") {
+        format!("{}SwatchTemplate", name)
+      } else {
+        format!("{}ColorSwatchTemplate", name)
+      };
+      let assoc = Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: vec![Expr::Rule {
+          pattern: Box::new(Expr::String("color".to_string())),
+          replacement: Box::new(expr.clone()),
+        }],
+      };
+      Expr::FunctionCall {
+        name: "TemplateBox".to_string(),
+        args: vec![assoc, Expr::String(template)],
+      }
+    }
     // Graphics[...] / Graphics3D[...] get dedicated box wrappers matching
     // Wolfram: Head[ToBoxes[Graphics[...]]] → GraphicsBox. Handles both the
     // unevaluated FunctionCall and the evaluated Expr::Graphics variants.
