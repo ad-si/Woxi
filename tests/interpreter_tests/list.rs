@@ -1209,22 +1209,41 @@ mod map_at {
   #[test]
   fn top_level_span_bare() {
     // Regression: bare `;;` used to fail parsing at the statement level.
-    assert_eq!(interpret(";; // FullForm").unwrap(), "Span[1, All]");
+    // wolframscript's REPL preserves the `FullForm` wrapper for Span,
+    // printing `FullForm[Span[1, All]]`. The bare head form is reachable
+    // via `ToString[FullForm[...]]`.
+    assert_eq!(
+      interpret(";; // FullForm").unwrap(),
+      "FullForm[Span[1, All]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[1 ;; All]]").unwrap(),
+      "Span[1, All]"
+    );
   }
 
   #[test]
   fn top_level_span_with_step() {
-    assert_eq!(interpret("1;;4;;2 // FullForm").unwrap(), "Span[1, 4, 2]");
+    assert_eq!(
+      interpret("1;;4;;2 // FullForm").unwrap(),
+      "FullForm[Span[1, 4, 2]]"
+    );
   }
 
   #[test]
   fn top_level_span_negative_end() {
-    assert_eq!(interpret("2;;-2 // FullForm").unwrap(), "Span[2, -2]");
+    assert_eq!(
+      interpret("2;;-2 // FullForm").unwrap(),
+      "FullForm[Span[2, -2]]"
+    );
   }
 
   #[test]
   fn top_level_span_from_start() {
-    assert_eq!(interpret(";;3 // FullForm").unwrap(), "Span[1, 3]");
+    assert_eq!(
+      interpret(";;3 // FullForm").unwrap(),
+      "FullForm[Span[1, 3]]"
+    );
   }
 
   #[test]

@@ -10071,6 +10071,11 @@ pub fn top_level_output(expr: &Expr) -> String {
               | "Times"
               | "Divide"
               | "Subtract"
+              // `Span` (`a ;; b`) preserves its head form inside FullForm:
+              // wolframscript's `FullForm[1 ;; 4]` prints
+              // `FullForm[Span[1, 4]]`, keeping the wrapper instead of
+              // dropping to a bare `Span[1, 4]`.
+              | "Span"
           )
       );
       if is_rational
