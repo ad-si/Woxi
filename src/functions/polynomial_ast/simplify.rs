@@ -3286,14 +3286,36 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() >= 2 {
     let mut override_asn: Option<Expr> = None;
     let mut positional: Vec<Expr> = Vec::new();
+    let mut leaf_count_complexity = false;
     for a in &args[1..] {
-      if let Expr::Rule { pattern, replacement } = a
-        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions")
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = a
       {
-        override_asn = Some(replacement.as_ref().clone());
-      } else {
-        positional.push(a.clone());
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions")
+        {
+          override_asn = Some(replacement.as_ref().clone());
+          continue;
+        }
+        // Recognise Simplify-specific options as options, not assumptions.
+        // `ComplexityFunction -> LeafCount` switches the cost metric to
+        // raw leaf count (so e.g. `Log[1048576]` beats `20*Log[2]`).
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ComplexityFunction")
+        {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "LeafCount")
+          {
+            leaf_count_complexity = true;
+          }
+          continue;
+        }
       }
+      positional.push(a.clone());
+    }
+    if leaf_count_complexity {
+      let base = simplify_expr_with_together(&args[0]);
+      let base = apply_active_assumptions(&base);
+      return Ok(simplify_for_leaf_count(&base));
     }
     let combined = match (override_asn, positional.len()) {
       (Some(o), 0) => Expr::Rule {
@@ -3331,6 +3353,84 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&assumed).or(Ok(assumed));
   }
   Ok(assumed)
+}
+
+/// Try transformations whose only payoff is a smaller leaf count
+/// (e.g. `n*Log[m]` → `Log[m^n]`) and return whichever form has the
+/// fewer leaves. Used when `Simplify` is called with `ComplexityFunction
+/// -> LeafCount`, which makes raw leaf count the cost function — so the
+/// otherwise-larger constant exponent inside `Log[m^n]` becomes a win.
+fn simplify_for_leaf_count(expr: &Expr) -> Expr {
+  let mut best = expr.clone();
+  let mut best_c = leaf_count(&best);
+  if let Some(candidate) = log_collapse_candidate(expr) {
+    let c = leaf_count(&candidate);
+    if c < best_c {
+      best = candidate;
+      best_c = c;
+    }
+  }
+  // Suppress unused variable warning when no other candidates are tried.
+  let _ = best_c;
+  best
+}
+
+/// `n*Log[m]` (with positive integers `n`, `m`) → `Log[m^n]` if the
+/// power evaluates to a finite integer literal.
+fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
+  use num_bigint::BigInt;
+  use num_traits::ToPrimitive;
+  let pair_opt = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      let log_inner = |e: &Expr| -> Option<Expr> {
+        match e {
+          Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+            Some(args[0].clone())
+          }
+          _ => None,
+        }
+      };
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), other) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        (other, Expr::Integer(n)) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        _ => None,
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let log_inner = |e: &Expr| -> Option<Expr> {
+        match e {
+          Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+            Some(args[0].clone())
+          }
+          _ => None,
+        }
+      };
+      match (left.as_ref(), right.as_ref()) {
+        (Expr::Integer(n), other) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        (other, Expr::Integer(n)) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let (n, log_arg) = pair_opt?;
+  let m = match log_arg {
+    Expr::Integer(m) if m > 1 => m,
+    _ => return None,
+  };
+  // Compute m^n as a BigInt to avoid overflow.
+  let pow = BigInt::from(m).pow(n.try_into().ok()?);
+  let pow_expr = pow.to_i128().map(Expr::Integer).unwrap_or_else(|| {
+    Expr::BigInteger(pow)
+  });
+  Some(Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![pow_expr],
+  })
 }
 
 fn contains_zero_negative_power(expr: &Expr) -> bool {
