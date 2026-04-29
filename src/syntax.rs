@@ -10024,6 +10024,53 @@ fn box_string_to_display_form(s: &str) -> String {
 /// formatting wrappers. FullForm[expr] renders the inner expression in
 /// canonical FullForm notation (matching wolframscript REPL behavior).
 /// Sequence[a, b, ...] displays as concatenated elements.
+/// Render a Box-form expression (`SuperscriptBox`, `RowBox`, …) the way
+/// wolframscript prints them inside `FullForm` / `InputForm`: the head is
+/// shown verbatim, but string arguments lose their surrounding quotes
+/// (so `SuperscriptBox["a", "b"]` displays as `SuperscriptBox[a, b]`).
+/// Recurses into `List` arguments (used by `RowBox`, `GridBox`, …).
+fn render_box_form(expr: &Expr) -> String {
+  fn render_box_arg(arg: &Expr) -> String {
+    match arg {
+      Expr::String(s) => s.clone(),
+      Expr::List(items) => {
+        let parts: Vec<String> = items.iter().map(render_box_arg).collect();
+        format!("{{{}}}", parts.join(", "))
+      }
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "SuperscriptBox"
+            | "SubscriptBox"
+            | "SubsuperscriptBox"
+            | "OverscriptBox"
+            | "UnderscriptBox"
+            | "UnderoverscriptBox"
+            | "FractionBox"
+            | "SqrtBox"
+            | "RadicalBox"
+            | "FormBox"
+            | "TagBox"
+            | "RowBox"
+            | "GridBox"
+            | "PaneBox"
+            | "InterpretationBox"
+            | "StyleBox"
+        ) =>
+      {
+        render_box_form(arg)
+      }
+      _ => expr_to_input_form(arg),
+    }
+  }
+  if let Expr::FunctionCall { name, args } = expr {
+    let parts: Vec<String> = args.iter().map(render_box_arg).collect();
+    format!("{}[{}]", name, parts.join(", "))
+  } else {
+    expr_to_input_form(expr)
+  }
+}
+
 pub fn top_level_output(expr: &Expr) -> String {
   match expr {
     Expr::FunctionCall { name, args }
@@ -10086,6 +10133,34 @@ pub fn top_level_output(expr: &Expr) -> String {
           other => expr_to_input_form(other),
         };
         return format!("FullForm[MessageName[{}, {}]]", head, tag);
+      }
+      // Box-form heads (`SuperscriptBox`, `SubscriptBox`, `RowBox`, …)
+      // render their string arguments without surrounding quotes inside
+      // `FullForm` and `InputForm`, matching wolframscript:
+      //   `wolframscript -code 'FullForm[ToBoxes[a^b]]'` →
+      //   `FullForm[SuperscriptBox[a, b]]` (no quotes around `a`/`b`).
+      if let Expr::FunctionCall { name: bn, .. } = &args[0]
+        && matches!(
+          bn.as_str(),
+          "SuperscriptBox"
+            | "SubscriptBox"
+            | "SubsuperscriptBox"
+            | "OverscriptBox"
+            | "UnderscriptBox"
+            | "UnderoverscriptBox"
+            | "FractionBox"
+            | "SqrtBox"
+            | "RadicalBox"
+            | "FormBox"
+            | "TagBox"
+            | "RowBox"
+            | "GridBox"
+            | "PaneBox"
+            | "InterpretationBox"
+            | "StyleBox"
+        )
+      {
+        return format!("FullForm[{}]", render_box_form(&args[0]));
       }
       // For atomic inputs (Identifier/Constant/Number/String) and
       // Rational/Repeated/RepeatedNull/Pattern* pseudo-atoms, match
