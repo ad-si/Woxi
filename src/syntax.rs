@@ -9962,6 +9962,23 @@ pub fn top_level_output(expr: &Expr) -> String {
         let parts: Vec<String> = sa.iter().map(expr_to_output).collect();
         return format!("FullForm[SeriesData[{}]]", parts.join(", "));
       }
+      // `MessageName[sym, "tag"]` shows as `MessageName[sym, tag]` inside the
+      // FullForm wrapper in wolframscript's REPL: the head form is preserved
+      // (instead of the `sym::tag` infix shown by InputForm), but the tag
+      // string is rendered without surrounding quotes — matching what
+      // `wolframscript -code 'FullForm[a::b]'` prints.
+      if let Expr::FunctionCall { name: mn, args: ma } = &args[0]
+        && mn == "MessageName"
+        && ma.len() == 2
+      {
+        let head = expr_to_input_form(&ma[0]);
+        let tag = match &ma[1] {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => expr_to_input_form(other),
+        };
+        return format!("FullForm[MessageName[{}, {}]]", head, tag);
+      }
       // For atomic inputs (Identifier/Constant/Number/String) and
       // Rational/Repeated/RepeatedNull/Pattern* pseudo-atoms, match
       // wolframscript's REPL display: keep the `FullForm[…]` wrapper
