@@ -523,6 +523,15 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "VerticalEllipsis" => Some("\u{22EE}"),
     "AscendingEllipsis" => Some("\u{22F0}"),
     "DescendingEllipsis" => Some("\u{22F1}"),
+    // Geometric and miscellaneous symbols (used as identifier-character
+    // literals in Wolfram, e.g. `\[Angle]XYZ` is the symbol `∠XYZ`).
+    "Angle" => Some("\u{2220}"),
+    "FilledSquare" => Some("\u{25A0}"),
+    "EmptySquare" => Some("\u{25A1}"),
+    "FilledCircle" => Some("\u{25CF}"),
+    "EmptyCircle" => Some("\u{25CB}"),
+    "FilledDiamond" => Some("\u{25C6}"),
+    "EmptyDiamond" => Some("\u{25C7}"),
     // Braces/brackets
     "LeftAngleBracket" => Some("\u{27E8}"),
     "RightAngleBracket" => Some("\u{27E9}"),
@@ -573,6 +582,47 @@ fn named_char_to_expr(s: &str) -> Expr {
     "\u{F74E}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryI]
     "\u{F74F}" => return Expr::Identifier("I".to_string()), // Wolfram PUA \[ImaginaryJ]
     _ => {}
+  }
+
+  // Adjacent `\[Name]` segments (and trailing identifier chars)
+  // concatenate into one identifier (e.g. `\[CapitalGamma]\[Beta]` → `Γβ`,
+  // `\[Angle]XYZ` → `∠XYZ`), matching wolframscript's
+  // identifier-character semantics. Detect any input with `\[`-segments
+  // — including a single `\[Name]` followed by alphanumerics — and join
+  // their Unicode mappings into one identifier.
+  if s.starts_with("\\[")
+    && (s.matches("\\[").count() > 1 || !s.ends_with(']'))
+  {
+    let mut joined = String::new();
+    let mut rest = s;
+    while !rest.is_empty() {
+      if rest.starts_with("\\[") {
+        let after = &rest[2..];
+        if let Some(close) = after.find(']') {
+          let name = &after[..close];
+          if let Some(unicode) = named_char_to_unicode(name) {
+            joined.push_str(unicode);
+          } else {
+            joined.push_str(name);
+          }
+          rest = &after[close + 1..];
+        } else {
+          break;
+        }
+      } else {
+        // Take one char and continue
+        let mut chars = rest.chars();
+        if let Some(c) = chars.next() {
+          joined.push(c);
+          rest = chars.as_str();
+        } else {
+          break;
+        }
+      }
+    }
+    if !joined.is_empty() {
+      return Expr::Identifier(joined);
+    }
   }
 
   // Extract name from \[Name] syntax
@@ -1686,6 +1736,36 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .or_else(|| s.strip_prefix('`'))
         .unwrap_or(s)
         .to_string();
+      // Expand any embedded `\[Name]` segments to their Unicode chars so
+      // `Z\[Infinity]` becomes the single identifier `Z∞`, matching
+      // wolframscript's identifier-character semantics.
+      let name = if name.contains("\\[") {
+        let mut out = String::with_capacity(name.len());
+        let mut rest = name.as_str();
+        while let Some(open) = rest.find("\\[") {
+          out.push_str(&rest[..open]);
+          let after = &rest[open + 2..];
+          if let Some(close) = after.find(']') {
+            let nm = &after[..close];
+            if let Some(unicode) = named_char_to_unicode(nm) {
+              out.push_str(unicode);
+            } else {
+              // Unknown name — keep the raw `\[Name]` form
+              out.push_str(&rest[open..open + 2 + close + 1]);
+            }
+            rest = &after[close + 1..];
+          } else {
+            // Unterminated — keep the rest as-is
+            out.push_str(&rest[open..]);
+            rest = "";
+            break;
+          }
+        }
+        out.push_str(rest);
+        out
+      } else {
+        name
+      };
       Expr::Identifier(name)
     }
     Rule::DerivativeIdentifier => {
@@ -10195,7 +10275,9 @@ pub fn top_level_output(expr: &Expr) -> String {
       let Expr::FunctionCall { args: ta, .. } = &args[0] else {
         unreachable!()
       };
-      let Expr::Real(c) = &ta[0] else { unreachable!() };
+      let Expr::Real(c) = &ta[0] else {
+        unreachable!()
+      };
       let coef_str = format_real(*c);
       let body = if *c < 0.0 {
         let abs_str = coef_str

@@ -75,15 +75,22 @@ PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
 // Matches \[Name] syntax or direct Unicode chars for common symbols
 // Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement], \[DirectedEdge], \[UndirectedEdge])
 // which must be parsed as infix operators, not as identifiers in implicit multiplication.
-NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+NamedCharBase = _{ !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" }
+// Adjacent `\[Name]` segments (or named char + identifier chars)
+// concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
+// `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
+// is parsed via the `Identifier` rule below). Matches wolframscript's
+// identifier-character semantics where named characters act like
+// identifier-character literals.
+NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | LETTER | "_")* }
 // Identifiers may carry a context prefix using backticks, e.g. `Global`x` or
 // `Foo`Bar`x`. A leading backtick ` `x` ` is shorthand for the current
 // context (Global by default). Each segment after a backtick must begin
 // with a letter/_/$ so numeric precision tags like `1`30`/`Pi`30` aren't
 // accidentally absorbed.
 Identifier = @{
-  ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")*)*)
-  | ((ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")*)*)
+  ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
