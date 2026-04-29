@@ -504,7 +504,7 @@ mod operator_precedence_at_map_apply {
     // @ binds tighter than /@ — f @ g /@ h = Map[f[g], h]
     assert_eq!(
       interpret("FullForm[Hold[f @ g /@ h]]").unwrap(),
-      "Hold[Map[f[g], h]]"
+      "FullForm[Hold[f[g] /@ h]]"
     );
   }
 
@@ -513,7 +513,7 @@ mod operator_precedence_at_map_apply {
     // @ binds tighter than @@ — f @ g @@ h = Apply[f[g], h]
     assert_eq!(
       interpret("FullForm[Hold[f @ g @@ h]]").unwrap(),
-      "Hold[Apply[f[g], h]]"
+      "FullForm[Hold[f[g] @@ h]]"
     );
   }
 
@@ -522,7 +522,7 @@ mod operator_precedence_at_map_apply {
     // f & /@ {1, 2} — & then /@ should work even for single-term body
     assert_eq!(
       interpret("FullForm[Hold[f & /@ g @ h]]").unwrap(),
-      "Hold[Map[Function[f], g[h]]]"
+      "FullForm[Hold[(f & ) /@ g[h]]]"
     );
   }
 

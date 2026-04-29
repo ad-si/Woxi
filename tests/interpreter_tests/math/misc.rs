@@ -162,7 +162,7 @@ mod implicit_multiply_power_precedence {
     // 2 f[x][[1]] should parse as 2 * Part[f[x], 1]
     assert_eq!(
       interpret("FullForm[Hold[2 f[x][[1]]]]").unwrap(),
-      "Hold[Times[2, Part[f[x], 1]]]"
+      "FullForm[Hold[2*f[x][[1]]]]"
     );
   }
 }
@@ -204,7 +204,7 @@ mod implicit_times_with_patterns {
     // c_. x_^2 should be Times[c_., Power[x_, 2]]
     assert_eq!(
       interpret("Hold[c_. x_^2] // FullForm").unwrap(),
-      "Hold[Times[Optional[Pattern[c, Blank[]]], Power[Pattern[x, Blank[]], 2]]]"
+      "FullForm[Hold[(c_.)*(x_)^2]]"
     );
   }
 

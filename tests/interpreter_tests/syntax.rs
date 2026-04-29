@@ -175,15 +175,15 @@ mod trailing_semicolon {
     // mathics test_control.py:107.
     assert_eq!(
       interpret("FullForm[Hold[a ; ; c]]").unwrap(),
-      "Hold[CompoundExpression[a, Null, c]]"
+      "FullForm[Hold[a; Null; c]]"
     );
     assert_eq!(
       interpret("FullForm[Hold[a ; ;]]").unwrap(),
-      "Hold[CompoundExpression[a, Null, Null]]"
+      "FullForm[Hold[a; Null; Null]]"
     );
     assert_eq!(
       interpret("FullForm[Hold[a ; ; ; b]]").unwrap(),
-      "Hold[CompoundExpression[a, Null, Null, b]]"
+      "FullForm[Hold[a; Null; Null; b]]"
     );
   }
 
@@ -496,7 +496,7 @@ mod newline_statements {
   fn function_call_leading_newline() {
     assert_eq!(
       interpret("Hold[Sin[\n0]] // FullForm").unwrap(),
-      "Hold[Sin[0]]"
+      "FullForm[Hold[Sin[0]]]"
     );
   }
 
@@ -504,7 +504,7 @@ mod newline_statements {
   fn function_call_multiple_leading_newlines() {
     assert_eq!(
       interpret("Hold[Sin[\n\n0]] // FullForm").unwrap(),
-      "Hold[Sin[0]]"
+      "FullForm[Hold[Sin[0]]]"
     );
   }
 
@@ -512,7 +512,7 @@ mod newline_statements {
   fn function_call_trailing_newline() {
     assert_eq!(
       interpret("Hold[Sin[0\n]] // FullForm").unwrap(),
-      "Hold[Sin[0]]"
+      "FullForm[Hold[Sin[0]]]"
     );
   }
 
@@ -522,7 +522,7 @@ mod newline_statements {
   fn function_call_compound_expression_across_newlines() {
     assert_eq!(
       interpret("Hold[f[a;\nb]] // FullForm").unwrap(),
-      "Hold[f[CompoundExpression[a, b]]]"
+      "FullForm[Hold[f[a; b]]]"
     );
   }
 }
@@ -1762,7 +1762,7 @@ mod pattern_test_function {
   fn pattern_test_with_head_fullform() {
     assert_eq!(
       interpret("FullForm[Hold[_Integer?NonNegative]]").unwrap(),
-      "Hold[PatternTest[Blank[Integer], NonNegative]]"
+      "FullForm[Hold[(_Integer)?NonNegative]]"
     );
   }
 }
@@ -5875,7 +5875,7 @@ mod tilde_infix {
     // a ~f~ b ~g~ c means g[f[a, b], c]
     assert_eq!(
       interpret("FullForm[Hold[a ~f~ b ~g~ c]]").unwrap(),
-      "Hold[g[f[a, b], c]]"
+      "FullForm[Hold[g[f[a, b], c]]]"
     );
   }
 
@@ -5884,7 +5884,7 @@ mod tilde_infix {
     // ~f~ binds tighter than +
     assert_eq!(
       interpret("FullForm[Hold[a + b ~f~ c]]").unwrap(),
-      "Hold[Plus[a, f[b, c]]]"
+      "FullForm[Hold[a + f[b, c]]]"
     );
   }
 
@@ -5893,7 +5893,7 @@ mod tilde_infix {
     // ~f~ binds tighter than *
     assert_eq!(
       interpret("FullForm[Hold[a * b ~f~ c]]").unwrap(),
-      "Hold[Times[a, f[b, c]]]"
+      "FullForm[Hold[a*f[b, c]]]"
     );
   }
 
@@ -5902,7 +5902,7 @@ mod tilde_infix {
     // ~f~ binds tighter than ^ (right-associative)
     assert_eq!(
       interpret("FullForm[Hold[a^2 ~f~ c]]").unwrap(),
-      "Hold[Power[a, f[2, c]]]"
+      "FullForm[Hold[a^f[2, c]]]"
     );
   }
 
@@ -5911,7 +5911,7 @@ mod tilde_infix {
     // @ binds tighter than ~f~
     assert_eq!(
       interpret("FullForm[Hold[g @ a ~f~ b]]").unwrap(),
-      "Hold[f[g[a], b]]"
+      "FullForm[Hold[f[g[a], b]]]"
     );
   }
 
@@ -5920,7 +5920,7 @@ mod tilde_infix {
     // ~f~ binds tighter than @@
     assert_eq!(
       interpret("FullForm[Hold[g @@ a ~f~ b]]").unwrap(),
-      "Hold[Apply[g, f[a, b]]]"
+      "FullForm[Hold[g @@ f[a, b]]]"
     );
   }
 
@@ -5929,7 +5929,7 @@ mod tilde_infix {
     // ~~ (StringExpression) should still work
     assert_eq!(
       interpret(r#"FullForm[Hold["a" ~~ "b"]]"#).unwrap(),
-      r#"Hold[StringExpression["a", "b"]]"#
+      r#"FullForm[Hold["a"~~"b"]]"#
     );
   }
 
@@ -6762,7 +6762,7 @@ mod anonymous_function_precedence {
     assert_eq!(interpret("# > 10 && PrimeQ[#] &[11]").unwrap(), "True");
     assert_eq!(
       interpret("FullForm[Hold[# > 10 && PrimeQ[#] &[11]]]").unwrap(),
-      "Hold[Function[And[Greater[Slot[1], 10], PrimeQ[Slot[1]]]][11]]"
+      "FullForm[Hold[(#1 > 10 && PrimeQ[#1] & )[11]]]"
     );
   }
 
@@ -6771,7 +6771,7 @@ mod anonymous_function_precedence {
     // `a + PrimeQ[#] &[11]` should parse as `Function[a + PrimeQ[#]][11]`.
     assert_eq!(
       interpret("FullForm[Hold[a + PrimeQ[#] &[11]]]").unwrap(),
-      "Hold[Function[Plus[a, PrimeQ[Slot[1]]]][11]]"
+      "FullForm[Hold[(a + PrimeQ[#1] & )[11]]]"
     );
   }
 
@@ -6780,7 +6780,7 @@ mod anonymous_function_precedence {
     // `a + {1, 2} &[5]` should parse as `Function[a + {1, 2}][5]`.
     assert_eq!(
       interpret("FullForm[Hold[a + {1, 2} &[5]]]").unwrap(),
-      "Hold[Function[Plus[a, List[1, 2]]][5]]"
+      "FullForm[Hold[(a + {1, 2} & )[5]]]"
     );
   }
 
@@ -6789,7 +6789,7 @@ mod anonymous_function_precedence {
     // `a + (b) &[5]` should parse as `Function[a + b][5]`.
     assert_eq!(
       interpret("FullForm[Hold[a + (b) &[5]]]").unwrap(),
-      "Hold[Function[Plus[a, b]][5]]"
+      "FullForm[Hold[(a + b & )[5]]]"
     );
   }
 
@@ -6798,7 +6798,7 @@ mod anonymous_function_precedence {
     // `a + f[{1,2,3}][[1]] &[5]` should wrap the whole Plus.
     assert_eq!(
       interpret("FullForm[Hold[a + f[{1,2,3}][[1]] &[5]]]").unwrap(),
-      "Hold[Function[Plus[a, Part[f[List[1, 2, 3]], 1]]][5]]"
+      "FullForm[Hold[(a + f[{1, 2, 3}][[1]] & )[5]]]"
     );
   }
 
@@ -6807,7 +6807,7 @@ mod anonymous_function_precedence {
     // `a + #[[1]] &[{5, 6}]` should wrap the whole Plus.
     assert_eq!(
       interpret("FullForm[Hold[a + #[[1]] &[{5, 6}]]]").unwrap(),
-      "Hold[Function[Plus[a, Part[Slot[1], 1]]][List[5, 6]]]"
+      "FullForm[Hold[(a + #1[[1]] & )[{5, 6}]]]"
     );
   }
 

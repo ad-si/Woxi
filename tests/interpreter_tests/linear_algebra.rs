@@ -465,7 +465,7 @@ mod cross {
     // Flat/associative: a ⨯ b ⨯ c → Cross[a, b, c]
     assert_eq!(
       interpret("FullForm[Hold[a \u{2A2F} b \u{2A2F} c]]").unwrap(),
-      "Hold[Cross[a, b, c]]"
+      "FullForm[Hold[Cross[a, b, c]]]"
     );
   }
 
@@ -473,7 +473,7 @@ mod cross {
   fn cross_operator_inside_hold() {
     assert_eq!(
       interpret("FullForm[Hold[{1, 2, 3} \u{2A2F} {4, 5, 6}]]").unwrap(),
-      "Hold[Cross[List[1, 2, 3], List[4, 5, 6]]]"
+      "FullForm[Hold[Cross[{1, 2, 3}, {4, 5, 6}]]]"
     );
   }
 }
