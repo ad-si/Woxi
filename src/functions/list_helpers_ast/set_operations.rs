@@ -466,9 +466,41 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     .cloned()
     .collect();
 
-  // Sort by string representation (Wolfram sorts Complement output)
+  // Sort by string representation (Wolfram sorts Complement output).
+  // Use a Wolfram-like collation key for accented Latin characters:
+  // wolframscript places `å`, `ä`, `ö` (and similar) after `z` in
+  // Swedish/Norwegian/Danish alphabet order, not by Unicode codepoint.
+  // So `Complement[Alphabet["Swedish"], Alphabet["English"]]` lands on
+  // `{å, ä, ö}` rather than the codepoint-sorted `{ä, å, ö}`.
+  fn collation_key(s: &str) -> Vec<u32> {
+    s.chars()
+      .map(|c| match c {
+        // Swedish/Finnish: ..., z, å, ä, ö
+        'å' => 0x110000 + 27,
+        'ä' => 0x110000 + 28,
+        'ö' => 0x110000 + 29,
+        'Å' => 0x110000 + 27,
+        'Ä' => 0x110000 + 28,
+        'Ö' => 0x110000 + 29,
+        // Norwegian/Danish: ..., z, æ, ø, å (different order from Swedish,
+        // but the only Wolfram alphabets we care about here put each accent
+        // strictly after `z`, so codepoint order within the trailing block
+        // is fine)
+        'æ' => 0x110000 + 30,
+        'ø' => 0x110000 + 31,
+        'Æ' => 0x110000 + 30,
+        'Ø' => 0x110000 + 31,
+        // Spanish ñ comes after n
+        'ñ' => 0x100000 + ('n' as u32) + 1,
+        'Ñ' => 0x100000 + ('N' as u32) + 1,
+        other => other as u32,
+      })
+      .collect()
+  }
   result.sort_by(|a, b| {
-    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+    let ka = collation_key(&crate::syntax::expr_to_string(a));
+    let kb = collation_key(&crate::syntax::expr_to_string(b));
+    ka.cmp(&kb)
   });
 
   match head_name {
