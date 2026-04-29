@@ -369,10 +369,7 @@ fn intersection_with_same_test(
   let test_eq = |a: &Expr, b: &Expr| -> bool {
     let call = Expr::FunctionCall {
       name: "Apply".to_string(),
-      args: vec![
-        test.clone(),
-        Expr::List(vec![a.clone(), b.clone()]),
-      ],
+      args: vec![test.clone(), Expr::List(vec![a.clone(), b.clone()])],
     };
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&call).ok(),

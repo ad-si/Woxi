@@ -1949,7 +1949,10 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
           has_inf = true;
         } else if matches!(a, Expr::Integer(-1)) {
           sign = -sign;
-        } else if let Expr::FunctionCall { name: dn, args: dargs } = a
+        } else if let Expr::FunctionCall {
+          name: dn,
+          args: dargs,
+        } = a
           && dn == "DirectedInfinity"
           && dargs.len() == 1
         {
@@ -1979,13 +1982,17 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
     // After Times canonicalisation, `I·Infinity` collapses to
     // `DirectedInfinity[I]` (and `-I·Infinity` to `DirectedInfinity[-I]`).
     // Recognise both forms here so trig handlers downstream still match.
-    Expr::FunctionCall { name, args } if name == "DirectedInfinity" && args.len() == 1 => {
+    Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity" && args.len() == 1 =>
+    {
       match &args[0] {
         Expr::Identifier(s) if s == "I" => Some(1),
         Expr::UnaryOp {
           op: crate::syntax::UnaryOperator::Minus,
           operand,
-        } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => Some(-1),
+        } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "I") => {
+          Some(-1)
+        }
         _ => None,
       }
     }

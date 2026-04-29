@@ -344,7 +344,10 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       // spliced element — wolframscript yields `2` for
       // `a; Sequence[1, 2]`, not the whole Sequence. Empty sequences
       // collapse to Null.
-      if let Expr::FunctionCall { name: n, args: seq_args } = &result
+      if let Expr::FunctionCall {
+        name: n,
+        args: seq_args,
+      } = &result
         && n == "Sequence"
       {
         result = seq_args
@@ -2143,7 +2146,10 @@ pub fn evaluate_expr_to_expr_inner(
       // Trailing `Sequence[...]` splices into the surrounding context;
       // wolframscript yields `2` for `a; Sequence[1, 2]`. Empty sequences
       // collapse to Null.
-      if let Expr::FunctionCall { name: n, args: seq_args } = &result
+      if let Expr::FunctionCall {
+        name: n,
+        args: seq_args,
+      } = &result
         && n == "Sequence"
       {
         result = seq_args

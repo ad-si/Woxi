@@ -267,7 +267,9 @@ fn kg_inner(n: i128, m: i128, shift: &mut u64) -> BigInt {
 fn factorial2_extract_real(expr: &Expr) -> Option<(f64, Option<f64>)> {
   match expr {
     Expr::Real(f) => Some((*f, None)),
-    Expr::BigFloat(digits, prec) => digits.parse::<f64>().ok().map(|v| (v, Some(*prec))),
+    Expr::BigFloat(digits, prec) => {
+      digits.parse::<f64>().ok().map(|v| (v, Some(*prec)))
+    }
     _ => None,
   }
 }

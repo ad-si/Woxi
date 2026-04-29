@@ -1583,8 +1583,12 @@ pub fn clustering_components_ast(
 /// `{key -> val, …}`. Returns `(keys, values)` on success.
 fn extract_rule_style_input(list: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
   // Form: `{k1, k2, …} -> {v1, v2, …}` (single rule containing two equal-length lists).
-  if let Expr::Rule { pattern, replacement } = list
-    && let (Expr::List(ks), Expr::List(vs)) = (pattern.as_ref(), replacement.as_ref())
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = list
+    && let (Expr::List(ks), Expr::List(vs)) =
+      (pattern.as_ref(), replacement.as_ref())
     && ks.len() == vs.len()
     && !ks.is_empty()
   {
@@ -1593,14 +1597,16 @@ fn extract_rule_style_input(list: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
   // Form: `{k1 -> v1, k2 -> v2, …}` — every list element is a Rule.
   if let Expr::List(items) = list
     && !items.is_empty()
-    && items
-      .iter()
-      .all(|e| matches!(e, Expr::Rule { .. }))
+    && items.iter().all(|e| matches!(e, Expr::Rule { .. }))
   {
     let mut ks = Vec::with_capacity(items.len());
     let mut vs = Vec::with_capacity(items.len());
     for item in items {
-      if let Expr::Rule { pattern, replacement } = item {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = item
+      {
         ks.push(pattern.as_ref().clone());
         vs.push(replacement.as_ref().clone());
       }

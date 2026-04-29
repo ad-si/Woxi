@@ -431,9 +431,10 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // the (-lo + hi) factor. Skip when either bound is infinite — those
       // are divergent improper integrals and need the antiderivative path's
       // divergence detection.
-      let bounds_finite =
-        !is_infinity(lo) && !is_negative_infinity(lo)
-          && !is_infinity(hi) && !is_negative_infinity(hi);
+      let bounds_finite = !is_infinity(lo)
+        && !is_negative_infinity(lo)
+        && !is_infinity(hi)
+        && !is_negative_infinity(hi);
       if bounds_finite {
         let width = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Minus,

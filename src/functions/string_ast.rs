@@ -3472,12 +3472,14 @@ pub fn to_expression_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ToExpression[InterpretationBox[boxes, expr]] returns the interpreted
   // expression directly (the second argument), evaluated. This matches
   // wolframscript: `ToExpression[InterpretationBox["Four", 4]]` → 4.
-  if let crate::syntax::Expr::FunctionCall { name, args: ib_args } = &args[0]
+  if let crate::syntax::Expr::FunctionCall {
+    name,
+    args: ib_args,
+  } = &args[0]
     && name == "InterpretationBox"
     && ib_args.len() == 2
   {
-    let interpreted =
-      crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
+    let interpreted = crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
     if args.len() == 3 {
       let wrapped = crate::syntax::Expr::FunctionCall {
         name: crate::syntax::expr_to_string(&args[2]),

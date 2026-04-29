@@ -3384,15 +3384,21 @@ fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
       let log_inner = |e: &Expr| -> Option<Expr> {
         match e {
-          Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+          Expr::FunctionCall { name, args }
+            if name == "Log" && args.len() == 1 =>
+          {
             Some(args[0].clone())
           }
           _ => None,
         }
       };
       match (&args[0], &args[1]) {
-        (Expr::Integer(n), other) if *n > 0 => log_inner(other).map(|m| (*n, m)),
-        (other, Expr::Integer(n)) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        (Expr::Integer(n), other) if *n > 0 => {
+          log_inner(other).map(|m| (*n, m))
+        }
+        (other, Expr::Integer(n)) if *n > 0 => {
+          log_inner(other).map(|m| (*n, m))
+        }
         _ => None,
       }
     }
@@ -3403,15 +3409,21 @@ fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
     } => {
       let log_inner = |e: &Expr| -> Option<Expr> {
         match e {
-          Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+          Expr::FunctionCall { name, args }
+            if name == "Log" && args.len() == 1 =>
+          {
             Some(args[0].clone())
           }
           _ => None,
         }
       };
       match (left.as_ref(), right.as_ref()) {
-        (Expr::Integer(n), other) if *n > 0 => log_inner(other).map(|m| (*n, m)),
-        (other, Expr::Integer(n)) if *n > 0 => log_inner(other).map(|m| (*n, m)),
+        (Expr::Integer(n), other) if *n > 0 => {
+          log_inner(other).map(|m| (*n, m))
+        }
+        (other, Expr::Integer(n)) if *n > 0 => {
+          log_inner(other).map(|m| (*n, m))
+        }
         _ => None,
       }
     }
@@ -3424,9 +3436,10 @@ fn log_collapse_candidate(expr: &Expr) -> Option<Expr> {
   };
   // Compute m^n as a BigInt to avoid overflow.
   let pow = BigInt::from(m).pow(n.try_into().ok()?);
-  let pow_expr = pow.to_i128().map(Expr::Integer).unwrap_or_else(|| {
-    Expr::BigInteger(pow)
-  });
+  let pow_expr = pow
+    .to_i128()
+    .map(Expr::Integer)
+    .unwrap_or_else(|| Expr::BigInteger(pow));
   Some(Expr::FunctionCall {
     name: "Log".to_string(),
     args: vec![pow_expr],

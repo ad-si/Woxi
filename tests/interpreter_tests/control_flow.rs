@@ -150,10 +150,7 @@ mod return_value {
     clear_state();
     // At top level, uncaught Return[] yields its argument (matching
     // wolframscript: `Module[{x=10}, Return[x+1]]` outputs `11`).
-    assert_eq!(
-      interpret("Module[{x = 10}, Return[x + 1]]").unwrap(),
-      "11"
-    );
+    assert_eq!(interpret("Module[{x = 10}, Return[x + 1]]").unwrap(), "11");
   }
 
   #[test]

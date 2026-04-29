@@ -282,14 +282,22 @@ fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
   };
   let is_one_over_var_squared = |e: &Expr| -> bool {
     // `1 / var^2`
-    if let Expr::BinaryOp { op: BinaryOperator::Divide, left, right } = e
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = e
       && matches!(left.as_ref(), Expr::Integer(1))
       && is_var_squared(right.as_ref())
     {
       return true;
     }
     // `var^(-2)` (canonical form for reciprocal squares)
-    if let Expr::BinaryOp { op: BinaryOperator::Power, left, right } = e
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } = e
       && matches!(left.as_ref(), Expr::Identifier(s) if s == var_name)
       && matches!(right.as_ref(), Expr::Integer(-2))
     {
@@ -307,7 +315,12 @@ fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
   };
   // Match the Plus shapes: Plus[1, 1/var^2] or Plus[1/var^2, 1] in either
   // BinaryOp::Plus or FunctionCall["Plus", …] form.
-  if let Expr::BinaryOp { op: BinaryOperator::Plus, left, right } = body {
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left,
+    right,
+  } = body
+  {
     return (matches!(left.as_ref(), Expr::Integer(1))
       && is_one_over_var_squared(right))
       || (matches!(right.as_ref(), Expr::Integer(1))

@@ -178,9 +178,8 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// if every test call returns True. Used by ArrayQ[expr, n, test].
 pub fn all_leaves_pass_test(expr: &Expr, depth: usize, test: &Expr) -> bool {
   if depth == 0 {
-    let result = crate::functions::list_helpers_ast::utilities::apply_func_ast(
-      test, expr,
-    );
+    let result =
+      crate::functions::list_helpers_ast::utilities::apply_func_ast(test, expr);
     return matches!(result, Ok(Expr::Identifier(ref s)) if s == "True");
   }
   match expr {

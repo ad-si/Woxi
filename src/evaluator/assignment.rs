@@ -1339,7 +1339,10 @@ pub fn set_delayed_ast(
           };
           match &pat_args[1] {
             Expr::PatternTest {
-              head, blank_type, test, ..
+              head,
+              blank_type,
+              test,
+              ..
             } => {
               let normalized = Expr::PatternTest {
                 name: pname.clone(),

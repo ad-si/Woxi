@@ -570,10 +570,8 @@ mod option_value {
   #[test]
   fn options_pattern_default_when_no_options_passed() {
     assert_eq!(
-      interpret(
-        "f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x]"
-      )
-      .unwrap(),
+      interpret("f[x_, OptionsPattern[{n -> 2}]] := x ^ OptionValue[n]; f[x]")
+        .unwrap(),
       "x^2"
     );
   }

@@ -612,9 +612,7 @@ pub fn dispatch_linear_algebra_functions(
         };
         let is_diag = rows.iter().enumerate().all(|(i, r)| {
           if let Expr::List(cs) = r {
-            cs.iter()
-              .enumerate()
-              .all(|(j, c)| i == j || is_zero(c))
+            cs.iter().enumerate().all(|(j, c)| i == j || is_zero(c))
           } else {
             false
           }

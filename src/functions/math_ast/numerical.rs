@@ -1984,9 +1984,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // machine number, i.e. MachinePrecision - Log10[$MinMachineNumber].
         // Wolfram uses 2^-1022 (smallest normalised double) here.
         let min_machine_number = f64::MIN_POSITIVE;
-        return Ok(Expr::Real(
-          machine_precision - min_machine_number.log10(),
-        ));
+        return Ok(Expr::Real(machine_precision - min_machine_number.log10()));
       }
       let accuracy = machine_precision - f.abs().log10();
       Ok(Expr::Real(accuracy))

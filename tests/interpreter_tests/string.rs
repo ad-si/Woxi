@@ -4136,7 +4136,11 @@ mod to_string_bigfloat {
   #[test]
   fn to_string_pi_100_strips_precision_marker() {
     let result = interpret("ToString[N[Pi, 100]]").unwrap();
-    assert!(!result.contains('`'), "no precision marker, got: {}", result);
+    assert!(
+      !result.contains('`'),
+      "no precision marker, got: {}",
+      result
+    );
     assert!(result.starts_with("3.14159265358979323846264338327"));
     // 1 integer digit + dot + 99 fractional digits.
     assert_eq!(result.len(), 101);
@@ -4153,7 +4157,11 @@ mod to_string_bigfloat {
   #[test]
   fn to_string_sqrt2_30_drops_marker() {
     let result = interpret("ToString[N[Sqrt[2], 30]]").unwrap();
-    assert!(!result.contains('`'), "no precision marker, got: {}", result);
+    assert!(
+      !result.contains('`'),
+      "no precision marker, got: {}",
+      result
+    );
     assert!(result.starts_with("1.41421356237309504880168872420"));
   }
 }

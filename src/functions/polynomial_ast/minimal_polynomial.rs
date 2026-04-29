@@ -234,8 +234,7 @@ fn handle_power(
   // so x^q substituted into p(t) gives a polynomial vanishing at α.
   if let Some((p, q)) = extract_rational_pair(exp)
     && p == 1
-    && q >= 2
-    && q <= 10
+    && (2..=10).contains(&q)
   {
     let base_poly = compute_minpoly_coeffs(base)?;
     if let Some(bp) = base_poly {

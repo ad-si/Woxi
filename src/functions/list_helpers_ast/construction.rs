@@ -1140,10 +1140,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // Fall back to invoking the function via the standard call form
             // (e.g. Composition, named symbols stored as values, …).
             let func_str = crate::syntax::expr_to_string(func);
-            crate::evaluator::evaluate_function_call_ast(
-              &func_str,
-              &index_args,
-            )
+            crate::evaluator::evaluate_function_call_ast(&func_str, &index_args)
           }
         }
       }

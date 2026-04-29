@@ -1117,19 +1117,18 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let z = &args[2];
     // U[1, 2, z] = z^{-1}
-    let mut u_prev = crate::evaluator::evaluate_expr_to_expr(
-      &Expr::FunctionCall {
+    let mut u_prev =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![z.clone(), Expr::Integer(-1)],
-      },
-    )?;
+      })?;
     // U[2, 2, z] = z^{-1} - E^z · Gamma[0, z]
     let exp_z = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![Expr::Identifier("E".to_string()), z.clone()],
     };
-    let mut u_curr = crate::evaluator::evaluate_expr_to_expr(
-      &Expr::FunctionCall {
+    let mut u_curr =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
           Expr::FunctionCall {
@@ -1148,8 +1147,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
           },
         ],
-      },
-    )?;
+      })?;
     // Iterate the recurrence from k=2 up to a-1 to obtain U[a, 2, z].
     for k in 2..*a {
       let coeff_curr = Expr::FunctionCall {

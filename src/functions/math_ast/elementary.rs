@@ -358,16 +358,16 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           op: crate::syntax::BinaryOperator::Power,
           left,
           right,
-        } => {
-          inner(left)
-            && !mentions_imaginary_unit(right)
-        }
+        } => inner(left) && !mentions_imaginary_unit(right),
         _ => is_positive_real_literal(f) && !matches!(f, Expr::Real(_)),
       }
     }
     inner(f)
   }
-  if let Expr::FunctionCall { name, args: factors } = &args[0]
+  if let Expr::FunctionCall {
+    name,
+    args: factors,
+  } = &args[0]
     && name == "Times"
     && factors.len() >= 2
   {
@@ -388,9 +388,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
     }
-    if all_positive_reals_or_one_complex
-      && let Some(z) = complex_factor
-    {
+    if all_positive_reals_or_one_complex && let Some(z) = complex_factor {
       return sign_ast(&[z]);
     }
   }

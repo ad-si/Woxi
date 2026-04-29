@@ -52,8 +52,7 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
             args: vec![Expr::Integer(-1), *right.clone()],
           };
           // Still flatten any further chained Plus on the left.
-          let mut args =
-            flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
+          let mut args = flatten_assoc_one(BinaryOperator::Plus, left.as_ref());
           args.push(neg_right);
           ("Plus", args)
         }
@@ -73,14 +72,12 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
           ("Times", args)
         }
         BinaryOperator::Power => ("Power", vec![*left.clone(), *right.clone()]),
-        BinaryOperator::And => (
-          "And",
-          flatten_assoc_binop(BinaryOperator::And, left, right),
-        ),
-        BinaryOperator::Or => (
-          "Or",
-          flatten_assoc_binop(BinaryOperator::Or, left, right),
-        ),
+        BinaryOperator::And => {
+          ("And", flatten_assoc_binop(BinaryOperator::And, left, right))
+        }
+        BinaryOperator::Or => {
+          ("Or", flatten_assoc_binop(BinaryOperator::Or, left, right))
+        }
         BinaryOperator::StringJoin => (
           "StringJoin",
           flatten_assoc_binop(BinaryOperator::StringJoin, left, right),

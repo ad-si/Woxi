@@ -339,18 +339,14 @@ fn try_ast_pattern_replace_impl(
     // outer curried structure can never fire on inner positions.
     Expr::CurriedCall { func, args } => {
       let mut any_matched = false;
-      let new_func = match try_ast_pattern_replace(
-        func,
-        pattern,
-        replacement,
-        condition,
-      )? {
-        Some(r) => {
-          any_matched = true;
-          r
-        }
-        None => (**func).clone(),
-      };
+      let new_func =
+        match try_ast_pattern_replace(func, pattern, replacement, condition)? {
+          Some(r) => {
+            any_matched = true;
+            r
+          }
+          None => (**func).clone(),
+        };
       let mut new_args = Vec::new();
       for arg in args {
         if let Some(result) =

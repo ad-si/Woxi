@@ -408,11 +408,9 @@ fn gamma_incomplete_upper(
   // (inexact). When both are integers/rationals, Wolfram keeps the form
   // symbolic — e.g. `Gamma[0, 1]` stays as `Gamma[0, 1]` rather than
   // collapsing to `0.21938…`.
-  let has_real_arg =
-    matches!(a, Expr::Real(_)) || matches!(z, Expr::Real(_));
+  let has_real_arg = matches!(a, Expr::Real(_)) || matches!(z, Expr::Real(_));
   if has_real_arg
-    && let (Some(a_val), Some(z_val)) =
-      (try_eval_to_f64(a), try_eval_to_f64(z))
+    && let (Some(a_val), Some(z_val)) = (try_eval_to_f64(a), try_eval_to_f64(z))
     && z_val >= 0.0
   {
     let result = upper_incomplete_gamma(a_val, z_val);
