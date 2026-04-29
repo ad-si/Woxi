@@ -33,9 +33,7 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   {
     let (re, im) = jacobi_p_complex(n_c, a_c, b_c, z_c);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(
-      re, im,
-    ));
+    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
   }
 
   let n = match &args[0] {
@@ -221,47 +219,27 @@ fn associated_legendre_p_ast(
   let n_is_nonneg_int = matches!(n_expr, Expr::Integer(k) if *k >= 0);
   let m_is_nonneg_int = matches!(m_expr, Expr::Integer(k) if *k >= 0);
   if !n_is_nonneg_int || !m_is_nonneg_int {
-    if let (Some(nf), Some(mf), Some(xf)) = (
-      try_eval_to_f64(n_expr),
-      try_eval_to_f64(m_expr),
-      try_eval_to_f64(x_expr),
-    ) {
-      // Use the general hypergeometric form for arbitrary (real) ν, μ.
-      let ratio = (1.0 + xf) / (1.0 - xf);
-      let prefactor = ratio.powf(mf / 2.0);
-      let hyp_call = Expr::FunctionCall {
-        name: "Hypergeometric2F1".to_string(),
-        args: vec![
-          Expr::Real(-nf),
-          Expr::Real(nf + 1.0),
-          Expr::Real(1.0 - mf),
-          Expr::Real((1.0 - xf) / 2.0),
-        ],
-      };
-      let hyp_val = match crate::evaluator::evaluate_expr_to_expr(&hyp_call) {
-        Ok(Expr::Real(v)) => v,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "LegendreP".to_string(),
-            args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-          });
-        }
-      };
-      let gamma_call = Expr::FunctionCall {
-        name: "Gamma".to_string(),
-        args: vec![Expr::Real(1.0 - mf)],
-      };
-      let gamma_val = match crate::evaluator::evaluate_expr_to_expr(&gamma_call)
-      {
-        Ok(Expr::Real(v)) => v,
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "LegendreP".to_string(),
-            args: vec![n_expr.clone(), m_expr.clone(), x_expr.clone()],
-          });
-        }
-      };
-      return Ok(Expr::Real(prefactor * hyp_val / gamma_val));
+    // Complex/inexact path: compute every factor in C, using principal-branch
+    // logs so the (1+z)/(1-z) raised to a fractional power picks up the
+    // correct branch — this matches wolframscript for `LegendreP[1.6, 3.1, 1.5]`
+    // where the surface formulation `((1+x)/(1-x))^(m/2)` would be NaN under
+    // real arithmetic (negative base, non-integer exponent).
+    let any_inexact = [n_expr, m_expr, x_expr].iter().any(|a| {
+      matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+        || crate::functions::math_ast::try_extract_complex_float(a)
+          .is_some_and(|(_, im)| im != 0.0)
+    });
+    if any_inexact
+      && let (Some(nc), Some(mc), Some(zc)) = (
+        crate::functions::math_ast::try_extract_complex_float(n_expr),
+        crate::functions::math_ast::try_extract_complex_float(m_expr),
+        crate::functions::math_ast::try_extract_complex_float(x_expr),
+      )
+    {
+      let (re, im) = legendre_p_associated_complex(nc, mc, zc);
+      return Ok(crate::functions::math_ast::build_complex_float_expr(
+        re, im,
+      ));
     }
     return Ok(Expr::FunctionCall {
       name: "LegendreP".to_string(),
@@ -1222,6 +1200,31 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match n {
     Some(n) => n,
     None => {
+      // Complex/inexact path for non-integer ν, |z| > 1: wolframscript's
+      // type-2 LegendreQ
+      //   Q_ν(z) = Q_real(z) − (i π/2) · P_ν(z)
+      // with
+      //   Q_real(z) = √π/2 · Γ(ν+1) / (2^ν · Γ(ν+3/2) · z^(ν+1))
+      //               · 2F1((ν+1)/2, (ν+2)/2, ν+3/2, 1/z²)
+      // and P_ν via the standard Legendre P. Only fires when at least one
+      // of ν / z is inexact and |z| > 1 (so the 2F1 series converges).
+      let any_inexact = args.iter().any(|a| {
+        matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+          || crate::functions::math_ast::try_extract_complex_float(a)
+            .is_some_and(|(_, im)| im != 0.0)
+      });
+      if any_inexact
+        && let (Some(nc), Some(zc)) = (
+          crate::functions::math_ast::try_extract_complex_float(&args[0]),
+          crate::functions::math_ast::try_extract_complex_float(&args[1]),
+        )
+        && (zc.0 * zc.0 + zc.1 * zc.1) > 1.0
+      {
+        let (re, im) = legendre_q_complex(nc, zc);
+        return Ok(crate::functions::math_ast::build_complex_float_expr(
+          re, im,
+        ));
+      }
       return Ok(Expr::FunctionCall {
         name: "LegendreQ".to_string(),
         args: args.to_vec(),
@@ -1241,6 +1244,76 @@ pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "LegendreQ".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Type-2 LegendreQ_ν(z) for complex/inexact ν and |z| > 1.
+/// `Q_ν(z) = Q_real(z) − (i π/2) · P_ν(z)` where
+/// `Q_real(z) = √π/2 · Γ(ν+1) / (2^ν · Γ(ν+3/2) · z^(ν+1)) · 2F1(…)`.
+fn legendre_q_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let clog = |(r, i): (f64, f64)| {
+    let im = if i == 0.0 { 0.0 } else { i };
+    ((r * r + im * im).sqrt().ln(), im.atan2(r))
+  };
+  let cexp = |(r, i): (f64, f64)| {
+    let mag = r.exp();
+    (mag * i.cos(), mag * i.sin())
+  };
+  let cpow = |b: (f64, f64), e: (f64, f64)| cexp(cmul(e, clog(b)));
+
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let n_plus_three_half = (n.0 + 1.5, n.1);
+  let two_pow_n = cpow((2.0, 0.0), n);
+  let z_pow_neg = cpow(z, (-n.0 - 1.0, -n.1));
+  let prefactor = cmul(
+    cdiv(
+      gamma_complex(n_plus_one.0, n_plus_one.1),
+      cmul(two_pow_n, gamma_complex(n_plus_three_half.0, n_plus_three_half.1)),
+    ),
+    z_pow_neg,
+  );
+  let sqrt_pi_half = (std::f64::consts::PI.sqrt() / 2.0, 0.0);
+  let prefactor = cmul(sqrt_pi_half, prefactor);
+
+  let inv_z_sq = cdiv((1.0, 0.0), cmul(z, z));
+  let f =
+    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+      ((n.0 + 1.0) / 2.0, n.1 / 2.0),
+      ((n.0 + 2.0) / 2.0, n.1 / 2.0),
+      n_plus_three_half,
+      inv_z_sq,
+    );
+  let q_real = cmul(prefactor, f);
+
+  // Subtract (iπ/2) · P_ν(z). Reuse the existing Legendre P numeric path
+  // by reconstructing the call — works for the non-integer-ν branch we
+  // care about here.
+  let p_val = legendre_p_value_complex(n, z);
+  let i_pi_half = (0.0, std::f64::consts::PI / 2.0);
+  let subtract = cmul(i_pi_half, p_val);
+  (q_real.0 - subtract.0, q_real.1 - subtract.1)
+}
+
+/// Compute LegendreP[ν, z] for complex ν, z via the hypergeometric form
+/// `P_ν(z) = 2F1(−ν, ν+1, 1, (1−z)/2)`. Used by `legendre_q_complex` so
+/// the type-2 Q definition stays self-contained.
+fn legendre_p_value_complex(n: (f64, f64), z: (f64, f64)) -> (f64, f64) {
+  let neg_n = (-n.0, -n.1);
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
+  crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_one,
+    (1.0, 0.0),
+    half_one_minus_z,
+  )
 }
 
 /// Evaluate Q_n(x) numerically using recurrence
@@ -1801,9 +1874,7 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   {
     let (re, im) = gegenbauer_c_complex(n_c, lam_c, z_c);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(
-      re, im,
-    ));
+    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
   }
 
   let n = match &args[0] {
@@ -1971,6 +2042,63 @@ pub fn gegenbauer_eval_rational(
   c
 }
 
+/// Complex/inexact associated LegendreP via the hypergeometric form:
+///   P_n^m(z) = (1/Γ(1−m)) · ((1+z)/(1−z))^(m/2) · 2F1(−n, n+1, 1−m, (1−z)/2)
+/// Computed entirely in C using principal-branch logs so the prefactor
+/// stays well-defined when (1+z)/(1−z) is negative real (the case for
+/// real z with z > 1 — Wolfram's branch convention).
+fn legendre_p_associated_complex(
+  n: (f64, f64),
+  m: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  // Principal-branch complex log. Normalize a strictly-zero imaginary part
+  // to +0 so `Log(-r)` (r > 0) lands on +iπ rather than ±iπ depending on
+  // an upstream `-0.0`. This matters: with a negative-zero imag we'd get
+  // `−iπ` and the entire associated-Legendre prefactor flips sign.
+  let clog = |(r, i): (f64, f64)| {
+    let im = if i == 0.0 { 0.0 } else { i };
+    ((r * r + im * im).sqrt().ln(), im.atan2(r))
+  };
+  let cexp = |(r, i): (f64, f64)| {
+    let mag = r.exp();
+    (mag * i.cos(), mag * i.sin())
+  };
+
+  let one_minus_m = (1.0 - m.0, -m.1);
+  let g_inv = cdiv((1.0, 0.0), gamma_complex(one_minus_m.0, one_minus_m.1));
+
+  // exp((m/2) * (Log(1+z) - Log(1-z))) — principal-branch logs.
+  let log_one_plus_z = clog((1.0 + z.0, z.1));
+  let log_one_minus_z = clog((1.0 - z.0, -z.1));
+  let log_diff = (
+    log_one_plus_z.0 - log_one_minus_z.0,
+    log_one_plus_z.1 - log_one_minus_z.1,
+  );
+  let half_m = (m.0 / 2.0, m.1 / 2.0);
+  let pow_term = cexp(cmul(half_m, log_diff));
+
+  let neg_n = (-n.0, -n.1);
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
+  let f =
+    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+      neg_n,
+      n_plus_one,
+      one_minus_m,
+      half_one_minus_z,
+    );
+  cmul(cmul(g_inv, pow_term), f)
+}
+
 /// Complex/inexact JacobiP via the hypergeometric representation:
 ///   P_n^{(a,b)}(z) = ((a+1)_n / n!) · 2F1[-n, n+a+b+1, a+1, (1-z)/2]
 fn jacobi_p_complex(
@@ -1998,12 +2126,13 @@ fn jacobi_p_complex(
   let neg_n = (-n.0, -n.1);
   let n_plus_ab_plus_1 = (n.0 + a.0 + b.0 + 1.0, n.1 + a.1 + b.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f = crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-    neg_n,
-    n_plus_ab_plus_1,
-    a_plus_one,
-    half_one_minus_z,
-  );
+  let f =
+    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+      neg_n,
+      n_plus_ab_plus_1,
+      a_plus_one,
+      half_one_minus_z,
+    );
   cmul(prefactor, f)
 }
 
@@ -2035,12 +2164,13 @@ fn gegenbauer_c_complex(
   let n_plus_two_lam = (n.0 + two_lam.0, n.1 + two_lam.1);
   let lam_plus_half = (lam.0 + 0.5, lam.1);
   let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
-  let f = crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
-    neg_n,
-    n_plus_two_lam,
-    lam_plus_half,
-    half_one_minus_z,
-  );
+  let f =
+    crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+      neg_n,
+      n_plus_two_lam,
+      lam_plus_half,
+      half_one_minus_z,
+    );
   cmul(prefactor, f)
 }
 

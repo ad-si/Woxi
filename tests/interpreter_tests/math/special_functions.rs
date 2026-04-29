@@ -1122,6 +1122,18 @@ mod legendre_p {
   fn associated_legendre_m_gt_n() {
     assert_eq!(interpret("LegendreP[2, 3, x]").unwrap(), "0");
   }
+
+  #[test]
+  fn associated_complex_branch_z_gt_one() {
+    // wolframscript: LegendreP[1.6, 3.1, 1.5]
+    //   ≈ -0.30399816148959324 - 1.9193688525633503*I
+    let s = interpret("LegendreP[1.6, 3.1, 1.5]").unwrap();
+    assert!(
+      s.starts_with("-0.30399816148959") && s.contains(" - 1.9193688525633"),
+      "got: {}",
+      s
+    );
+  }
 }
 
 mod legendre_q {
@@ -1161,6 +1173,18 @@ mod legendre_q {
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("LegendreQ[n, x]").unwrap(), "LegendreQ[n, x]");
+  }
+
+  #[test]
+  fn complex_type_2_z_gt_one() {
+    // wolframscript: LegendreQ[5/2, 1.5]
+    //   ≈ 0.036210967179686804 - 6.5621887981753035*I
+    let s = interpret("LegendreQ[5/2, 1.5]").unwrap();
+    assert!(
+      s.starts_with("0.0362109671796") && s.contains(" - 6.56218879817530"),
+      "got: {}",
+      s
+    );
   }
 }
 
@@ -1980,8 +2004,7 @@ mod jacobi_p {
     //   ≈ 1410.0201167451296 + 5797.298553127177*I
     let s = interpret("JacobiP[3.5 + I, 3, 2, 4 - I]").unwrap();
     assert!(
-      s.starts_with("1410.020116745")
-        && s.contains(" + 5797.298553127"),
+      s.starts_with("1410.020116745") && s.contains(" + 5797.298553127"),
       "got: {}",
       s
     );
@@ -2970,8 +2993,7 @@ mod gegenbauer_c {
     //   ≈ -3.2620959521652644 - 24.973939745527076*I
     let s = interpret("GegenbauerC[4 - I, 1 + 2 I, 0.7]").unwrap();
     assert!(
-      s.starts_with("-3.262095952165")
-        && s.contains(" - 24.973939745526"),
+      s.starts_with("-3.262095952165") && s.contains(" - 24.973939745526"),
       "got: {}",
       s
     );
