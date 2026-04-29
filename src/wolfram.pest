@@ -227,7 +227,9 @@ DivideBy = { (PartExtract | Identifier) ~ "/=" ~ Expression }
 // y^(-m) instead of y^0 - m (Wolfram's implicit-power semantics).
 NegSimpleTerm = { "-" ~ SimpleTerm }
 ImplicitPowerSuffix = { "^" ~ (NegSimpleTerm | SimpleTerm) }
-ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
+// Allow trailing `..` / `...` (Repeated/RepeatedNull) so `0..1` parses
+// as `Repeated[0] * 1` rather than splitting into two statements.
+ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? }
 // NegativeImplicitFirst allows -N as the first factor in implicit multiplication
 // so that "-90 Degree" parses as Times[-90, Degree] instead of failing.
 NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }

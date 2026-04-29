@@ -590,8 +590,7 @@ fn named_char_to_expr(s: &str) -> Expr {
   // identifier-character semantics. Detect any input with `\[`-segments
   // — including a single `\[Name]` followed by alphanumerics — and join
   // their Unicode mappings into one identifier.
-  if s.starts_with("\\[")
-    && (s.matches("\\[").count() > 1 || !s.ends_with(']'))
+  if s.starts_with("\\[") && (s.matches("\\[").count() > 1 || !s.ends_with(']'))
   {
     let mut joined = String::new();
     let mut rest = s;
@@ -3023,6 +3022,26 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
               right: Box::new(exponent),
             });
           }
+        } else if matches!(
+          inners[i].as_rule(),
+          Rule::RepeatedSuffix | Rule::RepeatedNullSuffix
+        ) {
+          // `..` / `...` postfix wraps the previous factor in
+          // `Repeated[…]` / `RepeatedNull[…]`, so `0..1` parses as
+          // `Repeated[0] * 1` rather than splitting into two
+          // statements.
+          if let Some(base) = factors.pop() {
+            let func_name = if inners[i].as_rule() == Rule::RepeatedNullSuffix
+            {
+              "RepeatedNull"
+            } else {
+              "Repeated"
+            };
+            factors.push(Expr::FunctionCall {
+              name: func_name.to_string(),
+              args: vec![base],
+            });
+          }
         } else {
           factors.push(pair_to_expr(inners[i].clone()));
         }
@@ -5392,14 +5411,20 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         return format!("<<{}>>", fmt(&args[0]));
       }
       // Special case: Repeated[x] displays as x.. (or (x).. when x is a
-      // Pattern, matching wolframscript's parenthesisation of `_`-bearing
-      // patterns).
+      // Pattern or numeric atom, matching wolframscript's
+      // parenthesisation of `_`-bearing patterns and numeric literals
+      // — `Repeated[0]` prints as `(0)..`, not `0..`, since `0..`
+      // would be lex-ambiguous with the `0.` Real literal).
       let is_pattern_arg = |e: &Expr| -> bool {
         matches!(
           e,
           Expr::Pattern { .. }
             | Expr::PatternOptional { .. }
             | Expr::PatternTest { .. }
+            | Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(_, _)
         ) || matches!(
           e,
           Expr::FunctionCall { name: pn, .. } if pn == "Pattern"
