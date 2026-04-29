@@ -7,29 +7,32 @@ fn make_tabular_failure(
   msg_tag: &str,
   data: &Expr,
 ) -> Expr {
+  let msg_template_key = Expr::String("MessageTemplate".to_string());
+  let msg_name_call = Expr::FunctionCall {
+    name: "MessageName".to_string(),
+    args: vec![
+      Expr::Identifier(func_name.to_string()),
+      Expr::String(msg_tag.to_string()),
+    ],
+  };
+  // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
+  // using the Association formatter convention: a value of
+  // `RuleDelayed { pattern == key, replacement }` renders as `key :> replacement`.
+  let msg_template_value = Expr::RuleDelayed {
+    pattern: Box::new(msg_template_key.clone()),
+    replacement: Box::new(msg_name_call),
+  };
   Expr::FunctionCall {
     name: "Failure".to_string(),
     args: vec![
       Expr::String(tag.to_string()),
-      Expr::FunctionCall {
-        name: "Association".to_string(),
-        args: vec![
-          Expr::Rule {
-            pattern: Box::new(Expr::String("MessageParameters".to_string())),
-            replacement: Box::new(Expr::List(vec![data.clone()])),
-          },
-          Expr::RuleDelayed {
-            pattern: Box::new(Expr::String("MessageTemplate".to_string())),
-            replacement: Box::new(Expr::FunctionCall {
-              name: "MessageName".to_string(),
-              args: vec![
-                Expr::Identifier(func_name.to_string()),
-                Expr::String(msg_tag.to_string()),
-              ],
-            }),
-          },
-        ],
-      },
+      Expr::Association(vec![
+        (
+          Expr::String("MessageParameters".to_string()),
+          Expr::List(vec![data.clone()]),
+        ),
+        (msg_template_key, msg_template_value),
+      ]),
     ],
   }
 }

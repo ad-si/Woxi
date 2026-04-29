@@ -3171,14 +3171,22 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         leading_not = true;
       }
       Rule::Operator | Rule::ConditionOp => {
-        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
+        flush_pending_not(
+          &mut pending_not_on_last,
+          &mut terms,
+          &mut term_was_implicit_times,
+        );
         operators.push(item.as_str().trim().to_string());
       }
       Rule::UnsetSuffix => {
         // f[x] =. → Unset[f[x]]: push "=." as an operator with a dummy
         // right operand so the precedence-climbing algorithm can handle it
         // like any other operator (at assignment precedence level 2).
-        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
+        flush_pending_not(
+          &mut pending_not_on_last,
+          &mut terms,
+          &mut term_was_implicit_times,
+        );
         operators.push("=.".to_string());
         terms.push(Expr::Identifier("Null".to_string())); // dummy right operand
         term_was_implicit_times.push(false);
@@ -3186,7 +3194,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       Rule::TildeInfix => {
         // a ~f~ b → f[a, b]: encode as "~funcName~" operator string
         // The inner pair is either BaseFunctionCall or Identifier
-        flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
+        flush_pending_not(
+          &mut pending_not_on_last,
+          &mut terms,
+          &mut term_was_implicit_times,
+        );
         let inner = item.into_inner().next().unwrap();
         let func_expr = pair_to_expr(inner);
         // Store as "~<encoded>~" for make_binary_op to handle
@@ -3330,7 +3342,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
     }
   }
-  flush_pending_not(&mut pending_not_on_last, &mut terms, &mut term_was_implicit_times);
+  flush_pending_not(
+    &mut pending_not_on_last,
+    &mut terms,
+    &mut term_was_implicit_times,
+  );
 
   let mut result = if terms.len() == 1 {
     terms.remove(0)
@@ -5068,6 +5084,18 @@ pub enum ExprForm {
   Output,
 }
 
+/// Detect the marker convention used by `Expr::Association` to indicate that
+/// an entry was originally `key :> value` (RuleDelayed). The value side is
+/// `RuleDelayed { pattern, replacement }` where `pattern` equals the key.
+/// Limited to `Expr::String` keys, which is the only form constructed
+/// internally with this convention (e.g. by Tabular's failure messages).
+pub(crate) fn assoc_marker_matches(key: &Expr, pattern: &Expr) -> bool {
+  matches!(
+    (key, pattern),
+    (Expr::String(a), Expr::String(b)) if a == b
+  )
+}
+
 /// Unified expression formatter that handles both InputForm and OutputForm.
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
@@ -5262,15 +5290,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "Rational" && args.len() == 2 {
         return format!("{}/{}", fmt(&args[0]), fmt(&args[1]));
       }
-      // Special case: Association[...] with Rule/RuleDelayed args displays as <|...|>
-      if name == "Association"
-        && args
-          .iter()
-          .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-      {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return format!("<|{}|>", parts.join(", "));
-      }
+      // `Expr::Association` (the evaluated form) displays as `<|...|>`;
+      // an unevaluated `Association[...]` FunctionCall (e.g. inside a
+      // RuleDelayed RHS or Hold) keeps the long-form spelling, matching
+      // Wolfram. This branch therefore has no shorthand for the FunctionCall.
       // Special case: Factorial[n] displays as n!, or (expr)! when the
       // argument is a Plus/Times or other operator-level expression so the
       // `!` suffix binds to the whole expression.
@@ -7130,9 +7153,20 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       parts.join("; ")
     }
     Expr::Association(items) => {
+      // Convention: a value of `RuleDelayed { pattern, replacement }` whose
+      // `pattern` equals the key marks an entry that was originally `key :> v`,
+      // since `Expr::Association` doesn't otherwise track Rule vs RuleDelayed.
       let parts: Vec<String> = items
         .iter()
-        .map(|(k, v)| format!("{} -> {}", fmt(k), fmt(v)))
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if assoc_marker_matches(k, pattern) => {
+            format!("{} :> {}", fmt(k), fmt(replacement))
+          }
+          _ => format!("{} -> {}", fmt(k), fmt(v)),
+        })
         .collect();
       format!("<|{}|>", parts.join(", "))
     }
@@ -7585,8 +7619,20 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::Association(items) => {
       let parts: Vec<String> = items
         .iter()
-        .map(|(k, v)| {
-          format!("{} -> {}", expr_to_input_form(k), expr_to_input_form(v))
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if assoc_marker_matches(k, pattern) => {
+            format!(
+              "{} :> {}",
+              expr_to_input_form(k),
+              expr_to_input_form(replacement)
+            )
+          }
+          _ => {
+            format!("{} -> {}", expr_to_input_form(k), expr_to_input_form(v))
+          }
         })
         .collect();
       format!("<|{}|>", parts.join(", "))
@@ -7739,16 +7785,6 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let mag_str = expr_to_input_form(&args[0]);
       let unit_str = quantity_unit_to_input_form(&args[1]);
       format!("Quantity[{}, {}]", mag_str, unit_str)
-    }
-    // Association[Rule, RuleDelayed, ...] displays as <|...|>
-    Expr::FunctionCall { name, args }
-      if name == "Association"
-        && args.iter().all(|a| {
-          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-        }) =>
-    {
-      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
-      format!("<|{}|>", parts.join(", "))
     }
     // FunctionCall: handle FullForm specially in InputForm (keep the wrapper)
     Expr::FunctionCall { name, args }

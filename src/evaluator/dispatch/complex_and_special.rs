@@ -3004,13 +3004,10 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         format!("{}ColorSwatchTemplate", name)
       };
-      let assoc = Expr::FunctionCall {
-        name: "Association".to_string(),
-        args: vec![Expr::Rule {
-          pattern: Box::new(Expr::String("color".to_string())),
-          replacement: Box::new(expr.clone()),
-        }],
-      };
+      let assoc = Expr::Association(vec![(
+        Expr::String("color".to_string()),
+        expr.clone(),
+      )]);
       Expr::FunctionCall {
         name: "TemplateBox".to_string(),
         args: vec![assoc, Expr::String(template)],

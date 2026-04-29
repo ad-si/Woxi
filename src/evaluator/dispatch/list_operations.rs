@@ -971,13 +971,27 @@ pub fn dispatch_list_operations(
           .unwrap();
         return Some(Ok(result));
       }
-      // Normal[<|k -> v, ...|>] converts Association to List of rules
+      // Normal[<|k -> v, ...|>] converts Association to List of rules.
+      // A `RuleDelayed { pattern == key, replacement }` value is the marker
+      // for an entry that was originally `key :> value`; preserve it as
+      // `key :> value` in the output list.
       if let Expr::Association(pairs) = &args[0] {
         let rules: Vec<Expr> = pairs
           .iter()
-          .map(|(k, v)| Expr::Rule {
-            pattern: Box::new(k.clone()),
-            replacement: Box::new(v.clone()),
+          .map(|(k, v)| match v {
+            Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if crate::syntax::assoc_marker_matches(k, pattern) => {
+              Expr::RuleDelayed {
+                pattern: Box::new(k.clone()),
+                replacement: replacement.clone(),
+              }
+            }
+            _ => Expr::Rule {
+              pattern: Box::new(k.clone()),
+              replacement: Box::new(v.clone()),
+            },
           })
           .collect();
         return Some(Ok(Expr::List(rules)));
@@ -3132,11 +3146,24 @@ fn pad_array(
 fn normal_convert_associations(expr: &Expr) -> Expr {
   match expr {
     Expr::Association(pairs) => {
+      // See `Normal` dispatch: `RuleDelayed{pattern==key, replacement}` is the
+      // marker for an originally-delayed entry.
       let rules: Vec<Expr> = pairs
         .iter()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(k.clone()),
-          replacement: Box::new(v.clone()),
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if crate::syntax::assoc_marker_matches(k, pattern) => {
+            Expr::RuleDelayed {
+              pattern: Box::new(k.clone()),
+              replacement: replacement.clone(),
+            }
+          }
+          _ => Expr::Rule {
+            pattern: Box::new(k.clone()),
+            replacement: Box::new(v.clone()),
+          },
         })
         .collect();
       Expr::List(rules)

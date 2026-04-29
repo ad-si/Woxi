@@ -233,32 +233,39 @@ fn map_at_depth(
   min_level: i64,
   max_level: i64,
 ) -> Result<Expr, InterpreterError> {
-  let children = match expr {
-    Expr::List(items) => Some((items.as_slice(), None::<&str>)),
-    Expr::FunctionCall { name, args } => {
-      Some((args.as_slice(), Some(name.as_str())))
-    }
-    _ => None,
+  // Recurse into composite expression children. `Rule`/`RuleDelayed` need
+  // their own arms so a `Map[f, _, {2}]` can reach the pattern/replacement
+  // pair (level 2 of `Q[a->1, b->2]` is `a, 1, b, 2`, not just `a->1, b->2`).
+  let recurse = |child: &Expr| -> Result<Expr, InterpreterError> {
+    map_at_depth(func, child, current_depth + 1, min_level, max_level)
   };
-
-  let result = if let Some((items, head_name)) = children {
-    // Recurse into children
-    let mapped: Result<Vec<Expr>, _> = items
-      .iter()
-      .map(|item| {
-        map_at_depth(func, item, current_depth + 1, min_level, max_level)
-      })
-      .collect();
-    let mapped = mapped?;
-    match head_name {
-      Some(h) => Expr::FunctionCall {
-        name: h.to_string(),
-        args: mapped,
-      },
-      None => Expr::List(mapped),
+  let result = match expr {
+    Expr::List(items) => {
+      let mapped: Result<Vec<Expr>, _> = items.iter().map(recurse).collect();
+      Expr::List(mapped?)
     }
-  } else {
-    expr.clone()
+    Expr::FunctionCall { name, args } => {
+      let mapped: Result<Vec<Expr>, _> = args.iter().map(recurse).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: mapped?,
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(recurse(pattern)?),
+      replacement: Box::new(recurse(replacement)?),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(recurse(pattern)?),
+      replacement: Box::new(recurse(replacement)?),
+    },
+    _ => expr.clone(),
   };
 
   // Apply f at this depth if in range
