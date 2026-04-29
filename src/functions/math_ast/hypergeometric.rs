@@ -1011,9 +1011,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || z.1 != 0.0;
     if inexact_marker {
       let (re, im) = hypergeometric_1f1_complex(a, b, z);
-      return Ok(crate::functions::math_ast::build_complex_float_expr(
-        re, im,
-      ));
+      return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
     }
   }
 
@@ -1536,9 +1534,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   {
     let (re, im) = hypergeometric_2f1_complex(av, bv, cv, zv);
-    return Ok(crate::functions::math_ast::build_complex_float_expr(
-      re, im,
-    ));
+    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
   }
 
   // Return unevaluated
@@ -1550,7 +1546,10 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute 2F1(a, b; c; z) for complex arguments via the same series, in
 /// double-precision complex arithmetic. Inputs are `(re, im)` pairs.
-fn hypergeometric_2f1_complex(
+/// For |z| > 1 (where the direct series diverges) the Pfaff transformation
+///   2F1(a, b; c; z) = (1−z)^(−a) · 2F1(a, c−b; c; z/(z−1))
+/// brings the argument back inside the unit disk.
+pub fn hypergeometric_2f1_complex(
   a: (f64, f64),
   b: (f64, f64),
   c: (f64, f64),
@@ -1565,15 +1564,31 @@ fn hypergeometric_2f1_complex(
   };
   let cabs = |(r, i): (f64, f64)| (r * r + i * i).sqrt();
 
+  // Pfaff transformation for |z| > 1.
+  if cabs(z) > 1.0 {
+    let one_minus_z = (1.0 - z.0, -z.1);
+    let z_over_zm1 = cdiv(z, (z.0 - 1.0, z.1));
+    // (1−z)^(−a)
+    let log_om = (cabs(one_minus_z).ln(), one_minus_z.1.atan2(one_minus_z.0));
+    let neg_a = (-a.0, -a.1);
+    let exponent = cmul(neg_a, log_om);
+    let mag = exponent.0.exp();
+    let prefactor = (mag * exponent.1.cos(), mag * exponent.1.sin());
+    let inner = hypergeometric_2f1_complex(
+      a,
+      (c.0 - b.0, c.1 - b.1),
+      c,
+      z_over_zm1,
+    );
+    return cmul(prefactor, inner);
+  }
+
   let mut sum = (1.0, 0.0);
   let mut term = (1.0, 0.0);
   for n in 0..2000 {
     let nf = n as f64;
     let num = cmul(cmul((a.0 + nf, a.1), (b.0 + nf, b.1)), z);
-    let den = (
-      (c.0 + nf) * (nf + 1.0) - (c.1) * 0.0,
-      (c.1) * (nf + 1.0),
-    );
+    let den = ((c.0 + nf) * (nf + 1.0) - (c.1) * 0.0, (c.1) * (nf + 1.0));
     term = cmul(term, cdiv(num, den));
     sum = (sum.0 + term.0, sum.1 + term.1);
     if cabs(term) < 1e-16 * cabs(sum).max(1e-300) {

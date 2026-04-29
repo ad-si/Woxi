@@ -378,8 +378,7 @@ mod hypergeometric2f1 {
     let s =
       interpret("Hypergeometric2F1[2 + I, -I, 3/4, 0.5 - 0.5 I]").unwrap();
     assert!(
-      s.starts_with("-0.972166571361907")
-        && s.contains(" - 0.181658741475730"),
+      s.starts_with("-0.972166571361907") && s.contains(" - 0.181658741475730"),
       "got: {}",
       s
     );
@@ -1976,6 +1975,19 @@ mod jacobi_p {
   }
 
   #[test]
+  fn complex_n_args() {
+    // wolframscript: JacobiP[3.5 + I, 3, 2, 4 - I]
+    //   ≈ 1410.0201167451296 + 5797.298553127177*I
+    let s = interpret("JacobiP[3.5 + I, 3, 2, 4 - I]").unwrap();
+    assert!(
+      s.starts_with("1410.020116745")
+        && s.contains(" + 5797.298553127"),
+      "got: {}",
+      s
+    );
+  }
+
+  #[test]
   fn symbolic_unevaluated() {
     assert_eq!(
       interpret("JacobiP[x, 1, 2, 0.5]").unwrap(),
@@ -2950,6 +2962,19 @@ mod gegenbauer_c {
       .parse()
       .unwrap();
     assert!((result - (-2.0)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn complex_n_args() {
+    // wolframscript: GegenbauerC[4 - I, 1 + 2 I, 0.7]
+    //   ≈ -3.2620959521652644 - 24.973939745527076*I
+    let s = interpret("GegenbauerC[4 - I, 1 + 2 I, 0.7]").unwrap();
+    assert!(
+      s.starts_with("-3.262095952165")
+        && s.contains(" - 24.973939745526"),
+      "got: {}",
+      s
+    );
   }
 
   #[test]

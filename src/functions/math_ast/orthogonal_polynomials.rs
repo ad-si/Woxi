@@ -12,6 +12,32 @@ pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Complex/inexact path via the hypergeometric representation:
+  //   P_n^{(a,b)}(z) = ((a+1)_n / n!) · 2F1[-n, n+a+b+1, a+1, (1-z)/2]
+  // Only used when n itself is non-integer or complex; for non-negative
+  // integer n the recurrence below gives an exact answer to higher
+  // precision (the Gamma path here introduces ~1e-14 rounding).
+  let n_is_nonneg_integer = matches!(&args[0], Expr::Integer(n) if *n >= 0);
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(a)
+        .is_some_and(|(_, im)| im != 0.0)
+  });
+  if !n_is_nonneg_integer
+    && any_inexact
+    && let (Some(n_c), Some(a_c), Some(b_c), Some(z_c)) = (
+      crate::functions::math_ast::try_extract_complex_float(&args[0]),
+      crate::functions::math_ast::try_extract_complex_float(&args[1]),
+      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+      crate::functions::math_ast::try_extract_complex_float(&args[3]),
+    )
+  {
+    let (re, im) = jacobi_p_complex(n_c, a_c, b_c, z_c);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(
+      re, im,
+    ));
+  }
+
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
@@ -1755,6 +1781,31 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Complex/inexact path via the hypergeometric representation:
+  //   GegenbauerC[n, λ, z] = ((2λ)_n / n!) · 2F1[-n, n+2λ, λ+1/2, (1-z)/2]
+  // Only used when n itself is non-integer or complex; for non-negative
+  // integer n the recurrence below gives an exact answer to higher
+  // precision (the Gamma path here introduces ~1e-14 rounding).
+  let n_is_nonneg_integer = matches!(&args[0], Expr::Integer(n) if *n >= 0);
+  let any_inexact = args.iter().any(|a| {
+    matches!(a, Expr::Real(_) | Expr::BigFloat(_, _))
+      || crate::functions::math_ast::try_extract_complex_float(a)
+        .is_some_and(|(_, im)| im != 0.0)
+  });
+  if !n_is_nonneg_integer
+    && any_inexact
+    && let (Some(n_c), Some(lam_c), Some(z_c)) = (
+      crate::functions::math_ast::try_extract_complex_float(&args[0]),
+      crate::functions::math_ast::try_extract_complex_float(&args[1]),
+      crate::functions::math_ast::try_extract_complex_float(&args[2]),
+    )
+  {
+    let (re, im) = gegenbauer_c_complex(n_c, lam_c, z_c);
+    return Ok(crate::functions::math_ast::build_complex_float_expr(
+      re, im,
+    ));
+  }
+
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
@@ -1918,6 +1969,79 @@ pub fn gegenbauer_eval_rational(
     };
   }
   c
+}
+
+/// Complex/inexact JacobiP via the hypergeometric representation:
+///   P_n^{(a,b)}(z) = ((a+1)_n / n!) · 2F1[-n, n+a+b+1, a+1, (1-z)/2]
+fn jacobi_p_complex(
+  n: (f64, f64),
+  a: (f64, f64),
+  b: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let a_plus_one_plus_n = (a.0 + 1.0 + n.0, a.1 + n.1);
+  let a_plus_one = (a.0 + 1.0, a.1);
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let g_top = gamma_complex(a_plus_one_plus_n.0, a_plus_one_plus_n.1);
+  let g_a = gamma_complex(a_plus_one.0, a_plus_one.1);
+  let g_n_fac = gamma_complex(n_plus_one.0, n_plus_one.1);
+  let prefactor = cdiv(g_top, cmul(g_a, g_n_fac));
+
+  let neg_n = (-n.0, -n.1);
+  let n_plus_ab_plus_1 = (n.0 + a.0 + b.0 + 1.0, n.1 + a.1 + b.1);
+  let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
+  let f = crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_ab_plus_1,
+    a_plus_one,
+    half_one_minus_z,
+  );
+  cmul(prefactor, f)
+}
+
+/// Complex/inexact GegenbauerC via the hypergeometric representation:
+///   C_n^λ(z) = ((2λ)_n / n!) · 2F1[-n, n+2λ, λ+1/2, (1-z)/2]
+/// with `(2λ)_n / n! = Γ(2λ+n) / (Γ(2λ) · Γ(n+1))`. Inputs are `(re, im)`.
+fn gegenbauer_c_complex(
+  n: (f64, f64),
+  lam: (f64, f64),
+  z: (f64, f64),
+) -> (f64, f64) {
+  use crate::functions::math_ast::zeta_functions::gamma_complex;
+  let cmul = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    (ar * br - ai * bi, ar * bi + ai * br)
+  };
+  let cdiv = |(ar, ai): (f64, f64), (br, bi): (f64, f64)| {
+    let d = br * br + bi * bi;
+    ((ar * br + ai * bi) / d, (ai * br - ar * bi) / d)
+  };
+  let two_lam = (2.0 * lam.0, 2.0 * lam.1);
+  let two_lam_plus_n = (two_lam.0 + n.0, two_lam.1 + n.1);
+  let n_plus_one = (n.0 + 1.0, n.1);
+  let g_top = gamma_complex(two_lam_plus_n.0, two_lam_plus_n.1);
+  let g_lam = gamma_complex(two_lam.0, two_lam.1);
+  let g_n_fac = gamma_complex(n_plus_one.0, n_plus_one.1);
+  let prefactor = cdiv(g_top, cmul(g_lam, g_n_fac));
+
+  let neg_n = (-n.0, -n.1);
+  let n_plus_two_lam = (n.0 + two_lam.0, n.1 + two_lam.1);
+  let lam_plus_half = (lam.0 + 0.5, lam.1);
+  let half_one_minus_z = (0.5 - 0.5 * z.0, -0.5 * z.1);
+  let f = crate::functions::math_ast::hypergeometric::hypergeometric_2f1_complex(
+    neg_n,
+    n_plus_two_lam,
+    lam_plus_half,
+    half_one_minus_z,
+  );
+  cmul(prefactor, f)
 }
 
 /// Evaluate Gegenbauer C_n^lambda(x) numerically
