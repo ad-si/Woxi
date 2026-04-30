@@ -599,7 +599,43 @@ pub fn evaluate_function_call_ast_inner(
     map.get(name).cloned()
   });
 
+  // For user-defined-function matching only: strip top-level
+  // `Unevaluated[expr]` wrappers from args. The wrapper holds its argument
+  // from outer evaluation but is transparent to pattern matching and
+  // binding. Wolfram: `f[Unevaluated[1+2]]` with rule `f[x_]:=List[x]`
+  // binds x to `1+2` (held). If no rule matches, the wrapper is preserved
+  // in the fall-through output, so we keep the original `args` and use a
+  // separate `stripped_args` only inside the overload-matching block.
+  let has_unevaluated = args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, args: ua }
+      if name == "Unevaluated" && ua.len() == 1),
+  );
+  let stripped_args_owned: Vec<Expr> = if has_unevaluated {
+    args
+      .iter()
+      .map(|a| match a {
+        Expr::FunctionCall { name, args: ua }
+          if name == "Unevaluated" && ua.len() == 1 =>
+        {
+          ua[0].clone()
+        }
+        _ => a.clone(),
+      })
+      .collect()
+  } else {
+    Vec::new()
+  };
+  let match_args: &[Expr] = if has_unevaluated {
+    &stripped_args_owned[..]
+  } else {
+    args
+  };
+
   if let Some(overloads) = overloads {
+    // Use stripped args for user-defined matching (Unevaluated wrapper is
+    // transparent to pattern matching). Original `args` stays untouched
+    // for the fall-through path so unmatched calls keep the wrapper.
+    let args = match_args;
     for (
       overload_idx,
       (params, conditions, param_defaults, param_heads, blank_types, body_expr),
