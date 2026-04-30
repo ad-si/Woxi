@@ -3928,10 +3928,171 @@ pub fn combine_like_bases(
   Ok(merged)
 }
 
+/// `SeriesData[var, x0, coeffs, nmin, nmax, denom] * var^k` →
+/// shift the series's exponent range by `k`. `k` may be Integer,
+/// `Rational[p, q]`, or `BinaryOp Divide` of two integers. Returns
+/// `None` if `series` isn't a SeriesData, `power` isn't a recognised
+/// `var^k` form, or the variables don't match.
+fn try_series_data_times_var_power(
+  series: &Expr,
+  power: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Match a SeriesData head.
+  let (var, x0, coeffs, nmin, nmax, denom) = match series {
+    Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6 => {
+      let nmin = match &args[3] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(None),
+      };
+      let nmax = match &args[4] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(None),
+      };
+      let denom = match &args[5] {
+        Expr::Integer(d) if *d > 0 => *d,
+        _ => return Ok(None),
+      };
+      let coeffs = match &args[2] {
+        Expr::List(items) => items.clone(),
+        _ => return Ok(None),
+      };
+      (args[0].clone(), args[1].clone(), coeffs, nmin, nmax, denom)
+    }
+    _ => return Ok(None),
+  };
+
+  // Match `var^k`. Accept the bare variable (k = 1), Power[var, Integer],
+  // Power[var, Rational], or Power[var, BinaryOp Divide of integers].
+  let var_name = match &var {
+    Expr::Identifier(n) => n.clone(),
+    _ => return Ok(None),
+  };
+  let same_var = |e: &Expr| matches!(e, Expr::Identifier(n) if *n == var_name);
+  let extract_pq = |exp: &Expr| -> Option<(i128, i128)> {
+    match exp {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
+          && *q > 0
+        {
+          Some((*p, *q))
+        } else {
+          None
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        if let (Expr::Integer(p), Expr::Integer(q)) = (left.as_ref(), right.as_ref())
+          && *q > 0
+        {
+          Some((*p, *q))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  };
+  let (p, q) = match power {
+    e if same_var(e) => (1i128, 1i128),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if same_var(left) => match extract_pq(right) {
+      Some(pq) => pq,
+      None => return Ok(None),
+    },
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 && same_var(&args[0]) => {
+      match extract_pq(&args[1]) {
+        Some(pq) => pq,
+        None => return Ok(None),
+      }
+    }
+    _ => return Ok(None),
+  };
+
+  // Lift to the common denominator d = lcm(denom, q).
+  let g = numeric_utils::gcd(denom.abs(), q.abs());
+  if g == 0 {
+    return Ok(None);
+  }
+  let d = (denom / g).saturating_mul(q);
+  let scale_old = d / denom;
+  let shift = p * (d / q);
+  let new_nmin = nmin * scale_old + shift;
+
+  // For an integer-power shift (q == 1), keep all original coefficients
+  // and shift `nmax` by `p` directly. For a fractional shift the
+  // resulting series loses one term of precision: wolframscript
+  // truncates exactly at the new slot of the original's last
+  // coefficient, dropping it. So `len(coefs)` shrinks by one and
+  // `nmax = (orig_nmax - 1) * scale + new-denom shift`.
+  let (new_nmax, new_coeffs) = if q == 1 {
+    let mut out: Vec<Expr> = Vec::new();
+    for (i, c) in coeffs.iter().enumerate() {
+      if i > 0 {
+        for _ in 0..(scale_old - 1) {
+          out.push(Expr::Integer(0));
+        }
+      }
+      out.push(c.clone());
+    }
+    (nmax * scale_old + shift, out)
+  } else {
+    // Drop the last original coefficient, then lift the rest.
+    let trunc_nmax = (nmax - 1) * scale_old + shift;
+    if coeffs.is_empty() {
+      return Ok(None);
+    }
+    let kept: Vec<Expr> = coeffs[..coeffs.len() - 1].to_vec();
+    let mut out: Vec<Expr> = Vec::new();
+    for (i, c) in kept.iter().enumerate() {
+      if i > 0 {
+        for _ in 0..(scale_old - 1) {
+          out.push(Expr::Integer(0));
+        }
+      }
+      out.push(c.clone());
+    }
+    (trunc_nmax, out)
+  };
+
+  Ok(Some(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      var,
+      x0,
+      Expr::List(new_coeffs),
+      Expr::Integer(new_nmin),
+      Expr::Integer(new_nmax),
+      Expr::Integer(d),
+    ],
+  }))
+}
+
 /// Times[args...] - Product of arguments, with list threading
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
+  }
+
+  // SeriesData[var, x0, coeffs, nmin, nmax, denom] times var^k (k integer
+  // or rational): shift the series exponent range by k. With k = p/q,
+  // pick a common denominator d = lcm(denom, q) and scale all exponents
+  // and the coefficient slots accordingly.
+  // E.g. `Series[Exp[x], {x, 0, 2}] * x^(1/3)` →
+  // `SeriesData[x, 0, {1, 0, 0, 1}, 1, 7, 3]`.
+  if args.len() == 2 {
+    if let Some(result) = try_series_data_times_var_power(&args[0], &args[1])? {
+      return Ok(result);
+    }
+    if let Some(result) = try_series_data_times_var_power(&args[1], &args[0])? {
+      return Ok(result);
+    }
   }
 
   // Combine two-or-more `SeriesData[var, x0, …]` factors sharing the same
