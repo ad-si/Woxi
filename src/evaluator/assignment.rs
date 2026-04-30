@@ -2273,6 +2273,47 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(eval_rhs);
   }
 
+  // `N[sym, …] ^= value` goes to NValues (under sym), not UpValues
+  // — Wolfram redirects these the same way `N[sym, …] = value`
+  // does. Mirror the `set_ast` N-handler so `UpValues[sym]` stays
+  // empty and `NValues[sym]` reflects the rule.
+  if lhs_head == "N"
+    && (lhs_args.len() == 1 || lhs_args.len() == 2)
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let prec_part = if lhs_args.len() == 2 {
+      let prec_eval = evaluate_expr_to_expr(&lhs_args[1])?;
+      let as_real = match &prec_eval {
+        Expr::Integer(n) => Some(Expr::Real(*n as f64)),
+        Expr::Real(_) => Some(prec_eval.clone()),
+        _ => None,
+      };
+      if let Some(prec_real) = as_real {
+        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())])
+      } else {
+        prec_eval
+      }
+    } else {
+      Expr::List(vec![
+        Expr::Identifier("MachinePrecision".to_string()),
+        Expr::Identifier("MachinePrecision".to_string()),
+      ])
+    };
+    let canonical_lhs = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![Expr::Identifier(sym_name.clone()), prec_part],
+    };
+    N_VALUES.with(|m| {
+      let mut map = m.borrow_mut();
+      let entries = map.entry(sym_name.clone()).or_default();
+      entries.retain(|(lhs_p, _)| {
+        !crate::evaluator::pattern_matching::expr_equal(lhs_p, &canonical_lhs)
+      });
+      entries.push((canonical_lhs, eval_rhs.clone()));
+    });
+    return Ok(eval_rhs);
+  }
+
   // Find all tag symbols in the arguments. Patterns like `_Q` carry the
   // tag in their `head` field; `Blank[Q]` (FunctionCall) is the same shape
   // when written via FullForm.
