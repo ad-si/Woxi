@@ -1776,7 +1776,7 @@ pub fn dispatch_math_functions(
     "Convergents" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::convergents_ast(args));
     }
-    "LucasL" if args.len() == 1 => {
+    "LucasL" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::lucas_l_ast(args));
     }
     "ChineseRemainder" if args.len() == 2 => {

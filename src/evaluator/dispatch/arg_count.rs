@@ -604,7 +604,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LowerTriangularize" => Some((1, 2)),
     "LowerTriangularMatrixQ" => Some((1, 1)),
     "LowpassFilter" => Some((2, 4)),
-    "LucasL" => Some((1, 1)),
+    "LucasL" => Some((1, 2)),
     "LUDecomposition" => Some((1, 1)),
     "MachineNumberQ" => Some((1, 1)),
     "MangoldtLambda" => Some((1, 1)),

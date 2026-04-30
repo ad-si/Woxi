@@ -502,13 +502,64 @@ pub fn subfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// LucasL[n] - Lucas number L_n
+/// LucasL[n] - Lucas number L_n.
+/// LucasL[n, x] - Lucas polynomial: L_0(x) = 2, L_1(x) = x,
+/// L_{n+1}(x) = x * L_n(x) + L_{n-1}(x). Stays symbolic when n is not
+/// a non-negative integer; series-expansion is wired up in
+/// `series_ast` for non-integer n via the closed form
+/// `((x + Sqrt[x^2 + 4])/2)^n`.
 pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "LucasL expects exactly 1 argument".into(),
+      "LucasL expects 1 or 2 arguments".into(),
     ));
   }
+
+  if args.len() == 2 {
+    // Two-argument form: Lucas polynomial in x.
+    let n = match expr_to_i128(&args[0]) {
+      Some(n) if n >= 0 => n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "LucasL".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let x = &args[1];
+    // L_0(x) = 2; L_1(x) = x.
+    if n == 0 {
+      return Ok(Expr::Integer(2));
+    }
+    if n == 1 {
+      return Ok(x.clone());
+    }
+    // Build via the recurrence symbolically, expanding after each step
+    // so `LucasL[5, y]` returns `5*y + 5*y^3 + y^5` rather than a
+    // nested-Times tree.
+    let mut prev: Expr = Expr::Integer(2);
+    let mut curr: Expr = x.clone();
+    for _ in 2..=n {
+      let next = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![x.clone(), curr.clone()],
+          },
+          prev,
+        ],
+      };
+      let expanded = crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        &[next],
+      )?;
+      prev = curr;
+      curr = expanded;
+    }
+    return Ok(curr);
+  }
+
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
     _ => {

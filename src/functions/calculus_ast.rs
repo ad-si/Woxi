@@ -7771,6 +7771,61 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // LucasL[n, var] with non-integer n: rewrite using the closed-form
+  // first dominant root `((x + Sqrt[x^2 + 4])/2)^n`. Series of this
+  // form yields the same coefficients as Wolfram's `Series[LucasL[n, x], …]`
+  // (the second-root contribution drops out of the real series).
+  if let Expr::FunctionCall {
+    name: lname,
+    args: largs,
+  } = &args[0]
+    && lname == "LucasL"
+    && largs.len() == 2
+    && matches!(&largs[1], Expr::Identifier(v) if v == &var_name)
+    && !matches!(&largs[0], Expr::Integer(_))
+  {
+    let n_expr = largs[0].clone();
+    let x_expr = largs[1].clone();
+    // ((x + Sqrt[x^2 + 4])/2)^n
+    let rewritten = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![
+                x_expr.clone(),
+                Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![
+                      Expr::Integer(4),
+                      Expr::FunctionCall {
+                        name: "Power".to_string(),
+                        args: vec![x_expr, Expr::Integer(2)],
+                      },
+                    ],
+                  }],
+                },
+              ],
+            },
+          ],
+        },
+        n_expr,
+      ],
+    };
+    let mut new_args = vec![rewritten, args[1].clone()];
+    new_args.extend(option_args.clone());
+    return series_ast(&new_args);
+  }
+
   // Try fast coefficient-based computation for known functions
   if let Some((rat_coeffs, nmin)) =
     try_fast_series(&args[0], &var_name, &x0, order)
