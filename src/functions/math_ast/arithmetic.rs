@@ -1471,6 +1471,12 @@ fn extract_earliest_variable(e: &Expr) -> Option<String> {
 
 /// Count distinct free (symbolic) variables in an expression.
 fn count_free_variables(e: &Expr) -> usize {
+  collect_free_vars(e).len()
+}
+
+/// Collect the set of free symbolic variables in an expression. Excludes
+/// known math constants (`Pi`, `E`, etc.) and non-alphabetic identifiers.
+fn collect_free_vars(e: &Expr) -> std::collections::BTreeSet<String> {
   fn collect(e: &Expr, vars: &mut std::collections::BTreeSet<String>) {
     match e {
       Expr::Identifier(s)
@@ -1515,7 +1521,7 @@ fn count_free_variables(e: &Expr) -> usize {
   }
   let mut vars = std::collections::BTreeSet::new();
   collect(e, &mut vars);
-  vars.len()
+  vars
 }
 
 /// Extract the latest (alphabetically greatest) free variable in an expression.
@@ -1973,6 +1979,39 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           } else {
             std::cmp::Ordering::Less
           };
+        }
+        // When the non-pair term's base is a Plus (e.g. `c*(5+a+b)` after
+        // stripping the numeric coefficient) AND the two terms have
+        // different free-variable sets, defer to canonical Order. This
+        // matches Wolfram's `Times[2, Plus[…]]` vs `Times[a, q]` →
+        // `Plus[…]` first (its sorted args put `2` before `a`).
+        // We restrict the check to differing variable sets so cases like
+        // `8*x + 4*(3+2*x)` (same variables) still hit the monomial-first
+        // rule below — that ordering matches Wolfram for shared-variable
+        // pairs.
+        let none_base_is_plus = matches!(&none_base,
+          Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(&none_base,
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+              ..
+            });
+        if none_base_is_plus {
+          let (_, pair_base) = decompose_term(pair_term);
+          let pair_vars = collect_free_vars(&pair_base);
+          let none_vars = collect_free_vars(&none_base);
+          if pair_vars != none_vars {
+            let cmp = crate::functions::list_helpers_ast::compare_exprs(
+              pair_term, none_term,
+            );
+            if cmp != 0 {
+              return if cmp > 0 {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+          }
         }
         // For compound algebraic terms with free variables, compare by
         // latest variable relative to the monomial's variable:
