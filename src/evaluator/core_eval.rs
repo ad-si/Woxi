@@ -1820,6 +1820,32 @@ pub fn evaluate_expr_to_expr_inner(
         if has_user_rules {
           return evaluate_function_call_ast(name, &[left_val, right_val]);
         }
+        // If the head symbol has an OwnValue (e.g. `Unprotect[Plus]; Plus=Q`),
+        // substitute the head and re-evaluate as `Q[a, b]` rather than the
+        // built-in plus_ast path. Matches Wolfram: `Plus = Q; a + b` → `Q[a, b]`.
+        let own_value_head: Option<String> = ENV.with(|e| {
+          let env = e.borrow();
+          match env.get(name) {
+            Some(StoredValue::ExprVal(Expr::Identifier(s))) => Some(s.clone()),
+            // OwnValues set via `Sym = simple_identifier` are stored as Raw
+            // text (the assignment shortcut). Treat a single-identifier
+            // textual value the same as a head substitution.
+            Some(StoredValue::Raw(s))
+              if s.chars().all(|c| c.is_alphanumeric() || c == '$') =>
+            {
+              Some(s.clone())
+            }
+            _ => None,
+          }
+        });
+        if let Some(new_head) = own_value_head
+          && new_head != name
+        {
+          return evaluate_function_call_ast(
+            &new_head,
+            &[left_val, right_val],
+          );
+        }
       }
 
       // Check for list threading (arithmetic operations thread over lists)
