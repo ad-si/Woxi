@@ -3157,15 +3157,12 @@ fn srgb_to_linear(c: f64) -> f64 {
 /// internal sRGB → D50 conversion (Bradford chromatic adaptation), so
 /// `ColorConvert[Red, "XYZ"]` lines up to f64 precision.
 fn linear_rgb_to_xyz_d50(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-  let x = 0.43602191242669813 * r
-    + 0.38510884137388846 * g
-    + 0.14308124062061284 * b;
-  let y = 0.22247517260243593 * r
-    + 0.7169066111623497 * g
-    + 0.06061821623521406 * b;
-  let z = 0.013928134067434789 * r
-    + 0.09710156693979348 * g
-    + 0.7141585835116003 * b;
+  let x =
+    0.43602191242669813 * r + 0.38510884137388846 * g + 0.14308124062061284 * b;
+  let y =
+    0.22247517260243593 * r + 0.7169066111623497 * g + 0.06061821623521406 * b;
+  let z =
+    0.013928134067434789 * r + 0.09710156693979348 * g + 0.7141585835116003 * b;
   (x, y, z)
 }
 
@@ -3226,7 +3223,10 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract optional `DistanceFunction -> spec` from the trailing args.
   let mut distance_fn: Option<Expr> = None;
   for a in &args[2..] {
-    if let Expr::Rule { pattern, replacement } = a
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DistanceFunction")
     {
       distance_fn = Some(replacement.as_ref().clone());
@@ -3257,17 +3257,23 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   match distance_fn {
+    // Built-in named distance functions arrive as String literals.
+    Some(Expr::String(ref s)) if s == "CIE2000" || s == "CIEDE2000" => {
+      Ok(Expr::Real(ciede2000_distance(lab1, lab2)))
+    }
+    Some(Expr::String(ref s)) if s == "CIE76" => {
+      let dl = lab1.0 - lab2.0;
+      let da = lab1.1 - lab2.1;
+      let db = lab1.2 - lab2.2;
+      Ok(Expr::Real((dl * dl + da * da + db * db).sqrt()))
+    }
     Some(func) => {
       // Apply the user-supplied function to the LAB triples.
-      let call = Expr::FunctionCall {
-        name: "Apply".to_string(),
-        args: vec![],
-      };
-      let _ = call; // unused; we use a direct CurriedCall instead
-      let result = crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
-        func: Box::new(func),
-        args: vec![to_list(lab1), to_list(lab2)],
-      })?;
+      let result =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new(func),
+          args: vec![to_list(lab1), to_list(lab2)],
+        })?;
       Ok(result)
     }
     None => {
@@ -3278,4 +3284,93 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Real((dl * dl + da * da + db * db).sqrt()))
     }
   }
+}
+
+/// CIEDE2000 / "CIE2000" perceptual color difference between two
+/// Wolfram-scaled LAB triples (L,a,b each in [0,1]). The standard
+/// formula operates in the unscaled `[0,100]` LAB space; we multiply
+/// by 100, run the formula, and divide the result by 100 to match
+/// wolframscript's reported magnitude.
+fn ciede2000_distance(
+  lab1: (f64, f64, f64),
+  lab2: (f64, f64, f64),
+) -> f64 {
+  let (l1, a1, b1) = (lab1.0 * 100.0, lab1.1 * 100.0, lab1.2 * 100.0);
+  let (l2, a2, b2) = (lab2.0 * 100.0, lab2.1 * 100.0, lab2.2 * 100.0);
+
+  let c1 = (a1 * a1 + b1 * b1).sqrt();
+  let c2 = (a2 * a2 + b2 * b2).sqrt();
+  let avg_c = 0.5 * (c1 + c2);
+  let avg_c7 = avg_c.powi(7);
+  let g = 0.5 * (1.0 - (avg_c7 / (avg_c7 + 25f64.powi(7))).sqrt());
+
+  let a1p = a1 * (1.0 + g);
+  let a2p = a2 * (1.0 + g);
+  let c1p = (a1p * a1p + b1 * b1).sqrt();
+  let c2p = (a2p * a2p + b2 * b2).sqrt();
+  let avg_cp = 0.5 * (c1p + c2p);
+
+  let to_deg = 180.0 / std::f64::consts::PI;
+  let h1p = {
+    let h = b1.atan2(a1p) * to_deg;
+    if h < 0.0 { h + 360.0 } else { h }
+  };
+  let h2p = {
+    let h = b2.atan2(a2p) * to_deg;
+    if h < 0.0 { h + 360.0 } else { h }
+  };
+
+  let delta_lp = l2 - l1;
+  let delta_cp = c2p - c1p;
+  let cprod = c1p * c2p;
+  let delta_hp_deg = if cprod == 0.0 {
+    0.0
+  } else {
+    let d = h2p - h1p;
+    if d.abs() <= 180.0 {
+      d
+    } else if d > 180.0 {
+      d - 360.0
+    } else {
+      d + 360.0
+    }
+  };
+  let delta_hp_rad = delta_hp_deg / to_deg;
+  let delta_h_big = 2.0 * cprod.sqrt() * (delta_hp_rad / 2.0).sin();
+
+  let avg_lp = 0.5 * (l1 + l2);
+  let avg_hp_deg = if cprod == 0.0 {
+    h1p + h2p
+  } else if (h1p - h2p).abs() <= 180.0 {
+    0.5 * (h1p + h2p)
+  } else if h1p + h2p < 360.0 {
+    0.5 * (h1p + h2p + 360.0)
+  } else {
+    0.5 * (h1p + h2p - 360.0)
+  };
+  let avg_hp_rad = avg_hp_deg / to_deg;
+  let cos = |deg: f64| (deg / to_deg).cos();
+  let t = 1.0 - 0.17 * cos(avg_hp_deg - 30.0)
+    + 0.24 * cos(2.0 * avg_hp_deg)
+    + 0.32 * cos(3.0 * avg_hp_deg + 6.0)
+    - 0.20 * cos(4.0 * avg_hp_deg - 63.0);
+
+  let delta_theta = 30.0
+    * (-((avg_hp_deg - 275.0) / 25.0).powi(2)).exp();
+  let avg_cp7 = avg_cp.powi(7);
+  let r_c = 2.0 * (avg_cp7 / (avg_cp7 + 25f64.powi(7))).sqrt();
+  let dl_diff = avg_lp - 50.0;
+  let s_l = 1.0
+    + 0.015 * dl_diff * dl_diff / (20.0 + dl_diff * dl_diff).sqrt();
+  let s_c = 1.0 + 0.045 * avg_cp;
+  let s_h = 1.0 + 0.015 * avg_cp * t;
+  let r_t = -(2.0 * delta_theta / to_deg).sin() * r_c;
+
+  let term_l = delta_lp / s_l;
+  let term_c = delta_cp / s_c;
+  let term_h = delta_h_big / s_h;
+  let _ = avg_hp_rad; // unused but documents the radian conversion above
+  let de2 =
+    term_l * term_l + term_c * term_c + term_h * term_h + r_t * term_c * term_h;
+  de2.sqrt() / 100.0
 }
