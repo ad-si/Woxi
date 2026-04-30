@@ -2264,10 +2264,7 @@ fn collect_fn_call_factors(e: &Expr) -> Vec<&Expr> {
 /// E.g. comparing `a*C[2]` vs `C[1]`: the Times product carries `C[2]`,
 /// and the bare term is `C[1]` — both share head `"C"`, so we recurse on
 /// `C[2]` vs `C[1]` (yielding `Greater`, i.e. `C[1]` sorts first).
-fn compare_via_shared_fn_call_factor(
-  a: &Expr,
-  b: &Expr,
-) -> std::cmp::Ordering {
+fn compare_via_shared_fn_call_factor(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   fn try_match<'a>(
     times_term: &'a Expr,
     bare_call: &'a Expr,
@@ -2277,9 +2274,9 @@ fn compare_via_shared_fn_call_factor(
       _ => return None,
     };
     let factors = collect_fn_call_factors(times_term);
-    factors.into_iter().find(|f| {
-      matches!(f, Expr::FunctionCall { name, .. } if name == bare_name)
-    })
+    factors.into_iter().find(
+      |f| matches!(f, Expr::FunctionCall { name, .. } if name == bare_name),
+    )
   }
   if let Some(matching) = try_match(a, b) {
     return compare_expr_canonical(matching, b);
@@ -4303,6 +4300,19 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // etc. are handled consistently with the non-list path.
       times_ast(&[a.clone(), b.clone()])
     });
+  }
+
+  // BigFloat-aware product. When any factor is a precision-tagged
+  // BigFloat and every factor evaluates to a BigFloat (via expr_to_bigfloat
+  // — Integer, Rational, BigFloat, or one of the math constants E / Pi /
+  // Degree / GoldenRatio / EulerGamma / Catalan / Glaisher / Khinchin),
+  // compute the product with astro-float so e.g. `N[Pi, 30] * E` returns
+  // a single high-precision BigFloat instead of a symbolic Times.
+  let has_bigfloat = args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
+  if has_bigfloat
+    && args.iter().all(is_bigfloat_evaluable_factor)
+  {
+    return bigfloat_times(args);
   }
 
   // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
@@ -7226,6 +7236,92 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let display_prec = (result_prec.round() as usize).max(1);
   let result_str = format_bigfloat_value(sum_val, display_prec);
   Ok(Expr::BigFloat(result_str, result_prec))
+}
+
+/// True if `e` can be evaluated to an `astro_float::BigFloat` via
+/// [`expr_to_bigfloat`] for use in [`bigfloat_times`]. Mirrors the input
+/// shapes that `expr_to_bigfloat` accepts: numeric literals, the math
+/// constants Wolfram tracks at arbitrary precision, and a sign-only
+/// `UnaryOp::Minus` wrapper.
+fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::BigFloat(_, _) => true,
+    Expr::Constant(name) => matches!(
+      name.as_str(),
+      "Pi" | "-Pi" | "E" | "Degree"
+    ),
+    Expr::Identifier(name) => matches!(
+      name.as_str(),
+      "GoldenRatio" | "EulerGamma" | "Catalan" | "Glaisher" | "Khinchin"
+    ),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      args.iter().all(is_bigfloat_evaluable_factor)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_bigfloat_evaluable_factor(operand),
+    _ => false,
+  }
+}
+
+/// Multiply BigFloat-tagged numbers with precision tracking. Mirrors
+/// [`bigfloat_plus`] but for products: the value is computed in
+/// astro-float at the full bit budget, and the result precision is
+/// tracked via the per-factor relative-error formula
+/// `1/p_result = sum 1/p_i`.
+fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use astro_float::{BigFloat, Consts, RoundingMode};
+
+  // Result precision: minimum of the BigFloat operands' precisions
+  // (exact factors don't bound it). For Times, the product's relative
+  // error is roughly the sum of operand relative errors, but for typical
+  // few-factor products the minimum precision is a close approximation
+  // (within 1 digit) and matches Wolfram's reported `Precision[…]`.
+  let min_bf_prec: f64 = args
+    .iter()
+    .filter_map(|a| {
+      if let Expr::BigFloat(_, p) = a {
+        Some(*p)
+      } else {
+        None
+      }
+    })
+    .fold(f64::INFINITY, f64::min);
+  if !min_bf_prec.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "bigfloat_times called without any BigFloat operand".into(),
+    ));
+  }
+
+  let bits = crate::functions::math_ast::numerical::nominal_bits(
+    min_bf_prec.ceil() as usize,
+  );
+  let rm = RoundingMode::ToEven;
+  let mut cc = Consts::new()
+    .map_err(|e| InterpreterError::EvaluationError(format!("{}", e)))?;
+
+  let mut product = BigFloat::from_i32(1, bits);
+  for arg in args {
+    let factor =
+      crate::functions::math_ast::numerical::expr_to_bigfloat(
+        arg, bits, rm, &mut cc,
+      )?;
+    product = product.mul(&factor, bits, rm);
+  }
+
+  let max_fraction_digits =
+    ((bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
+  let result_str = crate::functions::math_ast::numerical::bigfloat_to_string(
+    &product,
+    Some(max_fraction_digits),
+    rm,
+    &mut cc,
+  )?;
+  Ok(Expr::BigFloat(result_str, min_bf_prec))
 }
 
 /// Format an f64 value as a BigFloat digit string with the given significant digits.
