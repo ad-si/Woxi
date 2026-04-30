@@ -7864,7 +7864,22 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           ) || matches!(
             right.as_ref(),
             Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
-          )));
+          )))
+        // Times * Times (right-nested) where the inner left factor is a
+        // bare Integer: this is the literal chain produced for
+        // `Derivative[n][# ^ k &]` (e.g. `3*(2*#1)`). Times normally
+        // auto-flattens, so this nesting only survives inside Function
+        // bodies that hold the structure, and wolframscript prints those
+        // with the parens preserved.
+        || (matches!(op, BinaryOperator::Times)
+          && matches!(
+            right.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: rl,
+              ..
+            } if matches!(rl.as_ref(), Expr::Integer(_))
+          ));
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {

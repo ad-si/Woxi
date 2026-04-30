@@ -726,7 +726,8 @@ mod derivative_prime_notation {
 
   #[test]
   fn derivative_double_prime_on_paren_anonymous_function() {
-    assert_eq!(interpret("(#^4&)''").unwrap(), "12*#1^2 & ");
+    // Wolframscript prints the chain unsimplified rather than `12*#1^2 & `.
+    assert_eq!(interpret("(#^4&)''").unwrap(), "4*(3*#1^2) & ");
   }
 
   #[test]
@@ -891,12 +892,14 @@ mod derivative_prime_notation {
 
   #[test]
   fn derivative_n_pure_function_cubic_second() {
-    assert_eq!(interpret("Derivative[2][#^3&]").unwrap(), "6*#1 & ");
+    // Wolframscript prints `3*(2*#1) & ` instead of the folded `6*#1 & `.
+    assert_eq!(interpret("Derivative[2][#^3&]").unwrap(), "3*(2*#1) & ");
   }
 
   #[test]
   fn derivative_n_pure_function_cubic_third() {
-    assert_eq!(interpret("Derivative[3][#^3&]").unwrap(), "6 & ");
+    // Chain runs all the way down to the residual `1` factor.
+    assert_eq!(interpret("Derivative[3][#^3&]").unwrap(), "3*(2*1) & ");
   }
 
   #[test]

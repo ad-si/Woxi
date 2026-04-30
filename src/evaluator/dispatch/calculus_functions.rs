@@ -37,6 +37,78 @@ fn contains_unresolved_derivative(expr: &Expr, func_name: &str) -> bool {
   }
 }
 
+/// Match a function body of the shape `# ^ k` (where k is a positive integer
+/// constant). Returns the integer power k. The body must reference Slot(1)
+/// only as the base — bodies like `# ^ #` or `2 ^ #` don't qualify.
+fn match_slot_power(body: &Expr) -> Option<i128> {
+  let (base, exp) = match body {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    // Bare slot: `#1 &` is `# ^ 1 &` for our purposes.
+    Expr::Slot(1) => return Some(1),
+    _ => return None,
+  };
+  match (base, exp) {
+    (Expr::Slot(1), Expr::Integer(k)) if *k >= 0 => Some(*k),
+    _ => None,
+  }
+}
+
+/// Build the right-nested multiplication chain that wolframscript prints for
+/// `Derivative[n][# ^ k &]`. For n > k the function collapses to `0`. For
+/// n <= k the chain has n integer factors `k * (k-1) * … * (k-n+1)` wrapping
+/// the residual power: `1` when `k - n == 0`, `#1` when `k - n == 1`, and
+/// `#1^(k-n)` otherwise.
+fn build_derivative_slot_power_chain(k: i128, n: i128) -> Option<Expr> {
+  if n < 0 {
+    return None;
+  }
+  if n > k {
+    return Some(Expr::Integer(0));
+  }
+  let dn = k - n;
+  let times = |a: Expr, b: Expr| Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(a),
+    right: Box::new(b),
+  };
+  let (mut result, start) = if dn == 0 {
+    // The innermost factor is the literal `1` from `(k-n+1) * #1^0`. The
+    // chain ends with that 1 directly — no separate Slot factor remains.
+    if n == 0 {
+      return Some(Expr::Integer(1));
+    }
+    (Expr::Integer(1), n - 1)
+  } else {
+    let inner_var = if dn == 1 {
+      Expr::Slot(1)
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(Expr::Slot(1)),
+        right: Box::new(Expr::Integer(dn)),
+      }
+    };
+    if n == 0 {
+      return Some(inner_var);
+    }
+    // Innermost numeric factor is `(dn + 1) = k - n + 1`.
+    (times(Expr::Integer(dn + 1), inner_var), n - 1)
+  };
+  // Wrap with the remaining numerics k, k-1, …, k-n+2 from outside in.
+  for i in (0..start).rev() {
+    let factor = k - i;
+    result = times(Expr::Integer(factor), result);
+  }
+  Some(result)
+}
+
 pub fn dispatch_calculus_functions(
   name: &str,
   args: &[Expr],
@@ -129,12 +201,13 @@ pub fn dispatch_calculus_functions(
       // wolframscript preserves. Skip Integer/BigInteger arg shapes — those
       // belong to the multi-index `Derivative[n1, n2]` form, which is
       // unrelated to applying a derivative to a value.
-      if !matches!(&args[1],
+      if !matches!(
+        &args[1],
         Expr::Identifier(_)
           | Expr::Function { .. }
           | Expr::Integer(_)
-          | Expr::BigInteger(_))
-      {
+          | Expr::BigInteger(_)
+      ) {
         return Some(Ok(Expr::CurriedCall {
           func: Box::new(Expr::FunctionCall {
             name: "Derivative".to_string(),
@@ -186,6 +259,17 @@ pub fn dispatch_calculus_functions(
         }
         // Handle pure function: Derivative[n][body&]
         if let Expr::Function { body } = &args[1] {
+          // Special-case `Derivative[n][# ^ k &]`: wolframscript prints the
+          // result as a right-nested multiplication chain `k*(k-1)*…*#1^(k-n)`
+          // rather than the folded `k!/(k-n)! * #1^(k-n)`. Detect this shape
+          // and build the chain literally so the test's exact output matches.
+          if let Some(k) = match_slot_power(body)
+            && let Some(chain) = build_derivative_slot_power_chain(k, n as i128)
+          {
+            return Some(Ok(Expr::Function {
+              body: Box::new(chain),
+            }));
+          }
           let dummy = "__d_slot__";
           // Replace Slot(1) with dummy variable for differentiation
           let with_dummy = crate::syntax::substitute_slots(
