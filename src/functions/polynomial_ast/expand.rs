@@ -863,7 +863,8 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
   factors.sort_by(|a, b| {
     let pa = crate::functions::math_ast::term_priority(a);
     let pb = crate::functions::math_ast::term_priority(b);
-    pa.cmp(&pb).then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
+    pa.cmp(&pb)
+      .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
   });
 }
 
@@ -1037,7 +1038,12 @@ pub fn expand_all_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let expanded = expand_all_recursive(&args[0]);
   if let Some(m) = modulus {
-    Ok(reduce_coefficients_mod(&expanded, m))
+    // wolframscript keeps the fraction `(num)/(den)` together when a
+    // Modulus is supplied even though the default ExpandAll distributes
+    // each numerator term over the denominator. Recombine via Together
+    // after the modular reduction so the shape matches.
+    let reduced = reduce_coefficients_mod(&expanded, m);
+    Ok(super::together::together_expr(&reduced))
   } else {
     Ok(expanded)
   }

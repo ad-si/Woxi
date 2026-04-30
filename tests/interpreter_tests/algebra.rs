@@ -857,10 +857,12 @@ mod expand_all {
     // ExpandAll now accepts a Modulus option (like Expand) and applies the
     // reduction to coefficients in both numerator and denominator
     // subexpressions. Here `3*x^2*y` and `3*x*y^2` drop out of `(x+y)^3`
-    // mod 3, leaving just `x^3 + y^3`.
+    // mod 3, leaving just `x^3 + y^3`. wolframscript keeps the resulting
+    // fraction together (rather than distributing each numerator term over
+    // the denominator) when a Modulus is supplied.
     assert_eq!(
       interpret("ExpandAll[(1 + a) ^ 6 / (x + y)^3, Modulus -> 3]").unwrap(),
-      "(2*a^3)/(x^3 + y^3) + a^6/(x^3 + y^3) + (x^3 + y^3)^(-1)"
+      "(1 + 2*a^3 + a^6)/(x^3 + y^3)"
     );
   }
 }
