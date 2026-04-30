@@ -226,14 +226,17 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a], …]`. Picks the smallest |negative integer| to keep the polynomial
   // degree minimal and handled before the p=q=1 → 1F1 delegation so this
   // closed form covers both PFQ and 1F1 inputs uniformly.
-  if a_list.iter().any(|e| matches!(e, Expr::Integer(v) if *v <= 0)) {
+  if a_list
+    .iter()
+    .any(|e| matches!(e, Expr::Integer(v) if *v <= 0))
+  {
     let n = a_list
       .iter()
       .filter_map(|e| {
         if let Expr::Integer(v) = e
           && *v <= 0
         {
-          Some((-*v) as i128)
+          Some(-*v)
         } else {
           None
         }
@@ -1665,7 +1668,9 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `(1-z)^k` to `(z-1)^k` for matching wolframscript's canonical sign.
 fn inner_has_negative_int_coefficient(expr: &Expr) -> bool {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
       matches!(&args[0], Expr::Integer(n) if *n < 0)
     }
     Expr::BinaryOp {
@@ -1682,7 +1687,9 @@ fn inner_has_negative_int_coefficient(expr: &Expr) -> bool {
 /// match arms here are exhaustive for the inputs we produce.
 fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
       let mut new_args = args.clone();
       if let Expr::Integer(n) = &new_args[0] {
         new_args[0] = Expr::Integer(-n);

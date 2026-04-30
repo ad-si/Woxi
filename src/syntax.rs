@@ -7077,6 +7077,28 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               None
             };
             if let Some(i_part) = i_part_opt {
+              // If the symbolic side contains a denominator factor
+              // (Power[base, negative]) split it out as `(I*<numer>)/<denom>`,
+              // matching wolframscript's `Times[I, …, Power[d, -1]]` form.
+              if symbolic_factors.iter().any(|a| is_denominator_factor(a)) {
+                let combined: Vec<Expr> = std::iter::once(Expr::Identifier(
+                  "I".to_string(),
+                ))
+                .chain(symbolic_factors.iter().cloned().cloned())
+                .collect();
+                if let Some(frac) =
+                  format_times_with_denominator(&combined, fmt_fn)
+                {
+                  // i_part may be `-I`, `(-I)`, `I/2`, etc. The combined
+                  // path above always produces an `I`-prefixed numerator;
+                  // if i_part != "I", prefix the `-` / fold the rational
+                  // back over the fraction. For the common cases it's
+                  // sufficient to just use `frac` when i_part is `I`.
+                  if i_part == "I" {
+                    return frac;
+                  }
+                }
+              }
               let rest: Vec<String> = symbolic_factors
                 .iter()
                 .map(|a| {

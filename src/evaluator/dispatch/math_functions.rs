@@ -4102,10 +4102,208 @@ fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// polynomial result is a single distributed Plus chain.
 fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
   let expanded = complex_expand_recursive(expr);
-  Ok(
-    crate::evaluator::evaluate_function_call_ast("Expand", &[expanded.clone()])
-      .unwrap_or(expanded),
+  let distributed = crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    &[expanded.clone()],
   )
+  .unwrap_or(expanded);
+  // Group terms by I-factor: re-emit as `<real> + I*<imag>` so the
+  // imaginary contributions appear under a single `I*(…)` umbrella,
+  // matching wolframscript's `ComplexExpand[…, vars]` shape.
+  Ok(group_imag_terms(&distributed))
+}
+
+/// If `expr` is a Plus chain whose terms each have at most one explicit
+/// `I` (or `Complex[0,k]`) factor, regroup as `real_sum + I*imag_sum`.
+/// Terms without an `I` factor are taken as fully real; terms with one
+/// have that factor stripped and the remainder added to the imag bucket.
+fn group_imag_terms(expr: &Expr) -> Expr {
+  let terms: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return expr.clone(),
+  };
+  let mut real_parts: Vec<Expr> = Vec::new();
+  let mut imag_parts: Vec<Expr> = Vec::new();
+  let mut first_imag_pos: Option<usize> = None;
+  for t in &terms {
+    if !contains_explicit_i(t) {
+      real_parts.push(t.clone());
+      continue;
+    }
+    if let Some(stripped) = strip_one_i_factor(t) {
+      if first_imag_pos.is_none() {
+        first_imag_pos = Some(real_parts.len());
+      }
+      imag_parts.push(stripped);
+    } else {
+      // Term has multiple I factors (or I in a non-multiplicative
+      // position); we can't safely group it. Bail.
+      return expr.clone();
+    }
+  }
+  let imag = match imag_parts.len() {
+    0 => Expr::Integer(0),
+    1 => imag_parts.remove(0),
+    _ => crate::evaluator::evaluate_function_call_ast("Plus", &imag_parts)
+      .unwrap_or(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: imag_parts,
+      }),
+  };
+  if is_expr_zero(&imag) {
+    return match real_parts.len() {
+      0 => Expr::Integer(0),
+      1 => real_parts.remove(0),
+      _ => crate::evaluator::evaluate_function_call_ast("Plus", &real_parts)
+        .unwrap_or(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: real_parts,
+        }),
+    };
+  }
+  let i_term = if matches!(imag, Expr::Integer(1)) {
+    Expr::Identifier("I".to_string())
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Identifier("I".to_string()), imag],
+    }
+  };
+  if real_parts.is_empty() {
+    return crate::evaluator::evaluate_expr_to_expr(&i_term)
+      .unwrap_or(i_term);
+  }
+  // Insert the `I*<imag>` umbrella at the position the first imag
+  // term occupied in the original Plus, so the umbrella lands in the
+  // same slot wolframscript prints. Skip the final evaluate pass so
+  // the canonical Plus sort doesn't bury the umbrella back at the
+  // start.
+  let mut combined_args: Vec<Expr> = Vec::with_capacity(real_parts.len() + 1);
+  let insert_at = first_imag_pos.unwrap_or(real_parts.len()).min(real_parts.len());
+  combined_args.extend(real_parts.drain(..insert_at));
+  combined_args.push(i_term);
+  combined_args.extend(real_parts);
+  if combined_args.len() == 1 {
+    return combined_args.remove(0);
+  }
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: combined_args,
+  }
+}
+
+fn is_expr_zero(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+}
+
+/// Strip a single multiplicative `I` factor (or fold a `Complex[0, k]`
+/// into `k`) from a term, returning the remaining "real" coefficient.
+/// Returns None when more than one `I` factor is present, or the `I`
+/// is buried inside a head like `Sin[I*x]` where it can't be peeled
+/// off as a top-level multiplier.
+fn strip_one_i_factor(t: &Expr) -> Option<Expr> {
+  fn collect_factors(e: &Expr) -> Vec<Expr> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().flat_map(collect_factors).collect()
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        let mut v = collect_factors(left);
+        v.extend(collect_factors(right));
+        v
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        // `-X` is `(-1) * X` — push the sign into the factor list so
+        // strip_one_i_factor can drop the I and keep the leading −1.
+        let mut v = vec![Expr::Integer(-1)];
+        v.extend(collect_factors(operand));
+        v
+      }
+      _ => vec![e.clone()],
+    }
+  }
+  let factors = collect_factors(t);
+  let mut i_seen = false;
+  let mut new_factors: Vec<Expr> = Vec::new();
+  for f in factors {
+    let is_i = matches!(&f, Expr::Identifier(s) if s == "I");
+    let is_complex_imag = if let Expr::FunctionCall { name, args } = &f
+      && name == "Complex"
+      && args.len() == 2
+      && is_expr_zero(&args[0])
+      && !is_expr_zero(&args[1])
+    {
+      true
+    } else {
+      false
+    };
+    if is_i || is_complex_imag {
+      if i_seen {
+        return None;
+      }
+      i_seen = true;
+      // Complex[0, k] contributes its imaginary scalar `k` to the rest.
+      if is_complex_imag
+        && let Expr::FunctionCall { args: cargs, .. } = &f
+        && cargs.len() == 2
+        && !matches!(&cargs[1], Expr::Integer(1))
+      {
+        new_factors.push(cargs[1].clone());
+      }
+    } else if contains_explicit_i(&f) {
+      // Nested `I` inside a non-Times head means we can't cleanly peel
+      // it off, e.g. `Sin[I*x]`.
+      return None;
+    } else {
+      new_factors.push(f);
+    }
+  }
+  if !i_seen {
+    return None;
+  }
+  Some(match new_factors.len() {
+    0 => Expr::Integer(1),
+    1 => new_factors.remove(0),
+    _ => crate::evaluator::evaluate_function_call_ast("Times", &new_factors)
+      .unwrap_or(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_factors,
+      }),
+  })
+}
+
+/// Recursively checks whether an expression contains an explicit `I` or
+/// `Complex[0, k]` factor anywhere — used to decide whether
+/// `group_imag_terms` should attempt a real/imag split on this term or
+/// classify it as already fully real.
+fn contains_explicit_i(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(s) => s == "I",
+    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+      // Complex[a, 0] is real; Complex[a, b] with b≠0 carries an
+      // imaginary component.
+      !is_expr_zero(&args[1])
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_explicit_i),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_explicit_i(left) || contains_explicit_i(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_explicit_i(operand),
+    Expr::List(items) => items.iter().any(contains_explicit_i),
+    _ => false,
+  }
 }
 
 fn ce_simplify(e: Expr) -> Expr {
@@ -4303,6 +4501,24 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
 /// Decompose `base^exp` into real and imaginary parts when base = a + b*I and
 /// exp is a non-negative integer. Returns None otherwise.
 fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
+  // First, if `base` is real and `exp` is real (split returns
+  // imag-zero for both), the entire `base^exp` is real and we can
+  // return it as-is. This catches `Power[real, -1]` (denominator
+  // factors) so split_real_imag flows through Plus/Times rather than
+  // bailing.
+  if let Some((_, b_im)) = split_real_imag(base)
+    && matches!(b_im, Expr::Integer(0))
+    && let Some((_, e_im)) = split_real_imag(exp)
+    && matches!(e_im, Expr::Integer(0))
+  {
+    return Some((
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![base.clone(), exp.clone()],
+      },
+      Expr::Integer(0),
+    ));
+  }
   // Exponent must be a non-negative integer literal.
   let n = match exp {
     Expr::Integer(n) if *n >= 0 => *n,
@@ -4531,6 +4747,62 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                     left: Box::new(cosh_a),
                     right: Box::new(sin_b),
                   }),
+                }),
+              });
+            }
+            // Tanh[a + I*b] = (Sinh[2a] + I*Sin[2b]) / (Cos[2b] + Cosh[2a]).
+            // The split-into-real-and-imag form Wolfram emits keeps the
+            // shared denominator Cos[2b] + Cosh[2a] under both numerators
+            // — emit it the same way so display matches `ComplexExpand`'s.
+            "Tanh" => {
+              let two_a = Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Integer(2)),
+                right: Box::new(re.clone()),
+              };
+              let two_b = Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Integer(2)),
+                right: Box::new(im.clone()),
+              };
+              let sinh_2a = Expr::FunctionCall {
+                name: "Sinh".to_string(),
+                args: vec![two_a.clone()],
+              };
+              let sin_2b = Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: vec![two_b.clone()],
+              };
+              let cos_2b = Expr::FunctionCall {
+                name: "Cos".to_string(),
+                args: vec![two_b],
+              };
+              let cosh_2a = Expr::FunctionCall {
+                name: "Cosh".to_string(),
+                args: vec![two_a],
+              };
+              let denom = Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(cos_2b),
+                right: Box::new(cosh_2a),
+              };
+              let real_part = Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(sinh_2a),
+                right: Box::new(denom.clone()),
+              };
+              let imag_part = Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(sin_2b),
+                right: Box::new(denom),
+              };
+              return ce_simplify(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(real_part),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Identifier("I".to_string())),
+                  right: Box::new(imag_part),
                 }),
               });
             }
