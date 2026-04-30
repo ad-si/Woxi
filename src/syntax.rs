@@ -7573,15 +7573,13 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             ComparisonOp::SameQ => " === ",
             ComparisonOp::UnsameQ => " =!= ",
           };
-          let parts: Vec<String> = operands
-            .iter()
-            .map(|e| format_expr(e, ExprForm::Input))
-            .collect();
+          let parts: Vec<String> =
+            operands.iter().map(|e| format_expr(e, form)).collect();
           parts.join(op_str)
         } else {
           let mut parts = Vec::with_capacity(operands.len() + operators.len());
           for (i, operand) in operands.iter().enumerate() {
-            parts.push(format_expr(operand, ExprForm::Input));
+            parts.push(format_expr(operand, form));
             if i < operators.len() {
               let op_name = match &operators[i] {
                 ComparisonOp::Equal => "Equal",
@@ -7601,8 +7599,8 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       } else {
         // Patterns need parenthesisation in comparison output to match
         // wolframscript: `(a_) != (b_)` instead of `a_ != b_`.
-        fn fmt_operand(e: &Expr) -> String {
-          let s = format_expr(e, ExprForm::Input);
+        let fmt_operand = |e: &Expr| -> String {
+          let s = format_expr(e, form);
           if matches!(
             e,
             Expr::Pattern { .. }
@@ -7613,7 +7611,7 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           } else {
             s
           }
-        }
+        };
         let mut result = fmt_operand(&operands[0]);
         for (i, op) in operators.iter().enumerate() {
           let op_str = match op {

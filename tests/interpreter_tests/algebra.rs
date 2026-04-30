@@ -1031,8 +1031,10 @@ mod apart {
 
   #[test]
   fn apart_on_equation_is_noop() {
-    // Apart on a non-numeric expression without a denominator returns it unchanged.
-    assert_eq!(interpret("Apart[a == \"A\"]").unwrap(), "a == \"A\"");
+    // Apart on a non-numeric expression without a denominator returns it
+    // unchanged. Wolframscript -code prints OutputForm, which strips the
+    // quotes around held strings inside comparisons (e.g. `a == A`).
+    assert_eq!(interpret("Apart[a == \"A\"]").unwrap(), "a == A");
   }
 }
 
