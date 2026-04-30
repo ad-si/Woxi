@@ -228,11 +228,8 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
   }
 
   for (i, dummy) in dummies.iter().enumerate() {
-    current = crate::syntax::substitute_variable(
-      &current,
-      dummy,
-      &Expr::Slot(i + 1),
-    );
+    current =
+      crate::syntax::substitute_variable(&current, dummy, &Expr::Slot(i + 1));
   }
   Some(current)
 }
@@ -601,7 +598,8 @@ pub fn apply_curried_call(
         _ => vec![],
       };
       let body = &func_args[1];
-      // Convert all arguments to Real (compiled functions work numerically)
+      // Convert all arguments to Real (compiled functions work numerically).
+      // Rationals also coerce to Real so `cf[1/2]` matches `cf[0.5]`.
       let num_args: Vec<Expr> = args
         .iter()
         .map(|a| match a {
@@ -609,6 +607,13 @@ pub fn apply_curried_call(
           Expr::BigInteger(n) => {
             use std::str::FromStr;
             Expr::Real(f64::from_str(&n.to_string()).unwrap_or(f64::NAN))
+          }
+          Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 => {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
+              Expr::Real(*n as f64 / *d as f64)
+            } else {
+              a.clone()
+            }
           }
           other => other.clone(),
         })
