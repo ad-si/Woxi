@@ -1089,7 +1089,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Check for cyclotomic polynomials before using quadratic formula
           // x^2 + x + 1 = 0 (Φ₃): roots are (-1)^(2/3) and -(-1)^(1/3)
           // x^2 - x + 1 = 0 (Φ₆): roots are (-1)^(1/3) and -(-1)^(2/3)
-          if ai == 1 && ci == 1 && (bi == 1 || bi == -1) {
+          // Multiplying the polynomial through by -1 doesn't change the
+          // root set, so accept `(ai, ci) ∈ {(1, 1), (-1, -1)}` and pick
+          // the cyclotomic branch by `Sign[bi*ai]` rather than `bi` alone.
+          let cyclo_match = (ai == 1 && ci == 1) || (ai == -1 && ci == -1);
+          if cyclo_match && bi.abs() == ai.abs() {
             let make_neg1_pow = |p: i128, q: i128| -> Expr {
               Expr::FunctionCall {
                 name: "Power".to_string(),
@@ -1099,7 +1103,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ],
               }
             };
-            if bi == 1 {
+            // After multiplying by -1, the b/a sign flips along with a's
+            // sign — so `bi*ai > 0` corresponds to Φ₃ (`x^2 + x + 1`) and
+            // `bi*ai < 0` to Φ₆ (`x^2 - x + 1`).
+            if bi * ai > 0 {
               // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
               let sol1 = negate_expr(&make_neg1_pow(1, 3));
               let sol2 = make_neg1_pow(2, 3);
@@ -2610,8 +2617,8 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // bound value in the returned rule, matching wolframscript's
   // `{I am the result! -> 1.149…}` behaviour.
   let lhs_ident = Expr::Identifier(var);
-  let lhs = crate::evaluator::evaluate_expr_to_expr(&lhs_ident)
-    .unwrap_or(lhs_ident);
+  let lhs =
+    crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
   Ok(Expr::List(vec![Expr::Rule {
     pattern: Box::new(lhs),
     replacement: Box::new(result_val),
