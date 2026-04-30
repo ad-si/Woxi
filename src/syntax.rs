@@ -1774,6 +1774,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let inner_pair = pair.into_inner().next().unwrap();
       pair_to_expr(inner_pair)
     }
+    Rule::BoxNotation => {
+      // `\(... box content ...\)` — Woxi has no box AST, so we surface
+      // the raw source as a HoldComplete[String] so it survives
+      // CompoundExpression chains without erroring. Real box semantics
+      // would expand to RowBox/SuperscriptBox/etc. here.
+      Expr::FunctionCall {
+        name: "HoldComplete".to_string(),
+        args: vec![Expr::String(pair.as_str().to_string())],
+      }
+    }
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
       let inner_pairs: Vec<_> = pair.into_inner().collect();

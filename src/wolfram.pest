@@ -346,8 +346,21 @@ SlotCall = { Slot ~ BracketArgs+ }
 // the inner expression, so e.g. `\!\(2+2\)` evaluates to `4`.
 DisplayedBoxes = { "\\!" ~ "\\(" ~ Expression ~ "\\)" }
 
+// BoxNotation: `\(...\)` raw box-notation literal. Woxi doesn't
+// implement the box AST; we accept and skip the inner content so that
+// scripts mixing box notation with regular expressions still parse.
+// Inner content can include nested `\(...\)` plus the box operators
+// `\^` `\_` `\+` `\&` `\%` `\@`.
+BoxNotation = { "\\(" ~ BoxInner* ~ "\\)" }
+BoxInner = _{
+    BoxNotation
+  | "\\^" | "\\_" | "\\+" | "\\&" | "\\%" | "\\@"
+  | !"\\)" ~ ANY
+}
+
 Term = _{
     DisplayedBoxes
+  | BoxNotation
   | FunctionCallExtended
   | SlotCall
   | ImplicitTimes
