@@ -380,6 +380,40 @@ fn extract_linear_coeffs(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   Some((coeff, constant))
 }
 
+/// If `factor` is linear in `var` with a negative coefficient on `var`,
+/// negate the factor (so the variable term has a positive coefficient)
+/// and report `true`. Otherwise return the factor unchanged with `false`.
+/// Used to match Wolfram's Apart output convention of writing each
+/// linear denominator factor with the focus variable on the right and a
+/// positive coefficient — the negation is folded into the term's sign.
+fn negate_if_var_coeff_negative(factor: &Expr, var: &str) -> (Expr, bool) {
+  let coeffs = match extract_linear_coeffs(factor, var) {
+    Some(c) => c,
+    None => return (factor.clone(), false),
+  };
+  let coeff_negative = match &coeffs.0 {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(f) => *f < 0.0,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => true,
+    _ => false,
+  };
+  if !coeff_negative {
+    return (factor.clone(), false);
+  }
+  // Negate the factor: -(coeff*var + constant) = (-coeff)*var + (-constant)
+  let negated = Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(factor.clone()),
+  };
+  let negated =
+    crate::evaluator::evaluate_expr_to_expr(&negated).unwrap_or(negated);
+  (negated, true)
+}
+
 /// Extract leading sign from a Times expression.
 /// Returns (sign, abs_expr) where sign is 1 or -1.
 fn extract_leading_sign(expr: &Expr) -> (i128, Expr) {
@@ -507,75 +541,91 @@ fn apart_symbolic(
     // Extract sign from scalar: if leading coefficient is negative, flip sign
     let (sign, abs_scalar) = extract_leading_sign(&scalar);
 
+    // Wolfram displays the focus variable with positive coefficient inside
+    // each linear denominator factor: `(x - y)` (y-coeff = -1) is rewritten
+    // as `-(-x + y)` and the leading minus is folded into the term sign.
+    // This keeps the per-factor `var` term aligned with Wolfram's
+    // canonical Plus order for that factor.
+    let (factor_for_display, factor_negated) =
+      negate_if_var_coeff_negative(&linear_factors[i], var);
+    let mut term_sign = sign;
+    if factor_negated {
+      term_sign = -term_sign;
+    }
+
     // Build denominator = abs_scalar * factor_i (always positive scalar)
     let mut denom_factors = Vec::new();
     flatten_product_factors(&abs_scalar, &mut denom_factors);
-    denom_factors.push(linear_factors[i].clone());
+    denom_factors.push(factor_for_display);
     let full_denom = crate::functions::math_ast::times_ast(&denom_factors)
       .unwrap_or(Expr::Integer(1));
 
-    // Build positive fraction = num_val / full_denom
+    // Build fraction. When the term is negative, fold the sign into the
+    // numerator so the result evaluates as `-num_val / full_denom` and
+    // gets factored by Times canonical ordering (e.g. `-1/(2*x*…)` is
+    // displayed as `-1/2 * 1/(x*…)`), matching Wolfram's Apart format.
+    let signed_num = if term_sign < 0 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(num_val),
+      }
+    } else {
+      num_val
+    };
     let frac = Expr::BinaryOp {
       op: BinaryOperator::Divide,
-      left: Box::new(num_val),
+      left: Box::new(signed_num),
       right: Box::new(full_denom),
     };
     let frac = crate::evaluator::evaluate_expr_to_expr(&frac).unwrap_or(frac);
-
-    // Apply sign: negative terms use UnaryOp::Minus for proper plus_ast handling
-    if sign < 0 {
-      result_terms.push(Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(frac),
-      });
-    } else {
-      result_terms.push(frac);
-    }
+    result_terms.push(frac);
   }
 
   if result_terms.is_empty() {
     return Ok(expr.clone());
   }
 
-  // Build sum: positive terms first, then negative terms (as subtractions)
-  let mut positive: Vec<Expr> = Vec::new();
-  let mut negative: Vec<Expr> = Vec::new(); // stored as absolute values
-  for t in &result_terms {
-    match t {
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand,
-      } => negative.push(*operand.clone()),
-      _ => positive.push(t.clone()),
-    }
-  }
-  // Build: pos1 + pos2 + ... - neg1 - neg2 - ...
-  let mut result = if positive.is_empty() {
-    // All negative: start with -neg1
-    if negative.is_empty() {
-      return Ok(expr.clone());
-    }
-    let first = negative.remove(0);
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(first),
-    }
-  } else {
-    positive.remove(0)
-  };
-  for p in &positive {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(result),
-      right: Box::new(p.clone()),
-    };
-  }
-  for n in &negative {
-    result = Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left: Box::new(result),
-      right: Box::new(n.clone()),
-    };
-  }
-  Ok(result)
+  // Defer to canonical Plus ordering so terms (positive and negative) sort
+  // by Wolfram's rules. Falls back to a simple positive-then-negative
+  // chain if plus_ast can't handle the inputs.
+  let summed =
+    crate::functions::math_ast::plus_ast(&result_terms).unwrap_or_else(|_| {
+      let mut positive: Vec<Expr> = Vec::new();
+      let mut negative: Vec<Expr> = Vec::new();
+      for t in &result_terms {
+        match t {
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } => negative.push(*operand.clone()),
+          _ => positive.push(t.clone()),
+        }
+      }
+      let mut result = if positive.is_empty() {
+        let first = negative.remove(0);
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(first),
+        }
+      } else {
+        positive.remove(0)
+      };
+      for p in &positive {
+        result = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(result),
+          right: Box::new(p.clone()),
+        };
+      }
+      for n in &negative {
+        result = Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(result),
+          right: Box::new(n.clone()),
+        };
+      }
+      result
+    });
+  Ok(summed)
 }
