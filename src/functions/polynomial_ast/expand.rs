@@ -27,6 +27,23 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     false
   };
+  // Two-arg `Expand[expr, pattern]` (where the second arg is not an
+  // option rule like `Modulus -> n` or `Trig -> True`) expands only
+  // sub-expressions containing `pattern` and groups the resulting
+  // Plus terms by ascending power of the pattern variable.
+  // wolframscript:
+  //   Expand[(x+a)^2 + (y+a)^2 + (x+y)*(x+a), y]
+  //     → a^2 + x*(a + x) + (a + x)^2 + 2*a*y + (a + x)*y + y^2
+  if args.len() == 2 && modulus.is_none() && !trig
+    && is_pattern_arg(&args[1])
+  {
+    let var_name = match &args[1] {
+      Expr::Identifier(n) => Some(n.clone()),
+      _ => None,
+    };
+    let result = expand_with_pattern_top(&args[0], &args[1], var_name.as_deref());
+    return Ok(result);
+  }
 
   // Thread over Lists
   if let Expr::List(items) = &args[0] {
@@ -74,6 +91,288 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(expanded)
   }
 }
+
+/// Top-level driver for the 2-arg `Expand[expr, pat]` form.
+/// Processes the outermost Plus by separating pat-containing terms
+/// from pat-free ones: each pat-containing term contributes its
+/// expansion to per-pat-power buckets in input order, then the
+/// pat-free terms join the pat-power-0 bucket at the end. This
+/// matches wolframscript's grouping where unchanged (pat-free) terms
+/// sit *after* the expanded contributions inside the y^0 group.
+fn expand_with_pattern_top(expr: &Expr, pat: &Expr, var: Option<&str>) -> Expr {
+  let plus_args: Option<Vec<Expr>> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Some(vec![
+      *left.clone(),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: right.clone(),
+      },
+    ]),
+    _ => None,
+  };
+  let v = match var {
+    Some(s) => s,
+    None => return expand_with_pattern(expr, pat),
+  };
+  let Some(terms) = plus_args else {
+    let exp = expand_with_pattern(expr, pat);
+    return exp;
+  };
+  use std::collections::BTreeMap;
+  let mut buckets: BTreeMap<i128, Vec<Expr>> = BTreeMap::new();
+  let mut pat_free_y0: Vec<Expr> = Vec::new();
+  for t in &terms {
+    if !contains_pattern(t, pat) {
+      pat_free_y0.push(t.clone());
+      continue;
+    }
+    let exp = expand_with_pattern(t, pat);
+    let mut sub: Vec<Expr> = Vec::new();
+    flatten_plus_into(&exp, &mut sub);
+    for st in sub {
+      let mut p = crate::functions::polynomial_ast::coefficient::term_var_power_and_coeff(
+        &st, v,
+      )
+      .0;
+      if p < 0 {
+        p = 0;
+      }
+      buckets.entry(p).or_default().push(st);
+    }
+  }
+  // Append pat-free terms to the y-power-0 bucket so they appear after
+  // the expanded contributions for that power.
+  if !pat_free_y0.is_empty() {
+    buckets.entry(0).or_default().extend(pat_free_y0);
+  }
+  let mut final_terms: Vec<Expr> = Vec::new();
+  for (_, bucket) in buckets {
+    final_terms.extend(bucket);
+  }
+  if final_terms.len() == 1 {
+    return final_terms.remove(0);
+  }
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: final_terms,
+  }
+}
+
+/// True when the 2nd argument to `Expand[expr, …]` is a value to match
+/// against (a pattern), not an option rule like `Modulus -> n` or
+/// `Trig -> True`.
+fn is_pattern_arg(e: &Expr) -> bool {
+  if matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
+    return false;
+  }
+  if let Expr::FunctionCall { name, .. } = e
+    && (name == "Rule" || name == "RuleDelayed")
+  {
+    return false;
+  }
+  true
+}
+
+/// True when `expr` syntactically contains a sub-expression equal to
+/// `pat` (via the canonical string form). Used to decide whether
+/// `Expand[expr, pat]` should distribute a Times/Power over an inner
+/// Plus.
+fn contains_pattern(expr: &Expr, pat: &Expr) -> bool {
+  if expr_to_string(expr) == expr_to_string(pat) {
+    return true;
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => args.iter().any(|a| contains_pattern(a, pat)),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_pattern(left, pat) || contains_pattern(right, pat)
+    }
+    Expr::UnaryOp { operand, .. } => contains_pattern(operand, pat),
+    Expr::List(items) => items.iter().any(|a| contains_pattern(a, pat)),
+    _ => false,
+  }
+}
+
+/// Walk `expr` and expand only the sub-expressions that contain `pat`.
+/// Times/Power that don't depend on `pat` are returned untouched; Plus
+/// is processed term-by-term, and a Times that has exactly one Plus
+/// factor with `pat` distributes Times over that Plus while keeping
+/// the other (pat-independent) factors as-is.
+fn expand_with_pattern(expr: &Expr, pat: &Expr) -> Expr {
+  if !contains_pattern(expr, pat) {
+    return expr.clone();
+  }
+  let plus_args: Option<Vec<Expr>> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Some(vec![
+      *left.clone(),
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: right.clone(),
+      },
+    ]),
+    _ => None,
+  };
+  if let Some(terms) = plus_args {
+    let mut flat: Vec<Expr> = Vec::new();
+    for t in &terms {
+      let exp = expand_with_pattern(t, pat);
+      flatten_plus_into(&exp, &mut flat);
+    }
+    return Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: flat,
+    };
+  }
+  let times_args: Option<Vec<Expr>> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    _ => None,
+  };
+  if let Some(factors) = times_args {
+    let plus_idx = factors.iter().position(|f| {
+      contains_pattern(f, pat)
+        && (matches!(f, Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            f,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          ))
+    });
+    if let Some(idx) = plus_idx {
+      let plus_factor = factors[idx].clone();
+      let other_factors: Vec<Expr> = factors
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != idx)
+        .map(|(_, e)| e.clone())
+        .collect();
+      let plus_terms: Vec<Expr> = match &plus_factor {
+        Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left,
+          right,
+        } => vec![*left.clone(), *right.clone()],
+        Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left,
+          right,
+        } => vec![
+          *left.clone(),
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand: right.clone(),
+          },
+        ],
+        _ => return expr.clone(),
+      };
+      let mut new_terms: Vec<Expr> = Vec::new();
+      for t in &plus_terms {
+        let mut new_factors = other_factors.clone();
+        new_factors.push(t.clone());
+        let times = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_factors,
+        };
+        let evaluated =
+          crate::evaluator::evaluate_expr_to_expr(&times).unwrap_or(times);
+        let exp = expand_with_pattern(&evaluated, pat);
+        flatten_plus_into(&exp, &mut new_terms);
+      }
+      return Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: new_terms,
+      };
+    }
+    return expr.clone();
+  }
+  let pow_parts: Option<(Expr, Expr)> = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((*left.clone(), *right.clone())),
+    _ => None,
+  };
+  if let Some((base, exp)) = pow_parts
+    && let Expr::Integer(n) = exp
+    && n > 0
+    && contains_pattern(&base, pat)
+    && (matches!(&base, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        &base,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      ))
+  {
+    let fully = expand_and_combine(expr);
+    return expand_with_pattern(&fully, pat);
+  }
+  expr.clone()
+}
+
+/// Flatten a Plus chain into `out`, treating non-Plus expressions as a
+/// single term. Used to preserve input-order during recursion.
+fn flatten_plus_into(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      for a in args {
+        flatten_plus_into(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      flatten_plus_into(left, out);
+      flatten_plus_into(right, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      flatten_plus_into(left, out);
+      out.push(Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: right.clone(),
+      });
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
 
 /// Extract Trig -> True from an option argument
 fn extract_trig_option(opt: &Expr) -> bool {
