@@ -705,6 +705,17 @@ pub fn pop_context() -> Option<String> {
   CONTEXT_STACK.with(|s| s.borrow_mut().pop())
 }
 
+/// The currently active context — the top of the Begin/BeginPackage
+/// stack, or `"Global`"` when nothing has been pushed.
+pub fn current_context() -> String {
+  CONTEXT_STACK.with(|s| {
+    s.borrow()
+      .last()
+      .cloned()
+      .unwrap_or_else(|| "Global`".to_string())
+  })
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {

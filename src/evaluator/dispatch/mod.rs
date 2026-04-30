@@ -1232,13 +1232,27 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
-  // Begin["ctx`"] / BeginPackage["ctx`"] push context and return the context string
+  // Begin["ctx`"] / BeginPackage["ctx`"] push context and return the context string.
+  // The 2-arg `BeginPackage["ctx`", {"Other`Pkg`", …}]` form takes a list
+  // of packages to load alongside; Woxi just ignores the second arg
+  // (those packages are no-ops here) and still pushes the requested
+  // context, matching wolframscript's `$Context` value after the call.
+  // A "relative" context argument that starts with a backtick is
+  // resolved against the current context — `Begin["`Private`"]` from
+  // inside `MyPackage`` pushes `MyPackage`Private``.
   if (name == "Begin" || name == "BeginPackage")
-    && args.len() == 1
+    && (args.len() == 1 || args.len() == 2)
     && let Expr::String(ctx) = &args[0]
   {
-    crate::push_context(ctx.clone());
-    return Ok(Expr::String(ctx.clone()));
+    let resolved = if let Some(rel) = ctx.strip_prefix('`') {
+      let parent = crate::current_context();
+      let parent_trimmed = parent.trim_end_matches('`');
+      format!("{}`{}", parent_trimmed, rel)
+    } else {
+      ctx.clone()
+    };
+    crate::push_context(resolved.clone());
+    return Ok(Expr::String(resolved));
   }
   // End[] pops the context stack and returns the ended context
   if name == "End" && args.is_empty() {
