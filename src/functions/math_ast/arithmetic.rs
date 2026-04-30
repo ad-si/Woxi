@@ -3939,7 +3939,9 @@ fn try_series_data_times_var_power(
 ) -> Result<Option<Expr>, InterpreterError> {
   // Match a SeriesData head.
   let (var, x0, coeffs, nmin, nmax, denom) = match series {
-    Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6 => {
+    Expr::FunctionCall { name, args }
+      if name == "SeriesData" && args.len() == 6 =>
+    {
       let nmin = match &args[3] {
         Expr::Integer(n) => *n,
         _ => return Ok(None),
@@ -3971,7 +3973,9 @@ fn try_series_data_times_var_power(
   let extract_pq = |exp: &Expr| -> Option<(i128, i128)> {
     match exp {
       Expr::Integer(n) => Some((*n, 1)),
-      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
         if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
           && *q > 0
         {
@@ -3985,7 +3989,8 @@ fn try_series_data_times_var_power(
         left,
         right,
       } => {
-        if let (Expr::Integer(p), Expr::Integer(q)) = (left.as_ref(), right.as_ref())
+        if let (Expr::Integer(p), Expr::Integer(q)) =
+          (left.as_ref(), right.as_ref())
           && *q > 0
         {
           Some((*p, *q))
@@ -4006,7 +4011,9 @@ fn try_series_data_times_var_power(
       Some(pq) => pq,
       None => return Ok(None),
     },
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 && same_var(&args[0]) => {
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && same_var(&args[0]) =>
+    {
       match extract_pq(&args[1]) {
         Some(pq) => pq,
         None => return Ok(None),
@@ -7491,11 +7498,74 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
     {
       args.iter().all(is_bigfloat_evaluable_factor)
     }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      is_bigfloat_evaluable_factor(&args[0]) && bigfloat_int_exponent(&args[1]).is_some()
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      is_bigfloat_evaluable_factor(left) && bigfloat_int_exponent(right).is_some()
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
     } => is_bigfloat_evaluable_factor(operand),
     _ => false,
+  }
+}
+
+/// Extract a small signed integer exponent (`Integer(n)` or `-Integer(n)`).
+/// Used to recognise `Power[base, integer]` factors as bigfloat-evaluable.
+fn bigfloat_int_exponent(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) => Some(*n),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Expr::Integer(n) = operand.as_ref() {
+        Some(-n)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Relative-error contribution of a [`bigfloat_times`] factor, expressed as
+/// `-log10(rel_err)` so contributions can be combined via the
+/// log-sum-exp formula. Returns `None` for exact (infinite-precision) factors.
+fn factor_precision_contribution(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::BigFloat(_, p) if *p > 0.0 => Some(*p),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => factor_precision_contribution(operand),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      let p = factor_precision_contribution(&args[0])?;
+      let n = bigfloat_int_exponent(&args[1])?;
+      let abs_n = (n.unsigned_abs() as f64).max(1.0);
+      Some(p - abs_n.log10())
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let p = factor_precision_contribution(left)?;
+      let n = bigfloat_int_exponent(right)?;
+      let abs_n = (n.unsigned_abs() as f64).max(1.0);
+      Some(p - abs_n.log10())
+    }
+    _ => None,
   }
 }
 
@@ -7507,29 +7577,31 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
 fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use astro_float::{BigFloat, Consts, RoundingMode};
 
-  // Result precision: minimum of the BigFloat operands' precisions
-  // (exact factors don't bound it). For Times, the product's relative
-  // error is roughly the sum of operand relative errors, but for typical
-  // few-factor products the minimum precision is a close approximation
-  // (within 1 digit) and matches Wolfram's reported `Precision[…]`.
-  let min_bf_prec: f64 = args
+  // Combine per-factor relative errors. Each finite-precision factor
+  // contributes `10^(-p)` to the result's total relative error; the
+  // result precision is `-log10(Σ 10^(-p_i))`. Exact factors (Integer,
+  // Rational, exact constants) contribute zero error and don't bound
+  // the result. Power[bf, n] contributes `|n|·10^(-p)` because the
+  // relative error of `x^n` scales linearly with `|n|`.
+  let contribs: Vec<f64> = args
     .iter()
-    .filter_map(|a| {
-      if let Expr::BigFloat(_, p) = a {
-        Some(*p)
-      } else {
-        None
-      }
-    })
-    .fold(f64::INFINITY, f64::min);
-  if !min_bf_prec.is_finite() {
+    .filter_map(factor_precision_contribution)
+    .collect();
+  if contribs.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "bigfloat_times called without any BigFloat operand".into(),
     ));
   }
+  let min_contrib = contribs.iter().cloned().fold(f64::INFINITY, f64::min);
+  let total_rel_err: f64 = contribs.iter().map(|p| 10f64.powf(-p)).sum();
+  let result_prec = if total_rel_err > 0.0 {
+    -total_rel_err.log10()
+  } else {
+    min_contrib
+  };
 
   let bits = crate::functions::math_ast::numerical::nominal_bits(
-    min_bf_prec.ceil() as usize,
+    min_contrib.ceil() as usize,
   );
   let rm = RoundingMode::ToEven;
   let mut cc = Consts::new()
@@ -7551,7 +7623,7 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rm,
     &mut cc,
   )?;
-  Ok(Expr::BigFloat(result_str, min_bf_prec))
+  Ok(Expr::BigFloat(result_str, result_prec))
 }
 
 /// Format an f64 value as a BigFloat digit string with the given significant digits.
