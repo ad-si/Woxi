@@ -3246,6 +3246,15 @@ fn apply_replace_all_multi_ast_impl(
       }
       return Ok(evaluated);
     }
+    // Flat-attribute subsequence matching: `Q[a, 1, b]` with `Q` flat is
+    // matched against `Q[_Integer, _Symbol]` by treating Q as
+    // associative — the same path the single-rule branch in
+    // `apply_replace_all_ast` takes. Without this, `Q[a, 1, b] /.
+    // Dispatch[{rule}]` (rules wrapped in a list) fell through silently
+    // even though `Q[a, 1, b] /. rule` matched.
+    if let Some(result) = try_flat_replace_all(expr, pattern, replacement)? {
+      return Ok(result);
+    }
   }
 
   // No rule matched the whole expression — recurse into sub-expressions
