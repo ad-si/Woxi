@@ -1493,6 +1493,37 @@ pub fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
 
 /// Mod[m, n] - 2-argument form
 pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // BigInteger fast-path so `Mod[2^200, 10^100]` doesn't fall through
+  // to the float branch and lose precision. Mirrors the
+  // `((m % n) + n) % n` rule the small-integer path uses.
+  let m_big = match m {
+    Expr::Integer(v) => Some(num_bigint::BigInt::from(*v)),
+    Expr::BigInteger(v) => Some(v.clone()),
+    _ => None,
+  };
+  let n_big = match n {
+    Expr::Integer(v) => Some(num_bigint::BigInt::from(*v)),
+    Expr::BigInteger(v) => Some(v.clone()),
+    _ => None,
+  };
+  if let (Some(mb), Some(nb)) = (m_big, n_big) {
+    use num_bigint::BigInt;
+    use num_traits::Zero;
+    if nb.is_zero() {
+      crate::emit_message(&format!(
+        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
+        crate::syntax::expr_to_string(m)
+      ));
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    let rem: BigInt = ((&mb % &nb) + &nb) % &nb;
+    // Demote to native i128 when the result fits, since downstream
+    // code special-cases `Expr::Integer`.
+    if let Ok(small) = i128::try_from(&rem) {
+      return Ok(Expr::Integer(small));
+    }
+    return Ok(Expr::BigInteger(rem));
+  }
   // Try exact rational arithmetic first
   if let (Some((mn, md)), Some((nn, nd))) =
     (try_as_rational(m), try_as_rational(n))
