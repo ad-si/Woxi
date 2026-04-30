@@ -460,14 +460,16 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
       is_strictly_positive_real(&args[0])
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      // Power[positive, any_real] > 0
-      is_strictly_positive_real(&args[0])
+      // Power[positive, real_exp] > 0; require the exponent to be
+      // real-valued so a symbolic exponent (potentially complex) doesn't
+      // erroneously claim Power[positive, sym] is positive real.
+      is_strictly_positive_real(&args[0]) && is_real_valued(&args[1])
     }
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
-      right: _,
-    } => is_strictly_positive_real(left),
+      right,
+    } => is_strictly_positive_real(left) && is_real_valued(right),
     Expr::FunctionCall { name, args } if name == "Times" => {
       args.iter().all(is_strictly_positive_real)
     }
@@ -476,6 +478,85 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
 }
 
 /// Arg[z] - Argument (phase angle) of a complex number
+/// Recognise `Re[v] + I*Im[v]` (in either Plus arg order, FunctionCall or
+/// BinaryOp Plus) for some symbol `v`, returning the symbol's name. Used
+/// to collapse `Arg[Re[v] + I·Im[v]]` back to `Arg[v]` after the
+/// ComplexExpand substitution has run.
+fn match_re_plus_i_im(expr: &Expr) -> Option<String> {
+  let plus_args: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.clone(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return None,
+  };
+  if plus_args.len() != 2 {
+    return None;
+  }
+  fn extract_re_var(e: &Expr) -> Option<String> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Re"
+      && args.len() == 1
+      && let Expr::Identifier(v) = &args[0]
+    {
+      return Some(v.clone());
+    }
+    None
+  }
+  fn extract_i_im_var(e: &Expr) -> Option<String> {
+    let factors: Vec<&Expr> = match e {
+      Expr::FunctionCall { name, args } if name == "Times" => args.iter().collect(),
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => vec![left.as_ref(), right.as_ref()],
+      _ => return None,
+    };
+    if factors.len() != 2 {
+      return None;
+    }
+    let is_i = |x: &Expr| matches!(x, Expr::Identifier(s) if s == "I");
+    let im_var = |x: &Expr| -> Option<String> {
+      if let Expr::FunctionCall { name, args } = x
+        && name == "Im"
+        && args.len() == 1
+        && let Expr::Identifier(v) = &args[0]
+      {
+        return Some(v.clone());
+      }
+      None
+    };
+    if is_i(factors[0])
+      && let Some(v) = im_var(factors[1])
+    {
+      return Some(v);
+    }
+    if is_i(factors[1])
+      && let Some(v) = im_var(factors[0])
+    {
+      return Some(v);
+    }
+    None
+  }
+  // Either order: Re first then I*Im, or I*Im first then Re.
+  if let Some(v1) = extract_re_var(&plus_args[0])
+    && let Some(v2) = extract_i_im_var(&plus_args[1])
+    && v1 == v2
+  {
+    return Some(v1);
+  }
+  if let Some(v1) = extract_re_var(&plus_args[1])
+    && let Some(v2) = extract_i_im_var(&plus_args[0])
+    && v1 == v2
+  {
+    return Some(v1);
+  }
+  None
+}
+
 pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -489,6 +570,16 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && inner.len() == 1
   {
     return arg_ast(&[inner[0].clone()]);
+  }
+
+  // Arg[Re[v] + I*Im[v]] = Arg[v] — collapse the canonical complex split
+  // (used by ComplexExpand) back to Arg[v] when both pieces refer to the
+  // same symbol.
+  if let Some(v) = match_re_plus_i_im(&args[0]) {
+    return Ok(Expr::FunctionCall {
+      name: "Arg".to_string(),
+      args: vec![Expr::Identifier(v)],
+    });
   }
 
   // Arg[Times[positive_real, z, ...]] = Arg[Times[z, ...]]

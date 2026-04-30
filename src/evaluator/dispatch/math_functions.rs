@@ -4046,6 +4046,22 @@ fn rational_to_expr_local(n: i128, d: i128) -> Expr {
 
 /// Substitute each variable named in `vars` with `Re[v] + I*Im[v]` so that
 /// the subsequent ComplexExpand pass treats it as complex-valued.
+/// True iff `expr` contains any identifier in `vars` anywhere.
+fn contains_any_var(expr: &Expr, vars: &[String]) -> bool {
+  match expr {
+    Expr::Identifier(n) => vars.iter().any(|v| v == n),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| contains_any_var(a, vars))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_any_var(left, vars) || contains_any_var(right, vars)
+    }
+    Expr::UnaryOp { operand, .. } => contains_any_var(operand, vars),
+    Expr::List(items) => items.iter().any(|a| contains_any_var(a, vars)),
+    _ => false,
+  }
+}
+
 fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
   match expr {
     Expr::Identifier(name) if vars.iter().any(|v| v == name) => {
@@ -4064,6 +4080,26 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
           }),
         }),
       }
+    }
+    // `Re[z]`, `Im[z]`, `Arg[z]` for a complex-vars `z` are
+    // primitives Wolfram emits as-is. `Arg[anything-with-z]` is also
+    // left alone — Wolfram has no closed-form expansion for `Arg`.
+    // For non-bare `Re`/`Im` arguments (e.g. `Re[2 z]`, `Re[z^2]`)
+    // fall through to the usual substitution so the linear /
+    // polynomial form gets expanded.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Re" | "Im")
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(n) if vars.iter().any(|v| v == n)) =>
+    {
+      expr.clone()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Arg"
+        && args.len() == 1
+        && contains_any_var(&args[0], vars) =>
+    {
+      expr.clone()
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -4102,15 +4138,163 @@ fn complex_expand_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// polynomial result is a single distributed Plus chain.
 fn complex_expand_with_expand(expr: &Expr) -> Result<Expr, InterpreterError> {
   let expanded = complex_expand_recursive(expr);
-  let distributed = crate::evaluator::evaluate_function_call_ast(
-    "Expand",
-    &[expanded.clone()],
-  )
-  .unwrap_or(expanded);
+  let distributed =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[expanded.clone()])
+      .unwrap_or(expanded);
+  // Distribute Log over positive multipliers and `Sqrt`:
+  //   Log[positive_real * X] → Log[positive_real] + Log[X]
+  //   Log[Sqrt[Y]] → Log[Y]/2
+  // Matches wolframscript's `ComplexExpand[Abs[positive_const * z], …]`
+  // shape (`Log[2] + Log[Re[z]^2 + Im[z]^2]/2`).
+  let log_split = expand_log_in_complex_expand(&distributed);
   // Group terms by I-factor: re-emit as `<real> + I*<imag>` so the
   // imaginary contributions appear under a single `I*(…)` umbrella,
   // matching wolframscript's `ComplexExpand[…, vars]` shape.
-  Ok(group_imag_terms(&distributed))
+  Ok(group_imag_terms(&log_split))
+}
+
+/// True when `e` is the rational `1/2` in any of the shapes our parser
+/// or evaluator produces (`Rational[1, 2]`, `Divide(1, 2)`, `Real(0.5)`).
+fn is_one_half(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2)))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      matches!(
+        (left.as_ref(), right.as_ref()),
+        (Expr::Integer(1), Expr::Integer(2))
+      )
+    }
+    Expr::Real(v) => (*v - 0.5).abs() < 1e-15,
+    _ => false,
+  }
+}
+
+/// Walks the expanded ComplexExpand result and applies two Log
+/// rewrites Wolfram emits in this context:
+///   Log[Times[positive_const, …]] → Log[positive_const] + Log[Times[…]]
+///   Log[Sqrt[X]] → Log[X]/2
+fn expand_log_in_complex_expand(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      let inner = expand_log_in_complex_expand(&args[0]);
+      // Log[Sqrt[X]] → Log[X] / 2 (also catches the canonical
+      // `Power[X, Rational[1, 2]]` shape Wolfram emits internally).
+      let sqrt_arg: Option<&Expr> = match &inner {
+        Expr::FunctionCall { name: sn, args: sargs }
+          if sn == "Sqrt" && sargs.len() == 1 =>
+        {
+          Some(&sargs[0])
+        }
+        Expr::FunctionCall { name: pn, args: pargs }
+          if pn == "Power" && pargs.len() == 2 && is_one_half(&pargs[1]) =>
+        {
+          Some(&pargs[0])
+        }
+        Expr::BinaryOp { op: BinaryOperator::Power, left, right }
+          if is_one_half(right) =>
+        {
+          Some(left.as_ref())
+        }
+        _ => None,
+      };
+      if let Some(x) = sqrt_arg {
+        let log_x = Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![x.clone()],
+        };
+        return ce_simplify(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(log_x),
+          right: Box::new(Expr::Integer(2)),
+        });
+      }
+      // Log[Times[positive_const, …]] → Log[positive_const] + Log[Times[…]]
+      if let Expr::FunctionCall { name: tn, args: tfactors } = &inner
+        && tn == "Times"
+      {
+        let mut pos_const_factors: Vec<Expr> = Vec::new();
+        let mut other_factors: Vec<Expr> = Vec::new();
+        for f in tfactors {
+          let is_positive_const = match f {
+            Expr::Integer(n) => *n > 0,
+            Expr::Real(v) => *v > 0.0,
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rational" && ra.len() == 2 =>
+            {
+              matches!(&ra[0], Expr::Integer(n) if *n > 0)
+                && matches!(&ra[1], Expr::Integer(d) if *d > 0)
+            }
+            _ => false,
+          };
+          if is_positive_const {
+            pos_const_factors.push(f.clone());
+          } else {
+            other_factors.push(f.clone());
+          }
+        }
+        if !pos_const_factors.is_empty() && !other_factors.is_empty() {
+          let pos_const = if pos_const_factors.len() == 1 {
+            pos_const_factors.remove(0)
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: pos_const_factors,
+            }
+          };
+          let rest = if other_factors.len() == 1 {
+            other_factors.remove(0)
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: other_factors,
+            }
+          };
+          let log_pos = Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![pos_const],
+          };
+          let log_rest = expand_log_in_complex_expand(&Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![rest],
+          });
+          return ce_simplify(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(log_pos),
+            right: Box::new(log_rest),
+          });
+        }
+      }
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![inner],
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(expand_log_in_complex_expand).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(expand_log_in_complex_expand(left)),
+      right: Box::new(expand_log_in_complex_expand(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(expand_log_in_complex_expand(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(expand_log_in_complex_expand).collect())
+    }
+    _ => expr.clone(),
+  }
 }
 
 /// If `expr` is a Plus chain whose terms each have at most one explicit
@@ -4175,8 +4359,7 @@ fn group_imag_terms(expr: &Expr) -> Expr {
     }
   };
   if real_parts.is_empty() {
-    return crate::evaluator::evaluate_expr_to_expr(&i_term)
-      .unwrap_or(i_term);
+    return crate::evaluator::evaluate_expr_to_expr(&i_term).unwrap_or(i_term);
   }
   // Insert the `I*<imag>` umbrella at the position the first imag
   // term occupied in the original Plus, so the umbrella lands in the
@@ -4184,7 +4367,9 @@ fn group_imag_terms(expr: &Expr) -> Expr {
   // the canonical Plus sort doesn't bury the umbrella back at the
   // start.
   let mut combined_args: Vec<Expr> = Vec::with_capacity(real_parts.len() + 1);
-  let insert_at = first_imag_pos.unwrap_or(real_parts.len()).min(real_parts.len());
+  let insert_at = first_imag_pos
+    .unwrap_or(real_parts.len())
+    .min(real_parts.len());
   combined_args.extend(real_parts.drain(..insert_at));
   combined_args.push(i_term);
   combined_args.extend(real_parts);
@@ -4291,7 +4476,9 @@ fn strip_one_i_factor(t: &Expr) -> Option<Expr> {
 fn contains_explicit_i(e: &Expr) -> bool {
   match e {
     Expr::Identifier(s) => s == "I",
-    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
       // Complex[a, 0] is real; Complex[a, b] with b≠0 carries an
       // imaginary component.
       !is_expr_zero(&args[1])
@@ -4519,6 +4706,51 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
       Expr::Integer(0),
     ));
   }
+  // Positive real base with complex exponent:
+  //   b^(a + I*c) = b^a · (Cos[c·Log[b]] + I·Sin[c·Log[b]]).
+  // For E (Log[E] = 1) the inner argument collapses to c.
+  if is_complex_expand_real_base(base)
+    && let Some((re_e, im_e)) = split_real_imag(exp)
+    && !is_expr_zero(&im_e)
+  {
+    let exp_a = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base.clone()),
+      right: Box::new(re_e),
+    };
+    let inner_arg = if matches!(base, Expr::Identifier(s) | Expr::Constant(s) if s == "E")
+    {
+      im_e.clone()
+    } else {
+      ce_simplify(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(im_e),
+        right: Box::new(Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![base.clone()],
+        }),
+      })
+    };
+    let cos_part = Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![inner_arg.clone()],
+    };
+    let sin_part = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![inner_arg],
+    };
+    let real = ce_simplify(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(exp_a.clone()),
+      right: Box::new(cos_part),
+    });
+    let imag = ce_simplify(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(exp_a),
+      right: Box::new(sin_part),
+    });
+    return Some((real, imag));
+  }
   // Exponent must be a non-negative integer literal.
   let n = match exp {
     Expr::Integer(n) if *n >= 0 => *n,
@@ -4632,10 +4864,126 @@ fn is_complex_expand_real_base(base: &Expr) -> bool {
   }
 }
 
+/// Closed-form expansions for `Abs[arg]` under `ComplexExpand`. Returns
+/// `None` when the argument doesn't fit one of the recognised shapes so
+/// the caller falls through to the split-real-imag path.
+fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
+  // Abs[a * b * …] → Abs[a] * Abs[b] * …
+  let times_args: Option<Vec<Expr>> = match arg {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    _ => None,
+  };
+  if let Some(factors) = times_args
+    && factors.len() >= 2
+  {
+    // Wrap each factor in Abs *without* pre-expanding. The outer
+    // `complex_expand_recursive` pass that produced this rewrite will
+    // recurse into the resulting Abs[…] sub-calls, where this same
+    // helper can apply the Power/Log closed forms to the un-expanded
+    // factor (e.g. recognising `Abs[Power[2, z]]` as `2^Re[z]`).
+    let abs_factors: Vec<Expr> = factors
+      .iter()
+      .map(|f| {
+        complex_expand_recursive(&Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![f.clone()],
+        })
+      })
+      .collect();
+    return Some(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: abs_factors,
+    });
+  }
+  // Abs[Power[positive_real, c]] → Power[positive_real, Re[c]]
+  let power_parts: Option<(Expr, Expr)> = match arg {
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 =>
+    {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((*left.clone(), *right.clone())),
+    _ => None,
+  };
+  if let Some((base, exp)) = power_parts
+    && is_complex_expand_real_base(&base)
+  {
+    let re_exp = Expr::FunctionCall {
+      name: "Re".to_string(),
+      args: vec![exp],
+    };
+    let re_exp = complex_expand_recursive(&re_exp);
+    return Some(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base, re_exp],
+    });
+  }
+  // Abs[Log[w]] → Sqrt[Log[Abs[w]]^2 + Arg[w]^2]
+  if let Expr::FunctionCall { name, args } = arg
+    && name == "Log"
+    && args.len() == 1
+  {
+    let w = &args[0];
+    let abs_w = Expr::FunctionCall {
+      name: "Abs".to_string(),
+      args: vec![w.clone()],
+    };
+    let log_abs_w = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![complex_expand_recursive(&abs_w)],
+    };
+    let arg_w = Expr::FunctionCall {
+      name: "Arg".to_string(),
+      args: vec![w.clone()],
+    };
+    let arg_w = complex_expand_recursive(&arg_w);
+    let log_sq = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(log_abs_w),
+      right: Box::new(Expr::Integer(2)),
+    };
+    let arg_sq = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(arg_w),
+      right: Box::new(Expr::Integer(2)),
+    };
+    return Some(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(log_sq),
+        right: Box::new(arg_sq),
+      }],
+    });
+  }
+  None
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let arg = &args[0];
+      // ComplexExpand distributes Abs across multiplicative factors:
+      //   Abs[a*b] = Abs[a] * Abs[b], Abs[Power[positive, c]] = Power[positive, Re[c]],
+      //   Abs[Log[w]] = Sqrt[Log[Abs[w]]^2 + Arg[w]^2].
+      // Apply these rewrites before falling back to the
+      // split-real-imag path so symbolic factors that wouldn't split
+      // (e.g. `Log[2*(Re[z] + I*Im[z])]`) still get an explicit
+      // closed form.
+      if name == "Abs"
+        && let Some(rewritten) = abs_complex_expand_rewrite(arg)
+      {
+        return ce_simplify(rewritten);
+      }
       // Try to split the argument into real + I*imag parts
       if let Some((re, im)) = split_real_imag(arg) {
         // Check if imaginary part is zero
