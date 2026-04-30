@@ -2197,6 +2197,15 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           return cmp;
         }
       }
+      // When one term is a Times-product containing a `FunctionCall[..]`
+      // factor whose head matches the other term's `FunctionCall` head,
+      // compare via that shared FunctionCall factor instead of falling
+      // back to type-tag comparison. Matches Wolfram's `C[1] + a*C[2]`
+      // ordering (C[1] first, since C[1] < C[2]).
+      let cmp = compare_via_shared_fn_call_factor(&base_a, &base_b);
+      if cmp != std::cmp::Ordering::Equal {
+        return cmp;
+      }
       // Fall back: try structural comparison of function call arguments,
       // then string comparison for non-polynomial terms.
       // This ensures e.g. Log[1 - x] sorts before Log[1 + x] to match Wolfram.
@@ -2216,6 +2225,69 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       coeff_a.is_negative().cmp(&coeff_b.is_negative())
     }
   }
+}
+
+/// Collect each FunctionCall factor of a Times product (or the expression
+/// itself if it isn't a Times). Used by [`compare_via_shared_fn_call_factor`]
+/// so that `(-1)^n*C[2]` exposes its `C[2]` factor for matching against a
+/// peer `C[1]` term in canonical Plus ordering.
+fn collect_fn_call_factors(e: &Expr) -> Vec<&Expr> {
+  let mut out = Vec::new();
+  fn walk<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for arg in args {
+          walk(arg, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        walk(left, out);
+        walk(right, out);
+      }
+      Expr::FunctionCall { .. } => out.push(e),
+      _ => {}
+    }
+  }
+  walk(e, &mut out);
+  out
+}
+
+/// When one Plus term is a Times-product containing a `FunctionCall[..]`
+/// factor whose head matches the other Plus term's `FunctionCall` head,
+/// compare them via that shared factor. Returns `Equal` if the rule
+/// doesn't apply.
+///
+/// E.g. comparing `a*C[2]` vs `C[1]`: the Times product carries `C[2]`,
+/// and the bare term is `C[1]` — both share head `"C"`, so we recurse on
+/// `C[2]` vs `C[1]` (yielding `Greater`, i.e. `C[1]` sorts first).
+fn compare_via_shared_fn_call_factor(
+  a: &Expr,
+  b: &Expr,
+) -> std::cmp::Ordering {
+  fn try_match<'a>(
+    times_term: &'a Expr,
+    bare_call: &'a Expr,
+  ) -> Option<&'a Expr> {
+    let bare_name = match bare_call {
+      Expr::FunctionCall { name, .. } => name,
+      _ => return None,
+    };
+    let factors = collect_fn_call_factors(times_term);
+    factors.into_iter().find(|f| {
+      matches!(f, Expr::FunctionCall { name, .. } if name == bare_name)
+    })
+  }
+  if let Some(matching) = try_match(a, b) {
+    return compare_expr_canonical(matching, b);
+  }
+  if let Some(matching) = try_match(b, a) {
+    return compare_expr_canonical(a, matching);
+  }
+  std::cmp::Ordering::Equal
 }
 
 /// Strip a leading complex-number-literal factor from a Times expression.
