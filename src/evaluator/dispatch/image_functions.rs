@@ -108,6 +108,9 @@ pub fn dispatch_image_functions(
         return Some(crate::functions::image_ast::color_convert_ast(args));
       }
     }
+    "ColorDistance" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::color_distance_ast(args));
+    }
     // ColorData[]: list of available data categories.
     "ColorData" if args.is_empty() => {
       return Some(Ok(Expr::List(vec![

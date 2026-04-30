@@ -3132,3 +3132,150 @@ fn resolve_color_value(
     ))),
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  ColorDistance — distance between two colors in CIE LAB color space.
+//
+//  Wolfram Language uses the sRGB → D50 XYZ → CIE LAB pipeline (Bradford
+//  chromatic adaptation) and reports LAB components scaled to [0, 1] (i.e.
+//  the standard 0..100 L value divided by 100). The default
+//  DistanceFunction is the Euclidean distance in that scaled LAB space —
+//  which matches the CIE76 definition divided by 100.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Convert an sRGB component in `[0, 1]` to its linear-light value.
+fn srgb_to_linear(c: f64) -> f64 {
+  if c <= 0.04045 {
+    c / 12.92
+  } else {
+    ((c + 0.055) / 1.055).powf(2.4)
+  }
+}
+
+/// Convert linear-light sRGB `(r, g, b)` (each in `[0, 1]`) to CIE XYZ
+/// under a D50 illuminant. The matrix coefficients match Wolfram's
+/// internal sRGB → D50 conversion (Bradford chromatic adaptation), so
+/// `ColorConvert[Red, "XYZ"]` lines up to f64 precision.
+fn linear_rgb_to_xyz_d50(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+  let x = 0.43602191242669813 * r
+    + 0.38510884137388846 * g
+    + 0.14308124062061284 * b;
+  let y = 0.22247517260243593 * r
+    + 0.7169066111623497 * g
+    + 0.06061821623521406 * b;
+  let z = 0.013928134067434789 * r
+    + 0.09710156693979348 * g
+    + 0.7141585835116003 * b;
+  (x, y, z)
+}
+
+/// Apply the LAB f-function: cube root above the linear-region cutoff,
+/// affine continuation below.
+fn lab_f(t: f64) -> f64 {
+  // delta = 6/29, delta^3 = 216/24389.
+  const DELTA3: f64 = 216.0 / 24389.0;
+  if t > DELTA3 {
+    t.cbrt()
+  } else {
+    t * (24389.0 / 27.0 / 116.0) + 16.0 / 116.0
+  }
+}
+
+/// Convert sRGB `(r, g, b)` (each in `[0, 1]`) to Wolfram-style LAB
+/// `(L, a, b)` where every component is divided by 100 — i.e. L is in
+/// `[0, 1]` for typical inputs.
+fn srgb_to_lab(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+  let r_lin = srgb_to_linear(r);
+  let g_lin = srgb_to_linear(g);
+  let b_lin = srgb_to_linear(b);
+  let (x, y, z) = linear_rgb_to_xyz_d50(r_lin, g_lin, b_lin);
+  // D50 reference white. The constants below match Wolfram's internal
+  // reference white to f64 precision (reverse-engineered from
+  // `ColorConvert[Red, "Lab"]`); they sit a few ulp away from the
+  // ICC-rounded `(0.96422, 0.82521)` values.
+  let xn = 0.9642119944211995;
+  let yn = 1.0;
+  let zn = 0.8251882845188289;
+  let fx = lab_f(x / xn);
+  let fy = lab_f(y / yn);
+  let fz = lab_f(z / zn);
+  let l = 116.0 * fy - 16.0;
+  let a = 500.0 * (fx - fy);
+  let b_star = 200.0 * (fy - fz);
+  (l / 100.0, a / 100.0, b_star / 100.0)
+}
+
+/// Resolve any color expression (named, RGBColor, GrayLevel, etc.) to
+/// scaled LAB. Returns `None` if the expression is not a color.
+fn color_to_lab(expr: &Expr) -> Option<(f64, f64, f64)> {
+  let color = crate::functions::graphics::parse_color(expr)?;
+  Some(srgb_to_lab(color.r, color.g, color.b))
+}
+
+/// ColorDistance[c1, c2] — Euclidean distance between two colors in
+/// (Wolfram-scaled) CIE LAB space. The optional
+/// `DistanceFunction -> f` rule applies a custom function to the LAB
+/// triples instead of the default Euclidean norm.
+pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ColorDistance expects at least 2 arguments".into(),
+    ));
+  }
+
+  // Extract optional `DistanceFunction -> spec` from the trailing args.
+  let mut distance_fn: Option<Expr> = None;
+  for a in &args[2..] {
+    if let Expr::Rule { pattern, replacement } = a
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "DistanceFunction")
+    {
+      distance_fn = Some(replacement.as_ref().clone());
+    } else if let Expr::FunctionCall { name, args: ra } = a
+      && (name == "Rule" || name == "RuleDelayed")
+      && ra.len() == 2
+      && matches!(&ra[0], Expr::Identifier(s) if s == "DistanceFunction")
+    {
+      distance_fn = Some(ra[1].clone());
+    }
+  }
+
+  let lab1 = color_to_lab(&args[0]).ok_or_else(|| {
+    InterpreterError::EvaluationError(format!(
+      "ColorDistance: unsupported color {}",
+      crate::syntax::expr_to_string(&args[0])
+    ))
+  })?;
+  let lab2 = color_to_lab(&args[1]).ok_or_else(|| {
+    InterpreterError::EvaluationError(format!(
+      "ColorDistance: unsupported color {}",
+      crate::syntax::expr_to_string(&args[1])
+    ))
+  })?;
+
+  let to_list = |t: (f64, f64, f64)| {
+    Expr::List(vec![Expr::Real(t.0), Expr::Real(t.1), Expr::Real(t.2)])
+  };
+
+  match distance_fn {
+    Some(func) => {
+      // Apply the user-supplied function to the LAB triples.
+      let call = Expr::FunctionCall {
+        name: "Apply".to_string(),
+        args: vec![],
+      };
+      let _ = call; // unused; we use a direct CurriedCall instead
+      let result = crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+        func: Box::new(func),
+        args: vec![to_list(lab1), to_list(lab2)],
+      })?;
+      Ok(result)
+    }
+    None => {
+      // Default: Euclidean distance in Wolfram-scaled LAB.
+      let dl = lab1.0 - lab2.0;
+      let da = lab1.1 - lab2.1;
+      let db = lab1.2 - lab2.2;
+      Ok(Expr::Real((dl * dl + da * da + db * db).sqrt()))
+    }
+  }
+}
