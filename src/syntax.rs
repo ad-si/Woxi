@@ -2617,6 +2617,18 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         default: Some(Box::new(default)),
       }
     }
+    Rule::PatternOptionalAnonBlank => {
+      // PatternOptionalAnonBlank = { "_" ~ ":" ~ Term }
+      // `_:default` — anonymous Optional[Blank[], default]. Same shape as
+      // `name_:default` but without the name binding.
+      let mut inner = pair.into_inner();
+      let default = pair_to_expr(inner.next().unwrap());
+      Expr::PatternOptional {
+        name: String::new(),
+        head: None,
+        default: Some(Box::new(default)),
+      }
+    }
     Rule::PatternNamed => {
       // PatternNamed = { PatternName ~ ":" ~ Term }
       // `y : 1` is `Pattern[y, 1]` — a named pattern matching the literal
