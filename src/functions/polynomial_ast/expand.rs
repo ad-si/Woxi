@@ -855,6 +855,18 @@ pub fn combine_and_build(terms: Vec<Expr>) -> Expr {
   }
 }
 
+/// Sort variable factors using Wolfram canonical Times ordering:
+/// atomic algebraic terms (identifiers, polynomial powers) come before
+/// transcendental function calls (Sin, Cos, etc.). Within each priority
+/// bucket, sort by `expr_to_string` for canonical ordering.
+fn sort_var_factors_canonical(factors: &mut [Expr]) {
+  factors.sort_by(|a, b| {
+    let pa = crate::functions::math_ast::term_priority(a);
+    let pb = crate::functions::math_ast::term_priority(b);
+    pa.cmp(&pb).then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
+  });
+}
+
 /// Decompose a term into (numeric_coefficient, sort_key, variable_factors).
 /// E.g. 3*x^2*y → (3, "x^2*y", [x^2, y])
 ///      -x → (-1, "x^1", [x])
@@ -904,8 +916,9 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
         }
       }
 
-      // Sort variable factors for canonical key
-      var_factors.sort_by_key(expr_to_string);
+      // Sort variable factors using Wolfram canonical Times ordering:
+      // atomic identifiers come before transcendental function calls.
+      sort_var_factors_canonical(&mut var_factors);
       let key = var_factors
         .iter()
         .map(expr_to_string)
@@ -930,7 +943,7 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
         }
       }
 
-      var_factors.sort_by_key(expr_to_string);
+      sort_var_factors_canonical(&mut var_factors);
       let key = var_factors
         .iter()
         .map(expr_to_string)

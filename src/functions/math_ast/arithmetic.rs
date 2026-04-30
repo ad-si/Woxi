@@ -1991,11 +1991,14 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         // pairs.
         let none_base_is_plus = matches!(&none_base,
           Expr::FunctionCall { name, .. } if name == "Plus")
-          || matches!(&none_base,
+          || matches!(
+            &none_base,
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+              op: crate::syntax::BinaryOperator::Plus
+                | crate::syntax::BinaryOperator::Minus,
               ..
-            });
+            }
+          );
         if none_base_is_plus {
           let (_, pair_base) = decompose_term(pair_term);
           let pair_vars = collect_free_vars(&pair_base);
@@ -2105,13 +2108,65 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
       }
       // When both terms are transcendental (priority >= 1) and lack polynomial pairs,
-      // compare by primary function name, then by polynomial degree within the product.
-      // This sorts x*Cos[x] before Sin[x] (because "Cos" < "Sin"), matching Wolfram.
+      // compare by primary function name. With matching primary names,
+      // sort by:
+      // (a) number of distinct transcendental factors (ascending — `Cos[x]^2`
+      //     before `Cos[x]*Sin[x]`),
+      // (b) exponent of the primary function (ascending — `2*a*Sin[x]`
+      //     before `Sin[x]^2`),
+      // (c) polynomial degree among the non-transcendental factors.
       if !a_has_pairs && !b_has_pairs && pa >= 1 && pb >= 1 {
         let fn_a = extract_primary_fn_name(&base_a);
         let fn_b = extract_primary_fn_name(&base_b);
         if let (Some(ref na), Some(ref nb)) = (fn_a, fn_b) {
           let cmp = na.cmp(nb);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
+          // Tie-break by number of distinct trig factors (fewer first).
+          let trig_a = count_distinct_trig_factors(&base_a);
+          let trig_b = count_distinct_trig_factors(&base_b);
+          let cmp = trig_a.cmp(&trig_b);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
+          // Same trig-factor count: compare exponents reverse-lex over trig
+          // function names (Wolfram treats trig functions like polynomial
+          // variables). Use the alphabetically-last trig present, ascending.
+          // Examples:
+          //   `a*Sin[x]` (Sin^1) before `Sin[x]^2` (Sin^2) — same single trig.
+          //   `Cos[x]^3*Sin[x]` (Sin^1) before `Cos[x]*Sin[x]^3` (Sin^3) —
+          //   sorted by Sin exponent ascending despite higher Cos exponent.
+          let last_trig = {
+            let mut names: Vec<String> = extract_trig_factors(&base_a)
+              .into_iter()
+              .map(|(n, _, _)| n)
+              .chain(
+                extract_trig_factors(&base_b)
+                  .into_iter()
+                  .map(|(n, _, _)| n),
+              )
+              .collect();
+            names.sort();
+            names.dedup();
+            names.last().cloned()
+          };
+          if let Some(last) = last_trig {
+            let exp_la = extract_primary_fn_exponent(&base_a, &last);
+            let exp_lb = extract_primary_fn_exponent(&base_b, &last);
+            let cmp = exp_la
+              .partial_cmp(&exp_lb)
+              .unwrap_or(std::cmp::Ordering::Equal);
+            if cmp != std::cmp::Ordering::Equal {
+              return cmp;
+            }
+          }
+          // Fallback: primary-fn exponent ascending.
+          let exp_a = extract_primary_fn_exponent(&base_a, na);
+          let exp_b = extract_primary_fn_exponent(&base_b, na);
+          let cmp = exp_a
+            .partial_cmp(&exp_b)
+            .unwrap_or(std::cmp::Ordering::Equal);
           if cmp != std::cmp::Ordering::Equal {
             return cmp;
           }
@@ -2254,6 +2309,71 @@ fn extract_primary_fn_name(e: &Expr) -> Option<String> {
     } => extract_primary_fn_name(left),
     _ => None,
   }
+}
+
+/// Extract the exponent of the named transcendental function within a
+/// term. For `Sin[x]^2` returns 2; for `2*a*Sin[x]` returns 1; for any
+/// term that doesn't contain `name` as a function call returns 0.
+fn extract_primary_fn_exponent(e: &Expr, name: &str) -> f64 {
+  match e {
+    Expr::FunctionCall { name: n, .. } if n == name => 1.0,
+    Expr::FunctionCall { name: n, args } if n == "Power" && args.len() == 2 => {
+      if let Expr::FunctionCall { name: inner, .. } = &args[0]
+        && inner == name
+      {
+        match &args[1] {
+          Expr::Integer(k) => *k as f64,
+          Expr::Real(f) => *f,
+          _ => 1.0,
+        }
+      } else {
+        0.0
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::FunctionCall { name: inner, .. } = left.as_ref()
+        && inner == name
+      {
+        match right.as_ref() {
+          Expr::Integer(k) => *k as f64,
+          Expr::Real(f) => *f,
+          _ => 1.0,
+        }
+      } else {
+        0.0
+      }
+    }
+    Expr::FunctionCall { name: tn, args } if tn == "Times" => {
+      let mut total = 0.0;
+      for a in args {
+        total += extract_primary_fn_exponent(a, name);
+      }
+      total
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      extract_primary_fn_exponent(left, name)
+        + extract_primary_fn_exponent(right, name)
+    }
+    _ => 0.0,
+  }
+}
+
+/// Count the number of distinct transcendental function names in a term.
+/// `Cos[x]^2` → 1, `Cos[x]*Sin[x]` → 2, `Cos[x]^2*Sin[x]` → 2, `a*Sin[x]` → 1.
+fn count_distinct_trig_factors(e: &Expr) -> usize {
+  let factors = extract_trig_factors(e);
+  let mut names: Vec<String> = factors.into_iter().map(|(n, _, _)| n).collect();
+  names.sort();
+  names.dedup();
+  names.len()
 }
 
 /// Extract (function_name, argument, exponent) triples from a product of transcendental
