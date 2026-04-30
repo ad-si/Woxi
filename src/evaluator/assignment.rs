@@ -1589,6 +1589,30 @@ pub fn set_delayed_ast(
               heads.push(head.clone());
               blank_types.push(*blank_type);
             }
+            // `Pattern[name, OptionsPattern[…]]` — named OptionsPattern
+            // (e.g. `opt:OptionsPattern[]`) matches zero or more Rule
+            // arguments. Use the `__opts{i}` synthetic name so the
+            // option-bindings collector recognises it; the user-visible
+            // `name` is not currently bound (rare in practice — most
+            // bodies reach options via `OptionValue[…]`, not the bound
+            // sequence symbol).
+            Expr::FunctionCall {
+              name: opn,
+              args: op_args,
+            } if opn == "OptionsPattern" => {
+              let _ = pname; // user-visible name not bound
+              let param_name = format!("__opts{}", i);
+              params.push(param_name);
+              conditions.push(None);
+              defaults.push(None);
+              heads.push(None);
+              blank_types.push(3); // BlankNullSequence — 0 or more
+              if op_args.len() == 1
+                && let Expr::List(rules) = &op_args[0]
+              {
+                inline_opts_defaults = Some(rules.clone());
+              }
+            }
             // `Pattern[name, _]` / `Pattern[name, _Head]` / etc. — treat as
             // a plain named pattern.
             _ => {
