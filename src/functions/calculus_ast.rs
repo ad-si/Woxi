@@ -1057,6 +1057,59 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// Check if expr is x^(-2) (where x is the variable). Accepts both the
+/// parsed `BinaryOp::Power` form and the `Power[x, -2]` FunctionCall form.
+/// Used to recognise `Exp[-1/x^2]` for the special antiderivative
+/// `x*Exp[-1/x^2] + Sqrt[Pi]*Erf[1/x]`.
+fn is_var_to_minus_two(expr: &Expr, var: &str) -> bool {
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = expr
+  {
+    return matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+      && matches!(right.as_ref(), Expr::Integer(-2));
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Power"
+    && args.len() == 2
+  {
+    return matches!(&args[0], Expr::Identifier(n) if n == var)
+      && matches!(&args[1], Expr::Integer(-2));
+  }
+  false
+}
+
+/// Match `-1/x^2` (i.e. `-x^(-2)`) and return `Some(())`. Currently only
+/// the specific `a == 1` case is recognised since that's the only Erf-
+/// closed-form antiderivative we surface.
+fn match_neg_inverse_x_squared(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_var_to_minus_two(operand, var),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      (matches!(left.as_ref(), Expr::Integer(-1))
+        && is_var_to_minus_two(right, var))
+        || (matches!(right.as_ref(), Expr::Integer(-1))
+          && is_var_to_minus_two(left, var))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      (matches!(&args[0], Expr::Integer(-1))
+        && is_var_to_minus_two(&args[1], var))
+        || (matches!(&args[1], Expr::Integer(-1))
+          && is_var_to_minus_two(&args[0], var))
+    }
+    _ => false,
+  }
+}
+
 /// Check if expr is x^2 (where x is the variable). Accepts both the parsed
 /// `BinaryOp::Power` form and the canonicalised `Power[x, 2]` FunctionCall
 /// form (which is what falls out of simplifying `(x/2)^2` etc.).
@@ -5587,6 +5640,35 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             // ∫ E^(-a*x^2) dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
             if let Some(coeff) = match_neg_a_x_squared(exp_arg, var) {
               return Some(make_gaussian_antiderivative(var, &coeff));
+            }
+            // ∫ E^(-1/x^2) dx = x*E^(-1/x^2) + Sqrt[Pi]*Erf[1/x]
+            // Standard integration-by-parts result; matches wolframscript
+            // (which surfaces the `Erf[1/x]` term).
+            if match_neg_inverse_x_squared(exp_arg, var) {
+              let var_expr = Expr::Identifier(var.to_string());
+              let inv_x = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(var_expr.clone()),
+                right: Box::new(Expr::Integer(-1)),
+              };
+              let term1 = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(var_expr),
+                right: Box::new(expr.clone()),
+              };
+              let term2 = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(make_sqrt(Expr::Constant("Pi".to_string()))),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Erf".to_string(),
+                  args: vec![inv_x],
+                }),
+              };
+              return Some(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(term1),
+                right: Box::new(term2),
+              });
             }
           }
           // ∫ a^x dx = a^x / Log[a], ∫ a^(c*x) dx = a^(c*x) / (c*Log[a])
