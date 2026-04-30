@@ -15,7 +15,7 @@ pub mod arg_count;
 mod association_functions;
 mod attributes;
 mod boolean_functions;
-mod calculus_functions;
+pub(crate) mod calculus_functions;
 pub mod complex_and_special;
 pub use complex_and_special::builtin_default_value;
 pub use complex_and_special::builtin_default_value_at_position;
@@ -606,10 +606,10 @@ pub fn evaluate_function_call_ast_inner(
   // binds x to `1+2` (held). If no rule matches, the wrapper is preserved
   // in the fall-through output, so we keep the original `args` and use a
   // separate `stripped_args` only inside the overload-matching block.
-  let has_unevaluated = args.iter().any(
-    |a| matches!(a, Expr::FunctionCall { name, args: ua }
-      if name == "Unevaluated" && ua.len() == 1),
-  );
+  let has_unevaluated = args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, args: ua }
+      if name == "Unevaluated" && ua.len() == 1)
+  });
   let stripped_args_owned: Vec<Expr> = if has_unevaluated {
     args
       .iter()

@@ -61,11 +61,15 @@ fn match_slot_power(body: &Expr) -> Option<i128> {
 }
 
 /// Build the right-nested multiplication chain that wolframscript prints for
-/// `Derivative[n][# ^ k &]`. For n > k the function collapses to `0`. For
-/// n <= k the chain has n integer factors `k * (k-1) * … * (k-n+1)` wrapping
-/// the residual power: `1` when `k - n == 0`, `#1` when `k - n == 1`, and
-/// `#1^(k-n)` otherwise.
-fn build_derivative_slot_power_chain(k: i128, n: i128) -> Option<Expr> {
+/// `Derivative[n][# ^ k &]` and the multivariate analogues. For n > k the
+/// function collapses to `0`. For n <= k the chain has n integer factors
+/// `k * (k-1) * … * (k-n+1)` wrapping the residual power: `1` when
+/// `k - n == 0`, `var_expr` when `k - n == 1`, and `var_expr^(k-n)` otherwise.
+pub fn build_var_power_derivative_chain(
+  var_expr: &Expr,
+  k: i128,
+  n: i128,
+) -> Option<Expr> {
   if n < 0 {
     return None;
   }
@@ -79,19 +83,19 @@ fn build_derivative_slot_power_chain(k: i128, n: i128) -> Option<Expr> {
     right: Box::new(b),
   };
   let (mut result, start) = if dn == 0 {
-    // The innermost factor is the literal `1` from `(k-n+1) * #1^0`. The
-    // chain ends with that 1 directly — no separate Slot factor remains.
+    // The innermost factor is the literal `1` from `(k-n+1) * var^0`. The
+    // chain ends with that 1 directly — no separate var factor remains.
     if n == 0 {
       return Some(Expr::Integer(1));
     }
     (Expr::Integer(1), n - 1)
   } else {
     let inner_var = if dn == 1 {
-      Expr::Slot(1)
+      var_expr.clone()
     } else {
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Power,
-        left: Box::new(Expr::Slot(1)),
+        left: Box::new(var_expr.clone()),
         right: Box::new(Expr::Integer(dn)),
       }
     };
@@ -107,6 +111,115 @@ fn build_derivative_slot_power_chain(k: i128, n: i128) -> Option<Expr> {
     result = times(Expr::Integer(factor), result);
   }
   Some(result)
+}
+
+/// Try to factor `expr` as `c * var^p` where `c` is constant in `var` and `p`
+/// is a positive integer. Returns `(c, p)` on success. The traversal walks
+/// `BinaryOp::Times` and `Times[…]` factor structures without flattening, so
+/// already-built right-nested chains stay intact.
+pub fn extract_var_power_factor(
+  expr: &Expr,
+  var: &str,
+) -> Option<(Expr, i128)> {
+  use crate::functions::calculus_ast::is_constant_wrt;
+  use crate::syntax::BinaryOperator;
+
+  // `var` (i.e. `var^1`).
+  if matches!(expr, Expr::Identifier(s) if s == var) {
+    return Some((Expr::Integer(1), 1));
+  }
+
+  // `var^p` for positive integer `p`.
+  let power_parts = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  };
+  if let Some((base, exp)) = power_parts
+    && matches!(base, Expr::Identifier(s) if s == var)
+    && let Expr::Integer(p) = exp
+    && *p > 0
+  {
+    return Some((Expr::Integer(1), *p));
+  }
+
+  // `BinaryOp::Times` — descend into one side that depends on `var`, keep the
+  // other side as part of the constant factor.
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    let l_const = is_constant_wrt(left, var);
+    let r_const = is_constant_wrt(right, var);
+    if l_const == r_const {
+      return None; // both depend or both constant — can't isolate a single var^p
+    }
+    let (var_side, const_side) = if l_const {
+      (right.as_ref(), left.as_ref())
+    } else {
+      (left.as_ref(), right.as_ref())
+    };
+    let (sub_factor, p) = extract_var_power_factor(var_side, var)?;
+    let factor = if matches!(sub_factor, Expr::Integer(1)) {
+      const_side.clone()
+    } else if l_const {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(const_side.clone()),
+        right: Box::new(sub_factor),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(sub_factor),
+        right: Box::new(const_side.clone()),
+      }
+    };
+    return Some((factor, p));
+  }
+
+  // `FunctionCall["Times", […]]` — same idea with the flattened arg list.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+  {
+    let mut const_factors: Vec<Expr> = Vec::new();
+    let mut var_p: Option<i128> = None;
+    for a in args {
+      if is_constant_wrt(a, var) {
+        const_factors.push(a.clone());
+      } else if let Some((sub, p)) = extract_var_power_factor(a, var) {
+        if !matches!(sub, Expr::Integer(1)) {
+          const_factors.push(sub);
+        }
+        if var_p.is_some() {
+          return None;
+        }
+        var_p = Some(p);
+      } else {
+        return None;
+      }
+    }
+    let p = var_p?;
+    let factor = match const_factors.len() {
+      0 => Expr::Integer(1),
+      1 => const_factors.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: const_factors,
+      },
+    };
+    return Some((factor, p));
+  }
+
+  None
 }
 
 pub fn dispatch_calculus_functions(
@@ -264,7 +377,8 @@ pub fn dispatch_calculus_functions(
           // rather than the folded `k!/(k-n)! * #1^(k-n)`. Detect this shape
           // and build the chain literally so the test's exact output matches.
           if let Some(k) = match_slot_power(body)
-            && let Some(chain) = build_derivative_slot_power_chain(k, n as i128)
+            && let Some(chain) =
+              build_var_power_derivative_chain(&Expr::Slot(1), k, n as i128)
           {
             return Some(Ok(Expr::Function {
               body: Box::new(chain),

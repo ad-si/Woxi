@@ -7740,7 +7740,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
 
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
       // or when the numerator of a division is a product (Wolfram convention)
-      let left_needs_parens = (is_multiplicative && is_additive(left))
+      let left_needs_parens = (matches!(op, BinaryOperator::Times)
+        // Held right-nested Times chain on the left of another Times — i.e.
+        // the inner Times is `BinaryOp[Times, Integer, BinaryOp[Times, …]]`.
+        // This is the shape produced for held derivative chains like
+        // `Derivative[2,1][#1^3*#2 &] → (3*(2*#1))*1 & `. Canonicalised
+        // products are left-nested with an atomic right factor (e.g.
+        // `Times[Times[2, c], d]` for `2*c*d`), so checking that the inner
+        // right is itself a Times keeps us from over-wrapping those.
+        && matches!(
+          left.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: ll,
+            right: lr,
+          } if matches!(ll.as_ref(), Expr::Integer(_))
+            && matches!(
+              lr.as_ref(),
+              Expr::BinaryOp { op: BinaryOperator::Times, .. }
+            )
+        ))
+        || (is_multiplicative && is_additive(left))
         || (matches!(op, BinaryOperator::Divide | BinaryOperator::Power)
           && (matches!(
             left.as_ref(),

@@ -167,6 +167,76 @@ pub fn max_slot_index(expr: &Expr) -> usize {
   m
 }
 
+/// Apply `Derivative[n1, …, nk]` to a pure function body symbolically.
+///
+/// For each slot index `i` with `n_i > 0` we substitute `Slot(i)` for a fresh
+/// dummy and try to factor the current expression as `c * dummy_i^p` where
+/// `c` is constant in `dummy_i`. If the factorisation succeeds we replace
+/// the `dummy_i^p` part with the wolframscript-style right-nested chain
+/// `p*((p-1)*…*dummy_i^(p-n_i))` (or `0` when `n_i > p`). When the body
+/// can't be peeled apart that way we fall back to `differentiate_expr`
+/// repeated `n_i` times, which yields the simplified derivative.
+///
+/// Returns `None` if a fallback differentiation step fails (e.g. unknown
+/// function head), letting the caller keep the unevaluated form.
+fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
+  use crate::evaluator::dispatch::calculus_functions::{
+    build_var_power_derivative_chain, extract_var_power_factor,
+  };
+
+  let dummies: Vec<String> = (0..orders.len())
+    .map(|i| format!("__d_slot_{}__", i + 1))
+    .collect();
+  let dummy_exprs: Vec<Expr> = dummies
+    .iter()
+    .map(|d| Expr::Identifier(d.clone()))
+    .collect();
+  let mut current = crate::syntax::substitute_slots(body, &dummy_exprs);
+
+  for (i, &n_i) in orders.iter().enumerate() {
+    if n_i <= 0 {
+      continue;
+    }
+    let dummy = &dummies[i];
+    let dummy_expr = &dummy_exprs[i];
+    if let Some((factor, p)) = extract_var_power_factor(&current, dummy)
+      && let Some(chain) = build_var_power_derivative_chain(dummy_expr, p, n_i)
+    {
+      // Wolframscript keeps the literal `1` factor that appears when an
+      // earlier slot's chain reduced to `1` (e.g.
+      // `Derivative[1,2][#1*#2^3 &]` → `1*(3*(2*#2)) &`), so preserve `factor`
+      // even when it's `Integer(1)`.
+      current = if matches!(chain, Expr::Integer(0)) {
+        Expr::Integer(0)
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(factor),
+          right: Box::new(chain),
+        }
+      };
+      continue;
+    }
+    for _ in 0..n_i {
+      current = match crate::functions::calculus_ast::differentiate_expr(
+        &current, dummy,
+      ) {
+        Ok(v) => v,
+        Err(_) => return None,
+      };
+    }
+  }
+
+  for (i, dummy) in dummies.iter().enumerate() {
+    current = crate::syntax::substitute_variable(
+      &current,
+      dummy,
+      &Expr::Slot(i + 1),
+    );
+  }
+  Some(current)
+}
+
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 pub fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   match expr {
@@ -725,6 +795,19 @@ pub fn apply_curried_call(
           if beyond_zero {
             return Ok(Expr::Function {
               body: Box::new(Expr::Integer(0)),
+            });
+          }
+          // Try to evaluate `Derivative[n1, …, nk][body &]` symbolically.
+          // For each slot k with order n_k > 0 we either factor the current
+          // expression as `c * dummy_k^p` (constant `c` × pure power) and
+          // splice in the right-nested chain `p*((p-1)*…*dummy_k^(p-n_k))`,
+          // or fall back to ordinary `differentiate_expr` repeated n_k
+          // times. The chain branch is what makes wolframscript's preserved
+          // multiplication structure (e.g. `Cos[#1]*(3*(2*#2)) &`) come
+          // through unsimplified.
+          if let Some(result) = differentiate_function_body(body, &orders) {
+            return Ok(Expr::Function {
+              body: Box::new(result),
             });
           }
         }
