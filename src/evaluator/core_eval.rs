@@ -750,6 +750,13 @@ pub fn evaluate_expr_to_expr_inner(
     }
     Expr::List(items) => {
       let mut evaluated: Vec<Expr> = Vec::with_capacity(items.len());
+      // Snapshot FUNC_DEFS state before evaluation so we can detect
+      // whether any list element added or removed DownValues. Wolfram's
+      // evaluator iterates each expression to a fixed point; if a later
+      // element introduces a rule, earlier elements that didn't match
+      // before are re-evaluated against the new rule.
+      let defs_before: std::collections::HashSet<String> =
+        crate::FUNC_DEFS.with(|m| m.borrow().keys().cloned().collect());
       for item in items {
         let val = evaluate_expr_to_expr(item)?;
         if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
@@ -775,6 +782,22 @@ pub fn evaluate_expr_to_expr_inner(
           continue;
         }
         evaluated.push(val);
+      }
+      // If any new DownValues were introduced during element evaluation,
+      // re-evaluate the elements once so that earlier items pick up
+      // rules defined by later items (matches wolframscript:
+      // `{F[a, b], F[x__]:=H[x]; F[a,b], F=.; F[a,b]}` →
+      // `{H[a, b], H[a, b], H[a, b]}`). Limited to one re-evaluation pass
+      // to avoid infinite loops; deeper fixed-point semantics would need
+      // pervasive iteration in the evaluator itself.
+      let defs_after: std::collections::HashSet<String> =
+        crate::FUNC_DEFS.with(|m| m.borrow().keys().cloned().collect());
+      if defs_after != defs_before {
+        let mut re_eval: Vec<Expr> = Vec::with_capacity(evaluated.len());
+        for item in &evaluated {
+          re_eval.push(evaluate_expr_to_expr(item)?);
+        }
+        return Ok(Expr::List(re_eval));
       }
       Ok(Expr::List(evaluated))
     }
@@ -1566,23 +1589,23 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::Rule { .. }
               | Expr::RuleDelayed { .. }
               | Expr::Association(_) => true,
-              Expr::FunctionCall {
-                name: n,
-                args: ca,
-              } if n == "Rule" && ca.len() == 2 => true,
-              Expr::FunctionCall {
-                name: n,
-                args: ca,
-              } if n == "RuleDelayed" && ca.len() == 2 => true,
+              Expr::FunctionCall { name: n, args: ca }
+                if n == "Rule" && ca.len() == 2 =>
+              {
+                true
+              }
+              Expr::FunctionCall { name: n, args: ca }
+                if n == "RuleDelayed" && ca.len() == 2 =>
+              {
+                true
+              }
               Expr::FunctionCall {
                 name: n,
                 args: aargs,
               } if n == "Association" => {
                 aargs.iter().all(is_normalizable_assoc_arg)
               }
-              Expr::List(items) => {
-                items.iter().all(is_normalizable_assoc_arg)
-              }
+              Expr::List(items) => items.iter().all(is_normalizable_assoc_arg),
               _ => false,
             }
           }
