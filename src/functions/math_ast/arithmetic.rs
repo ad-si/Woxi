@@ -4064,17 +4064,24 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // result. Without this, a complex literal multiplied by `Infinity` stayed
   // as the unevaluated `Times[<complex>, Infinity]` form. wolframscript:
   //   (-1 + 2 I) Infinity  →  DirectedInfinity[(-1 + 2*I)/Sqrt[5]]
-  // Only triggers for genuinely complex (non-zero imaginary) numeric
-  // factors — real-coefficient × Infinity is handled by the existing
+  // Triggers for both numeric complex factors (`-1 + 2 I`) and symbolic
+  // ones with real-valued components (`-1 + 2 Pi I` → magnitude `Sqrt[1
+  // + 4 Pi^2]`). Real-coefficient × Infinity is handled by the existing
   // numeric coefficient path further down.
   let complex_idx = flat_args.iter().position(|a| {
     if let Some(((_re_n, _re_d), (im_n, _im_d))) =
       crate::functions::math_ast::try_extract_complex_exact(a)
     {
-      im_n != 0
-    } else {
-      false
+      return im_n != 0;
     }
+    // Symbolic complex: `Plus[real, Times[real, I]]` or similar.
+    if let Some((_re, im)) =
+      crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(a)
+      && !matches!(im, Expr::Integer(0))
+    {
+      return true;
+    }
+    false
   });
   let inf_idx = flat_args.iter().position(|a| {
     matches!(a, Expr::Identifier(n) if n == "Infinity")
@@ -4309,9 +4316,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // compute the product with astro-float so e.g. `N[Pi, 30] * E` returns
   // a single high-precision BigFloat instead of a symbolic Times.
   let has_bigfloat = args.iter().any(|a| matches!(a, Expr::BigFloat(_, _)));
-  if has_bigfloat
-    && args.iter().all(is_bigfloat_evaluable_factor)
-  {
+  if has_bigfloat && args.iter().all(is_bigfloat_evaluable_factor) {
     return bigfloat_times(args);
   }
 
@@ -7247,10 +7252,9 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
   match e {
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
     Expr::BigFloat(_, _) => true,
-    Expr::Constant(name) => matches!(
-      name.as_str(),
-      "Pi" | "-Pi" | "E" | "Degree"
-    ),
+    Expr::Constant(name) => {
+      matches!(name.as_str(), "Pi" | "-Pi" | "E" | "Degree")
+    }
     Expr::Identifier(name) => matches!(
       name.as_str(),
       "GoldenRatio" | "EulerGamma" | "Catalan" | "Glaisher" | "Khinchin"
@@ -7306,10 +7310,9 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut product = BigFloat::from_i32(1, bits);
   for arg in args {
-    let factor =
-      crate::functions::math_ast::numerical::expr_to_bigfloat(
-        arg, bits, rm, &mut cc,
-      )?;
+    let factor = crate::functions::math_ast::numerical::expr_to_bigfloat(
+      arg, bits, rm, &mut cc,
+    )?;
     product = product.mul(&factor, bits, rm);
   }
 

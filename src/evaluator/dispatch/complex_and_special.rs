@@ -298,6 +298,48 @@ pub fn dispatch_complex_and_special(
               }));
             }
           }
+          // Symbolic complex with real-valued numeric components (e.g.
+          // `-1 + 2*Pi*I`). When neither part is identically zero and both
+          // are real-valued, normalize to `DirectedInfinity[z/Sqrt[Re^2+Im^2]]`
+          // — matching wolframscript's `(-1 + 2*Pi*I)*Infinity` →
+          // `DirectedInfinity[(-1 + 2*I*Pi)/Sqrt[1 + 4*Pi^2]]`.
+          if !expr_contains_real(&args[0])
+            && let Some((re, im)) = split_real_imag_symbolic(&args[0])
+            && !is_zero_expr(&im)
+          {
+            let re_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(re.clone()),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let im_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(im.clone()),
+              right: Box::new(Expr::Integer(2)),
+            };
+            let mag_sq = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(re_sq),
+              right: Box::new(im_sq),
+            };
+            let mag_sq = match evaluate_expr_to_expr(&mag_sq) {
+              Ok(v) => v,
+              Err(e) => return Some(Err(e)),
+            };
+            let direction = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(args[0].clone()),
+              right: Box::new(make_sqrt(mag_sq)),
+            };
+            let direction = match evaluate_expr_to_expr(&direction) {
+              Ok(v) => v,
+              Err(e) => return Some(Err(e)),
+            };
+            return Some(Ok(Expr::FunctionCall {
+              name: "DirectedInfinity".to_string(),
+              args: vec![direction],
+            }));
+          }
           // Floating-point complex direction: normalize numerically so
           // `DirectedInfinity[1. + 2. I]` displays as
           // `DirectedInfinity[0.4472… + 0.8944…*I]`, matching Wolfram.
@@ -5504,6 +5546,170 @@ fn region_within(
   }
 
   unevaluated()
+}
+
+/// `true` if `expr` is structurally zero (e.g. `Integer(0)`). Used to
+/// short-circuit the symbolic-complex DirectedInfinity normalisation when
+/// the imaginary part collapses to zero — that's the pure-real case
+/// already handled above.
+fn is_zero_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0))
+}
+
+/// Split a complex-shaped expression into its real and imaginary parts as
+/// separate Expr values. Each Plus term either contains a single `I`
+/// factor (imaginary contribution) or none (real contribution); both kinds
+/// of contribution must themselves be real-valued (no `I` anywhere). When
+/// any term doesn't fit, returns None and the caller leaves the input
+/// unchanged. Used by `DirectedInfinity` to normalise symbolic directions
+/// like `-1 + 2*Pi*I` into `(-1 + 2*Pi*I)/Sqrt[1 + 4*Pi^2]`.
+pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
+  fn pull_i_factor(e: &Expr) -> Option<Expr> {
+    // If e contains `I` exactly once as a simple Times factor (or IS `I`),
+    // return e/I (the real coefficient). Returns None otherwise.
+    match e {
+      Expr::Identifier(name) if name == "I" => Some(Expr::Integer(1)),
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        let mut found = false;
+        let mut rest: Vec<Expr> = Vec::new();
+        for a in args {
+          if matches!(a, Expr::Identifier(n) if n == "I") {
+            if found {
+              return None;
+            }
+            found = true;
+          } else if expr_contains_imag(a) {
+            return None;
+          } else {
+            rest.push(a.clone());
+          }
+        }
+        if !found {
+          return None;
+        }
+        Some(match rest.len() {
+          0 => Expr::Integer(1),
+          1 => rest.into_iter().next().unwrap(),
+          _ => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: rest,
+          },
+        })
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        // Recurse with a flat list of factors.
+        let mut factors: Vec<Expr> = Vec::new();
+        flatten_times(left, &mut factors);
+        flatten_times(right, &mut factors);
+        let times_expr = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors,
+        };
+        pull_i_factor(&times_expr)
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => pull_i_factor(operand).map(|r| Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(r),
+      }),
+      _ => None,
+    }
+  }
+  fn flatten_times(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          flatten_times(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten_times(left, out);
+        flatten_times(right, out);
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  fn collect_plus(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args {
+          collect_plus(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        collect_plus(left, out);
+        collect_plus(right, out);
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        collect_plus(left, out);
+        out.push(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new((**right).clone()),
+        });
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  let mut terms = Vec::new();
+  collect_plus(expr, &mut terms);
+  let mut re_terms: Vec<Expr> = Vec::new();
+  let mut im_terms: Vec<Expr> = Vec::new();
+  for t in terms {
+    match pull_i_factor(&t) {
+      Some(r) => im_terms.push(r),
+      None => {
+        if expr_contains_imag(&t) {
+          return None;
+        }
+        re_terms.push(t);
+      }
+    }
+  }
+  fn build_plus(terms: Vec<Expr>) -> Expr {
+    match terms.len() {
+      0 => Expr::Integer(0),
+      1 => terms.into_iter().next().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      },
+    }
+  }
+  Some((build_plus(re_terms), build_plus(im_terms)))
+}
+
+/// `true` if `expr` contains the symbol `I` anywhere. Used as a guard in
+/// [`split_real_imag_symbolic`] so a "real" term doesn't accidentally
+/// hide an imaginary factor.
+fn expr_contains_imag(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) if name == "I" => true,
+    Expr::UnaryOp { operand, .. } => expr_contains_imag(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_imag(left) || expr_contains_imag(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_imag),
+    Expr::List(items) => items.iter().any(expr_contains_imag),
+    _ => false,
+  }
 }
 
 /// `true` if `expr` contains a machine-precision Real anywhere in its
