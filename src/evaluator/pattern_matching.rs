@@ -2152,8 +2152,9 @@ fn merge_option_rules(defaults: &[Expr], explicit: &[Expr]) -> Vec<Expr> {
   for rule in defaults.iter().chain(explicit.iter()) {
     let key = rule_key(rule);
     if let Some(k) = key
-      && let Some(slot) =
-        result.iter_mut().find(|r| rule_key(r).as_deref() == Some(&k))
+      && let Some(slot) = result
+        .iter_mut()
+        .find(|r| rule_key(r).as_deref() == Some(&k))
     {
       *slot = rule.clone();
       continue;
@@ -2380,10 +2381,7 @@ fn match_args_with_sequences(
       }
     }
     let merged = merge_option_rules(&opt_defaults, &explicit_rules);
-    return Some(vec![(
-      "__OptionsPattern__".to_string(),
-      Expr::List(merged),
-    )]);
+    return Some(vec![("__OptionsPattern__".to_string(), Expr::List(merged))]);
   }
 
   if let Some(seq) = get_sequence_info(pat) {
@@ -2981,7 +2979,12 @@ fn match_pattern_impl(
           }
           // For Orderless functions (Times, Plus), try all permutations
           let is_orderless =
-            crate::evaluator::listable::is_builtin_orderless(pat_name);
+            crate::evaluator::listable::is_builtin_orderless(pat_name)
+              || crate::FUNC_ATTRS.with(|m| {
+                m.borrow()
+                  .get(pat_name)
+                  .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
+              });
           if is_orderless && pat_args.len() >= 2 {
             // Try all permutations of expression args against pattern args.
             // When Optional patterns are present, prefer matches where more
@@ -3289,7 +3292,8 @@ pub fn apply_bindings(
   // of evaluation so `OptionValue[name]` lookups in the replacement resolve.
   let mut opt_pairs: Vec<(String, Expr)> = Vec::new();
   let mut has_opts = false;
-  let mut filtered_refs: Vec<(&str, &Expr)> = Vec::with_capacity(bindings.len());
+  let mut filtered_refs: Vec<(&str, &Expr)> =
+    Vec::with_capacity(bindings.len());
   for (name, value) in bindings {
     if name == "__OptionsPattern__" {
       if let Expr::List(items) = value {
@@ -3319,8 +3323,7 @@ pub fn apply_bindings(
     }
     filtered_refs.push((name.as_str(), value));
   }
-  let result =
-    crate::syntax::substitute_variables(replacement, &filtered_refs);
+  let result = crate::syntax::substitute_variables(replacement, &filtered_refs);
   if has_opts {
     crate::OPTION_VALUE_CONTEXT.with(|ctx| {
       ctx.borrow_mut().push((String::new(), opt_pairs));
