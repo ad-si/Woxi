@@ -8146,7 +8146,14 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
 
-    coefficients.push(coeff);
+    // Re-evaluate the coefficient so nested rational sub-expressions
+    // collapse to a single canonical fraction. Without this the Taylor
+    // expansion of `((x + Sqrt[x^2 + 4])/2)^(3/2)` keeps coefficients
+    // like `((3*1)/8 + (3*1/2)/8)/2` instead of `9/32`, and so e.g.
+    // `Series[LucasL[3/2, x], {x, 0, 5}]` doesn't match wolframscript.
+    let coeff_simplified =
+      crate::evaluator::evaluate_expr_to_expr(&coeff).unwrap_or(coeff);
+    coefficients.push(coeff_simplified);
 
     // Differentiate for the next iteration (unless this is the last)
     if k < order {
