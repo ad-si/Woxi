@@ -5522,7 +5522,46 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // looser-binding operator like Condition/Rule/RuleDelayed/
       // ReplaceAll/ReplaceRepeated, wrap it in parens so `s:a /; b`
       // doesn't flip to `Condition[Pattern[s, a], b]` on re-parse.
+      // When `body` is Blank/BlankSequence/BlankNullSequence, fold the
+      // name into the underscore form Wolfram prefers: `Pattern[x,
+      // Blank[]]` → `x_`, `Pattern[x, Blank[Integer]]` → `x_Integer`,
+      // and so on for `__`/`___`.
       if name == "Pattern" && args.len() == 2 {
+        if let Expr::Identifier(nm) = &args[0]
+          && let Expr::FunctionCall { name: bn, args: bargs } = &args[1]
+          && bargs.len() <= 1
+        {
+          let underscores = match bn.as_str() {
+            "Blank" => Some("_"),
+            "BlankSequence" => Some("__"),
+            "BlankNullSequence" => Some("___"),
+            _ => None,
+          };
+          if let Some(under) = underscores {
+            if bargs.is_empty() {
+              return format!("{}{}", nm, under);
+            }
+            if let Expr::Identifier(h) = &bargs[0] {
+              return format!("{}{}{}", nm, under, h);
+            }
+          }
+        }
+        // Also fold when body is the typed `Expr::Pattern` form with an
+        // empty name (the anonymous `_`/`__`/`___` parsed as a Term).
+        if let Expr::Identifier(nm) = &args[0]
+          && let Expr::Pattern {
+            name: bname,
+            head,
+            blank_type,
+          } = &args[1]
+          && bname.is_empty()
+        {
+          let under = "_".repeat(*blank_type as usize);
+          return match head {
+            Some(h) => format!("{}{}{}", nm, under, h),
+            None => format!("{}{}", nm, under),
+          };
+        }
         let needs_parens = matches!(
           &args[1],
           Expr::Rule { .. }
@@ -5599,6 +5638,17 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       if name == "Proportional" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{221D} ");
+      }
+      // Blank[] → _, Blank[h] → _h
+      if name == "Blank" {
+        if args.is_empty() {
+          return "_".to_string();
+        }
+        if args.len() == 1
+          && let Expr::Identifier(h) = &args[0]
+        {
+          return format!("_{}", h);
+        }
       }
       // BlankSequence[] → __, BlankSequence[h] → __h
       if name == "BlankSequence" {
@@ -7277,13 +7327,18 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Power")))
-        || (matches!(op, BinaryOperator::Power | BinaryOperator::Times)
-          && matches!(
-            left.as_ref(),
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ));
+        || (matches!(
+          op,
+          BinaryOperator::Power
+            | BinaryOperator::Times
+            | BinaryOperator::Plus
+            | BinaryOperator::Minus
+        ) && matches!(
+          left.as_ref(),
+          Expr::Pattern { .. }
+            | Expr::PatternOptional { .. }
+            | Expr::PatternTest { .. }
+        ));
       let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
@@ -7331,13 +7386,18 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
             }
           ) || is_right_multiplicative(right)
             || is_negative_expr(right)))
-        || (matches!(op, BinaryOperator::Power | BinaryOperator::Times)
-          && matches!(
-            right.as_ref(),
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ))
+        || (matches!(
+          op,
+          BinaryOperator::Power
+            | BinaryOperator::Times
+            | BinaryOperator::Plus
+            | BinaryOperator::Minus
+        ) && matches!(
+          right.as_ref(),
+          Expr::Pattern { .. }
+            | Expr::PatternOptional { .. }
+            | Expr::PatternTest { .. }
+        ))
         // Plus + Plus (right-nested): preserve grouping in held expressions.
         // The parser produces left-nested chains, so right-nesting only
         // appears via Hold/HoldAll substitution where we want to display
@@ -8049,10 +8109,47 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     // Pattern[name, body] displays as name:body in InputForm; wrap
     // looser-binding bodies (Condition/Rule/RuleDelayed/ReplaceAll/
     // ReplaceRepeated) in parens so `s:a /; b` doesn't flip to
-    // `Condition[Pattern[s, a], b]` on re-parse.
+    // `Condition[Pattern[s, a], b]` on re-parse. When `body` is
+    // Blank/BlankSequence/BlankNullSequence, fold into Wolfram's
+    // underscore form: `Pattern[x, Blank[]]` → `x_`, etc.
     Expr::FunctionCall { name, args }
       if name == "Pattern" && args.len() == 2 =>
     {
+      if let Expr::Identifier(nm) = &args[0]
+        && let Expr::FunctionCall { name: bn, args: bargs } = &args[1]
+        && bargs.len() <= 1
+      {
+        let underscores = match bn.as_str() {
+          "Blank" => Some("_"),
+          "BlankSequence" => Some("__"),
+          "BlankNullSequence" => Some("___"),
+          _ => None,
+        };
+        if let Some(under) = underscores {
+          if bargs.is_empty() {
+            return format!("{}{}", nm, under);
+          }
+          if let Expr::Identifier(h) = &bargs[0] {
+            return format!("{}{}{}", nm, under, h);
+          }
+        }
+      }
+      // Also fold when body is the typed `Expr::Pattern` form with an
+      // empty name (the anonymous `_`/`__`/`___` parsed as a Term).
+      if let Expr::Identifier(nm) = &args[0]
+        && let Expr::Pattern {
+          name: bname,
+          head,
+          blank_type,
+        } = &args[1]
+        && bname.is_empty()
+      {
+        let under = "_".repeat(*blank_type as usize);
+        return match head {
+          Some(h) => format!("{}{}{}", nm, under, h),
+          None => format!("{}{}", nm, under),
+        };
+      }
       let needs_parens = matches!(
         &args[1],
         Expr::Rule { .. }
