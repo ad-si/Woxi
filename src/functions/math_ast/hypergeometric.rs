@@ -213,6 +213,104 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Series-terminating case: a non-positive integer in `a_list` makes the
+  // Pochhammer factor `(−n)_k` zero for k > n, so pFq becomes the length-
+  // (n+1) polynomial via the recurrence
+  //   term_{k+1} = term_k · (∏ᵢ (aᵢ+k)) / (∏ⱼ (bⱼ+k) · (k+1)) · z.
+  // Evaluating the upper-parameter shift `∏ᵢ (aᵢ+k)` *alone* — before
+  // combining with z, the lower factors, or the running term — lets a
+  // step like `(-1) · (a+1)` collapse to `Plus[-1, -a]`. Once that Plus
+  // joins a wider Times product, Times canonicalisation no longer
+  // distributes the −1 into it, so the result keeps Wolfram's canonical
+  // `Times[−1, Plus[−1, −a], a, …]` shape rather than `Times[a, Plus[1,
+  // a], …]`. Picks the smallest |negative integer| to keep the polynomial
+  // degree minimal and handled before the p=q=1 → 1F1 delegation so this
+  // closed form covers both PFQ and 1F1 inputs uniformly.
+  if a_list.iter().any(|e| matches!(e, Expr::Integer(v) if *v <= 0)) {
+    let n = a_list
+      .iter()
+      .filter_map(|e| {
+        if let Expr::Integer(v) = e
+          && *v <= 0
+        {
+          Some((-*v) as i128)
+        } else {
+          None
+        }
+      })
+      .min()
+      .unwrap_or(0);
+    let mut terms: Vec<Expr> = Vec::with_capacity((n + 1) as usize);
+    let mut term: Expr = Expr::Integer(1);
+    terms.push(term.clone());
+    for k in 0..n {
+      // Build and *fully* evaluate the upper Pochhammer shift on its own
+      // so a step like `(-1) * (a+1)` collapses to `Plus[-1, -a]` here,
+      // before joining the wider running product.
+      let upper_unevaluated = if a_list.len() == 1 {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![a_list[0].clone(), Expr::Integer(k)],
+        }
+      } else {
+        let factors: Vec<Expr> = a_list
+          .iter()
+          .map(|ai| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![ai.clone(), Expr::Integer(k)],
+          })
+          .collect();
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors,
+        }
+      };
+      let upper = crate::evaluator::evaluate_expr_to_expr(&upper_unevaluated)?;
+      let lower_unevaluated = if b_list.is_empty() {
+        Expr::Integer(k + 1)
+      } else {
+        let mut factors: Vec<Expr> = Vec::with_capacity(b_list.len() + 1);
+        factors.push(Expr::Integer(k + 1));
+        for bj in b_list.iter() {
+          factors.push(Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![bj.clone(), Expr::Integer(k)],
+          });
+        }
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors,
+        }
+      };
+      let lower = crate::evaluator::evaluate_expr_to_expr(&lower_unevaluated)?;
+      let factor = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          upper,
+          z.clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![lower, Expr::Integer(-1)],
+          },
+        ],
+      };
+      term = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![term, factor],
+      })?;
+      terms.push(term.clone());
+    }
+    let poly = if terms.len() == 1 {
+      terms.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      }
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&poly);
+  }
+
   // p=q=1 form is just Hypergeometric1F1, which has its own closed-form
   // simplifications. Delegate so e.g. `HypergeometricPFQ[{6},{1},2]` →
   // `(719*E^2)/15` rather than the unsimplified series.
