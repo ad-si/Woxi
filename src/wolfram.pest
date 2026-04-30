@@ -62,8 +62,8 @@ PrecisionReal = @{
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
 }
 UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
-// Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010)
-BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ (ASCII_ALPHANUMERIC)+ }
+// Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010, 2^^1.01, 16^^FF.A)
+BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ ASCII_ALPHANUMERIC+ ~ ("." ~ !"." ~ ASCII_ALPHANUMERIC*)? }
 Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 NumericValue = { BasePrefix | PrecisionReal | Real | IntegerScientific | Integer | Constant }
 UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedIntegerScientific | UnsignedInteger | UnsignedConstant }

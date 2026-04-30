@@ -1733,20 +1733,50 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::BasePrefix => {
       let s = pair.as_str();
-      // Parse base^^digits format (e.g. 16^^FF = 255, 2^^1010 = 10)
+      // Parse base^^digits format (e.g. 16^^FF = 255, 2^^1010 = 10,
+      // 2^^1.01 = 1.25, 16^^FF.A = 255.625)
       let parts: Vec<&str> = s.splitn(2, "^^").collect();
       let base: u32 = parts[0].parse().unwrap_or(10);
       let digits = parts[1];
-      // i128::from_str_radix only supports lowercase, so normalize
-      match i128::from_str_radix(&digits.to_lowercase(), base) {
-        Ok(val) => Expr::Integer(val),
-        Err(_) => {
-          // Overflows i128 — try BigInteger
-          use num_bigint::BigInt;
-          use num_traits::Num;
-          match BigInt::from_str_radix(&digits.to_lowercase(), base) {
-            Ok(n) => Expr::BigInteger(n),
-            Err(_) => Expr::Integer(0),
+      let lower = digits.to_lowercase();
+      if let Some(dot_pos) = lower.find('.') {
+        // Fractional base literal — produce Real(f64).
+        let int_part = &lower[..dot_pos];
+        let frac_part = &lower[dot_pos + 1..];
+        let int_val: f64 = if int_part.is_empty() {
+          0.0
+        } else {
+          match i128::from_str_radix(int_part, base) {
+            Ok(v) => v as f64,
+            Err(_) => {
+              use num_bigint::BigInt;
+              use num_traits::{Num, ToPrimitive};
+              BigInt::from_str_radix(int_part, base)
+                .ok()
+                .and_then(|n| n.to_f64())
+                .unwrap_or(0.0)
+            }
+          }
+        };
+        let mut frac_val: f64 = 0.0;
+        let mut divisor: f64 = base as f64;
+        for c in frac_part.chars() {
+          let digit = c.to_digit(base).unwrap_or(0) as f64;
+          frac_val += digit / divisor;
+          divisor *= base as f64;
+        }
+        Expr::Real(int_val + frac_val)
+      } else {
+        match i128::from_str_radix(&lower, base) {
+          Ok(val) => Expr::Integer(val),
+          Err(_) => {
+            // Overflows i128 — try BigInteger
+            use num_bigint::BigInt;
+            use num_traits::Num;
+            match BigInt::from_str_radix(&lower, base) {
+              Ok(n) => Expr::BigInteger(n),
+              Err(_) => Expr::Integer(0),
+            }
           }
         }
       }
