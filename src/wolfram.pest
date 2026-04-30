@@ -639,9 +639,12 @@ Statement = _{ TagSetDelayed | TagUnset | TagSet | FunctionDefinition | TopLevel
 TopLevelSpan = { &HasSpanSep ~ SpanExpr ~ ("//" ~ PostfixFunction)* }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
-StatementSeparator = _{ (";" ~ !";")?  }
+// Atomic so the `!";"` lookahead checks the *immediate* next character.
+// Without atomic mode, pest skips WHITESPACE before evaluating `!";"`, which
+// would (wrongly) reject `; ;;3` because the next non-whitespace char is `;`.
+StatementSeparator = @{ (";" ~ !";")? }
 
 // TrailingSemicolon marks that the last statement ends with ; (suppresses output)
-TrailingSemicolon = { ";" ~ !";" }
+TrailingSemicolon = @{ ";" ~ !";" }
 
 Program = { SOI ~ (Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon?)? ~ EOI }
