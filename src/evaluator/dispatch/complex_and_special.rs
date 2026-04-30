@@ -797,8 +797,10 @@ pub fn dispatch_complex_and_special(
         }
 
         if lines.is_empty() {
-          // Undefined symbol - return Null
-          return Some(Ok(Expr::Identifier("Null".to_string())));
+          // Undefined symbol — wolframscript displays a blank
+          // `Definition[…]` panel (printable form is empty), so emit
+          // an empty raw string here to match.
+          return Some(Ok(Expr::Raw(String::new())));
         }
 
         return Some(Ok(Expr::Raw(lines.join("\n \n"))));
