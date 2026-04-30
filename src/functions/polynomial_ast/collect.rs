@@ -77,6 +77,91 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // If the input is `Times[outer1, outer2, …, Plus[…]]` with all the
+  // `outer_i` independent of `var`, factor those outer multipliers out
+  // and collect the Plus inside, keeping each var-power's coefficient
+  // as a single sub-Plus. This reproduces wolframscript's
+  // `Collect[2*Sin[x*z]*(x + 2*y^2 + Sin[y]*x), y]` shape, where the
+  // outer `2*Sin[x*z]` stays factored over `(x + x*Sin[y])` instead of
+  // distributing through the Plus.
+  if head.is_none()
+    && let Some((outer_factors, inner)) =
+      extract_var_free_outer_factors(&args[0], var)
+    && let Some(inner_plus_terms) = as_plus_terms(&inner)
+    && inner_plus_terms.len() >= 2
+  {
+    // Group inner-Plus terms by var-power, summing coefficients but
+    // keeping each bucket's sum as a Plus when it has more than one
+    // contribution.
+    let mut buckets: Vec<(i128, Vec<Expr>)> = Vec::new();
+    for t in &inner_plus_terms {
+      let (p, c) = term_var_power_and_coeff(t, var);
+      if let Some(entry) = buckets.iter_mut().find(|(bp, _)| *bp == p) {
+        entry.1.push(c);
+      } else {
+        buckets.push((p, vec![c]));
+      }
+    }
+    // wolframscript orders the result Plus by descending power of `var`
+    // when at least one var-power bucket has more than one coefficient
+    // term (so the outer-Plus coefficient stays grouped); otherwise it
+    // orders ascending. This matches both
+    //   Collect[2*(x+y^2), y] → 2*x + 2*y^2  (ascending)
+    //   Collect[2*Sin[x*z]*(x+2*y^2+Sin[y]*x), y]
+    //     → 4*y^2*Sin[x*z] + 2*(x + x*Sin[y])*Sin[x*z]  (descending).
+    let any_multi = buckets.iter().any(|(_, c)| c.len() > 1);
+    if any_multi {
+      buckets.sort_by_key(|(p, _)| -*p);
+    } else {
+      buckets.sort_by_key(|(p, _)| *p);
+    }
+    let mut result_terms: Vec<Expr> = Vec::new();
+    for (power, coeffs) in buckets {
+      let coeff = if coeffs.len() == 1 {
+        coeffs.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: coeffs,
+        }
+      };
+      // Build the var^power part.
+      let var_part = if power == 0 {
+        None
+      } else if power == 1 {
+        Some(Expr::Identifier(var.to_string()))
+      } else {
+        Some(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var.to_string())),
+          right: Box::new(Expr::Integer(power)),
+        })
+      };
+      // Assemble outer * coeff * var_part as a Times list, then sort
+      // canonically via times_ast. Use `Plus[…]` for the coefficient
+      // (when it has >1 term) so it stays grouped under the Times.
+      let mut factors: Vec<Expr> = outer_factors.clone();
+      // Skip a `1` coefficient in the product.
+      if !matches!(&coeff, Expr::Integer(1)) {
+        factors.push(coeff);
+      }
+      if let Some(v) = var_part {
+        factors.push(v);
+      }
+      let term = if factors.is_empty() {
+        Expr::Integer(1)
+      } else if factors.len() == 1 {
+        factors.into_iter().next().unwrap()
+      } else {
+        times_ast(&factors).unwrap_or_else(|_| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: factors,
+        })
+      };
+      result_terms.push(term);
+    }
+    return Ok(build_sum(result_terms));
+  }
   // Expand and collect terms by power of var
   let expanded = expand_and_combine(&args[0]);
   let terms = collect_additive_terms(&expanded);
@@ -179,6 +264,63 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(plus_ast_canonical(result_terms))
   } else {
     Ok(build_sum(result_terms))
+  }
+}
+
+/// If `expr` is a Times whose factors split cleanly into a non-empty
+/// set independent of `var` and at least one factor that depends on
+/// `var`, return `(outer_factors, inner)` where `inner` is the
+/// reassembled var-dependent factor (or the single var-dependent
+/// factor if there's only one). Returns `None` otherwise.
+fn extract_var_free_outer_factors(
+  expr: &Expr,
+  var: &str,
+) -> Option<(Vec<Expr>, Expr)> {
+  use crate::functions::calculus_ast::is_constant_wrt;
+  let factors: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return None,
+  };
+  let mut outer: Vec<Expr> = Vec::new();
+  let mut inner: Vec<Expr> = Vec::new();
+  for f in factors {
+    if is_constant_wrt(&f, var) {
+      outer.push(f);
+    } else {
+      inner.push(f);
+    }
+  }
+  if outer.is_empty() || inner.is_empty() {
+    return None;
+  }
+  let inner_expr = if inner.len() == 1 {
+    inner.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: inner,
+    }
+  };
+  Some((outer, inner_expr))
+}
+
+/// Extract the args of a Plus expression, or return None if `expr` is
+/// not a Plus. Used to identify whether the var-containing inner of a
+/// Times[..., Plus] structure is itself a Plus that we can recurse on.
+fn as_plus_terms(expr: &Expr) -> Option<Vec<Expr>> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => Some(args.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Some(vec![*left.clone(), *right.clone()]),
+    _ => None,
   }
 }
 
