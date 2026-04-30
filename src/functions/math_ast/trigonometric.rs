@@ -670,6 +670,36 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.sin()));
   }
+  // Sin of a BigFloat: evaluate at the input's working precision and
+  // propagate the precision tag using the relative condition number.
+  // For Sin[x], `d log(sin x) / d log x = x*cos(x)/sin(x) = x/tan(x)`,
+  // so output precision = `prec_in - log10(|x/tan(x)|)`.
+  if let Expr::BigFloat(digits, prec) = &args[0] {
+    let p_usize = (*prec as usize).max(1);
+    let result = crate::functions::math_ast::n_eval_arbitrary(
+      &Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: args.to_vec(),
+      },
+      p_usize,
+    )?;
+    if let Expr::BigFloat(ref out_digits, _) = result {
+      let x_f64 = digits.parse::<f64>().unwrap_or(0.0);
+      let t = x_f64.tan();
+      let cond = if t.abs() > 0.0 {
+        (x_f64 / t).abs()
+      } else {
+        0.0
+      };
+      let prec_out = if cond > 0.0 && cond.is_finite() {
+        prec - cond.log10()
+      } else {
+        *prec
+      };
+      return Ok(Expr::BigFloat(out_digits.clone(), prec_out));
+    }
+    return Ok(result);
+  }
   // Exact complex: sin(a+bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
   // For purely imaginary (a=0): sin(bi) = i*sinh(b)
   if let Some(((re_num, re_den), (im_num, im_den))) =
@@ -822,6 +852,31 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.cos()));
+  }
+  // Cos of a BigFloat: evaluate at the input's working precision and
+  // propagate the precision tag using the relative condition number.
+  // For Cos[x], `d log(cos x) / d log x = -x*tan(x)`, so the output
+  // relative precision is `prec_in - log10(|x*tan(x)|)`.
+  if let Expr::BigFloat(digits, prec) = &args[0] {
+    let p_usize = (*prec as usize).max(1);
+    let result = crate::functions::math_ast::n_eval_arbitrary(
+      &Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: args.to_vec(),
+      },
+      p_usize,
+    )?;
+    if let Expr::BigFloat(ref out_digits, _) = result {
+      let x_f64 = digits.parse::<f64>().unwrap_or(0.0);
+      let cond = (x_f64 * x_f64.tan()).abs();
+      let prec_out = if cond > 0.0 && cond.is_finite() {
+        prec - cond.log10()
+      } else {
+        *prec
+      };
+      return Ok(Expr::BigFloat(out_digits.clone(), prec_out));
+    }
+    return Ok(result);
   }
   // Exact complex: cos(a+bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
   // For purely imaginary (a=0): cos(bi) = cosh(b)
