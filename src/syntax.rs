@@ -1373,8 +1373,76 @@ fn parse_box_notation_str(raw: &str) -> Option<Expr> {
     return None;
   }
   let toks = tokenize_box(inner)?;
-  let (expr, idx) = parse_box_chain(&toks, 0)?;
-  if idx == toks.len() { Some(expr) } else { None }
+  // First try the operator-aware parser (SuperscriptBox/SubscriptBox/…) on a
+  // single chain. If that consumes everything, return its result directly.
+  if let Some((expr, idx)) = parse_box_chain(&toks, 0)
+    && idx == toks.len()
+  {
+    return Some(expr);
+  }
+  // Otherwise fall through to a generic RowBox builder that handles plain
+  // atom sequences like `\(c (1 + x)\)` → `RowBox[{c, RowBox[{(, RowBox[{1,
+  // +, x}], )}]}]`. Returns `None` if the input isn't expressible as
+  // RowBox-of-strings (e.g. unmatched parens or stray box operators).
+  parse_box_rowbox(&toks)
+}
+
+/// Build a generic `RowBox[{…}]` from a token list. Recognises balanced `(` /
+/// `)` Atom pairs as nested groups so the parens themselves stay as their own
+/// string atoms inside the surrounding RowBox.
+fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
+  // Split the top-level token list at every balanced `(`/`)` pair, recursing
+  // on the inside so each nested group becomes its own RowBox.
+  let mut parts: Vec<Expr> = Vec::new();
+  let mut i = 0;
+  while i < toks.len() {
+    match &toks[i] {
+      BoxTok::Atom(s) if s == "(" => {
+        // Find matching `)`.
+        let mut depth = 1usize;
+        let mut j = i + 1;
+        while j < toks.len() && depth > 0 {
+          match &toks[j] {
+            BoxTok::Atom(s) if s == "(" => depth += 1,
+            BoxTok::Atom(s) if s == ")" => depth -= 1,
+            _ => {}
+          }
+          if depth == 0 {
+            break;
+          }
+          j += 1;
+        }
+        if j >= toks.len() {
+          return None;
+        }
+        let inner_toks = &toks[i + 1..j];
+        let inner_expr = parse_box_rowbox(inner_toks)?;
+        // Build the parenthesised group as its own RowBox of `(`, inner, `)`.
+        let group = box_call(
+          "RowBox",
+          vec![Expr::List(vec![
+            Expr::String("(".to_string()),
+            inner_expr,
+            Expr::String(")".to_string()),
+          ])],
+        );
+        parts.push(group);
+        i = j + 1;
+      }
+      _ => {
+        let unit = box_unit(&toks[i])?;
+        parts.push(unit);
+        i += 1;
+      }
+    }
+  }
+  if parts.is_empty() {
+    return None;
+  }
+  if parts.len() == 1 {
+    return Some(parts.into_iter().next().unwrap());
+  }
+  Some(box_call("RowBox", vec![Expr::List(parts)]))
 }
 
 #[derive(Debug)]
@@ -1429,10 +1497,22 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
         continue;
       }
     }
+    // Single-character punctuation that wolframscript prints inside the
+    // RowBox sequence as its own string atom (e.g. `(`, `)`, `+`, `-`,
+    // arithmetic operators in `\(c (1 + x)\)` → `RowBox[{c, RowBox[{(,
+    // RowBox[{1, +, x}], )}]}]`).
+    if matches!(c, b'(' | b')' | b'+' | b'-' | b'*' | b'/' | b'=' | b',') {
+      toks.push(BoxTok::Atom((c as char).to_string()));
+      i += 1;
+      continue;
+    }
     let start = i;
     while i < bytes.len() {
       let c = bytes[i];
       if (c as char).is_whitespace() {
+        break;
+      }
+      if matches!(c, b'(' | b')' | b'+' | b'-' | b'*' | b'/' | b'=' | b',') {
         break;
       }
       if c == b'\\'
