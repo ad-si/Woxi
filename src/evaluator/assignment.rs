@@ -899,6 +899,83 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return set_downvalues_from_rules(&rhs_value);
   }
 
+  // Handle Messages[sym] = rules — replace all message DownValues for
+  // `sym` (entries on `MessageName` whose first slot SameQ-matches sym)
+  // with the rules in the RHS list. Each rule like `sym::tag :> "text"`
+  // (i.e. `RuleDelayed[MessageName[sym, tag], "text"]`) is replayed via
+  // SetDelayed so it lands as a regular MessageName DownValue.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Messages"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    // Filter MessageName DownValues, keeping only entries whose slot-0
+    // SameQ literal does NOT equal `sym_name`.
+    crate::FUNC_DEFS.with(|m| {
+      let mut map = m.borrow_mut();
+      if let Some(defs) = map.get_mut("MessageName") {
+        defs.retain(|(params, conds, _defaults, _heads, _blanks, _body)| {
+          let slot0_literal = conds.iter().find_map(|c| {
+            if let Some(Expr::Comparison {
+              operands,
+              operators,
+            }) = c
+              && operators.len() == 1
+              && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+              && operands.len() == 2
+              && let Expr::Identifier(name) = &operands[0]
+              && !params.is_empty()
+              && name == &params[0]
+            {
+              Some(operands[1].clone())
+            } else {
+              None
+            }
+          });
+          !matches!(&slot0_literal,
+            Some(Expr::Identifier(s)) if s == sym_name)
+        });
+      }
+    });
+    // Replay each rule as an individual SetDelayed/Set so the rule LHS
+    // re-installs as a MessageName DownValue.
+    let rule_items: Vec<Expr> = match &rhs_value {
+      Expr::List(items) => items.clone(),
+      _ => vec![],
+    };
+    for item in &rule_items {
+      let (pat, body, is_delayed) = match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone(), false),
+        Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone(), true),
+        _ => continue,
+      };
+      let unwrapped = match &pat {
+        Expr::FunctionCall { name: pn, args: pa }
+          if pn == "HoldPattern" && pa.len() == 1 =>
+        {
+          pa[0].clone()
+        }
+        _ => pat.clone(),
+      };
+      if is_delayed {
+        set_delayed_ast(&unwrapped, &body)?;
+      } else {
+        set_ast(&unwrapped, &body)?;
+      }
+    }
+    return Ok(rhs_value);
+  }
+
   // Handle NValues[sym] = rules / NValues[sym] := rules — store
   // the rule list directly into N_VALUES under sym, stripping any
   // outer HoldPattern wrappers so the LHS round-trips. Each rule's
