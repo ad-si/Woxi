@@ -1153,8 +1153,8 @@ fn try_align_groups(
             name: crate::syntax::expr_to_string(test),
             args: vec![e.clone()],
           };
-          let result = crate::evaluator::evaluate_expr_to_expr(&test_call)
-            .ok()?;
+          let result =
+            crate::evaluator::evaluate_expr_to_expr(&test_call).ok()?;
           if !matches!(&result, Expr::Identifier(s) if s == "True") {
             return None;
           }
@@ -2112,6 +2112,57 @@ struct SeqInfo {
   condition: Option<Box<Expr>>,
 }
 
+/// Recognise `OptionsPattern[]` / `OptionsPattern[{a -> v1, …}]` and return
+/// the optional default-rule list. Returns `None` when the pattern isn't an
+/// OptionsPattern.
+fn match_options_pattern(pat: &Expr) -> Option<Vec<Expr>> {
+  if let Expr::FunctionCall { name, args } = pat
+    && name == "OptionsPattern"
+  {
+    if args.is_empty() {
+      return Some(vec![]);
+    }
+    let inner = &args[0];
+    return Some(match inner {
+      Expr::List(items) => items.clone(),
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => vec![inner.clone()],
+      _ => vec![],
+    });
+  }
+  None
+}
+
+/// Merge `OptionsPattern[{defaults}]` defaults with explicit rules (the
+/// explicit rules win on collisions). Returns the merged list as a plain
+/// `Vec<Expr>` of `Rule[…]` / `RuleDelayed[…]` nodes.
+fn merge_option_rules(defaults: &[Expr], explicit: &[Expr]) -> Vec<Expr> {
+  fn rule_key(rule: &Expr) -> Option<String> {
+    match rule {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        match pattern.as_ref() {
+          Expr::Identifier(s) => Some(s.clone()),
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  let mut result: Vec<Expr> = Vec::new();
+  for rule in defaults.iter().chain(explicit.iter()) {
+    let key = rule_key(rule);
+    if let Some(k) = key
+      && let Some(slot) =
+        result.iter_mut().find(|r| rule_key(r).as_deref() == Some(&k))
+    {
+      *slot = rule.clone();
+      continue;
+    }
+    result.push(rule.clone());
+  }
+  result
+}
+
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
 fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
   match pattern {
@@ -2309,6 +2360,31 @@ fn match_args_with_sequences(
 
   let pat = &pat_args[0];
   let rest_pats = &pat_args[1..];
+
+  // OptionsPattern[defaults?] — consumes the remaining expr args (which
+  // must all be Rule/RuleDelayed) and emits a sentinel binding under the
+  // reserved key `__OptionsPattern__` so that `apply_bindings` can push
+  // the merged option bindings onto OPTION_VALUE_CONTEXT before evaluating
+  // the replacement (so `OptionValue[…]` lookups inside resolve).
+  if let Some(opt_defaults) = match_options_pattern(pat) {
+    if !rest_pats.is_empty() {
+      return None;
+    }
+    let mut explicit_rules: Vec<Expr> = Vec::new();
+    for arg in expr_args {
+      match arg {
+        Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+          explicit_rules.push(arg.clone());
+        }
+        _ => return None,
+      }
+    }
+    let merged = merge_option_rules(&opt_defaults, &explicit_rules);
+    return Some(vec![(
+      "__OptionsPattern__".to_string(),
+      Expr::List(merged),
+    )]);
+  }
 
   if let Some(seq) = get_sequence_info(pat) {
     // Sequence pattern: try consuming different numbers of args
@@ -2823,9 +2899,12 @@ fn match_pattern_impl(
           // would always be False.
           return try_one_identity_match(expr, pat_name, pat_args);
         }
-        // Check if any pattern arg is a sequence pattern
-        let has_sequence =
-          pat_args.iter().any(|p| get_sequence_info(p).is_some());
+        // Check if any pattern arg is a sequence pattern (or an
+        // OptionsPattern slot, which acts like one — it consumes any
+        // remaining Rule arguments).
+        let has_sequence = pat_args.iter().any(|p| {
+          get_sequence_info(p).is_some() || match_options_pattern(p).is_some()
+        });
         if has_sequence {
           // For Orderless functions (Plus, Times, …) with a sequence pattern
           // we need to try every permutation of the expression args, since
@@ -2837,9 +2916,7 @@ fn match_pattern_impl(
               || crate::FUNC_ATTRS.with(|m| {
                 m.borrow()
                   .get(pat_name.as_str())
-                  .is_some_and(|attrs| {
-                    attrs.contains(&"Orderless".to_string())
-                  })
+                  .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
               });
           if is_orderless && expr_args.len() >= 2 {
             for perm in permutations(expr_args) {
@@ -3205,13 +3282,55 @@ pub fn apply_bindings(
   replacement: &Expr,
   bindings: &[(String, Expr)],
 ) -> Result<Expr, InterpreterError> {
-  // Use simultaneous substitution to prevent variable name leakage
-  let binding_refs: Vec<(&str, &Expr)> = bindings
-    .iter()
-    .map(|(name, value)| (name.as_str(), value))
-    .collect();
-  let result = crate::syntax::substitute_variables(replacement, &binding_refs);
-  // Evaluate the result after substitution
+  // Pull the `__OptionsPattern__` sentinel (set by `match_args_with_sequences`
+  // when the pattern contained an OptionsPattern slot) out of the binding
+  // list so it doesn't get substituted into the replacement; instead push
+  // the captured option bindings onto OPTION_VALUE_CONTEXT for the duration
+  // of evaluation so `OptionValue[name]` lookups in the replacement resolve.
+  let mut opt_pairs: Vec<(String, Expr)> = Vec::new();
+  let mut has_opts = false;
+  let mut filtered_refs: Vec<(&str, &Expr)> = Vec::with_capacity(bindings.len());
+  for (name, value) in bindings {
+    if name == "__OptionsPattern__" {
+      if let Expr::List(items) = value {
+        has_opts = true;
+        for rule in items {
+          if let Expr::Rule {
+            pattern,
+            replacement: rule_rhs,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement: rule_rhs,
+          } = rule
+          {
+            let key = match pattern.as_ref() {
+              Expr::Identifier(s) => Some(s.clone()),
+              Expr::String(s) => Some(s.clone()),
+              _ => None,
+            };
+            if let Some(k) = key {
+              opt_pairs.push((k, *rule_rhs.clone()));
+            }
+          }
+        }
+      }
+      continue;
+    }
+    filtered_refs.push((name.as_str(), value));
+  }
+  let result =
+    crate::syntax::substitute_variables(replacement, &filtered_refs);
+  if has_opts {
+    crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+      ctx.borrow_mut().push((String::new(), opt_pairs));
+    });
+    let evaluated = evaluate_expr_to_expr(&result);
+    crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+      ctx.borrow_mut().pop();
+    });
+    return evaluated;
+  }
   evaluate_expr_to_expr(&result)
 }
 
