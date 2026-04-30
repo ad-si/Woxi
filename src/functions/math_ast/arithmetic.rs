@@ -1436,7 +1436,9 @@ fn has_transcendental_subexpr(e: &Expr) -> bool {
     return true;
   }
   match e {
-    Expr::FunctionCall { args, .. } => args.iter().any(has_transcendental_subexpr),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(has_transcendental_subexpr)
+    }
     Expr::List(items) => items.iter().any(has_transcendental_subexpr),
     Expr::BinaryOp { left, right, .. } => {
       has_transcendental_subexpr(left) || has_transcendental_subexpr(right)
@@ -1631,6 +1633,26 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
     // (Re[z], Im[z]). Generic FunctionCall heads stay opaque.
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate") =>
+    {
+      Some(vec![(expr_to_string(e), 1.0)])
+    }
+    // Curried `Derivative[…][f][args…]` calls behave like algebraic
+    // variables for Plus-ordering purposes: keying them by their full
+    // string form lets `2*Derivative[0,2,1][f][x^2,x,2*y]` sort
+    // alongside `8*x*Derivative[1,1,1][f][x^2,x,2*y]` so the resulting
+    // Plus matches wolframscript's x-degree-ascending order. Walk down
+    // through nested CurriedCalls (Derivative[n][f][args…] is two
+    // levels of currying) until we find the head.
+    e if {
+      fn root_head_is_derivative(x: &Expr) -> bool {
+        match x {
+          Expr::CurriedCall { func, .. } => root_head_is_derivative(func),
+          Expr::FunctionCall { name, .. } => name == "Derivative",
+          _ => false,
+        }
+      }
+      matches!(e, Expr::CurriedCall { .. }) && root_head_is_derivative(e)
+    } =>
     {
       Some(vec![(expr_to_string(e), 1.0)])
     }

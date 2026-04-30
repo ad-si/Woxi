@@ -860,10 +860,30 @@ pub fn combine_and_build(terms: Vec<Expr>) -> Expr {
 /// transcendental function calls (Sin, Cos, etc.). Within each priority
 /// bucket, sort by `expr_to_string` for canonical ordering.
 fn sort_var_factors_canonical(factors: &mut [Expr]) {
+  // Wolfram's canonical Times ordering puts atoms (Identifier, Constant)
+  // before compound function calls within the same priority bucket — so
+  // `x*Derivative[1,1,1][f][…]` rather than `Derivative[…]*x`.
+  fn factor_subpriority(e: &Expr) -> i32 {
+    match e {
+      Expr::Identifier(_) | Expr::Constant(_) => 0,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        ..
+      } => factor_subpriority(left),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && !args.is_empty() =>
+      {
+        factor_subpriority(&args[0])
+      }
+      _ => 1,
+    }
+  }
   factors.sort_by(|a, b| {
     let pa = crate::functions::math_ast::term_priority(a);
     let pb = crate::functions::math_ast::term_priority(b);
     pa.cmp(&pb)
+      .then_with(|| factor_subpriority(a).cmp(&factor_subpriority(b)))
       .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
   });
 }
