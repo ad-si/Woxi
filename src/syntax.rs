@@ -1767,6 +1767,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       };
       Expr::Identifier(name)
     }
+    Rule::DisplayedBoxes => {
+      // `\!\(expr\)` — wolframscript's "DisplayedBoxes" form. Without
+      // genuine box syntax to interpret, treat the wrapper as a no-op
+      // around the inner expression: `\!\(2+2\)` → `4`.
+      let inner_pair = pair.into_inner().next().unwrap();
+      pair_to_expr(inner_pair)
+    }
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
       let inner_pairs: Vec<_> = pair.into_inner().collect();

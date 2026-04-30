@@ -339,8 +339,15 @@ FunctionCallExtended = {
 // SlotCall: #[args] or #n[args] — Slot used as a function head (e.g., in Y combinator: #[#] &)
 SlotCall = { Slot ~ BracketArgs+ }
 
+// DisplayedBoxes: `\!\(expr\)` — wolframscript renders this as the
+// "displayed box" form. For non-box inner content (the only form
+// Woxi parses today), the `\!\(…\)` wrapper is just a no-op around
+// the inner expression, so e.g. `\!\(2+2\)` evaluates to `4`.
+DisplayedBoxes = { "\\!" ~ "\\(" ~ Expression ~ "\\)" }
+
 Term = _{
-    FunctionCallExtended
+    DisplayedBoxes
+  | FunctionCallExtended
   | SlotCall
   | ImplicitTimes
   | Unset
