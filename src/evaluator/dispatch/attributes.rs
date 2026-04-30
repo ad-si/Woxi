@@ -238,6 +238,14 @@ pub fn dispatch_attributes(
         ENV.with(|e| e.borrow_mut().remove(sym));
         crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
         crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_OPTIONS.with(|m| m.borrow_mut().remove(sym));
+        crate::FUNC_OPTS_INLINE.with(|m| m.borrow_mut().remove(sym));
+        crate::evaluator::assignment::FORMAT_VALUES
+          .with(|m| m.borrow_mut().remove(sym));
+        crate::evaluator::assignment::SUB_VALUES
+          .with(|m| m.borrow_mut().remove(sym));
+        crate::evaluator::assignment::N_VALUES
+          .with(|m| m.borrow_mut().remove(sym));
         // Mark every builtin attribute as removed so `Attributes[sym]`
         // returns `{}` after ClearAll, matching wolframscript.
         let builtin = get_builtin_attributes(sym);
