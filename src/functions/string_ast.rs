@@ -1583,9 +1583,48 @@ fn char_class_difference(excluded: &str, base: &str) -> Option<String> {
   Some(format!("[{}]", kept.join("")))
 }
 
+/// True if `name` is usable as a Rust regex named-capture identifier
+/// (`[A-Za-z_][A-Za-z0-9_]*`). Wolfram pattern variables that contain
+/// special characters can't round-trip as regex group names — fall back
+/// to a non-capturing group in that case.
+fn is_valid_regex_capture_name(name: &str) -> bool {
+  let mut chars = name.chars();
+  match chars.next() {
+    Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+    _ => return false,
+  }
+  chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Public entry point: builds the regex with a fresh names-seen set.
+fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
+  let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+  string_pattern_to_regex_inner(expr, &mut seen)
+}
+
+/// Wrap a regex body in a named capture group, deduplicating names so the
+/// Rust `regex` crate doesn't reject the pattern with "duplicate capture
+/// group name". A repeated name becomes a non-capturing group — we lose
+/// the back-reference semantics Wolfram has, but matching still succeeds
+/// in cases where names don't actually need to coincide.
+fn maybe_named_group(
+  name: &str,
+  body: &str,
+  seen: &mut std::collections::HashSet<String>,
+) -> String {
+  if !is_valid_regex_capture_name(name) || !seen.insert(name.to_string()) {
+    format!("(?:{})", body)
+  } else {
+    format!("(?P<{}>{})", name, body)
+  }
+}
+
 /// Convert a Wolfram string pattern expression to a regex pattern string.
 /// Returns None if the expression is not a recognized string pattern.
-fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
+fn string_pattern_to_regex_inner(
+  expr: &Expr,
+  seen: &mut std::collections::HashSet<String>,
+) -> Option<String> {
   match expr {
     // String literal patterns — convert Wolfram metacharacters (* and @)
     // to regex equivalents before escaping the rest.
@@ -1609,7 +1648,10 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       "LetterCharacter" => Some("[a-zA-Z\\p{L}]".to_string()),
       "WhitespaceCharacter" => Some("\\s".to_string()),
       "Whitespace" => Some("\\s+".to_string()),
-      "WordCharacter" => Some("[a-zA-Z0-9\\p{L}]".to_string()),
+      // Wolfram's `WordCharacter` matches only ASCII letters and digits
+      // (verified by `StringMatchQ["ö", WordCharacter]` → False), so don't
+      // include the broader `\p{L}` Unicode-letter class here.
+      "WordCharacter" => Some("[a-zA-Z0-9]".to_string()),
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
       "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
       "_" => Some(".".to_string()), // Blank: any single character
@@ -1639,10 +1681,23 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
         _ => return None,
       };
       if !name.is_empty() {
-        // Named pattern — create a named capture group
-        Some(format!("(?P<{}>{})", name, inner))
+        Some(maybe_named_group(name, inner, seen))
       } else {
         Some(inner.to_string())
+      }
+    }
+
+    // `name : pattern` parses as `Pattern[name, pattern]` — wrap the
+    // inner regex in a named capture group so a downstream rule's RHS
+    // can refer back to the matched substring.
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      let inner = string_pattern_to_regex_inner(&args[1], seen)?;
+      if let Expr::Identifier(var) = &args[0] {
+        Some(maybe_named_group(var, &inner, seen))
+      } else {
+        Some(format!("(?:{})", inner))
       }
     }
 
@@ -1652,8 +1707,8 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       left,
       right,
     } => {
-      let l = string_pattern_to_regex(left)?;
-      let r = string_pattern_to_regex(right)?;
+      let l = string_pattern_to_regex_inner(left, seen)?;
+      let r = string_pattern_to_regex_inner(right, seen)?;
       Some(format!("(?:{}|{})", l, r))
     }
 
@@ -1661,16 +1716,20 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Alternatives" && !args.is_empty() =>
     {
-      let parts: Option<Vec<String>> =
-        args.iter().map(string_pattern_to_regex).collect();
+      let parts: Option<Vec<String>> = args
+        .iter()
+        .map(|a| string_pattern_to_regex_inner(a, seen))
+        .collect();
       parts.map(|ps| format!("(?:{})", ps.join("|")))
     }
 
     // A list {pat1, pat2, ...} in a string-pattern context is treated as
     // Alternatives[pat1, pat2, ...].
     Expr::List(items) if !items.is_empty() => {
-      let parts: Option<Vec<String>> =
-        items.iter().map(string_pattern_to_regex).collect();
+      let parts: Option<Vec<String>> = items
+        .iter()
+        .map(|a| string_pattern_to_regex_inner(a, seen))
+        .collect();
       parts.map(|ps| format!("(?:{})", ps.join("|")))
     }
 
@@ -1678,8 +1737,10 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "StringExpression" && !args.is_empty() =>
     {
-      let parts: Option<Vec<String>> =
-        args.iter().map(string_pattern_to_regex).collect();
+      let parts: Option<Vec<String>> = args
+        .iter()
+        .map(|a| string_pattern_to_regex_inner(a, seen))
+        .collect();
       parts.map(|ps| ps.join(""))
     }
 
@@ -1687,9 +1748,29 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Repeated" && (args.len() == 1 || args.len() == 2) =>
     {
-      let base = string_pattern_to_regex(&args[0])?;
-      if args.len() == 1 {
-        Some(format!("(?:{})+", base))
+      // Wolfram parses `x : pat..` as `Pattern[x, Repeated[pat]]` — `..`
+      // binds tighter than `:`. Our parser produces `Repeated[Pattern[x,
+      // pat]]` instead. The two are equivalent under matching, but only
+      // the outer-Pattern shape captures the *whole* run as `x` rather
+      // than just the last single-char match. Rewrite the inner pattern
+      // by lifting the named Pattern out so the named capture spans all
+      // repetitions.
+      let (capture_name, inner_pat) = match &args[0] {
+        Expr::FunctionCall {
+          name: pn,
+          args: pargs,
+        } if pn == "Pattern" && pargs.len() == 2 => {
+          if let Expr::Identifier(var) = &pargs[0] {
+            (Some(var.clone()), &pargs[1])
+          } else {
+            (None, &args[0])
+          }
+        }
+        _ => (None, &args[0]),
+      };
+      let base = string_pattern_to_regex_inner(inner_pat, seen)?;
+      let body = if args.len() == 1 {
+        format!("(?:{})+", base)
       } else {
         // Repeated[pat, n] means 1..n, Repeated[pat, {n}] means exactly n
         let quantifier = match &args[1] {
@@ -1709,15 +1790,37 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
           }
           _ => return None,
         };
-        Some(format!("(?:{}){}", base, quantifier))
-      }
+        format!("(?:{}){}", base, quantifier)
+      };
+      Some(match capture_name {
+        Some(var) => maybe_named_group(&var, &body, seen),
+        None => body,
+      })
     }
 
     // RepeatedNull[pat] = pat... (zero or more)
     Expr::FunctionCall { name, args }
       if name == "RepeatedNull" && args.len() == 1 =>
     {
-      string_pattern_to_regex(&args[0]).map(|r| format!("(?:{})*", r))
+      let (capture_name, inner_pat) = match &args[0] {
+        Expr::FunctionCall {
+          name: pn,
+          args: pargs,
+        } if pn == "Pattern" && pargs.len() == 2 => {
+          if let Expr::Identifier(var) = &pargs[0] {
+            (Some(var.clone()), &pargs[1])
+          } else {
+            (None, &args[0])
+          }
+        }
+        _ => (None, &args[0]),
+      };
+      let base = string_pattern_to_regex_inner(inner_pat, seen)?;
+      let body = format!("(?:{})*", base);
+      Some(match capture_name {
+        Some(var) => maybe_named_group(&var, &body, seen),
+        None => body,
+      })
     }
 
     // RegularExpression["pattern"] - use the regex directly
@@ -1735,7 +1838,7 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Shortest" && args.len() == 1 =>
     {
-      let inner = string_pattern_to_regex(&args[0])?;
+      let inner = string_pattern_to_regex_inner(&args[0], seen)?;
       Some(make_non_greedy(&inner))
     }
 
@@ -1743,7 +1846,7 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Longest" && args.len() == 1 =>
     {
-      string_pattern_to_regex(&args[0])
+      string_pattern_to_regex_inner(&args[0], seen)
     }
 
     // Except[pattern] — negate a single-character class. Only meaningful
@@ -1752,7 +1855,7 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Except" && args.len() == 1 =>
     {
-      let inner = string_pattern_to_regex(&args[0])?;
+      let inner = string_pattern_to_regex_inner(&args[0], seen)?;
       // If the inner regex is already a character class, negate it.
       if let Some(stripped) = inner.strip_prefix('[')
         && let Some(body) = stripped.strip_suffix(']')
@@ -1775,8 +1878,8 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args }
       if name == "Except" && args.len() == 2 =>
     {
-      let excluded = string_pattern_to_regex(&args[0])?;
-      let base = string_pattern_to_regex(&args[1])?;
+      let excluded = string_pattern_to_regex_inner(&args[0], seen)?;
+      let base = string_pattern_to_regex_inner(&args[1], seen)?;
       char_class_difference(&excluded, &base)
     }
 
