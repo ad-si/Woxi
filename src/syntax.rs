@@ -2622,9 +2622,35 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // `y : 1` is `Pattern[y, 1]` — a named pattern matching the literal
       // body. Distinct from `y_:1` (Optional with default), which keeps
       // its own rule.
+      //
+      // The grammar parses chained `:` right-associatively, so `a:b:c`
+      // arrives here as `name=a, body=Pattern[b, c]`. Wolfram instead
+      // treats the trailing `:c` as an Optional default on the already-
+      // built Pattern, giving `Optional[Pattern[a, b], c]`. Restructure
+      // here to match. Repeated chains (`a:b:c:d:e`) keep nesting the
+      // Optional on the right (`Optional[Pattern[a, b], <inner>]`),
+      // which mirrors wolframscript's `a:b:(c:d:e)` display.
       let mut inner = pair.into_inner();
       let name = inner.next().unwrap().as_str().to_string();
       let body = pair_to_expr(inner.next().unwrap());
+      if let Expr::FunctionCall {
+        name: bn,
+        args: bargs,
+      } = &body
+        && bn == "Pattern"
+        && bargs.len() == 2
+      {
+        return Expr::FunctionCall {
+          name: "Optional".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Pattern".to_string(),
+              args: vec![Expr::Identifier(name), bargs[0].clone()],
+            },
+            bargs[1].clone(),
+          ],
+        };
+      }
       Expr::FunctionCall {
         name: "Pattern".to_string(),
         args: vec![Expr::Identifier(name), body],
@@ -5778,7 +5804,20 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
         return format!("{}.", fmt(&args[0]));
       }
       if name == "Optional" && args.len() == 2 {
-        return format!("{}:{}", fmt(&args[0]), fmt(&args[1]));
+        // Parenthesize the default when it's itself an Optional —
+        // `Optional[Pattern[a, b], Optional[Pattern[c, d], e]]` prints as
+        // `a:b:(c:d:e)`, not `a:b:c:d:e` (which would re-parse as a
+        // single nested Optional).
+        let needs_parens = matches!(
+          &args[1],
+          Expr::FunctionCall { name: dn, args: dargs }
+            if dn == "Optional" && dargs.len() == 2
+        );
+        let body = fmt(&args[1]);
+        if needs_parens {
+          return format!("{}:({})", fmt(&args[0]), body);
+        }
+        return format!("{}:{}", fmt(&args[0]), body);
       }
       if name == "NonCommutativeMultiply" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
