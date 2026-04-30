@@ -424,6 +424,38 @@ pub fn dispatch_evaluation_control(
         }
       }
     }
+    // NumericArray[list] / NumericArray[list, type] — typed numeric array.
+    // Without an explicit type, auto-detect the smallest type that fits all
+    // elements (currently only `UnsignedInteger8` for non-negative integers
+    // ≤ 255). The result keeps its underlying list payload for First/Last
+    // and AtomQ already returns True for the head; OutputForm then renders
+    // it as `NumericArray[<dim>, type]` to match wolframscript.
+    "NumericArray" if args.len() == 1 || args.len() == 2 => {
+      let payload = &args[0];
+      let dtype: Option<String> = if args.len() == 2 {
+        if let Expr::String(s) = &args[1] {
+          Some(s.clone())
+        } else {
+          None
+        }
+      } else {
+        detect_numeric_array_dtype(payload)
+      };
+      match dtype {
+        Some(t) => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "NumericArray".to_string(),
+            args: vec![payload.clone(), Expr::String(t)],
+          }));
+        }
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "NumericArray".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      }
+    }
     // CensoredDistribution[{min, max}, dist] — censored distribution
     "CensoredDistribution" if args.len() == 2 => {
       // Evaluate the underlying distribution to normalize it
@@ -574,6 +606,35 @@ pub fn dispatch_evaluation_control(
     _ => {}
   }
   None
+}
+
+/// Pick the smallest NumericArray dtype that fits every element in the
+/// (possibly nested) list `e`. Currently recognises only
+/// `UnsignedInteger8` — the type wolframscript uses by default for
+/// integer matrices in the 0..=255 range. Returns None when the payload
+/// isn't a list of suitable values.
+fn detect_numeric_array_dtype(e: &Expr) -> Option<String> {
+  fn walk(e: &Expr, all_uint8: &mut bool) -> bool {
+    match e {
+      Expr::List(items) => items.iter().all(|i| walk(i, all_uint8)),
+      Expr::Integer(n) => {
+        if !(0..=255).contains(n) {
+          *all_uint8 = false;
+        }
+        true
+      }
+      _ => false,
+    }
+  }
+  let mut all_uint8 = true;
+  if !walk(e, &mut all_uint8) {
+    return None;
+  }
+  if all_uint8 {
+    Some("UnsignedInteger8".to_string())
+  } else {
+    None
+  }
 }
 
 /// Helper to check if a numeric expression is positive.

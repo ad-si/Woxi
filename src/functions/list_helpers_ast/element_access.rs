@@ -154,9 +154,12 @@ pub fn first_ast(
     }
     Expr::FunctionCall { name, args } => {
       // NumericArray / ByteArray wrap a single list payload that should be
-      // indexed as if it were the sequence itself.
+      // indexed as if it were the sequence itself. The 2-arg
+      // `NumericArray[list, dtype]` form is what the dispatcher emits;
+      // re-wrap a nested list element so multi-dim arrays return a typed
+      // sub-array (`First[NumericArray[<2,2>, …]] → NumericArray[<2>, …]`).
       if (name == "NumericArray" || name == "ByteArray")
-        && args.len() == 1
+        && (args.len() == 1 || args.len() == 2)
         && let Expr::List(items) = &args[0]
       {
         if items.is_empty() {
@@ -164,7 +167,17 @@ pub fn first_ast(
             return Ok(d.clone());
           }
         } else {
-          return Ok(items[0].clone());
+          let elem = items[0].clone();
+          if name == "NumericArray"
+            && args.len() == 2
+            && matches!(elem, Expr::List(_))
+          {
+            return Ok(Expr::FunctionCall {
+              name: "NumericArray".to_string(),
+              args: vec![elem, args[1].clone()],
+            });
+          }
+          return Ok(elem);
         }
       }
       if args.is_empty() {
@@ -248,9 +261,12 @@ pub fn last_ast(
     }
     Expr::FunctionCall { name, args } => {
       // NumericArray / ByteArray wrap a single list payload that should be
-      // indexed as if it were the sequence itself.
+      // indexed as if it were the sequence itself. Mirrors the First handler
+      // above — the 2-arg `NumericArray[list, dtype]` form re-wraps nested
+      // list results so `Last[NumericArray[<2,2>, …]]` returns a typed
+      // sub-array.
       if (name == "NumericArray" || name == "ByteArray")
-        && args.len() == 1
+        && (args.len() == 1 || args.len() == 2)
         && let Expr::List(items) = &args[0]
       {
         if items.is_empty() {
@@ -258,7 +274,17 @@ pub fn last_ast(
             return Ok(d.clone());
           }
         } else {
-          return Ok(items[items.len() - 1].clone());
+          let elem = items[items.len() - 1].clone();
+          if name == "NumericArray"
+            && args.len() == 2
+            && matches!(elem, Expr::List(_))
+          {
+            return Ok(Expr::FunctionCall {
+              name: "NumericArray".to_string(),
+              args: vec![elem, args[1].clone()],
+            });
+          }
+          return Ok(elem);
         }
       }
       if args.is_empty() {

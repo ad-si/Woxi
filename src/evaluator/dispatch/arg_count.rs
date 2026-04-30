@@ -698,6 +698,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NumberQ" => Some((1, 1)),
     "Numerator" => Some((1, 2)),
     "NumericalSort" => Some((1, 1)),
+    "NumericArray" => Some((1, 2)),
     "NumericQ" => Some((1, 1)),
     "O" => Some((1, 2)),
     "OddQ" => Some((1, 1)),

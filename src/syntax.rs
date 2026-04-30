@@ -5869,6 +5869,27 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
           return format!("ByteArray[<{}>]", items.len());
         }
       }
+      // Special case: NumericArray. wolframscript hides the data and
+      // displays only the dimensions, like `NumericArray[<2,2>, UnsignedInteger8]`.
+      // Applies to the 2-arg form `NumericArray[list, dtype]` produced by
+      // the dispatcher in evaluation_control.rs.
+      if name == "NumericArray"
+        && args.len() == 2
+        && is_output
+        && let Expr::List(_) = &args[0]
+      {
+        let dims = numeric_array_dims(&args[0]);
+        let dtype = match &args[1] {
+          Expr::String(s) => s.clone(),
+          other => fmt(other),
+        };
+        let dim_str = dims
+          .iter()
+          .map(|d| d.to_string())
+          .collect::<Vec<_>>()
+          .join(",");
+        return format!("NumericArray[<{}>, {}]", dim_str, dtype);
+      }
       // InputForm: falls through to default formatting (ByteArray["base64"])
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
       if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
@@ -9295,6 +9316,28 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
   }
+}
+
+/// Compute the dimensions of a (possibly nested) list payload of a
+/// NumericArray, walking into the FIRST element of each level. Empty
+/// lists terminate the descent. Used by OutputForm rendering of
+/// NumericArray[<dim>, type].
+fn numeric_array_dims(payload: &Expr) -> Vec<usize> {
+  let mut dims = Vec::new();
+  let mut cur = payload;
+  loop {
+    match cur {
+      Expr::List(items) => {
+        dims.push(items.len());
+        if items.is_empty() {
+          break;
+        }
+        cur = &items[0];
+      }
+      _ => break,
+    }
+  }
+  dims
 }
 
 /// Format an image pixel value with proper precision.

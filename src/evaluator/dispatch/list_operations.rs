@@ -771,6 +771,19 @@ pub fn dispatch_list_operations(
           crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
         );
       }
+      // Normal[NumericArray[list, type]] returns the underlying list
+      // (`{{1,2},{3,4}}`), discarding the dtype tag — wolframscript does
+      // the same.
+      if let Expr::FunctionCall {
+        name,
+        args: na_args,
+      } = &args[0]
+        && name == "NumericArray"
+        && (na_args.len() == 1 || na_args.len() == 2)
+        && matches!(&na_args[0], Expr::List(_))
+      {
+        return Some(Ok(na_args[0].clone()));
+      }
       // Normal[ByteArray["base64"]] extracts the byte list
       if let Expr::FunctionCall {
         name,
