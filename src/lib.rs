@@ -49,6 +49,11 @@ thread_local! {
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
     // Context stack for Begin/End: stores the context strings pushed by Begin[]
     static CONTEXT_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    // Stack of saved $ContextPath values, pushed by BeginPackage[] and
+    // popped by EndPackage[]. The top entry (when present) is the
+    // currently-active path; an empty stack falls back to the System`/Global`
+    // default.
+    static CONTEXT_PATH_STACK: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
     // Current option bindings for OptionValue during function evaluation
     // Stack of (function_name, Vec<(option_name, option_value)>)
     pub static OPTION_VALUE_CONTEXT: RefCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { RefCell::new(Vec::new()) };
@@ -716,6 +721,27 @@ pub fn current_context() -> String {
   })
 }
 
+/// The currently active `$ContextPath` — the top of the
+/// `CONTEXT_PATH_STACK`, or the `["System`", "Global`"]` default
+/// when nothing has been pushed by `BeginPackage[]`.
+pub fn current_context_path() -> Vec<String> {
+  CONTEXT_PATH_STACK.with(|s| {
+    s.borrow().last().cloned().unwrap_or_else(|| {
+      vec!["System`".to_string(), "Global`".to_string()]
+    })
+  })
+}
+
+/// Push a new `$ContextPath` value (used by `BeginPackage[]`).
+pub fn push_context_path(path: Vec<String>) {
+  CONTEXT_PATH_STACK.with(|s| s.borrow_mut().push(path));
+}
+
+/// Pop the topmost `$ContextPath` value (used by `EndPackage[]`).
+pub fn pop_context_path() -> Option<Vec<String>> {
+  CONTEXT_PATH_STACK.with(|s| s.borrow_mut().pop())
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
@@ -727,6 +753,7 @@ pub fn clear_state() {
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
+  CONTEXT_PATH_STACK.with(|s| s.borrow_mut().clear());
   RECURSION_DEPTH.with(|d| d.set(0));
   EVAL_STACK.with(|s| s.borrow_mut().clear());
   LAST_ERROR_TRACE.with(|t| *t.borrow_mut() = None);

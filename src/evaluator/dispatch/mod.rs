@@ -1252,6 +1252,24 @@ pub fn evaluate_function_call_ast_inner(
       ctx.clone()
     };
     crate::push_context(resolved.clone());
+    // BeginPackage also re-points $ContextPath to
+    // `[pkg`, extras…, "System`"]` so symbols defined inside the
+    // package are read from the new context. Begin doesn't touch
+    // $ContextPath.
+    if name == "BeginPackage" {
+      let mut path = vec![resolved.clone()];
+      if args.len() == 2
+        && let Expr::List(items) = &args[1]
+      {
+        for item in items {
+          if let Expr::String(extra) = item {
+            path.push(extra.clone());
+          }
+        }
+      }
+      path.push("System`".to_string());
+      crate::push_context_path(path);
+    }
     return Ok(Expr::String(resolved));
   }
   // End[] pops the context stack and returns the ended context
@@ -1259,9 +1277,11 @@ pub fn evaluate_function_call_ast_inner(
     let ctx = crate::pop_context().unwrap_or_else(|| "Global`".to_string());
     return Ok(Expr::String(ctx));
   }
-  // EndPackage[] pops the context stack and returns Null
+  // EndPackage[] pops the context stack and returns Null. It also
+  // pops the saved $ContextPath that BeginPackage[] pushed.
   if name == "EndPackage" && args.is_empty() {
     crate::pop_context();
+    crate::pop_context_path();
     return Ok(Expr::Identifier("Null".to_string()));
   }
 

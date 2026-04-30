@@ -673,10 +673,12 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // $Input is the name of the currently evaluating input source. In
     // wolframscript's -code mode it's the empty string.
     "$Input" => Some(Expr::String("".to_string())),
-    "$ContextPath" => Some(Expr::List(vec![
-      Expr::String("System`".to_string()),
-      Expr::String("Global`".to_string()),
-    ])),
+    "$ContextPath" => Some(Expr::List(
+      crate::current_context_path()
+        .into_iter()
+        .map(Expr::String)
+        .collect(),
+    )),
     // Woxi only tracks the System` and Global` contexts; wolframscript lists
     // many kernel packages here, but MemberQ[$Packages, "System`"] is the
     // main observable use.
