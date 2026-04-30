@@ -481,6 +481,29 @@ pub fn evaluate_function_call_ast_inner(
         } if inner_name == name => {
           flat_args.extend(inner_args.clone());
         }
+        // `Unevaluated[f[a, b]]` inside a Flat `f[…]` flattens to
+        // `Unevaluated[a], Unevaluated[b]` — each inner arg is rewrapped
+        // so the hold context is preserved per spliced element.
+        Expr::FunctionCall {
+          name: u_name,
+          args: u_args,
+        } if u_name == "Unevaluated"
+          && u_args.len() == 1
+          && matches!(&u_args[0],
+            Expr::FunctionCall { name: inner, .. } if inner == name) =>
+        {
+          if let Expr::FunctionCall {
+            args: inner_args, ..
+          } = &u_args[0]
+          {
+            for inner in inner_args {
+              flat_args.push(Expr::FunctionCall {
+                name: "Unevaluated".to_string(),
+                args: vec![inner.clone()],
+              });
+            }
+          }
+        }
         _ => flat_args.push(arg.clone()),
       }
     }
