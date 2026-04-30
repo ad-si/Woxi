@@ -1810,6 +1810,24 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::String(pair.as_str().to_string())],
       }
     }
+    Rule::GetShorthand => {
+      // `<< filename` → Get["filename"]. The argument can be either a
+      // quoted String or an unquoted path (consumed atomically by the
+      // GetPath rule).
+      let inner = pair.into_inner().next().unwrap();
+      let path = if matches!(inner.as_rule(), Rule::String) {
+        // Strip surrounding quotes; escape sequences inside the path are
+        // unusual but handled the same as a regular string literal.
+        let raw = inner.as_str();
+        raw[1..raw.len() - 1].to_string()
+      } else {
+        inner.as_str().to_string()
+      };
+      Expr::FunctionCall {
+        name: "Get".to_string(),
+        args: vec![Expr::String(path)],
+      }
+    }
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
       let inner_pairs: Vec<_> = pair.into_inner().collect();

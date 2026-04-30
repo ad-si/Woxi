@@ -318,6 +318,13 @@ DerivativePrime = @{ "'"+ }
 // DerivativeIdentifier: standalone f' or f'' without brackets → Derivative[n][f]
 DerivativeIdentifier = { Identifier ~ DerivativePrime }
 
+// GetShorthand: `<< filename` → Get["filename"]
+// The path runs to the next whitespace, `]`, `,`, `;`, `)`, `}`, or `&`. We
+// also accept a quoted-string form `<< "filename"` for completeness.
+GetShorthand = { "<<" ~ (String | GetPath) }
+GetPath = @{ GetPathChar+ }
+GetPathChar = _{ ASCII_ALPHANUMERIC | LETTER | "~" | "/" | "." | "\\" | "-" | "_" | ":" | "$" | "*" | "?" | "`" | "+" | "!" | "#" | "@" | "=" | "%" | "^" }
+
 // FunctionCallExtended: merges FunctionCall, FunctionCall-based PartExtract,
 // FunctionAnonymousFunction, and FunctionCall-based PartAnonymousFunction
 // into a single rule. This parses the function call ONCE, then checks for
@@ -368,6 +375,7 @@ BoxInner = _{
 Term = _{
     DisplayedBoxes
   | BoxNotation
+  | GetShorthand
   | FunctionCallExtended
   | SlotCall
   | ImplicitTimes
