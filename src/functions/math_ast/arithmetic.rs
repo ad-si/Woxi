@@ -2142,9 +2142,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
               .into_iter()
               .map(|(n, _, _)| n)
               .chain(
-                extract_trig_factors(&base_b)
-                  .into_iter()
-                  .map(|(n, _, _)| n),
+                extract_trig_factors(&base_b).into_iter().map(|(n, _, _)| n),
               )
               .collect();
             names.sort();
@@ -2535,6 +2533,84 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       Expr::FunctionCall { .. } => 6,
       _ => 7,
     }
+  }
+
+  // Wolfram's canonical Order treats `Pattern[name, Blank[]]` etc. as
+  // FunctionCalls with head "Pattern" (or "Optional"/"PatternTest"), so
+  // these compound atoms sort against other compound terms by alphabetical
+  // head name. Return the implied head when `e` is a pattern-like atom.
+  fn pattern_compound_head(e: &Expr) -> Option<&'static str> {
+    match e {
+      Expr::Pattern { .. } => Some("Pattern"),
+      Expr::PatternOptional { .. } => Some("Optional"),
+      Expr::PatternTest { .. } => Some("PatternTest"),
+      _ => None,
+    }
+  }
+
+  // Normalize a top-level BinaryOp head to the canonical FunctionCall name.
+  fn binop_head(op: &crate::syntax::BinaryOperator) -> &'static str {
+    match op {
+      crate::syntax::BinaryOperator::Plus
+      | crate::syntax::BinaryOperator::Minus => "Plus",
+      crate::syntax::BinaryOperator::Times
+      | crate::syntax::BinaryOperator::Divide => "Times",
+      crate::syntax::BinaryOperator::Power => "Power",
+      crate::syntax::BinaryOperator::And => "And",
+      crate::syntax::BinaryOperator::Or => "Or",
+      crate::syntax::BinaryOperator::StringJoin => "StringJoin",
+      crate::syntax::BinaryOperator::Alternatives => "Alternatives",
+    }
+  }
+
+  // Cross-type rule: pattern atoms compare against any compound term
+  // (BinaryOp / FunctionCall) by alphabetical head, matching Wolfram's
+  // `Order[a_, b_*c_] = 1` (Pattern < Times) and
+  // `Order[a_, B[c_]] = -1` (Pattern > B) results.
+  let cross_head = |x: &Expr| -> Option<&'static str> {
+    if let Some(h) = pattern_compound_head(x) {
+      return Some(h);
+    }
+    match x {
+      Expr::FunctionCall { name, .. } => {
+        // Static-string ergonomics: compare via Box::leak isn't safe for our
+        // closure return — fall back to None and let the regular FunctionCall
+        // branch handle these cases.
+        let _ = name;
+        None
+      }
+      Expr::BinaryOp { op, .. } => Some(binop_head(op)),
+      _ => None,
+    }
+  };
+  match (pattern_compound_head(a), pattern_compound_head(b)) {
+    (Some(ha), None) => {
+      if let Some(hb) = cross_head(b) {
+        let cmp = ha.cmp(hb);
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      } else if let Expr::FunctionCall { name: nb, .. } = b {
+        let cmp = ha.cmp(nb.as_str());
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      }
+    }
+    (None, Some(hb)) => {
+      if let Some(ha) = cross_head(a) {
+        let cmp = ha.cmp(hb);
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      } else if let Expr::FunctionCall { name: na, .. } = a {
+        let cmp = na.as_str().cmp(hb);
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      }
+    }
+    _ => {}
   }
 
   let ta = type_tag(a);
