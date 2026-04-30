@@ -643,9 +643,53 @@ fn n_eval_arbitrary_partial(
         cc,
       )?),
     }),
-    // Identifiers, symbols, and other non-numeric expressions: leave as-is
+    // Identifier: check user-installed `N[sym, p] = value` rules. The
+    // canonical LHS Wolfram stores under NValues is
+    // `N[sym, {p., Infinity}]`; match on numeric `p` equal to (or below)
+    // the requested precision.
+    Expr::Identifier(name) => {
+      let nval = crate::evaluator::assignment::N_VALUES
+        .with(|m| m.borrow().get(name).cloned());
+      if let Some(entries) = nval {
+        for (lhs_p, rhs) in &entries {
+          if let Some(p) = arbitrary_precision_lhs(lhs_p)
+            && (p as usize) == precision
+          {
+            return n_eval_arbitrary(rhs, precision);
+          }
+        }
+      }
+      Ok(expr.clone())
+    }
+    // Other non-numeric expressions: leave as-is
     _ => Ok(expr.clone()),
   }
+}
+
+/// If `lhs` has shape `N[sym, {p_real, Infinity}]` (canonical Wolfram
+/// form for `N[sym, p] = value` rules), return `p`. Otherwise None.
+fn arbitrary_precision_lhs(lhs: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = lhs else {
+    return None;
+  };
+  if name != "N" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(prec) = &args[1] else {
+    return None;
+  };
+  if prec.len() != 2 {
+    return None;
+  }
+  let p = match &prec[0] {
+    Expr::Real(v) => *v,
+    Expr::Integer(n) => *n as f64,
+    _ => return None,
+  };
+  if !matches!(&prec[1], Expr::Identifier(s) if s == "Infinity") {
+    return None;
+  }
+  Some(p)
 }
 
 /// Recursively convert an Expr to a BigFloat with the given precision.

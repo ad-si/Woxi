@@ -1808,6 +1808,7 @@ fn contains_opaque_fn_call(e: &Expr) -> bool {
 fn is_numeric_constant(e: &Expr) -> bool {
   match e {
     Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => true,
+    Expr::BigFloat(_, _) => true,
     Expr::Constant(_) => true,
     Expr::Identifier(name) => {
       matches!(name.as_str(), "I" | "Infinity")
