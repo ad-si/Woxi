@@ -3239,6 +3239,22 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Broadcast: when both color arguments are equal-length lists,
+  // apply ColorDistance pairwise. wolframscript:
+  //   ColorDistance[{Red, Blue}, {Green, Yellow}, opts] →
+  //   {ColorDistance[Red, Green, opts], ColorDistance[Blue, Yellow, opts]}
+  if let (Expr::List(items1), Expr::List(items2)) = (&args[0], &args[1])
+    && items1.len() == items2.len()
+  {
+    let mut results = Vec::with_capacity(items1.len());
+    for (c1, c2) in items1.iter().zip(items2.iter()) {
+      let mut sub_args = vec![c1.clone(), c2.clone()];
+      sub_args.extend(args[2..].iter().cloned());
+      results.push(color_distance_ast(&sub_args)?);
+    }
+    return Ok(Expr::List(results));
+  }
+
   let lab1 = color_to_lab(&args[0]).ok_or_else(|| {
     InterpreterError::EvaluationError(format!(
       "ColorDistance: unsupported color {}",
@@ -3256,16 +3272,46 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(vec![Expr::Real(t.0), Expr::Real(t.1), Expr::Real(t.2)])
   };
 
+  // Decode `{name, qualifier}` distance specs (e.g. `{"CMC",
+  // "Perceptibility"}`) before the per-name dispatch.
+  let (dist_name, dist_qualifier): (Option<String>, Option<String>) =
+    match &distance_fn {
+      Some(Expr::List(items)) if items.len() == 2 => {
+        let n = match &items[0] {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        };
+        let q = match &items[1] {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        };
+        (n, q)
+      }
+      Some(Expr::String(s)) => (Some(s.clone()), None),
+      _ => (None, None),
+    };
+
   match distance_fn {
     // Built-in named distance functions arrive as String literals.
-    Some(Expr::String(ref s)) if s == "CIE2000" || s == "CIEDE2000" => {
+    _ if dist_name.as_deref() == Some("CIE2000")
+      || dist_name.as_deref() == Some("CIEDE2000") =>
+    {
       Ok(Expr::Real(ciede2000_distance(lab1, lab2)))
     }
-    Some(Expr::String(ref s)) if s == "CIE76" => {
+    _ if dist_name.as_deref() == Some("CIE76") => {
       let dl = lab1.0 - lab2.0;
       let da = lab1.1 - lab2.1;
       let db = lab1.2 - lab2.2;
       Ok(Expr::Real((dl * dl + da * da + db * db).sqrt()))
+    }
+    _ if dist_name.as_deref() == Some("CMC") => {
+      // CMC qualifiers: "Perceptibility" → l=1, c=1 (default, used for
+      // small differences); "Acceptability" → l=2, c=1.
+      let (l_param, c_param) = match dist_qualifier.as_deref() {
+        Some("Acceptability") => (2.0, 1.0),
+        _ => (1.0, 1.0),
+      };
+      Ok(Expr::Real(cmc_distance(lab1, lab2, l_param, c_param)))
     }
     Some(func) => {
       // Apply the user-supplied function to the LAB triples.
@@ -3291,10 +3337,7 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// formula operates in the unscaled `[0,100]` LAB space; we multiply
 /// by 100, run the formula, and divide the result by 100 to match
 /// wolframscript's reported magnitude.
-fn ciede2000_distance(
-  lab1: (f64, f64, f64),
-  lab2: (f64, f64, f64),
-) -> f64 {
+fn ciede2000_distance(lab1: (f64, f64, f64), lab2: (f64, f64, f64)) -> f64 {
   let (l1, a1, b1) = (lab1.0 * 100.0, lab1.1 * 100.0, lab1.2 * 100.0);
   let (l2, a2, b2) = (lab2.0 * 100.0, lab2.1 * 100.0, lab2.2 * 100.0);
 
@@ -3355,13 +3398,11 @@ fn ciede2000_distance(
     + 0.32 * cos(3.0 * avg_hp_deg + 6.0)
     - 0.20 * cos(4.0 * avg_hp_deg - 63.0);
 
-  let delta_theta = 30.0
-    * (-((avg_hp_deg - 275.0) / 25.0).powi(2)).exp();
+  let delta_theta = 30.0 * (-((avg_hp_deg - 275.0) / 25.0).powi(2)).exp();
   let avg_cp7 = avg_cp.powi(7);
   let r_c = 2.0 * (avg_cp7 / (avg_cp7 + 25f64.powi(7))).sqrt();
   let dl_diff = avg_lp - 50.0;
-  let s_l = 1.0
-    + 0.015 * dl_diff * dl_diff / (20.0 + dl_diff * dl_diff).sqrt();
+  let s_l = 1.0 + 0.015 * dl_diff * dl_diff / (20.0 + dl_diff * dl_diff).sqrt();
   let s_c = 1.0 + 0.045 * avg_cp;
   let s_h = 1.0 + 0.015 * avg_cp * t;
   let r_t = -(2.0 * delta_theta / to_deg).sin() * r_c;
@@ -3372,5 +3413,57 @@ fn ciede2000_distance(
   let _ = avg_hp_rad; // unused but documents the radian conversion above
   let de2 =
     term_l * term_l + term_c * term_c + term_h * term_h + r_t * term_c * term_h;
+  de2.sqrt() / 100.0
+}
+
+/// CMC l:c color difference. `l` and `c` weight lightness and chroma.
+/// "Perceptibility" → l=2, c=1; "Acceptability" → l=1, c=1.
+/// Operates on Wolfram-scaled LAB (each component in [0, 1]); returns
+/// the result divided by 100 to match wolframscript's magnitude.
+fn cmc_distance(
+  lab1: (f64, f64, f64),
+  lab2: (f64, f64, f64),
+  l_param: f64,
+  c_param: f64,
+) -> f64 {
+  let (l1, a1, b1) = (lab1.0 * 100.0, lab1.1 * 100.0, lab1.2 * 100.0);
+  let (l2, a2, b2) = (lab2.0 * 100.0, lab2.1 * 100.0, lab2.2 * 100.0);
+
+  let c1 = (a1 * a1 + b1 * b1).sqrt();
+  let c2 = (a2 * a2 + b2 * b2).sqrt();
+
+  let to_deg = 180.0 / std::f64::consts::PI;
+  // h1 in degrees, in [0, 360).
+  let h1 = {
+    let h = b1.atan2(a1) * to_deg;
+    if h < 0.0 { h + 360.0 } else { h }
+  };
+  // The CMC formula uses h1 (the reference colour's hue).
+  let cos = |deg: f64| (deg / to_deg).cos();
+  let t = if !(164.0..345.0).contains(&h1) {
+    0.36 + (0.4 * cos(h1 + 35.0)).abs()
+  } else {
+    0.56 + (0.2 * cos(h1 + 168.0)).abs()
+  };
+  let c1_4 = c1.powi(4);
+  let f = (c1_4 / (c1_4 + 1900.0)).sqrt();
+  let s_l = if l1 >= 16.0 {
+    0.040975 * l1 / (1.0 + 0.01765 * l1)
+  } else {
+    0.511
+  };
+  let s_c = 0.0638 * c1 / (1.0 + 0.0131 * c1) + 0.638;
+  let s_h = s_c * (f * t + 1.0 - f);
+
+  let delta_l = l1 - l2;
+  let delta_c = c1 - c2;
+  let delta_a = a1 - a2;
+  let delta_b = b1 - b2;
+  let delta_h2 = delta_a * delta_a + delta_b * delta_b - delta_c * delta_c;
+  let delta_h2 = delta_h2.max(0.0);
+
+  let term_l = delta_l / (l_param * s_l);
+  let term_c = delta_c / (c_param * s_c);
+  let de2 = term_l * term_l + term_c * term_c + delta_h2 / (s_h * s_h);
   de2.sqrt() / 100.0
 }
