@@ -678,6 +678,36 @@ pub fn evaluate_function_call_ast_inner(
         );
         let effective_args = match distribution {
           Some(dist) => {
+            // Validate OptionsPattern slots: every arg landing in an
+            // `__opts<i>` parameter must be a `Rule` / `RuleDelayed`, or
+            // an arbitrarily nested `List` / `Sequence` of those (e.g.
+            // `f[x, {n -> 4}]` and `f[x, {{{n -> 4}}}]` both bind a
+            // single option). Without this check `r[arg_., OptionsPattern
+            // [r]] := …` would accept `r[a, b]` (binding `__opts` to
+            // `b`), but wolframscript leaves that call unevaluated since
+            // `b` isn't an option container.
+            fn is_option_container(e: &Expr) -> bool {
+              match e {
+                Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+                Expr::List(items) => items.iter().all(is_option_container),
+                Expr::FunctionCall { name, args } if name == "Sequence" => {
+                  args.iter().all(is_option_container)
+                }
+                _ => false,
+              }
+            }
+            let mut opts_ok = true;
+            for (i, param_args) in dist.iter().enumerate() {
+              if params[i].starts_with("__opts")
+                && !param_args.iter().all(is_option_container)
+              {
+                opts_ok = false;
+                break;
+              }
+            }
+            if !opts_ok {
+              continue;
+            }
             let mut eff = Vec::with_capacity(params.len());
             for (i, param_args) in dist.iter().enumerate() {
               if blank_types[i] >= 2 {
