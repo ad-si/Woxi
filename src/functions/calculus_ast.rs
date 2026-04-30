@@ -64,6 +64,32 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Handle D[expr, {{x, y, ...}, n}] — n-th order derivative tensor.
+  // Recursively: result[i_1][i_2]…[i_n] = D[expr, v_{i_1}, …, v_{i_n}].
+  // Base case n == 0 returns `expr` itself; n == 1 yields the gradient.
+  if let Expr::List(outer_items) = &args[1]
+    && outer_items.len() == 2
+    && let Expr::List(vars) = &outer_items[0]
+    && let Expr::Integer(n_val) = &outer_items[1]
+    && *n_val >= 0
+  {
+    let n = *n_val as usize;
+    if n == 0 {
+      return Ok(args[0].clone());
+    }
+    let mut rows = Vec::with_capacity(vars.len());
+    let inner_spec = Expr::List(vec![
+      Expr::List(vars.clone()),
+      Expr::Integer((n - 1) as i128),
+    ]);
+    for v in vars {
+      let first = d_ast(&[args[0].clone(), v.clone()])?;
+      let nested = d_ast(&[first, inner_spec.clone()])?;
+      rows.push(nested);
+    }
+    return Ok(Expr::List(rows));
+  }
+
   // If args[1] is a 2-element List that isn't a valid {var, n} (n must
   // be a non-negative integer), return unevaluated — matching
   // wolframscript for forms like D[expr, {x, y}] with symbolic y.
