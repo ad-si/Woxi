@@ -1285,6 +1285,15 @@ pub fn evaluate_expr_to_expr_inner(
               StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
             );
           });
+          // Register the appended/prepended symbol in $PrintForms /
+          // $OutputForms when the target is `$BoxForms`. wolframscript
+          // exposes user-added box forms in those lists even after a
+          // subsequent `$BoxForms=.` clears the OwnValue.
+          if var_name == "$BoxForms"
+            && let Expr::Identifier(form_name) = &args[1]
+          {
+            crate::evaluator::assignment::register_user_print_form(form_name);
+          }
           return Ok(new_val);
         }
         // Special handling for AssociateTo - x = Append[x, key -> val]
@@ -1841,10 +1850,7 @@ pub fn evaluate_expr_to_expr_inner(
         if let Some(new_head) = own_value_head
           && new_head != name
         {
-          return evaluate_function_call_ast(
-            &new_head,
-            &[left_val, right_val],
-          );
+          return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
         }
       }
 
