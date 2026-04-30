@@ -2605,8 +2605,15 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result_val
   };
 
+  // Re-evaluate the LHS so a held variable name with an OwnValue (e.g.
+  // `x = "I am the result!"; FindRoot[…, {x, 1}]`) gets surfaced as that
+  // bound value in the returned rule, matching wolframscript's
+  // `{I am the result! -> 1.149…}` behaviour.
+  let lhs_ident = Expr::Identifier(var);
+  let lhs = crate::evaluator::evaluate_expr_to_expr(&lhs_ident)
+    .unwrap_or(lhs_ident);
   Ok(Expr::List(vec![Expr::Rule {
-    pattern: Box::new(Expr::Identifier(var)),
+    pattern: Box::new(lhs),
     replacement: Box::new(result_val),
   }]))
 }

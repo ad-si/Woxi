@@ -205,7 +205,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
     | "Definition" | "FullDefinition" | "Attributes" | "Quiet" | "Assert"
     | "OwnValues" | "DownValues" | "SubValues" | "UpValues"
-    | "DefaultValues" | "FormatValues" | "NValues" | "Messages" => {
+    | "DefaultValues" | "FormatValues" | "NValues" | "Messages"
+    // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
+    // get substituted by an OwnValue before the iteration starts.
+    | "FindRoot" => {
       vec!["HoldAll", "Protected"]
     }
     // Manipulate: HoldAll + Protected + ReadProtected (matches wolframscript).
@@ -464,7 +467,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Roots"
     | "Reduce"
     | "Eliminate"
-    | "FindRoot"
     | "D"
     | "Integrate"
     | "NIntegrate"
