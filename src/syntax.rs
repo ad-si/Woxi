@@ -3082,8 +3082,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           // `Repeated[0] * 1` rather than splitting into two
           // statements.
           if let Some(base) = factors.pop() {
-            let func_name = if inners[i].as_rule() == Rule::RepeatedNullSuffix
-            {
+            let func_name = if inners[i].as_rule() == Rule::RepeatedNullSuffix {
               "RepeatedNull"
             } else {
               "Repeated"
@@ -5346,6 +5345,65 @@ pub(crate) fn assoc_marker_matches(key: &Expr, pattern: &Expr) -> bool {
   }
 }
 
+/// Recursively rewrite every `Expr::Association` inside `expr` into the
+/// long-form `Association[…]` `FunctionCall`. Used when rendering an
+/// outer unevaluated `Association[…]` to match wolframscript's display
+/// rule: nested associations print in long form, never the `<|…|>`
+/// shorthand. Other expression types pass through unchanged.
+fn rewrite_assoc_to_long_form(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Association(pairs) => {
+      let mut converted_args: Vec<Expr> = Vec::with_capacity(pairs.len());
+      for (k, v) in pairs {
+        let kk = rewrite_assoc_to_long_form(k);
+        let vv = rewrite_assoc_to_long_form(v);
+        match v {
+          Expr::RuleDelayed { pattern, .. }
+            if assoc_marker_matches(k, pattern) =>
+          {
+            converted_args.push(Expr::FunctionCall {
+              name: "RuleDelayed".to_string(),
+              args: vec![kk, vv],
+            });
+          }
+          _ => {
+            converted_args.push(Expr::FunctionCall {
+              name: "Rule".to_string(),
+              args: vec![kk, vv],
+            });
+          }
+        }
+      }
+      Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: converted_args,
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(rewrite_assoc_to_long_form).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rewrite_assoc_to_long_form).collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rewrite_assoc_to_long_form(pattern)),
+      replacement: Box::new(rewrite_assoc_to_long_form(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rewrite_assoc_to_long_form(pattern)),
+      replacement: Box::new(rewrite_assoc_to_long_form(replacement)),
+    },
+    other => other.clone(),
+  }
+}
+
 /// Unified expression formatter that handles both InputForm and OutputForm.
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
@@ -5528,7 +5586,10 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // and so on for `__`/`___`.
       if name == "Pattern" && args.len() == 2 {
         if let Expr::Identifier(nm) = &args[0]
-          && let Expr::FunctionCall { name: bn, args: bargs } = &args[1]
+          && let Expr::FunctionCall {
+            name: bn,
+            args: bargs,
+          } = &args[1]
           && bargs.len() <= 1
         {
           let underscores = match bn.as_str() {
@@ -5683,7 +5744,19 @@ pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
       // `Expr::Association` (the evaluated form) displays as `<|...|>`;
       // an unevaluated `Association[...]` FunctionCall (e.g. inside a
       // RuleDelayed RHS or Hold) keeps the long-form spelling, matching
-      // Wolfram. This branch therefore has no shorthand for the FunctionCall.
+      // Wolfram. Wolfram also propagates the long-form spelling to
+      // any nested `Association` values inside the unevaluated form —
+      // `Association[<|a -> v|>, {d}]` prints as
+      // `Association[Association[a -> v], {d}]`, never the mixed
+      // `Association[<|a -> v|>, {d}]`. Walk the args here and rewrite
+      // every nested `Expr::Association` into the long-form FunctionCall
+      // before emitting.
+      if name == "Association" {
+        let rewritten: Vec<Expr> =
+          args.iter().map(rewrite_assoc_to_long_form).collect();
+        let parts: Vec<String> = rewritten.iter().map(&fmt).collect();
+        return format!("Association[{}]", parts.join(", "));
+      }
       // Special case: Factorial[n] displays as n!, or (expr)! when the
       // argument is a Plus/Times or other operator-level expression so the
       // `!` suffix binds to the whole expression.
@@ -8116,7 +8189,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       if name == "Pattern" && args.len() == 2 =>
     {
       if let Expr::Identifier(nm) = &args[0]
-        && let Expr::FunctionCall { name: bn, args: bargs } = &args[1]
+        && let Expr::FunctionCall {
+          name: bn,
+          args: bargs,
+        } = &args[1]
         && bargs.len() <= 1
       {
         let underscores = match bn.as_str() {
