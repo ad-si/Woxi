@@ -1356,6 +1356,191 @@ fn is_assoc_item_delayed(s: &str) -> bool {
   false
 }
 
+/// Parse a `\(...\)` box-notation literal into an explicit *Box AST. Atoms
+/// inside become String literals; `\^`, `\_`, `\+`, `\&`, `\@`, `\%`
+/// translate to SuperscriptBox/SubscriptBox/UnderscriptBox/OverscriptBox/
+/// SqrtBox/UnderoverscriptBox respectively. `\^` and `\_` are right-
+/// associative; `\%` extends the immediately preceding `\+`/`\&` into an
+/// UnderoverscriptBox. Returns None on unrecognised shapes so the caller
+/// can fall back to a HoldComplete wrapper.
+fn parse_box_notation_str(raw: &str) -> Option<Expr> {
+  let inner = raw
+    .strip_prefix("\\(")
+    .and_then(|s| s.strip_suffix("\\)"))
+    .unwrap_or(raw)
+    .trim();
+  if inner.is_empty() {
+    return None;
+  }
+  let toks = tokenize_box(inner)?;
+  let (expr, idx) = parse_box_chain(&toks, 0)?;
+  if idx == toks.len() { Some(expr) } else { None }
+}
+
+#[derive(Debug)]
+enum BoxTok {
+  Atom(String),
+  Op(char),
+  Nested(Expr),
+}
+
+fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
+  let mut toks: Vec<BoxTok> = Vec::new();
+  let bytes = s.as_bytes();
+  let mut i = 0;
+  while i < bytes.len() {
+    let c = bytes[i];
+    if (c as char).is_whitespace() {
+      i += 1;
+      continue;
+    }
+    if c == b'\\' && i + 1 < bytes.len() {
+      let n = bytes[i + 1];
+      if matches!(n, b'^' | b'_' | b'+' | b'&' | b'%' | b'@') {
+        toks.push(BoxTok::Op(n as char));
+        i += 2;
+        continue;
+      }
+      if n == b'(' {
+        // Find matching `\)` honouring nested `\(`.
+        let start = i;
+        let mut depth = 1;
+        i += 2;
+        while i < bytes.len() && depth > 0 {
+          if i + 1 < bytes.len() && bytes[i] == b'\\' {
+            if bytes[i + 1] == b'(' {
+              depth += 1;
+              i += 2;
+              continue;
+            }
+            if bytes[i + 1] == b')' {
+              depth -= 1;
+              i += 2;
+              continue;
+            }
+          }
+          i += 1;
+        }
+        if depth != 0 {
+          return None;
+        }
+        let nested = parse_box_notation_str(&s[start..i])?;
+        toks.push(BoxTok::Nested(nested));
+        continue;
+      }
+    }
+    let start = i;
+    while i < bytes.len() {
+      let c = bytes[i];
+      if (c as char).is_whitespace() {
+        break;
+      }
+      if c == b'\\'
+        && i + 1 < bytes.len()
+        && matches!(
+          bytes[i + 1],
+          b'^' | b'_' | b'+' | b'&' | b'%' | b'@' | b'(' | b')'
+        )
+      {
+        break;
+      }
+      i += 1;
+    }
+    if i > start {
+      toks.push(BoxTok::Atom(s[start..i].to_string()));
+    }
+  }
+  Some(toks)
+}
+
+fn box_unit(tok: &BoxTok) -> Option<Expr> {
+  match tok {
+    BoxTok::Atom(s) => Some(Expr::String(s.clone())),
+    BoxTok::Nested(e) => Some(e.clone()),
+    BoxTok::Op(_) => None,
+  }
+}
+
+fn box_call(name: &str, args: Vec<Expr>) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args,
+  }
+}
+
+fn parse_box_chain(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
+  if start >= toks.len() {
+    return None;
+  }
+  // Prefix `\@` (SqrtBox).
+  if matches!(toks[start], BoxTok::Op('@')) {
+    let (arg, end) = parse_box_chain(toks, start + 1)?;
+    return Some((box_call("SqrtBox", vec![arg]), end));
+  }
+  let lhs = box_unit(&toks[start])?;
+  parse_box_continued(lhs, toks, start + 1)
+}
+
+fn parse_box_continued(
+  mut lhs: Expr,
+  toks: &[BoxTok],
+  mut idx: usize,
+) -> Option<(Expr, usize)> {
+  while idx < toks.len() {
+    match &toks[idx] {
+      BoxTok::Op('^') | BoxTok::Op('_') => {
+        let op = match &toks[idx] {
+          BoxTok::Op(c) => *c,
+          _ => unreachable!(),
+        };
+        // Right-associative: full chain on the right.
+        let (rhs, end) = parse_box_chain(toks, idx + 1)?;
+        let head = if op == '^' {
+          "SuperscriptBox"
+        } else {
+          "SubscriptBox"
+        };
+        return Some((box_call(head, vec![lhs, rhs]), end));
+      }
+      BoxTok::Op('+') | BoxTok::Op('&') => {
+        let op = match &toks[idx] {
+          BoxTok::Op(c) => *c,
+          _ => unreachable!(),
+        };
+        // Read a single unit; `\%` may follow to extend into Underover.
+        if idx + 1 >= toks.len() {
+          return None;
+        }
+        let rhs = box_unit(&toks[idx + 1])?;
+        let mut end = idx + 2;
+        if end < toks.len() && matches!(toks[end], BoxTok::Op('%')) {
+          if end + 1 >= toks.len() {
+            return None;
+          }
+          let third = box_unit(&toks[end + 1])?;
+          end += 2;
+          let combined = if op == '+' {
+            box_call("UnderoverscriptBox", vec![lhs, rhs, third])
+          } else {
+            box_call("UnderoverscriptBox", vec![lhs, third, rhs])
+          };
+          lhs = combined;
+        } else {
+          let head = if op == '+' {
+            "UnderscriptBox"
+          } else {
+            "OverscriptBox"
+          };
+          lhs = box_call(head, vec![lhs, rhs]);
+        }
+        idx = end;
+      }
+      _ => break,
+    }
+  }
+  Some((lhs, idx))
+}
+
 /// Convert a pest Pair to an owned Expr AST.
 /// This is used to store function bodies without re-parsing.
 pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
@@ -1801,14 +1986,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       pair_to_expr(inner_pair)
     }
     Rule::BoxNotation => {
-      // `\(... box content ...\)` — Woxi has no box AST, so we surface
-      // the raw source as a HoldComplete[String] so it survives
-      // CompoundExpression chains without erroring. Real box semantics
-      // would expand to RowBox/SuperscriptBox/etc. here.
-      Expr::FunctionCall {
+      // `\(... box content ...\)` — translate the box operators into
+      // explicit *Box heads (SuperscriptBox, SubscriptBox, …). Atoms
+      // inside the box are surfaced as String literals to mirror the
+      // wolframscript box AST. Falls back to HoldComplete[<source>] if
+      // the inner content can't be parsed as a recognised box form.
+      let raw = pair.as_str().to_string();
+      parse_box_notation_str(&raw).unwrap_or_else(|| Expr::FunctionCall {
         name: "HoldComplete".to_string(),
-        args: vec![Expr::String(pair.as_str().to_string())],
-      }
+        args: vec![Expr::String(raw)],
+      })
     }
     Rule::GetShorthand => {
       // `<< filename` → Get["filename"]. The argument can be either a
