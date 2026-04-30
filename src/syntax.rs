@@ -1768,10 +1768,36 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::Identifier(name)
     }
     Rule::DisplayedBoxes => {
-      // `\!\(expr\)` — wolframscript's "DisplayedBoxes" form. Without
-      // genuine box syntax to interpret, treat the wrapper as a no-op
-      // around the inner expression: `\!\(2+2\)` → `4`.
+      // `\!\(expr\)` — wolframscript's "DisplayedBoxes" form. When the
+      // inner content is a regular expression (no box operators), the
+      // `\!\(…\)` wrapper is a no-op: `\!\(2+2\)` → `4`. When the inner
+      // is BoxNotation, translate the box operators to their math
+      // equivalents so e.g. `\!\(x \^ 2\)` evaluates to `Power[x, 2]`.
+      let raw_text = pair.as_str().to_string();
       let inner_pair = pair.into_inner().next().unwrap();
+      if matches!(inner_pair.as_rule(), Rule::BoxNotation) {
+        let raw = inner_pair.as_str();
+        // Strip the leading `\(` and trailing `\)` and translate the
+        // pairwise box-prefix operators to ordinary math operators.
+        let inner = raw
+          .strip_prefix("\\(")
+          .and_then(|s| s.strip_suffix("\\)"))
+          .unwrap_or(raw)
+          .replace("\\^", "^")
+          .replace("\\_", "_")
+          .replace("\\+", "+")
+          .replace("\\&", " ")
+          .replace("\\%", " ")
+          .replace("\\@", " ");
+        if let Ok(expr) = string_to_expr(&inner) {
+          return expr;
+        }
+        // Fallback: surface the raw source as HoldComplete.
+        return Expr::FunctionCall {
+          name: "HoldComplete".to_string(),
+          args: vec![Expr::String(raw_text)],
+        };
+      }
       pair_to_expr(inner_pair)
     }
     Rule::BoxNotation => {

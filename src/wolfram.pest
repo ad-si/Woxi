@@ -341,10 +341,12 @@ FunctionCallExtended = {
 SlotCall = { Slot ~ BracketArgs+ }
 
 // DisplayedBoxes: `\!\(expr\)` — wolframscript renders this as the
-// "displayed box" form. For non-box inner content (the only form
-// Woxi parses today), the `\!\(…\)` wrapper is just a no-op around
-// the inner expression, so e.g. `\!\(2+2\)` evaluates to `4`.
-DisplayedBoxes = { "\\!" ~ "\\(" ~ Expression ~ "\\)" }
+// "displayed box" form. When the inner content is a regular expression
+// (no box operators), the `\!\(…\)` wrapper is a no-op so e.g.
+// `\!\(2+2\)` evaluates to `4`. When the inner has box operators
+// (`\^`, `\_`, …) we fall through to the box-notation form, which is
+// surfaced as HoldComplete[<source>].
+DisplayedBoxes = { "\\!" ~ ("\\(" ~ Expression ~ "\\)" | BoxNotation) }
 
 // BoxNotation: `\(...\)` raw box-notation literal. Woxi doesn't
 // implement the box AST; we accept and skip the inner content so that
