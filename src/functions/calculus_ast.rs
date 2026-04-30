@@ -4364,9 +4364,168 @@ fn try_integrate_rational(
 
     // discriminant: b^2 - 4c (for x^2 + bx + c)
     let disc = b * b - 4 * c;
-    if disc >= 0 {
-      // Reducible quadratic - shouldn't happen since we already extracted all integer roots
-      // But if it does, bail out
+    if disc > 0 {
+      // Real but irrational roots: integration produces logs with √disc.
+      // Only handle the case where there are no extracted integer roots and
+      // the numerator is a constant — sufficient for `Integrate[1/(x^2+bx+c), x]`
+      // style queries.  Wolframscript prints
+      // `(Log[-b + s - 2x] - Log[b + s + 2x])/s` (simplified by gcd of the
+      // integer pieces), so reproduce that shape here.
+      if !roots.is_empty() || proper_num.len() != 1 {
+        return None;
+      }
+      let n = proper_num[0];
+      if n == 0 {
+        return Some(Expr::Integer(0));
+      }
+      // Factor disc = k^2 * m with m square-free.
+      let (k, m) = {
+        let mut outside = 1i128;
+        let mut inside = disc;
+        let mut factor = 2i128;
+        while factor * factor <= inside {
+          while inside % (factor * factor) == 0 {
+            outside *= factor;
+            inside /= factor * factor;
+          }
+          factor += 1;
+        }
+        (outside, inside)
+      };
+      // Common divisor between the (-b, s, 2x) integer pieces. If g > 1 we
+      // can divide every coefficient inside the Log args by g — wolframscript
+      // does this so `1/(x^2 - 4x + 1)` prints with `2 + Sqrt[3] - x` rather
+      // than `4 + 2*Sqrt[3] - 2x`. The outer denominator stays at the
+      // unsimplified `k * Sqrt[m]` (the Log[g] terms cancel between the two
+      // arguments).
+      let g_bk = gcd_i128(b.abs(), k);
+      let g = gcd_i128(g_bk, 2);
+      let neg_b_g = -b / g;
+      let b_g = b / g;
+      let k_g = k / g;
+      let two_g = 2 / g;
+
+      // Construct the `k_g * Sqrt[m]` factor that appears inside each Log
+      // argument. Collapses to `Sqrt[m]` when `k_g == 1` and to a bare
+      // integer when `m == 1`.
+      let inner_sqrt_factor = if m == 1 {
+        Expr::Integer(k_g)
+      } else if k_g == 1 {
+        make_sqrt(Expr::Integer(m))
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(k_g)),
+          right: Box::new(make_sqrt(Expr::Integer(m))),
+        }
+      };
+
+      // Helper: build `coeff * x` (or just `x` when coeff == 1).
+      let var_term = |coeff: i128| -> Expr {
+        if coeff == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(coeff)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }
+      };
+
+      // arg_a = neg_b_g + inner_sqrt_factor - two_g*x
+      // (wolframscript orders these as `-b + sqrt - x`, so do the same here).
+      let arg_a = {
+        let mut acc = if neg_b_g != 0 {
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(neg_b_g)),
+            right: Box::new(inner_sqrt_factor.clone()),
+          }
+        } else {
+          inner_sqrt_factor.clone()
+        };
+        acc = Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(acc),
+          right: Box::new(var_term(two_g)),
+        };
+        acc
+      };
+      // arg_b = b_g + inner_sqrt_factor + two_g*x
+      let arg_b = {
+        let mut acc = if b_g != 0 {
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(b_g)),
+            right: Box::new(inner_sqrt_factor.clone()),
+          }
+        } else {
+          inner_sqrt_factor.clone()
+        };
+        acc = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(acc),
+          right: Box::new(var_term(two_g)),
+        };
+        acc
+      };
+
+      let log_a = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![arg_a],
+      };
+      let log_b = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![arg_b],
+      };
+      // `Log[arg_a] - Log[arg_b]`, then multiplied by `n` and divided by
+      // `k * Sqrt[m]`.
+      let log_diff = Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(log_a),
+        right: Box::new(log_b),
+      };
+      let outer_sqrt = if m == 1 {
+        Expr::Integer(k)
+      } else if k == 1 {
+        make_sqrt(Expr::Integer(m))
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(k)),
+          right: Box::new(make_sqrt(Expr::Integer(m))),
+        }
+      };
+      let result_inner = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(log_diff),
+        right: Box::new(outer_sqrt),
+      };
+      let combined = if n == 1 {
+        result_inner
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(n / overall_factor)),
+          right: Box::new(result_inner),
+        }
+      };
+      // Combine with quotient integral if any.
+      let final_expr = match quotient_integral {
+        Some(qi) => Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(qi),
+          right: Box::new(combined),
+        },
+        None => combined,
+      };
+      return Some(crate::functions::polynomial_ast::expand_and_combine(
+        &final_expr,
+      ));
+    }
+    if disc == 0 {
+      // Repeated real root: 1/(x - r)^2 or similar. Bail out for now.
       return None;
     }
 
