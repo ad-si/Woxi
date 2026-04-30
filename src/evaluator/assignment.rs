@@ -899,6 +899,54 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return set_downvalues_from_rules(&rhs_value);
   }
 
+  // Handle NValues[sym] = rules / NValues[sym] := rules — store
+  // the rule list directly into N_VALUES under sym, stripping any
+  // outer HoldPattern wrappers so the LHS round-trips. Each rule's
+  // pattern is kept verbatim (Wolfram does the same: arbitrary
+  // user-written LHS patterns flow through `NValues[sym] = …`).
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "NValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let rule_items: Vec<Expr> = match &rhs_value {
+      Expr::List(items) => items.clone(),
+      _ => vec![],
+    };
+    let mut entries: Vec<(Expr, Expr)> = Vec::new();
+    for item in &rule_items {
+      let (pat, rep) = match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone()),
+        _ => continue,
+      };
+      let unwrapped_pat = match &pat {
+        Expr::FunctionCall { name: pn, args: pa }
+          if pn == "HoldPattern" && pa.len() == 1 =>
+        {
+          pa[0].clone()
+        }
+        _ => pat.clone(),
+      };
+      entries.push((unwrapped_pat, rep));
+    }
+    N_VALUES.with(|m| {
+      let mut map = m.borrow_mut();
+      map.insert(sym_name.clone(), entries);
+    });
+    return Ok(rhs_value);
+  }
+
   // Handle DownValues: f[val1, val2, ...] = rhs
   // Store as a function definition with literal-match conditions
   if let Expr::FunctionCall {
@@ -1179,6 +1227,51 @@ pub fn set_delayed_ast(
     if matches!(&result, Expr::Identifier(s) if s == "$Failed") {
       return Ok(result);
     }
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // Handle `NValues[sym] := rules` — same store as the Set form,
+  // but SetDelayed returns Null at top level.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "NValues"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    let rule_items: Vec<Expr> = match &rhs_value {
+      Expr::List(items) => items.clone(),
+      _ => vec![],
+    };
+    let mut entries: Vec<(Expr, Expr)> = Vec::new();
+    for item in &rule_items {
+      let (pat, rep) = match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), (**replacement).clone()),
+        _ => continue,
+      };
+      let unwrapped_pat = match &pat {
+        Expr::FunctionCall { name: pn, args: pa }
+          if pn == "HoldPattern" && pa.len() == 1 =>
+        {
+          pa[0].clone()
+        }
+        _ => pat.clone(),
+      };
+      entries.push((unwrapped_pat, rep));
+    }
+    N_VALUES.with(|m| {
+      let mut map = m.borrow_mut();
+      map.insert(sym_name.clone(), entries);
+    });
     return Ok(Expr::Identifier("Null".to_string()));
   }
 

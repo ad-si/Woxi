@@ -209,19 +209,36 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         let nval = crate::evaluator::assignment::N_VALUES
           .with(|m| m.borrow().get(name).cloned());
         if let Some(entries) = nval {
+          // The canonical Wolfram form is
+          // `N[sym, {MachinePrecision, MachinePrecision}]`, but
+          // user-supplied `NValues[sym] := {N[sym, MachinePrecision]
+          // :> v}` rules also need to fire here. Accept both shapes:
+          //   N[sym, {MachinePrecision, MachinePrecision}]
+          //   N[sym, MachinePrecision]
+          // wolframscript does NOT fire a bare `N[sym]` LHS — that
+          // pattern doesn't match the internal `N[sym, prec]` call —
+          // so a user-supplied `NValues[sym] := {N[sym] :> v}` is
+          // silently ignored at lookup. Mirror that.
+          let is_machine_precision_lhs = |lhs_p: &Expr| -> bool {
+            let Expr::FunctionCall { name: ln, args: la } = lhs_p else {
+              return false;
+            };
+            if ln != "N" || la.len() != 2 {
+              return false;
+            }
+            match &la[1] {
+              Expr::Identifier(s) if s == "MachinePrecision" => true,
+              Expr::List(prec) => {
+                prec.len() == 2
+                  && matches!(&prec[0],
+                    Expr::Identifier(s) if s == "MachinePrecision")
+              }
+              _ => false,
+            }
+          };
           for (lhs_p, rhs) in &entries {
-            if let Expr::FunctionCall {
-              name: ln,
-              args: largs,
-            } = lhs_p
-              && ln == "N"
-              && largs.len() == 2
-              && let Expr::List(prec) = &largs[1]
-              && prec.len() == 2
-              && matches!(&prec[0],
-                Expr::Identifier(s) if s == "MachinePrecision")
-            {
-              return Ok(rhs.clone());
+            if is_machine_precision_lhs(lhs_p) {
+              return n_eval(rhs);
             }
           }
         }
