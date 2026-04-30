@@ -1489,6 +1489,47 @@ pub fn evaluate_expr_to_expr_inner(
             }
           }
         }
+        // Special handling for Association[args]: if any raw arg is
+        // structurally non-normalizable (e.g. a List containing a non-Rule
+        // item), short-circuit to the unevaluated `Association[args]` form
+        // BEFORE evaluating args. wolframscript's `Association` has
+        // `HoldAllComplete`, so when normalization can't proceed it keeps
+        // the inner Association literals (with their empty `{}`/`<||>`
+        // entries) intact rather than collapsing them via standalone
+        // evaluation.
+        if name == "Association" && !args.is_empty() {
+          fn is_normalizable_assoc_arg(e: &Expr) -> bool {
+            match e {
+              Expr::Rule { .. }
+              | Expr::RuleDelayed { .. }
+              | Expr::Association(_) => true,
+              Expr::FunctionCall {
+                name: n,
+                args: ca,
+              } if n == "Rule" && ca.len() == 2 => true,
+              Expr::FunctionCall {
+                name: n,
+                args: ca,
+              } if n == "RuleDelayed" && ca.len() == 2 => true,
+              Expr::FunctionCall {
+                name: n,
+                args: aargs,
+              } if n == "Association" => {
+                aargs.iter().all(is_normalizable_assoc_arg)
+              }
+              Expr::List(items) => {
+                items.iter().all(is_normalizable_assoc_arg)
+              }
+              _ => false,
+            }
+          }
+          if !args.iter().all(is_normalizable_assoc_arg) {
+            return Ok(Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
         // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
         if name == "Quiet" {
           if (args.is_empty() || args.len() > 3)
