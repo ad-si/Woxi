@@ -726,9 +726,10 @@ pub fn current_context() -> String {
 /// when nothing has been pushed by `BeginPackage[]`.
 pub fn current_context_path() -> Vec<String> {
   CONTEXT_PATH_STACK.with(|s| {
-    s.borrow().last().cloned().unwrap_or_else(|| {
-      vec!["System`".to_string(), "Global`".to_string()]
-    })
+    s.borrow()
+      .last()
+      .cloned()
+      .unwrap_or_else(|| vec!["System`".to_string(), "Global`".to_string()])
   })
 }
 
@@ -760,6 +761,7 @@ pub fn clear_state() {
   evaluator::assignment::USER_PRINT_FORMS.with(|v| v.borrow_mut().clear());
   evaluator::assignment::FORMAT_VALUES.with(|m| m.borrow_mut().clear());
   evaluator::assignment::SUB_VALUES.with(|m| m.borrow_mut().clear());
+  evaluator::assignment::N_VALUES.with(|m| m.borrow_mut().clear());
   functions::entity_ast::clear_entity_stores();
   unseed_rng();
   clear_captured_stdout();

@@ -28,6 +28,16 @@ thread_local! {
   pub static SUB_VALUES: std::cell::RefCell<
     std::collections::HashMap<String, Vec<(Expr, Expr)>>,
   > = std::cell::RefCell::new(std::collections::HashMap::new());
+
+  /// NValue rules registered via `N[sym, …] := …` / `N[sym, …] = …`,
+  /// keyed by the symbol that the `N` head wraps. Stored as
+  /// `(lhs_pattern, rhs_body)` pairs in source order, where
+  /// `lhs_pattern` is the canonical
+  /// `N[sym, {MachinePrecision, MachinePrecision}]` form Wolfram
+  /// reports under `NValues`.
+  pub static N_VALUES: std::cell::RefCell<
+    std::collections::HashMap<String, Vec<(Expr, Expr)>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// If `expr` is a pattern with a head constraint (e.g. `_Q`, `x_Q`, `Blank[Q]`,
@@ -792,6 +802,56 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
     return set_options_from_value(sym_name, &rhs_value);
+  }
+
+  // Handle `N[sym, …] = value` (and `N[sym] = value`): store under
+  // the symbol's NValues with the canonical LHS Wolfram reports.
+  // `N[sym] = v` uses `N[sym, {MachinePrecision, MachinePrecision}]`,
+  // `N[sym, p] = v` (numeric p) uses `N[sym, {p., Infinity}]`. Falls
+  // through if sym isn't a bare Identifier.
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "N"
+    && (lhs_args.len() == 1 || lhs_args.len() == 2)
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let prec_part = if lhs_args.len() == 2 {
+      let prec_eval = evaluate_expr_to_expr(&lhs_args[1])?;
+      let as_real = match &prec_eval {
+        Expr::Integer(n) => Some(Expr::Real(*n as f64)),
+        Expr::Real(_) => Some(prec_eval.clone()),
+        _ => None,
+      };
+      if let Some(prec_real) = as_real {
+        Expr::List(vec![prec_real, Expr::Identifier("Infinity".to_string())])
+      } else {
+        // Non-numeric precision (`N[a, p_?test] := …` style) — keep
+        // the user's spec verbatim, mirroring Wolfram's HoldPattern
+        // round-trip.
+        prec_eval
+      }
+    } else {
+      Expr::List(vec![
+        Expr::Identifier("MachinePrecision".to_string()),
+        Expr::Identifier("MachinePrecision".to_string()),
+      ])
+    };
+    let canonical_lhs = Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![Expr::Identifier(sym_name.clone()), prec_part],
+    };
+    N_VALUES.with(|m| {
+      let mut map = m.borrow_mut();
+      let entries = map.entry(sym_name.clone()).or_default();
+      entries.retain(|(lhs_p, _)| {
+        !crate::evaluator::pattern_matching::expr_equal(lhs_p, &canonical_lhs)
+      });
+      entries.push((canonical_lhs, rhs_value.clone()));
+    });
+    return Ok(rhs_value);
   }
 
   // Handle Attributes[f] = value — set attributes on symbol f

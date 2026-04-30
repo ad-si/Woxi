@@ -707,9 +707,32 @@ pub fn dispatch_predicate_functions(
         .collect();
       return Some(Ok(Expr::List(rules)));
     }
-    // Other introspection functions - return {} for symbols without stored definitions
+    // NValues[sym] — read the rules registered via `N[sym, …] = value`
+    // (stored in N_VALUES under sym), formatted with HoldPattern wrappers.
     "NValues" if args.len() == 1 => {
-      return Some(Ok(Expr::List(vec![])));
+      let head = match &args[0] {
+        Expr::Identifier(s) => s.clone(),
+        _ => return Some(Ok(Expr::List(vec![]))),
+      };
+      let rules: Vec<Expr> =
+        crate::evaluator::assignment::N_VALUES.with(|m| {
+          m.borrow()
+            .get(&head)
+            .map(|entries| {
+              entries
+                .iter()
+                .map(|(lhs, rhs)| Expr::RuleDelayed {
+                  pattern: Box::new(Expr::FunctionCall {
+                    name: "HoldPattern".to_string(),
+                    args: vec![lhs.clone()],
+                  }),
+                  replacement: Box::new(rhs.clone()),
+                })
+                .collect()
+            })
+            .unwrap_or_default()
+        });
+      return Some(Ok(Expr::List(rules)));
     }
     "SubValues" if args.len() == 1 => {
       let head = match &args[0] {

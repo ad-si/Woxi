@@ -199,6 +199,33 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
+      // Look up user-installed `N[sym, …] = value` rules registered
+      // under the symbol's NValues. Wolfram stores these per-symbol
+      // (not as a DownValue of `N`), so this lookup is needed before
+      // falling back to the generic `N` dispatch. `n_eval` is the
+      // machine-precision path, so prefer the
+      // `N[sym, {MachinePrecision, MachinePrecision}]` entry.
+      if let Expr::Identifier(name) = expr {
+        let nval = crate::evaluator::assignment::N_VALUES
+          .with(|m| m.borrow().get(name).cloned());
+        if let Some(entries) = nval {
+          for (lhs_p, rhs) in &entries {
+            if let Expr::FunctionCall {
+              name: ln,
+              args: largs,
+            } = lhs_p
+              && ln == "N"
+              && largs.len() == 2
+              && let Expr::List(prec) = &largs[1]
+              && prec.len() == 2
+              && matches!(&prec[0],
+                Expr::Identifier(s) if s == "MachinePrecision")
+            {
+              return Ok(rhs.clone());
+            }
+          }
+        }
+      }
       // No built-in numeric value for this symbol — try to invoke
       // `N[expr]` so any user-installed `N[a] = 10.9` style DownValue
       // gets a chance to fire (matching Wolfram's NValues lookup).
