@@ -2,17 +2,12 @@ use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr};
 
 /// RSolve[{recurrence, initial_conditions...}, a, n]
+/// RSolve[recurrence, a[n], n] — single equation, return rule for `a[n]`
 /// Solve constant-coefficient linear recurrence relations.
 pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
-
-  // Extract the function name (e.g. "a")
-  let func_name = match &args[1] {
-    Expr::Identifier(name) => name.clone(),
-    _ => return Ok(unevaluated(args)),
-  };
 
   // Extract the variable name (e.g. "n")
   let var_name = match &args[2] {
@@ -20,9 +15,25 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated(args)),
   };
 
-  // Extract equations from the first argument (must be a list)
+  // Second arg is either `a` (Identifier — return rule for the function)
+  // or `a[var]` (FunctionCall — return rule for `a[var]` directly).
+  let (func_name, return_as_func_call) = match &args[1] {
+    Expr::Identifier(name) => (name.clone(), false),
+    Expr::FunctionCall { name, args: fargs }
+      if fargs.len() == 1
+        && matches!(&fargs[0], Expr::Identifier(v) if *v == var_name) =>
+    {
+      (name.clone(), true)
+    }
+    _ => return Ok(unevaluated(args)),
+  };
+
+  // Extract equations from the first argument. Accept a single equation
+  // (Comparison or Equal[...]) by wrapping it in a one-element list.
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
+    Expr::Comparison { .. } => vec![args[0].clone()],
+    Expr::FunctionCall { name, .. } if name == "Equal" => vec![args[0].clone()],
     _ => return Ok(unevaluated(args)),
   };
 
@@ -72,19 +83,50 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &var_name,
     &initial_conditions,
   ) {
-    // Return {{a -> Function[{n}, solution]}}
-    let func_expr = Expr::FunctionCall {
-      name: "Function".to_string(),
-      args: vec![Expr::List(vec![Expr::Identifier(var_name)]), solution],
-    };
-    let rule = Expr::Rule {
-      pattern: Box::new(Expr::Identifier(func_name)),
-      replacement: Box::new(func_expr),
-    };
-    return Ok(Expr::List(vec![Expr::List(vec![rule])]));
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
   }
 
   Ok(unevaluated(args))
+}
+
+/// Wrap a closed-form `solution` (in `var_name`) as Wolfram's RSolve output.
+/// When `return_as_func_call` is true, returns `{{a[n] -> solution}}`;
+/// otherwise returns `{{a -> Function[{n}, solution]}}`.
+fn wrap_rsolve_result(
+  solution: Expr,
+  func_name: &str,
+  var_name: &str,
+  return_as_func_call: bool,
+) -> Expr {
+  let pattern = if return_as_func_call {
+    Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: vec![Expr::Identifier(var_name.to_string())],
+    }
+  } else {
+    Expr::Identifier(func_name.to_string())
+  };
+  let replacement = if return_as_func_call {
+    solution
+  } else {
+    Expr::FunctionCall {
+      name: "Function".to_string(),
+      args: vec![
+        Expr::List(vec![Expr::Identifier(var_name.to_string())]),
+        solution,
+      ],
+    }
+  };
+  let rule = Expr::Rule {
+    pattern: Box::new(pattern),
+    replacement: Box::new(replacement),
+  };
+  Expr::List(vec![Expr::List(vec![rule])])
 }
 
 fn unevaluated(args: &[Expr]) -> Expr {
@@ -180,6 +222,12 @@ fn solve_const_coeff_linear(
     return None; // Need all roots for general solution
   }
 
+  // No initial conditions: emit the general solution
+  // a[n] = C[1]*r1^n + C[2]*r2^n + ...
+  if initial_conditions.is_empty() {
+    return build_general_solution(&roots, var_name);
+  }
+
   // Check initial conditions match order
   if initial_conditions.len() != order {
     return None;
@@ -192,6 +240,49 @@ fn solve_const_coeff_linear(
 
   // Build the solution expression: c1*r1^n + c2*r2^n + ...
   build_solution(&constants, &roots, var_name)
+}
+
+/// Build the general solution `C[1]*r1^n + C[2]*r2^n + ...`. Roots equal to
+/// 1 contribute a bare `C[k]` (since `1^n = 1`); negative-1 roots produce
+/// `(-1)^n*C[k]`.
+fn build_general_solution(
+  roots: &[(i128, i128)],
+  var_name: &str,
+) -> Option<Expr> {
+  let mut terms = Vec::new();
+  for (i, &(rn, rd)) in roots.iter().enumerate() {
+    let const_expr = Expr::FunctionCall {
+      name: "C".to_string(),
+      args: vec![Expr::Integer((i + 1) as i128)],
+    };
+    let term = if rn == 1 && rd == 1 {
+      const_expr
+    } else {
+      let root_expr = if rd == 1 {
+        Expr::Integer(rn)
+      } else {
+        crate::functions::math_ast::make_rational_pub(rn, rd)
+      };
+      let power = Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(root_expr),
+        right: Box::new(Expr::Identifier(var_name.to_string())),
+      };
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(power),
+        right: Box::new(const_expr),
+      }
+    };
+    terms.push(term);
+  }
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Some(terms.remove(0));
+  }
+  crate::functions::math_ast::plus_ast(&terms).ok()
 }
 
 /// Collect terms of the form coeff * func[var + offset] from an expression
