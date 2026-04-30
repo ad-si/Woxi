@@ -3342,7 +3342,17 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return simplify_with_assumptions(&args[0], &combined, false);
   }
   // Single argument: consult $Assumptions from the environment (e.g. set by
-  // Assuming[...]) and apply refinement if any are active.
+  // Assuming[...]) and apply refinement if any are active. Thread over Lists
+  // so each element runs through the full simplifier pipeline (Together,
+  // Expand, Factor candidates) rather than getting the candidates evaluated
+  // on the list as a whole — that way `Simplify[LeastSquares[...]]` collapses
+  // each component to its canonical form just like `Simplify[component]`.
+  if let Expr::List(items) = &args[0] {
+    let simplified_items: Vec<Expr> =
+      items.iter().map(simplify_expr_with_together).collect();
+    let assumed = apply_active_assumptions(&Expr::List(simplified_items));
+    return Ok(assumed);
+  }
   let simplified = simplify_expr_with_together(&args[0]);
   let assumed = apply_active_assumptions(&simplified);
   // If simplification exposed a singularity like `0^(-1)` (e.g. after
@@ -3523,10 +3533,36 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   let sc = leaf_count(&sub_togethered);
   if sc < best_c {
     best = sub_togethered;
-    let _ = best_c;
+    best_c = sc;
+  }
+
+  // Candidate 3: Expand — wolframscript prefers `-1 + x^2` over
+  // `(x-1)*(x+1)` because the expanded form has fewer leaves.
+  if let Ok(expanded) = super::expand::expand_ast(&[simplified.clone()]) {
+    let ec = leaf_count(&expanded);
+    if ec < best_c {
+      best = expanded;
+      best_c = ec;
+    }
+  }
+
+  // Candidate 4: Factor — wolframscript prefers `(1+a)^3` over the expanded
+  // `1 + 3a + 3a^2 + a^3` and also picks `3*(1+a)` over `3 + 3a` on a tie,
+  // so accept the factored form on `<=`. Skip when Factor returns a larger
+  // form (e.g. it would unexpand `-1 + x^2` to `(-1+x)*(1+x)`).
+  if let Ok(factored) = super::factor::factor_ast(&[simplified.clone()]) {
+    let fc = leaf_count(&factored);
+    if fc <= best_c && !exprs_equal(&factored, &best) {
+      best = factored;
+      let _ = best_c;
+    }
   }
 
   best
+}
+
+fn exprs_equal(a: &Expr, b: &Expr) -> bool {
+  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
 }
 
 /// Apply `together_expr` only to proper sub-expressions of `expr`, leaving the
