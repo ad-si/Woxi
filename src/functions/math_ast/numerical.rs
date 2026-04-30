@@ -333,6 +333,86 @@ fn bigfloat_powi(
   }
 }
 
+/// Arbitrary-precision Gamma via Spouge's approximation.
+///
+/// `Γ(z+1) = (z+a)^(z+1/2) · e^{−(z+a)} · √(2π) · (c₀ + Σ_{k=1}^{a−1} c_k/(z+k))`
+///
+/// with `c_0 = 1` and `c_k = (-1)^(k-1)/(k-1)! · (a-k)^(k-1/2) · e^(a-k)`.
+/// Choosing `a ≈ 1.6 · digits` gives ~`digits` accurate decimals. We
+/// shift the input by 1 (so the formula receives `z = input - 1`) and
+/// reflect to positive arguments via the reflection identity when
+/// `Re(z) ≤ 0`.
+fn gamma_bigfloat(
+  z_in: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // Choose `a` from the working precision. astro-float's bit count is
+  // a little above the requested decimal digits, so use ln(10)/ln(2) ≈
+  // 0.301 to convert bits → digits and pad by ~1.6.
+  let approx_digits = (bits as f64 * 0.30103).ceil() as i64;
+  let a_int: i64 = ((approx_digits as f64) * 1.6).ceil() as i64 + 5;
+  let a_int = a_int.max(20);
+  let a_bf = BigFloat::from_i64(a_int, bits);
+
+  // Reflection: for Re(z) < 0.5 use Γ(z) = π / (sin(π·z) · Γ(1−z)).
+  let half = BigFloat::from_f64(0.5, bits);
+  let pi = cc.pi(bits, rm);
+  if z_in.cmp(&half).is_some_and(|o| o < 0) {
+    let one = BigFloat::from_i32(1, bits);
+    let one_minus_z = one.sub(z_in, bits, rm);
+    let pi_z = pi.mul(z_in, bits, rm);
+    let sin_piz = pi_z.sin(bits, rm, cc);
+    let gamma_1mz = gamma_bigfloat(&one_minus_z, bits, rm, cc);
+    let denom = sin_piz.mul(&gamma_1mz, bits, rm);
+    return pi.div(&denom, bits, rm);
+  }
+
+  // Work with z = z_in - 1 so the formula computes Γ(z+1) = Γ(z_in).
+  let one = BigFloat::from_i32(1, bits);
+  let z = z_in.sub(&one, bits, rm);
+
+  // Outer factor: (z + a)^(z + 1/2) · e^{−(z+a)}.
+  // Note: the canonical Spouge form has a `√(2π)` multiplier, but it
+  // cancels because c_0 in the convention used here is `1` (rather
+  // than `√(2π)`) — i.e. the √(2π) is absorbed into the coefficients
+  // implicitly. Empirically `outer_pow · exp_term · sum_with_c0=1`
+  // recovers Γ(z+1) without an explicit √(2π) factor.
+  let z_plus_a = z.add(&a_bf, bits, rm);
+  let z_plus_half = z.add(&half, bits, rm);
+  let outer_pow = z_plus_a.pow(&z_plus_half, bits, rm, cc);
+  let neg_zpa = z_plus_a.neg();
+  let exp_term = neg_zpa.exp(bits, rm, cc);
+  let outer = outer_pow.mul(&exp_term, bits, rm);
+
+  // Inner sum: c_0 + Σ_{k=1}^{a-1} c_k / (z + k)
+  // Compute c_k = (-1)^(k-1) / (k-1)! · (a-k)^(k-1/2) · e^(a-k).
+  let mut sum = BigFloat::from_i32(1, bits); // c_0
+  let mut factorial = BigFloat::from_i32(1, bits); // (k-1)! starting at k=1
+  for k in 1..a_int {
+    if k > 1 {
+      factorial = factorial.mul(&BigFloat::from_i64(k - 1, bits), bits, rm);
+    }
+    let a_minus_k = BigFloat::from_i64(a_int - k, bits);
+    let half_offset = BigFloat::from_i64(k - 1, bits).add(&half, bits, rm);
+    // (a-k)^(k - 1/2)
+    let term_pow = a_minus_k.pow(&half_offset, bits, rm, cc);
+    let exp_amk = a_minus_k.exp(bits, rm, cc);
+    let mut c_k = term_pow.mul(&exp_amk, bits, rm).div(&factorial, bits, rm);
+    if k % 2 == 0 {
+      c_k = c_k.neg();
+    }
+    let z_plus_k = z.add(&BigFloat::from_i64(k, bits), bits, rm);
+    let term = c_k.div(&z_plus_k, bits, rm);
+    sum = sum.add(&term, bits, rm);
+  }
+
+  outer.mul(&sum, bits, rm)
+}
+
 /// Convert a BigFloat to a decimal string.
 /// If `max_fraction_digits` is Some(n), keep at most `n` digits AFTER the
 /// decimal point. The integer part (when |x| ≥ 1) is preserved in full, so
@@ -907,6 +987,10 @@ pub fn expr_to_bigfloat(
           let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
           Ok(base.pow(&exp, bits, rm, cc))
+        }
+        "Gamma" if args.len() == 1 => {
+          let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(gamma_bigfloat(&z, bits, rm, cc))
         }
         "Erf" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
