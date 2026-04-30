@@ -1426,6 +1426,26 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
 }
 
 /// Extract the earliest (alphabetically first) variable name from an expression.
+/// True if `e` contains any transcendental-typed sub-expression (Sin, Cos,
+/// Log, Exp, …) anywhere — including inside Plus/Times/Power. Used as a
+/// guard in `compare_plus_terms` to detect hybrid terms whose
+/// `term_priority` would otherwise misclassify the whole product as
+/// algebraic when only one of its factors is a Plus of transcendentals.
+fn has_transcendental_subexpr(e: &Expr) -> bool {
+  if term_priority(e) >= 1 {
+    return true;
+  }
+  match e {
+    Expr::FunctionCall { args, .. } => args.iter().any(has_transcendental_subexpr),
+    Expr::List(items) => items.iter().any(has_transcendental_subexpr),
+    Expr::BinaryOp { left, right, .. } => {
+      has_transcendental_subexpr(left) || has_transcendental_subexpr(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_transcendental_subexpr(operand),
+    _ => false,
+  }
+}
+
 fn extract_earliest_variable(e: &Expr) -> Option<String> {
   match e {
     Expr::Identifier(s)
@@ -1912,6 +1932,28 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   let pa = term_priority(a);
   let pb = term_priority(b);
   if pa != pb {
+    // Different priorities normally means transcendental terms (priority 1)
+    // sort after polynomial-like ones (priority 0). However, when one term
+    // is a Times product whose `Plus` factor hides transcendental sub-
+    // expressions (e.g. `d^e*(Log[b] + Log[c])`), our `term_priority`
+    // returns 0 for that whole product even though it's logically a
+    // transcendental term. wolframscript orders such hybrid terms by
+    // leading variable rather than priority class — `Log[a] +
+    // d^e*(Log[b]+Log[c]) + Log[f]` keeps `Log[a]` first because `a < b`.
+    // Detect this hybrid by checking whether the lower-priority term has
+    // a transcendental sub-expression and, if so, defer to leading-variable
+    // ordering before falling back to the priority gap.
+    let lower = if pa < pb { a } else { b };
+    if has_transcendental_subexpr(lower) {
+      let av = extract_earliest_variable(a);
+      let bv = extract_earliest_variable(b);
+      if let (Some(av), Some(bv)) = (av, bv) {
+        let cmp = av.cmp(&bv);
+        if cmp != std::cmp::Ordering::Equal {
+          return cmp;
+        }
+      }
+    }
     return pa.cmp(&pb);
   }
 
@@ -4076,7 +4118,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Symbolic complex: `Plus[real, Times[real, I]]` or similar.
     if let Some((_re, im)) =
-      crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(a)
+      crate::evaluator::dispatch::complex_and_special::split_real_imag_symbolic(
+        a,
+      )
       && !matches!(im, Expr::Integer(0))
     {
       return true;
